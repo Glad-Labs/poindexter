@@ -2,6 +2,44 @@
 
 ## Unreleased
 
+## [0.82.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.81.0...v0.82.0) (2026-06-19)
+
+
+### Features
+
+* **integrations:** replace Discord/Telegram notify handlers with one generic Apprise handler ([#1711](https://github.com/Glad-Labs/glad-labs-stack/issues/1711)) ([4a6c7ab](https://github.com/Glad-Labs/glad-labs-stack/commit/4a6c7aba1a88c0bf6c0b4656330f33510f27cd85))
+* **media:** Z-Image-Turbo default + fix dead image-style rotation (db/skill-configurable) ([#1700](https://github.com/Glad-Labs/glad-labs-stack/issues/1700)) ([ebf9362](https://github.com/Glad-Labs/glad-labs-stack/commit/ebf9362e580ca74bc33e2456d6d01fd6a342f92b))
+* **pipeline:** atom contract fingerprint handshake for graph_defs (poindexter[#755](https://github.com/Glad-Labs/glad-labs-stack/issues/755)) ([#1709](https://github.com/Glad-Labs/glad-labs-stack/issues/1709)) ([d4e15e3](https://github.com/Glad-Labs/glad-labs-stack/commit/d4e15e3e926586dc88d14848319ce5d5638629e0))
+* **qa:** cross-model rescue reviser + adopt gemma writer / glm reviser (bakeoff) ([#1692](https://github.com/Glad-Labs/glad-labs-stack/issues/1692)) ([b04be2a](https://github.com/Glad-Labs/glad-labs-stack/commit/b04be2aeebcb8c79fcb2ec122cd41c8100c99a20))
+* **tts:** DB/skill-configurable pronunciation table + computing unit entries ([#1699](https://github.com/Glad-Labs/glad-labs-stack/issues/1699)) ([9c0e875](https://github.com/Glad-Labs/glad-labs-stack/commit/9c0e8754e374dc6c4b144b7117d682b3e5f54a11))
+
+
+### Bug Fixes
+
+* **brain:** await async notify_fn in health_probes (dropped probe pages) ([#1715](https://github.com/Glad-Labs/glad-labs-stack/issues/1715)) ([c6ff281](https://github.com/Glad-Labs/glad-labs-stack/commit/c6ff2817267ff5df0bf584d7ca169d39208ba8c4))
+* **brain:** progress-aware Prefect stuck-flow detection (no more false backlog pages) ([#1713](https://github.com/Glad-Labs/glad-labs-stack/issues/1713)) ([c539e9b](https://github.com/Glad-Labs/glad-labs-stack/commit/c539e9bf9de12d9a49f34922968dedd4d4c21435))
+* **media:** mount sdxl-server generated-images + HF cache under /home/appuser ([#1703](https://github.com/Glad-Labs/glad-labs-stack/issues/1703)) ([266f512](https://github.com/Glad-Labs/glad-labs-stack/commit/266f512de0107ecc93fd91ce316db4242ce5c03e))
+* **media:** mount wan-server generated-videos + HF cache under /home/appuser ([#1704](https://github.com/Glad-Labs/glad-labs-stack/issues/1704)) ([d9a9d3f](https://github.com/Glad-Labs/glad-labs-stack/commit/d9a9d3fc71feb23df7512be30536f7e471f63a0e))
+* **media:** narration spans whole video, real photos for humans, strip TTS labels ([#1694](https://github.com/Glad-Labs/glad-labs-stack/issues/1694)) ([6ff828d](https://github.com/Glad-Labs/glad-labs-stack/commit/6ff828d1150760cba78a619816bb75e8de9603eb))
+* **media:** route human video shots to pexels, kill human-token advisory warnings ([#1697](https://github.com/Glad-Labs/glad-labs-stack/issues/1697)) ([8a22ecf](https://github.com/Glad-Labs/glad-labs-stack/commit/8a22ecfec6d98b347b20fccd798ff5aaaad4e456))
+* **media:** self-heal duplicate video renders (idempotent persist + orphan prune) ([#1701](https://github.com/Glad-Labs/glad-labs-stack/issues/1701)) ([473e4d3](https://github.com/Glad-Labs/glad-labs-stack/commit/473e4d39f9a32afd7ccdda793feae4c4bc834779))
+* **media:** strip bracketed/qualifier-prefixed section labels from TTS ([#1695](https://github.com/Glad-Labs/glad-labs-stack/issues/1695)) ([b2959ba](https://github.com/Glad-Labs/glad-labs-stack/commit/b2959ba1db6330df8774faf15008e10b6c6628e8))
+* **media:** thread platform handle into featured-image stage for LLM SDXL prompts ([#1705](https://github.com/Glad-Labs/glad-labs-stack/issues/1705)) ([f71023f](https://github.com/Glad-Labs/glad-labs-stack/commit/f71023fdfe925c47c5d58028a9d4f0bade220cba))
+* **qa:** raise qa_rewrite_max_attempts default 1-&gt;2 + keep-best rescue guard ([#1693](https://github.com/Glad-Labs/glad-labs-stack/issues/1693)) ([17e2185](https://github.com/Glad-Labs/glad-labs-stack/commit/17e2185faa3c38a0a24ecfccafe60a09d0d1cb5b))
+* **qa:** raise qa.rewrite rescue timeout 240s-&gt;600s to match writer budget ([#1687](https://github.com/Glad-Labs/glad-labs-stack/issues/1687)) ([119ba13](https://github.com/Glad-Labs/glad-labs-stack/commit/119ba134b6741de52e6b5623ff02805f50903e73))
+* **security:** resolve telegram_ops chat_id from app_settings, not a seed literal ([#1714](https://github.com/Glad-Labs/glad-labs-stack/issues/1714)) ([2d89e11](https://github.com/Glad-Labs/glad-labs-stack/commit/2d89e1161d711fdd032ac245973f6a70b0c77424))
+* **test:** use app.openapi() to enumerate finance routes (Starlette 0.45+ compat) ([5bd9995](https://github.com/Glad-Labs/glad-labs-stack/commit/5bd9995cbf8d3921a1ba827ef023f8c58074bae8))
+* **tts:** add bare \"vs\" → \"versus\" pronunciation replacement ([#1698](https://github.com/Glad-Labs/glad-labs-stack/issues/1698)) ([ea3a363](https://github.com/Glad-Labs/glad-labs-stack/commit/ea3a36322d0da0cde62fc829476b4301f9742c28))
+* **tts:** mp3 output (fixes ~24s cutoff) + spell out VRAM/SRAM/DRAM ([#1696](https://github.com/Glad-Labs/glad-labs-stack/issues/1696)) ([d55eea9](https://github.com/Glad-Labs/glad-labs-stack/commit/d55eea9303e96da80ce9939e975e0ebf869ffd5c))
+* **tts:** remux Speaches output to repair concatenated duration header (podcast cutoff) ([#1706](https://github.com/Glad-Labs/glad-labs-stack/issues/1706)) ([e7d02a8](https://github.com/Glad-Labs/glad-labs-stack/commit/e7d02a84371acad9eb0a8e0b3672a7599f88ef41))
+* **writer:** ban footnotes + placeholder URLs in canonical_blog writer prompt ([#1685](https://github.com/Glad-Labs/glad-labs-stack/issues/1685)) ([06ab28e](https://github.com/Glad-Labs/glad-labs-stack/commit/06ab28e07ed2a5ea926a7b2042c9f819aaddd82a))
+* **writer:** stop placeholder/generic-entity substitution + feed reviser advisory feedback ([#1691](https://github.com/Glad-Labs/glad-labs-stack/issues/1691)) ([6541c37](https://github.com/Glad-Labs/glad-labs-stack/commit/6541c37b0e25518aa3b19342978209f18371a985))
+
+
+### Reverts
+
+* undo accidental commit to main (finance-routes openapi fix) ([#1688](https://github.com/Glad-Labs/glad-labs-stack/issues/1688)) ([96d61e7](https://github.com/Glad-Labs/glad-labs-stack/commit/96d61e734eb4b675a2cc26647518587882f8418d))
+
 ## [0.81.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.80.1...v0.81.0) (2026-06-18)
 
 
