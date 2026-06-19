@@ -357,6 +357,44 @@ class TestConditionalSuppressionAndCrash:
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+class TestAsyncNotifyFnAwaited:
+    """Regression: run_health_probes must AWAIT an async notify_fn.
+
+    ``brain_daemon.notify`` is async (since #344), and it is the notify_fn
+    passed in production. run_health_probes was calling ``notify_fn(...)``
+    bare, so a probe-failure page became a coroutine that was never awaited —
+    ``RuntimeWarning: coroutine 'notify' was never awaited`` and the alert
+    silently dropped. The suppression tests above never caught it because they
+    pass a SYNC lambda. This mirrors the ``_maybe_await`` fix already shipped in
+    business_probes / post_performance.
+    """
+
+    async def test_async_notify_fn_is_awaited_on_probe_failure(self):
+        async def fail(_pool):
+            return {"ok": False, "detail": "boom"}
+
+        notify_fn = AsyncMock()
+        # 'fake_fail' is NOT in PROMETHEUS_COVERED_PROBES, so it pages directly
+        # (no suppression), and ALERT_AFTER_FAILURES=1 trips on this single run.
+        with patch.dict(hp.PROBES, {"fake_fail": fail}, clear=True), \
+                patch.object(hp, "_is_due", return_value=True), \
+                patch.object(hp, "ALERT_AFTER_FAILURES", 1), \
+                patch.object(
+                    hp, "_alertmanager_healthy", new=AsyncMock(return_value=True),
+                ):
+            hp._config_synced = True
+            await hp.run_health_probes(_make_pool(), notify_fn=notify_fn)
+
+        # The page must have been *awaited*, not left as a dangling coroutine.
+        assert notify_fn.await_count == 1, (
+            "run_health_probes did not await the async notify_fn — the "
+            "probe-failure page was dropped as an un-awaited coroutine "
+            f"(call_count={notify_fn.call_count}, await_count={notify_fn.await_count})"
+        )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 class TestGpuTemperatureProbe:
     """#536 — the probe must distinguish 'exporter alive' from 'writing fresh
     data'. A stale newest row (frozen feed) with a normal temp must fail."""

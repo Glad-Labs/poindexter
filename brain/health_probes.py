@@ -9,6 +9,7 @@ Standalone: only depends on asyncpg + urllib (no FastAPI imports).
 """
 
 import asyncio
+import inspect
 import json
 import logging
 import os
@@ -30,6 +31,21 @@ except ImportError:
     from brain.docker_utils import localize_url, resolve_url
 
 logger = logging.getLogger("brain.probes")
+
+
+async def _maybe_await(value: Any) -> Any:
+    """Await ``value`` when notify_fn returned a coroutine; pass through otherwise.
+
+    brain's production ``notify`` (``brain_daemon.notify``) is async since #344,
+    but legacy tests pass a sync ``MagicMock`` / lambda. Without this shim the
+    async call site emits ``RuntimeWarning: coroutine 'notify' was never
+    awaited`` and the probe-failure page silently dies. Mirrors the identical
+    helper already shipped in business_probes / post_performance.
+    """
+    if inspect.isawaitable(value):
+        return await value
+    return value
+
 
 # OpenTelemetry is optional — health probes work with or without it.
 # When the opentelemetry SDK isn't installed, ``_tracer`` is a no-op
@@ -1486,7 +1502,9 @@ async def run_health_probes(pool, notify_fn=None):
                 and notify_fn
                 and not suppress
             ):
-                notify_fn(f"✅ Probe '{name}' recovered: {result.get('detail', '')}")
+                await _maybe_await(
+                    notify_fn(f"✅ Probe '{name}' recovered: {result.get('detail', '')}")
+                )
             _failure_counts[name] = 0
         else:
             _failure_counts[name] = _failure_counts.get(name, 0) + 1
@@ -1497,21 +1515,21 @@ async def run_health_probes(pool, notify_fn=None):
                 detail = result.get('detail', 'unknown error')
                 if notify_fn and not suppress:
                     if crashed:
-                        notify_fn(
+                        await _maybe_await(notify_fn(
                             f"⚠️ Probe '{name}' ERRORED {ALERT_AFTER_FAILURES}x "
                             f"(bug in the probe — monitoring is BLIND for this "
                             f"check, not necessarily a service outage): {detail}"
-                        )
+                        ))
                     elif prom_covered and not am_healthy:
-                        notify_fn(
+                        await _maybe_await(notify_fn(
                             f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x "
                             f"AND Alertmanager is unreachable — Prometheus "
                             f"coverage is BLIND, brain is paging directly: {detail}"
-                        )
+                        ))
                     else:
-                        notify_fn(
+                        await _maybe_await(notify_fn(
                             f"🔴 Probe '{name}' failed {ALERT_AFTER_FAILURES}x: {detail}"
-                        )
+                        ))
                 # The Gitea-issue auto-create paper trail was removed when
                 # Gitea was decommissioned (2026-04-30). The notify_operator
                 # call above is now the only escalation; the brain's
@@ -1521,7 +1539,7 @@ async def run_health_probes(pool, notify_fn=None):
     # --- Self-healing: execute remediation actions for persistent failures ---
     for name, count in _failure_counts.items():
         if count >= ALERT_AFTER_FAILURES and name in REMEDIATIONS:
-            _try_remediation(name, results.get(name, {}), notify_fn)
+            await _try_remediation(name, results.get(name, {}), notify_fn)
 
     if results:
         passed = sum(1 for r in results.values() if r.get("ok"))
@@ -1555,7 +1573,7 @@ def _restart_container(container_name: str) -> tuple[bool, str]:
         return False, f"restart error: {str(e)[:200]}"
 
 
-def _try_remediation(probe_name: str, result: dict, notify_fn=None):
+async def _try_remediation(probe_name: str, result: dict, notify_fn=None):
     """Execute a remediation action if cooldown has elapsed."""
     last = _last_remediation.get(probe_name, 0)
     if (time.time() - last) < REMEDIATION_COOLDOWN:
@@ -1586,10 +1604,10 @@ def _try_remediation(probe_name: str, result: dict, notify_fn=None):
     detail = result.get("detail", "")
     if notify_fn:
         emoji = "🔧" if ok else "⚠️"
-        notify_fn(
+        await _maybe_await(notify_fn(
             f"{emoji} Self-heal '{probe_name}': {msg}\n"
             f"Trigger: {detail}"
-        )
+        ))
     logger.info("[SELF-HEAL] %s — %s (probe: %s)",
                 "SUCCESS" if ok else "FAILED", msg, probe_name)
 
