@@ -77,22 +77,39 @@ HUMAN-SUBJECT POLICY
 --------------------
 AI-generated faces, hands, and bodies are the strongest "AI slop" tell —
 six-fingered hands, faces that almost-but-not-quite work, weird joints.
-Route every human-subject shot through one of two paths:
+So humans get ONE home: real footage.
 
-1. Use source="pexels" — real cameras don't have the AI tell. This is
-   the preferred path for any shot featuring real people, products,
-   places, or recognizable real-world scenes.
+DECISION RULE — before writing each shot, ask: "is the visual subject a
+person, or any part of a person (a face, hands, a developer at a desk, a
+team, a crowd, an audience)?"
 
-2. Or rephrase the AI-source prompt as a faceless silhouette. Acceptable
-   phrasing for sdxl / sdxl_kenburns / wan21 prompts:
-   "faceless silhouette, no identifiable face, no visible hands, no fingers,
-    figure viewed from behind / backlit shape / shadow on wall".
+1. If YES → emit source="pexels" with a stock-photo "query" (e.g.
+   "developer typing keyboard close up", "team meeting in an office").
+   Real cameras don't have the AI tell. This is the home for EVERY shot
+   whose subject is a human — never reach for sdxl_kenburns with a person
+   in the prompt.
 
-Never request "developer", "engineer", "programmer", "person", "man",
-"woman", "face", "hands", "fingers" inside an sdxl / sdxl_kenburns /
-wan21 prompt. Use abstract subjects instead — servers, code on screens,
-cityscapes, data flows, hardware close-ups, glowing circuits, stylized
-diagrams. Pexels keeps the human lane.
+2. If a human genuinely MUST be AI-rendered (sdxl / sdxl_kenburns / wan21)
+   → phrase the figure as a faceless silhouette. The word "silhouette" or
+   "faceless" MUST appear in the prompt — that is the only form a human is
+   allowed to take in an AI source:
+   "faceless silhouette, no identifiable face, figure viewed from behind /
+    backlit shape / shadow on wall".
+
+3. Otherwise (the default for sdxl / sdxl_kenburns / wan21) → pick a
+   NON-human subject: servers, code on screens, cityscapes, data flows,
+   hardware close-ups, glowing circuits, stylized diagrams, abstract shapes.
+
+Do NOT name a human noun in an sdxl / sdxl_kenburns / wan21 prompt — not
+"person / people / man / woman / human / hand / hands / finger / fingers /
+developer / engineer / programmer / designer / manager / founder / team /
+crowd / audience", and NOT EVEN inside a negation like "no people" or
+"no humans". A reviewer flags the noun whether or not you negated it, and
+the renderer already adds its own negative prompt that strips faces,
+people, and hands for you (naming them in the positive prompt can even make
+diffusion render them). To signal an unpeopled scene, describe it
+positively — "empty server hall", "unpopulated street at night" — never by
+naming the human you're excluding. Pexels keeps the human lane.
 
 STYLE POLICY FOR AI SOURCES
 ---------------------------
@@ -120,9 +137,11 @@ HARD RULES
    visible at attention peaks (start + close).
 7. 6-12 shots total. Each shot 3-15 seconds.
 8. AI-source prompts (sdxl / sdxl_kenburns / wan21) MUST follow the
-   HUMAN-SUBJECT POLICY and STYLE POLICY above. Humans → pexels OR
-   faceless silhouette. No photorealism.
-9. Set director_model to "{model}" and director_prompt_version to "v1.1".
+   HUMAN-SUBJECT POLICY and STYLE POLICY above. Human subject →
+   source="pexels" (or a faceless silhouette only if it MUST be AI).
+   Never name a human noun in an AI prompt, not even as "no people".
+   No photorealism.
+9. Set director_model to "{model}" and director_prompt_version to "v1.2".
 10. Set director_decided_at to the current UTC ISO timestamp: "{now_iso}"
 
 SCHEMA (output this shape):
@@ -143,7 +162,7 @@ SCHEMA (output this shape):
       "duration_s": 5.0,
       "intent": "abstract — illustrate the metaphor",
       "source": "sdxl_kenburns",
-      "prompt": "flat vector illustration, a glass door opening with abstract data flowing through, cyan and dark navy palette, no people, no text",
+      "prompt": "flat vector illustration, a glass door opening with abstract data flowing through, cyan and dark navy palette, empty unpopulated scene",
       "kenburns_zoom": [1.0, 1.2],
       "narration_offset_s": 6.0
     }},
@@ -157,7 +176,7 @@ SCHEMA (output this shape):
     }}
   ],
   "director_model": "{model}",
-  "director_prompt_version": "v1.1",
+  "director_prompt_version": "v1.2",
   "director_decided_at": "{now_iso}"
 }}
 
@@ -210,14 +229,22 @@ single-subject, portrait-orientation scenes) over wide landscapes. For
 sdxl* / wan21, compose for a tall frame (a vertical column of interest, not a
 wide horizon).
 
-HUMAN-SUBJECT POLICY (unchanged)
---------------------------------
-AI-generated faces/hands/bodies are the strongest AI-slop tell. Route every
-human-subject shot through source="pexels" (real footage) OR rephrase the
-AI-source prompt as a "faceless silhouette, no identifiable face, no visible
-hands". Never put "person/man/woman/face/hands/developer/engineer" in an
-sdxl / sdxl_kenburns / wan21 prompt — use abstract subjects (servers, code on
-screens, hardware close-ups, glowing circuits, stylized diagrams).
+HUMAN-SUBJECT POLICY (same policy as the long director)
+-------------------------------------------------------
+AI-generated faces/hands/bodies are the strongest AI-slop tell, so humans get
+ONE home: real footage. If a shot's subject is a person or any part of one
+(face, hands, a developer, a team, a crowd) → emit source="pexels" with a
+stock "query"; never reach for sdxl_kenburns with a person in the prompt. If a
+human MUST be AI-rendered → phrase it as a "faceless silhouette, no
+identifiable face, figure from behind" (the word "silhouette" or "faceless" is
+required). The default sdxl / sdxl_kenburns / wan21 subject is NON-human:
+servers, code on screens, hardware close-ups, glowing circuits, stylized
+diagrams. Never name a human noun (person / people / man / woman / human /
+hand / hands / developer / engineer / team / crowd …) in an AI prompt — NOT
+EVEN as "no people" / "no humans" (a reviewer flags the word inside a
+negation, and the renderer already strips faces/people/hands for you). Signal
+an unpeopled scene positively ("empty server hall"), never by naming who's
+excluded.
 
 STYLE POLICY FOR AI SOURCES (unchanged)
 ---------------------------------------
@@ -240,8 +267,10 @@ HARD RULES (short-form)
    long holds — keep cuts frequent.
 8. Never more than 2 consecutive shots from the same source. First and last
    shots MUST NOT be "wan21".
-9. AI-source prompts MUST follow the HUMAN-SUBJECT + STYLE policies above.
-10. Set director_model to "{model}", director_prompt_version to "short_v1",
+9. AI-source prompts MUST follow the HUMAN-SUBJECT + STYLE policies above —
+   human subject → source="pexels", and never a human noun (not even
+   "no people") in an sdxl / sdxl_kenburns / wan21 prompt.
+10. Set director_model to "{model}", director_prompt_version to "short_v1.1",
     director_decided_at to "{now_iso}".
 
 SCHEMA (output this shape):
@@ -255,7 +284,7 @@ SCHEMA (output this shape):
       "duration_s": 2.0,
       "intent": "cold-open hook — land the promise in the first second",
       "source": "sdxl_kenburns",
-      "prompt": "cyberpunk neon illustration, a single glowing server rack pulsing with data, vertical composition, dark navy and cyan palette, no people, no text",
+      "prompt": "cyberpunk neon illustration, a single glowing server rack pulsing with data, vertical composition, dark navy and cyan palette, empty unpopulated scene",
       "kenburns_zoom": [1.0, 1.15],
       "narration_offset_s": 0.0
     }},
@@ -269,7 +298,7 @@ SCHEMA (output this shape):
     }}
   ],
   "director_model": "{model}",
-  "director_prompt_version": "short_v1",
+  "director_prompt_version": "short_v1.1",
   "director_decided_at": "{now_iso}"
 }}
 
