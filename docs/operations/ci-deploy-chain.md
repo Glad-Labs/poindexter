@@ -322,6 +322,29 @@ for an _immediate_ deploy (skip the wait) and is still required for dependency /
 base-image changes (which need `docker compose build`) and for
 `poindexter-prefect-worker` / `poindexter-brain-daemon` bootstrap-level changes.
 
+**Confirming the sync task actually ran.** The task runs hidden/non-interactive
+and the Windows TaskScheduler/Operational history log is disabled by default, so
+a green `0x0` "Last Run Result" is **not** proof it synced — it can skip every
+cycle (e.g. a stuck Prefect flow tripping the gap guard) and still report
+success. Each run therefore persists its own proof-of-work:
+
+- `~/.poindexter/deploy-checkout-sync.log` — timestamped narration of every
+  `git fetch`/`reset`/`clean` and `docker restart`, rotated to `.log.1` past
+  `POINDEXTER_DEPLOY_LOG_MAX_BYTES` (default 5 MB).
+- `~/.poindexter/deploy-checkout-sync.status.json` — one machine-readable object
+  (`result`, `head`, `previousHead`, `restarted[]`, `timestamp`) for a Grafana
+  textfile collector / phone check. `result` ∈ `deployed` | `synced-no-change` |
+  `synced-norestart` | `baseline-recorded` | `flow-gap-skip` | `error`.
+
+```powershell
+pwsh ./scripts/deploy-checkout-sync.ps1 -Status    # task state + clone HEAD + last status + log tail
+pwsh ./scripts/deploy-checkout-sync.ps1 -SelfTest  # exercise the logging/rotation/status plumbing (no git/docker)
+```
+
+Do **not** trust merged == deployed without one of these: compare
+`git -C ~/.poindexter/deploy/glad-labs-stack rev-parse HEAD` against `origin/main`,
+or read the status file.
+
 **Deploy-drift canary (glad-labs-stack#942).** Because the worker / brain
 bind-mount the deploy clone, "merged on main" does not mean "running in prod"
 until you run the deploy above. The brain's `branch_drift_probe` closes that
