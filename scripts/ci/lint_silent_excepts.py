@@ -30,8 +30,16 @@ you convert a silent swallow into a visible one (escalate the log level,
 emit a finding, re-raise) and re-run with ``--update-baseline``.
 
 Escape hatch for a genuinely-fine new silent swallow (best-effort cleanup,
-a close() in a finally-ish except): add a ``# noqa: silent-ok`` comment on
-the ``except`` line or anywhere inside the handler, with a short reason.
+a close() in a finally-ish except): add a bare ``# silent-ok: <reason>``
+comment on the ``except`` line or anywhere inside the handler. The marker
+is a plain comment this lint scans for, NOT a ruff code, so write it bare.
+Do *not* write ``# noqa: silent-ok`` — ruff then tries to parse
+``silent-ok`` as a suppression code and warns "Invalid ``# noqa``
+directive" on every run. If you additionally need to silence a real ruff
+rule, stack two separate comments on the line:
+``# noqa: BLE001  # silent-ok: <reason>``. (BLE001 / S110 are not in this
+repo's ruff ``select`` set, so a bare ``except Exception: pass`` needs no
+noqa at all.)
 
 Run:
     python scripts/ci/lint_silent_excepts.py                 # check
@@ -150,7 +158,7 @@ def _node_has_override(node: ast.AST, lines: list[str]) -> bool:
     """True if a ``silent-ok`` marker appears anywhere in the node's span.
 
     Works for both an ``except`` handler and a ``with suppress(...)`` block —
-    the escape hatch is identical: a ``# noqa: silent-ok <reason>`` comment on
+    the escape hatch is identical: a bare ``# silent-ok: <reason>`` comment on
     the opening line or anywhere inside the body exempts an intentional swallow.
     """
     start = getattr(node, "lineno", 1)
@@ -204,7 +212,7 @@ def scan_file(path: Path) -> int:
     Two shapes count: an ``except`` handler whose body is only ``pass`` /
     ``<logger>.debug(...)``, and a ``with contextlib.suppress(Exception)``
     block (broad suppression). Both hide the failure below operator
-    visibility; both are exempt with a ``# noqa: silent-ok`` marker.
+    visibility; both are exempt with a bare ``# silent-ok: <reason>`` marker.
     """
     try:
         source = path.read_text(encoding="utf-8")
@@ -288,8 +296,10 @@ def main() -> int:
             "`return <sentinel>` under a broad except, or a broad "
             "`contextlib.suppress(...)`. Make it visible — escalate to "
             "warning+/error, emit_finding(severity>=warn), or re-raise. If the "
-            "swallow is genuinely fine (best-effort cleanup), add "
-            "`# noqa: silent-ok <reason>`. If you intentionally reduced a "
+            "swallow is genuinely fine (best-effort cleanup), add a bare "
+            "`# silent-ok: <reason>` comment (a plain comment, NOT a ruff "
+            "code — do not write `# noqa: silent-ok`, which makes ruff warn "
+            "it can't parse the directive). If you intentionally reduced a "
             "count, re-run with --update-baseline."
         )
         return 1
