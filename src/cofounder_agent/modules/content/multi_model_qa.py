@@ -2146,6 +2146,10 @@ class MultiModelQA:
         payload = {
             "model": model,
             "stream": False,
+            # Thinking vision models (qwen3-vl) bury the answer in `thinking`
+            # and return an empty `content` — disable thinking so the verdict
+            # lands in `content` and the reviewer parses. #video-vision-qa.
+            "think": False,
             "messages": [
                 {
                     "role": "user",
@@ -2349,6 +2353,10 @@ class MultiModelQA:
         payload = {
             "model": model,
             "stream": False,
+            # Thinking vision models (qwen3-vl) bury the answer in `thinking`
+            # and return an empty `content` — disable thinking so the verdict
+            # lands in `content` and the reviewer parses. #video-vision-qa.
+            "think": False,
             "messages": [
                 {
                     "role": "user",

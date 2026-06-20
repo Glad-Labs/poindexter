@@ -151,8 +151,13 @@ async def score_shot_frame(
     payload = {
         "model": model,
         "stream": False,
+        # qwen3-vl is a thinking vision model: with thinking on it spends the
+        # num_predict budget inside `thinking` and returns an empty `content`,
+        # so the score never parses (always None → silent no-op). Disable
+        # thinking so the JSON verdict lands in `content`. #video-vision-qa.
+        "think": False,
         "messages": [{"role": "user", "content": prompt, "images": [b64]}],
-        "options": {"temperature": 0.2, "num_predict": 200},
+        "options": {"temperature": 0.2, "num_predict": 300},
     }
 
     import httpx

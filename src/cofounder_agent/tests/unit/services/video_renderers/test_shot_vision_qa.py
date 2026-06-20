@@ -51,6 +51,9 @@ async def test_scores_a_still_frame(tmp_path):
     body = client.post.call_args.kwargs["json"]
     assert body["model"] == "qwen3-vl:30b"  # ollama/ prefix stripped
     assert body["messages"][0]["images"]  # non-empty images array
+    # qwen3-vl is a thinking model — thinking MUST be off or `content` comes
+    # back empty and the score never parses (silent no-op). #video-vision-qa.
+    assert body["think"] is False
 
 
 @pytest.mark.asyncio
