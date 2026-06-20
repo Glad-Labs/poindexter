@@ -56,6 +56,7 @@ Each `SKILL.md` pack declares the keys it provides in its frontmatter `metadata.
 | `content/atoms`                                               | content             | `atoms.*` system prompts (narrate_bundle, review_with_critic, pipeline_architect)   |
 | `content/utility`                                             | utility             | content summarization / JSON conversion helpers                                     |
 | `ops/automation`, `ops/business`, `ops/triage`, `ops/hygiene` | ops                 | `task.*` business/automation/ops prompts                                            |
+| `voice/agent`                                                 | voice               | `voice.*` system prompts — Emma persona + Claude-bridge TTS override (`{surface}`)  |
 
 The `narrate_bundle` and `pipeline_architect` templates carry the operator persona as `{site_name}` / `{site_url}` placeholders, rendered from the run-bound `site_config` by the calling atom before the text reaches the model.
 

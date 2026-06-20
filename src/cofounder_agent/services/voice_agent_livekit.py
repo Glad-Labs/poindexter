@@ -87,6 +87,7 @@ from services.voice_pipecat import (
 from services.voice_pipecat import (
     resolve_livekit_creds_async as _shared_resolve_livekit_creds_async,
 )
+from services.voice_prompts import CLAUDE_BRIDGE_TTS_KEY, resolve_voice_prompt
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("voice_agent_livekit")
@@ -1391,15 +1392,8 @@ async def run_bot(
             task = build_voice_pipeline_task(
                 transport, site_config, log=log,
                 llm=llm_service,
-                system_prompt_override=(
-                    "You are speaking out loud to Matt over a phone "
-                    "call. Keep replies short and natural — under 20 "
-                    "seconds of speech unless he asks for more. No "
-                    "markdown, no bullet lists, no code blocks; this "
-                    "goes through TTS. When you take an action (edit a "
-                    "file, run a command, push a PR) summarise the "
-                    "outcome in one sentence rather than narrating the "
-                    "steps."
+                system_prompt_override=resolve_voice_prompt(
+                    CLAUDE_BRIDGE_TTS_KEY, surface="phone call",
                 ),
                 # Let the dev (claude-code) room run a distinct Kokoro
                 # voice from the public poindexter room. Empty = fall

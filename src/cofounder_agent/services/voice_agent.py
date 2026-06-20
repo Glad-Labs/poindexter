@@ -109,23 +109,18 @@ from pipecat.turns.user_stop.speech_timeout_user_turn_stop_strategy import (
 )
 from pipecat.turns.user_turn_strategies import UserTurnStrategies
 
+from services.voice_prompts import (
+    CLAUDE_BRIDGE_TTS_KEY,
+    EMMA_SYSTEM_KEY,
+    resolve_voice_prompt,
+)
+
 # pipecat.transports.local.audio imports sounddevice / PortAudio at
 # module load. In a headless container (the always-on voice-agent-livekit
 # / voice-agent-webrtc surfaces, #383) there's no audio device and that
 # import raises ``OSError: PortAudio library not found`` even though the
 # LiveKit / WebRTC surfaces never touch a local mic. Defer the import to
 # ``run_local()`` so the headless surfaces import this module cleanly.
-
-
-_DEFAULT_SYSTEM_PROMPT = (
-    "You are Emma, a concise voice assistant for Matt at Glad Labs. "
-    "Speak naturally — your output goes through text-to-speech, so "
-    "avoid markdown, bullet lists, and code blocks. Use short "
-    "sentences. If Matt asks a factual question you don't know the "
-    "answer to, say so plainly rather than guessing. Default to "
-    "responses under 30 seconds of speech (~80 words) unless he "
-    "explicitly asks for a longer one."
-)
 
 
 # ---------------------------------------------------------------------------
@@ -321,7 +316,7 @@ def build_voice_pipeline_task(
     vad_stop_secs = float(site_config.get("voice_agent_vad_stop_secs", 0.2))
     system_prompt = system_prompt_override or (
         site_config.get("voice_agent_system_prompt", "")
-        or _DEFAULT_SYSTEM_PROMPT
+        or resolve_voice_prompt(EMMA_SYSTEM_KEY)
     )
 
     # STT/TTS are mode-aware (#1088): in-process (legacy) or thin clients of
@@ -501,14 +496,8 @@ async def run_local(
         task = build_voice_pipeline_task(
             transport, site_config, log=log,
             llm=llm_service,
-            system_prompt_override=(
-                "You are speaking out loud to Matt over a local mic. "
-                "Keep replies short and natural — under 20 seconds of "
-                "speech unless he asks for more. No markdown, no bullet "
-                "lists, no code blocks; this goes through TTS. When you "
-                "take an action (edit a file, run a command, push a "
-                "PR), summarise the outcome in one sentence rather than "
-                "narrating the steps."
+            system_prompt_override=resolve_voice_prompt(
+                CLAUDE_BRIDGE_TTS_KEY, surface="local mic",
             ),
         )
     else:
