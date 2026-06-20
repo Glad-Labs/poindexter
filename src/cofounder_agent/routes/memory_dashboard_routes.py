@@ -36,7 +36,12 @@ from middleware.api_token_auth import verify_api_token
 
 logger = logging.getLogger(__name__)
 
-router = APIRouter(tags=["memory-dashboard"])
+router = APIRouter(
+    tags=["memory-dashboard"],
+    # Operator surface — auth enforced on every route, incl. the /memory
+    # HTML dashboard (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 
 async def _get_memory_client():

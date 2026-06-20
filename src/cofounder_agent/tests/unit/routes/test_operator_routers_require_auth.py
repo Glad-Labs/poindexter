@@ -12,8 +12,9 @@ Public routers are deliberately excluded: the four the public site actually
 calls (``cms`` / ``podcast`` / ``newsletter`` / ``revalidate``), the public
 video feed, the OAuth issuer (must be reachable without a token), the webhook
 sinks (own signature auth), and the public voice-join page. The two no-prefix
-dashboard routers (``pipeline_events`` / ``memory_dashboard``) are tracked for
-a separate pass.
+dashboard routers (``pipeline_events`` / ``memory_dashboard``) ARE included —
+their root-level ``/pipeline`` and ``/memory`` HTML dashboards require a token
+too, so they're operator surfaces, not public pages.
 """
 
 from __future__ import annotations
@@ -48,6 +49,8 @@ _OPERATOR_ROUTERS: list[tuple[str, str]] = [
     ("routes.seo_routes", "router"),
     ("routes.triage_routes", "router"),
     ("routes.module_probes_routes", "router"),
+    ("routes.pipeline_events_routes", "router"),
+    ("routes.memory_dashboard_routes", "router"),
 ]
 
 

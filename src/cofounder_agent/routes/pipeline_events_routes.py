@@ -42,7 +42,12 @@ async def _get_pool():
     db_service = get_database_dependency()
     return getattr(db_service, "cloud_pool", None) or db_service.pool
 
-router = APIRouter(tags=["pipeline-events"])
+router = APIRouter(
+    tags=["pipeline-events"],
+    # Operator surface — auth enforced on every route, incl. the /pipeline
+    # HTML dashboard (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 
 # The audit_log event types that represent QA / pipeline decisions.
