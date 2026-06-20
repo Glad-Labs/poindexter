@@ -914,6 +914,76 @@ class TestDeletePost:
 
 
 # ---------------------------------------------------------------------------
+# POST /api/posts/{post_id}/unpublish — unpublish_post_route (#684)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUnpublishPostRoute:
+    """The route is a thin adapter: resolve the id prefix, then delegate to
+    services.publish_service.unpublish_post and return its result verbatim."""
+
+    @staticmethod
+    def _app_with_site_config():
+        from services.site_config import SiteConfig
+        from utils.route_utils import get_site_config_dependency
+
+        app = _build_app()
+        app.dependency_overrides[get_site_config_dependency] = lambda: SiteConfig(
+            initial_config={"site_url": "https://www.test-site.example.com"}
+        )
+        return app
+
+    def test_delegates_to_service_and_returns_result(self):
+        # A full UUID short-circuits resolve_uuid_prefix (no DB lookup), so the
+        # route hands the id straight to the service.
+        pool, _conn = _make_pool_mock()
+        service_result = {
+            "unpublished": True,
+            "post_id": POST_UUID,
+            "slug": "bad-post",
+            "hooks": ["retired"],
+        }
+        unpublish = AsyncMock(return_value=service_result)
+        with patch(
+            "routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)
+        ), patch("services.publish_service.unpublish_post", new=unpublish):
+            client = TestClient(self._app_with_site_config())
+            resp = client.post(
+                f"/api/posts/{POST_UUID}/unpublish",
+                headers={"Authorization": "Bearer test-token"},
+            )
+        assert resp.status_code == 200
+        assert resp.json() == service_result
+        # Delegated with the resolved full id (positional arg 1 after pool).
+        assert unpublish.await_args.args[1] == POST_UUID
+
+    def test_idempotent_noop_surfaces_as_200_with_reason(self):
+        pool, _conn = _make_pool_mock()
+        unpublish = AsyncMock(
+            return_value={
+                "unpublished": False,
+                "post_id": POST_UUID,
+                "reason": "not_published",
+                "hooks": [],
+            }
+        )
+        with patch(
+            "routes.cms_routes.get_db_pool", new=AsyncMock(return_value=pool)
+        ), patch("services.publish_service.unpublish_post", new=unpublish):
+            client = TestClient(self._app_with_site_config())
+            resp = client.post(
+                f"/api/posts/{POST_UUID}/unpublish",
+                headers={"Authorization": "Bearer test-token"},
+            )
+        # An idempotent no-op is a 200 with a reason, not an error.
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["unpublished"] is False
+        assert body["reason"] == "not_published"
+
+
+# ---------------------------------------------------------------------------
 # GET /api/categories/{slug} — get_category_by_slug
 # ---------------------------------------------------------------------------
 

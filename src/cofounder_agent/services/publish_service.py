@@ -2054,3 +2054,105 @@ async def publish_now(
         len(fired["hooks"]), post_id, fired["hooks"],
     )
     return fired
+
+
+async def unpublish_post(
+    pool: Any,
+    post_id: str,
+    *,
+    site_config: SiteConfig | None = None,
+) -> dict[str, Any]:
+    """Take a published post offline — immediate rollback for a bad publish.
+
+    The inverse of ``publish_now``. Flips ``status`` ``published`` → ``draft``
+    (+ reverts the linked ``pipeline_tasks`` row ``published`` → ``approved``,
+    one transaction), then retires the post's static JSON from storage and
+    busts its ISR cache via ``_retire_slug`` so the live site drops it
+    immediately — no wait for the next full static rebuild or the hourly ISR
+    backstop. The PATCH route flips ``posts.status`` but never retires R2 /
+    revalidates, so a status change alone leaves the post served from storage;
+    this is the missing one-step takedown (cf. the 2026-05-26 unauthorized
+    auto-publish incident).
+
+    Refuses (idempotent no-op) when the post isn't currently published.
+    ``site_config`` is resolved from the process container when not injected.
+    """
+    if site_config is None:
+        try:
+            from services.container_registry import get_container
+
+            _c = get_container()
+            site_config = _c.site_config if _c is not None else SiteConfig()
+        except Exception:
+            site_config = SiteConfig()
+    _sc = site_config
+
+    result: dict[str, Any] = {"unpublished": False, "post_id": post_id, "hooks": []}
+
+    async with pool.acquire() as conn:
+        post_row = await conn.fetchrow(
+            """
+            SELECT id::text AS id, slug, status
+              FROM posts
+             WHERE id::text = $1
+            """,
+            str(post_id),
+        )
+    if post_row is None:
+        result["reason"] = "post_not_found"
+        return result
+
+    slug = post_row["slug"]
+
+    # Flip published → draft + revert the linked task published → approved (the
+    # inverse of publish_now's promote), in one transaction. The seam
+    # (metadata->>'pipeline_task_id') keeps pipeline_tasks.status in lockstep.
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            update_result = await conn.execute(
+                """
+                UPDATE posts
+                   SET status = 'draft',
+                       updated_at = NOW()
+                 WHERE id::text = $1
+                   AND status = 'published'
+                """,
+                str(post_id),
+            )
+            await conn.execute(
+                """
+                UPDATE pipeline_tasks pt
+                   SET status = 'approved', updated_at = NOW()
+                  FROM posts p
+                 WHERE p.id::text = $1
+                   AND p.metadata ->> 'pipeline_task_id' = pt.task_id
+                   AND pt.status = 'published'
+                """,
+                str(post_id),
+            )
+    if not update_result.startswith("UPDATE 1"):
+        # Not currently published (already draft/archived) — idempotent no-op.
+        logger.info(
+            "[publish_service] unpublish_post: post %s not currently published "
+            "(%s) — no status flip", post_id, update_result,
+        )
+        result["reason"] = "not_published"
+        return result
+
+    result["unpublished"] = True
+    result["slug"] = slug
+    logger.info("[publish_service] unpublish_post: post %s → draft", post_id)
+
+    # Retire the static JSON + bust ISR so the live site drops the post NOW.
+    # Best-effort: a cleanup failure must not mask the completed status flip.
+    try:
+        from services.static_export_service import _retire_slug
+
+        await _retire_slug(slug, site_config=_sc)
+        result["hooks"].append("retired")
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "[publish_service] unpublish_post retire failed (non-fatal): %s", e,
+        )
+
+    return result

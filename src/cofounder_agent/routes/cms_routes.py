@@ -516,6 +516,36 @@ async def update_post(
         raise await handle_route_error(e, "update_post", logger) from e
 
 
+@router.post("/api/posts/{post_id}/unpublish")
+async def unpublish_post_route(
+    post_id: str,
+    token: str = Depends(verify_api_token),
+    site_config_dep=Depends(get_site_config_dependency),
+):
+    """Take a published post offline — immediate rollback for a bad publish.
+
+    Flips ``status`` ``published`` → ``draft`` and retires the post's static
+    JSON from storage + busts its ISR cache, so the live site drops it
+    immediately (the PATCH route flips the column but leaves the post served
+    from storage). Idempotent: a post that isn't currently published returns
+    ``unpublished: false`` with a reason. Accepts a full UUID or 8-char prefix.
+    """
+    try:
+        from services.publish_service import unpublish_post
+
+        pool = await get_db_pool()
+        # 404 if the prefix matches no post, 409 if ambiguous; a full UUID
+        # passes through untouched (same as update_post / delete_post).
+        post_id = await resolve_uuid_prefix(
+            pool, table="posts", column="id", value=post_id, noun="post"
+        )
+        return await unpublish_post(pool, post_id, site_config=site_config_dep)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise await handle_route_error(e, "unpublish_post", logger) from e
+
+
 @router.delete("/api/posts/{post_id}", status_code=204)
 async def delete_post(
     post_id: str,

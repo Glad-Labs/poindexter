@@ -209,12 +209,24 @@ poindexter posts get my-post-slug --content        # include body
 poindexter posts get my-post-slug --json-output
 ```
 
-### `posts publish <post_id>` / `posts archive <post_id>`
+### `posts publish <post_id>` / `posts archive <post_id>` / `posts unpublish <post_id>`
 
 ```bash
 poindexter posts publish 481           # status='published', published_at=now
-poindexter posts archive 481           # soft delete, removes from live site
+poindexter posts archive 481           # status='archived' (soft delete); the
+                                       # live site drops it on the next static
+                                       # rebuild / hourly ISR revalidation
+poindexter posts unpublish 481         # IMMEDIATE takedown: status published->draft
+                                       # AND retire the post's static JSON + bust
+                                       # its ISR cache, so the live site drops it now
 ```
+
+Reach for `unpublish` to roll back a wrong/bad publish right away — it reverts
+the post to `draft` **and** pulls its JSON from storage + revalidates, so the
+page stops being served immediately (unlike `archive`/the PATCH `status` flip,
+which only changes the column and waits for the next rebuild to drop the post).
+Idempotent: a post that isn't currently published reports `No change`. Also
+exposed as `POST /api/posts/{post_id}/unpublish`.
 
 ### `posts retitle <post_id> <title>`
 

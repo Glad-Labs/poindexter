@@ -322,6 +322,12 @@ async def _patch_post(post_id: str, updates: dict) -> dict:
         return await c.json_or_raise(resp)
 
 
+async def _unpublish_post(post_id: str) -> dict:
+    async with WorkerClient() as c:
+        resp = await c.post(f"/api/posts/{post_id}/unpublish", json={})
+        return await c.json_or_raise(resp)
+
+
 @posts_group.command("publish")
 @click.argument("post_id")
 def posts_publish(post_id: str) -> None:
@@ -344,6 +350,34 @@ def posts_archive(post_id: str) -> None:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
     click.secho(f"Archived: {post_id}  status={p.get('status', '?')}", fg="yellow")
+
+
+@posts_group.command("unpublish")
+@click.argument("post_id")
+def posts_unpublish(post_id: str) -> None:
+    """Take a published post offline (full id or 8-char prefix).
+
+    Immediate rollback for a wrong/bad publish: reverts published->draft AND
+    retires the post's static JSON + busts its ISR cache, so the live site
+    drops it now. Unlike `archive` (which only flips the status column), this
+    pulls the post from storage so it stops being served immediately.
+    """
+    try:
+        r = _run(_unpublish_post(post_id))
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    if r.get("unpublished"):
+        slug = r.get("slug", "?")
+        click.secho(
+            f"Unpublished: {post_id}  status=draft  (slug '{slug}' retired from live site)",
+            fg="yellow",
+        )
+    else:
+        click.secho(
+            f"No change: {post_id}  ({r.get('reason', 'not currently published')})",
+            fg="bright_black",
+        )
 
 
 @posts_group.command("retitle")
