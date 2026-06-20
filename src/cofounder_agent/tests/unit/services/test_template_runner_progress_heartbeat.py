@@ -139,9 +139,12 @@ async def test_claim_pending_task_stamps_progress_at_claim():
 
 
 @pytest.mark.asyncio
-async def test_atom_node_stamps_progress_on_start():
-    """A wrapped atom node must stamp last_progress_at via the heartbeat
-    helper, using the pool from the threaded database_service."""
+async def test_atom_node_stamps_stage_and_progress_on_start():
+    """A wrapped atom node stamps pipeline_tasks.stage = <node_id> AND the
+    last_progress_at heartbeat (both folded into one _mark_stage_column UPDATE),
+    using the pool from the threaded database_service. Validation finding 2: the
+    stage column used to freeze at the last stage.* node (verify_task) because
+    atom nodes previously only stamped the heartbeat (_mark_progress)."""
     from services import pipeline_architect as pa
 
     conn = _FakeConn()
@@ -159,5 +162,7 @@ async def test_atom_node_stamps_progress_on_start():
     config = {"configurable": {"__services__": {"database_service": db}}}
     await node(state, config)
 
+    # _mark_stage_column stamps the stage (node_id) + folds in the heartbeat.
     assert any("last_progress_at" in q for q, _ in conn.calls)
-    assert any(args == ("task-atom",) for _, args in conn.calls)
+    assert any("stage = $1" in q for q, _ in conn.calls)
+    assert any(args == ("n1", "task-atom") for _, args in conn.calls)

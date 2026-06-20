@@ -38,6 +38,34 @@ class TestAtomCapture:
         assert rec.metrics["input_digest"] == digest_keys(rec.metrics["input_keys"])
         assert rec.metrics["output_digest"] == digest_keys(rec.metrics["output_keys"])
 
+    async def test_atom_node_stamps_stage_column_with_node_id(self):
+        """Validation finding 2: an atom node stamps ``pipeline_tasks.stage``
+        with its node_id (via _mark_stage_column, which also folds in the
+        last_progress_at heartbeat), so the stage column tracks the LIVE atom
+        instead of freezing at the last stage.* node (verify_task)."""
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+
+        sink: list = []
+
+        async def run_fn(state):
+            return {"content": "ok"}
+
+        mark = AsyncMock()
+        # _mark_stage_column is lazily imported inside _wrap_atom, so patch the
+        # source before constructing the node.
+        with patch("services.template_runner._mark_stage_column", mark):
+            node = _wrap_atom(run_fn, "atoms.fake", "qa.programmatic", sink)
+            db = SimpleNamespace(pool=object())
+            await node({"task_id": "t-1", "database_service": db}, None)
+
+        mark.assert_awaited_once()
+        # _mark_stage_column(pool, task_id, stage_name) — stage is the node_id
+        pool_arg, task_arg, stage_arg = mark.await_args.args
+        assert pool_arg is db.pool
+        assert task_arg == "t-1"
+        assert stage_arg == "qa.programmatic"
+
     async def test_failure_record_carries_node_id(self):
         sink: list = []
 

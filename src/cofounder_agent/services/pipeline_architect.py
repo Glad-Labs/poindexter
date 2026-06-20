@@ -990,7 +990,7 @@ def _wrap_atom(
     from services.template_runner import NODE_DURATION_SECONDS as _node_duration
     from services.template_runner import (
         TemplateRunRecord,
-        _mark_progress,
+        _mark_stage_column,
         _safe_on_event,
         _services_from_config,
     )
@@ -1038,13 +1038,17 @@ def _wrap_atom(
         await _safe_on_event(
             on_event, "template.node_started", _progress_payload(task_id),
         )
-        # Per-node progress heartbeat — stamp pipeline_tasks.last_progress_at so
-        # the brain's stuck-flow probe can tell this run is progressing. Atom
-        # nodes have no _mark_stage_column write (that's stage-only), so do it
-        # here. Best-effort: _mark_progress no-ops without a pool and swallows
-        # errors, so it can never break the run.
+        # Per-node stage stamp + progress heartbeat. _mark_stage_column writes
+        # pipeline_tasks.stage = <atom node_id> AND last_progress_at = NOW(), so
+        # `tasks list` + the Grafana stage panels track the LIVE atom — validation
+        # finding 2: the stage column used to freeze at the last stage.* node
+        # (verify_task) while the fine-grained content.*/qa.* atoms ran, because
+        # atom nodes only stamped the heartbeat (_mark_progress). The brain's
+        # stuck-flow probe still gets its last_progress_at heartbeat (folded into
+        # the same UPDATE). Best-effort: no-ops without a pool + swallows errors,
+        # so it can never break the run.
         _hb_db = atom_input.get("database_service")
-        await _mark_progress(getattr(_hb_db, "pool", None), task_id)
+        await _mark_stage_column(getattr(_hb_db, "pool", None), task_id, node_id)
         try:
             _max_a = retry_policy.max_attempts if retry_policy else 1
             result: dict[str, Any] = {}
