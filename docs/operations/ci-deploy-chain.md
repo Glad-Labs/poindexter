@@ -1,6 +1,6 @@
 # How Poindexter itself is tested and deployed
 
-**Last Updated:** 2026-06-15
+**Last Updated:** 2026-06-19
 
 > **What this doc is.** A transparency record of how Poindexter (the
 > project, not your self-host) is tested and shipped to [gladlabs.io](https://www.gladlabs.io).
@@ -19,9 +19,10 @@ Glad-Labs/glad-labs-stack (private GitHub, source of truth)
     │
     ├─→ GitHub Actions (several workflows — there is no single ci.yml)
     │       required checks: unit-tests.yml (job test-backend,
-    │       backend pytest) + migrations-smoke.yml, on every PR +
-    │       push to main (expensive steps short-circuit on docs-only
-    │       changes — see "CI minutes / cost discipline" below)
+    │       backend pytest) + migrations-smoke.yml + mcp-server-tests.yml
+    │       (job mcp-server-tests, the mcp-server uv suite), on every PR +
+    │       push to main (expensive steps short-circuit on docs-only or
+    │       unrelated changes — see "CI minutes / cost discipline" below)
     │       non-required, paths-gated: playwright-e2e.yml (frontend
     │       E2E), security.yml, grafana-panels-lint.yml
     │
@@ -34,7 +35,8 @@ Glad-Labs/glad-labs-stack (private GitHub, source of truth)
                     │
                     ├─→ public-side CI checks
                     │       (test-backend, migrations-smoke,
-                    │        Mintlify Deployment, link-rot)
+                    │        mcp-server-tests, Mintlify Deployment,
+                    │        link-rot)
                     │
                     └─→ Release Please runs for versioning only
                         (no deploy)
@@ -107,14 +109,25 @@ decorators in `test_database_service.py` and
 ## Key files
 
 - `.github/workflows/unit-tests.yml` — backend pytest, exposed as the
-  `test-backend` status check. One of the **two** branch-protection
+  `test-backend` status check. One of the **three** branch-protection
   required checks; a `detect-changes` step short-circuits the
   expensive pytest steps on docs-only changes while still reporting
   green (a required check must always report — see "CI minutes / cost
   discipline" below). No deploy step.
 - `.github/workflows/migrations-smoke.yml` — applies every migration
-  against a clean Postgres + pgvector. The **other** branch-protection
+  against a clean Postgres + pgvector. Another branch-protection
   required check; fires on every PR + push to main.
+- `.github/workflows/mcp-server-tests.yml` — runs the `mcp-server/`
+  pytest suite (its own `uv` venv) as the `mcp-server-tests` status
+  check, the **third** branch-protection required check. mcp-server
+  imports across the repo boundary (`services.*`, `modules.content.api`,
+  and `brain.*` via `sys.path`), but no workflow ran its suite — so a
+  shared-code refactor could merge a red mcp-server lane (PR #1663 did
+  exactly that; the breakage sat latent on main until #1742). A
+  `detect-changes` step gates the `uv` install + pytest on changes under
+  `mcp-server/**`, `src/cofounder_agent/**`, or `brain/**` while still
+  reporting green on unrelated PRs. Runs on the public mirror too (the
+  tested code ships there), where it is non-required.
 - `.github/workflows/playwright-e2e.yml` — frontend E2E (Playwright),
   `paths:`-gated to `web/public-site/**`. Non-required. The frontend
   Jest unit run + JS lint are **hook-only**, not run in CI (see the
@@ -204,12 +217,13 @@ Actions minutes are billable on this private repo, and a high PR +
 push-to-main volume (nightly scheduled agents, release commits, docs
 bots, dependabot) multiplies fast. The rules that keep the bill down:
 
-- **Only `test-backend` and `migrations-smoke` are branch-protection
-  required checks.** Required checks can't be `paths:`-filtered — a
-  skipped required check never reports, so it would block the PR
-  forever; they keep firing and gate their _expensive steps_ instead
-  (see the `detect-changes` step in `unit-tests.yml`). Every other
-  workflow is non-required and is `paths:`-filtered freely.
+- **`test-backend`, `migrations-smoke`, and `mcp-server-tests` are the
+  branch-protection required checks.** Required checks can't be
+  `paths:`-filtered — a skipped required check never reports, so it would
+  block the PR forever; they keep firing and gate their _expensive steps_
+  instead (see the `detect-changes` step in `unit-tests.yml` /
+  `mcp-server-tests.yml`). Every other workflow is non-required and is
+  `paths:`-filtered freely.
 - **`playwright-e2e` is `paths:`-gated** to `web/public-site/**` +
   the playwright config + root `package*.json`. A backend/docs/infra
   change skips the Chromium build entirely (those specs only exercise
@@ -280,8 +294,8 @@ The public mirror has `allow_force_pushes: true` in its branch
 protection — the mirror is rebuilt from scratch on every sync, so
 force-push protection on a derived branch would just keep the mirror
 permanently stale. Public-side CI (test-backend, migrations-smoke,
-Mintlify Deployment, link-rot) still has to pass on the resulting
-commit.
+mcp-server-tests, Mintlify Deployment, link-rot) still has to pass on
+the resulting commit.
 
 ## Deploying the local worker (bringing prod up to `main`)
 

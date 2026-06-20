@@ -1,0 +1,158 @@
+# Runs the mcp-server/ pytest suite in CI and exposes it as the
+# `mcp-server-tests` branch-protection required check.
+#
+# WHY THIS EXISTS
+# ---------------
+# The mcp-server package has its own pytest suite (its own `uv` venv —
+# mcp-server/pyproject.toml) but NO CI workflow ran it. The required checks
+# (`test-backend`, `migrations-smoke`) run the src/cofounder_agent poetry
+# suite + the migration smoke; neither touches mcp-server. The gap bit us:
+# PR #1663 ("de-SQL mcp-server", 8db8e0321) refactored
+# `mcp-server/server.py::start_voice_call` onto
+# `services/admin_db.py::AdminDatabase` (which uses `pool.acquire()`) and
+# broke 5 tests in mcp-server/tests/test_start_voice_call.py — but it merged
+# GREEN because CI never ran that lane. The breakage sat latent on main
+# until #1742 fixed it. This workflow closes the gap so the next
+# shared-code refactor can't merge a red mcp-server suite.
+#
+# WHY IT ALWAYS TRIGGERS (no `on: paths:` filter)
+# -----------------------------------------------
+# This is a REQUIRED status check. A `paths:`-filtered workflow that does
+# not match simply never reports its check — and GitHub blocks the PR
+# forever waiting on a required check that never arrives. So the trigger is
+# unconditional (push / PR to main) and the path filter is implemented as
+# the internal `detect-changes` step below, which gates the expensive
+# install + pytest steps. A SKIPPED step inside a SUCCESSFUL job still
+# satisfies the required-check contract. (Same always-run + internal-skip
+# pattern as unit-tests.yml / migrations-smoke.yml.)
+#
+# WHAT THE PATH GATE WATCHES
+# --------------------------
+# mcp-server puts BOTH the repo root and src/cofounder_agent on sys.path
+# (server.py) and imports across the repo boundary:
+#   - services.*           (admin_db, audit_log, tasks_mcp, site_config, …) -> src/cofounder_agent/
+#   - modules.content.api  (PostsService)                                   -> src/cofounder_agent/
+#   - brain.bootstrap / brain.operator_notifier                            -> brain/
+# So a refactor in ANY of src/cofounder_agent/** or brain/** can break an
+# mcp-server import. The gate fires on mcp-server/** OR src/cofounder_agent/**
+# OR brain/** (plus this workflow file). Narrowing to services/** alone
+# would reopen the exact slip-through on the modules/ and brain/ subtrees.
+name: mcp-server-tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+# Cancel older in-progress runs of the same ref/PR — saves Actions minutes
+# when multiple commits land back-to-back on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least-privilege GITHUB_TOKEN — read-only checkout is all this workflow needs.
+permissions:
+  contents: read
+
+jobs:
+  mcp-server-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1
+        with:
+          # >=2 so detect-changes can diff against the parent commit on push
+          # events; PRs additionally fetch the base sha below if needed.
+          fetch-depth: 2
+
+      # Path filter, implemented internally (see header: a required check
+      # cannot be `on: paths:`-filtered). Sets needs_tests=true when the diff
+      # touches mcp-server or any subtree it imports; the install + pytest
+      # steps below gate on it. Falls OPEN (runs the suite) on any state we
+      # can't classify — better a wasted ~20s run than a silent miss.
+      - name: Detect whether this change touches mcp-server or its imports
+        id: changes
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+
+          if [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "Manual dispatch — running the mcp-server suite."
+            echo "needs_tests=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # PR events check out a virtual merge commit (HEAD^1 = main's tip);
+          # push events diff against the parent (also HEAD^1). Diffing vs
+          # HEAD^1 gives the net change either way (mirrors unit-tests.yml).
+          # Fall back to the frozen base.sha only if HEAD^1 isn't reachable.
+          if git cat-file -e "HEAD^1" 2>/dev/null; then
+            base="$(git rev-parse HEAD^1)"
+          else
+            base="$PR_BASE"
+          fi
+
+          if [ -z "$base" ] || [ "$base" = "0000000000000000000000000000000000000000" ]; then
+            echo "No usable base sha — running the suite (fail open)."
+            echo "needs_tests=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Fetch the base sha if the shallow checkout didn't include it.
+          if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            if ! git fetch --no-tags --depth=1 origin "$base" 2>/dev/null; then
+              echo "Could not fetch base sha $base — running the suite (fail open)."
+              echo "needs_tests=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+          fi
+
+          changed="$(git diff --name-only "$base" HEAD)"
+          echo "Files changed vs $base:"
+          echo "$changed" | sed 's/^/  /'
+
+          # mcp-server/**           — the server + its tests + pyproject/uv.lock
+          # src/cofounder_agent/**  — services.* + modules.content.* it imports
+          # brain/**                — brain.bootstrap / brain.operator_notifier
+          # this workflow file      — so edits to it get smoke-tested by running
+          if echo "$changed" | grep -qE '^mcp-server/|^src/cofounder_agent/|^brain/|^\.github/workflows/mcp-server-tests\.yml$'; then
+            echo "mcp-server or an imported subtree changed — running the suite."
+            echo "needs_tests=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "No mcp-server-relevant change — skipping the suite."
+            echo "needs_tests=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Skipped — no mcp-server-relevant changes
+        if: steps.changes.outputs.needs_tests != 'true'
+        run: |
+          echo "::notice::No change under mcp-server/, src/cofounder_agent/, or brain/ — mcp-server suite skipped (the required check still reports green)."
+
+      - name: Setup Python
+        if: steps.changes.outputs.needs_tests == 'true'
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v5.6.0
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      # Install uv via pip (no third-party action) — mirrors how
+      # migrations-smoke.yml installs asyncpg and unit-tests.yml installs
+      # poetry, and keeps the SHA-pin allowlist (security.yml `action-pins`)
+      # clean. Pinned to the locally-verified version; bump deliberately.
+      - name: Install uv
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: pip install "uv==0.9.24"
+
+      # Exactly the command developers run locally (mcp-server has its own
+      # uv venv). `uv run` creates the venv from pyproject.toml + uv.lock and
+      # runs pytest; the tests put src/cofounder_agent + the repo root on
+      # sys.path (server.py) so `import server` and the lazy `services.*` /
+      # `modules.*` / `brain.*` imports resolve from the checkout.
+      - name: Run mcp-server tests
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: uv --directory mcp-server run pytest -q
