@@ -1,14 +1,17 @@
 """
-GPU Scheduler — serializes access to the shared GPU between Ollama and SDXL,
-and automatically yields to gaming/external GPU workloads.
+GPU Scheduler — serializes access to the shared GPU across the stack's own
+model consumers (Ollama LLM inference, SDXL image gen, wan video render), and
+*optionally* yields to external (non-stack) GPU workloads when sharing the box.
 
 With a single GPU (RTX 5090, 32GB), only one large workload can run at a time.
 This module provides an async lock so that:
-  - Ollama LLM inference and SDXL image generation don't fight for VRAM
-  - Before SDXL starts, any loaded Ollama model is unloaded
+  - Ollama LLM inference, SDXL image generation, and video render don't fight
+    for VRAM
+  - Before SDXL / video render starts, any loaded Ollama model is unloaded
   - Before Ollama starts, SDXL pipeline is released (if loaded)
   - Small models (embeddings) can coexist and skip the lock
-  - If a game or external app is using the GPU, the pipeline pauses automatically
+  - If a non-stack app (e.g. a game) shares the GPU, optionally pause (gated;
+    see "External-workload detection" below — off by default)
 
 Cross-process locking (poindexter#731):
   The in-process ``asyncio.Lock`` only serializes within one Python process.
@@ -25,10 +28,17 @@ Cross-process locking (poindexter#731):
   The ``asyncio.Lock`` is retained as an in-process guard so coroutines
   within the same event loop still serialize cheaply without hitting PG.
 
-Gaming detection:
+External-workload detection (off by default):
   Queries the nvidia-smi prometheus exporter (host.docker.internal:9835) for GPU
   utilization. If utilization is above the threshold and we don't hold the lock,
-  something external (a game) is using the GPU — we wait until it drops.
+  a NON-STACK app (e.g. a game on the same box) may be using the GPU — we wait
+  until it drops. The stack is normally the only thing running models, so this is
+  gated behind ``gpu_external_workload_wait_enabled`` (default false): all
+  stack-internal contention is already serialized by the pg_advisory_lock +
+  asyncio.Lock, and treating a sibling process's legitimate GPU use as "gaming"
+  only causes phantom pauses (validation finding 4a — a genuine 99% reading from
+  the stack's own non-pipeline process was mislabelled external). Operators who
+  share the GPU with a game set the flag true.
 
 Usage:
     from services.gpu_scheduler import gpu
@@ -131,6 +141,18 @@ def _cfg_float(key: str, default: float) -> float:
         return default
 
 
+def _cfg_bool(key: str, default: bool) -> bool:
+    """Read a bool from site_config (DB) with fallback.
+
+    Same fail-loud-but-recover pattern as :func:`_cfg_int`.
+    """
+    try:
+        return _sc().get_bool(key, default)
+    except Exception as exc:
+        _emit_cfg_fetch_finding("bool", key, default, exc)
+        return default
+
+
 def _emit_cfg_fetch_finding(
     kind: str, key: str, default: Any, exc: BaseException,
 ) -> None:
@@ -186,7 +208,7 @@ class GPUScheduler:
 
     def __init__(self):
         self._lock = asyncio.Lock()
-        self._current_owner: str | None = None  # "ollama" or "sdxl"
+        self._current_owner: str | None = None  # "ollama", "sdxl", or "video"
         self._current_model: str | None = None
         self._acquired_at: float = 0
         self._gaming_detected: bool = False
@@ -383,8 +405,12 @@ class GPUScheduler:
         session_start = datetime.now(timezone.utc)
 
         try:
-            # Prepare GPU for the new owner
-            if owner == "sdxl":
+            # Prepare GPU for the new owner. The video render is a wan + SDXL
+            # consumer (no Ollama of its own), so it evicts Ollama exactly like
+            # SDXL does to free VRAM for the render — validation finding 4b: the
+            # render path never went through the lock, so the 18GB writer/director
+            # stayed resident and starved wan+SDXL, failing the render.
+            if owner in ("sdxl", "video"):
                 await self._unload_ollama_models()
             yield
         finally:
@@ -585,6 +611,17 @@ class GPUScheduler:
         if self._current_owner is not None:
             return
 
+        # The stack is the only thing running models on this GPU, so all
+        # cross-process contention is already serialized by the pg_advisory_lock
+        # (and the in-process asyncio.Lock for same-process callers). A sibling
+        # stack process holding the GPU is NOT an external workload — treating its
+        # high utilisation as "gaming" here is what produced the 407s phantom
+        # pause (validation finding 4a). The util-based wait below only makes
+        # sense when the operator SHARES this GPU with a non-stack app (e.g. a
+        # game on the same box); gated off by default.
+        if not _cfg_bool("gpu_external_workload_wait_enabled", False):
+            return
+
         threshold = _cfg_int("gpu_busy_threshold_percent", _DEFAULT_GPU_BUSY_THRESHOLD)
         check_interval = _cfg_int("gpu_gaming_check_interval", _DEFAULT_GAMING_CHECK_INTERVAL)
         confirm_checks = _cfg_int("gpu_gaming_confirm_checks", _DEFAULT_GAMING_CONFIRM_CHECKS)
@@ -596,7 +633,7 @@ class GPUScheduler:
             if self._gaming_detected:
                 pause_duration = time.monotonic() - self._gaming_paused_since
                 self._total_gaming_paused_s += pause_duration
-                logger.info("[GPU] Gaming ended — resuming pipeline (paused %.0fs)", pause_duration)
+                logger.info("[GPU] External GPU workload cleared — resuming pipeline (paused %.0fs)", pause_duration)
                 self._gaming_detected = False
             return
 
@@ -614,7 +651,7 @@ class GPUScheduler:
         if not self._gaming_detected:
             self._gaming_detected = True
             self._gaming_paused_since = time.monotonic()
-            logger.info("[GPU] Gaming/external workload detected (util=%.0f%%) — pausing pipeline", util)
+            logger.info("[GPU] External/unowned GPU workload detected (util=%.0f%%) — pausing pipeline", util)
 
         # Wait until GPU usage drops for clear_checks consecutive checks
         clear_count = 0
@@ -628,7 +665,7 @@ class GPUScheduler:
 
         pause_duration = time.monotonic() - self._gaming_paused_since
         self._total_gaming_paused_s += pause_duration
-        logger.info("[GPU] Gaming ended — resuming pipeline (paused %.0fs)", pause_duration)
+        logger.info("[GPU] External GPU workload cleared — resuming pipeline (paused %.0fs)", pause_duration)
         self._gaming_detected = False
 
     async def _unload_ollama_models(self):

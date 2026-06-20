@@ -32,6 +32,7 @@ from typing import Any
 from pydantic import ValidationError
 
 from schemas.video_shot_list import VideoShotList
+from services.gpu_scheduler import gpu
 from services.video_renderers.shot_list_renderer import render_shot_list
 from utils.findings import emit_finding
 
@@ -123,19 +124,32 @@ async def render_from_state(
     out_path = f"{tempfile.gettempdir()}/media_{task_id}_{output_key}.mp4"
 
     try:
-        result = await render_shot_list(
-            post_id=str(task_id or ""),
-            shot_list=shot_list,
-            audio_path=narration,
-            output_path=out_path,
-            sdxl_url=sdxl_url,
-            site_config=site_config,
-            pool=pool,
-            width=width,
-            height=height,
-            ambient_path=ambient,
-            caption_path=caption,
-        )
+        # Hold the GPU for the whole render. The render drives wan + SDXL over
+        # HTTP and never went through the scheduler before (validation findings
+        # 4b/7): the ~18GB writer/director stayed resident in Ollama and starved
+        # wan+SDXL → "inference server unreachable" → render failures. The
+        # "video" owner evicts Ollama on acquire, and the cross-process
+        # pg_advisory_lock blocks the content pipeline (prefect-worker) for the
+        # render's duration so they can't oversubscribe the 32GB card.
+        async with gpu.lock(
+            "video",
+            model="shot_list_render",
+            task_id=str(task_id or "") or None,
+            phase="media_render",
+        ):
+            result = await render_shot_list(
+                post_id=str(task_id or ""),
+                shot_list=shot_list,
+                audio_path=narration,
+                output_path=out_path,
+                sdxl_url=sdxl_url,
+                site_config=site_config,
+                pool=pool,
+                width=width,
+                height=height,
+                ambient_path=ambient,
+                caption_path=caption,
+            )
     except Exception as exc:  # noqa: BLE001 — a render must never halt the graph
         logger.exception("[media.render] %s render raised: %s", output_key, exc)
         emit_finding(

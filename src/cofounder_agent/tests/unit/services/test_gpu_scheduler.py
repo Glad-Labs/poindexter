@@ -96,6 +96,32 @@ class TestGPUScheduler:
                 assert call_args[1]["json"]["keep_alive"] == 0
 
     @pytest.mark.asyncio
+    async def test_video_unloads_ollama_models(self):
+        """Acquiring for the video render evicts Ollama, same as SDXL — the
+        render is a wan+SDXL consumer with no Ollama of its own, so the resident
+        writer/director must be freed for it (validation findings 4b/7)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"models": [{"name": "gemma-4-31B-it-qat:latest"}]}
+
+        with patch.object(self.gpu, "_wait_for_gaming_clear", new=AsyncMock()):
+            with patch("services.gpu_scheduler.httpx.AsyncClient") as mock_client_cls:
+                mock_client = AsyncMock()
+                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+                mock_client.__aexit__ = AsyncMock(return_value=False)
+                mock_client.get = AsyncMock(return_value=mock_response)
+                mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
+                mock_client_cls.return_value = mock_client
+
+                async with self.gpu.lock("video"):
+                    pass
+
+                # video owner evicts Ollama exactly like sdxl
+                mock_client.get.assert_called_once()
+                mock_client.post.assert_called_once()
+                assert mock_client.post.call_args[1]["json"]["keep_alive"] == 0
+
+    @pytest.mark.asyncio
     async def test_ollama_does_not_unload(self):
         """Acquiring for Ollama should NOT call httpx to unload models."""
         with patch.object(self.gpu, "_wait_for_gaming_clear", new=AsyncMock()):
@@ -237,7 +263,8 @@ class TestWaitForGamingClear:
         scheduler._get_gpu_utilization = AsyncMock(return_value=10.0)  # below threshold
 
         mock_sc = MagicMock()
-        mock_sc.get_int.side_effect = lambda k, d: d  # use defaults
+        mock_sc.get_int.side_effect = lambda k, d: d
+        mock_sc.get_bool.return_value = True  # external-workload wait enabled (finding 4a gate)  # use defaults
         with patch("services.gpu_scheduler._sc", return_value=mock_sc):
             await scheduler._wait_for_gaming_clear()
         # Did not enter gaming-detected state
@@ -256,6 +283,7 @@ class TestWaitForGamingClear:
 
         mock_sc = MagicMock()
         mock_sc.get_int.side_effect = lambda k, d: d
+        mock_sc.get_bool.return_value = True  # external-workload wait enabled (finding 4a gate)
         with patch("services.gpu_scheduler._sc", return_value=mock_sc):
             await scheduler._wait_for_gaming_clear()
         # No exception, no gaming flag set
@@ -274,6 +302,7 @@ class TestWaitForGamingClear:
 
         mock_sc = MagicMock()
         mock_sc.get_int.side_effect = lambda k, d: d
+        mock_sc.get_bool.return_value = True  # external-workload wait enabled (finding 4a gate)
         with patch("services.gpu_scheduler._sc", return_value=mock_sc), \
              patch("asyncio.sleep", new=AsyncMock()):
             await scheduler._wait_for_gaming_clear()
@@ -295,6 +324,7 @@ class TestWaitForGamingClear:
 
         mock_sc = MagicMock()
         mock_sc.get_int.side_effect = lambda k, d: d
+        mock_sc.get_bool.return_value = True  # external-workload wait enabled (finding 4a gate)
         with patch("services.gpu_scheduler._sc", return_value=mock_sc):
             await scheduler._wait_for_gaming_clear()
 
@@ -323,6 +353,31 @@ class TestWaitForGamingClear:
         # Never queried GPU — returned before any IO
         scheduler._get_gpu_utilization.assert_not_awaited()
         # Gaming flag must not have been set by a false positive
+        assert scheduler._gaming_detected is False
+
+    @pytest.mark.asyncio
+    async def test_external_wait_disabled_by_default_skips_util(self):
+        """Validation finding 4a: the stack owns the GPU, so the util-based
+        external-workload wait is gated off by default. With the flag unset
+        (False), _wait_for_gaming_clear returns immediately without ever
+        querying GPU utilization — the pg_advisory_lock + asyncio.Lock handle
+        all stack-internal serialization, so a sibling process's legitimate 99%
+        is not mislabelled 'gaming'."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        # Would look exactly like "gaming" to the old code:
+        scheduler._get_gpu_utilization = AsyncMock(return_value=99.0)
+
+        mock_sc = MagicMock()
+        mock_sc.get_bool.return_value = False  # external-workload wait disabled (default)
+        with patch("services.gpu_scheduler._sc", return_value=mock_sc):
+            await scheduler._wait_for_gaming_clear()
+
+        # Gate fired — utilization never queried, no phantom pause
+        scheduler._get_gpu_utilization.assert_not_awaited()
         assert scheduler._gaming_detected is False
 
 
@@ -461,6 +516,7 @@ class TestPropertiesAndConfig:
         scheduler = GPUScheduler()
         mock_sc = MagicMock()
         mock_sc.get_int.side_effect = lambda k, d: d
+        mock_sc.get_bool.return_value = True  # external-workload wait enabled (finding 4a gate)
         with patch("services.gpu_scheduler._sc", return_value=mock_sc):
             status = scheduler.status
         assert "config" in status

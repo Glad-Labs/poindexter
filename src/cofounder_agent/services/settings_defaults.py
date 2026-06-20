@@ -140,6 +140,14 @@ DEFAULTS: dict[str, str] = {
     'video_shot_qa_enabled': 'true',
     'video_shot_qa_threshold': '60',
     'video_shot_qa_max_retries': '2',
+    # GPU scheduler — external (non-stack) workload detection. The stack is
+    # normally the only thing running models, so cross-process GPU contention is
+    # already serialized by the pg_advisory_lock + asyncio.Lock; treating a
+    # sibling stack process's legitimate GPU use as "gaming" only causes phantom
+    # pipeline pauses (validation finding 4a). Default OFF — set true only when
+    # sharing this GPU with a non-stack app (e.g. a game on the same box). Read
+    # via _cfg_bool in services/gpu_scheduler.py::_wait_for_gaming_clear.
+    'gpu_external_workload_wait_enabled': 'false',
     # why: asyncio.sleep() after issuing keep_alive=0 so Ollama actually
     # releases VRAM before the inline-image /generate lands. 2s is the
     # sweet spot — long enough for the kernel to free, short enough to

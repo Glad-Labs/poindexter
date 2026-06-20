@@ -23,6 +23,28 @@ from modules.content.atoms import _media_render
 from modules.content.atoms.media_render_long_video import run as run_long
 from modules.content.atoms.media_render_short_video import run as run_short
 
+
+class _FakeLock:
+    """No-op async CM standing in for gpu.lock during unit tests."""
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+
+@pytest.fixture(autouse=True)
+def _patch_gpu_lock():
+    """The render now runs inside ``gpu.lock("video")`` (validation findings
+    4b/7 — evict Ollama + hold the cross-process pg_advisory_lock for the render
+    duration). Patch it to a no-op CM so these unit tests never reach the real
+    scheduler (Ollama /api/ps unload HTTP + pg_advisory_lock connect). Yields
+    the mock so a test can assert the lock owner."""
+    lock_mock = MagicMock(return_value=_FakeLock())
+    with patch.object(_media_render.gpu, "lock", lock_mock):
+        yield lock_mock
+
 # A minimal valid 16:9 long-form shot-list dict (rehydratable by
 # VideoShotList.model_validate). One sdxl shot keeps it trivial.
 _LONG_SHOT_LIST = {
@@ -85,6 +107,23 @@ class TestRenderFromStateHelper:
                 state, shot_list_key="video_shot_list", output_key="long_video_path"
             )
         assert out == {"long_video_path": "/tmp/long.mp4"}
+        assert mock_render.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_render_held_under_gpu_video_lock(self, _patch_gpu_lock):
+        """The render runs inside ``gpu.lock("video")`` so the scheduler evicts
+        Ollama + holds the cross-process pg_advisory_lock for the render's
+        duration (validation findings 4b/7 — the render path used to bypass the
+        scheduler entirely, so the resident writer/director starved wan+SDXL →
+        'inference server unreachable' → render failures)."""
+        state = {"task_id": "t-1", "video_shot_list": _LONG_SHOT_LIST}
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        assert _patch_gpu_lock.call_count == 1
+        assert _patch_gpu_lock.call_args.args[0] == "video"
         assert mock_render.await_count == 1
 
     @pytest.mark.asyncio
