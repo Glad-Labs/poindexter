@@ -78,8 +78,9 @@ CITE YOUR SOURCES (do this — don't avoid the numbers)
   link each one inline to its exact URL: "it sustains [142 fps at 4K](https://...)".
 - Any claim that names a publication, person, or statistic needs an inline
   markdown link to its source URL. With no URL, state the point plainly and
-  drop the attribution — never write a bare "[]", "(url)", or "According to
-  [Source]" with no link.
+  drop the attribution — never write a bare "[]", a placeholder parenthetical
+  like "(source)", "(citation)", or "(url)", or "According to [Source]" with no
+  link.
 - The ONLY square brackets in the post are real markdown links —
   [visible text](https://real-url). Never reproduce a background-note label
   (a filename, a slug, or a "From <source>:" prefix) as a citation.

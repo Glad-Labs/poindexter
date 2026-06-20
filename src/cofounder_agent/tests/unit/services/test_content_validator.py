@@ -247,6 +247,43 @@ class TestPlaceholderCitation:
         result = validate_content("Related", content, "AI", site_config=_SC)
         assert not any(i.category == "placeholder_citation" for i in result.issues)
 
+    def test_catches_bare_source_parenthetical(self):
+        # Finding #3 (2026-06-19 validation): the gemma writer dropped a literal
+        # "(source)" placeholder instead of a real link. It reached the
+        # awaiting_approval draft because the rule only modeled the "](source)"
+        # markdown-href form, never a bare parenthetical.
+        content = "Frame pacing matters more than raw FPS (source)."
+        result = validate_content("Frametime", content, "gaming", site_config=_SC)
+        assert not result.passed
+        assert any(i.category == "placeholder_citation" for i in result.issues)
+
+    def test_catches_bare_citation_parentheticals(self):
+        for token in ("(citation)", "(Citation Needed)", "(add source)",
+                      "(cite)", "(insert a link)", "(reference)"):
+            content = f"Latency rises sharply under sustained load {token}."
+            result = validate_content("Latency", content, "hardware", site_config=_SC)
+            assert any(i.category == "placeholder_citation"
+                       for i in result.issues), token
+
+    def test_bare_parenthetical_placeholder_is_critical(self):
+        content = "GPUs draw more power than CPUs (source)."
+        result = validate_content("Power", content, "hardware", site_config=_SC)
+        pc = [i for i in result.issues if i.category == "placeholder_citation"]
+        assert pc and all(i.severity == "critical" for i in pc)
+
+    def test_no_false_positive_on_real_parenthetical(self):
+        # Only a parenthetical that is ONLY the placeholder word fires; one that
+        # merely CONTAINS such a word is normal prose and must pass.
+        for ok in (
+            "The driver is open (source code is on GitHub).",
+            "Check the numbers (see the benchmark chart below).",
+            "Read the [spec](https://example.com/source) for full details.",
+            "Wire the callback (a reference to the handler) before mounting.",
+        ):
+            result = validate_content("OK", ok, "AI", site_config=_SC)
+            assert not any(i.category == "placeholder_citation"
+                           for i in result.issues), ok
+
     def test_no_false_positive_markdown_tutorial_in_code_block(self):
         # A markdown tutorial may show "[text](url)" as an EXAMPLE inside a
         # fenced code block. Code spans are blanked before scanning, so it

@@ -267,6 +267,18 @@ PLACEHOLDER_CITATION_PATTERNS = [
     # "[text](your link here)". The href is anchored between ``(`` and ``)`` so a
     # real link such as "(https://x/url)" never matches.
     r"\]\(\s*(?:url|link|source|citation|internal[_\s\-]?(?:context[_\s\-]?)?link|insert[_\s\-]?(?:url|link)(?:[_\s\-]?here)?|your[_\s\-]?(?:url|link)[_\s\-]?here)\s*\)",
+    # Bare *parenthetical* placeholder the writer drops in lieu of a real link —
+    # "(source)", "(citation)", "(citation needed)", "(add source)". The whole
+    # parenthetical must be ONLY the placeholder vocabulary (anchored ``\(`` …
+    # ``\)`` around the word) so legitimate prose like "(source code on GitHub)"
+    # or "(a reference to the handler)" never fires; ``(?<!\])`` skips the
+    # "](source)" markdown-href form already caught by the rule above. Closes
+    # finding #3 of the 2026-06-19 pipeline validation: the gemma writer shipped
+    # 2 literal "(source)" placeholders past every rail to the awaiting_approval
+    # draft (had to be hand-fixed before publish).
+    r"(?<!\])\(\s*(?:sources?|citations?|cite|references?|links?|urls?)\s*\)",
+    r"(?<!\])\(\s*(?:source|citation|reference)s?\s+needed\s*\)",
+    r"(?<!\])\(\s*(?:add|insert)\s+(?:a\s+)?(?:source|citation|link|reference|url)s?\s*\)",
 ]
 
 # Leaked internal path tokens (#532) — poindexter's OWN source identifiers must
