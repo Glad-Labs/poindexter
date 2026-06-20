@@ -123,6 +123,19 @@ fi
 ACTION="${1:-up}"
 shift 2>/dev/null || true
 
+# Parallel-stack guard. docker compose infers the project name from the launch
+# directory's basename unless COMPOSE_PROJECT_NAME is set. Launching from a second
+# directory (e.g. a dedicated deploy checkout) whose basename differs from your
+# original checkout then forks a SECOND project that orphans the existing named
+# volumes. Pin it in ~/.poindexter/bootstrap.toml (compose_project_name =
+# "<your-project>", which the loop above exports as COMPOSE_PROJECT_NAME).
+if [ -z "${COMPOSE_PROJECT_NAME:-}" ]; then
+    echo "WARNING: COMPOSE_PROJECT_NAME is unset - docker compose will infer it from" >&2
+    echo "         '$(basename "$PROJECT_DIR")'. Launching from more than one directory" >&2
+    echo "         then forks a parallel stack and orphans your data volumes. Set" >&2
+    echo "         compose_project_name in ~/.poindexter/bootstrap.toml." >&2
+fi
+
 cd "$PROJECT_DIR"
 
 if [ "$ACTION" = "up" ] && [ $# -eq 0 ]; then

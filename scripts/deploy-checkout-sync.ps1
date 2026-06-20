@@ -266,6 +266,12 @@ function Invoke-SelfTest {
         Test-Case 'status previousHead field'          ($st.previousHead -eq 'def5678')
         Test-Case 'status restarted[] field'           (@($st.restarted) -contains 'poindexter-worker')
         Test-Case 'status carries a timestamp'         ([bool]$st.timestamp)
+
+        # 4) Compose-apply command is host-side bash + clone start-stack + no-build.
+        $applyArgv = Get-ComposeApplyCommand -DeployDir 'C:\fake\clone'
+        Test-Case 'apply uses git bash (not WSL)'      (($applyArgv[0] -eq 'bash') -or ($applyArgv[0] -match 'bash\.exe$'))
+        Test-Case 'apply targets clone start-stack'    ($applyArgv[1] -eq 'C:\fake\clone/scripts/start-stack.sh')
+        Test-Case 'apply passes up -d --no-build'      (($applyArgv[2..4] -join ' ') -eq 'up -d --no-build')
     } finally {
         Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -304,6 +310,34 @@ function Test-PrefectFlowRunning {
         # Prefect unreachable - skip the guard, proceed with sync.
         return $false
     }
+}
+
+# Resolve Git Bash explicitly. On Windows the PATH `bash` is usually WSL's
+# C:\Windows\System32\bash.exe, which runs in a separate filesystem namespace and
+# cannot see Docker or the C:\ paths the stack uses. git IS on PATH (this script
+# shells out to it), so derive Git Bash from git's location
+# (<GitRoot>\cmd\git.exe -> <GitRoot>\bin\bash.exe); fall back to standard installs.
+function Resolve-GitBash {
+    $git = (Get-Command git -ErrorAction SilentlyContinue).Source
+    if ($git) {
+        $cand = Join-Path (Split-Path (Split-Path $git)) 'bin\bash.exe'
+        if (Test-Path $cand) { return $cand }
+    }
+    foreach ($p in @("$env:ProgramFiles\Git\bin\bash.exe", "${env:ProgramFiles(x86)}\Git\bin\bash.exe")) {
+        if ($p -and (Test-Path $p)) { return $p }
+    }
+    return 'bash'  # last resort; a failed apply surfaces if this is WSL bash
+}
+
+# Build the host-side "apply the clone's compose" command. Runs the CLONE's
+# start-stack.sh (the canonical launcher: exports bootstrap.toml secrets, regenerates
+# the grafana/offsite runtime env files, pins COMPOSE_PROJECT_NAME, cd's into the
+# clone), so `docker compose up -d --no-build` recreates exactly the services whose
+# compose stanza changed. Invoked via Git Bash (NOT the PATH `bash`, which is WSL).
+# --no-build: never rebuild here; Dockerfile / build-context changes are separate.
+function Get-ComposeApplyCommand {
+    param([Parameter(Mandatory)][string]$DeployDir)
+    return @((Resolve-GitBash), "$DeployDir/scripts/start-stack.sh", 'up', '-d', '--no-build')
 }
 
 # ---- Read-only / test modes (no rotation, no sync, no restart) ------------
@@ -446,6 +480,23 @@ try {
 
     $lastShort = if ($lastDeployed.Length -ge 9) { $lastDeployed.Substring(0, 9) } else { $lastDeployed }
     Write-Log "Code advanced $lastShort -> $shortHead; restarting: $($RestartContainers -join ', ')"
+
+    # Apply compose/infra changes FIRST: recreate the services whose compose stanza
+    # changed (mounts/env/ports/image) by running the clone's compose up. Compose
+    # only touches changed services, so this is a no-op for code-only merges. The
+    # restart loop below still reloads code in the long-lived bind-mount containers,
+    # whose stanza is unchanged by a pure-Python edit (the source path is identical,
+    # only the file content differs). Without this step a compose-only merge (e.g.
+    # the GPU /root->/home/appuser mount fixes) lands on disk but never reaches the
+    # running stack. Failure aborts before recording the marker so it retries.
+    $applyArgv = Get-ComposeApplyCommand -DeployDir $DeployDir
+    Write-Log "Applying compose from clone: $($applyArgv -join ' ')"
+    $applyRc = Invoke-Logged $applyArgv[0] $applyArgv[1..($applyArgv.Length - 1)] 'compose-apply'
+    if ($applyRc -ne 0) {
+        Write-Log "compose-apply failed (exit $applyRc); NOT recording marker - will retry next cycle." 'ERROR'
+        Write-DeployStatus -Result 'error' -Head $head -PreviousHead $lastDeployed -Detail "compose-apply failed (exit $applyRc)"
+        exit 1
+    }
 
     $failed = @()
     $restarted = @()
