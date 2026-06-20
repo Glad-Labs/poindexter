@@ -575,6 +575,39 @@ class TestGetTask:
 
         assert result == sentinel
 
+    @pytest.mark.asyncio
+    async def test_uuid_prefix_single_match_returns_dict(self):
+        """A unique 8+ char prefix resolves to the one matching row.
+
+        No exact match (fetchrow None) → the prefix branch runs a single
+        ``fetch`` (LIMIT 2) and uses the lone row (#702 item 4: was a
+        ``fetchrow`` + a second identical ``SELECT 1`` LIKE scan).
+        """
+        pool = _make_pool(fetchrow_result=None, fetch_result=[object()])
+        db = _make_db(pool)
+
+        sentinel = {"task_id": "abcdef12"}
+        with (
+            patch(f"{_CONVERTER}.to_task_response", return_value=MagicMock()),
+            patch(f"{_CONVERTER}.to_dict", return_value=sentinel),
+        ):
+            result = await db.get_task("abcdef12")
+
+        assert result == sentinel
+
+    @pytest.mark.asyncio
+    async def test_ambiguous_uuid_prefix_returns_none(self):
+        """A prefix matching 2+ rows is rejected as ambiguous.
+
+        Detected from the single fetch's length (LIMIT 2 → two rows), with
+        no second query (#702 item 4).
+        """
+        pool = _make_pool(fetchrow_result=None, fetch_result=[object(), object()])
+        db = _make_db(pool)
+
+        result = await db.get_task("abcdef12")
+        assert result is None
+
 
 # ---------------------------------------------------------------------------
 # update_task_status

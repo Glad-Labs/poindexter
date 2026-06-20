@@ -116,11 +116,14 @@ class TasksDatabase(DatabaseServiceMixin):
         self.pool = pool
         # Pipeline tables are the primary store (#211 Phase 4).
         # content_tasks is a VIEW over pipeline_tasks + pipeline_versions.
-        # Reads go through the view (so consumers see one flat row
-        # shape); writes go DIRECTLY to the underlying base tables —
-        # the INSTEAD OF triggers that previously redirected view-INSERTs
-        # are not reliably present in production (#188), so app-side
-        # routing is the source of truth. See add_task() for details.
+        # Reads go through the view (so consumers see one flat row shape);
+        # writes go DIRECTLY to the underlying base tables for explicit
+        # control over the column split. The INSTEAD OF insert/update/delete
+        # triggers that redirect view-writes ARE present (seeded by
+        # 0000_baseline.schema.sql, verified on prod 2026-06-19) — the
+        # earlier "#188 not reliably present" concern is stale — but the app
+        # deliberately writes the base tables itself rather than leaning on
+        # them. See add_task() for the column routing.
 
     @log_query_performance(operation="get_pending_tasks", category="task_retrieval")
     async def get_pending_tasks(self, limit: int = 10) -> list[dict]:
@@ -206,12 +209,13 @@ class TasksDatabase(DatabaseServiceMixin):
 
         Background — #188
         -----------------
-        ``content_tasks`` is a VIEW (since migration 0125) and the
-        INSTEAD OF INSERT trigger that previously redirected writes to
-        the base tables is not reliably present in production, so any
-        INSERT into the view raises ``ObjectNotInPrerequisiteStateError:
-        cannot insert into view "content_tasks"``. We now mirror what
-        the trigger *would* have done, in application code:
+        ``content_tasks`` is a VIEW (since migration 0125). Its INSTEAD OF
+        INSERT trigger (``content_tasks_insert_redirect``) IS present —
+        seeded by ``0000_baseline.schema.sql`` and verified on prod
+        (2026-06-19); the earlier "not reliably present" framing is stale.
+        The app nonetheless writes the base tables directly rather than
+        INSERTing the view, for explicit control over the column split —
+        mirroring what the trigger would do, in application code:
 
         - Core scalar columns go straight into ``pipeline_tasks``.
         - ``title`` + content/SEO + ``stage_data`` JSONB (which carries
@@ -552,21 +556,19 @@ class TasksDatabase(DatabaseServiceMixin):
                     "SELECT * FROM content_tasks WHERE task_id = $1 OR id::text = $1 LIMIT 1",
                     str(task_id),
                 )
-                # Fallback: UUID prefix match (8+ chars, looks like a UUID prefix)
+                # Fallback: UUID prefix match (8+ chars, looks like a UUID prefix).
+                # One scan: fetch up to 2 matches so an ambiguous prefix (>1 row)
+                # is detectable from the result length — no second identical LIKE
+                # query (#702 item 4).
                 if not row and len(task_id) >= 8 and "-" not in task_id[8:]:
-                    row = await conn.fetchrow(
+                    prefix_rows = await conn.fetch(
                         "SELECT * FROM content_tasks WHERE task_id LIKE $1 LIMIT 2",
                         f"{task_id}%",
                     )
-                    # Reject ambiguous prefix matches
-                    if row:
-                        check = await conn.fetch(
-                            "SELECT 1 FROM content_tasks WHERE task_id LIKE $1 LIMIT 2",
-                            f"{task_id}%",
-                        )
-                        if len(check) > 1:
-                            logger.warning("Ambiguous task_id prefix '%s' matches multiple tasks", task_id)
-                            return None
+                    if len(prefix_rows) > 1:
+                        logger.warning("Ambiguous task_id prefix '%s' matches multiple tasks", task_id)
+                        return None
+                    row = prefix_rows[0] if prefix_rows else None
                 if row:
                     task_response = ModelConverter.to_task_response(row)
                     return cast(TaskRecord, ModelConverter.to_dict(task_response))
