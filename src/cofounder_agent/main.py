@@ -39,6 +39,7 @@ from utils.connection_health import ConnectionPoolHealth
 # Local application imports (must come after path setup)
 from utils.exception_handlers import register_exception_handlers
 from utils.middleware_config import MiddlewareConfig
+from utils.openapi_auth import register_authed_openapi
 from utils.route_registration import register_all_routes
 from utils.route_utils import initialize_services
 from utils.startup_manager import StartupManager
@@ -870,6 +871,13 @@ API endpoints require `Authorization: Bearer <API_TOKEN>` header.
     redoc_url=None if _is_production else "/api/redoc",
     swagger_ui_parameters={"defaultModelsExpandDepth": 1},
 )
+
+# poindexter#745: in production ``openapi_url=None`` keeps the spec from being
+# anonymously enumerable, but the machine-readable catalog must stay reachable
+# to authenticated API/LLM consumers (per the API-response-contracts ADR). Add
+# an auth-gated ``GET /api/openapi.json`` (no-op outside production, where the
+# built-in public route above already serves it).
+register_authed_openapi(app, is_production=_is_production)
 
 # Initialize OpenTelemetry tracing FIRST — once any later code path
 # finalises the middleware stack, FastAPIInstrumentor.instrument_app
