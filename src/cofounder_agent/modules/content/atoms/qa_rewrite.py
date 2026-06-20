@@ -109,7 +109,7 @@ def _resolve_revise_prompt(*, content: str, feedback: str) -> str:
             _REVISE_PROMPT_KEY, content=content, feedback=feedback,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
+        logger.error(
             "[qa.rewrite] prompt lookup for %r failed (%s) — inline fallback",
             _REVISE_PROMPT_KEY, exc,
         )

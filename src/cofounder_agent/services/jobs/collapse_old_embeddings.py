@@ -306,7 +306,7 @@ _DEFAULT_SUMMARY_PROMPT = (
     "and verbose phrasing. The summary will be embedded and used for "
     "future semantic search, so dense factual content beats prose.\n\n"
     "Excerpts:\n{joined}\n\n"
-    "Summary:"
+    "Summary:\n"
 )
 
 
@@ -330,7 +330,7 @@ def _resolve_summary_prompt_template() -> str:
             raise KeyError(_SUMMARY_PROMPT_KEY)
         return template
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
+        logger.error(
             "[collapse_old_embeddings] prompt_manager lookup for "
             "%r failed (%s) — using inline fallback",
             _SUMMARY_PROMPT_KEY, exc,

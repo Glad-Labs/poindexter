@@ -82,6 +82,8 @@ The contract tests serve two purposes:
 - **Drift detection.** A prod-side Langfuse edit that strays from the `SKILL.md` default still lands on the dashboard but ALSO trips the test in CI, forcing a conscious revert-or-update.
 - **Migration safety.** When prompts moved (f-string → YAML → `SKILL.md`), the tests verified the rendered body stayed byte-for-byte identical, so format-string gotchas (`{{`/`}}` doubling, trailing newlines) couldn't sneak through.
 
+**Inline-fallback resilience (`test_prompt_fallback_drift.py`).** Several resolvers keep an inline `_*_FALLBACK` copy so the pipeline survives a prompt-registry outage. A parametrized guard drives each resolver with the registry up (`SKILL.md` path) and down (inline path) and asserts they agree — so a fired fallback can never silently serve stale text. When a fallback DOES fire, the resolver logs at `error` (per `feedback_self_heal_not_suppress`: self-heal by serving the byte-identical inline copy, but surface the registry outage loudly rather than swallow it).
+
 ## How callers fetch prompts
 
 ```python

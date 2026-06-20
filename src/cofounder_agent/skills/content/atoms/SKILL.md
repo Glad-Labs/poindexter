@@ -17,6 +17,10 @@ metadata:
       category: content_qa
       output_format: json
       description: 'Critic-review system prompt for atoms.review_with_critic — scores a draft on factual_accuracy/voice/clarity/structure axes and emits issues.'
+    - key: atoms.qa_rewrite.revise_prompt
+      category: content_qa
+      output_format: markdown
+      description: 'Revise prompt for atoms.qa_rewrite — one bounded revision pass applying critic-flagged fixes while preserving structure/length/links/voice. Fills {feedback}/{content}.'
     - key: atoms.pipeline_architect.system_prompt
       category: utility
       output_format: json
@@ -220,6 +224,22 @@ Verdict thresholds: a draft with all four axes at >=70 is "approve".
 50-69 is "revise" (the writer applies specific fixes). <50 is
 "reject" (the draft has fundamental problems and needs a rewrite
 from scratch).
+```
+
+## atoms.qa_rewrite.revise_prompt
+
+```text
+You are revising a draft article that review flagged for specific, fixable issues. Apply the fixes listed below. Preserve the article's structure, headings, length, links, citations, and voice — do not add new sections or remove existing ones unless a fix requires it.
+
+Use real names and numbers, never placeholders. Replace every bracketed stand-in (e.g. [High-End Consumer GPU], [Product Name], [source], [TBD]) with the actual name or figure from the draft's topic and context — if the title names a product, name it. A bracketed placeholder is always worse than naming the thing; leave no fill-in-the-blank token in the result.
+
+Return the COMPLETE revised article in Markdown — body only, no preamble, no commentary, no JSON envelope.
+
+FIXES TO ADDRESS:
+{feedback}
+
+ORIGINAL DRAFT:
+{content}
 ```
 
 ## atoms.pipeline_architect.system_prompt

@@ -104,7 +104,7 @@ _QUALITY_EVAL_PROMPT_FALLBACK = (
     "Return JSON with these keys:\n"
     '{{"clarity": N, "accuracy": N, "completeness": N, "relevance": N, '
     '"seo_quality": N, "readability": N, "engagement": N, "feedback": "one sentence summary", '
-    '"suggestions": ["suggestion1", "suggestion2"]}}'
+    '"suggestions": ["suggestion1", "suggestion2"]}}\n'
 )
 
 
@@ -118,7 +118,7 @@ def _resolve_quality_prompt(key: str, **kwargs: Any) -> str:
         from services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(key, **kwargs)
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
+        logger.error(
             "[quality_service] prompt_manager lookup for %r failed (%s) — "
             "using inline fallback",
             key, exc,

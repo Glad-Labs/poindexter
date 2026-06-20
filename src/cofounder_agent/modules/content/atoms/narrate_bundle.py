@@ -197,7 +197,7 @@ def _resolve_system_prompt() -> tuple[str, str | None, int | None]:
         resolution = get_prompt_manager().get_prompt_resolution(_PROMPT_KEY)
         return resolution.text, resolution.key, resolution.version
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
+        logger.error(
             "[atoms.narrate_bundle] prompt_manager lookup for %r failed (%s) — "
             "falling back to inline constant",
             _PROMPT_KEY, exc,

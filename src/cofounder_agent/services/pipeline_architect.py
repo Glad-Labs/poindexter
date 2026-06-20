@@ -81,7 +81,7 @@ def _resolve_system_prompt() -> str:
         from services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(_PROMPT_KEY)
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
+        logger.error(
             "[pipeline_architect] prompt_manager lookup for %r failed (%s) — "
             "using inline fallback",
             _PROMPT_KEY, exc,
