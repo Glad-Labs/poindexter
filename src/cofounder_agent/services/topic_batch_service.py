@@ -218,9 +218,23 @@ class TopicBatchService:
             # DI-injected ``self._site_config``.
             scored = await llm_final_score(top10, goals, site_config=self._site_config)
 
-            ranked = sorted(
-                scored.values(), key=lambda c: -(c.llm_score or 0)
-            )[: niche.batch_size]
+            # Cap internal_rag's share of the batch so the system-introspection
+            # corpus (claude_sessions / brain / audit / memory) can't crowd out
+            # external/consumer topics — finding #5 of the 2026-06-19 validation,
+            # where internal_rag took 4/5 slots and the operator had to hand-edit
+            # the winner to a real consumer topic. Internal candidates are known
+            # by their pool; the cap is operator-tunable (1.0 disables it) and
+            # backfills so a thin-external sweep still produces a full batch.
+            internal_ids = {c.id for c in pool_internal}
+            internal_share_cap = self._site_config.get_float(
+                "niche_internal_rag_batch_share_cap", 0.5,
+            )
+            ranked = self._apply_source_diversity_cap(
+                list(scored.values()),
+                internal_ids,
+                niche.batch_size,
+                internal_share_cap,
+            )
 
             # Guard against the empty-batch wedge. If discovery + ranking
             # yielded nothing this sweep (every source dry, everything
@@ -279,6 +293,50 @@ class TopicBatchService:
     # ------------------------------------------------------------------
     # Helpers
     # ------------------------------------------------------------------
+
+    @staticmethod
+    def _apply_source_diversity_cap(
+        scored_candidates: list,
+        internal_ids: set[str],
+        batch_size: int,
+        internal_share_cap: float,
+    ) -> list:
+        """Pick up to ``batch_size`` candidates by LLM score while capping the
+        internal_rag share, so external/consumer sources are guaranteed batch
+        representation (finding #5: internal_rag took 4/5 slots on 2026-06-19).
+
+        SOFT cap. Pass 1 walks candidates best-score-first and admits internal
+        ones only until ``floor(batch_size * cap)`` are taken — external fills
+        the rest. Pass 2 backfills any slots still empty (external was too thin)
+        with the best remaining candidates, so a sweep never under-fills the
+        batch and a single-source (internal-only) batch is identical to the old
+        plain top-N-by-score slice. ``cap >= 1.0`` disables the cap.
+
+        ``internal_ids`` is the set of ``ScoredCandidate.id`` values from the
+        internal pool — the caller knows each candidate's source by its pool.
+        """
+        ranked = sorted(scored_candidates, key=lambda c: -(c.llm_score or 0))
+        if internal_share_cap >= 1.0 or batch_size <= 0:
+            return ranked[:batch_size]
+        max_internal = int(batch_size * internal_share_cap)
+        picked: list = []
+        internal_taken = 0
+        for c in ranked:  # pass 1 — honour the cap
+            if len(picked) >= batch_size:
+                break
+            if c.id in internal_ids and internal_taken >= max_internal:
+                continue
+            picked.append(c)
+            if c.id in internal_ids:
+                internal_taken += 1
+        if len(picked) < batch_size:  # pass 2 — backfill rather than under-fill
+            chosen = {id(c) for c in picked}
+            for c in ranked:
+                if len(picked) >= batch_size:
+                    break
+                if id(c) not in chosen:
+                    picked.append(c)
+        return picked
 
     async def _floor_elapsed(self, niche: Niche) -> bool:
         """True if enough time has passed since the last sweep for this niche.

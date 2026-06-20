@@ -217,6 +217,8 @@ DEFAULTS: dict[str, str] = {
     # ----- RAG / retrieval -----
     'niche_internal_rag_per_kind_limit': '5',
     'niche_internal_rag_snippet_max_chars': '600',
+    # Cap internal_rag's discovery-batch share (finding #5); 1.0 disables.
+    'niche_internal_rag_batch_share_cap': '0.5',
     'rag_default_top_k': '5',
     'rag_embed_retry_attempts': '3',
     'rag_embed_retry_base_delay_seconds': '0.25',
