@@ -217,7 +217,7 @@ async def approve_task(
 
     **Example cURL:**
     ```bash
-    curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/approve \\
+    curl -X POST http://localhost:8002/api/tasks/550e8400-e29b-41d4-a716-446655440000/approve \\
       -H "Content-Type: application/json" \\
       -H "Authorization: Bearer YOUR_JWT_TOKEN" \\
       -d '{
@@ -651,7 +651,7 @@ async def publish_task(
 
     **Example cURL:**
     ```bash
-    curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/publish \
+    curl -X POST http://localhost:8002/api/tasks/550e8400-e29b-41d4-a716-446655440000/publish \
       -H "Authorization: Bearer YOUR_JWT_TOKEN"
     ```
     """
@@ -958,7 +958,7 @@ async def generate_task_image(
 
     **Example cURL:**
     ```bash
-    curl -X POST http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000/generate-image \
+    curl -X POST http://localhost:8002/api/tasks/550e8400-e29b-41d4-a716-446655440000/generate-image \
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer YOUR_JWT_TOKEN" \
       -d '{

@@ -851,9 +851,8 @@ for complete business operations including:
 - **Model Management**: Unified LLM access across Ollama, HuggingFace, OpenAI, Anthropic, and Google
 
 ### Quick Links
-- **Documentation**: [View Full Docs](./docs/00-README.md)
-- **Architecture**: [System Design](./docs/02-ARCHITECTURE_AND_DESIGN.md)
-- **API Base URL**: http://localhost:8000
+- **Documentation**: [Poindexter on GitHub](https://github.com/Glad-Labs/poindexter#readme)
+- **API Base URL**: http://localhost:8002
 
 ### Authentication
 API endpoints require `Authorization: Bearer <API_TOKEN>` header.

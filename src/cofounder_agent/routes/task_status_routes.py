@@ -85,7 +85,7 @@ async def update_task_status_enterprise(
 
     **Example cURL:**
     ```bash
-    curl -X PUT "http://localhost:8000/api/tasks/{task_id}/status" \
+    curl -X PUT "http://localhost:8002/api/tasks/{task_id}/status" \
       -H "Authorization: Bearer TOKEN" \
       -H "Content-Type: application/json" \
       -d '{
@@ -97,8 +97,10 @@ async def update_task_status_enterprise(
 
     **Error Responses:**
     - 404: Task not found
-    - 422: Invalid status transition
-    - 400: Invalid input data
+    - 409: Invalid status transition (wrong-state — the body is valid but the
+      current→target transition isn't allowed)
+    - 422: Invalid status value (unknown status string)
+    - 400: Invalid input data (malformed task ID)
     """
     try:
         # Validate UUID format
@@ -346,7 +348,7 @@ async def get_task_status_info(
 
     **Example cURL:**
     ```bash
-    curl -X GET "http://localhost:8000/api/tasks/{task_id}/status" \
+    curl -X GET "http://localhost:8002/api/tasks/{task_id}/status" \
       -H "Authorization: Bearer TOKEN"
     ```
     """
@@ -432,7 +434,7 @@ async def get_task_status_history(
 
     **Example cURL:**
     ```bash
-    curl -X GET "http://localhost:8000/api/tasks/{task_id}/status-history?limit=20" \
+    curl -X GET "http://localhost:8002/api/tasks/{task_id}/status-history?limit=20" \
       -H "Authorization: Bearer TOKEN"
     ```
 
@@ -584,7 +586,7 @@ async def update_task(
 
     **Example cURL:**
     ```bash
-    curl -X PATCH http://localhost:8000/api/tasks/550e8400-e29b-41d4-a716-446655440000 \
+    curl -X PATCH http://localhost:8002/api/tasks/550e8400-e29b-41d4-a716-446655440000 \
       -H "Authorization: Bearer YOUR_JWT_TOKEN" \
       -H "Content-Type: application/json" \
       -d '{
