@@ -52,6 +52,15 @@ _DEFAULT_TARGET_DURATION_S = 60.0  # Fallback when podcast script length unknown
 _WORDS_PER_SECOND = 2.5  # Rough TTS narration pace; ~150 WPM
 
 
+# Per-call ceiling for the director LLM dispatch. Writer-grade director models
+# (e.g. gemma-4-31B, the prod default) emit a full structured shot list
+# (max_tokens 6144) and routinely need well over the old hardcoded 120s — the
+# call was timing out at exactly 120.0s and leaving an empty shot list, so
+# Stage-2 video never rendered. Tunable via the ``video_director_timeout_seconds``
+# DB setting; this is just the seed default for operators on faster models.
+_DIRECTOR_TIMEOUT_DEFAULT = 300
+
+
 def _estimate_target_duration(podcast_script: str) -> float:
     """Estimate the podcast's spoken duration from word count.
 
@@ -243,10 +252,14 @@ class GenerateVideoShotListStage:
 
     name = "generate_video_shot_list"
     description = "Director — produce shot list (sources, prompts, durations) for the post's video"
-    # Up to two LLM calls (long + short) up to 120s each. Director output
-    # is structured JSON; small generations. Budget 240 for slow disks +
-    # cold model loads + the second short-form call.
-    timeout_seconds = 240
+    # Up to two LLM dispatches (long + short), each capped at the
+    # ``video_director_timeout_seconds`` DB setting (default
+    # _DIRECTOR_TIMEOUT_DEFAULT). This stage-level budget only bites on the
+    # legacy template_runner path — canonical_blog runs on graph_def, which
+    # enforces the per-call ceiling inside _produce_shot_list — so keep it
+    # comfortably above 2× the per-call default so it never pre-empts the
+    # dispatches it wraps.
+    timeout_seconds = 2 * _DIRECTOR_TIMEOUT_DEFAULT + 80
     halts_on_failure = False  # Director failure shouldn't block the post
 
     async def _produce_shot_list(
@@ -263,6 +276,7 @@ class GenerateVideoShotListStage:
         title: str,
         content_text: str,
         site_name: str,
+        timeout_s: int,
     ) -> dict[str, Any] | None:
         """Render the director prompt, dispatch the LLM, validate the result.
 
@@ -326,7 +340,7 @@ class GenerateVideoShotListStage:
                     messages=[{"role": "user", "content": rendered_prompt}],
                     model=model,
                     tier="standard",
-                    timeout_s=120,
+                    timeout_s=timeout_s,
                     temperature=0.4,  # Lower temp — director should be decisive
                     # A full 30-shot list serializes past 3072 tokens, which
                     # truncated the JSON mid-list (json_extract failures) — the
@@ -488,6 +502,13 @@ class GenerateVideoShotListStage:
 
         now_iso = datetime.now(timezone.utc).isoformat()
         site_name = cfg.get("site_name") or ""
+        # Per-call LLM ceiling — DB-tunable so writer-grade director models get
+        # the headroom they need (see _DIRECTOR_TIMEOUT_DEFAULT). The old
+        # hardcoded 120s timed out gemma-4-31B and left an empty shot list, so
+        # Stage-2 video never rendered.
+        director_timeout = cfg.get_int(
+            "video_director_timeout_seconds", _DIRECTOR_TIMEOUT_DEFAULT
+        )
 
         # LONG (unchanged behavior): the 16:9 director over podcast_script.
         long_shot_list = await self._produce_shot_list(
@@ -502,6 +523,7 @@ class GenerateVideoShotListStage:
             title=title,
             content_text=content_text,
             site_name=site_name,
+            timeout_s=director_timeout,
         )
 
         if long_shot_list is None:
@@ -532,6 +554,7 @@ class GenerateVideoShotListStage:
                 title=title,
                 content_text=content_text,
                 site_name=site_name,
+                timeout_s=director_timeout,
             )
 
         # Success — return via context_updates so it survives the graph_def

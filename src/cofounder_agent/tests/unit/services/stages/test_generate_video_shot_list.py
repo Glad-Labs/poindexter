@@ -170,6 +170,9 @@ def _platform_with_dispatch(
     p = MagicMock()
     p.dispatch.complete = AsyncMock(return_value=returns, side_effect=raises)
     p.config.get = MagicMock(return_value=model)
+    # get_int returns the caller's default (realistic: the director-timeout
+    # setting is unset in these fixtures → cfg.get_int(key, default) → default).
+    p.config.get_int = MagicMock(side_effect=lambda key, default=0: default)
     return p
 
 
@@ -209,6 +212,45 @@ async def test_happy_path_persists_shot_list_to_context() -> None:
     # Audit log got the success event.
     audit_call = db_service.pool.execute.call_args
     assert "video_director.shot_list_produced" in audit_call.args[1]
+
+
+@pytest.mark.asyncio
+async def test_director_timeout_is_configurable() -> None:
+    """The per-call LLM ceiling comes from ``video_director_timeout_seconds``,
+    not a hardcoded 120s. The writer-grade director model (gemma-4-31B) emits a
+    full shot list and the old 120s cap timed out at exactly 120.0s, leaving an
+    empty shot list so Stage-2 video never rendered.
+    """
+    db_service = _make_db_service()
+    platform = _platform_with_dispatch(
+        returns=MagicMock(text=_make_valid_director_output()),
+        model="director-model-x",
+    )
+    # Operator-tuned director timeout overrides the seeded default.
+    platform.config.get_int = MagicMock(return_value=480)
+    context = {
+        "title": "Test Post",
+        "content": "Some content " * 50,
+        "podcast_script": "script " * 40,
+        "task_id": "task-timeout",
+        "database_service": db_service,
+        "platform": platform,
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+
+        result = await GenerateVideoShotListStage().execute(context, {})
+
+    assert result.ok
+    # The configured 480s — not the old hardcoded 120 — reaches the LLM dispatch.
+    assert platform.dispatch.complete.call_args.kwargs["timeout_s"] == 480
+    # And it was read from the right setting with a sane, non-120 default.
+    platform.config.get_int.assert_any_call("video_director_timeout_seconds", 300)
 
 
 @pytest.mark.asyncio
@@ -354,7 +396,9 @@ def _director_json() -> str:
 @pytest.mark.asyncio
 async def test_shot_list_returned_via_context_updates():
     platform = MagicMock()
-    platform.config = {"site_name": "Test", "video_director_model": "llama3:latest"}
+    _cfg = {"site_name": "Test", "video_director_model": "llama3:latest"}
+    platform.config.get = MagicMock(side_effect=lambda k, d=None: _cfg.get(k, d))
+    platform.config.get_int = MagicMock(side_effect=lambda k, d=0: d)
     platform.dispatch.complete = AsyncMock(return_value=SimpleNamespace(text=_director_json()))
 
     db = SimpleNamespace(pool=MagicMock())

@@ -126,6 +126,13 @@ DEFAULTS: dict[str, str] = {
     # critique; kept equal to pipeline_writer_model (asserted in tests). Was unset
     # before, falling through to default_ollama_model=auto → weak standard tier.
     'video_director_model': 'ollama/gemma-4-31B-it-qat:latest',
+    # Per-call ceiling (seconds) for the director LLM dispatch — long + short
+    # shot lists. Writer-grade director models (gemma-4-31B) emit a full
+    # structured shot list (max_tokens 6144) and need well over the old
+    # hardcoded 120s, which was timing out and leaving an empty shot list so
+    # Stage-2 video never rendered. Read via cfg.get_int in
+    # modules/content/stages/generate_video_shot_list.py.
+    'video_director_timeout_seconds': '300',
     # Per-shot vision-QA render-check loop (video-quality spec §3.2). The render
     # loop in shot_list_renderer scores each rendered frame with qa_vision_model
     # and regenerates (stochastic sources) or falls back to holdover on a miss.
@@ -1057,6 +1064,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- LLM model selection (writer-flip = canary per feedback_writer_model_canary) -----
     'pipeline_writer_model': {'owner': 'content_router', 'value_type': 'model'},
     'video_director_model': {'owner': 'video_director', 'value_type': 'model'},
+    'video_director_timeout_seconds': {'owner': 'video_director', 'value_type': 'integer'},
     'video_shot_qa_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_shot_qa_threshold': {'owner': 'video', 'value_type': 'integer'},
     'video_shot_qa_max_retries': {'owner': 'video', 'value_type': 'integer'},
