@@ -17,7 +17,12 @@ from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/api/media-approval", tags=["media-approval"])
+router = APIRouter(
+    prefix="/api/media-approval",
+    tags=["media-approval"],
+    # Operator surface — auth enforced on every route (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 
 class DecideRequest(BaseModel):

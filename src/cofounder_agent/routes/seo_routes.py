@@ -19,7 +19,12 @@ from services.database_service import DatabaseService
 from services.seo_read import read_seo
 from utils.route_utils import get_database_dependency
 
-router = APIRouter(prefix="/api/seo", tags=["seo"])
+router = APIRouter(
+    prefix="/api/seo",
+    tags=["seo"],
+    # Operator surface — auth enforced on every route (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 
 @router.get("")

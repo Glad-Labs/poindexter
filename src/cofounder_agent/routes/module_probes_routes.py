@@ -23,7 +23,12 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 
 from middleware.api_token_auth import verify_api_token
 
-router = APIRouter(prefix="/api/modules", tags=["modules"])
+router = APIRouter(
+    prefix="/api/modules",
+    tags=["modules"],
+    # Operator surface — auth enforced on every route (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 
 @router.get("/probes", response_model=None)

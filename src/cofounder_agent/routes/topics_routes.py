@@ -26,7 +26,12 @@ from utils.route_utils import get_database_dependency, get_site_config_dependenc
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/api/topics", tags=["topics"])
+router = APIRouter(
+    prefix="/api/topics",
+    tags=["topics"],
+    # Operator surface — auth enforced on every route (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 
 class FromUrlRequest(BaseModel):

@@ -34,7 +34,12 @@ from utils.uuid_prefix import resolve_task_id_prefix
 LEGACY_APPROVAL_GATE = "final_approval"
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/api/tasks", tags=["approval"])
+router = APIRouter(
+    prefix="/api/tasks",
+    tags=["approval"],
+    # Operator surface — auth enforced on every route (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 
 async def broadcast_approval_status(

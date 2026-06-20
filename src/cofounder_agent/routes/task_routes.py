@@ -200,7 +200,12 @@ async def _resolve_seed_url(
 
 
 # Configure router with prefix and tags
-router = APIRouter(prefix="/api/tasks", tags=["tasks"])
+router = APIRouter(
+    prefix="/api/tasks",
+    tags=["tasks"],
+    # Operator surface — auth enforced on every route (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 # ============================================================================
 # ENDPOINTS

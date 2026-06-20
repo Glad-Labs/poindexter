@@ -41,7 +41,12 @@ def _setting_attr(setting: Any, attr: str, default: Any = None) -> Any:
 
 
 # Create router
-router = APIRouter(prefix="/api/settings", tags=["settings"])
+router = APIRouter(
+    prefix="/api/settings",
+    tags=["settings"],
+    # Operator surface — auth enforced on every route (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 
 # ============================================================================

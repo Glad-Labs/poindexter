@@ -40,7 +40,11 @@ LEGACY_APPROVAL_GATE = "final_approval"
 
 logger = get_logger(__name__)
 
-publishing_router = APIRouter(tags=["Task Publishing"])
+publishing_router = APIRouter(
+    tags=["Task Publishing"],
+    # Operator surface — auth enforced on every route (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 
 def _check_task_ownership(task: Mapping[str, Any], current_user: Any) -> None:

@@ -36,7 +36,11 @@ from utils.task_status import TaskStatus, get_allowed_transitions, is_terminal, 
 
 logger = get_logger(__name__)
 
-status_router = APIRouter(tags=["Task Status Management"])
+status_router = APIRouter(
+    tags=["Task Status Management"],
+    # Operator surface — auth enforced on every route (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 
 @status_router.put(

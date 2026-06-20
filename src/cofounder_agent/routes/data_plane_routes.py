@@ -23,7 +23,12 @@ from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)
-router = APIRouter(prefix="/api/data-plane", tags=["data-plane"])
+router = APIRouter(
+    prefix="/api/data-plane",
+    tags=["data-plane"],
+    # Operator surface — auth enforced on every route (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 
 @router.get(

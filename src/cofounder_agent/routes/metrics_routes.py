@@ -18,7 +18,12 @@ from utils.route_utils import get_database_dependency
 
 logger = get_logger(__name__)
 # Create metrics router
-metrics_router = APIRouter(prefix="/api/metrics", tags=["metrics"])
+metrics_router = APIRouter(
+    prefix="/api/metrics",
+    tags=["metrics"],
+    # Operator surface — auth enforced on every route (poindexter#752 item 2).
+    dependencies=[Depends(verify_api_token)],
+)
 
 _start_time = datetime.now(timezone.utc)
 
