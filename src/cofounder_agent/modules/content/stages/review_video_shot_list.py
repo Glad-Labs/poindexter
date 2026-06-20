@@ -21,6 +21,7 @@ from datetime import datetime, timezone
 from typing import Any
 
 from modules.content.stages.generate_video_shot_list import (
+    _DIRECTOR_TIMEOUT_DEFAULT,
     _extract_json_object,
     _log_audit,
     _reconcile_shot_list,
@@ -36,9 +37,15 @@ class ReviewVideoShotListStage:
 
     name = "review_video_shot_list"
     description = "Director self-critique — revise the shot list before Gate 1"
-    # Up to two writer-grade LLM calls (long + short). gemma-4-31B is slow; budget
-    # generously. Non-halting, so an overrun just skips the review, never blocks.
-    timeout_seconds = 600
+    # Up to two writer-grade director-class LLM calls (long + short), each capped
+    # by the shared ``video_director_timeout_seconds`` DB setting — the same knob
+    # the director uses, since the review is the identical model doing a second
+    # 6144-token structured pass. This stage-level budget only bites on the legacy
+    # template_runner path (canonical_blog runs on graph_def, which enforces the
+    # per-call ceiling), so size it to 2× the per-call default + margin so it never
+    # pre-empts the two dispatches it wraps. Non-halting: an overrun skips the
+    # review, never blocks the post.
+    timeout_seconds = 2 * _DIRECTOR_TIMEOUT_DEFAULT + 80
     halts_on_failure = False
 
     async def _resolve_model(self, *, cfg: Any, pool: Any) -> str | None:
@@ -65,6 +72,7 @@ class ReviewVideoShotListStage:
         platform: Any,
         pool: Any,
         model: str,
+        timeout_s: int,
         prompt_key: str,
         script_var: str,
         script: str,
@@ -102,7 +110,7 @@ class ReviewVideoShotListStage:
                     messages=[{"role": "user", "content": rendered}],
                     model=model,
                     tier="standard",
-                    timeout_s=120,
+                    timeout_s=timeout_s,
                     temperature=0.4,
                     max_tokens=6144,
                 )
@@ -166,6 +174,14 @@ class ReviewVideoShotListStage:
                 metrics={"skipped": True},
             )
 
+        # Per-call LLM timeout — reuse the director's knob. The review is the same
+        # writer-grade model doing a second structured-output pass, so the old
+        # hardcoded 120s timed it out mid shot-list exactly like the director's did
+        # (validation finding: gemma-4-31B needs well over 120s for a 6144-token list).
+        review_timeout = cfg.get_int(
+            "video_director_timeout_seconds", _DIRECTOR_TIMEOUT_DEFAULT
+        )
+
         now_iso = datetime.now(timezone.utc).isoformat()
         site_name = cfg.get("site_name") or ""
         title = context.get("title", "")
@@ -174,7 +190,7 @@ class ReviewVideoShotListStage:
 
         # LONG. Non-halting: fall back to the unreviewed list on any failure.
         revised = await self._review_one(
-            platform=platform, pool=pool, model=model,
+            platform=platform, pool=pool, model=model, timeout_s=review_timeout,
             prompt_key="video.review_v1", script_var="podcast_script",
             script=context.get("podcast_script", ""), current=current,
             title=title, content_text=content_text, site_name=site_name,
@@ -188,7 +204,7 @@ class ReviewVideoShotListStage:
         short = context.get("short_shot_list")
         if short:
             revised_short = await self._review_one(
-                platform=platform, pool=pool, model=model,
+                platform=platform, pool=pool, model=model, timeout_s=review_timeout,
                 prompt_key="video.review_short_v1", script_var="short_script",
                 script=context.get("short_summary_script", ""), current=short,
                 title=title, content_text=content_text, site_name=site_name,
