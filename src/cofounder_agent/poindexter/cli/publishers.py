@@ -191,7 +191,7 @@ def publishers_fire(name: str, text: str, url: str) -> None:
         site_cfg = SiteConfig(pool=pool)
         try:
             await site_cfg.load(pool)
-        except Exception:  # noqa: silent-ok — keep the smoke test usable on partial bootstrap
+        except Exception:  # silent-ok: — keep the smoke test usable on partial bootstrap
             pass
 
         row = await dcs.get_row(pool, _SURFACE, name)

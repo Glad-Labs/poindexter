@@ -204,11 +204,11 @@ class WorkerClient:
         # in finally-style teardown and a raise here would mask the
         # caller's exception.
         if self._http is not None:
-            with suppress(Exception):  # noqa: silent-ok teardown close; raise would mask the caller's exception
+            with suppress(Exception):  # silent-ok: teardown close; raise would mask the caller's exception
                 await self._http.aclose()
             self._http = None
         if self._oauth is not None:
-            with suppress(Exception):  # noqa: silent-ok teardown close; raise would mask the caller's exception
+            with suppress(Exception):  # silent-ok: teardown close; raise would mask the caller's exception
                 await self._oauth.aclose()
             self._oauth = None
 

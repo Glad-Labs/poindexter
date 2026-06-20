@@ -98,7 +98,7 @@ async def capture_preview_screenshot(
                 )
                 return png_bytes
             finally:
-                with suppress(Exception):  # noqa: silent-ok best-effort browser close in finally
+                with suppress(Exception):  # silent-ok: best-effort browser close in finally
                     await browser.close()
     except Exception as e:
         logger.warning(

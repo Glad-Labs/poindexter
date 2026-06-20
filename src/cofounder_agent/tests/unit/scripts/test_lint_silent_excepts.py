@@ -3,7 +3,7 @@
 Pins the detection contract: a handler whose body is only ``pass`` or
 ``<logger>.debug(...)`` counts as a silent swallow, while a handler that
 records the failure (a second statement, a higher log level, a re-raise, or
-a ``# noqa: silent-ok`` override) does not. This is the ratchet that stops
+a ``# silent-ok:`` override) does not. This is the ratchet that stops
 the swallowed-exception category from growing (silent-failure audit H2).
 """
 import importlib.util
@@ -81,7 +81,7 @@ class TestSilentDetection:
             "def f():\n"
             "    try:\n        x()\n"
             "    except Exception:\n"
-            "        pass  # noqa: silent-ok best-effort cleanup\n"
+            "        pass  # silent-ok: best-effort cleanup\n"
         )
         assert _scan_src(tmp_path, src) == 0
 
@@ -150,7 +150,7 @@ class TestBroadSuppressDetection:
         src = (
             "from contextlib import suppress\n"
             "def f():\n"
-            "    with suppress(Exception):  # noqa: silent-ok best-effort close\n"
+            "    with suppress(Exception):  # silent-ok: best-effort close\n"
             "        x()\n"
         )
         assert _scan_src(tmp_path, src) == 0
@@ -293,7 +293,7 @@ class TestBroadExceptReturnSentinel:
         src = (
             "def f():\n"
             "    try:\n        return g()\n"
-            "    except Exception:  # noqa: silent-ok optional read\n"
+            "    except Exception:  # silent-ok: optional read\n"
             "        return None\n"
         )
         assert _scan_src(tmp_path, src) == 0

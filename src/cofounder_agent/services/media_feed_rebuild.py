@@ -57,7 +57,7 @@ async def _rebuild_feed(
         finally:
             try:
                 os.unlink(feed_path)
-            except OSError:  # noqa: silent-ok — best-effort temp-file cleanup
+            except OSError:  # silent-ok: — best-effort temp-file cleanup
                 pass
     except Exception as exc:  # noqa: BLE001 — feed rebuild is non-fatal
         logger.warning(

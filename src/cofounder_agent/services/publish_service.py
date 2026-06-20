@@ -129,7 +129,7 @@ def _spawn_background(coro, name: str | None = None) -> asyncio.Task:
     if name:
         # set_name is best-effort; some event-loop implementations don't
         # support it, but it's only used for debug visibility.
-        with suppress(Exception):  # noqa: silent-ok set_name is best-effort debug visibility
+        with suppress(Exception):  # silent-ok: set_name is best-effort debug visibility
             task.set_name(name)
     _background_tasks.add(task)
 
@@ -850,7 +850,7 @@ async def _niche_allowlist_block(
             f"(known: {sorted(known)})"
         )
         logger.error("[publish_service] %s", msg)
-        with suppress(Exception):  # noqa: silent-ok best-effort notify; the real error is returned below
+        with suppress(Exception):  # silent-ok: best-effort notify; the real error is returned below
             await notify_operator(msg, critical=False, site_config=site_config)
         return PublishResult(success=False, error=msg)
     return None
