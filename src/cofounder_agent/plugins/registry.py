@@ -663,7 +663,6 @@ def get_core_samples() -> dict[str, list[Any]]:
         ),
         ("jobs", "services.jobs.crosspost_to_devto", "CrosspostToDevtoJob"),
         ("jobs", "services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
-        ("jobs", "services.jobs.auto_embed_posts", "AutoEmbedPostsJob"),
         ("jobs", "services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
         # One-shot backfill — patches google_* columns on existing
         # post_performance snapshots from external_metrics. Runs every

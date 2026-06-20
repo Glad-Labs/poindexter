@@ -333,7 +333,6 @@ tune_publish_threshold = "cofounder_agent.services.jobs.tune_publish_threshold:T
 verify_published_posts = "cofounder_agent.services.jobs.verify_published_posts:VerifyPublishedPostsJob"
 crosspost_to_devto = "cofounder_agent.services.jobs.crosspost_to_devto:CrosspostToDevtoJob"
 update_utility_rates = "cofounder_agent.services.jobs.update_utility_rates:UpdateUtilityRatesJob"
-auto_embed_posts = "cofounder_agent.services.jobs.auto_embed_posts:AutoEmbedPostsJob"
 analyze_topic_gaps = "cofounder_agent.services.jobs.analyze_topic_gaps:AnalyzeTopicGapsJob"
 run_niche_topic_sweep = "cofounder_agent.services.jobs.run_niche_topic_sweep:RunNicheTopicSweepJob"
 run_dev_diary_post = "cofounder_agent.services.jobs.run_dev_diary_post:RunDevDiaryPostJob"
@@ -535,9 +534,8 @@ ignore = [
 # Quality scorers all share a (content, context, cfg) signature for
 # uniform dispatch, even when individual scorers don't read all three.
 "services/quality_scorers.py" = ["ARG001"]
-# Job Protocol: run(pool, config). Subprocess jobs (db_backup,
-# auto_embed_posts) don't need the pool — they shell out to a CLI
-# that reads DATABASE_URL itself.
+# Job Protocol: run(pool, config). Subprocess jobs (db_backup) don't
+# need the pool — they shell out to a CLI that reads DATABASE_URL itself.
 "services/jobs/*" = ["ARG002"]
 # Plugin sample implementations are Protocol-contract reference stubs.
 # The whole point is to show the minimum shape, not to use every arg.

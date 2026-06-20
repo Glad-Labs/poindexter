@@ -25,6 +25,7 @@ after N consecutive failures), etc.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from dataclasses import dataclass, field
 from typing import Any
@@ -46,6 +47,16 @@ EMBED_MODEL = "nomic-embed-text"
 # thousands of docs can't balloon memory or the summary log. Enough to
 # diagnose the usual handful (e.g. the 3 NUL-byte sessions) while bounded.
 _MAX_FAILURE_SAMPLES = 25
+
+# Per-tap wall-clock budget (seconds). The standalone auto-embed sidecar loops
+# `while true; python auto-embed.py; sleep 3600` with NO outer deadline, so a
+# single tap that wedges on a stalled Ollama embed call or a hung DB query would
+# freeze the whole embedding pipeline until a human restarts the container.
+# Wrapping each tap in this timeout bounds the blast radius to one tap. Generous
+# by default — the point is to catch an *infinite* hang, not enforce a tight SLA
+# (the slowest real tap, claude_code_sessions, runs ~50s and grows with the
+# corpus). Tunable via app_settings.tap_run_timeout_seconds.
+_DEFAULT_TAP_TIMEOUT_S = 300
 
 
 @dataclass
@@ -275,13 +286,23 @@ async def run_tap(
     return stats
 
 
-async def run_all(pool: Any, mem: Any) -> RunSummary:
+async def run_all(
+    pool: Any, mem: Any, *, tap_timeout_s: float | None = None
+) -> RunSummary:
     """Run every registered Tap in sequence and return an aggregated summary.
 
     Taps run sequentially (not in parallel) because they all share the
     same DB pool + Ollama endpoint; parallelism would mostly fight for
     the same resources. A future optimization can group by cost
     (network-bound taps can interleave with DB-bound taps).
+
+    Each tap is bounded by ``tap_timeout_s`` (a per-tap wall-clock budget). A
+    tap that exceeds it is cancelled and recorded as a failed tap with a
+    timeout reason; the run then continues with the remaining taps — so one
+    wedged tap (stalled Ollama, hung query) can't freeze the whole sidecar,
+    which has no outer deadline. When ``None`` (the production default) the
+    budget is read from ``app_settings.tap_run_timeout_seconds`` (falling back
+    to ``_DEFAULT_TAP_TIMEOUT_S``); callers/tests may pin it explicitly.
     """
     import time
 
@@ -291,13 +312,22 @@ async def run_all(pool: Any, mem: Any) -> RunSummary:
     # Global ingest chunk-size tunable, read once per run (not per doc) and
     # threaded into each tap. Falls back to the chunk_text default if the
     # SiteConfig load fails (best-effort — ingest must not hard-fail here).
+    # The per-tap timeout is resolved in the same pass unless the caller pinned
+    # it (so a config-read hiccup still leaves a sane bound in place).
     chunk_max_chars: int | None = None
+    _timeout_pinned = tap_timeout_s is not None
+    if tap_timeout_s is None:
+        tap_timeout_s = float(_DEFAULT_TAP_TIMEOUT_S)
     try:
         from services.site_config import SiteConfig
 
         _sc = SiteConfig(pool=pool)
         await _sc.load(pool)
         chunk_max_chars = _sc.get_int("tap_chunk_max_chars", 6000)
+        if not _timeout_pinned:
+            tap_timeout_s = float(
+                _sc.get_int("tap_run_timeout_seconds", _DEFAULT_TAP_TIMEOUT_S)
+            )
     except Exception:  # noqa: BLE001 — config read is best-effort
         # Visible (warning, not debug): a failed settings read means the DB
         # read path hiccuped, which is worth surfacing even though ingest
@@ -320,7 +350,28 @@ async def run_all(pool: Any, mem: Any) -> RunSummary:
         all_taps.append(tap)
 
     for tap in all_taps:
-        stats = await run_tap(tap, pool, mem, max_chars=chunk_max_chars)
+        tap_name = getattr(tap, "name", type(tap).__name__)
+        try:
+            stats = await asyncio.wait_for(
+                run_tap(tap, pool, mem, max_chars=chunk_max_chars),
+                timeout=tap_timeout_s,
+            )
+        except asyncio.TimeoutError:
+            # Bound a wedged tap (stalled Ollama embed / hung query) instead of
+            # letting it freeze the whole run. Recorded as a failed tap WITH a
+            # reason so the summary + auto-embed.log surface why
+            # (feedback_no_silent_defaults). Best-effort: wait_for can only
+            # cancel at an await point, so a tap blocked in pure sync code won't
+            # interrupt until it next yields — every real tap awaits DB/HTTP.
+            stats = TapStats(
+                name=tap_name,
+                failed=1,
+                error=f"exceeded {tap_timeout_s:g}s tap timeout — cancelled",
+            )
+            logger.warning(
+                "[TAP_RUNNER] tap %s exceeded %ss — cancelled to bound the run",
+                tap_name, tap_timeout_s,
+            )
         summary.taps.append(stats)
         summary.total_embedded += stats.embedded
         summary.total_skipped += stats.skipped

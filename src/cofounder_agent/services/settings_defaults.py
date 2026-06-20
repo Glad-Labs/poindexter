@@ -924,6 +924,12 @@ DEFAULTS: dict[str, str] = {
     # Max characters per chunk when the tap runner splits a document before
     # embedding (services/taps/_chunking.py). Was a module-level constant.
     'tap_chunk_max_chars': '6000',
+    # Per-tap wall-clock budget (seconds) in services/taps/runner.py::run_all.
+    # The auto-embed sidecar loops with no outer deadline, so this bounds a
+    # tap wedged on a stalled Ollama embed / hung query to one tap instead of
+    # freezing the whole hourly run. Generous — catches an infinite hang, not a
+    # tight SLA (slowest real tap, claude_code_sessions, is ~50s and growing).
+    'tap_run_timeout_seconds': '300',
 
     # ----- Misc -----
     'pexels_api_base': 'https://api.pexels.com/v1',
