@@ -165,3 +165,43 @@ class TestTargetedObservabilityWritesLogWarning:
         assert not any("Auto-remediation failed" in r.getMessage() for r in errors), (
             "stamp failure should be caught locally, not abort the whole sweep"
         )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestSendDiscordFailureCapturesTraceback:
+    """``send_discord`` is the brain's Discord notify helper. When delivery
+    fails it must log the traceback (``exc_info``), not just a bare one-line
+    message — otherwise "why did the notification not arrive?" is
+    undiagnosable from logs (poindexter#711 item 3)."""
+
+    async def test_send_discord_logs_failure_with_exc_info(self, caplog, monkeypatch):
+        # Force the webhook POST to raise so control reaches the failure
+        # branch. urlopen is called fully-qualified (urllib.request.urlopen),
+        # so patching the module attribute intercepts it regardless of how
+        # brain_daemon imported the package.
+        def _boom(*_args, **_kwargs):
+            raise RuntimeError("connection refused (simulated)")
+
+        monkeypatch.setattr("urllib.request.urlopen", _boom)
+
+        with caplog.at_level(logging.ERROR, logger=_LOGGER):
+            # Explicit webhook_url → skip the app_settings/pool lookup.
+            result = await bd.send_discord(
+                "ops alert", webhook_url="https://discord.test/webhook"
+            )
+
+        # The send failed and returned the None sentinel.
+        assert result is None
+        failures = [
+            r for r in caplog.records
+            if r.levelno == logging.ERROR and "Discord send failed" in r.getMessage()
+        ]
+        assert failures, "Discord send failure must be visible at ERROR"
+        # item 3: the record must carry the traceback (exc_info populated),
+        # not just the str(e) message — that's what makes the failure
+        # diagnosable in Loki / GlitchTip.
+        assert failures[0].exc_info is not None, (
+            "send_discord failure must log WITH exc_info so the traceback is "
+            "captured (poindexter#711 item 3) — a bare message is undiagnosable"
+        )

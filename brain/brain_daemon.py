@@ -1266,7 +1266,10 @@ async def send_discord(
             )
         return "1"
     except Exception as e:
-        logger.error("[BRAIN] Discord send failed: %s", e)
+        # exc_info=True so the traceback reaches Loki / GlitchTip — a bare
+        # one-line "%s" left "why didn't the notification arrive?"
+        # undiagnosable from logs (poindexter#711 item 3).
+        logger.error("[BRAIN] Discord send failed: %s", e, exc_info=True)
         return None
 
 
