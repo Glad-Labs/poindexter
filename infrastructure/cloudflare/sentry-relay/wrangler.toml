@@ -1,0 +1,40 @@
+name = "sentry-relay"
+main = "src/index.ts"
+compatibility_date = "2026-05-01"
+
+# Rate limiting — 120 requests/min per IP. Error capture is burstier than page
+# views (a broken deploy fires many events fast), so this is more generous than
+# the page-views beacon's 60/min while still killing a sustained abuse loop.
+# The namespace_id is a per-worker integer you pick; the CF dashboard shows it
+# under Workers > Rate Limiting after the first deploy.
+[[unsafe.bindings]]
+name = "RATE_LIMITER"
+type = "ratelimit"
+namespace_id = "2001"
+simple = { limit = 120, period = 60 }
+
+[vars]
+# Comma-separated public-site origins checked against the browser Origin
+# header. Empty (the default here) disables origin enforcement — safe for local
+# dev, but operators MUST set this in production.
+# Example: "https://gladlabs.io,https://www.gladlabs.io"
+ALLOWED_ORIGINS = ""
+
+# Comma-separated GlitchTip project IDs the relay will forward (the open-proxy
+# guard). Empty (default) = fail closed: the relay forwards nothing until an
+# operator sets it. Example: "1"
+ALLOWED_PROJECT_IDS = ""
+
+# GLITCHTIP_INGEST_ORIGIN is intentionally NOT a [vars] entry — set it as a
+# Worker secret so the operator's tailnet hostname never lands in this repo or
+# in browser source:
+#
+#   wrangler secret put GLITCHTIP_INGEST_ORIGIN
+#
+# Value is the path-scoped Tailscale Funnel base URL that fronts GlitchTip's
+# ingest, e.g. "https://<host>.<tailnet>.ts.net". The Worker forwards envelopes
+# to ${GLITCHTIP_INGEST_ORIGIN}/api/<project_id>/envelope/.
+
+# Custom domain — route your own subdomain (e.g. sentry-relay.example.com) to
+# this Worker via the CF dashboard or `wrangler routes add`. Don't commit a
+# route block with an operator-specific hostname (feedback_no_operator_info_to_public_repo).

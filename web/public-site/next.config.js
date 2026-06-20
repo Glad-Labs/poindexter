@@ -477,6 +477,14 @@ const hasSentryDsn =
   Boolean(process.env.SENTRY_DSN) ||
   Boolean(process.env.NEXT_PUBLIC_SENTRY_DSN);
 
+// poindexter#711 item 2: when an external relay tunnel is configured (the
+// sentry-relay Cloudflare Worker, wired via NEXT_PUBLIC_SENTRY_TUNNEL in
+// sentry.client.config.ts), skip the same-origin `/monitoring` route. That
+// route is a Vercel function that can't reach the LAN-only self-hosted
+// tracker, so it was a dead hop that silently dropped every frontend error.
+// Only fall back to it when no relay is set (e.g. a hosted DSN).
+const hasExternalSentryTunnel = Boolean(process.env.NEXT_PUBLIC_SENTRY_TUNNEL);
+
 export default (hasSentryDsn && withSentryConfig)
   ? withSentryConfig(nextConfig, {
       // Suppress Sentry CLI output during builds
@@ -486,7 +494,8 @@ export default (hasSentryDsn && withSentryConfig)
       disableClientWebpackPlugin: process.env.NODE_ENV !== 'production',
       // Automatically tree-shake Sentry logger statements
       disableLogger: true,
-      // Use a tunneling route to avoid ad-blocker interference
-      tunnelRoute: '/monitoring',
+      // Same-origin tunnel to avoid ad-blocker interference — used ONLY when
+      // there's no external relay tunnel (which supersedes it).
+      ...(hasExternalSentryTunnel ? {} : { tunnelRoute: '/monitoring' }),
     })
   : nextConfig;
