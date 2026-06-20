@@ -133,6 +133,12 @@ TOPIC: {topic}
 
 The loader (`prompt_manager._initialize_skills`) lives _inside_ the package (`<pkg>/skills/`) so a package-relative path resolves identically on the host (`src/cofounder_agent/skills`) and in the worker container (`/app/skills`). Operator _action_ skills (the repo-root `skills/poindexter/` pack that wraps the CLI/MCP) are a different layer — they carry no `metadata.prompts` and are not loaded here.
 
+### Parsing + import-time validation
+
+One parser reads `SKILL.md` everywhere: `services/skill_frontmatter.py` (`parse_frontmatter` + `extract_section`), shared by both the runtime loader (`_initialize_skills`) and the importer (`poindexter skills import`). It anchors the closing `---` to the start of a line, so a `---` inside a quoted frontmatter value — or a thematic break in the body — is never mistaken for the delimiter. (The two paths previously used different parsers; a pack could import clean and then fail to load.)
+
+`poindexter skills import` **fails loud** (per `feedback_no_silent_defaults.md`) when a declared key has no resolvable `## <key>` section — it runs the same `extract_section` the loader uses, so a pack that imports clean is guaranteed to resolve every key it advertises. The check runs before anything is written to disk or recorded in `skill_catalog`.
+
 ## Why Langfuse + `SKILL.md`, not just one
 
 - **`SKILL.md` alone:** edits require a PR + CI + deploy. Operators tuning prompts at 11pm on a Saturday don't want to touch the repo.

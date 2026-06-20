@@ -80,38 +80,20 @@ def _convert_github_blob_url(url: str) -> str:
 def _parse_frontmatter(raw: str) -> tuple[dict, str]:
     """Parse YAML frontmatter from a SKILL.md string.
 
-    Returns ``(meta_dict, body_string)`` where ``body_string`` is the
-    markdown content after the closing ``---`` delimiter.
-
-    Raises ``SkillImportError`` if frontmatter is missing or malformed.
+    Thin wrapper over :func:`services.skill_frontmatter.parse_frontmatter`
+    (the parser shared with the runtime loader) that re-raises the neutral
+    ``SkillFrontmatterError`` as the importer's user-facing
+    ``SkillImportError``. Returns ``(meta_dict, body_string)``.
     """
-    import yaml  # lazy import — not always needed  # type: ignore[import-untyped]
-
-    if not raw.startswith("---"):
-        raise SkillImportError(
-            "SKILL.md must start with a YAML frontmatter block "
-            "(first line must be '---')."
-        )
-
-    # Find the closing ---
-    end = raw.find("\n---", 3)
-    if end == -1:
-        raise SkillImportError(
-            "SKILL.md frontmatter block is not closed (missing second '---')."
-        )
-
-    fm_text = raw[3:end].strip()
-    body = raw[end + 4 :]  # skip '\n---'
+    from services.skill_frontmatter import (  # lazy: keeps yaml off cold paths
+        SkillFrontmatterError,
+        parse_frontmatter,
+    )
 
     try:
-        meta = yaml.safe_load(fm_text)
-    except Exception as exc:
-        raise SkillImportError(f"SKILL.md frontmatter YAML is invalid: {exc}") from exc
-
-    if not isinstance(meta, dict):
-        raise SkillImportError("SKILL.md frontmatter must be a YAML mapping.")
-
-    return meta, body
+        return parse_frontmatter(raw)
+    except SkillFrontmatterError as exc:
+        raise SkillImportError(str(exc)) from exc
 
 
 def _validate_meta(meta: dict) -> None:
@@ -152,6 +134,30 @@ def _validate_meta(meta: dict) -> None:
         if not isinstance(prompt, dict) or not prompt.get("key"):
             raise SkillImportError(
                 f"SKILL.md metadata.prompts[{i}] must be a mapping with a 'key' field."
+            )
+
+
+def _validate_body_sections(meta: dict, body: str) -> None:
+    """Confirm every declared prompt key has a resolvable '## <key>' section.
+
+    Runs the SAME extraction the runtime loader uses
+    (:func:`services.skill_frontmatter.extract_section`), so a skill that
+    imports clean is guaranteed to resolve every key it advertises. Without
+    this the importer trusted frontmatter and the failure surfaced far away,
+    at worker boot, as a skipped key.
+    """
+    from services.skill_frontmatter import extract_section
+
+    prompts = (meta.get("metadata") or {}).get("prompts") or []
+    for prompt in prompts:
+        key = prompt.get("key") if isinstance(prompt, dict) else None
+        if not key:
+            continue  # _validate_meta already guarantees a non-empty key
+        if not extract_section(body, key):
+            raise SkillImportError(
+                f"SKILL.md declares prompt key '{key}' but the body has no "
+                f"matching '## {key}' section with a fenced template. Add a "
+                f"'## {key}' heading followed by a fenced code block."
             )
 
 
@@ -233,8 +239,9 @@ async def import_skill(
     # ------------------------------------------------------------------
     # Parse & validate
     # ------------------------------------------------------------------
-    meta, _ = _parse_frontmatter(raw_str)
+    meta, body = _parse_frontmatter(raw_str)
     _validate_meta(meta)
+    _validate_body_sections(meta, body)
 
     name: str = meta["name"]
     license_id: str = meta["license"]
@@ -258,7 +265,11 @@ async def import_skill(
     dest_dir = _skills_dir() / pack / name
     dest_file = dest_dir / "SKILL.md"
 
-    if dest_file.exists() and not force:
+    # Capture presence BEFORE the write so install/update telemetry is
+    # accurate — the write makes dest_file.exists() unconditionally true.
+    already_installed = dest_file.exists()
+
+    if already_installed and not force:
         raise SkillImportError(
             f"Skill '{name}' is already installed at {dest_file}. "
             "Use --force to overwrite."
@@ -270,12 +281,6 @@ async def import_skill(
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_file.write_bytes(raw_bytes)
     logger.info("Skill '%s' written to %s", name, dest_file)
-
-    # ------------------------------------------------------------------
-    # Determine install vs update
-    # ------------------------------------------------------------------
-    # After writing, check if this was a re-install (force overwrite) or fresh.
-    was_existing = force and dest_file.exists()  # approximate
 
     # ------------------------------------------------------------------
     # DB catalog upsert
@@ -301,8 +306,8 @@ async def import_skill(
         "path": str(dest_file),
         "license": license_id,
         "prompt_count": prompt_count,
-        "installed": not was_existing,
-        "updated": was_existing,
+        "installed": not already_installed,
+        "updated": already_installed,
     }
 
 

@@ -23,7 +23,6 @@ Version History:
 """
 
 import json
-import re
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
@@ -33,6 +32,7 @@ import yaml  # type: ignore[import-untyped]
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from services.skill_frontmatter import extract_section, parse_frontmatter
 
 # Process-wide empty-SiteConfig fallback (#272 capstone). Used by the
 # ctor / Langfuse-init path when no SiteConfig is injected AND no
@@ -189,7 +189,7 @@ class UnifiedPromptManager:
         # docs/architecture/business-os-endgame.md.
         self._initialize_skills()
 
-    def _initialize_skills(self):
+    def _initialize_skills(self, skills_dir: "Path | None" = None):
         """Load pipeline prompts from agentskills.io SKILL.md packs.
 
         Pipeline-skill packs live INSIDE the package at ``<pkg>/skills/``,
@@ -217,22 +217,25 @@ class UnifiedPromptManager:
         YAML, so the resolution chain (Langfuse override -> in-memory default)
         is unchanged. See docs/architecture/business-os-endgame.md.
         """
-        # Package-relative, matching the retired prompts/ loader's depth:
-        # __file__ = <pkg>/services/prompt_manager.py -> parent.parent = <pkg>.
-        # Stable on host (src/cofounder_agent) AND in the container (/app).
-        skills_dir = Path(__file__).resolve().parent.parent / "skills"
+        # Package-relative default, matching the retired prompts/ loader's
+        # depth: __file__ = <pkg>/services/prompt_manager.py -> parent.parent
+        # = <pkg>. Stable on host (src/cofounder_agent) AND in the container
+        # (/app). The ``skills_dir`` arg overrides it (DI seam for tests).
+        if skills_dir is None:
+            skills_dir = Path(__file__).resolve().parent.parent / "skills"
         if not skills_dir.is_dir():
             return
 
         for skill_md in sorted(skills_dir.glob("*/*/SKILL.md")):
             try:
-                # Frontmatter is delimited by the first two '---' lines.
-                _, frontmatter_raw, body = skill_md.read_text(
-                    encoding="utf-8",
-                ).split("---", 2)
-                frontmatter: dict[str, Any] = yaml.safe_load(frontmatter_raw) or {}
+                # One robust parser shared with the importer — a '---' inside a
+                # frontmatter value is NOT mistaken for the closing delimiter.
+                frontmatter, body = parse_frontmatter(
+                    skill_md.read_text(encoding="utf-8")
+                )
             except Exception:
-                # ValueError = missing frontmatter delimiters; yaml errors etc.
+                # Malformed frontmatter / invalid YAML — skip this skill but
+                # keep the worker booting (fail-loud lives at import time).
                 logger.error("Failed to load skill: %s", skill_md, exc_info=True)
                 continue
 
@@ -297,20 +300,19 @@ class UnifiedPromptManager:
         snapshot tests pin that trailing ``\\n`` (e.g.
         test_topic_ranking_prompt.py) and rendered prompts assume it.
         """
-        match = re.search(
-            rf"^##\s+{re.escape(key)}\s*$\n+```[^\n]*\n(.*?)\n```",
-            body,
-            re.MULTILINE | re.DOTALL,
-        )
-        if not match:
-            return ""
-        return match.group(1).rstrip("\n") + "\n"
+        return extract_section(body, key)
 
     def _initialize_prompts(self):
         """Load all prompts from YAML files in the prompts/ directory."""
         prompts_dir = Path(__file__).resolve().parent.parent / "prompts"
         if not prompts_dir.is_dir():
-            logger.warning("Prompts directory not found: %s", prompts_dir)
+            # The legacy prompts/ YAML tree was retired once every default
+            # migrated into skills/<pack>/<skill>/SKILL.md (see
+            # _initialize_skills). Its absence is now the normal state.
+            logger.debug(
+                "No prompts/ YAML dir (defaults now ship as skills): %s",
+                prompts_dir,
+            )
             return
 
         for yaml_path in sorted(prompts_dir.glob("*.yaml")):

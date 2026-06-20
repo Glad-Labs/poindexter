@@ -417,3 +417,93 @@ class TestListAndRemoveSkills:
         with patch("services.skill_importer._SKILLS_DIR", skills_root):
             with pytest.raises(SkillImportError, match="not installed"):
                 await remove_skill("ghost-skill", pool=None)
+
+
+# ---------------------------------------------------------------------------
+# TestBodyValidation — import-time check that every declared key resolves
+# ---------------------------------------------------------------------------
+
+
+class TestBodyValidation:
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_declared_key_without_body_section_raises(self, tmp_path):
+        """A skill that DECLARES a prompt key but has no '## key' body section
+        is rejected at import — not silently broken at runtime.
+
+        Before this check the importer trusted frontmatter, wrote the file,
+        and recorded a catalog row with prompt_count=N, while the runtime
+        loader logged a warning and skipped the unresolvable key. The failure
+        surfaced far from the import, at worker boot."""
+        hollow = textwrap.dedent(
+            """\
+            ---
+            name: hollow
+            description: declares a key it never defines.
+            license: MIT
+            metadata:
+              category: utility
+              prompts:
+                - key: hollow.go
+            ---
+
+            # Hollow skill
+
+            (no '## hollow.go' section anywhere)
+            """
+        )
+        source_file = tmp_path / "SKILL.md"
+        source_file.write_text(hollow, encoding="utf-8")
+        skills_root = tmp_path / "skills"
+
+        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+            with pytest.raises(SkillImportError, match="hollow.go"):
+                await import_skill(str(source_file), pack="imported", pool=None)
+
+        # Fail-loud BEFORE side effects: nothing written to disk.
+        assert not (skills_root / "imported" / "hollow" / "SKILL.md").exists()
+
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_all_declared_keys_present_imports_ok(self, tmp_path):
+        """The happy path — every declared key has a matching section — still
+        imports cleanly (guards against the validator being too strict)."""
+        source_file = tmp_path / "SKILL.md"
+        source_file.write_text(_VALID_SKILL_MD, encoding="utf-8")
+        skills_root = tmp_path / "skills"
+
+        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+            result = await import_skill(str(source_file), pack="test-pack", pool=None)
+
+        assert result["ok"] is True
+        assert result["prompt_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# TestImportTelemetry — installed vs updated flags
+# ---------------------------------------------------------------------------
+
+
+class TestImportTelemetry:
+    @pytest.mark.unit
+    @pytest.mark.asyncio
+    async def test_force_import_of_new_skill_reports_installed_not_updated(
+        self, tmp_path
+    ):
+        """force=True on a skill that does NOT exist yet is a fresh install,
+        not an update.
+
+        Regression: ``was_existing`` was computed AFTER the file write, so the
+        destination always 'existed' and a fresh force-import mislabeled itself
+        ``updated=True`` / ``installed=False``."""
+        source_file = tmp_path / "SKILL.md"
+        source_file.write_text(_VALID_SKILL_MD, encoding="utf-8")
+        skills_root = tmp_path / "skills"
+
+        with patch("services.skill_importer._SKILLS_DIR", skills_root):
+            result = await import_skill(
+                str(source_file), pack="test-pack", pool=None, force=True,
+            )
+
+        assert result["installed"] is True
+        assert result["updated"] is False

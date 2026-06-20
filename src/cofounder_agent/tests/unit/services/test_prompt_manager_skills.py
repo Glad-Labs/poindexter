@@ -77,3 +77,31 @@ def test_skill_section_extraction_preserves_literal_braces() -> None:
     """Templates with JSON braces must survive extraction verbatim."""
     body = '## k\n```text\nreturn {{"x": 1}}\n```\n'
     assert UnifiedPromptManager._extract_skill_section(body, "k") == 'return {{"x": 1}}\n'
+
+
+def test_initialize_skills_loads_skill_with_dash_in_frontmatter(tmp_path) -> None:
+    """The runtime loader registers a skill whose frontmatter value contains
+    '---'.
+
+    The retired ``.split('---', 2)`` loader treated the inline dash as the
+    closing delimiter, truncated the YAML, lost ``metadata.prompts``, and
+    silently skipped the skill. Routing through the shared
+    ``skill_frontmatter.parse_frontmatter`` fixes it. The ``skills_dir`` arg
+    is the DI seam that lets this test point the loader at a temp tree.
+    """
+    skill = tmp_path / "content" / "dashy" / "SKILL.md"
+    skill.parent.mkdir(parents=True)
+    skill.write_text(
+        '---\nname: dashy\ndescription: "a --- b"\nlicense: MIT\n'
+        "metadata:\n  category: utility\n  prompts:\n    - key: dashy.go\n---\n\n"
+        "## dashy.go\n```text\nDo {x}.\n```\n",
+        encoding="utf-8",
+    )
+
+    pm = UnifiedPromptManager()
+    pm.prompts.clear()
+    pm.metadata.clear()
+    pm._initialize_skills(skills_dir=tmp_path)
+
+    assert "dashy.go" in pm.prompts
+    assert pm.prompts["dashy.go"]["template"] == "Do {x}.\n"
