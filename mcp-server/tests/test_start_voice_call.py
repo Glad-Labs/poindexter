@@ -17,6 +17,8 @@ from __future__ import annotations
 
 import json
 import sys
+from contextlib import asynccontextmanager
+from datetime import datetime
 from pathlib import Path
 from typing import Any
 
@@ -33,49 +35,93 @@ import server  # noqa: E402 — sys.path adjustment above
 # ---------------------------------------------------------------------------
 # Fake asyncpg pool
 #
-# server.start_voice_call calls ``await pool.execute(...)`` to write the
-# brain mode and ``await pool.fetchrow(...)`` to read back the join URL +
-# effective brain. The fake records writes so we can assert the canonical
-# key was the target, and returns a configurable row for the read.
+# ``start_voice_call`` reads + writes settings through
+# ``services.admin_db.AdminDatabase``, which acquires a connection
+# (``async with pool.acquire() as conn``) and then calls ``conn.fetchrow``
+# for per-key reads and ``conn.execute`` for the upsert. So the fake models
+# the pool as a ``setting_key -> value`` map: ``fetchrow`` returns a full
+# ``app_settings`` row for a known key (so ``AdminDatabase.get_setting`` can
+# build a ``SettingResponse``), and every ``execute`` is recorded on
+# ``executes`` so tests can assert the canonical key was the write target.
+#
+# This mirrors the proven fake in
+# ``src/cofounder_agent/tests/unit/cli/test_mcp_start_voice_call.py`` — the
+# sibling test that was kept current when ``start_voice_call`` was de-SQL'd
+# onto ``AdminDatabase`` (commit 8db8e0321) while this twin was left behind.
 # ---------------------------------------------------------------------------
+
+_SETTINGS_DT = datetime(2026, 1, 1)
+
+
+def _settings_row(key: str, value: str) -> dict[str, Any]:
+    """Build a minimal ``app_settings`` row for ``AdminDatabase.get_setting``."""
+    return {
+        "id": "00000000-0000-0000-0000-000000000001",
+        "key": key,
+        "value": value,
+        "category": "voice",
+        "description": "",
+        "is_secret": False,
+        "is_active": True,
+        "created_at": _SETTINGS_DT,
+        "updated_at": _SETTINGS_DT,
+    }
+
+
+class _FakeConn:
+    """Fake asyncpg connection — records executes, serves rows by key."""
+
+    def __init__(self, pool: _FakePool) -> None:
+        self._pool = pool
+
+    async def execute(self, sql: str, *args: Any) -> str:
+        self._pool.executes.append((sql, args))
+        return "INSERT 0 1"
+
+    async def fetchrow(self, sql: str, *args: Any) -> dict[str, Any] | None:
+        # AdminDatabase.get_setting always binds the setting key as $1.
+        key = args[0] if args else None
+        if not key or key not in self._pool.settings:
+            return None
+        return _settings_row(key, self._pool.settings[key])
+
+    async def fetchval(self, sql: str, *args: Any) -> Any:
+        return None
+
+    async def fetch(self, sql: str, *args: Any) -> list[Any]:
+        return []
 
 
 class _FakePool:
     """Minimal ``asyncpg.Pool``-shaped fake.
 
-    Records every (sql, args) pair sent to ``execute``; ``fetchrow``
-    returns whichever dict the test's fixture set. The real pool's
-    transaction / connection-acquire surface is unused by the tool.
+    Holds a ``setting_key -> value`` map plus an ``executes`` log. The
+    only pool surface the tool touches is ``acquire()`` (an async context
+    manager yielding a connection), so that's all we implement. Note
+    ``execute`` does NOT mutate ``settings`` — a test that needs the
+    post-write readback to reflect a flip pre-seeds ``settings`` itself.
     """
 
-    def __init__(self, fetchrow_result: dict[str, Any] | None) -> None:
-        self.fetchrow_result = fetchrow_result
+    def __init__(self, settings: dict[str, str]) -> None:
+        self.settings: dict[str, str] = dict(settings)
         self.executes: list[tuple[str, tuple[Any, ...]]] = []
 
-    async def execute(self, sql: str, *args: Any) -> str:
-        self.executes.append((sql, args))
-        return "INSERT 0 1"
-
-    async def fetchrow(self, sql: str, *args: Any) -> Any:
-        if self.fetchrow_result is None:
-            return None
-        # Return an object with __getitem__ since the tool indexes
-        # row["brain_mode"] / row["join_url"]. dict already supports that.
-        return self.fetchrow_result
+    @asynccontextmanager
+    async def acquire(self):
+        yield _FakeConn(self)
 
 
 @pytest.fixture
 def fake_pool(monkeypatch: pytest.MonkeyPatch) -> _FakePool:
     """Patch ``server._get_pool`` to yield a recording fake pool.
 
-    Default fetchrow returns the migration's seeded values so happy-
-    path tests don't have to repeat the URL in every parametrise
-    block.
+    Default settings carry the migration-seeded brain mode + join URL so
+    happy-path tests don't repeat them.
     """
     pool = _FakePool(
-        fetchrow_result={
-            "brain_mode": "ollama",
-            "join_url": "https://example.test/voice/join",
+        settings={
+            "voice_agent_brain_mode": "ollama",
+            "voice_agent_public_join_url": "https://example.test/voice/join",
         },
     )
 
@@ -145,12 +191,10 @@ async def test_start_voice_call_flips_brain_to_claude_code(fake_pool):
     """brain='claude-code' + note: persists the canonical setting and
     echoes the note in the response.
     """
-    # The tool reads back AFTER the write, so the readback must reflect
-    # the flip.
-    fake_pool.fetchrow_result = {
-        "brain_mode": "claude-code",
-        "join_url": "https://example.test/voice/join",
-    }
+    # The tool reads back AFTER the write. The fake's execute() doesn't
+    # mutate settings, so pre-seed the post-flip value to model "the
+    # write landed" — AdminDatabase.get_setting_value then returns it.
+    fake_pool.settings["voice_agent_brain_mode"] = "claude-code"
 
     raw = await _start_voice_call(brain="claude-code", note="got a draft to review")
     payload = json.loads(raw)
@@ -162,10 +206,13 @@ async def test_start_voice_call_flips_brain_to_claude_code(fake_pool):
     # Exactly one write, targeting the canonical _mode key with the
     # normalised value. (The legacy voice_agent_brain key is
     # intentionally not touched on the write path — see tool docstring.)
+    # AdminDatabase.set_setting binds (key, value, category, description),
+    # so assert on the leading two positional args.
     assert len(fake_pool.executes) == 1
     sql, args = fake_pool.executes[0]
     assert "INSERT INTO app_settings" in sql
-    assert args == ("voice_agent_brain_mode", "claude-code")
+    assert args[0] == "voice_agent_brain_mode"
+    assert args[1] == "claude-code"
 
 
 @pytest.mark.asyncio
@@ -174,18 +221,19 @@ async def test_start_voice_call_normalises_brain_value_before_persisting(fake_po
     before the DB write — operators dictating to voice should not need
     to enunciate 'lower hyphen lower-case'.
     """
-    fake_pool.fetchrow_result = {
-        "brain_mode": "claude-code",
-        "join_url": "https://example.test/voice/join",
-    }
+    # Pre-seed the post-flip readback value (execute() doesn't mutate
+    # settings — see the happy-path flip test).
+    fake_pool.settings["voice_agent_brain_mode"] = "claude-code"
 
     raw = await _start_voice_call(brain=" Claude-Code ")
     payload = json.loads(raw)
     assert payload["brain_mode"] == "claude-code"
 
     # The normalised value should land in the DB — not the user's
-    # original whitespace-noisy string.
-    assert fake_pool.executes[0][1] == ("voice_agent_brain_mode", "claude-code")
+    # original whitespace-noisy string. (args = key, value, category, …)
+    _sql, args = fake_pool.executes[0]
+    assert args[0] == "voice_agent_brain_mode"
+    assert args[1] == "claude-code"
 
 
 @pytest.mark.asyncio
@@ -218,10 +266,9 @@ async def test_start_voice_call_fails_loud_when_join_url_missing(fake_pool):
     fall back to a hardcoded URL — operators on a custom deployment
     would get a link that doesn't reach their bot.
     """
-    fake_pool.fetchrow_result = {
-        "brain_mode": "ollama",
-        "join_url": "",
-    }
+    # Drop the URL key entirely — AdminDatabase.get_setting_value then
+    # returns None, collapsing join_url to "" and tripping the guard.
+    del fake_pool.settings["voice_agent_public_join_url"]
 
     raw = await _start_voice_call()
     payload = json.loads(raw)
@@ -243,10 +290,12 @@ async def test_start_voice_call_falls_back_to_legacy_brain_for_read(fake_pool):
     pool's job is to simulate what the real DB would return; this test
     asserts the tool surfaces it verbatim.
     """
-    fake_pool.fetchrow_result = {
-        "brain_mode": "claude-code",  # legacy row would land here via COALESCE
-        "join_url": "https://example.test/voice/join",
-    }
+    # Canonical key absent, legacy voice_agent_brain present: the tool's
+    # read chain (voice_agent_brain_mode -> voice_agent_brain -> "ollama")
+    # should surface the legacy value. (The old single-fetchrow fake
+    # couldn't model the fallback; the per-key fake exercises it for real.)
+    del fake_pool.settings["voice_agent_brain_mode"]
+    fake_pool.settings["voice_agent_brain"] = "claude-code"
 
     raw = await _start_voice_call()
     payload = json.loads(raw)
