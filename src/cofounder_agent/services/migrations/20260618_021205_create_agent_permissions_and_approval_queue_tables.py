@@ -1,6 +1,6 @@
 """Migration 20260618_021205: create agent_permissions and approval_queue tables
 
-ISSUE: Glad-Labs/glad-labs-stack — MCP set_setting fails closed with
+ISSUE: Glad-Labs/poindexter — MCP set_setting fails closed with
 ``UndefinedTableError: relation "agent_permissions" does not exist``.
 
 The agent-permission gate (``services/agent_permissions.py``, queried by the
