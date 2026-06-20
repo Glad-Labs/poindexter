@@ -1199,7 +1199,7 @@ async def seed_all_defaults(pool: Any) -> int:
                     meta.get('deprecated', False),
                     meta.get('superseded_by'),
                 )
-        except Exception:  # noqa: silent-ok: lifecycle columns absent (pre-20260618 schema); INSERT pass ran, metadata deferred until migration runs
+        except Exception:  # silent-ok: lifecycle columns absent (pre-20260618 schema); INSERT pass ran, metadata deferred until migration runs
             pass
 
     return inserted
