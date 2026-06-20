@@ -181,7 +181,7 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "retrieved corpus; check the research stage is populating it. "
             "(2) disabled master flag — ragas_enabled / deepeval_enabled / "
             "guardrails_enabled is false in app_settings. (3) unresolvable "
-            "judge model — fix deepeval_judge_model OR cost_tier.standard.model "
+            "judge model — fix deepeval_judge_model OR cost_tier.budget.model "
             "OR pipeline_writer_model. Inspect per-rail on the QA Rails "
             "dashboard /d/qa-rails. If the rail is intentionally off, lower or "
             "disable this alert via prometheus.rule.QaRailFullySkipped."

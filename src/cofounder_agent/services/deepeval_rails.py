@@ -289,11 +289,14 @@ async def _resolve_judge_model(site_config: Any) -> str:
     Resolution order:
 
     1. ``app_settings.deepeval_judge_model`` — explicit per-rail override.
-    2. ``resolve_tier_model(pool, 'standard')`` — the same tier the
-       reviewers use, routed through the dispatcher API so model-name
-       normalisation stays consistent across all reviewer rails. Falls
-       through to a direct ``cost_tier.standard.model`` read when no
-       pool is available (tests, bootstrap).
+    2. ``resolve_tier_model(pool, 'budget')`` — the cheap offline-eval
+       tier (the same tier ``ragas_eval`` resolves to), routed through
+       the dispatcher API so model-name normalisation stays consistent
+       across all reviewer rails. The budget tier typically maps to the
+       writer model already resident in VRAM, so an advisory judge does
+       not load a *separate* heavy model. Falls through to a direct
+       ``cost_tier.budget.model`` read when no pool is available
+       (tests, bootstrap).
     3. ``app_settings.pipeline_writer_model`` — last-ditch fallback;
        the writer model exists in every install by construction.
     4. ``notify_operator(critical=True)`` + raise — per
@@ -312,6 +315,15 @@ async def _resolve_judge_model(site_config: Any) -> str:
     ``ragas_eval._resolve_judge_model`` shape — dispatcher cost-tier
     API + loud notify on total resolution failure. Function is now
     async so it can await the tier resolution + notify side-effect.
+
+    2026-06-20 (validation finding 7a): switched the cost-tier fallback
+    from ``standard`` to ``budget`` so both advisory LLM-judge rails
+    (deepeval + ragas) resolve to the same cheap tier. On a typical
+    install that tier is the writer model already resident in VRAM, so a
+    no-override install no longer loads a *separate* heavy judge (the
+    qwen3.6 23 GB resident that starved the desktop compositor) just for
+    advisory scoring. Operators who want an independent judge still set
+    ``deepeval_judge_model`` explicitly (checked first).
 
     Raises:
         ValueError when every resolution path is unset — fail loud so
@@ -340,7 +352,7 @@ async def _resolve_judge_model(site_config: Any) -> str:
     if pool is not None:
         from services.llm_providers.dispatcher import resolve_tier_model
         try:
-            tier_model = (await resolve_tier_model(pool, "standard")).strip()
+            tier_model = (await resolve_tier_model(pool, "budget")).strip()
             if tier_model:
                 # 2026-05-27: keep the ``ollama/`` prefix so
                 # ``_build_deepeval_judge_model`` can route the metric
@@ -357,7 +369,7 @@ async def _resolve_judge_model(site_config: Any) -> str:
     if tier_exc is None:
         try:
             tier = (
-                site_config.get("cost_tier.standard.model", "") or ""
+                site_config.get("cost_tier.budget.model", "") or ""
             ).strip()
             if tier:
                 return tier
@@ -385,7 +397,7 @@ async def _resolve_judge_model(site_config: Any) -> str:
         from services.integrations.operator_notify import notify_operator
         await notify_operator(
             f"deepeval_rails: judge model unresolvable — set "
-            f"``deepeval_judge_model`` OR ``cost_tier.standard.model`` "
+            f"``deepeval_judge_model`` OR ``cost_tier.budget.model`` "
             f"OR ``pipeline_writer_model``. tier_exc={tier_exc!r}",
             critical=True,
             site_config=site_config,
@@ -404,7 +416,7 @@ async def _resolve_judge_model(site_config: Any) -> str:
         )
     raise ValueError(
         "deepeval_rails: no judge model resolvable from app_settings — "
-        "set ``deepeval_judge_model`` OR ``cost_tier.standard.model`` "
+        "set ``deepeval_judge_model`` OR ``cost_tier.budget.model`` "
         "OR ``pipeline_writer_model``."
     )
 

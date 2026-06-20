@@ -340,14 +340,16 @@ class TestResolveJudgeModel:
         assert await _de_mod._resolve_judge_model(sc) == "gpt-4o-mini"
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_cost_tier_setting_when_no_pool(self):
-        """No pool (tests / bootstrap) → direct ``cost_tier.standard.model``
+    async def test_falls_back_to_budget_tier_setting_when_no_pool(self):
+        """No pool (tests / bootstrap) → direct ``cost_tier.budget.model``
         read remains the cost-tier path (same data the dispatcher would
-        serve)."""
+        serve). 2026-06-20 finding 7a: the advisory judge resolves to the
+        *budget* tier (reuses the resident writer) rather than ``standard``,
+        so a no-override install doesn't load a separate heavy judge."""
         sc = MagicMock(_pool=None)
         sc.get = MagicMock(side_effect=lambda key, default="": {
             "deepeval_judge_model": "",
-            "cost_tier.standard.model": "ollama/glm-4.7-flash:latest",
+            "cost_tier.budget.model": "ollama/glm-4.7-flash:latest",
             "pipeline_writer_model": "ollama/glm-4.7-flash:latest",
         }.get(key, default))
         # 2026-05-27: resolver preserves the ``ollama/`` prefix so
@@ -371,7 +373,9 @@ class TestResolveJudgeModel:
             model = await _de_mod._resolve_judge_model(sc)
         # 2026-05-27: resolver preserves the ``ollama/`` prefix.
         assert model == "ollama/gemma3:27b-it-qat"
-        tier.assert_awaited_once()
+        # 2026-06-20 finding 7a: advisory judge uses the *budget* tier
+        # (the same cheap tier ragas resolves to), not ``standard``.
+        tier.assert_awaited_once_with(sc._pool, "budget")
 
     @pytest.mark.asyncio
     async def test_falls_back_to_writer_when_explicit_and_tier_blank(self):
@@ -379,7 +383,7 @@ class TestResolveJudgeModel:
         sc = MagicMock(_pool=None)
         sc.get = MagicMock(side_effect=lambda key, default="": {
             "deepeval_judge_model": "",
-            "cost_tier.standard.model": "",
+            "cost_tier.budget.model": "",
             "pipeline_writer_model": "ollama/glm-4.7-flash:latest",
         }.get(key, default))
         # 2026-05-27: resolver preserves the ``ollama/`` prefix.

@@ -1459,7 +1459,7 @@ class MultiModelQA:
             self._surface_reviewer_skip(
                 "deepeval_g_eval",
                 "judge_model unresolvable — fix deepeval_judge_model OR "
-                "cost_tier.standard.model OR pipeline_writer_model",
+                "cost_tier.budget.model OR pipeline_writer_model",
                 {"exception_message": str(e)[:200]},
             )
             return None
@@ -1579,7 +1579,7 @@ class MultiModelQA:
             self._surface_reviewer_skip(
                 "deepeval_faithfulness",
                 "judge_model unresolvable — fix deepeval_judge_model OR "
-                "cost_tier.standard.model OR pipeline_writer_model",
+                "cost_tier.budget.model OR pipeline_writer_model",
                 {"exception_message": str(e)[:200]},
             )
             return None
