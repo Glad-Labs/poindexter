@@ -287,6 +287,70 @@ class TestMediaReconciliation:
         assert kwargs["kind"] == "media_drift"
 
     @pytest.mark.asyncio
+    async def test_existing_render_is_promoted_not_regenerated(self, tmp_path):
+        """Finding #6-sub (dup podcast): when the Stage-3 pipeline already
+        rendered a task-keyed podcast (PODCAST_DIR/{task_id}.mp3, media_assets
+        post_id=NULL), the watchdog uploads THAT file to the post-keyed R2 URL
+        instead of re-running TTS — no second render, no duplicate row.
+        """
+        render = tmp_path / "task-abc.mp3"
+        render.write_bytes(b"ID3 fake-mp3-bytes")
+
+        pool, conn = _make_pool([_post(id_="p9", media_to_generate=["podcast"])])
+
+        # Route conn.fetchrow: the existing-render lookup (joins on
+        # pipeline_task_id) returns the on-disk render row; everything else
+        # (storage_public_url / exclude-prefix resolve) keeps the default shape.
+        async def _fetchrow(query, *args, **kwargs):  # noqa: ANN001, ARG001
+            if "FROM media_assets" in query and "pipeline_task_id" in query:
+                return {"id": "asset-1", "storage_path": str(render)}
+            return {"value": "https://r2.test"}
+        conn.fetchrow = AsyncMock(side_effect=_fetchrow)
+
+        r2 = MagicMock()
+        upload_to_r2 = AsyncMock(return_value="https://r2.test/podcast/v2/p9.mp3")
+        r2.upload_to_r2 = upload_to_r2
+        gen_mock = AsyncMock(return_value=None)
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": d
+        with _patch_head(podcast_status=404, video_status=200), \
+             patch(
+                 "services.podcast_service.generate_podcast_episode", new=gen_mock,
+             ), \
+             patch(
+                 "services.r2_upload_service.R2UploadService", return_value=r2,
+             ), \
+             patch(
+                 "services.media_approval_service.record_pending",
+                 new=AsyncMock(),
+             ), \
+             patch("services.jobs.media_reconciliation.emit_finding"):
+            result = await MediaReconciliationJob().run(
+                pool, config={"_site_config": sc},
+            )
+
+        assert result.metrics["regen_podcast_ok"] == 1
+        # Decisive: NO TTS re-render — the existing render was uploaded.
+        gen_mock.assert_not_awaited()
+        upload_to_r2.assert_awaited_once()
+        assert upload_to_r2.await_args.args[0] == str(render)
+        assert upload_to_r2.await_args.args[1] == "podcast/v2/p9.mp3"
+        # The existing task-keyed row was LINKED (post_id + url), not duplicated
+        # via a fresh INSERT.
+        link_updates = [
+            c for c in conn.execute.await_args_list
+            if "UPDATE media_assets" in c.args[0]
+            and "post_id" in c.args[0]
+            and "WHERE id" in c.args[0]
+        ]
+        assert len(link_updates) == 1
+        podcast_inserts = [
+            c for c in conn.execute.await_args_list
+            if "INSERT INTO media_assets" in c.args[0]
+        ]
+        assert podcast_inserts == []
+
+    @pytest.mark.asyncio
     async def test_regen_upload_failure_escalates_to_critical(self):
         """Upload returns None → regen failed; finding MUST be critical."""
         pool, _ = _make_pool([_post(id_="p3", media_to_generate=["podcast"])])

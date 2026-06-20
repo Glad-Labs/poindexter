@@ -92,6 +92,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -706,12 +707,113 @@ class MediaReconciliationJob:
                 post_id, asset_type, e,
             )
 
+    # --- Reuse an existing Stage-3 render (finding #6-sub: dup podcast) -----
+    # The podcast_pipeline persists a *task-keyed* render at
+    # PODCAST_DIR/{task_id}.mp3 with a media_assets row (type='podcast',
+    # post_id=NULL) that ``podcast_distribute`` normally LINKS to the post and
+    # uploads. When that lane is dormant (podcast_pipeline_trigger_enabled=false)
+    # this watchdog is the only distributor — so it must UPLOAD the existing
+    # render, NOT re-run TTS. Re-rendering produced two files + two rows per
+    # post with different durations (wasted GPU) on the 2026-06-19 validation.
+    _EXISTING_PODCAST_RENDER_SQL = """
+        SELECT mas.id::text AS id, mas.storage_path
+          FROM media_assets mas
+          JOIN posts p ON p.metadata->>'pipeline_task_id' = mas.task_id
+         WHERE p.id = $1::uuid
+           AND mas.type = 'podcast'
+           AND COALESCE(mas.storage_path, '') <> ''
+         ORDER BY mas.created_at DESC
+         LIMIT 1
+    """
+    # LINK the existing task-keyed row in place (set post_id + the R2 URL) —
+    # never INSERT a second row (that's the duplicate we're eliminating).
+    _LINK_PROMOTED_PODCAST_SQL = """
+        UPDATE media_assets
+           SET post_id = $1::uuid,
+               url = $2,
+               storage_provider = 'cloudflare_r2',
+               source = 'reconciliation',
+               updated_at = NOW()
+         WHERE id = $3::uuid
+    """
+
+    async def _promote_existing_podcast(
+        self, pool: Any, row: dict[str, Any],
+    ) -> bool:
+        """Upload an already-rendered task-keyed podcast to the post-keyed R2
+        URL instead of re-running TTS.
+
+        Returns True iff an existing on-disk render was found, uploaded, and
+        linked; False otherwise (the caller then falls back to a full
+        re-render). Best-effort: any lookup/upload/link failure returns False
+        so the regen fallback still runs.
+        """
+        post_id = row["id"]
+        sc = getattr(self, "_site_config", None)
+        if sc is None:
+            return False
+        try:
+            async with pool.acquire() as conn:
+                rec = await conn.fetchrow(
+                    self._EXISTING_PODCAST_RENDER_SQL, post_id,
+                )
+        except Exception as e:  # noqa: BLE001 — lookup failure → regen fallback
+            logger.warning(
+                "media_reconciliation: existing-render lookup failed for "
+                "%s: %s", post_id, e,
+            )
+            return False
+        storage_path = (rec.get("storage_path") if rec else "") or ""
+        asset_id = (rec.get("id") if rec else "") or ""
+        if not storage_path or not os.path.exists(storage_path):
+            return False  # nothing on disk to reuse → re-render
+        cdn_ver = sc.get("podcast_cdn_version", "v2") or "v2"
+        key = f"podcast/{cdn_ver}/{post_id}.mp3"
+        try:
+            from services.r2_upload_service import R2UploadService
+
+            r2 = R2UploadService(site_config=sc)
+            url = await r2.upload_to_r2(storage_path, key, "audio/mpeg")
+        except Exception as e:  # noqa: BLE001 — upload failure → regen fallback
+            logger.warning(
+                "media_reconciliation: promote-upload failed for %s: %s — "
+                "falling back to re-render", post_id, e,
+            )
+            return False
+        if not url:
+            return False
+        try:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    self._LINK_PROMOTED_PODCAST_SQL, post_id, url, asset_id,
+                )
+        except Exception as e:  # noqa: BLE001 — link failure → regen fallback
+            logger.warning(
+                "media_reconciliation: promote-link failed for %s: %s",
+                post_id, e,
+            )
+            return False
+        # Seed the Gate-2 approval like the regen path's _record_media_asset does.
+        await self._seed_approval_gate(pool, post_id, "podcast")
+        logger.info(
+            "media_reconciliation: promoted existing podcast render for %s → "
+            "%s (reused Stage-3 render — no re-render)", post_id, url,
+        )
+        return True
+
     async def _regen_podcast(self, pool: Any, row: dict[str, Any]) -> bool:
         """Regenerate one missing podcast + upload to R2 + stamp media_assets.
 
         Returns True when both the gen and upload succeeded (signalled
         by a non-None upload URL).
         """
+        # REUSE the Stage-3 render if one already exists on disk — don't burn
+        # the GPU re-running TTS for a podcast the pipeline already produced
+        # (finding #6-sub). Only fall through to a full re-render when there is
+        # genuinely nothing to promote.
+        if await self._promote_existing_podcast(pool, row):
+            return True
+
         # Lazy imports — these pull in TTS heavyweight deps we don't want
         # to load when no regen is needed this cycle.
         from services.podcast_service import generate_podcast_episode
