@@ -737,6 +737,16 @@ DEFAULTS: dict[str, str] = {
     # jobs). Master switch; default on so failures are never silently swallowed.
     'scheduler_alert_on_job_failure': 'true',
 
+    # ----- Findings daily digest (job findings_daily_digest, #549) -----
+    # Once-a-day Discord rollup of audit_log findings (by kind + delivery
+    # policy + pending-delivery backlog). Routine, so Discord, never Telegram.
+    # The schedule is tuned like every other job via the
+    # plugin.job.findings_daily_digest config.schedule override (default
+    # 0 9 * * * = 09:00 local).
+    'findings_daily_digest_enabled': 'true',
+    'findings_daily_digest_lookback_hours': '24',
+    'findings_daily_digest_top_n': '5',
+
     # ----- Findings per-kind delivery policy (#461) -----
     # Per-kind policy for findings.<kind>.{delivery,fallback,cooldown_minutes,
     # min_severity}. Intended to drive per-kind suppression on the EXISTING

@@ -703,6 +703,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Telegram when overnight criticals appear, so the operator wakes
         # up to one summary instead of 50+ individual Captain Hook pings.
         ("jobs", "services.jobs.morning_brief", "MorningBriefJob"),
+        # Daily findings digest (cron 0 9 * * * — local container time).
+        # Posts a once-a-day Discord rollup of audit_log findings by kind +
+        # delivery policy + the pending-delivery backlog — the last unbuilt
+        # #461 Phase-4 triage surface (#549). Routine, so Discord not Telegram.
+        # Master switch ``findings_daily_digest_enabled`` (default true).
+        ("jobs", "services.jobs.findings_daily_digest", "FindingsDailyDigestJob"),
         # Topic auto-resolve (every 2h). Closes the gap when the operator
         # is not running ``poindexter topics rank-batch / resolve-batch``
         # manually. Scans open topic_batches, applies LLM-rank as
