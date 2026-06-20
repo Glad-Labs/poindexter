@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-19.**  
+> **Auto-generated from live `app_settings` table on 2026-06-20.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 848 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 844 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -42,7 +42,7 @@ The worker re-reads on every poll; no restart needed.
 - [experiments](#experiments) (4 keys)
 - [features](#features) (7 keys)
 - [finance](#finance) (4 keys)
-- [firefighter](#firefighter) (8 keys)
+- [firefighter](#firefighter) (7 keys)
 - [gates](#gates) (3 keys)
 - [general](#general) (326 keys)
 - [gpu](#gpu) (1 key)
@@ -68,8 +68,8 @@ The worker re-reads on every poll; no restart needed.
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
 - [pipeline](#pipeline) (36 keys)
-- [plugins](#plugins) (47 keys)
-- [plugin_telemetry](#plugin-telemetry) (81 keys)
+- [plugins](#plugins) (46 keys)
+- [plugin_telemetry](#plugin-telemetry) (79 keys)
 - [podcast](#podcast) (2 keys)
 - [prometheus](#prometheus) (5 keys)
 - [publishing](#publishing) (5 keys)
@@ -289,7 +289,6 @@ The worker re-reads on every poll; no restart needed.
 | `ops_triage_model_class` | `ops_triage` |  | model_router tier the firefighter_service uses for triage (#347). Defaults to a dedicated 'ops_triage' class which ma... |
 | `ops_triage_retry_backoff_seconds` | `[10, 30, 90]` |  | JSON list of per-attempt sleep durations (seconds) the brain uses between retries when worker /api/triage is unreacha... |
 | `ops_triage_retry_max` | `3` |  | Maximum retry attempts when the brain can't reach the worker /api/triage endpoint. Retries are scheduled with the bac... |
-| `ops_triage_system_prompt` | `You are the Poindexter operator. The ...` |  | Operator-persona system prompt the triage LLM sees. Iterable without redeploy. Keep <=400 tokens; the prompt sets the... |
 
 ## gates
 
@@ -942,7 +941,6 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `plugin.job.analyze_topic_gaps` | `{"enabled": true, "interval_seconds":...` |  | Config for job analyze_topic_gaps — tune cadence via config.schedule |
 | `plugin.job.audit_published_quality` | `{"enabled": true, "interval_seconds":...` |  | Config for job audit_published_quality — tune cadence via config.schedule |
-| `plugin.job.auto_embed_posts` | `{"enabled": true, "interval_seconds":...` |  | Config for job auto_embed_posts — tune cadence via config.schedule |
 | `plugin.job.backfill_podcasts` | `{"enabled": true, "interval_seconds":...` |  | Config for job backfill_podcasts — tune cadence via config.schedule |
 | `plugin.job.backfill_post_performance_gsc` | `{"enabled": true, "interval_seconds":...` |  | Config for job backfill_post_performance_gsc — tune cadence via config.schedule |
 | `plugin.job.backfill_videos` | `{"enabled": true, "interval_seconds":...` |  | Config for job backfill_videos — tune cadence via config.schedule |
@@ -995,7 +993,6 @@ The worker re-reads on every poll; no restart needed.
 | `findings_alert_route_watermark` | `76339` |  | Highest audit_log.id forwarded to alert_events by FindingsAlertRouterJob. Pre-seeded 2026-05-15 to current max to ski... |
 | `plugin_job_last_run_analyze_topic_gaps` | `0` |  | Unix epoch of last fire for plugin job 'analyze_topic_gaps' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_audit_published_quality` | `0` |  | Unix epoch of last fire for plugin job 'audit_published_quality' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_auto_embed_posts` | `0` |  | Unix epoch of last fire for plugin job 'auto_embed_posts' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_backfill_podcasts` | `0` |  | Unix epoch of last fire for plugin job 'backfill_podcasts' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_backfill_post_performance_gsc` | `0` |  | Unix epoch of last fire for plugin job 'backfill_post_performance_gsc' (auto-written by PluginScheduler) |
 | `plugin_job_last_run_backfill_videos` | `0` |  | Unix epoch of last fire for plugin job 'backfill_videos' (auto-written by PluginScheduler) |
@@ -1035,7 +1032,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin_job_last_run_verify_published_posts` | `0` |  | Unix epoch of last fire for plugin job 'verify_published_posts' (auto-written by PluginScheduler) |
 | `plugin_job_last_status_analyze_topic_gaps` | `ok` |  | Outcome of last fire for plugin job 'analyze_topic_gaps': 'ok' or 'err' |
 | `plugin_job_last_status_audit_published_quality` | `ok` |  | Outcome of last fire for plugin job 'audit_published_quality': 'ok' or 'err' |
-| `plugin_job_last_status_auto_embed_posts` | `ok` |  | Outcome of last fire for plugin job 'auto_embed_posts': 'ok' or 'err' |
 | `plugin_job_last_status_backfill_podcasts` | `ok` |  | Outcome of last fire for plugin job 'backfill_podcasts': 'ok' or 'err' |
 | `plugin_job_last_status_backfill_post_performance_gsc` | `ok` |  | Outcome of last fire for plugin job 'backfill_post_performance_gsc': 'ok' or 'err' |
 | `plugin_job_last_status_backfill_videos` | `ok` |  | Outcome of last fire for plugin job 'backfill_videos': 'ok' or 'err' |
