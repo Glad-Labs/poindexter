@@ -126,6 +126,42 @@ class TestRenderYaml:
 
 
 # ---------------------------------------------------------------------------
+# PoindexterBrainDbSizeWarning — the #735 item 2 SQL→Prometheus migration
+# ---------------------------------------------------------------------------
+
+
+class TestBrainDbSizeRule:
+    """The brain-db-size warning moved off the Grafana SQL ``pg_database_size()``
+    poll onto a native Prometheus rule over ``pg_database_size_bytes``
+    (poindexter#735 item 2), mirroring the 2026-06-03 disk-space migration."""
+
+    def test_rule_and_threshold_are_registered(self):
+        assert "PoindexterBrainDbSizeWarning" in rb.DEFAULT_RULES
+        assert rb.DEFAULT_THRESHOLDS["brain_db_size_warning_gb"] == "5"
+
+    def test_rule_renders_against_the_exporter_metric(self):
+        rule = rb.DEFAULT_RULES["PoindexterBrainDbSizeWarning"]
+        out = rb.render_yaml(dict(rb.DEFAULT_THRESHOLDS), {"PoindexterBrainDbSizeWarning": rule})
+        assert "- alert: PoindexterBrainDbSizeWarning" in out
+        # Native exporter metric — NOT the SQL pg_database_size() function.
+        assert "pg_database_size_bytes" in out
+        assert "pg_database_size(" not in out
+        assert r'datname=\"poindexter_brain\"' in out
+        # Threshold token substituted to its default; no leftover placeholder.
+        assert "{threshold.brain_db_size_warning_gb}" not in out
+        assert "> 5" in out
+        assert "severity: warning" in out
+
+    def test_absent_metric_does_not_alert(self):
+        """#581: db-size is a non-page-worthy capacity warning that must NOT
+        fire on no-data. A bare ``metric > N`` expr (no ``absent()`` guard,
+        unlike the disk rules) naturally yields no series when the exporter is
+        down — the Prometheus-native equivalent of the old noDataState: OK."""
+        rule = rb.DEFAULT_RULES["PoindexterBrainDbSizeWarning"]
+        assert "absent(" not in rule["expr"]
+
+
+# ---------------------------------------------------------------------------
 # load_thresholds / load_rules
 # ---------------------------------------------------------------------------
 

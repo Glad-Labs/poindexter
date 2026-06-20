@@ -37,8 +37,8 @@ class TestSubstituteThresholds:
 
     def test_substitutes_multiple_tokens(self):
         out = ab._substitute_thresholds(
-            "INTERVAL '{threshold.stale_task_hours} hours' AND val > {threshold.db_size_warning_gb}",
-            {"stale_task_hours": "3", "db_size_warning_gb": "10"},
+            "INTERVAL '{threshold.stale_task_hours} hours' AND val > {threshold.embedding_lag_hours}",
+            {"stale_task_hours": "3", "embedding_lag_hours": "10"},
         )
         assert "INTERVAL '3 hours'" in out
         assert "val > 10" in out
@@ -66,19 +66,21 @@ class TestLoadThresholds:
         pool = _FakePool([])
         thresholds = await ab.load_thresholds(pool)
         assert thresholds["error_rate_hourly_max"] == "5"
-        assert thresholds["db_size_warning_gb"] == "5"
         # gpu_temperature_celsius and gpu_metrics_stale_minutes were removed
         # (poindexter#653) — GPU temp now alerts via Prometheus GpuTemperatureHigh.
+        # db_size_warning_gb was removed (poindexter#735 item 2) — DB size now
+        # alerts via the native Prometheus rule PoindexterBrainDbSizeWarning.
         assert "gpu_temperature_celsius" not in thresholds
         assert "gpu_metrics_stale_minutes" not in thresholds
+        assert "db_size_warning_gb" not in thresholds
 
     @pytest.mark.asyncio
     async def test_db_row_overrides_default(self):
         pool = _FakePool([
-            {"key": "grafana.threshold.db_size_warning_gb", "value": "20"},
+            {"key": "grafana.threshold.stale_task_hours", "value": "20"},
         ])
         thresholds = await ab.load_thresholds(pool)
-        assert thresholds["db_size_warning_gb"] == "20"
+        assert thresholds["stale_task_hours"] == "20"
         # Other defaults unchanged
         assert thresholds["error_rate_hourly_max"] == "5"
 
@@ -123,9 +125,9 @@ class TestBuildCurrent:
     @pytest.mark.asyncio
     async def test_db_override_reflected_in_output(self, tmp_path):
         tmpl = tmp_path / "t.tmpl"
-        tmpl.write_text("threshold: {threshold.db_size_warning_gb}", encoding="utf-8")
+        tmpl.write_text("threshold: {threshold.stale_task_hours}", encoding="utf-8")
         pool = _FakePool([
-            {"key": "grafana.threshold.db_size_warning_gb", "value": "50"},
+            {"key": "grafana.threshold.stale_task_hours", "value": "50"},
         ])
         rendered = await ab.build_current(pool, tmpl)
         assert "threshold: 50" in rendered

@@ -12,7 +12,7 @@ Key scheme
     Examples::
 
         grafana.threshold.error_rate_hourly_max = "5"
-        grafana.threshold.db_size_warning_gb    = "5"
+        grafana.threshold.stale_task_hours      = "2"
 
 The template lives at
 ``infrastructure/grafana/provisioning/alerting/alert-rules.yml.tmpl``
@@ -36,8 +36,10 @@ DEFAULT_GRAFANA_THRESHOLDS: dict[str, str] = {
     "stale_task_hours": "2",               # SQL INTERVAL: in_progress staleness
     # alert #3 — brain-embedding-sync-lag
     "embedding_lag_hours": "6",            # condition: hours since newest embedding
-    # alert #4 — brain-db-size-warning
-    "db_size_warning_gb": "5",             # condition: DB size in GB
+    # alert #4 (brain-db-size-warning) was REMOVED (poindexter#735 item 2) —
+    # DB size now alerts via the native Prometheus rule
+    # PoindexterBrainDbSizeWarning over pg_database_size_bytes (postgres_exporter),
+    # dropping the redundant per-minute SQL pg_database_size() poll.
     # alert #5 — brain-daily-cost-spike
     "cost_spike_usd": "5",                 # condition: rolling spend exceeds $N
     "cost_spike_window_hours": "24",       # SQL INTERVAL hours

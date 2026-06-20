@@ -76,12 +76,14 @@ PAGE_WORTHY_UIDS = {
     # exporter death is caught by the static WindowsExporterDown rule.
 }
 
-# The single documented exception (#581): a non-page-worthy capacity
-# warning. ``pg_database_size()`` only returns no-data if the datasource
-# is unreachable — and that outage is already surfaced loudly by the two
-# critical rules on the same datasource (Worker Offline, Brain Daemon
-# Stale). Flipping it would just add a redundant capacity page.
-INTENTIONAL_OK_UIDS = {"brain-db-size-warning"}
+# No remaining rule is intentionally on noDataState: OK. The one prior
+# exception (#581) — brain-db-size-warning, a non-page-worthy capacity
+# warning — was migrated to the native Prometheus rule
+# PoindexterBrainDbSizeWarning (poindexter#735 item 2). A Prometheus
+# `metric > N` expr (no absent() guard) simply yields no series when the
+# exporter is down, so it never fires on no-data — the same intent without
+# a Grafana SQL poll.
+INTENTIONAL_OK_UIDS: set[str] = set()
 
 
 def _load_rules() -> list[dict]:

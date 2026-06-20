@@ -89,6 +89,10 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     "disk_free_warning_gb": "20",
     "disk_free_critical_gb": "10",
     "disk_min_total_gb": "200",
+    # Brain DB capacity warning (poindexter#735 item 2 — replaces the Grafana
+    # SQL pg_database_size() poll). Non-page-worthy: the bare `> N` expr yields
+    # no series when the exporter is down, so it never fires on no-data (#581).
+    "brain_db_size_warning_gb": "5",
     # Postgres connection-pool saturation. Ratios so they scale with any
     # max_connections value (currently 300 in docker-compose.local.yml).
     "postgres_connection_warning_ratio": "0.80",
@@ -348,6 +352,31 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "{{ $value | humanize }} GB free. Postgres writes, Docker pulls, "
             "and image generation will start failing. Free space now: "
             "`powershell scripts/docker-prune.ps1`."
+        ),
+    },
+    # Brain database capacity warning. Replaces the Grafana-managed SQL alert
+    # (brain-db-size-warning) that polled pg_database_size('poindexter_brain')
+    # every minute — postgres_exporter already exports pg_database_size_bytes
+    # (poindexter#735 item 2). No absent() guard: db-size is the documented
+    # non-page-worthy capacity warning (#581), so a missing metric must NOT
+    # fire — a bare `> N` naturally yields no series when the exporter is down.
+    "PoindexterBrainDbSizeWarning": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "1m",
+        "expr": (
+            'pg_database_size_bytes{datname="poindexter_brain",job="postgres-exporter"}'
+            " / (1024*1024*1024) > {threshold.brain_db_size_warning_gb}"
+        ),
+        "for": "5m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Brain database exceeds 5 GB",
+        "description": (
+            "poindexter_brain database size is {{ $value | humanize }} GB "
+            "(warning threshold: prometheus.threshold.brain_db_size_warning_gb, "
+            "default 5 GB). Consider archiving old data or pruning "
+            "retention_policies rows (sensor_samples, cost_logs, embeddings)."
         ),
     },
     # Postgres connection-pool saturation. Previously static in
