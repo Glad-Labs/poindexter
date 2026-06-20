@@ -16,12 +16,12 @@ metadata:
 # Triage skill
 
 The firefighter / brain-triage operator-persona system prompt. Used by
-`services/firefighter_service.py:_default_system_prompt` (poindexter#485
-Batch 5 follow-up — was previously read out of
-`app_settings.ops_triage_system_prompt`, which sat outside Langfuse /
-prompt-template reach). `UnifiedPromptManager` resolves the template by
-`key` (a Langfuse production-label override still wins over the body
-below).
+`services/firefighter_service.py:_resolve_system_prompt` (poindexter#485
+Batch 5 — was previously read out of `app_settings.ops_triage_system_prompt`,
+which sat outside Langfuse / prompt-template reach; that seed was retired once
+this pack became the canonical source). `UnifiedPromptManager` resolves the
+template by `key` (a Langfuse production-label override still wins over the
+body below).
 
 ## ops.triage.system_prompt
 

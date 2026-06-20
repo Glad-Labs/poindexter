@@ -14,8 +14,8 @@ Covers Glad-Labs/poindexter#347 step 2's checklist:
   ``ops_triage_max_diagnosis_tokens``
 - ``run_triage`` returns ``diagnosis=""`` (does not raise) when the
   LLM returns empty
-- ``_default_system_prompt`` falls back to the seeded default when the
-  setting is missing
+- ``_resolve_system_prompt`` resolves via UnifiedPromptManager and falls
+  back to the inline default (logged at ERROR) when the registry is down
 """
 
 from __future__ import annotations
@@ -29,7 +29,7 @@ import pytest
 
 from services.firefighter_service import (
     _FALLBACK_SYSTEM_PROMPT,
-    _default_system_prompt,
+    _resolve_system_prompt,
     build_triage_context,
     run_triage,
 )
@@ -387,88 +387,50 @@ class TestRunTriage:
 
 
 # ---------------------------------------------------------------------------
-# _default_system_prompt — poindexter#485 Batch 5 migrated path
+# _resolve_system_prompt — UnifiedPromptManager-backed (poindexter#485 Batch 5)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestDefaultSystemPrompt:
-    """``_default_system_prompt`` now routes through UnifiedPromptManager
-    instead of reading ``app_settings.ops_triage_system_prompt`` directly.
+class TestResolveSystemPrompt:
+    """``_resolve_system_prompt`` resolves through UnifiedPromptManager.
 
-    The ``site_config`` argument is retained for call-shape compatibility
-    with pre-migration callers (notably ``run_triage``), but the
-    function no longer reads from it. Operator overrides now live in
-    the ``prompt_templates`` table (key ``ops.triage.system_prompt``)
-    or, when enabled, Langfuse.
+    The pre-#485 ``app_settings.ops_triage_system_prompt`` override key was
+    retired (poindexter#485 follow-up); operator overrides now live in Langfuse
+    or the ``prompt_templates`` table (key ``ops.triage.system_prompt``). The
+    byte-for-byte drift guard (SKILL.md default == inline fallback) and the
+    fallback-logs-at-ERROR contract live in the shared parametrized suite
+    ``test_prompt_fallback_drift.py``; the firefighter-specific behaviour
+    contracts stay here.
     """
 
     def test_returns_value_from_prompt_manager(self):
-        cfg = SiteConfig(initial_config={})
-
         with patch(
             "services.prompt_manager.get_prompt_manager",
         ) as mock_pm:
             mock_pm.return_value.get_prompt.return_value = "FROM_PROMPT_MANAGER"
-            result = _default_system_prompt(cfg)
+            result = _resolve_system_prompt()
 
         assert result == "FROM_PROMPT_MANAGER"
         mock_pm.return_value.get_prompt.assert_called_with("ops.triage.system_prompt")
 
-    def test_ignores_legacy_app_setting_override(self):
-        """An operator who set the old ``ops_triage_system_prompt`` app_setting
-        used to win that comparison. Post-Batch-5 the prompt_manager is
-        authoritative — operators migrate the override into
-        ``prompt_templates`` instead. Pin the new contract so a future
-        regression doesn't silently re-add the legacy lookup.
-        """
-        cfg = SiteConfig(initial_config={
-            "ops_triage_system_prompt": "STALE_LEGACY_VALUE",
-        })
-
-        with patch(
-            "services.prompt_manager.get_prompt_manager",
-        ) as mock_pm:
-            mock_pm.return_value.get_prompt.return_value = "FRESH_FROM_PROMPT_MANAGER"
-            result = _default_system_prompt(cfg)
-
-        assert result == "FRESH_FROM_PROMPT_MANAGER"
-        assert "STALE_LEGACY" not in result
-
     def test_falls_back_to_inline_when_prompt_manager_raises(self):
-        """Triage must produce SOME system prompt. If prompt_manager
-        itself fails (DB pool not wired during bootstrap, etc.), we
-        fall back to the inline ``_FALLBACK_SYSTEM_PROMPT`` rather
-        than passing an empty system prompt to the LLM.
+        """Triage must produce SOME system prompt. If prompt_manager itself
+        fails (DB pool not wired during bootstrap, etc.), we fall back to the
+        inline ``_FALLBACK_SYSTEM_PROMPT`` rather than passing an empty system
+        prompt to the LLM.
         """
-        cfg = SiteConfig(initial_config={})
-
         with patch(
             "services.prompt_manager.get_prompt_manager",
             side_effect=RuntimeError("prompt_manager not initialised"),
         ):
-            result = _default_system_prompt(cfg)
+            result = _resolve_system_prompt()
 
         assert result == _FALLBACK_SYSTEM_PROMPT
 
-    def test_yaml_default_matches_inline_fallback(self):
-        """The skill default (skills/ops/triage/SKILL.md ::
-        ops.triage.system_prompt, migrated from prompts/system.yaml in
-        #528) and the inline ``_FALLBACK_SYSTEM_PROMPT`` should produce
-        the same operator-persona content. If a future PR edits one
-        without the other they'll drift; this test surfaces that.
-
-        Comparison strips whitespace because the SKILL.md loader clips a
-        single trailing newline that the Python literal doesn't have.
-        """
-        from services.prompt_manager import get_prompt_manager
-
-        yaml_default = get_prompt_manager().get_prompt("ops.triage.system_prompt")
-        assert yaml_default.strip() == _FALLBACK_SYSTEM_PROMPT.strip()
-
     def test_fallback_matches_spec_keywords(self):
-        # Tripwire — if someone tweaks the wording, this test reminds
-        # them to update the YAML default too (or vice versa).
+        # Tripwire — gross edits to the inline fallback trip here; the shared
+        # drift-guard enforces exact equality with the SKILL.md default.
         assert "Poindexter operator" in _FALLBACK_SYSTEM_PROMPT
         assert "ONE SHORT PARAGRAPH" in _FALLBACK_SYSTEM_PROMPT
         assert "Do NOT propose code" in _FALLBACK_SYSTEM_PROMPT

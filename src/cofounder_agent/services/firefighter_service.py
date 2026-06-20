@@ -24,9 +24,10 @@ Public surface (called by ``routes/triage_routes.py`` once step 3 lands):
   ``diagnosis=""`` (empty string, not None, never raises) when the
   LLM produces nothing — the caller's spec'd behaviour is to skip
   the follow-up rather than post empty.
-- :func:`_default_system_prompt` — operator-persona prompt; reads the
-  override from ``site_config`` and falls back to the migration-seeded
-  default verbatim.
+- :func:`_resolve_system_prompt` — operator-persona prompt; resolves via
+  :class:`UnifiedPromptManager` (Langfuse → ``skills/ops/triage/SKILL.md``)
+  and falls back to the inline ``_FALLBACK_SYSTEM_PROMPT`` — logged at
+  ERROR — only when the prompt registry is unreachable.
 
 DI rules (poindexter#95 / Phase H):
 
@@ -58,11 +59,19 @@ logger = get_logger(__name__)
 _CHARS_PER_TOKEN = 4
 
 
-# Verbatim default from the seed migration
-# (20260506_052451_seed_firefighter_ops_triage_app_settings.py). Used
-# as the fallback when the ``ops_triage_system_prompt`` setting is
-# missing or empty (e.g. fresh install before the seed migration ran,
-# or operator deliberately wiped the row).
+# Prompt key in UnifiedPromptManager + prompt_templates table. The default
+# body lives at skills/ops/triage/SKILL.md::ops.triage.system_prompt; runtime
+# overrides come from a Langfuse ``production`` label or a prompt_templates DB
+# row. Per feedback_prompts_must_be_db_configurable.
+_PROMPT_KEY = "ops.triage.system_prompt"
+
+
+# Last-resort fallback for :func:`_resolve_system_prompt`, used only when the
+# prompt registry is unreachable (early bootstrap, monkey-patched manager in
+# tests). This MUST stay byte-identical to the canonical SKILL.md body —
+# INCLUDING the trailing newline the SKILL.md loader emits — or the
+# parametrized drift-guard in tests/unit/services/test_prompt_fallback_drift.py
+# trips. Edit the SKILL.md body and this constant together.
 _FALLBACK_SYSTEM_PROMPT = (
     "You are the Poindexter operator. The system you are diagnosing is "
     "the Poindexter content pipeline -- a self-hosted FastAPI worker, "
@@ -73,7 +82,7 @@ _FALLBACK_SYSTEM_PROMPT = (
     "suggested next step the operator could take. Do NOT propose code "
     "changes -- those go to a different escalation path. Do NOT suggest "
     "ALL POSSIBLE causes -- commit to your most likely diagnosis. If "
-    "the context is genuinely ambiguous, say so plainly and stop."
+    "the context is genuinely ambiguous, say so plainly and stop.\n"
 )
 
 
@@ -276,7 +285,7 @@ async def run_triage(
     """
     model_class = site_config.get("ops_triage_model_class", "ops_triage")
     max_diag_tokens = site_config.get_int("ops_triage_max_diagnosis_tokens", 400)
-    system_prompt = _default_system_prompt(site_config)
+    system_prompt = _resolve_system_prompt()
 
     user_payload = json.dumps(context, default=str, ensure_ascii=False)
 
@@ -323,41 +332,33 @@ async def run_triage(
     return {"diagnosis": text, "model": model_name, "tokens": tokens, "ms": elapsed_ms}
 
 
-def _default_system_prompt(site_config: SiteConfig) -> str:
-    """Return the operator-persona system prompt.
+def _resolve_system_prompt() -> str:
+    """Return the operator-persona triage system prompt.
 
-    poindexter#485 Batch 5: was previously a direct
-    ``site_config.get("ops_triage_system_prompt")`` read. That sat
-    outside Langfuse / ``prompt_templates`` reach — operators couldn't
-    tune the prompt through the standard UI. Now routes through
-    :class:`services.prompt_manager.UnifiedPromptManager`, which
-    chains Langfuse → ``skills/ops/triage/SKILL.md`` default (migrated
-    from ``prompts/system.yaml`` in #528). Per
-    ``feedback_prompts_must_be_db_configurable``.
+    Resolves through :class:`services.prompt_manager.UnifiedPromptManager`,
+    which chains the Langfuse ``production`` label → the
+    ``skills/ops/triage/SKILL.md`` default. The pre-#485
+    ``app_settings.ops_triage_system_prompt`` override key was retired
+    (poindexter#485 follow-up) in favour of that stack — operators now tune
+    the prompt via Langfuse (tier 1) or the SKILL.md / ``prompt_templates``
+    row (tier 2), per ``docs/architecture/prompt-management.md``.
 
-    Back-compat: operators who had a customised
-    ``app_settings.ops_triage_system_prompt`` row should re-apply that
-    customisation as a ``prompt_templates`` row with key
-    ``ops.triage.system_prompt``. The ``site_config`` argument is
-    retained for tests that pre-date this migration (they pass a stub
-    SiteConfig); the argument is no longer consulted but kept to avoid
-    breaking the call shape.
-
-    ``_FALLBACK_SYSTEM_PROMPT`` stays as a last-resort fallback for the
-    case where ``get_prompt_manager()`` itself fails (audit_log /
-    DB pool not yet wired during early bootstrap, test fixtures that
-    monkey-patch the manager, etc.). Triage must produce SOME prompt;
-    a triage call with an empty system slot is worse than one with the
-    seed prompt.
+    ``_FALLBACK_SYSTEM_PROMPT`` is the last-resort fallback for the case
+    where ``get_prompt_manager()`` itself fails (DB pool not yet wired
+    during early bootstrap, test fixtures that monkey-patch the manager).
+    Triage must produce SOME system prompt — an empty system slot is worse
+    than the seeded default — so per ``feedback_self_heal_not_suppress`` we
+    self-heal LOUDLY: the fallback logs at ERROR so a broken registry
+    surfaces instead of silently serving the inline copy.
     """
     try:
         from services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt("ops.triage.system_prompt")
-    except Exception as exc:  # noqa: BLE001 — observability path mustn't gate triage
-        logger.warning(
-            "[firefighter] prompt_manager lookup for 'ops.triage.system_prompt' "
-            "failed (%s: %s) — using inline fallback. Re-check "
-            "prompt_templates seed + UnifiedPromptManager wiring.",
-            type(exc).__name__, exc,
+        return get_prompt_manager().get_prompt(_PROMPT_KEY)
+    except Exception as exc:  # noqa: BLE001 — triage must not be gated on the registry
+        logger.error(
+            "[firefighter] prompt_manager lookup for %r failed (%s) — using "
+            "inline fallback. Re-check the ops/triage SKILL.md pack + "
+            "UnifiedPromptManager wiring.",
+            _PROMPT_KEY, exc,
         )
         return _FALLBACK_SYSTEM_PROMPT

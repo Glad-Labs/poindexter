@@ -87,6 +87,12 @@ def _collapse():
     return m._resolve_summary_prompt_template()
 
 
+def _ops_triage():
+    from services import firefighter_service as m
+
+    return m._resolve_system_prompt()
+
+
 # (name, skill_key, resolver_callable)
 _CASES = [
     ("review_with_critic", "atoms.review_with_critic.system_prompt", _critic),
@@ -97,6 +103,7 @@ _CASES = [
     ("social_twitter", "social.twitter_promote", _social_twitter),
     ("social_linkedin", "social.linkedin_promote", _social_linkedin),
     ("collapse", "memory.collapse_old_embeddings.summary", _collapse),
+    ("ops_triage", "ops.triage.system_prompt", _ops_triage),
 ]
 
 _IDS = [c[0] for c in _CASES]
