@@ -2,6 +2,58 @@
 
 ## Unreleased
 
+## [0.83.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.82.0...v0.83.0) (2026-06-20)
+
+
+### Features
+
+* **api:** machine-readable deprecation mechanics ([#752](https://github.com/Glad-Labs/glad-labs-stack/issues/752) item 4) ([#1753](https://github.com/Glad-Labs/glad-labs-stack/issues/1753)) ([daffab4](https://github.com/Glad-Labs/glad-labs-stack/commit/daffab49b011a618f3119c636eea44c9934b8a68))
+* **api:** response-contract ADR + re-expose /api/openapi.json behind auth ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 1) ([#1767](https://github.com/Glad-Labs/glad-labs-stack/issues/1767)) ([96f40c4](https://github.com/Glad-Labs/glad-labs-stack/commit/96f40c47aff347f21f261dd05571b74fe5a9ea37))
+* **deploy:** make deploy-checkout-sync observable (log + status + -Status/-SelfTest) ([#1721](https://github.com/Glad-Labs/glad-labs-stack/issues/1721)) ([9ddd2cb](https://github.com/Glad-Labs/glad-labs-stack/commit/9ddd2cbc9bd6924da50256ca0100f61794dc55b3))
+* **findings:** once-a-day Discord digest of findings activity ([#549](https://github.com/Glad-Labs/glad-labs-stack/issues/549)) ([#1736](https://github.com/Glad-Labs/glad-labs-stack/issues/1736)) ([3f3a445](https://github.com/Glad-Labs/glad-labs-stack/commit/3f3a445805b9619135db4e463cfcafc567084c2e))
+* **gpu:** media render holds gpu.lock("video"); stop mislabeling the stack's own GPU use as gaming ([#1766](https://github.com/Glad-Labs/glad-labs-stack/issues/1766)) ([17422b0](https://github.com/Glad-Labs/glad-labs-stack/commit/17422b010c448403b1d1c1be66803ee15a772bce))
+* **observability:** Cloudflare Worker relay for frontend error capture ([#711](https://github.com/Glad-Labs/glad-labs-stack/issues/711) item 2) ([#1764](https://github.com/Glad-Labs/glad-labs-stack/issues/1764)) ([ae2931a](https://github.com/Glad-Labs/glad-labs-stack/commit/ae2931ae91cc544bf93cce86a1b66a3f23cc97ff))
+* **observability:** per-node + root-flow OTel spans for the pipeline subprocess ([#711](https://github.com/Glad-Labs/glad-labs-stack/issues/711) item 1) ([#1760](https://github.com/Glad-Labs/glad-labs-stack/issues/1760)) ([9695435](https://github.com/Glad-Labs/glad-labs-stack/commit/96954353fcbf3c20bdc11e5180427c718b987391))
+* **publish:** one-step takedown via `posts unpublish` ([#684](https://github.com/Glad-Labs/glad-labs-stack/issues/684)) ([#1735](https://github.com/Glad-Labs/glad-labs-stack/issues/1735)) ([ab0f9ed](https://github.com/Glad-Labs/glad-labs-stack/commit/ab0f9ed710fa7b7ee1804ef2718e8e166c3f0e5f))
+* **video:** per-shot vision-QA render-check loop (video-quality Piece 2) ([#1726](https://github.com/Glad-Labs/glad-labs-stack/issues/1726)) ([1c131f8](https://github.com/Glad-Labs/glad-labs-stack/commit/1c131f8a7d08abcb6fd1bd75e0ce4ae55b6ea77f))
+* **video:** video quality layer — spec + Piece 1 (director self-critique) ([#1712](https://github.com/Glad-Labs/glad-labs-stack/issues/1712)) ([3151b00](https://github.com/Glad-Labs/glad-labs-stack/commit/3151b007e7fffeba50ddb5ae7f172f0ae84ff899))
+* **voice:** extract voice personas to a skill pack with drift-guarded fallback ([#1757](https://github.com/Glad-Labs/glad-labs-stack/issues/1757)) ([d274cf1](https://github.com/Glad-Labs/glad-labs-stack/commit/d274cf108165976aeda3a6826190d773a965b748))
+
+
+### Bug Fixes
+
+* **api:** enforce auth at the router for 17 operator surfaces ([#752](https://github.com/Glad-Labs/glad-labs-stack/issues/752) item 2) ([#1751](https://github.com/Glad-Labs/glad-labs-stack/issues/1751)) ([952d150](https://github.com/Glad-Labs/glad-labs-stack/commit/952d1503458c68375d9b5b9879e34b9e7abe8a24))
+* **api:** router-level auth on the 2 dashboard routers ([#752](https://github.com/Glad-Labs/glad-labs-stack/issues/752) item 2 follow-up) ([#1752](https://github.com/Glad-Labs/glad-labs-stack/issues/1752)) ([ea69c09](https://github.com/Glad-Labs/glad-labs-stack/commit/ea69c090ce7b2a753a5bda4e65e1b0f2851dfa23))
+* **auto-embed:** retire redundant scheduler job + bound tap runs ([#1739](https://github.com/Glad-Labs/glad-labs-stack/issues/1739)) ([c37e98b](https://github.com/Glad-Labs/glad-labs-stack/commit/c37e98b53d95c3a02fd5a871e97006514f90a374))
+* **content:** catch bare "(source)" placeholder citations the writer drops ([#1769](https://github.com/Glad-Labs/glad-labs-stack/issues/1769)) ([08970e6](https://github.com/Glad-Labs/glad-labs-stack/commit/08970e6de86a63f4cf41102c0dc45e82cf9a1dc4))
+* **deploy:** robust two-trigger composition for deploy-checkout-sync task ([#1724](https://github.com/Glad-Labs/glad-labs-stack/issues/1724)) ([e843ade](https://github.com/Glad-Labs/glad-labs-stack/commit/e843adec02279292907075c0a8d393509918a298)), closes [#1723](https://github.com/Glad-Labs/glad-labs-stack/issues/1723)
+* **discovery:** cap internal_rag's share of a topic batch ([#1771](https://github.com/Glad-Labs/glad-labs-stack/issues/1771)) ([651c943](https://github.com/Glad-Labs/glad-labs-stack/commit/651c94397075077f5670b185b93670a48315b168))
+* **flow:** close the DB pool the content flow builds itself ([#702](https://github.com/Glad-Labs/glad-labs-stack/issues/702) item 1) ([#1747](https://github.com/Glad-Labs/glad-labs-stack/issues/1747)) ([5d5b483](https://github.com/Glad-Labs/glad-labs-stack/commit/5d5b4838ff7034c5ed42dcfa6e61efb02afab019))
+* **lint:** convert noqa:silent-ok markers to bare # silent-ok: form ([#1748](https://github.com/Glad-Labs/glad-labs-stack/issues/1748)) ([c4a05a8](https://github.com/Glad-Labs/glad-labs-stack/commit/c4a05a859a117e1cc36d613519f5a493826e9612))
+* **lint:** drop noqa: prefix from silent-ok ratchet marker ([#1741](https://github.com/Glad-Labs/glad-labs-stack/issues/1741)) ([1a8768b](https://github.com/Glad-Labs/glad-labs-stack/commit/1a8768b0775d16896f9eab049b90163063c1f299))
+* **mcp:** add pyyaml dep + lazy-load prompt_manager so topic tools work ([#1738](https://github.com/Glad-Labs/glad-labs-stack/issues/1738)) ([f9e0bb0](https://github.com/Glad-Labs/glad-labs-stack/commit/f9e0bb02c99e8aba1daf6dbe635787c9bded4ed5))
+* **media:** correct z_image SDXL params + size render timeout for cold-load ([#1727](https://github.com/Glad-Labs/glad-labs-stack/issues/1727)) ([d650580](https://github.com/Glad-Labs/glad-labs-stack/commit/d650580d54ae09228c5f6152e27efd2474d47b47))
+* **media:** reuse Stage-3 podcast render in reconciliation instead of re-rendering ([#1770](https://github.com/Glad-Labs/glad-labs-stack/issues/1770)) ([9b3cb2d](https://github.com/Glad-Labs/glad-labs-stack/commit/9b3cb2d0defe15e103a23e254abec0d64f0cde3d))
+* **migrations:** make unfinished migration scaffolds fail loud, not cryptic ([#1722](https://github.com/Glad-Labs/glad-labs-stack/issues/1722)) ([8b4c581](https://github.com/Glad-Labs/glad-labs-stack/commit/8b4c5811defa67d02847eef6c2defd3cd1cc5669))
+* **pipeline:** atom nodes stamp pipeline_tasks.stage on the graph_def path ([#1768](https://github.com/Glad-Labs/glad-labs-stack/issues/1768)) ([fd0487c](https://github.com/Glad-Labs/glad-labs-stack/commit/fd0487c6d8fefc6d8526331ac966e239392981a5))
+* **prompts:** drift-guard inline fallbacks + log loud on fallback; migrate qa_rewrite to skill ([#1755](https://github.com/Glad-Labs/glad-labs-stack/issues/1755)) ([829c342](https://github.com/Glad-Labs/glad-labs-stack/commit/829c342207afed7ddfa5d4acb6858dda8d58a282))
+* **prompts:** fold firefighter triage prompt into the shared drift-guard ([#1758](https://github.com/Glad-Labs/glad-labs-stack/issues/1758)) ([9ba589f](https://github.com/Glad-Labs/glad-labs-stack/commit/9ba589f5945cf20e83afa9685d295c701df84a37))
+* **qa:** disable thinking on qwen3-vl vision calls so verdicts parse ([#1732](https://github.com/Glad-Labs/glad-labs-stack/issues/1732)) ([a9cb044](https://github.com/Glad-Labs/glad-labs-stack/commit/a9cb0445b2170c6b56d65cb95c23a6a2d4cc0411))
+* **security:** ratchet against HTTPException detail leaks ([#724](https://github.com/Glad-Labs/glad-labs-stack/issues/724)) ([#1728](https://github.com/Glad-Labs/glad-labs-stack/issues/1728)) ([5d99b9d](https://github.com/Glad-Labs/glad-labs-stack/commit/5d99b9d1531c122aa449996431c3e2bbfedca9c0))
+* **skills:** unify SKILL.md parser + fail loud on import; fix install telemetry ([#1754](https://github.com/Glad-Labs/glad-labs-stack/issues/1754)) ([c7c16ca](https://github.com/Glad-Labs/glad-labs-stack/commit/c7c16ca11f50193f03bef97e0ddeb68e10d64fd9))
+* **video:** make the director LLM timeout a DB setting (was hardcoded 120s) ([#1750](https://github.com/Glad-Labs/glad-labs-stack/issues/1750)) ([b1ba939](https://github.com/Glad-Labs/glad-labs-stack/commit/b1ba939262a7502e8539b6607b13d9287e2791d2))
+* **video:** review_video_shot_list timeout is DB-driven, not hardcoded 120s ([#1763](https://github.com/Glad-Labs/glad-labs-stack/issues/1763)) ([6b37259](https://github.com/Glad-Labs/glad-labs-stack/commit/6b3725908ed02c43922e5804da1dc0fc312ac062))
+* **video:** spell out per-source field rules in shot-list review prompts ([#1725](https://github.com/Glad-Labs/glad-labs-stack/issues/1725)) ([71b0feb](https://github.com/Glad-Labs/glad-labs-stack/commit/71b0feb8220e79fc77acfadaae4ba81e4b1e163b))
+* **voice:** align seeded voice_agent_system_prompt persona with the skill default ([#1759](https://github.com/Glad-Labs/glad-labs-stack/issues/1759)) ([4722c4c](https://github.com/Glad-Labs/glad-labs-stack/commit/4722c4c2966be848307f70a48c6da73fa357c6ba))
+
+
+### Performance Improvements
+
+* **obs:** migrate brain-db-size alert + panel off SQL to Prometheus ([#735](https://github.com/Glad-Labs/glad-labs-stack/issues/735) item 2) ([#1756](https://github.com/Glad-Labs/glad-labs-stack/issues/1756)) ([0209084](https://github.com/Glad-Labs/glad-labs-stack/commit/020908447e3079287f017aca9d2f496605b6e323))
+* **qa:** advisory deepeval judge defaults to budget tier, not a separate heavy model ([#1762](https://github.com/Glad-Labs/glad-labs-stack/issues/1762)) ([6c91edb](https://github.com/Glad-Labs/glad-labs-stack/commit/6c91edbd392c93235676d379187e0f2d4b1d6fb2))
+* **taps:** batch chunk-0 dedup pre-fetch per source ([#735](https://github.com/Glad-Labs/glad-labs-stack/issues/735) item 1) ([#1740](https://github.com/Glad-Labs/glad-labs-stack/issues/1740)) ([80a617c](https://github.com/Glad-Labs/glad-labs-stack/commit/80a617c4b79c397e4eac89074fa270d36ed72aa7))
+* **video:** two-pass shot render to stop SDXL/vision GPU thrash ([#1737](https://github.com/Glad-Labs/glad-labs-stack/issues/1737)) ([db16bb2](https://github.com/Glad-Labs/glad-labs-stack/commit/db16bb2aa1d8bcf033ae932d6b90af705b902055))
+
 ## [0.82.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.81.0...v0.82.0) (2026-06-19)
 
 
