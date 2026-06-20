@@ -931,6 +931,13 @@ DEFAULTS: dict[str, str] = {
     # tight SLA (slowest real tap, claude_code_sessions, is ~50s and growing).
     'tap_run_timeout_seconds': '300',
 
+    # Documents the tap runner buffers before a batched chunk-0 dedup pre-fetch
+    # (services/taps/runner.py). The dedup hash lookup runs one query per
+    # source_table per batch instead of one SELECT per document (#735), so this
+    # only bounds peak memory / round-trip granularity — it does not affect
+    # dedup output.
+    'tap_dedup_batch_size': '256',
+
     # ----- Misc -----
     'pexels_api_base': 'https://api.pexels.com/v1',
 

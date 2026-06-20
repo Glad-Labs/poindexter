@@ -47,7 +47,7 @@ from services.taps.runner import run_tap
 
 
 class _FakeConn:
-    """Records execute() calls; fetchval() returns None (row absent)."""
+    """Records execute() calls; fetchval()/fetch() model an empty table."""
 
     def __init__(self) -> None:
         self.execute_calls: list[tuple[Any, ...]] = []
@@ -58,6 +58,12 @@ class _FakeConn:
 
     async def fetchval(self, *args: Any, **kwargs: Any) -> Any:
         return None
+
+    async def fetch(self, *args: Any, **kwargs: Any) -> list[Any]:
+        # #735: run_tap batch-pre-fetches chunk-0 hashes via conn.fetch.
+        # Empty → no existing rows, so every doc is treated as new (same
+        # semantics as the fetchval-returns-None row-absent model above).
+        return []
 
 
 class _FakeAcquire:

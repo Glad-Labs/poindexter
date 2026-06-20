@@ -52,7 +52,7 @@ class TestPerTapTimeout:
         taps = [SimpleNamespace(name="hangs"), SimpleNamespace(name="healthy")]
         _patch_discovery(monkeypatch, taps)
 
-        async def fake_run_tap(tap, pool, mem, *, max_chars=None):
+        async def fake_run_tap(tap, pool, mem, *, max_chars=None, dedup_batch_size=None):
             if tap.name == "hangs":
                 await asyncio.Event().wait()  # never resolves
             return runner_mod.TapStats(name=tap.name, embedded=1)
@@ -77,7 +77,7 @@ class TestPerTapTimeout:
         taps = [SimpleNamespace(name="a"), SimpleNamespace(name="b")]
         _patch_discovery(monkeypatch, taps)
 
-        async def fake_run_tap(tap, pool, mem, *, max_chars=None):
+        async def fake_run_tap(tap, pool, mem, *, max_chars=None, dedup_batch_size=None):
             return runner_mod.TapStats(name=tap.name, embedded=2, skipped=1)
 
         monkeypatch.setattr(runner_mod, "run_tap", fake_run_tap)

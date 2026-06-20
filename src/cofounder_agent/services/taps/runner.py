@@ -58,6 +58,19 @@ _MAX_FAILURE_SAMPLES = 25
 # corpus). Tunable via app_settings.tap_run_timeout_seconds.
 _DEFAULT_TAP_TIMEOUT_S = 300
 
+# Documents buffered before a batched dedup pre-fetch + flush. The dedup
+# chunk-0 hash lookup is fetched once per source_table per batch (one
+# round-trip per source instead of one SELECT per document — poindexter#735),
+# so this only bounds peak memory / round-trip granularity; it does NOT affect
+# dedup output. Operator-tunable via ``app_settings.tap_dedup_batch_size``.
+_DEFAULT_DEDUP_BATCH_SIZE = 256
+
+# Sentinel so ``_store_document`` can distinguish "no hash supplied → run the
+# per-document fallback query" from an explicit ``None`` ("no stored chunk-0
+# row → treat as new"). The hot tap path always supplies a value (possibly
+# ``None``) from the batch pre-fetch.
+_UNSET: Any = object()
+
 
 @dataclass
 class TapStats:
@@ -127,6 +140,37 @@ async def _existing_chunk0_hash(
     )
 
 
+async def _batch_existing_chunk0_hashes_for(
+    pool: Any, docs: list[Any], embedding_model: str
+) -> dict[tuple[str, str], str]:
+    """Pre-fetch chunk-0 content_hashes for a batch of documents.
+
+    Runs ONE query per distinct ``source_table`` (``source_id = ANY($1)``)
+    instead of one SELECT per document — the #735 fix for the 51k-call-per-window
+    dedup hot path. Keyed by ``(source_table, source_id)``; a source with no
+    stored chunk-0 row is simply absent from the map, so the caller threads
+    ``None`` into ``_store_document`` and the document is treated as new.
+    """
+    by_table: dict[str, set[str]] = {}
+    for doc in docs:
+        by_table.setdefault(doc.source_table, set()).add(doc.source_id)
+
+    result: dict[tuple[str, str], str] = {}
+    async with pool.acquire() as conn:
+        for source_table, ids in by_table.items():
+            rows = await conn.fetch(
+                """
+                SELECT source_id, content_hash FROM embeddings
+                 WHERE source_table = $1 AND source_id = ANY($2::text[])
+                   AND chunk_index = 0 AND embedding_model = $3
+                """,
+                source_table, list(ids), embedding_model,
+            )
+            for r in rows:
+                result[(source_table, r["source_id"])] = r["content_hash"]
+    return result
+
+
 async def _delete_stale_chunks(
     conn: Any,
     source_table: str,
@@ -148,7 +192,12 @@ async def _delete_stale_chunks(
 
 
 async def _store_document(
-    mem: Any, pool: Any, doc: Any, *, max_chars: int | None = None
+    mem: Any,
+    pool: Any,
+    doc: Any,
+    *,
+    max_chars: int | None = None,
+    existing_hash: Any = _UNSET,
 ) -> str:
     """Persist one Document (with chunking + dedup). Returns one of:
 
@@ -170,10 +219,16 @@ async def _store_document(
     # that ``mem.store()`` writes (see EMBED_MODEL note above).
     embed_model = getattr(mem, "embed_model", None) or EMBED_MODEL
 
-    async with pool.acquire() as conn:
-        existing = await _existing_chunk0_hash(
-            conn, doc.source_table, doc.source_id, embed_model
-        )
+    # Dedup against the stored chunk-0 hash. The hot tap path supplies a
+    # batch-fetched ``existing_hash`` (one query per source for the whole batch,
+    # #735); direct callers that omit it fall back to a per-document SELECT.
+    if existing_hash is _UNSET:
+        async with pool.acquire() as conn:
+            existing = await _existing_chunk0_hash(
+                conn, doc.source_table, doc.source_id, embed_model
+            )
+    else:
+        existing = existing_hash
     if existing == full_hash:
         return "skipped"
 
@@ -240,13 +295,23 @@ async def _store_document(
 
 
 async def run_tap(
-    tap: Any, pool: Any, mem: Any, *, max_chars: int | None = None
+    tap: Any,
+    pool: Any,
+    mem: Any,
+    *,
+    max_chars: int | None = None,
+    dedup_batch_size: int = _DEFAULT_DEDUP_BATCH_SIZE,
 ) -> TapStats:
     """Run one Tap end-to-end, returning a stats summary.
 
     ``max_chars`` overrides the chunk size for this run (sourced from
     ``app_settings.tap_chunk_max_chars`` by :func:`run_all`); ``None`` uses
     the ``chunk_text`` default.
+
+    Documents are processed in batches of ``dedup_batch_size`` (sourced from
+    ``app_settings.tap_dedup_batch_size``): each batch's existing chunk-0 hashes
+    are pre-fetched in one query per source_table, so the dedup check costs one
+    round-trip per source instead of one SELECT per document (#735).
     """
     import time
 
@@ -259,13 +324,29 @@ async def run_tap(
         logger.info("Tap %s disabled; skipping", stats.name)
         return stats
 
-    start = time.monotonic()
-    try:
-        async for doc in tap.extract(pool, cfg.config):
+    embed_model = getattr(mem, "embed_model", None) or EMBED_MODEL
+
+    async def _process_batch(batch_docs: list[Any]) -> None:
+        if not batch_docs:
+            return
+        # One dedup round-trip per source_table for the whole batch (#735),
+        # then store each document with its pre-fetched chunk-0 hash.
+        existing = await _batch_existing_chunk0_hashes_for(
+            pool, batch_docs, embed_model
+        )
+        for doc in batch_docs:
             try:
-                outcome = await _store_document(mem, pool, doc, max_chars=max_chars)
+                outcome = await _store_document(
+                    mem,
+                    pool,
+                    doc,
+                    max_chars=max_chars,
+                    existing_hash=existing.get((doc.source_table, doc.source_id)),
+                )
             except Exception as e:
-                logger.exception("Tap %s: store failed for %s: %s", stats.name, doc.source_id, e)
+                logger.exception(
+                    "Tap %s: store failed for %s: %s", stats.name, doc.source_id, e
+                )
                 stats.failed += 1
                 if len(stats.failures) < _MAX_FAILURE_SAMPLES:
                     stats.failures.append(f"{doc.source_id}: {type(e).__name__}: {e}")
@@ -276,6 +357,16 @@ async def run_tap(
                 stats.skipped += 1
             else:
                 stats.failed += 1
+
+    start = time.monotonic()
+    try:
+        batch: list[Any] = []
+        async for doc in tap.extract(pool, cfg.config):
+            batch.append(doc)
+            if len(batch) >= dedup_batch_size:
+                await _process_batch(batch)
+                batch = []
+        await _process_batch(batch)  # flush the remainder
     except Exception as e:
         logger.exception("Tap %s: extract failed: %s", stats.name, e)
         stats.error = str(e)
@@ -318,6 +409,7 @@ async def run_all(
     _timeout_pinned = tap_timeout_s is not None
     if tap_timeout_s is None:
         tap_timeout_s = float(_DEFAULT_TAP_TIMEOUT_S)
+    dedup_batch_size = _DEFAULT_DEDUP_BATCH_SIZE
     try:
         from services.site_config import SiteConfig
 
@@ -328,13 +420,15 @@ async def run_all(
             tap_timeout_s = float(
                 _sc.get_int("tap_run_timeout_seconds", _DEFAULT_TAP_TIMEOUT_S)
             )
+        dedup_batch_size = _sc.get_int("tap_dedup_batch_size", _DEFAULT_DEDUP_BATCH_SIZE)
     except Exception:  # noqa: BLE001 — config read is best-effort
         # Visible (warning, not debug): a failed settings read means the DB
         # read path hiccuped, which is worth surfacing even though ingest
         # safely falls back to the chunk_text default. Keeps the handler out
         # of the silent-except lint baseline (audit H2).
         logger.warning(
-            "[TAP_RUNNER] tap_chunk_max_chars read failed; using chunk_text default",
+            "[TAP_RUNNER] tap_chunk_max_chars / tap_run_timeout_seconds / "
+            "tap_dedup_batch_size read failed; using defaults",
             exc_info=True,
         )
 
@@ -353,7 +447,13 @@ async def run_all(
         tap_name = getattr(tap, "name", type(tap).__name__)
         try:
             stats = await asyncio.wait_for(
-                run_tap(tap, pool, mem, max_chars=chunk_max_chars),
+                run_tap(
+                    tap,
+                    pool,
+                    mem,
+                    max_chars=chunk_max_chars,
+                    dedup_batch_size=dedup_batch_size,
+                ),
                 timeout=tap_timeout_s,
             )
         except asyncio.TimeoutError:
