@@ -10,8 +10,15 @@ import math
 
 from services.logger_config import get_logger
 from services.niche_service import NicheGoal
-from services.prompt_manager import get_prompt_manager
 from services.site_config import SiteConfig
+
+# ``get_prompt_manager`` is imported lazily inside ``llm_final_score`` (its
+# only caller) instead of at module top-level. ``prompt_manager`` pulls in
+# PyYAML, and the MCP server imports this module transitively for the operator
+# topic tools (show / rank / edit / resolve / reject) — all pure-DB paths that
+# never reach LLM scoring. A top-level import would force PyYAML into the
+# lightweight MCP venv for read paths that don't use it. Mirrors the lazy-import
+# seam ``topic_batch_service`` already uses for ``embed_text``/``llm_final_score``.
 
 logger = get_logger(__name__)
 
@@ -327,6 +334,10 @@ async def llm_final_score(
     descriptions = _resolve_goal_descriptions(site_config=_sc)
     weights_descr = "\n".join(f"- {g.goal_type} (weight {g.weight_pct}%): {descriptions[g.goal_type]}" for g in weights)
     cand_block = "\n".join(f"[{c.id}] {c.title} — {c.summary or ''}" for c in candidates)
+    # Lazy import (see module header): defers the PyYAML-bearing prompt_manager
+    # import to the only code path that actually needs it, so the MCP server's
+    # operator topic tools can import this module without PyYAML installed.
+    from services.prompt_manager import get_prompt_manager
     prompt = get_prompt_manager().get_prompt(
         "topic.ranking",
         weights_descr=weights_descr,

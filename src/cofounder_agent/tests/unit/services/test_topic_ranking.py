@@ -251,3 +251,63 @@ def test_apply_decay_zero_factor_zeroes_score():
     assert apply_decay(score=80, decay_factor=0.0) == 0.0
     # decay_factor > 1 (theoretically a re-promotion) still multiplies
     assert apply_decay(score=50, decay_factor=1.2) == pytest.approx(60.0)
+
+
+# ---------------------------------------------------------------------------
+# import hygiene — the operator topic chain must stay PyYAML-free
+# ---------------------------------------------------------------------------
+
+
+def test_topic_chain_imports_without_pyyaml():
+    """Importing ``services.topic_batch_service`` must not require PyYAML.
+
+    The MCP server runs in a lightweight venv and imports this chain for the
+    operator topic tools (``topics_show_batch`` / ``rank`` / ``edit`` /
+    ``resolve`` / ``reject``) — all pure-DB paths. ``prompt_manager`` does
+    ``import yaml`` and is only needed by ``llm_final_score`` (the discovery
+    sweep), so its import is lazy. A top-level re-import would resurface the
+    ``ModuleNotFoundError: No module named 'yaml'`` that broke the topic MCP
+    tools. Run in a subprocess with ``yaml`` blocked to mimic that venv.
+    """
+    import os
+    import subprocess
+    import sys
+    import textwrap
+    from pathlib import Path
+
+    cofounder_root = Path(__file__).resolve().parents[3]
+    probe = textwrap.dedent(
+        """
+        import builtins
+        import sys
+
+        _real_import = builtins.__import__
+
+        def _no_yaml(name, *args, **kwargs):
+            if name == "yaml" or name.startswith("yaml."):
+                raise ModuleNotFoundError("No module named 'yaml'")
+            return _real_import(name, *args, **kwargs)
+
+        builtins.__import__ = _no_yaml
+
+        # Must succeed with PyYAML unavailable.
+        import services.topic_batch_service  # noqa: F401
+
+        # And prompt_manager must not have been pulled in transitively.
+        assert "services.prompt_manager" not in sys.modules, (
+            "prompt_manager (PyYAML-bearing) must stay a lazy import "
+            "in topic_ranking.llm_final_score"
+        )
+        print("OK")
+        """
+    )
+    proc = subprocess.run(
+        [sys.executable, "-c", probe],
+        capture_output=True,
+        text=True,
+        # Inherit the parent env (Windows needs SYSTEMROOT etc. for the stdlib)
+        # and add the cofounder root so ``services.*`` is importable.
+        env={**os.environ, "PYTHONPATH": str(cofounder_root)},
+    )
+    assert proc.returncode == 0, f"stdout={proc.stdout!r}\nstderr={proc.stderr!r}"
+    assert "OK" in proc.stdout

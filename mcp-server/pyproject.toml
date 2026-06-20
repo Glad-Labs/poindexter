@@ -14,6 +14,17 @@ dependencies = [
     # src/cofounder_agent/pyproject.toml ("^3.11.2"). See
     # Glad-Labs/poindexter#258.
     "apscheduler>=3.11.2,<4",
+    # Required transitively by the worker ``services.*`` modules this server
+    # imports (it puts src/cofounder_agent on sys.path). ``prompt_manager``
+    # (UnifiedPromptManager) does ``import yaml`` to load YAML prompt defaults,
+    # and it is reachable from several tools' import graphs. Absent here it
+    # raised ``ModuleNotFoundError: No module named 'yaml'`` on the topic tools
+    # (topics_show_batch et al. → topic_batch_service → topic_ranking →
+    # prompt_manager). The topic read paths were also lazily decoupled from
+    # prompt_manager (see services/topic_ranking.py), but PyYAML stays declared
+    # here as the worker code this server runs legitimately depends on it.
+    # Pinned to the same major the worker resolves (PyYAML 6.x).
+    "pyyaml>=6.0,<7",
     # OAuth JWT verification for the HTTP transport (#241 Phase 1).
     # Kept on the same major as the cofounder_agent pin to avoid
     # signature-format drift between issuer and verifier.
