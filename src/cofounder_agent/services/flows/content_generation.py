@@ -30,7 +30,17 @@ from prefect import flow, task
 from prefect.cache_policies import NO_CACHE
 from prefect.context import get_run_context
 
+from plugins.tracing import get_tracer, traced_span
+
 logger = logging.getLogger(__name__)
+
+# Root span for the whole pipeline run (poindexter#711 item 1). The subprocess
+# wires the tracer provider via ``setup_telemetry`` above; this span wraps the
+# graph execution so every per-node span (``pipeline_architect._span_wrap``)
+# nests under ONE trace per run in Tempo, stitched to the Prefect run_id. Same
+# "poindexter.pipeline" scope as the node tracer so the whole pipeline reads as
+# one instrumentation scope.
+_FLOW_TRACER = get_tracer("poindexter.pipeline")
 
 
 @task(
@@ -454,27 +464,40 @@ async def _run_content_generation_flow(
     #    so the brain daemon / approval queue / cost dashboards
     #    don't show it as still-running.
     try:
-        result = await process_content_generation_task(
-            topic=topic,
-            style=style,
-            tone=tone,
-            target_length=target_length,
-            tags=tags,
-            generate_featured_image=generate_featured_image,
-            database_service=database_service,
-            task_id=task_id,
-            category=category,
-            target_audience=target_audience,
-            # #272 Phase-2f: site_config is now a required kwarg. Thread
-            # the subprocess-wired instance from
-            # build_and_wire_subprocess_with_container above (None only in
-            # the degenerate no-pool branch, which already logged a
-            # warning and is a real misconfiguration we surface loudly).
-            site_config=_wired_site_config,
-            # Seam 1 Wave 3c: content's scoped handle for this run (None-tolerant
-            # — best-effort audit telemetry only).
-            platform=_platform,
-        )
+        # poindexter#711 item 1: root flow span. The graph's per-node spans
+        # (pipeline_architect._span_wrap) nest under this one because
+        # start_as_current_span reads the active context — so one run is ONE
+        # Tempo trace, stitched to the Prefect run_id. Lives inside the try so
+        # a pipeline crash is recorded on the span before the except marks the
+        # task failed and re-raises.
+        with traced_span(
+            _FLOW_TRACER,
+            "pipeline.content_generation",
+            task_id=str(task_id or ""),
+            topic=str(topic or "")[:200],
+            prefect_run_id=prefect_run_id or "",
+        ):
+            result = await process_content_generation_task(
+                topic=topic,
+                style=style,
+                tone=tone,
+                target_length=target_length,
+                tags=tags,
+                generate_featured_image=generate_featured_image,
+                database_service=database_service,
+                task_id=task_id,
+                category=category,
+                target_audience=target_audience,
+                # #272 Phase-2f: site_config is now a required kwarg. Thread
+                # the subprocess-wired instance from
+                # build_and_wire_subprocess_with_container above (None only in
+                # the degenerate no-pool branch, which already logged a
+                # warning and is a real misconfiguration we surface loudly).
+                site_config=_wired_site_config,
+                # Seam 1 Wave 3c: content's scoped handle for this run (None-tolerant
+                # — best-effort audit telemetry only).
+                platform=_platform,
+            )
     except Exception as exc:
         await _mark_task_failed_on_flow_crash(
             database_service=database_service,

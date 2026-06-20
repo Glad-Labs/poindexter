@@ -44,9 +44,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any
 
+from langchain_core.runnables import RunnableConfig
 from langgraph.errors import GraphInterrupt
 from langgraph.graph import END, StateGraph
 
+from plugins.tracing import get_tracer
 from services.atom_registry import (
     get_atom_callable,
     get_atom_meta,
@@ -66,6 +68,58 @@ from services.template_runner import (
 # ``di_wiring.WIRED_MODULES``.
 
 logger = logging.getLogger(__name__)
+
+# Per-node tracer (poindexter#711 item 1). The Prefect subprocess wires the
+# tracer provider via ``setup_telemetry`` but no graph node created a span, so
+# Tempo only saw the FastAPI worker's HTTP spans. ``get_tracer`` returns an
+# OTel ProxyTracer when called before the provider is set at flow start, so a
+# module-level tracer still exports once ``setup_telemetry`` runs.
+_NODE_TRACER = get_tracer("poindexter.pipeline")
+
+
+def _span_wrap(
+    fn: Callable[..., Any], node_id: str, kind: str
+) -> Callable[..., Any]:
+    """Wrap a compiled graph node callable in an OTel span (poindexter#711
+    item 1), giving the pipeline subprocess a per-node trace tree in Tempo.
+
+    An EXTERNAL wrapper applied at the ``add_node`` seam, so the delicate
+    ``make_stage_node`` / ``_wrap_atom`` bodies (GraphInterrupt handling,
+    record_sink, progress events) stay untouched. ``config`` MUST stay
+    annotated as bare ``RunnableConfig`` so LangGraph's config-injection
+    allow-list (``KWARGS_CONFIG_KEYS``) still threads the services dict
+    through — the same constraint the wrapped nodes document.
+
+    ``GraphInterrupt`` (a langgraph interrupt()-based pause, e.g. an approval
+    gate) propagates untouched and is NOT recorded as a span error — it's
+    control flow, not a failure. Real exceptions are recorded then re-raised so
+    the graph still halts.
+    """
+    span_name = f"pipeline.{kind}.{node_id}"
+
+    span_attributes = {"pipeline.node_id": node_id, "pipeline.node_kind": kind}
+
+    async def _spanned(
+        state: PipelineState,
+        config: RunnableConfig = None,  # type: ignore[assignment]
+    ) -> Any:
+        # Attributes set at creation (start_as_current_span accepts them) so
+        # there's no separate guarded set_attribute call. Mirrors
+        # plugins.tracing.traced_span's exception shape: GraphInterrupt is
+        # control flow and re-raises unrecorded; a real error is recorded then
+        # re-raised so the graph still halts.
+        with _NODE_TRACER.start_as_current_span(
+            span_name, attributes=span_attributes
+        ) as span:
+            try:
+                return await fn(state, config)
+            except GraphInterrupt:
+                raise
+            except Exception as exc:
+                span.record_exception(exc)
+                raise
+
+    return _spanned
 
 
 # Prompt key in UnifiedPromptManager + prompt_templates table. The
@@ -727,8 +781,12 @@ def build_graph_from_spec(
                 )
             g.add_node(
                 nid,
-                make_stage_node(
-                    stage, pool, record_sink=record_sink, on_event=on_event,
+                _span_wrap(
+                    make_stage_node(
+                        stage, pool, record_sink=record_sink, on_event=on_event,
+                    ),
+                    nid,
+                    "stage",
                 ),
             )
         else:
@@ -744,13 +802,17 @@ def build_graph_from_spec(
             node_config = n.get("config") if isinstance(n.get("config"), dict) else None
             g.add_node(
                 nid,
-                _wrap_atom(
-                    run_fn, atom_name, nid, record_sink,
-                    node_config=node_config,
-                    on_event=on_event,
-                    index=index,
-                    total=total_nodes,
-                    retry_policy=meta.retry if meta else None,
+                _span_wrap(
+                    _wrap_atom(
+                        run_fn, atom_name, nid, record_sink,
+                        node_config=node_config,
+                        on_event=on_event,
+                        index=index,
+                        total=total_nodes,
+                        retry_policy=meta.retry if meta else None,
+                    ),
+                    nid,
+                    "atom",
                 ),
             )
         node_ids.append(nid)
@@ -923,8 +985,6 @@ def _wrap_atom(
     the graph so a streaming channel can render a checklist. Callback
     failures are swallowed (``_safe_on_event``) — they never break the run.
     """
-
-    from langchain_core.runnables import RunnableConfig
 
     from services.atom_runs import digest_keys
     from services.template_runner import NODE_DURATION_SECONDS as _node_duration
