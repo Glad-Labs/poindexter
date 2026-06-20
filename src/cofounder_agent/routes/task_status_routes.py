@@ -31,6 +31,7 @@ from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
 from services.enhanced_status_change_service import EnhancedStatusChangeService
 from services.logger_config import get_logger
+from utils.deprecation import deprecation_headers
 from utils.route_utils import get_database_dependency
 from utils.task_status import TaskStatus, get_allowed_transitions, is_terminal, is_valid_transition
 
@@ -207,6 +208,10 @@ async def update_task_status_enterprise(
     response_model=dict[str, Any],
     summary="[DEPRECATED] Update task status with enhanced validation and audit trail",
     tags=["Task Status Management"],
+    # Machine-readable deprecation (poindexter#752 item 4): sets OpenAPI
+    # `deprecated: true` so Swagger strikes it through and generated clients
+    # see it — not just humans reading the "[DEPRECATED]" summary text.
+    deprecated=True,
 )
 async def update_task_status_validated(
     task_id: str,
@@ -257,7 +262,7 @@ async def update_task_status_validated(
     }
     ```
     """
-    _DEPRECATION_HEADER = (
+    _DEPRECATION_MESSAGE = (
         "PUT /{task_id}/status/validated is deprecated; "
         "use PUT /{task_id}/status instead (poindexter#743)"
     )
@@ -306,11 +311,15 @@ async def update_task_status_validated(
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "updated_by": user_id,
             "deprecated": True,
-            "deprecation_notice": _DEPRECATION_HEADER,
+            "deprecation_notice": _DEPRECATION_MESSAGE,
         }
         return JSONResponse(
             content=body,
-            headers={"Deprecation": _DEPRECATION_HEADER},
+            # RFC 8594 headers (poindexter#752 item 4): `Deprecation: true`
+            # plus the human message in `Warning: 299`, replacing the prior
+            # non-standard free-text `Deprecation` value. The body still
+            # carries `deprecation_notice` for back-compat with body-readers.
+            headers=deprecation_headers(message=_DEPRECATION_MESSAGE),
         )
 
     except HTTPException:

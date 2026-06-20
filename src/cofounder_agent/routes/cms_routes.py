@@ -66,7 +66,15 @@ async def get_db_pool():
 async def list_posts(
     request: Request,
     offset: int = Query(0, ge=0, le=10000, description="Number of posts to skip"),
-    skip: int = Query(0, ge=0, le=10000, description="Alias for offset (deprecated — use offset)"),
+    skip: int = Query(
+        0,
+        ge=0,
+        le=10000,
+        # `deprecated=True` → OpenAPI param `deprecated: true` (poindexter#752
+        # item 4), so the legacy alias is machine-visible, not prose-only.
+        deprecated=True,
+        description="Alias for offset (deprecated — use offset)",
+    ),
     limit: int = Query(20, ge=1, le=100),
     published_only: bool = Query(True),
     token: str | None = Depends(verify_api_token_optional),
