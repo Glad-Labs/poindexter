@@ -45,7 +45,7 @@ from typing import Any
 
 from plugins.media_compositor import CompositionRequest, CompositionScene
 from schemas.video_shot_list import Shot, VideoShotList
-from services.video_renderers.shot_vision_qa import score_shot_frame
+from services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -95,6 +95,26 @@ class _QAConfig:
     enabled: bool
     threshold: float
     max_retries: int
+
+
+@dataclass
+class _ShotState:
+    """Per-shot working state threaded across the render → score → repair →
+    finalize passes.
+
+    The two-pass split exists to stop the SDXL↔vision-model GPU thrash: the
+    old per-shot loop ran ``render → score`` for each shot, so every vision
+    call evicted SDXL and the next shot's render paid a ~133s cold reload.
+    Batching all renders, then all scores, keeps each model resident for a
+    whole pass. ``_ShotState`` is the mutable carrier that lets the later
+    passes update a shot's best result/score without re-rendering.
+    """
+
+    shot: Shot
+    result: ShotRenderResult  # best result so far (fresh render, or best regen)
+    is_reused: bool  # True ⇒ holdover / pexels-miss (reused a prior clip; never scored)
+    qa: ShotQAResult | None = None  # best score (None ⇒ unscored / couldn't score)
+    attempts: int = 0  # regen rounds spent on this shot
 
 
 def _build_qa_config(site_config: Any) -> _QAConfig:
@@ -474,88 +494,212 @@ async def _render_one_shot(
     )
 
 
-async def _render_shot_with_qa(
-    shot: Shot,
+async def _render_pass(
+    shots: list[Shot],
     *,
-    prior_clip: str | None,
+    render_kwargs: dict[str, Any],
+) -> list[_ShotState]:
+    """Render every shot once, with the image model resident across the pass.
+
+    Threads ``render_prior`` (the last successful fresh clip) so holdover and
+    pexels-miss shots resolve against the prior clip exactly as the old
+    sequential loop did. The key property: only ``sdxl`` / ``wan21`` shots
+    touch the GPU here, and nothing scores, so SDXL loads once and stays warm
+    for the whole pass instead of being evicted by a per-shot vision call.
+
+    ``is_reused`` flags a shot whose result reused the prior clip (a holdover,
+    or a pexels miss that held over) — those are never scored (the prior clip
+    was already vetted) and get re-pointed to the post-QA prior in finalize.
+    """
+    states: list[_ShotState] = []
+    render_prior: str | None = None
+    for shot in shots:
+        result = await _render_one_shot(shot, prior_clip=render_prior, **render_kwargs)
+        is_reused = bool(
+            result.success and result.clip_path
+            and result.clip_path == render_prior,
+        )
+        states.append(_ShotState(shot=shot, result=result, is_reused=is_reused))
+        if result.success and result.clip_path:
+            render_prior = result.clip_path
+    return states
+
+
+async def _score_pass(
+    states: list[_ShotState],
+    *,
+    qa: _QAConfig,
+    site_config: Any,
+    http_client_factory: Any,
+) -> None:
+    """Score every fresh, non-reused clip — vision model resident across the pass.
+
+    A ``None`` score (no model / infra down) is stored as-is; later passes treat
+    it as "could not score, accept the shot" rather than penalising it. Reused
+    clips (holdover / pexels-miss) and failed renders are skipped, matching the
+    old per-shot early-return.
+    """
+    if not qa.enabled:
+        return
+    for st in states:
+        if st.is_reused or not st.result.success or not st.result.clip_path:
+            continue
+        st.qa = await score_shot_frame(
+            frame_path=st.result.clip_path, shot=st.shot,
+            site_config=site_config, http_client_factory=http_client_factory,
+        )
+
+
+def _needs_repair(st: _ShotState, *, qa: _QAConfig) -> bool:
+    """True ⇒ this shot is a below-threshold, stochastic source worth re-rolling.
+
+    A ``None`` score is excluded (couldn't score ⇒ accept); pexels/holdover are
+    excluded (deterministic / no asset); a shot that has used its retry budget
+    is excluded.
+    """
+    return bool(
+        st.qa is not None
+        and st.qa.score is not None
+        and st.qa.score < qa.threshold
+        and st.shot.source in _REGENERABLE_SOURCES
+        and st.attempts < qa.max_retries,
+    )
+
+
+async def _repair_pass(
+    states: list[_ShotState],
+    *,
     qa: _QAConfig,
     site_config: Any,
     render_kwargs: dict[str, Any],
     http_client_factory: Any,
-    post_id: str,
-) -> tuple[ShotRenderResult, float | None, str | None]:
-    """Render one shot, then verify-and-repair against the vision-QA score.
+) -> None:
+    """Batched keep-best regeneration for the sub-threshold stochastic shots.
 
-    Returns ``(result, qa_score, qa_outcome)`` where ``qa_outcome`` is one of
-    ``None`` | ``"accepted"`` | ``"regenerated"`` | ``"fallback_holdover"`` |
-    ``"kept_below"``. Bounded: at most ``qa.max_retries`` re-renders for
-    stochastic sources, then a deterministic holdover fallback — never loops.
+    Each round re-renders the WHOLE failing batch (image model resident) then
+    re-scores the WHOLE batch (vision model resident), so even a multi-failure
+    video swaps models a bounded number of times (≤ ``max_retries`` swaps each
+    way) instead of once per failure. A shot leaves the batch the moment its
+    best score clears threshold or it exhausts ``max_retries``. Keep-best:
+    a candidate replaces the incumbent only when it scores strictly higher.
     """
-    result = await _render_one_shot(shot, prior_clip=prior_clip, **render_kwargs)
+    if not qa.enabled or qa.max_retries <= 0:
+        return
+    for _ in range(qa.max_retries):
+        pending = [st for st in states if _needs_repair(st, qa=qa)]
+        if not pending:
+            break
+        # Re-render the batch (image model resident — no vision call between).
+        cands: list[tuple[_ShotState, ShotRenderResult]] = []
+        for st in pending:
+            st.attempts += 1
+            cand = await _render_one_shot(st.shot, prior_clip=None, **render_kwargs)
+            cands.append((st, cand))
+        # Re-score the batch (vision model resident), keep-best per shot.
+        for st, cand in cands:
+            if not (cand.success and cand.clip_path):
+                continue
+            cand_qa = await score_shot_frame(
+                frame_path=cand.clip_path, shot=st.shot,
+                site_config=site_config, http_client_factory=http_client_factory,
+            )
+            best = st.qa
+            if (cand_qa.score is not None and best is not None
+                    and best.score is not None and cand_qa.score > best.score):
+                st.result, st.qa = cand, cand_qa
 
-    # QA off / nothing rendered / reused the prior clip (a holdover, or a
-    # pexels miss that already held over) → no scoring: the prior clip was
-    # already vetted when it was first produced.
-    if (not qa.enabled or not result.success or not result.clip_path
-            or result.clip_path == prior_clip):
-        return result, None, None
 
-    best = result
-    best_qa = await score_shot_frame(
-        frame_path=result.clip_path, shot=shot, site_config=site_config,
-        http_client_factory=http_client_factory,
+def _emit_fallback_finding(
+    *, shot: Shot, score: float, threshold: float, post_id: str,
+    title: str, body: str,
+) -> None:
+    """Emit the ``shot_quality_fallback`` finding (shared shape for the holdover
+    and idx-0 keep-below cases)."""
+    emit_finding(
+        source="shot_list_renderer", kind="shot_quality_fallback",
+        title=title, body=body, severity="warn",
+        dedup_key=f"shot_quality_fallback:{post_id}:{shot.idx}",
+        extra={"shot_idx": shot.idx, "source": shot.source,
+               "score": score, "threshold": threshold},
     )
-    # Could not score (no model / infra down) → accept as-is, don't penalise.
-    if best_qa.score is None:
-        return best, None, None
 
-    attempts = 0
-    while (best_qa.score < qa.threshold and attempts < qa.max_retries
-           and shot.source in _REGENERABLE_SOURCES):
-        attempts += 1
-        cand = await _render_one_shot(shot, prior_clip=prior_clip, **render_kwargs)
-        if not (cand.success and cand.clip_path):
-            continue
-        cand_qa = await score_shot_frame(
-            frame_path=cand.clip_path, shot=shot, site_config=site_config,
-            http_client_factory=http_client_factory,
+
+async def _finalize_pass(
+    states: list[_ShotState],
+    *,
+    qa: _QAConfig,
+    pool: Any,
+    post_id: str,
+) -> list[ShotRenderResult]:
+    """Assign per-shot outcomes, emit findings, and audit — threading the
+    post-QA prior clip.
+
+    Outcomes are preserved verbatim from the old per-shot loop:
+    ``accepted`` / ``regenerated`` / ``fallback_holdover`` / ``kept_below``
+    (or ``None`` when QA is off, the frame couldn't be scored, or the shot
+    reused a prior clip). Holdover / pexels-miss shots are re-pointed to the
+    post-QA ``final_prior`` so a below-threshold frame never propagates into a
+    following holdover (the old loop got this for free by being sequential).
+    """
+    final_prior: str | None = None
+    out: list[ShotRenderResult] = []
+    for st in states:
+        shot = st.shot
+        result = st.result
+        qa_score: float | None = None
+        qa_outcome: str | None = None
+
+        if st.is_reused:
+            # Holdover / pexels-miss → carry the post-QA prior clip. (An idx-0
+            # reuse can't happen: the render pass fails it for lack of a prior.)
+            if final_prior:
+                result = ShotRenderResult(
+                    idx=shot.idx, source=shot.source, success=True,
+                    clip_path=final_prior, duration_s=shot.duration_s,
+                )
+        elif not qa.enabled or not result.success or not result.clip_path:
+            pass  # accept the render verbatim — no QA verdict to apply
+        elif st.qa is None or st.qa.score is None:
+            pass  # could not score → accept, don't penalise
+        elif st.qa.score < qa.threshold:
+            qa_score = st.qa.score
+            if final_prior:
+                _emit_fallback_finding(
+                    shot=shot, score=st.qa.score, threshold=qa.threshold,
+                    post_id=post_id,
+                    title=f"shot {shot.idx} ({shot.source}) fell back to holdover",
+                    body=(f"shot {shot.idx} scored {st.qa.score:.0f} < "
+                          f"{qa.threshold:.0f} after {st.attempts} regen(s); held "
+                          f"over the prior clip. reason: {st.qa.reason}"),
+                )
+                result = ShotRenderResult(
+                    idx=shot.idx, source=shot.source, success=True,
+                    clip_path=final_prior, duration_s=shot.duration_s,
+                )
+                qa_outcome = "fallback_holdover"
+            else:
+                # idx 0 with no prior clip to hold over: ship the best, flag it.
+                _emit_fallback_finding(
+                    shot=shot, score=st.qa.score, threshold=qa.threshold,
+                    post_id=post_id,
+                    title=f"shot {shot.idx} ({shot.source}) kept below threshold",
+                    body=(f"shot {shot.idx} scored {st.qa.score:.0f} < "
+                          f"{qa.threshold:.0f} and has no prior clip to hold over; "
+                          f"kept the best attempt. reason: {st.qa.reason}"),
+                )
+                qa_outcome = "kept_below"
+        else:
+            qa_score = st.qa.score
+            qa_outcome = "regenerated" if st.attempts else "accepted"
+
+        await _log_shot_audit(
+            pool, post_id=post_id, shot_result=result,
+            qa_score=qa_score, qa_outcome=qa_outcome,
         )
-        if cand_qa.score is not None and cand_qa.score > best_qa.score:
-            best, best_qa = cand, cand_qa
-
-    if best_qa.score is not None and best_qa.score < qa.threshold:
-        if prior_clip:
-            emit_finding(
-                source="shot_list_renderer", kind="shot_quality_fallback",
-                title=f"shot {shot.idx} ({shot.source}) fell back to holdover",
-                body=(f"shot {shot.idx} scored {best_qa.score:.0f} < "
-                      f"{qa.threshold:.0f} after {attempts} regen(s); held over the "
-                      f"prior clip. reason: {best_qa.reason}"),
-                severity="warn",
-                dedup_key=f"shot_quality_fallback:{post_id}:{shot.idx}",
-                extra={"shot_idx": shot.idx, "source": shot.source,
-                       "score": best_qa.score, "threshold": qa.threshold},
-            )
-            held = ShotRenderResult(
-                idx=shot.idx, source=shot.source, success=True,
-                clip_path=prior_clip, duration_s=shot.duration_s,
-            )
-            return held, best_qa.score, "fallback_holdover"
-        # idx 0 with no prior clip to hold over: ship the best attempt, flag it.
-        emit_finding(
-            source="shot_list_renderer", kind="shot_quality_fallback",
-            title=f"shot {shot.idx} ({shot.source}) kept below threshold",
-            body=(f"shot {shot.idx} scored {best_qa.score:.0f} < {qa.threshold:.0f} "
-                  f"and has no prior clip to hold over; kept the best attempt. "
-                  f"reason: {best_qa.reason}"),
-            severity="warn",
-            dedup_key=f"shot_quality_fallback:{post_id}:{shot.idx}",
-            extra={"shot_idx": shot.idx, "source": shot.source,
-                   "score": best_qa.score, "threshold": qa.threshold},
-        )
-        return best, best_qa.score, "kept_below"
-
-    return best, best_qa.score, ("regenerated" if attempts else "accepted")
+        out.append(result)
+        if result.success and result.clip_path:
+            final_prior = result.clip_path
+    return out
 
 
 async def render_shot_list(
@@ -644,25 +788,24 @@ async def render_shot_list(
         orientation=orientation,
     )
 
-    shot_results: list[ShotRenderResult] = []
-    prior_clip: str | None = None
-    for shot in shot_list.shots:
-        result, qa_score, qa_outcome = await _render_shot_with_qa(
-            shot,
-            prior_clip=prior_clip,
-            qa=qa,
-            site_config=site_config,
-            render_kwargs=render_kwargs,
-            http_client_factory=http_client_factory,
-            post_id=post_id,
-        )
-        await _log_shot_audit(
-            pool, post_id=post_id, shot_result=result,
-            qa_score=qa_score, qa_outcome=qa_outcome,
-        )
-        shot_results.append(result)
-        if result.success and result.clip_path:
-            prior_clip = result.clip_path
+    # Two-pass to stop the SDXL↔vision-model GPU thrash: render every shot
+    # (image model resident for the whole pass), then score every fresh frame
+    # (vision model resident), then batched keep-best regen of the
+    # sub-threshold stochastic shots, then assign outcomes + audit. The old
+    # per-shot ``render → score`` loop evicted SDXL on every vision call, so
+    # each next render paid a ~133s cold reload. See ``_ShotState``.
+    states = await _render_pass(shot_list.shots, render_kwargs=render_kwargs)
+    await _score_pass(
+        states, qa=qa, site_config=site_config,
+        http_client_factory=http_client_factory,
+    )
+    await _repair_pass(
+        states, qa=qa, site_config=site_config,
+        render_kwargs=render_kwargs, http_client_factory=http_client_factory,
+    )
+    shot_results = await _finalize_pass(
+        states, qa=qa, pool=pool, post_id=post_id,
+    )
 
     rendered = [r for r in shot_results if r.success and r.clip_path]
     if not rendered:

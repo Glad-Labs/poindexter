@@ -1018,3 +1018,63 @@ class TestRenderCheckLoop:
         assert f["severity"] == "warn"
         assert f["dedup_key"] == "shot_quality_fallback:post-xyz:1"
         assert f["extra"]["score"] == 15.0
+
+    @pytest.mark.asyncio
+    async def test_all_renders_precede_any_vision_call(self, tmp_path):
+        """Anti-thrash invariant: with QA on, EVERY shot is rendered before
+        ANY vision score runs — so SDXL stays resident for the whole render
+        pass instead of being evicted by an interleaved Ollama call per shot.
+
+        On the old interleaved loop the timeline was
+        ``[render0, score0, render1, score1, ...]`` and this assert fails; the
+        two-pass renderer produces ``[render0, render1, ..., score0, score1]``.
+        """
+        import services.video_renderers.shot_list_renderer as mod
+        from services.video_renderers.shot_list_renderer import ShotRenderResult
+        from services.video_renderers.shot_vision_qa import ShotQAResult
+
+        # Distinct sources keep the ≤2-consecutive-same-source streak guard
+        # happy; all three are fresh-render sources, so each is scored once.
+        shots = [
+            Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+                 prompt="cyan circuit", narration_offset_s=0.0),
+            Shot(idx=1, duration_s=3.0, intent="beat", source="wan21",
+                 prompt="teal mesh in motion", narration_offset_s=3.0),
+            Shot(idx=2, duration_s=3.0, intent="close", source="sdxl",
+                 prompt="gold grid", narration_offset_s=6.0),
+        ]
+        timeline: list[tuple[str, int]] = []
+
+        async def _fake_render(shot, *, prior_clip, **kwargs):
+            timeline.append(("render", shot.idx))
+            clip = str(tmp_path / f"shot_{shot.idx:02d}.png")
+            with open(clip, "wb") as fh:
+                fh.write(b"png")
+            return ShotRenderResult(
+                idx=shot.idx, source=shot.source, success=True,
+                clip_path=clip, duration_s=shot.duration_s,
+            )
+
+        async def _fake_score(*, frame_path, shot, **kwargs):
+            timeline.append(("score", shot.idx))
+            return ShotQAResult(score=90.0, reason="great")
+
+        with patch.object(mod, "_render_one_shot", _fake_render), \
+             patch.object(mod, "score_shot_frame", _fake_score), \
+             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+                   self._mock_compositor()):
+            result = await render_shot_list(
+                post_id="p", shot_list=_build_shot_list(shots),
+                audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
+                sdxl_url="http://sdxl:9836", site_config=_QASC(),
+                http_client_factory=self._sdxl_factory())
+
+        assert result.success is True
+        # All three passed (90 ≥ 60) → each scored exactly once, no repair.
+        assert [k for k, _ in timeline].count("render") == 3
+        assert [k for k, _ in timeline].count("score") == 3
+        render_positions = [i for i, (k, _) in enumerate(timeline) if k == "render"]
+        score_positions = [i for i, (k, _) in enumerate(timeline) if k == "score"]
+        assert max(render_positions) < min(score_positions), (
+            f"renders must all precede scores (anti-thrash); timeline={timeline}"
+        )
