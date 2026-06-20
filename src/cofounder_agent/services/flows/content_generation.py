@@ -231,14 +231,67 @@ async def content_generation_flow(
     triggered calls can inject their own pool to share connections
     with the calling context.
     """
+    # Ownership: when no caller injected a DatabaseService, the flow builds
+    # its own and is responsible for closing that pool when the run ends —
+    # otherwise every scheduled invocation churns a fresh
+    # min_size=5..max_size=50 pool (poindexter#702 item 1). An injected
+    # service shares connections with the caller's context; never close it.
+    own_database_service = database_service is None
+    if own_database_service:
+        database_service = await _build_default_database_service()
+    try:
+        return await _run_content_generation_flow(
+            task_id=task_id,
+            topic=topic,
+            style=style,
+            tone=tone,
+            target_length=target_length,
+            tags=tags,
+            generate_featured_image=generate_featured_image,
+            category=category,
+            target_audience=target_audience,
+            database_service=database_service,
+        )
+    finally:
+        if own_database_service and database_service is not None:
+            try:
+                await database_service.close()
+            except Exception:  # noqa: BLE001 — best-effort teardown
+                # The subprocess exit releases the connections regardless,
+                # so a close hiccup must not mask the flow's real result.
+                logger.warning(
+                    "[CONTENT_FLOW] closing the flow-owned DB pool raised",
+                    exc_info=True,
+                )
+
+
+async def _run_content_generation_flow(
+    *,
+    task_id: str | None,
+    topic: str | None,
+    style: str,
+    tone: str,
+    target_length: int,
+    tags: list[str] | None,
+    generate_featured_image: bool,
+    category: str | None,
+    target_audience: str | None,
+    database_service: Any,
+) -> dict[str, Any]:
+    """Body of :func:`content_generation_flow`.
+
+    Split out so the ``@flow`` wrapper can own + close a DatabaseService it
+    built (poindexter#702 item 1) via a try/finally around the whole run,
+    without indenting the entire body. ``database_service`` is always
+    non-None here — the wrapper builds one when the caller didn't inject it.
+    Deliberately NOT ``@flow``-decorated: it executes inside the wrapper's
+    flow context, so ``get_run_context`` and Prefect logging still resolve.
+    """
     # Lazy-import to keep flow-module import cheap (Prefect imports
     # the module to register flows during deployment-time discovery
     # but doesn't need the heavy database/services tree).
     from services.content_router_service import process_content_generation_task
     from services.di_wiring import build_and_wire_subprocess_with_container
-
-    if database_service is None:
-        database_service = await _build_default_database_service()
 
     # poindexter#477: Prefect spawns this flow inside a fresh Python
     # subprocess that never runs ``main.py``'s lifespan. Without the

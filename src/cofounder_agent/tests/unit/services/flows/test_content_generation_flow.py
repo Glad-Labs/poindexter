@@ -730,3 +730,94 @@ class TestPrefectSentryInit:
 
         # Flow exits cleanly with the empty-queue result
         assert result == {"claimed": False, "task_id": None}
+
+
+# ---------------------------------------------------------------------------
+# poindexter#702 item 1: the flow closes a DB pool it built (not injected ones)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestFlowOwnsAndClosesItsPool:
+    """A schedule-driven run (no ``database_service`` arg) builds its own
+    ``DatabaseService`` and must close that pool when the flow ends —
+    otherwise every scheduled invocation churns a fresh
+    ``min_size=5..max_size=50`` pool. An injected service is owned by the
+    caller and must NOT be closed (it shares connections with the caller's
+    context). The close must fire on the crash path too, via try/finally.
+    """
+
+    @pytest.mark.asyncio
+    async def test_closes_pool_it_built(self):
+        from services.flows import content_generation as cg
+
+        pool = _make_pool(claim_row=None)
+        built = _make_db_service(pool)
+        built.close = AsyncMock()
+
+        with patch(
+            "services.flows.content_generation._build_default_database_service",
+            new=AsyncMock(return_value=built),
+        ), patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+        ):
+            # No database_service injected → the flow builds + owns one.
+            result = await cg.content_generation_flow.fn()
+
+        assert result == {"claimed": False, "task_id": None}
+        built.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_does_not_close_injected_service(self):
+        from services.flows.content_generation import content_generation_flow
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+        db.close = AsyncMock()
+
+        with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+        ):
+            await content_generation_flow.fn(database_service=db)
+
+        # Caller owns the injected service — flow must not close it.
+        db.close.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_closes_owned_pool_even_when_pipeline_raises(self):
+        """The close lives in a finally, so a crashing pipeline still frees
+        the flow-owned pool (and the crash still propagates to Prefect)."""
+        from services.flows import content_generation as cg
+
+        pool = _make_pool(claim_row=None)
+        built = _make_db_service(pool)
+        built.close = AsyncMock()
+
+        with patch(
+            "services.flows.content_generation._build_default_database_service",
+            new=AsyncMock(return_value=built),
+        ), patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+            new=AsyncMock(side_effect=RuntimeError("pipeline boom")),
+        ):
+            with pytest.raises(RuntimeError, match="pipeline boom"):
+                await cg.content_generation_flow.fn(
+                    task_id="t-crash", topic="a topic that crashes"
+                )
+
+        built.close.assert_awaited_once()
