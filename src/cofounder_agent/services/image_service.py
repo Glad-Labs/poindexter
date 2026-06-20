@@ -1012,7 +1012,7 @@ class ImageService:
         # Strategy 1: Try host SDXL server (runs on GPU outside Docker)
         _sc = self._site_config
         sdxl_server_url = _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
-        render_timeout = _sc.get_int("image_render_timeout_seconds", 60)
+        render_timeout = _sc.get_int("image_render_timeout_seconds", 240)
         try:
             from contextlib import AsyncExitStack
 
@@ -1028,17 +1028,27 @@ class ImageService:
                 else:
                     client = await _stack.enter_async_context(
                         httpx.AsyncClient(
-                            timeout=httpx.Timeout(60.0, connect=5.0),
+                            timeout=httpx.Timeout(float(render_timeout), connect=5.0),
                         )
                     )
+                # Only forward steps / guidance_scale when the caller set
+                # them explicitly; otherwise let the SDXL server's per-model
+                # registry drive them. The old `or 4` / `or 1.0` fallback
+                # forced SDXL-Turbo's params onto z_image_turbo, which is
+                # guidance-distilled (wants 9 steps / CFG 0) — the mismatch
+                # produced degraded images. Matches replace_inline_images.
+                # #image-zimage-and-variety.
+                _gen_body: dict[str, object] = {
+                    "prompt": prompt,
+                    "negative_prompt": negative_prompt or "",
+                }
+                if num_inference_steps is not None:
+                    _gen_body["steps"] = num_inference_steps
+                if guidance_scale is not None:
+                    _gen_body["guidance_scale"] = guidance_scale
                 resp = await client.post(
                     f"{sdxl_server_url}/generate",
-                    json={
-                        "prompt": prompt,
-                        "negative_prompt": negative_prompt or "",
-                        "steps": num_inference_steps or 4,
-                        "guidance_scale": guidance_scale or 1.0,
-                    },
+                    json=_gen_body,
                     timeout=render_timeout,
                 )
                 # The sidecar at scripts/sdxl-server.py returns JSON

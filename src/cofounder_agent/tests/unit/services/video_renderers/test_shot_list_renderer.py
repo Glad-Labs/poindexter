@@ -38,10 +38,11 @@ class TestRenderOneShot:
 
     @pytest.mark.asyncio
     async def test_sdxl_kenburns_calls_sdxl_with_correct_body(self, tmp_path):
-        """The SDXL render must POST {'prompt': ..., 'negative_prompt': ...,
-        'steps': 4, 'guidance_scale': 1.0} to ``/generate`` — this is the
-        correct SDXL server shape (Wan21's wrong-body 422 issue should
-        never resurface here)."""
+        """The SDXL render must POST {'prompt': ..., 'negative_prompt': ...}
+        to ``/generate`` and OMIT steps / guidance_scale so the server's
+        per-model registry drives them (z_image_turbo wants 9 / CFG0;
+        hardcoding SDXL-Turbo's 4 / 1.0 blew the render past the timeout).
+        Wan21's wrong-body 422 issue should never resurface here."""
         shot = Shot(
             idx=0,
             duration_s=5.0,
@@ -89,6 +90,52 @@ class TestRenderOneShot:
         assert "image_paths" not in body
         assert "audio_path" not in body
         assert "ken_burns" not in body
+        # Params omitted — server's per-model registry drives them (z_image_turbo).
+        assert "steps" not in body
+        assert "guidance_scale" not in body
+
+    @pytest.mark.asyncio
+    async def test_sdxl_render_timeout_comes_from_site_config(self, tmp_path):
+        """The SDXL render timeout is read from image_render_timeout_seconds so a
+        cold Z-Image load (~133s) survives — not a hardcoded 60s cap."""
+        from services.site_config import SiteConfig
+
+        shot = Shot(
+            idx=0,
+            duration_s=5.0,
+            intent="opening shot",
+            source="sdxl_kenburns",
+            prompt="a clean modern desk",
+            kenburns_zoom=(1.0, 1.2),
+            narration_offset_s=0.0,
+        )
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "image/png"}
+        mock_resp.content = b"fake-png-bytes"
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        captured: dict = {}
+
+        def _factory(*args, **kwargs):
+            captured["timeout"] = kwargs.get("timeout")
+            return mock_client
+
+        sc = SiteConfig(initial_config={"image_render_timeout_seconds": "234"})
+        await _render_one_shot(
+            shot,
+            prior_clip=None,
+            work_dir=tmp_path,
+            sdxl_url="http://sdxl:9836",
+            site_config=sc,
+            http_client_factory=_factory,
+        )
+        # httpx.Timeout(read) reflects the configured value, not the 60s default.
+        assert captured["timeout"] is not None
+        assert captured["timeout"].read == 234.0
 
     @pytest.mark.asyncio
     async def test_wan21_calls_provider_with_prompt_only(self, tmp_path):
@@ -804,6 +851,12 @@ class _QASC:
 
     def get(self, k, d=None):
         return self._cfg.get(k, d)
+
+    def get_int(self, k, d=0):
+        try:
+            return int(self._cfg.get(k, d))
+        except (TypeError, ValueError):
+            return d
 
     async def get_secret(self, k, d=None):
         return d

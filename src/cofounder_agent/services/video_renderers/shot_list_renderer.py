@@ -171,6 +171,7 @@ async def _render_sdxl_image(
     output_path: str,
     sdxl_url: str,
     http_client_factory: Any,
+    render_timeout: int = 240,
 ) -> bool:
     """Render one SDXL image to disk via the SDXL server.
 
@@ -188,17 +189,20 @@ async def _render_sdxl_image(
     )
     try:
         async with http_client_factory(
-            timeout=httpx.Timeout(60.0, connect=5.0),
+            timeout=httpx.Timeout(float(render_timeout), connect=5.0),
         ) as client:
             resp = await client.post(
                 f"{sdxl_url}/generate",
                 json={
                     "prompt": prompt,
                     "negative_prompt": neg,
-                    "steps": 4,
-                    "guidance_scale": 1.0,
+                    # steps / guidance_scale omitted — the SDXL server's
+                    # per-model registry drives them (z_image_turbo is
+                    # guidance-distilled: 9 steps / CFG 0). SDXL-Turbo's
+                    # hardcoded 4 / 1.0 produced degraded frames. Matches the
+                    # inline-image path (replace_inline_images). #image-zimage-and-variety.
                 },
-                timeout=60,
+                timeout=render_timeout,
             )
             got = await _consume_sdxl_image_response(
                 resp,
@@ -406,11 +410,16 @@ async def _render_one_shot(
                 error=f"{source} shot missing prompt and query",
             )
         clip_path = str(work_dir / f"shot_{shot.idx:02d}.png")
+        render_timeout = (
+            site_config.get_int("image_render_timeout_seconds", 240)
+            if site_config is not None else 240
+        )
         ok = await _render_sdxl_image(
             prompt=sdxl_prompt,
             output_path=clip_path,
             sdxl_url=sdxl_url,
             http_client_factory=http_client_factory,
+            render_timeout=render_timeout,
         )
         if not ok:
             return ShotRenderResult(

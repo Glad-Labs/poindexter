@@ -329,7 +329,8 @@ async def _generate_images_for_video(
 
     logger.info("[VIDEO] Generating %d SDXL images from %d prompts", len(prompts), len(prompts))
     sdxl_url = _sdxl_server_url(site_config=site_config)
-    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
+    render_timeout = site_config.get_int("image_render_timeout_seconds", 240)
+    async with httpx.AsyncClient(timeout=httpx.Timeout(float(render_timeout), connect=5.0)) as client:
         for i, prompt in enumerate(prompts):
             try:
                 logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
@@ -337,9 +338,13 @@ async def _generate_images_for_video(
                     f"{sdxl_url}/generate",
                     json={
                         "prompt": prompt, "negative_prompt": neg,
-                        "steps": 4, "guidance_scale": 1.0,
+                        # steps / guidance_scale omitted — server's per-model
+                        # registry drives them (z_image_turbo is guidance-
+                        # distilled: 9 steps / CFG 0). SDXL-Turbo's hardcoded
+                        # 4 / 1.0 produced degraded frames. Matches
+                        # replace_inline_images. #image-zimage-and-variety.
                     },
-                    timeout=60,
+                    timeout=render_timeout,
                 )
                 img_path = str(output_dir / f"frame_{i:02d}.png")
                 got = await _consume_sdxl_image_response(
@@ -415,7 +420,8 @@ async def _generate_images_from_scenes(
 
     logger.info("[VIDEO] Generating %d SDXL images from pre-generated scenes", len(scenes))
     sdxl_url = _sdxl_server_url(site_config=site_config)
-    async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
+    render_timeout = site_config.get_int("image_render_timeout_seconds", 240)
+    async with httpx.AsyncClient(timeout=httpx.Timeout(float(render_timeout), connect=5.0)) as client:
         for i, prompt in enumerate(scenes):
             try:
                 logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
@@ -423,9 +429,13 @@ async def _generate_images_from_scenes(
                     f"{sdxl_url}/generate",
                     json={
                         "prompt": prompt, "negative_prompt": neg,
-                        "steps": 4, "guidance_scale": 1.0,
+                        # steps / guidance_scale omitted — server's per-model
+                        # registry drives them (z_image_turbo is guidance-
+                        # distilled: 9 steps / CFG 0). SDXL-Turbo's hardcoded
+                        # 4 / 1.0 produced degraded frames. Matches
+                        # replace_inline_images. #image-zimage-and-variety.
                     },
-                    timeout=60,
+                    timeout=render_timeout,
                 )
                 img_path = str(output_dir / f"frame_{i:02d}.png")
                 got = await _consume_sdxl_image_response(

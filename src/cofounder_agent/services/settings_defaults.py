@@ -460,11 +460,14 @@ DEFAULTS: dict[str, str] = {
     'image_style_history_size': '10',
     'image_style_history_ttl_seconds': '3600',
     # Per-call HTTP timeout (seconds) for a local image inference server
-    # (SDXL / FLUX / Z-Image `/generate`) to render one image. A render that
-    # exceeds this is abandoned so a hung GPU server can't wedge the pipeline.
-    # Wired into the featured + inline render calls (was hardcoded 60 there,
-    # which is tight for a cold Z-Image load). #image-zimage-and-variety.
-    'image_render_timeout_seconds': '90',
+    # (SDXL / FLUX / Z-Image `/generate`) to render one image. Must cover a
+    # COLD model load: the SDXL server unloads after 60s idle (so Ollama can
+    # use the GPU) and is re-evicted on every Ollama call, so most renders pay
+    # the reload. Measured cold-load for Z-Image-Turbo (6B) is ~133s + render;
+    # 90s was too tight and silently fell back to Pexels / failed the shot.
+    # 240 gives headroom while still bounding a genuinely hung GPU server.
+    # Wired into the featured + inline + video render calls. #image-zimage-and-variety.
+    'image_render_timeout_seconds': '240',
     # LLM params for the image-PROMPT generation step — the small model that
     # writes the SDXL prompt from the topic + chosen style (NOT the image
     # render itself). Externalised so prompt creativity / length / patience are

@@ -422,7 +422,7 @@ class TestConfigExternalisationAuditKeys:
         "image_style_history_size": "10",
         "image_style_history_ttl_seconds": "3600",
         # Local GPU render timeouts (image / audio providers)
-        "image_render_timeout_seconds": "90",
+        "image_render_timeout_seconds": "240",
         "audio_render_timeout_seconds": "180",
         # Worker heartbeat cadence (services/worker_service.py)
         "worker_heartbeat_interval_seconds": "30",
