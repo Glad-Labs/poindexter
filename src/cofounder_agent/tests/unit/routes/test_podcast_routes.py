@@ -379,8 +379,18 @@ class TestListEpisodes:
         resp = client.get("/api/podcast/episodes")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["count"] == 2
-        assert len(data["episodes"]) == 2
+        # Canonical offset envelope (poindexter#745): items, not the legacy
+        # episodes/count keys. `count` is recoverable as len(items).
+        assert data["total"] == 2
+        assert data["limit"] == 50  # default limit
+        assert data["offset"] == 0
+        assert "episodes" not in data
+        assert "count" not in data
+        assert len(data["items"]) == 2
+        assert data["items"][0]["post_id"] == "1"
+        # #636 parity: the response_model filters the service's absolute
+        # file_path out of the public body (the mock input includes it).
+        assert "file_path" not in data["items"][0]
 
     @patch("routes.podcast_routes.PodcastService")
     def test_empty_list(self, mock_svc_cls):
@@ -390,8 +400,7 @@ class TestListEpisodes:
 
         resp = client.get("/api/podcast/episodes")
         data = resp.json()
-        assert data["count"] == 0
-        assert data["episodes"] == []
+        assert data == {"items": [], "total": 0, "limit": 50, "offset": 0}
 
 
 # ---------------------------------------------------------------------------

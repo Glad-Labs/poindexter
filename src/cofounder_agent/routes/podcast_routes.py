@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
 from middleware.api_token_auth import verify_api_token
+from schemas.media_schemas import PodcastEpisodeListResponse
 from services.logger_config import get_logger
 from services.podcast_service import PODCAST_DIR, PodcastService
 from utils.rate_limiter import _settings_limit, limiter
@@ -329,19 +330,27 @@ async def stream_episode(post_id: str):
 # ---------------------------------------------------------------------------
 
 
-@router.get("/episodes")
+@router.get("/episodes", response_model=PodcastEpisodeListResponse)
 async def list_episodes(
     site_config: Any = Depends(get_site_config_dependency),
     limit: int = Query(50, ge=1, le=200, description="Max episodes to return"),
     offset: int = Query(0, ge=0, description="Episodes to skip"),
-):
+) -> PodcastEpisodeListResponse:
     """List podcast episodes as JSON, paginated (closes #746 — the endpoint was
     previously unbounded and grew linearly with content volume forever)."""
     svc = PodcastService(site_config=site_config)
     all_episodes = svc.list_episodes()
     total = len(all_episodes)
     page = all_episodes[offset : offset + limit]
-    return {"episodes": page, "count": len(page), "total": total, "limit": limit, "offset": offset}
+    # Canonical offset envelope (poindexter#745): `episodes` → `items`, drop the
+    # redundant `count` (recoverable as len(items)). Pydantic validates each row
+    # into a PodcastEpisodeItem.
+    return PodcastEpisodeListResponse(
+        items=page,  # type: ignore[arg-type]
+        total=total,
+        limit=limit,
+        offset=offset,
+    )
 
 
 # ---------------------------------------------------------------------------
