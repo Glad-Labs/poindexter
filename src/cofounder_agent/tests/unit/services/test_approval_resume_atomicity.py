@@ -18,7 +18,7 @@ These tests pin the two service-layer halves of the fix:
   transaction it restores the paused-at-gate columns AND deletes the
   dangling approval row.
 
-Issue: Glad-Labs/glad-labs-stack pipeline-resume atomicity.
+Issue: Glad-Labs/poindexter pipeline-resume atomicity.
 """
 
 from __future__ import annotations

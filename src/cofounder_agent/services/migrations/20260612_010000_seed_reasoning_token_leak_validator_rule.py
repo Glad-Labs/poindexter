@@ -1,6 +1,6 @@
 """Migration 20260612_010000: seed reasoning_token_leak content_validator_rules row.
 
-ISSUE: Glad-Labs/glad-labs-stack#1283
+ISSUE: Glad-Labs/poindexter#1283
 
 Background — a draft whose body contained ``<|channel>thought<channel|>…``
 control tokens scored 91 and reached ``awaiting_approval`` because the
