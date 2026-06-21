@@ -2009,6 +2009,11 @@ services:
       - -c
       - 'rm -f /actions-runner/.runner /actions-runner/.credentials /actions-runner/.credentials_rsaparams 2>/dev/null; exec /entrypoint.sh "$@"'
       - --
+    # Compose's `entrypoint:` override CLEARS the image's default CMD, so restore
+    # it explicitly — otherwise the wrapper execs /entrypoint.sh with an empty
+    # "$@", the runner configures then has nothing to run, and it exits right
+    # after "Settings Saved" (a register→exit→restart crash loop).
+    command: ["./bin/Runner.Listener", "run", "--startuptype", "service"]
     # IMPORTANT — caps are relative to the WSL2 VM, NOT the 64 GB host.
     # `.wslconfig` pins WSL2 to 24 GB / 16 procs, and the ENTIRE Docker stack
     # (postgres, grafana, sdxl, worker, langfuse, observability…) shares that
