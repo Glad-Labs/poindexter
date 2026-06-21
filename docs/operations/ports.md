@@ -6,7 +6,11 @@ needs to reach a service in the local Docker stack.
 
 The actual mapping is owned by `docker-compose.local.yml`. **If you change a
 port there, update this table.** A CI lint job (`scripts/ci/ports_lint.py`,
-not yet wired) is the planned belt-and-suspenders to keep them in sync.
+wired in `.github/workflows/ports-lint.yml`) is the belt-and-suspenders that
+keeps them in sync: it fails the build if the host-port column here and the
+`ports:` publishes in the compose file disagree in either direction (and it
+also asserts `setup.py::_DEFAULT_LOCAL_DB_PORT` matches the Postgres publish).
+Run it locally with `python scripts/ci/ports_lint.py`.
 
 ## Why this matters
 
@@ -26,30 +30,30 @@ table first.**
 
 ## Table
 
-| Service             | Container                     | Host port | Container port | URL                                                |
-| ------------------- | ----------------------------- | --------- | -------------- | -------------------------------------------------- |
-| Grafana             | poindexter-grafana            | **3000**  | 3000           | <http://localhost:3000>                            |
-| Uptime Kuma         | poindexter-uptime-kuma        | **3002**  | 3001           | <http://localhost:3002>                            |
-| Langfuse web        | poindexter-langfuse-web       | **3010**  | 3000           | <http://localhost:3010>                            |
-| Loki                | poindexter-loki               | **3100**  | 3100           | <http://localhost:3100> (Grafana datasource)       |
-| Tempo HTTP          | poindexter-tempo              | **3200**  | 3200           | <http://localhost:3200> (Grafana datasource)       |
-| Tempo OTLP gRPC     | poindexter-tempo              | **4317**  | 4317           | gRPC — worker exports traces here                  |
-| Tempo OTLP HTTP     | poindexter-tempo              | **4318**  | 4318           | HTTP alt OTLP path                                 |
-| Pyroscope           | poindexter-pyroscope          | **4040**  | 4040           | <http://localhost:4040>                            |
-| Prefect server      | poindexter-prefect-server     | **4200**  | 4200           | <http://localhost:4200>                            |
-| LiveKit signalling  | poindexter-livekit            | **7880**  | 7880           | WebSocket signalling                               |
-| LiveKit RTC TCP     | poindexter-livekit            | **7881**  | 7881           | TCP RTC fallback                                   |
-| LiveKit RTC TCP alt | poindexter-livekit            | **7882**  | 7882           |                                                    |
-| Worker (FastAPI)    | poindexter-worker             | **8002**  | 8002           | <http://localhost:8002>                            |
-| Voice agent WebRTC  | poindexter-voice-agent-webrtc | **8003**  | 8003           |                                                    |
-| GlitchTip web       | poindexter-glitchtip-web      | **8080**  | 8000           | <http://localhost:8080>                            |
-| Prometheus          | poindexter-prometheus         | **9091**  | 9090           | <http://localhost:9091>                            |
-| Alertmanager        | poindexter-alertmanager       | **9093**  | 9093           | <http://localhost:9093>                            |
-| GPU exporter        | poindexter-gpu-exporter       | **9835**  | 9835           | Prometheus scrape target                           |
-| SDXL server         | poindexter-sdxl-server        | **9836**  | 9836           | On-demand image generation                         |
-| Wan server          | poindexter-wan-server         | **9840**  | 9840           | On-demand video generation                         |
-| Postgres            | poindexter-postgres-local     | **5433**  | 5432           | `postgresql://...@localhost:5433/poindexter_brain` |
-| pgAdmin             | poindexter-pgadmin            | **18443** | 80             | <http://localhost:18443>                           |
+| Service             | Container                 | Host port | Container port | URL                                                |
+| ------------------- | ------------------------- | --------- | -------------- | -------------------------------------------------- |
+| Grafana             | poindexter-grafana        | **3000**  | 3000           | <http://localhost:3000>                            |
+| Uptime Kuma         | poindexter-uptime-kuma    | **3002**  | 3001           | <http://localhost:3002>                            |
+| Langfuse web        | poindexter-langfuse-web   | **3010**  | 3000           | <http://localhost:3010>                            |
+| Loki                | poindexter-loki           | **3100**  | 3100           | <http://localhost:3100> (Grafana datasource)       |
+| Tempo HTTP          | poindexter-tempo          | **3200**  | 3200           | <http://localhost:3200> (Grafana datasource)       |
+| Tempo OTLP gRPC     | poindexter-tempo          | **4317**  | 4317           | gRPC — worker exports traces here                  |
+| Tempo OTLP HTTP     | poindexter-tempo          | **4318**  | 4318           | HTTP alt OTLP path                                 |
+| Pyroscope           | poindexter-pyroscope      | **4040**  | 4040           | <http://localhost:4040>                            |
+| Prefect server      | poindexter-prefect-server | **4200**  | 4200           | <http://localhost:4200>                            |
+| LiveKit signalling  | poindexter-livekit        | **7880**  | 7880           | WebSocket signalling                               |
+| LiveKit RTC TCP     | poindexter-livekit        | **7881**  | 7881           | TCP RTC fallback                                   |
+| LiveKit RTC TCP alt | poindexter-livekit        | **7882**  | 7882           |                                                    |
+| Speaches (STT/TTS)  | poindexter-speaches       | **8001**  | 8000           | Warm STT + TTS sidecar (OpenAI-compatible)         |
+| Worker (FastAPI)    | poindexter-worker         | **8002**  | 8002           | <http://localhost:8002>                            |
+| GlitchTip web       | poindexter-glitchtip-web  | **8080**  | 8000           | <http://localhost:8080>                            |
+| Prometheus          | poindexter-prometheus     | **9091**  | 9090           | <http://localhost:9091>                            |
+| Alertmanager        | poindexter-alertmanager   | **9093**  | 9093           | <http://localhost:9093>                            |
+| GPU exporter        | poindexter-gpu-exporter   | **9835**  | 9835           | Prometheus scrape target                           |
+| SDXL server         | poindexter-sdxl-server    | **9836**  | 9836           | On-demand image generation                         |
+| Wan server          | poindexter-wan-server     | **9840**  | 9840           | On-demand video generation                         |
+| Postgres            | poindexter-postgres-local | **5433**  | 5432           | `postgresql://...@localhost:5433/poindexter_brain` |
+| pgAdmin             | poindexter-pgadmin        | **18443** | 80             | <http://localhost:18443>                           |
 
 **Bolded host-port column is what the host (your browser, host-CLI, or
 `host.docker.internal`) reaches the service on.** From inside another

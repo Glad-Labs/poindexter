@@ -1,0 +1,59 @@
+# Keep the host-port column of docs/operations/ports.md in lockstep with the
+# `ports:` publishes in docker-compose.local.yml (and with
+# setup.py::_DEFAULT_LOCAL_DB_PORT). This is the belt-and-suspenders the ports
+# doc has long promised — it catches the drift class behind the 2026-06-21
+# `15432 -> 5433` local-Postgres move, where a hardcoded port literal drifted
+# from the compose publish after 15432 hit a Windows Hyper-V reserved range.
+#
+# Pure-stdlib script (scripts/ci/ports_lint.py) — no DB, no services, no pip
+# install. Same posture as the action-pins / shell-line-endings ratchets.
+name: ports-lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'docker-compose.local.yml'
+      - 'docs/operations/ports.md'
+      - 'src/cofounder_agent/poindexter/cli/setup.py'
+      - 'scripts/ci/ports_lint.py'
+      - '.github/workflows/ports-lint.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'docker-compose.local.yml'
+      - 'docs/operations/ports.md'
+      - 'src/cofounder_agent/poindexter/cli/setup.py'
+      - 'scripts/ci/ports_lint.py'
+      - '.github/workflows/ports-lint.yml'
+  workflow_dispatch:
+
+# Cancel older in-progress runs of the same ref/PR — saves Actions minutes
+# when multiple commits land back-to-back on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least-privilege GITHUB_TOKEN — a read-only checkout is all this needs.
+permissions:
+  contents: read
+
+jobs:
+  ports-lint:
+    # Source-repo only — same rationale as grafana-panels-lint.yml. The public
+    # mirror is force-pushed (checks gate nothing) and this isn't a required
+    # check there; it would just re-lint the same public files the source
+    # already checked. A FORK (repo name != Glad-Labs/poindexter) still runs it.
+    if: github.repository != 'Glad-Labs/poindexter'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+        with:
+          fetch-depth: 1
+      - name: Set up Python
+        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v5.6.0 as of 2026-05-12
+        with:
+          python-version: '3.13'
+      - name: Run ports_lint
+        run: python scripts/ci/ports_lint.py
