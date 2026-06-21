@@ -220,6 +220,18 @@ COMPOSE_WORKING_DIR_LABEL = "com.docker.compose.project.working_dir"
 ON_DEMAND_SERVICES_SETTING_KEY = "compose_drift_on_demand_services"
 ON_DEMAND_SERVICES_DEFAULT = "wan-server,sdxl-server"
 
+# Compose `profiles:` the operator has activated at `docker compose up` (CSV,
+# e.g. "operator,ci-runner"). A service gated behind a profile NOT in this set
+# is opt-in and legitimately not running, so its `container_missing` is
+# suppressed exactly like an on-demand service — the probe can't otherwise tell
+# "profile off (fine)" from "profile on but crashed (page)". Empty default =
+# treat every profiled service as inactive (no false pages out of the box);
+# list your active profiles to restore crash-detection for their services.
+# Incident 2026-06-21: gpu-exporter `profiles:[linux-gpu]` false-paged CRITICAL
+# every cycle on this Windows host, where the host nvidia-smi exporter (not the
+# profile-gated container) serves GPU metrics.
+ACTIVE_PROFILES_SETTING_KEY = "compose_drift_active_profiles"
+
 # How long to wait after ``docker compose up -d`` before re-probing.
 RECOVER_WAIT_SECONDS = 30
 
@@ -723,6 +735,28 @@ async def _read_on_demand_services(pool) -> set[str]:
     return {s.strip() for s in val.split(",") if s.strip()}
 
 
+async def _read_active_profiles(pool) -> set[str]:
+    val = await _read_setting(pool, ACTIVE_PROFILES_SETTING_KEY, default="")
+    return {s.strip() for s in val.split(",") if s.strip()}
+
+
+def _service_profiles(service_block: dict[str, Any]) -> set[str]:
+    """Extract a service's compose ``profiles:`` as a set of profile names.
+
+    Compose accepts a list (``profiles: ["linux-gpu"]``); a bare string is also
+    tolerated. A service with no ``profiles:`` key returns the empty set — it's
+    an always-on service that every ``docker compose up`` starts.
+    """
+    raw = service_block.get("profiles")
+    if not raw:
+        return set()
+    if isinstance(raw, str):
+        return {raw.strip()} if raw.strip() else set()
+    if isinstance(raw, (list, tuple, set)):
+        return {str(p).strip() for p in raw if str(p).strip()}
+    return set()
+
+
 async def _read_compose_project_name(pool) -> str:
     val = await _read_setting(pool, COMPOSE_PROJECT_NAME_SETTING_KEY, default="")
     return val.strip()
@@ -1004,6 +1038,7 @@ async def run_compose_drift_probe(
     compose_path = await _read_compose_path(pool)
     skip_services = await _read_skip_services(pool)
     on_demand_services = await _read_on_demand_services(pool)
+    active_profiles = await _read_active_profiles(pool)
     auto_recover_enabled = await _read_auto_recover_enabled(pool)
     project_name = await _read_compose_project_name(pool)
     project_directory = await _read_compose_project_directory(pool)
@@ -1111,16 +1146,26 @@ async def run_compose_drift_probe(
         inspect = inspect_fn(container_name)
         inspected_count += 1
         diff = _diff_service(svc_block, inspect)
-        # On-demand services (e.g. wan-server, sdxl-server) spin up only
-        # when needed — `container_missing` is the expected steady state,
-        # not drift. Suppress that specific signal but keep diffing if the
-        # container does happen to be running, so genuine env/mount/port
-        # drift still surfaces. See Glad-Labs/poindexter#425.
-        if diff["container_missing"] and svc_name in on_demand_services:
+        # Suppress `container_missing` (only) for services that are EXPECTED to
+        # be down: (1) on-demand services (wan-server, sdxl-server) that spin up
+        # only when needed (Glad-Labs/poindexter#425), and (2) services gated
+        # behind a compose `profiles:` that isn't active — e.g. gpu-exporter
+        # `profiles:[linux-gpu]` on a Windows host where the host nvidia-smi
+        # exporter serves GPU metrics (incident 2026-06-21). Both keep diffing
+        # if the container IS running, so genuine env/mount/port drift still
+        # surfaces.
+        svc_profiles = _service_profiles(svc_block)
+        profile_inactive = bool(svc_profiles) and not (svc_profiles & active_profiles)
+        if diff["container_missing"] and (
+            svc_name in on_demand_services or profile_inactive
+        ):
             logger.debug(
-                "[COMPOSE_DRIFT] %s missing but flagged on-demand "
-                "(%s) — suppressing container_missing alert",
-                svc_name, ON_DEMAND_SERVICES_SETTING_KEY,
+                "[COMPOSE_DRIFT] %s missing but suppressed (%s) — skipping "
+                "container_missing alert",
+                svc_name,
+                ON_DEMAND_SERVICES_SETTING_KEY
+                if svc_name in on_demand_services
+                else f"profile(s) {sorted(svc_profiles)} not in {ACTIVE_PROFILES_SETTING_KEY}",
             )
             continue
         if diff["drifted"]:

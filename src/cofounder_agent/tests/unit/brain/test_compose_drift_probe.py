@@ -252,6 +252,133 @@ async def test_read_on_demand_services_empty_string_disables_suppression():
 
 
 # ---------------------------------------------------------------------------
+# Compose `profiles:` awareness — a service gated behind an inactive profile
+# (e.g. gpu-exporter `profiles: [linux-gpu]` on a Windows host where GPU
+# metrics come from a host exporter) is legitimately not running. Its
+# `container_missing` must NOT page; the probe was false-paging CRITICAL on it
+# every cycle until the host-recover cap (incident 2026-06-21).
+# ---------------------------------------------------------------------------
+
+
+def test_service_profiles_extracts_profiles_list():
+    assert cd._service_profiles({"profiles": ["linux-gpu", "x"]}) == {"linux-gpu", "x"}
+    assert cd._service_profiles({}) == set()
+    assert cd._service_profiles({"profiles": []}) == set()
+    # Non-list / malformed profiles degrade to empty rather than raising.
+    assert cd._service_profiles({"profiles": "linux-gpu"}) == {"linux-gpu"}
+
+
+@pytest.mark.asyncio
+async def test_read_active_profiles_parses_csv():
+    pool = _make_pool(
+        setting_values={cd.ACTIVE_PROFILES_SETTING_KEY: " operator , ci-runner "}
+    )
+    assert await cd._read_active_profiles(pool) == {"operator", "ci-runner"}
+
+
+@pytest.mark.asyncio
+async def test_read_active_profiles_defaults_empty():
+    """No operator config → no profiles active → every profiled service's
+    container_missing is suppressed (safe default: no false pages)."""
+    pool = _make_pool(setting_values={})
+    assert await cd._read_active_profiles(pool) == set()
+
+
+@pytest.mark.asyncio
+async def test_inactive_profile_service_missing_is_suppressed():
+    """gpu-exporter (profiles:[linux-gpu]) missing while linux-gpu is not in
+    the active set → suppressed, exactly like an on-demand service."""
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={})  # active_profiles empty → linux-gpu inactive
+
+    spec = _spec({
+        "gpu-exporter": {
+            "container_name": "poindexter-gpu-exporter",
+            "profiles": ["linux-gpu"],
+        },
+    })
+
+    notify = MagicMock()
+    summary = await cd.run_compose_drift_probe(
+        pool,
+        notify_fn=notify,
+        inspect_fn=lambda _name: None,  # profile off → container not running
+        yaml_loader=lambda _path: spec,
+        docker_reachable_fn=lambda: (True, ""),
+    )
+
+    assert summary["status"] == "no_drift"
+    assert summary["drifted_count"] == 0
+    notify.assert_not_called()
+    assert "probe.compose_drift_detected" not in _audit_event_types(pool)
+
+
+@pytest.mark.asyncio
+async def test_active_profile_service_missing_still_alerts():
+    """A profiled service whose profile IS active but whose container is gone
+    is a real outage — crash detection must be preserved (not over-suppressed)."""
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(
+        setting_values={cd.ACTIVE_PROFILES_SETTING_KEY: "operator,ci-runner"}
+    )
+
+    spec = _spec({
+        "pgadmin": {
+            "container_name": "poindexter-pgadmin",
+            "profiles": ["operator"],
+        },
+    })
+
+    notify = MagicMock()
+    summary = await cd.run_compose_drift_probe(
+        pool,
+        notify_fn=notify,
+        inspect_fn=lambda _name: None,  # missing while its profile is active
+        yaml_loader=lambda _path: spec,
+        docker_reachable_fn=lambda: (True, ""),
+    )
+
+    assert summary["status"] == "drift_detected_no_recover"
+    assert "pgadmin" in summary["drifted_services"]
+    notify.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_inactive_profile_service_running_with_real_drift_still_alerts():
+    """Suppression is scoped to container_missing — a profiled service that IS
+    running but has genuine spec drift (missing mount) still reports, even when
+    its profile is inactive."""
+    cd._last_notified_drifted = frozenset()
+    pool = _make_pool(setting_values={})  # linux-gpu inactive
+
+    spec = _spec({
+        "gpu-exporter": {
+            "container_name": "poindexter-gpu-exporter",
+            "profiles": ["linux-gpu"],
+            "volumes": ["/host/x:/x"],
+        },
+    })
+    inspect_payload = {
+        "Config": {"Env": [], "Image": ""},
+        "HostConfig": {"Binds": [], "PortBindings": {}},
+        "Mounts": [],  # /x mount missing → real drift
+    }
+
+    notify = MagicMock()
+    summary = await cd.run_compose_drift_probe(
+        pool,
+        notify_fn=notify,
+        inspect_fn=lambda _name: inspect_payload,
+        yaml_loader=lambda _path: spec,
+        docker_reachable_fn=lambda: (True, ""),
+    )
+
+    assert summary["status"] == "drift_detected_no_recover"
+    assert "gpu-exporter" in summary["drifted_services"]
+    notify.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
 # Host-routed recovery (PR3). On drift, a containerised brain delegates the
 # `docker compose up` it can't run itself to the host Recovery Agent. These
 # cover the new 5-host branch: dispatch, disabled/unconfigured fall-through,

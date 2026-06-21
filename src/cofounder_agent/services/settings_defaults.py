@@ -1010,6 +1010,16 @@ DEFAULTS: dict[str, str] = {
     # Max start-stack reapplies per rolling window before escalating to a page.
     'compose_drift_host_recover_cap_per_window': '3',
     'compose_drift_host_recover_window_minutes': '60',
+    # Compose `profiles:` the operator activates at `docker compose up` (CSV,
+    # e.g. "operator,ci-runner"). A service gated behind a profile NOT listed
+    # here is opt-in and legitimately not running, so the drift probe suppresses
+    # its container_missing (it still diffs the service if it IS running). Empty
+    # default = treat every profiled service as inactive — no false pages out of
+    # the box. Incident 2026-06-21: gpu-exporter profiles:[linux-gpu] false-paged
+    # CRITICAL every cycle on this Windows host, where the host nvidia-smi
+    # exporter (not the profile-gated container) serves GPU metrics. List your
+    # active profiles to restore crash-detection for their services.
+    'compose_drift_active_profiles': '',
 
     # ----- Scheduled-tasks probe (brain/health_probes.py::probe_scheduled_tasks) -----
     # The containerised brain can't enumerate the host Windows Task Scheduler, so

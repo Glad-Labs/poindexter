@@ -133,6 +133,24 @@ containerised brain it heals the drift through the host Recovery Agent:
 5. **POST failed** (agent down) → warning page: the recovery path itself is
    broken.
 
+**Opt-in services are exempt from the missing-container check.** Two classes of
+service are legitimately not running, so a missing container for them is never
+drift (drift in their _other_ fields — mounts/env/ports/image — is still flagged
+when they **are** up):
+
+- **On-demand** services listed in `compose_drift_on_demand_services` (CSV,
+  default `wan-server,sdxl-server`) — GPU-heavy backends the worker starts per
+  job and lets exit.
+- **Profile-gated** services whose compose `profiles:` are not in
+  `compose_drift_active_profiles` (CSV, default empty). A `profiles:`-gated
+  service only starts when the operator brings up its profile, so if that
+  profile isn't active the container is _supposed_ to be absent. Empty default =
+  every profiled service is treated as inactive (no false pages out of the box);
+  list the profiles you actually run to restore crash-detection for their
+  services. Incident 2026-06-21: `gpu-exporter` (`profiles: [linux-gpu]`)
+  false-paged CRITICAL every cycle on the Windows host, where the host
+  nvidia-smi exporter — not the profile-gated container — serves GPU metrics.
+
 This is separate from `compose_drift_auto_recover_enabled` — the brain's _own_
 `docker compose up` — which **stays off** on a Windows host because it mangles
 the `C:\` binds (see the detector/actor split above).
@@ -171,17 +189,19 @@ Example watch list:
 
 ## Settings reference
 
-| Setting                                     | Default | Meaning                                                                                                       |
-| ------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------- |
-| `compose_drift_host_recover_enabled`        | `true`  | Auto-heal compose drift via the host agent.                                                                   |
-| `compose_drift_host_recover_cap_per_window` | `3`     | Max reapplies before escalating to a page.                                                                    |
-| `compose_drift_host_recover_window_minutes` | `60`    | The rolling window for the cap.                                                                               |
-| `compose_drift_auto_recover_enabled`        | `false` | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                   |
-| `mcp_http_probe_recovery_url`               | (empty) | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.  |
-| `mcp_http_probe_recovery_token`             | secret  | Bearer token matching the agent's `poindexter_recovery_token`.                                                |
-| `scheduled_tasks_probe_watch_tasks`         | (empty) | CSV of host Scheduled Task names the `scheduled_tasks` probe checks via `GET /tasks`. Empty = advisory no-op. |
-| `offsite_backup_watch_enabled`              | `true`  | Backup-freshness probe.                                                                                       |
-| `auto_embed_watch_enabled`                  | `true`  | Embedder-freshness probe.                                                                                     |
+| Setting                                     | Default                  | Meaning                                                                                                                   |
+| ------------------------------------------- | ------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `compose_drift_host_recover_enabled`        | `true`                   | Auto-heal compose drift via the host agent.                                                                               |
+| `compose_drift_host_recover_cap_per_window` | `3`                      | Max reapplies before escalating to a page.                                                                                |
+| `compose_drift_host_recover_window_minutes` | `60`                     | The rolling window for the cap.                                                                                           |
+| `compose_drift_on_demand_services`          | `wan-server,sdxl-server` | CSV of services started on demand — exempt from the missing-container check.                                              |
+| `compose_drift_active_profiles`             | (empty)                  | CSV of active compose `profiles:`. Services gated behind an unlisted profile are exempt from the missing-container check. |
+| `compose_drift_auto_recover_enabled`        | `false`                  | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                               |
+| `mcp_http_probe_recovery_url`               | (empty)                  | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.              |
+| `mcp_http_probe_recovery_token`             | secret                   | Bearer token matching the agent's `poindexter_recovery_token`.                                                            |
+| `scheduled_tasks_probe_watch_tasks`         | (empty)                  | CSV of host Scheduled Task names the `scheduled_tasks` probe checks via `GET /tasks`. Empty = advisory no-op.             |
+| `offsite_backup_watch_enabled`              | `true`                   | Backup-freshness probe.                                                                                                   |
+| `auto_embed_watch_enabled`                  | `true`                   | Embedder-freshness probe.                                                                                                 |
 
 ## Deploying the Recovery Agent
 
