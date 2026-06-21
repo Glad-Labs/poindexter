@@ -52,6 +52,8 @@ from __future__ import annotations
 import json
 import logging
 import os
+import socket
+import struct
 import subprocess
 import time
 import urllib.error
@@ -228,12 +230,20 @@ def _parse_watch_list(raw: Any) -> list[dict[str, Any]]:
                 container, host_port_raw, port_int,
             )
             host_port = port_int
+        probe_type = str(entry.get("probe_type") or "http").strip().lower()
+        if probe_type not in ("http", "postgres"):
+            logger.warning(
+                "[PORT_FORWARD] %s entry has unknown probe_type=%r — "
+                "defaulting to 'http'", container, entry.get("probe_type"),
+            )
+            probe_type = "http"
         out.append({
             "container": str(container),
             "port": port_int,
             "host_port": host_port,
             "path": str(path),
             "internal_hostname": str(internal_hostname),
+            "probe_type": probe_type,
         })
     return out
 
@@ -280,6 +290,36 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         "restart_cap_per_window": restart_cap_per_window,
         "restart_cap_window_minutes": restart_cap_window_minutes,
     }
+
+
+# ---------------------------------------------------------------------------
+# Postgres reachability probe — for non-HTTP watch-list entries
+# (probe_type="postgres"). Detects the WSL2 NAT host-port wedge that drops
+# the connection mid-handshake (the failure that surfaces as asyncpg
+# "unexpected connection_lost() call"). Credential-free: we send the libpq
+# SSLRequest and read the single negotiation byte, exactly as asyncpg's
+# first wire step does, then close. A healthy Postgres answers 'S'/'N'; a
+# wedged proxy accepts the TCP connection then drops it (empty recv /
+# reset). Stdlib-only, matching the probe's "reachability, not auth"
+# philosophy.
+# ---------------------------------------------------------------------------
+
+_PG_SSL_REQUEST = struct.pack("!ii", 8, 80877103)  # length=8, code=80877103
+
+
+def _pg_probe(host: str, port: int, timeout_seconds: float) -> bool:
+    """True iff Postgres answers the SSLRequest handshake within timeout."""
+    try:
+        with socket.create_connection(
+            (host, port), timeout=timeout_seconds
+        ) as sock:
+            sock.settimeout(timeout_seconds)
+            sock.sendall(_PG_SSL_REQUEST)
+            reply = sock.recv(1)
+            return reply in (b"S", b"N")
+    except Exception as exc:  # noqa: BLE001 — any failure = not reachable
+        logger.debug("[PORT_FORWARD] pg_probe %s:%s failed: %s", host, port, exc)
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -617,6 +657,7 @@ async def _check_one_service(
     service: dict[str, Any],
     config: dict[str, Any],
     http_probe_fn: Callable[[str, float], bool],
+    pg_probe_fn: Callable[[str, int, float], bool],
     container_exists_fn: Callable[[str], bool],
     restart_fn: Callable[[str], tuple[bool, str]],
     sleep_fn: Callable[[float], None],
@@ -656,11 +697,27 @@ async def _check_one_service(
     # uses the container-side port; the external probe uses the host
     # side, since that's what wslrelay actually forwards.
     host_port = service.get("host_port", port)
-    internal_url = f"http://{internal_hostname}:{port}{path}"
-    external_url = f"http://host.docker.internal:{host_port}{path}"
+    probe_type = service.get("probe_type", "http")
+    if probe_type == "postgres":
+        # Non-HTTP service: use the credential-free Postgres SSLRequest
+        # reachability check on the internal DNS and the host-published
+        # port. Same wedge signature (internal ok, external dropped). The
+        # external closure is reused for the post-restart recovery re-probe.
+        internal_url = f"postgres://{internal_hostname}:{port}"
+        external_url = f"postgres://host.docker.internal:{host_port}"
+        ok_internal = pg_probe_fn(internal_hostname, port, timeout)
 
-    ok_internal = http_probe_fn(internal_url, timeout)
-    ok_external = http_probe_fn(external_url, timeout)
+        def _probe_external() -> bool:
+            return pg_probe_fn("host.docker.internal", host_port, timeout)
+    else:
+        internal_url = f"http://{internal_hostname}:{port}{path}"
+        external_url = f"http://host.docker.internal:{host_port}{path}"
+        ok_internal = http_probe_fn(internal_url, timeout)
+
+        def _probe_external() -> bool:
+            return http_probe_fn(external_url, timeout)
+
+    ok_external = _probe_external()
 
     # 1) Both ok → happy path.
     if ok_internal and ok_external:
@@ -824,9 +881,11 @@ async def _check_one_service(
             "retried_n": retried_n,
         }
 
-    # 6) Wait briefly, then re-probe to confirm recovery.
+    # 6) Wait briefly, then re-probe to confirm recovery. Uses the
+    # probe_type-aware external closure so a postgres entry re-checks via
+    # the pg probe, not an HTTP GET.
     sleep_fn(recovery_wait)
-    recovered = http_probe_fn(external_url, timeout)
+    recovered = _probe_external()
     recovery_ms = int((now_fn() - restart_started) * 1000)
 
     audit_extra = {
@@ -894,6 +953,7 @@ async def run_docker_port_forward_probe(
     pool: Any,
     *,
     http_probe_fn: Callable[[str, float], bool] | None = None,
+    pg_probe_fn: Callable[[str, int, float], bool] | None = None,
     container_exists_fn: Callable[[str], bool] | None = None,
     restart_fn: Callable[[str], tuple[bool, str]] | None = None,
     sleep_fn: Callable[[float], None] | None = None,
@@ -921,6 +981,7 @@ async def run_docker_port_forward_probe(
     ``brain_decisions`` / the cycle's ``probe_results`` map.
     """
     http_probe_fn = http_probe_fn or _http_probe
+    pg_probe_fn = pg_probe_fn or _pg_probe
     container_exists_fn = container_exists_fn or _container_exists
     restart_fn = restart_fn or _restart_container
     sleep_fn = sleep_fn or time.sleep
@@ -960,6 +1021,7 @@ async def run_docker_port_forward_probe(
                 service=service,
                 config=config,
                 http_probe_fn=http_probe_fn,
+                pg_probe_fn=pg_probe_fn,
                 container_exists_fn=container_exists_fn,
                 restart_fn=restart_fn,
                 sleep_fn=sleep_fn,

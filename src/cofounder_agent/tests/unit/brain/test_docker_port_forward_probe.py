@@ -699,6 +699,7 @@ class TestWatchListParsing:
             "host_port": 4040,
             "path": "/",
             "internal_hostname": "pyroscope",
+            "probe_type": "http",
         }]
 
     def test_explicit_internal_hostname_overrides_heuristic(self):
@@ -762,6 +763,31 @@ class TestWatchListParsing:
         ]))
         assert len(out) == 1
         assert out[0]["container"] == "ok2"
+
+    def test_probe_type_defaults_to_http(self):
+        out = pf._parse_watch_list(json.dumps([
+            {"container": "poindexter-grafana", "port": 3000, "path": "/"},
+        ]))
+        assert out[0]["probe_type"] == "http"
+
+    def test_probe_type_postgres_preserved(self):
+        out = pf._parse_watch_list(json.dumps([
+            {
+                "container": "poindexter-postgres-local",
+                "internal_hostname": "postgres-local",
+                "port": 5432,
+                "host_port": 5433,
+                "probe_type": "postgres",
+            },
+        ]))
+        assert out[0]["probe_type"] == "postgres"
+        assert out[0]["host_port"] == 5433
+
+    def test_unknown_probe_type_falls_back_to_http(self):
+        out = pf._parse_watch_list(json.dumps([
+            {"container": "poindexter-x", "port": 1, "probe_type": "carrier-pigeon"},
+        ]))
+        assert out[0]["probe_type"] == "http"
 
 
 @pytest.mark.unit
@@ -902,3 +928,162 @@ class TestAlertFingerprintsAreStable:
             "cap-alert fingerprints for different containers must "
             "remain distinct"
         )
+
+
+# ---------------------------------------------------------------------------
+# Postgres reachability probe (_pg_probe) — SSLRequest framing
+# ---------------------------------------------------------------------------
+
+
+class _FakeSock:
+    """Minimal context-manager socket stub for _pg_probe tests."""
+
+    def __init__(self, reply: bytes = b"", *, raise_on: str | None = None):
+        self._reply = reply
+        self._raise_on = raise_on
+        self.sent = b""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+    def settimeout(self, _t):
+        pass
+
+    def sendall(self, data):
+        if self._raise_on == "sendall":
+            raise ConnectionResetError("reset on send")
+        self.sent += data
+
+    def recv(self, _n):
+        if self._raise_on == "recv":
+            raise ConnectionResetError("reset on recv")
+        return self._reply
+
+
+@pytest.mark.unit
+class TestPgProbe:
+    def test_sends_ssl_request_and_true_on_S(self, monkeypatch):
+        sock = _FakeSock(reply=b"S")
+        monkeypatch.setattr(
+            pf.socket, "create_connection", lambda addr, timeout: sock
+        )
+        assert pf._pg_probe("postgres-local", 5432, 3.0) is True
+        # Mirrors asyncpg's first wire step exactly.
+        assert sock.sent == pf._PG_SSL_REQUEST
+
+    def test_true_on_N(self, monkeypatch):
+        monkeypatch.setattr(
+            pf.socket, "create_connection",
+            lambda addr, timeout: _FakeSock(reply=b"N"),
+        )
+        assert pf._pg_probe("host.docker.internal", 5433, 3.0) is True
+
+    def test_false_on_empty_reply_wedge(self, monkeypatch):
+        # The wedge: TCP accepted, then dropped on first byte → empty recv.
+        monkeypatch.setattr(
+            pf.socket, "create_connection",
+            lambda addr, timeout: _FakeSock(reply=b""),
+        )
+        assert pf._pg_probe("host.docker.internal", 5433, 3.0) is False
+
+    def test_false_on_reset(self, monkeypatch):
+        monkeypatch.setattr(
+            pf.socket, "create_connection",
+            lambda addr, timeout: _FakeSock(raise_on="recv"),
+        )
+        assert pf._pg_probe("host.docker.internal", 5433, 3.0) is False
+
+    def test_false_on_connect_error(self, monkeypatch):
+        def _boom(addr, timeout):
+            raise OSError("connection refused")
+        monkeypatch.setattr(pf.socket, "create_connection", _boom)
+        assert pf._pg_probe("nope", 5432, 3.0) is False
+
+
+# ---------------------------------------------------------------------------
+# Postgres watch entry — wedge detection + recovery via pg_probe_fn
+# ---------------------------------------------------------------------------
+
+
+_PG_ENTRY = {
+    "container": "poindexter-postgres-local",
+    "internal_hostname": "postgres-local",
+    "port": 5432,
+    "host_port": 5433,
+    "probe_type": "postgres",
+}
+
+
+@pytest.mark.unit
+class TestPostgresWatchEntry:
+    @pytest.mark.asyncio
+    async def test_pg_wedge_internal_ok_external_fail_restarts(self):
+        pool = _make_pool(setting_values={pf.WATCH_LIST_KEY: json.dumps([_PG_ENTRY])})
+        external = iter([False, True])  # fail, then recover post-restart
+
+        def fake_pg(host, _port, _timeout):
+            if host == "host.docker.internal":
+                return next(external)
+            return True  # internal always ok
+
+        def fake_http(_url, _timeout):
+            raise AssertionError("http probe must not run for postgres entry")
+
+        restart_calls: list[str] = []
+
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            http_probe_fn=fake_http,
+            pg_probe_fn=fake_pg,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            sleep_fn=lambda s: None,
+            notify_fn=lambda **k: None,
+            now_fn=lambda: 1_000_000.0,
+        )
+
+        svc = summary["services"]["poindexter-postgres-local"]
+        assert svc["status"] == "recovered", summary
+        assert restart_calls == ["poindexter-postgres-local"]
+        assert "docker_port_forward_recovered" in _executed_audit_events(pool)
+
+    @pytest.mark.asyncio
+    async def test_pg_both_down_does_not_restart(self):
+        pool = _make_pool(setting_values={pf.WATCH_LIST_KEY: json.dumps([_PG_ENTRY])})
+        restart_calls: list[str] = []
+
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            pg_probe_fn=lambda h, p, t: False,  # both down
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            sleep_fn=lambda s: None,
+            notify_fn=lambda **k: None,
+            now_fn=lambda: 1_000_000.0,
+        )
+
+        assert summary["services"]["poindexter-postgres-local"]["status"] == "service_down"
+        assert restart_calls == []
+
+    @pytest.mark.asyncio
+    async def test_pg_both_ok_no_restart(self):
+        pool = _make_pool(setting_values={pf.WATCH_LIST_KEY: json.dumps([_PG_ENTRY])})
+        restart_calls: list[str] = []
+
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            pg_probe_fn=lambda h, p, t: True,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            sleep_fn=lambda s: None,
+            notify_fn=lambda **k: None,
+            now_fn=lambda: 1_000_000.0,
+        )
+
+        svc = summary["services"]["poindexter-postgres-local"]
+        assert svc["status"] == "ok"
+        assert svc["external_url"] == "postgres://host.docker.internal:5433"
+        assert restart_calls == []

@@ -94,11 +94,12 @@ The brain runs these every 5-minute cycle. Two patterns:
 
 **HTTP/inspect probes** — actively check a surface, recover, cap, page:
 
-| Probe                                        | Watches                        | Detect                         | Recover                                              | Escalate            |
-| -------------------------------------------- | ------------------------------ | ------------------------------ | ---------------------------------------------------- | ------------------- |
-| `brain/mcp_http_probe.py`                    | MCP HTTP server (`:8004`)      | `GET` discovery endpoint       | launcher (host process) or host-recover (`mcp-http`) | page after cap      |
-| `brain/compose_drift_probe.py`               | container vs compose spec      | `docker inspect` vs YAML       | host-recover (`compose-reapply`) — see below         | page after cap      |
-| `brain/health_probes.py` (`scheduled_tasks`) | host self-heal Scheduled Tasks | `GET /tasks` on the host agent | — (detect-only) — see below                          | page after 3 cycles |
+| Probe                                        | Watches                                                                                       | Detect                                                                                                            | Recover                                              | Escalate            |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------- |
+| `brain/mcp_http_probe.py`                    | MCP HTTP server (`:8004`)                                                                     | `GET` discovery endpoint                                                                                         | launcher (host process) or host-recover (`mcp-http`) | page after cap      |
+| `brain/compose_drift_probe.py`               | container vs compose spec                                                                     | `docker inspect` vs YAML                                                                                         | host-recover (`compose-reapply`) — see below         | page after cap      |
+| `brain/health_probes.py` (`scheduled_tasks`) | host self-heal Scheduled Tasks                                                                | `GET /tasks` on the host agent                                                                                  | — (detect-only) — see below                          | page after 3 cycles |
+| `brain/docker_port_forward_probe.py`         | published host ports — 12 HTTP sidecars + Postgres `:5433` (`docker_port_forward_watch_list`) | internal-OK + external-FAIL: HTTP `GET`, or a credential-free libpq `SSLRequest` for `probe_type=postgres` entries | `docker restart <container>` → re-probe              | page after cap      |
 
 **Heartbeat/freshness probes** — read the newest success row a service stamps in
 `audit_log`; if it's too old, the service is wedged:
