@@ -73,6 +73,12 @@
 
   // In-memory OAuth token cache (never persisted — short-lived JWT).
   let _tok = { value: '', exp: 0 };
+  // De-dupes concurrent mints. Going LIVE mounts ~11 panel effects at once, each
+  // calling http() -> getToken() against an empty cache; without coalescing,
+  // every one would POST /token and trip the worker's rate limiter (429). The
+  // first caller starts the mint and parks the promise here; the rest await it.
+  // Cleared in finally(), so the next mint after success/expiry/failure is fresh.
+  let _tokInflight = null;
 
   // Mint (or reuse) a client-credentials JWT. Refreshes ~60s before expiry.
   async function getToken() {
@@ -82,29 +88,47 @@
       throw new Error(
         'No OAuth client configured. Set client_id + client_secret in App Settings → Connection.'
       );
-    const form = new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: cfg.clientId,
-      client_secret: cfg.clientSecret,
+    // A mint is already in flight — ride it instead of starting a second one.
+    if (_tokInflight) return _tokInflight;
+    _tokInflight = (async () => {
+      const postToken = () => {
+        const form = new URLSearchParams({
+          grant_type: 'client_credentials',
+          client_id: cfg.clientId,
+          client_secret: cfg.clientSecret,
+        });
+        if (cfg.scope) form.set('scope', cfg.scope);
+        return fetch((cfg.base || '') + '/token', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: form.toString(),
+        });
+      };
+      let res = await postToken();
+      // Rate-limited (e.g. a burst the in-flight dedup can't cover — multiple
+      // tabs, or a token-rotation storm). Back off briefly and retry ONCE
+      // before surfacing it, so a transient 429 self-heals instead of leaving
+      // a panel red-toasted until the next 5-min poll.
+      if (res.status === 429) {
+        await new Promise((r) => setTimeout(r, 400));
+        res = await postToken();
+      }
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(
+          `/token → ${res.status} ${res.statusText} ${detail}`.trim()
+        );
+      }
+      const j = await res.json();
+      _tok = {
+        value: j.access_token,
+        exp: Date.now() + (Number(j.expires_in) || 3600) * 1000,
+      };
+      return _tok.value;
+    })().finally(() => {
+      _tokInflight = null;
     });
-    if (cfg.scope) form.set('scope', cfg.scope);
-    const res = await fetch((cfg.base || '') + '/token', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
-      body: form.toString(),
-    });
-    if (!res.ok) {
-      const detail = await res.text().catch(() => '');
-      throw new Error(
-        `/token → ${res.status} ${res.statusText} ${detail}`.trim()
-      );
-    }
-    const j = await res.json();
-    _tok = {
-      value: j.access_token,
-      exp: Date.now() + (Number(j.expires_in) || 3600) * 1000,
-    };
-    return _tok.value;
+    return _tokInflight;
   }
 
   // Thin fetch wrapper with sane errors + OAuth. Used only by live branches.

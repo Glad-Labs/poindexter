@@ -120,6 +120,12 @@ without a backend.
   production-fast, the future move is an esbuild/vite precompile of the `.jsx`
   into one bundle and dropping the Babel runtime — documented as a follow-up,
   not done here.
+- **One token mint per load.** Going live mounts ~11 panels that each hit the
+  API; `getToken()` coalesces their concurrent OAuth mints behind a single
+  in-flight `POST /token` (and backs off + retries once on a `429`), so a live
+  page load mints exactly one JWT instead of a thundering herd that trips the
+  worker's rate limiter. Contract-tested in `js/__tests__/api.token.test.js`
+  (`npm run test:console`; also gated by the `console-unit` CI workflow).
 - **Mobile.** At ≤920px the left rail collapses to a bottom tab bar and the
   masonry becomes a single column; verified down to a 390px phone viewport.
 - **Brand.** E3 tokens (cyan/amber, JetBrains Mono + Space Grotesk, square
