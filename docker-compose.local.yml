@@ -1990,6 +1990,25 @@ services:
     container_name: poindexter-ci-runner-1
     profiles: ["ci-runner"]
     restart: unless-stopped
+    # Clear stale runner registration before the image entrypoint runs. This
+    # runner registers fresh on every start ("reusage disabled"), but an
+    # UNGRACEFUL restart (Docker Engine / WSL restart, PC sleep, a job killed
+    # mid-run) leaves a half-written /actions-runner/.runner + .credentials the
+    # entrypoint can neither reuse nor remove ("Cannot configure the runner
+    # because it is already configured" + "Value cannot be null (Parameter
+    # 'configuredSettings')"). With `restart: unless-stopped` that then
+    # crash-loops the SAME container forever, and a plain `compose up -d` can't
+    # heal it (config matches desired, so nothing recreates it) — it took a
+    # manual `--force-recreate`. Wiping the config first makes every start a
+    # clean re-register, so the runner self-recovers from any restart. The image
+    # CMD is forwarded verbatim via "$@" (entrypoint=/entrypoint.sh,
+    # workdir=/actions-runner are the image's own settings; validated against the
+    # pinned image).
+    entrypoint:
+      - /bin/bash
+      - -c
+      - 'rm -f /actions-runner/.runner /actions-runner/.credentials /actions-runner/.credentials_rsaparams 2>/dev/null; exec /entrypoint.sh "$@"'
+      - --
     # IMPORTANT — caps are relative to the WSL2 VM, NOT the 64 GB host.
     # `.wslconfig` pins WSL2 to 24 GB / 16 procs, and the ENTIRE Docker stack
     # (postgres, grafana, sdxl, worker, langfuse, observability…) shares that

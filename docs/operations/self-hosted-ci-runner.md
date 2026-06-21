@@ -192,6 +192,13 @@ free, less when SDXL spikes). Size the runner to fit that, not the host.
   access. Immediate unblock: `gh variable set CI_RUNNER_MODE off`.
 - **Runner registers then immediately deregisters:** usually a bad App private
   key, or the App install is missing `Administration: write`.
+- **Runner crash-loops with "already configured" / "Value cannot be null
+  (Parameter 'configuredSettings')":** an ungraceful restart (Docker/WSL restart,
+  PC sleep, a job killed mid-run) left a corrupt `/actions-runner/.runner`. The
+  service `entrypoint` now wipes stale config on every start, so this
+  self-recovers on the next restart. A container created _before_ that change
+  needs one `bash scripts/start-stack.sh up -d --force-recreate github-runner-1`
+  to adopt the new entrypoint.
 - **`unit-tests` red only on self-hosted, green on hosted:** a hosted-image
   assumption. The two `Free … disk` steps are already guarded behind
   `!vars.CI_RUNNER`; if a new step assumes the ubuntu image, guard it the same
