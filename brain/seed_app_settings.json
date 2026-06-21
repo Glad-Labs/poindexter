@@ -134,12 +134,6 @@
       "description": "Fallback model when primary is unavailable"
     },
     {
-      "key": "pipeline_seo_model",
-      "value": "ollama/qwen3:8b",
-      "category": "models",
-      "description": "SEO title/description generation (smaller, faster)"
-    },
-    {
       "key": "pipeline_social_model",
       "value": "ollama/qwen3:8b",
       "category": "models",
@@ -158,46 +152,10 @@
       "description": "Research stage. Premium seed swaps this for a higher-capability model."
     },
     {
-      "key": "pipeline_factcheck_model",
-      "value": "programmatic",
-      "category": "pipeline",
-      "description": "Fact-checking mode: 'programmatic' or an LLM provider"
-    },
-    {
-      "key": "model_role_writer",
-      "value": "ollama/gemma3:27b",
-      "category": "model_roles",
-      "description": "Free-tier default writer. Premium seed upgrades to a specialized creative-writing model."
-    },
-    {
-      "key": "model_role_critic",
-      "value": "ollama/gemma3:27b",
-      "category": "model_roles",
-      "description": "Quality scoring / structured JSON output"
-    },
-    {
       "key": "model_role_factchecker",
       "value": "ollama/gemma3:27b",
       "category": "model_roles",
       "description": "Fact-checking. Kept separate from writer on purpose."
-    },
-    {
-      "key": "model_role_seo",
-      "value": "ollama/qwen3:8b",
-      "category": "model_roles",
-      "description": "SEO / metadata. Small model is fine."
-    },
-    {
-      "key": "model_role_image_prompt",
-      "value": "ollama/qwen3:8b",
-      "category": "model_roles",
-      "description": "Generates SDXL prompts from post content"
-    },
-    {
-      "key": "model_role_summarizer",
-      "value": "ollama/qwen3:8b",
-      "category": "model_roles",
-      "description": "Fast summaries, short-form copy"
     },
     {
       "key": "default_model_tier",
