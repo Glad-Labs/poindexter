@@ -10,6 +10,12 @@ docs/reference/services.md
 package-lock.json
 .release-please-manifest.json
 
+# CLAUDE.md — dense prose with inline-code/glob asterisks (e.g. `stage.*`) that
+# prettier mis-pairs as emphasis and corrupts (observed 2026-06-21: `content.*`
+# → `content._`, collapsed backtick spacing). It's also stats-synced by
+# .github/workflows/sync-claude-md.yml, which bypasses this hook.
+CLAUDE.md
+
 # Vendored third-party runtime (React + Babel-standalone) for the operator
 # console — pinned, minified, checksum-locked. prettier un-minified these on
 # first commit (babel 2.98MB → 4.8MB); never reformat them. eslint already
