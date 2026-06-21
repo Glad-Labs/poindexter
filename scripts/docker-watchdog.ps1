@@ -35,7 +35,12 @@ param(
 $ErrorActionPreference = "Continue"
 
 $DOCKER_EXE   = "C:\Program Files\Docker\Docker\Docker Desktop.exe"
-$COMPOSE_DIR  = "$env:USERPROFILE\glad-labs-website"
+# Launch from the dedicated deploy clone (auto-synced to origin/main by the
+# Poindexter-DeployCheckoutSync task), NOT the main dev checkout. The main
+# checkout's compose spec is not auto-advanced, so recovering the stack from it
+# re-homes services to a stale spec (the 2026-06 GPU /root regression). Keep in
+# sync with deploy-checkout-sync.ps1's $DeployDir.
+$COMPOSE_DIR  = if ($env:POINDEXTER_DEPLOY_ROOT) { $env:POINDEXTER_DEPLOY_ROOT } else { "$env:USERPROFILE\.poindexter\deploy\glad-labs-stack" }
 $COMPOSE_FILE = "docker-compose.local.yml"
 $LOG_DIR      = "$env:USERPROFILE\.poindexter\logs"
 $LOG_FILE     = "$LOG_DIR\docker-watchdog.log"
@@ -119,20 +124,48 @@ function Wait-DockerEngine {
     return $false
 }
 
+# Resolve Git Bash explicitly. On Windows the PATH ``bash`` is usually WSL's
+# C:\Windows\System32\bash.exe, which runs in a separate filesystem namespace and
+# cannot see Docker or the C:\ paths the stack uses. git IS on PATH, so derive Git
+# Bash from git's location (<GitRoot>\cmd\git.exe -> <GitRoot>\bin\bash.exe), with
+# fallbacks to the standard install locations.
+function Resolve-GitBash {
+    $git = (Get-Command git -ErrorAction SilentlyContinue).Source
+    if ($git) {
+        $cand = Join-Path (Split-Path (Split-Path $git)) 'bin\bash.exe'
+        if (Test-Path $cand) { return $cand }
+    }
+    foreach ($p in @("$env:ProgramFiles\Git\bin\bash.exe", "${env:ProgramFiles(x86)}\Git\bin\bash.exe")) {
+        if ($p -and (Test-Path $p)) { return $p }
+    }
+    return 'bash'  # last resort; a failed launch surfaces if this is WSL bash
+}
+
 function Invoke-ComposeUp {
     if (-not (Test-Path "$COMPOSE_DIR\$COMPOSE_FILE")) {
         Write-Log "ERROR" "Compose file missing: $COMPOSE_DIR\$COMPOSE_FILE"
         return $false
     }
+    # Launch through the deploy clone's start-stack.sh (the canonical launcher):
+    # it exports bootstrap.toml secrets as env vars (so NO host .env is needed),
+    # regenerates the grafana/offsite runtime env files, pins COMPOSE_PROJECT_NAME,
+    # and runs ``docker compose up -d --no-build``. Routing recovery through it
+    # (instead of a plain ``docker compose up`` from a stale launch dir) is what
+    # keeps a Docker-restart from re-homing the stack to an out-of-date compose
+    # spec. Invoked via Git Bash (NOT the PATH ``bash``, which on Windows is WSL
+    # and cannot see Docker or the C:\ bind paths). Push-Location so start-stack's
+    # own compose-file probe resolves against the clone regardless of task CWD.
+    $bash = Resolve-GitBash
+    $startStack = "$COMPOSE_DIR/scripts/start-stack.sh"
     Push-Location $COMPOSE_DIR
     try {
-        $out = docker compose -f $COMPOSE_FILE up -d 2>&1
+        $out = & $bash $startStack up -d --no-build 2>&1
         $ec = $LASTEXITCODE
-        Write-Log "INFO" "compose up exit=$ec"
-        # Compose can exit non-zero on a single-service interpolation issue
-        # while still bringing the rest up - log details but don't bail.
+        Write-Log "INFO" "start-stack up exit=$ec"
+        # Compose can exit non-zero on a single-service issue while still bringing
+        # the rest up - log details but don't bail.
         if ($ec -ne 0) {
-            Write-Log "WARN" "compose up output: $($out -join ' | ')"
+            Write-Log "WARN" "start-stack output: $($out -join ' | ')"
         }
         return ($ec -eq 0)
     } finally {

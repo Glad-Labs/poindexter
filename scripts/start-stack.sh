@@ -73,34 +73,31 @@ fi
 if [ -n "$PYTHON_BIN" ] && [ -f "$SCRIPT_DIR/_grafana_webhook_token.py" ]; then
     # Capture stdout (the JWT) only; let stderr pass through to the
     # operator's terminal so missing-config warnings are visible.
-    GRAFANA_WEBHOOK_TOKEN="$("$PYTHON_BIN" "$SCRIPT_DIR/_grafana_webhook_token.py" || true)"
-    export GRAFANA_WEBHOOK_TOKEN
-    # Persist the decrypted token to a runtime env file so plain
-    # ``docker restart poindexter-grafana`` and ``docker compose up
-    # -d`` (run outside ``start-stack.sh``) still pick up the JWT.
-    # Without this, restarting Grafana directly leaves the
-    # contact-point's Bearer credential empty and the worker logs
-    # ~200 401s/day on the Alertmanager webhook (2026-05-27 audit
-    # finding). Glad-Labs/glad-labs-stack#231 — wire-it-once,
-    # survive-every-restart hardening.
-    #
-    # Writes to ``.poindexter-grafana.env`` next to docker-compose.local.yml;
-    # the grafana service is wired to load it via ``env_file:`` so the
-    # token lands in the container's env on every up/restart.
-    #
-    # ``.poindexter-grafana.env`` is git-ignored (operator-specific
-    # runtime secret). Empty-token writes are still safe — the file
-    # carries an explicit empty assignment which mirrors the
-    # docker-compose env-var default and keeps the loud-401 failure
-    # mode (per ``feedback_no_silent_defaults``).
     _RUNTIME_ENV="$PROJECT_DIR/.poindexter-grafana.env"
-    {
-        echo "# Auto-managed by scripts/start-stack.sh — DO NOT EDIT BY HAND."
-        echo "# Regenerated on every start-stack invocation from"
-        echo "# app_settings.grafana_webhook_oauth_jwt (encrypted at rest)."
-        echo "GRAFANA_WEBHOOK_TOKEN=$GRAFANA_WEBHOOK_TOKEN"
-    } > "$_RUNTIME_ENV"
-    chmod 600 "$_RUNTIME_ENV" 2>/dev/null || true
+    # Capture the JWT (stdout only; stderr passes through for operator visibility).
+    GRAFANA_WEBHOOK_TOKEN="$("$PYTHON_BIN" "$SCRIPT_DIR/_grafana_webhook_token.py" || true)"
+    # start-stack.sh is now the canonical every-launch path (the docker-watchdog
+    # routes recovery through it), so an empty result from a transient DB miss
+    # (e.g. postgres not yet publishing localhost:15432) must NOT clobber a working
+    # JWT and break grafana webhook auth. Preserve a previously-minted token; only
+    # (re)write the env_file when we actually got a token, or when none exists to
+    # keep. The grafana service loads this via env_file: so the token also survives
+    # a plain ``docker compose up`` / ``docker restart poindexter-grafana``
+    # (Glad-Labs/glad-labs-stack#231). git-ignored operator secret.
+    if [ -z "$GRAFANA_WEBHOOK_TOKEN" ] && [ -f "$_RUNTIME_ENV" ] \
+        && grep -qE '^GRAFANA_WEBHOOK_TOKEN=.+' "$_RUNTIME_ENV"; then
+        echo "WARNING: grafana token helper returned empty; preserving existing $_RUNTIME_ENV" >&2
+        GRAFANA_WEBHOOK_TOKEN="$(grep -E '^GRAFANA_WEBHOOK_TOKEN=' "$_RUNTIME_ENV" | head -1 | cut -d= -f2-)"
+    else
+        {
+            echo "# Auto-managed by scripts/start-stack.sh - DO NOT EDIT BY HAND."
+            echo "# Regenerated on every start-stack invocation from"
+            echo "# app_settings.grafana_webhook_oauth_jwt (encrypted at rest)."
+            echo "GRAFANA_WEBHOOK_TOKEN=$GRAFANA_WEBHOOK_TOKEN"
+        } > "$_RUNTIME_ENV"
+        chmod 600 "$_RUNTIME_ENV" 2>/dev/null || true
+    fi
+    export GRAFANA_WEBHOOK_TOKEN
 fi
 
 # Offsite-backup secrets (poindexter#386) — decrypt the three encrypted
@@ -114,12 +111,25 @@ fi
 # file is non-fatal too.
 if [ -n "$PYTHON_BIN" ] && [ -f "$SCRIPT_DIR/_backup_offsite_secrets.py" ]; then
     _OFFSITE_ENV="$PROJECT_DIR/.poindexter-backup-offsite.env"
-    # stdout (the env body) → the file; stderr (WARNINGs) → operator terminal.
-    if ! "$PYTHON_BIN" "$SCRIPT_DIR/_backup_offsite_secrets.py" > "$_OFFSITE_ENV"; then
-        # The helper is designed never to fail; this is belt-and-suspenders so
-        # a crash still leaves a valid (empty) env_file rather than a truncated one.
+    # Same preserve-don't-clobber posture as the grafana token above: capture to a
+    # temp first so an empty/failed regen on a watchdog launch (DB unreachable)
+    # can't overwrite working RESTIC/AWS secrets. The helper always emits the full
+    # body (empty assignments when unconfigured), so a clean exit alone isn't
+    # enough -- require at least one non-empty secret before adopting the new body.
+    _OFFSITE_TMP="$(mktemp 2>/dev/null || echo "${_OFFSITE_ENV}.tmp.$$")"
+    _offsite_has_secret='^(RESTIC_PASSWORD|AWS_ACCESS_KEY_ID|AWS_SECRET_ACCESS_KEY)=.+'
+    if "$PYTHON_BIN" "$SCRIPT_DIR/_backup_offsite_secrets.py" > "$_OFFSITE_TMP" \
+        && grep -qE "$_offsite_has_secret" "$_OFFSITE_TMP"; then
+        mv -f "$_OFFSITE_TMP" "$_OFFSITE_ENV"          # real secrets -> adopt
+    elif [ -f "$_OFFSITE_ENV" ] && grep -qE "$_offsite_has_secret" "$_OFFSITE_ENV"; then
+        echo "WARNING: offsite-secrets helper returned no secrets; preserving existing $_OFFSITE_ENV" >&2
+        rm -f "$_OFFSITE_TMP"
+    elif [ -s "$_OFFSITE_TMP" ]; then
+        mv -f "$_OFFSITE_TMP" "$_OFFSITE_ENV"          # valid empty body -> fail-soft default
+    else
+        rm -f "$_OFFSITE_TMP"
         printf '%s\n' \
-            "# Auto-managed — generation failed, see start-stack.sh output." \
+            "# Auto-managed - generation failed, see start-stack.sh output." \
             "RESTIC_PASSWORD=" "AWS_ACCESS_KEY_ID=" "AWS_SECRET_ACCESS_KEY=" \
             > "$_OFFSITE_ENV"
     fi
