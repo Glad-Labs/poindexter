@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import FileResponse, Response
 
 from middleware.api_token_auth import verify_api_token
@@ -190,13 +190,18 @@ async def video_feed(
 
 
 @router.get("/episodes", response_model=VideoEpisodeListResponse)
-async def list_video_episodes() -> VideoEpisodeListResponse:
-    """List all available video episodes as JSON."""
-    episodes = []
+async def list_video_episodes(
+    limit: int = Query(50, ge=1, le=200, description="Max episodes to return"),
+    offset: int = Query(0, ge=0, description="Episodes to skip"),
+) -> VideoEpisodeListResponse:
+    """List video episodes as JSON, paginated (closes #746 — applies the same
+    fix to video that #746 gave podcast; the endpoint was previously unbounded
+    and grew linearly with content volume forever)."""
+    all_episodes = []
     if VIDEO_DIR.exists():
         for mp4 in sorted(VIDEO_DIR.glob("*.mp4")):
             stat = mp4.stat()
-            episodes.append({
+            all_episodes.append({
                 "post_id": mp4.stem,
                 # file_path intentionally omitted — it leaked the worker's
                 # absolute filesystem layout. Clients fetch the bytes via
@@ -206,15 +211,18 @@ async def list_video_episodes() -> VideoEpisodeListResponse:
                 "file_size_bytes": stat.st_size,
                 "created_at": stat.st_ctime,
             })
+    total = len(all_episodes)
+    page = all_episodes[offset : offset + limit]
     # Canonical offset envelope (poindexter#745): `episodes` → `items`, drop the
-    # redundant `count` (recoverable as len(items)). Unpaginated full listing, so
-    # offset is 0 and limit == total. Pydantic validates each row into a
-    # VideoEpisodeItem.
+    # redundant `count` (recoverable as len(items)). Real `limit`/`offset`
+    # pagination (#746) mirrors the podcast endpoint — `total` is the FULL
+    # unpaginated count, `limit`/`offset` echo the actual params. Pydantic
+    # validates each row into a VideoEpisodeItem.
     return VideoEpisodeListResponse(
-        items=episodes,  # type: ignore[arg-type]
-        total=len(episodes),
-        limit=len(episodes),
-        offset=0,
+        items=page,  # type: ignore[arg-type]
+        total=total,
+        limit=limit,
+        offset=offset,
     )
 
 

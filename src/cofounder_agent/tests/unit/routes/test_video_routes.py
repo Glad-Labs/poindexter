@@ -101,9 +101,11 @@ class TestListVideoEpisodes:
             assert resp.status_code == 200
             data = resp.json()
             # Canonical offset envelope (poindexter#745): items, not the legacy
-            # episodes/count keys. Unpaginated → limit == len(items), offset 0.
+            # episodes/count keys. With pagination (#746) a no-param request
+            # echoes the DEFAULT limit (50) — NOT len(items) as the pre-#746
+            # unpaginated handler did.
             assert data["total"] == 2
-            assert data["limit"] == 2
+            assert data["limit"] == 50
             assert data["offset"] == 0
             assert "episodes" not in data
             assert "count" not in data
@@ -115,13 +117,68 @@ class TestListVideoEpisodes:
         with patch("routes.video_routes.VIDEO_DIR", tmp_path):
             resp = client.get("/api/video/episodes")
             data = resp.json()
-            assert data == {"items": [], "total": 0, "limit": 0, "offset": 0}
+            # Empty page still echoes the default limit (#746), not 0.
+            assert data == {"items": [], "total": 0, "limit": 50, "offset": 0}
 
     def test_empty_when_dir_missing(self):
         with patch("routes.video_routes.VIDEO_DIR", Path("/nonexistent/dir")):
             resp = client.get("/api/video/episodes")
             data = resp.json()
-            assert data == {"items": [], "total": 0, "limit": 0, "offset": 0}
+            assert data == {"items": [], "total": 0, "limit": 50, "offset": 0}
+
+    # --- pagination (#746 — apply the podcast fix to video) ------------------
+
+    def test_pagination_limits_page(self, tmp_path):
+        """?limit=2&offset=0 over 3 episodes returns the first 2, but `total`
+        reports the FULL unpaginated count (3) — the linear-growth fix."""
+        for i in range(1, 4):
+            (tmp_path / f"post{i}.mp4").write_bytes(b"\x00" * (1000 * i))
+
+        with patch("routes.video_routes.VIDEO_DIR", tmp_path):
+            resp = client.get("/api/video/episodes?limit=2&offset=0")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["total"] == 3
+            assert data["limit"] == 2
+            assert data["offset"] == 0
+            assert len(data["items"]) == 2
+
+    def test_pagination_offset_skips(self, tmp_path):
+        """?offset=2 skips the first 2 of 3 episodes; only the last remains.
+        Episodes sort by filename, so offset 2 yields post3."""
+        for i in range(1, 4):
+            (tmp_path / f"post{i}.mp4").write_bytes(b"\x00" * (1000 * i))
+
+        with patch("routes.video_routes.VIDEO_DIR", tmp_path):
+            resp = client.get("/api/video/episodes?limit=2&offset=2")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["total"] == 3
+            assert data["limit"] == 2
+            assert data["offset"] == 2
+            assert len(data["items"]) == 1
+            assert data["items"][0]["post_id"] == "post3"
+
+    def test_pagination_offset_past_end_is_empty(self, tmp_path):
+        """An offset beyond the end returns an empty page (graceful Python
+        slice, mirroring podcast), NOT a 404 — `total` still reports 3."""
+        for i in range(1, 4):
+            (tmp_path / f"post{i}.mp4").write_bytes(b"\x00" * 1000)
+
+        with patch("routes.video_routes.VIDEO_DIR", tmp_path):
+            resp = client.get("/api/video/episodes?offset=10")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["total"] == 3
+            assert data["items"] == []
+
+    def test_pagination_rejects_out_of_range_params(self, tmp_path):
+        """Query bounds mirror the podcast endpoint exactly: limit in [1, 200],
+        offset >= 0. Out-of-range values are rejected with 422 by FastAPI."""
+        with patch("routes.video_routes.VIDEO_DIR", tmp_path):
+            assert client.get("/api/video/episodes?limit=0").status_code == 422
+            assert client.get("/api/video/episodes?limit=201").status_code == 422
+            assert client.get("/api/video/episodes?offset=-1").status_code == 422
 
 
 # ---------------------------------------------------------------------------
