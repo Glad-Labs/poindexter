@@ -14,6 +14,7 @@ import pytest
 from schemas import ListResponse, PaginatedResponse
 from schemas.settings_schemas import SettingListResponse
 from schemas.task_schemas import (
+    GatePausedListResponse,
     MediaApprovalListResponse,
     PendingApprovalListResponse,
     TaskListResponse,
@@ -30,6 +31,7 @@ ENDPOINT_LIST_MODELS = [
     TaskListResponse,  # step 4 — GET /api/tasks
     PendingApprovalListResponse,  # step 5 — GET /api/tasks/pending-approval
     MediaApprovalListResponse,  # step 6 — GET /api/media-approval/pending
+    GatePausedListResponse,  # step 7 — GET /api/gates/pending
 ]
 
 

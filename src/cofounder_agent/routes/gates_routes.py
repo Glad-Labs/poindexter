@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
+from schemas.task_schemas import GatePausedListResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
@@ -77,7 +78,7 @@ async def set_gate_enabled(
 @router.get(
     "/pending",
     summary="List tasks currently paused at an approval gate",
-    response_model=dict[str, Any],
+    response_model=GatePausedListResponse,
     status_code=200,
 )
 async def list_pending(
@@ -85,12 +86,20 @@ async def list_pending(
     limit: int = Query(100, ge=1, le=500),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-) -> dict[str, Any]:
+) -> GatePausedListResponse:
     """Return every task currently paused at any gate (or one gate)."""
     from services.approval_service import list_pending as _list_pending
 
     tasks = await _list_pending(pool=db_service.pool, gate_name=gate_name, limit=limit)
-    return {"tasks": tasks, "total": len(tasks)}
+    # Canonical offset envelope (poindexter#745): `tasks` → `items`. The list is
+    # `limit`-capped with no cursor, so offset is always 0. Pydantic validates
+    # each row into a GatePausedTaskItem.
+    return GatePausedListResponse(
+        items=tasks,  # type: ignore[arg-type]
+        total=len(tasks),
+        limit=limit,
+        offset=0,
+    )
 
 
 @router.get(

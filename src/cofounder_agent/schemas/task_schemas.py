@@ -445,6 +445,33 @@ class MediaApprovalListResponse(ListResponse[MediaApprovalItem]):
     """
 
 
+class GatePausedTaskItem(BaseModel):
+    """One task paused at an approval gate (#1343).
+
+    ``artifact`` is the gate's decision payload, always normalized to a dict by
+    ``gate_machinery.coerce_artifact`` (asyncpg yields the jsonb column as a
+    string absent a codec). ``gate_paused_at`` is an ISO timestamp.
+    """
+
+    task_id: str | None = None
+    gate_name: str | None = None
+    status: str | None = None
+    topic: str | None = None
+    title: str | None = None
+    artifact: dict[str, Any] = Field(default_factory=dict)
+    gate_paused_at: datetime | None = None
+
+
+class GatePausedListResponse(ListResponse[GatePausedTaskItem]):
+    """Gate-paused task queue — canonical offset envelope (poindexter#745).
+
+    ``{items, total, limit, offset}`` via ``ListResponse[GatePausedTaskItem]``.
+    Replaces the prior untyped ``dict[str, Any]`` body that used a ``tasks`` key.
+    The list is ``limit``-capped with no cursor, so ``offset`` is always 0.
+    Operator gate-admin surface (OAuth-JWT); no public-site consumer.
+    """
+
+
 class MetricsResponse(BaseModel):
     """Schema for aggregated metrics"""
 

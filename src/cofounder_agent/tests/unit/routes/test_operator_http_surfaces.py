@@ -151,7 +151,13 @@ class TestGatesRoutes:
         with patch("services.approval_service.list_pending", new=AsyncMock(return_value=tasks)):
             resp = TestClient(app).get("/api/gates/pending")
         assert resp.status_code == 200
-        assert resp.json()["total"] == 1
+        data = resp.json()
+        # Canonical offset envelope (poindexter#745): items, not the legacy tasks key.
+        assert data["total"] == 1
+        assert data["limit"] == 100
+        assert data["offset"] == 0
+        assert "tasks" not in data
+        assert data["items"][0]["task_id"] == "t-1"
 
     def test_show_pending_found(self):
         app, _ = _app_gates()
