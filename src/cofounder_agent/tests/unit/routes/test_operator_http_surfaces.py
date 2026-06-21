@@ -128,14 +128,19 @@ class TestGatesRoutes:
             resp = TestClient(app).get("/api/gates")
         assert resp.status_code == 200
         data = resp.json()
+        # Canonical offset envelope (poindexter#745): items, not the legacy gates key.
         assert data["total"] == 1
-        assert data["gates"][0]["gate_name"] == "draft"
+        assert data["limit"] == 1  # full unpaginated list → limit == len(items)
+        assert data["offset"] == 0
+        assert "gates" not in data
+        assert data["items"][0]["gate_name"] == "draft"
+        assert data["items"][0]["pending_count"] == 2
 
     def test_list_gates_empty(self):
         app, _ = _app_gates()
         with patch("services.approval_service.list_gates", new=AsyncMock(return_value=[])):
             resp = TestClient(app).get("/api/gates")
-        assert resp.json() == {"gates": [], "total": 0}
+        assert resp.json() == {"items": [], "total": 0, "limit": 0, "offset": 0}
 
     def test_set_gate_enabled_true(self):
         app, _ = _app_gates()

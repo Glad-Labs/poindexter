@@ -14,7 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
-from schemas.task_schemas import GatePausedListResponse
+from schemas.task_schemas import GateListResponse, GatePausedListResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
@@ -35,20 +35,28 @@ class SetGateRequest(BaseModel):
 @router.get(
     "",
     summary="List all known approval gates",
-    response_model=dict[str, Any],
+    response_model=GateListResponse,
     status_code=200,
 )
 async def list_gates(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
     site_config: Any = Depends(get_site_config_dependency),
-) -> dict[str, Any]:
+) -> GateListResponse:
     """Return every gate the system has ever heard of, plus its enabled state
     and the number of tasks currently paused on it."""
     from services.approval_service import list_gates as _list_gates
 
     gates = await _list_gates(pool=db_service.pool, site_config=site_config)
-    return {"gates": gates, "total": len(gates)}
+    # Canonical offset envelope (poindexter#745): `gates` → `items`. This is a
+    # full unpaginated enumeration, so offset is 0 and limit == total (the whole
+    # set is returned). Pydantic validates each row into a GateItem.
+    return GateListResponse(
+        items=gates,  # type: ignore[arg-type]
+        total=len(gates),
+        limit=len(gates),
+        offset=0,
+    )
 
 
 @router.patch(

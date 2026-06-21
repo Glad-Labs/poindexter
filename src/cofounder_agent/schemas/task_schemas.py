@@ -472,6 +472,33 @@ class GatePausedListResponse(ListResponse[GatePausedTaskItem]):
     """
 
 
+class GateItem(BaseModel):
+    """One approval gate the system knows about (#1343).
+
+    Sourced from ``approval_service.list_gates`` — a union of every
+    ``pipeline_gate_*`` app_settings row and every distinct live
+    ``awaiting_gate`` on a ``pipeline_tasks`` row. All four fields are scalar
+    (no jsonb), so no coercion is needed. Fields default permissively so a
+    partial row never trips validation.
+    """
+
+    gate_name: str | None = None
+    enabled: bool | None = None
+    setting_key: str | None = None
+    pending_count: int | None = None
+
+
+class GateListResponse(ListResponse[GateItem]):
+    """Known-gates listing — canonical offset envelope (poindexter#745).
+
+    ``{items, total, limit, offset}`` via ``ListResponse[GateItem]``. Replaces
+    the prior untyped ``dict[str, Any]`` body that used a ``gates`` key. This is
+    a full unpaginated enumeration (no cursor), so ``offset`` is always 0 and
+    ``limit`` equals ``total`` (the whole set is returned). Operator gate-admin
+    surface (OAuth-JWT); no public-site consumer.
+    """
+
+
 class MetricsResponse(BaseModel):
     """Schema for aggregated metrics"""
 
