@@ -21,6 +21,12 @@ Config keys (under ``plugin.caption_provider.speaches`` in ``app_settings``):
   base URL of the Speaches server. The same host the TTS service already uses.
 - ``model`` (str, default ``"Systran/faster-whisper-medium"``) — ASR model id.
 - ``timeout_seconds`` (float, default 180.0) — per-call HTTP timeout.
+- ``initial_prompt`` (str, default ``""``) — vocabulary bias forwarded as the
+  OpenAI ``prompt`` field (faster-whisper's ``initial_prompt``). A short,
+  comma-separated list of proper nouns the narration uses nudges the decoder's
+  spelling toward them (helpful when a name is misheard as an acoustically
+  similar word). Soft bias, not find-replace. Empty/blank ⇒ omitted, so the
+  default behaves exactly as before; set brand terms per-operator in the DB.
 """
 
 from __future__ import annotations
@@ -163,6 +169,16 @@ class SpeachesCaptionProvider:
         if granularity == "word":
             # OpenAI-compatible word timestamps; Speaches honours the list form.
             data["timestamp_granularities[]"] = "word"
+
+        # Bias the decoder toward brand / proper-noun vocabulary. Speaches
+        # forwards ``prompt`` as faster-whisper's ``initial_prompt`` — a soft
+        # context that nudges spelling (e.g. away from mishearing a brand name
+        # as an acoustically similar word) without find-replacing anything, so
+        # it helps every proper noun at once. Empty/blank is the NOT-NULL
+        # "unset" sentinel: omit the field entirely so behaviour is unchanged.
+        initial_prompt = str(self._get("initial_prompt", "") or "").strip()
+        if initial_prompt:
+            data["prompt"] = initial_prompt
 
         logger.info(
             "[speaches_caption] transcribing %s via %s (model=%s)",

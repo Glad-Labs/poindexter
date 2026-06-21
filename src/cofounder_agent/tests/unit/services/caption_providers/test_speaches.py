@@ -205,6 +205,71 @@ class TestTranscribeHappyPath:
 
 
 # ---------------------------------------------------------------------------
+# initial_prompt — vocabulary bias for proper nouns (brand-name ASR fix)
+#
+# faster-whisper mishears "Glad Labs" as "GLAAD Labs". The OpenAI-compatible
+# transcriptions endpoint accepts a ``prompt`` field that Speaches forwards as
+# faster-whisper's ``initial_prompt``, biasing the decoder toward the supplied
+# vocabulary. The provider reads it from
+# ``plugin.caption_provider.speaches.initial_prompt`` and forwards it on the
+# multipart ``data`` — but only when it carries actual text, so an unset/blank
+# setting transcribes exactly as before.
+# ---------------------------------------------------------------------------
+
+
+_PROMPT_VOCAB = "Poindexter, Kokoro, ONNX"
+
+
+class TestInitialPromptBias:
+    @pytest.mark.asyncio
+    async def test_configured_prompt_is_forwarded_in_data(self, tmp_path):
+        audio = tmp_path / "narration.mp3"
+        audio.write_bytes(b"\x00" * 32)
+        provider = _make_provider({"initial_prompt": _PROMPT_VOCAB})
+
+        fake = _FakeAsyncClient(_FakeResp(200, _VERBOSE_JSON))
+        with patch(
+            "services.caption_providers.speaches.httpx.AsyncClient",
+            return_value=fake,
+        ):
+            await provider.transcribe(audio_path=str(audio))
+
+        assert fake.posted["data"]["prompt"] == _PROMPT_VOCAB
+
+    @pytest.mark.asyncio
+    async def test_unset_prompt_is_omitted_from_data(self, tmp_path):
+        audio = tmp_path / "narration.mp3"
+        audio.write_bytes(b"\x00" * 32)
+        provider = _make_provider({})  # no initial_prompt configured
+
+        fake = _FakeAsyncClient(_FakeResp(200, _VERBOSE_JSON))
+        with patch(
+            "services.caption_providers.speaches.httpx.AsyncClient",
+            return_value=fake,
+        ):
+            await provider.transcribe(audio_path=str(audio))
+
+        assert "prompt" not in fake.posted["data"]
+
+    @pytest.mark.asyncio
+    async def test_blank_prompt_is_omitted_from_data(self, tmp_path):
+        # '' is the NOT-NULL "unset" sentinel; whitespace-only is treated the
+        # same so a stray space in app_settings doesn't ship a useless prompt.
+        audio = tmp_path / "narration.mp3"
+        audio.write_bytes(b"\x00" * 32)
+        provider = _make_provider({"initial_prompt": "   "})
+
+        fake = _FakeAsyncClient(_FakeResp(200, _VERBOSE_JSON))
+        with patch(
+            "services.caption_providers.speaches.httpx.AsyncClient",
+            return_value=fake,
+        ):
+            await provider.transcribe(audio_path=str(audio))
+
+        assert "prompt" not in fake.posted["data"]
+
+
+# ---------------------------------------------------------------------------
 # Error handling — never raises
 # ---------------------------------------------------------------------------
 

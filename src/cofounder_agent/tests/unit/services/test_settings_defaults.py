@@ -98,6 +98,15 @@ class TestRegistryShape:
             METADATA["plugin.caption_provider.speaches.base_url"]["value_type"]
             == "url"
         )
+        # initial_prompt biases the ASR toward proper nouns (brand-name fix).
+        # Defaults to '' (the NOT-NULL "unset" sentinel) so the public OSS
+        # default ships no operator vocabulary and behaves as before; the
+        # operator sets brand terms in their own DB.
+        assert DEFAULTS["plugin.caption_provider.speaches.initial_prompt"] == ""
+        assert (
+            METADATA["plugin.caption_provider.speaches.initial_prompt"]["value_type"]
+            == "string"
+        )
 
     def test_no_duplicate_keys(self):
         # Python dicts can't actually contain duplicates — but verify that

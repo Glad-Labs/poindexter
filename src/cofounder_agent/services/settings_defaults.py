@@ -176,6 +176,14 @@ DEFAULTS: dict[str, str] = {
     'plugin.caption_provider.speaches.base_url': 'http://speaches:8000/v1',
     'plugin.caption_provider.speaches.model': 'Systran/faster-whisper-medium',
     'plugin.caption_provider.speaches.timeout_seconds': '180',
+    # initial_prompt biases faster-whisper toward the supplied vocabulary (the
+    # OpenAI 'prompt' field → initial_prompt). A short comma-separated list of
+    # proper nouns nudges the decoder's spelling toward them, so a brand or
+    # product name isn't transcribed as an acoustically similar word. Soft bias,
+    # not find-replace. Default '' (the NOT-NULL unset sentinel) = no bias =
+    # unchanged behaviour; the empty OSS default keeps operator-specific brand
+    # vocabulary out of the public mirror — operators set their terms in the DB.
+    'plugin.caption_provider.speaches.initial_prompt': '',
     # GPU scheduler — external (non-stack) workload detection. The stack is
     # normally the only thing running models, so cross-process GPU contention is
     # already serialized by the pg_advisory_lock + asyncio.Lock; treating a
@@ -1169,6 +1177,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     },
     'plugin.caption_provider.speaches.timeout_seconds': {
         'owner': 'caption_providers', 'value_type': 'integer',
+    },
+    'plugin.caption_provider.speaches.initial_prompt': {
+        'owner': 'caption_providers', 'value_type': 'string',
     },
     'pipeline_fallback_model': {'owner': 'content_router', 'value_type': 'model'},
     'qa_fallback_writer_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
