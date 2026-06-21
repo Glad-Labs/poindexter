@@ -72,6 +72,33 @@ class TestRegistryShape:
         assert METADATA["video_shot_qa_enabled"]["value_type"] == "boolean"
         assert METADATA["video_shot_qa_threshold"]["value_type"] == "integer"
 
+    def test_caption_provider_keys_seeded(self):
+        # media.transcribe_narration selects its ASR provider via
+        # get_caption_provider → video_caption_engine (default 'speaches', the
+        # already-running faster-whisper sidecar). The prior hardcoded
+        # whisper_local default shelled a whisper-cli binary that was never
+        # installed in the worker image, so captions silently never burned in.
+        from services.settings_defaults import DEFAULTS, METADATA
+        assert DEFAULTS["video_caption_engine"] == "speaches"
+        assert DEFAULTS["plugin.caption_provider.speaches.enabled"] == "true"
+        assert (
+            DEFAULTS["plugin.caption_provider.speaches.base_url"]
+            == "http://speaches:8000/v1"
+        )
+        assert (
+            DEFAULTS["plugin.caption_provider.speaches.model"]
+            == "Systran/faster-whisper-medium"
+        )
+        assert METADATA["video_caption_engine"]["value_type"] == "string"
+        assert (
+            METADATA["plugin.caption_provider.speaches.enabled"]["value_type"]
+            == "boolean"
+        )
+        assert (
+            METADATA["plugin.caption_provider.speaches.base_url"]["value_type"]
+            == "url"
+        )
+
     def test_no_duplicate_keys(self):
         # Python dicts can't actually contain duplicates — but verify that
         # the post-import iteration order is stable and matches the

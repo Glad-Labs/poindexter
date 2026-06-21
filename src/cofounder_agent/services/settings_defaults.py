@@ -159,6 +159,23 @@ DEFAULTS: dict[str, str] = {
     'video_shot_qa_enabled': 'true',
     'video_shot_qa_threshold': '60',
     'video_shot_qa_max_retries': '2',
+    # Caption ASR engine for media.transcribe_narration. Default 'speaches'
+    # reuses the already-running Speaches faster-whisper sidecar (narration TTS /
+    # voice STT) instead of a second whisper.cpp install. The prior default,
+    # 'whisper_local', shelled a whisper-cli binary that was never baked into the
+    # worker image — so transcribe returned success=False and BOTH video lanes
+    # rendered with NO burned-in captions (2026-06-21 validation). Set
+    # 'whisper_local' to use a locally-installed whisper.cpp instead. Read via
+    # services/caption_providers/get_caption_provider.
+    'video_caption_engine': 'speaches',
+    # Speaches caption provider config (plugin.caption_provider.speaches.*). The
+    # base_url is the same OpenAI-compatible host the TTS path already uses; the
+    # model is the faster-whisper weight Speaches serves. enabled is a kill switch
+    # that fails loud (success=False) rather than silently producing no captions.
+    'plugin.caption_provider.speaches.enabled': 'true',
+    'plugin.caption_provider.speaches.base_url': 'http://speaches:8000/v1',
+    'plugin.caption_provider.speaches.model': 'Systran/faster-whisper-medium',
+    'plugin.caption_provider.speaches.timeout_seconds': '180',
     # GPU scheduler — external (non-stack) workload detection. The stack is
     # normally the only thing running models, so cross-process GPU contention is
     # already serialized by the pg_advisory_lock + asyncio.Lock; treating a
@@ -1140,6 +1157,19 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_shot_qa_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_shot_qa_threshold': {'owner': 'video', 'value_type': 'integer'},
     'video_shot_qa_max_retries': {'owner': 'video', 'value_type': 'integer'},
+    'video_caption_engine': {'owner': 'caption_providers', 'value_type': 'string'},
+    'plugin.caption_provider.speaches.enabled': {
+        'owner': 'caption_providers', 'value_type': 'boolean',
+    },
+    'plugin.caption_provider.speaches.base_url': {
+        'owner': 'caption_providers', 'value_type': 'url',
+    },
+    'plugin.caption_provider.speaches.model': {
+        'owner': 'caption_providers', 'value_type': 'model',
+    },
+    'plugin.caption_provider.speaches.timeout_seconds': {
+        'owner': 'caption_providers', 'value_type': 'integer',
+    },
     'pipeline_fallback_model': {'owner': 'content_router', 'value_type': 'model'},
     'qa_fallback_writer_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'structured_extraction_model': {'owner': 'content_router', 'value_type': 'model'},

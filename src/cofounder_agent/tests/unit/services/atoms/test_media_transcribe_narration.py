@@ -6,8 +6,9 @@ surfaces ``long_caption_srt_path`` / ``short_caption_srt_path``.
 
 Captions are best-effort — a caption failure must NEVER halt the graph. The
 fidelity check is advisory: a low ASR-vs-script ratio emits a finding but does
-not fail. We patch the caption provider class + ``emit_finding`` where they are
-imported in the call-site module, per the standard mocking discipline.
+not fail. We patch the caption-provider factory (``get_caption_provider``) +
+``emit_finding`` where they are imported in the call-site module, per the
+standard mocking discipline.
 """
 from __future__ import annotations
 
@@ -30,12 +31,15 @@ def _caption_result(*, success=True, srt_text="1\n00:00:00,000 --> 00:00:02,000\
 
 
 def _patch_provider(result):
-    """Swap the provider class with one whose transcribe() returns ``result``."""
+    """Patch the provider factory with one returning a stub whose transcribe()
+    returns ``result``. The atom selects its provider via
+    ``get_caption_provider(site_config)``, so we patch that seam (not a concrete
+    class) — the configured engine is what production resolves."""
     provider = MagicMock()
     provider.transcribe = AsyncMock(return_value=result)
     factory = MagicMock(return_value=provider)
     return patch.object(
-        media_transcribe_narration, "WhisperLocalCaptionProvider", factory
+        media_transcribe_narration, "get_caption_provider", factory
     ), provider, factory
 
 
@@ -98,7 +102,7 @@ async def test_transcribe_one_raises_emits_caption_failed_no_raise():
     factory = MagicMock(return_value=provider)
     mock_emit = MagicMock()
     with patch.object(
-        media_transcribe_narration, "WhisperLocalCaptionProvider", factory
+        media_transcribe_narration, "get_caption_provider", factory
     ), patch.object(media_transcribe_narration, "emit_finding", mock_emit):
         srt = await _transcribe_one(
             audio_path="/tmp/narration.wav", script="", task_id="t-raise",

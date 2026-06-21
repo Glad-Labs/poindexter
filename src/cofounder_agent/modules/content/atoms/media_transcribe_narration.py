@@ -1,8 +1,10 @@
 """media.transcribe_narration — Stage-2 per-lane ASR atom (#676 / #689).
 
-Runs one ASR (whisper.cpp) pass over EACH video lane's narration audio (long +
-short), BEFORE the render nodes. Per lane it does two things from one
-transcription (redesign §6 "one ASR pass"):
+Runs one ASR pass over EACH video lane's narration audio (long + short),
+BEFORE the render nodes. The provider is selected by
+``services.caption_providers.get_caption_provider`` — the ``video_caption_engine``
+app-setting, default ``speaches`` (the already-running faster-whisper sidecar).
+Per lane it does two things from one transcription (redesign §6 "one ASR pass"):
 
 1. **Captions (#676):** writes the SRT document to a temp file and surfaces it
    on the lane's caption channel (``long_caption_srt_path`` /
@@ -17,8 +19,8 @@ transcription (redesign §6 "one ASR pass"):
    DB-configurable ``media.caption.fidelity_min_ratio``, default 0.80) emits an
    advisory ``caption_fidelity`` finding — catches TTS dropouts / truncation.
 
-Captions are **best-effort**: a caption failure (whisper not installed, audio
-missing, provider exception) must NEVER halt the graph — the video still
+Captions are **best-effort**: a caption failure (provider disabled / unreachable,
+audio missing, provider exception) must NEVER halt the graph — the video still
 renders, just without burned-in captions. So every failure mode returns an empty
 path (and, where useful, emits a per-lane finding) rather than raising.
 
@@ -36,7 +38,7 @@ import tempfile
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
-from services.caption_providers.whisper_local import WhisperLocalCaptionProvider
+from services.caption_providers import get_caption_provider
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -133,7 +135,7 @@ async def _transcribe_one(
         return ""
 
     try:
-        provider = WhisperLocalCaptionProvider(site_config=site_config)
+        provider = get_caption_provider(site_config)
         result = await provider.transcribe(audio_path=audio_path, task_id=task_id)
     except Exception as exc:  # noqa: BLE001 — a caption failure must not halt the graph
         logger.exception(
