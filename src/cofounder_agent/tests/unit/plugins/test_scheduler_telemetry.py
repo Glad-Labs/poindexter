@@ -60,7 +60,7 @@ def _pool_with_fetchval(value):
 
 async def test_interval_next_run_none_for_cron_trigger():
     """Cron triggers compute their own next fire — we don't override them."""
-    scheduler = PluginScheduler(_pool_with_fetchval("0"))
+    scheduler = PluginScheduler(_pool_with_fetchval(datetime.now(timezone.utc)))
     trigger = CronTrigger.from_crontab("0 13 * * *")
     assert await scheduler._interval_next_run("x", trigger) is None
 
@@ -103,7 +103,9 @@ async def test_interval_next_run_fires_now_when_overdue():
     """The 2026-05-26 bug: a 24h job last run ~3.8 days ago must fire on the
     next tick, not get pushed 24h past this boot."""
     last = time.time() - 3.8 * 86400  # ~3.8 days ago
-    scheduler = PluginScheduler(_pool_with_fetchval(str(int(last))))
+    scheduler = PluginScheduler(
+        _pool_with_fetchval(datetime.fromtimestamp(last, tz=timezone.utc))
+    )
     trigger = IntervalTrigger(hours=24)
     before = datetime.now(timezone.utc)
     nxt = await scheduler._interval_next_run("x", trigger)
@@ -117,11 +119,13 @@ async def test_interval_next_run_anchors_to_last_run_when_not_due():
     """Not-yet-due job keeps its real cadence: next fire = last_run + interval,
     anchored to the actual last run rather than this boot."""
     last = time.time() - 3600  # 1h ago
-    scheduler = PluginScheduler(_pool_with_fetchval(str(int(last))))
+    scheduler = PluginScheduler(
+        _pool_with_fetchval(datetime.fromtimestamp(last, tz=timezone.utc))
+    )
     trigger = IntervalTrigger(hours=24)
     nxt = await scheduler._interval_next_run("x", trigger)
     assert nxt is not None
-    expected = datetime.fromtimestamp(int(last) + 86400, tz=timezone.utc)
+    expected = datetime.fromtimestamp(last + 86400, tz=timezone.utc)
     assert abs((nxt - expected).total_seconds()) < 2
 
 
@@ -161,40 +165,38 @@ async def test_seed_job_config_swallows_db_errors():
     await PluginScheduler(_BrokenPool())._seed_job_config_if_absent(job)
 
 
-async def test_persisted_last_run_epoch_parses_and_handles_missing():
-    assert await PluginScheduler(_pool_with_fetchval("1780000000"))._persisted_last_run_epoch("x") == 1780000000.0
+async def test_persisted_last_run_epoch_reads_timestamp_and_handles_missing():
+    dt = datetime(2026, 6, 21, 12, 0, 0, tzinfo=timezone.utc)
+    got = await PluginScheduler(_pool_with_fetchval(dt))._persisted_last_run_epoch("x")
+    assert got == dt.timestamp()
     assert await PluginScheduler(_pool_with_fetchval(None))._persisted_last_run_epoch("x") is None
-    assert await PluginScheduler(_pool_with_fetchval(""))._persisted_last_run_epoch("x") is None
-    assert await PluginScheduler(_pool_with_fetchval("not-a-number"))._persisted_last_run_epoch("x") is None
 
 
-async def test_record_last_run_writes_two_rows_on_success():
-    """Each fire writes BOTH the epoch row and the status='ok' row."""
+async def test_record_last_run_upserts_ok_row():
+    """A successful fire UPSERTs one job_run_state row with status='ok'."""
     pool, conn = _pool_with_conn()
     scheduler = PluginScheduler(pool)
 
     await scheduler._record_last_run("backfill_podcasts", ok=True)
 
-    assert conn.execute.await_count == 2
-    args_run = conn.execute.await_args_list[0].args
-    args_status = conn.execute.await_args_list[1].args
-    assert args_run[1] == "plugin_job_last_run_backfill_podcasts"
-    # epoch is a stringified int — sanity-check it parses
-    assert int(args_run[2]) > 0
-    assert args_status[1] == "plugin_job_last_status_backfill_podcasts"
-    assert args_status[2] == "ok"
+    assert conn.execute.await_count == 1
+    sql, name, status = conn.execute.await_args.args
+    assert "job_run_state" in sql
+    assert "ON CONFLICT (job_name) DO UPDATE" in sql
+    assert name == "backfill_podcasts"
+    assert status == "ok"
 
 
-async def test_record_last_run_marks_err_on_failure():
-    """``ok=False`` writes 'err' to the status row (not 'ok')."""
+async def test_record_last_run_upserts_err_row():
+    """ok=False writes status='err'."""
     pool, conn = _pool_with_conn()
     scheduler = PluginScheduler(pool)
 
     await scheduler._record_last_run("backfill_videos", ok=False)
 
-    status_args = conn.execute.await_args_list[1].args
-    assert status_args[1] == "plugin_job_last_status_backfill_videos"
-    assert status_args[2] == "err"
+    _, name, status = conn.execute.await_args.args
+    assert name == "backfill_videos"
+    assert status == "err"
 
 
 async def test_record_last_run_swallows_db_errors():

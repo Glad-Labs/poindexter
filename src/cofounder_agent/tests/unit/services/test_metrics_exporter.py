@@ -40,6 +40,8 @@ def _reset_gauges():
     # Labeled gauges — clear the series so each test starts absent.
     mx.BRAIN_CYCLE_HEARTBEAT_TIMESTAMP.clear()
     mx.POSTS_TOTAL.clear()  # poindexter#576
+    mx.SCHEDULER_JOB_LAST_RUN_AGE_SECONDS.clear()
+    mx.SCHEDULER_JOB_LAST_RUN_OK.clear()
     yield
 
 
@@ -57,6 +59,57 @@ def _make_pool(fetchval_responses, fetch_responses):
     ctx.__aexit__ = AsyncMock(return_value=None)
     pool.acquire = MagicMock(return_value=ctx)
     return pool, conn
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_refresh_scheduler_job_state_sets_series_and_skips_never_run():
+    from prometheus_client import REGISTRY
+
+    from services import metrics_exporter as mx
+
+    class _Ctx:
+        def __init__(self, conn):
+            self._c = conn
+
+        async def __aenter__(self):
+            return self._c
+
+        async def __aexit__(self, *a):
+            return False
+
+    conn = MagicMock()
+    conn.fetch = AsyncMock(
+        return_value=[
+            {"job_name": "run_taps", "age_s": 42.0, "last_status": "ok"},
+            {"job_name": "db_backup", "age_s": 90000.0, "last_status": "err"},
+        ]
+    )
+    pool = MagicMock()
+    pool.acquire = MagicMock(return_value=_Ctx(conn))
+
+    await mx.refresh_scheduler_job_state(pool)
+
+    g = "poindexter_scheduler_job_last_run_age_seconds"
+    ok = "poindexter_scheduler_job_last_run_ok"
+    assert REGISTRY.get_sample_value(g, {"job_name": "run_taps"}) == 42.0
+    assert REGISTRY.get_sample_value(ok, {"job_name": "run_taps"}) == 1.0
+    assert REGISTRY.get_sample_value(ok, {"job_name": "db_backup"}) == 0.0
+    # A job absent from the query (never run) emits no series.
+    assert REGISTRY.get_sample_value(g, {"job_name": "nope"}) is None
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_refresh_scheduler_job_state_swallows_db_errors():
+    from services import metrics_exporter as mx
+
+    class _BrokenPool:
+        def acquire(self):
+            raise RuntimeError("pool is dead")
+
+    # Must not raise.
+    await mx.refresh_scheduler_job_state(_BrokenPool())
 
 
 @pytest.mark.unit

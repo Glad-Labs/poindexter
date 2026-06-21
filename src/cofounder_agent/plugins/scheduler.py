@@ -10,9 +10,10 @@ Design:
   ``MemoryJobStore``. Jobs are re-registered from ``entry_points`` on
   each worker boot, so we don't need cross-restart persistence for the
   *schedule* — the list of jobs is authoritative in code + entry_points.
-- Jobs' ``last_run_at`` and ``next_run_time`` are tracked in
-  ``app_settings`` (via :class:`PluginConfig`) for operator visibility.
-  This is not required by apscheduler; it's for humans.
+- Jobs' ``last_run_at`` / ``last_status`` are tracked in the dedicated
+  ``job_run_state`` table (one row per job) for operator visibility. This
+  is not required by apscheduler; it's for humans. (Relocated out of
+  ``app_settings`` so runtime state no longer pollutes the config table.)
 - The ``schedule`` attribute on each Job can be:
 
   - ``"every N seconds"`` / ``"every N minutes"`` / ``"every N hours"``
@@ -69,7 +70,7 @@ _CIRCULAR_SAFE_JOBS: frozenset[str] = frozenset(
 _FAILURE_NOTIFY_COOLDOWN_S = 1800  # 30 min
 
 # First-fire seeding for never-run interval jobs (poindexter#561). A brand-new
-# interval job has no persisted ``plugin_job_last_run_*`` row, so we seed an
+# interval job has no ``job_run_state`` row, so we seed an
 # explicit ``next_run_time`` shortly after boot instead of letting APScheduler
 # re-anchor it to ``boot + interval`` every restart (which strands any interval
 # longer than the restart cadence — it never reaches its first fire). The base
@@ -223,8 +224,8 @@ class PluginScheduler:
         # stalled 7 daily maintenance jobs (last fire 2026-05-26, ~3.8 days
         # idle). misfire_grace_time=None does NOT fix this: there's no
         # *missed* fire to coalesce when the trigger re-anchors to boot.
-        # Fix: seed next_run_time from the persisted ``plugin_job_last_run_*``
-        # epoch — overdue jobs fire on the next tick; not-yet-due jobs keep
+        # Fix: seed next_run_time from the persisted ``job_run_state.last_run_at``
+        # — overdue jobs fire on the next tick; not-yet-due jobs keep
         # their real cadence across restarts.
         next_run_time = await self._interval_next_run(job.name, trigger)
         add_kwargs: dict[str, Any] = {}
@@ -318,17 +319,21 @@ class PluginScheduler:
         return now if due <= now else due
 
     async def _persisted_last_run_epoch(self, job_name: str) -> float | None:
-        """Read ``plugin_job_last_run_<name>`` (Unix epoch seconds) from
-        app_settings, or ``None`` if absent/unparseable."""
+        """Read ``job_run_state.last_run_at`` for ``job_name`` as a Unix epoch
+        (float seconds), or ``None`` if absent / never run.
+
+        Returns an epoch float (converted from the stored timestamptz via
+        ``datetime.timestamp()``) so ``_interval_next_run`` — which anchors an
+        interval job's first fire to its last run across restarts
+        (poindexter#561) — is unchanged.
+        """
         try:
             async with self._pool.acquire() as conn:
                 val = await conn.fetchval(
-                    "SELECT value FROM app_settings WHERE key = $1",
-                    f"plugin_job_last_run_{job_name}",
+                    "SELECT last_run_at FROM job_run_state WHERE job_name = $1",
+                    job_name,
                 )
-            return float(val) if val not in (None, "") else None
-        except (TypeError, ValueError):
-            return None
+            return val.timestamp() if val is not None else None
         except Exception as e:  # pragma: no cover - defensive
             logger.debug(
                 "scheduler: last-run lookup failed for %r: %s", job_name, e
@@ -461,41 +466,33 @@ class PluginScheduler:
             )
 
     async def _record_last_run(self, name: str, ok: bool) -> None:
-        """Stamp ``app_settings`` with this job's last-run epoch + status.
+        """Stamp ``job_run_state`` with this job's last-run time + status.
 
-        Two keys per job, written every fire:
+        One row per job, UPSERTed every fire:
 
-        - ``plugin_job_last_run_<name>`` — Unix epoch seconds (string).
-        - ``plugin_job_last_status_<name>`` — ``"ok"`` or ``"err"``.
+        - ``last_run_at`` — ``now()`` (timestamptz).
+        - ``last_status`` — ``"ok"`` or ``"err"``.
 
-        Dashboards that surface "minutes since last run" should read these
-        instead of the legacy ``idle_last_run_*`` keys (which only the
-        retired ``services/idle_worker.py`` wrote and were stuck once that
-        loop was decomposed into plugin Jobs).
+        Relocated out of ``app_settings`` (the ``plugin_job_last_run_*`` /
+        ``plugin_job_last_status_*`` keys) so runtime state no longer pollutes
+        the config table. The Prometheus scheduler-freshness gauges and the
+        System Health dashboard read this table.
 
         Failure here is swallowed: telemetry must not crash the scheduler.
         """
-        import time
-        epoch = str(int(time.time()))
         status = "ok" if ok else "err"
         sql = (
-            "INSERT INTO app_settings (key, value, category, description, updated_at) "
-            "VALUES ($1, $2, 'plugin_telemetry', $3, NOW()) "
-            "ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()"
+            "INSERT INTO job_run_state (job_name, last_run_at, last_status, updated_at) "
+            "VALUES ($1, now(), $2, now()) "
+            "ON CONFLICT (job_name) DO UPDATE SET "
+            "last_run_at = EXCLUDED.last_run_at, "
+            "last_status = EXCLUDED.last_status, "
+            "updated_at = now()"
         )
         try:
             async with self._pool.acquire() as conn:
-                await conn.execute(
-                    sql,
-                    f"plugin_job_last_run_{name}",
-                    epoch,
-                    f"Unix epoch of last fire for plugin job {name!r} (auto-written by PluginScheduler)",
-                )
-                await conn.execute(
-                    sql,
-                    f"plugin_job_last_status_{name}",
-                    status,
-                    f"Outcome of last fire for plugin job {name!r}: 'ok' or 'err'",
-                )
+                await conn.execute(sql, name, status)
         except Exception as e:
-            logger.warning("scheduler: last-run telemetry write failed for %r: %s", name, e)
+            logger.warning(
+                "scheduler: last-run telemetry write failed for %r: %s", name, e
+            )

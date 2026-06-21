@@ -29,7 +29,11 @@ POSTGRES_DATASOURCE = {
 }
 PROMETHEUS_DATASOURCE = {
     "type": "prometheus",
-    "uid": "prometheus",
+    # Must match the provisioned datasource uid in
+    # infrastructure/grafana/provisioning/datasources/local-prometheus.yml.
+    # (It is NOT "prometheus" — that uid resolves to no datasource, and
+    # local-prometheus is isDefault:false so there's no fallback.)
+    "uid": "local-prometheus",
 }
 LOKI_DATASOURCE = {
     "type": "loki",
@@ -831,8 +835,8 @@ def system_health_scheduler_freshness_table() -> dict:
 
     Powered by:
     - ``poindexter_scheduler_job_last_run_age_seconds{job_name=...}`` —
-      seconds since last fire (auto-populated from
-      app_settings.plugin_job_last_run_<name>)
+      seconds since last fire (from the job_run_state table, emitted by
+      services.metrics_exporter.refresh_scheduler_job_state)
     - ``poindexter_scheduler_job_last_run_ok{job_name=...}`` —
       1=ok / 0=err on the most recent fire
 

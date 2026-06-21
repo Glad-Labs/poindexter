@@ -69,6 +69,13 @@ Self-monitoring:
   persistently stale gauge is visible (``PoindexterMetricsRefreshErrors``)
   instead of dying at DEBUG.
 
+Scheduler:
+- ``poindexter_scheduler_job_last_run_age_seconds`` — gauge by ``job_name``,
+  seconds since each scheduled plugin job last fired (from ``job_run_state``;
+  relocated out of ``app_settings``). Absent for never-run jobs.
+- ``poindexter_scheduler_job_last_run_ok`` — gauge by ``job_name``, 1/0 from
+  the job's most recent ``last_status``. Absent for never-run jobs.
+
 All metric values come from the same DB queries the brain probes
 already run, so the values stay consistent between the legacy probe
 path and the new Prometheus path during the migration.
@@ -346,6 +353,24 @@ WHERE s.event_type = 'qa_reviewer_skipped'
   AND s.details->>'reason' NOT LIKE '%master rail flag off%'
 GROUP BY s.details->>'reviewer'
 """
+
+
+# Per-scheduler-job freshness — relocated out of app_settings into the
+# job_run_state table (see plugins/scheduler.py). Cleared + repopulated each
+# scrape so a removed job's series drops out; never-run jobs (last_run_at IS
+# NULL) emit no series. Bounded cardinality: ~one pair per registered job.
+SCHEDULER_JOB_LAST_RUN_AGE_SECONDS = Gauge(
+    "poindexter_scheduler_job_last_run_age_seconds",
+    "Seconds since each scheduled plugin job last fired (from job_run_state). "
+    "Absent for never-run jobs.",
+    ["job_name"],
+)
+SCHEDULER_JOB_LAST_RUN_OK = Gauge(
+    "poindexter_scheduler_job_last_run_ok",
+    "1 if the job's most recent fire returned ok, 0 if it errored "
+    "(from job_run_state.last_status). Absent for never-run jobs.",
+    ["job_name"],
+)
 
 
 # ---------------------------------------------------------------------------
@@ -868,6 +893,10 @@ async def refresh_metrics(
     # blocks above. Powers the QaRailFullySkipped alert.
     await refresh_qa_rail_skip_ratio(pool)
 
+    # Per-job scheduler freshness from job_run_state (relocated from
+    # app_settings). Self-contained; powers the System Health scheduler panels.
+    await refresh_scheduler_job_state(pool)
+
 
 async def _refresh_module_metrics(pool: Any) -> None:
     """Invoke each registered Module's optional ``refresh_module_metrics``.
@@ -960,6 +989,43 @@ async def refresh_qa_rail_skip_ratio(
             continue
         ratio = float(r["skips"] or 0) / passes
         QA_RAIL_SKIP_RATIO.labels(reviewer=reviewer).set(min(ratio, 1.0))
+
+
+async def refresh_scheduler_job_state(pool: Any) -> None:
+    """Recompute the per-job scheduler freshness gauges from ``job_run_state``.
+
+    For each job with a non-NULL ``last_run_at`` set
+    ``poindexter_scheduler_job_last_run_age_seconds`` to ``now() - last_run_at``
+    and ``poindexter_scheduler_job_last_run_ok`` to 1/0 from ``last_status``.
+    Both gauges are CLEARED first so a removed job's series disappears and a
+    never-run job (NULL ``last_run_at``) emits nothing. Best-effort: any failure
+    leaves the gauges cleared rather than raising — ``/metrics`` must never 500.
+    """
+    SCHEDULER_JOB_LAST_RUN_AGE_SECONDS.clear()
+    SCHEDULER_JOB_LAST_RUN_OK.clear()
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT job_name, "
+                "EXTRACT(EPOCH FROM (now() - last_run_at)) AS age_s, "
+                "last_status "
+                "FROM job_run_state WHERE last_run_at IS NOT NULL"
+            )
+    except Exception as e:  # noqa: BLE001 — /metrics must never 500
+        _note_refresh_error("job_run_state", e)
+        return
+    for r in rows:
+        job = r["job_name"]
+        if not job:
+            continue
+        age = r["age_s"]
+        if age is not None:
+            SCHEDULER_JOB_LAST_RUN_AGE_SECONDS.labels(job_name=job).set(float(age))
+        status = r["last_status"]
+        if status is not None:
+            SCHEDULER_JOB_LAST_RUN_OK.labels(job_name=job).set(
+                1 if status == "ok" else 0
+            )
 
 
 def render_exposition() -> tuple[bytes, str]:

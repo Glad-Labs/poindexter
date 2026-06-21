@@ -1432,11 +1432,20 @@
       }
     },
     {
+      "id": 713,
+      "title": "Scheduled jobs \u2014 freshness + last-run status",
+      "type": "table",
+      "description": "Auto-populated for every PluginScheduler job. Healthy = age below the job's expected interval (every-2h jobs sit at 0-7200s, every-60s jobs at 0-90s). Orange highlight = age suggests the loop is dead. ok=0 = ran recently but failed; click the job_name to grep Loki for details.",
       "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "type": "prometheus",
+        "uid": "local-prometheus"
       },
-      "description": "Last-run timestamp (age in hours) for each idle-tracked background job. Red = overdue given its interval; investigate the scheduler.",
+      "gridPos": {
+        "x": 0,
+        "y": 280,
+        "w": 16,
+        "h": 10
+      },
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1444,9 +1453,8 @@
           },
           "custom": {
             "align": "left",
-            "cellOptions": {
-              "type": "auto"
-            },
+            "displayMode": "auto",
+            "filterable": true,
             "inspect": false
           },
           "mappings": [],
@@ -1458,40 +1466,267 @@
                 "value": null
               }
             ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 9,
-        "w": 24,
-        "x": 0,
-        "y": 17
-      },
-      "id": 23,
-      "options": {
-        "cellHeight": "sm",
-        "footer": {
-          "countRows": false,
-          "fields": "",
-          "reducer": ["sum"],
-          "show": false
+          },
+          "unit": "short"
         },
-        "showHeader": true
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Age (s)"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "s"
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "blue",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 3600
+                    }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Last status"
+            },
+            "properties": [
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "options": {
+                      "0": {
+                        "text": "ERR",
+                        "color": "orange",
+                        "index": 0
+                      },
+                      "1": {
+                        "text": "ok",
+                        "color": "blue",
+                        "index": 1
+                      }
+                    },
+                    "type": "value"
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "footer": {
+          "show": true,
+          "reducer": ["count"],
+          "fields": ""
+        },
+        "sortBy": [
+          {
+            "displayName": "Age (s)",
+            "desc": true
+          }
+        ]
       },
       "targets": [
         {
           "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "type": "prometheus",
+            "uid": "local-prometheus"
           },
+          "expr": "poindexter_scheduler_job_last_run_age_seconds",
           "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT replace(r.key, 'plugin_job_last_run_', '') AS \"Job\", to_timestamp(r.value::float8)::timestamptz AS \"Last-run\", ROUND(EXTRACT(EPOCH FROM (NOW() - to_timestamp(r.value::float8))) / 3600, 1) AS \"Hours ago\", COALESCE(s.value, '?') AS \"Status\" FROM app_settings r LEFT JOIN app_settings s ON s.key = replace(r.key, 'plugin_job_last_run_', 'plugin_job_last_status_') WHERE r.key LIKE 'plugin_job_last_run_%' ORDER BY r.value::float8 ASC;",
+          "instant": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "poindexter_scheduler_job_last_run_ok",
+          "format": "table",
+          "instant": true,
+          "refId": "B"
         }
       ],
-      "title": "Scheduled jobs \u2014 last run times",
-      "type": "table"
+      "transformations": [
+        {
+          "id": "merge",
+          "options": {}
+        },
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "instance": true,
+              "job": true
+            },
+            "indexByName": {},
+            "renameByName": {
+              "job_name": "Job",
+              "Value #A": "Age (s)",
+              "Value #B": "Last status"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "id": 714,
+      "title": "Stalest jobs (top 10)",
+      "type": "bargauge",
+      "description": "Top 10 jobs by last-run age. Healthy state: all bars below their respective scheduled intervals. One bar far above the others = the loop has stopped firing. The threshold color flips to orange at the 1-hour mark \u2014 but a job that's scheduled to run every 6h naturally stays orange between fires. Cross-reference with the freshness table.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "x": 16,
+        "y": 280,
+        "w": 8,
+        "h": 10
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 3600
+              }
+            ]
+          },
+          "unit": "s"
+        },
+        "overrides": []
+      },
+      "options": {
+        "displayMode": "gradient",
+        "minVizHeight": 10,
+        "minVizWidth": 0,
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true,
+        "valueMode": "color"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "topk(10, poindexter_scheduler_job_last_run_age_seconds)",
+          "instant": true,
+          "legendFormat": "{{job_name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 715,
+      "title": "Jobs whose last fire failed",
+      "type": "stat",
+      "description": "Number of scheduler jobs where the most recent fire status was 'err'. Healthy = 0. >0 = at least one job ran but raised \u2014 open the freshness table, sort by Last status, and check Loki for the underlying traceback.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 290,
+        "w": 4,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "count(poindexter_scheduler_job_last_run_ok == 0)",
+          "instant": true,
+          "refId": "A"
+        }
+      ]
     },
     {
       "type": "row",

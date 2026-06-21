@@ -176,50 +176,30 @@ async def test_start_and_shutdown_clean(
 async def test_record_last_run_writes_telemetry(
     migrations_applied, clean_test_tables: asyncpg.Pool
 ) -> None:
-    """``_record_last_run`` UPSERTs the two app_settings telemetry rows.
-
-    Dashboards (System Health → "Hours since last run" panels) read these
-    keys instead of the legacy ``idle_last_run_*`` rows that only the
-    retired ``services/idle_worker.py`` wrote.
-    """
-    import time
+    """``_record_last_run`` UPSERTs one job_run_state row; re-running flips
+    status and bumps last_run_at (UPSERT, not duplicate insert)."""
     scheduler = PluginScheduler(clean_test_tables)
 
-    before = int(time.time())
     await scheduler._record_last_run("demo_job", ok=True)
-    after = int(time.time())
-
     async with clean_test_tables.acquire() as conn:
-        run_row = await conn.fetchrow(
-            "SELECT value FROM app_settings WHERE key = $1",
-            "plugin_job_last_run_demo_job",
+        row = await conn.fetchrow(
+            "SELECT last_run_at, last_status FROM job_run_state WHERE job_name = $1",
+            "demo_job",
         )
-        status_row = await conn.fetchrow(
-            "SELECT value FROM app_settings WHERE key = $1",
-            "plugin_job_last_status_demo_job",
-        )
+    assert row is not None, "job_run_state row not written"
+    assert row["last_run_at"] is not None
+    assert row["last_status"] == "ok"
+    first_ts = row["last_run_at"]
 
-    assert run_row is not None, "plugin_job_last_run_demo_job not written"
-    assert before <= int(run_row["value"]) <= after
-    assert status_row is not None
-    assert status_row["value"] == "ok"
-
-    # Re-running flips status and bumps the epoch — UPSERT, not duplicate insert.
-    await asyncio.sleep(1.1)  # ensure epoch tick is observable
+    await asyncio.sleep(0.05)
     await scheduler._record_last_run("demo_job", ok=False)
-
     async with clean_test_tables.acquire() as conn:
-        rerun = await conn.fetchrow(
-            "SELECT value FROM app_settings WHERE key = $1",
-            "plugin_job_last_run_demo_job",
+        rerow = await conn.fetchrow(
+            "SELECT last_run_at, last_status FROM job_run_state WHERE job_name = $1",
+            "demo_job",
         )
-        restatus = await conn.fetchrow(
-            "SELECT value FROM app_settings WHERE key = $1",
-            "plugin_job_last_status_demo_job",
-        )
-
-    assert int(rerun["value"]) > int(run_row["value"])
-    assert restatus["value"] == "err"
+    assert rerow["last_status"] == "err"
+    assert rerow["last_run_at"] >= first_ts
 
 
 async def test_record_last_run_swallows_db_errors(
