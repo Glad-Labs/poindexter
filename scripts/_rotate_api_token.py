@@ -26,6 +26,27 @@ sys.path.insert(0, str(ROOT / "src" / "cofounder_agent"))
 from plugins.secrets import set_secret  # noqa: E402
 
 
+def _resolve_db_url() -> str:
+    """Resolve the brain DSN from bootstrap (bootstrap.toml is canonical, #198)
+    and force IPv4 (mirrors scripts/gpu-scraper.py, #1796). On Windows
+    ``localhost`` resolves to ``::1`` first, where Docker Desktop's IPv6
+    port-proxy silently drops connections; ``127.0.0.1`` lands on host postgres.
+    """
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        sys.path.insert(0, str(ROOT))
+        try:
+            from brain.bootstrap import resolve_database_url  # type: ignore
+
+            dsn = resolve_database_url()
+        except Exception as exc:  # bootstrap is best-effort on the host
+            print(f"[dsn] bootstrap resolution failed ({exc}); using default", file=sys.stderr)
+            dsn = None
+    if not dsn:
+        dsn = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
+    return dsn.replace("@localhost:", "@127.0.0.1:")
+
+
 async def _main(token_path: str) -> None:
     if not os.getenv("POINDEXTER_SECRET_KEY"):
         print("ERROR: POINDEXTER_SECRET_KEY env var must be set", file=sys.stderr)
@@ -36,10 +57,7 @@ async def _main(token_path: str) -> None:
         print("ERROR: token file empty or too short", file=sys.stderr)
         sys.exit(2)
 
-    dsn = os.getenv(
-        "DATABASE_URL",
-        "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
-    )
+    dsn = _resolve_db_url()
     conn = await asyncpg.connect(dsn)
     try:
         await set_secret(

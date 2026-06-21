@@ -88,6 +88,13 @@ LOCAL_DSN = _dsn or "postgresql://poindexter:poindexter-brain-local@localhost:54
 IN_DOCKER = os.getenv("IN_DOCKER", "").lower() in ("1", "true", "yes") \
     or Path("/.dockerenv").exists()
 
+# On the host (not IN_DOCKER), force IPv4 on the DB DSN: Windows resolves
+# ``localhost`` to ``::1`` first and Docker Desktop's IPv6 port-proxy silently
+# drops connections. In-container the DB host comes from DATABASE_URL, so the
+# rewrite is correctly skipped there. (mirrors scripts/gpu-scraper.py, #1796)
+if not IN_DOCKER:
+    LOCAL_DSN = LOCAL_DSN.replace("@localhost:", "@127.0.0.1:")
+
 
 def _localize_url(url: str) -> str:
     if not url or not IN_DOCKER:

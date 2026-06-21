@@ -40,10 +40,30 @@ except ImportError:
 
 
 DEFAULT_PROMPTS_DIR = Path(__file__).resolve().parent.parent.parent / "glad-labs-prompts"
-DEFAULT_DB_URL = os.environ.get(
-    "LOCAL_DATABASE_URL",
-    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
-)
+def _resolve_db_url() -> str:
+    """Resolve the brain DSN and force IPv4 (mirrors scripts/gpu-scraper.py, #1796).
+
+    Order: ``LOCAL_DATABASE_URL`` → ``DATABASE_URL`` → bootstrap.toml (canonical,
+    #198) → local default. IPv4 because on Windows ``localhost`` resolves to
+    ``::1`` first and Docker Desktop's IPv6 port-proxy silently drops connections.
+    """
+    for env_key in ("LOCAL_DATABASE_URL", "DATABASE_URL"):
+        val = os.environ.get(env_key)
+        if val:
+            return val.replace("@localhost:", "@127.0.0.1:")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    try:
+        from brain.bootstrap import resolve_database_url  # type: ignore
+
+        dsn = resolve_database_url()
+    except Exception as exc:  # bootstrap is best-effort on the host
+        print(f"[dsn] bootstrap resolution failed ({exc}); using default", file=sys.stderr)
+        dsn = None
+    default = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
+    return (dsn or default).replace("@localhost:", "@127.0.0.1:")
+
+
+DEFAULT_DB_URL = _resolve_db_url()
 
 # The YAML files in the premium repo that contain prompt_templates-shaped
 # entries. Each entry needs `key`, `category`, `template`. Description and

@@ -51,22 +51,25 @@ def _resolve_r2_url(arg: str | None) -> str:
 
 
 def _resolve_database_url(arg: str | None) -> str:
+    # Force IPv4 on every path: on Windows ``localhost`` resolves to ``::1``
+    # first and Docker Desktop's IPv6 port-proxy silently drops connections.
+    # (mirrors scripts/gpu-scraper.py, #1796)
     if arg:
-        return arg
+        return arg.replace("@localhost:", "@127.0.0.1:")
     try:
         from brain.bootstrap import resolve_database_url  # type: ignore[import]
 
         maybe = resolve_database_url()
         url = asyncio.run(maybe) if asyncio.iscoroutine(maybe) else maybe  # type: ignore[arg-type]
         if url:
-            return url
+            return url.replace("@localhost:", "@127.0.0.1:")
     except Exception:
         pass
     # Last resort: standard env vars
     for key in ("DATABASE_URL", "LOCAL_DATABASE_URL", "POINDEXTER_MEMORY_DSN"):
         val = os.environ.get(key)
         if val:
-            return val
+            return val.replace("@localhost:", "@127.0.0.1:")
     raise SystemExit(
         "Cannot resolve database URL. Pass --database-url or set DATABASE_URL."
     )

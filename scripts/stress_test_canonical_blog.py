@@ -27,6 +27,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import sys
 import time
 from datetime import datetime, timezone
@@ -36,6 +37,28 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src" / "cofounder_agent"))
 
 import asyncpg  # noqa: E402
+
+
+def _resolve_db_url() -> str:
+    """Resolve the brain DSN from bootstrap (bootstrap.toml is canonical, #198)
+    and force IPv4 (mirrors scripts/gpu-scraper.py, #1796). On Windows
+    ``localhost`` resolves to ``::1`` first, where Docker Desktop's IPv6
+    port-proxy silently drops connections; ``127.0.0.1`` lands on host postgres.
+    """
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        try:
+            from brain.bootstrap import resolve_database_url  # type: ignore
+
+            dsn = resolve_database_url()
+        except Exception as exc:  # bootstrap is best-effort on the host
+            print(f"[dsn] bootstrap resolution failed ({exc}); using default", file=sys.stderr)
+            dsn = None
+    if not dsn:
+        dsn = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
+    return dsn.replace("@localhost:", "@127.0.0.1:")
+
 
 # Brand-aligned topics — every one hits at least one keyword in
 # TopicDiscovery._BRAND_KEYWORDS so the off-brand filter doesn't kill
@@ -193,9 +216,11 @@ async def main():
                         help="Number of tasks to dispatch (max %d)" % len(TOPICS))
     parser.add_argument("--max-wait", type=int, default=7200,
                         help="Max wait per run in seconds (default 2h)")
-    parser.add_argument("--dsn", default=(
-        "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
-    ))
+    parser.add_argument(
+        "--dsn",
+        default=None,
+        help="Postgres DSN (default: resolve from bootstrap.toml, IPv4-forced)",
+    )
     args = parser.parse_args()
 
     count = min(args.count, len(TOPICS))
@@ -206,7 +231,7 @@ async def main():
     print(f"  max_wait : {args.max_wait}s")
     print()
 
-    pool = await asyncpg.create_pool(args.dsn, min_size=1, max_size=4)
+    pool = await asyncpg.create_pool(args.dsn or _resolve_db_url(), min_size=1, max_size=4)
 
     print("=== dispatching ===")
     topics = _today_topic_pool(count)

@@ -46,13 +46,32 @@ import asyncpg  # noqa: E402
 from services.excerpt_generator import generate_excerpt  # noqa: E402
 from services.multi_model_qa import format_qa_feedback_from_reviews  # noqa: E402
 
-DB_URL = os.getenv(
-    "POINDEXTER_BRAIN_URL",
-    os.getenv(
-        "GLADLABS_BRAIN_URL",
-        "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
-    ),
-)
+
+def _resolve_db_url() -> str:
+    """Resolve the brain DSN and force IPv4 (mirrors scripts/gpu-scraper.py, #1796).
+
+    Order: ``POINDEXTER_BRAIN_URL`` → ``GLADLABS_BRAIN_URL`` → bootstrap.toml
+    (canonical, #198) → local default. IPv4 because on Windows ``localhost``
+    resolves to ``::1`` first and Docker Desktop's IPv6 port-proxy silently
+    drops connections.
+    """
+    for env_key in ("POINDEXTER_BRAIN_URL", "GLADLABS_BRAIN_URL", "DATABASE_URL"):
+        val = os.getenv(env_key)
+        if val:
+            return val.replace("@localhost:", "@127.0.0.1:")
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    try:
+        from brain.bootstrap import resolve_database_url  # type: ignore
+
+        dsn = resolve_database_url()
+    except Exception as exc:  # bootstrap is best-effort on the host
+        print(f"[dsn] bootstrap resolution failed ({exc}); using default", file=sys.stderr)
+        dsn = None
+    default = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
+    return (dsn or default).replace("@localhost:", "@127.0.0.1:")
+
+
+DB_URL = _resolve_db_url()
 
 
 def _coerce_json(value) -> dict:

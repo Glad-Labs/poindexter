@@ -138,12 +138,23 @@ def host_path_from_storage_path(
 
 def _resolve_db_url(cli_value: str | None) -> str:
     if cli_value:
-        return cli_value
+        return cli_value.replace("@localhost:", "@127.0.0.1:")
     for env_key in ("POINDEXTER_BRAIN_URL", "GLADLABS_BRAIN_URL", "DATABASE_URL"):
         val = os.getenv(env_key)
         if val:
-            return val
-    return DEFAULT_DB_URL
+            return val.replace("@localhost:", "@127.0.0.1:")
+    # bootstrap.toml is canonical (#198) — resolve from it so the port tracks the
+    # deploy; force IPv4 because Windows resolves ``localhost`` to ``::1`` first
+    # and Docker Desktop's IPv6 port-proxy drops connections. (#1796)
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+    try:
+        from brain.bootstrap import resolve_database_url  # type: ignore
+
+        dsn = resolve_database_url()
+    except Exception as exc:  # bootstrap is best-effort on the host
+        print(f"[dsn] bootstrap resolution failed ({exc}); using default", file=sys.stderr)
+        dsn = None
+    return (dsn or DEFAULT_DB_URL).replace("@localhost:", "@127.0.0.1:")
 
 
 def _data_root() -> Path:
