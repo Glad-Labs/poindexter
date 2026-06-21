@@ -18,6 +18,27 @@ def test_apprise_handler_registered_and_legacy_gone():
     assert "outbound.telegram_post" not in outbound
 
 
+def test_all_retention_handlers_registered_via_load_all():
+    """load_all() must wire every retention handler the runtime relies on.
+
+    Regression guard: ``retention.checkpoint_prune`` shipped with a correct
+    ``@register_handler`` decorator and full unit coverage, but was omitted
+    from ``load_all()``'s import list, so it was never registered in the
+    worker process. Its own unit test imports the handler module *directly*
+    (firing the decorator in-process), which masked the gap — ``run_retention``
+    failed in production with ``HandlerRegistrationError: no handler
+    registered under 'retention.checkpoint_prune'`` while every test stayed
+    green. Asserting the ``load_all()`` surface directly is what catches a
+    handler file that exists but isn't wired.
+    """
+    load_all()
+    retention = registry.registered_names("retention")
+    assert "retention.checkpoint_prune" in retention
+    assert "retention.downsample" in retention
+    assert "retention.summarize_to_table" in retention
+    assert "retention.ttl_prune" in retention
+
+
 def test_discord_module_deleted():
     with pytest.raises(ModuleNotFoundError):
         importlib.import_module(
