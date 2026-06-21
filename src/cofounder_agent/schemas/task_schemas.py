@@ -499,6 +499,37 @@ class GateListResponse(ListResponse[GateItem]):
     """
 
 
+class PostApprovalItem(BaseModel):
+    """One post paused at a publish gate (#1343).
+
+    Sourced from ``posts_approval_service.list_pending_publish``. ``artifact`` is
+    the gate's decision payload, always normalized to a dict by that service's
+    ``_coerce_artifact`` (asyncpg yields the ``gate_artifact`` jsonb column as a
+    string absent a codec). ``published_at`` / ``gate_paused_at`` are ISO
+    timestamps (``iso_or_none``). Fields default permissively so a partial row
+    never trips validation.
+    """
+
+    post_id: str | None = None
+    slug: str | None = None
+    title: str | None = None
+    status: str | None = None
+    published_at: datetime | None = None
+    gate_name: str | None = None
+    artifact: dict[str, Any] = Field(default_factory=dict)
+    gate_paused_at: datetime | None = None
+
+
+class PostApprovalListResponse(ListResponse[PostApprovalItem]):
+    """Posts paused at a publish gate — canonical offset envelope (poindexter#745).
+
+    ``{items, total, limit, offset}`` via ``ListResponse[PostApprovalItem]``.
+    Replaces the prior untyped ``dict[str, Any]`` body that used a ``posts`` key.
+    The list is ``limit``-capped with no cursor, so ``offset`` is always 0.
+    Operator publish-gate surface (OAuth-JWT); no public-site consumer.
+    """
+
+
 class MetricsResponse(BaseModel):
     """Schema for aggregated metrics"""
 

@@ -18,6 +18,7 @@ from schemas.task_schemas import (
     GatePausedListResponse,
     MediaApprovalListResponse,
     PendingApprovalListResponse,
+    PostApprovalListResponse,
     TaskListResponse,
 )
 
@@ -34,6 +35,7 @@ ENDPOINT_LIST_MODELS = [
     MediaApprovalListResponse,  # step 6 — GET /api/media-approval/pending
     GatePausedListResponse,  # step 7 — GET /api/gates/pending
     GateListResponse,  # step 8 — GET /api/gates
+    PostApprovalListResponse,  # step 9 — GET /api/posts-approval/pending
 ]
 
 

@@ -14,6 +14,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
+from schemas.task_schemas import PostApprovalListResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
@@ -40,7 +41,7 @@ class RejectPublishRequest(BaseModel):
 @router.get(
     "/pending",
     summary="List posts paused at a publish gate",
-    response_model=dict[str, Any],
+    response_model=PostApprovalListResponse,
     status_code=200,
 )
 async def list_pending_publish(
@@ -48,12 +49,20 @@ async def list_pending_publish(
     limit: int = Query(100, ge=1, le=500),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-) -> dict[str, Any]:
+) -> PostApprovalListResponse:
     """Return every post currently paused at any publish gate (or one gate)."""
     from services.posts_approval_service import list_pending_publish as _list_pending
 
     posts = await _list_pending(pool=db_service.pool, gate_name=gate_name, limit=limit)
-    return {"posts": posts, "total": len(posts)}
+    # Canonical offset envelope (poindexter#745): `posts` → `items`. The list is
+    # `limit`-capped with no cursor, so offset is always 0. Pydantic validates
+    # each row into a PostApprovalItem.
+    return PostApprovalListResponse(
+        items=posts,  # type: ignore[arg-type]
+        total=len(posts),
+        limit=limit,
+        offset=0,
+    )
 
 
 @router.get(

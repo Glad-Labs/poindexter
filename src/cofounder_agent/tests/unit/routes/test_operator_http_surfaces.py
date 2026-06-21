@@ -208,7 +208,13 @@ class TestPostsApprovalRoutes:
         with patch("services.posts_approval_service.list_pending_publish", new=AsyncMock(return_value=posts)):
             resp = TestClient(app).get("/api/posts-approval/pending")
         assert resp.status_code == 200
-        assert resp.json()["total"] == 1
+        data = resp.json()
+        # Canonical offset envelope (poindexter#745): items, not the legacy posts key.
+        assert data["total"] == 1
+        assert data["limit"] == 100
+        assert data["offset"] == 0
+        assert "posts" not in data
+        assert data["items"][0]["post_id"] == "p-1"
 
     def test_approve_publish_success(self):
         app, _ = _app_posts_approval()
