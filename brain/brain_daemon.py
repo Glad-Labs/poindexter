@@ -248,6 +248,19 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_OFFSITE_BACKUP_WATCH = False
 
 try:
+    # auto-embed liveness watch. Reads an audit_log heartbeat (creds-free)
+    # and `docker restart`s the wedged embedder sidecar before paging;
+    # emits auto_embed_stale on escalate.
+    from auto_embed_watch import run_auto_embed_watch_probe
+    _HAS_AUTO_EMBED_WATCH = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.auto_embed_watch import run_auto_embed_watch_probe
+        _HAS_AUTO_EMBED_WATCH = True
+    except ImportError:
+        _HAS_AUTO_EMBED_WATCH = False
+
+try:
     # GH#222 — Docker port-forward stuck-state probe. Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting
     # stuck (TCP up, HTTP empty-reply via host.docker.internal, fine
@@ -396,6 +409,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Backup RESTORE verification offline — a corrupt dump goes unnoticed (#441)"),
     ("_HAS_OFFSITE_BACKUP_WATCH", "brain/offsite_backup_watch.py",
      "Off-machine backup auto-retry offline — a wedged offsite runner pages late, no self-heal (#386)"),
+    ("_HAS_AUTO_EMBED_WATCH", "brain/auto_embed_watch.py",
+     "Auto-embed liveness offline — a wedged/dead embedder stops embedding silently, RAG + memory go stale"),
     ("_HAS_DOCKER_PORT_FORWARD_PROBE", "brain/docker_port_forward_probe.py",
      "Windows wslrelay stuck-state auto-recovery offline (#222)"),
     ("_HAS_CORSAIR_FEED_PROBE", "brain/corsair_feed_probe.py",
@@ -2522,6 +2537,22 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] offsite_backup_watch probe failed: %s", e)
+
+    # Auto-embed liveness watch. Reads the audit_log heartbeat
+    # (auto_embed_succeeded) each cycle; on staleness `docker restart`s the
+    # wedged embedder sidecar, and after max_retries emits a warning-level
+    # auto_embed_stale alert. Creds-free — never runs Ollama or touches the
+    # embeddings table. Disabled via app_settings.auto_embed_watch_enabled=false.
+    if _HAS_AUTO_EMBED_WATCH:
+        try:
+            ae_summary = await run_auto_embed_watch_probe(pool)
+            probe_results["auto_embed_watch"] = {
+                "ok": bool(ae_summary.get("ok", False)),
+                "detail": ae_summary.get("detail", ""),
+                "summary": ae_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] auto_embed_watch probe failed: %s", e)
 
     # Docker port-forward stuck-state probe (#222). Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting

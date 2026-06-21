@@ -27,6 +27,7 @@ other knob — enable/disable per Tap, per-Tap config — lives in
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import sys
@@ -276,6 +277,29 @@ async def main() -> None:
             len(summary.taps), elapsed,
         )
         logger.info("Auto-Embed run complete.\n")
+
+        # Liveness heartbeat — brain/auto_embed_watch.py reads the newest
+        # auto_embed_succeeded audit_log row to detect a wedged/dead embedder
+        # (a hung Tap, a stuck Ollama call, a crashed container). Stamped on
+        # every completed run regardless of embedded count: "the embedder
+        # cycled" is the signal, not "there was new content to embed".
+        # Best-effort — a heartbeat-write failure must never fail the run.
+        try:
+            await pool.execute(
+                "INSERT INTO audit_log (event_type, source, details, severity)"
+                " VALUES ($1, $2, $3::jsonb, $4)",
+                "auto_embed_succeeded",
+                "auto-embed",
+                json.dumps({
+                    "embedded": summary.total_embedded,
+                    "failed": summary.total_failed,
+                    "taps": len(summary.taps),
+                    "elapsed_s": round(elapsed, 1),
+                }),
+                "info",
+            )
+        except Exception as hb_err:
+            logger.warning("Could not write auto_embed heartbeat: %s", hb_err)
 
     except Exception as e:
         logger.exception("Fatal error: %s", e)

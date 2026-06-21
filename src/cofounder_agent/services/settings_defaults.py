@@ -98,6 +98,18 @@ DEFAULTS: dict[str, str] = {
     'offsite_backup_watch_max_retries': '2',
     'offsite_backup_watch_retry_delay_seconds': '120',
 
+    # Non-secret tunables for the brain auto_embed_watch probe — the
+    # self-heal-before-paging liveness watch for the auto-embed sidecar
+    # (sibling of offsite_backup_watch). Reads the auto_embed_succeeded
+    # audit_log heartbeat that scripts/auto-embed.py stamps each run; stale =>
+    # `docker restart poindexter-auto-embed`, then a warning-level
+    # auto_embed_stale alert on escalate. Seeded every boot. auto-embed runs
+    # hourly, so 6h ~= 6 missed cycles before paging.
+    'auto_embed_max_age_hours': '6',
+    'auto_embed_watch_enabled': 'true',
+    'auto_embed_watch_max_retries': '2',
+    'auto_embed_watch_retry_delay_seconds': '120',
+
     # ----- Cost / billing -----
     'daily_spend_limit_usd': '2.0',
     'monthly_spend_limit_usd': '100.0',

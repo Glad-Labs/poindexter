@@ -88,7 +88,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `findings_read.py` | Read + summarize quality-probe findings for the operator console. |
 | `firefighter_service.py` | Firefighter ops LLM service — diagnosis-only enrichment for alerts. |
 | `gate_machinery.py` | Shared HITL approval-gate machinery (Glad-Labs/poindexter#622). |
-| `gpu_scheduler.py` | GPU Scheduler — serializes access to the shared GPU between Ollama and SDXL, |
+| `gpu_scheduler.py` | GPU Scheduler — serializes access to the shared GPU across the stack's own |
 | `grafana_alert_builder.py` | Render Grafana SQL alert rules from ``app_settings`` (DB-first). |
 | `guardrails_rails.py` | Native QA rails for brand-fabrication + competitor-mention screening |
 | `http_client.py` | Shared httpx.AsyncClient — lifespan-bound process-wide connection pool. |
