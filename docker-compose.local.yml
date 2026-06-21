@@ -10,7 +10,16 @@ services:
     container_name: poindexter-postgres-local
     restart: unless-stopped
     ports:
-      - "15432:5432"
+      # Host publish for host-side tools only (poindexter CLI, start-stack token
+      # helpers). In-container services reach the DB at postgres-local:5432 and are
+      # unaffected by this mapping. The host port is operator-tunable because
+      # Windows (Hyper-V/WSL) dynamically reserves TCP ranges that shift across
+      # updates: 15432 landed inside a reserved range (15424-15523) and became
+      # unbindable (WSAEACCES), silently dropping the publish. Default 5433 (low,
+      # outside the Hyper-V grabs); override via POSTGRES_HOST_PORT in bootstrap.toml
+      # if it's reserved on your box (`netsh int ipv4 show excludedportrange
+      # protocol=tcp`). Keep in sync with the port in bootstrap.toml's database_url.
+      - "${POSTGRES_HOST_PORT:-5433}:5432"
     environment:
       POSTGRES_DB: ${LOCAL_POSTGRES_DB:-poindexter_brain}
       POSTGRES_USER: ${LOCAL_POSTGRES_USER:-poindexter}
@@ -453,8 +462,9 @@ services:
       # persist on the host. Pinpoint-subdir mounts (not the whole
       # ~/.poindexter dir) to keep bootstrap.toml OUT of appuser's HOME
       # — resolve_database_url() reads ~/.poindexter/bootstrap.toml as
-      # priority 1, and the host file's DSN points at localhost:15432
-      # which is unreachable from inside the worker container.
+      # priority 1, and the host file's DSN points at localhost:5433
+      # (the postgres host publish, see postgres-local.ports) which is
+      # unreachable from inside the worker container.
       - ${USERPROFILE:-.}/.poindexter/podcast:/home/appuser/.poindexter/podcast
       - ${USERPROFILE:-.}/.poindexter/video:/home/appuser/.poindexter/video
       - ${USERPROFILE:-.}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
