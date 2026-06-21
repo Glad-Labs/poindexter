@@ -459,13 +459,14 @@
 
     // ── approvals (Action Inbox · approve kind) ─────────────
     // Real endpoints live under /api/tasks — there is NO /api/approvals.
-    // pending-approval → {total, count, tasks:[…]}. approve / reject / publish
-    // are three distinct operator gates: approve only STAGES (auto_publish
-    // defaults false), publish ships. (See feedback_human_approval.)
+    // pending-approval → {items:[…], total, limit, offset} (canonical envelope,
+    // poindexter#745). approve / reject / publish are three distinct operator
+    // gates: approve only STAGES (auto_publish defaults false), publish ships.
+    // (See feedback_human_approval.)
     listApprovals() {
       return pick(
         () => http('GET', '/api/tasks/pending-approval?limit=50'),
-        () => ({ tasks: mock().inbox.filter((i) => i.kind === 'approve') })
+        () => ({ items: mock().inbox.filter((i) => i.kind === 'approve') })
       );
     },
     approve(id, opts = {}) {

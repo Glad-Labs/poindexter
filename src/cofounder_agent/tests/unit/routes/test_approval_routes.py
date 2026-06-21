@@ -227,7 +227,11 @@ class TestGetPendingApprovals:
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 0
-        assert data["tasks"] == []
+        # Canonical offset envelope (poindexter#745): items, not the legacy
+        # tasks key; the redundant count (= len(items)) was dropped.
+        assert data["items"] == []
+        assert "tasks" not in data
+        assert "count" not in data
 
     def test_returns_pending_tasks(self):
         pending_task = {
@@ -252,8 +256,8 @@ class TestGetPendingApprovals:
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
-        assert len(data["tasks"]) == 1
-        assert data["tasks"][0]["topic"] == "Blockchain"
+        assert len(data["items"]) == 1
+        assert data["items"][0]["topic"] == "Blockchain"
 
     def test_pagination_defaults_are_correct(self):
         mock_db = make_mock_db()

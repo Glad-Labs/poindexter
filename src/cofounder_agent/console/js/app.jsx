@@ -183,7 +183,8 @@ function App() {
           PX.api.listTasks('?status=approved&limit=50'),
         ]);
         if (!alive) return;
-        setInbox(((pending && pending.tasks) || []).map(approvalToInbox));
+        // pending-approval now returns the canonical {items,…} envelope (poindexter#745).
+        setInbox(((pending && pending.items) || []).map(approvalToInbox));
         // GET /api/tasks now returns the canonical {items,…} envelope (poindexter#745).
         setApproved((Array.isArray(appr) ? appr : appr && appr.items) || []);
       } catch (e) {

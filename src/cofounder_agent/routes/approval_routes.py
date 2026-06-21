@@ -20,6 +20,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import get_operator_identity, verify_api_token
+from schemas.task_schemas import PendingApprovalListResponse
 from services.database_service import DatabaseService
 from services.error_handler import AppError
 from services.logger_config import get_logger
@@ -251,7 +252,7 @@ async def reject_task(
 @router.get(
     "/pending-approval",
     summary="List all tasks awaiting approval",
-    response_model=dict[str, Any],
+    response_model=PendingApprovalListResponse,
     status_code=200,
 )
 async def get_pending_approvals(
@@ -303,12 +304,16 @@ async def get_pending_approvals(
 
         logger.info("Pending approvals: %d total, returning %d", total, len(pending_tasks))
 
-        return {
-            "total": total,
-            "limit": limit,
-            "offset": offset,
-            "count": len(pending_tasks),
-            "tasks": [
+        # Canonical offset envelope (poindexter#745): {items, total, limit,
+        # offset} via the typed PendingApprovalListResponse. The legacy ``tasks``
+        # key became ``items`` and the redundant ``count`` (= len(items)) was
+        # dropped; the operator console reads ``items`` in lockstep.
+        return PendingApprovalListResponse(
+            total=total,
+            limit=limit,
+            offset=offset,
+            # Pydantic validates each projection dict into a PendingApprovalItem.
+            items=[  # type: ignore[arg-type]
                 {
                     "task_id": task.get("task_id") or task.get("id"),  # Try task_id first, then id
                     "task_name": task.get("title")
@@ -330,7 +335,7 @@ async def get_pending_approvals(
                 }
                 for task in pending_tasks
             ],
-        }
+        )
 
     except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
         logger.error("Failed to fetch pending approvals: %s", e, exc_info=True)

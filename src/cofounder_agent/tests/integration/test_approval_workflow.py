@@ -402,7 +402,7 @@ class TestGetPendingApprovals:
             )
         assert resp.status_code == 200
 
-    def test_response_has_tasks_field(self):
+    def test_response_has_items_field(self):
         db = _make_mock_db_for_reject()
         with patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
@@ -410,7 +410,9 @@ class TestGetPendingApprovals:
                 "/api/tasks/pending-approval",
                 headers={"Authorization": "Bearer test-token"},
             ).json()
-        assert "tasks" in data
+        # Canonical offset envelope (poindexter#745): items, not legacy tasks.
+        assert "items" in data
+        assert "tasks" not in data
 
     def test_returns_awaiting_approval_tasks(self):
         db = _make_mock_db_for_reject()
@@ -420,7 +422,7 @@ class TestGetPendingApprovals:
                 "/api/tasks/pending-approval",
                 headers={"Authorization": "Bearer test-token"},
             ).json()
-        tasks = data["tasks"]
+        tasks = data["items"]
         assert len(tasks) > 0
         task = tasks[0]
         assert "task_id" in task or "id" in task

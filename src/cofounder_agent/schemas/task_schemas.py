@@ -4,6 +4,7 @@ Task Management Schemas
 Consolidates all Pydantic models for task management endpoints
 """
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
@@ -384,6 +385,35 @@ class TaskListResponse(ListResponse[UnifiedTaskResponse]):
     already offset-based. The one in-repo consumer (the ``poindexter tasks
     list`` CLI) is updated in lockstep — operator endpoint, no public-site
     reader.
+    """
+
+
+class PendingApprovalItem(BaseModel):
+    """One row in the pending-approval (HITL) queue.
+
+    The light projection the approval inbox renders — a 200-char
+    ``content_preview`` rather than the full body (#619).
+    """
+
+    task_id: str | None = None
+    task_name: str | None = None
+    topic: str | None = None
+    task_type: str | None = None
+    status: str | None = None
+    created_at: datetime | None = None
+    quality_score: float | None = None
+    content_preview: str = ""
+    featured_image_url: str | None = None
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class PendingApprovalListResponse(ListResponse[PendingApprovalItem]):
+    """Pending-approval queue — canonical offset envelope (poindexter#745).
+
+    ``{items, total, limit, offset}`` via ``ListResponse[PendingApprovalItem]``.
+    Replaces the prior untyped ``dict[str, Any]`` body that used a ``tasks`` key
+    plus a redundant ``count`` (= ``len(items)``). Operator HITL surface
+    (OAuth-JWT); the operator console is updated in lockstep.
     """
 
 
