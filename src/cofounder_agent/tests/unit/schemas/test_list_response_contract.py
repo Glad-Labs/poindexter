@@ -12,6 +12,7 @@ from __future__ import annotations
 import pytest
 
 from schemas import ListResponse, PaginatedResponse
+from schemas.data_plane_schemas import DataPlaneRowListResponse
 from schemas.media_schemas import PodcastEpisodeListResponse, VideoEpisodeListResponse
 from schemas.settings_schemas import SettingListResponse
 from schemas.task_schemas import (
@@ -39,6 +40,7 @@ ENDPOINT_LIST_MODELS = [
     PostApprovalListResponse,  # step 9 — GET /api/posts-approval/pending
     PodcastEpisodeListResponse,  # step 10 — GET /api/podcast/episodes
     VideoEpisodeListResponse,  # step 11 — GET /api/video/episodes
+    DataPlaneRowListResponse,  # step 12 — GET /api/data-plane/{surface}
 ]
 
 

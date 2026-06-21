@@ -40,8 +40,14 @@ class TestDataPlaneRoutes:
             resp = TestClient(app).get("/api/data-plane/taps")
         assert resp.status_code == 200
         data = resp.json()
+        # Canonical offset envelope (poindexter#745): items, not the legacy rows
+        # key. Unpaginated full listing → limit == len(items), offset 0.
         assert data["total"] == 1
-        assert data["rows"][0]["name"] == "rss"
+        assert data["limit"] == 1
+        assert data["offset"] == 0
+        assert "rows" not in data
+        assert data["items"][0]["name"] == "rss"
+        assert data["items"][0]["enabled"] is True
 
     def test_list_unknown_surface_returns_404(self):
         # No patch — the real service's resolve_surface raises

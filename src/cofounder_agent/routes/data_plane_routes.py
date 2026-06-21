@@ -18,6 +18,7 @@ from typing import Any
 from fastapi import APIRouter, Body, Depends, HTTPException
 
 from middleware.api_token_auth import verify_api_token
+from schemas.data_plane_schemas import DataPlaneRowListResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency
@@ -34,23 +35,32 @@ router = APIRouter(
 @router.get(
     "/{surface}",
     summary="List every row of a declarative data-plane surface",
-    response_model=dict[str, Any],
+    response_model=DataPlaneRowListResponse,
     status_code=200,
 )
 async def list_surface(
     surface: str,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-) -> dict[str, Any]:
+) -> DataPlaneRowListResponse:
     """Return all rows for ``surface`` (taps / retention / webhooks /
-    publishers / qa-gates) as ``{"rows": [...], "total": n}``."""
+    publishers / qa-gates) as the canonical ``{items, total, limit, offset}``
+    envelope (poindexter#745)."""
     from services.declarative_config_service import UnknownSurfaceError, list_rows
 
     try:
         rows = await list_rows(db_service.pool, surface)
     except UnknownSurfaceError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return {"rows": rows, "total": len(rows)}
+    # Canonical offset envelope (poindexter#745): `rows` → `items`. Rows are
+    # surface-polymorphic free-form dicts (passed through as-is). Unpaginated
+    # full listing, so offset is 0 and limit == total.
+    return DataPlaneRowListResponse(
+        items=rows,
+        total=len(rows),
+        limit=len(rows),
+        offset=0,
+    )
 
 
 @router.get(
