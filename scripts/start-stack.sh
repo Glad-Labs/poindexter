@@ -53,6 +53,23 @@ while IFS= read -r line; do
     fi
 done < "$BOOTSTRAP"
 
+# CI-runner GitHub App private key — the multiline PEM can't live in
+# bootstrap.toml (the parser above is single-line, and a PEM spans many lines),
+# so source it from a file at launch time, the same shape as the grafana /
+# offsite secrets below. Opt-in and fail-soft: only an operator who enabled the
+# `ci-runner` compose profile drops this file at ~/.poindexter/ci-runner-app.pem;
+# everyone else skips it and the profiled github-runner-1 service never starts.
+# Without this, any launch where compose_profiles includes "ci-runner" brings the
+# runner up with an empty APP_PRIVATE_KEY and the myoung34 entrypoint crash-loops
+# ("All of APP_ID, APP_PRIVATE_KEY and APP_LOGIN must be specified"). An
+# already-exported value (e.g. the manual activation command in the runbook) is
+# respected, never clobbered.
+_CI_RUNNER_PEM="${USERPROFILE:-$HOME}/.poindexter/ci-runner-app.pem"
+if [ -z "${CI_RUNNER_APP_PRIVATE_KEY:-}" ] && [ -f "$_CI_RUNNER_PEM" ]; then
+    CI_RUNNER_APP_PRIVATE_KEY="$(cat "$_CI_RUNNER_PEM")"
+    export CI_RUNNER_APP_PRIVATE_KEY
+fi
+
 # Grafana webhook JWT — decrypt from app_settings.grafana_webhook_oauth_jwt
 # so contact-points.yml can substitute it into the Poindexter Webhook
 # receiver's Authorization header. Without this Grafana posts

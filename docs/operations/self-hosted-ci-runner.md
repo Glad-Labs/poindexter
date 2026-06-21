@@ -76,11 +76,15 @@ The App ID is a plain number; only the private key is secret.
 mkdir -p ~/.poindexter
 mv ~/Downloads/glad-labs-ci-runner.*.private-key.pem ~/.poindexter/ci-runner-app.pem
 
-# a) container (local) — App ID + profile in the stack .env. The multiline PEM
-#    is NOT put in .env (compose .env is line-based); it's exported from the file
-#    above at `up` time (step 3). COMPOSE_PROFILES starts the runner with the stack.
-echo 'CI_RUNNER_APP_ID=123456'    >> .env       # the numeric App ID (not secret)
-echo 'COMPOSE_PROFILES=ci-runner' >> .env
+# a) container (local) — App ID + profile in bootstrap.toml. The stack reads
+#    bootstrap.toml (not .env); start-stack.sh exports each key as an upper-case
+#    env var. The multiline PEM is NOT put here — start-stack.sh sources it from
+#    ~/.poindexter/ci-runner-app.pem at `up` time (step 3). compose_profiles
+#    starts the runner with the stack.
+cat >> ~/.poindexter/bootstrap.toml <<'TOML'
+ci_runner_app_id = "123456"      # the numeric App ID (not secret)
+compose_profiles = "ci-runner"
+TOML
 
 # b) the healthcheck workflow — App ID + private key as repo secrets
 gh secret set CI_RUNNER_APP_ID          --repo Glad-Labs/glad-labs-stack --body '123456'
@@ -92,18 +96,33 @@ gh secret set DISCORD_OPS_WEBHOOK_URL --repo Glad-Labs/glad-labs-stack --body "$
 
 ### 3. Bring the runner up
 
-The PEM is exported from the file into the container's `APP_PRIVATE_KEY` for the
-`up` invocation — a multiline value compose interpolates from the shell but can't
-read from `.env`. `restart: unless-stopped` captures the env at create time, so
-the runner survives daemon/PC restarts; you only re-run this when you
-intentionally recreate it (e.g. an image bump).
+`compose_profiles` includes `ci-runner`, so the runner comes up with the rest of
+the stack — and **`start-stack.sh` exports the multiline PEM into the container's
+`APP_PRIVATE_KEY` for you** (it sources `~/.poindexter/ci-runner-app.pem`, the
+same file-sourced-secret pattern it uses for the grafana webhook token). So the
+normal bring-up is just:
+
+```bash
+bash scripts/start-stack.sh up -d                            # whole stack, runner included
+# …or recreate just the runner:
+bash scripts/start-stack.sh up -d --force-recreate github-runner-1
+docker compose -f docker-compose.local.yml ps github-runner-1
+# Confirm registration:
+gh api repos/Glad-Labs/glad-labs-stack/actions/runners --jq '.runners[] | {name, status, busy}'
+```
+
+**A `docker compose up` (and every deploy-checkout-sync) _recreates_ the
+container — it does not merely `restart` it — so the env is rebuilt from scratch
+each time.** That is exactly why `start-stack.sh` has to source the PEM itself: a
+one-off manual `export` does **not** survive a recreate. Before this was
+automated, a start-stack-driven deploy brought the runner up with an empty
+`APP_PRIVATE_KEY` and the entrypoint crash-looped (`All of APP_ID,
+APP_PRIVATE_KEY and APP_LOGIN must be specified`). If you ever bring the runner
+up _without_ start-stack (direct compose), pass the key yourself:
 
 ```bash
 CI_RUNNER_APP_PRIVATE_KEY="$(cat ~/.poindexter/ci-runner-app.pem)" \
   docker compose -f docker-compose.local.yml --profile ci-runner up -d github-runner-1
-docker compose -f docker-compose.local.yml ps github-runner-1
-# Confirm registration:
-gh api repos/Glad-Labs/glad-labs-stack/actions/runners --jq '.runners[] | {name, status, busy}'
 ```
 
 ### 4. Enable self-hosted
