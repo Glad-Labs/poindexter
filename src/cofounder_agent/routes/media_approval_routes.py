@@ -12,6 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import get_operator_identity, verify_api_token
+from schemas.task_schemas import MediaApprovalListResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from utils.route_utils import get_database_dependency, get_site_config_dependency
@@ -33,7 +34,7 @@ class DecideRequest(BaseModel):
 @router.get(
     "/pending",
     summary="List pending media awaiting operator review",
-    response_model=dict[str, Any],
+    response_model=MediaApprovalListResponse,
     status_code=200,
 )
 async def list_pending(
@@ -41,7 +42,7 @@ async def list_pending(
     limit: int = Query(50, ge=1, le=500),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-) -> dict[str, Any]:
+) -> MediaApprovalListResponse:
     """Return pending media rows joined with post title/slug."""
     from services.media_approval_service import list_pending as _list_pending
 
@@ -51,7 +52,16 @@ async def list_pending(
         for k, v in row.items():
             if hasattr(v, "isoformat"):
                 row[k] = v.isoformat()
-    return {"media": rows, "total": len(rows)}
+    # Canonical offset envelope (poindexter#745): {items, total, limit, offset}.
+    # The legacy `media` key became `items`. Pydantic projects each row to the
+    # 6 operator-facing MediaApprovalItem fields (internal scoring columns drop).
+    # No cursor pagination — the list is `limit`-capped, so offset is always 0.
+    return MediaApprovalListResponse(
+        items=rows,  # type: ignore[arg-type]
+        total=len(rows),
+        limit=limit,
+        offset=0,
+    )
 
 
 @router.post(

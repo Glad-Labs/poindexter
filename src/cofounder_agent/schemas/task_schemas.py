@@ -417,6 +417,34 @@ class PendingApprovalListResponse(ListResponse[PendingApprovalItem]):
     """
 
 
+class MediaApprovalItem(BaseModel):
+    """One row in the Gate-2 media-approval queue (#1343).
+
+    The operator-facing projection joined with the post's title/slug. The
+    internal scoring columns (``quality_signals`` / ``quality_evaluated_at``)
+    are intentionally not surfaced over HTTP — the ``poindexter media pending``
+    CLI reads those straight from the service, not this endpoint.
+    """
+
+    post_id: str | None = None
+    medium: str | None = None
+    title: str | None = None
+    slug: str | None = None
+    quality_score: float | None = None
+    created_at: datetime | None = None
+
+
+class MediaApprovalListResponse(ListResponse[MediaApprovalItem]):
+    """Pending media queue — canonical offset envelope (poindexter#745).
+
+    ``{items, total, limit, offset}`` via ``ListResponse[MediaApprovalItem]``.
+    Replaces the prior untyped ``dict[str, Any]`` body that used a ``media`` key.
+    The list is capped at ``limit`` with no cursor, so ``offset`` is always 0.
+    Operator Gate-2 surface (OAuth-JWT); the operator console reads ``items`` in
+    lockstep.
+    """
+
+
 class MetricsResponse(BaseModel):
     """Schema for aggregated metrics"""
 

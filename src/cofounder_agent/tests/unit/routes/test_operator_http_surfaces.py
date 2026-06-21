@@ -417,14 +417,18 @@ class TestMediaApprovalRoutes:
             resp = TestClient(app).get("/api/media-approval/pending")
         assert resp.status_code == 200
         data = resp.json()
+        # Canonical offset envelope (poindexter#745): items, not the legacy media key.
         assert data["total"] == 1
-        assert data["media"][0]["medium"] == "podcast"
+        assert data["limit"] == 50
+        assert data["offset"] == 0
+        assert "media" not in data
+        assert data["items"][0]["medium"] == "podcast"
 
     def test_list_pending_empty(self):
         app, _ = _app_media_approval()
         with patch("services.media_approval_service.list_pending", new=AsyncMock(return_value=[])):
             resp = TestClient(app).get("/api/media-approval/pending")
-        assert resp.json() == {"media": [], "total": 0}
+        assert resp.json() == {"items": [], "total": 0, "limit": 50, "offset": 0}
 
     def test_decide_approve_success(self):
         app, _ = _app_media_approval()

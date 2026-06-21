@@ -694,15 +694,16 @@
     },
 
     // ── media Gate-2 (podcast / video approval, #1343) ──────
-    // GET /api/media-approval/pending → {media:[{post_id, medium, title, slug,
-    // quality_score, created_at}], total}. gate2Pending (= total) + the queue
-    // are real; render-rate KPIs (renderSuccess24h / dispatched / videosPersisted)
-    // have no read here → null, and the panel shows '—' (feedback_no_dummy_data).
+    // GET /api/media-approval/pending → {items:[{post_id, medium, title, slug,
+    // quality_score, created_at}], total, limit, offset} (canonical envelope,
+    // poindexter#745). gate2Pending (= total) + the queue are real; render-rate
+    // KPIs (renderSuccess24h / dispatched / videosPersisted) have no read here →
+    // null, and the panel shows '—' (feedback_no_dummy_data).
     mediaQueue() {
       return pick(
         async () => {
           const r = await http('GET', '/api/media-approval/pending');
-          const rows = (r && r.media) || [];
+          const rows = (r && r.items) || [];
           return {
             gate2Pending: r && r.total != null ? r.total : rows.length,
             renderSuccess24h: null,
