@@ -184,7 +184,8 @@ function App() {
         ]);
         if (!alive) return;
         setInbox(((pending && pending.tasks) || []).map(approvalToInbox));
-        setApproved((Array.isArray(appr) ? appr : appr && appr.tasks) || []);
+        // GET /api/tasks now returns the canonical {items,…} envelope (poindexter#745).
+        setApproved((Array.isArray(appr) ? appr : appr && appr.items) || []);
       } catch (e) {
         pushToast(`Approvals load failed — ${e.message}`, 'red', '✕');
       }
@@ -208,7 +209,8 @@ function App() {
       try {
         const res = await PX.api.listTasks('?limit=50');
         if (!alive) return;
-        const rows = ((res && res.tasks) || []).map(taskToRow);
+        // GET /api/tasks now returns the canonical {items,…} envelope (poindexter#745).
+        const rows = ((res && res.items) || []).map(taskToRow);
         setPipeline((p) => withLiveCounts(p, rows));
       } catch (e) {
         pushToast(`Tasks load failed — ${e.message}`, 'red', '✕');
