@@ -475,15 +475,33 @@ class SettingResponse(BaseModel):
 # ============================================================================
 
 
-class PaginatedResponse(BaseModel, Generic[T]):
-    """Generic paginated response wrapper."""
+class ListResponse(BaseModel, Generic[T]):
+    """Canonical list envelope — offset-based (poindexter#745).
+
+    ``{items, total, limit, offset}`` per the API-response-contracts ADR
+    (``docs/architecture/2026-06-20-api-response-contracts.md``). Replaces the
+    earlier page-based wrapper; the page-vs-offset split is resolved toward
+    offset because it matches the DB query layer (``LIMIT ... OFFSET``). The
+    typed-schema sweep (steps 2–N) converts list endpoints to this type.
+    """
 
     model_config = ConfigDict(from_attributes=True)
 
-    total: int = Field(..., description="Total number of items")
-    page: int = Field(..., ge=1, description="Current page number")
-    limit: int = Field(..., ge=1, le=100, description="Items per page")
-    items: list[T] = Field(..., description="Response items")
+    items: list[T] = Field(
+        default_factory=list, description="The page of results (never null)"
+    )
+    total: int = Field(..., ge=0, description="Total matching rows across all pages")
+    limit: int = Field(..., ge=0, description="Page size echoed back (the LIMIT)")
+    offset: int = Field(
+        default=0, ge=0, description="Window start echoed back (the OFFSET)"
+    )
+
+
+# Deprecated alias — older code (and the 2026-06-09 audit) import
+# ``PaginatedResponse``. Keep it pointing at the one canonical ``ListResponse``
+# (offset-based) rather than a second divergent type. New code uses
+# ``ListResponse``.
+PaginatedResponse = ListResponse
 
 
 # ============================================================================

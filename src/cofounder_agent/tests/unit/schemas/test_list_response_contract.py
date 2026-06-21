@@ -1,0 +1,53 @@
+"""Conformance ratchet for the canonical list envelope (poindexter#745).
+
+ADR ``docs/architecture/2026-06-20-api-response-contracts.md``: every list
+response is ``{items, total, limit, offset}`` — offset-based, snake_case. This
+test locks the canonical generic's shape so it can't drift back to the
+page-based form, and is the seam the per-endpoint envelope assertions grow into
+as the typed-schema sweep lands (steps 2–N).
+"""
+
+from __future__ import annotations
+
+import pytest
+
+from schemas import ListResponse, PaginatedResponse
+
+pytestmark = pytest.mark.unit
+
+
+def test_list_response_is_canonical_offset_shape() -> None:
+    fields = set(ListResponse.model_fields)
+    assert fields == {"items", "total", "limit", "offset"}, (
+        "ListResponse must be the canonical {items, total, limit, offset} "
+        f"envelope (#745); got {sorted(fields)}"
+    )
+
+
+def test_list_response_dropped_page_based_fields() -> None:
+    """The #745 reconciliation resolves the page-vs-offset split toward offset."""
+    for banned in ("page", "per_page", "pages"):
+        assert banned not in ListResponse.model_fields, (
+            f"{banned!r} is the page-based shape the ADR replaced with offset"
+        )
+
+
+def test_paginated_response_is_deprecated_alias_of_list_response() -> None:
+    """Backcompat: older code imports ``PaginatedResponse``; keep it as an alias
+    to the one canonical ``ListResponse`` rather than a second divergent type."""
+    assert PaginatedResponse is ListResponse
+
+
+def test_items_defaults_to_empty_list_not_null() -> None:
+    resp = ListResponse[str](total=0, limit=20, offset=0)
+    assert resp.items == [], "items must default to [] (never null) per the ADR"
+
+
+def test_round_trips_an_offset_window() -> None:
+    resp = ListResponse[str](
+        items=["a", "b"], total=100, limit=20, offset=40
+    )
+    assert resp.total == 100
+    assert resp.limit == 20
+    assert resp.offset == 40
+    assert resp.items == ["a", "b"]

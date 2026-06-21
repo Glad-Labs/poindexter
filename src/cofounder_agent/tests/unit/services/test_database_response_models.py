@@ -360,33 +360,36 @@ class TestErrorResponse:
 
 
 # ---------------------------------------------------------------------------
-# PaginatedResponse
+# PaginatedResponse (deprecated alias of the canonical offset-based ListResponse)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestPaginatedResponse:
     def test_valid(self):
-        page: PaginatedResponse[str] = PaginatedResponse(
+        # Offset-based canonical shape (poindexter#745) — page-based fields
+        # were retired. PaginatedResponse is now an alias of ListResponse.
+        resp: PaginatedResponse[str] = PaginatedResponse(
             total=100,
-            page=1,
+            offset=0,
             limit=20,
             items=["item1", "item2"],
         )
-        assert page.total == 100
-        assert len(page.items) == 2
+        assert resp.total == 100
+        assert resp.offset == 0
+        assert len(resp.items) == 2
 
-    def test_page_minimum(self):
+    def test_offset_rejects_negative(self):
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            PaginatedResponse(total=10, page=0, limit=20, items=[])
+            PaginatedResponse(total=10, offset=-1, limit=20, items=[])
 
-    def test_limit_maximum(self):
+    def test_total_rejects_negative(self):
         from pydantic import ValidationError
 
         with pytest.raises(ValidationError):
-            PaginatedResponse(total=10, page=1, limit=101, items=[])
+            PaginatedResponse(total=-1, offset=0, limit=20, items=[])
 
 
 # ---------------------------------------------------------------------------
