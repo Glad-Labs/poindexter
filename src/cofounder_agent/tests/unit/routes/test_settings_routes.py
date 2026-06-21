@@ -81,9 +81,8 @@ class TestListSettings:
         data = client.get("/api/settings").json()
         assert "total" in data
         assert "items" in data
-        assert "page" in data
-        assert "per_page" in data
-        assert "pages" in data
+        assert "limit" in data
+        assert "offset" in data
 
     def test_total_matches_db_count(self):
         mock_db = _make_settings_db()
@@ -103,8 +102,8 @@ class TestListSettings:
     def test_default_pagination(self):
         client = TestClient(_build_app())
         data = client.get("/api/settings").json()
-        assert data["per_page"] == 20
-        assert data["page"] == 1
+        assert data["limit"] == 20
+        assert data["offset"] == 0
 
     def test_secret_value_is_masked(self):
         """#642 — secret values (and enc: ciphertext) must not round-trip
@@ -134,15 +133,17 @@ class TestListSettings:
         data = TestClient(_build_app(mock_db)).get("/api/settings?offset=2&limit=3").json()
         assert data["total"] == 10
         assert len(data["items"]) == 3
-        assert data["per_page"] == 3
-        assert data["pages"] == 4
+        assert data["limit"] == 3
+        assert data["offset"] == 2
 
     def test_custom_limit_via_query(self):
+        # ``per_page`` stays accepted as a legacy REQUEST param (#635); the
+        # RESPONSE now echoes the canonical ``limit`` (poindexter#745).
         mock_db = _make_settings_db()
         mock_db.get_all_settings = AsyncMock(return_value=[SETTING_DICT] * 10)
         client = TestClient(_build_app(mock_db))
         data = client.get("/api/settings?per_page=5").json()
-        assert data["per_page"] == 5
+        assert data["limit"] == 5
 
     def test_db_error_returns_500(self):
         mock_db = _make_settings_db()

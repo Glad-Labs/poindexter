@@ -8,6 +8,8 @@ from enum import Enum
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from .database_response_models import ListResponse
+
 
 class SettingDataTypeEnum(str, Enum):
     """Setting data type"""
@@ -136,14 +138,14 @@ class SettingResponse(SettingBase):
     model_config = ConfigDict(from_attributes=True)
 
 
-class SettingListResponse(BaseModel):
-    """Model for list endpoint response"""
+class SettingListResponse(ListResponse[SettingResponse]):
+    """Settings list — canonical offset envelope (poindexter#745).
 
-    total: int = Field(..., description="Total number of settings")
-    page: int = Field(..., description="Current page number")
-    per_page: int = Field(..., description="Items per page")
-    pages: int = Field(..., description="Total number of pages")
-    items: list["SettingResponse"] = Field(..., description="List of settings")
+    ``{items, total, limit, offset}`` via ``ListResponse[SettingResponse]``.
+    Completes the #635 offset/limit canonicalization on the response side (the
+    request side already accepted offset/limit); the page-based response fields
+    (page/per_page/pages) were retired.
+    """
 
 
 class SettingHistoryResponse(BaseModel):

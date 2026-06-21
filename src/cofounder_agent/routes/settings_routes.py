@@ -104,8 +104,6 @@ async def list_settings(
         else:
             eff_limit = per_page
             eff_offset = (page - 1) * per_page
-        pages = (total + eff_limit - 1) // eff_limit if eff_limit > 0 else 1
-        eff_page = (eff_offset // eff_limit) + 1 if eff_limit > 0 else 1
 
         # Slice for pagination
         paginated_items = all_settings[eff_offset : eff_offset + eff_limit]
@@ -143,9 +141,7 @@ async def list_settings(
                 )
             )
 
-        return SettingListResponse(
-            total=total, page=eff_page, per_page=eff_limit, pages=pages, items=items
-        )
+        return SettingListResponse(items=items, total=total, limit=eff_limit, offset=eff_offset)
     except Exception as exc:
         logger.error("[list_settings] Failed to retrieve settings", exc_info=True)
         raise HTTPException(status_code=500, detail="Failed to retrieve settings") from exc

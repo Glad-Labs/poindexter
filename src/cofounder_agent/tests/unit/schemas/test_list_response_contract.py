@@ -12,8 +12,17 @@ from __future__ import annotations
 import pytest
 
 from schemas import ListResponse, PaginatedResponse
+from schemas.settings_schemas import SettingListResponse
 
 pytestmark = pytest.mark.unit
+
+# Per-endpoint list-response models, asserted to descend from the canonical
+# generic. The typed-schema sweep (#745 steps 2–N) appends each converted
+# endpoint's envelope here, so one ratchet covers every list surface and a
+# regression to a bespoke page-based body fails loudly.
+ENDPOINT_LIST_MODELS = [
+    SettingListResponse,  # step 3 — GET /api/settings/
+]
 
 
 def test_list_response_is_canonical_offset_shape() -> None:
@@ -51,3 +60,14 @@ def test_round_trips_an_offset_window() -> None:
     assert resp.limit == 20
     assert resp.offset == 40
     assert resp.items == ["a", "b"]
+
+
+@pytest.mark.parametrize("model", ENDPOINT_LIST_MODELS)
+def test_endpoint_model_descends_from_canonical_envelope(model: type) -> None:
+    """Each converted endpoint's list model IS a ``ListResponse`` — so it
+    inherits the canonical ``{items, total, limit, offset}`` shape and can't
+    reintroduce a bespoke page-based body."""
+    assert issubclass(model, ListResponse)
+    assert set(model.model_fields) == {"items", "total", "limit", "offset"}, (
+        f"{model.__name__} drifted from the canonical envelope; got {sorted(model.model_fields)}"
+    )
