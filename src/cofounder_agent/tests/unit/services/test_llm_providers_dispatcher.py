@@ -7,6 +7,7 @@ Covers ``get_provider_name``, ``get_provider``, ``get_provider_config``,
 
 from __future__ import annotations
 
+import contextlib
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -651,3 +652,109 @@ class TestLocalElectricityAttribution:
         args = cost_inserts[0][1]
         assert args[7] == 0.0   # fallback
         assert args[11] is None  # electricity_kwh not set
+
+
+# ---------------------------------------------------------------------------
+# GPU serialization at the dispatch chokepoint
+# ---------------------------------------------------------------------------
+
+
+class _GpuLockTracker:
+    """Records gpu.lock(owner, **kwargs) entries; yields a no-op context."""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple] = []
+
+    @contextlib.asynccontextmanager
+    async def lock(self, owner, **kwargs):
+        self.calls.append((owner, kwargs))
+        yield
+
+
+@pytest.mark.unit
+class TestGpuSerializeLocalDispatch:
+    """`_gpu_serialize_local_dispatch` decides whether a dispatch holds the GPU
+    lock: local calls do (default on), paid/cloud calls never, flag can disable."""
+
+    def test_paid_call_never_serializes(self):
+        assert dispatcher._gpu_serialize_local_dispatch("openai/gpt-4o", {}) is False
+
+    def test_local_call_serializes_by_default(self):
+        with patch("services.container_registry.get_container", return_value=None):
+            assert dispatcher._gpu_serialize_local_dispatch("gemma3:27b", {}) is True
+
+    def test_flag_off_disables_for_local(self):
+        container = MagicMock()
+        container.site_config.get_bool.return_value = False
+        with patch("services.container_registry.get_container", return_value=container):
+            assert dispatcher._gpu_serialize_local_dispatch("gemma3:27b", {}) is False
+        container.site_config.get_bool.assert_called_once_with(
+            "gpu_serialize_llm_dispatch", True,
+        )
+
+
+@pytest.mark.unit
+class TestDispatchCompleteGpuSerialization:
+    """dispatch_complete wraps a LOCAL provider.complete in gpu.lock('ollama')
+    so a concurrent media render can't be undercut; cloud calls skip the lock."""
+
+    async def test_local_call_acquires_ollama_lock(self):
+        pool = _FakePool(setting_value="ollama_native")
+        provider = _FakeProvider(name="ollama_native")
+        provider.complete.return_value = _FakeCompletionResult(prompt_tokens=1)
+        tracker = _GpuLockTracker()
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
+             patch.object(dispatcher, "_record_dispatch_cost", AsyncMock()), \
+             patch.object(dispatcher, "gpu", tracker):
+            await dispatcher.dispatch_complete(
+                pool,
+                messages=[{"role": "user", "content": "hi"}],
+                model="gemma3:27b",
+                task_id="t1",
+                phase="generate_content",
+            )
+        assert len(tracker.calls) == 1
+        owner, kwargs = tracker.calls[0]
+        assert owner == "ollama"
+        assert kwargs["model"] == "gemma3:27b"
+        assert kwargs["task_id"] == "t1"
+        assert kwargs["phase"] == "generate_content"
+        provider.complete.assert_awaited_once()
+
+    async def test_cloud_call_does_not_acquire_lock(self):
+        pool = _FakePool(setting_value="litellm")
+        provider = _FakeProvider(name="litellm")
+        provider.complete.return_value = _FakeCompletionResult()
+        tracker = _GpuLockTracker()
+        guard = MagicMock()
+        guard.check_budget = AsyncMock()
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
+             patch.object(dispatcher, "get_provider_config", AsyncMock(return_value={})), \
+             patch.object(dispatcher, "_record_dispatch_cost", AsyncMock()), \
+             patch("services.cost_guard.CostGuard", return_value=guard), \
+             patch.object(dispatcher, "gpu", tracker):
+            await dispatcher.dispatch_complete(
+                pool,
+                messages=[{"role": "user", "content": "hi"}],
+                model="anthropic/claude-haiku-4-5",
+                tier="premium",
+            )
+        assert tracker.calls == []
+        provider.complete.assert_awaited_once()
+
+    async def test_flag_off_skips_lock_for_local(self):
+        pool = _FakePool(setting_value="ollama_native")
+        provider = _FakeProvider(name="ollama_native")
+        provider.complete.return_value = _FakeCompletionResult()
+        tracker = _GpuLockTracker()
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
+             patch.object(dispatcher, "_record_dispatch_cost", AsyncMock()), \
+             patch.object(dispatcher, "_gpu_serialize_local_dispatch", return_value=False), \
+             patch.object(dispatcher, "gpu", tracker):
+            await dispatcher.dispatch_complete(
+                pool,
+                messages=[{"role": "user", "content": "hi"}],
+                model="gemma3:27b",
+            )
+        assert tracker.calls == []
+        provider.complete.assert_awaited_once()

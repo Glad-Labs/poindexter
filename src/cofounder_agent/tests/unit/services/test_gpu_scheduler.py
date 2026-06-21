@@ -145,6 +145,90 @@ class TestGPUScheduler:
             assert not self.gpu.is_busy
 
 
+class TestGPUSchedulerReentrancy:
+    """Reentrant gpu.lock — a nested acquire within an already-held session is a
+    pass-through no-op, so the LLM chokepoint (dispatch_complete) can acquire
+    gpu.lock('ollama') even inside content stages that already hold it, without
+    deadlocking on the non-reentrant asyncio.Lock (GPU-serialize fix)."""
+
+    def setup_method(self):
+        self.gpu = GPUScheduler()
+
+    @pytest.mark.asyncio
+    async def test_nested_lock_does_not_deadlock(self):
+        """The core property: a nested gpu.lock() completes instead of hanging."""
+
+        async def nested():
+            async with self.gpu.lock("ollama", model="writer"):
+                async with self.gpu.lock("ollama", model="writer"):
+                    return "ok"
+
+        result = await asyncio.wait_for(nested(), timeout=2.0)
+        assert result == "ok"
+
+    @pytest.mark.asyncio
+    async def test_reentrant_inner_acquires_pg_advisory_lock_once(self):
+        """The cross-process pg advisory lock is taken by the OUTER acquire only;
+        the reentrant inner is a no-op (one acquire, one release)."""
+        with patch.object(self.gpu, "_acquire_pg_advisory_lock", new=AsyncMock()) as acq, \
+             patch.object(self.gpu, "_release_pg_advisory_lock", new=AsyncMock()) as rel:
+
+            async def nested():
+                async with self.gpu.lock("ollama"):
+                    async with self.gpu.lock("ollama"):
+                        pass
+
+            await asyncio.wait_for(nested(), timeout=2.0)
+        assert acq.await_count == 1
+        assert rel.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_reentrant_inner_does_not_reevict_ollama(self):
+        """An outer 'video' lock evicts Ollama once; a reentrant inner 'ollama'
+        acquire must NOT trigger a second eviction."""
+        with patch.object(self.gpu, "_unload_ollama_models", new=AsyncMock()) as unload, \
+             patch.object(self.gpu, "_acquire_pg_advisory_lock", new=AsyncMock()), \
+             patch.object(self.gpu, "_release_pg_advisory_lock", new=AsyncMock()):
+
+            async def nested():
+                async with self.gpu.lock("video"):
+                    async with self.gpu.lock("ollama"):
+                        pass
+
+            await asyncio.wait_for(nested(), timeout=2.0)
+        unload.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_session_resets_so_sequential_lock_acquires_fresh(self):
+        """After the outer lock exits, the reentrancy flag is cleared so the next
+        independent lock acquires normally (the contextvar token is reset)."""
+        async with self.gpu.lock("ollama"):
+            pass
+        with patch.object(self.gpu, "_acquire_pg_advisory_lock", new=AsyncMock()) as acq:
+            async with self.gpu.lock("ollama"):
+                pass
+        assert acq.await_count == 1
+
+    @pytest.mark.asyncio
+    async def test_distinct_tasks_still_serialize(self):
+        """Reentrancy must not break cross-task serialization — distinct asyncio
+        tasks get distinct contexts, so they still queue on the lock."""
+        order: list[str] = []
+
+        async def task(name, delay):
+            async with self.gpu.lock(name):
+                order.append(f"{name}_start")
+                await asyncio.sleep(delay)
+                order.append(f"{name}_end")
+
+        await asyncio.gather(task("a", 0.05), task("b", 0.02))
+        assert len(order) == 4
+        # Each task's start/end are adjacent (no interleaving).
+        assert order[0].endswith("_start")
+        assert order[1].endswith("_end")
+        assert order[0].split("_")[0] == order[1].split("_")[0]
+
+
 class TestGPUSchedulerSingleton:
     """Module-level singleton."""
 

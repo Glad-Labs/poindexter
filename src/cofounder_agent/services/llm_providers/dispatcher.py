@@ -54,6 +54,7 @@ from typing import Any
 
 from plugins.config import PluginConfig
 from plugins.registry import get_all_llm_providers
+from services.gpu_scheduler import gpu
 
 logger = logging.getLogger(__name__)
 
@@ -124,6 +125,40 @@ def _is_paid_llm_call(model: str, provider_config: dict[str, Any] | None) -> boo
         return False
     prefix = model.split("/", 1)[0].lower()
     return prefix not in _LOCAL_MODEL_PREFIXES
+
+
+def _gpu_serialize_local_dispatch(
+    model: str, provider_config: dict[str, Any] | None,
+) -> bool:
+    """Whether this dispatch should hold ``gpu.lock("ollama")`` around
+    ``provider.complete`` (GPU-serialize fix).
+
+    Local Ollama inference shares the one GPU with media renders (SDXL / wan).
+    Content stages already wrap their LLM work in ``gpu.lock("ollama")``, but
+    scheduled worker jobs (topic research, SEO, newsletter) reach the LLM only
+    through ``dispatch_complete`` — so without this they can load the ~19 GB
+    writer concurrently with an in-flight render and exceed 32 GB VRAM.
+    Serializing every LOCAL dispatch through the GPU lock (reentrant, so a
+    no-op inside a stage that already holds it) makes that contention
+    impossible by construction. Paid/cloud calls use no local GPU, so they
+    never serialize. Operators with abundant VRAM opt out via
+    ``gpu_serialize_llm_dispatch=false``.
+    """
+    if _is_paid_llm_call(model, provider_config):
+        return False
+    try:
+        from services.container_registry import get_container
+
+        container = get_container()
+        if container is None:
+            # No container bootstrapped (CLI early paths, tests) — default to
+            # serializing; the reentrant lock is cheap when uncontended.
+            return True
+        return container.site_config.get_bool("gpu_serialize_llm_dispatch", True)
+    except Exception:  # silent-ok: a config-read failure defaults to the SAFE
+        # behavior (serialize) — raising would break every dispatch, and a
+        # per-call warning/finding on this hot path would be log noise.
+        return True
 
 
 async def _enforce_budget_if_paid(
@@ -320,7 +355,22 @@ async def dispatch_complete(
                 pool=pool, provider=provider, model=model,
                 provider_config=provider_config,
             )
-            result = await provider.complete(messages=messages, model=model, **kwargs)
+            # GPU-serialize fix: hold gpu.lock("ollama") around a LOCAL provider
+            # call so it can't run concurrently with a media render (which
+            # evicts Ollama on gpu.lock("video") and needs the freed VRAM). The
+            # lock is reentrant, so this is a no-op inside content stages that
+            # already hold it; cloud calls use no local GPU and skip it.
+            if _gpu_serialize_local_dispatch(model, provider_config):
+                async with gpu.lock(
+                    "ollama", model=model, task_id=task_id, phase=phase,
+                ):
+                    result = await provider.complete(
+                        messages=messages, model=model, **kwargs,
+                    )
+            else:
+                result = await provider.complete(
+                    messages=messages, model=model, **kwargs,
+                )
             # Completion has .prompt_tokens / .completion_tokens when the
             # provider populates them; safe getattr for non-standard shapes.
             pt = getattr(result, "prompt_tokens", 0)

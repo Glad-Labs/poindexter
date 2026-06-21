@@ -49,6 +49,7 @@ Usage:
 import asyncio
 import time
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from typing import Any
 
@@ -63,6 +64,15 @@ from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
+
+# Reentrancy guard for ``GPUScheduler.lock`` (GPU-serialize fix). Records
+# whether the current async call chain already holds the GPU session, so a
+# nested ``gpu.lock()`` acquire is a pass-through no-op instead of deadlocking
+# the non-reentrant ``asyncio.Lock``. A ContextVar (not an instance attribute)
+# because generator-based context managers run in the caller's context and
+# distinct asyncio tasks get distinct context copies — preserving cross-task
+# serialization while making same-chain nesting reentrant.
+_gpu_session_active: ContextVar[bool] = ContextVar("gpu_session_active", default=False)
 
 # Process-wide empty-SiteConfig fallback (#272 capstone). When no
 # AppContainer has been registered (CLI early paths, import time, tests
@@ -376,6 +386,18 @@ class GPUScheduler:
             phase: optional pipeline phase label (e.g. "generate_content",
                 "featured_image"). Defaults to ``owner`` when unset.
         """
+        # Reentrancy (GPU-serialize fix): if this async call chain already
+        # holds the GPU session, a nested acquire is a pass-through no-op — no
+        # second asyncio.Lock / pg_advisory_lock acquire, no second Ollama
+        # eviction. This lets dispatch_complete wrap every local LLM call in
+        # gpu.lock("ollama") even inside content stages that already hold it,
+        # without deadlocking on the non-reentrant asyncio.Lock. Distinct
+        # asyncio tasks get distinct context copies, so cross-task
+        # serialization is preserved.
+        if _gpu_session_active.get():
+            yield
+            return
+
         # Wait for gaming to stop before acquiring lock
         await self._wait_for_gaming_clear()
 
@@ -404,6 +426,9 @@ class GPUScheduler:
         self._acquired_at = time.monotonic()
         session_start = datetime.now(timezone.utc)
 
+        # Mark the GPU session active so nested gpu.lock() calls within this
+        # async chain (e.g. dispatch_complete inside a stage) are no-ops.
+        token = _gpu_session_active.set(True)
         try:
             # Prepare GPU for the new owner. The video render is a wan + SDXL
             # consumer (no Ollama of its own), so it evicts Ollama exactly like
@@ -422,6 +447,7 @@ class GPUScheduler:
             # so that the cross-process barrier stays up until we are done.
             await self._release_pg_advisory_lock()
             self._lock.release()
+            _gpu_session_active.reset(token)
             # internal tracker Phase 3.A3 — record the session so model/phase
             # compute economics are queryable per task. Best-effort; a
             # write failure never breaks the GPU lock lifecycle.

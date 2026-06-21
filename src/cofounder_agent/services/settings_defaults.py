@@ -160,6 +160,13 @@ DEFAULTS: dict[str, str] = {
     # sharing this GPU with a non-stack app (e.g. a game on the same box). Read
     # via _cfg_bool in services/gpu_scheduler.py::_wait_for_gaming_clear.
     'gpu_external_workload_wait_enabled': 'false',
+    # GPU-serialize fix: hold gpu.lock("ollama") around every LOCAL LLM dispatch
+    # (services/llm_providers/dispatcher.py::dispatch_complete) so scheduled
+    # worker jobs (topic research, SEO, newsletter) can't load the ~19GB writer
+    # concurrently with a media render and blow past 32GB VRAM. Reentrant, so
+    # it's a no-op inside content stages that already hold the lock. Default ON;
+    # operators with abundant VRAM can flip to 'false' to skip the serialization.
+    'gpu_serialize_llm_dispatch': 'true',
     # why: asyncio.sleep() after issuing keep_alive=0 so Ollama actually
     # releases VRAM before the inline-image /generate lands. 2s is the
     # sweet spot — long enough for the kernel to free, short enough to
