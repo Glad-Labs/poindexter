@@ -31,7 +31,7 @@ Usage (from repo root, with the backend on PYTHONPATH)::
 
 DB connection resolves like the other backfill scripts: ``--database-url`` →
 ``POINDEXTER_BRAIN_URL`` / ``GLADLABS_BRAIN_URL`` / ``DATABASE_URL`` → local
-default (the prod brain DB on :15432).
+default (the prod brain DB on :5433).
 """
 from __future__ import annotations
 
@@ -42,7 +42,7 @@ import sys
 from pathlib import Path
 
 DEFAULT_DB_URL = (
-    "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
+    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
 )
 
 

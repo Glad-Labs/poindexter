@@ -10,7 +10,7 @@ Target: `posts` table in poindexter_brain.
 Usage:
   python scripts/dr-reimport-posts-from-r2.py \\
       --r2-url https://pub-xxx.r2.dev/static \\
-      --database-url postgresql://poindexter:<pw>@localhost:15432/poindexter_brain
+      --database-url postgresql://poindexter:<pw>@localhost:5433/poindexter_brain
 
 If --r2-url is omitted, reads NEXT_PUBLIC_STATIC_URL env var (same source the
 Next.js frontend uses). If --database-url is omitted, reads bootstrap.toml via

@@ -24,11 +24,18 @@ These tests cover the runner-invocation contract:
 from __future__ import annotations
 
 import asyncio
+import re
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from poindexter.cli.setup import _run_migrations
+from poindexter.cli.setup import (
+    _AUTO_PORT,
+    _DEFAULT_LOCAL_DB_PORT,
+    _DEFAULT_LOCAL_DB_URL,
+    _run_migrations,
+)
 
 
 def _make_fake_pool(*, before_count: int, after_count: int) -> MagicMock:
@@ -292,3 +299,50 @@ class TestRunMigrationsSeedsDefaults:
         assert "settings seed FAILED" in reason
         assert "RuntimeError" in reason
         assert "seed exploded" in reason
+
+
+def _find_compose_default_host_port() -> int | None:
+    """Return the ``POSTGRES_HOST_PORT`` default from docker-compose.local.yml.
+
+    Walks up from this test file to find the compose file (robust to the
+    test-tree depth quirk that skips some in-container runs). Returns
+    ``None`` when the file isn't part of the checkout — e.g. an in-container
+    image or a stripped mirror — so the caller can skip rather than fail.
+    """
+    here = Path(__file__).resolve()
+    for parent in (here, *here.parents):
+        candidate = parent / "docker-compose.local.yml"
+        if candidate.exists():
+            text = candidate.read_text(encoding="utf-8")
+            # ports entry looks like:  "${POSTGRES_HOST_PORT:-5433}:5432"
+            m = re.search(r"POSTGRES_HOST_PORT:-(\d+)", text)
+            return int(m.group(1)) if m else None
+    return None
+
+
+class TestLocalDbPortInvariant:
+    """The fresh-install default port must track docker-compose.local.yml.
+
+    Regression guard for the 2026-06-21 host-port move (15432 -> 5433): the
+    setup wizard's default DSN had drifted independently of the compose
+    publish, so a fresh ``poindexter setup`` could default to a port the
+    stack no longer listens on. These tests pin the single-source-of-truth.
+    """
+
+    def test_default_dsn_uses_the_canonical_local_port(self):
+        """The prompt default DSN is built from _DEFAULT_LOCAL_DB_PORT."""
+        assert f"@localhost:{_DEFAULT_LOCAL_DB_PORT}/" in _DEFAULT_LOCAL_DB_URL
+
+    def test_auto_port_is_one_above_the_default(self):
+        """--auto spins a separate container one port above the compose default."""
+        assert _AUTO_PORT == _DEFAULT_LOCAL_DB_PORT + 1
+
+    def test_default_port_matches_compose_publish(self):
+        """setup.py's default port must equal the compose POSTGRES_HOST_PORT default."""
+        compose_port = _find_compose_default_host_port()
+        if compose_port is None:
+            pytest.skip("docker-compose.local.yml not in checkout — cannot cross-check")
+        assert _DEFAULT_LOCAL_DB_PORT == compose_port, (
+            f"setup.py default port {_DEFAULT_LOCAL_DB_PORT} drifted from the "
+            f"docker-compose.local.yml POSTGRES_HOST_PORT default {compose_port}"
+        )

@@ -33,7 +33,7 @@ sys.path.insert(0, str(_REPO_ROOT / "src" / "cofounder_agent"))
 async def main() -> int:
     db_url = (
         os.environ.get("DATABASE_URL")
-        or "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
+        or "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
     )
 
     print(f"[smoke] connecting to {db_url[:40]}...")

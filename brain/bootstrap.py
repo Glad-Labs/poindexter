@@ -148,7 +148,7 @@ def require_database_url(
             f"{BOOTSTRAP_FILE} interactively, or set DATABASE_URL in the "
             "environment.\n\n"
             "Example DATABASE_URL:\n"
-            "  postgresql://poindexter:<password>@localhost:15432/poindexter_brain"
+            "  postgresql://poindexter:<password>@localhost:5433/poindexter_brain"
         ),
         source=source,
         severity="critical",

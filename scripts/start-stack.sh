@@ -95,7 +95,7 @@ if [ -n "$PYTHON_BIN" ] && [ -f "$SCRIPT_DIR/_grafana_webhook_token.py" ]; then
     GRAFANA_WEBHOOK_TOKEN="$("$PYTHON_BIN" "$SCRIPT_DIR/_grafana_webhook_token.py" || true)"
     # start-stack.sh is now the canonical every-launch path (the docker-watchdog
     # routes recovery through it), so an empty result from a transient DB miss
-    # (e.g. postgres not yet publishing localhost:15432) must NOT clobber a working
+    # (e.g. postgres not yet publishing localhost:5433) must NOT clobber a working
     # JWT and break grafana webhook auth. Preserve a previously-minted token; only
     # (re)write the env_file when we actually got a token, or when none exists to
     # keep. The grafana service loads this via env_file: so the token also survives

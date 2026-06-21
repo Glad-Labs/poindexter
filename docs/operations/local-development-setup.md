@@ -116,7 +116,7 @@ This starts the core containers (cross-referenced against the CLAUDE.md Quick-Li
 | --------------------------- | ------------------------------------------------------------------------- | ----- |
 | `poindexter-worker`         | FastAPI backend, content pipeline                                         | 8002  |
 | `poindexter-brain-daemon`   | Health probes + self-healing loop                                         | —     |
-| `poindexter-postgres-local` | PostgreSQL 16 + pgvector                                                  | 15432 |
+| `poindexter-postgres-local` | PostgreSQL 16 + pgvector                                                  | 5433  |
 | `poindexter-grafana`        | Monitoring dashboards                                                     | 3000  |
 | `poindexter-prometheus`     | Metric scraper                                                            | 9091  |
 | `poindexter-sdxl-server`    | SDXL image generation (GPU)                                               | 9836  |

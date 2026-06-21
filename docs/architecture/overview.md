@@ -169,10 +169,10 @@ LOCKED` and hands them to `content_router_service`. Retry /
 
 ### Backend Architecture
 
-| Component             | Technology                      | Port  | Status        |
-| --------------------- | ------------------------------- | ----- | ------------- |
-| **Poindexter Worker** | FastAPI + Python 3.13 + Uvicorn | 8002  | ✅ Production |
-| **CMS Data**          | PostgreSQL (Direct Access)      | 15432 | ✅ Production |
+| Component             | Technology                      | Port | Status        |
+| --------------------- | ------------------------------- | ---- | ------------- |
+| **Poindexter Worker** | FastAPI + Python 3.13 + Uvicorn | 8002 | ✅ Production |
+| **CMS Data**          | PostgreSQL (Direct Access)      | 5433 | ✅ Production |
 
 **Backend Features:**
 

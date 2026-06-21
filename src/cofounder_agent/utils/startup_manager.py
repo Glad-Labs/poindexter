@@ -374,7 +374,7 @@ class StartupManager:
                         "and that DATABASE_URL (or DATABASE_HOST/USER/...) is "
                         "set correctly.\n\n"
                         "For local dev the DSN usually looks like:\n"
-                        "  postgresql://poindexter:<password>@localhost:15432/poindexter_brain"
+                        "  postgresql://poindexter:<password>@localhost:5433/poindexter_brain"
                     ),
                     source="worker.startup_manager",
                     severity="critical",

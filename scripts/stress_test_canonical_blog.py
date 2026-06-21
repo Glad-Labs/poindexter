@@ -194,7 +194,7 @@ async def main():
     parser.add_argument("--max-wait", type=int, default=7200,
                         help="Max wait per run in seconds (default 2h)")
     parser.add_argument("--dsn", default=(
-        "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
+        "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
     ))
     args = parser.parse_args()
 

@@ -1026,10 +1026,10 @@ Create `infrastructure/grafana/dashboards/seo-harvest.json` (datasource uid
 
 - [ ] **Step 2: Lint the panels**
 
-Run (against the local stack DB — adjust DSN/port to match your stack, e.g. 15432):
+Run (against the local stack DB — adjust DSN/port to match your stack, e.g. 5433):
 
 ```bash
-DATABASE_URL=postgresql://postgres:postgres@localhost:15432/poindexter_brain python scripts/ci/grafana_panels_lint.py infrastructure/grafana/dashboards/seo-harvest.json
+DATABASE_URL=postgresql://postgres:postgres@localhost:5433/poindexter_brain python scripts/ci/grafana_panels_lint.py infrastructure/grafana/dashboards/seo-harvest.json
 ```
 
 Expected: `0 fail` for the seo-harvest panels (the table `seo_opportunities` must exist — apply the Task 1 migration to the target DB first). Warnings on macros are acceptable (CI is soft-fail).

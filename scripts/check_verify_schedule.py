@@ -2,7 +2,7 @@ import asyncio
 
 import asyncpg
 
-DB_URL = "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
+DB_URL = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
 
 async def main():
     pool = await asyncpg.create_pool(DB_URL)

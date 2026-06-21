@@ -3,7 +3,7 @@ import urllib.request
 
 import asyncpg
 
-DB_URL = "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
+DB_URL = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
 
 PROBE_PATHS = [
     "http://localhost:8002/health",

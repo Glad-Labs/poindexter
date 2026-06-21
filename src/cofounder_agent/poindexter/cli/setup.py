@@ -383,9 +383,22 @@ async def _check_telegram(token: str, chat_id: str) -> tuple[bool, str]:
 # --auto: spin a local Docker Postgres (Phase 4)
 # ---------------------------------------------------------------------------
 
+# Canonical local-dev Postgres host port. Mirrors the POSTGRES_HOST_PORT
+# default published by docker-compose.local.yml — keep the two in sync
+# (guarded by tests/unit/poindexter/cli/test_setup.py). 15432 was retired
+# 2026-06-21 after it landed inside a Windows Hyper-V reserved TCP range
+# and became unbindable (WSAEACCES); see the compose-file comment.
+_DEFAULT_LOCAL_DB_PORT = 5433
+_DEFAULT_LOCAL_DB_URL = (
+    f"postgresql://poindexter:poindexter-brain-local"
+    f"@localhost:{_DEFAULT_LOCAL_DB_PORT}/poindexter_brain"
+)
+
 _AUTO_CONTAINER = "poindexter-postgres-auto"
 _AUTO_IMAGE = "pgvector/pgvector:pg16"
-_AUTO_PORT = 15433  # one above the docker-compose.local.yml default (15432)
+# The --auto path spins a SEPARATE container, one port above the compose
+# default, so it never collides with a running local stack.
+_AUTO_PORT = _DEFAULT_LOCAL_DB_PORT + 1
 _AUTO_DB = "poindexter_brain"
 _AUTO_USER = "poindexter"
 
@@ -600,7 +613,7 @@ def _prompt_defaults() -> dict[str, str]:
 
     db_url = click.prompt(
         "Database URL (postgresql://user:pass@host:port/db)",
-        default="postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain",
+        default=_DEFAULT_LOCAL_DB_URL,
         show_default=True,
     ).strip()
 

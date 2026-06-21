@@ -17,7 +17,7 @@ Recommended: run via Docker Compose from the repo root.
 docker compose -f docker-compose.local.yml up -d worker
 ```
 
-For local Python development (requires Postgres running on port 15432):
+For local Python development (requires Postgres running on port 5433):
 
 ```bash
 cd src/cofounder_agent

@@ -144,7 +144,7 @@ ok "Dependencies installed"
 # 5. Verify database connectivity
 # ============================================================
 info "Verifying database connectivity..."
-if PGPASSWORD="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}" psql -h localhost -p 15432 -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" -c "SELECT 1" >/dev/null 2>&1; then
+if PGPASSWORD="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}" psql -h localhost -p "${POSTGRES_HOST_PORT:-5433}" -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" -c "SELECT 1" >/dev/null 2>&1; then
     ok "Database reachable (migrations will run automatically when the worker starts)"
 else
     warn "Database not reachable via psql — this is OK if psql is not installed"
@@ -157,7 +157,7 @@ fi
 info "Seeding default app_settings..."
 
 # These are the configurable knobs — change them in the DB, not in code
-PGPASSWORD="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}" psql -h localhost -p 15432 -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" -c "
+PGPASSWORD="${LOCAL_POSTGRES_PASSWORD:-poindexter-brain-local}" psql -h localhost -p "${POSTGRES_HOST_PORT:-5433}" -U "${LOCAL_POSTGRES_USER:-poindexter}" -d "${LOCAL_POSTGRES_DB:-poindexter_brain}" -c "
 CREATE TABLE IF NOT EXISTS app_settings (
     id SERIAL PRIMARY KEY,
     key VARCHAR(255) UNIQUE NOT NULL,

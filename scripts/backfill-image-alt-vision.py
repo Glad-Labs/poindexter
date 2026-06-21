@@ -55,7 +55,7 @@ _IMG_TAG_RE = re.compile(r"<img\b[^>]*>", re.IGNORECASE)
 _IMG_SRC_RE = re.compile(r'<img\b[^>]*?\bsrc="([^"]+)"', re.IGNORECASE)
 
 DEFAULT_DB_URL = (
-    "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
+    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
 )
 
 

@@ -5,7 +5,7 @@ import sys
 
 import asyncpg
 
-DB_URL = "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
+DB_URL = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
 MIGRATION_PATH = sys.argv[1]
 
 

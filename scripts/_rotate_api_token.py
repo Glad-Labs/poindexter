@@ -38,7 +38,7 @@ async def _main(token_path: str) -> None:
 
     dsn = os.getenv(
         "DATABASE_URL",
-        "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain",
+        "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
     )
     conn = await asyncpg.connect(dsn)
     try:

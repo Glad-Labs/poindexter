@@ -51,7 +51,7 @@ from services.alt_text import (  # noqa: E402  (sys.path munge above)
 )
 
 DEFAULT_DB_URL = (
-    "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
+    "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
 )
 
 

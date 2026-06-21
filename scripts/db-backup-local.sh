@@ -76,7 +76,7 @@ elif [ -f /.dockerenv ] || grep -q docker /proc/1/cgroup 2>/dev/null; then
 else
     # On the host — connect via mapped port
     DB_HOST="${DB_HOST:-localhost}"
-    DB_PORT="${DB_PORT:-15432}"
+    DB_PORT="${DB_PORT:-5433}"
     echo "[backup] Running on host (connecting to localhost:${DB_PORT})"
 fi
 

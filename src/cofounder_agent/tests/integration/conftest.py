@@ -87,7 +87,7 @@ requires_real_services = pytest.mark.skipif(
 # ---------------------------------------------------------------------------
 
 
-_DEFAULT_ADMIN_DSN = "postgresql://poindexter:poindexter-brain-local@localhost:15432/postgres"
+_DEFAULT_ADMIN_DSN = "postgresql://poindexter:poindexter-brain-local@localhost:5433/postgres"
 _TEST_DB_NAME = "poindexter_test"
 
 

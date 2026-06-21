@@ -49,7 +49,7 @@ docker run -d --name poindexter-fresh \
     -e POSTGRES_USER=postgres \
     -e POSTGRES_PASSWORD=postgres \
     -e POSTGRES_DB=poindexter_brain \
-    -p 15432:5432 \
+    -p 5433:5432 \
     pgvector/pgvector:pg16
 
 # Wait until pg_isready reports OK (1-3 seconds on warm cache).
@@ -59,9 +59,9 @@ done
 echo "postgres ready"
 ```
 
-The container exposes Postgres on host port 15432 — that's the
+The container exposes Postgres on host port 5433 — that's the
 standard local-dev port for Poindexter (not 5432, to avoid clashing
-with a system Postgres). Pick any free port if you already use 15432
+with a system Postgres). Pick any free port if you already use 5433
 for the live DB.
 
 > **Don't run this against a populated DB.** The migration runner is
@@ -85,7 +85,7 @@ The CI smoke script is the right tool here — it's what production
 relies on, it asserts row-count equality, and it's dependency-light.
 
 ```bash
-DATABASE_URL=postgres://postgres:postgres@localhost:15432/poindexter_brain \
+DATABASE_URL=postgres://postgres:postgres@localhost:5433/poindexter_brain \
     python scripts/ci/migrations_smoke.py
 ```
 
@@ -173,7 +173,7 @@ gets unique credentials), not by a shared migration.
 ## Step 3 — Run the setup wizard
 
 ```bash
-poindexter setup --db-url postgres://postgres:postgres@localhost:15432/poindexter_brain
+poindexter setup --db-url postgres://postgres:postgres@localhost:5433/poindexter_brain
 ```
 
 The wizard runs four steps:
@@ -250,7 +250,7 @@ provisions nothing, just reports per-component status.
 Poindexter system check
 
   OK   bootstrap.toml         /home/you/.poindexter/bootstrap.toml
-  OK   database URL           postgresql://postgres:***@localhost:15432/poindexter_brain
+  OK   database URL           postgresql://postgres:***@localhost:5433/poindexter_brain
   OK   postgres connection    PostgreSQL 16.x …
   OK   migrations             app_settings table already present — migrations already run
  SKIP  worker API             api_base_url unset in app_settings
@@ -279,7 +279,7 @@ lifespan should:
 
 ```bash
 cd src/cofounder_agent
-DATABASE_URL=postgres://postgres:postgres@localhost:15432/poindexter_brain \
+DATABASE_URL=postgres://postgres:postgres@localhost:5433/poindexter_brain \
     poetry run uvicorn main:app --host 0.0.0.0 --port 8002
 ```
 

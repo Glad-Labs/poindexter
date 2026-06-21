@@ -46,7 +46,7 @@ LOCAL USAGE
 
 Against the running stack on Matt's box:
 
-    DATABASE_URL=postgresql://postgres:postgres@localhost:15432/poindexter \\
+    DATABASE_URL=postgresql://postgres:postgres@localhost:5433/poindexter \\
         PROMETHEUS_URL=http://localhost:9090 \\
         LOKI_URL=http://localhost:3100 \\
         python scripts/ci/grafana_panels_lint.py infrastructure/grafana/dashboards/

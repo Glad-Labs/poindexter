@@ -42,7 +42,7 @@ HOST_DB_URL = os.getenv(
     "POINDEXTER_BRAIN_URL",
     os.getenv(
         "GLADLABS_BRAIN_URL",
-        "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain",
+        "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain",
     ),
 )
 

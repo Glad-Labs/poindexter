@@ -79,7 +79,7 @@ if not _dsn:
         _dsn = resolve_database_url() or ""
     except Exception:
         pass
-LOCAL_DSN = _dsn or "postgresql://poindexter:poindexter-brain-local@localhost:15432/poindexter_brain"
+LOCAL_DSN = _dsn or "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
 
 # URL localization — same pattern used by brain.docker_utils and the
 # plugins ecosystem. When IN_DOCKER=true, rewrites localhost URLs to

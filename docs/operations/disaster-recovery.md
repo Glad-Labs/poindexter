@@ -502,7 +502,7 @@ If the counts are way off, treat as **DB-2** (volume loss).
 ```bash
 mkdir -p ~/.poindexter
 cat > ~/.poindexter/bootstrap.toml <<'EOF'
-database_url = "postgresql://poindexter:<password>@localhost:15432/poindexter_brain"
+database_url = "postgresql://poindexter:<password>@localhost:5433/poindexter_brain"
 
 # Operator notification fallbacks (optional — used when DB is unreachable)
 telegram_bot_token = ""
