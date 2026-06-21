@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+## [0.84.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.83.0...v0.84.0) (2026-06-21)
+
+
+### Features
+
+* **alerts:** add PyroscopeDown liveness alert ([#1784](https://github.com/Glad-Labs/glad-labs-stack/issues/1784)) ([6e50afa](https://github.com/Glad-Labs/glad-labs-stack/commit/6e50afa0ad513bfab03006cf0655c841143d1d70))
+* **api:** canonical offset-based ListResponse[T] + conformance ratchet ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 2) ([#1776](https://github.com/Glad-Labs/glad-labs-stack/issues/1776)) ([e699569](https://github.com/Glad-Labs/glad-labs-stack/commit/e699569a27deab01537560f9afd8aaed444d07c7))
+* **api:** paginate GET /api/video/episodes (apply [#746](https://github.com/Glad-Labs/glad-labs-stack/issues/746) to video) ([#1798](https://github.com/Glad-Labs/glad-labs-stack/issues/1798)) ([da54383](https://github.com/Glad-Labs/glad-labs-stack/commit/da54383aeb6b9f13bb80d54c781e3f2d627aa3b5))
+* **api:** settings list endpoint returns canonical offset envelope ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 3) ([#1777](https://github.com/Glad-Labs/glad-labs-stack/issues/1777)) ([cfedffe](https://github.com/Glad-Labs/glad-labs-stack/commit/cfedffe72e5b6648a41af50c869795bd2c283493))
+* **api:** task list endpoint returns canonical offset envelope ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 4) ([#1778](https://github.com/Glad-Labs/glad-labs-stack/issues/1778)) ([b8cfb0f](https://github.com/Glad-Labs/glad-labs-stack/commit/b8cfb0f89a13a10d66d5be5f0f7c15d8291b545e))
+* **api:** type data-plane surface list as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 12) ([#1795](https://github.com/Glad-Labs/glad-labs-stack/issues/1795)) ([ef31d7e](https://github.com/Glad-Labs/glad-labs-stack/commit/ef31d7e99f54beadb3222e0e6310fabf1a0bd743))
+* **api:** type gates list as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 8) ([#1787](https://github.com/Glad-Labs/glad-labs-stack/issues/1787)) ([7519ae2](https://github.com/Glad-Labs/glad-labs-stack/commit/7519ae243af466a700502ea57570cfe05c022339))
+* **api:** type gates pending as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 7) ([#1785](https://github.com/Glad-Labs/glad-labs-stack/issues/1785)) ([cc56c94](https://github.com/Glad-Labs/glad-labs-stack/commit/cc56c9472a9f4dcea5b3dc9759a12107598aaac0))
+* **api:** type media-approval pending as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 6) ([#1782](https://github.com/Glad-Labs/glad-labs-stack/issues/1782)) ([74853cf](https://github.com/Glad-Labs/glad-labs-stack/commit/74853cf70dbba6f64c90b7f9b618d40e0c00eb8e))
+* **api:** type pending-approval as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 5) ([#1781](https://github.com/Glad-Labs/glad-labs-stack/issues/1781)) ([359f16b](https://github.com/Glad-Labs/glad-labs-stack/commit/359f16bac7c3b1b81893676d571a3312ea68381b))
+* **api:** type podcast episodes as canonical ListResponse + close path leak ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 10) ([#1789](https://github.com/Glad-Labs/glad-labs-stack/issues/1789)) ([4af09cf](https://github.com/Glad-Labs/glad-labs-stack/commit/4af09cfe0e38061555db1de2c88d1802aff2038a))
+* **api:** type posts-approval pending as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 9) ([#1788](https://github.com/Glad-Labs/glad-labs-stack/issues/1788)) ([c168101](https://github.com/Glad-Labs/glad-labs-stack/commit/c1681010d73cb92333ba60469027b6b9ece025cf))
+* **api:** type topics proposals as canonical ListResponse + console lockstep ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 13) ([#1797](https://github.com/Glad-Labs/glad-labs-stack/issues/1797)) ([2622891](https://github.com/Glad-Labs/glad-labs-stack/commit/2622891f8bc4f41601e617bb813d4cb3181f664b))
+* **api:** type video episodes as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 11) ([#1793](https://github.com/Glad-Labs/glad-labs-stack/issues/1793)) ([41a802d](https://github.com/Glad-Labs/glad-labs-stack/commit/41a802d97b0c4a545c77dd07686565498b0df760))
+* **brain:** auto-embed liveness watch (heartbeat + self-heal probe) ([#1786](https://github.com/Glad-Labs/glad-labs-stack/issues/1786)) ([797a085](https://github.com/Glad-Labs/glad-labs-stack/commit/797a085f3b158c7acb1df68ffd61bb73e017d29c))
+* **brain:** host-routed compose-drift self-heal via the Recovery Agent ([#1791](https://github.com/Glad-Labs/glad-labs-stack/issues/1791)) ([3e2431e](https://github.com/Glad-Labs/glad-labs-stack/commit/3e2431ee0d4d688ffdc3fd0575e5aee4356580ef))
+
+
+### Bug Fixes
+
+* **ci:** export CI runner PEM in start-stack.sh so the self-hosted runner survives deploys ([#1790](https://github.com/Glad-Labs/glad-labs-stack/issues/1790)) ([b42d92f](https://github.com/Glad-Labs/glad-labs-stack/commit/b42d92f94e4f0f4cc53a5bf6b56f5222a624422a))
+* **console:** read GET /api/tasks rows from items, not tasks ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 4 follow-up) ([#1779](https://github.com/Glad-Labs/glad-labs-stack/issues/1779)) ([96a72e1](https://github.com/Glad-Labs/glad-labs-stack/commit/96a72e1359d1b12d3f2815d73b071158cc40b0e9))
+* **deploy:** anchor start-stack.sh compose-file check to PROJECT_DIR (not CWD) ([#1775](https://github.com/Glad-Labs/glad-labs-stack/issues/1775)) ([acf433e](https://github.com/Glad-Labs/glad-labs-stack/commit/acf433e09f3483d516e45d5e0de9275c2d89537b))
+* **deploy:** deploy-checkout-sync applies compose changes (close the launch-dir compose-spec gap) ([#1761](https://github.com/Glad-Labs/glad-labs-stack/issues/1761)) ([060c2f8](https://github.com/Glad-Labs/glad-labs-stack/commit/060c2f80e07f566b4aa76b0f7d2aeca1c9cd69f2))
+* **deploy:** move postgres host publish off Windows-reserved 15432 (-&gt; POSTGRES_HOST_PORT, default 5433) ([#1783](https://github.com/Glad-Labs/glad-labs-stack/issues/1783)) ([0e8f391](https://github.com/Glad-Labs/glad-labs-stack/commit/0e8f391267b490875fbcfe85fc2b84e859c92a10))
+* **deploy:** route the docker watchdog through the bootstrap-only start-stack.sh ([#1780](https://github.com/Glad-Labs/glad-labs-stack/issues/1780)) ([e883740](https://github.com/Glad-Labs/glad-labs-stack/commit/e8837407ee128b035080501dd9b1537c26258512))
+* **gpu:** serialize local LLM dispatch through reentrant gpu.lock ([#1794](https://github.com/Glad-Labs/glad-labs-stack/issues/1794)) ([59e775c](https://github.com/Glad-Labs/glad-labs-stack/commit/59e775c203055bbda0f9f67fb685b510efe702c3))
+* **gpu:** source nvidia_gpu from host exporter; repair gpu-scraper endpoints ([#1796](https://github.com/Glad-Labs/glad-labs-stack/issues/1796)) ([0ccbc78](https://github.com/Glad-Labs/glad-labs-stack/commit/0ccbc78ff0c4e9cfdebd7ddabb7737df60fa524c))
+* **setup:** default local Postgres host port to 5433 (retire 15432) ([#1792](https://github.com/Glad-Labs/glad-labs-stack/issues/1792)) ([e9eb807](https://github.com/Glad-Labs/glad-labs-stack/commit/e9eb807ac5bf002f1c7920ff4d93027a03cd6b9a))
+
 ## [0.83.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.82.0...v0.83.0) (2026-06-20)
 
 
