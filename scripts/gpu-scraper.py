@@ -19,8 +19,11 @@ from pathlib import Path
 import asyncpg
 import httpx
 
-EXPORTER_URL = "http://localhost:9835/metrics"
-LOCAL_DB = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
+# Force IPv4 (127.0.0.1, not "localhost"): on Windows "localhost" resolves to
+# ::1 first, so when the gpu-exporter container publishes :9835 on IPv6 its
+# Docker proxy answers ::1 and drops the connection ("Server disconnected"),
+# starving this scraper. 127.0.0.1 always lands on the host-side exporter.
+EXPORTER_URL = os.getenv("GPU_EXPORTER_URL", "http://127.0.0.1:9835/metrics")
 INTERVAL = 60  # seconds
 
 LOG_DIR = Path.home() / ".poindexter"
@@ -35,6 +38,38 @@ logging.basicConfig(
     ],
 )
 logger = logging.getLogger("gpu-scraper")
+
+
+def _resolve_db_url() -> str:
+    """Resolve the brain DB DSN — bootstrap.toml is canonical (#198).
+
+    Order: ``DATABASE_URL`` env → ``brain.bootstrap.resolve_database_url()``
+    (CLI arg → bootstrap.toml → DATABASE_URL → LOCAL_DATABASE_URL → …) → a
+    local default. The previous hardcoded ``localhost:15432`` froze
+    ``gpu_metrics`` silently when the 2026-06-21 deploy cutover moved the
+    Postgres host port to 5433 (15432 was Windows-reserved); resolving from
+    bootstrap tracks the port so the writer can't drift off it again.
+
+    The host is forced to IPv4 (127.0.0.1) for the same reason as the
+    exporter URL: on Windows "localhost" resolves to ::1 first, and the
+    Docker Desktop IPv6 port-proxy is unreliable — it silently drops
+    connections (directly observed on :9835).
+    """
+    dsn = os.getenv("DATABASE_URL")
+    if not dsn:
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+        try:
+            from brain.bootstrap import resolve_database_url  # type: ignore
+
+            dsn = resolve_database_url()
+        except Exception as exc:  # pragma: no cover - host bootstrap best-effort
+            logger.warning("bootstrap DSN resolution failed (%s); using default", exc)
+    if not dsn:
+        dsn = "postgresql://poindexter:poindexter-brain-local@localhost:5433/poindexter_brain"
+    return dsn.replace("@localhost:", "@127.0.0.1:")
+
+
+LOCAL_DB = _resolve_db_url()
 
 
 def parse_metric(text, name):

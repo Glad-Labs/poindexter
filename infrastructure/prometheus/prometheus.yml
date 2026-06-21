@@ -19,15 +19,30 @@ rule_files:
   - rules/*.yml
 
 scrape_configs:
+  # GPU metrics (nvidia_gpu_*) — sourced from the HOST exporter, not the
+  # gpu-exporter container. On Windows Docker Desktop the Linux container can't
+  # reach the NVIDIA driver (`nvidia-smi` -> "Driver Not Loaded"), so it serves
+  # zero nvidia_gpu_* series; worse, its :9835 publish shadows the host-side
+  # nvidia-smi-exporter.py on IPv6 and broke gpu-scraper.py (incident 2026-06-21).
+  # The host pythonw exporter reads the GPU reliably over host.docker.internal.
+  # We KEEP job_name "nvidia-smi" and limit this scrape to nvidia_gpu_* +
+  # system_*_power_estimate_* so every consumer is unchanged: the hardware-power
+  # dashboard's bare nvidia_gpu_* queries and the GpuTemperatureHigh /
+  # GpuVramUtilizationHigh rules (prometheus_rule_builder.py) keep their
+  # job="nvidia-smi" series. The complementary nvidia-smi-host job below supplies
+  # the host-only hwinfo_/aida64_/psu_/system_cpu_ sensors from the same endpoint,
+  # so the two keep-lists don't overlap (no duplicate series).
+  # The gpu-exporter container is profile-gated off on Windows in
+  # docker-compose.local.yml; re-point this job at "gpu-exporter:9835" on a Linux
+  # host where GPU passthrough actually works.
   - job_name: nvidia-smi
-    # Scrape via docker DNS (container-to-container) instead of
-    # host.docker.internal — Windows Docker Desktop occasionally fails
-    # the gateway resolution for sibling containers, producing intermittent
-    # "connection refused" up=0 reports even when the exporter is healthy
-    # on the host's port-forward. The gpu-exporter container is on the
-    # same compose network so the service name resolves directly.
+    scrape_interval: 30s
     static_configs:
-      - targets: ["gpu-exporter:9835"]
+      - targets: ["host.docker.internal:9835"]
+    metric_relabel_configs:
+      - source_labels: [__name__]
+        regex: 'nvidia_gpu_.*|system_.*_power_estimate_.*'
+        action: keep
 
   # Host hardware sensors — the host-side pythonw nvidia-smi-exporter.py is the
   # ONLY source for Windows shared-memory sensors (HWiNFO64 + AIDA64) and AMD RAPL

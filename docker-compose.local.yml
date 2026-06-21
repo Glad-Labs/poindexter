@@ -1505,6 +1505,16 @@ services:
   # GPU Metrics Exporter — nvidia-smi + HWiNFO to Prometheus
   # ===========================================
   gpu-exporter:
+    # Profile-gated OFF by default (incident 2026-06-21): on Windows Docker
+    # Desktop this Linux container can't reach the NVIDIA driver (`nvidia-smi`
+    # -> "Driver Not Loaded"), so it serves zero nvidia_gpu_* metrics — and its
+    # :9835 publish shadows the working host-side nvidia-smi-exporter.py on IPv6,
+    # which broke gpu-scraper.py and starved Prometheus of GPU data. On Windows
+    # the host exporter is the GPU source (see prometheus.yml job "nvidia-smi").
+    # This service stays defined for a future Linux host with real GPU
+    # passthrough; start it there with:
+    #   docker compose --profile linux-gpu up -d gpu-exporter
+    profiles: ["linux-gpu"]
     build:
       context: .
       dockerfile: scripts/Dockerfile.gpu-exporter
