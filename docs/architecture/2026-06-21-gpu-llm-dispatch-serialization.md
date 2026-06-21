@@ -136,3 +136,31 @@ takes effect on a brain rebuild + recreate (not a bind-mount restart). The
 `OllamaNoModelsLoaded` guard re-renders into `rules/*.yml` within ~5 min via
 `RenderPrometheusRulesJob` (no restart needed). Both are pure code — no
 migration, no settings.
+
+## Follow-up: closing the `/api/triage` bypass (2026-06-21)
+
+The "every local LLM call flows through `dispatch_complete`" invariant above had
+one hole. `services.llm_text.ollama_chat_text` routes through `dispatch_complete`
+**only when a `pool` is passed**; with no pool it falls back to a direct
+`httpx` POST to local Ollama — a path documented as "tests + bootstrap only"
+that **bypasses `gpu.lock("ollama")` entirely**.
+
+The `POST /api/triage` route (firefighter alert diagnosis) was a production
+caller hitting that fallback: `routes/triage_routes.py::_DefaultModelRouter`
+called `ollama_chat_text` without threading the route's pool. During a media
+render holding `gpu.lock("video")`, an inbound triage (the brain triages every
+alert, and a degrading render _raises_ alerts) reloaded the 19 GB writer model
+into VRAM — gemma(19) + wan + SDXL oversubscribed the 32 GB card and the SDXL
+server hit a CUDA OOM mid-render, degrading the video (most shots fell back to
+held-over clips; `media.qa` rejected it). Confirmed in the 2026-06-21 media-lane
+validation: `triage_ok ... model=gemma-4-31B` logged at 17:52, inside a
+`gpu.lock("video")` hold that ran 17:50→18:08.
+
+Fix: `_DefaultModelRouter` takes the route's `pool` and threads it into
+`ollama_chat_text`, so triage routes through the gated dispatcher and blocks
+while a render holds the GPU. A sweep of the other production `ollama_chat_text`
+callers (`pipeline_architect`, `ai_content_generator`, `narrate_bundle`,
+`qa_rewrite`, `review_with_critic`, `two_pass_writer`, `_seo_common`) confirmed
+they already pass a pool — triage was the only bypass. (The brain daemon's
+writer-model probe was the other un-gated direct caller; it is gated separately —
+see the writer-probe section above.)

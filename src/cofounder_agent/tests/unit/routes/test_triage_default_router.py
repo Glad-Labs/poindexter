@@ -147,6 +147,59 @@ async def test_response_is_think_block_stripped(fake_site_config):
 
 
 @pytest.mark.asyncio
+async def test_router_threads_pool_into_ollama_chat_text(fake_site_config):
+    """Regression for mid-render GPU oversubscription (#1766/#1794 follow-up):
+    the triage router MUST pass its asyncpg ``pool`` to ``ollama_chat_text``
+    so the call routes through ``dispatch_complete`` — which holds
+    ``gpu.lock("ollama")`` (#1794) and therefore blocks while a video render
+    holds ``gpu.lock("video")``. The pool-less path takes the direct-httpx
+    fallback that BYPASSES the GPU lock, reloading the 19GB writer model
+    mid-render and CUDA-OOMing the SDXL server (validation 2026-06-21).
+    """
+    from routes.triage_routes import _DefaultModelRouter
+
+    sc = fake_site_config({"ops_triage_writer_model": "gemma3:27b"})
+    sentinel_pool = object()
+    router = _DefaultModelRouter(sc, pool=sentinel_pool)
+
+    with (
+        patch(
+            "services.llm_text.ollama_chat_text",
+            new=AsyncMock(return_value="ok"),
+        ) as mock_chat,
+        patch("services.llm_text.resolve_local_model"),
+    ):
+        await router.invoke(model_class="ops_triage", system="s", user="u")
+
+    assert mock_chat.await_args.kwargs.get("pool") is sentinel_pool
+
+
+@pytest.mark.asyncio
+async def test_build_router_threads_pool_to_default_router(fake_site_config):
+    """``_build_router`` must forward the route's pool to the default
+    router so production triage routes through the gated dispatcher.
+    The test-injection factory seam stays pool-agnostic (``(site_config)``)."""
+    from routes.triage_routes import _build_router, set_model_router_for_tests
+
+    set_model_router_for_tests(None)  # ensure the default router path
+    sc = fake_site_config({"ops_triage_writer_model": "gemma3:27b"})
+    sentinel_pool = object()
+
+    router = _build_router(sc, sentinel_pool)
+
+    with (
+        patch(
+            "services.llm_text.ollama_chat_text",
+            new=AsyncMock(return_value="ok"),
+        ) as mock_chat,
+        patch("services.llm_text.resolve_local_model"),
+    ):
+        await router.invoke(model_class="ops_triage", system="s", user="u")
+
+    assert mock_chat.await_args.kwargs.get("pool") is sentinel_pool
+
+
+@pytest.mark.asyncio
 async def test_site_config_get_raising_uses_fallback(fake_site_config):
     """A misbehaving SiteConfig that raises on ``.get()`` must NOT
     crash the triage path — it falls back to the writer-model chain."""

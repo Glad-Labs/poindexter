@@ -132,6 +132,13 @@ DEFAULTS: dict[str, str] = {
     # hedging or qwen2.5's stat fabrication, and rarely needs the rescue. The
     # cross-model rescue reviser is glm (qa_rewrite_model). Operators tune live.
     'pipeline_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
+    # Ops alert-triage (firefighter /api/triage) is a one-paragraph diagnosis,
+    # NOT content — it defaults to the small free-tier model, never the 19 GB
+    # writer. Unset before, it fell through to pipeline_writer_model, so a triage
+    # reloaded the writer into VRAM mid-media-render and CUDA-OOM'd the SDXL
+    # server (2026-06-21). A 2 GB model coexists with wan + SDXL on a 32 GB card,
+    # so triage can't oversubscribe the GPU even when un-gated.
+    'ops_triage_writer_model': 'ollama/llama3.2:3b',
     # Video director + self-critique run on the writer model — scene judgment is
     # the top video-quality lever (video-quality spec §3.1). One shared key feeds
     # both the generate_video_shot_list draft pass and the review_video_shot_list

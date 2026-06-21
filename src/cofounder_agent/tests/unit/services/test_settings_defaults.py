@@ -24,6 +24,18 @@ def _run(coro):
     return asyncio.run(coro)
 
 
+def test_ops_triage_defaults_to_small_model_not_heavy_writer():
+    """Alert triage is a one-paragraph ops task; it must NOT default to the
+    19 GB content writer. With no default the route fell through to
+    ``pipeline_writer_model``, so a triage reloaded the writer into VRAM
+    mid-media-render and CUDA-OOM'd the SDXL server (2026-06-21). A fresh
+    install now gets a small model (matching ``cost_tier.free.model``)."""
+    from services.settings_defaults import DEFAULTS
+
+    assert DEFAULTS["ops_triage_writer_model"] == "ollama/llama3.2:3b"
+    assert DEFAULTS["ops_triage_writer_model"] != DEFAULTS["pipeline_writer_model"]
+
+
 # ---------------------------------------------------------------------------
 # Registry shape
 # ---------------------------------------------------------------------------

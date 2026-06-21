@@ -171,8 +171,14 @@ class _DefaultModelRouter:
     the reasoning trace gets cleaned before reaching the alert.
     """
 
-    def __init__(self, site_config: SiteConfig) -> None:
+    def __init__(self, site_config: SiteConfig, pool: Any = None) -> None:
         self._site_config = site_config
+        # Threading the pool routes the LLM call through
+        # ``dispatch_complete`` (which holds ``gpu.lock("ollama")``, #1794)
+        # rather than ``ollama_chat_text``'s direct-httpx fallback that
+        # BYPASSES the GPU lock. The bypass let triage reload the writer
+        # model mid-video-render and CUDA-OOM the SDXL server (2026-06-21).
+        self._pool = pool
 
     async def invoke(
         self,
@@ -200,7 +206,7 @@ class _DefaultModelRouter:
 
         raw = await ollama_chat_text(
             prompt=user, system=system, model=model_name,
-            site_config=self._site_config,
+            site_config=self._site_config, pool=self._pool,
         )
         text = strip_think_blocks(raw)
         return {"text": text, "model": f"ollama/{model_name}", "tokens": 0}
@@ -223,10 +229,10 @@ def set_model_router_for_tests(factory: Any | None) -> None:
     _router_factory = factory
 
 
-def _build_router(site_config: SiteConfig) -> Any:
+def _build_router(site_config: SiteConfig, pool: Any = None) -> Any:
     if _router_factory is not None:
         return _router_factory(site_config)
-    return _DefaultModelRouter(site_config)
+    return _DefaultModelRouter(site_config, pool=pool)
 
 
 # ---------------------------------------------------------------------------
@@ -377,7 +383,7 @@ async def post_triage(
             detail={"code": "context_build_failed", "message": str(exc)[:400]},
         ) from exc
 
-    router_obj = _build_router(site_config)
+    router_obj = _build_router(site_config, pool)
     result = await run_triage(context, site_config, router_obj)
 
     response_payload = {
