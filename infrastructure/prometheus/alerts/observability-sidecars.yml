@@ -1,11 +1,15 @@
-# Observability-sidecar liveness — promtail (log shipping), langfuse-worker
-# (LLM trace processing), glitchtip-worker (error ingest).
+# Observability-sidecar liveness — promtail (log shipping), pyroscope
+# (continuous profiling), langfuse-worker (LLM trace processing),
+# glitchtip-worker (error ingest).
 #
 # Closes the monitoring blind spot in Glad-Labs/glad-labs-stack#1154: these
-# three async sidecars had no liveness signal, so a silent crash went unnoticed
-# until someone happened to read the logs. Each is escalated to
-# `severity: critical` (issue action item #3) because a dead one takes a whole
-# observability axis dark — logs, LLM traces, or runtime errors respectively.
+# async sidecars had no liveness signal, so a silent crash went unnoticed
+# until someone happened to read the logs. The three operational axes
+# (logs / LLM traces / runtime errors) are `severity: critical` (issue
+# action item #3) because a dead one takes a whole axis dark. Pyroscope
+# (continuous profiling) is `severity: warning` instead — a dead profiler
+# degrades debugging but doesn't blind an operational axis, so it routes to
+# Discord (routine) rather than Telegram (critical).
 #
 # Delivery: severity=critical is routed to Telegram by the brain's
 # alert_dispatch_loop (warning → Discord), identical to PoindexterWorkerDown in
@@ -13,9 +17,10 @@
 # through the worker webhook and the brain dispatches on the severity label.
 #
 # Two probe strategies, by what each service exposes:
-#   - promtail IS Prometheus-native (the new `promtail` scrape job), so
-#     up{job="promtail"}==0 is the direct signal — it catches both a crashed
-#     container and a wedged HTTP server (which fails the scrape).
+#   - promtail and pyroscope are Prometheus-native (their own scrape jobs),
+#     so up{job="promtail"}==0 / up{job="pyroscope"}==0 is the direct signal —
+#     it catches both a crashed container and a wedged HTTP server (which
+#     fails the scrape).
 #   - the two workers expose no Prometheus metrics (langfuse-worker's /api/health
 #     is JSON, not exposition), so we lean on cAdvisor's container_last_seen.
 #     absent() fires when cAdvisor stops reporting the container — i.e. it
@@ -47,6 +52,31 @@ groups:
             wedged promtail whose HTTP server stopped responding.
             Check `docker ps` for poindexter-promtail and
             `docker logs poindexter-promtail --tail 100`.
+
+      # --- Pyroscope (continuous profiling → Grafana) ---
+      # Prometheus-native like promtail (the `pyroscope` scrape job hits
+      # pyroscope:4040), so up==0 catches a crashed or wedged profiler. Only
+      # `warning` (Discord): a dead profiler degrades debugging but the
+      # pipeline keeps running. The brain's docker_port_forward_probe also
+      # watches pyroscope, but only auto-restarts the STUCK-port-forward
+      # signature (internal-OK + external-fail); a genuine down (scrape fails →
+      # up==0, internal unreachable) is NOT auto-recovered, so this is the
+      # signal of record.
+      - alert: PyroscopeDown
+        expr: up{job="pyroscope"} == 0
+        for: 5m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Pyroscope is down — continuous profiling has stopped"
+          description: |
+            Prometheus has failed to scrape pyroscope (:4040) for 5+ minutes.
+            CPU flame graphs from worker / brain / voice are no longer being
+            ingested, so the Observability dashboard's profiling panels and
+            Grafana's Pyroscope datasource go blind. Check `docker ps` for
+            poindexter-pyroscope and
+            `docker logs poindexter-pyroscope --tail 100`.
 
       # --- Langfuse worker (async LLM trace processing) ---
       - alert: LangfuseWorkerDown
