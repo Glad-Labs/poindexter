@@ -1279,6 +1279,45 @@ class TestHallucinatedReferenceDetection:
             f"real asyncio APIs should not be flagged, got: {[h.matched_text for h in hallucinated]}"
         )
 
+    def test_quantization_precision_vocab_not_flagged(self, monkeypatch):
+        """Precision / quantization formats (fp16, int8, int4, bf16, qat, gguf,
+        gptq, awq) are core AI/ML + hardware vocabulary, not libraries. A
+        quantization post — squarely an AI/ML brand niche — was hard-rejected
+        when ``FP16`` got flagged as a 'hallucinated library/API reference'
+        (prod task 2d81e084: 98/100 quality, critic called it publication-ready,
+        every other rail passed). They belong in the shipped base whitelist
+        beside ``vram`` / ``gpu`` / ``llm`` / ``gemma``.
+
+        Content deliberately uses the two shapes the extractor actually picks
+        up (verified against ``_HALLUCINATED_REF_PATTERNS``): backtick-lowercase
+        (`` `int8` ``, pattern 3) and verb-prefixed uppercase (``use FP16`` —
+        the real prod trigger, pattern 5). A naive `` `FP16` `` (backtick-upper)
+        matches no pattern and would never reach the whitelist, so it can't
+        guard the fix. DB additions are patched empty so this pins the CODE
+        base list, not an operator override."""
+        import modules.content.content_validator as _cv
+        monkeypatch.setattr(
+            _cv, "_load_hallucination_whitelist_additions_sync", lambda: set()
+        )
+        content = (
+            "Quantization shrinks models to fit consumer VRAM. Most ship in "
+            "`fp16`, and teams adopt `int8` or `int4` to halve or quarter the "
+            "memory footprint. `bf16` keeps more dynamic range, and `qat` "
+            "recovers accuracy lost to rounding. In practice you use FP16 at "
+            "inference, then import GGUF checkpoints and try GPTQ kernels; "
+            "`gguf`, `gptq`, and `awq` are the common local-inference formats."
+        )
+        result = validate_content(
+            "Quantization and VRAM",
+            content,
+            topic="quantization vram",
+            tags=["ai-ml", "hardware"], site_config=_SC)
+        hallucinated = self._hallucinated_issues(result)
+        assert not hallucinated, (
+            "precision/quant vocab must not be flagged as hallucinated libraries, "
+            f"got: {[h.matched_text for h in hallucinated]}"
+        )
+
     def test_schedule_callback_flagged_as_hallucinated(self):
         """Fabricated asyncio function should fire hallucinated_reference."""
         content = (

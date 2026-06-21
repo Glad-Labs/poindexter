@@ -894,6 +894,17 @@ _HALLUCINATION_WHITELIST_BASE = {
     "embeddings", "transformer", "transformers", "bge-m3", "bge",
     "sentence-transformers", "hfembedding", "basemodel", "contextgem",
     "localai", "coderabbit", "codestral", "groq", "perplexity",
+    # ---- Numeric precision + quantization formats (AI/ML brand niche).
+    # Data-type / quantization vocabulary (model weights, KV cache), NOT
+    # libraries — but the bare-module (`` `int8` ``) and verb-prefixed
+    # (``use FP16``) patterns flag them identically. A 98/100 quantization
+    # post hard-rejected on ``FP16`` alone (prod task 2d81e084, 2026-06-21)
+    # before these shipped in the base list. Full family so a future post
+    # using ``fp8`` / ``exl2`` doesn't re-trip the same rule.
+    "fp4", "fp8", "fp16", "fp32", "fp64", "bf16", "tf32",
+    "int2", "int4", "int8", "int16", "uint8", "e4m3", "e5m2",
+    "gguf", "ggml", "gptq", "awq", "exl2", "qat", "ptq",
+    "qlora", "hqq", "kv-cache",
     # ---- Gaming + hardware (brand_niches: gaming + hardware)
     "steam", "vulkan", "opengl", "directx", "opencl", "metal",
     "xbox", "playstation", "ps4", "ps5", "switch", "nintendo", "sega",
