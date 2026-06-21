@@ -157,3 +157,49 @@ The agent is host-local. After changing `scripts/recovery-agent.py` / `.cmd`:
 
 The brain probes are image-baked, so after changing a probe rebuild and recreate
 the brain: `docker compose build brain-daemon && docker compose up -d brain-daemon`.
+
+## Audit notes & known limitations
+
+A periodic audit confirms every probe and recovery action still targets a
+reachable endpoint — especially after infrastructure changes (a moved host
+port, a retired container). Three structural facts keep most targets correct;
+three known gaps are tracked here.
+
+### Why most probe targets survive host changes
+
+- **`localize_url()`** (`brain/docker_utils.py`) rewrites
+  `localhost`/`127.0.0.1` → `host.docker.internal` at runtime, so a probe
+  configured with a host-canonical URL reaches the host-published port from
+  inside the container with no per-environment config.
+- **Recovery actions key off container names** (`docker restart <name>`), not
+  host ports, so a changed host-port publish never breaks a restart.
+- **In-stack calls use compose service names** (`postgres:5432`,
+  `prefect:4200`), independent of host-side port publishing.
+
+The one place a stale host port can hide is the
+`docker_port_forward_watch_list` setting, which carries explicit `host_port`
+overrides — re-check that list after any host-port change.
+
+### Known limitations
+
+- **The containerised brain cannot see the host OS task scheduler.** The
+  `scheduled_tasks` probe fails ("needs migration") because a Linux container
+  can't enumerate host scheduled tasks. As a consequence the host self-heal
+  tasks (the Recovery Agent launcher, the MCP HTTP launcher) are not themselves
+  liveness-checked by the brain. The natural fix is to surface their status
+  through the Recovery Agent (a status action-kind) rather than from inside the
+  container — tracked as a follow-up.
+- **Operator-surface probing is host-routed and can false-positive on
+  dual-stack services.** `operator_url_probe` reaches operator surfaces via
+  `host.docker.internal`. A service published on both IPv4 (`0.0.0.0`) and IPv6
+  (`[::]`) can have its IPv6 Docker proxy accept the TCP connection then drop it
+  ("Server disconnected without sending a response") even when the service is
+  healthy and reachable by its real in-network consumer (e.g. the trace store,
+  Tempo, consumed through Grafana on the compose network). Treat a single such
+  surface failing while its consumer works as a probe-path artifact, not an
+  outage.
+- **Operator-surface URLs drift when a backing container is retired.** Retiring
+  or renaming a container leaves any operator-surface URL that named it stale,
+  and the brain then pages "Operator surface unreachable" every cycle. When you
+  retire a container, sweep the operator-surface URL settings in the same
+  change.

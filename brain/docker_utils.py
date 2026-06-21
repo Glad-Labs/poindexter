@@ -34,7 +34,7 @@ def localize_url(url: str) -> str:
     """Rewrite host-side URLs so they work from inside a container.
 
     `app_settings` holds canonical URLs that work from the host (e.g.
-    `http://localhost:3001` for Gitea). Inside a container, `localhost`
+    `http://localhost:3000` for Grafana). Inside a container, `localhost`
     loops back to the container itself, which isn't what's wanted —
     every port the host exposes is reachable at `host.docker.internal`
     instead, on the same port number.
