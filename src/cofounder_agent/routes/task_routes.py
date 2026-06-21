@@ -354,7 +354,11 @@ async def _handle_blog_post_creation(
 
     # Resolve "auto" topic to a fresh discovered topic
     resolved_topic = (request.topic or "").strip()
-    if resolved_topic.lower() == "auto":
+    # Capture BEFORE resolution: an explicit "auto" topic is deduped by
+    # TopicDiscovery below, so the manual-injection dedup guard must skip it
+    # (the autonomous path has no human present to pass force=true).
+    is_auto_topic = resolved_topic.lower() == "auto"
+    if is_auto_topic:
         try:
             from services.topic_discovery import TopicDiscovery
             pool = db_service.pool if db_service else None
@@ -369,6 +373,28 @@ async def _handle_blog_post_creation(
         except Exception as e:
             logger.warning("[create_task] Auto-topic resolution failed: %s", e)
             raise HTTPException(status_code=422, detail="Could not resolve auto topic") from e
+
+    # Pre-enqueue semantic dedup guard — closes the create_post / POST
+    # /api/tasks near-duplicate gap. AUTO topics were already deduped by
+    # TopicDiscovery above; an explicitly-provided or seed_url-derived topic is
+    # checked here against already-published posts and refused (409) when too
+    # similar, unless the caller passes force=true. See topic_dedup_guard.py.
+    if not is_auto_topic:
+        from services.topic_dedup_guard import (
+            DuplicateTopicError,
+            assert_topic_not_duplicate,
+        )
+
+        try:
+            await assert_topic_not_duplicate(
+                resolved_topic,
+                site_config=site_config,
+                force=bool(getattr(request, "force", False)),
+            )
+        except DuplicateTopicError as dup:
+            # 409 Conflict — the topic collides with an existing post. The
+            # message names the post, the score, and the force=true override.
+            raise HTTPException(status_code=409, detail=str(dup)) from dup
 
     task_data = {
         "id": task_id,

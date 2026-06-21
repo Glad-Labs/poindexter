@@ -136,6 +136,16 @@ class UnifiedTaskRequest(BaseModel):
     quality_preference: Literal["fast", "balanced", "quality"] | None = Field(
         "balanced", description="Quality vs speed preference"
     )
+    force: bool = Field(
+        False,
+        description=(
+            "Bypass the pre-enqueue semantic dedup guard (blog_post only). "
+            "When False (default), a topic too similar to an already-published "
+            "post is refused with 409 Conflict to stop near-duplicates. Set "
+            "True to create it anyway (operator override). Threshold is "
+            "app_settings.create_post_dedup_threshold."
+        ),
+    )
 
     @model_validator(mode="before")
     @classmethod

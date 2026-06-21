@@ -411,6 +411,12 @@ DEFAULTS: dict[str, str] = {
     'niche_goal_descriptions': '',
     'niche_ollama_chat_timeout_seconds': '300.0',
     'niche_top_n_per_pool': '5',
+    # Manual-injection dedup (create_post MCP tool / POST /api/tasks): cosine
+    # similarity at/above which a caller-supplied topic is refused (409) as a
+    # near-duplicate of an already-published post. Auto-discovered topics use
+    # the topic_dedup_* engine above; this guards the manual path. force=true
+    # overrides. See services/topic_dedup_guard.py.
+    'create_post_dedup_threshold': '0.75',
     'topic_dedup_engine': 'word_overlap',
     'topic_dedup_existing_threshold': '0.7',
     'topic_dedup_intra_batch_threshold': '0.65',

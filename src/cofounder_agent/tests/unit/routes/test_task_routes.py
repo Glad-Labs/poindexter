@@ -520,6 +520,130 @@ class TestCreateTaskQueueFull:
 
 
 # ---------------------------------------------------------------------------
+# POST /api/tasks semantic dedup guard (create_post near-duplicate gap)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCreateTaskDedup:
+    """Blog-post creation must refuse a topic that near-duplicates an
+    already-published post (409), unless the caller sets ``force=true``.
+
+    Closes the gap where a topic injected via ``create_post`` / ``POST
+    /api/tasks`` bypassed the topic-discovery dedup and let a near-duplicate
+    reach ``awaiting_approval``. The guard itself is unit-tested in
+    ``tests/unit/services/test_topic_dedup_guard.py``; here we verify the
+    route *wiring*: DuplicateTopicError → 409, and that ``force`` is
+    threaded through to the guard.
+    """
+
+    def _patch_guard(self, monkeypatch, *, duplicate: bool) -> dict:
+        """Patch the guard at its source module (the handler imports it
+        lazily, so the patched attribute is resolved at call time)."""
+        import types
+
+        import services.topic_dedup_guard as topic_dedup_guard
+
+        calls: dict = {}
+
+        async def _fake_guard(topic, *, site_config=None, force=False, **_kw):
+            calls["topic"] = topic
+            calls["force"] = force
+            if duplicate and not force:
+                match = types.SimpleNamespace(
+                    similarity=0.82,
+                    metadata={"title": "The VRAM Currency Problem"},
+                    source_id="post/bb10de87",
+                )
+                raise topic_dedup_guard.DuplicateTopicError(
+                    topic=topic, match=match, threshold=0.75
+                )
+
+        monkeypatch.setattr(
+            topic_dedup_guard, "assert_topic_not_duplicate", _fake_guard
+        )
+        return calls
+
+    def test_duplicate_topic_returns_409(self, monkeypatch):
+        self._patch_guard(monkeypatch, duplicate=True)
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="should-not-be-saved")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={"topic": "Quantization and VRAM for LLMs", "task_type": "blog_post"},
+        )
+        assert resp.status_code == 409
+        # The error names the colliding post so the operator can judge it.
+        assert "VRAM Currency Problem" in resp.json()["detail"]
+        # The near-duplicate is NOT enqueued.
+        assert not mock_db.add_task.called
+
+    def test_force_true_bypasses_dedup_and_creates(self, monkeypatch):
+        calls = self._patch_guard(monkeypatch, duplicate=True)
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="forced-task-id")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={
+                "topic": "Quantization and VRAM for LLMs",
+                "task_type": "blog_post",
+                "force": True,
+            },
+        )
+        assert resp.status_code == 201
+        assert mock_db.add_task.called
+        # force was threaded through to the guard.
+        assert calls.get("force") is True
+
+    def test_distinct_topic_passes_guard_and_creates(self, monkeypatch):
+        calls = self._patch_guard(monkeypatch, duplicate=False)
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="fresh-task-id")
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks",
+            json={"topic": "A genuinely novel angle on edge caching", "task_type": "blog_post"},
+        )
+        assert resp.status_code == 201
+        assert mock_db.add_task.called
+        # The guard ran (and allowed it) — wiring is live, not skipped.
+        assert calls.get("topic") == "A genuinely novel angle on edge caching"
+
+    def test_auto_topic_skips_dedup_guard(self, monkeypatch):
+        """An explicit ``topic='auto'`` is resolved by TopicDiscovery, which
+        already dedups — the create-post guard must NOT also run on it (no
+        human is present to pass force on the autonomous path)."""
+        from unittest.mock import patch
+
+        calls = self._patch_guard(monkeypatch, duplicate=True)
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="auto-task-id")
+
+        # Stub TopicDiscovery so 'auto' resolves to a fresh title.
+        fake_topic = MagicMock()
+        fake_topic.title = "Fresh Auto-Discovered Topic"
+        fake_topic.is_duplicate = False
+        discovery = MagicMock()
+        discovery.discover = AsyncMock(return_value=[fake_topic])
+
+        with patch("services.topic_discovery.TopicDiscovery", return_value=discovery):
+            client = TestClient(_build_app(mock_db))
+            resp = client.post(
+                "/api/tasks",
+                json={"topic": "auto", "task_type": "blog_post"},
+            )
+        assert resp.status_code == 201
+        assert mock_db.add_task.called
+        # Guard was skipped for the auto path.
+        assert calls == {}
+
+
+# ---------------------------------------------------------------------------
 # POST /api/tasks seed_url flow (GH-42)
 # ---------------------------------------------------------------------------
 

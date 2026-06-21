@@ -337,23 +337,34 @@ async def _api(
 # ============================================================================
 
 @mcp.tool()
-async def create_post(topic: str, category: str = "technology", target_audience: str = "developers and founders", niche: str = "") -> str:
+async def create_post(topic: str, category: str = "technology", target_audience: str = "developers and founders", niche: str = "", force: bool = False) -> str:
     """Create a new blog post task in the content pipeline. The worker will generate it via AI.
 
     Args:
         niche: Niche slug this post belongs to (e.g. 'glad-labs', 'dev_diary'). Required to pass
                the publish allowlist gate — tasks with no niche are blocked at publish time.
+        force: Bypass the semantic dedup guard. By default a topic too similar to an
+               already-published post is refused (the pipeline returns 409) so the
+               pipeline doesn't burn a run on a near-duplicate. Run find_similar_posts
+               first if unsure; set force=True to create it anyway.
     """
     payload: dict = {
         "task_name": f"Blog post: {topic}",
         "topic": topic,
         "category": category,
         "target_audience": target_audience,
+        "force": force,
     }
     if niche:
         payload["niche_slug"] = niche
     result = await _api("POST", "/api/tasks", payload)
     if "error" in result:
+        # A near-duplicate refusal (HTTP 409) carries a remediation message in
+        # ``detail`` — surface it so the operator sees the colliding post and
+        # the force=true override, not just "HTTP 409".
+        detail = result.get("detail")
+        if detail:
+            return f"Failed: {result['error']} — {detail}"
         return f"Failed: {result['error']}"
     return f"Task created: {result.get('task_id', '?')} — status: {result.get('status', '?')}"
 
