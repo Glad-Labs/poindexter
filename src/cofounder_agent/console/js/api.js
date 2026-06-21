@@ -919,16 +919,22 @@
     },
 
     // ── posts / analytics (KPIs) ────────────────────────────
-    posts() {
+    // `params` is an already-encoded query tail (e.g. '?limit=100' /
+    // '?days=1'). Live shapes (VERIFIED in cms_routes.py): posts →
+    // {posts:[{published_at,…}], total, offset, limit}; analyticsViews →
+    // {period_days, daily:[{day, views}], top_posts, top_referrers}. Mock
+    // returns the same empty shapes (honest-empty, never fabricated rows) —
+    // the KPI strip only consumes the live branch (kpisFromLive).
+    posts(params = '') {
       return pick(
-        () => http('GET', '/api/posts'),
-        () => ({ items: [] })
+        () => http('GET', '/api/posts' + params),
+        () => ({ posts: [], total: 0, offset: 0, limit: 0 })
       );
     },
-    analyticsViews() {
+    analyticsViews(params = '') {
       return pick(
-        () => http('GET', '/api/analytics/views'),
-        () => ({ items: [] })
+        () => http('GET', '/api/analytics/views' + params),
+        () => ({ period_days: 0, daily: [], top_posts: [], top_referrers: [] })
       );
     },
 

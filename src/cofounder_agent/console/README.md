@@ -92,6 +92,22 @@ method has a `live:` branch (real `fetch`) and a `mock:` branch via
 | service health    | Prometheus `GET /api/v1/query` — cAdvisor `container_last_seen` (`:9091`) + `/api/health`                    |
 | GPU               | Prometheus `GET /api/v1/query` — `nvidia_gpu_*` (`:9091`)                                                    |
 
+### Overview KPI strip (live)
+
+The headline KPI strip is live-wired through a pure mapper (`js/kpis.js` →
+`PX.kpisFromLive`, contract-tested by `js/__tests__/kpis.test.js` via
+`npm run test:console`): **spend** reuses the
+same `budget()` read the Cost panel renders (so the two can't disagree),
+**awaiting-approval** comes from the live inbox, **published (30d)** + **page
+views (24h)** from `GET /api/posts` + `GET /api/analytics/views`, and
+**avg-quality** / **failed** render an honest `—` (no backing read —
+`quality_score` isn't on `/api/posts` and there's no 24h-failed route). Mock
+mode keeps the static `PX.kpis`. The Revenue and QA panels are intentionally
+static (documented at their call sites in `app.jsx`): Revenue is
+pre-revenue/billing-gated with no `/api/revenue` read, and QA's rail list is the
+real config already (graduating a rail is a `qa_gates.<rail>.required_to_pass`
+change, not a console edit).
+
 ### One `TODO(live)` spot left
 
 - **Restart service** — there is no worker route yet; `restartService()` points

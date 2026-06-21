@@ -796,6 +796,18 @@ All phases 0–13 shipped via squash-merged PRs against `main`. The operator con
 
 ---
 
+## Post-completion gap fix — overview KPI strip live-wire (2026-06-21)
+
+Every panel was wired live, but the **headline overview KPI strip** was missed: `App` rendered `<KpiStrip kpis={PX.kpis} …/>` (the static mock) with **no live effect**, so in live mode it showed stale mock numbers that contradicted the live panels on the same screen — e.g. KPI "Cloud Spend $11.42 / $50" while the live Cost panel correctly read "$35.54 / $150", and KPI "Awaiting Approval 4" while the inbox read "Inbox zero".
+
+**Fix:** a pure mapper `js/kpis.js` (`PX.kpisFromLive`, dual-mode browser + CommonJS) projects the real reads onto the strip in live mode; `app.jsx` adds a 5-min `kpiReads` effect (`GET /api/posts` + `/api/analytics/views`) and a `kpis` memo that composes them with the already-loaded `cost` and `inbox` state. Per-KPI source: **spend** ← the same `budget()`-loaded `cost` the Cost panel renders (cannot drift); **awaiting-approval** ← the live `inbox`; **published-30d** ← `/api/posts` (count + a real per-day histogram from the same rows); **page-views-24h** ← `/api/analytics/views?days=1`; **quality** & **failed** ← honest `—` (no `quality_score` on `/api/posts`, no 24h-failed route) — `feedback_no_dummy_data`, the brain `queueDepth → —` pattern.
+
+**Adjacent panels evaluated (task ask):** `RevenuePanel` (raw `PX.revenue`) and `QAPanel` (raw `PX.qa`) are now documented **intentionally static** at their call sites — Revenue is pre-revenue/billing-gated with no `/api/revenue` read (renders honest `$0` via `live:false`); QA's rail list IS the real config and the panel already branches on `isLive()` for its meta (graduating a rail is a `qa_gates.<rail>.required_to_pass` change). `WallDisplay` stays on `PX.kpis` (ambient mode with hardcoded scaffolding + a numeric `.toFixed` on spend that honest-empty `—` would throw on) — documented; a separate change.
+
+**Tests:** the honest-empty mapping is the one branch-heavy bit, so `js/kpis.js` is a pure (dual-mode) function with a `node:test` contract test at `js/__tests__/kpis.test.js` (9 cases) that joins the **console-unit harness** added in #1806 (`npm run test:console` → `node --test "js/__tests__/**/*.test.js"`; standalone: `node --test src/cofounder_agent/console/js/__tests__/kpis.test.js`). Unlike `api.token.test.js` (which vm-evaluates the `api.js` IIFE against a browser shim), `kpis.js` exports cleanly so the test requires it directly. Integration verified in real Chromium (mock no-regression + simulated-live: spend `$35.54`, approval `0`, published `3`, views `42`, quality/failed `—`, zero page errors).
+
+---
+
 ## Self-review checklist (run before execution)
 
 - **Spec coverage:** every gap from the cross-reference maps to a task — auth (0.2/0.3), approvals+publish (1.x), pipeline model (3.x), topics (4.x), health/probes/restart (5.x), cost reframe (6.x), findings (7.x), brain/memory (8.x), media (9.x), schedule (10.x), SEO (11.x), live feed/voice/rebuild (12.x), revenue/mobile/docs (13.x).

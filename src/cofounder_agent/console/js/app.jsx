@@ -36,6 +36,10 @@ function App() {
   const [media, setMedia] = useS(PX.media); // live: GET /api/media-approval/pending
   const [schedule, setSchedule] = useS(PX.schedule); // live: GET /api/scheduling
   const [seo, setSeo] = useS(PX.seo); // live: GET /api/seo
+  // live: KPI-strip reads with no home panel — GET /api/posts (published 30d +
+  // a real per-day histogram) + GET /api/analytics/views (page views 24h). Mock
+  // keeps PX.kpis untouched (the `kpis` memo below short-circuits in mock mode).
+  const [kpiReads, setKpiReads] = useS({ posts: null, views: null });
   const [feed, setFeed] = useS(() =>
     // Live starts empty — the real /api/pipeline/events poll fills it (never
     // show the mock seed on live, feedback_no_dummy_data). Mock seeds the demo.
@@ -426,6 +430,33 @@ function App() {
       } catch (e) {
         pushToast(`SEO load failed — ${e.message}`, 'red', '✕');
       }
+    };
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: KPI strip reads (GET /api/posts + /api/analytics/views) ──
+  // The overview KPIs are mostly a projection of state other panels already
+  // load (cost → spend, inbox → awaiting-approval); these two reads cover the
+  // rest. posts → published-in-30d + a real per-day histogram from the same
+  // rows; analytics(days=1) → page views over the last 24h. quality/failed have
+  // no live read → honest '—' (mapped in kpis.js). On a read failure we store
+  // null so that KPI renders honest-empty, never the mock value
+  // (feedback_no_dummy_data). 5-min cadence — these move slowly.
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      const [posts, views] = await Promise.all([
+        PX.api.posts('?limit=100&published_only=true').catch(() => null),
+        PX.api.analyticsViews('?days=1').catch(() => null),
+      ]);
+      if (!alive) return;
+      setKpiReads({ posts, views });
     };
     load();
     const timer = setInterval(load, 5 * 60 * 1000);
@@ -1046,6 +1077,21 @@ function App() {
     return ['ok', 'ALL SYSTEMS NOMINAL'];
   }, [services, inbox]);
 
+  // Overview KPI strip. Mock: the static PX.kpis. Live: project the real reads
+  // onto the strip via the pure mapper — spend from the SAME budget()-loaded
+  // `cost` the Cost panel renders (so the two can't disagree), awaiting-approval
+  // from the live `inbox`, published/traffic from the kpiReads effect, and an
+  // honest '—' for anything with no live route (kpis.js / feedback_no_dummy_data).
+  const kpis = useMemo(() => {
+    if (!PX.api.isLive()) return PX.kpis;
+    const pendingApproval = inbox.filter((i) => i.kind === 'approve').length;
+    return PX.kpisFromLive(
+      PX.kpis,
+      { cost, pendingApproval, posts: kpiReads.posts, views: kpiReads.views },
+      Date.now()
+    );
+  }, [cost, inbox, kpiReads]);
+
   return (
     <div className={`app gl-atmosphere mode-${mode}`}>
       {/* Rail */}
@@ -1143,7 +1189,8 @@ function App() {
         {mode === 'console' && (
           <div className="main__inner">
             <div id="sec-overview">
-              <KpiStrip kpis={PX.kpis} onOpen={(k) => open('kpi', k)} />
+              {/* Live in live mode (kpis memo → PX.kpisFromLive); PX.kpis in mock. */}
+              <KpiStrip kpis={kpis} onOpen={(k) => open('kpi', k)} />
             </div>
 
             <div className="masonry masonry--overview">
@@ -1208,6 +1255,12 @@ function App() {
                 />
               </div>
               <div id="sec-revenue">
+                {/* Intentionally static (raw PX.revenue, no live effect):
+                    pre-revenue, billing gated (project_monetization), and there
+                    is no /api/revenue read. PX.revenue carries live:false so the
+                    panel already renders an honest $0 / "billing not live yet" —
+                    never a fabricated figure. Wire a live effect here when a
+                    revenue route + a first real sale land. */}
                 <RevenuePanel
                   revenue={PX.revenue}
                   onOpen={() => open('revenue', PX.revenue)}
@@ -1221,6 +1274,12 @@ function App() {
                 />
               </div>
               <div id="sec-qa">
+                {/* Intentionally static (raw PX.qa, no live effect): the rail
+                    list IS the real current config (modules/content/atoms/qa_*.py
+                    → qa.aggregate) and QAPanel already branches on isLive() for
+                    its meta. Pass/reject rates have no console read surface;
+                    graduating a rail is a qa_gates.<rail>.required_to_pass change,
+                    not a console edit. Wire from qa_gates here if a read lands. */}
                 <QAPanel qa={PX.qa} onOpen={() => open('qa', PX.qa)} />
               </div>
               <div id="sec-seo">
@@ -1294,6 +1353,11 @@ function App() {
         )}
 
         {mode === 'wall' && (
+          // Wall is an ambient/TV view kept on the static PX.kpis: it has its
+          // own hardcoded scaffolding (date, deltas, "of $50 budget") and does a
+          // numeric .toFixed on the spend value that the live honest-empty '—'
+          // would throw on. The live, action-first strip is console mode above;
+          // wiring Wall to live is a separate, larger change.
           <WallDisplay
             kpis={PX.kpis}
             gpu={gpu}

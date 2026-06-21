@@ -2,7 +2,10 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1, viewport-fit=cover"
+    />
     <meta name="color-scheme" content="dark" />
     <title>Poindexter · Operator Console</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
@@ -32,15 +35,33 @@
     <script src="js/data.js"></script>
     <script src="js/settings-data.js"></script>
     <script src="js/api.js"></script>
+    <!-- Pure live-KPI mapper (PX.kpisFromLive) — must load before app.jsx. -->
+    <script src="js/kpis.js"></script>
 
     <!-- JSX components (Babel-compiled). app.jsx is LAST: it calls ReactDOM.createRoot. -->
-    <script type="text/babel" data-presets="react" src="js/primitives.jsx"></script>
+    <script
+      type="text/babel"
+      data-presets="react"
+      src="js/primitives.jsx"
+    ></script>
     <script type="text/babel" data-presets="react" src="js/panels.jsx"></script>
-    <script type="text/babel" data-presets="react" src="js/panels2.jsx"></script>
+    <script
+      type="text/babel"
+      data-presets="react"
+      src="js/panels2.jsx"
+    ></script>
     <script type="text/babel" data-presets="react" src="js/drawer.jsx"></script>
     <script type="text/babel" data-presets="react" src="js/modes.jsx"></script>
-    <script type="text/babel" data-presets="react" src="js/palette.jsx"></script>
-    <script type="text/babel" data-presets="react" src="js/settings.jsx"></script>
+    <script
+      type="text/babel"
+      data-presets="react"
+      src="js/palette.jsx"
+    ></script>
+    <script
+      type="text/babel"
+      data-presets="react"
+      src="js/settings.jsx"
+    ></script>
     <script type="text/babel" data-presets="react" src="js/app.jsx"></script>
   </body>
 </html>
