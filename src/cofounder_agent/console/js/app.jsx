@@ -236,7 +236,10 @@ function App() {
       try {
         const res = await PX.api.listTopicProposals();
         if (!alive) return;
-        setTopics(res && res.batches ? res : { count: 0, batches: [] });
+        // Canonical offset envelope (poindexter#745): read `.items`, not `.batches`.
+        setTopics(
+          res && res.items ? res : { items: [], total: 0, limit: 0, offset: 0 }
+        );
       } catch (e) {
         pushToast(`Topics load failed — ${e.message}`, 'red', '✕');
       }
@@ -1057,7 +1060,7 @@ function App() {
               : r.id === 'services'
                 ? services.filter((s) => s.status === 'err').length
                 : r.id === 'topics'
-                  ? ((topics && topics.batches) || []).length
+                  ? ((topics && topics.items) || []).length
                   : 0;
           return (
             <button
@@ -1451,15 +1454,16 @@ function withLiveCounts(p, rows) {
 // 1-based position so the Picked winner shows as #1 immediately, before the
 // server round-trip lands (rolled back on error by the caller).
 function removeBatch(topics, batchId) {
-  const batches = ((topics && topics.batches) || []).filter(
+  const items = ((topics && topics.items) || []).filter(
     (b) => b.batch_id !== batchId
   );
-  return { count: batches.length, batches };
+  // Canonical offset envelope (poindexter#745): unpaginated → limit == len.
+  return { items, total: items.length, limit: items.length, offset: 0 };
 }
 function reRankBatch(topics, batchId, orderedIds) {
   const rankById = {};
   orderedIds.forEach((id, i) => (rankById[id] = i + 1));
-  const batches = ((topics && topics.batches) || []).map((b) => {
+  const items = ((topics && topics.items) || []).map((b) => {
     if (b.batch_id !== batchId) return b;
     return {
       ...b,
@@ -1470,7 +1474,7 @@ function reRankBatch(topics, batchId, orderedIds) {
       })),
     };
   });
-  return { ...topics, batches };
+  return { ...topics, items };
 }
 
 // Ready-to-publish list — staged (approved) tasks awaiting the publish gate.

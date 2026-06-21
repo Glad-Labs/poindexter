@@ -908,7 +908,8 @@ function LauncherPanel({ tools, onLaunch, onVoice }) {
 // ranked — the backend 400s an unranked resolve, so we gate it in the UI too.
 const CAND_KIND_TAG = { external: 'cyan', internal: 'amber' };
 function TopicsPanel({ topics, onPick, onResolve, onReject }) {
-  const batches = (topics && topics.batches) || [];
+  // Canonical offset envelope (poindexter#745): the list lives under `.items`.
+  const batches = (topics && topics.items) || [];
   return (
     <Panel
       idx="T1"

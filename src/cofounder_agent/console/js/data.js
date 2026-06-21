@@ -1106,9 +1106,12 @@
   // operator_rank is null until the operator ranks; rank_in_batch is the
   // system pre-rank. A stuck open batch = content goes dark, so this is the
   // surface to drain it. (Brand niches: AI/ML, gaming, PC hardware.)
+  // Canonical offset envelope (poindexter#745): {items, total, limit, offset}.
   const topics = {
-    count: 2,
-    batches: [
+    total: 2,
+    limit: 2,
+    offset: 0,
+    items: [
       {
         batch_id: 'b1a2c3d4-aiml-open-batch',
         niche_id: 'niche-aiml',

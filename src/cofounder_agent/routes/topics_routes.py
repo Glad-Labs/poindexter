@@ -15,6 +15,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from middleware.api_token_auth import verify_api_token
+from schemas.topics_schemas import TopicProposalListResponse
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
@@ -323,14 +324,14 @@ def _serialize_open_batch(ob: OpenBatch) -> dict[str, Any]:
 
 @router.get(
     "/proposals",
-    response_model=dict[str, Any],
+    response_model=TopicProposalListResponse,
     summary="List open topic batches awaiting an operator decision",
 )
 async def list_proposals(
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
     site_config: SiteConfig = Depends(get_site_config_dependency),
-) -> dict[str, Any]:
+) -> TopicProposalListResponse:
     """Return the open topic batches the operator can rank / resolve / reject.
 
     Mirrors the ``topics_show_batch`` MCP tool but across every niche at once.
@@ -340,7 +341,16 @@ async def list_proposals(
     service = TopicBatchService(db_service.pool, site_config=site_config)
     open_batches = await service.list_open_batches()
     batches = [_serialize_open_batch(ob) for ob in open_batches]
-    return {"count": len(batches), "batches": batches}
+    # Canonical offset envelope (poindexter#745): `count`/`batches` → the
+    # `{items, total, limit, offset}` shape. Each item is a nested batch dict
+    # (passed through as-is). Unpaginated full listing, so offset is 0 and
+    # limit == total. The operator console reads `.items` (updated in lockstep).
+    return TopicProposalListResponse(
+        items=batches,
+        total=len(batches),
+        limit=len(batches),
+        offset=0,
+    )
 
 
 @router.post(

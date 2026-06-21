@@ -532,7 +532,8 @@
     listTopicProposals() {
       return pick(
         () => http('GET', '/api/topics/proposals'),
-        () => pair(mock().topics, { count: 0, batches: [] })
+        // Canonical offset envelope (poindexter#745): {items, total, limit, offset}.
+        () => pair(mock().topics, { items: [], total: 0, limit: 0, offset: 0 })
       );
     },
     rankTopicBatch(batchId, orderedCandidateIds) {

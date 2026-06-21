@@ -103,8 +103,14 @@ class TestListProposals:
 
         assert resp.status_code == 200, resp.text
         data = resp.json()
-        assert data["count"] == 1
-        b = data["batches"][0]
+        # Canonical offset envelope (poindexter#745): items, not the legacy
+        # batches/count keys. Unpaginated full listing → limit == len, offset 0.
+        assert data["total"] == 1
+        assert data["limit"] == 1
+        assert data["offset"] == 0
+        assert "batches" not in data
+        assert "count" not in data
+        b = data["items"][0]
         assert b["batch_id"] == str(bid)
         assert b["niche_id"] == str(nid)
         assert b["niche_slug"] == "glad-labs"
@@ -125,7 +131,7 @@ class TestListProposals:
             client = TestClient(_build_app())
             resp = client.get("/api/topics/proposals")
         assert resp.status_code == 200
-        assert resp.json() == {"count": 0, "batches": []}
+        assert resp.json() == {"items": [], "total": 0, "limit": 0, "offset": 0}
 
     def test_unauthenticated_returns_401(self):
         client = TestClient(_build_app(authed=False), raise_server_exceptions=False)

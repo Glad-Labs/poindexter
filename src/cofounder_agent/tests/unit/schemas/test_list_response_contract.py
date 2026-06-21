@@ -23,6 +23,7 @@ from schemas.task_schemas import (
     PostApprovalListResponse,
     TaskListResponse,
 )
+from schemas.topics_schemas import TopicProposalListResponse
 
 pytestmark = pytest.mark.unit
 
@@ -41,6 +42,7 @@ ENDPOINT_LIST_MODELS = [
     PodcastEpisodeListResponse,  # step 10 — GET /api/podcast/episodes
     VideoEpisodeListResponse,  # step 11 — GET /api/video/episodes
     DataPlaneRowListResponse,  # step 12 — GET /api/data-plane/{surface}
+    TopicProposalListResponse,  # step 13 — GET /api/topics/proposals
 ]
 
 
