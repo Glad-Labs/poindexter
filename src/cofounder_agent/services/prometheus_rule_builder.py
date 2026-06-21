@@ -422,7 +422,20 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         # "Up but empty" — /api/tags returns 200 with []. The existing
         # OllamaReachable gauge passes this case, which is why it needs
         # a dedicated alert.
-        "expr": "poindexter_ollama_model_count == 0",
+        #
+        # The ``unless poindexter_ollama_reachable == 0`` guard prevents a
+        # FALSE critical when a transient /api/tags timeout (e.g. under heavy
+        # GPU render load) trips metrics_exporter's except-branch, which zeroes
+        # BOTH gauges at once. That case is "Ollama unreachable" — already owned
+        # by the static PoindexterOllamaDown (reachable==0) alert — not "up but
+        # no models". Without the guard it double-fired a spurious "up but no
+        # models" critical during a media render (observed 2026-06-21 18:21).
+        # The guard keeps ONLY the genuine up-but-empty signal (reachable=1,
+        # count=0).
+        "expr": (
+            "poindexter_ollama_model_count == 0 "
+            "unless poindexter_ollama_reachable == 0"
+        ),
         "for": "2m",
         "severity": "critical",
         "category": "infra",

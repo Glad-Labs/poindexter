@@ -20,11 +20,36 @@ import pytest
 from brain import health_probes as hp
 
 
+class _AcquireCM:
+    """Stand-in for ``asyncpg.Pool.acquire()`` — an async context manager
+    yielding one connection. Lets probe tests exercise the cross-process GPU
+    advisory-lock gating (``async with pool.acquire() as conn``) without a
+    live Postgres."""
+
+    def __init__(self, conn):
+        self._conn = conn
+
+    async def __aenter__(self):
+        return self._conn
+
+    async def __aexit__(self, *_exc):
+        return False
+
+
 def _make_pool():
     pool = MagicMock()
     pool.fetch = AsyncMock()
     pool.fetchrow = AsyncMock()
     pool.execute = AsyncMock()
+    # Connection handed out by ``pool.acquire()``. Its ``fetchval`` answers the
+    # ``SELECT pg_try_advisory_lock(...)`` GPU-arbitration probe — default True
+    # (GPU free) so probes that take the lock run as before. Tests exercising
+    # the "GPU busy" skip override ``pool._lock_conn.fetchval``.
+    conn = MagicMock()
+    conn.fetchval = AsyncMock(return_value=True)
+    conn.execute = AsyncMock()
+    pool._lock_conn = conn
+    pool.acquire = MagicMock(return_value=_AcquireCM(conn))
     return pool
 
 
@@ -705,3 +730,91 @@ class TestProbeContentGen:
         assert r["ok"] is False
         assert r["model"] == "gemma3:27b"
         assert "gemma3:27b" in r["detail"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestProbeContentGenGpuLock:
+    """probe_content_gen must yield the GPU to active renders / LLM jobs.
+
+    Exercising the writer loads the ~19GB model into VRAM. Firing during a
+    media render (wan + SDXL already near the 32GB ceiling) oversubscribes the
+    GPU → SDXL CUDA-OOM → degraded video (observed 2026-06-21). The brain runs
+    in its own stdlib+asyncpg container and can't import
+    ``services.gpu_scheduler``, but it shares Postgres, so it takes the SAME
+    cross-process advisory lock NON-BLOCKINGLY: ``pg_try_advisory_lock(
+    GPU_ADVISORY_LOCK_KEY)``. Lock held → skip this cycle with a non-alerting
+    status (NOT writer-down — that would fire a false Ollama/writer page). Lock
+    free → run, then release on the same connection.
+    """
+
+    def _pool(self, *, lock_free, writer="gemma3:27b"):
+        p = _make_pool()
+
+        async def _fv(_query, *args):
+            key = args[0] if args else None
+            return {"pipeline_writer_model": writer}.get(key)
+
+        # Settings resolution reads via the POOL; the advisory lock reads via
+        # the acquired CONNECTION — distinct objects, set independently.
+        p.fetchval = AsyncMock(side_effect=_fv)
+        p._lock_conn.fetchval = AsyncMock(return_value=lock_free)
+        return p
+
+    async def test_skips_without_loading_writer_when_lock_held(self):
+        p = self._pool(lock_free=False)
+        with patch("urllib" + ".request.urlopen") as urlopen:
+            r = await hp.probe_content_gen(p)
+        # Non-alerting skip — must NOT report the writer as down.
+        assert r["ok"] is True
+        assert r.get("status") == "skipped_gpu_busy"
+        # The ~19GB writer was NOT loaded: /api/generate never called.
+        urlopen.assert_not_called()
+        # Never acquired the lock → must not release someone else's.
+        assert not [
+            c for c in p._lock_conn.execute.await_args_list
+            if "pg_advisory_unlock" in c.args[0]
+        ]
+
+    async def test_probes_lock_with_shared_gpu_key(self):
+        p = self._pool(lock_free=False)
+        with patch("urllib" + ".request.urlopen"):
+            await hp.probe_content_gen(p)
+        call = p._lock_conn.fetchval.await_args
+        assert "pg_try_advisory_lock" in call.args[0]
+        # Same int64 key the worker's GPUScheduler holds (kept in sync by value).
+        assert call.args[1] == hp.GPU_ADVISORY_LOCK_KEY == 7_777_777_777
+
+    async def test_runs_and_unlocks_when_lock_free(self):
+        p = self._pool(lock_free=True, writer="gemma3:27b")
+        resp = MagicMock()
+        resp.read.return_value = (
+            b'{"response": "FastAPI is a modern Python web framework for APIs."}'
+        )
+        with patch("urllib" + ".request.urlopen", return_value=resp):
+            r = await hp.probe_content_gen(p)
+        assert r["ok"] is True
+        assert r["model"] == "gemma3:27b"
+        # Released the lock on the SAME connection, with the shared key.
+        unlocks = [
+            c for c in p._lock_conn.execute.await_args_list
+            if "pg_advisory_unlock" in c.args[0]
+        ]
+        assert len(unlocks) == 1
+        assert unlocks[0].args[1] == hp.GPU_ADVISORY_LOCK_KEY
+
+    async def test_unlocks_even_if_probe_work_raises(self):
+        # An advisory-lock leak would block the worker's real GPU scheduler,
+        # so the release MUST live in a finally.
+        p = self._pool(lock_free=True)
+        with patch.object(
+            hp, "_resolve_content_gen_model",
+            new=AsyncMock(side_effect=RuntimeError("boom")),
+        ):
+            with pytest.raises(RuntimeError):
+                await hp.probe_content_gen(p)
+        unlocks = [
+            c for c in p._lock_conn.execute.await_args_list
+            if "pg_advisory_unlock" in c.args[0]
+        ]
+        assert len(unlocks) == 1

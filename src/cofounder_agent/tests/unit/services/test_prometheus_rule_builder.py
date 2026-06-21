@@ -408,6 +408,46 @@ class TestWindowsExporterDownStaticRule:
 
 
 # ---------------------------------------------------------------------------
+# OllamaNoModelsLoaded — must not false-fire on a transient /api/tags timeout
+# ---------------------------------------------------------------------------
+
+
+class TestOllamaNoModelsLoadedRule:
+    """The 'Ollama up but no models' critical must be guarded against
+    unreachability.
+
+    ``metrics_exporter`` zeroes BOTH ``poindexter_ollama_reachable`` AND
+    ``poindexter_ollama_model_count`` in one ``except`` branch when its 3s
+    ``/api/tags`` scrape errors — which happens transiently under heavy GPU
+    render load (wan + SDXL saturating the box). A bare ``model_count == 0``
+    expr then pages a CRITICAL "up but no models" even though the truth is
+    "Ollama didn't answer a health ping in time" — already covered by the
+    static ``PoindexterOllamaDown`` (``reachable == 0``) alert. The
+    ``unless poindexter_ollama_reachable == 0`` guard routes timeouts to the
+    reachability alert and keeps ONLY the genuine up-but-empty case
+    (reachable=1, count=0). Observed as a false critical 2026-06-21 18:21
+    during a media render.
+    """
+
+    def test_expr_present_and_guards_unreachable(self):
+        rule = rb.DEFAULT_RULES["OllamaNoModelsLoaded"]
+        expr = rule["expr"]
+        # Still fires on genuine up-but-empty...
+        assert "poindexter_ollama_model_count == 0" in expr
+        # ...but NOT when Ollama is unreachable (timeout → reachable==0).
+        assert "unless poindexter_ollama_reachable == 0" in expr
+        assert rule["severity"] == "critical"
+
+    @pytest.mark.asyncio
+    async def test_guard_renders_into_yaml(self):
+        pool = _FakePool([])
+        out = await rb.build_current(pool)
+        assert "alert: OllamaNoModelsLoaded" in out
+        # The reachability guard survives rendering (it's part of the expr).
+        assert "unless poindexter_ollama_reachable == 0" in out
+
+
+# ---------------------------------------------------------------------------
 # Disk absent() guards — DB-rendered rules (poindexter#705)
 # ---------------------------------------------------------------------------
 

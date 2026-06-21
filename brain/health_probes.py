@@ -94,6 +94,18 @@ except ImportError:  # pragma: no cover - exercised in minimal dev envs
 # inside a container, so the same DB value works in both environments.
 API_URL = localize_url(os.getenv("API_URL") or "http://localhost:8002")
 LOCAL_OLLAMA = localize_url(os.getenv("OLLAMA_URL") or "http://localhost:11434")
+
+# Cross-process GPU arbitration key. MUST stay in sync, BY VALUE, with
+# ``services.gpu_scheduler.GPU_ADVISORY_LOCK_KEY`` (same int64). The brain runs
+# in its own container (stdlib + asyncpg only) and cannot import the worker's
+# gpu_scheduler, so the key is duplicated here rather than imported. The
+# worker's GPUScheduler holds ``pg_advisory_lock(this key)`` on a dedicated
+# connection for the whole of every GPU session (Ollama inference, SDXL image
+# gen, wan video render); the brain's writer-model probe takes the same lock
+# NON-BLOCKINGLY (``pg_try_advisory_lock``) so it never loads the ~19GB writer
+# into VRAM mid-render (would oversubscribe the 32GB card → SDXL CUDA-OOM →
+# degraded video; observed 2026-06-21).
+GPU_ADVISORY_LOCK_KEY: int = 7_777_777_777
 # Where Alertmanager is reachable from the brain. Used to decide whether the
 # PROMETHEUS_COVERED suppression is safe (#304): if Alertmanager is down, the
 # brain must NOT defer covered-probe alerts to it (that would be a double-blind).
@@ -351,16 +363,14 @@ async def _resolve_content_gen_model(pool) -> str:
     return _CONTENT_GEN_FALLBACK_MODEL
 
 
-async def probe_content_gen(_pool) -> dict:
-    """Probe: Check Ollama can generate text — 1-sentence test.
+async def _probe_content_gen_inner(pool) -> dict:
+    """Exercise the writer model (resolve + ``/api/generate``).
 
-    Uses the DB-configured writer model (``pipeline_writer_model``, then
-    ``default_ollama_model``) rather than a hardcoded tag, so the probe
-    exercises a model that's actually installed. A hardcoded model that
-    isn't pulled makes ``/api/generate`` 404 and the probe falsely
-    reports content generation broken (#228 follow-up).
+    Split out from ``probe_content_gen`` so the latter stays a thin GPU-lock
+    wrapper. Runs ONLY while the caller holds the GPU advisory lock — it loads
+    the ~19GB writer into VRAM, so it must never run concurrently with a render.
     """
-    model = await _resolve_content_gen_model(_pool)
+    model = await _resolve_content_gen_model(pool)
     ok, result = await asyncio.to_thread(
         _http_json,
         f"{LOCAL_OLLAMA}/api/generate",
@@ -392,6 +402,62 @@ async def probe_content_gen(_pool) -> dict:
         "response_length": len(response_text),
         "detail": "generation working" if has_content else "empty response",
     }
+
+
+async def probe_content_gen(pool) -> dict:
+    """Probe: Check Ollama can generate text — 1-sentence test.
+
+    GPU arbitration (2026-06-21): exercising the writer loads the ~19GB model
+    into VRAM. Firing during a media render (wan + SDXL already near the 32GB
+    ceiling) oversubscribes the GPU → SDXL CUDA-OOM → degraded video. The brain
+    can't import ``services.gpu_scheduler`` (separate stdlib+asyncpg container),
+    but it shares Postgres, so it takes the SAME cross-process GPU advisory lock
+    NON-BLOCKINGLY: if a render/LLM job holds it, the probe SKIPS this cycle
+    with a non-alerting status (NOT a writer-down failure — that would fire a
+    false writer/Ollama page). Lock and unlock run on one pinned connection
+    (advisory locks are session-scoped) and the release is in a ``finally`` so a
+    crash can't leak the lock and wedge the worker's real GPU scheduler.
+
+    Uses the DB-configured writer model (``pipeline_writer_model``, then
+    ``default_ollama_model``) rather than a hardcoded tag, so the probe
+    exercises a model that's actually installed. A hardcoded model that
+    isn't pulled makes ``/api/generate`` 404 and the probe falsely
+    reports content generation broken (#228 follow-up).
+    """
+    async with pool.acquire() as conn:
+        acquired = bool(
+            await conn.fetchval(
+                "SELECT pg_try_advisory_lock($1)", GPU_ADVISORY_LOCK_KEY
+            )
+        )
+        if not acquired:
+            # A render or LLM job holds the GPU. The skip is observable (this
+            # log line + the ``skipped_gpu_busy`` status persisted to
+            # brain_knowledge) and non-alerting (ok=True), so monitoring is
+            # never blinded and we never report the writer DOWN just because
+            # the GPU is legitimately busy.
+            logger.info(
+                "[content_gen] GPU advisory lock (key=%d) is held — a media "
+                "render or LLM job is using the GPU; skipping the writer-model "
+                "probe this cycle to avoid loading the ~19GB writer into VRAM "
+                "during contention (deferred, NOT a writer-down condition).",
+                GPU_ADVISORY_LOCK_KEY,
+            )
+            return {
+                "ok": True,
+                "status": "skipped_gpu_busy",
+                "detail": (
+                    "skipped — GPU busy (advisory lock held by an active "
+                    "render or LLM job); writer-model probe deferred to the "
+                    "next cycle to avoid VRAM oversubscription"
+                ),
+            }
+        try:
+            return await _probe_content_gen_inner(pool)
+        finally:
+            await conn.execute(
+                "SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY
+            )
 
 
 async def probe_research_service(pool) -> dict:

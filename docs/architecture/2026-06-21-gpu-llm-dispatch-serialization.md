@@ -2,7 +2,7 @@
 
 - **Date:** 2026-06-21
 - **Status:** Accepted
-- **Related:** PR #1766 (media render holds `gpu.lock("video")`), 2026-06-19 validation finding #7 / #4-serial residual
+- **Related:** PR #1766 (media render holds `gpu.lock("video")`), 2026-06-19 validation finding #7 / #4-serial residual. Follow-up: brain writer-probe gating + `OllamaNoModelsLoaded` reachability guard (the brain is the one un-gated caller the worker-side chokepoint can't reach).
 
 ## Problem
 
@@ -60,6 +60,55 @@ blocks every local LLM call until it finishes, and an in-flight local LLM call
 blocks a render from starting mid-inference. Contention is impossible by
 construction, at the one point every LLM call already flows through.
 
+## Brain writer-model probe (separate process, non-blocking)
+
+The chokepoint above closes the gap for the worker — but the
+`poindexter-brain-daemon` is a **separate container** (stdlib + asyncpg +
+urllib only; no FastAPI / `services` imports), so it can neither import
+`gpu_scheduler` nor route through `dispatch_complete`. Its `content_gen` health
+probe (`brain/health_probes.py::probe_content_gen`) exercises the DB-configured
+writer via Ollama `/api/generate`, loading the ~19 GB writer into VRAM — the
+same contention, from a process the chokepoint can't see.
+
+The brain shares one thing with the worker: Postgres. So it takes the **same**
+cross-process advisory lock, by value — `GPU_ADVISORY_LOCK_KEY = 7_777_777_777`
+duplicated into `health_probes.py` with a comment cross-referencing
+`services/gpu_scheduler.py` (the brain can't import the constant). Two
+differences from the worker path:
+
+1. **Non-blocking.** A health probe must not stall for a multi-minute render,
+   so it uses `pg_try_advisory_lock` (not the worker's blocking
+   `pg_advisory_lock`). Lock held → **skip** this cycle; lock free → run the
+   probe, then `pg_advisory_unlock` on the **same** pinned connection in a
+   `finally` (advisory locks are session-scoped — a leaked lock would wedge the
+   worker's real scheduler).
+2. **Skip is non-alerting and observable.** The skip returns
+   `{"ok": true, "status": "skipped_gpu_busy"}` (logged + persisted to
+   `brain_knowledge`), NOT a failure — reporting the writer DOWN merely because
+   the GPU is legitimately busy would be a false page.
+
+Net: the brain's writer probe never adds VRAM pressure during a render, and a
+render still can't start mid-probe (the probe holds the real lock for its
+~30 s `/api/generate`, at most once per 30 min).
+
+## False-critical: `OllamaNoModelsLoaded`
+
+During the same 2026-06-21 render the `OllamaNoModelsLoaded` alert fired a
+spurious **critical** at 18:21. It is **not** brain-raised — it is a DB-rendered
+rule (`prometheus_rule_builder.py`) over `poindexter_ollama_model_count`, a
+gauge the **worker's** `metrics_exporter` sets from Ollama `/api/tags` (counts
+_installed_ models, which a VRAM eviction never empties). Under render load that
+3 s scrape can time out, and the exporter's `except` branch zeroes **both**
+`poindexter_ollama_reachable` and `poindexter_ollama_model_count`. The bare
+`model_count == 0` expr then pages "up but no models" when the truth is "Ollama
+didn't answer in time" — already owned by the static `PoindexterOllamaDown`
+(`reachable == 0`).
+
+Fix: guard the expr with `unless poindexter_ollama_reachable == 0` (mirrors the
+existing `unless approval_queue_length > 0` cost-alert idiom). Timeouts route to
+the reachability alert; only the genuine up-but-empty case (`reachable=1,
+count=0`) still fires the dedicated critical.
+
 ## Testing
 
 - `test_gpu_scheduler.py`: nested `gpu.lock` does not deadlock; the
@@ -68,8 +117,22 @@ construction, at the one point every LLM call already flows through.
   inner acquire does not re-evict Ollama.
 - dispatcher tests: `dispatch_complete` locks local calls, skips cloud calls,
   and honors `gpu_serialize_llm_dispatch=false`.
+- `test_brain_health_probes.py::TestProbeContentGenGpuLock`: the writer probe
+  skips (non-alerting, `status=skipped_gpu_busy`) without calling
+  `/api/generate` when `pg_try_advisory_lock` returns false; probes with the
+  shared `GPU_ADVISORY_LOCK_KEY`; runs and releases on the same connection when
+  the lock is free; and unlocks in `finally` even when the probe body raises.
+- `test_prometheus_rule_builder.py::TestOllamaNoModelsLoadedRule`: the
+  `OllamaNoModelsLoaded` expr carries the `unless reachable == 0` guard and it
+  survives YAML rendering.
 
 ## Rollout
 
 Pure code plus a default-true setting; takes effect on worker restart
 (deploy-from-sync). No migration. Reversible via `gpu_serialize_llm_dispatch=false`.
+
+The brain probe gating is image-baked into `poindexter-brain-daemon`, so it
+takes effect on a brain rebuild + recreate (not a bind-mount restart). The
+`OllamaNoModelsLoaded` guard re-renders into `rules/*.yml` within ~5 min via
+`RenderPrometheusRulesJob` (no restart needed). Both are pure code — no
+migration, no settings.
