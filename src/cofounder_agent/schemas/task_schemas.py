@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
+from schemas.database_response_models import ListResponse
 from schemas.unified_task_response import UnifiedTaskResponse
 
 
@@ -375,13 +376,15 @@ class TaskResponse(BaseModel):
     )
 
 
-class TaskListResponse(BaseModel):
-    """Schema for task list response with pagination"""
+class TaskListResponse(ListResponse[UnifiedTaskResponse]):
+    """Task list — canonical offset envelope (poindexter#745).
 
-    tasks: list[UnifiedTaskResponse]
-    total: int
-    offset: int
-    limit: int
+    ``{items, total, limit, offset}`` via ``ListResponse[UnifiedTaskResponse]``.
+    The list field renamed ``tasks`` → ``items``; the pagination fields were
+    already offset-based. The one in-repo consumer (the ``poindexter tasks
+    list`` CLI) is updated in lockstep — operator endpoint, no public-site
+    reader.
+    """
 
 
 class MetricsResponse(BaseModel):

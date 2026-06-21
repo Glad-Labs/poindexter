@@ -151,7 +151,7 @@ class TestListTasks:
         resp = client.get("/api/tasks")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["tasks"] == []
+        assert data["items"] == []
         assert data["total"] == 0
         assert data["offset"] == 0
         assert data["limit"] == 20
@@ -194,8 +194,8 @@ class TestListTasks:
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 1
-        assert len(data["tasks"]) == 1
-        assert data["tasks"][0]["status"] == "pending"
+        assert len(data["items"]) == 1
+        assert data["items"][0]["status"] == "pending"
 
     def test_limit_out_of_range_returns_422(self):
         client = TestClient(_build_app())

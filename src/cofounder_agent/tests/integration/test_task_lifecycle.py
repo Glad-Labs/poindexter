@@ -173,8 +173,9 @@ class TestTaskCreateThenFetch:
         response = client.get(f"{BASE}/", params={"limit": 10, "offset": 0})
         assert response.status_code == 200
         body = response.json()
-        # Response must have tasks array and total
-        assert "tasks" in body or isinstance(body, list)
+        # Canonical list envelope (poindexter#745): {items, total, limit, offset}
+        assert set(body) >= {"items", "total", "limit", "offset"}
+        assert isinstance(body["items"], list)
 
     def test_list_tasks_pagination_params_respected(self):
         db = _make_mock_db()

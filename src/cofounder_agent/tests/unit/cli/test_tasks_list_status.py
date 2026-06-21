@@ -50,8 +50,10 @@ def test_list_accepts_status_approved(runner):
     fake_client = AsyncMock()
     fake_client.__aenter__.return_value = fake_client
     fake_client.get.return_value = MagicMock()
+    # Canonical list envelope (poindexter#745): the worker returns ``items``,
+    # not the legacy ``tasks`` key. The CLI reads ``items``.
     fake_client.json_or_raise.return_value = {
-        "tasks": [
+        "items": [
             {"id": "6a7e6951abcd", "status": "approved", "title": "Indie games"},
         ],
         "total": 1,

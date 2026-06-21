@@ -13,6 +13,7 @@ import pytest
 
 from schemas import ListResponse, PaginatedResponse
 from schemas.settings_schemas import SettingListResponse
+from schemas.task_schemas import TaskListResponse
 
 pytestmark = pytest.mark.unit
 
@@ -22,6 +23,7 @@ pytestmark = pytest.mark.unit
 # regression to a bespoke page-based body fails loudly.
 ENDPOINT_LIST_MODELS = [
     SettingListResponse,  # step 3 — GET /api/settings/
+    TaskListResponse,  # step 4 — GET /api/tasks
 ]
 
 

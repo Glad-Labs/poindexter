@@ -87,7 +87,7 @@ def tasks_list(status: str, limit: int, json_output: bool) -> None:
         click.echo(f"Error: {e}", err=True)
         sys.exit(1)
 
-    tasks = data.get("tasks") or []
+    tasks = data.get("items") or []
     if json_output:
         click.echo(json.dumps(tasks, indent=2, default=str))
         return

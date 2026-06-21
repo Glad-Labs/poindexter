@@ -796,7 +796,7 @@ async def list_tasks(
                 validated_tasks.append(task)
 
         return TaskListResponse(
-            tasks=validated_tasks,
+            items=validated_tasks,
             total=total,
             offset=offset,
             limit=limit,

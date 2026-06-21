@@ -1044,7 +1044,8 @@ async def health(ctx):
 @bot.slash_command(name="tasks", description="List posts awaiting approval")
 async def tasks(ctx):
     data = await _api_call("GET", "/api/tasks?status=awaiting_approval")
-    task_list = data if isinstance(data, list) else data.get("tasks", [])
+    # Canonical list envelope (poindexter#745): worker returns ``items``.
+    task_list = data if isinstance(data, list) else data.get("items", [])
     if not task_list:
         await ctx.respond("No posts awaiting approval.")
         return

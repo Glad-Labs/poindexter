@@ -320,7 +320,8 @@ async def handle_command(text: str, chat_id: str):
 
     elif cmd == "/tasks":
         data = await api_call("GET", "/api/tasks?status=awaiting_approval")
-        task_list = data if isinstance(data, list) else data.get("tasks", [])
+        # Canonical list envelope (poindexter#745): worker returns ``items``.
+        task_list = data if isinstance(data, list) else data.get("items", [])
         if not task_list:
             await send_message("No posts awaiting approval.", chat_id)
             return

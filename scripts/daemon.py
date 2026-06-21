@@ -181,7 +181,7 @@ def auto_publish():
     for status in ["awaiting_approval", "approved"]:
         try:
             data = _api_get(f"/api/tasks?status={status}&limit=30", timeout=10)
-            tasks = data.get("tasks", [])
+            tasks = data.get("items", [])
         except Exception as _e:
             logger.warning("API request failed: %s", _e)
             continue
@@ -292,7 +292,7 @@ def get_pending_task_count():
     """Check how many tasks are waiting in the queue."""
     try:
         data = _api_get("/api/tasks?status=pending&limit=1", timeout=10)
-        return len(data.get("tasks", []))
+        return len(data.get("items", []))
     except Exception:
         return -1
 
@@ -325,7 +325,7 @@ def run_opportunistic_task():
     # These were scored before calibration and might now pass the threshold
     try:
         data = _api_get("/api/tasks?status=awaiting_approval&limit=50", timeout=10)
-        held_tasks = data.get("tasks", [])
+        held_tasks = data.get("items", [])
         low_scored = [t for t in held_tasks if (t.get("quality_score") or 0) < 75]
 
         if low_scored:
@@ -350,7 +350,7 @@ def run_opportunistic_task():
     # Priority 2: Pre-generate content if we're running low
     try:
         data = _api_get("/api/tasks?status=awaiting_approval&limit=1", timeout=10)
-        ready_count = len(data.get("tasks", []))
+        ready_count = len(data.get("items", []))
 
         if ready_count < 3:
             logger.info("[OPPORTUNISTIC] Content buffer low (%d), requesting topic via API", ready_count)
