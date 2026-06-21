@@ -12,14 +12,21 @@
 set -euo pipefail
 
 BOOTSTRAP="${USERPROFILE:-$HOME}/.poindexter/bootstrap.toml"
-# Use the operator stack if available, otherwise the customer stack
-if [ -f "docker-compose.local.yml" ]; then
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
+# Use the operator stack if available, otherwise the customer stack. Anchor the
+# existence check to PROJECT_DIR (derived from $0), NOT the caller's CWD: this
+# script is invoked from arbitrary working directories — the deploy-checkout-sync
+# Scheduled Task's apply step runs it from C:\Windows\System32 — and a CWD-relative
+# check there silently falls back to the customer docker-compose.yml, then
+# reconciles the operator project against the wrong topology (tearing down
+# operator-only services). COMPOSE_FILE stays a basename; the `docker compose -f`
+# call runs after `cd "$PROJECT_DIR"` below, so the basename resolves correctly.
+if [ -f "$PROJECT_DIR/docker-compose.local.yml" ]; then
     COMPOSE_FILE="docker-compose.local.yml"
 else
     COMPOSE_FILE="docker-compose.yml"
 fi
-SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 
 if [ ! -f "$BOOTSTRAP" ]; then
     echo "ERROR: $BOOTSTRAP not found."
