@@ -1011,6 +1011,17 @@ DEFAULTS: dict[str, str] = {
     'compose_drift_host_recover_cap_per_window': '3',
     'compose_drift_host_recover_window_minutes': '60',
 
+    # ----- Scheduled-tasks probe (brain/health_probes.py::probe_scheduled_tasks) -----
+    # The containerised brain can't enumerate the host Windows Task Scheduler, so
+    # it asks the host Recovery Agent (GET /tasks — shares mcp_http_probe_recovery_url
+    # + _token, same agent) for the status of the host Scheduled Tasks named here
+    # (CSV), then pages when one is DISABLED, missing, or its last run failed.
+    # Empty default = advisory no-op (fail-open) so an operator without the agent —
+    # or on a non-Windows host — never pages. Set it to the host's self-heal task
+    # names to enable, e.g.
+    # "Poindexter Recovery Agent,Poindexter MCP HTTP,Poindexter-DeployCheckoutSync".
+    'scheduled_tasks_probe_watch_tasks': '',
+
     # ----- API rate limits (slowapi — poindexter#748) -----
     # slowapi limit strings: "<count>/<period>" e.g. "5/minute", "100/hour".
     # Limits are read at request time so operators can tune via app_settings

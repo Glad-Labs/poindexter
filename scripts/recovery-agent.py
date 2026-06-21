@@ -16,6 +16,17 @@ Two action kinds, dispatched by the ``service`` field of the POST body:
                             reconciles drifted containers back to the compose
                             spec (consumer: ``brain/compose_drift_probe.py``).
 
+Plus a read-only status endpoint:
+
+  - ``GET /tasks``        → report ``{enabled, state, last_run_result}`` for the
+                            host Scheduled Tasks named in the ``?name=`` query
+                            params (consumer: ``brain/health_probes.py``'s
+                            ``scheduled_tasks`` probe). The brain can't enumerate
+                            the host Task Scheduler from inside its container, so
+                            this agent reflects task status back over HTTP. The
+                            agent stays a dumb reflector — it returns raw status
+                            and lets the brain decide what counts as unhealthy.
+
 Why compose-reapply lives HERE and not in the brain: a Linux brain container
 running ``docker compose up`` mangles Windows ``C:\\`` bind-mount sources into
 ``/app/C:\\...`` (the daemon then auto-creates them as empty dirs and wipes
@@ -42,6 +53,7 @@ import shutil
 import subprocess
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
+from urllib.parse import parse_qs, urlsplit
 
 logging.basicConfig(
     level=logging.INFO,
@@ -254,6 +266,116 @@ def dispatch_recovery(
     return (200 if ok else 500), {"ok": ok, "service": service, "detail": detail}
 
 
+# ---------------------------------------------------------------------------
+# Status capability (read-only — GET /tasks). The brain runs in a Linux
+# container and cannot enumerate the host's Windows Task Scheduler, so it asks
+# this agent (which runs ON the host) for the status of a set of task names.
+# Returns {name, exists, enabled, state, last_run_result} per task and lets the
+# brain decide what's healthy — the agent stays a dumb reflector.
+# ---------------------------------------------------------------------------
+
+
+def _scheduled_task_status(task_names: list[str]) -> tuple[bool, list[dict] | str]:
+    """Query Windows Task Scheduler for each name. Returns ``(ok, tasks | error)``.
+
+    On success ``tasks`` is a list of ``{name, exists, enabled, state,
+    last_run_result}`` dicts. ``Get-ScheduledTask`` supplies ``.Settings.Enabled``
+    (the flag ``Set-ScheduledTask -Action`` silently flips to ``False``) and
+    ``.State``; ``Get-ScheduledTaskInfo`` supplies ``.LastTaskResult`` (0 =
+    success). A name that doesn't resolve comes back ``exists=false`` rather than
+    erroring the whole batch. On failure (PowerShell missing, non-zero exit,
+    unparseable output) returns ``(False, error_string)`` — never raises.
+    """
+    # Double single quotes so a task name can't break out of the '...' literal
+    # (mirrors _restart_task's escaping).
+    names_literal = ", ".join("'" + n.replace("'", "''") + "'" for n in task_names)
+    script = (
+        "$ErrorActionPreference='SilentlyContinue';"
+        "$names=@(" + names_literal + ");"
+        "$out=foreach($n in $names){"
+        "$t=Get-ScheduledTask -TaskName $n -ErrorAction SilentlyContinue;"
+        "if($null -eq $t){"
+        "[pscustomobject]@{name=$n;exists=$false;enabled=$null;state=$null;last_run_result=$null}"
+        "}else{"
+        "$i=Get-ScheduledTaskInfo -TaskName $n -ErrorAction SilentlyContinue;"
+        "[pscustomobject]@{name=$n;exists=$true;enabled=[bool]$t.Settings.Enabled;"
+        "state=[string]$t.State;"
+        "last_run_result=$(if($i){[int64]$i.LastTaskResult}else{$null})}"
+        "}"
+        "};"
+        # @($out) forces an array even for one task; the brain-side parser also
+        # normalizes the bare-object case Windows PowerShell 5.1 still emits.
+        "ConvertTo-Json -InputObject @($out) -Depth 4 -Compress"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True,
+            text=True,
+            timeout=TASK_TIMEOUT_SECONDS,
+            creationflags=_NO_WINDOW,
+        )
+    except Exception as exc:
+        logger.error("Scheduled-task status subprocess error: %s", exc)
+        return False, f"{type(exc).__name__}: {exc}"
+    if result.returncode != 0:
+        return False, (result.stderr or result.stdout or "powershell error").strip()[:300]
+    raw = (result.stdout or "").strip()
+    if not raw:
+        return True, []
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        return False, f"could not parse PowerShell JSON: {exc}"
+    if parsed is None:
+        return True, []
+    if isinstance(parsed, dict):  # PS 5.1 emits a bare object for a single task
+        parsed = [parsed]
+    if not isinstance(parsed, list):
+        return False, f"unexpected PowerShell JSON shape: {type(parsed).__name__}"
+    return True, parsed
+
+
+def query_task_statuses(
+    task_names: list[str],
+    *,
+    status_fn=_scheduled_task_status,
+) -> tuple[int, dict]:
+    """Pure dispatch from a list of task names to ``(http_status, body)``.
+
+    Read-only sibling of :func:`dispatch_recovery`. ``status_fn`` is injectable
+    so this is unit-testable without a real Task Scheduler.
+    """
+    if not task_names:
+        return 200, {"ok": True, "tasks": []}
+    ok, result = status_fn(task_names)
+    if not ok:
+        logger.warning("Task-status query FAILED for %r → %s", task_names, result)
+        return 500, {"ok": False, "error": result}
+    return 200, {"ok": True, "tasks": result}
+
+
+def _task_names_from_query(query: str) -> list[str]:
+    """Resolve requested task names from a ``GET /tasks`` query string.
+
+    Accepts repeated ``?name=`` params (the brain's form — one per watched task)
+    and a ``?names=`` CSV (manual-curl convenience). De-duplicates while
+    preserving first-seen order.
+    """
+    parsed = parse_qs(query)
+    raw: list[str] = list(parsed.get("name", []))
+    for csv in parsed.get("names", []):
+        raw.extend(csv.split(","))
+    out: list[str] = []
+    seen: set[str] = set()
+    for name in raw:
+        name = name.strip()
+        if name and name not in seen:
+            seen.add(name)
+            out.append(name)
+    return out
+
+
 def authorized(auth_header: str, token: str) -> tuple[bool, str]:
     """Validate the Bearer header against the configured token.
 
@@ -296,10 +418,21 @@ class RecoveryHandler(BaseHTTPRequestHandler):
         self._send_json(status, payload)
 
     def do_GET(self) -> None:  # noqa: N802
-        if self.path in {"/healthz", "/health"}:
+        route = urlsplit(self.path)
+        if route.path in {"/healthz", "/health"}:
             self._send_json(200, {"ok": True, "service": "poindexter-recovery-agent"})
-        else:
-            self.send_error(404)
+            return
+        if route.path == "/tasks":
+            # Status reflects host task names/state — authenticate like /recover
+            # rather than leaving it open like /healthz.
+            ok_auth, auth_err = authorized(self.headers.get("Authorization", ""), self._token)
+            if not ok_auth:
+                self._send_json(401, {"ok": False, "error": auth_err})
+                return
+            status, payload = query_task_statuses(_task_names_from_query(route.query))
+            self._send_json(status, payload)
+            return
+        self.send_error(404)
 
     def _send_json(self, status: int, body: dict) -> None:
         payload = json.dumps(body).encode()

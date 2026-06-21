@@ -19,6 +19,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+from collections.abc import Callable
 from datetime import UTC
 from typing import Any
 
@@ -29,6 +30,16 @@ except ImportError:
     # When imported as ``brain.health_probes`` (tests, notebooks), use
     # package-qualified path.
     from brain.docker_utils import localize_url, resolve_url
+
+try:  # secret_reader decrypts secret app_settings (the recovery token).
+    from secret_reader import read_app_setting as _read_app_setting
+except ImportError:  # pragma: no cover — package-qualified path (tests)
+    from brain.secret_reader import read_app_setting as _read_app_setting
+
+try:  # httpx is pinned in the brain image; guard for minimal dev envs.
+    import httpx
+except ImportError:  # pragma: no cover
+    httpx = None  # type: ignore[assignment]
 
 logger = logging.getLogger("brain.probes")
 
@@ -493,73 +504,172 @@ async def probe_public_site(_pool) -> dict:
         return {"ok": False, "detail": f"Public site check failed: {str(e)[:100]}"}
 
 
-async def probe_scheduled_tasks(_pool) -> dict:
-    """Probe: Check Windows scheduled tasks for failures (non-zero last result)."""
-    if platform.system() != "Windows":
-        # Post-containerization the brain daemon runs in a Linux container, so
-        # this branch is taken every cycle. It cannot see host Windows Task
-        # Scheduler entries from inside the container — so reporting ok:True
-        # here is fake-healthy: it tells the operator this surface is covered
-        # when it isn't (the autonomous-session schtasks + host daemons go
-        # unwatched). Report the gap honestly instead (#704).
-        #
-        # This pages only ONCE: run_health_probes alerts when the failure
-        # count first hits ALERT_AFTER_FAILURES, then the probe sits
-        # visibly-degraded on the health surface (no chronic re-paging). Real
-        # host-side coverage (a completion-beacon / schtasks textfile-collector
-        # heartbeat → Prometheus absence rule) is the part-2 follow-up.
+# ---------------------------------------------------------------------------
+# Scheduled-tasks probe — host self-heal task liveness via the Recovery Agent.
+#
+# The brain runs in a Linux container and can't enumerate the host's Windows
+# Task Scheduler (the long-standing "needs migration" gap, #704). Instead it
+# asks the host Recovery Agent (GET /tasks — see scripts/recovery-agent.py) for
+# the status of an operator-configured watch list, then pages when a watched
+# self-heal task is disabled, missing, or its last run failed. The watch list +
+# agent URL/token live in app_settings (config-in-DB), so the agent stays a
+# generic reflector with no operator task names baked into the mirrored script.
+# ---------------------------------------------------------------------------
+
+# Shared with mcp_http_probe + compose_drift_probe — same physical agent.
+RECOVERY_URL_KEY = "mcp_http_probe_recovery_url"
+RECOVERY_TOKEN_KEY = "mcp_http_probe_recovery_token"  # noqa: S105 — setting key, not a secret
+SCHED_TASKS_WATCH_KEY = "scheduled_tasks_probe_watch_tasks"
+
+# Windows "Last Result" codes that are NOT failures: 0 = success, 1 =
+# running/queued, 267009 = SCHED_S_TASK_RUNNING, 267011 = SCHED_S_TASK_HAS_NOT_RUN
+# (the same set the legacy direct-schtasks probe treated as healthy).
+_OK_LAST_RESULT_CODES: frozenset[int] = frozenset({0, 1, 267009, 267011})
+
+
+def _derive_tasks_url(recovery_url: str) -> str:
+    """Turn the agent's ``/recover`` URL into its ``/tasks`` sibling.
+
+    ``mcp_http_probe_recovery_url`` points at the agent's POST ``/recover``
+    endpoint; the read-only status endpoint lives at ``/tasks`` on the same
+    host:port. Swaps the final path segment.
+    """
+    base = recovery_url.rstrip("/").rsplit("/", 1)[0]
+    return base + "/tasks"
+
+
+def _task_problem(task: dict) -> str | None:
+    """Return a one-line problem for an unhealthy task, or None when healthy.
+
+    Single source of truth for the page decision: a task is unhealthy if it's
+    missing on the host, disabled (``Settings.Enabled=False`` or
+    ``State=Disabled`` — the state ``Set-ScheduledTask -Action`` silently leaves
+    it in), or its last run returned a non-OK result code.
+    """
+    name = str(task.get("name", "?"))
+    if not task.get("exists", True):
+        return f"{name}: not found on host"
+    state = task.get("state")
+    if task.get("enabled") is False or (
+        isinstance(state, str) and state.lower() == "disabled"
+    ):
+        return f"{name}: DISABLED"
+    lrr = task.get("last_run_result")
+    if lrr is not None:
+        try:
+            code: int | None = int(lrr)
+        except (TypeError, ValueError):
+            code = None  # unparseable → don't page on it
+        if code is not None and code not in _OK_LAST_RESULT_CODES:
+            return f"{name}: last run failed (exit {code})"
+    return None
+
+
+def _evaluate_scheduled_task_health(tasks: list[dict]) -> tuple[bool, str]:
+    """Reduce a list of task-status dicts to an ``(ok, detail)`` page decision."""
+    problems = [p for t in tasks if (p := _task_problem(t)) is not None]
+    if problems:
+        return False, (
+            f"{len(problems)} watched task(s) unhealthy: " + "; ".join(problems[:5])
+        )
+    return True, f"all {len(tasks)} watched scheduled task(s) healthy"
+
+
+async def probe_scheduled_tasks(
+    pool,
+    *,
+    http_client_factory: Callable[..., Any] | None = None,
+) -> dict:
+    """Probe: verify host self-heal Scheduled Tasks are enabled + last-run-ok.
+
+    The brain can't see the host Windows Task Scheduler from inside its Linux
+    container, so it asks the host Recovery Agent's ``GET /tasks`` endpoint for
+    the status of the tasks named in ``scheduled_tasks_probe_watch_tasks``, then
+    pages when one is disabled, missing, or last-run-failed.
+
+    Fail-open (advisory ``ok=True``) when the agent URL/token are unset or the
+    watch list is empty — an un-configured operator (e.g. a non-Windows OSS
+    install with no agent) never pages, mirroring the host-recover fall-through
+    in compose_drift_probe. Debounce + escalation is the framework's job
+    (``run_health_probes`` pages after ``ALERT_AFTER_FAILURES`` consecutive
+    fails), so this probe only reports a single-cycle ``ok``/``detail``.
+    """
+    watch_csv = await _read_app_setting(pool, SCHED_TASKS_WATCH_KEY, "")
+    watch = [t.strip() for t in watch_csv.split(",") if t.strip()]
+    recovery_url = (await _read_app_setting(pool, RECOVERY_URL_KEY, "")).strip()
+    recovery_token = (await _read_app_setting(pool, RECOVERY_TOKEN_KEY, "")).strip()
+
+    if not recovery_url or not recovery_token:
+        return {
+            "ok": True,
+            "detail": (
+                "recovery agent URL/token unset — host scheduled-task liveness "
+                "not checked (advisory; set mcp_http_probe_recovery_url + "
+                "mcp_http_probe_recovery_token to enable)"
+            ),
+        }
+    if not watch:
+        return {
+            "ok": True,
+            "detail": (
+                "no watched tasks configured — set scheduled_tasks_probe_watch_tasks "
+                "to a CSV of host Scheduled Task names (advisory)"
+            ),
+        }
+
+    if httpx is None and http_client_factory is None:
+        return {
+            "ok": True,
+            "detail": (
+                "httpx unavailable in brain image — scheduled-task liveness "
+                "not checked (advisory)"
+            ),
+        }
+
+    tasks_url = _derive_tasks_url(recovery_url)
+    _httpx: Any = httpx
+    factory = http_client_factory or (lambda: _httpx.AsyncClient(timeout=10))
+
+    try:
+        async with factory() as client:
+            response = await client.get(
+                tasks_url,
+                params={"name": watch},
+                headers={"Authorization": f"Bearer {recovery_token}"},
+            )
+            status_code = response.status_code
+            if not (200 <= status_code < 300):
+                return {
+                    "ok": False,
+                    "detail": (
+                        f"recovery agent GET {tasks_url} returned HTTP {status_code} "
+                        f"— can't verify host scheduled-task health"
+                    ),
+                }
+            body = response.json()
+    except Exception as exc:  # noqa: BLE001 — any transport error is a real signal
         return {
             "ok": False,
             "detail": (
-                "needs migration — probe cannot see host scheduled tasks "
-                "from inside the container"
+                f"recovery agent unreachable at {tasks_url}: {type(exc).__name__}: "
+                f"{exc} — the Recovery Agent task itself may be down"
             ),
         }
-    try:
-        # Query Poindexter scheduled tasks via schtasks
-        result = subprocess.run(
-            ["schtasks", "/query", "/fo", "CSV", "/v"],
-            capture_output=True, text=True, timeout=15,
-        )
-        if result.returncode != 0:
-            return {"ok": False, "detail": f"schtasks failed: {result.stderr[:100]}"}
 
-        # Parse CSV output — look for our tasks with non-zero "Last Result"
-        import csv
-        import io
-        reader = csv.DictReader(io.StringIO(result.stdout))
-        failed_tasks = []
-        for row in reader:
-            task_name = row.get("TaskName", "")
-            # Only check Poindexter tasks (matches existing GladLabs/Poindexter folders)
-            if not any(kw in task_name.lower() for kw in [
-                "openclaw", "worker", "brain", "publisher", "nvidia",
-                "power", "content", "update", "claude",
-                "poindexter", "gladlabs", "glad",
-            ]):
-                continue
-            last_result = row.get("Last Result", "0")
-            # 0 = success, 1 = running/queued (OK), 267011 = task hasn't run yet
-            if last_result not in ("0", "1", "267011", "267009"):
-                try:
-                    code = int(last_result)
-                    if code != 0:
-                        short_name = task_name.split("\\")[-1]
-                        failed_tasks.append(f"{short_name} (exit {code})")
-                except ValueError:
-                    pass
+    if not isinstance(body, dict) or not body.get("ok", False):
+        return {
+            "ok": False,
+            "detail": f"recovery agent /tasks returned an error: {str(body)[:200]}",
+        }
 
-        if failed_tasks:
-            return {
-                "ok": False,
-                "failed": failed_tasks[:5],
-                "detail": f"{len(failed_tasks)} task(s) failing: {', '.join(failed_tasks[:3])}",
-            }
-        return {"ok": True, "detail": "all scheduled tasks healthy"}
-    except subprocess.TimeoutExpired:
-        return {"ok": False, "detail": "schtasks timed out after 15s"}
-    except Exception as e:
-        return {"ok": False, "detail": f"scheduled task check failed: {str(e)[:150]}"}
+    tasks = body.get("tasks") or []
+    ok, detail = _evaluate_scheduled_task_health(tasks)
+    result: dict = {"ok": ok, "detail": detail}
+    if not ok:
+        result["failed"] = [
+            str(t.get("name")) for t in tasks if _task_problem(t) is not None
+        ][:5]
+    return result
 
 
 async def probe_gpu_temperature(pool) -> dict:
@@ -1561,7 +1671,6 @@ REMEDIATION_COOLDOWN = 900  # 15 minutes between remediation attempts per probe
 def _restart_container(container_name: str) -> tuple[bool, str]:
     """Restart a Docker container. Returns (success, message)."""
     try:
-        import subprocess
         result = subprocess.run(
             ["docker", "restart", container_name],
             capture_output=True, text=True, timeout=60,

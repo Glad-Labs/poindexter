@@ -182,3 +182,158 @@ def test_compose_reapply_spawn_failure_is_reported(monkeypatch):
     monkeypatch.setattr(agent.subprocess, "Popen", boom)
     ok, detail = agent._compose_reapply()
     assert ok is False and "OSError" in detail
+
+
+# --- query_task_statuses (status capability — GET /tasks) ------------------
+# The brain runs in a Linux container and can't enumerate the host's Windows
+# Task Scheduler, so the agent (on the host) reflects task status back over
+# GET /tasks. query_task_statuses is the pure dispatch behind that route, with
+# the PowerShell runner injected so these assertions run on Linux CI too.
+
+
+def test_query_task_statuses_empty_names_returns_empty_list():
+    # No names requested → nothing to report (the route resolves names from the
+    # query string; a bare GET /tasks should not error).
+    status, body = agent.query_task_statuses([])
+    assert status == 200
+    assert body == {"ok": True, "tasks": []}
+
+
+def test_query_task_statuses_returns_status_fn_payload():
+    def fake_status(names):
+        assert names == ["Poindexter MCP HTTP"]
+        return True, [
+            {
+                "name": "Poindexter MCP HTTP",
+                "exists": True,
+                "enabled": True,
+                "state": "Ready",
+                "last_run_result": 0,
+            }
+        ]
+
+    status, body = agent.query_task_statuses(
+        ["Poindexter MCP HTTP"], status_fn=fake_status
+    )
+    assert status == 200 and body["ok"] is True
+    assert body["tasks"][0]["name"] == "Poindexter MCP HTTP"
+    assert body["tasks"][0]["enabled"] is True
+
+
+def test_query_task_statuses_status_fn_failure_is_500():
+    status, body = agent.query_task_statuses(
+        ["X"], status_fn=lambda names: (False, "powershell not found")
+    )
+    assert status == 500
+    assert body["ok"] is False
+    assert "powershell not found" in body["error"]
+
+
+# --- _task_names_from_query ------------------------------------------------
+
+
+def test_task_names_from_query_repeated_name_params():
+    # The brain sends one ?name= per watched task (spaces form-encoded).
+    names = agent._task_names_from_query("name=Poindexter+MCP+HTTP&name=DeployCheckoutSync")
+    assert names == ["Poindexter MCP HTTP", "DeployCheckoutSync"]
+
+
+def test_task_names_from_query_csv_form_dedupes_preserving_order():
+    # ?names=A,B,A convenience form for manual curl debugging.
+    assert agent._task_names_from_query("names=A,B,A") == ["A", "B"]
+
+
+def test_task_names_from_query_empty_is_empty_list():
+    assert agent._task_names_from_query("") == []
+
+
+# --- _scheduled_task_status (PowerShell runner) ----------------------------
+
+
+def test_scheduled_task_status_parses_json_array(monkeypatch):
+    canned = (
+        '[{"name":"A","exists":true,"enabled":true,'
+        '"state":"Ready","last_run_result":0}]'
+    )
+
+    def fake_run(argv, **kwargs):
+        # Proves we shell out to PowerShell, embedding the requested task name
+        # and the Get-ScheduledTask / Get-ScheduledTaskInfo cmdlets.
+        assert argv[0] == "powershell"
+        assert "Get-ScheduledTask" in argv[-1]
+        assert "Get-ScheduledTaskInfo" in argv[-1]
+        assert "'A'" in argv[-1]
+        return SimpleNamespace(returncode=0, stdout=canned, stderr="")
+
+    monkeypatch.setattr(agent.subprocess, "run", fake_run)
+    ok, tasks = agent._scheduled_task_status(["A"])
+    assert ok is True
+    assert tasks == [
+        {
+            "name": "A",
+            "exists": True,
+            "enabled": True,
+            "state": "Ready",
+            "last_run_result": 0,
+        }
+    ]
+
+
+def test_scheduled_task_status_wraps_single_object(monkeypatch):
+    # Windows PowerShell 5.1's ConvertTo-Json emits a bare object (not an
+    # array) for a single task — the parser must normalize it to a list.
+    canned = (
+        '{"name":"A","exists":true,"enabled":false,'
+        '"state":"Disabled","last_run_result":0}'
+    )
+    monkeypatch.setattr(
+        agent.subprocess,
+        "run",
+        lambda argv, **k: SimpleNamespace(returncode=0, stdout=canned, stderr=""),
+    )
+    ok, tasks = agent._scheduled_task_status(["A"])
+    assert ok is True and isinstance(tasks, list) and len(tasks) == 1
+    assert tasks[0]["enabled"] is False
+
+
+def test_scheduled_task_status_empty_stdout_is_empty_list(monkeypatch):
+    monkeypatch.setattr(
+        agent.subprocess,
+        "run",
+        lambda argv, **k: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    ok, tasks = agent._scheduled_task_status(["A"])
+    assert ok is True and tasks == []
+
+
+def test_scheduled_task_status_nonzero_exit_is_error(monkeypatch):
+    monkeypatch.setattr(
+        agent.subprocess,
+        "run",
+        lambda argv, **k: SimpleNamespace(returncode=1, stdout="", stderr="boom"),
+    )
+    ok, detail = agent._scheduled_task_status(["A"])
+    assert ok is False and "boom" in detail
+
+
+def test_scheduled_task_status_escapes_single_quotes(monkeypatch):
+    seen = {}
+
+    def fake_run(argv, **kwargs):
+        seen["script"] = argv[-1]
+        return SimpleNamespace(returncode=0, stdout="[]", stderr="")
+
+    monkeypatch.setattr(agent.subprocess, "run", fake_run)
+    agent._scheduled_task_status(["O'Brien Task"])
+    # Single quotes are doubled for PowerShell string-literal safety (mirrors
+    # _restart_task), so the name can't break out of the '...' literal.
+    assert "O''Brien Task" in seen["script"]
+
+
+def test_scheduled_task_status_subprocess_error_is_reported(monkeypatch):
+    def boom(argv, **kwargs):
+        raise FileNotFoundError("powershell missing")
+
+    monkeypatch.setattr(agent.subprocess, "run", boom)
+    ok, detail = agent._scheduled_task_status(["A"])
+    assert ok is False and "FileNotFoundError" in detail
