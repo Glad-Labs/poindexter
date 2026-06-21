@@ -263,6 +263,107 @@ def test_choose_falls_back_to_h1_for_short_rubric_title():
 
 
 # ---------------------------------------------------------------------------
+# Meta-commentary leak — "It is framed as … rather than a …" family
+#
+# Production capture (pipeline task bb878d6b / earlier 2d81e084, niche
+# glad-labs): the title-gen LLM emitted a sentence DESCRIBING its title
+# choice instead of a title.  This is the same species as the They/These
+# rubric bullets above, but uses the pronoun "It" and opens with a bare
+# 3rd-person verb ("Avoids"), so it slipped past _RUBRIC_REASONING_RE and
+# (at 89 chars) under the 90-char length cap.  The seo.generate_all_metadata
+# node produced a CLEAN title for the same post — the leak is specific to
+# the free-text title-gen path.
+# ---------------------------------------------------------------------------
+
+
+def test_real_capture_bb878d6b_meta_commentary_is_junk():
+    """The exact production capture: a sentence about the title choice, not a
+    title.  Must be rejected as junk so choose_canonical_title falls back to
+    the body H1."""
+    junk = (
+        'Avoids the "Dev Diary/PR" style: It is framed as an evergreen '
+        "resource rather than a log."
+    )
+    assert len(junk) <= _DEFAULT_TITLE_MAX_LENGTH  # slips under the length cap
+    assert _is_junk_title(junk) is True
+
+
+@pytest.mark.parametrize(
+    "junk",
+    [
+        # Pronoun "It" after a subtitle label, lowercase continuation = prose.
+        'Frames the article: It reads as a reference, not a changelog.',
+        "Positioning: This is meant as an evergreen explainer rather than news.",
+        # "framed as" is pure meta — a real headline never says it.
+        "The piece is framed as a tutorial.",
+    ],
+)
+def test_it_this_meta_clause_after_label_is_junk(junk: str):
+    """A '<label>: It/This <lowercase prose>' clause is the model narrating
+    its choice — flag it regardless of the novel label."""
+    assert _is_junk_title(junk) is True, f"Expected junk for {junk!r}"
+
+
+@pytest.mark.parametrize(
+    "junk",
+    [
+        'Avoids the "Dev Diary/PR" style entirely.',
+        "Frames the topic as a beginner-friendly walkthrough.",
+        "Positions this as an evergreen resource.",
+        "Reframes the debate around local inference.",
+        "Conveys the core trade-off up front.",
+        "Establishes the stakes in the first line.",
+        "Emphasizes the practical takeaway.",
+        "Emphasises the practical takeaway.",  # British spelling
+    ],
+)
+def test_leading_descriptive_verb_is_junk(junk: str):
+    """A title that OPENS with a 3rd-person-singular descriptive verb + article
+    ('Avoids the …', 'Frames the …') is the model describing the article with
+    an elided subject — not a headline.  Real headlines use the imperative
+    ('Avoid …') or a noun, never the '-s' descriptive form."""
+    assert _is_junk_title(junk) is True, f"Expected junk for {junk!r}"
+
+
+@pytest.mark.parametrize(
+    "legit",
+    [
+        # Pronoun present but title-cased after it = legitimate subtitle.
+        "It Takes Two: Building a Local LLM Rig",
+        "This Is the Year Local LLMs Win",
+        "Quantization and VRAM: Fit Large LLMs on Your Own GPU",  # the GOOD title
+        # Noun homographs of the meta-verbs — protected by the article check.
+        "Frames Per Second: Benchmarking the RTX 5090",
+        "Highlights From RustConf 2026",
+        "Signals and Systems: A Primer",
+        # Imperative ('Avoid', not 'Avoids') is a normal headline verb.
+        "Avoid the N+1 Query Trap in Django",
+        "Frame Your Shot: Composition for Screenshots",
+    ],
+)
+def test_meta_commentary_rules_do_not_flag_legit_titles(legit: str):
+    """The meta-commentary rules must NOT fire on legitimate titles that share
+    surface features (leading pronoun, verb-homograph nouns, imperatives)."""
+    assert _is_junk_title(legit) is False, f"False positive on {legit!r}"
+
+
+def test_choose_falls_back_to_h1_for_meta_commentary_title():
+    """End-to-end: the exact bb878d6b capture as an LLM title must be replaced
+    by the body H1 (the real headline), matching how publish_service derives
+    the live title."""
+    junk = (
+        'Avoids the "Dev Diary/PR" style: It is framed as an evergreen '
+        "resource rather than a log."
+    )
+    content = (
+        "# Quantization and VRAM: Fit Large LLMs on Your Own GPU\n\n"
+        "Body text about quantization."
+    )
+    out = choose_canonical_title("local LLM quantization", content, llm_title=junk)
+    assert out == "Quantization and VRAM: Fit Large LLMs on Your Own GPU"
+
+
+# ---------------------------------------------------------------------------
 # choose_canonical_title falls back when junk is detected
 # ---------------------------------------------------------------------------
 

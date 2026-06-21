@@ -63,7 +63,10 @@ class OllamaNativeProvider:
 
         Recognized kwargs: ``temperature``, ``max_tokens``, ``timeout_s``
         (per-call override of OllamaClient.timeout for callers like
-        self-review that need tighter QA windows).
+        self-review that need tighter QA windows), ``think`` (``False``
+        disables a reasoning model's deliberation phase — short-copy callers
+        like title generation pass this so the model emits the answer directly
+        instead of leaking its rationale; ``None`` keeps the model default).
         """
         client = self._get_client()
         system = next((m["content"] for m in messages if m.get("role") == "system"), None)
@@ -82,6 +85,7 @@ class OllamaNativeProvider:
             max_tokens=kwargs.get("max_tokens"),
             stream=False,
             timeout=kwargs.get("timeout_s"),
+            think=kwargs.get("think"),
         )
 
         text = result.get("response") or result.get("text") or ""

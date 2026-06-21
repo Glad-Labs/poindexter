@@ -158,6 +158,48 @@ async def test_pages_operator_when_both_miss():
     provider.complete.assert_not_awaited()
 
 
+@pytest.mark.asyncio
+async def test_disables_thinking_for_short_copy_title():
+    """A title is short copy: the writer call MUST pass ``think=False`` so a
+    reasoning model emits the title directly instead of deliberating and
+    leaking its rationale as the title (task bb878d6b, 2026-06-21). The
+    "standard" cost tier is a thinking model (glm-class), so without this the
+    deliberation trace surfaces as the chosen title."""
+    captured: dict[str, Any] = {}
+    provider = MagicMock()
+    provider.name = "ollama_native"
+
+    async def _complete(**kwargs):
+        captured["think"] = kwargs.get("think")
+        result = MagicMock()
+        result.text = "A Crisp SEO-Optimized Title"
+        return result
+
+    provider.complete = AsyncMock(side_effect=_complete)
+
+    fake_sc = MagicMock()
+    fake_sc._pool = _FakePool("ollama/glm-4.7-5090")
+    fake_sc.get.return_value = ""
+    fake_sc.get_int.return_value = 4000
+
+    with patch(
+             "plugins.registry.get_all_llm_providers",
+             return_value=[provider],
+         ), \
+         patch("services.prompt_manager.get_prompt_manager") as pm:
+        pm.return_value.get_prompt.return_value = "PROMPT"
+        out = await generate_canonical_title(
+            topic="AI trends", primary_keyword="AI", content_excerpt="x",
+            site_config=fake_sc,
+        )
+
+    assert out == "A Crisp SEO-Optimized Title"
+    assert captured["think"] is False, (
+        "generate_canonical_title must pass think=False — a title is short "
+        "copy and a thinking model otherwise leaks its rationale as the title"
+    )
+
+
 # ---------------------------------------------------------------------------
 # sanitize_generated_title — pure-function edge cases.
 # Pins the thinking-model failure-mode handling described in the docstring

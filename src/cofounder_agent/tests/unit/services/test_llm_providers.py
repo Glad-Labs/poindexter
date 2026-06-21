@@ -349,6 +349,48 @@ class TestOllamaNativeDelegation:
         call = mock_client.generate.await_args.kwargs
         assert call["timeout"] is None
 
+    @pytest.mark.asyncio
+    async def test_complete_forwards_think_kwarg(self):
+        """``think`` kwarg must flow through to OllamaClient.generate(think=...)
+        so short-copy callers (title gen, social copy) can disable a reasoning
+        model's deliberation phase. Previously dropped silently — see task
+        bb878d6b where the title-gen deliberation leaked as the title."""
+        provider = OllamaNativeProvider()
+        mock_client = MagicMock()
+        mock_client.generate = AsyncMock(return_value={
+            "response": "ok", "model": "gemma3:27b",
+            "prompt_eval_count": 1, "eval_count": 1, "done_reason": "stop",
+        })
+        provider._client = mock_client
+
+        await provider.complete(
+            messages=[{"role": "user", "content": "hi"}],
+            model="gemma3:27b",
+            think=False,
+        )
+        call = mock_client.generate.await_args.kwargs
+        assert call["think"] is False
+
+    @pytest.mark.asyncio
+    async def test_complete_omits_think_when_not_set(self):
+        """When the caller doesn't pass ``think``, the provider must pass
+        ``think=None`` so OllamaClient omits it from the payload and the
+        model keeps its native (default) behaviour."""
+        provider = OllamaNativeProvider()
+        mock_client = MagicMock()
+        mock_client.generate = AsyncMock(return_value={
+            "response": "ok", "model": "gemma3:27b",
+            "prompt_eval_count": 1, "eval_count": 1, "done_reason": "stop",
+        })
+        provider._client = mock_client
+
+        await provider.complete(
+            messages=[{"role": "user", "content": "hi"}],
+            model="gemma3:27b",
+        )
+        call = mock_client.generate.await_args.kwargs
+        assert call.get("think") is None
+
 
 class TestOpenAICompatTimeoutPrecedence:
     """v2.1: ``timeout_s`` kwarg should override config.timeout_seconds."""

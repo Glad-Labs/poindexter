@@ -135,6 +135,10 @@ _JUNK_TITLE_PREFIX_PATTERNS: tuple[str, ...] = (
 _JUNK_TITLE_SUBSTRING_PATTERNS: tuple[str, ...] = (
     " they signal to the reader",
     " they lead with high-volume",
+    # "framed as" is pure meta-commentary — a real headline never describes
+    # how it is "framed". Captured 2026-06-21 (task bb878d6b): the title-gen
+    # LLM emitted "… It is framed as an evergreen resource rather than a log."
+    " framed as ",
 )
 
 # Rubric / reasoning leak.  The title-generation LLM periodically emits a
@@ -158,6 +162,33 @@ _JUNK_TITLE_SUBSTRING_PATTERNS: tuple[str, ...] = (
 # publish_service uses), so the stored title becomes the real headline.
 _RUBRIC_REASONING_RE = re.compile(
     r"^(?:[^:]{1,40}:\s+)?(?:[Tt]hey|[Tt]hese)\s+[a-z]",
+)
+
+# Meta-clause after a subtitle label (task bb878d6b, 2026-06-21). Same species
+# as ``_RUBRIC_REASONING_RE`` but the pronoun is singular ("It"/"This") rather
+# than plural, so it needs its own alternation. Real prod capture:
+#   'Avoids the "Dev Diary/PR" style: It is framed as an evergreen resource …'
+# The label is REQUIRED here (unlike the plural rule, which allows a bare
+# "They/These" start) because a bare "It is …"/"This is …" opening is more
+# often a malformed-but-real title than a rubric bullet. The lowercase
+# continuation after the pronoun stays the discriminator — a legitimate
+# subtitle is title-cased ("RTX 5090: These Are…" / "Topic: It Takes…").
+_RUBRIC_META_CLAUSE_RE = re.compile(
+    r"^[^:]{1,40}:\s+(?:[Ii]t|[Tt]his|[Tt]hey|[Tt]hese)\s+[a-z]",
+)
+
+# Leading descriptive verb (task bb878d6b, 2026-06-21). The model narrates what
+# the article/title *does* with an elided subject — "[This title] Avoids the …",
+# "[It] Frames the topic as …". A real headline uses the imperative ("Avoid …")
+# or a noun, never the 3rd-person-singular "-s" descriptive form, so the "-s"
+# verb followed by an article/determiner is the tell. The trailing article
+# requirement protects noun homographs ("Frames Per Second", "Signals and
+# Systems", "Highlights From RustConf" — none followed by an article).
+_META_LEADING_VERB_RE = re.compile(
+    r"^(?:Avoids|Frames|Positions|Reframes|Conveys|Establishes"
+    r"|Emphasi[sz]es|Signals|Highlights)\s+"
+    r"(?:the|this|that|these|those|it|a|an)\b",
+    re.IGNORECASE,
 )
 
 # Characters that represent a cleanly terminated title.
@@ -189,7 +220,15 @@ def _is_junk_title(title: str, max_length: int = _DEFAULT_TITLE_MAX_LENGTH) -> b
        prose verb (e.g. ``Tone: They move away…`` / ``These avoid…``). This
        generalises checks 3-4 to the shared *structural* shape so novel
        labels and sub-cap-length rubric bullets are still caught.
-    6. **Topic verbatim** — intentionally NOT handled here; that case is
+    6. **Singular meta-clause** — matches ``_RUBRIC_META_CLAUSE_RE``: a
+       ``<label>:`` subtitle then ``It``/``This`` (or ``They``/``These``)
+       followed by a lowercase prose verb (e.g. ``…style: It is framed…``).
+       Extends #5 to the singular pronoun the writer also reaches for.
+    7. **Leading descriptive verb** — matches ``_META_LEADING_VERB_RE``: a
+       3rd-person-singular ``-s`` verb + article opening (e.g. ``Avoids the…``,
+       ``Frames the…``) where the model narrates the article with an elided
+       subject instead of naming it.
+    8. **Topic verbatim** — intentionally NOT handled here; that case is
        already covered by the ``choose_canonical_title`` fallback logic.
 
     Pure function — no LLM calls, no I/O.
@@ -224,6 +263,16 @@ def _is_junk_title(title: str, max_length: int = _DEFAULT_TITLE_MAX_LENGTH) -> b
     #    form (not ``lower``) because the lowercase prose-verb after the
     #    pronoun is the discriminator vs a title-cased subtitle.
     if _RUBRIC_REASONING_RE.match(stripped):
+        return True
+
+    # 6. Singular meta-clause after a subtitle label ("<label>: It is …").
+    #    Same lowercase-continuation discriminator as #5; case-preserved form.
+    if _RUBRIC_META_CLAUSE_RE.match(stripped):
+        return True
+
+    # 7. Leading descriptive verb narrating the article ("Avoids the …").
+    #    Case-insensitive via the compiled flag, so ``stripped`` is fine.
+    if _META_LEADING_VERB_RE.match(stripped):
         return True
 
     return False
@@ -463,6 +512,15 @@ async def generate_canonical_title(
             max_tokens=_sc.get_int(
                 "content_router_seo_title_max_tokens", 4000,
             ),
+            # A title is short copy. The "standard" tier is a reasoning model
+            # (glm-class), so leave thinking ON and it deliberates inside the
+            # 4000-token budget and leaks its rationale as the "title" (task
+            # bb878d6b: 'Avoids the "Dev Diary/PR" style: It is framed as an
+            # evergreen resource rather than a log.'). think=False makes it emit
+            # the title directly. If the resolved model can't disable thinking
+            # the call errors and we fall through to None → H1/topic fallback,
+            # which is the same safe headline the junk guard would pick anyway.
+            think=False,
         )
 
         if result and result.text:
