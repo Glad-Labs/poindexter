@@ -989,6 +989,21 @@ DEFAULTS: dict[str, str] = {
     # catching genuine sustained outages (#1301).
     'mcp_http_probe_min_consecutive_failures': '3',
 
+    # ----- Compose-drift host-routed recovery (brain/compose_drift_probe.py) -----
+    # On drift, a containerised brain can't `docker compose up` Windows binds
+    # itself, so it POSTs {"service":"compose-reapply"} to the host Recovery
+    # Agent (the same agent as mcp_http_probe_recovery_url above), which runs
+    # start-stack.sh on the host. Default ON — auto-heal — bounded by the cap
+    # below so a persistent (unfixable) drift escalates to a page instead of
+    # storm-reapplying. SEPARATE from compose_drift_auto_recover_enabled (the
+    # brain's own compose-up, which stays off on this Windows host because it
+    # mangles C:\ binds). On a fresh install with no agent configured this
+    # no-ops (falls through to notify-only).
+    'compose_drift_host_recover_enabled': 'true',
+    # Max start-stack reapplies per rolling window before escalating to a page.
+    'compose_drift_host_recover_cap_per_window': '3',
+    'compose_drift_host_recover_window_minutes': '60',
+
     # ----- API rate limits (slowapi — poindexter#748) -----
     # slowapi limit strings: "<count>/<period>" e.g. "5/minute", "100/hour".
     # Limits are read at request time so operators can tune via app_settings

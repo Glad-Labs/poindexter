@@ -138,6 +138,17 @@ try:  # Flat import when brain/ is on sys.path (container runtime).
 except ImportError:  # pragma: no cover — package-qualified for tests
     from brain.operator_notifier import notify_operator
 
+try:  # httpx is used only for the host-recover POST; degrade if absent.
+    import httpx
+except ImportError:  # pragma: no cover
+    httpx = None  # type: ignore[assignment]
+
+try:  # secret_reader DECRYPTS secret app_settings (the recovery token);
+    # compose-drift's own _read_setting only reads the raw (encrypted) value.
+    from secret_reader import read_app_setting as _read_secret_setting
+except ImportError:  # pragma: no cover — package-qualified for tests
+    from brain.secret_reader import read_app_setting as _read_secret_setting
+
 logger = logging.getLogger("brain.compose_drift_probe")
 
 # ---------------------------------------------------------------------------
@@ -233,6 +244,38 @@ _last_notified_drifted: frozenset[str] = frozenset()
 # min). Re-notify after this window so persistent drift gets re-paged.
 _last_notified_at: float = 0.0
 _RENOTIFY_AFTER_SECONDS = 3600.0  # 1 hour
+
+
+# ---------------------------------------------------------------------------
+# Host-routed recovery (glad-labs-stack PR3). A containerised brain can't run
+# ``docker compose up`` itself — a Linux container mangles Windows ``C:\`` bind
+# sources to ``/app/C:\...`` and the daemon then auto-creates them as empty
+# dirs, wiping the service's real config. So on drift the brain DETECTS and
+# delegates the ACT to the host Recovery Agent (port 9841), which runs
+# ``start-stack.sh`` on the host where the binds resolve. ``brain/mcp_http_probe.py``
+# already drives the same agent for the MCP HTTP server. Bounded by a rolling
+# cap so a persistent (unfixable) drift escalates to a page instead of
+# storm-reapplying. This is SEPARATE from ``compose_drift_auto_recover_enabled``
+# (the brain's own broken compose-up), which stays the no-op-on-Windows it is.
+HOST_RECOVER_ENABLED_KEY = "compose_drift_host_recover_enabled"
+HOST_RECOVER_CAP_KEY = "compose_drift_host_recover_cap_per_window"
+HOST_RECOVER_WINDOW_MINUTES_KEY = "compose_drift_host_recover_window_minutes"
+# The host Recovery Agent URL + token — SHARED with mcp_http_probe (same
+# physical agent). The ``mcp_http_probe_*`` names are historical (it was the
+# first consumer); PR4 renames both to ``recovery_agent_*`` with a shim.
+HOST_RECOVER_URL_KEY = "mcp_http_probe_recovery_url"
+HOST_RECOVER_TOKEN_KEY = "mcp_http_probe_recovery_token"  # noqa: S105 — setting key, not a secret
+DEFAULT_HOST_RECOVER_CAP = 3
+DEFAULT_HOST_RECOVER_WINDOW_MINUTES = 60
+
+# Rolling-window timestamps of host-recover POSTs (mirrors mcp_http_probe's
+# restart cap). Pruned to the window each cycle.
+_host_recover_attempts: list[float] = []
+
+
+def _reset_host_recover_state() -> None:
+    """Test hook — drop the host-recover rolling-window cap state."""
+    _host_recover_attempts.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -692,6 +735,28 @@ async def _read_compose_project_directory(pool) -> str:
     return val.strip()
 
 
+async def _read_host_recover_enabled(pool) -> bool:
+    # Fail OPEN (default "true"): unlike mcp_http_probe's fail-closed
+    # kill-switch (where a transient read failure was re-enabling a probe the
+    # operator disabled and false-paging), a transient failure here should not
+    # STOP self-healing — and the rolling cap bounds the downside either way.
+    val = await _read_setting(pool, HOST_RECOVER_ENABLED_KEY, default="true")
+    return val.strip().lower() in ("true", "1", "yes", "on")
+
+
+async def _read_int_setting(pool, key: str, default: int) -> int:
+    val = (await _read_setting(pool, key, default="")).strip()
+    if not val:
+        return default
+    try:
+        return int(val)
+    except ValueError:
+        logger.warning(
+            "[COMPOSE_DRIFT] %s not an int (%r); using %d", key, val, default
+        )
+        return default
+
+
 async def _emit_audit_event(
     pool,
     event: str,
@@ -858,6 +923,40 @@ def _recreate_services(
 
 
 # ---------------------------------------------------------------------------
+# Host-routed recovery — POST to the host Recovery Agent
+# ---------------------------------------------------------------------------
+
+
+async def _try_host_recover(url: str, token: str) -> tuple[bool, str]:
+    """POST ``{"service": "compose-reapply"}`` to the host Recovery Agent.
+
+    Mirror of ``brain/mcp_http_probe.py::_try_http_recovery`` — same agent,
+    same Bearer auth — only the service name differs. The agent runs
+    ``start-stack.sh`` on the host (where Windows binds resolve), which the
+    brain itself cannot. The agent dispatches start-stack fire-and-forget and
+    returns immediately, so a short timeout is correct here: a 2xx means
+    "reapply dispatched", and the NEXT drift-probe cycle confirms it cleared.
+    Never raises — returns (ok, detail).
+    """
+    if not url or not token:
+        return False, "recovery_url or recovery_token not configured"
+    if httpx is None:
+        return False, "httpx not available"
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(
+                url,
+                json={"service": "compose-reapply"},
+                headers={"Authorization": f"Bearer {token}"},
+            )
+            if 200 <= response.status_code < 300:
+                return True, f"recovery agent responded HTTP {response.status_code}"
+            return False, f"recovery agent returned HTTP {response.status_code}"
+    except Exception as exc:  # noqa: BLE001
+        return False, f"recovery request failed: {type(exc).__name__}: {exc}"
+
+
+# ---------------------------------------------------------------------------
 # Top-level probe entry point
 # ---------------------------------------------------------------------------
 
@@ -871,6 +970,7 @@ async def run_compose_drift_probe(
     yaml_loader=None,
     sleep_fn=time.sleep,
     docker_reachable_fn=None,
+    host_recover_fn=None,
 ) -> dict[str, Any]:
     """Single execution of the compose-spec drift probe.
 
@@ -899,6 +999,7 @@ async def run_compose_drift_probe(
     # (including tests) see the normal flow. ComposeDriftProbe.check() wires the
     # real _docker_reachable explicitly so production still pre-flights the socket.
     docker_reachable_fn = docker_reachable_fn or (lambda: (True, ""))
+    host_recover_fn = host_recover_fn or _try_host_recover
 
     compose_path = await _read_compose_path(pool)
     skip_services = await _read_skip_services(pool)
@@ -1075,6 +1176,124 @@ async def run_compose_drift_probe(
                 "container_missing": info["diff"]["container_missing"],
                 "auto_recover_enabled": auto_recover_enabled,
             },
+        )
+
+    # ---- 5-host) Host-routed recovery (containerised brain) -------------------
+    # The brain can't `docker compose up` Windows binds itself, so it delegates
+    # to the host Recovery Agent, which runs start-stack.sh on the host. Bounded
+    # by a rolling cap. On a successful dispatch we DON'T page — self-heal
+    # before paging (the per-service audit rows above are the visibility); the
+    # next 5-min cycle confirms it cleared. We page only on a failed POST (the
+    # recovery path itself is broken) or when the cap is hit (drift persists
+    # despite repeated reapplies). Takes precedence over the brain-side 5a/5b
+    # paths below, which are left untouched for non-containerised operators.
+    host_recover_enabled = await _read_host_recover_enabled(pool)
+    recovery_url = (await _read_secret_setting(pool, HOST_RECOVER_URL_KEY, "")).strip()
+    recovery_token = (await _read_secret_setting(pool, HOST_RECOVER_TOKEN_KEY, "")).strip()
+    if host_recover_enabled and recovery_url and recovery_token:
+        now_ts = time.time()
+        cap = await _read_int_setting(pool, HOST_RECOVER_CAP_KEY, DEFAULT_HOST_RECOVER_CAP)
+        window_min = await _read_int_setting(
+            pool, HOST_RECOVER_WINDOW_MINUTES_KEY, DEFAULT_HOST_RECOVER_WINDOW_MINUTES
+        )
+        cutoff = now_ts - max(1, window_min) * 60
+        _host_recover_attempts[:] = [t for t in _host_recover_attempts if t >= cutoff]
+
+        if len(_host_recover_attempts) >= max(1, cap):
+            # Cap reached — reapplies keep not fixing it. Stop hammering, page.
+            cap_detail = (
+                f"{detected_summary}\n\nHost-recover cap reached "
+                f"({len(_host_recover_attempts)}/{cap} in {window_min}m) — drift "
+                f"persists after repeated start-stack reapplies. Auto-heal is "
+                f"giving up this window; investigate why the reapply isn't "
+                f"clearing it (see ~/.poindexter/logs/recovery-agent.log)."
+            )
+            try:
+                notify_fn(
+                    title=(
+                        f"Compose drift PERSISTS — host-recover cap reached "
+                        f"({len(drifted)} service(s))"
+                    ),
+                    detail=cap_detail,
+                    source="brain.compose_drift_probe",
+                    severity="critical",
+                )
+            except Exception as exc:
+                logger.warning("[COMPOSE_DRIFT] notify_fn failed: %s", exc)
+            await _emit_audit_event(
+                pool,
+                "probe.compose_drift_host_recover_cap_reached",
+                cap_detail,
+                extra={
+                    "drifted_services": sorted(drifted),
+                    "cap": cap,
+                    "window_minutes": window_min,
+                },
+            )
+            _last_notified_drifted = drifted_names
+            return {
+                "ok": False,
+                "status": "host_recover_cap_reached",
+                "detail": cap_detail,
+                "drifted_count": len(drifted),
+                "drifted_services": sorted(drifted),
+                "compose_path": compose_path,
+                "host_recover_enabled": True,
+            }
+
+        ok_recover, recover_msg = await host_recover_fn(recovery_url, recovery_token)
+        _host_recover_attempts.append(now_ts)
+        await _emit_audit_event(
+            pool,
+            "probe.compose_drift_host_recover_dispatched" if ok_recover
+            else "probe.compose_drift_host_recover_failed",
+            f"{detected_summary} -> {recover_msg}",
+            extra={
+                "drifted_services": sorted(drifted),
+                "ok": ok_recover,
+                "recover_msg": recover_msg,
+            },
+        )
+        if ok_recover:
+            # Self-heal dispatched — no page (audit rows are the trail). The next
+            # cycle re-probes: cleared → no_drift; still drifted → another capped
+            # attempt, then escalate.
+            logger.info("[COMPOSE_DRIFT] host-recover dispatched: %s", recover_msg)
+        else:
+            # The POST itself failed (agent down/unreachable) — page warning so
+            # the broken recovery path is visible; it cannot self-heal.
+            try:
+                notify_fn(
+                    title=(
+                        f"Compose drift — host-recover POST failed "
+                        f"({len(drifted)} service(s))"
+                    ),
+                    detail=(
+                        f"{detected_summary}\n\nPOST to the host Recovery Agent "
+                        f"failed: {recover_msg}\n\nConfirm the agent is running "
+                        f"(GET {recovery_url.rsplit('/', 1)[0]}/healthz) and that "
+                        f"{HOST_RECOVER_TOKEN_KEY} matches the agent's token."
+                    ),
+                    source="brain.compose_drift_probe",
+                    severity="warning",
+                )
+            except Exception as exc:
+                logger.warning("[COMPOSE_DRIFT] notify_fn failed: %s", exc)
+        _last_notified_drifted = drifted_names
+        return {
+            "ok": ok_recover,
+            "status": "host_recover_dispatched" if ok_recover else "host_recover_post_failed",
+            "detail": recover_msg,
+            "drifted_count": len(drifted),
+            "drifted_services": sorted(drifted),
+            "compose_path": compose_path,
+            "host_recover_enabled": True,
+        }
+    elif host_recover_enabled:
+        logger.info(
+            "[COMPOSE_DRIFT] host-recover enabled but recovery_url/token unset "
+            "— falling through to notify-only (set %s + %s).",
+            HOST_RECOVER_URL_KEY, HOST_RECOVER_TOKEN_KEY,
         )
 
     # ---- 5a) Auto-recover disabled — periodic notify (set-aware + time-bound) --
