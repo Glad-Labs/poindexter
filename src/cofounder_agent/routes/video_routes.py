@@ -16,6 +16,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import FileResponse, Response
 
 from middleware.api_token_auth import verify_api_token
+from schemas.media_schemas import VideoEpisodeListResponse
 from services.logger_config import get_logger
 from services.video_service import VIDEO_DIR
 from utils.rate_limiter import _settings_limit, limiter
@@ -188,8 +189,8 @@ async def video_feed(
     return Response(content=xml_content, media_type="application/rss+xml; charset=utf-8")
 
 
-@router.get("/episodes")
-async def list_video_episodes():
+@router.get("/episodes", response_model=VideoEpisodeListResponse)
+async def list_video_episodes() -> VideoEpisodeListResponse:
     """List all available video episodes as JSON."""
     episodes = []
     if VIDEO_DIR.exists():
@@ -200,12 +201,21 @@ async def list_video_episodes():
                 # file_path intentionally omitted — it leaked the worker's
                 # absolute filesystem layout. Clients fetch the bytes via
                 # /api/video/episodes/{post_id}.mp4 (poindexter#636). Matches
-                # the unauthenticated podcast episodes endpoint, which also
-                # does not expose on-disk paths.
+                # the podcast episodes endpoint, whose response_model now also
+                # filters on-disk paths (poindexter#745 step 10).
                 "file_size_bytes": stat.st_size,
                 "created_at": stat.st_ctime,
             })
-    return {"episodes": episodes, "count": len(episodes)}
+    # Canonical offset envelope (poindexter#745): `episodes` → `items`, drop the
+    # redundant `count` (recoverable as len(items)). Unpaginated full listing, so
+    # offset is 0 and limit == total. Pydantic validates each row into a
+    # VideoEpisodeItem.
+    return VideoEpisodeListResponse(
+        items=episodes,  # type: ignore[arg-type]
+        total=len(episodes),
+        limit=len(episodes),
+        offset=0,
+    )
 
 
 @router.get("/episodes/{post_id}.mp4")

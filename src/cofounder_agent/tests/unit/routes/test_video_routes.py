@@ -100,21 +100,28 @@ class TestListVideoEpisodes:
             resp = client.get("/api/video/episodes")
             assert resp.status_code == 200
             data = resp.json()
-            assert data["count"] == 2
-            assert len(data["episodes"]) == 2
+            # Canonical offset envelope (poindexter#745): items, not the legacy
+            # episodes/count keys. Unpaginated → limit == len(items), offset 0.
+            assert data["total"] == 2
+            assert data["limit"] == 2
+            assert data["offset"] == 0
+            assert "episodes" not in data
+            assert "count" not in data
+            assert len(data["items"]) == 2
+            # #636: the video listing never exposes an on-disk file_path.
+            assert "file_path" not in data["items"][0]
 
     def test_empty_when_no_videos(self, tmp_path):
         with patch("routes.video_routes.VIDEO_DIR", tmp_path):
             resp = client.get("/api/video/episodes")
             data = resp.json()
-            assert data["count"] == 0
-            assert data["episodes"] == []
+            assert data == {"items": [], "total": 0, "limit": 0, "offset": 0}
 
     def test_empty_when_dir_missing(self):
         with patch("routes.video_routes.VIDEO_DIR", Path("/nonexistent/dir")):
             resp = client.get("/api/video/episodes")
             data = resp.json()
-            assert data["count"] == 0
+            assert data == {"items": [], "total": 0, "limit": 0, "offset": 0}
 
 
 # ---------------------------------------------------------------------------

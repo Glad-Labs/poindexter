@@ -41,3 +41,32 @@ class PodcastEpisodeListResponse(ListResponse[PodcastEpisodeItem]):
     list has no in-repo consumer — podcast clients use the RSS ``/feed.xml``,
     not this list. Real ``limit``/``offset`` pagination (#746).
     """
+
+
+class VideoEpisodeItem(BaseModel):
+    """One generated video episode (rendered ``.mp4`` + filesystem metadata).
+
+    Sourced from ``video_routes.list_video_episodes`` — a directory scan of the
+    video output dir. ``created_at`` is a Unix epoch float (``st_ctime``), NOT
+    an ISO string, so it is typed ``float`` to preserve the wire format. There
+    is no ``file_path`` field: the route already omits the worker's absolute
+    path (poindexter#636); clients fetch bytes via
+    ``/api/video/episodes/{post_id}.mp4``. Fields default permissively so a
+    partial row never trips validation.
+    """
+
+    post_id: str | None = None
+    file_size_bytes: int | None = None
+    created_at: float | None = None
+
+
+class VideoEpisodeListResponse(ListResponse[VideoEpisodeItem]):
+    """Video episode listing — canonical offset envelope (poindexter#745).
+
+    ``{items, total, limit, offset}`` via ``ListResponse[VideoEpisodeItem]``.
+    Replaces the prior untyped body that used ``episodes``/``count`` keys
+    (``count`` is recoverable as ``len(items)``). The endpoint returns the full
+    set unpaginated, so ``offset`` is always 0 and ``limit`` equals ``total``.
+    Public endpoint, but the JSON list has no in-repo consumer — clients use the
+    RSS ``video-feed.xml`` and the ``/episodes/{post_id}.mp4`` stream.
+    """

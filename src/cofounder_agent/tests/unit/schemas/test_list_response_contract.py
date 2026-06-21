@@ -12,7 +12,7 @@ from __future__ import annotations
 import pytest
 
 from schemas import ListResponse, PaginatedResponse
-from schemas.media_schemas import PodcastEpisodeListResponse
+from schemas.media_schemas import PodcastEpisodeListResponse, VideoEpisodeListResponse
 from schemas.settings_schemas import SettingListResponse
 from schemas.task_schemas import (
     GateListResponse,
@@ -38,6 +38,7 @@ ENDPOINT_LIST_MODELS = [
     GateListResponse,  # step 8 — GET /api/gates
     PostApprovalListResponse,  # step 9 — GET /api/posts-approval/pending
     PodcastEpisodeListResponse,  # step 10 — GET /api/podcast/episodes
+    VideoEpisodeListResponse,  # step 11 — GET /api/video/episodes
 ]
 
 
