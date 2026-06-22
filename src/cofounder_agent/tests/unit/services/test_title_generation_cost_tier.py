@@ -55,7 +55,9 @@ def _make_provider(captured: dict[str, Any]) -> MagicMock:
         captured["model"] = kwargs.get("model")
         captured["called"] = True
         result = MagicMock()
-        result.text = "A Crisp SEO-Optimized Title"
+        # Title path now reads parsed["title"] from a structured JSON response
+        # (#1280/#1821) — the writer returns a {"title": "..."} object.
+        result.text = '{"title": "A Crisp SEO-Optimized Title"}'
         return result
 
     provider.complete = AsyncMock(side_effect=_complete)
@@ -172,7 +174,9 @@ async def test_disables_thinking_for_short_copy_title():
     async def _complete(**kwargs):
         captured["think"] = kwargs.get("think")
         result = MagicMock()
-        result.text = "A Crisp SEO-Optimized Title"
+        # Title path now reads parsed["title"] from a structured JSON response
+        # (#1280/#1821) — the writer returns a {"title": "..."} object.
+        result.text = '{"title": "A Crisp SEO-Optimized Title"}'
         return result
 
     provider.complete = AsyncMock(side_effect=_complete)
@@ -371,12 +375,12 @@ async def test_returns_none_when_sanitizer_rejects_llm_output():
 @pytest.mark.asyncio
 async def test_topic_is_passed_to_get_prompt():
     """Regression (#541 follow-up): the ``seo.generate_title`` default
-    template is ``Generate an SEO-friendly title for: {topic}`` — so the
-    call site MUST pass ``topic``. It previously passed only ``content`` +
-    ``primary_keyword``, so every canonical_blog run raised
-    "missing required variable: topic", the broad except swallowed it, and
-    titles silently fell back to the H1/topic. Capture the kwargs and pin
-    that ``topic`` is forwarded."""
+    template requires ``{topic}`` (the structured-JSON rewrite for #1280/#1821
+    kept ``{topic}`` as its only placeholder) — so the call site MUST pass
+    ``topic``. It previously passed only ``content`` + ``primary_keyword``, so
+    every canonical_blog run raised "missing required variable: topic", the
+    broad except swallowed it, and titles silently fell back to the H1/topic.
+    Capture the kwargs and pin that ``topic`` is forwarded."""
     captured: dict[str, Any] = {}
     provider = _make_provider({})
 
@@ -422,7 +426,7 @@ async def test_existing_titles_appended_to_avoidance_prompt():
     async def _complete(**kwargs):
         captured["prompt"] = kwargs["messages"][0]["content"]
         result = MagicMock()
-        result.text = "A Distinctly Different Title"
+        result.text = '{"title": "A Distinctly Different Title"}'
         return result
 
     provider.complete = AsyncMock(side_effect=_complete)

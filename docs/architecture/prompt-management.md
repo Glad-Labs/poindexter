@@ -117,7 +117,7 @@ metadata:
   category: seo_metadata
   prompts:
     - key: seo.generate_title
-      output_format: text # 'json' | 'text' — for downstream parsing
+      output_format: json # 'json' | 'text' — for downstream parsing
       description: 'Default prompt — premium packs ship as an add-on'
 ---
 
@@ -126,7 +126,9 @@ metadata:
 ## seo.generate_title
 
 \`\`\`
-Write an SEO title for the following article.
+Generate one SEO-friendly title for the topic below.
+
+Return ONLY a JSON object — {{"title": "..."}} — no markdown, no reasoning.
 
 TOPIC: {topic}
 \`\`\`

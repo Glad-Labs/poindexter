@@ -4,9 +4,14 @@ Lifted from content_router_service.py during Phase E2. Two functions the
 generate_content stage uses back-to-back:
 
 - :func:`generate_canonical_title` — asks the writer LLM for an SEO-optimized
-  title that avoids a list of recent/existing titles. Handles the
-  thinking-model failure mode (``<think>…</think>`` wrappers, list markers,
-  deliberation markers) via :func:`sanitize_generated_title`.
+  title as a structured ``{"title": "..."}`` JSON object (avoiding a list of
+  recent/existing titles), then reads the ``title`` field via
+  :func:`_extract_json`. Reading the field — instead of scanning free text for
+  a "title-like" line — makes the thinking-model deliberation leak impossible
+  by construction (#1280/#1821): any rationale the reasoning model emits
+  outside the JSON object is discarded. :func:`sanitize_generated_title` still
+  applies final hygiene to the extracted string, and ``_is_junk_title`` in
+  :func:`choose_canonical_title` remains a belt-and-suspenders backstop.
 
 - :func:`check_title_originality` — web-searches the proposed title to see
   if it collides with existing published content. If it does, the stage
@@ -17,10 +22,12 @@ generate_content stage uses back-to-back:
 
 from __future__ import annotations
 
+import json
 import logging
 import re
 import string
 from difflib import SequenceMatcher
+from typing import Any
 
 from services.llm_providers.thinking_models import strip_think_blocks
 from services.site_config import SiteConfig
@@ -438,6 +445,51 @@ def sanitize_generated_title(raw: str) -> str | None:
     return candidate
 
 
+def _extract_json(text: str) -> dict[str, Any] | None:
+    """Extract a JSON object from ``text``, tolerating markdown code fences and
+    leading/trailing prose the model may emit around the object.
+
+    Mirrors ``modules/content/atoms/seo_generate_all_metadata._extract_json``.
+    The substrate must not import the content atom (the engine never imports a
+    business module), so the small helper is replicated here. Returns the parsed
+    ``dict`` or ``None`` when no JSON object can be recovered — the caller treats
+    ``None`` as "no usable title" and degrades to the H1 / topic fallback.
+
+    Reading the title out of the parsed object is what makes the title path
+    leak-proof by construction (#1280/#1821): any deliberation a reasoning model
+    emits *outside* the ``{...}`` is never seen by the caller.
+    """
+    if not text:
+        return None
+    # Strip ```json ... ``` fences if present, else scan the raw text.
+    fence_match = re.search(r"```(?:json)?\s*([\s\S]*?)```", text)
+    candidate = fence_match.group(1) if fence_match else text
+    # Try a direct parse first, then fall back to the first {...} block — this
+    # is what discards a reasoning preamble that precedes the object.
+    for chunk in (candidate, text):
+        chunk = chunk.strip()
+        try:
+            parsed = json.loads(chunk)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            # silent-ok: not valid JSON as-is; fall through to the {...} scan
+            # below. Exhausting every strategy returns None, which the caller
+            # surfaces as a WARNING ("No usable title in JSON response").
+            pass
+        brace_match = re.search(r"\{[\s\S]*\}", chunk)
+        if brace_match:
+            try:
+                parsed = json.loads(brace_match.group())
+                if isinstance(parsed, dict):
+                    return parsed
+            except json.JSONDecodeError:
+                # silent-ok: this {...} slice isn't valid JSON; try the next
+                # chunk. Exhausting all chunks returns None → caller WARNs.
+                pass
+    return None
+
+
 async def generate_canonical_title(
     topic: str,
     primary_keyword: str,
@@ -524,12 +576,32 @@ async def generate_canonical_title(
         )
 
         if result and result.text:
-            title = sanitize_generated_title(result.text)
-            if title:
-                logger.debug("Generated title: %s", title)
-                return title
+            # Structured-JSON extraction (#1280/#1821). The seo.generate_title
+            # prompt asks for a ``{"title": "..."}`` object; we parse it and read
+            # the ``title`` field, DISCARDING any deliberation the reasoning
+            # model emitted outside the object. This is the durable fix for the
+            # title-leak lineage — the old bottom-up line scan kept selecting
+            # rationale bullets (and even the raw JSON envelope) as the "title".
+            # ``seo_generate_all_metadata.py`` has never leaked for this reason.
+            parsed = _extract_json(result.text)
+            if parsed is not None:
+                raw_title = str(parsed.get("title") or "").strip()
+                if raw_title:
+                    # ``sanitize_generated_title`` now runs on the single trusted
+                    # title string (markdown/quote/label/QA-suffix hygiene +
+                    # length cap), not on free-form LLM output. ``_is_junk_title``
+                    # in ``choose_canonical_title`` stays the final backstop.
+                    title = sanitize_generated_title(raw_title)
+                    if title:
+                        logger.debug("Generated title: %s", title)
+                        return title
+            # No parseable object, or no usable ``title`` field: return None and
+            # let ``choose_canonical_title`` fall back to the body H1 / topic.
+            # We do NOT scan the raw text for a title — that is exactly the leak
+            # this change removes.
             logger.warning(
-                "[TITLE_GEN] Sanitizer rejected LLM output as unclean: %r",
+                "[TITLE_GEN] No usable title in JSON response — falling back to "
+                "H1/topic (raw=%r)",
                 result.text[:100],
             )
         return None

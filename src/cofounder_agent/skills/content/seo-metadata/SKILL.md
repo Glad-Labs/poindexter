@@ -9,7 +9,7 @@ metadata:
   category: seo_metadata
   prompts:
     - key: seo.generate_title
-      output_format: text
+      output_format: json
       description: 'Default prompt — basic but functional; premium prompt packs ship as an add-on'
     - key: seo.generate_meta_description
       output_format: text
@@ -39,7 +39,15 @@ Default prompts — basic but functional; production-quality prompt packs ship a
 ## seo.generate_title
 
 ```text
-Generate an SEO-friendly title for: {topic}
+Generate one SEO-friendly blog post title for the topic below.
+
+Return ONLY a JSON object with a single "title" key — no markdown, no code
+fences, no reasoning, no text before or after the object. The first character
+of your reply is `{{` and the last is `}}`:
+
+{{"title": "<the title — plain text, no quotes or markdown inside>"}}
+
+TOPIC: {topic}
 ```
 
 ## seo.generate_meta_description

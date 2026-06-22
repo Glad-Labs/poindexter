@@ -172,7 +172,9 @@ class TestGetMetadata:
 
     def test_output_format_set(self, pm: UnifiedPromptManager):
         meta = pm.get_metadata("seo.generate_title")
-        assert meta.output_format == "text"
+        # seo.generate_title returns a structured {"title": "..."} object as of
+        # the #1280/#1821 leak fix — the catalog declares json accordingly.
+        assert meta.output_format == "json"
 
     def test_version_is_enum(self, pm: UnifiedPromptManager):
         meta = pm.get_metadata("blog_generation.initial_draft")
