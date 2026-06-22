@@ -88,6 +88,14 @@ async def claim_pending_task(database_service: Any) -> dict[str, Any] | None:
             # those tasks were stranded and never re-ran. ``rejected_final``
             # stays terminal (excluded). The audit_log rejection event keeps
             # the learning signal that distinguishes a retry from fresh work.
+            # ``category`` is read here off the base table — and this SELECT is
+            # the *only* reason the physical ``pipeline_tasks.category`` column
+            # still exists. 20260622_032938 dropped it (shimming the views with
+            # NULL) but missed this read, so 20260622_055500 had to re-add the
+            # base column. The value is always NULL — category is vestigial
+            # (superseded by ``niche_slug``, #796); nothing populates it — and
+            # ``content_router_service`` defaults it to "technology" downstream.
+            # Kept in the SELECT for back-compat; do not assume a real value.
             row = await conn.fetchrow(
                 """
                 SELECT task_id, topic, style, tone, target_length,

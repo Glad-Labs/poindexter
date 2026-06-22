@@ -1882,6 +1882,118 @@ class TestAddTaskAgainstRealDb:
         assert view_col == 1, "content_tasks must keep its category column (032938 NULL shim)"
         assert ptv_col == 1, "pipeline_tasks_view must keep its category column (032938 NULL shim)"
 
+    async def test_add_task_does_not_populate_base_category_column(self, db_pool):
+        """Writer contract: ``add_task`` must NOT write ``pipeline_tasks.category``.
+
+        ``category`` is vestigial — superseded by ``niche_slug`` (#796) — and is
+        deliberately absent from the ``add_task`` INSERT column list. The sibling
+        ``test_add_task_writes_row_visible_via_view`` only proves the *view* reads
+        NULL, which is ambiguous: it could be the 032938 NULL shim OR an omitted
+        write. This reads the **base column directly** to pin the writer side of
+        the base-table-only contract — ``add_task`` drops category regardless of
+        the view shim.
+        """
+        from services.tasks_db import TasksDatabase
+
+        db = TasksDatabase(pool=db_pool)
+        task_id = await db.add_task({
+            "topic": "category-writer-contract",
+            "task_type": "blog_post",
+            "category": "should_be_dropped_by_writer",
+        })
+        try:
+            async with db_pool.acquire() as conn:
+                base_row = await conn.fetchrow(
+                    "SELECT topic, category FROM pipeline_tasks WHERE task_id = $1",
+                    task_id,
+                )
+            # The row must exist (so the None below can't be a false pass from a
+            # missing row) ...
+            assert base_row is not None, "add_task must create the base pipeline_tasks row"
+            assert base_row["topic"] == "category-writer-contract"
+            # ... but the supplied ``category`` must NOT have been persisted.
+            assert base_row["category"] is None, (
+                "add_task must not populate pipeline_tasks.category — the column is "
+                "vestigial (superseded by niche_slug, #796) and intentionally absent "
+                "from the INSERT column list"
+            )
+        finally:
+            async with db_pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM pipeline_tasks WHERE task_id = $1", task_id
+                )
+
+    async def test_real_base_category_value_is_not_surfaced_through_views(self, db_pool):
+        """View contract: a REAL ``pipeline_tasks.category`` value must NOT
+        surface through the ``content_tasks`` / ``pipeline_tasks_view`` views.
+
+        This is the guard that locks the *base-table-only* reconciliation of the
+        032938-drop / 055500-readd inconsistency. 055500 re-added the physical
+        column for the claim path but left 032938's ``NULL::varchar AS category``
+        projection in both views (and the category-free INSTEAD OF triggers) in
+        place — by design, because category is retired. We write a real value
+        straight to the base column (bypassing ``add_task``, which omits it, and
+        the view trigger, which drops it) and assert both views still read NULL.
+
+        If a future change "restores to canonical" by rebuilding the views to read
+        ``pt.category``, this fails loudly — forcing a conscious decision rather
+        than a silent behaviour change.
+        """
+        from services.tasks_db import TasksDatabase
+
+        db = TasksDatabase(pool=db_pool)
+        task_id = await db.add_task({
+            "topic": "category-view-shim-contract",
+            "task_type": "blog_post",
+        })
+        sentinel = "REAL_BASE_VALUE_should_not_leak"
+        try:
+            async with db_pool.acquire() as conn:
+                # Write straight to the base column — NOT through the content_tasks
+                # view (whose INSTEAD OF trigger drops category).
+                await conn.execute(
+                    "UPDATE pipeline_tasks SET category = $2 WHERE task_id = $1",
+                    task_id,
+                    sentinel,
+                )
+                base_row = await conn.fetchrow(
+                    "SELECT category FROM pipeline_tasks WHERE task_id = $1",
+                    task_id,
+                )
+                ct_row = await conn.fetchrow(
+                    "SELECT topic, category FROM content_tasks WHERE task_id = $1",
+                    task_id,
+                )
+                ptv_row = await conn.fetchrow(
+                    "SELECT topic, category FROM pipeline_tasks_view WHERE task_id = $1",
+                    task_id,
+                )
+            # Sanity: the base column really does store the directly-written value.
+            assert base_row is not None and base_row["category"] == sentinel, (
+                f"base column did not store value: {base_row and base_row['category']!r}"
+            )
+            # The rows ARE visible through both views (so the NULL asserts below
+            # can't be a false pass from a missing row) ...
+            assert ct_row is not None, "row must be visible through content_tasks"
+            assert ct_row["topic"] == "category-view-shim-contract"
+            assert ptv_row is not None, "row must be visible through pipeline_tasks_view"
+            assert ptv_row["topic"] == "category-view-shim-contract"
+            # ... but neither surfaces the base category value: both project the
+            # 032938 ``NULL::varchar AS category`` shim, not ``pt.category``.
+            assert ct_row["category"] is None, (
+                "content_tasks.category must be the 032938 NULL shim, not pt.category — "
+                "category is base-table-only by design (retired in #796, superseded by "
+                "niche_slug)"
+            )
+            assert ptv_row["category"] is None, (
+                "pipeline_tasks_view.category must be the 032938 NULL shim, not pt.category"
+            )
+        finally:
+            async with db_pool.acquire() as conn:
+                await conn.execute(
+                    "DELETE FROM pipeline_tasks WHERE task_id = $1", task_id
+                )
+
 
 # ---------------------------------------------------------------------------
 # log_status_change

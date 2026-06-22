@@ -324,6 +324,16 @@ class TasksDatabase(DatabaseServiceMixin):
 
             async with self.pool.acquire() as conn:
                 async with conn.transaction():
+                    # ``category`` is intentionally omitted from this column
+                    # list. It is a vestigial, base-table-only field (superseded
+                    # by ``niche_slug``, #796): the physical
+                    # ``pipeline_tasks.category`` column exists only so
+                    # ``claim_pending_task``'s SELECT resolves (it was dropped by
+                    # 20260622_032938 and re-added by 20260622_055500), but
+                    # nothing populates it and the ``content_tasks`` /
+                    # ``pipeline_tasks_view`` views project a NULL shim — so a
+                    # value written here would never surface through them anyway.
+                    # Do NOT re-add it; see TestAddTaskAgainstRealDb.
                     await conn.execute(
                         """
                         INSERT INTO pipeline_tasks (
@@ -497,6 +507,8 @@ class TasksDatabase(DatabaseServiceMixin):
                 )
             )
 
+        # ``category`` intentionally omitted — base-table-only vestige that
+        # nothing populates and the views don't surface; see add_task().
         pipeline_sql = """
             INSERT INTO pipeline_tasks (
                 task_id, task_type, topic, status, stage,
