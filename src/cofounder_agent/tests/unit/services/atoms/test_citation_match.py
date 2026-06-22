@@ -165,6 +165,47 @@ def test_link_does_not_touch_non_attribution_prose():
     assert linked == []
 
 
+def test_link_repairs_single_word_brand_parenthetical():
+    """A single-word, simple-title-case brand in parens — '(Keychron)' — is a
+    real citation when the brand is in the corpus, and must be linked.
+
+    The shape heuristic (``_looks_like_source_name``) rejects it for lacking
+    internal caps / a dot / all-caps, so repair needs the corpus-grounded
+    acceptance path. Reference: validation post 12db663a (mechanical keyboard
+    switches) shipped "...actuation (Keychron)." unlinked even though
+    keychron.com was in the research corpus (the writer had linked an earlier
+    "According to [Keychron](https://www.keychron.com/...)").
+    """
+    sources = [CorpusSource(
+        url="https://www.keychron.com/blogs/news/types-of-keyboard-switches",
+        title="Types of Keyboard Switches",
+        text="types of keyboard switches keychron",
+    )]
+    content = "They make a satisfying click upon actuation (Keychron)."
+    new_content, linked = link_matched_attributions(content, sources)
+    assert (
+        "([Keychron](https://www.keychron.com/blogs/news/types-of-keyboard-switches))"
+        in new_content
+    )
+    assert any(x["subject"] == "Keychron" for x in linked)
+
+
+def test_link_skips_single_word_non_brand_parenthetical():
+    """'(Recommended)' / '(Optional)' are editorial asides, not citations.
+
+    The corpus-grounded acceptance must NOT fire for them — they match no
+    corpus domain, so they stay untouched (no false link). This is the
+    precision guard that lets the single-word path exist at all.
+    """
+    sources = [CorpusSource(
+        url="https://www.keychron.com/x", title="Keychron", text="keychron switches",
+    )]
+    content = "Use linear switches for gaming (Recommended)."
+    new_content, linked = link_matched_attributions(content, sources)
+    assert new_content == content
+    assert linked == []
+
+
 # --- find_unmatched_attributions (advisory, scan-2) -------------------------
 
 def test_unmatched_flags_author_and_unknown_brand():

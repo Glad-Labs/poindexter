@@ -267,7 +267,9 @@ def _looks_like_source_name(subject: str) -> bool:
     return False
 
 
-def find_attributions(content: str | None) -> list[Attribution]:
+def find_attributions(
+    content: str | None, sources: list[CorpusSource] | None = None,
+) -> list[Attribution]:
     """Detect attribution-shaped phrases and their named subject spans.
 
     Surfaces subjects from four frames (passive "noted by X", subject-first
@@ -275,6 +277,14 @@ def find_attributions(content: str | None) -> list[Attribution]:
     first-person subjects. Each subject is flagged ``already_linked`` when its
     span overlaps a markdown link's text — those are correctly-cited and not a
     problem. Deduped by subject start offset, returned in document order.
+
+    ``sources`` (optional) is the research corpus. It only loosens the
+    parenthetical gate: a single-word, simple-title-case brand like
+    ``(Keychron)`` fails the brandish-shape heuristic (no internal caps / dot /
+    all-caps) and would otherwise be dropped, but is accepted when it grounds to
+    a corpus domain handle — high precision, so ``(Recommended)`` / ``(see
+    below)`` still never qualify. Passing no corpus preserves the original
+    shape-only behaviour.
     """
     if not content:
         return []
@@ -290,7 +300,13 @@ def find_attributions(content: str | None) -> list[Attribution]:
             if first_tok in _SUBJECT_STOPWORDS:
                 continue
             if rx is _PAREN_RE and not _looks_like_source_name(subject):
-                continue
+                # Single-word simple-title-case brands (Keychron, Razer, Cherry)
+                # fail the shape heuristic. Accept such a parenthetical ONLY when
+                # it grounds to a corpus source — a wrong auto-link is worse than
+                # a missing flag, so editorial asides ("(Recommended)") that match
+                # no corpus domain stay excluded.
+                if not (sources and _domain_match(subject, sources) is not None):
+                    continue
             start, end = m.span(1)
             if start in seen:
                 continue
@@ -322,7 +338,7 @@ def link_matched_attributions(
     if not content or not sources:
         return content or "", []
     edits: list[tuple[int, int, str, str]] = []
-    for a in find_attributions(content):
+    for a in find_attributions(content, sources):
         if a.already_linked:
             continue
         src = _domain_match(a.subject, sources)
@@ -350,7 +366,7 @@ def find_unmatched_attributions(
     if not content or not sources:
         return []
     out: list[str] = []
-    for a in find_attributions(content):
+    for a in find_attributions(content, sources):
         if a.already_linked:
             continue
         if match_subject(a.subject, sources) is not None:
