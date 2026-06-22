@@ -55,14 +55,14 @@ SECTIONS:
 
 AVAILABLE IMAGE SOURCES:
 - "sdxl": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, diagrams, conceptual scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
-- "pexels": Stock photography. Best for: real-world objects, environments, workspaces, close-ups, people working (if appropriate).
+- "pexels": Stock photography. Best for: real-world objects, environments, workspaces, hardware close-ups, materials. Avoid shots of people.
 
 RULES:
 1. Pick 3 sections that would benefit most from a visual (skip sections that are mostly code)
 2. For each, decide: sdxl or pexels? What style? What specific image?
 3. Also decide on 1 featured image (the hero/header image for the article)
 4. Be specific in your prompts — describe the exact scene, not vague concepts
-5. NEVER include text, words, letters, or faces in SDXL images
+5. NEVER depict people, hands, faces, or human figures in ANY image — the brand style is objects, hardware, and environments only. Also never put text, words, or letters in SDXL images.
 
 Output ONLY valid JSON (no markdown, no explanation):
 {
@@ -101,6 +101,37 @@ class TestImageDecisionPromptSnapshot:
             max_images=3,
         )
         assert actual == _IMAGE_DECISION_EXPECTED
+
+    def test_image_decision_forbids_human_depiction(self, pm: UnifiedPromptManager):
+        """The prompt must forbid people/hands/figures, not just faces.
+
+        Brand style is "no detailed humans" (feedback_image_style), and the live
+        image model (z_image_turbo) is guidance-distilled — it runs at CFG 0 and
+        IGNORES the negative prompt, so the positive prompt is the only lever.
+        Validation finding 2026-06-21: a "hands typing on a keyboard" inline image
+        shipped because RULE 5 banned only "faces" and the pexels source invited
+        "people working".
+        """
+        import re
+
+        rendered = pm.get_prompt(
+            "image.decision",
+            topic="T",
+            category="C",
+            section_list="  1. S",
+            max_images=3,
+        ).lower()
+        assert "people working" not in rendered, (
+            "image.decision must not invite 'people working' — brand style is no "
+            "detailed humans"
+        )
+        assert re.search(
+            r"(never|no|avoid|without)[^.\n]*\b(people|hands|human|figure)", rendered
+        ), (
+            "image.decision must explicitly forbid people/hands/human figures — "
+            "z_image_turbo ignores the negative prompt, so the positive prompt "
+            "must avoid all human subjects"
+        )
 
 
 # ---------------------------------------------------------------------------

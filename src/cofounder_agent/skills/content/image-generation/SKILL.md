@@ -79,14 +79,14 @@ SECTIONS:
 
 AVAILABLE IMAGE SOURCES:
 - "sdxl": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, diagrams, conceptual scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
-- "pexels": Stock photography. Best for: real-world objects, environments, workspaces, close-ups, people working (if appropriate).
+- "pexels": Stock photography. Best for: real-world objects, environments, workspaces, hardware close-ups, materials. Avoid shots of people.
 
 RULES:
 1. Pick {max_images} sections that would benefit most from a visual (skip sections that are mostly code)
 2. For each, decide: sdxl or pexels? What style? What specific image?
 3. Also decide on 1 featured image (the hero/header image for the article)
 4. Be specific in your prompts — describe the exact scene, not vague concepts
-5. NEVER include text, words, letters, or faces in SDXL images
+5. NEVER depict people, hands, faces, or human figures in ANY image — the brand style is objects, hardware, and environments only. Also never put text, words, or letters in SDXL images.
 
 Output ONLY valid JSON (no markdown, no explanation):
 {{
