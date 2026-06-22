@@ -426,9 +426,10 @@ class TestAddTaskTemplateSlug:
         })
 
         args = self._capture_pipeline_tasks_args(captured_args)
-        # template_slug is positional arg 17 in the INSERT (1-indexed
-        # in the SQL, so index 16 in the 0-indexed args tuple).
-        assert args[16] == "canonical_blog"
+        # template_slug is positional arg 16 in the INSERT (1-indexed in
+        # the SQL, so index 15 in the 0-indexed args tuple) after the
+        # vestigial `category` column was dropped (20260622_032938).
+        assert args[15] == "canonical_blog"
 
     @pytest.mark.asyncio
     async def test_default_setting_used_when_caller_omits(self):
@@ -450,7 +451,7 @@ class TestAddTaskTemplateSlug:
         await db.add_task({"id": "t-1", "topic": "AI"})
 
         args = self._capture_pipeline_tasks_args(captured_args)
-        assert args[16] == "canonical_blog"
+        assert args[15] == "canonical_blog"
 
     @pytest.mark.asyncio
     async def test_empty_setting_yields_null_slug(self):
@@ -1651,8 +1652,8 @@ class TestBulkAddTasks:
         # #188: pipeline_tasks INSERT positional row layout:
         #   $1 task_id, $2 task_type, $3 topic, $4 status, $5 stage,
         #   $6 site_id, $7 style, $8 tone, $9 target_length,
-        #   $10 category, $11 primary_keyword, $12 target_audience,
-        #   $13 created_at (used twice for created_at + updated_at)
+        #   $10 primary_keyword, $11 target_audience, $12 template_slug,
+        #   $13 niche_slug, $14 created_at (used twice for created_at + updated_at)
         pt_call = next(
             (sql, rows) for sql, rows in captured if "pipeline_tasks" in sql
         )
@@ -1746,7 +1747,10 @@ class TestAddTaskAgainstRealDb:
         assert row["task_type"] == "blog_post"
         assert row["content_type"] == "blog_post"  # view-derived from task_type
         assert row["status"] == "pending"
-        assert row["category"] == "test_188"
+        # category is a vestigial column dropped in 20260622_032938 — it is
+        # accepted-but-ignored on write, and the content_tasks view now
+        # projects it as a NULL shim for back-compat.
+        assert row["category"] is None
 
         meta = row["task_metadata"]
         if isinstance(meta, str):
@@ -1771,8 +1775,8 @@ class TestAddTaskAgainstRealDb:
         async with db_pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT topic, title, status FROM content_tasks "
-                "WHERE category = $1 ORDER BY topic ASC",
-                "test_188_bulk",
+                "WHERE task_id = ANY($1::text[]) ORDER BY topic ASC",
+                ids,
             )
 
         assert [r["topic"] for r in rows] == ["188-bulk-A", "188-bulk-B"]
@@ -1809,6 +1813,32 @@ class TestAddTaskAgainstRealDb:
 
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM pipeline_tasks WHERE task_id = $1", task_id)
+
+    async def test_category_column_dropped_but_shimmed_in_view(self, db_pool):
+        """20260622_032938 shimmed drop: the physical ``category`` column is
+        gone from ``pipeline_tasks``, but the ``content_tasks`` /
+        ``pipeline_tasks_view`` views still project it as a NULL shim so
+        ``SELECT *`` / ``TaskRecord.category`` / the ``?category=`` filter keep
+        working. Guards against both re-adding the column and dropping the
+        back-compat shim.
+        """
+        async with db_pool.acquire() as conn:
+            base_col = await conn.fetchval(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'pipeline_tasks' AND column_name = 'category'"
+            )
+            view_col = await conn.fetchval(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'content_tasks' AND column_name = 'category'"
+            )
+            ptv_col = await conn.fetchval(
+                "SELECT 1 FROM information_schema.columns "
+                "WHERE table_name = 'pipeline_tasks_view' AND column_name = 'category'"
+            )
+
+        assert base_col is None, "pipeline_tasks.category must be physically dropped"
+        assert view_col == 1, "content_tasks must keep a NULL category shim column"
+        assert ptv_col == 1, "pipeline_tasks_view must keep a NULL category shim column"
 
 
 # ---------------------------------------------------------------------------

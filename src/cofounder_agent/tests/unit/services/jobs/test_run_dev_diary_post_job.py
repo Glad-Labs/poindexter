@@ -174,7 +174,7 @@ class TestRun:
     async def test_already_ran_today_short_circuits(self, db_pool):
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM app_settings WHERE key = $1", _LAST_RUN_KEY)
-            await conn.execute("DELETE FROM content_tasks WHERE category = $1", _NICHE_SLUG)
+            await conn.execute("DELETE FROM content_tasks WHERE niche_slug = $1", _NICHE_SLUG)
 
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         await _set_last_run_date(db_pool, today)
@@ -196,7 +196,7 @@ class TestRun:
     async def test_quiet_day_skips_and_marks_marker(self, db_pool):
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM app_settings WHERE key = $1", _LAST_RUN_KEY)
-            await conn.execute("DELETE FROM content_tasks WHERE category = $1", _NICHE_SLUG)
+            await conn.execute("DELETE FROM content_tasks WHERE niche_slug = $1", _NICHE_SLUG)
 
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         notify_calls: list[str] = []
@@ -220,7 +220,7 @@ class TestRun:
         # No content task should have been created
         async with db_pool.acquire() as conn:
             row_count = await conn.fetchval(
-                "SELECT COUNT(*) FROM content_tasks WHERE category = $1",
+                "SELECT COUNT(*) FROM content_tasks WHERE niche_slug = $1",
                 _NICHE_SLUG,
             )
         assert row_count == 0
@@ -232,7 +232,7 @@ class TestRun:
     async def test_busy_day_creates_task_and_notifies(self, db_pool):
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM app_settings WHERE key = $1", _LAST_RUN_KEY)
-            await conn.execute("DELETE FROM content_tasks WHERE category = $1", _NICHE_SLUG)
+            await conn.execute("DELETE FROM content_tasks WHERE niche_slug = $1", _NICHE_SLUG)
 
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
         notify_calls: list[str] = []
@@ -259,12 +259,12 @@ class TestRun:
         # The content_tasks row should be present + tagged correctly
         async with db_pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT topic, category, task_metadata FROM content_tasks "
-                "WHERE category = $1 ORDER BY created_at DESC LIMIT 1",
+                "SELECT topic, niche_slug, task_metadata FROM content_tasks "
+                "WHERE niche_slug = $1 ORDER BY created_at DESC LIMIT 1",
                 _NICHE_SLUG,
             )
         assert row is not None
-        assert row["category"] == _NICHE_SLUG
+        assert row["niche_slug"] == _NICHE_SLUG
         assert today in row["topic"]
         # task_metadata is JSONB — asyncpg returns it as a string in raw mode
         import json as _json
@@ -282,7 +282,7 @@ class TestRun:
     async def test_notify_failure_does_not_break_job(self, db_pool):
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM app_settings WHERE key = $1", _LAST_RUN_KEY)
-            await conn.execute("DELETE FROM content_tasks WHERE category = $1", _NICHE_SLUG)
+            await conn.execute("DELETE FROM content_tasks WHERE niche_slug = $1", _NICHE_SLUG)
 
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
 

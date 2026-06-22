@@ -329,17 +329,17 @@ class TasksDatabase(DatabaseServiceMixin):
                         INSERT INTO pipeline_tasks (
                             task_id, task_type, topic, status, stage,
                             site_id, style, tone, target_length,
-                            category, primary_keyword, target_audience,
+                            primary_keyword, target_audience,
                             percentage, message, model_used,
                             error_message, template_slug, niche_slug,
                             created_at, updated_at
                         ) VALUES (
                             $1, $2, $3, $4, $5,
                             $6, $7, $8, $9,
-                            $10, $11, $12,
-                            $13, $14, $15,
-                            $16, $17, $18,
-                            $19, $19
+                            $10, $11,
+                            $12, $13, $14,
+                            $15, $16, $17,
+                            $18, $18
                         )
                         """,
                         task_id,
@@ -351,7 +351,6 @@ class TasksDatabase(DatabaseServiceMixin):
                         task_data.get("style", "technical"),
                         task_data.get("tone", "professional"),
                         task_data.get("target_length", 1500),
-                        task_data.get("category"),
                         task_data.get("primary_keyword"),
                         task_data.get("target_audience"),
                         metadata.get("percentage", 0),
@@ -482,7 +481,6 @@ class TasksDatabase(DatabaseServiceMixin):
                     task_data.get("style", "technical"),
                     task_data.get("tone", "professional"),
                     task_data.get("target_length", 1500),
-                    task_data.get("category"),
                     task_data.get("primary_keyword"),
                     task_data.get("target_audience"),
                     row_slug,
@@ -503,13 +501,13 @@ class TasksDatabase(DatabaseServiceMixin):
             INSERT INTO pipeline_tasks (
                 task_id, task_type, topic, status, stage,
                 site_id, style, tone, target_length,
-                category, primary_keyword, target_audience,
+                primary_keyword, target_audience,
                 template_slug, niche_slug, created_at, updated_at
             ) VALUES (
                 $1, $2, $3, $4, $5,
                 $6, $7, $8, $9,
-                $10, $11, $12,
-                $13, $14, $15, $15
+                $10, $11,
+                $12, $13, $14, $14
             )
         """
 

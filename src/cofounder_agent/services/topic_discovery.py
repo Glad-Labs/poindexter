@@ -379,13 +379,13 @@ class TopicDiscovery:
                             """
                             INSERT INTO pipeline_tasks
                               (task_id, task_type, topic, status, stage,
-                               style, tone, target_length, category,
+                               style, tone, target_length,
                                template_slug)
                             VALUES ($1, 'blog_post', $2::text, 'pending', 'pending',
-                                    $3, $4, $5, $6, $7)
+                                    $3, $4, $5, $6)
                             """,
                             task_id, str(topic.title), style, tone,
-                            target_length, str(topic.category or "technology"),
+                            target_length,
                             template_slug,
                         )
                         await conn.execute(

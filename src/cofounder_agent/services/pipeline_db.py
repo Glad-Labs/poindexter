@@ -46,10 +46,10 @@ class PipelineDB:
                 """
                 INSERT INTO pipeline_tasks (
                     task_id, task_type, topic, status, stage, site_id,
-                    style, tone, target_length, category, primary_keyword,
+                    style, tone, target_length, primary_keyword,
                     target_audience, percentage, message, model_used,
                     error_message, created_at, updated_at, started_at, completed_at
-                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19,$20)
+                ) VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
                 ON CONFLICT (task_id) DO UPDATE SET
                     status = EXCLUDED.status,
                     stage = EXCLUDED.stage,
@@ -70,7 +70,6 @@ class PipelineDB:
                 data.get("style", "technical"),
                 data.get("tone", "professional"),
                 data.get("target_length", 1500),
-                data.get("category"),
                 data.get("primary_keyword"),
                 data.get("target_audience"),
                 data.get("percentage", 0),

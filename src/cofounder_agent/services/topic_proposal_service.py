@@ -302,16 +302,16 @@ async def propose_topic(
                 """
                 INSERT INTO pipeline_tasks (
                     task_id, task_type, topic, status, stage, site_id,
-                    style, tone, target_length, category, primary_keyword,
+                    style, tone, target_length, primary_keyword,
                     target_audience, percentage, message, model_used,
                     error_message, template_slug,
                     created_at, updated_at
                 ) VALUES (
                     $1, 'blog_post', $2, 'pending', 'pending', NULL,
-                    $3, $4, $5, $6, $7,
-                    NULL, 0, $8, NULL,
-                    NULL, $9,
-                    $10, $10
+                    $3, $4, $5, $6,
+                    NULL, 0, $7, NULL,
+                    NULL, $8,
+                    $9, $9
                 )
                 """,
                 task_id,
@@ -319,7 +319,6 @@ async def propose_topic(
                 style,
                 tone,
                 int(target_length),
-                category_clean or None,
                 primary_keyword_resolved or None,
                 f"manual proposal (source={source})",
                 template_slug,

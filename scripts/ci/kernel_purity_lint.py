@@ -64,7 +64,8 @@ KERNEL_PURITY_BASELINE = {
     # import was the Direction-B violation that warranted the immediate fix;
     # the remaining lazy usage here is baselined pending a gate-artifact
     # public seam on the content module).
-    "services/topic_proposal_service.py:405",
+    # Line shifted 405 -> 404 by the poindexter#796 category-column drop.
+    "services/topic_proposal_service.py:404",
 }
 
 
