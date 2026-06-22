@@ -186,6 +186,16 @@ class StartupManager:
             # Step 2: Run migrations
             await self._run_migrations()
 
+            # Step 2b: Self-heal any fully-unstamped active graph_def rows
+            # (poindexter#755). graph_def *reseed* migrations write the raw
+            # spec with no per-node contract fingerprints (to stay importable
+            # in the migrations-smoke env), which un-stamps the active row and
+            # trips the load-time drift gate (assert_graph_def_current) on the
+            # next boot — halting every pipeline run. Baseline-stamp only
+            # never-stamped rows here so genuine drift in stamped rows is still
+            # caught. Runs after migrations because the reseed IS a migration.
+            await self._ensure_active_graph_defs_stamped()
+
             # Step 3: Setup Redis cache
             await self._setup_redis_cache()
 
@@ -537,6 +547,55 @@ class StartupManager:
             logger.info("   [OK] JWT blocklist service initialized")
         except Exception as e:
             logger.warning(f"   [WARNING] JWT blocklist init failed: {e!s}", exc_info=True)
+
+    async def _ensure_active_graph_defs_stamped(self) -> None:
+        """Baseline-stamp any active graph_def a reseed migration left fully
+        unstamped (poindexter#755).
+
+        Delegates to
+        :func:`services.pipeline_architect.ensure_active_graph_defs_stamped`,
+        which stamps ONLY never-stamped rows (so genuine atom-contract drift in
+        a stamped row is still caught by the load-time gate). Best-effort: a
+        missing pool, an unimportable pipeline_architect stack (minimal
+        coordinator deploy), or any runtime error is logged and skipped —
+        never aborts startup. Same posture as the #379 settings seeder and the
+        #1284 Ollama-model validator.
+        """
+        if not (self.database_service and self.database_service.pool):
+            logger.debug("[graph_def_stamp] no DB pool — skipping")
+            return
+        try:
+            from services.pipeline_architect import (
+                ensure_active_graph_defs_stamped,
+            )
+        except Exception as exc:  # noqa: BLE001 — stack unavailable ⇒ no-op
+            logger.warning(
+                "[graph_def_stamp] pipeline_architect unavailable, "
+                "skipping (%s)",
+                exc,
+            )
+            return
+        try:
+            stamped = await ensure_active_graph_defs_stamped(
+                self.database_service.pool
+            )
+            if stamped:
+                logger.info(
+                    "   [OK] graph_def self-heal: baseline-stamped %d "
+                    "fully-unstamped active graph_def(s)",
+                    stamped,
+                )
+            else:
+                logger.debug(
+                    "   [INFO] graph_def self-heal: no fully-unstamped active "
+                    "graph_def(s) to stamp"
+                )
+        except Exception as exc:  # noqa: BLE001 — best-effort, never abort boot
+            logger.warning(
+                "[graph_def_stamp] self-heal raised unexpectedly: %s",
+                exc,
+                exc_info=True,
+            )
 
     async def _setup_redis_cache(self) -> None:
         """Initialize Redis cache for query optimization.

@@ -109,6 +109,20 @@ and calls `notify_operator()`.
 - **Trade-off:** an atom contract change halts that pipeline until a re-seed.
   This is the intended fail-loud behavior; the remediation is one re-seed and is
   named in the error.
+- **Reseed un-stamping → boot-time self-heal (follow-up, poindexter#755):** the
+  baseline restamp migration only fixes rows extant at its time. graph_def reseed
+  migrations write the raw spec via `json.dumps(CANONICAL_BLOG_GRAPH_DEF)`
+  with **no** `stamp_graph_def` call — deliberately, so they stay importable in
+  the migrations-smoke env (no atom registry). Each reseed therefore re-un-stamps
+  the active row, and the next boot halts every run with `GraphContractError`
+  (bit twice: the v6 director reseed and the preview_gate reseed; hotfixed by
+  one-shot restamp migrations that only move the problem to the next reseed). The
+  durable fix is `StartupManager._ensure_active_graph_defs_stamped` →
+  `pipeline_architect.ensure_active_graph_defs_stamped`, run on every boot right
+  after migrations: it baseline-stamps **only** rows that are fully unstamped
+  (`is_graph_def_fully_unstamped`), leaving any row that carries a fingerprint
+  untouched so this gate still catches genuine drift. Self-healing regardless of
+  how a row got written, so a future reseed can keep emitting raw specs.
 
 ### 4. Checkpoint compatibility — discard on mismatch
 

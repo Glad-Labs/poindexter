@@ -1237,6 +1237,110 @@ def assert_graph_def_current(spec: dict[str, Any]) -> None:
         )
 
 
+def is_graph_def_fully_unstamped(spec: dict[str, Any]) -> bool:
+    """True iff ``spec`` has at least one node and **no** node carries a truthy
+    ``_contract_fp``.
+
+    A *partially*-stamped graph (some nodes stamped, some not) returns
+    ``False`` — only never-stamped graphs are eligible for a baseline stamp.
+    This is the safety pivot for the boot-time self-heal
+    (:func:`ensure_active_graph_defs_stamped`): re-stamping a row that already
+    carries fingerprints would silently overwrite — and thus mask — the
+    genuine atom-contract drift that :func:`assert_graph_def_current` exists to
+    catch. A deliberate graph_def reseed writes the raw spec with *every* node
+    unstamped, which is exactly the shape this predicate accepts.
+
+    Falsy fingerprints (``""``/``None``) count as unstamped, mirroring
+    :func:`assert_graph_def_current`, which rejects any falsy ``_contract_fp``.
+    """
+    nodes = spec.get("nodes") if isinstance(spec, dict) else None
+    if not isinstance(nodes, list) or not nodes:
+        return False
+    return all(isinstance(n, dict) and not n.get("_contract_fp") for n in nodes)
+
+
+async def ensure_active_graph_defs_stamped(pool: Any) -> int:
+    """Baseline-stamp every active ``pipeline_templates`` row that is *fully*
+    unstamped, leaving already-stamped rows untouched. Returns the number of
+    rows stamped (poindexter#755).
+
+    Boot-time self-heal: graph_def *reseed* migrations write the raw spec via
+    ``json.dumps(CANONICAL_BLOG_GRAPH_DEF)`` with no ``stamp_graph_def`` call —
+    deliberately, so they stay importable in the migrations-smoke env (no atom
+    registry). That un-stamps the active row, which then trips the load-time
+    drift gate (:func:`assert_graph_def_current` via ``TemplateRunner.run``) on
+    the next worker boot and halts every pipeline run. One-shot restamp
+    migrations only fix rows extant at their time; the next reseed
+    re-introduces the outage. Running this after migrations on every boot makes
+    the fix recurrence-proof.
+
+    Safe w.r.t. drift detection: a row that carries *any* fingerprint is left
+    alone (see :func:`is_graph_def_fully_unstamped`), so the gate still catches
+    real atom-contract drift. Only never-stamped rows — which the gate would
+    reject outright — get a baseline stamp from the live registry, exactly what
+    a deliberate reseed intends.
+
+    Import-guarded: discovery walks ``modules.content.atoms.*`` which pulls
+    runtime deps that may be absent (a minimal coordinator deploy, smoke). If
+    the registry is unavailable we log and no-op (returning 0) rather than
+    block startup.
+    """
+    try:
+        from services.atom_registry import discover  # noqa: PLC0415
+
+        discover()
+    except Exception as exc:  # noqa: BLE001 — no registry ⇒ nothing to stamp
+        logger.warning(
+            "ensure_active_graph_defs_stamped: atom registry unavailable, "
+            "skipping (%s)",
+            exc,
+        )
+        return 0
+
+    stamped = 0
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT slug, graph_def FROM pipeline_templates WHERE active = true"
+        )
+        for row in rows:
+            raw = row["graph_def"]
+            spec = json.loads(raw) if isinstance(raw, str) else raw
+            if not is_graph_def_fully_unstamped(spec):
+                # Already stamped (or empty/malformed) — leave it so the
+                # drift gate stays meaningful for this row.
+                continue
+            try:
+                stamped_spec = stamp_graph_def(spec)
+            except Exception as exc:  # noqa: BLE001 — skip un-stampable row
+                logger.warning(
+                    "ensure_active_graph_defs_stamped: slug=%s could not be "
+                    "stamped (%s)",
+                    row["slug"],
+                    exc,
+                )
+                continue
+            await conn.execute(
+                "UPDATE pipeline_templates SET graph_def = $1::jsonb, "
+                "updated_at = NOW() WHERE slug = $2 AND active = true",
+                json.dumps(stamped_spec),
+                row["slug"],
+            )
+            stamped += 1
+
+    if stamped:
+        logger.info(
+            "ensure_active_graph_defs_stamped: baseline-stamped %d "
+            "fully-unstamped active graph_def(s)",
+            stamped,
+        )
+    else:
+        logger.debug(
+            "ensure_active_graph_defs_stamped: no fully-unstamped active "
+            "graph_def(s) to stamp"
+        )
+    return stamped
+
+
 def graph_signature(spec: dict[str, Any]) -> str:
     """12-hex digest over node ``(id, _contract_fp)`` pairs + edges — identifies
     the exact graph a checkpoint was produced under (poindexter#755)."""

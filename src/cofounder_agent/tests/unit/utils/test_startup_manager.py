@@ -379,6 +379,79 @@ class TestRunMigrations:
 
 
 # ---------------------------------------------------------------------------
+# _ensure_active_graph_defs_stamped — boot-time graph_def self-heal (#755)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestEnsureActiveGraphDefsStamped:
+    """The boot step delegates to ``pipeline_architect.ensure_active_graph_defs_stamped``
+    with the live pool, no-ops without a pool, and never aborts startup —
+    matching the best-effort posture of the seeder / model-validator steps."""
+
+    def _mock_db(self):
+        db = MagicMock()
+        db.pool = MagicMock()
+        return db
+
+    def test_delegates_to_pipeline_architect_with_pool(self):
+        mgr = _make_manager()
+        mgr.database_service = self._mock_db()
+        pool = mgr.database_service.pool
+
+        mock_pa = MagicMock()
+        mock_pa.ensure_active_graph_defs_stamped = AsyncMock(return_value=2)
+
+        with patch.dict("sys.modules", {"services.pipeline_architect": mock_pa}):
+            _run(mgr._ensure_active_graph_defs_stamped())
+
+        mock_pa.ensure_active_graph_defs_stamped.assert_awaited_once()
+        # Receives the DB pool, not the wrapper service.
+        assert mock_pa.ensure_active_graph_defs_stamped.await_args.args[0] is pool
+
+    def test_skips_when_pool_is_none(self):
+        mgr = _make_manager()
+        mgr.database_service = MagicMock()
+        mgr.database_service.pool = None  # degraded startup
+
+        mock_pa = MagicMock()
+        mock_pa.ensure_active_graph_defs_stamped = AsyncMock()
+
+        with patch.dict("sys.modules", {"services.pipeline_architect": mock_pa}):
+            _run(mgr._ensure_active_graph_defs_stamped())
+
+        mock_pa.ensure_active_graph_defs_stamped.assert_not_awaited()
+
+    def test_skips_when_no_database_service(self):
+        mgr = _make_manager()
+        mgr.database_service = None
+        _run(mgr._ensure_active_graph_defs_stamped())  # Must not raise
+
+    def test_exception_swallowed_not_raised(self):
+        """A failure in the stamping step must NOT abort startup (best-effort)."""
+        mgr = _make_manager()
+        mgr.database_service = self._mock_db()
+
+        mock_pa = MagicMock()
+        mock_pa.ensure_active_graph_defs_stamped = AsyncMock(
+            side_effect=RuntimeError("registry exploded")
+        )
+
+        with patch.dict("sys.modules", {"services.pipeline_architect": mock_pa}):
+            _run(mgr._ensure_active_graph_defs_stamped())  # Must not raise
+
+    def test_import_unavailable_no_op(self):
+        """If pipeline_architect can't be imported (minimal deploy), no-op."""
+        mgr = _make_manager()
+        mgr.database_service = self._mock_db()
+
+        # A None sys.modules entry makes ``from services.pipeline_architect
+        # import ...`` raise ImportError — the import-guard must swallow it.
+        with patch.dict("sys.modules", {"services.pipeline_architect": None}):
+            _run(mgr._ensure_active_graph_defs_stamped())  # Must not raise
+
+
+# ---------------------------------------------------------------------------
 # _setup_redis_cache
 # ---------------------------------------------------------------------------
 
@@ -650,3 +723,25 @@ class TestInitializeAllServices:
             "redis",
             "verify",
         ]
+
+    def test_graph_def_stamp_runs_after_migrations(self):
+        """The #755 graph_def self-heal must run AFTER migrations (the reseed
+        that un-stamps the row is a migration) and BEFORE the rest of boot."""
+        mgr = _make_manager()
+        call_order = []
+
+        mgr._validate_secrets = MagicMock()
+        mgr._initialize_database = AsyncMock()
+        mgr._run_migrations = AsyncMock(side_effect=lambda: call_order.append("migrations"))
+        mgr._ensure_active_graph_defs_stamped = AsyncMock(
+            side_effect=lambda: call_order.append("graphdef_stamp")
+        )
+        mgr._setup_redis_cache = AsyncMock(side_effect=lambda: call_order.append("redis"))
+        mgr._verify_connections = AsyncMock()
+        mgr._log_startup_summary = MagicMock()
+
+        _run(mgr.initialize_all_services())
+
+        assert "graphdef_stamp" in call_order
+        assert call_order.index("migrations") < call_order.index("graphdef_stamp")
+        assert call_order.index("graphdef_stamp") < call_order.index("redis")
