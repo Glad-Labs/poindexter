@@ -31,6 +31,8 @@ seed app_settings reads via the ``setting_values`` dict passed to
 from __future__ import annotations
 
 import json
+import re
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -788,6 +790,91 @@ class TestWatchListParsing:
             {"container": "poindexter-x", "port": 1, "probe_type": "carrier-pigeon"},
         ]))
         assert out[0]["probe_type"] == "http"
+
+
+# ---------------------------------------------------------------------------
+# Seed contract — the watch_list seeded in 0000_baseline.seeds.sql must only
+# name containers that exist AND publish a host port. A stale name silently
+# no-ops (``_container_exists`` → False → "unwatched" → skipped), so the
+# service gets ZERO coverage and nobody notices. Worse, a real container with
+# NO published host port (e.g. langfuse-clickhouse / langfuse-minio, internal
+# 8123/9000 only) would make the external probe fail every cycle → a
+# false-positive restart loop. This static test (no DB) reads the actual
+# seeded value and would have caught the 2026-06-21 drift.
+# ---------------------------------------------------------------------------
+
+
+def _baseline_seeds_path() -> Path:
+    """Locate 0000_baseline.seeds.sql by walking up from this test file.
+
+    Walking up (rather than a fixed ``parents[N]``) sidesteps the path-depth
+    fragility that makes a few brain tests host-only.
+    """
+    for parent in Path(__file__).resolve().parents:
+        candidate = parent / "services" / "migrations" / "0000_baseline.seeds.sql"
+        if candidate.exists():
+            return candidate
+    raise FileNotFoundError(
+        "0000_baseline.seeds.sql not found above " + __file__
+    )
+
+
+def _seeded_watch_list() -> list[dict[str, Any]]:
+    """Parse the docker_port_forward_watch_list value out of the baseline seed.
+
+    The seeded JSON is single-line and single-quote-delimited in the SQL with
+    no apostrophes inside, so a non-greedy capture to the next ``'`` is exact.
+    """
+    text = _baseline_seeds_path().read_text(encoding="utf-8")
+    m = re.search(r"'docker_port_forward_watch_list',\s*'(.*?)'", text)
+    assert m, "docker_port_forward_watch_list not seeded in baseline.seeds.sql"
+    return pf._parse_watch_list(m.group(1))
+
+
+# Containers that were seeded but are stale: clickhouse/minio were renamed
+# under the langfuse- prefix AND publish no host port; redis-insight and
+# pyroscope-grafana-frontend never existed in the running stack.
+_RETIRED_WATCH_CONTAINERS = {
+    "poindexter-clickhouse",
+    "poindexter-minio",
+    "poindexter-redis-insight",
+    "poindexter-pyroscope-grafana-frontend",
+}
+
+# The host-port-publishing services this probe can actually recover.
+_EXPECTED_WATCH_CONTAINERS = {
+    "poindexter-pyroscope",
+    "poindexter-glitchtip-web",
+    "poindexter-alertmanager",
+    "poindexter-pgadmin",
+    "poindexter-grafana",
+    "poindexter-prometheus",
+    "poindexter-loki",
+    "poindexter-langfuse-web",
+    "poindexter-postgres-local",
+}
+
+
+@pytest.mark.unit
+class TestSeededWatchListIsCurrent:
+    def test_no_retired_containers_seeded(self):
+        seeded = {e["container"] for e in _seeded_watch_list()}
+        leaked = seeded & _RETIRED_WATCH_CONTAINERS
+        assert not leaked, (
+            f"stale containers still in the seeded watch_list: {sorted(leaked)} "
+            "— they no-op (unwatched) or restart-loop (no host port); drop them"
+        )
+
+    def test_watch_list_matches_running_stack(self):
+        """Exact-set lock (mirrors the #472 host_port contract test). Adding a
+        new watched service must update this set — forcing a re-check that the
+        container exists AND publishes a host port before it goes in."""
+        seeded = {e["container"] for e in _seeded_watch_list()}
+        assert seeded == _EXPECTED_WATCH_CONTAINERS, (
+            f"seeded watch_list drifted from the running stack: "
+            f"unexpected={sorted(seeded - _EXPECTED_WATCH_CONTAINERS)}, "
+            f"missing={sorted(_EXPECTED_WATCH_CONTAINERS - seeded)}"
+        )
 
 
 @pytest.mark.unit

@@ -5,10 +5,13 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from services.data_fabric import DataFabric
+from services.data_fabric.loki import DEFAULT_URL as LOKI_DEFAULT_URL
 from services.data_fabric.loki import LokiClient
 from services.data_fabric.prometheus import DEFAULT_URL as PROMETHEUS_DEFAULT_URL
 from services.data_fabric.prometheus import PrometheusClient
+from services.data_fabric.pyroscope import DEFAULT_URL as PYROSCOPE_DEFAULT_URL
 from services.data_fabric.pyroscope import PyroscopeClient
+from services.data_fabric.tempo import DEFAULT_URL as TEMPO_DEFAULT_URL
 from services.data_fabric.tempo import TempoClient
 
 
@@ -74,3 +77,33 @@ class TestSiteConfigPropagation:
         fabric = DataFabric(site_config=sc)
         client = fabric.loki
         assert client._url == "http://custom:3100"
+
+
+class TestDefaultUrlsAreInternalDns:
+    """DataFabric runs inside the worker/brain containers, so a ``localhost``
+    default points at the container itself — the same in-container footgun
+    PR #1827 fixed for the GPU-metrics URL (and retired ``nvidia_exporter_url``
+    over). Defaults must use compose-service DNS so the clients resolve the
+    real services over the docker network, sidestepping the host wslrelay
+    port-forward that can wedge on Windows.
+    """
+
+    def test_defaults_never_use_localhost(self):
+        for name, url in {
+            "prometheus": PROMETHEUS_DEFAULT_URL,
+            "loki": LOKI_DEFAULT_URL,
+            "tempo": TEMPO_DEFAULT_URL,
+            "pyroscope": PYROSCOPE_DEFAULT_URL,
+        }.items():
+            assert "localhost" not in url and "127.0.0.1" not in url, (
+                f"{name} DEFAULT_URL={url!r} resolves to the container itself "
+                "in-container — use compose-service DNS"
+            )
+
+    def test_defaults_match_compose_service_dns(self):
+        # prometheus host-published on 9091 but listens internally on 9090
+        # (matches gpu_metrics_prometheus_url set by #1827); the rest are 1:1.
+        assert PROMETHEUS_DEFAULT_URL == "http://prometheus:9090"
+        assert LOKI_DEFAULT_URL == "http://loki:3100"
+        assert TEMPO_DEFAULT_URL == "http://tempo:3200"
+        assert PYROSCOPE_DEFAULT_URL == "http://pyroscope:4040"

@@ -6,7 +6,7 @@ import httpx
 
 from .errors import DataFabricError
 
-DEFAULT_URL = "http://localhost:3100"
+DEFAULT_URL = "http://loki:3100"
 
 
 class LokiClient:

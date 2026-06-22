@@ -6,7 +6,7 @@ import httpx
 
 from .errors import DataFabricError
 
-DEFAULT_URL = "http://localhost:4040"
+DEFAULT_URL = "http://pyroscope:4040"
 
 
 class PyroscopeClient:

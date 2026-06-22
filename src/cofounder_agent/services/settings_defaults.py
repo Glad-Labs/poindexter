@@ -728,12 +728,16 @@ DEFAULTS: dict[str, str] = {
     'media.qa.av_sync_tolerance_s': '2.0',
 
     # ----- Observability / monitoring -----
-    # DataFabric store URLs (#429). Defaults match Docker-local ports from CLAUDE.md.
-    # Override to http://host.docker.internal:<port> when running inside a container.
-    'data_fabric_prometheus_url': 'http://localhost:9091',
-    'data_fabric_loki_url': 'http://localhost:3100',
-    'data_fabric_tempo_url': 'http://localhost:3200',
-    'data_fabric_pyroscope_url': 'http://localhost:4040',
+    # DataFabric store URLs (#429). DataFabric clients run inside the
+    # worker/brain containers, so the defaults use compose-service DNS — a
+    # 'localhost' default would resolve to the container itself (the
+    # in-container footgun PR #1827 fixed for the GPU-metrics URL). Internal
+    # DNS also avoids the host wslrelay port-forward that can wedge on Windows.
+    # prometheus listens on 9090 internally (host-published 9091).
+    'data_fabric_prometheus_url': 'http://prometheus:9090',
+    'data_fabric_loki_url': 'http://loki:3100',
+    'data_fabric_tempo_url': 'http://tempo:3200',
+    'data_fabric_pyroscope_url': 'http://pyroscope:4040',
     'enable_pyroscope': 'false',
     # Defaulted true 2026-05-17 (Glad-Labs/poindexter#409) — the
     # OTLP gRPC exporter + Tempo container + per-probe instrumentation
@@ -1256,6 +1260,14 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'migration_drift_defer_while_inflight': {'owner': 'brain_migration_drift_probe', 'value_type': 'boolean'},
 
     # ----- Deprecated keys — emit warning on read (add new ones here) -----
+    # nvidia_exporter_url went dead when PR #1827 moved gpu_scheduler onto
+    # Prometheus (gpu_metrics_prometheus_url) for GPU metrics; nothing reads
+    # the direct-exporter URL anymore. Kept as a tombstone so SiteConfig.get()
+    # warns once-per-boot and points callers at the replacement key.
+    'nvidia_exporter_url': {
+        'owner': 'gpu_scheduler', 'value_type': 'url',
+        'deprecated': True, 'superseded_by': 'gpu_metrics_prometheus_url',
+    },
     # Example pattern (uncomment + fill in when retiring a key):
     # 'old_key_name': {
     #     'owner': 'cost_guard', 'value_type': 'float',

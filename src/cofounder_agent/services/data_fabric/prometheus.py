@@ -6,7 +6,7 @@ import httpx
 
 from .errors import DataFabricError
 
-DEFAULT_URL = "http://localhost:9091"
+DEFAULT_URL = "http://prometheus:9090"
 
 
 class PrometheusClient:

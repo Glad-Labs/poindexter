@@ -6,7 +6,7 @@ import httpx
 
 from .errors import DataFabricError
 
-DEFAULT_URL = "http://localhost:3200"
+DEFAULT_URL = "http://tempo:3200"
 
 
 class TempoClient:

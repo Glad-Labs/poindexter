@@ -449,6 +449,77 @@ class TestRetiredSettings:
 
 
 # ---------------------------------------------------------------------------
+# Deprecated settings (lifecycle columns, not hard-delete)
+# ---------------------------------------------------------------------------
+
+class TestDeprecatedSettings:
+    """Keys kept as tombstones via the lifecycle columns (deprecated +
+    superseded_by) instead of hard-deleted. ``seed_settings_metadata`` applies
+    the flag every boot (fresh + prod via ``UPDATE … IS DISTINCT FROM``) and
+    ``SiteConfig.get()`` warns once-per-boot on read, pointing callers at the
+    replacement key.
+    """
+
+    def test_nvidia_exporter_url_deprecated(self):
+        """nvidia_exporter_url went dead when PR #1827 moved gpu_scheduler onto
+        Prometheus (gpu_metrics_prometheus_url); nothing reads it anymore."""
+        from services.settings_defaults import DEFAULTS, METADATA
+
+        meta = METADATA.get("nvidia_exporter_url")
+        assert meta is not None, "nvidia_exporter_url must be marked in METADATA"
+        assert meta.get("deprecated") is True
+        assert meta.get("superseded_by") == "gpu_metrics_prometheus_url"
+        # The replacement must be a live, seeded key (breadcrumb can't dangle).
+        assert "gpu_metrics_prometheus_url" in DEFAULTS
+
+    def test_every_deprecated_key_supersedes_a_live_key(self):
+        """Invariant guarding all future deprecations: a deprecated key's
+        superseded_by must point at a key that still exists in DEFAULTS."""
+        from services.settings_defaults import DEFAULTS, METADATA
+
+        for key, meta in METADATA.items():
+            if not meta.get("deprecated"):
+                continue
+            target = meta.get("superseded_by")
+            assert target, f"{key} is deprecated but has no superseded_by"
+            assert target in DEFAULTS, (
+                f"{key} superseded_by={target!r}, which is not a live "
+                "DEFAULTS key"
+            )
+
+
+# ---------------------------------------------------------------------------
+# DataFabric URLs must seed internal DNS, never localhost
+# ---------------------------------------------------------------------------
+
+class TestDataFabricUrlsAreInternalDns:
+    """DataFabric clients run inside the worker/brain containers, so the
+    seeded ``data_fabric_*_url`` defaults must use compose-service DNS — a
+    ``localhost`` value resolves to the container itself (the in-container
+    footgun PR #1827 fixed for the GPU URL). Companion to the DEFAULT_URL
+    constant test in tests/unit/services/data_fabric/test_data_fabric.py;
+    this guards the *seed* surface that populates fresh installs.
+    """
+
+    EXPECTED = {
+        "data_fabric_prometheus_url": "http://prometheus:9090",
+        "data_fabric_loki_url": "http://loki:3100",
+        "data_fabric_tempo_url": "http://tempo:3200",
+        "data_fabric_pyroscope_url": "http://pyroscope:4040",
+    }
+
+    def test_data_fabric_defaults_use_internal_dns(self):
+        from services.settings_defaults import DEFAULTS
+
+        for key, expected in self.EXPECTED.items():
+            actual = DEFAULTS.get(key)
+            assert actual == expected, (
+                f"{key} default = {actual!r}; expected {expected!r}. A "
+                "localhost default resolves to the container itself."
+            )
+
+
+# ---------------------------------------------------------------------------
 # Hardcoded-value externalisation audit keys
 # ---------------------------------------------------------------------------
 
