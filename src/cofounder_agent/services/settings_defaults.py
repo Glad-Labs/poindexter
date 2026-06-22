@@ -441,9 +441,11 @@ DEFAULTS: dict[str, str] = {
     # discarding a non-approvable draft — after the bounded regen cycle it FLAGS
     # the draft (qa_flagged) and rides the forward edge to awaiting_approval with
     # the per-rail findings attached, never writing rejected/rejected_final
-    # (operator-only). Ships OFF (today's discard behavior); flip to 'true' after
-    # the Docker e2e (preview_gate T12 playbook).
-    'qa_flag_instead_of_reject': 'false',
+    # (operator-only). Default 'true' since 2026-06-22: shipped OFF behind this
+    # switch, e2e-verified live (task ce1f7499 — a 94-score no-veto draft flagged
+    # to awaiting_approval instead of discarded), then flipped on prod + here so
+    # fresh installs default to never-discard. 'false' restores legacy discard.
+    'qa_flag_instead_of_reject': 'true',
 
     # ----- Topic discovery / dedup / ranking -----
     'niche_batch_expires_days': '7',
