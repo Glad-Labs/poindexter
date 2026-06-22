@@ -266,7 +266,7 @@ youtube = ["google-auth", "google-auth-oauthlib", "google-api-python-client", "p
 
 [tool.poetry.group.dev.dependencies]
 # Testing
-pytest = "^9.0"
+pytest = "^9.1"
 pytest-asyncio = ">=1.0,<2.0"
 pytest-cov = ">=4,<8"
 pytest-timeout = "^2.0"
