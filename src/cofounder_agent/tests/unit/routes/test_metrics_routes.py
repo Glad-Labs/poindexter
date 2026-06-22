@@ -285,6 +285,15 @@ class TestGetBudgetStatus:
             client.get("/api/metrics/costs/budget?monthly_budget=500")
         mock_svc.get_budget_status.assert_awaited_once_with(monthly_budget=500.0)
 
+    def test_no_budget_param_forwards_none(self):
+        # Omitting the param sends None so the service reads the operator's real
+        # cap from app_settings (no hardcoded $150 at the route boundary).
+        mock_svc = _make_mock_cost_service()
+        with patch("routes.metrics_routes.CostAggregationService", return_value=mock_svc):
+            client = TestClient(_build_app())
+            client.get("/api/metrics/costs/budget")
+        mock_svc.get_budget_status.assert_awaited_once_with(monthly_budget=None)
+
     def test_budget_below_minimum_returns_422(self):
         client = TestClient(_build_app())
         resp = client.get("/api/metrics/costs/budget?monthly_budget=5.0")

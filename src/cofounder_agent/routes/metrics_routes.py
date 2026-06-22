@@ -31,14 +31,16 @@ _start_time = datetime.now(timezone.utc)
 @metrics_router.get("/costs/budget")
 async def get_budget_status(
     token: str = Depends(verify_api_token),
-    monthly_budget: float = Query(150.0, ge=10, le=10000),
+    monthly_budget: float | None = Query(None, ge=10, le=10000),
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> dict[str, Any]:
     """
     Get budget status and alerts for Week 2 dashboard
 
     **Parameters:**
-    - monthly_budget: Monthly limit in USD (default $150 for solopreneurs)
+    - monthly_budget: Monthly limit in USD. Omit to use the operator's real cap
+      from ``app_settings.monthly_spend_limit_usd`` (no hardcoded $150); supply a
+      value only to override for a what-if view.
 
     **Returns:**
     - Amount spent vs remaining
