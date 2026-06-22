@@ -11,18 +11,33 @@ from __future__ import annotations
 
 from typing import Any
 
+# Columns every list row carries. ``qa_feedback`` is the formatted rail
+# breakdown (compile_meta → persist_task writes it to
+# pipeline_tasks.qa_feedback) and ``qa_flagged`` is the self-heal-before-paging
+# marker — a draft QA found non-approvable but did NOT discard. The flag lives
+# in ``task_metadata`` JSON (no view rebuild), so derive it in SQL: a missing
+# key or a non-flagged draft both read as false.
+_LIST_COLS = (
+    "task_id, topic, status, quality_score, created_at, qa_feedback, "
+    "COALESCE((task_metadata->>'qa_flagged')::boolean, false) AS qa_flagged"
+)
+
 _LIST_TASKS_FILTERED_SQL = (
-    "SELECT task_id, topic, status, quality_score, created_at "
+    f"SELECT {_LIST_COLS} "
     "FROM pipeline_tasks_view WHERE status = $1 ORDER BY created_at DESC LIMIT $2"
 )
 
 _LIST_TASKS_ALL_SQL = (
-    "SELECT task_id, topic, status, quality_score, created_at "
+    f"SELECT {_LIST_COLS} "
     "FROM pipeline_tasks_view ORDER BY created_at DESC LIMIT $1"
 )
 
 _RESOLVE_PREFIX_SQL = (
     "SELECT task_id FROM pipeline_tasks_view WHERE task_id::text LIKE $1 || '%' LIMIT 1"
+)
+
+_TASK_QA_FEEDBACK_SQL = (
+    "SELECT qa_feedback FROM pipeline_tasks_view WHERE task_id::text = $1 LIMIT 1"
 )
 
 
@@ -43,6 +58,20 @@ async def list_tasks(
     else:
         rows = await pool.fetch(_LIST_TASKS_ALL_SQL, limit)
     return [dict(r) for r in rows]
+
+
+async def get_task_qa_feedback(pool: Any, task_id: Any) -> str:
+    """Return the formatted QA-rail feedback for a single task.
+
+    This is the per-rail breakdown the operator reads to decide on a
+    ``qa_flagged`` (or any awaiting_approval) post — score, vetoes, and
+    advisory notes, as ``compile_meta`` formatted them. Returns ``""`` when
+    the task has no row or no feedback recorded yet (never ``None``).
+    """
+    row = await pool.fetchrow(_TASK_QA_FEEDBACK_SQL, str(task_id))
+    if row and row["qa_feedback"]:
+        return str(row["qa_feedback"])
+    return ""
 
 
 async def resolve_task_prefix(pool: Any, prefix: str) -> str:

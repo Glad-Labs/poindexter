@@ -273,3 +273,75 @@ class TestIsRescuableReject:
         assert is_rescuable_reject(
             [], ["ghost_reviewer"], final_score=10.0, threshold=70.0,
         ) is False
+
+    # --- broaden=True (self-heal-before-paging) -------------------------------
+    # When the qa_flag_instead_of_reject switch is on, qa.aggregate passes
+    # broaden=True so the garbage-collector reruns ANY draft a text revision
+    # could plausibly fix before flag-and-continue — including programmatic /
+    # brand / factcheck vetoes — but still NOT a missing rail or a non-text
+    # gate (vision / url) a rewrite can't touch.
+
+    def test_broaden_default_false_keeps_programmatic_non_rescuable(self):
+        # Default arg must preserve today's behavior exactly.
+        reviews = [
+            {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
+             "provider": "programmatic", "advisory": False},
+        ]
+        assert is_rescuable_reject(
+            reviews, ["programmatic_validator"], final_score=0.0, threshold=70.0,
+        ) is False
+
+    def test_broaden_true_programmatic_is_rescuable(self):
+        reviews = [
+            {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
+             "provider": "programmatic", "advisory": False},
+        ]
+        assert is_rescuable_reject(
+            reviews, ["programmatic_validator"], final_score=0.0, threshold=70.0,
+            broaden=True,
+        ) is True
+
+    def test_broaden_true_brand_is_rescuable(self):
+        reviews = [
+            {"reviewer": "deepeval_brand_fabrication", "approved": False, "score": 0.0,
+             "provider": "deepeval", "advisory": False},
+        ]
+        assert is_rescuable_reject(
+            reviews, ["deepeval_brand_fabrication"], final_score=0.0, threshold=70.0,
+            broaden=True,
+        ) is True
+
+    def test_broaden_true_missing_required_still_not_rescuable(self):
+        # Infra gap — a rerun won't make an absent rail emit. Surface-direct.
+        reviews = [
+            {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+             "provider": "ollama", "advisory": False},
+        ]
+        assert is_rescuable_reject(
+            reviews, ["ollama_critic", "missing_required:deepeval_g_eval"],
+            final_score=55.0, threshold=70.0, broaden=True,
+        ) is False
+
+    def test_broaden_true_vision_gate_still_not_rescuable(self):
+        # A text revise can't fix a bad image — surface-direct even when broadened.
+        reviews = [
+            {"reviewer": "vision_gate", "approved": False, "score": 20.0,
+             "provider": "vision_gate", "advisory": False},
+        ]
+        assert is_rescuable_reject(
+            reviews, ["vision_gate"], final_score=20.0, threshold=70.0, broaden=True,
+        ) is False
+
+    def test_broaden_true_url_verifier_still_not_rescuable(self):
+        reviews = [
+            {"reviewer": "url_verifier", "approved": False, "score": 40.0,
+             "provider": "url_verifier", "advisory": False},
+        ]
+        assert is_rescuable_reject(
+            reviews, ["url_verifier"], final_score=40.0, threshold=70.0, broaden=True,
+        ) is False
+
+    def test_broaden_true_below_threshold_still_rescuable(self):
+        assert is_rescuable_reject(
+            [], [], final_score=60.0, threshold=70.0, broaden=True,
+        ) is True

@@ -638,3 +638,39 @@ async def test_evaluate_skips_structural_check_when_args_omitted() -> None:
         "Structural check fired with all-None inputs — breaks backwards compat"
     )
     assert decision.gate_state == "pass"
+
+
+# ---------------------------------------------------------------------------
+# Self-heal-before-paging: a qa_flagged post must never auto-publish
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_qa_flagged_blocks_would_fire() -> None:
+    """A draft the QA gate flagged requires operator sign-off — it must NEVER
+    auto-publish, even with an enabled niche opt-in that clears the threshold."""
+    from modules.content.auto_publish_gate import evaluate
+
+    platform = _make_platform({
+        "glad-labs_auto_publish_threshold": "70",
+        "glad-labs_auto_publish_dry_run": "false",
+    })
+    decision = await evaluate(
+        _make_pool(), task_id="t1", niche_slug="glad-labs", category="ai",
+        quality_score=95.0, platform=platform, qa_flagged=True,
+    )
+    assert decision.would_fire is False
+    assert decision.gate_state == "block_qa_flagged"
+
+
+@pytest.mark.asyncio
+async def test_not_flagged_defaults_evaluate_normally() -> None:
+    """qa_flagged defaults False — the guard must not alter the non-flagged path."""
+    from modules.content.auto_publish_gate import evaluate
+
+    platform = _make_platform({})  # no opt-in keys → disabled, NOT block_qa_flagged
+    decision = await evaluate(
+        _make_pool(), task_id="t2", niche_slug="glad-labs", category="ai",
+        quality_score=95.0, platform=platform,
+    )
+    assert decision.gate_state != "block_qa_flagged"

@@ -437,6 +437,14 @@ DEFAULTS: dict[str, str] = {
     # never replaces a better earlier draft.
     'qa_rewrite_max_attempts': '2',
 
+    # Self-heal before paging (#qa-self-heal): when true, qa.aggregate stops
+    # discarding a non-approvable draft — after the bounded regen cycle it FLAGS
+    # the draft (qa_flagged) and rides the forward edge to awaiting_approval with
+    # the per-rail findings attached, never writing rejected/rejected_final
+    # (operator-only). Ships OFF (today's discard behavior); flip to 'true' after
+    # the Docker e2e (preview_gate T12 playbook).
+    'qa_flag_instead_of_reject': 'false',
+
     # ----- Topic discovery / dedup / ranking -----
     'niche_batch_expires_days': '7',
     'niche_carry_forward_decay_factor': '0.7',
@@ -1258,6 +1266,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- QA thresholds -----
     'qa_pass_threshold': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'qa_rewrite_max_attempts': {'owner': 'qa_aggregate', 'value_type': 'integer'},
+    'qa_flag_instead_of_reject': {'owner': 'qa_aggregate', 'value_type': 'boolean'},
     'qa_critical_floor': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'deepeval_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'guardrails_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},

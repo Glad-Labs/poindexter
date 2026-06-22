@@ -184,12 +184,20 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # review channel, then the loop edge re-runs the QA block.
     attempts = int(state.get("qa_rewrite_attempts") or 0)
     max_attempts = _max_attempts(config)
+    # Self-heal-before-paging switch (qa_flag_instead_of_reject): when on, a
+    # terminal non-approvable draft is flagged + ridden to awaiting_approval
+    # rather than discarded, AND the regen pass is broadened to cover any
+    # text-fixable veto (broaden=True) so the garbage-collector reruns it first.
+    flag_instead = str(
+        (config.get("qa_flag_instead_of_reject", "false") if config else "false")
+    ).strip().lower() in ("true", "1", "yes", "on")
     if (
         not approved
         and attempts < max_attempts
         and is_rescuable_reject(
             reviews, result.get("vetoed_by", []),
             final_score=float(final_score), threshold=float(threshold),
+            broaden=flag_instead,
         )
     ):
         _platform = state.get("platform")
@@ -271,7 +279,39 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if kept_best_applied:
         out["content"] = kept_content
 
-    if not approved:
+    if not approved and flag_instead:
+        # Self-heal before paging: do NOT discard. Flag the draft and ride the
+        # existing default forward edge (qa_aggregate -> seo_all_metadata -> ...
+        # -> persist_task) to awaiting_approval. compile_meta formats the
+        # qa_feedback from qa_reviews (already in `out`) and persist_task writes
+        # it; evaluate_auto_publish refuses to auto-publish a flagged post.
+        # rejected_final stays an operator-only state.
+        out["qa_flagged"] = True
+        _platform = state.get("platform")
+        if _platform is not None:
+            try:
+                _platform.audit.write_bg(
+                    "qa_flagged_surfaced",
+                    source="qa.aggregate",
+                    details={
+                        "final_score": round(float(kept_score), 2),
+                        "threshold": float(threshold),
+                        "vetoed_by": list(result.get("vetoed_by", [])),
+                        "attempts": attempts,
+                    },
+                    task_id=(str(state.get("task_id")) or None) if state.get("task_id") else None,
+                    severity="warning",
+                )
+            except Exception as exc:  # noqa: BLE001 — telemetry must not break the gate
+                # Visible, not silent: a failed audit write means the operator's
+                # flag-rate dashboard (audit_log event_type='qa_flagged_surfaced')
+                # under-counts, so warn rather than swallow at debug. The gate
+                # still flags-and-continues regardless.
+                logger.warning(
+                    "[qa.aggregate] qa_flagged_surfaced audit write failed "
+                    "(flag-rate telemetry will under-count): %s", exc,
+                )
+    elif not approved:
         from modules.content.atoms._qa_persist import (
             build_qa_feedback,
             build_reject_reason,

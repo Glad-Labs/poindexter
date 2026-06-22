@@ -163,7 +163,7 @@ class AutoPublishDecision:
 
     gate_state: str
     """One of 'pass', 'block_threshold', 'block_structural',
-    'block_unclean', 'disabled', 'no_history'."""
+    'block_unclean', 'block_qa_flagged', 'disabled', 'no_history'."""
 
     reason: str
     """Human-readable reason — surfaces in audit_log + Discord."""
@@ -186,6 +186,7 @@ async def evaluate(
     title: str | None = None,
     content: str | None = None,
     excerpt: str | None = None,
+    qa_flagged: bool = False,
 ) -> AutoPublishDecision:
     """Evaluate the auto-publish gate for a task. Best-effort —
     exceptions return a 'disabled' decision rather than blocking
@@ -203,6 +204,17 @@ async def evaluate(
     the threshold. Defaulting to None skips the structural check for
     callers that don't pass content, preserving backwards compatibility.
     """
+    # Self-heal-before-paging (#qa-self-heal): a draft the QA gate flagged
+    # requires operator sign-off and must NEVER auto-publish — regardless of the
+    # niche opt-in or the score. Checked first so it short-circuits even an
+    # otherwise-passing gate. The operator's explicit publish path is unaffected.
+    if qa_flagged:
+        return AutoPublishDecision(
+            would_fire=False, dry_run=True, gate_state="block_qa_flagged",
+            reason="post flagged by QA — operator sign-off required, never auto-publish",
+            quality_score=quality_score,
+        )
+
     if platform is None:
         logger.debug("[auto_publish_gate] no platform handle — gate disabled")
         return AutoPublishDecision(

@@ -845,3 +845,97 @@ class TestQaAggregateKeepBest:
         assert out["_halt"] is True
         assert "content" not in out
         assert db.update_task_calls[0][1]["status"] == "rejected"
+
+
+@pytest.mark.unit
+class TestQaAggregateFlagAndContinue:
+    """self-heal-before-paging (#qa-self-heal): with qa_flag_instead_of_reject
+    on, a terminal non-approvable draft is FLAGGED and rides the forward edge to
+    awaiting_approval instead of being discarded — no _halt, no status=rejected,
+    no persist_qa_reject. Switch off keeps today's discard behavior byte-for-byte."""
+
+    def _reject_state(self, config=None, **extra):
+        cfg = {"qa_rewrite_max_attempts": "0"}  # rescue off -> straight to terminal
+        if config:
+            cfg.update(config)
+        state = {
+            "platform": FakePlatform(config=cfg),
+            "task_id": "task-flag",
+            "content": "the body",
+            "title": "T",
+            "models_used_by_phase": {},
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+                 "provider": "ollama", "advisory": False, "feedback": "weak"},
+            ],
+        }
+        state.update(extra)
+        return state
+
+    async def test_switch_on_flags_and_continues(self):
+        out = await qa_aggregate.run(
+            self._reject_state(config={"qa_flag_instead_of_reject": "true"})
+        )
+        assert out.get("qa_flagged") is True
+        assert "_halt" not in out                 # rides the forward edge
+        assert out.get("status") != "rejected"    # never discarded
+        assert out.get("_goto") == ""             # default forward edge -> seo
+        assert out.get("qa_reviews")              # surfaced via compile_meta
+        assert out["qa_final_verdict"] == "reject"
+
+    async def test_switch_on_does_no_reject_persist(self, monkeypatch):
+        called = {"persist": False}
+
+        async def _spy_persist(*a, **kw):
+            called["persist"] = True
+
+        monkeypatch.setattr(
+            "modules.content.atoms._qa_persist.persist_qa_reject", _spy_persist,
+        )
+        db = _DB2()
+        await qa_aggregate.run(
+            self._reject_state(config={"qa_flag_instead_of_reject": "true"},
+                               database_service=db)
+        )
+        assert called["persist"] is False
+        # No reject status write either.
+        assert not any(c[1].get("status") == "rejected" for c in db.update_task_calls)
+
+    async def test_switch_off_still_discards(self, monkeypatch):
+        class _FakePipelineDB:
+            def __init__(self, pool): pass
+            async def upsert_version(self, task_id, fields): pass
+
+        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        db = _DB2()
+        out = await qa_aggregate.run(
+            self._reject_state(config={"qa_flag_instead_of_reject": "false"},
+                               database_service=db)
+        )
+        assert out["_halt"] is True
+        assert out["status"] == "rejected"
+        assert out.get("qa_flagged") is not True
+        assert db.update_task_calls[0][1]["status"] == "rejected"
+
+    async def test_switch_on_emits_flagged_surfaced_audit(self):
+        state = self._reject_state(config={"qa_flag_instead_of_reject": "true"})
+        fake = state["platform"]
+        await qa_aggregate.run(state)
+        flagged = [w for w in fake.audit.writes_bg if w["event_type"] == "qa_flagged_surfaced"]
+        assert len(flagged) == 1
+        # qa_pass_completed still fires (the /d/qa-rails denominator).
+        passes = [w for w in fake.audit.writes_bg if w["event_type"] == "qa_pass_completed"]
+        assert len(passes) == 1
+
+    async def test_switch_on_broadens_rescue_for_programmatic(self):
+        # With rescue available (max 1) + switch on, a programmatic veto now
+        # DEFERS to qa.rewrite (broaden=True) instead of hard-rejecting.
+        out = await qa_aggregate.run(self._reject_state(
+            config={"qa_rewrite_max_attempts": "1", "qa_flag_instead_of_reject": "true"},
+            qa_rail_reviews=[
+                {"reviewer": "programmatic_validator", "approved": False, "score": 0.0,
+                 "provider": "programmatic", "advisory": False, "feedback": "fake"},
+            ],
+        ))
+        assert out["_goto"] == "qa_rewrite"
+        assert "_halt" not in out

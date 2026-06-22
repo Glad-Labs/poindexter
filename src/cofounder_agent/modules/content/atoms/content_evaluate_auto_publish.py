@@ -141,6 +141,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             category=category,
             quality_score=quality_score,
             platform=platform,
+            # Self-heal-before-paging: a flagged draft never auto-publishes.
+            qa_flagged=bool(state.get("qa_flagged")),
         )
         if platform is not None:
             platform.audit.write_bg(

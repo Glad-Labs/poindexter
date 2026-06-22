@@ -1789,6 +1789,59 @@ class TestInternalFilePathExemption:
         assert any("fakelib_one" in h.matched_text for h in hallucinated)
 
 
+class TestInternalPipelineVocabExemption:
+    """Poindexter-internal pipeline vocabulary (function / node / table names
+    like ``generate_content``, ``qa_aggregate``, ``auto_publish_gate``) recurs
+    in dev_diary posts ABOUT the pipeline. Unlike the ``.py`` file refs in
+    ``TestInternalFilePathExemption`` these carry no extension, so the
+    file-path predicate doesn't exempt them — they must be whitelisted so a
+    post discussing the pipeline internals isn't flagged as citing fabricated
+    libraries (self-heal-before-paging §7)."""
+
+    def test_extract_candidates_skips_internal_pipeline_terms(self):
+        from modules.content.content_validator import _extract_library_candidates
+
+        cands = _extract_library_candidates(
+            "The graph runs `generate_content`, then `qa_aggregate` decides, "
+            "and `auto_publish_gate` evaluates publish."
+        )
+        flagged = {raw for raw, _ in cands}
+        assert "generate_content" not in flagged
+        assert "qa_aggregate" not in flagged
+        assert "auto_publish_gate" not in flagged
+
+    def test_internal_pipeline_term_not_flagged_as_hallucinated(self):
+        content = (
+            "This week we reworked the graph. `generate_content` now hands off "
+            "to `qa_aggregate`, which on a soft reject routes to `qa_rewrite` "
+            "before `auto_publish_gate` runs. State rides `pipeline_versions`."
+        )
+        result = validate_content(
+            "Pipeline Diary", content, "tech", tags=["tech"], site_config=_SC
+        )
+        hallucinated = [
+            i for i in result.issues if i.category == "hallucinated_reference"
+        ]
+        flagged_text = " ".join(h.matched_text for h in hallucinated)
+        for term in (
+            "generate_content", "qa_aggregate", "qa_rewrite",
+            "auto_publish_gate", "pipeline_versions",
+        ):
+            assert term not in flagged_text, (
+                f"internal pipeline term flagged as hallucinated: {term} "
+                f"(all: {[h.matched_text for h in hallucinated]})"
+            )
+
+    def test_unknown_backticked_lib_still_flagged(self):
+        """Guard against over-whitelisting: a genuinely unknown backticked
+        module is STILL a candidate (the fix must be a precise allowlist, not
+        a blanket suppression of underscore/lowercase tokens)."""
+        from modules.content.content_validator import _extract_library_candidates
+
+        cands = _extract_library_candidates("Install `zzfakelibxyz` to start.")
+        assert any("zzfakelibxyz" in raw for raw, _ in cands)
+
+
 # ---------------------------------------------------------------------------
 # Demotion: unlinked_citation + hallucinated_reference are non-fatal warnings
 # (Glad-Labs/poindexter#692, 2026-06-09)

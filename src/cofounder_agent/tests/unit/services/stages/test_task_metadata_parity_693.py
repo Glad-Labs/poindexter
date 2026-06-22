@@ -58,6 +58,7 @@ EXPECTED_METADATA_KEYS = frozenset(
         "quality_score",
         "quality_score_early_eval",
         "qa_final_score",
+        "qa_flagged",
         "content_length",
         "word_count",
         "podcast_script",
@@ -246,3 +247,30 @@ def test_build_task_metadata_defaults_target_audience():
         early_eval_score=0,
     )
     assert meta["target_audience"] == "General"
+
+
+@pytest.mark.unit
+def test_build_task_metadata_carries_qa_flagged():
+    """Self-heal-before-paging: qa_flagged rides task_metadata so the operator
+    surface (pipeline_tasks_view.task_metadata) can mark a flagged post."""
+    from modules.content.task_metadata import build_task_metadata
+
+    meta = build_task_metadata(
+        {"qa_flagged": True},
+        preview_token="", content_text="x", seo_title="", seo_description="",
+        seo_keywords_list=[], final_quality_score=79, early_eval_score=70,
+    )
+    assert meta["qa_flagged"] is True
+
+
+@pytest.mark.unit
+def test_build_task_metadata_qa_flagged_defaults_false():
+    """A draft with no qa_flagged in state (e.g. dev_diary, or an approved
+    canonical_blog post) defaults to False."""
+    from modules.content.task_metadata import build_task_metadata
+
+    meta = build_task_metadata(
+        {}, preview_token="", content_text="x", seo_title="", seo_description="",
+        seo_keywords_list=[], final_quality_score=90, early_eval_score=90,
+    )
+    assert meta["qa_flagged"] is False

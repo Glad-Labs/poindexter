@@ -1368,6 +1368,107 @@
       ],
       "title": "Last 10 Ragas Evaluations",
       "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 52
+      },
+      "id": 18,
+      "panels": [],
+      "title": "Self-Heal Before Paging — Flag vs Discard",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Self-heal-before-paging (qa_flag_instead_of_reject). 'flagged' = drafts QA found non-approvable but kept for operator review (audit_log event_type='qa_flagged_surfaced'); 'discarded' = hard rejects that halted the graph (qa_pass_completed, not approved). Before the switch is flipped the flagged series is empty by design; after, watch flagged rise and discarded fall toward only true fabrication/gate vetoes.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 53
+      },
+      "id": 19,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('hour', timestamp) AS time, 'flagged (kept for review)' AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'qa_flagged_surfaced' AND $__timeFilter(timestamp) GROUP BY 1 UNION ALL SELECT date_trunc('hour', timestamp) AS time, 'discarded (hard reject)' AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'qa_pass_completed' AND NOT COALESCE((details->>'approved')::boolean, false) AND $__timeFilter(timestamp) GROUP BY 1 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "QA Flagged vs Discarded per Hour",
+      "type": "timeseries"
     }
   ]
 }

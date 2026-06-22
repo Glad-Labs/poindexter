@@ -363,8 +363,13 @@ class TestGroupingMakesSense:
             return  # Nothing to check
         span = qa_lines[-1] - qa_lines[0]
         # All qa_ keys in DEFAULTS should fit inside a contiguous-ish block
-        # (some interleaving with comments is fine)
-        assert span < 200, (
+        # (some interleaving with comments is fine). Two legitimate clusters
+        # exist: the qa_*_model config keys that live with the other model keys
+        # (qa_fallback_writer_model / qa_rewrite_model / qa_*_vision_*), and the
+        # qa scoring + gate-behavior cluster (qa_accuracy_* … qa_rewrite_max_attempts
+        # / qa_flag_instead_of_reject). The slack accommodates that ~210-line gap;
+        # a genuinely new far-flung qa_ section would still overshoot it.
+        assert span < 230, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

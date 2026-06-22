@@ -976,6 +976,23 @@ _HALLUCINATION_WHITELIST_BASE = {
     "main.py", "requirements.txt", "read_file", "content_status",
     # ---- File-extensions + common script names
     "py", "js", "ts", "tsx", "jsx", "rs", "rb", "sh", "ps1",
+    # ---- Poindexter-internal pipeline vocabulary (function / graph-node /
+    #      table names that recur in dev_diary posts ABOUT the pipeline). NOT
+    #      external libraries — none collide with a real PyPI package — so
+    #      whitelisting them cannot mask a genuine library fabrication; it only
+    #      stops a post discussing the pipeline's own internals from
+    #      hard-failing the programmatic gate. Stored dash-normalized because
+    #      _normalize_pkg maps "_" -> "-" before the lookup (so `generate_content`
+    #      -> "generate-content"). #qa-self-heal §7 — the generate_content
+    #      false-positive surfaced 2026-06-22. The dotted atom forms
+    #      (`qa.aggregate`, `content.generate_draft`) already resolve to a
+    #      short (<3, skipped) or whitelisted ("content") root, so only the
+    #      underscore/bare forms need listing here.
+    "generate-content", "qa-aggregate", "qa-rewrite", "qa-programmatic",
+    "auto-publish-gate", "multi-model-qa", "content-validator",
+    "template-runner", "pipeline-architect", "canonical-blog",
+    "pipeline-tasks", "pipeline-versions", "graph-def", "atom-runs",
+    "qa-gates", "app-settings",
 }
 
 

@@ -83,6 +83,42 @@ still halts immediately. Pinned by `test_qa_rail_common.py`
 (`is_rescuable_reject`), `test_qa_rewrite_atom.py`, and
 `test_qa_aggregate_atom.py::TestQaAggregateRescueDispatch`.
 
+#### Self-heal before paging: flag-and-continue, never silent-discard (2026-06)
+
+Hard QA was throwing away finished drafts. A single rail veto — frequently a
+false positive — discarded an avg-79 draft outright, even though a human
+approval gate (`awaiting_approval`) already sits downstream. That is the content
+analogue of paging an operator instead of self-healing, except worse: it
+self-_destructs_. The redesign makes `qa.aggregate`'s terminal behavior a
+DB-master-switched choice (`app_settings.qa_flag_instead_of_reject`):
+
+- **`false` (legacy)** — a non-rescuable reject halts the graph and persists
+  `status=rejected` (`persist_qa_reject` → `_halt`). The draft is discarded.
+- **`true` (self-heal)** — `qa.aggregate` does **not** halt. It sets the
+  `qa_flagged` state channel `True`, emits a `qa_flagged_surfaced` audit row
+  (severity `warning`, with `final_score` / `threshold` / `vetoed_by` /
+  `attempts`), and rides the existing forward edge to `awaiting_approval` like
+  any other draft. `compile_meta` formats the rail breakdown into `qa_feedback`
+  and `persist_task` writes it; the flag rides `task_metadata->>'qa_flagged'`.
+  The bounded rewrite cycle above still runs first — flag-and-continue is only
+  what happens _after_ a rescue is exhausted or was never eligible.
+
+Under the self-heal switch the rescue eligibility also **broadens**
+(`is_rescuable_reject(..., broaden=True)`): every veto becomes regen-eligible
+except the two that text can't fix — `vision_gate` and `url_verifier`
+(`_NON_TEXT_FIXABLE_PROVIDERS`) — so even a programmatic/fabrication veto gets
+its one rewrite pass before being flagged rather than discarded.
+
+A flagged draft is never auto-published: `auto_publish_gate.evaluate(...,
+qa_flagged=True)` short-circuits to `gate_state="block_qa_flagged"`,
+`would_fire=False`. **`rejected_final` is now operator-only** — the pipeline
+flags and surfaces; the operator (CLI `poindexter pipeline qa <task>`, the `⚑`
+marker in `pipeline list-paused` / MCP `list_tasks`, the **Self-Heal Before
+Paging** row on the QA Rails dashboard) decides discard vs. approve vs. regen.
+The switch ships `false` (inert) and is flipped to `true` after the in-Docker
+e2e. Pinned by `test_qa_aggregate_atom.py` (flag-and-continue) +
+`test_qa_rail_common.py` (`broaden`).
+
 The rails call the individual per-rail check methods, **not** the full
 `MultiModelQA.review()` — so the programmatic validator that `review()`
 ran as its first step (Layer 2, below) is no longer co-located in the QA

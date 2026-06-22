@@ -26,6 +26,10 @@ _VALIDATOR_PROVIDERS = ("programmatic",)
 _CRITIC_PROVIDERS = ("anthropic", "google", "ollama")
 _GATE_PROVIDERS = ("consistency_gate", "vision_gate", "web_factcheck", "url_verifier")
 
+# Providers whose veto a text revision can NEVER fix (bad image / dead link).
+# Under broaden=True these stay surface-direct (no regen) — see is_rescuable_reject.
+_NON_TEXT_FIXABLE_PROVIDERS = ("vision_gate", "url_verifier")
+
 
 def reviewer_to_dict(r: Any) -> dict[str, Any]:
     """Serialize a ReviewerResult (or duck-typed equivalent) to a plain
@@ -87,11 +91,13 @@ def is_rescuable_reject(
     *,
     final_score: float,
     threshold: float,
+    broaden: bool = False,
 ) -> bool:
     """Decide whether a qa.aggregate REJECT is eligible for one rewrite pass.
 
-    Rescuable iff the reject came from a SOFT judgment a targeted revision
-    could plausibly fix — never from a hard correctness gate:
+    ``broaden=False`` (default — the switch-off path) keeps the original rule:
+    rescuable only when the reject came from a SOFT judgment a targeted
+    revision could plausibly fix.
 
     (a) Critic-only veto: ``vetoed_by`` is non-empty AND every vetoing
         reviewer resolves to a critic provider (anthropic/google/ollama). A
@@ -102,14 +108,23 @@ def is_rescuable_reject(
         critic approved) AND ``final_score < threshold`` (the weighted score
         fell below the floor). A rewrite can lift the score.
 
-    Returns False for any veto that is not purely critic-sourced, and for an
-    empty veto whose score already clears the threshold (i.e. an approve).
+    ``broaden=True`` (self-heal-before-paging — the qa_flag_instead_of_reject
+    switch is on) widens (a): the garbage-collector reruns ANY draft a text
+    revision could plausibly fix before flag-and-continue, so a
+    ``programmatic_validator`` / brand / factcheck / consistency veto is now
+    rescuable too. It STILL returns False for a ``missing_required:*`` veto
+    (infra — a rerun won't make an absent rail emit) and for a
+    non-text-fixable gate (``vision_gate`` / ``url_verifier`` — a text revise
+    can't fix a bad image or a dead link).
+
+    Returns False for an empty veto whose score already clears the threshold
+    (i.e. an approve) under either mode.
     """
     # (b) Score-threshold reject: nothing vetoed, just below the bar.
     if not vetoed_by:
         return final_score < threshold
 
-    # (a) Critic-only veto: map each vetoing reviewer back to its provider.
+    # (a) Map each vetoing reviewer back to its provider.
     by_name = {r.get("reviewer"): r for r in reviews}
     for name in vetoed_by:
         if isinstance(name, str) and name.startswith("missing_required:"):
@@ -117,8 +132,13 @@ def is_rescuable_reject(
         review = by_name.get(name)
         if review is None:
             return False  # unknown veto source — fail safe, don't rescue
-        if review.get("provider") not in _CRITIC_PROVIDERS:
-            return False  # programmatic / gate veto — hard correctness
+        provider = review.get("provider")
+        if broaden:
+            if provider in _NON_TEXT_FIXABLE_PROVIDERS:
+                return False  # a text revise can't fix a bad image / dead link
+            continue  # every other veto is regen-eligible under self-heal
+        if provider not in _CRITIC_PROVIDERS:
+            return False  # switch-off: programmatic / gate veto — hard correctness
     return True
 
 

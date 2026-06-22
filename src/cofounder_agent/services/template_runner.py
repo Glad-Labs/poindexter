@@ -575,6 +575,12 @@ class PipelineState(TypedDict, total=False):
     # and on hard reject. Declared as a last-value channel so it survives the
     # graph_def adapter (undeclared keys are dropped on the graph_def path).
     _goto: str
+    # qa_flagged (self-heal-before-paging): qa.aggregate sets this True when a
+    # non-approvable draft is flag-and-continued (the qa_flag_instead_of_reject
+    # switch) instead of discarded. Read by content.evaluate_auto_publish (never
+    # auto-publish a flagged post) and carried into task_metadata for the
+    # operator surface. Last-value channel so it survives the graph_def merge.
+    qa_flagged: bool
     gate_name: str
     awaiting_gate: str
     gate_artifact: dict

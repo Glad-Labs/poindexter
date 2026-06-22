@@ -70,6 +70,46 @@ class TestListTasks:
         result = await tasks_mcp.list_tasks(pool, status="all", limit=10)
         assert result == []
 
+    async def test_selects_qa_flagged_and_feedback(self, fake_pool):
+        # Self-heal-before-paging: the operator queue surfaces the flag + findings.
+        pool, conn = fake_pool
+        await tasks_mcp.list_tasks(pool, status="awaiting_approval", limit=10)
+        sql = conn.fetch.await_args.args[0]
+        assert "qa_flagged" in sql
+        assert "qa_feedback" in sql
+
+    async def test_row_carries_qa_flagged(self, fake_pool):
+        pool, _conn = fake_pool
+        pool.fetch = AsyncMock(return_value=[{
+            "task_id": "t1", "topic": "x", "status": "awaiting_approval",
+            "quality_score": 79, "created_at": None,
+            "qa_feedback": "Final score: 79/100 (REJECTED)", "qa_flagged": True,
+        }])
+        rows = await tasks_mcp.list_tasks(pool, status="awaiting_approval", limit=10)
+        assert rows[0]["qa_flagged"] is True
+        assert "qa_feedback" in rows[0]
+
+
+# ---------------------------------------------------------------------------
+# get_task_qa_feedback
+# ---------------------------------------------------------------------------
+
+
+class TestGetTaskQaFeedback:
+    async def test_returns_feedback(self, fake_pool):
+        pool, _conn = fake_pool
+        pool.fetchrow = AsyncMock(
+            return_value={"qa_feedback": "Final score: 79/100 (REJECTED)\n- ..."},
+        )
+        fb = await tasks_mcp.get_task_qa_feedback(pool, "t1")
+        assert "79/100" in fb
+
+    async def test_none_returns_empty(self, fake_pool):
+        pool, _conn = fake_pool
+        pool.fetchrow = AsyncMock(return_value=None)
+        fb = await tasks_mcp.get_task_qa_feedback(pool, "t1")
+        assert fb == ""
+
 
 # ---------------------------------------------------------------------------
 # resolve_task_prefix

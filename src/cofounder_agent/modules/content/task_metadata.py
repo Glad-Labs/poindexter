@@ -109,6 +109,11 @@ def build_task_metadata(
         "quality_score": final_quality_score,
         "quality_score_early_eval": early_eval_score,
         "qa_final_score": state.get("qa_final_score"),
+        # Self-heal-before-paging (#qa-self-heal): True when qa.aggregate flagged
+        # this draft (non-approvable but not discarded). Surfaced to the operator
+        # via pipeline_tasks_view.task_metadata; read by the auto-publish guard
+        # from state. Defaults False (dev_diary + approved posts).
+        "qa_flagged": bool(state.get("qa_flagged")),
         "content_length": len(content_text),
         "word_count": len(content_text.split()),
         "podcast_script": state.get("podcast_script", ""),

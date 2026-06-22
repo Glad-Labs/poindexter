@@ -59,6 +59,7 @@ import click
 
 from poindexter.cli._bootstrap import resolve_dsn as _dsn
 from poindexter.cli._prefix import resolve_uuid_prefix
+from services import tasks_mcp  # cheap: services/__init__ is empty, tasks_mcp imports only typing
 
 
 def _ensure_selector_event_loop_on_windows() -> None:
@@ -217,7 +218,10 @@ def list_paused_command(limit: int, json_output: bool) -> None:
                            gate_paused_at,
                            status,
                            topic,
-                           template_slug
+                           template_slug,
+                           COALESCE(
+                               (task_metadata->>'qa_flagged')::boolean, false
+                           ) AS qa_flagged
                       FROM pipeline_tasks
                      WHERE awaiting_gate IS NOT NULL
                      ORDER BY gate_paused_at ASC NULLS LAST
@@ -250,7 +254,11 @@ def list_paused_command(limit: int, json_output: bool) -> None:
         gate = row.get("gate_name") or "?"
         paused = row.get("gate_paused_at") or "-"
         topic = (row.get("topic") or "")[:50]
-        click.secho(f"  {tid}  {gate:<20} {topic}", fg="yellow")
+        # Self-heal-before-paging marker: a draft QA flagged (non-approvable
+        # but NOT discarded) carries qa_flagged=true. Glyph + word, never
+        # colour alone — the operator is colourblind.
+        flag = "  ⚑ QA-flagged" if row.get("qa_flagged") else ""
+        click.secho(f"  {tid}  {gate:<20} {topic}{flag}", fg="yellow")
         click.secho(
             f"    paused_at={paused}  template={row.get('template_slug')}",
             fg="bright_black",
@@ -689,10 +697,75 @@ def regen_command(
         )
 
 
+# ---------------------------------------------------------------------------
+# qa — surface the recorded QA-rail findings for a task
+# ---------------------------------------------------------------------------
+
+
+@pipeline_group.command("qa")
+@click.argument("task_id")
+@click.option("--json", "json_output", is_flag=True)
+def qa_command(task_id: str, json_output: bool) -> None:
+    """Print the QA-rail findings recorded for a task (full id or prefix).
+
+    This is the per-rail breakdown — score, vetoes, advisory notes — exactly
+    as ``compile_meta`` formatted it, the same ``qa_feedback`` the operator
+    weighs before signing off an ``awaiting_approval`` post. Especially useful
+    for a ``qa_flagged`` draft (one QA found non-approvable but did NOT
+    discard): it shows *why* it was flagged so the operator can approve, regen,
+    or reject from evidence rather than guesswork. Self-heal-before-paging
+    (#qa-self-heal): the gate never silently buries the reason.
+    """
+
+    async def _impl():
+        pool = await _make_pool()
+        try:
+            resolved = await resolve_uuid_prefix(
+                pool,
+                table="pipeline_tasks",
+                column="task_id",
+                prefix=str(task_id),
+                noun="task",
+            )
+            if resolved is None:
+                return {"error": f"Task {task_id} not found", "code": 1}
+            feedback = await tasks_mcp.get_task_qa_feedback(pool, resolved)
+            return {"task_id": resolved, "qa_feedback": feedback}
+        finally:
+            await pool.close()
+
+    try:
+        result = _run(_impl())
+    except Exception as e:
+        _exit_error(f"{type(e).__name__}: {e}")
+        return
+
+    if "error" in result:
+        _exit_error(str(result["error"]), code=int(result.get("code", 1)))
+        return
+
+    if json_output:
+        click.echo(json.dumps(result, indent=2, default=str))
+        return
+
+    click.secho(f"QA findings for task {result['task_id']}", fg="cyan", bold=True)
+    feedback = (result.get("qa_feedback") or "").strip()
+    if feedback:
+        click.echo()
+        click.echo(feedback)
+    else:
+        click.secho(
+            "  (no QA feedback recorded yet — task may be pre-QA or a "
+            "dev_diary post)",
+            fg="bright_black",
+        )
+
+
 __all__ = [
     "pipeline_group",
     "list_paused_command",
     "status_command",
     "resume_command",
     "regen_command",
+    "qa_command",
 ]

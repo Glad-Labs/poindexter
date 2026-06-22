@@ -384,7 +384,13 @@ async def list_tasks(status: str = "all", limit: int = 10) -> str:
             tid_short = tid[:8] if len(tid) > 8 else tid
             qs = str(r["quality_score"]) if r["quality_score"] is not None else "-"
             topic = (r["topic"] or "?")[:50]
-            lines.append(f"  {tid_short} | {r['status'] or '?':20s} | Q:{qs:5s} | {topic}")
+            # Self-heal-before-paging: ⚑ marks a draft QA flagged
+            # (non-approvable but NOT discarded). Pull the per-rail reason with
+            # the `poindexter pipeline qa <task>` CLI before deciding.
+            flag = " ⚑" if r.get("qa_flagged") else ""
+            lines.append(
+                f"  {tid_short} | {r['status'] or '?':20s} | Q:{qs:5s} | {topic}{flag}"
+            )
         return "\n".join(lines)
     except Exception as e:
         return f"Error: {e}"
