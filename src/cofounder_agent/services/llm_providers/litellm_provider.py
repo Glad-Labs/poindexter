@@ -177,16 +177,27 @@ async def configure_langfuse_callback(site_config: Any) -> bool:
         return False
 
     host = (site_config.get("langfuse_host", "") or "").strip()
-    public_key = (site_config.get("langfuse_public_key", "") or "").strip()
+    # Both halves of the Langfuse key pair are ``is_secret=true`` rows in
+    # app_settings (encrypted at rest), so SiteConfig filters them out of
+    # its non-secret startup cache — they MUST be read via the async,
+    # decrypting ``get_secret`` accessor. Reading ``langfuse_public_key``
+    # through the sync ``site_config.get()`` silently missed the cache and
+    # only resolved from the ``LANGFUSE_PUBLIC_KEY`` env var, so a clean
+    # operator install that configured the keys in the DB (via
+    # ``poindexter setup``, no env vars) lost tracing entirely. Fetch both
+    # under one guard so a DB read failure on either surfaces the same
+    # clean LangfuseConfigError the caller already catches.
     try:
+        public_key_raw = await site_config.get_secret("langfuse_public_key", "")
         secret_key_raw = await site_config.get_secret("langfuse_secret_key", "")
     except Exception as exc:  # noqa: BLE001
         raise LangfuseConfigError(
-            f"langfuse_tracing_enabled=true but reading "
-            f"langfuse_secret_key failed: {exc!s}. Either populate the "
-            f"row in app_settings (see migration 0153) or set "
-            f"langfuse_tracing_enabled=false.",
+            f"langfuse_tracing_enabled=true but reading the Langfuse "
+            f"credential rows (langfuse_public_key / langfuse_secret_key) "
+            f"failed: {exc!s}. Either populate them in app_settings "
+            f"(see migration 0153) or set langfuse_tracing_enabled=false.",
         ) from exc
+    public_key = (public_key_raw or "").strip()
     secret_key = (secret_key_raw or "").strip()
 
     missing = [

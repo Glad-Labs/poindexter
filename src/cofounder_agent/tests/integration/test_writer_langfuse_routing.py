@@ -143,9 +143,10 @@ async def test_dispatch_complete_routes_through_litellm_and_registers_langfuse_c
     # success_callback list is empty and no spans land.
     fake_site_config = SimpleNamespace(
         get_bool=lambda _k, _d=False: True,  # langfuse_tracing_enabled=true
+        # Only langfuse_host (non-secret) comes through the sync get cache;
+        # both keys are is_secret=true rows read via get_secret below.
         get=lambda k, _d="": {
             "langfuse_host": os.getenv("LANGFUSE_HOST", ""),
-            "langfuse_public_key": os.getenv("LANGFUSE_PUBLIC_KEY", ""),
         }.get(k, _d),
         get_secret=_async_secret_lookup,
     )
@@ -194,7 +195,14 @@ async def test_dispatch_complete_routes_through_litellm_and_registers_langfuse_c
 
 
 async def _async_secret_lookup(key: str, _default: str = "") -> str:
-    """Mirror SiteConfig.get_secret signature for the smoke test."""
+    """Mirror SiteConfig.get_secret signature for the smoke test.
+
+    Both Langfuse keys are ``is_secret=true`` app_settings rows, so
+    ``configure_langfuse_callback`` reads them through ``get_secret`` (not
+    the sync cache) — return both from here.
+    """
+    if key == "langfuse_public_key":
+        return os.getenv("LANGFUSE_PUBLIC_KEY", "")
     if key == "langfuse_secret_key":
         return os.getenv("LANGFUSE_SECRET_KEY", "")
     return _default

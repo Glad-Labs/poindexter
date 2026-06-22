@@ -98,15 +98,26 @@ def _fake_site_config(
 ):
     """Build a mock SiteConfig with the four settings the function reads.
 
-    ``get_secret`` is async, so it's an AsyncMock.
+    Both Langfuse keys are ``is_secret=true`` app_settings rows (encrypted
+    at rest), so they're filtered out of SiteConfig's non-secret startup
+    cache and the function reads them through the async, decrypting
+    ``get_secret`` accessor — NOT the sync ``get`` cache. Model that here:
+    only ``langfuse_host`` (non-secret) comes through the sync ``get``
+    side_effect; both keys come through the ``get_secret`` AsyncMock, whose
+    side_effect routes by key so the two return distinct values (a single
+    ``return_value`` couldn't tell the public key from the secret key).
     """
     sc = MagicMock()
     sc.get_bool.return_value = enabled
     sc.get.side_effect = lambda key, default="": {
         "langfuse_host": host,
-        "langfuse_public_key": public_key,
     }.get(key, default)
-    sc.get_secret = AsyncMock(return_value=secret_key)
+    sc.get_secret = AsyncMock(
+        side_effect=lambda key, default="": {
+            "langfuse_public_key": public_key,
+            "langfuse_secret_key": secret_key,
+        }.get(key, default),
+    )
     return sc
 
 
@@ -185,8 +196,10 @@ async def test_idempotent_double_call():
     # The OTEL instance appears exactly once — the second call short-circuits
     # at the registration guard and does not double-append.
     assert _litellm_stub.callbacks == [_mock_opentelemetry_cls.return_value]
-    # Should have been fetched twice (env-var refresh path).
-    assert sc.get_secret.await_count == 2
+    # get_secret is awaited twice per call (public key + secret key), and
+    # both calls fetch credentials to refresh env vars on the rotation path
+    # (only the first call appends the callback) — so four awaits total.
+    assert sc.get_secret.await_count == 4
 
 
 @pytest.mark.asyncio
