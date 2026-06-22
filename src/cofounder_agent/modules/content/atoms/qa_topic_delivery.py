@@ -21,8 +21,9 @@ Advisory status is DB-driven via ``qa_gates.topic_delivery.required_to_pass``
 gate row (the gate had none — it was an unconditional veto). Per the
 advisory-first restoration posture, it's seeded ``required_to_pass=false`` so
 the rail SCORES on every pass but does not yet veto; an operator graduates it
-to a hard veto (restoring the legacy binary semantics) by flipping
-``required_to_pass=true`` via the poindexter#454 lever — no code deploy.
+to a hard veto (restoring the legacy binary semantics) with
+``poindexter qa-gates require qa.topic_delivery`` (the poindexter#454 lever) —
+no code deploy. ``poindexter qa-gates advisory qa.topic_delivery`` reverts it.
 """
 
 from __future__ import annotations

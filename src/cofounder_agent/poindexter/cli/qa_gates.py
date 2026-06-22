@@ -7,6 +7,8 @@ enabled rows in ``execution_order`` and dispatches to the named reviewer.
     poindexter qa-gates show NAME
     poindexter qa-gates enable NAME
     poindexter qa-gates disable NAME
+    poindexter qa-gates require NAME      # graduate rail to a hard gate
+    poindexter qa-gates advisory NAME     # demote rail back to advisory
     poindexter qa-gates reorder NAME NEW_ORDER
 
 Thin adapter over :mod:`services.declarative_config_service` (#1522, epic
@@ -98,6 +100,24 @@ def qa_gates_disable(name: str) -> None:
     _set_enabled(name, False)
 
 
+@qa_gates_group.command("require")
+@click.argument("name")
+def qa_gates_require(name: str) -> None:
+    """Graduate a rail to a hard gate (required_to_pass=true) — a reject now
+    fails the pipeline. The poindexter#454 graduation lever; no restart needed.
+    """
+    _set_required(name, True)
+
+
+@qa_gates_group.command("advisory")
+@click.argument("name")
+def qa_gates_advisory(name: str) -> None:
+    """Demote a rail to advisory (required_to_pass=false) — it still runs and
+    records, but a reject no longer gates the pipeline. No restart needed.
+    """
+    _set_required(name, False)
+
+
 def _set_enabled(name: str, enabled: bool) -> None:
     async def _impl(pool):
         row = await dcs.get_row(pool, _SURFACE, name)
@@ -117,6 +137,27 @@ def _set_enabled(name: str, enabled: bool) -> None:
         sys.exit(1)
     state = "enabled" if enabled else "disabled"
     click.secho(f"{name}: {state}", fg="green" if enabled else "yellow")
+
+
+def _set_required(name: str, required: bool) -> None:
+    async def _impl(pool):
+        row = await dcs.get_row(pool, _SURFACE, name)
+        if row is None:
+            return False
+        await dcs.upsert_row(pool, _SURFACE, {**row, "required_to_pass": required})
+        return True
+
+    try:
+        ok = run_service(_impl)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+
+    if not ok:
+        click.echo(f"(no qa_gates row named {name!r})", err=True)
+        sys.exit(1)
+    state = "required_to_pass" if required else "advisory"
+    click.secho(f"{name}: {state}", fg="green" if required else "yellow")
 
 
 @qa_gates_group.command("reorder")

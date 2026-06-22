@@ -106,7 +106,8 @@ mode keeps the static `PX.kpis`. The Revenue and QA panels are intentionally
 static (documented at their call sites in `app.jsx`): Revenue is
 pre-revenue/billing-gated with no `/api/revenue` read, and QA's rail list is the
 real config already (graduating a rail is a `qa_gates.<rail>.required_to_pass`
-change, not a console edit).
+change via `poindexter qa-gates require <rail>` / `… advisory <rail>`, not a
+console edit).
 
 ### One `TODO(live)` spot left
 

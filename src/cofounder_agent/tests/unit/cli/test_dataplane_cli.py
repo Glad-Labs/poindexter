@@ -218,6 +218,68 @@ def test_qa_gates_reorder_upserts_execution_order():
     assert captured["execution_order"] == 5
 
 
+def test_qa_gates_require_upserts_required_to_pass_true():
+    from poindexter.cli.qa_gates import qa_gates_group
+
+    captured: dict = {}
+
+    async def _fake_upsert(pool, surface, payload):
+        captured.update(payload)
+        return payload
+
+    # An advisory rail with live telemetry counters — graduating it must
+    # flip required_to_pass without disturbing enabled/counters.
+    existing = {
+        "name": "qa.vision", "required_to_pass": False, "enabled": True,
+        "total_runs": 7, "total_rejections": 2, "config": {}, "metadata": {},
+    }
+    with patch("poindexter.cli.qa_gates.run_service", _fake_run_service), patch(
+        "services.declarative_config_service.get_row",
+        new=AsyncMock(return_value=existing),
+    ), patch("services.declarative_config_service.upsert_row", new=_fake_upsert):
+        result = CliRunner().invoke(qa_gates_group, ["require", "qa.vision"])
+    assert result.exit_code == 0
+    assert captured["required_to_pass"] is True
+    # The rest of the row rides along untouched (enabled stays true).
+    assert captured["enabled"] is True
+    assert "required_to_pass" in result.output
+
+
+def test_qa_gates_advisory_upserts_required_to_pass_false():
+    from poindexter.cli.qa_gates import qa_gates_group
+
+    captured: dict = {}
+
+    async def _fake_upsert(pool, surface, payload):
+        captured.update(payload)
+        return payload
+
+    existing = {
+        "name": "qa.vision", "required_to_pass": True, "enabled": True,
+        "config": {}, "metadata": {},
+    }
+    with patch("poindexter.cli.qa_gates.run_service", _fake_run_service), patch(
+        "services.declarative_config_service.get_row",
+        new=AsyncMock(return_value=existing),
+    ), patch("services.declarative_config_service.upsert_row", new=_fake_upsert):
+        result = CliRunner().invoke(qa_gates_group, ["advisory", "qa.vision"])
+    assert result.exit_code == 0
+    assert captured["required_to_pass"] is False
+    assert "advisory" in result.output
+
+
+def test_qa_gates_require_missing_reports_and_exits():
+    from poindexter.cli.qa_gates import qa_gates_group
+
+    with patch("poindexter.cli.qa_gates.run_service", _fake_run_service), patch(
+        "services.declarative_config_service.get_row",
+        new=AsyncMock(return_value=None),
+    ):
+        result = CliRunner().invoke(qa_gates_group, ["require", "ghost"])
+    assert result.exit_code == 1
+    assert "no qa_gates row named" in result.output
+
+
 # --- publishers ---------------------------------------------------------
 
 
