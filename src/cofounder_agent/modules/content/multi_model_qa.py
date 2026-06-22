@@ -20,6 +20,7 @@ Usage:
 """
 
 import asyncio
+import re
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -82,6 +83,65 @@ SKIP_TYPE_MISCONFIG = "misconfig"
 # the IN (...) literals in metrics_exporter._QA_RAIL_SKIP_SQL — the drift guard
 # in test_metrics_exporter asserts that SQL contains each value here.
 SKIP_TYPES_EXCLUDED_FROM_RATIO = (SKIP_TYPE_MASTER_FLAG_OFF, SKIP_TYPE_CONDITIONAL)
+
+
+# --- Vision-model image normalization (Glad-Labs/poindexter#563) ------------
+# qwen3-vl (via Ollama) decodes JPEG and PNG but NOT WebP. The SDXL-generated
+# inline images are stored as WebP on R2 (r2_upload_service converts PNG/JPEG ->
+# WebP before upload), so the vision rail downloaded a WebP, the model received
+# no decodable image, and _check_image_relevance returned None — which fails the
+# post closed once vision_gate is required_to_pass. Convert any non-JPEG/PNG
+# image to JPEG in-memory before it reaches the model; JPEG/PNG (both confirmed
+# decodable) pass through untouched. This is the QA-path forward conversion that
+# mirrors r2_upload_service's upload-path PNG/JPEG->WebP, and it leaves the
+# published WebP on R2 untouched.
+_VISION_DECODABLE_FORMATS = frozenset({"JPEG", "PNG"})
+
+
+def _normalize_image_for_vision(img_bytes: bytes) -> bytes:
+    """Re-encode an image the Ollama vision model can't read (e.g. WebP) to JPEG.
+
+    Returns the original bytes unchanged when they are already a model-decodable
+    format (JPEG/PNG) or when Pillow can't open them (best-effort — the rail
+    degrades gracefully rather than raising mid-download).
+    """
+    try:
+        import io
+
+        from PIL import Image  # type: ignore[import]
+
+        with Image.open(io.BytesIO(img_bytes)) as im:
+            fmt = im.format
+            if fmt in _VISION_DECODABLE_FORMATS:
+                return img_bytes
+            buf = io.BytesIO()
+            im.convert("RGB").save(buf, format="JPEG", quality=90)
+            logger.debug(
+                "[VISION_QA] converted %s image (%d bytes) -> JPEG for the vision model",
+                fmt, len(img_bytes),
+            )
+            return buf.getvalue()
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[VISION_QA] image normalize skipped (%s); using original bytes", exc)
+        return img_bytes
+
+
+# Inline-image URL extraction — shared so _check_image_relevance (which
+# assesses the images) and the qa.vision atom (which decides "were there images
+# to assess?" for the deliberate-pass vs fail-open split) agree on what counts
+# as an inline image. http(s) only: relative/data URIs aren't downloadable by
+# the vision rail.
+_MD_IMAGE_RE = re.compile(r"!\[[^\]]*\]\((https?://[^)\s]+)\)")
+_HTML_IMAGE_RE = re.compile(r"<img[^>]+src=['\"](https?://[^'\"]+)['\"]")
+
+
+def extract_inline_image_urls(content: str) -> list[str]:
+    """Ordered, de-duplicated inline image URLs (markdown + HTML, http(s) only)."""
+    urls: list[str] = []
+    for u in _MD_IMAGE_RE.findall(content or "") + _HTML_IMAGE_RE.findall(content or ""):
+        if u not in urls:
+            urls.append(u)
+    return urls
 
 
 @dataclass
@@ -2039,6 +2099,13 @@ class MultiModelQA:
         model = ""
         max_images = 3
         pass_threshold = 60
+        # qwen3-vl emits a long <think> trace even with think=False, and that
+        # trace shares the num_predict budget with the JSON answer — at 400 the
+        # JSON was getting truncated ('{"scores":[30],...,"overall":' cut off)
+        # or the content came back empty, so the rail returned None on perfectly
+        # good images (#563). 1024 leaves room for thinking + the small JSON;
+        # tunable per vision model via qa_vision_num_predict.
+        num_predict = 1024
         if self.settings:
             try:
                 enabled = str(
@@ -2053,6 +2120,9 @@ class MultiModelQA:
                 )
                 pass_threshold = int(
                     await self.settings.get("qa_vision_pass_threshold") or 60
+                )
+                num_predict = int(
+                    await self.settings.get("qa_vision_num_predict") or 1024
                 )
             except Exception as exc:
                 # poindexter#455 — used to silently swallow this. If
@@ -2077,16 +2147,10 @@ class MultiModelQA:
         if not content or not content.strip():
             return None
 
-        # Find inline markdown / HTML images. Cap at max_images so a
+        # Find inline markdown / HTML images (shared extractor — keeps qa.vision's
+        # "were there images?" check in lockstep). Cap at max_images so a
         # 10-image article doesn't blow up inference budget.
-        md_urls = re.findall(r'!\[[^\]]*\]\((https?://[^)\s]+)\)', content)
-        html_urls = re.findall(r'<img[^>]+src=[\'"](https?://[^\'"]+)[\'"]', content)
-        urls: list[str] = []
-        for u in md_urls + html_urls:
-            if u not in urls:
-                urls.append(u)
-            if len(urls) >= max_images:
-                break
+        urls = extract_inline_image_urls(content)[:max_images]
         if not urls:
             return None
 
@@ -2109,6 +2173,11 @@ class MultiModelQA:
                     img_bytes = resp.content
                     if not img_bytes or len(img_bytes) > 8 * 1024 * 1024:
                         continue  # skip empty or oversized (>8MB)
+                    # The vision model can't decode WebP (the SDXL->R2 inline
+                    # image format); convert to JPEG so it actually sees the
+                    # image instead of returning an empty/"no image" verdict
+                    # (Glad-Labs/poindexter#563).
+                    img_bytes = _normalize_image_for_vision(img_bytes)
                     encoded_images.append(
                         (url, base64.b64encode(img_bytes).decode("ascii"))
                     )
@@ -2157,7 +2226,7 @@ class MultiModelQA:
                     "images": [b64 for _u, b64 in encoded_images],
                 }
             ],
-            "options": {"temperature": 0.2, "num_predict": 400},
+            "options": {"temperature": 0.2, "num_predict": num_predict},
         }
         _ollama_url = (
             self._platform.config.get("ollama_base_url", "http://host.docker.internal:11434")
@@ -2280,6 +2349,9 @@ class MultiModelQA:
         pass_threshold = 70
         viewport_width = 1280
         viewport_height = 1024
+        # Same thinking-budget headroom as the image-relevance leg (shared knob);
+        # qwen3-vl's <think> trace would otherwise truncate the JSON verdict (#563).
+        num_predict = 1024
         if self.settings:
             try:
                 enabled = str(
@@ -2297,6 +2369,9 @@ class MultiModelQA:
                 )
                 viewport_height = int(
                     await self.settings.get("qa_preview_viewport_height") or 1024
+                )
+                num_predict = int(
+                    await self.settings.get("qa_vision_num_predict") or 1024
                 )
             except Exception as exc:
                 # poindexter#455 — symmetric to the qa_vision config-read
@@ -2364,7 +2439,7 @@ class MultiModelQA:
                     "images": [b64],
                 }
             ],
-            "options": {"temperature": 0.2, "num_predict": 500},
+            "options": {"temperature": 0.2, "num_predict": num_predict},
         }
         _ollama_url = (
             self._platform.config.get("ollama_base_url", "http://host.docker.internal:11434")

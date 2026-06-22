@@ -26,10 +26,14 @@ reviews are appended to the ``qa_rail_reviews`` channel; both carry
 ``provider='vision_gate'`` so ``_qa_rail_common`` weights them at
 ``gate_weight`` and a non-advisory failing review vetoes in ``qa.aggregate``.
 
-Fail-loud (``feedback_no_silent_defaults``): when ``qa_preview_screenshot_enabled``
-is true but no ``preview_url`` is resolvable from state, the atom logs a
-warning AND pages the operator instead of silently skipping — that silent
-skip is exactly how the gate stayed cold for ~3 weeks unnoticed.
+Always emits a review (``feedback_no_silent_defaults``; #563): when neither leg
+produces one, the atom returns a DELIBERATE, advisory, non-vetoing pass via
+``_emit_deliberate_pass`` rather than a silent ``{}``. That empty return is
+exactly how a *required* ``vision_gate`` fails 100% of posts closed — the
+qa.aggregate vacuous-pass guard reads "no review" as "required rail absent".
+The deliberate pass distinguishes "nothing to assess" (no inline images → pass
+by vacuity, no page) from "couldn't assess" (images present but the vision
+model was unreachable → fail open + page the operator, per operator policy).
 """
 
 from __future__ import annotations
@@ -109,6 +113,87 @@ async def _preview_screenshot_enabled(settings_service: Any) -> bool:
     return str(raw or "false").strip().lower() in ("true", "1", "yes")
 
 
+async def _emit_deliberate_pass(
+    state: dict[str, Any],
+    content: str,
+    site_config: Any,
+    settings_service: Any,
+) -> dict[str, Any]:
+    """Emit a deliberate, advisory, non-vetoing vision review when neither leg
+    produced one — so a REQUIRED ``vision_gate`` is satisfied by presence
+    instead of failing the post closed on a vacuous run (#563).
+
+    The review aliases to ``vision_gate`` (``reviewer="image_relevance"``) and is
+    advisory: it registers as *present* for the qa.aggregate vacuous-pass guard
+    but neither vetoes nor feeds a fabricated score into the weighted mean. The
+    feedback reason — and whether the operator is paged — depend on WHY there
+    was nothing to score:
+
+    - **No inline images** (case C): genuinely nothing to assess → pass by
+      vacuity, no page. (If preview-screenshot QA is enabled yet no preview_url
+      reached the rail, page about the broken wiring — the only operator-
+      actionable signal in this branch.)
+    - **Images present** (case D): the image-relevance leg couldn't assess them
+      (vision model unreachable / unparseable). Operator policy is fail-open +
+      page — the post proceeds, the operator is alerted to fix the model.
+    """
+    from modules.content.multi_model_qa import (
+        ReviewerResult,
+        extract_inline_image_urls,
+    )
+
+    image_urls = extract_inline_image_urls(content)
+    preview_unavailable = (
+        not _resolve_preview_url(state, site_config)
+        and await _preview_screenshot_enabled(settings_service)
+    )
+    task_id = str(state.get("task_id") or "?")[:8]
+
+    page_msg = ""
+    if image_urls:
+        reason = (
+            f"could not assess {len(image_urls)} inline image(s) — vision "
+            "model/infra unavailable; passing open"
+        )
+        page_msg = (
+            f"qa.vision (task {task_id}): {reason}. The image-relevance check "
+            "returned no result — confirm the vision model (qa_vision_model) is "
+            "loaded and reachable on the worker."
+        )
+    elif preview_unavailable:
+        reason = (
+            "no inline images, and preview-screenshot QA is enabled but no "
+            "preview_url reached the rail; passing open"
+        )
+        page_msg = (
+            "qa.vision: qa_preview_screenshot_enabled=true but no preview_url "
+            f"reached the QA rail for task {task_id} — the rendered-preview "
+            "screenshot gate is skipping. Ensure stage.verify_task surfaces "
+            "preview_url (preview_token + preview_base_url) before the qa.* block."
+        )
+    else:
+        reason = "no inline images to assess — vision gate satisfied by vacuity"
+
+    if page_msg:
+        logger.warning("[qa.vision] %s", page_msg)
+        try:
+            from services.integrations.operator_notify import notify_operator
+
+            await notify_operator(page_msg, critical=False, site_config=site_config)
+        except Exception as exc:  # noqa: BLE001
+            logger.debug("[qa.vision] operator notify failed (non-critical): %s", exc)
+
+    review = ReviewerResult(
+        reviewer="image_relevance",  # aliases to vision_gate in _REVIEWER_TO_GATE
+        approved=True,
+        score=100.0,
+        feedback=f"[vision] {reason}",
+        provider="vision_gate",
+        advisory=True,  # present for the gate, but never vetoes or scores
+    )
+    return {"qa_rail_reviews": [reviewer_to_dict(review)]}
+
+
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     content = (state.get("content") or "").strip()
     site_config = state.get("site_config")
@@ -152,29 +237,16 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 preview_review, gate_states, "vision_gate",
             )
             reviews.append(reviewer_to_dict(preview_review))
-    elif await _preview_screenshot_enabled(settings_service):
-        # Fail loud (feedback_no_silent_defaults): the operator opted into
-        # preview-screenshot QA but no preview_url reached this rail, so the
-        # gate would silently no-op — exactly the cold state #563 flagged.
-        # Surface it instead of swallowing.
-        task_id = str(state.get("task_id") or "?")[:8]
-        msg = (
-            "qa.vision: qa_preview_screenshot_enabled=true but no preview_url "
-            f"reached the QA rail for task {task_id} — the rendered-preview "
-            "screenshot gate is skipping. Ensure stage.verify_task surfaces "
-            "preview_url (preview_token + preview_base_url) before the qa.* block."
-        )
-        logger.warning("[qa.vision] %s", msg)
-        try:
-            from services.integrations.operator_notify import notify_operator
 
-            await notify_operator(msg, critical=False, site_config=site_config)
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("[qa.vision] operator notify failed (non-critical): %s", exc)
+    if reviews:
+        return {"qa_rail_reviews": reviews}
 
-    if not reviews:
-        return {}
-    return {"qa_rail_reviews": reviews}
+    # Neither leg produced a review. Emit a DELIBERATE, advisory, non-vetoing
+    # review (never a silent {}) so a REQUIRED vision_gate is satisfied by
+    # presence rather than failed closed on a vacuous run — that empty-{} return
+    # is exactly how the gate stayed cold and became un-graduatable
+    # (feedback_no_silent_defaults; Glad-Labs/poindexter#563).
+    return await _emit_deliberate_pass(state, content, site_config, settings_service)
 
 
 __all__ = ["ATOM_META", "run"]

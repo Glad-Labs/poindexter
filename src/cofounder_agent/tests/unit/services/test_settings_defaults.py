@@ -36,6 +36,17 @@ def test_ops_triage_defaults_to_small_model_not_heavy_writer():
     assert DEFAULTS["ops_triage_writer_model"] != DEFAULTS["pipeline_writer_model"]
 
 
+def test_qa_vision_num_predict_has_headroom_for_thinking_plus_json():
+    """qwen3-vl's <think> trace shares the num_predict budget with the JSON
+    verdict; the old hardcoded 400 truncated the JSON and the vision rail
+    returned None on good images (#563). The default must leave real headroom
+    and be int-parseable + DB-tunable."""
+    from services.settings_defaults import DEFAULTS, METADATA
+
+    assert int(DEFAULTS["qa_vision_num_predict"]) >= 768  # > the broken 400
+    assert METADATA["qa_vision_num_predict"]["value_type"] == "int"
+
+
 # ---------------------------------------------------------------------------
 # Registry shape
 # ---------------------------------------------------------------------------

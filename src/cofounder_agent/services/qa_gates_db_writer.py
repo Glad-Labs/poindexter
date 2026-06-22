@@ -85,6 +85,12 @@ _REVIEWER_TO_GATE: dict[str, str] = {
     # Aliases — the inline reviewer name and the gate-row name diverged
     # historically; preserve both rather than rename either side.
     "image_relevance": "vision_gate",
+    # rendered_preview is the SECOND vision check (the screenshot leg) and
+    # shares the vision_gate row with image_relevance. Without this alias a
+    # preview-only review left vision_gate looking absent in
+    # missing_required_gates, so a required vision_gate failed closed even
+    # though the rail ran (Glad-Labs/poindexter#563).
+    "rendered_preview": "vision_gate",
     "internal_consistency": "consistency",
     "ollama_critic": "llm_critic",
 }

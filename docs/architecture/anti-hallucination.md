@@ -271,11 +271,41 @@ and surfaces `preview_token` + `preview_url` in its `context_updates` (the
 same ride-`context_updates` requirement as `research_context` above);
 `finalize_task` reuses that token rather than minting a second one, keeping the
 dashboard link and the QA screenshot pointed at the same URL. `qa.vision`
-reads `preview_url` softly from state and, if `qa_preview_screenshot_enabled`
-is true but no `preview_url` arrives, **pages the operator** instead of
-silently skipping (`feedback_no_silent_defaults` — the silent skip is exactly
-how the gate stayed cold for ~3 weeks). `test_qa_vision_atom.py` +
+reads `preview_url` softly from state. `test_qa_vision_atom.py` +
 `test_verify_task_preview.py` pin the threading.
+
+##### Graduating `vision_gate` to `required_to_pass` (#563)
+
+Wiring the rail was necessary but not sufficient: when `vision_gate` was first
+flipped to `required_to_pass=true` it rejected **100%** of posts. Three
+independent defects stacked, each only fatal once the gate was load-bearing:
+
+1. **WebP is undecodable by the vision model.** SDXL inline images are stored
+   as WebP on R2 (`r2_upload_service` converts PNG/JPEG → WebP for the web), but
+   `qwen3-vl` (via Ollama) cannot decode WebP — it receives no image and returns
+   an empty / "no image" verdict. `_check_image_relevance` now normalizes every
+   downloaded image to JPEG in-memory (`_normalize_image_for_vision`; Pillow,
+   leaving the published WebP untouched). JPEG/PNG pass through unchanged.
+2. **The `<think>` trace truncated the JSON verdict.** `qwen3-vl` emits a long
+   reasoning trace even with `think=False`, and it shares the `num_predict`
+   budget with the answer — at 400 the JSON (`{"scores":…,"overall":…}`) got cut
+   off and the rail returned `None`. Budget is now the DB-tunable
+   `qa_vision_num_predict` (default 1024).
+3. **A vacuous run failed closed.** When neither leg produced a review,
+   `qa.vision` returned `{}` — which the `qa.aggregate` vacuous-pass guard
+   correctly reads as "required rail absent → reject". It now emits a
+   **deliberate, advisory, non-vetoing** review instead (`reviewer=image_relevance`,
+   which aliases to `vision_gate`): a _pass by vacuity_ when there are genuinely
+   no inline images, or a _fail-open pass + operator page_ when images were
+   present but the model couldn't assess them (operator policy:
+   keep the pipeline moving, alert to fix the model — vision is 1 of 12 rails).
+   Advisory means it satisfies the required-gate presence check without vetoing
+   or feeding a fabricated score into the weighted mean.
+
+A latent fourth bug: `rendered_preview` was missing from `_REVIEWER_TO_GATE`, so
+a preview-only review didn't satisfy `vision_gate`; it now aliases there too
+(both vision legs share the `vision_gate` row). `test_qa_vision_atom.py`,
+`test_vision_image_normalization.py`, and `test_qa_gates_db_writer.py` pin all four.
 
 #### Four more dropped checks: topic-delivery, citations, consistency, web-factcheck
 

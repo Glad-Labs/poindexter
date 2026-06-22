@@ -129,7 +129,9 @@ class TestQaVisionAtom:
 
     async def test_fail_loud_when_enabled_but_no_preview_url(self, monkeypatch):
         """feedback_no_silent_defaults: preview screenshot enabled but no URL
-        → the atom pages the operator instead of silently skipping."""
+        → the atom pages the operator. It now ALSO emits a deliberate advisory
+        PASS (never a silent {}) so a required vision_gate isn't failed closed
+        on this vacuous run (#563)."""
         async def img(self, title, topic, content):
             return None  # no image review either → reviews empty
 
@@ -150,14 +152,20 @@ class TestQaVisionAtom:
             "services.integrations.operator_notify.notify_operator", fake_notify,
         )
 
-        # No preview_url / preview_token → the fail-loud branch must fire.
+        # No images + preview enabled + no preview_url/token.
         out = await qa_vision.run(_state(settings_service=_Settings(), task_id="abc123"))
-        assert out == {}  # nothing to score, but...
-        assert "no preview_url" in notified.get("message", "")
+        reviews = out["qa_rail_reviews"]
+        assert len(reviews) == 1
+        assert reviews[0]["reviewer"] == "image_relevance"  # aliases to vision_gate
+        assert reviews[0]["approved"] is True
+        assert reviews[0]["advisory"] is True  # deliberate pass, never gates
+        assert "no preview_url" in notified.get("message", "")  # operator still paged
 
     async def test_no_fail_loud_when_preview_disabled(self, monkeypatch):
-        """When the screenshot flag is off, an absent preview_url is NOT an
-        alert — the gate is simply opt-out."""
+        """When the screenshot flag is off and there are no inline images, an
+        absent preview_url is NOT an alert — but the atom STILL emits a
+        deliberate advisory PASS (case C: nothing to assess) so a required
+        vision_gate passes by vacuity rather than failing closed (#563)."""
         async def img(self, title, topic, content):
             return None
         monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
@@ -176,5 +184,52 @@ class TestQaVisionAtom:
         )
 
         out = await qa_vision.run(_state(settings_service=_Settings()))
-        assert out == {}
-        assert "message" not in notified
+        reviews = out["qa_rail_reviews"]
+        assert len(reviews) == 1
+        assert reviews[0]["advisory"] is True
+        assert reviews[0]["approved"] is True
+        assert "no inline images" in reviews[0]["feedback"].lower()
+        assert "message" not in notified  # genuinely nothing wrong → no page
+
+    async def test_no_images_satisfies_required_vision_gate(self, monkeypatch):
+        """THE #563 acceptance core: a post with no inline images produces a
+        review that satisfies a REQUIRED vision_gate (missing_required_gates
+        returns it as present), so qa.aggregate does NOT fail closed."""
+        from modules.content.atoms._qa_rail_common import missing_required_gates
+
+        async def img(self, title, topic, content):
+            return None
+        monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
+
+        out = await qa_vision.run(_state())  # no images, no preview
+        reviews = out["qa_rail_reviews"]
+        # vision_gate is required + enabled here; the deliberate pass must
+        # register as present so the vacuous-pass guard doesn't reject.
+        assert missing_required_gates(reviews, {"vision_gate": (True, True)}) == []
+
+    async def test_images_present_but_unassessable_passes_open_and_pages(self, monkeypatch):
+        """Case D (operator policy = fail-open + page): inline images ARE
+        present but the image leg couldn't assess them (vision model down /
+        unparseable). The atom passes open (advisory) AND pages the operator,
+        rather than failing the post closed."""
+        async def img(self, title, topic, content):
+            return None  # model unreachable
+        monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
+
+        notified = {}
+
+        async def fake_notify(message, *, critical=False, site_config=None):
+            notified["message"] = message
+        monkeypatch.setattr(
+            "services.integrations.operator_notify.notify_operator", fake_notify,
+        )
+
+        body = 'Body.\n<img src="https://r2.dev/x.webp" alt="x" width="1024" />\nmore'
+        out = await qa_vision.run(_state(content=body, task_id="def456"))
+        reviews = out["qa_rail_reviews"]
+        assert len(reviews) == 1
+        assert reviews[0]["reviewer"] == "image_relevance"
+        assert reviews[0]["approved"] is True      # fail-open
+        assert reviews[0]["advisory"] is True       # but doesn't gate the score
+        assert "could not assess" in reviews[0]["feedback"].lower()
+        assert notified.get("message")              # operator paged (fail-open + page)

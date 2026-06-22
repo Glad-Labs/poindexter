@@ -249,6 +249,7 @@ DEFAULTS: dict[str, str] = {
     # operator deliberately cleared the key — the vision check is skipped.
     'qa_preview_vision_model': 'ollama/qwen3-vl:30b',
     'qa_vision_model': 'ollama/qwen3-vl:30b',
+    'qa_vision_num_predict': '1024',  # #563: room for qwen3-vl <think> + JSON verdict
     # why: structured-JSON extraction calls (topic discovery distill +
     # candidate ranking) need a JSON-reliable INSTRUCT model. The writer
     # model (pipeline_writer_model) may be a reasoning model that returns
@@ -1242,6 +1243,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'niche_embedding_model': {'owner': 'topic_discovery', 'value_type': 'model'},
     'qa_vision_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'qa_preview_vision_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
+    'qa_vision_num_predict': {'owner': 'multi_model_qa', 'value_type': 'int'},
     'vision_alt_model': {'owner': 'image_service', 'value_type': 'model'},
     'rag_rerank_model': {'owner': 'rag_engine', 'value_type': 'model'},
 

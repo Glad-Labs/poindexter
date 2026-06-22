@@ -67,17 +67,18 @@ async def test_empty_reviews_no_ops():
 @pytest.mark.asyncio
 async def test_unknown_reviewer_skipped():
     """Inline reviewers without a qa_gates row must NOT trigger an UPDATE
-    — there's no row to bump.
+    — there's no row to bump (``reviewer_to_gate`` returns None and
+    ``record_chain_run`` skips them).
 
-    ``rendered_preview`` is the finalize-time preview reviewer (minted via
-    the preview_token AFTER the qa.* chain), so it genuinely has no
-    qa_gates row. NB: citation_verifier / topic_delivery USED to belong
-    here, but they were given gate rows on 2026-06-03 (#659/#658) and now
-    bump counters — see test_restored_rail_gates_bump_their_counters."""
+    NB: ``rendered_preview`` USED to be the example here, but it was aliased
+    to vision_gate in #563 (both vision legs share that row), so it now bumps
+    a counter — see test_alias_mapping_rendered_preview_to_vision_gate.
+    citation_verifier / topic_delivery likewise moved out when they were
+    given gate rows on 2026-06-03 (#659/#658)."""
     pool = _FakePool()
     await record_chain_run(pool, [
-        _Review("rendered_preview"),
         _Review("some_reviewer_with_no_gate_row"),
+        _Review("another_unmapped_reviewer"),
     ])
     assert pool.executes == []
 
@@ -130,6 +131,18 @@ async def test_alias_mapping_ollama_critic_to_llm_critic():
 
 
 @pytest.mark.asyncio
+async def test_alias_mapping_rendered_preview_to_vision_gate():
+    """The rendered-preview vision check shares the vision_gate row with
+    image_relevance — both are vision rails. Without the alias, a
+    preview-only review left vision_gate looking absent and a required
+    gate failed closed (Glad-Labs/poindexter#563)."""
+    pool = _FakePool()
+    await record_chain_run(pool, [_Review("rendered_preview", approved=True)])
+    _, args = pool.executes[0]
+    assert args[0] == "vision_gate"
+
+
+@pytest.mark.asyncio
 async def test_duplicate_reviewer_collapses_to_one_update():
     """url_verifier appends a ReviewerResult on both the dead-link and
     the bonus path. The writer must collapse those into a single
@@ -157,7 +170,8 @@ async def test_full_chain_writes_one_update_per_gate():
         # #659/#658 on 2026-06-03) so they bump too:
         _Review("citation_verifier", approved=True),
         _Review("topic_delivery", approved=True),
-        # rendered_preview is the only genuinely rowless reviewer here:
+        # rendered_preview now aliases to vision_gate (#563) — it bumps the
+        # vision_gate counter alongside image_relevance:
         _Review("rendered_preview", approved=True),
     ])
     bumped_gates = {args[0] for _, args in pool.executes}
@@ -169,6 +183,7 @@ async def test_full_chain_writes_one_update_per_gate():
         "url_verifier",
         "citation_verifier",
         "topic_delivery",
+        "vision_gate",
     }
 
 
@@ -185,15 +200,12 @@ def test_alias_table_covers_every_known_inline_reviewer():
     reviewer can't silently regress to `total_runs=0`.
     """
     inline_reviewers_with_row = set(_REVIEWER_TO_GATE)
-    inline_reviewers_without_row = {
-        # Finalize-time preview reviewer — minted via the preview_token
-        # AFTER the qa.* chain, so it has no qa_gates row by design.
-        # (citation_verifier / topic_delivery were moved OUT of this set on
-        # 2026-06-11: they were given gate rows on 2026-06-03 (#659/#658),
-        # so they MUST be aliased — leaving them here is what let the
-        # third alias-drop recurrence pass CI.)
-        "rendered_preview",
-    }
+    # (Empty.) Reviewers that USED to live here all eventually got gate rows
+    # and moved to must_be_documented below:
+    #   - citation_verifier / topic_delivery (2026-06-03, #659/#658)
+    #   - rendered_preview (#563): aliased to the vision_gate row it shares
+    #     with image_relevance, the fourth alias-drop this guard catches.
+    inline_reviewers_without_row: set[str] = set()
     documented = inline_reviewers_with_row | inline_reviewers_without_row
     # If you trip this assertion, either:
     #   (a) add the reviewer name + gate name to _REVIEWER_TO_GATE, OR
@@ -207,6 +219,10 @@ def test_alias_table_covers_every_known_inline_reviewer():
         "ollama_critic",
         "internal_consistency",
         "image_relevance",
+        # rendered_preview shares the vision_gate row with image_relevance
+        # (#563) — both vision legs must be aliased so the counter tracks
+        # every vision pass and a required vision_gate sees the rail present.
+        "rendered_preview",
         "web_factcheck",
         "url_verifier",
         # Lane D #329 OSS rails — migrations 20260510_022034,
