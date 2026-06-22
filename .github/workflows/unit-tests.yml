@@ -137,7 +137,7 @@ jobs:
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           df -h /
 
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
         with:
           # Need >=2 so `git diff` against the previous commit works on
           # push events. For PRs, the detect-changes step additionally
@@ -563,7 +563,7 @@ jobs:
       contents: read
       issues: write  # the failure handler files an issue on the source repo
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
       - name: Setup Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v5.6.0 as of 2026-05-12
         with:

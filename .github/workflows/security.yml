@@ -51,7 +51,7 @@ jobs:
       docker: ${{ steps.classify.outputs.docker }}
       deps: ${{ steps.classify.outputs.deps }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
         with:
           # >=2 so `git diff` against the parent works on push; PRs use the
           # virtual merge commit's HEAD^1 (current main's tip).
@@ -114,7 +114,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
         # No fetch-depth: 0 — we scan with --no-git so git history isn't
         # needed and a shallow checkout is enough.
       # Use the gitleaks CLI directly instead of gitleaks/gitleaks-action@v2,
@@ -162,7 +162,7 @@ jobs:
     # Weekly baseline + manual dispatch always run (drift check between PRs).
     if: ${{ needs.changes.outputs.deps == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
       - name: Trivy filesystem scan (HIGH/CRITICAL gate)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -217,7 +217,7 @@ jobs:
     # weekly + manual scans). CI-minutes sweep.
     if: ${{ needs.changes.outputs.docker == 'true' || github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
       - name: Scan Dockerfiles / compose for misconfig
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
@@ -248,7 +248,7 @@ jobs:
     # tag/branch instead of a 40-char commit SHA. Pure-stdlib script —
     # no pip install needed.
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
       - name: Run check-action-pins
         run: python scripts/ci/check-action-pins.py
 
@@ -268,7 +268,7 @@ jobs:
     # pipefail``. Fails the build the moment any tracked
     # ``*.sh`` / ``*.bash`` file carries ``\r``. Pure-stdlib script.
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
       - name: Run check-shell-line-endings
         run: python scripts/ci/check-shell-line-endings.py
       # Companion gate: PowerShell scripts must be ASCII or UTF-8-with-BOM.
@@ -291,7 +291,7 @@ jobs:
     # GitHub mirror in case a contributor opens a PR without pre-commit
     # installed and without going through Gitea CI first.
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v5.6.0 as of 2026-05-12
         with:
@@ -312,7 +312,7 @@ jobs:
     # scheduled run covers dep-drift CVEs between pushes. CI-minutes sweep.
     if: ${{ github.event_name == 'schedule' || github.event_name == 'workflow_dispatch' }}
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10  # v4.3.1 as of 2026-05-12
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
 
       - name: Generate SBOM (CycloneDX)
         uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0 as of 2026-05-12
