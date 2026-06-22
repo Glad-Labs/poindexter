@@ -86,16 +86,33 @@ def _run(coro):
     return asyncio.run(coro)
 
 
-class _PoolShim:
-    """Minimal ``database_service``-shaped object exposing only ``.pool``.
+async def _build_resume_handles(site_config: Any) -> tuple[Any, Any]:
+    """Build the full ``(database_service, platform)`` a mid-graph resume needs.
 
-    The gate atom + stage adapters read ``state['database_service'].pool``;
-    a full DatabaseService needs DSN resolution + an ``initialize()`` round
-    trip we don't want for a one-shot CLI resume.
+    ``preview_gate`` sits MID-GRAPH: resuming it (approve OR regen) re-runs the
+    image / QA / finalize atoms, which call full ``DatabaseService`` delegate
+    methods (``update_task``, ``create_quality_evaluation`` …) and dispatch
+    SDXL / LLM prompts through ``platform.dispatch.complete``. The earlier thin
+    pool shim exposed neither, so a real ``regen --images`` halted at
+    ``content.persist_task`` with ``'_PoolShim' object has no attribute
+    'update_task'`` and SDXL inline silently fell back to Pexels (``platform``
+    was ``None``).
+
+    Build the same handles the Prefect subprocess builds in
+    ``services.flows.content_generation``: a real ``DatabaseService`` — whose
+    ``initialize()`` also installs the global ``AuditLogger`` that
+    ``build_platform_for_subprocess`` reads — plus the capability-scoped
+    ``platform``. The worker container runs single-pool (no
+    ``LOCAL_DATABASE_URL``), so one pool over ``_dsn()`` backs every delegate.
+    The caller owns ``await database_service.close()``.
     """
+    from services.database_service import DatabaseService
+    from services.di_wiring import build_platform_for_subprocess
 
-    def __init__(self, pool: Any) -> None:
-        self.pool = pool
+    database_service = DatabaseService(database_url=_dsn(), site_config=site_config)
+    await database_service.initialize()
+    platform = build_platform_for_subprocess(database_service.pool, site_config)
+    return database_service, platform
 
 
 async def _make_pool():
@@ -330,6 +347,7 @@ def resume_command(task_id: str, feedback: str | None, json_output: bool) -> Non
 
     async def _impl():
         pool = await _make_pool()
+        db_service = None  # built mid-try; closed in finally (guard early returns)
         try:
             row = await _fetch_paused_row(pool, task_id)
             if row is None:
@@ -347,12 +365,13 @@ def resume_command(task_id: str, feedback: str | None, json_output: bool) -> Non
 
             site_config = await _make_site_config(pool)
 
-            # We need the live service handles re-threaded into the
-            # RunnableConfig, so build a minimal context with database_service +
-            # site_config. A full DatabaseService needs DSN + an initialize()
-            # round trip; the gate atom (and stage adapters) only read
-            # ``.pool``, so a tiny shim exposing the CLI pool is sufficient.
-            db_service = _PoolShim(pool)
+            # Re-thread the live service handles into the RunnableConfig.
+            # ``preview_gate`` resumes MID-GRAPH, re-running atoms that call full
+            # DatabaseService delegates + dispatch through ``platform`` — so a
+            # bare pool shim is not enough. Build the real handles the Prefect
+            # subprocess builds (see ``_build_resume_handles``); closed in the
+            # ``finally`` below.
+            db_service, platform = await _build_resume_handles(site_config)
 
             # Hand the runner an EXPLICIT checkpointer DSN. TemplateRunner's
             # own fallback resolver (``_resolve_dsn``) imports
@@ -385,6 +404,7 @@ def resume_command(task_id: str, feedback: str | None, json_output: bool) -> Non
                         "topic": row.get("topic") or "",
                         "database_service": db_service,
                         "site_config": site_config,
+                        "platform": platform,
                     },
                     thread_id=task_id_str,
                     resume=True,
@@ -476,6 +496,8 @@ def resume_command(task_id: str, feedback: str | None, json_output: bool) -> Non
                 "code": 1,
             }
         finally:
+            if db_service is not None:
+                await db_service.close()
             await pool.close()
 
     try:
@@ -552,6 +574,7 @@ def regen_command(
 
     async def _impl():
         pool = await _make_pool()
+        db_service = None  # built mid-try; closed in finally (guard early returns)
         try:
             row = await _fetch_paused_row(pool, task_id)
             if row is None:
@@ -576,7 +599,10 @@ def regen_command(
                 }
 
             site_config = await _make_site_config(pool)
-            db_service = _PoolShim(pool)
+            # Full handles — the regen loop re-runs image/QA/finalize atoms that
+            # need DatabaseService delegates + platform.dispatch (see
+            # ``_build_resume_handles``). Closed in the ``finally`` below.
+            db_service, platform = await _build_resume_handles(site_config)
             checkpointer_dsn = _dsn()  # see resume_command for why this is explicit
 
             from services.approval_service import (
@@ -610,6 +636,7 @@ def regen_command(
                     "topic": row.get("topic") or "",
                     "database_service": db_service,
                     "site_config": site_config,
+                    "platform": platform,
                 },
                 thread_id=task_id_str,
                 resume=True,
@@ -628,6 +655,8 @@ def regen_command(
                 "mode": "regen_resume",
             }
         finally:
+            if db_service is not None:
+                await db_service.close()
             await pool.close()
 
     try:

@@ -58,6 +58,11 @@ def _patches(*, row, regen=None, run_result=None, run_side_effect=None):
         patch("services.template_runner.TemplateRunner", new=runner_cls),
         patch("poindexter.cli.pipeline._dsn",
               new=MagicMock(return_value="postgresql://test/dsn")),
+        # The resume re-threads the full (database_service, platform) handles a
+        # mid-graph resume needs. Stub the builder so the adapter test never
+        # opens a real pool / builds a real Platform.
+        patch("poindexter.cli.pipeline._build_resume_handles",
+              new=AsyncMock(return_value=(MagicMock(close=AsyncMock()), MagicMock()))),
     ]
     return patches, runner_cls, regen_mock
 

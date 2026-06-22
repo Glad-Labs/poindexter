@@ -83,6 +83,11 @@ def _patches(
         patch("services.template_runner.TemplateRunner", new=runner_cls),
         patch("services.template_runner.has_resumable_checkpoint",
               new=AsyncMock(return_value=has_ckpt)),
+        # Mid-graph resume re-threads the full (database_service, platform)
+        # handles. Stub the builder so the atomicity test never opens a real
+        # pool / builds a real Platform.
+        patch("poindexter.cli.pipeline._build_resume_handles",
+              new=AsyncMock(return_value=(MagicMock(close=AsyncMock()), MagicMock()))),
         # The CLI resolves the checkpointer DSN via its vendored resolver
         # (brain.bootstrap isn't importable in the installed CLI venv). Stub
         # it so the resume path never reads bootstrap.toml / DB env vars on CI.
