@@ -6,8 +6,9 @@ Exercises the four acceptance criteria from the issue:
    not stamped, no error raised. Lets the operator kill tracing without
    nuking prompt management.
 2. ``langfuse_tracing_enabled=true`` + all credentials present → env
-   vars stamped + ``litellm.success_callback`` / ``failure_callback``
-   set to ``["langfuse"]``.
+   vars stamped + an ``OpenTelemetry`` instance appended to
+   ``litellm.callbacks`` (the async-logging list — see regression note
+   below).
 3. ``langfuse_tracing_enabled=true`` + missing credential → raises
    :class:`LangfuseConfigError`. Per ``feedback_no_silent_defaults``,
    no quiet skip.
@@ -32,6 +33,11 @@ import pytest
 _litellm_stub = MagicMock(name="litellm")
 _litellm_stub.success_callback = []
 _litellm_stub.failure_callback = []
+# ``litellm.callbacks`` is the list litellm consults for async ``acompletion``
+# logging — the OTEL CustomLogger instance MUST land here (regression #1387).
+# Seed it as a real list so the provider's append-if-absent logic behaves like
+# production (where litellm pre-populates it with its own internal hooks).
+_litellm_stub.callbacks = []
 
 # Stub the OTEL integration submodule so tests don't instantiate a real
 # OpenTelemetry exporter (which tries to connect to a collector endpoint).
@@ -77,6 +83,7 @@ def _reset_module_state(monkeypatch):
         monkeypatch.delenv(var, raising=False)
     _litellm_stub.success_callback = []
     _litellm_stub.failure_callback = []
+    _litellm_stub.callbacks = []
     _mock_opentelemetry_cls.reset_mock()
     _mock_otel_config_cls.reset_mock()
     yield
@@ -112,8 +119,7 @@ async def test_disabled_skips_registration_cleanly():
     sc = _fake_site_config(enabled=False)
     result = await configure_langfuse_callback(sc)
     assert result is False
-    assert _litellm_stub.success_callback == []
-    assert _litellm_stub.failure_callback == []
+    assert _litellm_stub.callbacks == []
     assert "LANGFUSE_HOST" not in os.environ
     # Secret should not even be fetched when disabled.
     sc.get_secret.assert_not_awaited()
@@ -123,16 +129,17 @@ async def test_disabled_skips_registration_cleanly():
 async def test_enabled_with_all_credentials_registers_callback():
     """Happy path — all three credentials present + tracing enabled.
 
-    Verifies env vars get stamped AND the success/failure callback lists
-    are set to an OpenTelemetry instance pointed at Langfuse's OTEL endpoint.
+    Verifies env vars get stamped AND the OpenTelemetry instance lands in
+    ``litellm.callbacks`` (the async-logging list) pointed at Langfuse's OTEL
+    endpoint.
     """
     sc = _fake_site_config()
     result = await configure_langfuse_callback(sc)
     assert result is True
-    # Both lists receive the same OpenTelemetry instance.
-    assert len(_litellm_stub.success_callback) == 1
-    assert len(_litellm_stub.failure_callback) == 1
-    assert _litellm_stub.success_callback[0] is _litellm_stub.failure_callback[0]
+    # The OpenTelemetry instance is appended to litellm.callbacks — the only
+    # list litellm consults for async acompletion logging. Registering solely
+    # in success_callback is the 2026-05-28 regression that emitted zero spans.
+    assert _mock_opentelemetry_cls.return_value in _litellm_stub.callbacks
     # OpenTelemetryConfig was constructed with the Langfuse OTEL endpoint.
     _mock_otel_config_cls.assert_called_once()
     config_kwargs = _mock_otel_config_cls.call_args.kwargs
@@ -160,9 +167,8 @@ async def test_missing_credential_raises_loud_error(missing_field, kwargs):
     sc = _fake_site_config(**kwargs)
     with pytest.raises(LangfuseConfigError, match=missing_field):
         await configure_langfuse_callback(sc)
-    # Callback lists must remain untouched on failure.
-    assert _litellm_stub.success_callback == []
-    assert _litellm_stub.failure_callback == []
+    # Callback list must remain untouched on failure.
+    assert _litellm_stub.callbacks == []
 
 
 @pytest.mark.asyncio
@@ -176,7 +182,9 @@ async def test_idempotent_double_call():
     second = await configure_langfuse_callback(sc)
     assert first is True
     assert second is True
-    assert len(_litellm_stub.success_callback) == 1
+    # The OTEL instance appears exactly once — the second call short-circuits
+    # at the registration guard and does not double-append.
+    assert _litellm_stub.callbacks == [_mock_opentelemetry_cls.return_value]
     # Should have been fetched twice (env-var refresh path).
     assert sc.get_secret.await_count == 2
 
@@ -189,7 +197,7 @@ async def test_none_site_config_skips_silently():
     """
     result = await configure_langfuse_callback(None)
     assert result is False
-    assert _litellm_stub.success_callback == []
+    assert _litellm_stub.callbacks == []
 
 
 @pytest.mark.asyncio
@@ -202,6 +210,32 @@ async def test_secret_fetch_exception_wrapped():
     sc.get_secret = AsyncMock(side_effect=RuntimeError("db down"))
     with pytest.raises(LangfuseConfigError, match="langfuse_secret_key"):
         await configure_langfuse_callback(sc)
+
+
+@pytest.mark.asyncio
+async def test_registers_in_callbacks_and_preserves_existing():
+    """Regression guard (2026-05-28 trace outage): the OTEL instance MUST be
+    appended to ``litellm.callbacks`` — litellm's only async-logging list —
+    not merely ``success_callback``. In litellm>=1.85 a CustomLogger instance
+    placed solely in ``success_callback`` never fires
+    ``async_log_success_event`` for ``acompletion``, so the async-everywhere
+    pipeline emitted zero Langfuse spans for ~3 weeks.
+
+    Also pins append-if-absent: litellm pre-seeds ``callbacks`` with its own
+    internal hooks (e.g. SkillsInjectionHook); clobbering the list drops them.
+    """
+    sentinel = object()  # stand-in for litellm's own internal callback
+    _litellm_stub.callbacks = [sentinel]
+    sc = _fake_site_config()
+
+    await configure_langfuse_callback(sc)
+
+    # litellm's pre-existing internal callback is preserved, not clobbered.
+    assert sentinel in _litellm_stub.callbacks
+    # The OTEL instance is added so async acompletion logging actually fires.
+    assert _mock_opentelemetry_cls.return_value in _litellm_stub.callbacks
+    # Exactly once — no accidental duplicate registration.
+    assert _litellm_stub.callbacks.count(_mock_opentelemetry_cls.return_value) == 1
 
 
 # ---------------------------------------------------------------------------

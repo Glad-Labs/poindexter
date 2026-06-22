@@ -64,10 +64,9 @@ logger = logging.getLogger(__name__)
 
 
 # Module-level idempotency guard — Langfuse callback registration is a
-# process-wide mutation of ``litellm.success_callback`` /
-# ``failure_callback``, so we only do it once even if the worker calls
-# ``configure_langfuse_callback`` multiple times (e.g. main.py +
-# CLI re-init paths).
+# process-wide mutation of ``litellm.callbacks``, so we only do it once
+# even if the worker calls ``configure_langfuse_callback`` multiple times
+# (e.g. main.py + CLI re-init paths).
 _LANGFUSE_CALLBACK_REGISTERED = False
 
 
@@ -134,9 +133,12 @@ async def configure_langfuse_callback(site_config: Any) -> bool:
       stamp the three values into ``LANGFUSE_HOST`` /
       ``LANGFUSE_PUBLIC_KEY`` / ``LANGFUSE_SECRET_KEY`` env vars
       (which is how LiteLLM's built-in Langfuse integration discovers
-      them — see litellm.utils._init_logging_callbacks), then set
-      ``litellm.success_callback = ["langfuse"]`` +
-      ``litellm.failure_callback = ["langfuse"]``.
+      them — see litellm.utils._init_logging_callbacks), then append an
+      ``OpenTelemetry`` CustomLogger instance to ``litellm.callbacks``.
+      It MUST go in ``litellm.callbacks`` (not just
+      ``litellm.success_callback``) or litellm never fires
+      ``async_log_success_event`` for ``acompletion`` calls — the
+      async path the whole pipeline uses.
 
     Idempotent — safe to call multiple times, only the first call
     registers the callbacks.
@@ -241,8 +243,20 @@ async def configure_langfuse_callback(site_config: Any) -> bool:
         headers=f"Authorization=Basic {b64_creds}",
     )
     otel_callback = OpenTelemetry(config=otel_config)
-    litellm.success_callback = [otel_callback]
-    litellm.failure_callback = [otel_callback]
+    # Register the CustomLogger INSTANCE in ``litellm.callbacks`` — that is the
+    # only list litellm consults for async ``acompletion`` success/failure
+    # logging in litellm>=1.85. The pipeline is async-everywhere, so an instance
+    # placed solely in ``litellm.success_callback`` (the legacy list, which only
+    # wires the *sync* ``completion`` path and bare string names like
+    # ``"langfuse"``) never fires ``async_log_success_event`` and silently emits
+    # zero spans. That was the 2026-05-28 regression that #1387 only half-fixed:
+    # a manual test span reached Langfuse, but real (async) pipeline traffic
+    # stayed dark. Append-if-absent so we preserve litellm's own internal
+    # callbacks (e.g. SkillsInjectionHook) and stay idempotent within a process.
+    existing_callbacks = list(getattr(litellm, "callbacks", None) or [])
+    if otel_callback not in existing_callbacks:
+        existing_callbacks.append(otel_callback)
+    litellm.callbacks = existing_callbacks
     _LANGFUSE_CALLBACK_REGISTERED = True
     logger.info(
         "[litellm_provider] Langfuse tracing active via OTEL (host=%s) — every "
