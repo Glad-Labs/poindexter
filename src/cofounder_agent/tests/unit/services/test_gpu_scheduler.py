@@ -242,93 +242,117 @@ class TestGPUSchedulerSingleton:
 # ===========================================================================
 
 
-class TestGetGpuUtilization:
-    """Coverage for the nvidia-smi exporter parsing."""
+class TestGpuMetricsFromPrometheus:
+    """GPU power/util are sourced from Prometheus instant queries, not a
+    direct exporter scrape.
+
+    Prometheus already scrapes + caches the nvidia-smi exporter, so it serves
+    the last value instantly and never blocks on nvidia-smi under render load
+    (the 2026-06-21 RemoteDisconnected). Querying it over container-internal
+    DNS (``prometheus:9090``) also sidesteps the Windows Docker host-port
+    forward wedge that made the direct ``host.docker.internal:9835`` read flap.
+    """
+
+    @staticmethod
+    def _mock_client(*, status=200, value=None, raise_exc=None):
+        from unittest.mock import AsyncMock, MagicMock
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = status
+        result = [] if value is None else [
+            {"metric": {}, "value": [1782092699.0, str(value)]}
+        ]
+        mock_resp.json = MagicMock(
+            return_value={"status": "success",
+                          "data": {"resultType": "vector", "result": result}}
+        )
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        if raise_exc is not None:
+            mock_client.get = AsyncMock(side_effect=raise_exc)
+        else:
+            mock_client.get = AsyncMock(return_value=mock_resp)
+        return mock_client
 
     @pytest.mark.asyncio
-    async def test_parses_utilization_from_prometheus_output(self):
-        """The function looks for a 'nvidia_gpu_utilization_percent{...}' line."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+    async def test_utilization_parsed_from_prometheus_instant_vector(self):
+        from unittest.mock import patch
 
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
-
-        prometheus_text = (
-            "# HELP nvidia_gpu_utilization_percent GPU utilization\n"
-            "# TYPE nvidia_gpu_utilization_percent gauge\n"
-            "nvidia_gpu_utilization_percent{gpu=\"0\"} 75.0\n"
-            "nvidia_other_metric{x=\"y\"} 100\n"
-        )
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.text = prometheus_text
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get = AsyncMock(return_value=mock_resp)
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        client = self._mock_client(value="75")
+        with patch("httpx.AsyncClient", return_value=client):
             result = await scheduler._get_gpu_utilization()
         assert result == 75.0
+        # Hit the Prometheus instant-query API for the util metric.
+        assert client.get.call_args.args[0].endswith("/api/v1/query")
+        assert (
+            client.get.call_args.kwargs["params"]["query"]
+            == "nvidia_gpu_utilization_percent"
+        )
 
     @pytest.mark.asyncio
-    async def test_non_200_returns_none(self):
-        from unittest.mock import AsyncMock, MagicMock, patch
+    async def test_power_draw_parsed_from_prometheus(self):
+        from unittest.mock import patch
 
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
-        mock_resp = MagicMock()
-        mock_resp.status_code = 503
-        mock_resp.text = ""
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get = AsyncMock(return_value=mock_resp)
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
-            result = await scheduler._get_gpu_utilization()
-        assert result is None
+        client = self._mock_client(value="284.5")
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await scheduler._get_gpu_power_watts()
+        assert result == 284.5
+        # Correct metric name (nvidia_gpu_power_draw_watts, NOT the old
+        # nvidia_gpu_power_usage_watts which never existed).
+        assert (
+            client.get.call_args.kwargs["params"]["query"]
+            == "nvidia_gpu_power_draw_watts"
+        )
 
     @pytest.mark.asyncio
-    async def test_network_error_returns_none(self):
+    async def test_empty_result_returns_none_without_finding(self):
+        """No recent scrape (empty vector) → None, NOT a paged finding."""
         from unittest.mock import AsyncMock, patch
 
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get = AsyncMock(side_effect=RuntimeError("connection refused"))
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        scheduler._emit_exporter_finding = AsyncMock()
+        client = self._mock_client(value=None)  # empty result vector
+        with patch("httpx.AsyncClient", return_value=client):
             result = await scheduler._get_gpu_utilization()
         assert result is None
+        scheduler._emit_exporter_finding.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_no_matching_line_returns_none(self):
-        """If the metric isn't in the response, returns None."""
-        from unittest.mock import AsyncMock, MagicMock, patch
+    async def test_non_200_emits_finding_and_returns_none(self):
+        from unittest.mock import AsyncMock, patch
 
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
-        mock_resp = MagicMock()
-        mock_resp.status_code = 200
-        mock_resp.text = "some_other_metric{} 50\nyet_another{} 100\n"
-
-        mock_client = AsyncMock()
-        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-        mock_client.__aexit__ = AsyncMock(return_value=False)
-        mock_client.get = AsyncMock(return_value=mock_resp)
-
-        with patch("httpx.AsyncClient", return_value=mock_client):
+        scheduler._emit_exporter_finding = AsyncMock()
+        client = self._mock_client(status=503)
+        with patch("httpx.AsyncClient", return_value=client):
             result = await scheduler._get_gpu_utilization()
         assert result is None
+        scheduler._emit_exporter_finding.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_connection_error_emits_finding_and_returns_none(self):
+        from unittest.mock import AsyncMock, patch
+
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        scheduler._emit_exporter_finding = AsyncMock()
+        client = self._mock_client(raise_exc=RuntimeError("connection refused"))
+        with patch("httpx.AsyncClient", return_value=client):
+            result = await scheduler._get_gpu_utilization()
+        assert result is None
+        scheduler._emit_exporter_finding.assert_awaited_once()
 
 
 # ===========================================================================

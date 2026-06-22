@@ -343,6 +343,7 @@ async def dispatch_complete(
         span.set_attribute("llm.phase", phase)
         started = time.monotonic()
         provider = None
+        provider_config: dict[str, Any] | None = None
         try:
             provider = await get_provider(pool, tier)
             span.set_attribute("llm.provider.name", provider.name)
@@ -390,6 +391,7 @@ async def dispatch_complete(
                 phase=phase,
                 duration_ms=duration_ms,
                 success=True,
+                provider_config=provider_config,
             )
             return result
         except Exception as exc:
@@ -407,6 +409,7 @@ async def dispatch_complete(
                 phase=phase,
                 duration_ms=duration_ms,
                 success=False,
+                provider_config=provider_config,
                 error=str(exc)[:300],
             )
             raise
@@ -422,15 +425,17 @@ async def _record_dispatch_cost(
     phase: str,
     duration_ms: int,
     success: bool,
+    provider_config: dict[str, Any] | None = None,
     error: str | None = None,
 ) -> None:
     """Write a cost_logs row for the dispatch_complete call.
 
     Best-effort — never raises out of the call path. Uses LiteLLM's
     ``response_cost`` when present (the litellm provider stamps it on
-    ``result.raw``); for local models where LiteLLM has no price table
-    entry (response_cost == 0.0), falls back to GPU power × duration via
-    CostGuard so cost_usd reflects true electricity spend rather than $0.
+    ``result.raw``) for PAID calls; for local calls (``_is_paid_llm_call``
+    is False) any reported ``response_cost`` is discarded as phantom and
+    cost falls back to GPU power × duration via CostGuard, so cost_usd
+    reflects true electricity spend rather than a fictional cloud price.
     ``electricity_kwh`` is populated for every local call so the Cost &
     Analytics dashboard can show per-call energy attribution.
     """
@@ -450,10 +455,21 @@ async def _record_dispatch_cost(
         completion_tokens = int(getattr(result, "completion_tokens", 0) or 0) if result is not None else 0
         total_tokens = int(getattr(result, "total_tokens", 0) or 0) if result is not None else 0
 
-        # For local models LiteLLM returns response_cost=0.0 (no price table
-        # entry). Estimate electricity from GPU power × wall-clock duration so
-        # cost_usd and electricity_kwh are meaningful in the dashboard instead
-        # of being $0 / NULL. Cloud calls keep their LiteLLM-reported price.
+        # Local calls cost $0 in API terms — discard any phantom response_cost.
+        # A bare local tag like "llama3.2:3b" collides with a *hosted* llama
+        # price in litellm.model_cost, so LiteLLM stamps ~$0.0135/call on free
+        # local inference (the 2026-06-21 triage incident: 311 calls logged
+        # $4.16 and tripped DailySpendOverBudget). Zero it here and let the
+        # electricity fallback below record true GPU cost. Mirrors the budget
+        # gate (_enforce_budget_if_paid), which already treats this call as
+        # free — the cost log and the gate must agree on local-vs-paid.
+        if not _is_paid_llm_call(model, provider_config):
+            cost_usd = 0.0
+
+        # Local calls then fall through to electricity: estimate GPU power ×
+        # wall-clock duration so cost_usd and electricity_kwh are meaningful in
+        # the dashboard instead of $0 / NULL. Paid/cloud calls keep their
+        # LiteLLM-reported price (cost_usd != 0.0 skips this branch).
         electricity_kwh: float | None = None
         if cost_usd == 0.0:
             try:

@@ -106,9 +106,19 @@ def _ollama_base_url() -> str:
     return _sc_get("ollama_base_url") or _sc_get("ollama_host") or "http://host.docker.internal:11434"
 
 
-def _nvidia_exporter_url() -> str:
-    """Lazy resolve so post-lifespan changes take effect."""
-    return _sc_get("nvidia_exporter_url", "http://host.docker.internal:9835/metrics")
+def _prometheus_query_url() -> str:
+    """Base URL for Prometheus instant queries of GPU metrics.
+
+    GPU power/util are read from Prometheus — which already scrapes and
+    caches the nvidia-smi exporter — rather than hitting the exporter
+    directly. Prometheus serves the last scrape instantly and never blocks
+    on a slow ``nvidia-smi`` under render load (the 2026-06-21
+    RemoteDisconnected), and querying it over container-internal DNS
+    (``prometheus:9090``) sidesteps the Windows Docker host-port-forward
+    wedge that made the direct ``host.docker.internal:9835`` read flap.
+    Lazy resolve so post-lifespan settings changes take effect.
+    """
+    return _sc_get("gpu_metrics_prometheus_url") or "http://prometheus:9090"
 
 
 # Models under this VRAM threshold (in GB) skip the lock — they can coexist.
@@ -548,15 +558,15 @@ class GPUScheduler:
                 kind="nvidia_exporter_unreachable",
                 severity="warning",
                 title=(
-                    f"GPU scheduler cannot read {metric} from nvidia-smi exporter"
+                    f"GPU scheduler cannot read {metric} from Prometheus"
                 ),
                 body=(
-                    f"GET {_nvidia_exporter_url()} failed: {detail}. "
-                    "The pipeline will treat the missing reading as 'idle' "
-                    "and proceed (poindexter#455 sweep — fail-loud rather "
-                    "than silent). If gaming is in progress, jobs will "
-                    "run on top of it. Investigate the gpu-exporter "
-                    "container + Tailscale connectivity."
+                    f"Prometheus instant query for {metric} failed: {detail} "
+                    f"(GET {_prometheus_query_url()}/api/v1/query). The "
+                    "scheduler treats the missing reading as 'idle' and "
+                    "proceeds (poindexter#455 — fail-loud, not silent). "
+                    "Check the poindexter-prometheus container and that the "
+                    "nvidia-smi-host scrape target is up."
                 ),
                 dedup_key=f"nvidia_exporter_unreachable_{metric}",
             )
@@ -567,61 +577,51 @@ class GPUScheduler:
                 "emit_finding unavailable in gpu_scheduler", exc_info=True,
             )
 
-    async def _get_gpu_power_watts(self) -> float | None:
-        """Query nvidia-smi exporter for current GPU power draw (watts)."""
+    async def _query_prometheus_scalar(self, metric: str) -> float | None:
+        """Return the latest scalar value of ``metric`` from Prometheus, or None.
+
+        Runs an instant query against the Prometheus HTTP API and reads
+        ``data.result[0].value[1]``. A genuine connectivity / non-200 failure
+        emits the operator finding (telemetry is broken); an empty result
+        (Prometheus is up but has no recent scrape of the metric) returns None
+        quietly — a transient scrape gap is not a pageable outage.
+        """
+        url = f"{_prometheus_query_url()}/api/v1/query"
         try:
             client = self._get_http_client()
-            resp = await client.get(_nvidia_exporter_url(), timeout=5)
+            resp = await client.get(url, params={"query": metric}, timeout=5)
             if resp.status_code != 200:
                 logger.warning(
-                    "[GPU] nvidia exporter returned HTTP %s — power reading unavailable",
-                    resp.status_code,
+                    "[GPU] Prometheus query %s returned HTTP %s — reading unavailable",
+                    metric, resp.status_code,
                 )
-                await self._emit_exporter_finding(
-                    "power_watts", f"HTTP {resp.status_code}",
+                await self._emit_exporter_finding(metric, f"HTTP {resp.status_code}")
+                return None
+            payload = resp.json()
+            result = (payload.get("data") or {}).get("result") or []
+            if not result:
+                logger.debug(
+                    "[GPU] Prometheus has no series for %s yet (no recent scrape)",
+                    metric,
                 )
                 return None
-            for line in resp.text.splitlines():
-                if line.startswith("nvidia_gpu_power_usage_watts{"):
-                    return float(line.split("}")[1].strip())
+            # Instant-vector sample: value = [<unix_ts>, "<scalar as string>"].
+            return float(result[0]["value"][1])
         except Exception as exc:
             logger.warning(
-                "[GPU] nvidia exporter unreachable for power reading: %s: %s",
-                type(exc).__name__, exc,
+                "[GPU] Prometheus unreachable for %s: %s: %s",
+                metric, type(exc).__name__, exc,
             )
-            await self._emit_exporter_finding(
-                "power_watts", f"{type(exc).__name__}: {exc}",
-            )
+            await self._emit_exporter_finding(metric, f"{type(exc).__name__}: {exc}")
             return None
-        return None
+
+    async def _get_gpu_power_watts(self) -> float | None:
+        """Current GPU power draw (watts), via Prometheus."""
+        return await self._query_prometheus_scalar("nvidia_gpu_power_draw_watts")
 
     async def _get_gpu_utilization(self) -> float | None:
-        """Query nvidia-smi exporter for current GPU utilization %."""
-        try:
-            client = self._get_http_client()
-            resp = await client.get(_nvidia_exporter_url(), timeout=5)
-            if resp.status_code != 200:
-                logger.warning(
-                    "[GPU] nvidia exporter returned HTTP %s — utilization unavailable",
-                    resp.status_code,
-                )
-                await self._emit_exporter_finding(
-                    "utilization_percent", f"HTTP {resp.status_code}",
-                )
-                return None
-            for line in resp.text.splitlines():
-                if line.startswith("nvidia_gpu_utilization_percent{"):
-                    return float(line.split("}")[1].strip())
-        except Exception as exc:
-            logger.warning(
-                "[GPU] nvidia exporter unreachable for utilization: %s: %s",
-                type(exc).__name__, exc,
-            )
-            await self._emit_exporter_finding(
-                "utilization_percent", f"{type(exc).__name__}: {exc}",
-            )
-            return None
-        return None
+        """Current GPU utilization (%), via Prometheus."""
+        return await self._query_prometheus_scalar("nvidia_gpu_utilization_percent")
 
     async def _wait_for_gaming_clear(self):
         """Block until GPU is not being used by an external workload (gaming).

@@ -192,6 +192,14 @@ DEFAULTS: dict[str, str] = {
     # sharing this GPU with a non-stack app (e.g. a game on the same box). Read
     # via _cfg_bool in services/gpu_scheduler.py::_wait_for_gaming_clear.
     'gpu_external_workload_wait_enabled': 'false',
+    # GPU power/util are read from Prometheus (which scrapes + caches the
+    # nvidia-smi exporter), NOT from the exporter directly. Prometheus serves
+    # the last scrape instantly and never blocks on a slow nvidia-smi under
+    # render load, and container-internal DNS (prometheus:9090) sidesteps the
+    # Windows Docker host-port-forward wedge that made the direct
+    # host.docker.internal:9835 read flap with RemoteDisconnected (2026-06-21).
+    # Read via services/gpu_scheduler.py::_prometheus_query_url.
+    'gpu_metrics_prometheus_url': 'http://prometheus:9090',
     # GPU-serialize fix: hold gpu.lock("ollama") around every LOCAL LLM dispatch
     # (services/llm_providers/dispatcher.py::dispatch_complete) so scheduled
     # worker jobs (topic research, SEO, newsletter) can't load the ~19GB writer

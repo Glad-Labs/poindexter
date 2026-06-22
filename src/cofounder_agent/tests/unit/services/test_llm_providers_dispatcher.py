@@ -362,26 +362,41 @@ class TestDispatchCompleteAutoLog:
         assert args[11] == pytest.approx(0.001)   # electricity_kwh
         assert args[12] is None   # error_message
 
-    async def test_response_cost_from_raw_populates_cost_usd(self):
+    async def test_local_phantom_response_cost_is_zeroed_to_electricity(self):
+        """A LOCAL call must NOT record LiteLLM's phantom hosted price.
+
+        Regression for the 2026-06-21 incident: triage/alerting moved to
+        ``llama3.2:3b``, a bare local Ollama model. LiteLLM's ``model_cost``
+        table carries a *hosted* llama3.2 price, so ``response_cost`` came
+        back ~$0.0135/call for free local inference — 311 calls logged $4.16
+        and tripped DailySpendOverBudget. A local call (``_is_paid_llm_call``
+        is False) must discard that phantom price and fall through to the
+        electricity estimate, staying consistent with the budget gate which
+        already treats the same call as free.
+        """
         pool, executions = _make_logging_pool(setting_value="litellm")
         provider = _FakeProvider(name="litellm")
         result = _FakeCompletionResult(prompt_tokens=100, completion_tokens=50)
-        result.raw = {"response_cost": 0.000123}  # type: ignore[attr-defined]
+        result.raw = {"response_cost": 4.16}  # type: ignore[attr-defined]  # phantom hosted price
         provider.complete.return_value = result
-        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+        guard = MagicMock()
+        guard.estimate_local_kwh.return_value = 0.001
+        guard.kwh_to_usd.return_value = 0.00016
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]), \
+             patch("services.cost_guard.CostGuard", return_value=guard):
             await dispatcher.dispatch_complete(
                 pool, messages=[{"role": "user", "content": "hi"}],
-                model="claude-3-haiku-20240307",
+                model="llama3.2:3b", phase="ollama_chat_text",
             )
         cost_inserts = [(q, a) for (q, a) in executions if "cost_logs" in q]
         assert len(cost_inserts) == 1
         args = cost_inserts[0][1]
-        # cost_usd at index 7 — cloud price kept as-is; no electricity path.
-        assert args[7] == 0.000123
+        # Phantom $4.16 must NOT be recorded; electricity estimate replaces it.
+        assert args[7] == pytest.approx(0.00016)  # cost_usd from electricity
         assert args[3] == "litellm"
-        # Cloud call: electricity_kwh not estimated (cost_usd was non-zero).
-        assert args[11] is None  # electricity_kwh
+        assert args[11] == pytest.approx(0.001)   # electricity_kwh populated
         assert args[12] is None  # error_message
+        guard.estimate_local_kwh.assert_called_once()
 
     async def test_phase_defaults_to_dispatch_complete_when_not_supplied(self):
         pool, executions = _make_logging_pool()
