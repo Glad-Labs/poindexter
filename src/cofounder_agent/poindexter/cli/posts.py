@@ -453,8 +453,9 @@ def _compute_idempotency_key(
 @click.option(
     "--force",
     is_flag=True,
-    help="Bypass idempotency. Always create a fresh post even if an "
-    "identical create-intent fired within the dedup window (#338).",
+    help="Bypass the semantic dedup guard AND idempotency — create the post "
+    "even if it near-duplicates a published post or an identical "
+    "create-intent fired within the window (#338).",
 )
 @click.option("--json", "json_output", is_flag=True)
 def post_create(
@@ -463,13 +464,23 @@ def post_create(
     force: bool,
     json_output: bool,
 ) -> None:
-    """Create a new post and kick off the writer.
+    """Create a draft post shell for the operator to author.
+
+    Inserts a ``posts`` row with an empty body for the operator to write
+    (e.g. via ``edit_post_body``); any media in ``--media`` is generated at
+    publish time. This does NOT run the AI writer pipeline — that's the
+    ``create_post`` MCP tool / ``POST /api/tasks`` path.
+
+    Semantic dedup: the topic is checked against already-published posts and
+    refused if too similar (``create_post_dedup_threshold``, default 0.75);
+    ``--force`` overrides. Shared with the MCP/HTTP path via
+    ``services.topic_dedup_guard`` (glad-labs-stack#1823).
 
     Idempotency (#338): a stable key is computed from
     ``topic + media + operator``. If an identical invocation fired inside
     the configured window (``cli_post_create_idempotency_window_minutes``,
     default 30), the existing post id is returned instead of inserting a
-    duplicate. Pass ``--force`` to override, or set
+    duplicate. ``--force`` also bypasses this, or set
     ``cli_post_create_idempotency_enabled=false`` to disable globally.
     """
     from services.site_config import SiteConfig
@@ -559,6 +570,27 @@ def post_create(
                         "idempotent_hit": True,
                         "idempotency_key": idempotency_key,
                     }
+
+            # Pre-insert semantic dedup guard — shared with the create_post
+            # MCP tool / POST /api/tasks path (glad-labs-stack#1823). A
+            # manually-inserted topic that near-duplicates an already-published
+            # post is refused; --force overrides (the same flag that bypasses
+            # idempotency above).
+            if not force:
+                from services.topic_dedup_guard import (
+                    DuplicateTopicError,
+                    assert_topic_not_duplicate,
+                )
+
+                try:
+                    await assert_topic_not_duplicate(topic, site_config=site_cfg)
+                except DuplicateTopicError as dup:
+                    raise RuntimeError(
+                        f"{dup.topic!r} is too similar to published post "
+                        f"{dup.match_title!r} ({dup.match_post_id}) — cosine "
+                        f"{dup.similarity:.2f} ≥ {dup.threshold:.2f}. Refusing to "
+                        "create a near-duplicate; re-run with --force to override."
+                    ) from dup
 
             # Insert a minimal posts row. Title = topic, slug = sanitized
             # topic + short random suffix (CLI-created posts don't yet
