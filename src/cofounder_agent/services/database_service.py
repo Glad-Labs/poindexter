@@ -372,16 +372,6 @@ class DatabaseService:
         """Delegate to tasks module."""
         return await self.tasks.get_queued_tasks(limit)  # type: ignore[return-value]
 
-    async def get_tasks_by_date_range(
-        self, start_date=None, end_date=None, status: str | None = None, limit: int = 500
-    ) -> list[dict]:
-        """Delegate to tasks module."""
-        return await self.tasks.get_tasks_by_date_range(start_date, end_date, status, limit)
-
-    async def get_kpi_aggregates(self, start_date=None, end_date=None) -> dict:
-        """Delegate to tasks module — single-query KPI aggregation (issue #696)."""
-        return await self.tasks.get_kpi_aggregates(start_date, end_date)
-
     async def delete_task(self, task_id: str) -> bool:
         """Delegate to tasks module."""
         return await self.tasks.delete_task(task_id)
