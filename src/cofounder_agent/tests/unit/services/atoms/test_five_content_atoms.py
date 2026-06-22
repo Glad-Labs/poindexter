@@ -300,6 +300,9 @@ class TestContentEvaluateAutoPublish:
         assert "auto_publish_gate" in ATOM_META.produces
         assert ATOM_META.idempotent is True
         assert ATOM_META.cost_class == "free"
+        # Terminal node re-asserts awaiting_approval (preview_gate approve-resume
+        # fix) — so it is a db_write, not observe-only.
+        assert "db_write" in ATOM_META.side_effects
 
     async def test_returns_disabled_when_no_niche(self, monkeypatch):
         """Gate disabled when niche_slug absent → gate_state='disabled'."""

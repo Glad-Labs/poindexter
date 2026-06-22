@@ -43,17 +43,23 @@ finalize block **after the draft is persisted** (`content.persist_task` →
 (`content.evaluate_auto_publish`). The draft is persisted and the task is set
 `awaiting_approval` exactly as today, so the operator reviews the **real
 persisted draft** through the existing surface — the review UX does not change.
-When the gate is enabled it _is_ the approval, so on approve the run proceeds to
-publish-stage and the auto-publish-threshold branch in `evaluate_auto_publish`
-is subsumed (no double gate).
-The gate then `interrupt()`s: LangGraph durably checkpoints the whole graph
+Approving the gate means "the draft + images are good, let it land in the
+approval queue" — it is **not** a go-live. On approve the graph runs through to
+`content.evaluate_auto_publish`, which re-asserts `awaiting_approval` (see
+[Terminal-node finalization](#terminal-node-finalization) below), and the post
+sits in the normal approval queue for the existing per-post publish sign-off
+(`/approve-post`), consistent with the "approve = stage, not go-live" rule.
+(Auto-publish stays a forward-Prefect-path side-effect; the CLI/MCP resume path
+never auto-publishes.)
+The gate `interrupt()`s: LangGraph durably checkpoints the whole graph
 (Postgres, keyed on `task_id`) and releases the worker. The graph stays paused
 until the operator decides; the decision is the resume value.
 
 ```
 … → content.persist_task (status=awaiting_approval)
       → preview_gate (interrupt, wait for operator)
-            ├─ approve      → content.evaluate_auto_publish → publish-stage
+            ├─ approve      → content.evaluate_auto_publish (re-asserts
+            │                 awaiting_approval) → END → approval queue
             ├─ regen_images → [loop] content.plan_image_markers   (image block)
             ├─ regen_text   → [loop] content.generate_draft       (writer block)
             └─ reject       → _halt   (existing reject behaviour)
@@ -67,6 +73,25 @@ The two regen edges reuse the existing bounded **loop-edge** pattern (the
 - `regen_text`: `preview_gate → content.generate_draft`. Re-runs the writer block;
   the existing forward edges carry it through the image block (fresh images) and
   all QA again — the cascade the operator explicitly wants.
+
+### Terminal-node finalization
+
+`preview_gate` sits **after** `content.persist_task` (which sets
+`awaiting_approval`), so on a pause the status is overwritten — `pause_at_gate`
+sets `awaiting_gate`, and the operator approve cycle (`approval_service.approve`)
+sets `in_progress` before resuming. The CLI/MCP resume path does **not** run
+`services.post_pipeline_actions`, so the graph alone has to leave the task in its
+correct end state. `content.evaluate_auto_publish` is the terminal node, so it
+**re-asserts `awaiting_approval`** (a guarded `update_task_status_guarded` write,
+`allowed_from=(in_progress, awaiting_gate)`) — making the graph authoritative
+about its own end state on every exit path (CLI resume / MCP approve / forward
+Prefect flow). The guard means a task the forward path already auto-published or
+a QA gate already rejected is never reverted.
+
+Without this, an approve-resumed task ended at `in_progress` and the
+stale-inprogress sweep (`tasks_db.sweep_stale_tasks`, 30 min) reset it to
+`pending` and silently re-ran an already-approved post (live incident
+2026-06-22). The fix is a prerequisite for flipping the gate on (see Rollout).
 
 ### Operator surface (CLI-first, then MCP)
 
@@ -91,21 +116,23 @@ sanity cap, each component carries a durable counter on `pipeline_tasks`
 `settings_defaults.py`. On cap the gate forces an approve-or-reject decision
 rather than another loop.
 
-### Rollout (enabled by default)
+### Rollout (seeded disabled)
 
-`preview_gate` is **enabled by default** (`pipeline_gate_preview_gate=true`,
-seeded in `settings_defaults.py`) — the operator reviews every post anyway
-(`auto_publish_threshold=0`), so the gate becomes the review mechanism rather
-than the terminal `awaiting_approval` hold. The flag still exists, so it can be
-turned **off** to fall back to today's terminal review (passthrough →
-`evaluate_auto_publish` → `awaiting_approval`, approve/reject only) with no code
-deploy.
+`preview_gate` is **seeded disabled** (`pipeline_gate_preview_gate=off` in
+`settings_defaults.py`) — it drops into the pipeline inert (the gate atom
+passes through when the flag is off) and the operator opts in with
+`poindexter gates set preview_gate on`. Until then the terminal
+`awaiting_approval` hold (passthrough → `evaluate_auto_publish` →
+`awaiting_approval`, approve/reject only) stays the review mechanism.
 
-**Because it is on by default it changes a battle-tested flow on merge**, so the
-flag is only flipped to `true` on prod _after_ end-to-end verification: a real
-`canonical_blog` run must pause at `preview_gate`, surface the draft for review,
-and resume cleanly on approve / each regen action. Until that passes, develop
-behind `false` and treat the default flip as the last implementation step.
+**Because enabling it changes a battle-tested flow**, the flag is only flipped to
+`on` on prod _after_ end-to-end verification: a real `canonical_blog` run must
+pause at `preview_gate`, surface the draft for review, and resume cleanly on
+approve / each regen action — landing the task back at `awaiting_approval` (not
+stranded at `in_progress`). The 2026-06-22 approve-finalization fix
+(see [Terminal-node finalization](#terminal-node-finalization)) is a prerequisite
+for that flip; the flag was briefly flipped on 2026-06-22, the strand was
+observed, and it was reverted to `off` pending the fix.
 
 ## Data flow / state
 
@@ -127,6 +154,10 @@ behind `false` and treat the default flip as the last implementation step.
 ## Testing (TDD)
 
 - `preview_gate` disabled → passthrough (graph unchanged). _(regression guard)_
+- **approve-resume finalizes at `awaiting_approval`** (not `in_progress`): the
+  terminal `content.evaluate_auto_publish` node re-asserts the status regardless
+  of caller, and a guarded re-run never reverts a published/rejected task.
+  _(regression guard for the 2026-06-22 strand)_
 - `regen_images` resume routes to the image block and **not** the writer block;
   text state is byte-identical across the loop.
 - `regen_text` resume routes to the writer block and the image block re-runs
