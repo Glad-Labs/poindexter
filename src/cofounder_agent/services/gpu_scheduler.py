@@ -60,6 +60,7 @@ import httpx
 # int64 range: -9223372036854775808 .. 9223372036854775807
 GPU_ADVISORY_LOCK_KEY: int = 7_777_777_777
 
+from services.llm_providers.ollama_unload import unload_loaded_ollama_models
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
@@ -99,11 +100,6 @@ def _sc() -> SiteConfig:
 
 def _sc_get(key: str, default: str = "") -> str:
     return _sc().get(key, default)
-
-
-def _ollama_base_url() -> str:
-    """Lazy resolve so post-lifespan changes take effect."""
-    return _sc_get("ollama_base_url") or _sc_get("ollama_host") or "http://host.docker.internal:11434"
 
 
 def _prometheus_query_url() -> str:
@@ -695,23 +691,33 @@ class GPUScheduler:
         self._gaming_detected = False
 
     async def _unload_ollama_models(self):
-        """Unload all Ollama models to free VRAM for SDXL."""
+        """Unload all Ollama models to free VRAM for SDXL / the video render.
+
+        Delegates to the unified ``unload_loaded_ollama_models`` so the
+        eviction is *confirmed*: it re-polls ``/api/ps`` until the model is
+        gone before returning, rather than firing ``keep_alive:0`` and hoping.
+        The caller (the ``sdxl`` / ``video`` lock owner) loads its diffusion /
+        video model the instant we return; on a single 32 GB GPU shared with
+        the desktop, returning while the 18 GB writer is still resident
+        overlaps the two models, exhausts VRAM, and freezes WDDM. Tunable via
+        the ``pipeline_writer_unload_confirm_*`` app_settings.
+        """
         try:
-            client = self._get_http_client()
-            resp = await client.get(f"{_ollama_base_url()}/api/ps", timeout=10)
-            if resp.status_code != 200:
-                return
-            data = resp.json()
-            for model in data.get("models", []):
-                name = model["name"]
-                logger.info("Unloading Ollama model for SDXL", model=name)
-                await client.post(
-                    f"{_ollama_base_url()}/api/generate",
-                    json={"model": name, "keep_alive": 0},
-                    timeout=30,
-                )
-        except Exception as e:
-            logger.warning("Failed to unload Ollama models: %s", e)
+            await unload_loaded_ollama_models(
+                site_config=_sc(),
+                confirm=_cfg_bool("pipeline_writer_unload_confirm_enabled", True),
+                confirm_timeout_seconds=_cfg_int(
+                    "pipeline_writer_unload_confirm_timeout_seconds", 15,
+                ),
+                poll_interval_seconds=_cfg_float(
+                    "pipeline_writer_unload_poll_interval_seconds", 0.5,
+                ),
+            )
+        except Exception as exc:  # noqa: BLE001 — eviction is best-effort; a
+            # failure here must never wedge the GPU lock or fail the task.
+            # (unload_loaded_ollama_models is already non-raising; this is a
+            # belt-and-suspenders guard preserving the pre-delegation contract.)
+            logger.warning("Failed to unload Ollama models: %s", exc)
 
     async def prepare_mode(self, mode: str):
         """Actively prepare GPU for a specific workload mode.

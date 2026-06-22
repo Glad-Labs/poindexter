@@ -426,6 +426,42 @@ def _reset_env_between_tests(monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolate_gpu_ollama_unload():
+    """Keep unit tests off the real host Ollama via the GPU lock.
+
+    ``gpu.lock("sdxl"|"video")`` — acquired deep inside image / media stages
+    and atoms — calls ``GPUScheduler._unload_ollama_models``, which delegates
+    to ``unload_loaded_ollama_models``: real HTTP to ``/api/ps`` plus a
+    confirm poll that waits (up to
+    ``pipeline_writer_unload_confirm_timeout_seconds``) for the model to
+    actually leave VRAM. On a dev/CI box with a live Ollama that blocks for
+    seconds per acquire and makes timing-sensitive tests (e.g. the GPU
+    reentrancy 2s budget) flaky.
+
+    Default the scheduler's delegated unloader to a no-op so the lock still
+    serializes (asyncio + pg) but never touches the network. Tests that
+    assert unload behavior re-patch the symbol inside their own
+    ``with patch(...)``, which wins for that block.
+    """
+    from unittest.mock import AsyncMock, patch
+
+    try:
+        patcher = patch(
+            "services.gpu_scheduler.unload_loaded_ollama_models",
+            new=AsyncMock(return_value=[]),
+        )
+        patcher.start()
+    except (ImportError, AttributeError, ModuleNotFoundError):
+        # gpu_scheduler unimportable in a minimal env — don't gate the suite.
+        patcher = None
+    try:
+        yield
+    finally:
+        if patcher is not None:
+            patcher.stop()
+
+
+@pytest.fixture(autouse=True)
 def _reset_singletons_between_tests():
     """Clear shared mutable state exposed by various services modules.
 

@@ -9,6 +9,12 @@ import pytest
 
 from services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY, GPUScheduler
 
+# Network isolation for gpu.lock("sdxl"/"video") (which delegates to the
+# real unload_loaded_ollama_models + confirm poll) is provided globally by
+# the ``_isolate_gpu_ollama_unload`` autouse fixture in tests/unit/conftest.py.
+# The unload-assertion tests below re-patch the symbol within their own
+# ``with patch(...)`` block, which wins for that scope.
+
 
 class TestGPUScheduler:
     """Core GPU scheduler behavior."""
@@ -72,74 +78,60 @@ class TestGPUScheduler:
 
     @pytest.mark.asyncio
     async def test_sdxl_unloads_ollama_models(self):
-        """Acquiring for SDXL should attempt to unload Ollama models."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"models": [{"name": "qwen3.5:latest"}]}
-
+        """Acquiring for SDXL delegates to the unified confirmed unloader, so
+        the writer is verified gone (re-polled out of /api/ps) before SDXL
+        loads — preventing the 18 GB-writer-over-SDXL VRAM overlap that
+        freezes the desktop (lever 3, 2026-06-21)."""
         with patch.object(self.gpu, "_wait_for_gaming_clear", new=AsyncMock()):
-            with patch("services.gpu_scheduler.httpx.AsyncClient") as mock_client_cls:
-                mock_client = AsyncMock()
-                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_client.__aexit__ = AsyncMock(return_value=False)
-                mock_client.get = AsyncMock(return_value=mock_response)
-                mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
-                mock_client_cls.return_value = mock_client
-
+            with patch(
+                "services.gpu_scheduler.unload_loaded_ollama_models",
+                new=AsyncMock(return_value=["gemma-4-31B-it-qat:latest"]),
+            ) as mock_unload:
                 async with self.gpu.lock("sdxl"):
                     pass
 
-                # Should have called GET /api/ps and POST /api/generate with keep_alive=0
-                mock_client.get.assert_called_once()
-                mock_client.post.assert_called_once()
-                call_args = mock_client.post.call_args
-                assert call_args[1]["json"]["keep_alive"] == 0
+        mock_unload.assert_awaited_once()
+        # Confirmation must be ON — the whole point is to verify the release,
+        # not to blind-sleep and hope.
+        assert mock_unload.await_args.kwargs.get("confirm") is True
 
     @pytest.mark.asyncio
     async def test_video_unloads_ollama_models(self):
         """Acquiring for the video render evicts Ollama, same as SDXL — the
         render is a wan+SDXL consumer with no Ollama of its own, so the resident
-        writer/director must be freed for it (validation findings 4b/7)."""
-        mock_response = MagicMock()
-        mock_response.status_code = 200
-        mock_response.json.return_value = {"models": [{"name": "gemma-4-31B-it-qat:latest"}]}
-
+        writer/director must be freed for it (validation findings 4b/7). It
+        routes through the same confirmed unloader as the SDXL owner."""
         with patch.object(self.gpu, "_wait_for_gaming_clear", new=AsyncMock()):
-            with patch("services.gpu_scheduler.httpx.AsyncClient") as mock_client_cls:
-                mock_client = AsyncMock()
-                mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-                mock_client.__aexit__ = AsyncMock(return_value=False)
-                mock_client.get = AsyncMock(return_value=mock_response)
-                mock_client.post = AsyncMock(return_value=MagicMock(status_code=200))
-                mock_client_cls.return_value = mock_client
-
+            with patch(
+                "services.gpu_scheduler.unload_loaded_ollama_models",
+                new=AsyncMock(return_value=["gemma-4-31B-it-qat:latest"]),
+            ) as mock_unload:
                 async with self.gpu.lock("video"):
                     pass
 
-                # video owner evicts Ollama exactly like sdxl
-                mock_client.get.assert_called_once()
-                mock_client.post.assert_called_once()
-                assert mock_client.post.call_args[1]["json"]["keep_alive"] == 0
+        mock_unload.assert_awaited_once()
+        assert mock_unload.await_args.kwargs.get("confirm") is True
 
     @pytest.mark.asyncio
     async def test_ollama_does_not_unload(self):
-        """Acquiring for Ollama should NOT call httpx to unload models."""
+        """Acquiring for Ollama must NOT unload models — it IS the Ollama owner."""
         with patch.object(self.gpu, "_wait_for_gaming_clear", new=AsyncMock()):
-            with patch("services.gpu_scheduler.httpx.AsyncClient") as mock_client_cls:
+            with patch(
+                "services.gpu_scheduler.unload_loaded_ollama_models",
+                new=AsyncMock(),
+            ) as mock_unload:
                 async with self.gpu.lock("ollama"):
                     pass
-                mock_client_cls.assert_not_called()
+                mock_unload.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_unload_failure_does_not_block(self):
-        """If unloading Ollama fails, SDXL lock still works."""
-        with patch("services.gpu_scheduler.httpx.AsyncClient") as mock_client_cls:
-            mock_client = AsyncMock()
-            mock_client.__aenter__ = AsyncMock(return_value=mock_client)
-            mock_client.__aexit__ = AsyncMock(return_value=False)
-            mock_client.get = AsyncMock(side_effect=Exception("connection refused"))
-            mock_client_cls.return_value = mock_client
-
+        """If the delegated unload raises, the SDXL lock still acquires and
+        releases — eviction is best-effort and must never wedge the lock."""
+        with patch(
+            "services.gpu_scheduler.unload_loaded_ollama_models",
+            new=AsyncMock(side_effect=Exception("ollama unreachable")),
+        ):
             async with self.gpu.lock("sdxl"):
                 assert self.gpu.is_busy
             assert not self.gpu.is_busy

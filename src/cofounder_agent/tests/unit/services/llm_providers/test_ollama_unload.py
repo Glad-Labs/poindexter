@@ -41,6 +41,9 @@ def _site_config(
     *,
     unload_enabled: bool = True,
     grace_seconds: int = 2,
+    confirm_enabled: bool = True,
+    confirm_timeout: int = 15,
+    poll_interval: float = 0.5,
     base_url: str = "http://host.docker.internal:11434",
 ) -> Any:
     """Minimal SiteConfig stand-in matching the DI seam used in stages."""
@@ -50,12 +53,24 @@ def _site_config(
         }.get(key, default),
         get_int=lambda key, default=0: {
             "pipeline_writer_unload_grace_seconds": grace_seconds,
+            "pipeline_writer_unload_confirm_timeout_seconds": confirm_timeout,
         }.get(key, default),
         get_bool=lambda key, default=False: {
             "pipeline_explicit_writer_unload_before_sdxl": unload_enabled,
+            "pipeline_writer_unload_confirm_enabled": confirm_enabled,
         }.get(key, default),
-        get_float=lambda key, default=0.0: default,
+        get_float=lambda key, default=0.0: {
+            "pipeline_writer_unload_poll_interval_seconds": poll_interval,
+        }.get(key, default),
     )
+
+
+def _resp(models: list[dict[str, Any]] | None, status: int = 200) -> Any:
+    """A fake ``/api/ps`` response carrying the given loaded-model list."""
+    r = MagicMock()
+    r.status_code = status
+    r.json = MagicMock(return_value={"models": models or []})
+    return r
 
 
 def _mock_http_client(
@@ -307,6 +322,9 @@ async def test_maybe_unload_runs_when_gate_enabled(caplog):
     ps_resp.status_code = 200
     ps_resp.json = MagicMock(return_value={"models": [{"name": "gemma3:27b"}]})
     client = _mock_http_client(ps_response=ps_resp)
+    # Default confirm-on path: enumerate sees the model, the first confirm
+    # poll sees it gone — so the sweep completes without timing out.
+    client.get = AsyncMock(side_effect=[ps_resp, _resp([])])
 
     with patch(
         "services.llm_providers.ollama_unload.httpx.AsyncClient",
@@ -331,7 +349,8 @@ async def test_maybe_unload_runs_when_gate_enabled(caplog):
 
 @pytest.mark.asyncio
 async def test_maybe_unload_threads_grace_seconds_from_settings():
-    """``pipeline_writer_unload_grace_seconds`` reaches the asyncio.sleep call."""
+    """With confirm disabled, ``pipeline_writer_unload_grace_seconds`` reaches
+    the legacy blind asyncio.sleep call (the confirm-off fallback path)."""
     ps_resp = MagicMock()
     ps_resp.status_code = 200
     ps_resp.json = MagicMock(return_value={"models": [{"name": "gemma3:27b"}]})
@@ -345,7 +364,9 @@ async def test_maybe_unload_threads_grace_seconds_from_settings():
         "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
     ):
         await maybe_unload_writer_before_sdxl(
-            site_config=_site_config(unload_enabled=True, grace_seconds=5),
+            site_config=_site_config(
+                unload_enabled=True, grace_seconds=5, confirm_enabled=False,
+            ),
             stage_label="replace_inline_images",
         )
 
@@ -373,3 +394,150 @@ async def test_maybe_unload_defaults_to_on_when_site_config_missing():
     # The /api/ps probe still ran — proves we entered the unload path
     # rather than short-circuiting on a missing site_config.
     client.get.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# unload_loaded_ollama_models — confirm-release poll (lever 3, 2026-06-21)
+#
+# Replaces the blind ``asyncio.sleep(grace_seconds)`` with an actual check
+# that Ollama released the model BEFORE the next (SDXL/video) model loads.
+# On a single 32 GB GPU shared with the Windows desktop, the old "sleep 2s
+# and hope" let the 18 GB writer overlap the incoming diffusion model →
+# VRAM exhaustion → WDDM desktop freeze.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_confirm_returns_as_soon_as_ps_reports_empty():
+    """confirm=True re-polls /api/ps and returns the instant the model is gone
+    — no blind grace sleep when release is already confirmed."""
+    present = _resp([{"name": "gemma-4-31B-it-qat:latest"}])
+    client = _mock_http_client(ps_response=present)
+    # enumerate -> present; first confirm poll -> empty.
+    client.get = AsyncMock(side_effect=[present, _resp([])])
+    sleep_mock = AsyncMock()
+
+    with patch(
+        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        return_value=client,
+    ), patch(
+        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+    ):
+        unloaded = await unload_loaded_ollama_models(
+            site_config=_site_config(), grace_seconds=2.0, confirm=True,
+        )
+
+    assert unloaded == ["gemma-4-31B-it-qat:latest"]
+    # One enumerate GET + one confirm-poll GET.
+    assert client.get.await_count == 2
+    # Empty on the first confirm poll => no poll wait, and crucially NO blind
+    # grace sleep (the whole point — we proceed only once it's actually free).
+    sleep_mock.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_confirm_polls_until_model_evicted():
+    """The confirm loop keeps polling /api/ps (sleeping poll_interval between
+    checks) until the model disappears, then returns."""
+    present = _resp([{"name": "gemma-4-31B-it-qat:latest"}])
+    client = _mock_http_client(ps_response=present)
+    # enumerate -> present; poll #1 -> still present; poll #2 -> gone.
+    client.get = AsyncMock(side_effect=[present, present, _resp([])])
+    sleep_mock = AsyncMock()
+
+    with patch(
+        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        return_value=client,
+    ), patch(
+        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+    ):
+        unloaded = await unload_loaded_ollama_models(
+            site_config=_site_config(),
+            confirm=True,
+            confirm_timeout_seconds=15.0,
+            poll_interval_seconds=0.5,
+        )
+
+    assert unloaded == ["gemma-4-31B-it-qat:latest"]
+    assert client.get.await_count == 3  # enumerate + 2 confirm polls
+    sleep_mock.assert_awaited_once_with(0.5)  # one wait between the 2 polls
+
+
+@pytest.mark.asyncio
+async def test_confirm_warns_and_proceeds_when_model_never_evicts(caplog):
+    """If /api/ps still lists the model after the bounded confirm window, the
+    helper logs a WARNING and proceeds — it must never hang the pipeline."""
+    present = _resp([{"name": "gemma-4-31B-it-qat:latest"}])
+    client = _mock_http_client(ps_response=present)
+    client.get = AsyncMock(return_value=present)  # never frees
+    sleep_mock = AsyncMock()
+
+    with patch(
+        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        return_value=client,
+    ), patch(
+        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+    ), caplog.at_level("WARNING", logger="services.llm_providers.ollama_unload"):
+        unloaded = await unload_loaded_ollama_models(
+            site_config=_site_config(),
+            confirm=True,
+            confirm_timeout_seconds=1.0,
+            poll_interval_seconds=0.5,
+        )
+
+    assert unloaded == ["gemma-4-31B-it-qat:latest"]
+    # confirm_timeout/poll_interval = 1.0/0.5 = 2 confirm polls (+1 enumerate).
+    assert client.get.await_count == 3
+    warnings = [r.message for r in caplog.records if r.levelname == "WARNING"]
+    assert any("still resident" in m for m in warnings), warnings
+
+
+@pytest.mark.asyncio
+async def test_confirm_false_uses_blind_grace_sleep():
+    """confirm=False preserves the legacy blind grace-sleep behavior (no
+    extra /api/ps polling) — backcompat for the opt-out path."""
+    present = _resp([{"name": "gemma-4-31B-it-qat:latest"}])
+    client = _mock_http_client(ps_response=present)
+    sleep_mock = AsyncMock()
+
+    with patch(
+        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        return_value=client,
+    ), patch(
+        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+    ):
+        unloaded = await unload_loaded_ollama_models(
+            site_config=_site_config(), grace_seconds=2.0, confirm=False,
+        )
+
+    assert unloaded == ["gemma-4-31B-it-qat:latest"]
+    client.get.assert_awaited_once()  # only the enumerate; no confirm poll
+    sleep_mock.assert_awaited_once_with(2.0)
+
+
+@pytest.mark.asyncio
+async def test_maybe_unload_threads_confirm_settings_from_site_config():
+    """maybe_unload_writer_before_sdxl reads the confirm settings and runs the
+    confirm-poll path (no blind grace sleep) when confirm is enabled."""
+    present = _resp([{"name": "gemma-4-31B-it-qat:latest"}])
+    client = _mock_http_client(ps_response=present)
+    client.get = AsyncMock(side_effect=[present, _resp([])])
+    sleep_mock = AsyncMock()
+
+    with patch(
+        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        return_value=client,
+    ), patch(
+        "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
+    ):
+        unloaded = await maybe_unload_writer_before_sdxl(
+            site_config=_site_config(
+                unload_enabled=True, confirm_enabled=True, grace_seconds=9,
+            ),
+            stage_label="source_featured_image",
+        )
+
+    assert unloaded == ["gemma-4-31B-it-qat:latest"]
+    assert client.get.await_count == 2  # enumerate + confirm poll
+    # confirm path supersedes the blind grace sleep, so grace=9 is never slept.
+    sleep_mock.assert_not_called()

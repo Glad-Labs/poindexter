@@ -207,11 +207,29 @@ DEFAULTS: dict[str, str] = {
     # it's a no-op inside content stages that already hold the lock. Default ON;
     # operators with abundant VRAM can flip to 'false' to skip the serialization.
     'gpu_serialize_llm_dispatch': 'true',
+    # why: when true, after issuing keep_alive=0 the unload helper re-polls
+    # Ollama /api/ps until the model is actually gone BEFORE the next
+    # (SDXL/video) model loads — instead of blind-sleeping and hoping. On a
+    # single 32GB GPU shared with the Windows desktop, returning while the
+    # 18GB writer is still resident overlaps it with the incoming diffusion
+    # model, exhausts VRAM, and freezes WDDM. See
+    # services/llm_providers/ollama_unload.py. Set false to fall back to the
+    # legacy blind pipeline_writer_unload_grace_seconds sleep.
+    'pipeline_writer_unload_confirm_enabled': 'true',
+    # Upper bound (seconds) on the confirm poll. If the model is still
+    # resident after this window the helper logs a WARNING and proceeds —
+    # it never hangs the pipeline. Generous default: an 18GB evict is
+    # typically 1-5s; 15s leaves headroom under render load.
+    'pipeline_writer_unload_confirm_timeout_seconds': '15',
     # why: asyncio.sleep() after issuing keep_alive=0 so Ollama actually
-    # releases VRAM before the inline-image /generate lands. 2s is the
-    # sweet spot — long enough for the kernel to free, short enough to
+    # releases VRAM before the inline-image /generate lands. Only used when
+    # pipeline_writer_unload_confirm_enabled=false (legacy fallback). 2s is
+    # the sweet spot — long enough for the kernel to free, short enough to
     # stay invisible in pipeline latency.
     'pipeline_writer_unload_grace_seconds': '2',
+    # Interval (seconds) between confirm-poll /api/ps checks. Smaller =
+    # tighter handoff (less wasted wait once the model frees), more polls.
+    'pipeline_writer_unload_poll_interval_seconds': '0.5',
     'qa_fallback_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
     # Cross-model rescue reviser. The qa.rewrite step routes here instead of the
     # writer (pipeline_writer_model). Default glm-4.7: cautious and never
