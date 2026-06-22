@@ -132,7 +132,7 @@ prometheus-client = "^0.25.0"
 # sys_platform marker: pyroscope-io ships no Windows wheels (closes #224)
 # — required for Matt's Windows host `poetry install --extras profiling`
 # to skip cleanly instead of falling through to a Rust source build.
-pyroscope-io = { version = "^0.8.5", optional = true, markers = "sys_platform != 'win32'" }
+pyroscope-io = { version = "^1.0.12", optional = true, markers = "sys_platform != 'win32'" }
 # Bumped past 1.0.10 to clear GHSA — checkpoint loading had unsafe
 # msgpack deserialization in <1.0.10. langgraph 1.x is API-compatible
 # with the StateGraph + END + MemorySaver surface used in
