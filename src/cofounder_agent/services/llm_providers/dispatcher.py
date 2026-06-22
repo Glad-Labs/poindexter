@@ -466,10 +466,11 @@ async def _record_dispatch_cost(
         if not _is_paid_llm_call(model, provider_config):
             cost_usd = 0.0
 
-        # Local calls then fall through to electricity: estimate GPU power ×
-        # wall-clock duration so cost_usd and electricity_kwh are meaningful in
-        # the dashboard instead of $0 / NULL. Paid/cloud calls keep their
-        # LiteLLM-reported price (cost_usd != 0.0 skips this branch).
+        # Local calls attribute electricity for the dashboard/savings view, but
+        # cost_usd STAYS 0 — the API axis is paid-cloud only, and the electricity
+        # BILL comes from the brain's measured power rows, not per-call estimates
+        # (cost-control attribution spec, P1 invariant). Paid/cloud calls keep
+        # their LiteLLM-reported price (cost_usd != 0.0 skips this branch).
         electricity_kwh: float | None = None
         if cost_usd == 0.0:
             try:
@@ -483,7 +484,9 @@ async def _record_dispatch_cost(
                     pass
                 guard = CostGuard(pool=pool, site_config=site_config)
                 electricity_kwh = guard.estimate_local_kwh(duration_ms=duration_ms)
-                cost_usd = guard.kwh_to_usd(electricity_kwh)
+                # NOTE: do NOT set cost_usd = kwh_to_usd(...) here — that conflated
+                # electricity onto the API axis and double-counted the brain's
+                # measured power. cost_usd stays 0 for local calls.
             except Exception:  # noqa: BLE001 — best-effort; $0 is still a valid fallback
                 pass
 

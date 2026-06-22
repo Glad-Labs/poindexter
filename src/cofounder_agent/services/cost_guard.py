@@ -777,8 +777,11 @@ class CostGuard:
 
         if cost_usd is None:
             if is_local:
-                # Local cost is the electricity bill, not a token rate.
-                cost_usd = self.kwh_to_usd(electricity_kwh)
+                # Local cost on the API axis is $0 — electricity is tracked via
+                # electricity_kwh (attribution) + the brain's measured rows (the
+                # bill). Do NOT bill per-call electricity onto cost_usd
+                # (cost-control attribution spec, P1 invariant).
+                cost_usd = 0.0
             else:
                 cost_usd = await self.estimate_cost(
                     provider=provider,

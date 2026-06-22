@@ -10,12 +10,14 @@ Provides advanced cost analytics by querying the cost_logs PostgreSQL table:
 Built on top of DatabaseService's log_cost() and get_task_costs() methods.
 
 Module-level helpers (no class instantiation required):
-    :func:`get_spend_totals` — raw monthly + daily totals for operator dashboards.
+    :func:`get_spend_totals` — monthly + daily spend for operator dashboards,
+    split into honest api / electricity axes via the ``cost_ledger`` seam.
 """
 
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+from services import cost_ledger
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -34,7 +36,11 @@ class CostAggregationService:
             db_service: DatabaseService instance (injected)
         """
         self.db = db_service
-        self.monthly_budget = 150.0  # Default solopreneur budget
+        # Unset sentinel — NOT a hardcoded budget. The real monthly cap is read
+        # per call from app_settings.monthly_spend_limit_usd (the single
+        # cost_guard cap); 0.0 means "no budget configured" so get_summary /
+        # get_budget_status never display or alert against a fake $150.
+        self.monthly_budget = 0.0
 
     async def get_summary(self) -> dict[str, Any]:
         """
@@ -90,6 +96,10 @@ class CostAggregationService:
                 month_cost = float(summary_row["month_cost"] or 0.0)
                 tasks_count = int(summary_row["tasks_count"] or 0)
 
+                # Honest budget for the display: the operator's real cap from
+                # app_settings, not a hardcoded $150 (0.0 = unconfigured).
+                monthly_budget = await self._read_monthly_budget_cap(conn)
+
                 # Calculate average cost per task
                 avg_cost_per_task = month_cost / tasks_count if tasks_count > 0 else 0.0
 
@@ -103,7 +113,7 @@ class CostAggregationService:
                     projected_monthly = month_cost
 
                 budget_used_percent = (
-                    (month_cost / self.monthly_budget * 100) if self.monthly_budget > 0 else 0
+                    (month_cost / monthly_budget * 100) if monthly_budget > 0 else 0
                 )
 
                 return {
@@ -111,7 +121,7 @@ class CostAggregationService:
                     "today_cost": round(today_cost, 2),
                     "week_cost": round(week_cost, 2),
                     "month_cost": round(month_cost, 2),
-                    "monthly_budget": self.monthly_budget,
+                    "monthly_budget": monthly_budget,
                     "budget_used_percent": round(budget_used_percent, 2),
                     "projected_monthly": round(projected_monthly, 2),
                     "tasks_completed": tasks_count,
@@ -372,13 +382,20 @@ class CostAggregationService:
             return self._get_empty_history(period)
 
     async def get_budget_status(
-        self, monthly_budget: float = 150.0
+        self, monthly_budget: float | None = None
     ) -> dict[str, Any]:
         """
-        Get current budget status and alerts
+        Get current budget status and alerts — ADVISORY / observability only.
+
+        Enforcement lives solely in ``cost_guard`` (the dispatch-time gate);
+        this is the dashboard/pre-flight *display*. ``monthly_budget=None``
+        reads the operator's real cap from ``app_settings.monthly_spend_limit_usd``
+        (no hardcoded $150); an explicit value still wins. ``amount_spent`` is
+        the ledger's **api axis** (genuinely-paid cloud), since that cap is an
+        API cap and the P1 write invariant keeps local rows at $0.
 
         Returns: {
-            "monthly_budget": 150.0,
+            "monthly_budget": 10.0,
             "amount_spent": 12.50,
             "amount_remaining": 137.50,
             "percent_used": 8.33,
@@ -393,23 +410,26 @@ class CostAggregationService:
         """
         try:
             if not self.db or not self.db.pool:
-                return self._get_empty_budget_status(monthly_budget)
+                return self._get_empty_budget_status(monthly_budget or 0.0)
 
-            # Get this month's costs
+            # Budget from app_settings (the single cost_guard cap), NOT a
+            # hardcoded $150. An explicit caller-supplied budget still wins
+            # (the metrics route + tests pass one); None reads the cap.
+            if monthly_budget is None:
+                monthly_budget = await self._read_monthly_budget_cap(self.db.pool)
+
+            # month_start is still needed below for days_elapsed / the burn-rate
+            # projection; only the spend SUM moved to the ledger.
             month_start = datetime.now(timezone.utc).replace(
                 day=1, hour=0, minute=0, second=0, microsecond=0
             )
 
-            async with self.db.pool.acquire() as conn:
-                cost_row = await conn.fetchval(
-                    """
-                    SELECT COALESCE(SUM(cost_usd), 0)
-                    FROM cost_logs
-                    WHERE created_at >= $1 AND success = true
-                    """,
-                    month_start,
-                )
-                amount_spent = float(cost_row or 0.0)
+            # Spend from the one honest ledger seam. amount_spent is the api
+            # axis (genuinely-paid cloud): monthly_spend_limit_usd is an API
+            # cap, electricity has its own throttle ceiling (P3), and the P1
+            # write invariant keeps local rows at $0 so the api axis is clean.
+            month = await cost_ledger.get_spend(self.db.pool, window="month")
+            amount_spent = month.api_usd
 
             # Calculate days
             now = datetime.now(timezone.utc)
@@ -507,7 +527,7 @@ class CostAggregationService:
             }
         except Exception as e:
             logger.error("[_get_budget_status] Error getting budget status: %s", e, exc_info=True)
-            return self._get_empty_budget_status(monthly_budget)
+            return self._get_empty_budget_status(monthly_budget or 0.0)
 
     async def recalculate_all(self) -> dict[str, Any]:
         """Force recalculation of all metrics"""
@@ -517,6 +537,38 @@ class CostAggregationService:
     # ========================================================================
     # Helper methods for empty/default responses
     # ========================================================================
+
+    async def _read_monthly_budget_cap(self, executor: Any) -> float:
+        """Read the operator's monthly spend cap from app_settings.
+
+        The single budget source of truth — ``monthly_spend_limit_usd`` (the
+        cost_guard cap) — so get_summary / get_budget_status stop disagreeing on
+        a hardcoded $150. Returns ``0.0`` when unset (the ``''`` sentinel) or
+        unreadable, per ``feedback_no_silent_defaults`` (no fake default).
+        ``executor`` is anything with an async ``fetchval`` — a pool or an
+        already-acquired connection.
+        """
+        try:
+            raw = await executor.fetchval(
+                "SELECT value FROM app_settings WHERE key = 'monthly_spend_limit_usd'"
+            )
+        except Exception as e:
+            # Advisory-only read — don't crash the dashboard/pre-flight — but
+            # surface it (no silent swallow per feedback_no_silent_defaults): an
+            # unreadable app_settings degrades the budget advisory to $0.
+            logger.warning(
+                "[cost] monthly_spend_limit_usd cap unreadable; budget advisory "
+                "falls back to $0 (unconfigured): %s", e,
+            )
+            return 0.0
+        try:
+            return float(raw) if raw not in (None, "") else 0.0
+        except (TypeError, ValueError):
+            logger.warning(
+                "[cost] monthly_spend_limit_usd has a non-numeric value %r; "
+                "budget advisory falls back to $0", raw,
+            )
+            return 0.0
 
     def _get_empty_summary(self) -> dict[str, Any]:
         return {
@@ -577,24 +629,29 @@ class CostAggregationService:
 # Module-level helper — no class instantiation required.
 # ---------------------------------------------------------------------------
 
-_SPEND_MONTHLY_SQL = (
-    "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
-    "WHERE created_at >= date_trunc('month', NOW())"
-)
-_SPEND_DAILY_SQL = (
-    "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
-    "WHERE created_at >= date_trunc('day', NOW())"
-)
+async def get_spend_totals(
+    pool: Any, *, site_config: Any = None
+) -> dict[str, Any]:
+    """Return current month + day spend from the cost ledger (honest split).
 
+    Backward-compatible superset: ``monthly_total_usd`` / ``daily_total_usd``
+    stay (now the ledger's ``total_usd``) so the MCP ``get_budget`` tool keeps
+    serializing the same keys, while the api/electricity split and
+    ``electricity_source`` are added for the phone/dashboard. The single
+    ``cost_ledger.get_spend`` seam relies on the P1 write invariant (local rows
+    ``cost_usd=0``), so the api axis sums only genuinely-paid cloud spend.
 
-async def get_spend_totals(pool: Any) -> dict[str, float]:
-    """Return current month and current day spend totals from ``cost_logs``.
-
-    Returns ``{"monthly_total_usd": float, "daily_total_usd": float}``.
+    ``site_config`` (optional) supplies the electricity coverage/rate knobs to
+    the ledger's estimate fallback; ``None`` uses the documented defaults.
     """
-    monthly = await pool.fetchval(_SPEND_MONTHLY_SQL)
-    daily = await pool.fetchval(_SPEND_DAILY_SQL)
+    month = await cost_ledger.get_spend(pool, window="month", site_config=site_config)
+    day = await cost_ledger.get_spend(pool, window="day", site_config=site_config)
     return {
-        "monthly_total_usd": float(monthly or 0),
-        "daily_total_usd": float(daily or 0),
+        "monthly_total_usd": month.total_usd,
+        "daily_total_usd": day.total_usd,
+        "monthly_api_usd": month.api_usd,
+        "monthly_electricity_usd": month.electricity_usd,
+        "daily_api_usd": day.api_usd,
+        "daily_electricity_usd": day.electricity_usd,
+        "electricity_source": month.electricity_source,
     }

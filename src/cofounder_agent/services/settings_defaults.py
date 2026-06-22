@@ -113,6 +113,12 @@ DEFAULTS: dict[str, str] = {
     # ----- Cost / billing -----
     'daily_spend_limit_usd': '2.0',
     'monthly_spend_limit_usd': '100.0',
+    # Electricity ledger (cost_ledger.get_spend): prefer the brain's measured PSU
+    # rows; fall back to per-call kWh estimates for windows the measured feed
+    # didn't cover (HX1500i sampling has been flaky). A sample "covers" up to
+    # *_gap_minutes after it; below *_min_coverage_pct of the window => estimated.
+    'electricity_measured_min_coverage_pct': '80',
+    'electricity_source_gap_minutes': '15',
 
     # ----- LLM model selection -----
     'default_ollama_model': 'auto',
@@ -1203,6 +1209,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- Cost guard (incident: spend-limit rename fallthrough 2026-05-27) -----
     'daily_spend_limit_usd': {'owner': 'cost_guard', 'value_type': 'float'},
     'monthly_spend_limit_usd': {'owner': 'cost_guard', 'value_type': 'float'},
+    'electricity_measured_min_coverage_pct': {'owner': 'cost_ledger', 'value_type': 'float'},
+    'electricity_source_gap_minutes': {'owner': 'cost_ledger', 'value_type': 'integer'},
 
     # ----- LLM model selection (writer-flip = canary per feedback_writer_model_canary) -----
     'pipeline_writer_model': {'owner': 'content_router', 'value_type': 'model'},

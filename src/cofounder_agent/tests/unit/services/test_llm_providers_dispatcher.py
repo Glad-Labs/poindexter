@@ -356,7 +356,7 @@ class TestDispatchCompleteAutoLog:
         assert args[3] == "ollama_native"
         assert args[4] == 12    # input_tokens
         assert args[5] == 34    # output_tokens
-        assert args[7] == pytest.approx(0.00016)  # cost_usd from electricity
+        assert args[7] == 0.0  # API cost is $0 for local (electricity not billed)
         assert args[8] == "inference"
         assert args[10] is True   # success
         assert args[11] == pytest.approx(0.001)   # electricity_kwh
@@ -370,9 +370,10 @@ class TestDispatchCompleteAutoLog:
         table carries a *hosted* llama3.2 price, so ``response_cost`` came
         back ~$0.0135/call for free local inference — 311 calls logged $4.16
         and tripped DailySpendOverBudget. A local call (``_is_paid_llm_call``
-        is False) must discard that phantom price and fall through to the
-        electricity estimate, staying consistent with the budget gate which
-        already treats the same call as free.
+        is False) must discard that phantom price and record $0 API cost,
+        staying consistent with the budget gate which already treats the same
+        call as free. Electricity is attribution-only (electricity_kwh), never
+        billed onto cost_usd (P1 invariant).
         """
         pool, executions = _make_logging_pool(setting_value="litellm")
         provider = _FakeProvider(name="litellm")
@@ -391,8 +392,9 @@ class TestDispatchCompleteAutoLog:
         cost_inserts = [(q, a) for (q, a) in executions if "cost_logs" in q]
         assert len(cost_inserts) == 1
         args = cost_inserts[0][1]
-        # Phantom $4.16 must NOT be recorded; electricity estimate replaces it.
-        assert args[7] == pytest.approx(0.00016)  # cost_usd from electricity
+        # Phantom $4.16 must NOT be recorded; API cost stays $0 for local
+        # (electricity is attribution-only via electricity_kwh, not billed here).
+        assert args[7] == 0.0
         assert args[3] == "litellm"
         assert args[11] == pytest.approx(0.001)   # electricity_kwh populated
         assert args[12] is None  # error_message
@@ -432,7 +434,7 @@ class TestDispatchCompleteAutoLog:
         assert args[10] is False  # success
         assert args[11] == pytest.approx(0.0005)  # electricity_kwh
         assert "upstream timeout" in (args[12] or "")  # error_message
-        assert args[7] == pytest.approx(0.00008)  # cost_usd from electricity
+        assert args[7] == 0.0  # API cost is $0 for local (electricity not billed)
 
     async def test_log_write_failure_does_not_break_call(self):
         # Pool whose execute() raises — auto-log must swallow it.
@@ -599,7 +601,12 @@ class TestLocalElectricityAttribution:
     """Local Ollama calls get electricity_kwh populated and cost_usd derived
     from GPU power × duration — not left at $0.0 / NULL."""
 
-    async def test_local_model_writes_electricity_kwh_and_nonzero_cost(self):
+    async def test_local_model_writes_zero_api_cost_keeps_electricity_kwh(self):
+        """Phantom canary: a LOCAL call records cost_usd=0 on the API axis but
+        keeps electricity_kwh for attribution. Guards against a bare local tag
+        (e.g. 'glm-4.7-5090:latest') re-acquiring a hosted price — the
+        2026-06-21 phantom bug — and against billing per-call electricity onto
+        the API axis (cost-control attribution spec, P1 invariant)."""
         pool, executions = _make_logging_pool()
         provider = _FakeProvider(name="ollama_native")
         provider.complete.return_value = _FakeCompletionResult(
@@ -620,11 +627,11 @@ class TestLocalElectricityAttribution:
         cost_inserts = [(q, a) for (q, a) in executions if "cost_logs" in q]
         assert len(cost_inserts) == 1
         args = cost_inserts[0][1]
-        assert args[7] == pytest.approx(0.00032)   # cost_usd from electricity
-        assert args[11] == pytest.approx(0.002)    # electricity_kwh
+        assert args[7] == 0.0                      # API cost is $0 for local
+        assert args[11] == pytest.approx(0.002)    # electricity_kwh kept (attribution)
         assert args[12] is None                    # error_message
         guard.estimate_local_kwh.assert_called_once()
-        guard.kwh_to_usd.assert_called_once_with(0.002)
+        guard.kwh_to_usd.assert_not_called()       # electricity NOT billed to cost_usd
 
     async def test_cloud_model_with_nonzero_response_cost_skips_electricity_path(self):
         """If LiteLLM returns a real price, electricity estimation must not run."""

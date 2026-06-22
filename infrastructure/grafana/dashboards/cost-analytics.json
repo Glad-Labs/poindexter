@@ -277,7 +277,8 @@
           "refId": "A"
         }
       ],
-      "title": "Total Spend",
+      "description": "Blended total = API (paid cloud) + electricity (measured power). See the API $ and Electricity stats for the honest split; most of this is power, not cloud spend.",
+      "title": "Total (API + power)",
       "type": "stat"
     },
     {
@@ -835,10 +836,11 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT ROUND(SUM(cost_usd)::numeric, 4) FROM cost_logs WHERE provider = 'electricity' AND $__timeFilter(created_at)",
+          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric, 4) FROM cost_logs WHERE cost_type LIKE 'electricity%' AND $__timeFilter(created_at)",
           "refId": "A"
         }
       ],
+      "description": "Measured power cost (the brain's PSU rows). Matches cost_ledger's electricity axis (cost_type LIKE 'electricity%').",
       "title": "Electricity",
       "type": "stat"
     },
@@ -890,11 +892,70 @@
             "uid": "local-brain-db"
           },
           "format": "table",
-          "rawSql": "SELECT ROUND(SUM(cost_usd)::numeric, 4) FROM cost_logs WHERE provider != 'electricity' AND $__timeFilter(created_at)",
+          "rawSql": "SELECT ROUND(COALESCE(SUM(cost_usd),0)::numeric, 4) FROM cost_logs WHERE COALESCE(cost_type,'inference') NOT LIKE 'electricity%' AND $__timeFilter(created_at)",
           "refId": "A"
         }
       ],
-      "title": "LLM Spend",
+      "description": "Genuinely-paid cloud API spend (the cost_ledger api axis). Local calls are $0 by the P1 write invariant, so this reads ~$0 unless a paid cloud provider is enabled.",
+      "title": "API $ (cloud)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Whether electricity in this window comes from the brain's measured PSU rows (any present) or would fall back to the per-call kWh estimate. Mirrors cost_ledger's electricity_source signal.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "fixedColor": "text",
+            "mode": "fixed"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "id": 52,
+      "options": {
+        "colorMode": "none",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawSql": "SELECT CASE WHEN COUNT(*) FILTER (WHERE cost_type LIKE 'electricity%') > 0 THEN 'measured' ELSE 'estimated' END AS source FROM cost_logs WHERE $__timeFilter(created_at)",
+          "refId": "A"
+        }
+      ],
+      "title": "Electricity source",
       "type": "stat"
     },
     {

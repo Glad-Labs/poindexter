@@ -18,7 +18,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from services import cost_ledger
 from services.cost_aggregation_service import CostAggregationService
+from services.cost_ledger import SpendBreakdown
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -80,6 +82,23 @@ def _make_service(db=None):
     return svc
 
 
+def _patch_month_api(monkeypatch, api_usd, *, electricity_usd=0.0):
+    """Patch the cost_ledger seam so get_budget_status sees a given month spend.
+
+    Since get_budget_status now reads spend from cost_ledger.get_spend (not raw
+    pool SQL), spend is injected here. amount_spent reflects the api axis.
+    """
+    async def _fake(pool, *, window="day", strict=False, site_config=None):
+        return SpendBreakdown(
+            api_usd=api_usd,
+            electricity_usd=electricity_usd,
+            total_usd=api_usd + electricity_usd,
+            electricity_source="measured",
+        )
+
+    monkeypatch.setattr(cost_ledger, "get_spend", _fake)
+
+
 # ---------------------------------------------------------------------------
 # get_summary
 # ---------------------------------------------------------------------------
@@ -92,7 +111,8 @@ class TestGetSummary:
         svc = _make_service(db=None)
         result = await svc.get_summary()
         assert result["total_spent"] == 0.0
-        assert result["monthly_budget"] == 150.0
+        # No hardcoded $150 — the unset sentinel is 0.0 (cap read per call).
+        assert result["monthly_budget"] == 0.0
 
     @pytest.mark.asyncio
     async def test_no_pool_returns_empty_summary(self):
@@ -325,45 +345,60 @@ class TestGetBudgetStatus:
         assert result["monthly_budget"] == 100.0
 
     @pytest.mark.asyncio
-    async def test_healthy_status_under_80_percent(self):
-        # Spent $50 of $150 budget = 33% — status is healthy
-        # Note: projection alerts may still fire if daily spend extrapolates
-        # over budget, but the STATUS should be "healthy" based on actual spend
-        conn = _make_conn(fetchval_values=[50.0])
-        db = _make_db(conn=conn)
+    async def test_budget_reads_app_settings_cap_not_150(self, monkeypatch):
+        # monthly_budget=None must read app_settings.monthly_spend_limit_usd
+        # (the single cost_guard cap), NOT a hardcoded $150.
+        _patch_month_api(monkeypatch, 5.0)
+        db = _make_db()
+        db.pool.fetchval = AsyncMock(return_value="10.0")  # the app_settings cap
         svc = _make_service(db=db)
-        result = await svc.get_budget_status(monthly_budget=150.0)
-        assert result["status"] == "healthy"
-        # Only check no threshold alerts — projection warnings are informational
-        threshold_alerts = [a for a in result["alerts"] if "exceeds" not in a.get("message", "").lower() or a["level"] == "critical"]
-        assert threshold_alerts == []
+        result = await svc.get_budget_status()  # no explicit budget
+        assert result["monthly_budget"] == 10.0
+        assert result["amount_spent"] == 5.0
+        assert result["percent_used"] == 50.0
 
     @pytest.mark.asyncio
-    async def test_warning_at_80_percent(self):
+    async def test_amount_spent_is_api_axis(self, monkeypatch):
+        # amount_spent reflects the api axis (paid cloud), not electricity:
+        # electricity has its own throttle ceiling, this cap is an API cap.
+        _patch_month_api(monkeypatch, 4.0, electricity_usd=30.0)
+        svc = _make_service(db=_make_db())
+        result = await svc.get_budget_status(monthly_budget=150.0)
+        assert result["amount_spent"] == 4.0  # 30.0 electricity excluded
+
+    @pytest.mark.asyncio
+    async def test_healthy_status_under_80_percent(self, monkeypatch):
+        # Spent $50 of $150 budget = 33% — status is healthy. (Projection
+        # alerts may still append, but they don't change the status field.)
+        _patch_month_api(monkeypatch, 50.0)
+        svc = _make_service(db=_make_db())
+        result = await svc.get_budget_status(monthly_budget=150.0)
+        assert result["status"] == "healthy"
+        assert result["amount_spent"] == 50.0
+
+    @pytest.mark.asyncio
+    async def test_warning_at_80_percent(self, monkeypatch):
         # Spent $120 of $150 = 80%
-        conn = _make_conn(fetchval_values=[120.0])
-        db = _make_db(conn=conn)
-        svc = _make_service(db=db)
+        _patch_month_api(monkeypatch, 120.0)
+        svc = _make_service(db=_make_db())
         result = await svc.get_budget_status(monthly_budget=150.0)
         assert result["status"] == "warning"
         assert len(result["alerts"]) >= 1
 
     @pytest.mark.asyncio
-    async def test_critical_at_100_percent(self):
+    async def test_critical_at_100_percent(self, monkeypatch):
         # Spent $150 of $150 = 100%
-        conn = _make_conn(fetchval_values=[150.0])
-        db = _make_db(conn=conn)
-        svc = _make_service(db=db)
+        _patch_month_api(monkeypatch, 150.0)
+        svc = _make_service(db=_make_db())
         result = await svc.get_budget_status(monthly_budget=150.0)
         assert result["status"] == "critical"
         critical_alerts = [a for a in result["alerts"] if a["level"] == "critical"]
         assert len(critical_alerts) >= 1
 
     @pytest.mark.asyncio
-    async def test_required_fields_present(self):
-        conn = _make_conn(fetchval_values=[10.0])
-        db = _make_db(conn=conn)
-        svc = _make_service(db=db)
+    async def test_required_fields_present(self, monkeypatch):
+        _patch_month_api(monkeypatch, 10.0)
+        svc = _make_service(db=_make_db())
         result = await svc.get_budget_status(monthly_budget=150.0)
         for field in [
             "monthly_budget",
@@ -380,12 +415,15 @@ class TestGetBudgetStatus:
             assert field in result
 
     @pytest.mark.asyncio
-    async def test_db_error_returns_empty(self):
-        db = MagicMock()
-        db.pool = MagicMock()
-        db.pool.acquire = MagicMock(side_effect=RuntimeError("DB down"))
-        svc = _make_service(db=db)
-        result = await svc.get_budget_status(150.0)
+    async def test_ledger_error_returns_empty(self, monkeypatch):
+        # A ledger failure is swallowed into the advisory empty status (this is
+        # observability, never an enforcement path).
+        async def _boom(pool, *, window="day", strict=False, site_config=None):
+            raise RuntimeError("DB down")
+
+        monkeypatch.setattr(cost_ledger, "get_spend", _boom)
+        svc = _make_service(db=_make_db())
+        result = await svc.get_budget_status(monthly_budget=150.0)
         assert result["amount_spent"] == 0.0
 
 
@@ -594,14 +632,12 @@ class TestGetHistoryTrends:
 @pytest.mark.unit
 class TestGetBudgetStatusProjection:
     @pytest.mark.asyncio
-    async def test_projection_over_110_percent_adds_alert(self):
+    async def test_projection_over_110_percent_adds_alert(self, monkeypatch):
         """If projected cost > 110% of budget, a projection alert is added."""
         from unittest.mock import patch
-        conn = MagicMock()
-        # amount_spent is high enough that daily_burn_rate * 30 > monthly_budget * 1.1
-        conn.fetchval = AsyncMock(return_value=50.0)
-        db = _make_db(conn)
-        svc = _make_service(db)
+        # amount_spent high enough that daily_burn_rate * 30 > monthly_budget * 1.1
+        _patch_month_api(monkeypatch, 50.0)
+        svc = _make_service(db=_make_db())
 
         # Freeze "now" so days_elapsed is deterministic. With a high burn rate
         # projected_final_cost can reliably exceed 110% of the budget.
@@ -624,7 +660,7 @@ class TestGetBudgetStatusProjection:
         assert len(projection_alerts) >= 1
 
     @pytest.mark.asyncio
-    async def test_projection_below_110_no_alert(self):
+    async def test_projection_below_110_no_alert(self, monkeypatch):
         """Normal burn rate = no projection alert.
 
         "now" is pinned to mid-month so this exercises the genuine
@@ -635,10 +671,8 @@ class TestGetBudgetStatusProjection:
         over-extrapolates (the 2026-06-01 CI flake).
         """
         from unittest.mock import patch
-        conn = MagicMock()
-        conn.fetchval = AsyncMock(return_value=10.0)
-        db = _make_db(conn)
-        svc = _make_service(db)
+        _patch_month_api(monkeypatch, 10.0)
+        svc = _make_service(db=_make_db())
 
         with patch("services.cost_aggregation_service.datetime") as mock_dt:
             from datetime import datetime, timezone
@@ -657,7 +691,7 @@ class TestGetBudgetStatusProjection:
         assert len(projection_alerts) == 0
 
     @pytest.mark.asyncio
-    async def test_projection_first_days_of_month_no_false_alert(self):
+    async def test_projection_first_days_of_month_no_false_alert(self, monkeypatch):
         """No projection alert in the first days of a month.
 
         Early in a month, dividing month-to-date spend by 1-2 elapsed
@@ -668,12 +702,10 @@ class TestGetBudgetStatusProjection:
         guard and reproduces the 2026-06-01 incident with a fixed clock.
         """
         from unittest.mock import patch
-        conn = MagicMock()
         # $10 spent on day 1 -> naive extrapolation is $300/mo, which would
         # trip 110% of the $200 budget ($220) WITHOUT the warm-up guard.
-        conn.fetchval = AsyncMock(return_value=10.0)
-        db = _make_db(conn)
-        svc = _make_service(db)
+        _patch_month_api(monkeypatch, 10.0)
+        svc = _make_service(db=_make_db())
 
         with patch("services.cost_aggregation_service.datetime") as mock_dt:
             from datetime import datetime, timezone
@@ -690,12 +722,10 @@ class TestGetBudgetStatusProjection:
         assert len(projection_alerts) == 0
 
     @pytest.mark.asyncio
-    async def test_zero_budget_safe_percent_used(self):
+    async def test_zero_budget_safe_percent_used(self, monkeypatch):
         """monthly_budget=0 should not divide by zero."""
-        conn = MagicMock()
-        conn.fetchval = AsyncMock(return_value=5.0)
-        db = _make_db(conn)
-        svc = _make_service(db)
+        _patch_month_api(monkeypatch, 5.0)
+        svc = _make_service(db=_make_db())
 
         result = await svc.get_budget_status(monthly_budget=0.0)
         assert result["percent_used"] == 0  # safe fallback

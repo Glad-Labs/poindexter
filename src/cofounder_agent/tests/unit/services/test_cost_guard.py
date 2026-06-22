@@ -656,7 +656,7 @@ class TestRecordUsage:
     """``record_usage`` auto-fills cost + electricity_kwh (lines 705-739)."""
 
     @pytest.mark.asyncio
-    async def test_local_provider_auto_calculates_via_electricity(self) -> None:
+    async def test_local_provider_records_zero_api_cost(self) -> None:
         pool = MagicMock()
         pool.execute = AsyncMock()
         guard = CostGuard(pool=pool)
@@ -665,9 +665,10 @@ class TestRecordUsage:
             prompt_tokens=500, completion_tokens=500,
             duration_ms=2000, is_local=True,
         )
-        # local cost = kwh_to_usd(estimate_local_kwh(2000ms))
-        # 2s @ 450W = 900J / 3.6e6 = 0.00025 kWh; * 0.16 = 0.00004
-        assert cost == pytest.approx(0.16 * 900 / 3_600_000, rel=1e-3)
+        # Local API cost is $0 (P1 invariant); electricity is attribution-only,
+        # tracked via electricity_kwh + the brain's measured rows, not billed
+        # onto cost_usd.
+        assert cost == 0.0
         pool.execute.assert_awaited_once()
 
     @pytest.mark.asyncio
