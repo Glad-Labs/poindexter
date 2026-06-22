@@ -2,6 +2,52 @@
 
 ## Unreleased
 
+## [0.85.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.84.0...v0.85.0) (2026-06-22)
+
+
+### Features
+
+* **brain:** auto-recover the Postgres host-port-proxy wedge ([#1814](https://github.com/Glad-Labs/glad-labs-stack/issues/1814)) ([36fab93](https://github.com/Glad-Labs/glad-labs-stack/commit/36fab935e4c4670fc7a767f7485852cec10976bb))
+* **cli:** repurpose `posts create` into a manual markdown write/upload ([#1842](https://github.com/Glad-Labs/glad-labs-stack/issues/1842)) ([9c160ac](https://github.com/Glad-Labs/glad-labs-stack/commit/9c160ac5e5b3f5b788ec52c5a468b6ac454ee745))
+* **pipeline:** preview_gate — component-scoped regen gate ([#1851](https://github.com/Glad-Labs/glad-labs-stack/issues/1851)) ([d7b7640](https://github.com/Glad-Labs/glad-labs-stack/commit/d7b76406f2fd257a68470f4350cc25248e361a26))
+* **scheduler:** relocate run/status state from app_settings to job_run_state ([#1820](https://github.com/Glad-Labs/glad-labs-stack/issues/1820)) ([5db2f34](https://github.com/Glad-Labs/glad-labs-stack/commit/5db2f3442e96630995c6e8b01e11118cd04e8d1a))
+* **self-healing:** liveness-check host scheduled tasks via Recovery Agent /tasks ([#1804](https://github.com/Glad-Labs/glad-labs-stack/issues/1804)) ([aca857a](https://github.com/Glad-Labs/glad-labs-stack/commit/aca857a73008dfecf1a4209badd50fb377981b95))
+
+
+### Bug Fixes
+
+* **brain:** gate writer-model probe behind GPU advisory lock; guard OllamaNoModelsLoaded ([#1812](https://github.com/Glad-Labs/glad-labs-stack/issues/1812)) ([1fed4ba](https://github.com/Glad-Labs/glad-labs-stack/commit/1fed4ba640ff827f5e19d7394f812d08337ee647))
+* **brain:** make compose-drift probe profile-aware ([#1809](https://github.com/Glad-Labs/glad-labs-stack/issues/1809)) ([a051e01](https://github.com/Glad-Labs/glad-labs-stack/commit/a051e0130a6ae2a7587ab7251fc3173a0318d5df))
+* **captions:** bias Speaches ASR toward brand vocab via initial_prompt ([#1817](https://github.com/Glad-Labs/glad-labs-stack/issues/1817)) ([453c222](https://github.com/Glad-Labs/glad-labs-stack/commit/453c2224a489e145dceac1e6d2cd6de87c4ab774))
+* **captions:** burn in video captions via Speaches sidecar, not an uninstalled whisper.cpp ([#1815](https://github.com/Glad-Labs/glad-labs-stack/issues/1815)) ([dfa307c](https://github.com/Glad-Labs/glad-labs-stack/commit/dfa307c03d1bf1cf85a7c4ae22968276eda3d89d))
+* **ci:** pin test-exclude@7 so jest --coverage survives the minimatch&gt;=9 override ([#1850](https://github.com/Glad-Labs/glad-labs-stack/issues/1850)) ([0082919](https://github.com/Glad-Labs/glad-labs-stack/commit/008291903ae113d98f32606e1739ef9bc1142877))
+* **ci:** restore runner CMD cleared by the entrypoint override ([#1810](https://github.com/Glad-Labs/glad-labs-stack/issues/1810) follow-up) ([#1811](https://github.com/Glad-Labs/glad-labs-stack/issues/1811)) ([db35282](https://github.com/Glad-Labs/glad-labs-stack/commit/db35282fe388e165ba14be0f3f1bb9dc8b1982d5))
+* **ci:** self-recover the self-hosted runner from ungraceful restarts ([#1810](https://github.com/Glad-Labs/glad-labs-stack/issues/1810)) ([7cb90d1](https://github.com/Glad-Labs/glad-labs-stack/commit/7cb90d1b146255fa013fe43cee3fad86c3821a36))
+* **citation:** link single-word brand parentheticals when corpus-grounded ([#1831](https://github.com/Glad-Labs/glad-labs-stack/issues/1831)) ([c584818](https://github.com/Glad-Labs/glad-labs-stack/commit/c5848185c2f4312f01b493ed763539d2e2aa4c6f))
+* **citation:** link subject-first "describes" attributions in repair scan ([#1837](https://github.com/Glad-Labs/glad-labs-stack/issues/1837)) ([6eed7d1](https://github.com/Glad-Labs/glad-labs-stack/commit/6eed7d133f59d95ae36fbc6e797d3b6b7bd39b62))
+* **cli:** apply the create_post dedup guard to posts create ([#1829](https://github.com/Glad-Labs/glad-labs-stack/issues/1829)) ([d7595d6](https://github.com/Glad-Labs/glad-labs-stack/commit/d7595d6311a0b7615a21387192706b22b08bdc14))
+* **cli:** resume/regen build full DB service + platform for mid-graph gates ([#1854](https://github.com/Glad-Labs/glad-labs-stack/issues/1854)) ([044dbe6](https://github.com/Glad-Labs/glad-labs-stack/commit/044dbe67e618c706b8a9fa3d12d06a1ffd6d9e2f))
+* **console:** coalesce concurrent OAuth token mints to stop /token 429s ([#1806](https://github.com/Glad-Labs/glad-labs-stack/issues/1806)) ([0067681](https://github.com/Glad-Labs/glad-labs-stack/commit/0067681b1fddfcb52c0b946ae0e368ce913f517b))
+* **console:** live-wire the overview KPI strip (was mock in live mode) ([#1807](https://github.com/Glad-Labs/glad-labs-stack/issues/1807)) ([a9fb2a6](https://github.com/Glad-Labs/glad-labs-stack/commit/a9fb2a6410e0262b32c614a81244f84bd68b41fe))
+* **content:** stop title-gen leaking model rationale as the post title ([#1822](https://github.com/Glad-Labs/glad-labs-stack/issues/1822)) ([ff4866a](https://github.com/Glad-Labs/glad-labs-stack/commit/ff4866a211a908c0730e32ab8b25d6a6dd9d950c))
+* **content:** structured-JSON title-gen retires the denylist whack-a-mole ([#1825](https://github.com/Glad-Labs/glad-labs-stack/issues/1825)) ([add2614](https://github.com/Glad-Labs/glad-labs-stack/commit/add2614a866ce32da612ffe6cd946ee2d30d7184))
+* **gpu:** confirm Ollama VRAM release before SDXL/video load to stop desktop lockups ([#1839](https://github.com/Glad-Labs/glad-labs-stack/issues/1839)) ([8240fb6](https://github.com/Glad-Labs/glad-labs-stack/commit/8240fb628b10e0c85ea366aa309a124a14a982fb))
+* **gpu:** size cost_tier.budget below the writer so background jobs stop pegging VRAM ([#1826](https://github.com/Glad-Labs/glad-labs-stack/issues/1826)) ([ad86661](https://github.com/Glad-Labs/glad-labs-stack/commit/ad8666115ef20dc937e1dba9ca119ca9121924d4))
+* **image:** forbid all human depiction in image.decision prompt, not just faces ([#1830](https://github.com/Glad-Labs/glad-labs-stack/issues/1830)) ([8480df3](https://github.com/Glad-Labs/glad-labs-stack/commit/8480df3fb53e368bf41aba00dd7f76656b374e9c))
+* **jobs:** wire checkpoint_prune retention handler + scrub dead-job seeds ([#1818](https://github.com/Glad-Labs/glad-labs-stack/issues/1818)) ([71a072c](https://github.com/Glad-Labs/glad-labs-stack/commit/71a072c17955d33ff9d8060fd15b8065eab13091))
+* **monitoring:** drop stale port-forward watch list, retire dead nvidia_exporter_url, repoint data-fabric URLs to internal DNS ([#1832](https://github.com/Glad-Labs/glad-labs-stack/issues/1832)) ([604bff0](https://github.com/Glad-Labs/glad-labs-stack/commit/604bff0f8ddcc7d7e8e8ecbfb42ba9a8d13ae55f))
+* **observability:** read langfuse_public_key via get_secret so DB-only installs keep tracing ([#1838](https://github.com/Glad-Labs/glad-labs-stack/issues/1838)) ([41db284](https://github.com/Glad-Labs/glad-labs-stack/commit/41db284a27f0ab0ca119344b43c92646c450c2f7))
+* **observability:** register Langfuse OTEL logger in litellm.callbacks so async traces resume ([#1833](https://github.com/Glad-Labs/glad-labs-stack/issues/1833)) ([6a4b7ba](https://github.com/Glad-Labs/glad-labs-stack/commit/6a4b7baaec9fb5dc4cae5870a0df0b79fe075394))
+* **ops:** auto-recover wedged WSL2 backend in docker-watchdog ([#1844](https://github.com/Glad-Labs/glad-labs-stack/issues/1844)) ([d17544e](https://github.com/Glad-Labs/glad-labs-stack/commit/d17544e2f0dfa54830beefffe55eb814f2864e2d))
+* **pipeline:** block near-duplicate topics injected via create_post ([#1823](https://github.com/Glad-Labs/glad-labs-stack/issues/1823)) ([749c623](https://github.com/Glad-Labs/glad-labs-stack/commit/749c6231cfd589bb23ba12a66aade9c23aac496c))
+* **pipeline:** QA-rejected posts no longer trigger the awaiting-approval ping ([#1834](https://github.com/Glad-Labs/glad-labs-stack/issues/1834)) ([f8b17c7](https://github.com/Glad-Labs/glad-labs-stack/commit/f8b17c72fb6db5b293e6c20f96cefce786a330c1))
+* **pipeline:** restore task claim + graph_def load after main deploy ([#1853](https://github.com/Glad-Labs/glad-labs-stack/issues/1853)) ([c5416a1](https://github.com/Glad-Labs/glad-labs-stack/commit/c5416a16e8aa3d3af2d77d917e2197d0675e5e2a))
+* **qa:** whitelist numeric-precision + quantization vocab in content validator ([#1819](https://github.com/Glad-Labs/glad-labs-stack/issues/1819)) ([ddc8da1](https://github.com/Glad-Labs/glad-labs-stack/commit/ddc8da17bf540760d429d854da41cd6a3028e409))
+* resolve cost + probe false-positives surfaced by alert investigation ([#1827](https://github.com/Glad-Labs/glad-labs-stack/issues/1827)) ([3023817](https://github.com/Glad-Labs/glad-labs-stack/commit/30238175dcc11346ac1e69eae1cc325582758f27))
+* **scripts:** resolve DSN via bootstrap + force IPv4 in host one-offs ([#1803](https://github.com/Glad-Labs/glad-labs-stack/issues/1803)) ([bbdd7cc](https://github.com/Glad-Labs/glad-labs-stack/commit/bbdd7cc5c4bac0a276fc0b04939938e32414ba12))
+* **settings:** scrub resurrected dead model keys + guard seed/migration drift ([#1813](https://github.com/Glad-Labs/glad-labs-stack/issues/1813)) ([2833d5d](https://github.com/Glad-Labs/glad-labs-stack/commit/2833d5d2865522e62c8c4d29acd9e917ee5b11bc))
+* **triage:** route /api/triage LLM through the gpu.lock-gated dispatcher ([#1808](https://github.com/Glad-Labs/glad-labs-stack/issues/1808)) ([297c466](https://github.com/Glad-Labs/glad-labs-stack/commit/297c46667249b62fb67ca0d206d3f933b75ccfc5))
+
 ## [0.84.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.83.0...v0.84.0) (2026-06-21)
 
 
