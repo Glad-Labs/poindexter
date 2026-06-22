@@ -318,12 +318,6 @@ class AnthropicProvider:
     supports_streaming = False  # Pipeline doesn't currently stream — see ticket.
     supports_embeddings = False
 
-    # Class-level latch so the "_db_service missing" warning fires
-    # exactly once per process. Operators reading the logs see the
-    # gap on the first call; subsequent calls don't drown them in
-    # repeats. Reset by tests via ``cls._cost_guard_check_warned = False``.
-    _cost_guard_check_warned: bool = False
-
     def __init__(self, site_config: Any = None) -> None:
         # SiteConfig is optional. Plugin discovery instantiates with no
         # args. Per-call config still flows in via ``_provider_config``
@@ -510,84 +504,25 @@ class AnthropicProvider:
     async def _cost_guard_check(
         self,
         *,
-        model: str,
-        estimated_cost_usd: float,
+        model: str,  # noqa: ARG002 — kept to preserve the monkeypatch-seam signature
+        estimated_cost_usd: float,  # noqa: ARG002 — kept to preserve the monkeypatch-seam signature
     ) -> None:
-        """Pre-flight budget check.
+        """Pre-flight cost-guard seam — default no-op.
 
-        Default implementation calls into ``services.cost_aggregation_service``
-        if it's importable, falling back to a permissive no-op when the
-        cost service isn't wired (e.g. early-startup, minimal CLI).
-        Either path raises ``CostGuardExhausted`` when the projected
-        spend would blow the budget. Tests monkey-patch this method
-        to assert it's called and to inject the exhausted path.
+        Budget enforcement lives solely in :mod:`services.cost_guard`, which
+        gates at dispatch against ``monthly_spend_limit_usd``. This method is
+        retained only as an instance seam so tests (and any future
+        provider-boundary policy) can monkey-patch it to inject a
+        :class:`CostGuardExhausted` refusal; :meth:`complete` awaits it
+        before issuing the SDK call.
+
+        The previous body fetched ``CostAggregationService.get_budget_status()``
+        and raised on ``status["alert_status"] == "exceeded"`` — a key that
+        summary never returns (it exposes ``status``, not ``alert_status``),
+        so the branch was dead and enforced nothing. The aggregation service
+        is advisory; cost_guard is the single enforcement point.
         """
-        # The shipping cost-aggregation service exposes a synchronous
-        # budget summary; we treat ``budget_used_percent >= 100`` as
-        # exhausted. If the service can't be reached we DO NOT silently
-        # allow the call — fail loud per Matt's "no silent fallback"
-        # rule for required infrastructure.
-        try:
-            from services.cost_aggregation_service import CostAggregationService  # noqa: PLC0415
-        except Exception as e:
-            logger.debug(
-                "[AnthropicProvider] cost service not importable, "
-                "skipping pre-flight check (test/CLI environment): %s", e,
-            )
-            return
-
-        # In production this path resolves a live db_service from the
-        # site_config DI seam. When it's missing (test/CLI/bootstrap)
-        # we still proceed — but warn loudly + notify the operator once
-        # per process so the gap is visible. The post-call log_cost
-        # write always runs, so spend accounting stays correct; the
-        # risk this warning surfaces is "the pre-flight check is silent
-        # and we only catch overage AFTER the call returns" — bad in a
-        # runaway-loop scenario.
-        #
-        # Closes cycle-4 audit finding: previous behavior was a bare
-        # ``return`` here which contradicted the docstring's "fail loud
-        # per no-silent-fallback" claim. Operators with a broken DI
-        # seam got zero feedback that the budget gate was inert.
-        sc = self._site_config
-        db_service = None
-        if sc is not None:
-            db_service = getattr(sc, "_db_service", None)
-        if db_service is None:
-            if not type(self)._cost_guard_check_warned:
-                logger.warning(
-                    "[AnthropicProvider] cost-guard pre-check inert — "
-                    "site_config._db_service is None. Pre-flight budget "
-                    "check is skipped; only post-call log_cost will run "
-                    "(spend is still recorded but a runaway loop could "
-                    "overshoot the cap before the next iteration sees "
-                    "it). Wire site_config._db_service in lifespan to "
-                    "restore the pre-flight gate."
-                )
-                type(self)._cost_guard_check_warned = True
-            return
-
-        try:
-            svc = CostAggregationService(db_service=db_service)
-            status = await svc.get_budget_status()
-            if status.get("alert_status") == "exceeded":
-                raise CostGuardExhausted(
-                    f"Anthropic call refused: monthly budget exhausted "
-                    f"(${status.get('amount_spent', 0):.2f} / "
-                    f"${status.get('monthly_budget', 0):.2f}); estimated "
-                    f"call cost ${estimated_cost_usd:.4f}",
-                    provider=self.name,
-                    model=model,
-                    estimated_cost_usd=estimated_cost_usd,
-                )
-        except CostGuardExhausted:
-            raise
-        except Exception as e:
-            logger.warning(
-                "[AnthropicProvider] cost-guard pre-check errored "
-                "(allowing call to proceed; post-call log will still "
-                "record actual spend): %s", e,
-            )
+        return None
 
     async def _cost_guard_record(
         self,
