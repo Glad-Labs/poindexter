@@ -88,18 +88,15 @@ async def claim_pending_task(database_service: Any) -> dict[str, Any] | None:
             # those tasks were stranded and never re-ran. ``rejected_final``
             # stays terminal (excluded). The audit_log rejection event keeps
             # the learning signal that distinguishes a retry from fresh work.
-            # ``category`` is read here off the base table — and this SELECT is
-            # the *only* reason the physical ``pipeline_tasks.category`` column
-            # still exists. 20260622_032938 dropped it (shimming the views with
-            # NULL) but missed this read, so 20260622_055500 had to re-add the
-            # base column. The value is always NULL — category is vestigial
-            # (superseded by ``niche_slug``, #796); nothing populates it — and
-            # ``content_router_service`` defaults it to "technology" downstream.
-            # Kept in the SELECT for back-compat; do not assume a real value.
+            # ``category`` is intentionally NOT selected: the vestigial
+            # ``pipeline_tasks.category`` column was retired (dropped) in the
+            # Phase F squash. It was always NULL (superseded by ``niche_slug``,
+            # #796) and content_router defaults the content-category hint to
+            # "technology" regardless — this SELECT was its last reader.
             row = await conn.fetchrow(
                 """
                 SELECT task_id, topic, style, tone, target_length,
-                       category, target_audience, niche_slug,
+                       target_audience, niche_slug,
                        template_slug, primary_keyword, site_id
                 FROM pipeline_tasks
                 WHERE status IN ('pending', 'rejected_retry')
@@ -423,7 +420,8 @@ async def _run_content_generation_flow(
         style = claimed.get("style") or style
         tone = claimed.get("tone") or tone
         target_length = int(claimed.get("target_length") or target_length)
-        category = claimed.get("category")
+        # ``category`` no longer claimed (column retired in the Phase F squash);
+        # the flow param / "technology" default carries the content-category hint.
         target_audience = claimed.get("target_audience")
 
     # Surface trace_id correlation. Prefect run_id is the canonical

@@ -99,10 +99,12 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5433/poindexter_brain \
 
 The migration history is squashed into a single
 `0000_baseline.py` (plus `0000_baseline.schema.sql` +
-`0000_baseline.seeds.sql`) — re-rolled most recently by the Phase E
-squash (2026-06-06) — so the post-baseline count is much smaller
-than it was pre-squash. Derive the expected count dynamically — the
-`-1` subtracts `__init__.py`:
+`0000_baseline.seeds.sql`) — re-rolled most recently by the Phase F
+squash (2026-06-22), which folded the Phase E baseline + its 73
+post-baseline migrations and retired `pipeline_tasks.category` — so the
+post-baseline count is now just **2** (the baseline + the one surviving
+`drop_pipeline_tasks_category` convergence migration). Derive the
+expected count dynamically — the `-1` subtracts `__init__.py`:
 
 ```bash
 python -c "from pathlib import Path; n=len(list(Path('src/cofounder_agent/services/migrations').glob('*.py')))-1; print(f'expect ~{n} migrations applied')"
@@ -148,21 +150,22 @@ SELECT
 "
 ```
 
-**Expected (verified 2026-05-05 against the smoke test):**
+**Expected (verified 2026-06-22 against the Phase F baseline):**
 
 ```
  migrations | app_settings_seeded | qa_gates_seeded | niches_seeded | oauth_clients_seeded | tables
 ------------+---------------------+-----------------+---------------+----------------------+--------
-        144 |                 149 |               6 |             2 |                    0 |     78
+          2 |                 761 |              16 |             2 |                    0 |     94
 ```
 
-Note: `app_settings_seeded = 149` is the **migration-seeded baseline**.
-The full ~700-key set documented in `CLAUDE.md` materialises after
-the first worker boot — settings the worker queries at runtime that
-weren't pre-seeded by a migration get inserted lazily by the
-`SettingsService` with their code-side defaults. **This is a known
-gap**, tracked separately for #378 — see the
-[Follow-ups](#follow-ups-and-known-gaps) section.
+Note: `app_settings_seeded = 761` is the **full non-secret set** —
+since the Phase E/F baselines are generated fold-forward from real DB
+state, `0000_baseline.seeds.sql` now ships every `is_secret = false`
+key (no longer just a minimal migration-seeded subset). Secret keys and
+per-operator identity are NOT seeded; `poindexter setup` writes those.
+`settings_defaults.py` still runs `seed_all_defaults()` at every boot as
+an idempotent backstop, but on a fresh install the seeds file has
+already populated the non-secret defaults.
 
 `oauth_clients_seeded = 0` is correct — the initial CLI client gets
 provisioned by `poindexter setup` per-installation (each install

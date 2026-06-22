@@ -212,7 +212,11 @@ class TestContentGenerationFlow:
         kwargs = pipeline_mock.call_args.kwargs
         assert kwargs["topic"] == "Why FastAPI beats Flask for AI APIs"
         assert kwargs["task_id"] == "task-claim-1"
-        assert kwargs["category"] == "ai_ml"
+        # ``category`` was retired in the Phase F squash — the schedule-driven
+        # path no longer claims it off the row (the content-category hint is
+        # defaulted inside process_content_generation_task), so the flow forwards
+        # the param default of None rather than the row's vestigial value.
+        assert kwargs["category"] is None
 
     @pytest.mark.asyncio
     async def test_operator_triggered_uses_supplied_args(self):

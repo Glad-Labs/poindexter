@@ -86,7 +86,9 @@ async def test_claim_returns_pending_row_and_flips_status(test_pool) -> None:
         # broken — list them explicitly so a future deletion is caught.
         for required_col in (
             "task_id", "topic", "style", "tone", "target_length",
-            "category", "target_audience", "niche_slug",
+            # ``category`` retired in the Phase F squash — claim_pending_task no
+            # longer SELECTs it; ``niche_slug`` (#796) is the live replacement.
+            "target_audience", "niche_slug",
             "template_slug", "primary_keyword", "site_id",
         ):
             assert required_col in claimed, (

@@ -1764,12 +1764,12 @@ class TestAddTaskAgainstRealDb:
         assert row["task_type"] == "blog_post"
         assert row["content_type"] == "blog_post"  # view-derived from task_type
         assert row["status"] == "pending"
-        # category reads back NULL through the view: 20260622_032938 made the
-        # content_tasks view project ``NULL::varchar AS category`` and the
-        # write-through trigger stop carrying it. 20260622_055500 later re-added
-        # the physical base column (for the claim path) but did NOT restore the
-        # view projection or the trigger — so a write through the view is still
-        # accepted-but-ignored and the view still reads NULL.
+        # category reads back NULL through the view. The base column was retired
+        # (Phase F: claim no longer reads it + …_drop_pipeline_tasks_category drops
+        # it); the content_tasks view keeps the 032938 literal ``NULL::varchar AS
+        # category`` shim. add_task still accepts the legacy ``category`` key
+        # (passed above) without error — it omits it from the INSERT — so this
+        # also guards that the dropped column doesn't break the writer.
         assert row["category"] is None
 
         meta = row["task_metadata"]
@@ -1834,31 +1834,30 @@ class TestAddTaskAgainstRealDb:
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM pipeline_tasks WHERE task_id = $1", task_id)
 
-    async def test_category_column_present_on_base_table_and_views(self, db_pool):
-        """``pipeline_tasks.category`` is a physical column on the base table.
+    async def test_category_column_dropped_from_base_table_views_retain_null_shim(self, db_pool):
+        """``pipeline_tasks.category`` is gone from the base table; the views keep
+        their literal-NULL ``category`` shim.
 
-        History — two same-day migrations that cancel out:
+        End of a long retirement:
 
-          * ``20260622_032938`` dropped ``category`` as a "shimmed drop" (#1843):
-            the views kept a ``NULL::varchar AS category`` projection and the
-            INSTEAD OF triggers stopped writing it. But that drop missed the
-            ``claim_pending_task`` SELECT in
-            ``services/flows/content_generation.py``, which reads ``category``
-            straight off ``pipeline_tasks`` — so after deploy every task-claim
-            crashed with ``UndefinedColumnError`` and the pipeline went dark.
-          * ``20260622_055500`` re-added the column with
-            ``ADD COLUMN IF NOT EXISTS`` to restore the claim path (#1853). It
-            lands at the end of the table (ordinal 41 on prod ``poindexter_brain``).
+          * baseline added ``category`` → ``20260622_032938`` (#1843) dropped it
+            (shimmed via views) → ``20260622_055500`` (#1853) re-added the base
+            column because that drop missed ``claim_pending_task``'s SELECT →
+            #1867 reconciled it to base-table-only.
+          * The Phase F squash retires it for good: ``claim_pending_task`` no
+            longer reads it, and ``…_drop_pipeline_tasks_category`` drops the base
+            column (the Phase F baseline omits it; the migration converges
+            existing installs like prod).
 
-        Final state asserted here against a fully-migrated DB:
+        Asserted against a fully-migrated DB:
 
-          * ``pipeline_tasks.category`` exists again — guards against a future
-            re-drop that would re-break ``claim_pending_task``.
-          * The ``content_tasks`` / ``pipeline_tasks_view`` views still carry a
-            ``category`` column. 055500 only touched the base table, so the
-            032938 NULL shim is still what the views project — the back-compat
-            read surface (``SELECT *`` / ``TaskRecord.category`` / the
-            ``?category=`` filter) keeps resolving.
+          * ``pipeline_tasks.category`` no longer exists — guards against a re-add
+            (the column is retired, superseded by ``niche_slug``, #796).
+          * The ``content_tasks`` / ``pipeline_tasks_view`` views STILL carry a
+            ``category`` column — the 032938 literal ``NULL::varchar`` shim, which
+            never depended on the base column — so the back-compat read surface
+            (``SELECT *`` / ``TaskRecord.category`` / the ``?category=`` filter)
+            keeps resolving to NULL.
         """
         async with db_pool.acquire() as conn:
             base_col = await conn.fetchval(
@@ -1874,125 +1873,13 @@ class TestAddTaskAgainstRealDb:
                 "WHERE table_name = 'pipeline_tasks_view' AND column_name = 'category'"
             )
 
-        assert base_col == 1, (
-            "pipeline_tasks.category must exist as a physical column — 20260622_055500 "
-            "re-added it because claim_pending_task SELECTs it off the base table; "
-            "re-dropping it re-breaks the claim path"
+        assert base_col is None, (
+            "pipeline_tasks.category must be dropped — it is retired (superseded by "
+            "niche_slug, #796); claim_pending_task no longer reads it and "
+            "…_drop_pipeline_tasks_category removes it"
         )
-        assert view_col == 1, "content_tasks must keep its category column (032938 NULL shim)"
-        assert ptv_col == 1, "pipeline_tasks_view must keep its category column (032938 NULL shim)"
-
-    async def test_add_task_does_not_populate_base_category_column(self, db_pool):
-        """Writer contract: ``add_task`` must NOT write ``pipeline_tasks.category``.
-
-        ``category`` is vestigial — superseded by ``niche_slug`` (#796) — and is
-        deliberately absent from the ``add_task`` INSERT column list. The sibling
-        ``test_add_task_writes_row_visible_via_view`` only proves the *view* reads
-        NULL, which is ambiguous: it could be the 032938 NULL shim OR an omitted
-        write. This reads the **base column directly** to pin the writer side of
-        the base-table-only contract — ``add_task`` drops category regardless of
-        the view shim.
-        """
-        from services.tasks_db import TasksDatabase
-
-        db = TasksDatabase(pool=db_pool)
-        task_id = await db.add_task({
-            "topic": "category-writer-contract",
-            "task_type": "blog_post",
-            "category": "should_be_dropped_by_writer",
-        })
-        try:
-            async with db_pool.acquire() as conn:
-                base_row = await conn.fetchrow(
-                    "SELECT topic, category FROM pipeline_tasks WHERE task_id = $1",
-                    task_id,
-                )
-            # The row must exist (so the None below can't be a false pass from a
-            # missing row) ...
-            assert base_row is not None, "add_task must create the base pipeline_tasks row"
-            assert base_row["topic"] == "category-writer-contract"
-            # ... but the supplied ``category`` must NOT have been persisted.
-            assert base_row["category"] is None, (
-                "add_task must not populate pipeline_tasks.category — the column is "
-                "vestigial (superseded by niche_slug, #796) and intentionally absent "
-                "from the INSERT column list"
-            )
-        finally:
-            async with db_pool.acquire() as conn:
-                await conn.execute(
-                    "DELETE FROM pipeline_tasks WHERE task_id = $1", task_id
-                )
-
-    async def test_real_base_category_value_is_not_surfaced_through_views(self, db_pool):
-        """View contract: a REAL ``pipeline_tasks.category`` value must NOT
-        surface through the ``content_tasks`` / ``pipeline_tasks_view`` views.
-
-        This is the guard that locks the *base-table-only* reconciliation of the
-        032938-drop / 055500-readd inconsistency. 055500 re-added the physical
-        column for the claim path but left 032938's ``NULL::varchar AS category``
-        projection in both views (and the category-free INSTEAD OF triggers) in
-        place — by design, because category is retired. We write a real value
-        straight to the base column (bypassing ``add_task``, which omits it, and
-        the view trigger, which drops it) and assert both views still read NULL.
-
-        If a future change "restores to canonical" by rebuilding the views to read
-        ``pt.category``, this fails loudly — forcing a conscious decision rather
-        than a silent behaviour change.
-        """
-        from services.tasks_db import TasksDatabase
-
-        db = TasksDatabase(pool=db_pool)
-        task_id = await db.add_task({
-            "topic": "category-view-shim-contract",
-            "task_type": "blog_post",
-        })
-        sentinel = "REAL_BASE_VALUE_should_not_leak"
-        try:
-            async with db_pool.acquire() as conn:
-                # Write straight to the base column — NOT through the content_tasks
-                # view (whose INSTEAD OF trigger drops category).
-                await conn.execute(
-                    "UPDATE pipeline_tasks SET category = $2 WHERE task_id = $1",
-                    task_id,
-                    sentinel,
-                )
-                base_row = await conn.fetchrow(
-                    "SELECT category FROM pipeline_tasks WHERE task_id = $1",
-                    task_id,
-                )
-                ct_row = await conn.fetchrow(
-                    "SELECT topic, category FROM content_tasks WHERE task_id = $1",
-                    task_id,
-                )
-                ptv_row = await conn.fetchrow(
-                    "SELECT topic, category FROM pipeline_tasks_view WHERE task_id = $1",
-                    task_id,
-                )
-            # Sanity: the base column really does store the directly-written value.
-            assert base_row is not None and base_row["category"] == sentinel, (
-                f"base column did not store value: {base_row and base_row['category']!r}"
-            )
-            # The rows ARE visible through both views (so the NULL asserts below
-            # can't be a false pass from a missing row) ...
-            assert ct_row is not None, "row must be visible through content_tasks"
-            assert ct_row["topic"] == "category-view-shim-contract"
-            assert ptv_row is not None, "row must be visible through pipeline_tasks_view"
-            assert ptv_row["topic"] == "category-view-shim-contract"
-            # ... but neither surfaces the base category value: both project the
-            # 032938 ``NULL::varchar AS category`` shim, not ``pt.category``.
-            assert ct_row["category"] is None, (
-                "content_tasks.category must be the 032938 NULL shim, not pt.category — "
-                "category is base-table-only by design (retired in #796, superseded by "
-                "niche_slug)"
-            )
-            assert ptv_row["category"] is None, (
-                "pipeline_tasks_view.category must be the 032938 NULL shim, not pt.category"
-            )
-        finally:
-            async with db_pool.acquire() as conn:
-                await conn.execute(
-                    "DELETE FROM pipeline_tasks WHERE task_id = $1", task_id
-                )
+        assert view_col == 1, "content_tasks must keep its literal-NULL category shim (back-compat)"
+        assert ptv_col == 1, "pipeline_tasks_view must keep its literal-NULL category shim (back-compat)"
 
 
 # ---------------------------------------------------------------------------

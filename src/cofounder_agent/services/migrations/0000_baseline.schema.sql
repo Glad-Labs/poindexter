@@ -3,24 +3,30 @@
 --
 
 
-
-
 --
--- Name: public; Type: SCHEMA; Schema: -; Owner: -
---
-
-CREATE SCHEMA IF NOT EXISTS public;
-
-
---
--- Extensions (required before dependent types like public.vector)
+-- Name: pg_stat_statements; Type: EXTENSION; Schema: -; Owner: -
 --
 
 CREATE EXTENSION IF NOT EXISTS pg_stat_statements WITH SCHEMA public;
 
+
+--
+-- Name: pg_trgm; Type: EXTENSION; Schema: -; Owner: -
+--
+
 CREATE EXTENSION IF NOT EXISTS pg_trgm WITH SCHEMA public;
 
+
+--
+-- Name: pgcrypto; Type: EXTENSION; Schema: -; Owner: -
+--
+
 CREATE EXTENSION IF NOT EXISTS pgcrypto WITH SCHEMA public;
+
+
+--
+-- Name: vector; Type: EXTENSION; Schema: -; Owner: -
+--
 
 CREATE EXTENSION IF NOT EXISTS vector WITH SCHEMA public;
 
@@ -65,6 +71,20 @@ $$;
 
 
 --
+-- Name: app_settings_set_updated_at(); Type: FUNCTION; Schema: public; Owner: -
+--
+
+CREATE OR REPLACE FUNCTION public.app_settings_set_updated_at() RETURNS trigger
+    LANGUAGE plpgsql
+    AS $$
+BEGIN
+    NEW.updated_at = now();
+    RETURN NEW;
+END;
+$$;
+
+
+--
 -- Name: content_tasks_delete_redirect(); Type: FUNCTION; Schema: public; Owner: -
 --
 
@@ -86,8 +106,8 @@ CREATE OR REPLACE FUNCTION public.content_tasks_insert_redirect() RETURNS trigge
     LANGUAGE plpgsql
     AS $$
 BEGIN
-    INSERT INTO pipeline_tasks (task_id, task_type, topic, status, stage, style, tone, target_length, category, primary_keyword, target_audience, percentage, message, model_used, error_message, created_at, updated_at)
-    VALUES (NEW.task_id, COALESCE(NEW.task_type, 'blog_post'), COALESCE(NEW.topic, NEW.title, 'untitled'), COALESCE(NEW.status, 'pending'), COALESCE(NEW.stage, 'pending'), COALESCE(NEW.style, 'technical'), COALESCE(NEW.tone, 'professional'), COALESCE(NEW.target_length, 1500), NEW.category, NEW.primary_keyword, NEW.target_audience, COALESCE(NEW.percentage, 0), NEW.message, NEW.model_used, NEW.error_message, COALESCE(NEW.created_at, NOW()), COALESCE(NEW.updated_at, NOW()))
+    INSERT INTO pipeline_tasks (task_id, task_type, topic, status, stage, style, tone, target_length, primary_keyword, target_audience, percentage, message, model_used, error_message, created_at, updated_at)
+    VALUES (NEW.task_id, COALESCE(NEW.task_type, 'blog_post'), COALESCE(NEW.topic, NEW.title, 'untitled'), COALESCE(NEW.status, 'pending'), COALESCE(NEW.stage, 'pending'), COALESCE(NEW.style, 'technical'), COALESCE(NEW.tone, 'professional'), COALESCE(NEW.target_length, 1500), NEW.primary_keyword, NEW.target_audience, COALESCE(NEW.percentage, 0), NEW.message, NEW.model_used, NEW.error_message, COALESCE(NEW.created_at, NOW()), COALESCE(NEW.updated_at, NOW()))
     ON CONFLICT (task_id) DO NOTHING;
 
     INSERT INTO pipeline_versions (task_id, version, title, content, excerpt, featured_image_url, seo_title, seo_description, seo_keywords, quality_score, qa_feedback, models_used_by_phase, stage_data)
@@ -125,7 +145,6 @@ BEGIN
         message = COALESCE(NEW.message, pipeline_tasks.message),
         model_used = COALESCE(NEW.model_used, pipeline_tasks.model_used),
         error_message = COALESCE(NEW.error_message, pipeline_tasks.error_message),
-        category = COALESCE(NEW.category, pipeline_tasks.category),
         style = COALESCE(NEW.style, pipeline_tasks.style),
         tone = COALESCE(NEW.tone, pipeline_tasks.tone),
         target_audience = COALESCE(NEW.target_audience, pipeline_tasks.target_audience),
@@ -257,6 +276,39 @@ CREATE OR REPLACE FUNCTION public.webhook_endpoints_touch_updated_at() RETURNS t
     AS $$ BEGIN NEW.updated_at = now(); RETURN NEW; END; $$;
 
 
+--
+-- Name: agent_permissions; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.agent_permissions (
+    id bigint NOT NULL,
+    agent_name character varying(100) NOT NULL,
+    resource character varying(100) NOT NULL,
+    action character varying(20) NOT NULL,
+    allowed boolean DEFAULT false NOT NULL,
+    requires_approval boolean DEFAULT false NOT NULL,
+    description text DEFAULT ''::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: agent_permissions_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.agent_permissions_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: agent_permissions_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.agent_permissions_id_seq OWNED BY public.agent_permissions.id;
 
 
 --
@@ -396,13 +448,18 @@ ALTER SEQUENCE public.alert_log_id_seq OWNED BY public.alert_log.id;
 CREATE TABLE IF NOT EXISTS public.app_settings (
     id integer NOT NULL,
     key character varying(255) NOT NULL,
-    value text DEFAULT ''::text,
+    value text DEFAULT ''::text NOT NULL,
     category character varying(100) DEFAULT 'general'::character varying,
     description text DEFAULT ''::text,
     is_secret boolean DEFAULT false,
     created_at timestamp with time zone DEFAULT now(),
     updated_at timestamp with time zone DEFAULT now(),
-    is_active boolean DEFAULT true NOT NULL
+    is_active boolean DEFAULT true NOT NULL,
+    owner text,
+    value_type text,
+    deprecated boolean DEFAULT false NOT NULL,
+    superseded_by text,
+    CONSTRAINT app_settings_value_type_check CHECK ((value_type = ANY (ARRAY['string'::text, 'boolean'::text, 'integer'::text, 'float'::text, 'url'::text, 'model'::text, 'csv'::text, 'json'::text, 'duration'::text])))
 );
 
 
@@ -435,6 +492,43 @@ CREATE TABLE IF NOT EXISTS public.app_state (
     revision bigint,
     content text
 );
+
+
+--
+-- Name: approval_queue; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.approval_queue (
+    id bigint NOT NULL,
+    agent_name character varying(100) NOT NULL,
+    resource character varying(100) NOT NULL,
+    action character varying(20) NOT NULL,
+    proposed_change jsonb NOT NULL,
+    reason text DEFAULT ''::text NOT NULL,
+    status character varying(20) DEFAULT 'pending'::character varying NOT NULL,
+    reviewed_by character varying(100),
+    reviewed_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: approval_queue_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.approval_queue_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: approval_queue_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.approval_queue_id_seq OWNED BY public.approval_queue.id;
 
 
 --
@@ -522,6 +616,44 @@ ALTER SEQUENCE public.audit_log_id_seq OWNED BY public.audit_log.id;
 
 
 --
+-- Name: audit_log_summaries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.audit_log_summaries (
+    id bigint NOT NULL,
+    bucket_start timestamp with time zone NOT NULL,
+    bucket_end timestamp with time zone NOT NULL,
+    row_count integer NOT NULL,
+    event_type_counts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    severity_counts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    top_sources jsonb,
+    error_excerpts jsonb,
+    summary_text text,
+    summary_method text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: audit_log_summaries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.audit_log_summaries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: audit_log_summaries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.audit_log_summaries_id_seq OWNED BY public.audit_log_summaries.id;
+
+
+--
 -- Name: authors; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -532,6 +664,88 @@ CREATE TABLE IF NOT EXISTS public.authors (
     avatar_url character varying(500),
     created_at timestamp with time zone DEFAULT now()
 );
+
+
+--
+-- Name: bench_run_results; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.bench_run_results (
+    id integer NOT NULL,
+    run_id uuid DEFAULT gen_random_uuid() NOT NULL,
+    model text NOT NULL,
+    tier text,
+    provider text NOT NULL,
+    prompt_label text,
+    prompt_tokens integer DEFAULT 0 NOT NULL,
+    completion_tokens integer DEFAULT 0 NOT NULL,
+    total_tokens integer DEFAULT 0 NOT NULL,
+    duration_ms integer DEFAULT 0 NOT NULL,
+    gpu_watts_avg numeric(8,2),
+    electricity_kwh numeric(12,8),
+    cost_usd numeric(10,6),
+    quality_score numeric(5,2),
+    joules_per_token numeric(12,4),
+    tokens_per_second numeric(10,2),
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: bench_run_results_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.bench_run_results_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: bench_run_results_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.bench_run_results_id_seq OWNED BY public.bench_run_results.id;
+
+
+--
+-- Name: brain_decision_summaries; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.brain_decision_summaries (
+    id bigint NOT NULL,
+    bucket_start timestamp with time zone NOT NULL,
+    bucket_end timestamp with time zone NOT NULL,
+    row_count integer NOT NULL,
+    outcome_counts jsonb DEFAULT '{}'::jsonb NOT NULL,
+    avg_confidence double precision,
+    decision_excerpts jsonb,
+    summary_text text,
+    summary_method text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: brain_decision_summaries_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.brain_decision_summaries_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: brain_decision_summaries_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.brain_decision_summaries_id_seq OWNED BY public.brain_decision_summaries.id;
 
 
 --
@@ -819,7 +1033,7 @@ CREATE TABLE IF NOT EXISTS public.pipeline_distributions (
 CREATE TABLE IF NOT EXISTS public.pipeline_gate_history (
     id bigint NOT NULL,
     task_id text,
-    post_id text,
+    post_id uuid,
     gate_name text NOT NULL,
     event_kind text NOT NULL,
     feedback text,
@@ -845,7 +1059,6 @@ CREATE TABLE IF NOT EXISTS public.pipeline_tasks (
     style character varying DEFAULT 'technical'::character varying,
     tone character varying DEFAULT 'professional'::character varying,
     target_length integer DEFAULT 1500,
-    category character varying,
     primary_keyword character varying,
     target_audience character varying,
     percentage integer DEFAULT 0,
@@ -865,7 +1078,16 @@ CREATE TABLE IF NOT EXISTS public.pipeline_tasks (
     topic_batch_id uuid,
     template_slug text,
     auto_cancelled_at timestamp with time zone,
-    retry_count integer DEFAULT 0 NOT NULL
+    retry_count integer DEFAULT 0 NOT NULL,
+    media_pipeline_dispatched_at timestamp with time zone,
+    podcast_dispatched_at timestamp with time zone,
+    media_pipeline_redispatch_count integer DEFAULT 0 NOT NULL,
+    last_progress_at timestamp with time zone,
+    regen_images_attempts integer DEFAULT 0 NOT NULL,
+    regen_images_pending boolean DEFAULT false NOT NULL,
+    regen_text_attempts integer DEFAULT 0 NOT NULL,
+    regen_text_pending boolean DEFAULT false NOT NULL,
+    CONSTRAINT pipeline_tasks_status_check CHECK (status IN ('pending', 'in_progress', 'approved', 'awaiting_approval', 'awaiting_gate', 'rejected', 'rejected_retry', 'rejected_final', 'failed', 'completed', 'published', 'cancelled', 'dry_run', 'superseded', 'archived'))
 );
 
 
@@ -908,7 +1130,7 @@ CREATE OR REPLACE VIEW public.content_tasks AS
     pt.style,
     pt.tone,
     pt.target_length,
-    pt.category,
+    NULL::character varying AS category,
     pt.primary_keyword,
     pt.target_audience,
     pv.content,
@@ -1414,7 +1636,8 @@ CREATE TABLE IF NOT EXISTS public.external_taps (
     total_runs bigint DEFAULT 0 NOT NULL,
     total_records bigint DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    niche_id uuid
 );
 
 
@@ -1665,6 +1888,18 @@ CREATE TABLE IF NOT EXISTS public.internal_topic_candidates (
 
 
 --
+-- Name: job_run_state; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.job_run_state (
+    job_name text NOT NULL,
+    last_run_at timestamp with time zone,
+    last_status text,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
 -- Name: jwt_blocklist; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1730,6 +1965,41 @@ CREATE TABLE IF NOT EXISTS public.media_assets (
     cost_usd numeric(10,6),
     electricity_kwh numeric(12,8),
     platform_video_ids jsonb DEFAULT '{}'::jsonb NOT NULL
+);
+
+
+--
+-- Name: media_assets_dedup_backup; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.media_assets_dedup_backup (
+    id uuid NOT NULL,
+    tenant_id uuid,
+    site_id uuid,
+    type character varying(30) NOT NULL,
+    source character varying(30) NOT NULL,
+    storage_provider character varying(30),
+    url character varying(1000),
+    storage_path character varying(1000),
+    thumbnail_url character varying(1000),
+    title character varying(500),
+    description text,
+    alt_text character varying(500),
+    metadata jsonb,
+    ai_metadata jsonb,
+    task_id character varying(255),
+    created_at timestamp with time zone,
+    updated_at timestamp with time zone,
+    post_id uuid,
+    provider_plugin character varying(128),
+    width integer,
+    height integer,
+    duration_ms integer,
+    file_size_bytes bigint,
+    mime_type character varying(64),
+    cost_usd numeric(10,6),
+    electricity_kwh numeric(12,8),
+    platform_video_ids jsonb NOT NULL
 );
 
 
@@ -2150,7 +2420,7 @@ CREATE OR REPLACE VIEW public.pipeline_tasks_view AS
     pt.style,
     pt.tone,
     pt.target_length,
-    pt.category,
+    NULL::character varying AS category,
     pt.primary_keyword,
     pt.target_audience,
     pv.content,
@@ -2538,6 +2808,41 @@ CREATE TABLE IF NOT EXISTS public.sensor_samples (
 
 
 --
+-- Name: sensor_samples_hourly; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.sensor_samples_hourly (
+    id bigint NOT NULL,
+    bucket_start timestamp with time zone NOT NULL,
+    source text NOT NULL,
+    metric_name text NOT NULL,
+    avg_value numeric(14,4),
+    min_value numeric(14,4),
+    max_value numeric(14,4),
+    sample_count bigint DEFAULT 0 NOT NULL
+);
+
+
+--
+-- Name: sensor_samples_hourly_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.sensor_samples_hourly_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: sensor_samples_hourly_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.sensor_samples_hourly_id_seq OWNED BY public.sensor_samples_hourly.id;
+
+
+--
 -- Name: sensor_samples_id_seq; Type: SEQUENCE; Schema: public; Owner: -
 --
 
@@ -2554,6 +2859,72 @@ CREATE SEQUENCE IF NOT EXISTS public.sensor_samples_id_seq
 --
 
 ALTER SEQUENCE public.sensor_samples_id_seq OWNED BY public.sensor_samples.id;
+
+
+--
+-- Name: sensor_samples_unified; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE OR REPLACE VIEW public.sensor_samples_unified AS
+ SELECT sensor_samples.sampled_at,
+    sensor_samples.source,
+    sensor_samples.metric_name,
+    sensor_samples.metric_value,
+    sensor_samples.unit,
+    sensor_samples.dimensions
+   FROM public.sensor_samples
+UNION ALL
+ SELECT sensor_samples_hourly.bucket_start AS sampled_at,
+    sensor_samples_hourly.source,
+    sensor_samples_hourly.metric_name,
+    sensor_samples_hourly.avg_value AS metric_value,
+    NULL::text AS unit,
+    '{}'::jsonb AS dimensions
+   FROM public.sensor_samples_hourly
+  WHERE (sensor_samples_hourly.bucket_start < (now() - '30 days'::interval));
+
+
+--
+-- Name: seo_opportunities; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.seo_opportunities (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    post_id uuid,
+    slug text NOT NULL,
+    target_query text DEFAULT ''::text NOT NULL,
+    tier text NOT NULL,
+    current_position numeric(6,2),
+    impressions integer DEFAULT 0 NOT NULL,
+    ctr numeric(8,5),
+    gap_score numeric(12,2) DEFAULT 0 NOT NULL,
+    status text DEFAULT 'open'::text NOT NULL,
+    detected_at timestamp with time zone DEFAULT now() NOT NULL,
+    baseline_position numeric(6,2),
+    baseline_ctr numeric(8,5),
+    outcome_position numeric(6,2),
+    outcome_ctr numeric(8,5),
+    outcome_measured_at timestamp with time zone,
+    refreshed_at timestamp with time zone
+);
+
+
+--
+-- Name: skill_catalog; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.skill_catalog (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    name text NOT NULL,
+    pack text DEFAULT 'imported'::text NOT NULL,
+    source_url text,
+    license text NOT NULL,
+    description text,
+    import_hash text NOT NULL,
+    prompt_count integer DEFAULT 0 NOT NULL,
+    installed_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
 
 
 --
@@ -2707,6 +3078,26 @@ CREATE TABLE IF NOT EXISTS public.topic_candidates (
 
 
 --
+-- Name: topic_pool; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.topic_pool (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    niche_id uuid NOT NULL,
+    source text NOT NULL,
+    title text NOT NULL,
+    summary text DEFAULT ''::text NOT NULL,
+    url text DEFAULT ''::text NOT NULL,
+    category text DEFAULT ''::text NOT NULL,
+    score double precision DEFAULT 0 NOT NULL,
+    dedup_key text NOT NULL,
+    status text DEFAULT 'pooled'::text NOT NULL,
+    ingested_at timestamp with time zone DEFAULT now() NOT NULL,
+    batched_at timestamp with time zone
+);
+
+
+--
 -- Name: users; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2825,6 +3216,13 @@ ALTER SEQUENCE public.writing_samples_id_seq OWNED BY public.writing_samples.id;
 
 
 --
+-- Name: agent_permissions id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_permissions ALTER COLUMN id SET DEFAULT nextval('public.agent_permissions_id_seq'::regclass);
+
+
+--
 -- Name: alert_actions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2853,6 +3251,13 @@ ALTER TABLE ONLY public.app_settings ALTER COLUMN id SET DEFAULT nextval('public
 
 
 --
+-- Name: approval_queue id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approval_queue ALTER COLUMN id SET DEFAULT nextval('public.approval_queue_id_seq'::regclass);
+
+
+--
 -- Name: atom_runs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -2864,6 +3269,27 @@ ALTER TABLE ONLY public.atom_runs ALTER COLUMN id SET DEFAULT nextval('public.at
 --
 
 ALTER TABLE ONLY public.audit_log ALTER COLUMN id SET DEFAULT nextval('public.audit_log_id_seq'::regclass);
+
+
+--
+-- Name: audit_log_summaries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_log_summaries ALTER COLUMN id SET DEFAULT nextval('public.audit_log_summaries_id_seq'::regclass);
+
+
+--
+-- Name: bench_run_results id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bench_run_results ALTER COLUMN id SET DEFAULT nextval('public.bench_run_results_id_seq'::regclass);
+
+
+--
+-- Name: brain_decision_summaries id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.brain_decision_summaries ALTER COLUMN id SET DEFAULT nextval('public.brain_decision_summaries_id_seq'::regclass);
 
 
 --
@@ -3014,6 +3440,13 @@ ALTER TABLE ONLY public.sensor_samples ALTER COLUMN id SET DEFAULT nextval('publ
 
 
 --
+-- Name: sensor_samples_hourly id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sensor_samples_hourly ALTER COLUMN id SET DEFAULT nextval('public.sensor_samples_hourly_id_seq'::regclass);
+
+
+--
 -- Name: sync_metrics id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3025,6 +3458,22 @@ ALTER TABLE ONLY public.sync_metrics ALTER COLUMN id SET DEFAULT nextval('public
 --
 
 ALTER TABLE ONLY public.writing_samples ALTER COLUMN id SET DEFAULT nextval('public.writing_samples_id_seq'::regclass);
+
+
+--
+-- Name: agent_permissions agent_permissions_agent_name_resource_action_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_permissions
+    ADD CONSTRAINT agent_permissions_agent_name_resource_action_key UNIQUE (agent_name, resource, action);
+
+
+--
+-- Name: agent_permissions agent_permissions_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.agent_permissions
+    ADD CONSTRAINT agent_permissions_pkey PRIMARY KEY (id);
 
 
 --
@@ -3092,6 +3541,14 @@ ALTER TABLE ONLY public.app_state
 
 
 --
+-- Name: approval_queue approval_queue_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.approval_queue
+    ADD CONSTRAINT approval_queue_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: atom_runs atom_runs_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -3108,11 +3565,35 @@ ALTER TABLE ONLY public.audit_log
 
 
 --
+-- Name: audit_log_summaries audit_log_summaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.audit_log_summaries
+    ADD CONSTRAINT audit_log_summaries_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: authors authors_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.authors
     ADD CONSTRAINT authors_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: bench_run_results bench_run_results_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.bench_run_results
+    ADD CONSTRAINT bench_run_results_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: brain_decision_summaries brain_decision_summaries_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.brain_decision_summaries
+    ADD CONSTRAINT brain_decision_summaries_pkey PRIMARY KEY (id);
 
 
 --
@@ -3409,6 +3890,14 @@ ALTER TABLE ONLY public.gpu_task_sessions
 
 ALTER TABLE ONLY public.internal_topic_candidates
     ADD CONSTRAINT internal_topic_candidates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: job_run_state job_run_state_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.job_run_state
+    ADD CONSTRAINT job_run_state_pkey PRIMARY KEY (job_name);
 
 
 --
@@ -3780,11 +4269,51 @@ ALTER TABLE ONLY public.schema_migrations
 
 
 --
+-- Name: sensor_samples_hourly sensor_samples_hourly_bucket_source_metric_unique; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sensor_samples_hourly
+    ADD CONSTRAINT sensor_samples_hourly_bucket_source_metric_unique UNIQUE (bucket_start, source, metric_name);
+
+
+--
+-- Name: sensor_samples_hourly sensor_samples_hourly_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.sensor_samples_hourly
+    ADD CONSTRAINT sensor_samples_hourly_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: sensor_samples sensor_samples_pkey; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
 ALTER TABLE ONLY public.sensor_samples
     ADD CONSTRAINT sensor_samples_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: seo_opportunities seo_opportunities_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.seo_opportunities
+    ADD CONSTRAINT seo_opportunities_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: skill_catalog skill_catalog_name_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.skill_catalog
+    ADD CONSTRAINT skill_catalog_name_key UNIQUE (name);
+
+
+--
+-- Name: skill_catalog skill_catalog_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.skill_catalog
+    ADD CONSTRAINT skill_catalog_pkey PRIMARY KEY (id);
 
 
 --
@@ -3865,6 +4394,14 @@ ALTER TABLE ONLY public.topic_candidates
 
 ALTER TABLE ONLY public.topic_candidates
     ADD CONSTRAINT topic_candidates_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: topic_pool topic_pool_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.topic_pool
+    ADD CONSTRAINT topic_pool_pkey PRIMARY KEY (id);
 
 
 --
@@ -4057,6 +4594,13 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_severity ON public.audit_log USING btre
 
 
 --
+-- Name: idx_audit_log_summaries_bucket_start; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_audit_log_summaries_bucket_start ON public.audit_log_summaries USING btree (bucket_start);
+
+
+--
 -- Name: idx_audit_log_task_id; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4068,6 +4612,34 @@ CREATE INDEX IF NOT EXISTS idx_audit_log_task_id ON public.audit_log USING btree
 --
 
 CREATE INDEX IF NOT EXISTS idx_audit_log_timestamp ON public.audit_log USING btree ("timestamp");
+
+
+--
+-- Name: idx_bench_run_results_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_bench_run_results_created ON public.bench_run_results USING btree (created_at);
+
+
+--
+-- Name: idx_bench_run_results_model; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_bench_run_results_model ON public.bench_run_results USING btree (model);
+
+
+--
+-- Name: idx_bench_run_results_tier; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_bench_run_results_tier ON public.bench_run_results USING btree (tier);
+
+
+--
+-- Name: idx_brain_decision_summaries_bucket_start; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_brain_decision_summaries_bucket_start ON public.brain_decision_summaries USING btree (bucket_start);
 
 
 --
@@ -4274,13 +4846,6 @@ CREATE INDEX IF NOT EXISTS idx_embeddings_text_search ON public.embeddings USING
 
 
 --
--- Name: idx_embeddings_writer; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX IF NOT EXISTS idx_embeddings_writer ON public.embeddings USING btree (writer);
-
-
---
 -- Name: idx_experiment_variants_active_lookup; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4334,6 +4899,13 @@ CREATE INDEX IF NOT EXISTS idx_external_taps_enabled ON public.external_taps USI
 --
 
 CREATE INDEX IF NOT EXISTS idx_external_taps_name ON public.external_taps USING btree (name);
+
+
+--
+-- Name: idx_external_taps_niche_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_external_taps_niche_id ON public.external_taps USING btree (niche_id) WHERE (niche_id IS NOT NULL);
 
 
 --
@@ -4579,13 +5151,6 @@ CREATE INDEX IF NOT EXISTS idx_pipeline_tasks_awaiting_gate ON public.pipeline_t
 --
 
 CREATE INDEX IF NOT EXISTS idx_pipeline_tasks_scheduled ON public.pipeline_tasks USING btree (status, scheduled_at) WHERE (scheduled_at IS NOT NULL);
-
-
---
--- Name: idx_pipeline_tasks_stage; Type: INDEX; Schema: public; Owner: -
---
-
-CREATE INDEX IF NOT EXISTS idx_pipeline_tasks_stage ON public.pipeline_tasks USING btree (stage);
 
 
 --
@@ -4848,6 +5413,34 @@ CREATE INDEX IF NOT EXISTS idx_sensor_samples_source_metric_time ON public.senso
 
 
 --
+-- Name: idx_seo_opportunities_gap_score; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_seo_opportunities_gap_score ON public.seo_opportunities USING btree (gap_score DESC);
+
+
+--
+-- Name: idx_seo_opportunities_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_seo_opportunities_status ON public.seo_opportunities USING btree (status);
+
+
+--
+-- Name: idx_seo_opportunities_tier; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_seo_opportunities_tier ON public.seo_opportunities USING btree (tier);
+
+
+--
+-- Name: idx_skill_catalog_pack; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_skill_catalog_pack ON public.skill_catalog USING btree (pack);
+
+
+--
 -- Name: idx_subscriber_events_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4887,6 +5480,20 @@ CREATE INDEX IF NOT EXISTS idx_task_status_history_created_at ON public.task_sta
 --
 
 CREATE INDEX IF NOT EXISTS idx_task_status_history_task_id ON public.task_status_history USING btree (task_id);
+
+
+--
+-- Name: idx_topic_pool_ingested_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_topic_pool_ingested_at ON public.topic_pool USING btree (ingested_at);
+
+
+--
+-- Name: idx_topic_pool_niche_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_topic_pool_niche_status ON public.topic_pool USING btree (niche_id, status);
 
 
 --
@@ -4981,6 +5588,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS orchestrator_training_data_execution_id_key ON
 
 
 --
+-- Name: sensor_samples_hourly_bucket_idx; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS sensor_samples_hourly_bucket_idx ON public.sensor_samples_hourly USING btree (bucket_start DESC);
+
+
+--
+-- Name: uniq_media_assets_post_video_type; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX IF NOT EXISTS uniq_media_assets_post_video_type ON public.media_assets USING btree (post_id, type) WHERE ((post_id IS NOT NULL) AND (type IN ('video', 'video_short')));
+
+
+--
 -- Name: uq_one_open_batch_per_niche; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -4995,10 +5616,31 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_sensor_samples_source_time_metric ON public
 
 
 --
+-- Name: uq_seo_opportunities_post_query; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_seo_opportunities_post_query ON public.seo_opportunities USING btree (post_id, target_query);
+
+
+--
+-- Name: uq_topic_pool_niche_dedup; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_topic_pool_niche_dedup ON public.topic_pool USING btree (niche_id, dedup_key);
+
+
+--
 -- Name: app_settings app_settings_auto_encrypt_trigger; Type: TRIGGER; Schema: public; Owner: -
 --
 
 CREATE TRIGGER app_settings_auto_encrypt_trigger BEFORE INSERT OR UPDATE OF value ON public.app_settings FOR EACH ROW EXECUTE FUNCTION public.app_settings_auto_encrypt();
+
+
+--
+-- Name: app_settings app_settings_set_updated_at_trigger; Type: TRIGGER; Schema: public; Owner: -
+--
+
+CREATE TRIGGER app_settings_set_updated_at_trigger BEFORE UPDATE OF value ON public.app_settings FOR EACH ROW EXECUTE FUNCTION public.app_settings_set_updated_at();
 
 
 --
@@ -5102,6 +5744,14 @@ ALTER TABLE ONLY public.discovery_runs
 
 ALTER TABLE ONLY public.experiment_variants
     ADD CONSTRAINT experiment_variants_experiment_id_fkey FOREIGN KEY (experiment_id) REFERENCES public.experiments(id) ON DELETE CASCADE;
+
+
+--
+-- Name: external_taps external_taps_niche_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.external_taps
+    ADD CONSTRAINT external_taps_niche_id_fkey FOREIGN KEY (niche_id) REFERENCES public.niches(id) ON DELETE CASCADE;
 
 
 --
@@ -5265,6 +5915,13 @@ ALTER TABLE ONLY public.topic_candidates
 
 
 --
--- PostgreSQL database dump complete
+-- Name: topic_pool topic_pool_niche_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
+ALTER TABLE ONLY public.topic_pool
+    ADD CONSTRAINT topic_pool_niche_id_fkey FOREIGN KEY (niche_id) REFERENCES public.niches(id) ON DELETE CASCADE;
+
+
+--
+-- PostgreSQL database dump complete
+--

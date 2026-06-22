@@ -336,9 +336,8 @@ class AIContentGenerator:
             if not (domain or "").strip():
                 logger.warning(
                     "[blog_system_prompt] domain missing -- rendering "
-                    "with sentinel %r. Backfill the "
-                    "pipeline_tasks.category column for this task to "
-                    "silence this warning.",
+                    "with sentinel %r. Supply a content-domain hint when "
+                    "creating the task to silence this warning.",
                     _domain,
                 )
             system_prompt = pm.get_prompt(
