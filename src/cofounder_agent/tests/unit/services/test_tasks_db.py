@@ -738,6 +738,76 @@ class TestUpdateTask:
 
         assert result == sentinel
 
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "field,value",
+        [
+            ("featured_image_data", {"sdxl_model": "z_image_turbo", "seed": 42}),
+            ("actual_cost", 1.23),
+            ("cost_breakdown", {"llm": 0.5, "image": 0.7}),
+        ],
+    )
+    async def test_jsonb_only_fields_not_emitted_as_phantom_columns(self, field, value):
+        """``featured_image_data`` / ``actual_cost`` / ``cost_breakdown`` are
+        ``task_metadata`` JSONB keys, NOT ``content_tasks`` columns.
+
+        Regression for the phantom-column write: ``update_task`` used to pull
+        these out of ``task_metadata`` and emit ``UPDATE content_tasks SET
+        <field> = …`` against a view that has no such column. Postgres raises
+        ``UndefinedColumnError``, which fails the *entire* update — silently
+        dropping the sibling status/stage/title writes batched in the same
+        call, not just spamming a log line. The canonical baseline never
+        defined these as columns on ``pipeline_tasks`` / ``pipeline_versions``
+        / the ``content_tasks`` view (``featured_image_data`` lives only on the
+        unrelated ``posts`` table). They must stay inside the ``task_metadata``
+        JSONB blob, which the INSTEAD OF UPDATE trigger maps to
+        ``pipeline_versions.stage_data -> 'task_metadata'`` and which
+        ``publish_service`` reads back from.
+        """
+        row = _make_row(task_id="t-1", status="pending")
+
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value=row)
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+
+        pool = MagicMock()
+        pool.acquire = _acquire
+        db = TasksDatabase(pool=pool)
+
+        with (
+            patch(f"{_CONVERTER}.to_task_response", return_value=MagicMock()),
+            patch(f"{_CONVERTER}.to_dict", return_value={"ok": True}),
+        ):
+            await db.update_task(
+                "t-1",
+                {"status": "awaiting_approval", "task_metadata": {field: value}},
+            )
+
+        # The first fetchrow is the resolve SELECT; isolate the redirect UPDATE.
+        update_calls = [
+            c for c in conn.fetchrow.call_args_list if "UPDATE" in c.args[0].upper()
+        ]
+        assert update_calls, "update_task must emit an UPDATE against content_tasks"
+        update_sql = update_calls[0].args[0]
+        update_params = update_calls[0].args[1:]
+
+        # 1. The phantom column must never appear in the UPDATE column list.
+        assert field not in update_sql, (
+            f"{field} is a task_metadata JSONB key, not a content_tasks column — "
+            f"it must not be emitted as `SET {field} = …` (no such view column)"
+        )
+
+        # 2. The value must survive inside the serialized task_metadata JSONB param.
+        blob = next(
+            (p for p in update_params if isinstance(p, str) and field in p), None
+        )
+        assert blob is not None, (
+            f"{field} must be preserved inside the task_metadata JSONB param"
+        )
+
 
 # ---------------------------------------------------------------------------
 # get_tasks_paginated

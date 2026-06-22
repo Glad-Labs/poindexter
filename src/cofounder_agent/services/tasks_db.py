@@ -712,11 +712,12 @@ class TasksDatabase(DatabaseServiceMixin):
                 and "featured_image_url" in task_metadata
             ):
                 normalized_updates["featured_image_url"] = task_metadata.get("featured_image_url")
-            if (
-                "featured_image_data" not in normalized_updates
-                and "featured_image_data" in task_metadata
-            ):
-                normalized_updates["featured_image_data"] = task_metadata.get("featured_image_data")
+            # featured_image_data / actual_cost / cost_breakdown are
+            # deliberately NOT extracted to top-level: they have no dedicated
+            # content_tasks column (the view projects featured_image_url, never
+            # featured_image_data). They ride inside task_metadata (JSONB) and
+            # the INSTEAD OF UPDATE trigger maps them to
+            # stage_data -> 'task_metadata'. See _VIEW_COLUMNS below.
             if "qa_feedback" not in normalized_updates and "qa_feedback" in task_metadata:
                 qa_fb = task_metadata.get("qa_feedback")
                 if isinstance(qa_fb, list):
@@ -736,15 +737,6 @@ class TasksDatabase(DatabaseServiceMixin):
                 normalized_updates["percentage"] = task_metadata.get("percentage")
             if "message" not in normalized_updates and "message" in task_metadata:
                 normalized_updates["message"] = task_metadata.get("message")
-            if "actual_cost" not in normalized_updates and "actual_cost" in task_metadata:
-                normalized_updates["actual_cost"] = task_metadata.get("actual_cost")
-            if "cost_breakdown" not in normalized_updates and "cost_breakdown" in task_metadata:
-                cost_breakdown = task_metadata.get("cost_breakdown")
-                normalized_updates["cost_breakdown"] = (
-                    json.dumps(cost_breakdown)
-                    if isinstance(cost_breakdown, dict)
-                    else cost_breakdown
-                )
             if "published_at" not in normalized_updates and "published_at" in task_metadata:
                 normalized_updates["published_at"] = task_metadata.get("published_at")
 
@@ -757,18 +749,26 @@ class TasksDatabase(DatabaseServiceMixin):
         # halting the pipeline at finalize_task. Fold any non-column keys
         # into task_metadata (JSONB) instead so the data survives without
         # crashing the write.
+        #
+        # This set MUST mirror the real content_tasks view columns (verify
+        # against information_schema.columns, not intuition). featured_image_data
+        # / actual_cost / cost_breakdown are intentionally absent — they are
+        # task_metadata JSONB keys, never view columns. Listing them here made
+        # the filter wave them through to `SET <key> = …`, which raised
+        # UndefinedColumnError and failed the whole update (dropping its sibling
+        # column writes too). featured_image_data lands on posts.featured_image_data
+        # at publish via task_metadata; the cost blobs ride in task_metadata.
         _VIEW_COLUMNS = {
             "id", "task_id", "task_type", "content_type", "title", "topic",
             "status", "stage", "style", "tone", "target_length", "category",
             "primary_keyword", "target_audience", "content", "excerpt",
-            "featured_image_url", "featured_image_data", "quality_score",
+            "featured_image_url", "quality_score",
             "qa_feedback", "seo_title", "seo_description", "seo_keywords",
             "percentage", "message", "model_used", "error_message",
             "models_used_by_phase", "metadata", "result", "task_metadata",
             "site_id", "created_at", "updated_at", "started_at",
             "completed_at", "approval_status", "approved_by",
             "human_feedback", "post_id", "post_slug", "published_at",
-            "actual_cost", "cost_breakdown",
         }
         rerouted_to_metadata: dict[str, Any] = {}
         for stray_key in list(normalized_updates.keys()):
