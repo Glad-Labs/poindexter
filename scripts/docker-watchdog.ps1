@@ -8,26 +8,39 @@
       2. Compose stack has the expected containers running
 
     Recovery:
-      - Launches Docker Desktop if process not running
+      - Launches Docker Desktop if the process is not running (AutoStart-off case)
+      - If the process IS running but the engine is unreachable - the wedged
+        WSL2-backend signature (engine 500 / HCS_E_CONNECTION_TIMEOUT) - confirms
+        it is not a transient blip, captures forensics + pings Telegram, then
+        force-recycles the VM with `wsl --shutdown` (Docker Desktop AutoStart
+        rebuilds it). A plain relaunch cannot fix this case.
       - Waits for engine readiness (up to 5min)
-      - Runs `docker compose up -d` to restart any stopped containers
+      - Runs the deploy clone's start-stack.sh to restart any stopped containers
 
     Why this exists: After the 2026-05-07 unexpected shutdown, Docker
     Desktop's `AutoStart` setting was False so nothing came back online -
     Grafana, Postgres, the whole stack was offline for 7+ hours. AutoStart
     is now True, but this watchdog catches the case where it silently flips
-    back during a Docker Desktop update or where the engine crashes.
+    back during a Docker Desktop update or where the engine crashes. The
+    2026-06-21 outage added the wedged-VM path: the engine returned 500 with
+    the Docker Desktop process still alive, so the old "wait then give up"
+    recovery could not help - only `wsl --shutdown` clears it.
 
     Modes:
       - One-shot:  .\docker-watchdog.ps1
       - Loop:      .\docker-watchdog.ps1 -Loop -IntervalSeconds 300
       - Install:   .\docker-watchdog.ps1 -Install   (5-min scheduled task)
       - Uninstall: .\docker-watchdog.ps1 -Uninstall
+
+    -WedgeConfirmSeconds (default 30): delay before re-checking a dead engine
+    when Docker Desktop is alive, so a transient `docker info` blip does not
+    trigger an unnecessary VM recycle.
 #>
 
 param(
     [switch]$Loop,
     [int]$IntervalSeconds = 300,
+    [int]$WedgeConfirmSeconds = 30,
     [switch]$Install,
     [switch]$Uninstall
 )
@@ -173,6 +186,87 @@ function Invoke-ComposeUp {
     }
 }
 
+# ---- WSL2-backend wedge recovery ----
+# The case the original watchdog could NOT recover: Docker Desktop's process is
+# alive, but the WSL2 utility VM is unresponsive - `docker info` returns 500 and
+# `wsl` calls time out with HCS_E_CONNECTION_TIMEOUT. Relaunching Docker Desktop
+# does nothing; the VM must be force-recycled. Added after the 2026-06-21 outage
+# where the engine stayed wedged and recovery only logged "manual intervention
+# needed" (the manual step was a human running `wsl --shutdown`).
+
+function Reset-WslBackend {
+    # Force-terminate the wedged WSL2 utility VM. Returns even when the VM is
+    # unresponsive because this is a host-side HCS teardown, not an in-VM command.
+    # Docker Desktop (AutoStart on) rebuilds the VM + engine afterward.
+    Write-Log "WARN" "Recycling WSL2 backend: wsl --shutdown"
+    & wsl.exe --shutdown 2>$null
+    Write-Log "INFO" "wsl --shutdown issued (exit=$LASTEXITCODE)"
+    # Let the VM fully tear down before Docker Desktop starts rebuilding it.
+    Start-Sleep -Seconds 10
+}
+
+function Save-WedgeForensics {
+    # Best-effort host-state capture at the moment of a wedge so the (still
+    # unconfirmed) root cause can finally be pinned. Never throws - recovery must
+    # proceed even if capture fails.
+    $stamp = Get-Date -Format "yyyyMMdd-HHmmss"
+    $dir = Join-Path $LOG_DIR "wedge-$stamp"
+    try {
+        New-Item -ItemType Directory -Path $dir -Force | Out-Null
+        Write-Log "INFO" "Capturing wedge forensics -> $dir"
+
+        # GPU snapshot (host nvidia-smi). WSL2 GPU-passthrough churn is the leading
+        # hypothesis for the VM hang, so this is the highest-value grab.
+        try { & nvidia-smi *> (Join-Path $dir "nvidia-smi.txt") } catch {}
+
+        # Hyper-V / WSL / vmcompute event channels around the wedge.
+        $since = (Get-Date).AddMinutes(-20)
+        foreach ($log in @('System', 'Microsoft-Windows-Hyper-V-Compute-Operational')) {
+            try {
+                Get-WinEvent -FilterHashtable @{ LogName = $log; StartTime = $since } -ErrorAction Stop |
+                    Where-Object { $_.LevelDisplayName -in 'Error', 'Critical', 'Warning' } |
+                    Select-Object TimeCreated, Id, LevelDisplayName, ProviderName, Message |
+                    Format-List |
+                    Out-File -FilePath (Join-Path $dir ("events-" + ($log -replace '[\\/:]+', '_') + ".txt")) -Encoding utf8
+            } catch {}
+        }
+
+        # Docker Desktop's own diagnostic bundle (path varies by version; best-effort).
+        $diag = Join-Path $env:ProgramFiles "Docker\Docker\resources\com.docker.diagnose.exe"
+        if (Test-Path $diag) {
+            try { & $diag gather -output (Join-Path $dir "docker-diagnose.zip") *> (Join-Path $dir "diagnose.log") } catch {}
+        }
+
+        Write-Log "OK" "Wedge forensics captured -> $dir"
+    } catch {
+        Write-Log "WARN" "Forensics capture failed: $_"
+    }
+}
+
+function Send-TelegramAlert {
+    # Host-side Telegram ping. A fully-down engine is exactly when the in-Docker
+    # alert plane - brain dispatcher, Alertmanager, the Prometheus dead-man's
+    # switch - is ALSO down, so the watchdog pings directly. Token is read from
+    # bootstrap.toml; silent no-op if unset. Never blocks recovery.
+    param([string]$Text)
+    try {
+        $bootstrap = Join-Path $env:USERPROFILE ".poindexter\bootstrap.toml"
+        if (-not (Test-Path $bootstrap)) { Write-Log "INFO" "Telegram skipped (no bootstrap.toml)"; return }
+        $toml = Get-Content $bootstrap -Raw
+        $token = ([regex]::Match($toml, '(?m)^\s*telegram_bot_token\s*=\s*"([^"]*)"')).Groups[1].Value
+        $chat = ([regex]::Match($toml, '(?m)^\s*telegram_chat_id\s*=\s*"([^"]*)"')).Groups[1].Value
+        if ([string]::IsNullOrWhiteSpace($token) -or [string]::IsNullOrWhiteSpace($chat)) {
+            Write-Log "INFO" "Telegram skipped (token/chat_id not set in bootstrap.toml)"
+            return
+        }
+        $body = @{ chat_id = $chat; text = "[docker-watchdog @ $env:COMPUTERNAME] $Text" }
+        Invoke-RestMethod -Method Post -Uri "https://api.telegram.org/bot$token/sendMessage" -Body $body -TimeoutSec 15 | Out-Null
+        Write-Log "OK" "Telegram alert sent"
+    } catch {
+        Write-Log "WARN" "Telegram alert failed: $_"
+    }
+}
+
 # ---- Main Check ----
 
 function Invoke-HealthCheck {
@@ -185,10 +279,25 @@ function Invoke-HealthCheck {
         Write-Log "ERROR" "Docker engine unreachable"
 
         if (-not (Test-DockerDesktopProcess)) {
+            # Docker Desktop isn't running at all - just (re)launch it. The original
+            # AutoStart-flipped-off case.
             Write-Log "WARN" "Docker Desktop process not running - launching"
             Start-DockerDesktop | Out-Null
         } else {
-            Write-Log "WARN" "Docker Desktop process running but engine dead - waiting for engine"
+            # Process alive but engine dead = the wedged-WSL2-VM signature. A relaunch
+            # can't fix it; the VM must be force-recycled. Guard against a transient
+            # `docker info` blip by re-checking after a short delay first.
+            Write-Log "WARN" "Docker Desktop alive but engine dead - confirming wedge (recheck in ${WedgeConfirmSeconds}s)"
+            Start-Sleep -Seconds $WedgeConfirmSeconds
+            if (Test-DockerEngine) {
+                Write-Log "OK" "Engine recovered on recheck - transient blip, no recycle needed"
+                Write-Log "INFO" "--- Docker watchdog check complete ---"
+                return $true
+            }
+            Write-Log "ERROR" "Engine still dead after recheck - WSL2 backend wedged, recycling"
+            Save-WedgeForensics
+            Send-TelegramAlert "Docker engine wedged - recycling WSL2 backend (wsl --shutdown). Stack auto-restores."
+            Reset-WslBackend
         }
 
         $engineOk = Wait-DockerEngine -MaxSeconds 300
@@ -196,7 +305,8 @@ function Invoke-HealthCheck {
             Write-Log "INFO" "Restoring compose stack"
             Invoke-ComposeUp | Out-Null
         } else {
-            Write-Log "ERROR" "Engine recovery FAILED - manual intervention needed"
+            Write-Log "ERROR" "Engine recovery FAILED after recycle - manual intervention needed"
+            Send-TelegramAlert "Docker engine STILL down after wsl --shutdown - manual intervention needed."
         }
     }
 

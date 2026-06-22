@@ -461,6 +461,16 @@ curl -s http://localhost:11434/api/tags  # Ollama
 
 ### Step 1 — Try a soft reset first
 
+> **Note.** The **Docker Engine Watchdog** scheduled task (`scripts/docker-watchdog.ps1`,
+> every 5 min) now performs this soft reset automatically. When the Docker Desktop
+> process is alive but the engine is wedged (the WSL2-VM `HCS_E_CONNECTION_TIMEOUT`
+> case), it re-checks after `-WedgeConfirmSeconds` (default 30) to rule out a transient
+> blip, captures forensics to `~/.poindexter/logs/wedge-<timestamp>/` (host `nvidia-smi`,
+> Hyper-V/`vmcompute` event channels, `docker diagnose` bundle), pings Telegram if
+> `telegram_bot_token` is set in `bootstrap.toml`, then runs `wsl --shutdown` and
+> restores the stack via `start-stack.sh`. The manual steps below are the fallback if
+> the watchdog is disabled or the recycle doesn't take.
+
 ```powershell
 # PowerShell, as admin
 wsl --shutdown
