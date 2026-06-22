@@ -425,65 +425,165 @@ def post_group() -> None:
 
 def _compute_idempotency_key(
     *,
-    topic: str,
-    media: list[str],
+    content: str,
     operator: str,
 ) -> str:
-    """Derive a stable 16-hex-char key from create-intent inputs."""
+    """Derive a stable 16-hex-char key from a manual upload's identity.
+
+    For a manual write/upload the **body** is the identity (not the topic or
+    the requested media): re-uploading the same file is a no-op, while an
+    edited body is legitimately a new post. So the key hashes ``content +
+    operator`` — media is deliberately excluded so the same body with a
+    different ``--media`` request still collapses to one post.
+    """
     import hashlib
 
-    payload = "|".join([
-        topic.strip(),
-        ",".join(sorted(m.strip() for m in media)),
-        operator.strip(),
-    ])
+    payload = "|".join([content.strip(), operator.strip()])
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
 @click.command("create")
-@click.option("--topic", required=True, help="Topic / working title for the post.")
+@click.option(
+    "--from-file",
+    "from_file",
+    type=click.Path(exists=True, dir_okay=False, readable=True),
+    default=None,
+    help="Markdown file to upload as the post body. Omit to read the body "
+    "from stdin (pipe markdown in).",
+)
+@click.option(
+    "--title",
+    default=None,
+    help="Post title. Omit to derive it from the first markdown H1 in the body.",
+)
+@click.option(
+    "--topic",
+    default=None,
+    hidden=True,
+    help="[DEPRECATED] alias for --title.",
+)
+@click.option(
+    "--slug",
+    default=None,
+    help="URL slug. Omit to derive from the title plus a short random suffix.",
+)
+@click.option(
+    "--niche",
+    default=None,
+    help="Niche slug stored in metadata.niche_slug (e.g. ai_ml, gaming, "
+    "pc_hardware). Omitting it emits a warning — niche-gated publishing will "
+    "skip a post with no niche.",
+)
+@click.option(
+    "--excerpt",
+    default=None,
+    help="Optional excerpt / summary for listings and the SEO description.",
+)
+@click.option(
+    "--status",
+    type=click.Choice(["draft", "awaiting_approval"]),
+    default="draft",
+    show_default=True,
+    help="Initial status. 'awaiting_approval' routes it into the approval "
+    "queue; 'draft' keeps it private.",
+)
 @click.option(
     "--media",
     default=None,
     help="Comma-separated list of media to generate "
     "(podcast, video, video_short; 'short' is accepted as an "
     "alias for video_short). Empty/omitted = use default_media_to_generate "
-    "from app_settings.",
+    "from app_settings. Media is generated at publish time, not now.",
 )
 @click.option(
     "--force",
     is_flag=True,
     help="Bypass the semantic dedup guard AND idempotency — create the post "
-    "even if it near-duplicates a published post or an identical "
-    "create-intent fired within the window (#338).",
+    "even if its title near-duplicates a published post or the same body was "
+    "uploaded within the window (#338).",
 )
 @click.option("--json", "json_output", is_flag=True)
 def post_create(
-    topic: str,
+    from_file: str | None,
+    title: str | None,
+    topic: str | None,
+    slug: str | None,
+    niche: str | None,
+    excerpt: str | None,
+    status: str,
     media: str | None,
     force: bool,
     json_output: bool,
 ) -> None:
-    """Create a draft post shell for the operator to author.
+    """Upload a finished markdown post you wrote by hand.
 
-    Inserts a ``posts`` row with an empty body for the operator to write
-    (e.g. via ``edit_post_body``); any media in ``--media`` is generated at
-    publish time. This does NOT run the AI writer pipeline — that's the
-    ``create_post`` MCP tool / ``POST /api/tasks`` path.
+    This is the MANUAL counterpart to the AI pipeline (the ``create_post`` MCP
+    tool / ``POST /api/tasks``, which *generates* a post from a topic). Here you
+    supply the body yourself — from ``--from-file`` or piped via stdin — and a
+    complete ``posts`` row is inserted directly. No writer LLM runs.
 
-    Semantic dedup: the topic is checked against already-published posts and
-    refused if too similar (``create_post_dedup_threshold``, default 0.75);
-    ``--force`` overrides. Shared with the MCP/HTTP path via
+      poindexter posts create --from-file my-post.md --niche ai_ml
+      cat my-post.md | poindexter posts create --niche gaming
+
+    Title is ``--title`` (else the first markdown ``# H1`` in the body); slug is
+    ``--slug`` (else the slugified title plus a short suffix). ``--status``
+    defaults to ``draft``; pass ``awaiting_approval`` to route it into the
+    approval queue. ``--niche`` lands in ``metadata.niche_slug``. Any
+    ``--media`` is generated at publish time.
+
+    Semantic dedup: the resolved title is checked against already-published
+    posts and refused if too similar (``create_post_dedup_threshold``, default
+    0.75); ``--force`` overrides. Shared with the AI path via
     ``services.topic_dedup_guard`` (glad-labs-stack#1823).
 
-    Idempotency (#338): a stable key is computed from
-    ``topic + media + operator``. If an identical invocation fired inside
-    the configured window (``cli_post_create_idempotency_window_minutes``,
-    default 30), the existing post id is returned instead of inserting a
-    duplicate. ``--force`` also bypasses this, or set
-    ``cli_post_create_idempotency_enabled=false`` to disable globally.
+    Idempotency (#338): a stable key is computed from ``body + operator``. If
+    the same body was uploaded inside the window
+    (``cli_post_create_idempotency_window_minutes``, default 30), the existing
+    post id is returned instead of inserting a duplicate. ``--force`` bypasses
+    this, or set ``cli_post_create_idempotency_enabled=false`` to disable it.
     """
+    import re
+    import secrets
+
     from services.site_config import SiteConfig
+    from services.title_generation import extract_h1_title
+
+    # --- Resolve body (no DB needed — fail fast before opening a pool) ----
+    # --from-file wins; otherwise read piped stdin. An interactive TTY with
+    # nothing piped is treated as empty so we fail loud instead of hanging.
+    if from_file:
+        with open(from_file, encoding="utf-8") as fh:
+            raw_body = fh.read()
+    elif sys.stdin.isatty():
+        raw_body = ""
+    else:
+        raw_body = sys.stdin.read()
+    content = raw_body.strip()
+    if not content:
+        _exit_error(
+            "No post body. Provide --from-file PATH or pipe markdown via "
+            "stdin (e.g. `cat post.md | poindexter posts create`)."
+        )
+        return
+
+    # --- Resolve title: explicit flag → --topic alias → first H1 ---------
+    resolved_title = (title or topic or "").strip() or extract_h1_title(content)
+    if not resolved_title:
+        _exit_error(
+            "No title. Pass --title (or --topic), or start the body with a "
+            "markdown H1 (`# My Title`)."
+        )
+        return
+    resolved_title = resolved_title.strip()
+
+    # --- Resolve slug: explicit → slugified title + short random suffix --
+    if slug:
+        resolved_slug = slug.strip()
+    else:
+        slug_root = re.sub(
+            r"[^\w\s-]", "", resolved_title
+        ).lower().strip().replace(" ", "-")[:48].strip("-")
+        resolved_slug = f"{slug_root}-{secrets.token_hex(3)}"
 
     async def _impl():
         pool = await _make_gate_pool()
@@ -495,7 +595,8 @@ def post_create(
                 pass
 
             # Resolve media with two-stage fallback:
-            # explicit flag → app_settings default.
+            # explicit flag → app_settings default. (Needs the DB for the
+            # default, so it's the one resolution that can't run pre-pool.)
             resolved_media = (
                 _split_csv(media) if media is not None
                 else _split_csv(site_cfg.get("default_media_to_generate", ""))
@@ -511,14 +612,12 @@ def post_create(
                         f"('short' is accepted as an alias for video_short)."
                     )
 
-            # --- Idempotency check (#338) -------------------------------
+            # --- Idempotency check (#338), re-keyed on body+operator ----
             #
-            # Compute the key up-front so we can include it in the
-            # INSERT below (miss path) or short-circuit to an existing
-            # post id (hit path). The lookup runs against the partial
-            # index ``idx_posts_cli_idempotency_key`` declared in
-            # ``0000_baseline.schema.sql`` — no full table scan even at
-            # scale.
+            # The body is the upload's identity (not the topic/media): the
+            # same file uploaded twice is a no-op, an edited body is a new
+            # post. The lookup runs against the partial index
+            # ``idx_posts_cli_idempotency_key`` (0000_baseline.schema.sql).
             operator = _operator_identity()
             idempotency_enabled = (
                 site_cfg.get("cli_post_create_idempotency_enabled", "true")
@@ -534,8 +633,7 @@ def post_create(
                 window_minutes = 30
 
             idempotency_key = _compute_idempotency_key(
-                topic=topic,
-                media=resolved_media,
+                content=content,
                 operator=operator,
             )
 
@@ -573,9 +671,9 @@ def post_create(
 
             # Pre-insert semantic dedup guard — shared with the create_post
             # MCP tool / POST /api/tasks path (glad-labs-stack#1823). A
-            # manually-inserted topic that near-duplicates an already-published
-            # post is refused; --force overrides (the same flag that bypasses
-            # idempotency above).
+            # manually-uploaded post whose TITLE near-duplicates an
+            # already-published post is refused; --force overrides (the same
+            # flag that bypasses idempotency above).
             if not force:
                 from services.topic_dedup_guard import (
                     DuplicateTopicError,
@@ -583,7 +681,9 @@ def post_create(
                 )
 
                 try:
-                    await assert_topic_not_duplicate(topic, site_config=site_cfg)
+                    await assert_topic_not_duplicate(
+                        resolved_title, site_config=site_cfg
+                    )
                 except DuplicateTopicError as dup:
                     raise RuntimeError(
                         f"{dup.topic!r} is too similar to published post "
@@ -592,20 +692,21 @@ def post_create(
                         "create a near-duplicate; re-run with --force to override."
                     ) from dup
 
-            # Insert a minimal posts row. Title = topic, slug = sanitized
-            # topic + short random suffix (CLI-created posts don't yet
-            # have a writer-generated slug, so they live under a
-            # placeholder until the writer fills in the real one).
-            import re
-            import secrets
+            # --- Niche → metadata.niche_slug (warn when omitted) --------
+            if niche:
+                metadata_json = json.dumps({"niche_slug": niche.strip()})
+            else:
+                metadata_json = json.dumps({})
+                click.echo(
+                    "warning: no --niche given; the post has no niche_slug in "
+                    "metadata, so niche-gated publishing will skip it. Pass "
+                    "--niche <slug> to set one.",
+                    err=True,
+                )
 
-            slug_root = re.sub(r"[^\w\s-]", "", topic).lower().replace(" ", "-")[:48]
-            slug = f"{slug_root}-{secrets.token_hex(3)}"
-
-            # Persist the idempotency key on the row when the feature
-            # is enabled (and not forced — forced inserts skip dedup
-            # so don't poison the lookup with a key that an earlier
-            # post already owns).
+            # Persist the idempotency key on the row when the feature is
+            # enabled (and not forced — forced inserts skip dedup so don't
+            # poison the lookup with a key an earlier post already owns).
             stored_key = (
                 idempotency_key if (idempotency_enabled and not force) else None
             )
@@ -614,17 +715,17 @@ def post_create(
                 row = await conn.fetchrow(
                     """
                     INSERT INTO posts
-                        (title, slug, content, status, media_to_generate,
-                         cli_idempotency_key)
-                    VALUES ($1, $2, '', 'draft', $3::text[], $4)
+                        (title, slug, content, excerpt, status,
+                         media_to_generate, metadata, cli_idempotency_key)
+                    VALUES ($1, $2, $3, $4, $5, $6::text[], $7::jsonb, $8)
                     RETURNING id::text AS id, slug, title, status
                     """,
-                    topic, slug, resolved_media, stored_key,
+                    resolved_title, resolved_slug, content, excerpt, status,
+                    resolved_media, metadata_json, stored_key,
                 )
 
-            post_id = row["id"]
             return {
-                "post_id": post_id,
+                "post_id": row["id"],
                 "slug": row["slug"],
                 "title": row["title"],
                 "status": row["status"],
@@ -654,7 +755,7 @@ def post_create(
     else:
         click.secho(
             f"Created post {result['post_id'][:8]}  "
-            f"({result['title'][:60]})",
+            f"({result['title'][:60]})  [{result['status']}]",
             fg="green",
         )
     click.echo(f"  slug              {result['slug']}")

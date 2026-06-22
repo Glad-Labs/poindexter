@@ -1,6 +1,6 @@
 # Poindexter CLI Reference
 
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-06-21
 
 The `poindexter` command is installed as a console script when you
 `pip install -e src/cofounder_agent`. It's the primary operator
@@ -184,6 +184,56 @@ approval, but this is the manual override).
 ## `posts`
 
 Published/draft blog post management.
+
+### `posts create`
+
+Upload a finished markdown post you wrote by hand — the **manual** counterpart
+to the AI pipeline (the `create_post` MCP tool / `POST /api/tasks`, which
+_generates_ a post from a topic). You supply the body; a complete `posts` row is
+inserted directly and no writer LLM runs.
+
+```bash
+# Body from a file; title taken from the first markdown H1 in the file
+poindexter posts create --from-file my-post.md --niche ai_ml
+
+# Body piped via stdin, explicit title, routed to the approval queue
+cat my-post.md | poindexter posts create \
+  --title "Why Docker Changed Everything" \
+  --niche pc_hardware --status awaiting_approval
+
+poindexter posts create --from-file my-post.md --niche gaming --json
+```
+
+The body is **required** (from `--from-file PATH` or stdin); an empty body fails
+loud. Flags:
+
+- `--from-file PATH` — markdown file to upload. Omit to read the body from stdin.
+- `--title TEXT` — post title. Omit to derive it from the first markdown `# H1`
+  in the body; if neither is present the command fails loud.
+- `--slug TEXT` — URL slug. Omit to derive from the slugified title plus a short
+  random suffix.
+- `--niche SLUG` — stored in `metadata.niche_slug` (e.g. `ai_ml`, `gaming`,
+  `pc_hardware`). Omitting it warns — niche-gated publishing skips a post with no
+  niche.
+- `--excerpt TEXT` — optional excerpt / SEO description.
+- `--status {draft,awaiting_approval}` — initial status (default `draft`).
+  `awaiting_approval` routes it into the approval queue.
+- `--media A,B` — media to generate **at publish time** (`podcast`, `video`,
+  `video_short`; `short` is an alias for `video_short`). Defaults to
+  `default_media_to_generate`.
+- `--force` — bypass the semantic dedup guard **and** idempotency.
+- `--json` — machine-readable output.
+
+Two safety rails, shared with the AI path:
+
+- **Semantic dedup** — the resolved title is checked against already-published
+  posts and refused if cosine similarity ≥ `create_post_dedup_threshold`
+  (default `0.75`). Re-run with `--force` to override.
+- **Idempotency (#338)** — a key derived from `body + operator` makes an
+  accidental same-file re-upload within
+  `cli_post_create_idempotency_window_minutes` (default 30) return the existing
+  post instead of a duplicate; an edited body is a new post. `--force` bypasses
+  it, or set `cli_post_create_idempotency_enabled=false` to disable.
 
 ### `posts list`
 

@@ -12,10 +12,11 @@ The fix mirrors the existing ``--gates`` validation: aliases are
 normalized (``short`` → ``video_short``), then each resolved flavor is
 checked against ``CANONICAL_MEDIA_NAMES`` with a loud error on a typo.
 
-These tests patch ``asyncpg`` + ``SiteConfig`` + the gate helpers the
-same way ``test_post_create_idempotency`` does so the suite never touches
-a real DB. The INSERT's positional args are ``(query, title, slug,
-media, key)`` — ``media`` is ``args[3]``.
+These tests patch ``asyncpg`` + ``SiteConfig`` + the dedup guard so the suite
+never touches a real DB. ``posts create`` is now a manual write/upload command
+(see ``test_post_create_manual_upload``): a body is required (piped via stdin
+here) and the INSERT's positional args are ``(query, title, slug, content,
+excerpt, status, media, metadata, key)`` — ``media`` is ``args[6]``.
 """
 
 from __future__ import annotations
@@ -89,11 +90,15 @@ def _patch_site_config(initial: dict[str, str] | None = None):
 
 
 def _run_create(runner, fake_asyncpg, media_arg: str):
-    """Invoke ``post create --media <media_arg>`` against a scripted INSERT.
+    """Invoke ``posts create --media <media_arg>`` against a scripted INSERT.
 
     Idempotency is disabled so the path is a single INSERT (no lookup),
-    keeping the INSERT call at ``fetchrow.await_args_list[0]``.
+    keeping the INSERT call at ``fetchrow.await_args_list[0]``. A body is
+    piped via stdin (now required) and the dedup guard is no-op'd so the
+    only DB op is the INSERT.
     """
+    import services.topic_dedup_guard as guard
+
     new_conn = _make_conn(fetchrow_results=[
         {
             "id": "11111111-2222-3333-4444-555555555555",
@@ -108,10 +113,12 @@ def _run_create(runner, fake_asyncpg, media_arg: str):
     site_patch = _patch_site_config(
         initial={"cli_post_create_idempotency_enabled": "false"}
     )
-    with site_patch:
+    guard_patch = patch.object(guard, "assert_topic_not_duplicate", AsyncMock())
+    with site_patch, guard_patch:
         result = runner.invoke(
             post_group,
-            ["create", "--topic", "x", "--media", media_arg, "--json"],
+            ["create", "--title", "x", "--media", media_arg, "--json"],
+            input="# x\n\nManual body.",
         )
     return result, new_conn
 
@@ -151,7 +158,7 @@ class TestMediaNormalizedInInsert:
         result, conn = _run_create(runner, fake_asyncpg, "short")
         assert result.exit_code == 0, result.output
         insert_call = conn.fetchrow.await_args_list[0]
-        stored_media = insert_call.args[3]
+        stored_media = insert_call.args[6]
         assert "video_short" in stored_media
         assert "short" not in stored_media
 
@@ -159,7 +166,7 @@ class TestMediaNormalizedInInsert:
         result, conn = _run_create(runner, fake_asyncpg, "video_short")
         assert result.exit_code == 0, result.output
         insert_call = conn.fetchrow.await_args_list[0]
-        assert insert_call.args[3] == ["video_short"]
+        assert insert_call.args[6] == ["video_short"]
 
 
 # ---------------------------------------------------------------------------
