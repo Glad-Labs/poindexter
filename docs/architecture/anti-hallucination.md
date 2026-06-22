@@ -362,6 +362,17 @@ at draft time, the fix is a deterministic lookup, not a guess:
   link. High precision by construction; the inserted links then flow through
   `qa.citations`' dead-link check. Gated by `citation_reconcile_enabled` (default
   on). The pure matching core is `modules/content/atoms/_citation_match.py`.
+  - **Verb frame (scan-1).** The subject-first site ("Keychron describes…",
+    "GetMaxim points out…") recognises a **broader verb set for repair than for
+    the advisory flag** below. "describes" & co. are common in plain prose
+    ("Section 2 describes…", "Apple describes…"), so the advisory scan omits them
+    to avoid over-flagging; the repair scan can afford them because it only ever
+    links behind the **domain gate** — a broader verb widens the candidate set
+    without risking a bad link ("Section" grounds to no corpus domain, so it's
+    never linked). This mirrors the match-side asymmetry: repair is strict on
+    MATCH, so it can be loose on FRAME; advisory is loose on match, so it stays
+    strict on frame. The seam is `find_attributions(…, repair=True)`, broadening
+    the conservative `_SUBJECT_VERBS` with `_REPAIR_EXTRA_VERBS`.
   - **Re-point pass (scan-3, same atom).** The writer also fabricates citations
     the other way: it wraps a brand in a markdown link to that brand's _own_
     domain but invents the **path** — a 404 the host-only `scrub_fabricated_links`

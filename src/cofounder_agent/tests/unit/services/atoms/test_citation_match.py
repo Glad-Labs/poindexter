@@ -101,6 +101,24 @@ def test_find_attributions_ignores_first_person_and_rhetoric():
     assert find_attributions("As we noted, the window is not the fix.") == []
 
 
+def test_find_attributions_repair_frame_recognizes_describes():
+    """The subject-first frame has two verb sets behind a ``repair`` seam.
+
+    The default (advisory) frame keeps a conservative verb list; the repair frame
+    (``repair=True``) additionally recognises "describes" and friends — common
+    attribution verbs too noisy for the advisory scan but safe for repair, which
+    only ever links on a corpus domain match. This locks the asymmetry at the
+    lowest level: same sentence, advisory sees nothing, repair surfaces the
+    subject for corpus grounding.
+    """
+    text = "Keychron describes them as smooth and quiet."
+    # Advisory frame: "describes" is deliberately NOT recognised (would over-flag).
+    assert find_attributions(text) == []
+    # Repair frame: the same sentence surfaces the subject.
+    repair_attrs = find_attributions(text, repair=True)
+    assert any(a.subject == "Keychron" for a in repair_attrs)
+
+
 # --- match_subject ----------------------------------------------------------
 
 def _sources():
@@ -206,6 +224,61 @@ def test_link_skips_single_word_non_brand_parenthetical():
     assert linked == []
 
 
+def test_link_repairs_subject_first_describes_verb():
+    """"describes" is a common attribution verb the conservative subject-first
+    frame omits — so "Keychron describes them as…" shipped unlinked even with
+    keychron.com in the corpus. Repair uses the broader verb frame and links it.
+
+    Reference: validation post 12db663a (mechanical keyboard switches) shipped
+    "...halfway through the press. Keychron describes them as smooth and quiet..."
+    with keychron.com present in that task's research corpus.
+    """
+    sources = [CorpusSource(
+        url="https://www.keychron.com/blogs/news/types-of-keyboard-switches",
+        title="Types of Keyboard Switches",
+        text="types of keyboard switches keychron",
+    )]
+    content = (
+        "The switch bottoms out halfway through the press. "
+        "Keychron describes them as smooth and quiet."
+    )
+    new_content, linked = link_matched_attributions(content, sources)
+    assert (
+        "[Keychron](https://www.keychron.com/blogs/news/types-of-keyboard-switches)"
+        " describes them" in new_content
+    )
+    assert any(x["subject"] == "Keychron" for x in linked)
+
+
+def test_link_describes_subject_needs_corpus_domain_match():
+    """Precision rides on the domain gate, not the verb. The broadened repair
+    frame surfaces "Section describes" as a candidate, but "Section" grounds to
+    no corpus domain, so repair leaves it untouched — no false link."""
+    sources = [CorpusSource(
+        url="https://www.keychron.com/x", title="Keychron", text="keychron switches",
+    )]
+    content = "Section describes the layout of the board in fine detail."
+    new_content, linked = link_matched_attributions(content, sources)
+    assert new_content == content
+    assert linked == []
+
+
+def test_link_does_not_link_numbered_section_describes():
+    """The literal task false-positives — "Section 2 / Figure 1 / Table 3
+    describes" — must never be linked: the intervening number breaks subject↔verb
+    adjacency AND none ground to a corpus domain."""
+    sources = [CorpusSource(
+        url="https://www.keychron.com/x", title="Keychron", text="keychron switches",
+    )]
+    content = (
+        "Section 2 describes the layout. Figure 1 describes the switch. "
+        "Table 3 describes the feel."
+    )
+    new_content, linked = link_matched_attributions(content, sources)
+    assert new_content == content
+    assert linked == []
+
+
 # --- find_unmatched_attributions (advisory, scan-2) -------------------------
 
 def test_unmatched_flags_author_and_unknown_brand():
@@ -233,6 +306,25 @@ def test_unmatched_empty_when_no_corpus():
     # pass rather than flagging every attribution. Returns [].
     content = "As noted by Someone Important, this matters."
     assert find_unmatched_attributions(content, []) == []
+
+
+def test_unmatched_keeps_conservative_frame_for_describes():
+    """The advisory scan must NOT inherit the repair frame's broader verbs.
+
+    "describes" is far more common in ordinary prose than the conservative verbs,
+    so flagging "Section 2 describes" / "Apple describes" / "Figure 1 describes"
+    would bury real findings (author names, unknown brands) in noise. The broad
+    verb set is safe only for repair (gated by a corpus domain match); advisory
+    stays conservative and surfaces none of these.
+    """
+    sources = [CorpusSource(
+        url="https://www.keychron.com/x", title="Keychron", text="keychron switches",
+    )]
+    content = (
+        "Section 2 describes the layout. Apple describes its chip as fast. "
+        "Figure 1 describes the switch."
+    )
+    assert find_unmatched_attributions(content, sources) == []
 
 
 # --- repoint_fabricated_citations (repair, scan-3) --------------------------

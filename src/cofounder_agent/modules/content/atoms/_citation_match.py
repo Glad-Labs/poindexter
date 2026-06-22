@@ -214,18 +214,41 @@ _PREP_VERBS = (
     r"noted|observed|argued|explained|shown|highlighted|reported|described|"
     r"demonstrated|discussed|mentioned|written|documented|outlined|detailed|stated"
 )
+# Conservative subject-first verbs — used by BOTH scans. Kept tight on purpose:
+# the advisory scan (find_unmatched_attributions) flags on the looser
+# title/snippet-token match, so any verb here that's common in ordinary prose
+# would over-flag ("Section 2 <verb>…"). Every verb is a deliberate, distinctive
+# attribution signal.
 _SUBJECT_VERBS = (
     r"points\s+out|pointed\s+out|notes|noted|argues|argued|explains|explained|"
     r"writes|wrote|reports|reported|observes|observed|states|stated|highlights|"
     r"highlighted|emphasi[sz]es|emphasi[sz]ed|warns|warned|stresses|stressed|"
     r"suggests|suggested"
 )
+# Additional subject-first verbs recognised ONLY by the REPAIR scan
+# (``link_matched_attributions`` → ``find_attributions(repair=True)``).
+# "describes" & co. are far more common in plain prose than the conservative set
+# ("Section 2 describes…", "Apple describes…"), so surfacing them for the
+# advisory scan would bury real findings in noise. Repair can afford them because
+# it only ever links on a high-precision corpus ``_domain_match`` — a broader
+# grammar frame just widens the candidate set; the domain gate, not the verb,
+# decides what gets linked. This mirrors the module's documented asymmetry:
+# repair is strict on the MATCH side, so it can be loose on the FRAME side;
+# advisory is loose on match, so it must stay strict on frame. (The passive
+# "described by/in X" frame already lives in ``_PREP_VERBS`` — its by/in
+# preposition anchors it enough to share; this is the anchorless subject-first
+# form, hence repair-only. New repair-safe verbs go here.)
+_REPAIR_EXTRA_VERBS = r"describes|described|describe"
+_REPAIR_SUBJECT_VERBS = rf"{_SUBJECT_VERBS}|{_REPAIR_EXTRA_VERBS}"
 
 _PREP_RE = re.compile(
     rf"(?:as\s+)?(?:{_PREP_VERBS})\s+(?:by|in)\s+({_SUBJECT_CS})", re.IGNORECASE,
 )
 _SUBJ_FIRST_RE = re.compile(
     rf"\b({_SUBJECT_CS})\s+(?:{_SUBJECT_VERBS})\b", re.IGNORECASE,
+)
+_SUBJ_FIRST_REPAIR_RE = re.compile(
+    rf"\b({_SUBJECT_CS})\s+(?:{_REPAIR_SUBJECT_VERBS})\b", re.IGNORECASE,
 )
 _ACCORDING_RE = re.compile(rf"according\s+to\s+({_SUBJECT_CS})", re.IGNORECASE)
 _PAREN_RE = re.compile(rf"\(\s*({_SUBJECT_CS})\s*\)")
@@ -269,6 +292,7 @@ def _looks_like_source_name(subject: str) -> bool:
 
 def find_attributions(
     content: str | None, sources: list[CorpusSource] | None = None,
+    *, repair: bool = False,
 ) -> list[Attribution]:
     """Detect attribution-shaped phrases and their named subject spans.
 
@@ -285,13 +309,21 @@ def find_attributions(
     a corpus domain handle — high precision, so ``(Recommended)`` / ``(see
     below)`` still never qualify. Passing no corpus preserves the original
     shape-only behaviour.
+
+    ``repair`` selects the subject-first verb frame. Default (``False`` — the
+    advisory scan) uses the conservative :data:`_SUBJECT_VERBS`; ``True`` (the
+    repair scan, which links only on a corpus domain match) additionally
+    recognises the broader :data:`_REPAIR_EXTRA_VERBS` ("describes" & co.) —
+    verbs too common to flag but safe to *link* behind the domain gate. See the
+    verb-set comments above.
     """
     if not content:
         return []
+    subj_first_rx = _SUBJ_FIRST_REPAIR_RE if repair else _SUBJ_FIRST_RE
     link_spans = _markdown_link_text_spans(content)
     seen: set[int] = set()
     results: list[Attribution] = []
-    for rx in (_PREP_RE, _SUBJ_FIRST_RE, _ACCORDING_RE, _PAREN_RE):
+    for rx in (_PREP_RE, subj_first_rx, _ACCORDING_RE, _PAREN_RE):
         for m in rx.finditer(content):
             subject = m.group(1).strip()
             if not subject:
@@ -338,7 +370,9 @@ def link_matched_attributions(
     if not content or not sources:
         return content or "", []
     edits: list[tuple[int, int, str, str]] = []
-    for a in find_attributions(content, sources):
+    # repair=True widens the subject-first verb frame ("describes" & co.); safe
+    # here because every candidate must still clear the _domain_match gate below.
+    for a in find_attributions(content, sources, repair=True):
         if a.already_linked:
             continue
         src = _domain_match(a.subject, sources)
