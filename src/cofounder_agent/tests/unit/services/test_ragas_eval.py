@@ -15,7 +15,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# NOTE (Glad-Labs/glad-labs-stack#997): this module previously carried an
+# NOTE (Glad-Labs/poindexter#997): this module previously carried an
 # UNCONDITIONAL ``pytest.skip(..., allow_module_level=True)`` for a Windows +
 # Python 3.12 pyarrow native-init access violation (``from datasets import
 # Dataset`` inside evaluate_sample). Because the skip wasn't platform-guarded

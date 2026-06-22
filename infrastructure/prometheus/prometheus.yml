@@ -114,7 +114,7 @@ scrape_configs:
     static_configs:
       - targets: ["pyroscope:4040"]
 
-  # Promtail self-metrics + liveness (Glad-Labs/glad-labs-stack#1154).
+  # Promtail self-metrics + liveness (Glad-Labs/poindexter#1154).
   # Exposes promtail_* (sent entries, active targets, read/encode failures)
   # and — critically — gives us up{job="promtail"} so the PromtailDown alert
   # can page when the log shipper crashes OR wedges (a wedged HTTP server
