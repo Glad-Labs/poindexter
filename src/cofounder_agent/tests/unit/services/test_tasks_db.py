@@ -426,9 +426,10 @@ class TestAddTaskTemplateSlug:
         })
 
         args = self._capture_pipeline_tasks_args(captured_args)
-        # template_slug is positional arg 16 in the INSERT (1-indexed in
-        # the SQL, so index 15 in the 0-indexed args tuple) after the
-        # vestigial `category` column was dropped (20260622_032938).
+        # template_slug is positional arg 16 in the INSERT (1-indexed in the
+        # SQL, so index 15 in the 0-indexed args tuple): add_task's INSERT
+        # column list omits `category` — it was removed here in 20260622_032938
+        # and 20260622_055500 only re-added the base column, not this write path.
         assert args[15] == "canonical_blog"
 
     @pytest.mark.asyncio
@@ -1817,9 +1818,12 @@ class TestAddTaskAgainstRealDb:
         assert row["task_type"] == "blog_post"
         assert row["content_type"] == "blog_post"  # view-derived from task_type
         assert row["status"] == "pending"
-        # category is a vestigial column dropped in 20260622_032938 — it is
-        # accepted-but-ignored on write, and the content_tasks view now
-        # projects it as a NULL shim for back-compat.
+        # category reads back NULL through the view: 20260622_032938 made the
+        # content_tasks view project ``NULL::varchar AS category`` and the
+        # write-through trigger stop carrying it. 20260622_055500 later re-added
+        # the physical base column (for the claim path) but did NOT restore the
+        # view projection or the trigger — so a write through the view is still
+        # accepted-but-ignored and the view still reads NULL.
         assert row["category"] is None
 
         meta = row["task_metadata"]
@@ -1884,13 +1888,31 @@ class TestAddTaskAgainstRealDb:
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM pipeline_tasks WHERE task_id = $1", task_id)
 
-    async def test_category_column_dropped_but_shimmed_in_view(self, db_pool):
-        """20260622_032938 shimmed drop: the physical ``category`` column is
-        gone from ``pipeline_tasks``, but the ``content_tasks`` /
-        ``pipeline_tasks_view`` views still project it as a NULL shim so
-        ``SELECT *`` / ``TaskRecord.category`` / the ``?category=`` filter keep
-        working. Guards against both re-adding the column and dropping the
-        back-compat shim.
+    async def test_category_column_present_on_base_table_and_views(self, db_pool):
+        """``pipeline_tasks.category`` is a physical column on the base table.
+
+        History — two same-day migrations that cancel out:
+
+          * ``20260622_032938`` dropped ``category`` as a "shimmed drop" (#1843):
+            the views kept a ``NULL::varchar AS category`` projection and the
+            INSTEAD OF triggers stopped writing it. But that drop missed the
+            ``claim_pending_task`` SELECT in
+            ``services/flows/content_generation.py``, which reads ``category``
+            straight off ``pipeline_tasks`` — so after deploy every task-claim
+            crashed with ``UndefinedColumnError`` and the pipeline went dark.
+          * ``20260622_055500`` re-added the column with
+            ``ADD COLUMN IF NOT EXISTS`` to restore the claim path (#1853). It
+            lands at the end of the table (ordinal 41 on prod ``poindexter_brain``).
+
+        Final state asserted here against a fully-migrated DB:
+
+          * ``pipeline_tasks.category`` exists again — guards against a future
+            re-drop that would re-break ``claim_pending_task``.
+          * The ``content_tasks`` / ``pipeline_tasks_view`` views still carry a
+            ``category`` column. 055500 only touched the base table, so the
+            032938 NULL shim is still what the views project — the back-compat
+            read surface (``SELECT *`` / ``TaskRecord.category`` / the
+            ``?category=`` filter) keeps resolving.
         """
         async with db_pool.acquire() as conn:
             base_col = await conn.fetchval(
@@ -1906,9 +1928,13 @@ class TestAddTaskAgainstRealDb:
                 "WHERE table_name = 'pipeline_tasks_view' AND column_name = 'category'"
             )
 
-        assert base_col is None, "pipeline_tasks.category must be physically dropped"
-        assert view_col == 1, "content_tasks must keep a NULL category shim column"
-        assert ptv_col == 1, "pipeline_tasks_view must keep a NULL category shim column"
+        assert base_col == 1, (
+            "pipeline_tasks.category must exist as a physical column — 20260622_055500 "
+            "re-added it because claim_pending_task SELECTs it off the base table; "
+            "re-dropping it re-breaks the claim path"
+        )
+        assert view_col == 1, "content_tasks must keep its category column (032938 NULL shim)"
+        assert ptv_col == 1, "pipeline_tasks_view must keep its category column (032938 NULL shim)"
 
 
 # ---------------------------------------------------------------------------
