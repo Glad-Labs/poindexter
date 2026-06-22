@@ -1696,6 +1696,13 @@ services:
     image: poindexter-voice-agent:latest
     container_name: poindexter-voice-agent-claude-code
     restart: unless-stopped
+    # Opt-in only: the claude-code/dev voice room is gated behind the `voice-dev`
+    # compose profile, so a plain `docker compose up -d` does NOT start it. It was
+    # retired 2026-06-21 (sat unused for weeks and was the only paid voice path —
+    # host-brain shells to `claude -p`, ~$0.40+/turn). Bring it up explicitly:
+    #   docker compose --profile voice-dev up -d voice-agent-claude-code
+    # Host-brain mode additionally needs its host daemon/scheduled task enabled.
+    profiles: ["voice-dev"]
     command: ["python", "-m", "services.voice_agent_livekit", "--service", "--service-profile", "claude-code"]
     environment:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
