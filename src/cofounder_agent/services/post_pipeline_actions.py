@@ -1,8 +1,16 @@
 """Post-pipeline side-effects shared by both orchestrators.
 
-After the content pipeline finishes a task successfully there is a
-fixed sequence of operator-visible side-effects to run:
+After the content pipeline finishes a task there is a fixed sequence of
+operator-visible side-effects to run:
 
+0. Terminal-status guard. Re-read the canonical ``pipeline_tasks.status``
+   (the spinal-cord signal, not the brittle in-memory ``result`` dict). A
+   task qa.aggregate already hard-rejected (``status='rejected'``, written
+   straight to the DB while the graph halts) gets a routine 'QA rejected'
+   Discord notice and NONE of the success-path steps below — no false
+   awaiting-approval ping, no ``task.completed`` webhook, and crucially no
+   auto-publish of QA-rejected content. ``failed`` / ``cancelled`` /
+   ``published`` / ``approved`` are skipped silently (handled elsewhere).
 1. Emit a ``task.completed`` webhook so external consumers
    (Discord ops integration, future SaaS multi-tenant routing,
    marketplace adapters) see "this task finished".
@@ -59,11 +67,21 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from typing import Any
 
 from .webhook_delivery_service import emit_webhook_event
 
 logger = logging.getLogger(__name__)
+
+# Terminal statuses the pipeline itself already decided. A task in one of
+# these has been routed to its outcome by the graph or a prior side-effect,
+# so the success-path actions (task.completed webhook, auto-curate,
+# auto-publish, awaiting-approval ping) must NOT run. ``rejected`` is handled
+# separately — it earns a routine operator notice rather than a silent skip.
+_DECIDED_NON_REJECTED_STATUSES = frozenset(
+    {"failed", "cancelled", "canceled", "published", "approved"}
+)
 
 
 # Default thresholds preserved verbatim from the inline block they
@@ -639,6 +657,87 @@ async def _notify_operator(
         )
 
 
+async def _read_task_status(
+    database_service: Any, task_id: str,
+) -> tuple[str | None, str | None]:
+    """Return the canonical ``(status, error_message)`` for ``task_id``.
+
+    The pipeline's terminal decision lives on ``pipeline_tasks.status`` —
+    the spinal-cord canonical signal — NOT reliably on the in-memory
+    ``result`` dict. ``qa.aggregate`` halts the graph and writes
+    ``status='rejected'`` to the DB directly
+    (``modules/content/atoms/_qa_persist.py``), so the only trustworthy read
+    of the outcome is the DB.
+
+    Best-effort: returns ``(None, None)`` when the pool/row is unavailable so
+    the caller fails OPEN to the success path — a successfully-completed post
+    must never be silenced by a transient read hiccup. The miss is logged
+    (``feedback_no_silent_defaults``).
+    """
+    pool = (
+        getattr(database_service, "cloud_pool", None)
+        or getattr(database_service, "pool", None)
+    )
+    if pool is None:
+        return None, None
+    try:
+        row = await pool.fetchrow(
+            "SELECT status, error_message FROM pipeline_tasks WHERE task_id = $1",
+            task_id,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[POST_PIPELINE] canonical status read failed for %s — proceeding "
+            "with success-path side-effects: %s",
+            task_id, exc,
+        )
+        return None, None
+    if row is None:
+        return None, None
+    # ``.get`` (supported by both asyncpg.Record and dict) keeps this tolerant
+    # of a row that doesn't carry the columns — the SELECT always does, but the
+    # accessor never raises if a caller's double returns a narrower row.
+    return row.get("status"), row.get("error_message")
+
+
+async def _notify_operator_rejected(
+    *,
+    site_config: Any,
+    task_id: str,
+    topic: str,
+    quality_score: float,
+    reason: str | None,
+) -> None:
+    """Send a routine 'QA rejected' notice in place of the success ping.
+
+    Fired when the canonical status is ``rejected`` (a QA hard-reject that
+    halted the graph). Routes to Discord (``critical=False``) — a reject
+    needs no operator action, unlike the awaiting-approval queue signal which
+    pages Telegram (``critical=True``). Mirrors the operator's
+    Telegram=critical / Discord=routine convention.
+    """
+    # ``build_reject_reason`` prefixes the DB reason with a redundant
+    # "QA rejected (score N/100). " — strip it so the notice isn't doubled up
+    # with the header + Score line below.
+    detail = re.sub(
+        r"^QA rejected \(score [\d.]+/100\)\.\s*", "", (reason or "").strip(),
+    )
+    msg = f"QA rejected: \"{topic}\"\n"
+    msg += f"Score: {quality_score:.0f}/100\n"
+    if detail:
+        msg += f"Reason: {detail[:400]}\n"
+    msg += f"Task {task_id[:8]} — rejected at the QA gate, no action needed."
+
+    try:
+        from services.integrations.operator_notify import notify_operator
+        await notify_operator(msg, critical=False, site_config=site_config)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[POST_PIPELINE] reject notification failed for %s: %s",
+            task_id, exc,
+        )
+
+
 async def run_post_pipeline_actions(
     *,
     database_service: Any,
@@ -678,6 +777,42 @@ async def run_post_pipeline_actions(
             quality_score = float(result.get("quality_score", 0))
         except (TypeError, ValueError):
             quality_score = 0.0
+
+    # 0. Canonical terminal-status guard (defense-in-depth). The pipeline's
+    # outcome is authoritative on pipeline_tasks.status, NOT result["status"]
+    # — qa.aggregate halts the graph and writes status='rejected' to the DB
+    # directly (the in-memory status channel is not load-bearing). Re-read it
+    # so an already-decided task never receives the success-path side-effects:
+    #   - rejected  → a routine 'QA rejected' Discord notice (no false
+    #                 awaiting-approval ping, no task.completed webhook, and
+    #                 crucially no auto-publish of QA-rejected content in an
+    #                 auto-publish-opt-in niche)
+    #   - failed / cancelled / published / approved → skip silently (each is
+    #                 handled by its own path)
+    # Fails OPEN (proceeds) when the status can't be read, so a transient DB
+    # hiccup never silences a genuinely-awaiting post.
+    canonical_status, reject_reason = await _read_task_status(
+        database_service, task_id,
+    )
+    if canonical_status == "rejected":
+        logger.info(
+            "[POST_PIPELINE] task %s is rejected (canonical) — sending a "
+            "reject notice instead of the awaiting-approval ping", task_id,
+        )
+        await _notify_operator_rejected(
+            site_config=site_config,
+            task_id=task_id,
+            topic=topic,
+            quality_score=quality_score,
+            reason=reject_reason,
+        )
+        return
+    if canonical_status in _DECIDED_NON_REJECTED_STATUSES:
+        logger.info(
+            "[POST_PIPELINE] task %s already in terminal status %r — skipping "
+            "success-path side-effects", task_id, canonical_status,
+        )
+        return
 
     # 1. task.completed webhook — fires unconditionally on success.
     try:

@@ -46,10 +46,13 @@ KERNEL_PURITY_BASELINE = {
     # pipeline_templates dev_diary factory imports narrate_bundle atom lazily;
     # dev_diary template is the one remaining non-graph_def path.
     "services/pipeline_templates/__init__.py:106",
-    # post_pipeline_actions calls auto_publish_gate lazily (3 import sites).
-    "services/post_pipeline_actions.py:396",
-    "services/post_pipeline_actions.py:445",
-    "services/post_pipeline_actions.py:521",
+    # post_pipeline_actions calls modules.content.api (public surface) lazily
+    # (3 import sites). Lines shifted 396/445/521 -> 414/463/539 by the #1834
+    # canonical terminal-status guard (the `import re` + _DECIDED_NON_REJECTED_
+    # STATUSES constant + docstring step 0 added ~18 lines above these funcs).
+    "services/post_pipeline_actions.py:414",
+    "services/post_pipeline_actions.py:463",
+    "services/post_pipeline_actions.py:539",
     # publish_service calls record_post_approve_metrics lazily (via
     # modules/content/api public seam — same pattern as post_pipeline_actions).
     # Line shifted 1038 -> 1082 by the #729 _niche_allowlist_block helper.

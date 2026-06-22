@@ -59,21 +59,25 @@ import pytest
 # ---------------------------------------------------------------------------
 
 
-def _make_pool(*, fetchval_return=None, execute_return=None):
+def _make_pool(*, fetchval_return=None, execute_return=None, fetchrow_return=None):
     """asyncpg pool double with both ``pool.acquire()`` + bare ``execute``.
 
     The post-pipeline helper uses pool.execute() directly for the
-    pipeline_gate_history insert and pool.fetchval() for the
-    preview_token lookup, but acquires a connection for the
+    pipeline_gate_history insert, pool.fetchval() for the
+    preview_token lookup, and pool.fetchrow() for the canonical
+    pipeline_tasks.status re-read (terminal-status guard) + the
+    auto-publish niche lookup, but acquires a connection for the
     DETERMINISTIC_COMPOSITOR writer_rag_mode check.
     """
     conn = MagicMock()
     conn.fetchval = AsyncMock(return_value=fetchval_return)
     conn.execute = AsyncMock(return_value=execute_return)
+    conn.fetchrow = AsyncMock(return_value=fetchrow_return)
 
     pool = MagicMock()
     pool.fetchval = AsyncMock(return_value=fetchval_return)
     pool.execute = AsyncMock(return_value=execute_return)
+    pool.fetchrow = AsyncMock(return_value=fetchrow_return)
 
     @asynccontextmanager
     async def _acquire():
@@ -634,6 +638,225 @@ class TestFailureIsolation:
         # Webhook tried, failed — but notification still went out.
         emit_mock.assert_awaited()
         notify_mock.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
+# Canonical terminal-status guard — a QA-rejected task must NOT get the
+# success-path side-effects (false "Awaiting approval" ping / auto-publish).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRejectedTaskGuard:
+    """qa.aggregate halts the graph and writes ``pipeline_tasks.status =
+    'rejected'`` directly (modules/content/atoms/_qa_persist.py). The
+    in-memory ``result`` dict is NOT the canonical signal, so
+    ``run_post_pipeline_actions`` must re-read the DB status and route a
+    rejected task to a routine 'QA rejected' notice — never the
+    success-path 'Awaiting approval' ping, ``task.completed`` webhook, or
+    auto-publish. Regression for the false-positive operator ping observed
+    on task 5c99f281 (2026-06-22: status=rejected, yet Discord said
+    'Awaiting approval: ... Score: 84/100').
+    """
+
+    _REJECT_ROW = {
+        "status": "rejected",
+        "error_message": (
+            "QA rejected (score 84/100). deepeval_faithfulness: The score "
+            "is 0.78 because the actual output contains several "
+            "contradictions with the retrieval context."
+        ),
+        "niche_slug": "glad-labs",
+        "category": "technology",
+    }
+
+    @pytest.mark.asyncio
+    async def test_qa_rejected_sends_reject_notice_not_awaiting(self):
+        from services.post_pipeline_actions import run_post_pipeline_actions
+
+        pool, _ = _make_pool(fetchrow_return=self._REJECT_ROW)
+        db = _make_db_service(pool=pool)
+        site = _make_site_config(values={"preview_base_url": "http://x/"})
+        settings = _make_settings_service(
+            values={"min_curation_score": "70", "require_human_approval": "true"},
+        )
+
+        notify_mock = AsyncMock()
+        with patch(
+            "services.post_pipeline_actions.emit_webhook_event",
+            new_callable=AsyncMock,
+        ), patch(
+            "services.integrations.operator_notify.notify_operator",
+            notify_mock,
+        ):
+            await run_post_pipeline_actions(
+                database_service=db,
+                task_id="5c99f281",
+                topic="Avoiding Breaking Changes in AI Agent Consoles",
+                # The result dict LIES (says awaiting) — proves the guard
+                # reads the canonical DB status, not result["status"].
+                result=_result(score=84, status="awaiting_approval"),
+                site_config=site,
+                settings_service=settings,
+            )
+
+        notify_mock.assert_awaited_once()
+        msg = notify_mock.call_args.args[0]
+        assert "QA rejected" in msg
+        assert "Avoiding Breaking Changes in AI Agent Consoles" in msg
+        assert "84" in msg  # score surfaced
+        assert "deepeval_faithfulness" in msg  # failing rail surfaced
+        # The false success ping must NOT appear.
+        assert "Awaiting approval" not in msg
+        # Routine outcome → Discord (critical=False), not a Telegram page.
+        assert notify_mock.call_args.kwargs.get("critical") is False
+
+    @pytest.mark.asyncio
+    async def test_qa_rejected_suppresses_task_completed_webhook(self):
+        from services.post_pipeline_actions import run_post_pipeline_actions
+
+        pool, _ = _make_pool(fetchrow_return=self._REJECT_ROW)
+        db = _make_db_service(pool=pool)
+        site = _make_site_config()
+        settings = _make_settings_service(values={"min_curation_score": "70"})
+
+        emit_mock = AsyncMock()
+        with patch(
+            "services.post_pipeline_actions.emit_webhook_event", emit_mock,
+        ), patch(
+            "services.integrations.operator_notify.notify_operator",
+            new_callable=AsyncMock,
+        ):
+            await run_post_pipeline_actions(
+                database_service=db,
+                task_id="5c99f281",
+                topic="Avoiding Breaking Changes in AI Agent Consoles",
+                result=_result(score=84),
+                site_config=site,
+                settings_service=settings,
+            )
+
+        # A rejected task is not a completion — task.completed must not fire.
+        events = [c.args[1] for c in emit_mock.call_args_list]
+        assert "task.completed" not in events, (
+            f"task.completed should be suppressed for a rejected task; "
+            f"events seen: {events}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_qa_rejected_does_not_auto_publish(self):
+        from services.post_pipeline_actions import run_post_pipeline_actions
+
+        pool, _ = _make_pool(fetchrow_return=self._REJECT_ROW)
+        db = _make_db_service(pool=pool)
+        site = _make_site_config()
+        settings = _make_settings_service(
+            values={"min_curation_score": "70", "require_human_approval": "false"},
+        )
+
+        # A rejected post that clears the auto-publish threshold must STILL
+        # never publish — the guard returns before _maybe_auto_publish.
+        auto_pub_mock = AsyncMock(return_value=True)
+        with patch(
+            "services.post_pipeline_actions.emit_webhook_event",
+            new_callable=AsyncMock,
+        ), patch(
+            "modules.content.api.get_auto_publish_threshold",
+            AsyncMock(return_value=70.0),
+        ), patch(
+            "modules.content.api.auto_publish_task", auto_pub_mock,
+        ), patch(
+            "services.integrations.operator_notify.notify_operator",
+            new_callable=AsyncMock,
+        ):
+            await run_post_pipeline_actions(
+                database_service=db,
+                task_id="5c99f281",
+                topic="Avoiding Breaking Changes in AI Agent Consoles",
+                result=_result(score=84),
+                site_config=site,
+                settings_service=settings,
+            )
+
+        auto_pub_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_already_published_task_skips_all_side_effects(self):
+        from services.post_pipeline_actions import run_post_pipeline_actions
+
+        pool, _ = _make_pool(
+            fetchrow_return={"status": "published", "error_message": None},
+        )
+        db = _make_db_service(pool=pool)
+        site = _make_site_config()
+        settings = _make_settings_service(values={"min_curation_score": "70"})
+
+        emit_mock = AsyncMock()
+        notify_mock = AsyncMock()
+        with patch(
+            "services.post_pipeline_actions.emit_webhook_event", emit_mock,
+        ), patch(
+            "services.integrations.operator_notify.notify_operator",
+            notify_mock,
+        ):
+            await run_post_pipeline_actions(
+                database_service=db,
+                task_id="t-published",
+                topic="Already shipped",
+                result=_result(score=92),
+                site_config=site,
+                settings_service=settings,
+            )
+
+        notify_mock.assert_not_awaited()
+        events = [c.args[1] for c in emit_mock.call_args_list]
+        assert "task.completed" not in events
+
+    @pytest.mark.asyncio
+    async def test_awaiting_approval_still_sends_awaiting_notice(self):
+        """Regression guard: a genuinely awaiting task is unaffected by the
+        new terminal-status guard — it still gets the 'Awaiting approval'
+        ping."""
+        from services.post_pipeline_actions import run_post_pipeline_actions
+
+        pool, _ = _make_pool(
+            fetchval_return=None,
+            fetchrow_return={
+                "status": "awaiting_approval",
+                "error_message": None,
+                "niche_slug": None,
+                "category": None,
+            },
+        )
+        db = _make_db_service(pool=pool)
+        site = _make_site_config(values={"preview_base_url": "http://x/"})
+        settings = _make_settings_service(
+            values={
+                "min_curation_score": "70",
+                "require_human_approval": "true",
+                "qa_preview_screenshot_enabled": "false",
+            },
+        )
+
+        notify_mock = AsyncMock()
+        with patch(
+            "services.post_pipeline_actions.emit_webhook_event",
+            new_callable=AsyncMock,
+        ), patch(
+            "services.integrations.operator_notify.notify_operator",
+            notify_mock,
+        ):
+            await run_post_pipeline_actions(
+                database_service=db,
+                task_id="t-awaiting",
+                topic="A perfectly good post",
+                result=_result(score=88),
+                site_config=site,
+                settings_service=settings,
+            )
+
+        notify_mock.assert_awaited_once()
+        assert "Awaiting approval" in notify_mock.call_args.args[0]
 
 
 # ---------------------------------------------------------------------------

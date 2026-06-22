@@ -542,8 +542,13 @@ async def _run_content_generation_flow(
     # The original inline block lived in ``task_executor._process_loop``;
     # that file was deleted in Stage 4 (poindexter#410) so this is now
     # the sole driver. Failure-path webhooks fire via the existing
-    # FailedTaskHandler stage where it matters; we only run the helper
-    # on successful pipeline completions (status != 'failed').
+    # FailedTaskHandler stage where it matters; we skip the helper only for
+    # 'failed' (the crash path above already alerted + marked the row). Every
+    # OTHER terminal outcome is disambiguated INSIDE run_post_pipeline_actions,
+    # which re-reads the canonical pipeline_tasks.status: a QA-rejected task
+    # gets a routine reject notice (not the awaiting-approval ping), and
+    # published/approved are skipped. So 'rejected' must NOT be excluded here —
+    # the helper needs to be reached to emit the reject notice.
     try:
         final_status = (
             result.get("status", "awaiting_approval")
