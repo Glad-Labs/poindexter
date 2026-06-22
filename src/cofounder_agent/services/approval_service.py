@@ -107,6 +107,14 @@ class GateMismatchError(ApprovalServiceError):
     instead of approving the wrong artifact."""
 
 
+class RegenCapReachedError(ApprovalServiceError):
+    """Raised when a ``regen_at_gate`` request would exceed the per-component
+    cap (``app_settings.regen_<component>_max_attempts``). HITL means the
+    operator is the loop bound; this cap is the runaway guard. On cap the task
+    stays paused at the gate so the operator must approve or reject instead of
+    looping again."""
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -755,6 +763,182 @@ async def reject(
         "gate_name": rejected_gate,
         "new_status": new_status,
         "reason": reason or "",
+    }
+
+
+# ---------------------------------------------------------------------------
+# Regen — preview_gate component-scoped regeneration (images | text)
+# ---------------------------------------------------------------------------
+
+# Static, component-keyed SQL — no f-string interpolation into the statement.
+# ``component`` is whitelisted to these two keys, so there is no dynamic-SQL
+# surface; the operator surface just picks the right prepared statement.
+_REGEN_ATTEMPTS_SELECT = {
+    "images": (
+        "SELECT regen_images_attempts FROM pipeline_tasks "
+        "WHERE task_id::text = $1 FOR UPDATE"
+    ),
+    "text": (
+        "SELECT regen_text_attempts FROM pipeline_tasks "
+        "WHERE task_id::text = $1 FOR UPDATE"
+    ),
+}
+_REGEN_UPDATE = {
+    "images": """
+        UPDATE pipeline_tasks
+           SET awaiting_gate = NULL,
+               gate_artifact = '{}'::jsonb,
+               gate_paused_at = NULL,
+               status = 'in_progress',
+               regen_images_attempts = regen_images_attempts + 1,
+               regen_images_pending = true,
+               updated_at = NOW()
+         WHERE task_id::text = $1
+    """,
+    "text": """
+        UPDATE pipeline_tasks
+           SET awaiting_gate = NULL,
+               gate_artifact = '{}'::jsonb,
+               gate_paused_at = NULL,
+               status = 'in_progress',
+               regen_text_attempts = regen_text_attempts + 1,
+               regen_text_pending = true,
+               updated_at = NOW()
+         WHERE task_id::text = $1
+    """,
+}
+_REGEN_DEFAULT_CAP = {"images": 3, "text": 2}
+
+
+async def regen_at_gate(
+    *,
+    task_id: str,
+    component: str,
+    steering: str | None = None,
+    gate_name: str | None = None,
+    actor: str = "human",
+    site_config: Any,
+    pool: Any,
+) -> dict[str, Any]:
+    """Request a surgical regen of one component (``images``/``text``) of a
+    post paused at a gate.
+
+    Sets the one-shot ``pipeline_tasks.regen_<component>_pending`` flag the
+    ``approval_gate`` atom consumes on resume (routing the graph's backward loop
+    edge to the image/writer block), bumps the monotonic
+    ``regen_<component>_attempts`` counter, and writes a ``regen_<component>``
+    ``pipeline_gate_history`` audit row. Like :func:`approve`, it clears the gate
+    columns and sets ``status='in_progress'`` so the CALLER resumes the graph
+    (the resume is the caller's job — CLI/MCP — exactly as for approve).
+
+    Bounded by ``app_settings.regen_<component>_max_attempts`` (defaults: images
+    3, text 2): at the cap this raises :class:`RegenCapReachedError` and leaves
+    the task paused so the operator must approve or reject. ``steering`` is an
+    optional free-text note recorded on the audit row (prompt threading is a
+    follow-up).
+
+    Args:
+        task_id: External ``pipeline_tasks.task_id``.
+        component: ``"images"`` or ``"text"`` — anything else raises ``ValueError``.
+        steering: Optional operator guidance, recorded as the audit feedback.
+        gate_name: Optional gate to assert; None = the task's active gate.
+        actor: Who triggered it (CLI/MCP = 'human').
+        site_config: SiteConfig (DI).
+        pool: asyncpg pool.
+
+    Returns:
+        ``{"ok": True, "task_id", "gate_name", "component", "attempts",
+        "max_attempts", "steering", "previous_status"}``.
+
+    Raises:
+        ValueError: ``component`` is not 'images'/'text'.
+        TaskNotFoundError / TaskNotPausedError / GateMismatchError: as approve.
+        RegenCapReachedError: the component is already at its attempt cap.
+    """
+    if component not in _REGEN_UPDATE:
+        raise ValueError(
+            f"regen component must be 'images' or 'text', got {component!r}"
+        )
+
+    row = await _fetch_task_row(pool, task_id)
+    if row is None:
+        logger.warning("[approval_service] regen: task %s not found", task_id)
+        raise TaskNotFoundError(f"Task {task_id} not found")
+
+    cleared_gate = ensure_gate_match(
+        row,
+        gate_name,
+        entity_label="Task",
+        entity_id=str(task_id),
+        not_paused_exc=TaskNotPausedError,
+        mismatch_exc=GateMismatchError,
+        verb="regen",
+    )
+    previous_status = row.get("status")
+    cap = site_config.get_int(
+        f"regen_{component}_max_attempts", _REGEN_DEFAULT_CAP[component]
+    )
+
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            current = await conn.fetchval(
+                _REGEN_ATTEMPTS_SELECT[component], str(task_id)
+            )
+            current = int(current or 0)
+            if current >= cap:
+                # Leave the task paused (the transaction rolls back having
+                # changed nothing) so the operator must approve or reject.
+                raise RegenCapReachedError(
+                    f"regen cap reached for {component} "
+                    f"({current}/{cap}) on task {task_id} — approve or reject"
+                )
+            new_attempts = current + 1
+
+            await conn.execute(_REGEN_UPDATE[component], str(task_id))
+
+            await conn.execute(
+                """
+                INSERT INTO pipeline_gate_history
+                    (task_id, gate_name, event_kind, feedback, actor, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+                """,
+                str(task_id),
+                cleared_gate,
+                f"regen_{component}",
+                steering or "",
+                actor,
+                json.dumps(
+                    {
+                        "component": component,
+                        "attempts": new_attempts,
+                        "previous_status": previous_status,
+                    },
+                    default=str,
+                ),
+            )
+
+    audit_log_bg(
+        event_type="approval_gate_regen",
+        source="approval_service",
+        details={
+            "gate_name": cleared_gate,
+            "component": component,
+            "attempts": new_attempts,
+            "steering": steering or "",
+        },
+        task_id=str(task_id),
+        severity="info",
+    )
+
+    return {
+        "ok": True,
+        "task_id": str(task_id),
+        "gate_name": cleared_gate,
+        "component": component,
+        "attempts": new_attempts,
+        "max_attempts": cap,
+        "steering": steering or "",
+        "previous_status": previous_status,
     }
 
 

@@ -72,6 +72,19 @@ class TestRegistryShape:
         assert METADATA["video_shot_qa_enabled"]["value_type"] == "boolean"
         assert METADATA["video_shot_qa_threshold"]["value_type"] == "integer"
 
+    def test_preview_gate_keys_seeded_off(self):
+        # preview_gate (component-scoped regen) ships DISABLED — develop behind
+        # the flag; the default flip to 'on' is gated on end-to-end verification
+        # (plan Task 12). The two caps bound the per-component regen loop (the
+        # HITL runaway guard; the surface refuses past them).
+        from services.settings_defaults import DEFAULTS, METADATA
+        assert DEFAULTS["pipeline_gate_preview_gate"] == "off"
+        assert DEFAULTS["regen_images_max_attempts"] == "3"
+        assert DEFAULTS["regen_text_max_attempts"] == "2"
+        assert METADATA["pipeline_gate_preview_gate"]["value_type"] == "string"
+        assert METADATA["regen_images_max_attempts"]["value_type"] == "integer"
+        assert METADATA["regen_text_max_attempts"]["value_type"] == "integer"
+
     def test_caption_provider_keys_seeded(self):
         # media.transcribe_narration selects its ASR provider via
         # get_caption_provider → video_caption_engine (default 'speaches', the

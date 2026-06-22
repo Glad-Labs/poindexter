@@ -31,6 +31,7 @@ import pytest
 
 from services.approval_service import (
     GateMismatchError,
+    RegenCapReachedError,
     TaskNotFoundError,
     TaskNotPausedError,
     approve,
@@ -38,6 +39,7 @@ from services.approval_service import (
     list_gates,
     list_pending,
     pause_at_gate,
+    regen_at_gate,
     reject,
     set_gate_enabled,
     show_pending,
@@ -99,10 +101,39 @@ class FakeConnection:
             # approve switched this INSERT to fetchval to capture RETURNING id.
             self._record_gate_event(args)
             return len(self._store.events)  # synthetic bigint id
+        if sql_norm.startswith("SELECT regen_images_attempts") or sql_norm.startswith(
+            "SELECT regen_text_attempts"
+        ):
+            # regen_at_gate's cap read (SELECT ... FOR UPDATE).
+            (task_id,) = args
+            row = self._store.tasks.get(task_id) or {}
+            col = (
+                "regen_images_attempts"
+                if "regen_images_attempts" in sql_norm
+                else "regen_text_attempts"
+            )
+            return int(row.get(col, 0))
         raise AssertionError(f"FakeConnection.fetchval saw unexpected SQL: {sql_norm[:80]}")
 
     async def execute(self, sql: str, *args):
         sql_norm = " ".join(sql.split())
+        if sql_norm.startswith("UPDATE pipeline_tasks") and "regen_" in sql_norm:
+            # regen_at_gate's mutation: clear gate, in_progress, bump the
+            # component attempts counter, set the pending flag.
+            (task_id,) = args
+            row = self._store.tasks.get(task_id)
+            if row is not None:
+                row["status"] = "in_progress"
+                row["awaiting_gate"] = None
+                row["gate_artifact"] = "{}"
+                row["gate_paused_at"] = None
+                if "regen_images_pending = true" in sql_norm:
+                    row["regen_images_attempts"] = int(row.get("regen_images_attempts", 0)) + 1
+                    row["regen_images_pending"] = True
+                if "regen_text_pending = true" in sql_norm:
+                    row["regen_text_attempts"] = int(row.get("regen_text_attempts", 0)) + 1
+                    row["regen_text_pending"] = True
+            return "UPDATE 1"
         if sql_norm.startswith("UPDATE pipeline_tasks SET awaiting_gate = $1"):
             gate, artifact_json, paused_at, task_id = args
             row = self._store.tasks.get(task_id)
@@ -237,8 +268,16 @@ class FakePool:
 
 def _make_site_config(values: dict[str, str] | None = None):
     cache = dict(values or {})
+
+    def _get_int(k, d=0):
+        try:
+            return int(cache.get(k, d))
+        except (TypeError, ValueError):
+            return d
+
     return SimpleNamespace(
         get=lambda k, d=None: cache.get(k, d),
+        get_int=_get_int,
         _config=cache,
     )
 
@@ -617,3 +656,111 @@ class TestGateSettings:
         assert topic["pending_count"] == 0
         assert preview["enabled"] is False  # never set
         assert preview["pending_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# regen_at_gate — preview_gate component-scoped regen surface
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestRegenAtGate:
+    """The operator surface for preview_gate's surgical regen. Sets the
+    one-shot ``regen_<c>_pending`` flag the gate atom consumes, bumps the
+    monotonic attempts counter, refuses past the per-component cap, and writes
+    a ``regen_<c>`` audit row. Mirrors approve()'s gate-clear so the CLI can
+    immediately resume the graph."""
+
+    def _paused_task(self, **extra):
+        base = {
+            "status": "awaiting_gate",
+            "awaiting_gate": "preview_gate",
+            "gate_artifact": json.dumps({"title": "x"}),
+            "gate_paused_at": datetime.now(timezone.utc),
+            "topic": "t",
+            "title": "x",
+            "regen_images_attempts": 0,
+            "regen_text_attempts": 0,
+        }
+        base.update(extra)
+        return base
+
+    async def test_images_sets_pending_bumps_attempts_audits(
+        self, fake_pool, patched_audit,
+    ):
+        fake_pool.store.tasks["t-1"] = self._paused_task()
+        result = await regen_at_gate(
+            task_id="t-1", component="images", steering="less busy",
+            site_config=_make_site_config({"regen_images_max_attempts": "3"}),
+            pool=fake_pool,
+        )
+        assert result["ok"] is True
+        assert result["component"] == "images"
+        assert result["attempts"] == 1
+        row = fake_pool.store.tasks["t-1"]
+        assert row["regen_images_pending"] is True
+        assert row["regen_images_attempts"] == 1
+        # Gate cleared + task running so the CLI can resume the graph.
+        assert row["status"] == "in_progress"
+        assert row["awaiting_gate"] is None
+        # Audit row: event_kind 'regen_images', steering carried as feedback.
+        assert any(
+            e.get("event_kind") == "regen_images"
+            and e.get("task_id") == "t-1"
+            and e.get("feedback") == "less busy"
+            for e in fake_pool.store.events
+        )
+
+    async def test_text_sets_text_pending_only(self, fake_pool, patched_audit):
+        fake_pool.store.tasks["t-1"] = self._paused_task()
+        result = await regen_at_gate(
+            task_id="t-1", component="text",
+            site_config=_make_site_config({"regen_text_max_attempts": "2"}),
+            pool=fake_pool,
+        )
+        assert result["component"] == "text"
+        row = fake_pool.store.tasks["t-1"]
+        assert row["regen_text_pending"] is True
+        assert row["regen_text_attempts"] == 1
+        # The image flag is untouched (surgical — keep the images).
+        assert row.get("regen_images_pending") is None
+
+    async def test_cap_refuses_and_leaves_task_paused(self, fake_pool, patched_audit):
+        fake_pool.store.tasks["t-1"] = self._paused_task(regen_images_attempts=3)
+        with pytest.raises(RegenCapReachedError):
+            await regen_at_gate(
+                task_id="t-1", component="images",
+                site_config=_make_site_config({"regen_images_max_attempts": "3"}),
+                pool=fake_pool,
+            )
+        row = fake_pool.store.tasks["t-1"]
+        # Unchanged: still paused for approve/reject, no bump, no pending flag.
+        assert row["status"] == "awaiting_gate"
+        assert row["awaiting_gate"] == "preview_gate"
+        assert row["regen_images_attempts"] == 3
+        assert row.get("regen_images_pending") is None
+
+    async def test_unknown_component_raises_value_error(self, fake_pool):
+        fake_pool.store.tasks["t-1"] = self._paused_task()
+        with pytest.raises(ValueError):
+            await regen_at_gate(
+                task_id="t-1", component="audio",
+                site_config=_make_site_config(), pool=fake_pool,
+            )
+
+    async def test_not_paused_raises(self, fake_pool):
+        fake_pool.store.tasks["t-1"] = self._paused_task(
+            awaiting_gate=None, status="in_progress",
+        )
+        with pytest.raises(TaskNotPausedError):
+            await regen_at_gate(
+                task_id="t-1", component="images",
+                site_config=_make_site_config(), pool=fake_pool,
+            )
+
+    async def test_task_missing_raises(self, fake_pool):
+        with pytest.raises(TaskNotFoundError):
+            await regen_at_gate(
+                task_id="nope", component="images",
+                site_config=_make_site_config(), pool=fake_pool,
+            )

@@ -134,6 +134,17 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "compile_meta", "atom": "content.compile_meta"},
         {"id": "persist_task", "atom": "content.persist_task"},
         {"id": "record_pipeline_version", "atom": "content.record_pipeline_version"},
+        # Component-scoped regen gate (preview_gate). Sits AFTER the draft is
+        # persisted (status=awaiting_approval) so the operator reviews the real
+        # persisted draft, and BEFORE the terminal publish decision. Seeded
+        # DISABLED (pipeline_gate_preview_gate) — a passthrough no-op until the
+        # operator opts in. regen_targets map the operator's regen choice to the
+        # backward loop-edge target the atom emits via _goto. See
+        # docs/architecture/2026-06-21-component-scoped-regen-gate.md.
+        {"id": "preview_gate", "atom": "atoms.approval_gate",
+         "config": {"gate_name": "preview_gate",
+                    "regen_targets": {"images": "plan_image_markers",
+                                      "text": "generate_draft"}}},
         {"id": "evaluate_auto_publish", "atom": "content.evaluate_auto_publish"},
     ],
     "edges": [
@@ -183,7 +194,18 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "capture_training_data", "to": "compile_meta"},
         {"from": "compile_meta", "to": "persist_task"},
         {"from": "persist_task", "to": "record_pipeline_version"},
-        {"from": "record_pipeline_version", "to": "evaluate_auto_publish"},
+        # preview_gate (component-scoped regen). Default forward edge = approve;
+        # the two branch+loop back-edges are the operator's regen choices the
+        # gate atom routes to via _goto (loop-flagged so the backward edges are
+        # DAG-exempt, same as the qa_rewrite rescue cycle above).
+        {"from": "record_pipeline_version", "to": "preview_gate"},
+        {"from": "preview_gate", "to": "evaluate_auto_publish"},
+        # regen_images: re-run the image block only (text untouched).
+        {"from": "preview_gate", "to": "plan_image_markers",
+         "branch": True, "loop": True},
+        # regen_text: re-run the writer block; images refresh on the cascade.
+        {"from": "preview_gate", "to": "generate_draft",
+         "branch": True, "loop": True},
         {"from": "evaluate_auto_publish", "to": "END"},
     ],
 }

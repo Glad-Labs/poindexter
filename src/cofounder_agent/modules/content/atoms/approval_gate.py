@@ -170,6 +170,28 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 "_halt": True,
                 "_halt_reason": f"gate {gate_name!r} rejected by operator",
             }
+        # Pending-regen short-circuit (preview_gate component regen). Read the
+        # one-shot pending flag BEFORE pausing so a regen reroutes the graph's
+        # backward loop edge WITHOUT re-paging the operator; clear the flag
+        # (consume) so the loop-back finds it false and falls through to a
+        # single fresh review pause. Outranks a stale approval — the operator
+        # asking for a redo is newer intent than an earlier approve.
+        pending = await _pending_regen(pool, str(task_id))
+        if pending is not None:
+            out = _regen_output(pending, state.get("regen_targets") or {})
+            if "_goto" in out:
+                await _consume_regen(pool, str(task_id), pending)
+                logger.info(
+                    "[atoms.approval_gate:%s] regen_%s consumed → _goto %s",
+                    gate_name, pending, out["_goto"],
+                )
+            else:
+                logger.error(
+                    "[atoms.approval_gate:%s] regen_%s pending but no target "
+                    "configured — halting",
+                    gate_name, pending,
+                )
+            return out
         if decision == "approved":
             logger.info(
                 "[atoms.approval_gate:%s] already approved — passthrough",
@@ -348,6 +370,72 @@ async def _gate_decision(pool: Any, task_id: str, gate_name: str) -> str | None:
     except Exception as exc:  # noqa: BLE001
         logger.debug("[atoms.approval_gate] gate-decision check failed: %s", exc)
         return None
+
+
+def _regen_output(component: str, regen_targets: dict[str, Any]) -> dict[str, Any]:
+    """Map a pending regen component to this atom's output.
+
+    A configured target → ``{"_goto": <node_id>}`` so the compiler's branch
+    router routes the backward loop edge to the image/writer block. A MISSING
+    target is a graph misconfiguration (the node's ``regen_targets`` config is
+    absent/incomplete): fail loud with ``_halt`` rather than silently passing
+    unreviewed content forward.
+    """
+    target = (regen_targets or {}).get(component)
+    if not target:
+        return {
+            "_halt": True,
+            "_halt_reason": (
+                f"preview_gate: regen_{component} pending but no regen target "
+                f"configured for {component!r} (node config 'regen_targets')"
+            ),
+        }
+    return {"_goto": target}
+
+
+async def _pending_regen(pool: Any, task_id: str) -> str | None:
+    """Return ``"images"``/``"text"`` for an unconsumed regen request, else None.
+
+    Reads the one-shot ``pipeline_tasks.regen_<c>_pending`` flags the operator
+    surface (``approval_service.regen_at_gate``) sets. Images win a tie (the
+    common "bad image, good text" case). Any error — the columns not present yet
+    (pre-migration) or a bad id — means "no regen" → ``None`` → normal pause.
+    """
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT regen_images_pending, regen_text_pending
+                  FROM pipeline_tasks
+                 WHERE task_id::text = $1
+                """,
+                str(task_id),
+            )
+        if row is None:
+            return None
+        if row.get("regen_images_pending"):
+            return "images"
+        if row.get("regen_text_pending"):
+            return "text"
+        return None
+    except Exception as exc:  # noqa: BLE001 — missing columns / bad id → no regen
+        logger.debug("[atoms.approval_gate] pending-regen check failed: %s", exc)
+        return None
+
+
+async def _consume_regen(pool: Any, task_id: str, component: str) -> None:
+    """Clear the one-shot ``regen_<component>_pending`` flag (consume the regen).
+
+    Once cleared, the loop-back re-entry sees ``pending=false`` and falls through
+    to a single fresh review pause instead of re-honoring the same request. The
+    monotonic ``regen_<c>_attempts`` counter is owned by the surface, not here.
+    """
+    col = "regen_images_pending" if component == "images" else "regen_text_pending"
+    async with pool.acquire() as conn:
+        await conn.execute(
+            f"UPDATE pipeline_tasks SET {col} = false WHERE task_id::text = $1",
+            str(task_id),
+        )
 
 
 __all__ = ["ATOM_META", "run"]

@@ -164,6 +164,39 @@ class TestCanonicalBlogSpec:
         # The default forward edge from qa_aggregate is unchanged.
         assert ("qa_aggregate", "seo_all_metadata") in pairs
 
-    def test_node_count_is_38(self):
-        # 37 + review_video_shot_list (director self-critique, video-quality §3.1)
-        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 38
+    def test_preview_gate_wired(self):
+        spec = CANONICAL_BLOG_GRAPH_DEF
+
+        # The gate node exists — an approval_gate atom with the regen targets in
+        # its static config (the atom reads them on a pending-regen short-circuit).
+        gate = next(n for n in spec["nodes"] if n["id"] == "preview_gate")
+        assert gate["atom"] == "atoms.approval_gate"
+        cfg = gate.get("config") or {}
+        assert cfg.get("gate_name") == "preview_gate"
+        assert cfg.get("regen_targets") == {
+            "images": "plan_image_markers", "text": "generate_draft",
+        }
+
+        edges = spec["edges"]
+        pairs = {(e["from"], e["to"]) for e in edges}
+        # Rerouted finalize: record_pipeline_version -> preview_gate -> evaluate.
+        assert ("record_pipeline_version", "preview_gate") in pairs
+        assert ("preview_gate", "evaluate_auto_publish") in pairs
+        # The old direct edge is gone — every post now flows THROUGH the gate
+        # (a passthrough no-op while disabled).
+        assert ("record_pipeline_version", "evaluate_auto_publish") not in pairs
+        # Backward branch+loop regen edges to the image + writer block entries.
+        img = next(
+            e for e in edges
+            if e["from"] == "preview_gate" and e["to"] == "plan_image_markers"
+        )
+        assert img.get("branch") is True and img.get("loop") is True
+        txt = next(
+            e for e in edges
+            if e["from"] == "preview_gate" and e["to"] == "generate_draft"
+        )
+        assert txt.get("branch") is True and txt.get("loop") is True
+
+    def test_node_count_is_39(self):
+        # 38 + preview_gate (component-scoped regen gate, seeded disabled)
+        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 39

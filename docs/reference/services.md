@@ -559,9 +559,9 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 
 ---
 
-## Content pipeline (`canonical_blog` graph_def) — 38 nodes
+## Content pipeline (`canonical_blog` graph_def) — 39 nodes
 
-Rendered in execution order from `services/canonical_blog_spec.py::CANONICAL_BLOG_GRAPH_DEF` (11 `stage.*` + 12 `content.*` + 13 `qa.*` + 1 `seo.*` + 1 `atoms.approval_gate`). `stage.*` atoms live in `modules/content/stages/`; `content.*` / `qa.*` / `seo.*` and the approval gate in `modules/content/atoms/`.
+Rendered in execution order from `services/canonical_blog_spec.py::CANONICAL_BLOG_GRAPH_DEF` (11 `stage.*` + 12 `content.*` + 13 `qa.*` + 1 `seo.*` + 2 `atoms.approval_gate`). `stage.*` atoms live in `modules/content/stages/`; `content.*` / `qa.*` / `seo.*` and the approval gate in `modules/content/atoms/`.
 
 1. `verify_task` → `stage.verify_task`
 2. `generate_draft` → `content.generate_draft`
@@ -600,7 +600,8 @@ Rendered in execution order from `services/canonical_blog_spec.py::CANONICAL_BLO
 35. `compile_meta` → `content.compile_meta`
 36. `persist_task` → `content.persist_task`
 37. `record_pipeline_version` → `content.record_pipeline_version`
-38. `evaluate_auto_publish` → `content.evaluate_auto_publish`
+38. `preview_gate` → `atoms.approval_gate`
+39. `evaluate_auto_publish` → `content.evaluate_auto_publish`
 
 ---
 

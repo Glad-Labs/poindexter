@@ -837,10 +837,10 @@ def build_graph_from_spec(
     # Pre-scan for branch edges: a source with a "branch": true out-edge gets
     # a _goto-aware conditional router (see _branch_router) instead of the
     # default halt/fan-out routers. Maps source node id -> branch target id.
-    branch_by_src: dict[str, str] = {}
+    branch_by_src: dict[str, list[str]] = {}
     for e in edges:
         if e.get("branch"):
-            branch_by_src[e["from"]] = e["to"]
+            branch_by_src.setdefault(e["from"], []).append(e["to"])
 
     def _halt_router_single(target: Any) -> Callable[[PipelineState], Any]:
         """Halt-aware router for a single successor."""
@@ -873,42 +873,49 @@ def build_graph_from_spec(
         return _route
 
     def _branch_router(
-        branch_target: Any, default_target: Any,
+        branch_targets: list[Any], default_target: Any,
     ) -> Callable[[PipelineState], Any]:
-        """Conditional router for a node with a ``branch``-flagged out-edge.
+        """Conditional router for a node with one or more ``branch``-flagged
+        out-edges.
 
-        Priority: ``_halt`` (-> END) > ``_goto == branch_target`` (-> the
-        branch/rescue node) > the default forward target. This is how
-        qa.aggregate routes a deferred-rescue reject to qa.rewrite while a
-        normal approve/exhausted-reject continues down the default edge (or
-        halts).
+        Priority: ``_halt`` (-> END) > ``_goto`` matching ANY branch target
+        (-> that target) > the default forward target. A single branch target
+        is the qa.aggregate->qa.rewrite rescue; multiple targets are the
+        preview_gate 3-way split (approve -> default, regen_images / regen_text
+        -> their branch targets).
         """
+        targets = set(branch_targets)
 
         def _route(state: PipelineState) -> Any:
             if state.get("_halt"):
                 return END
-            if state.get("_goto") == branch_target:
-                return branch_target
+            goto = state.get("_goto")
+            if goto in targets:
+                return goto
             return default_target
 
         _route.__name__ = (
-            f"branch_to_{branch_target}_or_"
-            f"{'END' if default_target is END else default_target}"
+            "branch_to_"
+            + "_".join(str(t) for t in branch_targets)
+            + ("_or_END" if default_target is END else f"_or_{default_target}")
         )
         return _route
 
     for src, dsts in out_by_src.items():
-        # Branch case: a _goto-aware conditional router. Exactly one of this
-        # source's out-edges carries "branch": true; the other (non-branch,
-        # non-loop) edge is the default forward target.
+        # Branch case: a _goto-aware conditional router. One or more of this
+        # source's out-edges carry "branch": true (the qa.rewrite rescue is one;
+        # preview_gate is two); the remaining non-branch edge is the default
+        # forward target.
         if src in branch_by_src:
-            branch_target = _resolve(branch_by_src[src])
-            defaults = [d for d in dsts if d != branch_by_src[src]]
+            bts = branch_by_src[src]  # raw branch target ids (>= 1)
+            resolved_bts = [_resolve(b) for b in bts]
+            defaults = [d for d in dsts if d not in bts]
             default_target = _resolve(defaults[0]) if defaults else END
-            mapping = {branch_target: branch_target, END: END}
+            mapping: dict[Any, Any] = {t: t for t in resolved_bts}
+            mapping[END] = END
             mapping[default_target] = default_target
             g.add_conditional_edges(
-                src, _branch_router(branch_target, default_target), mapping,
+                src, _branch_router(resolved_bts, default_target), mapping,
             )
             continue
         resolved = [_resolve(d) for d in dsts]

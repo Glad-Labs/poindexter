@@ -1122,6 +1122,16 @@ DEFAULTS: dict[str, str] = {
     # draft_gate: pause after writer stage for operator review. Default off —
     # prod runs are unaffected until `poindexter gates set draft_gate on`.
     'pipeline_gate_draft_gate': 'off',
+    # preview_gate: component-scoped regen gate after the draft is persisted.
+    # Default OFF — develop behind the flag; flip to 'on' only after end-to-end
+    # verification (plan Task 12). When on it IS the review point (operator can
+    # approve / regen_images / regen_text / reject). The node is in the graph_def
+    # already (a passthrough no-op while off). regen_*_max_attempts bound the
+    # per-component loop; the surface (regen_at_gate) refuses past them.
+    # See docs/architecture/2026-06-21-component-scoped-regen-gate.md.
+    'pipeline_gate_preview_gate': 'off',
+    'regen_images_max_attempts': '3',
+    'regen_text_max_attempts': '2',
 
     # ----- SEO Harvest Loop (Phase 1) -----
     # The read-only analyzer is safe-on so the opportunity list populates day
@@ -1259,6 +1269,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- Pipeline gates -----
     'pipeline_gate_draft_gate': {'owner': 'template_runner', 'value_type': 'string'},
     'pipeline_gate_seo_refresh_gate': {'owner': 'seo_refresh', 'value_type': 'boolean'},
+    'pipeline_gate_preview_gate': {'owner': 'approval_gate', 'value_type': 'string'},
+    'regen_images_max_attempts': {'owner': 'regen_at_gate', 'value_type': 'integer'},
+    'regen_text_max_attempts': {'owner': 'regen_at_gate', 'value_type': 'integer'},
 
     # ----- Media pipeline master switches -----
     'media_pipeline_trigger_enabled': {'owner': 'dispatch_media_pipeline', 'value_type': 'boolean'},

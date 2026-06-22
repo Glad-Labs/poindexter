@@ -21,7 +21,7 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from langgraph.errors import GraphInterrupt
 
-from tests.unit.services._gate_fakes import FakeConn, FakePool
+from tests.unit.services._gate_fakes import FakeConn, FakePool, executed_sql
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -258,6 +258,129 @@ class TestApprovalGateRetryCountFreshness:
         ):
             out = await approval_gate.run(state)
         assert out == {}
+
+
+# ---------------------------------------------------------------------------
+# 1c. The approval_gate atom — pending-regen short-circuit (preview_gate)
+# ---------------------------------------------------------------------------
+#
+# preview_gate adds a third resume outcome beyond approve/reject: a per-component
+# regen. The operator surface sets pipeline_tasks.regen_<c>_pending=true and
+# resumes the graph. The atom must read that flag BEFORE pausing, clear it
+# (one-shot consume), and route _goto to the configured image/writer block — so
+# it does NOT re-page, and the loop-back (pending now false) falls through to a
+# single fresh review page. See docs/architecture/2026-06-21-component-scoped-
+# regen-gate.md.
+
+
+def _regen_fetchrow(*, images=False, text=False):
+    """A FakeConn.fetchrow callable: no approved/rejected gate-history row, but
+    pipeline_tasks shows the given pending flags."""
+
+    def _fn(sql, args):
+        if "pipeline_gate_history" in sql:
+            return None  # _gate_decision: no approved/rejected decision
+        if "regen_images_pending" in sql:  # _pending_regen
+            return {"regen_images_pending": images, "regen_text_pending": text}
+        return None
+
+    return _fn
+
+
+@pytest.mark.unit
+class TestApprovalGatePendingRegen:
+    _TARGETS = {"images": "plan_image_markers", "text": "generate_draft"}
+
+    async def test_pending_image_regen_routes_goto_and_consumes(self):
+        from modules.content.atoms import approval_gate
+
+        conn = FakeConn(fetchrow_result=_regen_fetchrow(images=True))
+        state = _state_with_pool(
+            conn, gate_name="preview_gate",
+            regen_targets=self._TARGETS, title="x", topic="t",
+        )
+        pause_mock = AsyncMock()
+        notify_mock = AsyncMock()
+        with (
+            patch("services.approval_service.is_gate_enabled", return_value=True),
+            patch("services.approval_service.pause_at_gate", pause_mock),
+            patch(
+                "services.integrations.operator_notify.notify_operator", notify_mock,
+            ),
+            # If the impl is missing, the atom falls through to interrupt();
+            # return a sentinel so RED fails cleanly on the _goto assertion
+            # rather than raising GraphInterrupt. In GREEN this is never called.
+            patch.object(approval_gate, "interrupt", lambda payload: {"approved": True}),
+        ):
+            out = await approval_gate.run(state)
+
+        assert out.get("_goto") == "plan_image_markers"
+        assert "_halt" not in out
+        # Consumed at the short-circuit → no pause, no page.
+        pause_mock.assert_not_awaited()
+        notify_mock.assert_not_awaited()
+        # One-shot: the atom cleared the flag so the loop-back re-pauses.
+        assert "regen_images_pending = false" in executed_sql(conn).lower()
+
+    async def test_pending_text_regen_routes_goto_and_consumes(self):
+        from modules.content.atoms import approval_gate
+
+        conn = FakeConn(fetchrow_result=_regen_fetchrow(text=True))
+        state = _state_with_pool(
+            conn, gate_name="preview_gate",
+            regen_targets=self._TARGETS, title="x", topic="t",
+        )
+        with (
+            patch("services.approval_service.is_gate_enabled", return_value=True),
+            patch("services.approval_service.pause_at_gate", AsyncMock()),
+            patch(
+                "services.integrations.operator_notify.notify_operator", AsyncMock(),
+            ),
+        ):
+            out = await approval_gate.run(state)
+
+        assert out.get("_goto") == "generate_draft"
+        assert "_halt" not in out
+        assert "regen_text_pending = false" in executed_sql(conn).lower()
+
+    async def test_image_regen_outranks_stale_approval(self):
+        """A pending regen takes priority over an 'approved' row (regen is the
+        newer intent; the approval predates the operator asking for a redo)."""
+        from modules.content.atoms import approval_gate
+
+        def _fetchrow(sql, args):
+            if "pipeline_gate_history" in sql:
+                return {"event_kind": "approved"}  # stale approval present
+            if "regen_images_pending" in sql:
+                return {"regen_images_pending": True, "regen_text_pending": False}
+            return None
+
+        conn = FakeConn(fetchrow_result=_fetchrow)
+        state = _state_with_pool(
+            conn, gate_name="preview_gate", regen_targets=self._TARGETS,
+        )
+        with patch("services.approval_service.is_gate_enabled", return_value=True):
+            out = await approval_gate.run(state)
+        assert out.get("_goto") == "plan_image_markers"
+
+    async def test_pending_regen_without_target_halts_loud(self):
+        """Misconfig: pending regen but no regen_targets mapping → fail loud
+        (no silent passthrough that would publish unreviewed content)."""
+        from modules.content.atoms import approval_gate
+
+        conn = FakeConn(fetchrow_result=_regen_fetchrow(images=True))
+        state = _state_with_pool(conn, gate_name="preview_gate")  # no regen_targets
+        with (
+            patch("services.approval_service.is_gate_enabled", return_value=True),
+            patch("services.approval_service.pause_at_gate", AsyncMock()),
+            patch(
+                "services.integrations.operator_notify.notify_operator", AsyncMock(),
+            ),
+            patch.object(approval_gate, "interrupt", lambda payload: {"approved": True}),
+        ):
+            out = await approval_gate.run(state)
+        assert out.get("_halt") is True
+        assert "regen target" in out.get("_halt_reason", "").lower()
 
 
 # ---------------------------------------------------------------------------

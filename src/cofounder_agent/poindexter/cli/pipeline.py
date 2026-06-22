@@ -508,9 +508,162 @@ def resume_command(task_id: str, feedback: str | None, json_output: bool) -> Non
         )
 
 
+# ---------------------------------------------------------------------------
+# regen — preview_gate component-scoped regeneration
+# ---------------------------------------------------------------------------
+
+
+@pipeline_group.command("regen")
+@click.argument("task_id")
+@click.option(
+    "--images", "regen_images", is_flag=True,
+    help="Regenerate only the images (keep the text).",
+)
+@click.option(
+    "--text", "regen_text", is_flag=True,
+    help="Regenerate the text (images refresh too — they are planned from it).",
+)
+@click.option(
+    "--steering", default=None,
+    help="Optional guidance recorded on the regen audit row.",
+)
+@click.option("--json", "json_output", is_flag=True)
+def regen_command(
+    task_id: str,
+    regen_images: bool,
+    regen_text: bool,
+    steering: str | None,
+    json_output: bool,
+) -> None:
+    """Regenerate one component of a post paused at ``preview_gate``, then resume.
+
+    ``--images`` keeps the text and re-runs the image block; ``--text`` re-runs
+    the writer block (images refresh too, since they are planned from the final
+    text). Exactly one of ``--images`` / ``--text`` is required. Delegates the
+    state change to ``approval_service.regen_at_gate`` (sets the one-shot pending
+    flag + bumps the attempt counter, refusing past the per-component cap), then
+    resumes the graph from its checkpoint — the gate atom consumes the flag and
+    routes the backward loop edge to the chosen block.
+    """
+    if regen_images == regen_text:  # both set, or neither
+        _exit_error("specify exactly one of --images or --text")
+        return
+    component = "images" if regen_images else "text"
+
+    async def _impl():
+        pool = await _make_pool()
+        try:
+            row = await _fetch_paused_row(pool, task_id)
+            if row is None:
+                return {"error": f"Task {task_id} not found", "code": 1}
+
+            task_id_str = str(row["task_id"])
+            template_slug = row.get("template_slug")
+            if not template_slug:
+                return {
+                    "error": f"Task {task_id} has no template_slug — cannot resume",
+                    "code": 1,
+                }
+
+            gate_name = row.get("awaiting_gate")
+            if not gate_name:
+                return {
+                    "error": (
+                        f"Task {task_id} is not paused at a gate "
+                        f"(status={row.get('status')!r}) — nothing to regen"
+                    ),
+                    "code": 1,
+                }
+
+            site_config = await _make_site_config(pool)
+            db_service = _PoolShim(pool)
+            checkpointer_dsn = _dsn()  # see resume_command for why this is explicit
+
+            from services.approval_service import (
+                RegenCapReachedError,
+                regen_at_gate,
+            )
+            from services.template_runner import TemplateRunner
+
+            # Set the pending flag + bump the counter BEFORE resuming. On cap,
+            # leave the task paused so the operator must approve or reject.
+            try:
+                regen = await regen_at_gate(
+                    task_id=task_id_str,
+                    component=component,
+                    steering=steering,
+                    gate_name=gate_name,
+                    actor="human",
+                    site_config=site_config,
+                    pool=pool,
+                )
+            except RegenCapReachedError as exc:
+                return {"error": str(exc), "code": 1}
+
+            runner = TemplateRunner(
+                pool, checkpointer_dsn=checkpointer_dsn, site_config=site_config,
+            )
+            summary = await runner.run(
+                template_slug,
+                {
+                    "task_id": task_id_str,
+                    "topic": row.get("topic") or "",
+                    "database_service": db_service,
+                    "site_config": site_config,
+                },
+                thread_id=task_id_str,
+                resume=True,
+                resume_value={"regen": component, "gate_name": gate_name},
+            )
+
+            return {
+                "ok": summary.ok,
+                "task_id": task_id_str,
+                "gate_name": gate_name,
+                "component": component,
+                "attempts": regen.get("attempts"),
+                "max_attempts": regen.get("max_attempts"),
+                "template_slug": template_slug,
+                "halted_at": summary.halted_at,
+                "mode": "regen_resume",
+            }
+        finally:
+            await pool.close()
+
+    try:
+        result = _run(_impl())
+    except Exception as e:
+        _exit_error(f"unexpected: {type(e).__name__}: {e}")
+        return
+
+    if "error" in result:
+        _exit_error(result["error"], code=result.get("code", 1))
+        return
+
+    if json_output:
+        click.echo(json.dumps(result, indent=2, default=str))
+        return
+
+    attempt_note = f"(attempt {result.get('attempts')}/{result.get('max_attempts')})"
+    if result.get("ok"):
+        click.secho(
+            f"Regenerated {result['component']} for task {result['task_id']} "
+            f"{attempt_note} — pipeline completed.",
+            fg="green",
+        )
+    else:
+        click.secho(
+            f"Regenerated {result['component']} for task {result['task_id']} "
+            f"{attempt_note}; pipeline paused again at "
+            f"{result.get('halted_at')!r} for review.",
+            fg="yellow",
+        )
+
+
 __all__ = [
     "pipeline_group",
     "list_paused_command",
     "status_command",
     "resume_command",
+    "regen_command",
 ]
