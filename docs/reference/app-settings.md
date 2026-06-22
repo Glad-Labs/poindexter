@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-20.**  
+> **Auto-generated from live `app_settings` table on 2026-06-22.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 844 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 763 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -44,7 +44,7 @@ The worker re-reads on every poll; no restart needed.
 - [finance](#finance) (4 keys)
 - [firefighter](#firefighter) (7 keys)
 - [gates](#gates) (3 keys)
-- [general](#general) (326 keys)
+- [general](#general) (325 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (5 keys)
@@ -67,9 +67,9 @@ The worker re-reads on every poll; no restart needed.
 - [ops-triage](#ops-triage) (1 key)
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
-- [pipeline](#pipeline) (36 keys)
-- [plugins](#plugins) (46 keys)
-- [plugin_telemetry](#plugin-telemetry) (79 keys)
+- [pipeline](#pipeline) (37 keys)
+- [plugins](#plugins) (43 keys)
+- [plugin_telemetry](#plugin-telemetry) (1 key)
 - [podcast](#podcast) (2 keys)
 - [prometheus](#prometheus) (5 keys)
 - [publishing](#publishing) (5 keys)
@@ -435,7 +435,7 @@ The worker re-reads on every poll; no restart needed.
 | `newsletter_batch_delay_seconds` | `2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `newsletter_batch_size` | `50` |  | Auto-seeded by services.settings_defaults (#379) |
 | `newsletter_email` | `` |  | Newsletter sender email (legacy) |
-| `nvidia_exporter_url` | `http://poindexter-gpu-exporter:9835/m...` |  | nvidia-smi metrics exporter |
+| `nvidia_exporter_url` | `http://poindexter-gpu-exporter:9835/m...` |  | DEPRECATED (PR #1827) — superseded by gpu_metrics_prometheus_url. gpu_scheduler now reads GPU metrics from Prometheus... |
 | `ollama_base_url` | `http://host.docker.internal:11434` |  | Ollama API endpoint |
 | `ollama_client_timeout_seconds` | `1500` |  |  |
 | `openclaw_gateway_url` | `http://localhost:18789` |  | OpenClaw gateway URL |
@@ -456,7 +456,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin.audio_gen_provider.stable-audio-open-1.0.server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.image_provider.flux_schnell.server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.job.media_reconciliation` | `{"enabled": true, "interval_seconds":...` |  |  |
-| `plugin.job.run_dev_diary_post.enabled` | `true` |  |  |
 | `plugin.job.verify_published_posts` | `{"enabled":true,"interval_seconds":0,...` |  |  |
 | `plugin.llm_provider.gemini.enabled` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.llm_provider.litellm.allow_paid_base_url` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -697,7 +696,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `cost_tier.budget.model` | `ollama/gemma-4-31B-it-qat:latest` |  | Model resolved when callers pass cost_tier=budget. Quantized 27B; offline retention work. |
+| `cost_tier.budget.model` | `ollama/phi4:14b` |  | Model resolved when callers pass cost_tier=budget. Sub-writer-size (phi4 14B, ~8GB): DeepEval/Ragas advisory judges, ... |
 | `cost_tier.free.model` | `ollama/qwen3:8b` |  | Model resolved when callers pass cost_tier=free. Smallest local; image-decision tier. |
 | `cost_tier.premium.model` | `anthropic/claude-haiku-4-5` |  | Model resolved when callers pass cost_tier=premium. Cloud cross-model QA; cost_guard-gated. |
 | `cost_tier.standard.model` | `ollama/glm-4.7-5090:latest` |  | Model resolved when callers pass cost_tier=standard. Default writer + critic. |
@@ -748,11 +747,11 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `embedding_collapse_summary_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Ollama model used for cluster-summary generation. Picked empirically: factually dense, no thinking-trace overhead, ~1... |
+| `embedding_collapse_summary_model` | `ollama/phi4:14b` |  | Ollama model used for cluster-summary generation. Sub-writer-size (phi4 14B, ~8GB) so this continuous hygiene job doe... |
 | `embedding_collapse_summary_provider` | `ollama` |  | Summarization backend for CollapseOldEmbeddingsJob. 'ollama' calls the local LLM to produce a real summary; 'joined_p... |
 | `embedding_collapse_summary_timeout_seconds` | `60` |  | Per-call timeout for the LLM summary generation. 60s allows headroom over the ~12s typical run; on timeout the cluste... |
 | `memory_compression_excerpts_per_bucket` | `12` |  | How many sample rows feed the LLM prompt and land in the {event_type}_excerpts JSONB column for each day-bucket. 12 i... |
-| `memory_compression_summary_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Ollama model used by retention.summarize_to_table for the per-day summary paragraph. Same default as embedding_collap... |
+| `memory_compression_summary_model` | `ollama/phi4:14b` |  | Ollama model used by retention.summarize_to_table for the per-day summary paragraph. Same default as embedding_collap... |
 | `memory_compression_summary_timeout_seconds` | `60` |  | Per-call timeout (seconds) for the LLM summary generation in retention.summarize_to_table. On timeout the handler fal... |
 
 ## model_roles
@@ -858,10 +857,10 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `data_fabric_loki_url` | `http://localhost:3100` |  | Loki HTTP API base URL used by DataFabric.LokiClient. Override to http://host.docker.internal:3100 when running insid... |
-| `data_fabric_prometheus_url` | `http://localhost:9091` |  | Prometheus HTTP API base URL used by DataFabric.PrometheusClient. Override to http://host.docker.internal:9091 when r... |
-| `data_fabric_pyroscope_url` | `http://localhost:4040` |  | Pyroscope HTTP API base URL used by DataFabric.PyroscopeClient. Override to http://host.docker.internal:4040 when run... |
-| `data_fabric_tempo_url` | `http://localhost:3200` |  | Tempo HTTP API base URL used by DataFabric.TempoClient. Override to http://host.docker.internal:3200 when running ins... |
+| `data_fabric_loki_url` | `http://loki:3100` |  | Loki HTTP API base URL used by DataFabric.LokiClient. Defaults to compose-service DNS so it resolves from inside the ... |
+| `data_fabric_prometheus_url` | `http://prometheus:9090` |  | Prometheus HTTP API base URL used by DataFabric.PrometheusClient. Defaults to compose-service DNS (prometheus listens... |
+| `data_fabric_pyroscope_url` | `http://pyroscope:4040` |  | Pyroscope HTTP API base URL used by DataFabric.PyroscopeClient. Defaults to compose-service DNS so it resolves from i... |
+| `data_fabric_tempo_url` | `http://tempo:3200` |  | Tempo HTTP API base URL used by DataFabric.TempoClient. Defaults to compose-service DNS so it resolves from inside th... |
 | `enable_pyroscope` | `true` |  | When true, services/profiling.py:setup_pyroscope() configures the pyroscope-io agent at worker / brain / voice-agent ... |
 | `enable_tracing` | `true` |  | Master switch for OpenTelemetry tracing. When true, services.tracing.setup_tracing initializes the TracerProvider + O... |
 | `langfuse_host` | `http://langfuse-web:3000` |  | Langfuse base URL for prompt management + tracing. Default empty = Langfuse disabled, prompts resolve via DB+YAML fal... |
@@ -903,6 +902,7 @@ The worker re-reads on every poll; no restart needed.
 | `brain_auto_cancel_grace_minutes` | `10` |  | Extra grace period the brain daemon adds on top of stale_task_timeout_minutes before flipping a stuck task to failed.... |
 | `content_quality_minimum` | `75` |  | Minimum quality score to even queue for approval. Below this = auto-reject. |
 | `content_weekly_cap` | `50` |  | Maximum new posts per week (0=unlimited). Topic discovery respects this. |
+| `create_post_dedup_threshold` | `0.75` |  | Cosine similarity at/above which a caller-supplied topic (create_post MCP tool / POST /api/tasks) is refused as a nea... |
 | `daily_budget_usd` | `1.00` |  | Daily LLM spend budget in USD (ignored if cloud_api_mode=disabled) |
 | `daily_post_limit` | `4` |  | Maximum posts to generate per day |
 | `default_model_tier` | `budget` |  | Default model cost tier (free/budget/standard/premium/flagship) |
@@ -941,9 +941,7 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `plugin.job.analyze_topic_gaps` | `{"enabled": true, "interval_seconds":...` |  | Config for job analyze_topic_gaps — tune cadence via config.schedule |
 | `plugin.job.audit_published_quality` | `{"enabled": true, "interval_seconds":...` |  | Config for job audit_published_quality — tune cadence via config.schedule |
-| `plugin.job.backfill_podcasts` | `{"enabled": true, "interval_seconds":...` |  | Config for job backfill_podcasts — tune cadence via config.schedule |
 | `plugin.job.backfill_post_performance_gsc` | `{"enabled": true, "interval_seconds":...` |  | Config for job backfill_post_performance_gsc — tune cadence via config.schedule |
-| `plugin.job.backfill_videos` | `{"enabled": true, "interval_seconds":...` |  | Config for job backfill_videos — tune cadence via config.schedule |
 | `plugin.job.check_memory_staleness` | `{"enabled": true, "interval_seconds":...` |  | Config for job check_memory_staleness — tune cadence via config.schedule |
 | `plugin.job.check_published_links` | `{"enabled": true, "interval_seconds":...` |  | Config for job check_published_links — tune cadence via config.schedule |
 | `plugin.job.collapse_old_embeddings` | `{"enabled": true, "interval_seconds":...` |  | Config for job collapse_old_embeddings — tune cadence via config.schedule |
@@ -974,7 +972,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin.job.static_export_orphan_sweep` | `{"enabled": true, "interval_seconds":...` |  | Config for job static_export_orphan_sweep — tune cadence via config.schedule |
 | `plugin.job.static_export_reconciliation` | `{"enabled": true, "interval_seconds":...` |  | Config for job static_export_reconciliation — tune cadence via config.schedule |
 | `plugin.job.sync_cloudflare_analytics` | `{"enabled": true, "interval_seconds":...` |  | Config for job sync_cloudflare_analytics — tune cadence via config.schedule |
-| `plugin.job.sync_newsletter_subscribers` | `{"enabled": true, "interval_seconds":...` |  | Config for job sync_newsletter_subscribers — tune cadence via config.schedule |
 | `plugin.job.topic_auto_resolve` | `{"enabled": true, "interval_seconds":...` |  | Config for job topic_auto_resolve — tune cadence via config.schedule |
 | `plugin.job.tune_publish_threshold` | `{"enabled": true, "interval_seconds":...` |  | Config for job tune_publish_threshold — tune cadence via config.schedule |
 | `plugin.job.update_utility_rates` | `{"enabled": true, "interval_seconds":...` |  | Config for job update_utility_rates — tune cadence via config.schedule |
@@ -991,84 +988,6 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `findings_alert_route_watermark` | `76339` |  | Highest audit_log.id forwarded to alert_events by FindingsAlertRouterJob. Pre-seeded 2026-05-15 to current max to ski... |
-| `plugin_job_last_run_analyze_topic_gaps` | `0` |  | Unix epoch of last fire for plugin job 'analyze_topic_gaps' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_audit_published_quality` | `0` |  | Unix epoch of last fire for plugin job 'audit_published_quality' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_backfill_podcasts` | `0` |  | Unix epoch of last fire for plugin job 'backfill_podcasts' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_backfill_post_performance_gsc` | `0` |  | Unix epoch of last fire for plugin job 'backfill_post_performance_gsc' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_backfill_videos` | `0` |  | Unix epoch of last fire for plugin job 'backfill_videos' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_check_memory_staleness` | `0` |  | Unix epoch of last fire for plugin job 'check_memory_staleness' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_check_published_links` | `0` |  | Unix epoch of last fire for plugin job 'check_published_links' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_collapse_old_embeddings` | `0` |  | Unix epoch of last fire for plugin job 'collapse_old_embeddings' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_crosspost_to_devto` | `0` |  | Unix epoch of last fire for plugin job 'crosspost_to_devto' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_db_backup` | `0` |  | Unix epoch of last fire for plugin job 'db_backup' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_detect_anomalies` | `0` |  | Unix epoch of last fire for plugin job 'detect_anomalies' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_detect_duplicate_posts` | `0` |  | Unix epoch of last fire for plugin job 'detect_duplicate_posts' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_expire_stale_approvals` | `0` |  | Unix epoch of last fire for plugin job 'expire_stale_approvals' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_findings_alert_router` | `0` |  | Unix epoch of last fire for plugin job 'findings_alert_router' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_fix_broken_external_links` | `0` |  | Unix epoch of last fire for plugin job 'fix_broken_external_links' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_fix_broken_internal_links` | `0` |  | Unix epoch of last fire for plugin job 'fix_broken_internal_links' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_fix_uncategorized_posts` | `0` |  | Unix epoch of last fire for plugin job 'fix_uncategorized_posts' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_flag_missing_seo` | `0` |  | Unix epoch of last fire for plugin job 'flag_missing_seo' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_media_reconciliation` | `0` |  | Unix epoch of last fire for plugin job 'media_reconciliation' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_morning_brief` | `0` |  | Unix epoch of last fire for plugin job 'morning_brief' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_postgres_vacuum` | `0` |  | Unix epoch of last fire for plugin job 'postgres_vacuum' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_prune_orphan_embeddings` | `0` |  | Unix epoch of last fire for plugin job 'prune_orphan_embeddings' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_prune_stale_embeddings` | `0` |  | Unix epoch of last fire for plugin job 'prune_stale_embeddings' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_regenerate_stock_images` | `0` |  | Unix epoch of last fire for plugin job 'regenerate_stock_images' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_reload_site_config` | `0` |  | Unix epoch of last fire for plugin job 'reload_site_config' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_render_alertmanager_config` | `0` |  | Unix epoch of last fire for plugin job 'render_alertmanager_config' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_render_prometheus_rules` | `0` |  | Unix epoch of last fire for plugin job 'render_prometheus_rules' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_rollup_post_performance` | `0` |  | Unix epoch of last fire for plugin job 'rollup_post_performance' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_run_dev_diary_post` | `0` |  | Unix epoch of last fire for plugin job 'run_dev_diary_post' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_run_niche_topic_sweep` | `0` |  | Unix epoch of last fire for plugin job 'run_niche_topic_sweep' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_run_retention` | `0` |  | Unix epoch of last fire for plugin job 'run_retention' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_run_taps` | `0` |  | Unix epoch of last fire for plugin job 'run_taps' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_static_export_orphan_sweep` | `0` |  | Unix epoch of last fire for plugin job 'static_export_orphan_sweep' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_static_export_reconciliation` | `0` |  | Unix epoch of last fire for plugin job 'static_export_reconciliation' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_sync_cloudflare_analytics` | `0` |  | Unix epoch of last fire for plugin job 'sync_cloudflare_analytics' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_topic_auto_resolve` | `0` |  | Unix epoch of last fire for plugin job 'topic_auto_resolve' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_tune_publish_threshold` | `0` |  | Unix epoch of last fire for plugin job 'tune_publish_threshold' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_update_utility_rates` | `0` |  | Unix epoch of last fire for plugin job 'update_utility_rates' (auto-written by PluginScheduler) |
-| `plugin_job_last_run_verify_published_posts` | `0` |  | Unix epoch of last fire for plugin job 'verify_published_posts' (auto-written by PluginScheduler) |
-| `plugin_job_last_status_analyze_topic_gaps` | `ok` |  | Outcome of last fire for plugin job 'analyze_topic_gaps': 'ok' or 'err' |
-| `plugin_job_last_status_audit_published_quality` | `ok` |  | Outcome of last fire for plugin job 'audit_published_quality': 'ok' or 'err' |
-| `plugin_job_last_status_backfill_podcasts` | `ok` |  | Outcome of last fire for plugin job 'backfill_podcasts': 'ok' or 'err' |
-| `plugin_job_last_status_backfill_post_performance_gsc` | `ok` |  | Outcome of last fire for plugin job 'backfill_post_performance_gsc': 'ok' or 'err' |
-| `plugin_job_last_status_backfill_videos` | `ok` |  | Outcome of last fire for plugin job 'backfill_videos': 'ok' or 'err' |
-| `plugin_job_last_status_check_memory_staleness` | `ok` |  | Outcome of last fire for plugin job 'check_memory_staleness': 'ok' or 'err' |
-| `plugin_job_last_status_check_published_links` | `ok` |  | Outcome of last fire for plugin job 'check_published_links': 'ok' or 'err' |
-| `plugin_job_last_status_collapse_old_embeddings` | `ok` |  | Outcome of last fire for plugin job 'collapse_old_embeddings': 'ok' or 'err' |
-| `plugin_job_last_status_crosspost_to_devto` | `ok` |  | Outcome of last fire for plugin job 'crosspost_to_devto': 'ok' or 'err' |
-| `plugin_job_last_status_db_backup` | `ok` |  | Outcome of last fire for plugin job 'db_backup': 'ok' or 'err' |
-| `plugin_job_last_status_detect_anomalies` | `ok` |  | Outcome of last fire for plugin job 'detect_anomalies': 'ok' or 'err' |
-| `plugin_job_last_status_detect_duplicate_posts` | `ok` |  | Outcome of last fire for plugin job 'detect_duplicate_posts': 'ok' or 'err' |
-| `plugin_job_last_status_expire_stale_approvals` | `ok` |  | Outcome of last fire for plugin job 'expire_stale_approvals': 'ok' or 'err' |
-| `plugin_job_last_status_findings_alert_router` | `ok` |  | Outcome of last fire for plugin job 'findings_alert_router': 'ok' or 'err' |
-| `plugin_job_last_status_fix_broken_external_links` | `ok` |  | Outcome of last fire for plugin job 'fix_broken_external_links': 'ok' or 'err' |
-| `plugin_job_last_status_fix_broken_internal_links` | `ok` |  | Outcome of last fire for plugin job 'fix_broken_internal_links': 'ok' or 'err' |
-| `plugin_job_last_status_fix_uncategorized_posts` | `ok` |  | Outcome of last fire for plugin job 'fix_uncategorized_posts': 'ok' or 'err' |
-| `plugin_job_last_status_flag_missing_seo` | `ok` |  | Outcome of last fire for plugin job 'flag_missing_seo': 'ok' or 'err' |
-| `plugin_job_last_status_media_reconciliation` | `ok` |  | Outcome of last fire for plugin job 'media_reconciliation': 'ok' or 'err' |
-| `plugin_job_last_status_morning_brief` | `ok` |  | Outcome of last fire for plugin job 'morning_brief': 'ok' or 'err' |
-| `plugin_job_last_status_postgres_vacuum` | `ok` |  | Outcome of last fire for plugin job 'postgres_vacuum': 'ok' or 'err' |
-| `plugin_job_last_status_prune_orphan_embeddings` | `ok` |  | Outcome of last fire for plugin job 'prune_orphan_embeddings': 'ok' or 'err' |
-| `plugin_job_last_status_prune_stale_embeddings` | `ok` |  | Outcome of last fire for plugin job 'prune_stale_embeddings': 'ok' or 'err' |
-| `plugin_job_last_status_regenerate_stock_images` | `ok` |  | Outcome of last fire for plugin job 'regenerate_stock_images': 'ok' or 'err' |
-| `plugin_job_last_status_reload_site_config` | `ok` |  | Outcome of last fire for plugin job 'reload_site_config': 'ok' or 'err' |
-| `plugin_job_last_status_render_alertmanager_config` | `ok` |  | Outcome of last fire for plugin job 'render_alertmanager_config': 'ok' or 'err' |
-| `plugin_job_last_status_render_prometheus_rules` | `ok` |  | Outcome of last fire for plugin job 'render_prometheus_rules': 'ok' or 'err' |
-| `plugin_job_last_status_rollup_post_performance` | `ok` |  | Outcome of last fire for plugin job 'rollup_post_performance': 'ok' or 'err' |
-| `plugin_job_last_status_run_dev_diary_post` | `ok` |  | Outcome of last fire for plugin job 'run_dev_diary_post': 'ok' or 'err' |
-| `plugin_job_last_status_run_niche_topic_sweep` | `ok` |  | Outcome of last fire for plugin job 'run_niche_topic_sweep': 'ok' or 'err' |
-| `plugin_job_last_status_run_retention` | `ok` |  | Outcome of last fire for plugin job 'run_retention': 'ok' or 'err' |
-| `plugin_job_last_status_run_taps` | `ok` |  | Outcome of last fire for plugin job 'run_taps': 'ok' or 'err' |
-| `plugin_job_last_status_static_export_orphan_sweep` | `ok` |  | Outcome of last fire for plugin job 'static_export_orphan_sweep': 'ok' or 'err' |
-| `plugin_job_last_status_static_export_reconciliation` | `ok` |  | Outcome of last fire for plugin job 'static_export_reconciliation': 'ok' or 'err' |
-| `plugin_job_last_status_sync_cloudflare_analytics` | `ok` |  | Outcome of last fire for plugin job 'sync_cloudflare_analytics': 'ok' or 'err' |
-| `plugin_job_last_status_topic_auto_resolve` | `ok` |  | Outcome of last fire for plugin job 'topic_auto_resolve': 'ok' or 'err' |
-| `plugin_job_last_status_tune_publish_threshold` | `ok` |  | Outcome of last fire for plugin job 'tune_publish_threshold': 'ok' or 'err' |
-| `plugin_job_last_status_update_utility_rates` | `ok` |  | Outcome of last fire for plugin job 'update_utility_rates': 'ok' or 'err' |
-| `plugin_job_last_status_verify_published_posts` | `ok` |  | Outcome of last fire for plugin job 'verify_published_posts': 'ok' or 'err' |
 
 ## podcast
 
