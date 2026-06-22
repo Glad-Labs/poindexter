@@ -164,7 +164,7 @@ psycopg = { version = ">=3.2.0,<4.0", extras = ["binary", "pool"] }
 # with `module 'pyarrow' has no attribute 'PyExtensionType'`.
 # datasets >=2.16 handles the new pyarrow API; 3.x is the current
 # stable line. Closes Glad-Labs/poindexter#308.
-datasets = ">=3,<5"
+datasets = ">=5.0.0,<6"
 # LiteLLM — backs services/cost_lookup.py (model_cost table — #199),
 # the LiteLLMProvider plugin (services/llm_providers/litellm_provider.py
 # — #372 cutover), and the Langfuse callback wiring used at lifespan
