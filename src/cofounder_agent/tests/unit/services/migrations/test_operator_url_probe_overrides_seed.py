@@ -139,6 +139,38 @@ def test_override_key_set_matches_prod(baseline_seeds_text: str) -> None:
     )
 
 
+def test_data_fabric_overrides_probe_compose_dns(baseline_seeds_text: str) -> None:
+    """Tempo + Loki probe overrides must target the compose-network service
+    name, not ``localhost`` / ``host.docker.internal``.
+
+    The data_fabric clients and Grafana's datasources reach these backends over
+    the compose net (``tempo:3200`` / ``loki:3100``). Probing the host-published
+    port instead means a wedged host-port proxy — Tempo healthy, traces still
+    flowing to Grafana over the compose net, but ``localhost:3200`` returning an
+    empty reply — pages the operator every ~15 min on a false positive. Compose-
+    DNS probing tests the path real consumers use and only fails when the backend
+    is actually down. Regression guard for that false-page class.
+    """
+    overrides = _overrides(baseline_seeds_text)
+    expected_probe_urls = {
+        "data_fabric_tempo_url": "http://tempo:3200/ready",
+        "data_fabric_loki_url": "http://loki:3100/ready",
+    }
+    for key, want in expected_probe_urls.items():
+        entry = overrides.get(key)
+        assert entry is not None, f"{key} override missing from baseline"
+        got = entry.get("probe_url")
+        assert got == want, (
+            f"{key} probe_url must be {want!r} (compose DNS), got {got!r}. "
+            "localhost / host.docker.internal routes the probe through the "
+            "host-published-port proxy, which false-pages when only that proxy "
+            "is wedged while the backend is healthy on the compose net."
+        )
+        assert "localhost" not in got and "host.docker.internal" not in got, (
+            f"{key} probe_url must not target the host-port path: {got!r}"
+        )
+
+
 def test_overrides_seed_is_idempotent(baseline_seeds_text: str) -> None:
     """ON CONFLICT DO NOTHING so a baseline replay never clobbers an operator's
     runtime-tuned override map. Line-anchored (not ``[^;]``) because the JSON
