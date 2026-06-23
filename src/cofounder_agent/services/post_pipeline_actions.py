@@ -405,12 +405,14 @@ async def _maybe_auto_publish(
             pool = getattr(database_service, "pool", None)
             if pool is not None and site_config is not None:
                 row = await pool.fetchrow(
-                    "SELECT niche_slug, category FROM pipeline_tasks "
+                    "SELECT niche_slug FROM pipeline_tasks "
                     "WHERE task_id = $1",
                     task_id,
                 )
                 niche_slug = row["niche_slug"] if row else None
-                category = row["category"] if row else None
+                # ``pipeline_tasks.category`` was dropped in Phase F; the gate
+                # accepts None and falls back to niche_slug-only history lookup.
+                category = None
                 from modules.content.api import evaluate_auto_publish_gate as _gate_evaluate
                 decision = await _gate_evaluate(
                     pool,

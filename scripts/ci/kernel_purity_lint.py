@@ -48,11 +48,11 @@ KERNEL_PURITY_BASELINE = {
     "services/pipeline_templates/__init__.py:106",
     # post_pipeline_actions calls modules.content.api (public surface) lazily
     # (3 import sites). Lines shifted 396/445/521 -> 414/463/539 by the #1834
-    # canonical terminal-status guard (the `import re` + _DECIDED_NON_REJECTED_
-    # STATUSES constant + docstring step 0 added ~18 lines above these funcs).
-    "services/post_pipeline_actions.py:414",
-    "services/post_pipeline_actions.py:463",
-    "services/post_pipeline_actions.py:539",
+    # canonical terminal-status guard; shifted again +2 -> 416/465/541 by the
+    # #1903 category-column fix (2-line comment added above the first import).
+    "services/post_pipeline_actions.py:416",
+    "services/post_pipeline_actions.py:465",
+    "services/post_pipeline_actions.py:541",
     # publish_service calls record_post_approve_metrics lazily (via
     # modules/content/api public seam — same pattern as post_pipeline_actions).
     # Line shifted 1038 -> 1082 by the #729 _niche_allowlist_block helper.

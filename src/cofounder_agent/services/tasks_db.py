@@ -772,7 +772,7 @@ class TasksDatabase(DatabaseServiceMixin):
         # at publish via task_metadata; the cost blobs ride in task_metadata.
         _VIEW_COLUMNS = {
             "id", "task_id", "task_type", "content_type", "title", "topic",
-            "status", "stage", "style", "tone", "target_length", "category",
+            "status", "stage", "style", "tone", "target_length",
             "primary_keyword", "target_audience", "content", "excerpt",
             "featured_image_url", "quality_score",
             "qa_feedback", "seo_title", "seo_description", "seo_keywords",

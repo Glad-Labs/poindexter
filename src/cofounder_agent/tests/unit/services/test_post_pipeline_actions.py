@@ -1017,19 +1017,17 @@ class TestAutoPublishGateBypass:
         ``modules.content.auto_publish_gate.evaluate``.
 
         This covers the inline-evaluate branch (lines ~371-402): it
-        reads niche_slug + category off pipeline_tasks, calls the gate,
-        and — when the gate returns would_fire=True/dry_run=False — uses
-        that decision to bypass require_human_approval. The result dict
-        here carries NO gate key, so the inline path is the only way the
-        bypass can engage."""
+        reads niche_slug off pipeline_tasks (``category`` was dropped in
+        Phase F), calls the gate, and — when the gate returns
+        would_fire=True/dry_run=False — uses that decision to bypass
+        require_human_approval. The result dict here carries NO gate key,
+        so the inline path is the only way the bypass can engage."""
         from services.post_pipeline_actions import run_post_pipeline_actions
 
-        # fetchrow returns the (niche_slug, category) row the inline
-        # branch reads; _make_pool's fetchrow isn't wired by default, so
-        # set it on the pool explicitly.
+        # fetchrow returns the niche_slug row the inline branch reads.
         pool, _ = _make_pool(fetchval_return=None)
         pool.fetchrow = AsyncMock(
-            return_value={"niche_slug": "dev_diary", "category": "engineering"}
+            return_value={"niche_slug": "dev_diary"}
         )
         db = _make_db_service(pool=pool)
         site = _make_site_config()
@@ -1076,7 +1074,8 @@ class TestAutoPublishGateBypass:
         kwargs = gate_eval_mock.await_args.kwargs
         assert kwargs["task_id"] == "t-inline-gate"
         assert kwargs["niche_slug"] == "dev_diary"
-        assert kwargs["category"] == "engineering"
+        # pipeline_tasks.category was dropped in Phase F; gate receives None
+        assert kwargs["category"] is None
         # The inline gate fired → bypass require_human_approval and ship.
         auto_pub_mock.assert_awaited_once_with(
             database_service=db, task_id="t-inline-gate", quality_score=88.0,

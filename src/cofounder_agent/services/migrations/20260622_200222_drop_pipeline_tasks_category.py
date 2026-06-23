@@ -22,16 +22,20 @@ Both converge to a category-free ``pipeline_tasks``. The next squash (Phase G)
 can fold this away once every install has dropped it.
 
 The ``content_tasks`` / ``pipeline_tasks_view`` views keep their literal
-``NULL::character varying AS category`` shim (they never referenced
-``pt.category`` after ``032938``), so reads through them — ``SELECT *`` /
+``NULL::character varying AS category`` shim, so reads through them — ``SELECT *`` /
 ``TaskRecord.category`` / the ``GET /tasks?category=`` filter — are unaffected,
 and the INSTEAD OF triggers don't write it. The DROP therefore has no view or
 trigger dependency to break.
 
+NOTE: The original docstring claimed "they never referenced pt.category after
+032938" — that was incorrect. ``services/post_pipeline_actions.py`` had an
+overlooked direct ``SELECT niche_slug, category FROM pipeline_tasks`` call that
+caused 384 ``UndefinedColumnError`` hits on prod the day after the column was
+dropped. Fixed in the same PR that corrected this note.
+
 Safe: ``category`` was always NULL (0 of 1,830 rows on prod ``poindexter_brain``),
-superseded by ``niche_slug`` (#796), and its last reader
-(``services/flows/content_generation.py::claim_pending_task``) was removed in the
-same PR.
+superseded by ``niche_slug`` (#796). ``pipeline_tasks.category`` now has no
+callers in the codebase.
 
 stdlib-only so the migrations-smoke CI step applies it without a full app boot.
 """
