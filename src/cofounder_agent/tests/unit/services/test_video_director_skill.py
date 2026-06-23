@@ -131,7 +131,7 @@ def test_short_director_renders_9x16_and_brand() -> None:
 # "no people"/"developer"/… in either director's example block.
 # ---------------------------------------------------------------------------
 
-_AI_SOURCES = ("sdxl", "sdxl_kenburns", "wan21")
+_AI_SOURCES = ("sdxl", "sdxl_kenburns", "wan21", "generative")
 
 
 def _example_ai_prompts(rendered: str) -> list[str]:

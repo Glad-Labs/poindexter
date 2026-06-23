@@ -165,6 +165,14 @@ DEFAULTS: dict[str, str] = {
     'video_shot_qa_enabled': 'true',
     'video_shot_qa_threshold': '60',
     'video_shot_qa_max_retries': '2',
+    # Video-quality Piece 4 (spec §3.3) — Wan 2.2 TI2V-5B image-to-video hero
+    # renderer. ``generative_video_model`` is the swappable model seam (a HF
+    # repo id; point at a 14B / LTX checkpoint later with no code change) read
+    # by the Wan provider + the wan-server. ``video_hero_shots_max`` caps the
+    # per-video count of heavy generative i2v renders; the renderer downgrades
+    # excess hero shots to sdxl_kenburns (see shot_list_renderer._cap_hero_shots).
+    'generative_video_model': 'Wan-AI/Wan2.2-TI2V-5B',
+    'video_hero_shots_max': '3',
     # Caption ASR engine for media.transcribe_narration. Default 'speaches'
     # reuses the already-running Speaches faster-whisper sidecar (narration TTS /
     # voice STT) instead of a second whisper.cpp install. The prior default,
@@ -1263,6 +1271,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_shot_qa_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_shot_qa_threshold': {'owner': 'video', 'value_type': 'integer'},
     'video_shot_qa_max_retries': {'owner': 'video', 'value_type': 'integer'},
+    'generative_video_model': {'owner': 'video', 'value_type': 'model'},
+    'video_hero_shots_max': {'owner': 'video', 'value_type': 'integer'},
     'video_caption_engine': {'owner': 'caption_providers', 'value_type': 'string'},
     'plugin.caption_provider.speaches.enabled': {
         'owner': 'caption_providers', 'value_type': 'boolean',

@@ -62,6 +62,17 @@ def test_vram_budget_defaults_present():
     assert METADATA["vram_budget_guard_enabled"]["value_type"] == "boolean"
 
 
+def test_piece4_video_hero_defaults_present():
+    """Video-quality Piece 4: the swappable generative-video model seam and the
+    per-video hero-shot budget cap (spec §3.3)."""
+    from services.settings_defaults import DEFAULTS, METADATA
+
+    assert DEFAULTS["generative_video_model"] == "Wan-AI/Wan2.2-TI2V-5B"
+    assert DEFAULTS["video_hero_shots_max"] == "3"
+    assert METADATA["generative_video_model"]["value_type"] == "model"
+    assert METADATA["video_hero_shots_max"]["value_type"] == "integer"
+
+
 def test_qa_vision_num_predict_has_headroom_for_thinking_plus_json():
     """qwen3-vl's <think> trace shares the num_predict budget with the JSON
     verdict; the old hardcoded 400 truncated the JSON and the vision rail

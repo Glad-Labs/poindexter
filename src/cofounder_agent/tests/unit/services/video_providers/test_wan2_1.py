@@ -15,6 +15,7 @@ accidentally absorb the 14B path's heavier VRAM footprint.
 
 from __future__ import annotations
 
+import base64
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -366,6 +367,80 @@ class TestWan21ProviderFetch:
         assert captured["json"]["width"] == 832
         assert captured["json"]["height"] == 480
         assert captured["json"]["fps"] == 16
+
+    async def test_image_path_sends_image_b64_for_i2v(self, tmp_path):
+        """Piece 4: a hero shot passes its SDXL still via ``image_path``; the
+        provider base64-encodes it into the POST body as ``image_b64`` so the
+        wan-server can condition image-to-video on it."""
+        still = tmp_path / "still.png"
+        still.write_bytes(b"\x89PNG\r\n\x1a\nFAKE")
+        captured: dict = {}
+
+        async def capture_post(url, json=None, timeout=None):
+            captured["json"] = json
+            return _video_response(content=b"\x00\x00MP4")
+
+        client = AsyncMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.post = AsyncMock(side_effect=capture_post)
+
+        with patch(
+            "services.video_providers.wan2_1.httpx.AsyncClient",
+            return_value=client,
+        ):
+            await Wan21Provider().fetch(
+                "a glowing neon GPU die",
+                {
+                    "output_path": str(tmp_path / "o.mp4"),
+                    "image_path": str(still),
+                },
+            )
+
+        assert captured["json"]["image_b64"] == base64.b64encode(
+            b"\x89PNG\r\n\x1a\nFAKE",
+        ).decode("ascii")
+
+    async def test_no_image_path_omits_image_b64_for_t2v(self, tmp_path):
+        """Backcompat: with no init image the body carries no ``image_b64``, so
+        the (current T2V) server renders text-to-video exactly as before."""
+        captured: dict = {}
+
+        async def capture_post(url, json=None, timeout=None):
+            captured["json"] = json
+            return _video_response(content=b"\x00\x00MP4")
+
+        client = AsyncMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.post = AsyncMock(side_effect=capture_post)
+
+        with patch(
+            "services.video_providers.wan2_1.httpx.AsyncClient",
+            return_value=client,
+        ):
+            await Wan21Provider().fetch(
+                "a glowing neon GPU die",
+                {"output_path": str(tmp_path / "o.mp4")},
+            )
+
+        assert "image_b64" not in captured["json"]
+
+    async def test_generative_video_model_label_in_metadata(self, tmp_path):
+        """The swappable-model seam: when ``generative_video_model`` is set the
+        VideoResult metadata reflects it (so a 14B / LTX swap needs no code)."""
+        with _mock_httpx_post(_video_response(content=b"\x00\x00MP4")):
+            results = await Wan21Provider().fetch(
+                "a scene",
+                {
+                    "output_path": str(tmp_path / "o.mp4"),
+                    "_site_config": _StubSiteConfig(
+                        {"generative_video_model": "Wan-AI/Wan2.2-TI2V-5B"},
+                    ),
+                },
+            )
+        assert results
+        assert results[0].metadata["model"] == "Wan-AI/Wan2.2-TI2V-5B"
 
     async def test_negative_prompt_from_config_wins(self, tmp_path):
         captured: dict = {}

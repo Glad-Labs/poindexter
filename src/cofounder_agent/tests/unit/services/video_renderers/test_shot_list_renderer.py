@@ -138,11 +138,13 @@ class TestRenderOneShot:
         assert captured["timeout"].read == 234.0
 
     @pytest.mark.asyncio
-    async def test_wan21_calls_provider_with_prompt_only(self, tmp_path):
-        """The wan21 source must route through ``Wan21Provider.fetch``
-        which sends the correct ``{'prompt': ..., 'duration_s': ..., ...}``
-        request body to the wan-server. This pins the 422 fix: the body
-        MUST NOT contain image_paths/audio_path/ken_burns."""
+    async def test_wan21_calls_provider_with_image_path(self, tmp_path):
+        """A hero shot (wan21/generative) renders its SDXL still first, then
+        routes through ``Wan21Provider.fetch`` with that still as ``image_path``
+        (i2v conditioning). This pins the 422 fix too: the body MUST NOT carry
+        the old slideshow fields image_paths/audio_path/ken_burns."""
+        import services.video_renderers.shot_list_renderer as mod
+
         shot = Shot(
             idx=0,
             duration_s=5.0,
@@ -167,7 +169,13 @@ class TestRenderOneShot:
                     f.write(b"\x00\x00\x00\x18ftypisom" + b"fake_mp4")
             return [MagicMock(file_path=output)]
 
-        with patch.object(wan21_mod.Wan21Provider, "fetch", _fake_fetch):
+        async def _fake_sdxl(*, prompt, output_path, **kw):
+            with open(output_path, "wb") as f:
+                f.write(b"\x89PNG")
+            return True
+
+        with patch.object(wan21_mod.Wan21Provider, "fetch", _fake_fetch), \
+                patch.object(mod, "_render_sdxl_image", _fake_sdxl):
             result = await _render_one_shot(
                 shot,
                 prior_clip=None,
@@ -181,12 +189,13 @@ class TestRenderOneShot:
         assert result.clip_path is not None
         assert result.clip_path.endswith(".mp4")
 
-        # The wan21 provider config must carry duration + output_path.
-        # It must NOT carry image_paths / audio_path / ken_burns —
+        # The provider config carries duration + output_path + the i2v init
+        # image. It must NOT carry image_paths / audio_path / ken_burns —
         # that was the 2026-05-26 422-causing body.
         assert "output_path" in captured_config
         assert "duration_s" in captured_config
         assert captured_config["duration_s"] <= 6  # Wan2.1 artifacts beyond
+        assert captured_config["image_path"].endswith(".png")  # i2v init still
         assert "image_paths" not in captured_config
         assert "audio_path" not in captured_config
         assert "ken_burns" not in captured_config
@@ -204,6 +213,7 @@ class TestRenderOneShot:
             narration_offset_s=0.0,
         )
 
+        import services.video_renderers.shot_list_renderer as mod
         from services.video_providers import wan2_1 as wan21_mod
 
         captured_config: dict = {}
@@ -214,7 +224,13 @@ class TestRenderOneShot:
                 f.write(b"fake")
             return [MagicMock(file_path=config["output_path"])]
 
-        with patch.object(wan21_mod.Wan21Provider, "fetch", _fake_fetch):
+        async def _fake_sdxl(*, prompt, output_path, **kw):
+            with open(output_path, "wb") as f:
+                f.write(b"\x89PNG")
+            return True
+
+        with patch.object(wan21_mod.Wan21Provider, "fetch", _fake_fetch), \
+                patch.object(mod, "_render_sdxl_image", _fake_sdxl):
             await _render_one_shot(
                 shot,
                 prior_clip=None,
@@ -225,6 +241,92 @@ class TestRenderOneShot:
             )
 
         assert captured_config["duration_s"] == 6
+
+    @pytest.mark.asyncio
+    async def test_generative_animates_sdxl_still(self, tmp_path):
+        """Piece 4: a ``generative`` hero shot renders the stylized SDXL still
+        first, then animates it into a clip — the success path returns the
+        .mp4."""
+        import services.video_renderers.shot_list_renderer as mod
+
+        shot = Shot(idx=0, duration_s=5.0, intent="hero", source="generative",
+                    prompt="neon GPU die, cyberpunk", narration_offset_s=0.0)
+
+        async def _fake_sdxl(*, prompt, output_path, **kw):
+            with open(output_path, "wb") as f:
+                f.write(b"\x89PNG")
+            return True
+
+        async def _fake_clip(*, prompt, output_path, image_path, duration_s, site_config):
+            assert image_path and image_path.endswith(".png")  # the i2v init still
+            with open(output_path, "wb") as f:
+                f.write(b"MP4")
+            return True
+
+        with patch.object(mod, "_render_sdxl_image", _fake_sdxl), \
+                patch.object(mod, "_render_generative_clip", _fake_clip):
+            result = await _render_one_shot(
+                shot, prior_clip=None, work_dir=tmp_path, sdxl_url="http://x",
+                site_config=None, http_client_factory=AsyncMock)
+
+        assert result.success is True
+        assert result.clip_path.endswith(".mp4")
+
+    @pytest.mark.asyncio
+    async def test_generative_falls_back_to_still_on_clip_miss(self, tmp_path):
+        """When i2v produces no clip, fall back to the SDXL still (the
+        compositor Ken-Burns it) and emit a ``hero_render_fallback`` finding —
+        NOT a holdover of the prior clip."""
+        import services.video_renderers.shot_list_renderer as mod
+
+        shot = Shot(idx=1, duration_s=5.0, intent="hero", source="generative",
+                    prompt="neon GPU die", narration_offset_s=0.0)
+        findings: list[dict] = []
+
+        async def _fake_sdxl(*, prompt, output_path, **kw):
+            with open(output_path, "wb") as f:
+                f.write(b"\x89PNG")
+            return True
+
+        async def _fake_clip(**kw):
+            return False  # i2v miss
+
+        with patch.object(mod, "_render_sdxl_image", _fake_sdxl), \
+                patch.object(mod, "_render_generative_clip", _fake_clip), \
+                patch.object(mod, "emit_finding",
+                             lambda **kw: findings.append(kw)):
+            result = await _render_one_shot(
+                shot, prior_clip="/prior/clip.mp4", work_dir=tmp_path,
+                sdxl_url="http://x", site_config=None,
+                http_client_factory=AsyncMock, post_id="post-1")
+
+        assert result.success is True
+        assert result.clip_path.endswith(".png")  # the still, not the prior clip
+        assert "/prior/clip.mp4" not in (result.clip_path or "")
+        assert any(f.get("kind") == "hero_render_fallback" for f in findings)
+
+    @pytest.mark.asyncio
+    async def test_generative_still_render_failure_is_hard_fail(self, tmp_path):
+        """If even the SDXL still can't render, there's nothing to fall back
+        to — the shot fails (the render pass drops it)."""
+        import services.video_renderers.shot_list_renderer as mod
+
+        shot = Shot(idx=0, duration_s=5.0, intent="hero", source="generative",
+                    prompt="neon GPU die", narration_offset_s=0.0)
+
+        async def _fake_sdxl(*, prompt, output_path, **kw):
+            return False
+
+        with patch.object(mod, "_render_sdxl_image", _fake_sdxl):
+            result = await _render_one_shot(
+                shot, prior_clip=None, work_dir=tmp_path, sdxl_url="http://x",
+                site_config=None, http_client_factory=AsyncMock)
+
+        assert result.success is False
+
+    def test_generative_is_regenerable(self):
+        import services.video_renderers.shot_list_renderer as mod
+        assert "generative" in mod._REGENERABLE_SOURCES
 
     @pytest.mark.asyncio
     async def test_holdover_carries_prior_clip(self, tmp_path):
@@ -793,6 +895,9 @@ class TestPexelsSource:
             def get(self, k, d=None):
                 return d
 
+            def get_int(self, k, d=0):
+                return d
+
             async def get_secret(self, k, d=None):
                 return "SEKRIT" if k == "pexels_api_key" else d
 
@@ -1078,3 +1183,52 @@ class TestRenderCheckLoop:
         assert max(render_positions) < min(score_positions), (
             f"renders must all precede scores (anti-thrash); timeline={timeline}"
         )
+
+
+# ---------------------------------------------------------------------------
+# Piece 4 — hero-shot budget cap (video_hero_shots_max)
+# ---------------------------------------------------------------------------
+
+
+def test_cap_hero_shots_downgrades_excess_to_kenburns():
+    """Past ``max_hero`` generative/wan21 shots, the rest downgrade to
+    sdxl_kenburns (same prompt) so the director over-asking can't blow the
+    GPU budget (spec §3.3). Non-hero shots are untouched, order preserved."""
+    import services.video_renderers.shot_list_renderer as mod
+
+    def _gen(i):
+        return Shot(idx=i, duration_s=4.0, intent="hero", source="generative",
+                    prompt="neon die", narration_offset_s=float(i) * 4.0)
+
+    shots = [
+        _gen(0),
+        _gen(1),
+        Shot(idx=2, duration_s=4.0, intent="b-roll", source="pexels",
+             query="data center", narration_offset_s=8.0),
+        _gen(3),
+        _gen(4),
+    ]
+    out = mod._cap_hero_shots(shots, 2)
+
+    assert [s.source for s in out] == [
+        "generative", "generative", "pexels", "sdxl_kenburns", "sdxl_kenburns",
+    ]
+    # Downgraded shots keep their prompt (sdxl_kenburns needs one too).
+    assert out[3].prompt == "neon die"
+    assert out[4].prompt == "neon die"
+    # Idx order preserved.
+    assert [s.idx for s in out] == [0, 1, 2, 3, 4]
+
+
+def test_cap_hero_shots_noop_under_budget():
+    """Two generative shots under a cap of 3 are left as-is."""
+    import services.video_renderers.shot_list_renderer as mod
+
+    shots = [
+        Shot(idx=0, duration_s=4.0, intent="hero", source="generative",
+             prompt="a", narration_offset_s=0.0),
+        Shot(idx=1, duration_s=4.0, intent="hero", source="wan21",
+             prompt="b", narration_offset_s=4.0),
+    ]
+    out = mod._cap_hero_shots(shots, 3)
+    assert [s.source for s in out] == ["generative", "wan21"]

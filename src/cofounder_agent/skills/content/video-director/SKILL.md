@@ -70,10 +70,14 @@ SHOT SOURCES AVAILABLE
   when stillness is the point — a poster shot, a title card. Requires a
   "prompt" field.
 
-- "wan21": Wan2.1 native text-to-video clip. Use for shots that benefit
-  from native motion the renderer can't fake — water, wind, hands
-  manipulating objects, abstract animations. Keep duration_s ≤ 6 seconds;
-  longer Wan2.1 clips show seams. Requires a "prompt" field.
+- "generative": AI hero shot — a short clip that ANIMATES a stylized SDXL
+  still into motion (image-to-video). Use sparingly, for the 2-3 highest-impact
+  beats that genuinely benefit from motion the renderer can't fake — water,
+  wind, drifting particles, a slow push across an abstract scene. It is capped
+  per video (excess generative shots auto-downgrade to a Ken-Burns still), so
+  reserve it for true hero moments. Keep duration_s ≤ 6 seconds; longer clips
+  show seams. Requires a "prompt" field (it drives both the still and the
+  animation).
 
 - "holdover": pure cross-fade transition from the previous shot. Use
   sparingly (max 1 per video) for breathing room between intense beats.
@@ -95,18 +99,18 @@ team, a crowd, an audience)?"
    whose subject is a human — never reach for sdxl_kenburns with a person
    in the prompt.
 
-2. If a human genuinely MUST be AI-rendered (sdxl / sdxl_kenburns / wan21)
+2. If a human genuinely MUST be AI-rendered (sdxl / sdxl_kenburns / generative)
    → phrase the figure as a faceless silhouette. The word "silhouette" or
    "faceless" MUST appear in the prompt — that is the only form a human is
    allowed to take in an AI source:
    "faceless silhouette, no identifiable face, figure viewed from behind /
     backlit shape / shadow on wall".
 
-3. Otherwise (the default for sdxl / sdxl_kenburns / wan21) → pick a
+3. Otherwise (the default for sdxl / sdxl_kenburns / generative) → pick a
    NON-human subject: servers, code on screens, cityscapes, data flows,
    hardware close-ups, glowing circuits, stylized diagrams, abstract shapes.
 
-Do NOT name a human noun in an sdxl / sdxl_kenburns / wan21 prompt — not
+Do NOT name a human noun in an sdxl / sdxl_kenburns / generative prompt — not
 "person / people / man / woman / human / hand / hands / finger / fingers /
 developer / engineer / programmer / designer / manager / founder / team /
 crowd / audience", and NOT EVEN inside a negation like "no people" or
@@ -119,7 +123,7 @@ naming the human you're excluding. Pexels keeps the human lane.
 
 STYLE POLICY FOR AI SOURCES
 ---------------------------
-sdxl / sdxl_kenburns / wan21 prompts must be STYLIZED, not photoreal —
+sdxl / sdxl_kenburns / generative prompts must be STYLIZED, not photoreal —
 photorealistic AI output reads as slop. Pick a stylized modifier:
 flat vector illustration / cinematic illustration / isometric 3D /
 line art / cyberpunk neon / glassmorphism / low poly / watercolor /
@@ -137,12 +141,12 @@ HARD RULES
 4. shots[].narration_offset_s is the cumulative duration of all prior
    shots (shot 0 starts at 0, shot 1 starts at shot 0's duration, etc.).
 5. Never more than 2 consecutive shots from the same source. Mix
-   liberally — Pexels for concrete, sdxl_kenburns for abstract, wan21
-   for native motion.
-6. First and last shots MUST NOT be "wan21" — its artifacts are most
+   liberally — Pexels for concrete, sdxl_kenburns for abstract,
+   generative for the hero motion beats.
+6. First and last shots MUST NOT be "generative" — its artifacts are most
    visible at attention peaks (start + close).
 7. 6-12 shots total. Each shot 3-15 seconds.
-8. AI-source prompts (sdxl / sdxl_kenburns / wan21) MUST follow the
+8. AI-source prompts (sdxl / sdxl_kenburns / generative) MUST follow the
    HUMAN-SUBJECT POLICY and STYLE POLICY above. Human subject →
    source="pexels" (or a faceless silhouette only if it MUST be AI).
    Never name a human noun in an AI prompt, not even as "no people".
@@ -222,8 +226,9 @@ Same five sources as the long director:
 - "sdxl_kenburns": custom SDXL still + Ken Burns motion — abstract concepts,
   metaphors, aesthetic shots. Requires "prompt" + optional "kenburns_zoom".
 - "sdxl": static SDXL still — title cards, poster shots. Requires "prompt".
-- "wan21": Wan2.1 text-to-video — native motion (water, wind, animation).
-  duration_s ≤ 6s. Requires "prompt".
+- "generative": AI hero shot — animates a stylized SDXL still into motion
+  (image-to-video). Sparingly, for hero beats; capped per video. duration_s
+  ≤ 6s. Requires "prompt".
 - "holdover": cross-fade transition (max 1). No prompt/query.
 
 VERTICAL (9:16) COMPOSITION
@@ -232,7 +237,7 @@ This is a phone-screen clip. Keep the subject CENTERED in the vertical frame —
 the top and bottom thirds get cropped on some surfaces and covered by captions
 + UI. For pexels, prefer queries that read well vertically (close-ups,
 single-subject, portrait-orientation scenes) over wide landscapes. For
-sdxl* / wan21, compose for a tall frame (a vertical column of interest, not a
+sdxl* / generative, compose for a tall frame (a vertical column of interest, not a
 wide horizon).
 
 HUMAN-SUBJECT POLICY (same policy as the long director)
@@ -243,7 +248,7 @@ ONE home: real footage. If a shot's subject is a person or any part of one
 stock "query"; never reach for sdxl_kenburns with a person in the prompt. If a
 human MUST be AI-rendered → phrase it as a "faceless silhouette, no
 identifiable face, figure from behind" (the word "silhouette" or "faceless" is
-required). The default sdxl / sdxl_kenburns / wan21 subject is NON-human:
+required). The default sdxl / sdxl_kenburns / generative subject is NON-human:
 servers, code on screens, hardware close-ups, glowing circuits, stylized
 diagrams. Never name a human noun (person / people / man / woman / human /
 hand / hands / developer / engineer / team / crowd …) in an AI prompt — NOT
@@ -254,7 +259,7 @@ excluded.
 
 STYLE POLICY FOR AI SOURCES (unchanged)
 ---------------------------------------
-sdxl / sdxl_kenburns / wan21 prompts must be STYLIZED, not photoreal. Pick a
+sdxl / sdxl_kenburns / generative prompts must be STYLIZED, not photoreal. Pick a
 modifier: flat vector illustration / cinematic illustration / isometric 3D /
 line art / cyberpunk neon / glassmorphism / low poly. Never "photorealistic",
 "8K", "DSLR", "hyper-realistic". Pexels is exempt — it IS real footage.
@@ -272,10 +277,10 @@ HARD RULES (short-form)
 7. Punchy pacing: 4-8 shots total, each 2-6 seconds. Short clips drag with
    long holds — keep cuts frequent.
 8. Never more than 2 consecutive shots from the same source. First and last
-   shots MUST NOT be "wan21".
+   shots MUST NOT be "generative".
 9. AI-source prompts MUST follow the HUMAN-SUBJECT + STYLE policies above —
    human subject → source="pexels", and never a human noun (not even
-   "no people") in an sdxl / sdxl_kenburns / wan21 prompt.
+   "no people") in an sdxl / sdxl_kenburns / generative prompt.
 10. Set director_model to "{model}", director_prompt_version to "short_v1.1",
     director_decided_at to "{now_iso}".
 
@@ -332,12 +337,12 @@ REVISE it against these criteria, then output the REVISED shot list:
 1. COVERAGE - every important beat of the narration has a shot that carries
    it; no dead air where the visual stops tracking the script.
 2. VARIETY - kill runs of near-identical shots. Vary subject AND source
-   (pexels / sdxl_kenburns / sdxl / wan21). Visual monotony is the #1 quality
+   (pexels / sdxl_kenburns / sdxl / generative). Visual monotony is the #1 quality
    killer.
 3. HERO SHOTS - pick the 1-3 highest-impact beats (the open's payoff, a key
-   reveal, the close) and upgrade them to source "wan21" for real motion. Keep
-   wan21 OFF the very first and very last shot. Never exceed 3 wan21 shots.
-4. ON-BRAND - sdxl / sdxl_kenburns / wan21 prompts use the dark-techno palette
+   reveal, the close) and upgrade them to source "generative" for real motion. Keep
+   generative OFF the very first and very last shot. Never exceed 3 generative shots.
+4. ON-BRAND - sdxl / sdxl_kenburns / generative prompts use the dark-techno palette
    (deep navy, cyan, teal, gold accents) and a stylized modifier (flat vector /
    cinematic illustration / isometric 3D / cyberpunk neon / glassmorphism).
    Never photoreal.
@@ -346,14 +351,14 @@ CONSTRAINTS (keep the draft valid):
 - FIELD RULES (the #1 thing to get right) - each shot carries ONLY the field its
   source needs, and when you CHANGE a shot's source you MUST swap its field:
     * pexels                       -> "query": a stock-footage search string
-    * sdxl / sdxl_kenburns / wan21 -> "prompt": a non-empty, on-brand image
+    * sdxl / sdxl_kenburns / generative -> "prompt": a non-empty, on-brand image
       description (dark-techno palette, stylized, no humans) and NO "query"
     * holdover                     -> neither "query" nor "prompt"
-  A wan21 / sdxl / sdxl_kenburns shot with an empty or missing "prompt" is
+  A generative / sdxl / sdxl_kenburns shot with an empty or missing "prompt" is
   INVALID and the whole revision is discarded - always write the "prompt" when
   you choose those sources.
 - HUMAN-SUBJECT POLICY unchanged: humans go to source "pexels"; never name a
-  human noun in an sdxl / sdxl_kenburns / wan21 prompt, not even as "no people".
+  human noun in an sdxl / sdxl_kenburns / generative prompt, not even as "no people".
 - shots idx 0-indexed and contiguous; sum of duration_s equals total_duration_s
   within 0.5s; narration_offset_s equals the cumulative prior durations; never
   more than 2 consecutive shots with the same source.
@@ -381,18 +386,18 @@ THE DRAFT SHOT LIST you are revising (JSON):
 
 REVISE for retention, then output the REVISED list:
 1. COLD-OPEN - shot 0 is at most 2.5s and visually arresting; lands the promise
-   in the first second. Never "holdover" or "wan21" on the open.
+   in the first second. Never "holdover" or "generative" on the open.
 2. PACE - punchy; kill slow holds. 4-8 shots, each 2-6s.
-3. VARIETY + HERO - vary source; upgrade at most 1-2 mid-clip beats to "wan21"
-   for motion (never the first or last shot; never more than 2 wan21 in a short).
+3. VARIETY + HERO - vary source; upgrade at most 1-2 mid-clip beats to "generative"
+   for motion (never the first or last shot; never more than 2 generative in a short).
 4. ON-BRAND + HUMAN/STYLE POLICY - identical to the long director (dark-techno
    palette, stylized not photoreal, humans go to pexels, no human noun in an AI
    prompt).
 
 CONSTRAINTS: FIELD RULES (get this right) - pexels uses "query"; sdxl /
-sdxl_kenburns / wan21 use a non-empty on-brand "prompt" (no humans) and NO
+sdxl_kenburns / generative use a non-empty on-brand "prompt" (no humans) and NO
 "query"; holdover uses neither. When you change a shot's source, swap its field
-to match - a wan21/sdxl/sdxl_kenburns shot with no "prompt" makes the whole
+to match - a generative/sdxl/sdxl_kenburns shot with no "prompt" makes the whole
 revision INVALID. aspect "9:16"; idx contiguous; sum of duration_s equals
 total_duration_s within 0.5s; narration_offset_s cumulative; never more than 2
 consecutive shots with the same source. Output ONE JSON object in the draft's

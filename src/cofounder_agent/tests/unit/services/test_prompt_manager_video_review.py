@@ -37,4 +37,6 @@ def test_review_prompt_renders_and_substitutes(key: str, script_kwarg: str) -> N
     # the unreviewed draft). Locks in the per-source field guidance.
     assert "FIELD RULES" in text
     assert '"prompt"' in text
-    assert "wan21" in text
+    # The hero i2v source is named so the reviewer knows it can upgrade a beat
+    # to motion (renamed wan21 -> generative in Piece 4).
+    assert "generative" in text

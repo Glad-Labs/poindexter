@@ -30,7 +30,7 @@ def _valid_shot(idx: int = 0, source: str = "pexels", **overrides) -> dict:
     }
     if source == "pexels":
         base["query"] = "data center"
-    elif source in ("sdxl", "sdxl_kenburns", "wan21"):
+    elif source in ("sdxl", "sdxl_kenburns", "wan21", "generative"):
         base["prompt"] = "test prompt"
     base.update(overrides)
     return base
@@ -66,6 +66,25 @@ def test_sdxl_requires_prompt() -> None:
 def test_wan21_requires_prompt() -> None:
     with pytest.raises(ValidationError, match="requires a non-empty"):
         Shot.model_validate(_valid_shot(0, "wan21", prompt=None))
+
+
+def test_generative_requires_prompt() -> None:
+    # ``generative`` is the i2v hero source — the prompt is the conditioning
+    # text alongside the SDXL still, so it's mandatory just like wan21/sdxl.
+    with pytest.raises(ValidationError, match="requires a non-empty"):
+        Shot.model_validate(_valid_shot(0, "generative", prompt=None))
+
+
+def test_generative_accepted_with_prompt() -> None:
+    shot = Shot.model_validate(_valid_shot(0, "generative"))
+    assert shot.source == "generative"
+    assert shot.prompt == "test prompt"
+
+
+def test_wan21_accepted_with_prompt_backcompat() -> None:
+    # wan21 stays a valid source (legacy shot lists + in-flight tasks carry it).
+    shot = Shot.model_validate(_valid_shot(0, "wan21"))
+    assert shot.source == "wan21"
 
 
 def test_sdxl_kenburns_requires_prompt() -> None:

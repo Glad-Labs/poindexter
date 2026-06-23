@@ -60,7 +60,11 @@ _WAN21_MAX_DURATION_S = 6
 # Stochastic sources worth re-rolling on a vision-QA miss — a fresh SDXL/Wan
 # seed yields a different image. Pexels is deterministic (same top result), so
 # it's excluded: a pexels miss falls straight through to the holdover fallback.
-_REGENERABLE_SOURCES = frozenset({"sdxl", "sdxl_kenburns", "wan21"})
+_REGENERABLE_SOURCES = frozenset({"sdxl", "sdxl_kenburns", "wan21", "generative"})
+
+# Hero sources — generative image-to-video clips. The most expensive +
+# failure-prone source, so the per-video count is capped (spec §3.3).
+_HERO_SOURCES = frozenset({"generative", "wan21"})
 
 
 @dataclass
@@ -293,20 +297,21 @@ async def _render_pexels_image(
     return os.path.exists(output_path) and os.path.getsize(output_path) > 0
 
 
-async def _render_wan21_clip(
+async def _render_generative_clip(
     *,
     prompt: str,
     output_path: str,
+    image_path: str | None,
     duration_s: int,
     site_config: Any,
 ) -> bool:
-    """Render one Wan2.1 T2V clip to ``output_path``.
+    """Render one hero clip to ``output_path`` via the Wan provider.
 
-    Delegates to the existing ``Wan21Provider`` so the request body
-    shape (``prompt`` / ``negative_prompt`` / ``steps`` /
-    ``guidance_scale`` / ``duration_s`` / ``width`` / ``height`` /
-    ``fps`` / ``model``) is the correct one for the wan-server.
-    Returns True on success.
+    When ``image_path`` is set it's the shot's stylized SDXL still, passed
+    as the image-to-video init frame (animating the brand still keeps visual
+    consistency — spec §3.3). Absent → text-to-video. Delegates to the
+    existing ``Wan21Provider`` so the request body shape is the correct one
+    for the wan-server. Returns True on success.
     """
     from services.video_providers.wan2_1 import Wan21Provider
 
@@ -317,12 +322,13 @@ async def _render_wan21_clip(
             {
                 "output_path": output_path,
                 "duration_s": min(duration_s, _WAN21_MAX_DURATION_S),
+                "image_path": image_path or "",
                 "_site_config": site_config,
             },
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "[SHOT_LIST] Wan21 render raised for %s: %s",
+            "[SHOT_LIST] generative render raised for %s: %s",
             os.path.basename(output_path), exc,
         )
         return False
@@ -342,6 +348,7 @@ async def _render_one_shot(
     http_client_factory: Any,
     pexels_key: str = "",
     orientation: str = "landscape",
+    post_id: str = "",
 ) -> ShotRenderResult:
     """Produce a clip file for one shot.
 
@@ -456,33 +463,63 @@ async def _render_one_shot(
             duration_s=shot.duration_s,
         )
 
-    if source == "wan21":
+    if source in ("generative", "wan21"):
         if not shot.prompt:
             return ShotRenderResult(
                 idx=shot.idx,
                 source=source,
                 success=False,
-                error="wan21 shot missing prompt",
+                error=f"{source} shot missing prompt",
             )
-        clip_path = str(work_dir / f"shot_{shot.idx:02d}.mp4")
-        ok = await _render_wan21_clip(
-            prompt=shot.prompt,
-            output_path=clip_path,
-            duration_s=int(shot.duration_s),
-            site_config=site_config,
+        # Render the stylized SDXL still FIRST — it's both the image-to-video
+        # init frame and the Ken-Burns fallback if the clip render misses
+        # (spec §3.3). If even the still fails there's nothing to animate or
+        # fall back to, so the shot hard-fails.
+        still_path = str(work_dir / f"shot_{shot.idx:02d}.png")
+        render_timeout = (
+            site_config.get_int("image_render_timeout_seconds", 240)
+            if site_config is not None else 240
         )
-        if not ok:
+        still_ok = await _render_sdxl_image(
+            prompt=shot.prompt,
+            output_path=still_path,
+            sdxl_url=sdxl_url,
+            http_client_factory=http_client_factory,
+            render_timeout=render_timeout,
+        )
+        if not still_ok:
             return ShotRenderResult(
                 idx=shot.idx,
                 source=source,
                 success=False,
-                error="Wan21 render returned no clip",
+                error="generative shot: SDXL still render failed",
             )
+        clip_path = str(work_dir / f"shot_{shot.idx:02d}.mp4")
+        clip_ok = await _render_generative_clip(
+            prompt=shot.prompt,
+            output_path=clip_path,
+            image_path=still_path,
+            duration_s=int(shot.duration_s),
+            site_config=site_config,
+        )
+        if clip_ok:
+            return ShotRenderResult(
+                idx=shot.idx,
+                source=source,
+                success=True,
+                clip_path=clip_path,
+                duration_s=shot.duration_s,
+            )
+        # i2v miss → fall back to the still. The compositor applies Ken Burns
+        # to a PNG scene automatically, so returning the still path is all it
+        # takes; emit a finding so the operator sees the degrade. NOT a
+        # holdover of the prior clip (spec §3.3).
+        _emit_hero_fallback_finding(shot=shot, post_id=post_id)
         return ShotRenderResult(
             idx=shot.idx,
             source=source,
             success=True,
-            clip_path=clip_path,
+            clip_path=still_path,
             duration_s=shot.duration_s,
         )
 
@@ -624,6 +661,24 @@ def _emit_fallback_finding(
     )
 
 
+def _emit_hero_fallback_finding(*, shot: Shot, post_id: str) -> None:
+    """Emit the ``hero_render_fallback`` finding — a generative hero shot's
+    image-to-video render produced no clip, so the renderer fell back to the
+    stylized SDXL still (Ken-Burns'd by the compositor). Distinct kind from
+    ``shot_quality_fallback`` so the Findings dashboard can track i2v render
+    misses separately from QA-score fallbacks (spec §3.3)."""
+    emit_finding(
+        source="shot_list_renderer", kind="hero_render_fallback",
+        title=f"hero shot {shot.idx} fell back to still (Ken Burns)",
+        body=(f"shot {shot.idx} ({shot.source}) — image-to-video render "
+              f"produced no clip; used the stylized SDXL still with Ken Burns "
+              f"motion instead."),
+        severity="warn",
+        dedup_key=f"hero_render_fallback:{post_id}:{shot.idx}",
+        extra={"shot_idx": shot.idx, "source": shot.source},
+    )
+
+
 async def _finalize_pass(
     states: list[_ShotState],
     *,
@@ -699,6 +754,28 @@ async def _finalize_pass(
         out.append(result)
         if result.success and result.clip_path:
             final_prior = result.clip_path
+    return out
+
+
+def _cap_hero_shots(shots: list[Shot], max_hero: int) -> list[Shot]:
+    """Keep at most ``max_hero`` hero (generative/wan21) shots; downgrade the
+    rest to ``sdxl_kenburns`` — the still+Ken-Burns cousin, carrying the same
+    prompt. The hero render is the most expensive + failure-prone source, so
+    the director over-asking shouldn't blow the GPU budget (spec §3.3). A
+    negative ``max_hero`` disables the cap (keep everything). Order and
+    non-hero shots are preserved.
+    """
+    if max_hero < 0:
+        return list(shots)
+    out: list[Shot] = []
+    seen = 0
+    for s in shots:
+        if s.source in _HERO_SOURCES:
+            seen += 1
+            if seen > max_hero:
+                out.append(s.model_copy(update={"source": "sdxl_kenburns"}))
+                continue
+        out.append(s)
     return out
 
 
@@ -786,6 +863,7 @@ async def render_shot_list(
         http_client_factory=http_client_factory,
         pexels_key=pexels_key,
         orientation=orientation,
+        post_id=post_id,
     )
 
     # Two-pass to stop the SDXL↔vision-model GPU thrash: render every shot
@@ -794,7 +872,16 @@ async def render_shot_list(
     # sub-threshold stochastic shots, then assign outcomes + audit. The old
     # per-shot ``render → score`` loop evicted SDXL on every vision call, so
     # each next render paid a ~133s cold reload. See ``_ShotState``.
-    states = await _render_pass(shot_list.shots, render_kwargs=render_kwargs)
+    # Cap the per-video hero-shot budget (spec §3.3) — excess generative shots
+    # downgrade to sdxl_kenburns so the director over-asking can't serialise a
+    # dozen heavy i2v renders. shots_total below still counts the original list.
+    max_hero = (
+        site_config.get_int("video_hero_shots_max", 3)
+        if site_config is not None else 3
+    )
+    capped_shots = _cap_hero_shots(list(shot_list.shots), max_hero)
+
+    states = await _render_pass(capped_shots, render_kwargs=render_kwargs)
     await _score_pass(
         states, qa=qa, site_config=site_config,
         http_client_factory=http_client_factory,

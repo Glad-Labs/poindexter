@@ -43,6 +43,7 @@ Kind: ``"generate"``.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 import shutil
@@ -91,6 +92,15 @@ def _write_video_bytes(path: str, content: bytes) -> None:
     """
     with open(path, "wb") as f:
         f.write(content)
+
+
+def _read_image_bytes(path: str) -> bytes:
+    """Sync helper for ``asyncio.to_thread`` — read the init-image (the
+    shot's SDXL still) for image-to-video. A stylized PNG is small
+    (~1 MB), but reading it off the event loop keeps ASYNC230 happy.
+    """
+    with open(path, "rb") as f:
+        return f.read()
 
 
 class Wan21Provider:
@@ -147,6 +157,35 @@ class Wan21Provider:
                 output_path = tmp.name
             cleanup_on_failure = True
 
+        # Image-to-video (Piece 4): a hero shot passes its stylized SDXL still
+        # via ``image_path``. We base64-encode it into the request body so the
+        # wan-server conditions the clip on it (animating the brand still keeps
+        # visual consistency). Absent ``image_path`` → text-to-video, exactly
+        # as before. The current T2V server ignores an ``image_b64`` it doesn't
+        # model, so this is forward-compatible: the field is inert until the
+        # server is upgraded to the TI2V-5B image-to-video pipeline.
+        image_path = str(config.get("image_path", "") or "")
+        image_b64: str | None = None
+        if image_path and os.path.exists(image_path):
+            raw = await asyncio.to_thread(_read_image_bytes, image_path)
+            image_b64 = base64.b64encode(raw).decode("ascii")
+
+        # Swappable-model seam (spec §3.3): ``generative_video_model`` lets an
+        # operator point at a 14B / LTX checkpoint without code changes. It's a
+        # label here (the server owns the actual weights) and a HF repo id, so
+        # we surface it as both ``model`` and ``model_repo`` for traceability.
+        # Unset → the deployed Wan 2.1 1.3B identity (backcompat default).
+        model_label = "wan2.1-1.3b"
+        model_repo = "Wan-AI/Wan2.1-T2V-1.3B"
+        if site_config is not None:
+            try:
+                configured = site_config.get("generative_video_model", "") or ""
+            except Exception:  # noqa: BLE001 — config read must not break render
+                configured = ""
+            if configured:
+                model_label = configured
+                model_repo = configured
+
         success = await _generate_to_path(
             prompt=prompt,
             negative=negative,
@@ -158,6 +197,7 @@ class Wan21Provider:
             width=width,
             height=height,
             fps=fps,
+            image_b64=image_b64,
             site_config=site_config,
         )
 
@@ -213,9 +253,14 @@ class Wan21Provider:
                     "upload_target": upload_target or "none",
                     "steps": steps,
                     "guidance_scale": guidance,
-                    "model": "wan2.1-1.3b",
-                    "model_repo": "Wan-AI/Wan2.1-T2V-1.3B",
+                    # ``model`` / ``model_repo`` reflect the swappable
+                    # ``generative_video_model`` seam (unset → the deployed Wan
+                    # 2.1 1.3B identity). Both Wan 2.1 and 2.2 TI2V-5B are
+                    # Apache-2.0.
+                    "model": model_label,
+                    "model_repo": model_repo,
                     "license": "apache-2.0",
+                    "i2v": image_b64 is not None,
                     "server_url": server_url,
                 },
             ),
@@ -297,10 +342,16 @@ async def _generate_to_path(
     width: int,
     height: int,
     fps: int,
+    image_b64: str | None = None,
     site_config: Any = None,
 ) -> bool:
     """POST the prompt to the Wan inference server; write the resulting
     MP4 to ``output_path``. Returns True when the file was written.
+
+    When ``image_b64`` is set (a base64 PNG — the shot's SDXL still), it
+    rides the request body so an image-to-video server conditions the
+    clip on it. A text-to-video server simply ignores the extra field
+    (pydantic drops unknown keys), so the same call works against both.
 
     Handles both response formats the SDXL/FLUX sidecars use, so a single
     sidecar operator runbook can describe all four servers:
@@ -315,21 +366,24 @@ async def _generate_to_path(
     clear, actionable error and returns False so the dispatcher knows
     to fall back to another provider.
     """
+    body: dict[str, Any] = {
+        "prompt": prompt,
+        "negative_prompt": negative,
+        "steps": steps,
+        "guidance_scale": guidance,
+        "duration_s": duration,
+        "width": width,
+        "height": height,
+        "fps": fps,
+        "model": "wan2.1-1.3b",
+    }
+    if image_b64:
+        body["image_b64"] = image_b64
     try:
         async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
             resp = await client.post(
                 f"{server_url}/generate",
-                json={
-                    "prompt": prompt,
-                    "negative_prompt": negative,
-                    "steps": steps,
-                    "guidance_scale": guidance,
-                    "duration_s": duration,
-                    "width": width,
-                    "height": height,
-                    "fps": fps,
-                    "model": "wan2.1-1.3b",
-                },
+                json=body,
                 timeout=300,
             )
     except Exception as e:

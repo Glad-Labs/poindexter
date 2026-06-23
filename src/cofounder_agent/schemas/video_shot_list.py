@@ -33,7 +33,8 @@ ShotSource = Literal[
     "sdxl",            # Static SDXL image, held for ``duration_s``
     "sdxl_kenburns",   # SDXL image + Ken Burns zoom/pan animation
     "pexels",          # Pexels stock video clip (real footage)
-    "wan21",           # Wan2.1 native text-to-video clip
+    "generative",      # Hero shot: animate the stylized SDXL still (Wan i2v)
+    "wan21",           # DEPRECATED alias of ``generative`` (legacy shot lists)
     "holdover",        # Cross-fade transition from prior shot (no asset)
 ]
 
@@ -110,7 +111,7 @@ class Shot(BaseModel):
         returns an SDXL shot with no prompt would otherwise produce an
         empty clip silently.
         """
-        if self.source in ("sdxl", "sdxl_kenburns", "wan21"):
+        if self.source in ("sdxl", "sdxl_kenburns", "wan21", "generative"):
             if not self.prompt:
                 raise ValueError(
                     f"source={self.source!r} requires a non-empty ``prompt``",
@@ -132,7 +133,7 @@ class Shot(BaseModel):
             if start <= 0 or end <= 0:
                 raise ValueError("kenburns_zoom values must be positive")
 
-        if self.source in ("sdxl", "sdxl_kenburns", "wan21") and self.prompt:
+        if self.source in ("sdxl", "sdxl_kenburns", "wan21", "generative") and self.prompt:
             human_tokens = scan_for_human_tokens(self.prompt)
             if human_tokens:
                 logger.warning(
