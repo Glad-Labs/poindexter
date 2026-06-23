@@ -127,3 +127,24 @@ class TestCompleteReasoningFallback:
                 },
             )
         assert result.text == ""
+
+
+class TestCompleteForwardsNumCtx:
+    """num_ctx must reach litellm.acompletion (-> Ollama options.num_ctx).
+
+    Before this, the writer routed through LiteLLM never sent num_ctx and ran
+    at Ollama's Modelfile default, silently ignoring ollama_num_ctx.
+    """
+
+    async def test_num_ctx_forwarded_to_acompletion(self):
+        provider = LiteLLMProvider()
+        resp = _response("ok")
+        mock = AsyncMock(return_value=resp)
+        with patch("litellm.acompletion", mock):
+            await provider.complete(
+                messages=[{"role": "user", "content": "hi"}],
+                model="ollama/gemma-4-31B-it-qat:latest",
+                num_ctx=32768,
+                _provider_config={"api_base": "http://host.docker.internal:11434"},
+            )
+        assert mock.call_args.kwargs.get("num_ctx") == 32768

@@ -760,3 +760,24 @@ class TestEmbedBatch:
 
         with pytest.raises(httpx.HTTPError):
             await c.embed_batch(["a", "b"])
+
+
+def test_resolve_num_ctx_precedence():
+    """Per-phase context: <phase>_num_ctx wins, else the global ollama_num_ctx,
+    else the 8192 hard default. Lets writer/RAG phases run long while title/SEO
+    stay small."""
+    from services.ollama_client import resolve_num_ctx
+    from services.site_config import SiteConfig
+
+    sc = SiteConfig(initial_config={
+        "ollama_num_ctx": "8192",
+        "content.generate_draft_num_ctx": "32768",
+    })
+    # phase with an override wins
+    assert resolve_num_ctx("content.generate_draft", site_config=sc) == 32768
+    # phase without an override falls back to the global
+    assert resolve_num_ctx("content.generate_title", site_config=sc) == 8192
+    # no phase -> global
+    assert resolve_num_ctx(None, site_config=sc) == 8192
+    # nothing configured -> hard default
+    assert resolve_num_ctx("x", site_config=SiteConfig(initial_config={})) == 8192

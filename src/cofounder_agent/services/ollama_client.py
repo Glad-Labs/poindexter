@@ -140,6 +140,22 @@ def _default_num_ctx(*, site_config: SiteConfig | None = None) -> int:
         ) from exc
 
 
+def resolve_num_ctx(
+    phase: str | None, *, site_config: SiteConfig | None = None,
+) -> int:
+    """Per-phase context window: ``<phase>_num_ctx`` -> ``ollama_num_ctx`` -> 8192.
+
+    Lets context-hungry phases (writer / RAG) run long while title / SEO stay
+    small. Delegates to ``_get_int_setting`` so a bad / non-positive per-phase
+    value logs a warning and defers to the global default, instead of silently
+    swallowing the parse error.
+    """
+    fallback = _default_num_ctx(site_config=site_config)
+    if phase:
+        return _get_int_setting(f"{phase}_num_ctx", fallback, site_config=site_config)
+    return fallback
+
+
 def _get_int_setting(key: str, default: int, *, site_config: SiteConfig | None = None) -> int:
     """Read a positive int from app_settings, falling back to ``default`` on
     missing / invalid values. Wraps bad config in a warning log instead of

@@ -241,6 +241,7 @@ async def ollama_chat_text(
         # let the exception propagate. Per ``feedback_no_silent_defaults``:
         # missing-pool / missing-config should fail loud in production.
         from services.llm_providers.dispatcher import dispatch_complete
+        from services.ollama_client import resolve_num_ctx
 
         timeout = (
             site_config.get_float(timeout_setting, timeout_default)
@@ -254,6 +255,7 @@ async def ollama_chat_text(
             timeout_s=int(timeout),
             task_id=task_id,
             phase=phase,
+            num_ctx=resolve_num_ctx(phase, site_config=site_config),
         )
         raw = getattr(completion, "text", "") or ""
         usage_details = {

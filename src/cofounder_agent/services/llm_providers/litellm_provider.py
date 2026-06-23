@@ -545,7 +545,7 @@ class LiteLLMProvider:
         # rather than 4xx — so this is the safe seam to retire the legacy
         # direct-httpx ``"format": "json"`` payload key that the
         # ``_ollama_chat_json`` survivors were using.
-        for key in ("temperature", "max_tokens", "top_p", "response_format"):
+        for key in ("temperature", "max_tokens", "top_p", "response_format", "num_ctx"):
             if key in kwargs:
                 completion_kwargs[key] = kwargs[key]
 
