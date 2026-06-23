@@ -156,7 +156,7 @@ TIMESTAMP`.
 - `docs/architecture/services/site_config.md` — the **read** path
   used by every service. Read its "How callers should plumb the
   instance" section before adding a new consumer.
-- `services.bootstrap_defaults.ensure_defaults` — populates new keys
+- `services.settings_defaults.seed_all_defaults` — populates new keys
   with sensible defaults at startup so a fresh DB doesn't need
   manual seeding.
 - `feedback_db_first_config` (operator design note)

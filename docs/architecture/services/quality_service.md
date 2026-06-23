@@ -140,13 +140,11 @@ under the `qa_*` prefix in `quality_scorers.qa_cfg()`.
 - **External APIs:** none directly. The injected `llm_client` is what
   talks to Ollama/cloud.
 - **Sister-service callers:**
-  - `agents.blog_quality_agent` — wraps the service for the agent
-    framework.
-  - `services.phases.content_phases` — quality phase in the legacy
-    phase-based pipeline.
-  - `services.stages.quality_evaluation` — the GH#117 stage-based
-    pipeline equivalent.
-  - `main.py` — constructed at startup as `UnifiedQualityService()`.
+  - `modules.content.stages.quality_evaluation` — the `quality_evaluation`
+    graph_def node (moved from `services/stages/` to `modules/content/stages/`
+    during the 2026-06-04 content-module migration).
+  - `main.py` — constructed at startup as `UnifiedQualityService()` via the
+    `modules.content.api` thin-adapter boundary.
 
 ## Failure modes
 

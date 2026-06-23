@@ -129,9 +129,10 @@ app_settings changes apply without a restart (#198):
 - **Writes to:** nothing. Both services are read-only / pure.
 - **External APIs:** DuckDuckGo (no key) + outbound HTTP fetches.
 - **Sister-service callers (non-exhaustive):**
-  - `services.stages.generate_content` — primary writer pipeline.
-  - `services.writer_rag_modes.two_pass` — TWO_PASS revise loop via
-    the `research_topic()` shim.
+  - `modules.content.stages.generate_content` — primary writer pipeline
+    (moved from `services/stages/` in the 2026-06-04 content-module migration).
+  - `modules.content.atoms.two_pass_writer` — TWO_PASS revise loop via
+    the `research_topic()` shim (moved from `services/writer_rag_modes/`).
   - `modules.content.multi_model_qa` — the web fact-check gate constructs
     its own `WebResearcher()` directly.
   - `services.title_generation` — title generator searches for

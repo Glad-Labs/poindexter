@@ -2,7 +2,7 @@
 
 FastAPI orchestrator for the Poindexter AI content pipeline. Coordinates specialized agents through a model router with task management, QA gates, and real-time monitoring.
 
-**Version:** 0.5.0
+**Version:** 0.85.0
 **Runtime:** Python 3.13+ with FastAPI
 **Port:** 8002
 **Database:** PostgreSQL via asyncpg (raw SQL, no ORM)
@@ -52,7 +52,7 @@ src/cofounder_agent/
 ├── middleware/                # 5 middleware modules (auth, validation, etc.)
 ├── utils/                     # 20 utility modules
 └── tests/                     # pytest suite
-    └── unit/                  # 10,223+ unit tests (10,352 passed, 84 skipped as of 2026-06-09)
+    └── unit/                  # 11,440+ unit tests
 ```
 
 ## Key Architecture
@@ -63,7 +63,7 @@ src/cofounder_agent/
 
 **Database** (`services/database_service.py`): asyncpg connection pool with 5 domain modules (Users, Tasks, Content, Admin, WritingStyle). All queries are raw SQL. Migrations in `services/migrations/`.
 
-**Content Pipeline**: The `canonical_blog` graph (37 nodes — 10 `stage.*` + 11 `content.*` + 12 `qa.*` + 3 `seo.*` + 1 `atoms.approval_gate`) is stored as a DB `graph_def` (`services/canonical_blog_spec.py`), compiled by `services/pipeline_architect.py::build_graph_from_spec`, and orchestrated by `TemplateRunner`. Dispatch happens via the Prefect `content_generation_flow`.
+**Content Pipeline**: The `canonical_blog` graph (38 nodes — 11 `stage.*` + 12 `content.*` + 12 `qa.*` + 1 `qa.rewrite` + 1 `seo.*` + 1 `atoms.approval_gate`) is stored as a DB `graph_def` (`services/canonical_blog_spec.py`), compiled by `services/pipeline_architect.py::build_graph_from_spec`, and orchestrated by `TemplateRunner`. Dispatch happens via the Prefect `content_generation_flow`.
 
 **Gate History** (`pipeline_gate_history` table): Typed history of HITL gate approvals + regen retries (poindexter#366 phase 1 — replaces the dropped `pipeline_events` event-bus table). Approval service writes; `atoms.approval_gate` + `rejection_handlers` read.
 
@@ -87,7 +87,7 @@ Markers: `unit`, `integration`, `api`, `e2e`, `performance`, `slow`, `voice`, `w
 
 ## Configuration
 
-Bootstrap config loaded from `~/.poindexter/bootstrap.toml` (created by `poindexter setup`). Runtime config from `app_settings` DB table (~946 keys, 67 secret).
+Bootstrap config loaded from `~/.poindexter/bootstrap.toml` (created by `poindexter setup`). Runtime config from `app_settings` DB table (~1,090 keys, 68 secret).
 
 - `database_url` — in bootstrap.toml (the only disk-based config)
 - **Auth: OAuth 2.1 client-credentials only** (Phase 3 #249). The static-Bearer `api_token` fallback was removed. `bootstrap.toml` holds the OAuth signing key; each consumer registers an `oauth_clients` row (`poindexter setup` provisions the initial CLI client; others via `poindexter auth migrate-*`) and mints a JWT through `POST /token`.
