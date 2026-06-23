@@ -86,12 +86,17 @@ python-multipart = ">=0.0.31"
 # aiofiles removed — never imported in production code (poindexter#714)
 
 # ML/AI - Image Generation (SDXL)
-# torch needs the CUDA build to drive SDXL on Matt's RTX 5090 (Blackwell,
-# sm_120) — without this source pin, poetry resolves the CPU wheel from
-# PyPI and SDXL crashes silently in the autocast path. See
-# glad-labs-stack#334 for the full bug. cu128 wheels run fine against
-# the 596.36 / CUDA 13.2 driver due to CUDA's forward-compat guarantee.
-torch = { version = ">=2.7", source = "pytorch-cu128", optional = true }
+# torch is the CPU build here: the two pipeline images (worker + OSS
+# standalone) install it only via the `rerank` extra to drive the
+# LlamaIndex cross-encoder reranker, which runs on CPU (#1882). Neither
+# image has GPU passthrough or `diffusers`, so the CUDA build was ~2 GB
+# of dead weight (the nvidia-*/cuda-* + triton transitive wheels). The cu128 build
+# that actually renders SDXL on Matt's RTX 5090 lives self-contained in
+# scripts/Dockerfile.sdxl (its own pytorch/pytorch:*-cuda12.8 base), not
+# in this lock. <2.12 bounds the pin so a re-lock can't silently jump to
+# a new CUDA-major torch (the 2.12/CUDA-13 split that bit #1891). See
+# docs/superpowers/specs/2026-06-23-worker-cpu-torch-design.md.
+torch = { version = ">=2.7,<2.12", source = "pytorch-cpu", optional = true }
 transformers = { version = ">=4.40.0", optional = true }
 # `accelerate` removed — zero imports in tracked code. Was optional ml extra.
 
@@ -418,14 +423,17 @@ requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
 # ===== POETRY SOURCES =====
-# Explicit-priority source for the CUDA-built torch wheels. Without
-# this, the resolver picks up the CPU build from PyPI and SDXL silently
-# breaks on hardware (glad-labs-stack#334). priority="explicit" means
-# poetry only consults this index for packages that pin source =
-# "pytorch-cu128"; everything else still resolves from PyPI.
+# Explicit-priority source for the CPU-only torch wheels. The pipeline
+# images install torch (via the `rerank` extra) purely for the CPU
+# cross-encoder reranker, so the CPU build is correct and ~2 GB smaller
+# than cu128. priority="explicit" means poetry only consults this index
+# for packages that pin source = "pytorch-cpu"; everything else still
+# resolves from PyPI. The CUDA (cu128) torch that drives SDXL lives in
+# scripts/Dockerfile.sdxl, not here. See glad-labs-stack#334 for the
+# original cu128 pin and the 2026-06-23 CPU-trim follow-up spec.
 [[tool.poetry.source]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
 priority = "explicit"
 
 # ===== TOOL CONFIGURATION =====

@@ -54,11 +54,15 @@ COPY pyproject.toml poetry.lock ./
 RUN poetry config virtualenvs.create false && \
     poetry install --no-interaction --no-ansi --only main --extras "rerank"
 
-# Fail-fast verification — confirm the rerank stack landed (mirror of the worker
-# image). sentence-transformers is an opt-in `rerank` extra as of the 2026-06-23
-# CI torch-trim; a dropped `[rerank]` extra silently degrades the cross-encoder
-# reranker to passthrough at runtime, so fail the build instead.
-RUN python -c "import sentence_transformers, torch; print('[BUILD] rerank extra OK — sentence_transformers + torch available')"
+# Fail-fast verification — confirm the rerank stack landed AND that torch is the
+# CPU build (mirror of the worker image). sentence-transformers is an opt-in
+# `rerank` extra as of the 2026-06-23 CI torch-trim; a dropped `[rerank]` extra
+# silently degrades the cross-encoder reranker to passthrough at runtime. The
+# torch.version.cuda assertion guards the CPU-trim — this image carries the
+# ~2 GB-smaller CPU wheel (no GPU here), and a re-lock that re-pulls CUDA torch
+# reddens the build instead of silently re-bloating it. cu128 lives in
+# scripts/Dockerfile.sdxl.
+RUN python -c "import sentence_transformers, torch; assert torch.version.cuda is None, f'expected CPU torch, got CUDA {torch.version.cuda}'; print('[BUILD] rerank extra OK — sentence_transformers + CPU torch', torch.__version__)"
 
 # Install Playwright's bundled chromium. This downloads ~150MB into
 # /root/.cache/ms-playwright/ during build. We skip the OS deps install

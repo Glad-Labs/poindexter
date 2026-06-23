@@ -25,10 +25,11 @@ poetry install
 poetry run uvicorn main:app --reload --port 8002
 ```
 
-> The cross-encoder reranker (`sentence-transformers` + `torch`, a multi-GB CUDA
-> wheel) is an opt-in `rerank` extra. With the lean `poetry install` above the
-> reranker degrades to passthrough; to run it locally use
-> `poetry install --extras rerank` (or `pip install -e "src/cofounder_agent[rerank]"`).
+> The cross-encoder reranker (`sentence-transformers` + `torch`, a CPU wheel) is
+> an opt-in `rerank` extra. With the lean `poetry install` above the reranker
+> degrades to passthrough; to run it locally use `poetry install --extras rerank`
+> (or `pip install -e "src/cofounder_agent[rerank]"`). The reranker runs on CPU
+> (#1882); the CUDA torch that drives SDXL lives in the sdxl-server container.
 
 Requires `~/.poindexter/bootstrap.toml` with `database_url` (created by `poindexter setup`). Ollama is the default LLM provider — no cloud API keys required. All other config lives in the `app_settings` DB table.
 

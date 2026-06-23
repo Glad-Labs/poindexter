@@ -15,13 +15,14 @@ python = ">=3.13,<3.15"
 # of the content_agent tree is tracked separately.
 python-dotenv = "^1.1.1"
 
-# Optional ML/AI dependencies for SDXL image generation.
-# torch is sourced from the explicit pytorch-cu128 index (defined in
-# the [[tool.poetry.source]] block at the bottom of this file) so the
-# 5090 (Blackwell, sm_120) gets the right CUDA kernels — the default
-# PyPI wheel is CPU-only and SDXL silently fails on it. See
-# Glad-Labs/glad-labs-stack#334. >=2.7 ensures Blackwell support.
-torch = { version = ">=2.7", source = "pytorch-cu128", optional = true }
+# Optional ML/AI dependencies. torch is the CPU build (sourced from the
+# explicit pytorch-cpu index defined at the bottom of this file). The
+# CUDA (cu128) torch that drives SDXL on the 5090 lives self-contained
+# in scripts/Dockerfile.sdxl, not in this dev-harness lock — see
+# Glad-Labs/glad-labs-stack#334 and the CPU-trim follow-up spec
+# docs/superpowers/specs/2026-06-23-worker-cpu-torch-design.md. <2.12
+# bounds the pin against a silent CUDA-major bump on re-lock.
+torch = { version = ">=2.7,<2.12", source = "pytorch-cpu", optional = true }
 diffusers = { version = ">=0.30.0", optional = true }
 transformers = { version = ">=4.40.0", optional = true }
 accelerate = { version = ">=0.24.0", optional = true }
@@ -56,14 +57,15 @@ ml = ["torch", "diffusers", "transformers", "accelerate"]
 requires = ["poetry-core"]
 build-backend = "poetry.core.masonry.api"
 
-# Explicit-priority source for the CUDA-built torch wheels.
+# Explicit-priority source for the CPU-only torch wheels.
 # priority="explicit" means poetry only consults this index for
-# packages that pin source = "pytorch-cu128"; everything else still
-# resolves from PyPI. See Glad-Labs/glad-labs-stack#334 for the bug
-# this fixes (CPU torch broke SDXL on Matt's RTX 5090).
+# packages that pin source = "pytorch-cpu"; everything else still
+# resolves from PyPI. The CUDA (cu128) torch that drives SDXL on the
+# 5090 lives in scripts/Dockerfile.sdxl, not here. See
+# Glad-Labs/glad-labs-stack#334 for the original cu128 pin.
 [[tool.poetry.source]]
-name = "pytorch-cu128"
-url = "https://download.pytorch.org/whl/cu128"
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
 priority = "explicit"
 
 [project]

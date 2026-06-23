@@ -897,7 +897,10 @@ class StartupManager:
             import torch
         except ModuleNotFoundError:
             logger.info("  SDXL warmup: torch not installed - SDXL disabled")
-            logger.info("     To enable SDXL: pip install -r scripts/requirements-ml.txt")
+            logger.info(
+                "     In-process SDXL needs the `ml` extra (poetry install "
+                "--extras ml); GPU rendering runs in the sdxl-server container."
+            )
             return
 
         # Skip warmup if GPU is not available (SDXL only works on GPU)
