@@ -11,7 +11,7 @@ export const SITE_URL = 'https://gladlabs.ai';
 // on every release (see the `generic` extra-files entry in
 // release-please-config.json), so it tracks the real version instead of
 // drifting. Keep the `// x-release-please-version` annotation on this line.
-export const POINDEXTER_VERSION = '0.74.0'; // x-release-please-version
+export const POINDEXTER_VERSION = '0.85.0'; // x-release-please-version
 
 // Lemon Squeezy subscription product URL for Poindexter Pro.
 // Single tier: $19/month or $180/year (7-day trial applies once CHECKOUT_LIVE).

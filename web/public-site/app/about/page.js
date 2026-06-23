@@ -211,8 +211,8 @@ export default function AboutPage() {
                   <li>Self-hosted: PostgreSQL, Grafana, Prometheus, Loki</li>
                   <li>Content pipeline with quality gate + human approval</li>
                   <li>Podcast (Kokoro TTS) + Video (SDXL slideshow + ffmpeg)</li>
-                  <li>FastAPI backend, 7,900+ tests</li>
-                  <li>Next.js 15 on Vercel + Cloudflare R2 CDN</li>
+                  <li>FastAPI backend, 11,400+ tests</li>
+                  <li>Next.js 16 on Vercel + Cloudflare R2 CDN</li>
                 </ul>
               </Card>
 
