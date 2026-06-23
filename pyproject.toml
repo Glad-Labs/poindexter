@@ -19,7 +19,7 @@ python-dotenv = "^1.1.1"
 # explicit pytorch-cpu index defined at the bottom of this file). The
 # CUDA (cu128) torch that drives SDXL on the 5090 lives self-contained
 # in scripts/Dockerfile.sdxl, not in this dev-harness lock — see
-# Glad-Labs/glad-labs-stack#334 and the CPU-trim follow-up spec
+# Glad-Labs/poindexter#334 and the CPU-trim follow-up spec
 # docs/superpowers/specs/2026-06-23-worker-cpu-torch-design.md. <2.12
 # bounds the pin against a silent CUDA-major bump on re-lock.
 torch = { version = ">=2.7,<2.12", source = "pytorch-cpu", optional = true }
@@ -62,7 +62,7 @@ build-backend = "poetry.core.masonry.api"
 # packages that pin source = "pytorch-cpu"; everything else still
 # resolves from PyPI. The CUDA (cu128) torch that drives SDXL on the
 # 5090 lives in scripts/Dockerfile.sdxl, not here. See
-# Glad-Labs/glad-labs-stack#334 for the original cu128 pin.
+# Glad-Labs/poindexter#334 for the original cu128 pin.
 [[tool.poetry.source]]
 name = "pytorch-cpu"
 url = "https://download.pytorch.org/whl/cpu"

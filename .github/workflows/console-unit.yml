@@ -36,7 +36,7 @@ jobs:
   console-unit:
     # Source-repo only: PRs land on glad-labs-stack; the public mirror is
     # force-rebuilt and takes no PRs, so gating it would waste Actions minutes.
-    if: github.repository == 'Glad-Labs/glad-labs-stack'
+    if: github.repository == 'Glad-Labs/poindexter'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
