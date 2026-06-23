@@ -144,6 +144,29 @@ def extract_inline_image_urls(content: str) -> list[str]:
     return urls
 
 
+def _images_to_score(
+    content: str, featured_image_url: str | None, max_images: int
+) -> list[str]:
+    """Ordered, de-duplicated image URLs for the qa.vision relevance call.
+
+    The featured/hero image is scored under the same
+    ``image_relevance`` / ``vision_gate`` reviewer as the inline images.
+    It *leads* the list so it always survives the ``max_images`` cap — a
+    post with N>=max_images inline images would otherwise push the hero
+    past the truncation and leave it unscored, which is the gap this
+    closes. A hero that also appears inline is scored once (lead slot).
+    Empty/whitespace ``featured_image_url`` → inline-only (backcompat).
+    """
+    urls: list[str] = []
+    featured = (featured_image_url or "").strip()
+    if featured:
+        urls.append(featured)
+    for u in extract_inline_image_urls(content):
+        if u not in urls:
+            urls.append(u)
+    return urls[:max_images]
+
+
 @dataclass
 class ReviewerResult:
     """Result from a single reviewer.
@@ -2068,13 +2091,16 @@ class MultiModelQA:
 
     @observe(as_type="generation", name="multi_model_qa._check_image_relevance")
     async def _check_image_relevance(
-        self, title: str, topic: str, content: str
+        self, title: str, topic: str, content: str,
+        featured_image_url: str | None = None,
     ) -> ReviewerResult | None:
-        """Gate: do the inline images actually match what the article is about?
+        """Gate: do the images actually match what the article is about?
 
-        Extracts up to N inline image URLs from the content, downloads them,
-        and asks a vision-capable Ollama model (qwen3-vl:30b by default)
-        whether each image is relevant to the content and topic. Returns
+        Extracts up to N image URLs — the featured/hero image (when supplied)
+        plus the inline images from the content — downloads them, and asks
+        a vision-capable Ollama model (qwen3-vl:30b by default) whether each
+        image is relevant to the content and topic. The featured image leads the
+        set so it always survives the ``qa_vision_max_images`` cap. Returns
         None when disabled (default), when no images are present, or when
         the vision model is unavailable.
 
@@ -2147,10 +2173,11 @@ class MultiModelQA:
         if not content or not content.strip():
             return None
 
-        # Find inline markdown / HTML images (shared extractor — keeps qa.vision's
-        # "were there images?" check in lockstep). Cap at max_images so a
-        # 10-image article doesn't blow up inference budget.
-        urls = extract_inline_image_urls(content)[:max_images]
+        # Featured/hero image (leads) + inline markdown / HTML images
+        # (shared extractor — keeps qa.vision's "were there images?" check in
+        # lockstep). Cap at max_images so a 10-image article doesn't blow up
+        # inference budget; the hero leads so the cap never drops it.
+        urls = _images_to_score(content, featured_image_url, max_images)
         if not urls:
             return None
 

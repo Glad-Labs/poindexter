@@ -8,7 +8,8 @@ and 2h) — the cutover ported the text rails (``qa.critic`` / ``qa.deepeval``
 but NOT the vision legs, so both went cold (Glad-Labs/poindexter#563):
 
 1. **Image relevance** (``_check_image_relevance`` → reviewer ``image_relevance``,
-   aliased to the ``vision_gate`` qa_gates row). Checks inline images actually
+   aliased to the ``vision_gate`` qa_gates row). Checks the featured/hero image
+   (``state['featured_image_url']``) plus the inline body images actually
    match the content. Opt-in via ``qa_vision_check_enabled``; needs no preview.
 2. **Rendered-preview screenshot** (``_check_rendered_preview`` → reviewer
    ``rendered_preview``). Screenshots the post's ``/preview/{token}`` URL and
@@ -215,8 +216,13 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # 1. Image relevance — restores the cold qa_gates.vision_gate counter.
     #    Returns None when qa_vision_check_enabled is false / no images / vision
     #    model unreachable; otherwise a ReviewerResult(reviewer="image_relevance").
+    #    The featured/hero image is included alongside inline images so the
+    #    same vision_gate rail scores it (it leads, never dropped by the cap).
     try:
-        image_review = await qa._check_image_relevance(title, topic, content)
+        image_review = await qa._check_image_relevance(
+            title, topic, content,
+            featured_image_url=state.get("featured_image_url") or "",
+        )
     except Exception as exc:  # noqa: BLE001
         logger.warning("[qa.vision] image-relevance check raised: %s", exc)
         image_review = None

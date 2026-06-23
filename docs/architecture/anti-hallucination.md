@@ -284,8 +284,12 @@ The `qa.vision` rail runs two vision-model checks the deleted
 `MultiModelQA.review()` ran inline:
 
 - **Image relevance** (`_check_image_relevance` → reviewer `image_relevance`,
-  aliased to the `vision_gate` qa_gates row) — does each inline image match
-  the content next to it? Opt-in via `qa_vision_check_enabled`. Needs no URL.
+  aliased to the `vision_gate` qa_gates row) — does each image match the
+  content? Scores the featured/hero image (`state['featured_image_url']`)
+  **plus** the inline body images, deduped via `_images_to_score`. The hero
+  leads the scan set so it always survives the `qa_vision_max_images` cap (an
+  N≥cap inline-image post would otherwise push the hero past truncation and
+  leave it unscored). Opt-in via `qa_vision_check_enabled`. Needs no URL.
 - **Rendered-preview screenshot** (`_check_rendered_preview` → reviewer
   `rendered_preview`) — screenshots the post's `/preview/{token}` page via
   headless chromium and feeds the PNG to a vision model to catch layout

@@ -64,7 +64,7 @@ class TestQaVisionAtom:
 
     async def test_image_relevance_review_emitted(self, monkeypatch):
         """The image-relevance check restores the cold vision_gate score."""
-        async def img(self, title, topic, content):
+        async def img(self, title, topic, content, featured_image_url=None):
             return ReviewerResult("image_relevance", True, 88.0, "ok", "vision_gate")
 
         async def no_preview(self, title, topic, preview_url):  # pragma: no cover
@@ -78,11 +78,28 @@ class TestQaVisionAtom:
         assert "image_relevance" in reviewers
         assert "rendered_preview" not in reviewers
 
+    async def test_featured_image_url_threaded_to_image_relevance(self, monkeypatch):
+        """The featured/hero image (state['featured_image_url']) reaches the
+        image-relevance gate so it's scored under the same vision_gate rail as the
+        inline images. Before this the gate only saw the markdown body."""
+        seen = {}
+
+        async def img(self, title, topic, content, featured_image_url=None):
+            seen["featured"] = featured_image_url
+            return ReviewerResult("image_relevance", True, 88.0, "ok", "vision_gate")
+
+        monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
+
+        hero = "https://r2.dev/hero.webp"
+        out = await qa_vision.run(_state(featured_image_url=hero))
+        assert seen.get("featured") == hero
+        assert any(r["reviewer"] == "image_relevance" for r in out["qa_rail_reviews"])
+
     async def test_preview_url_threaded_to_rendered_preview(self, monkeypatch):
         """THE #563 contract: an explicit preview_url reaches _check_rendered_preview."""
         seen = {}
 
-        async def img(self, title, topic, content):
+        async def img(self, title, topic, content, featured_image_url=None):
             return None  # isolate the preview leg
 
         async def preview(self, title, topic, preview_url):
@@ -103,7 +120,7 @@ class TestQaVisionAtom:
         preview_base_url + token (the verify_task → qa.vision seam)."""
         seen = {}
 
-        async def img(self, title, topic, content):
+        async def img(self, title, topic, content, featured_image_url=None):
             return None
 
         async def preview(self, title, topic, preview_url):
@@ -119,7 +136,7 @@ class TestQaVisionAtom:
 
     async def test_advisory_flag_from_gate_state(self, monkeypatch):
         """vision_gate is advisory in prod baseline → review.advisory=True."""
-        async def img(self, title, topic, content):
+        async def img(self, title, topic, content, featured_image_url=None):
             return ReviewerResult("image_relevance", True, 88.0, "ok", "vision_gate")
         monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
 
@@ -132,7 +149,7 @@ class TestQaVisionAtom:
         → the atom pages the operator. It now ALSO emits a deliberate advisory
         PASS (never a silent {}) so a required vision_gate isn't failed closed
         on this vacuous run (#563)."""
-        async def img(self, title, topic, content):
+        async def img(self, title, topic, content, featured_image_url=None):
             return None  # no image review either → reviews empty
 
         monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
@@ -166,7 +183,7 @@ class TestQaVisionAtom:
         absent preview_url is NOT an alert — but the atom STILL emits a
         deliberate advisory PASS (case C: nothing to assess) so a required
         vision_gate passes by vacuity rather than failing closed (#563)."""
-        async def img(self, title, topic, content):
+        async def img(self, title, topic, content, featured_image_url=None):
             return None
         monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
 
@@ -197,7 +214,7 @@ class TestQaVisionAtom:
         returns it as present), so qa.aggregate does NOT fail closed."""
         from modules.content.atoms._qa_rail_common import missing_required_gates
 
-        async def img(self, title, topic, content):
+        async def img(self, title, topic, content, featured_image_url=None):
             return None
         monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
 
@@ -212,7 +229,7 @@ class TestQaVisionAtom:
         present but the image leg couldn't assess them (vision model down /
         unparseable). The atom passes open (advisory) AND pages the operator,
         rather than failing the post closed."""
-        async def img(self, title, topic, content):
+        async def img(self, title, topic, content, featured_image_url=None):
             return None  # model unreachable
         monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
 
