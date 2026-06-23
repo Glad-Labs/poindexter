@@ -16,18 +16,19 @@ generated but never reached R2 — both have happened recently:
   never did.
 
 This watchdog is the safety net: every 15 min it scans published posts
-in the recent window and, for any that are missing podcast or video on
-R2, fires the regen path. The job is bounded by a per-cycle cap so a
-large backlog doesn't pile up on the GPU forever.
+in the recent window and, for any that are missing podcast or video,
+re-dispatches the gated pipeline (it never authors media itself — see
+Pass 2). The job is bounded by a per-cycle cap so a large backlog
+doesn't re-arm the dispatcher all at once.
 
 ## Fail-loud contract
 
 Even when self-healing succeeds, the job emits a ``media_drift``
 finding so the operator finds out the upstream regression happened
 (and can decide whether to dig into the root cause). The finding's
-``severity`` is ``warning`` while regen is succeeding and ``critical``
-when regen itself starts failing — that's the case where the human
-has to step in.
+``severity`` is always ``warning``: re-dispatch never "fails" the job —
+drift that can't be re-dispatched (no task seam, or the per-task cap was
+hit) is surfaced in the finding for the operator, not counted as an error.
 
 ## Two reconciliation passes
 
@@ -43,10 +44,14 @@ produce the same symptom (a media-wanting post with no asset):
    only wrote a row as a *side-effect of regeneration*. Stamping is a
    pure DB write (no GPU, no upload), so this pass is NOT capped and
    NOT time-windowed.
-2. **Regen pass (capped, GPU-bound).** For media-wanting posts whose
-   file is genuinely ABSENT from R2, regenerate + upload + stamp,
-   capped per cycle so a backlog doesn't pin the GPU. This is the
-   original watchdog behaviour.
+2. **Re-dispatch pass (capped).** For media-wanting posts whose media is
+   genuinely ABSENT (no ``media_assets`` row), re-dispatch the gated
+   pipeline — clear the source task's dispatch marker so the dispatcher
+   re-runs it through the full quality gates + Gate-2 — capped per cycle
+   and per task. The watchdog NEVER authors media directly (#1904); a
+   *delivered* episode whose R2 object vanished is re-uploaded from the
+   durable local render (no re-render), falling back to re-dispatch only
+   if that local file is also gone.
 
 ## Approval-gate seeding (self-healing)
 
@@ -61,31 +66,32 @@ gated feed silently excluded them (``feedback_approval_gate_all_media``).
 
 ## Config (``plugin.job.media_reconciliation``)
 
-- ``config.lookback_days`` (default 14) — REGEN-pass window: only
-  regenerate genuinely-missing media for posts published in the last N
-  days (older posts are considered intentionally archived for the
-  GPU-bound regen). The cheap row-stamp pass ignores this and scans the
-  full ``max_lookback_days`` window — stamping a missing row for an old
-  post costs nothing.
+- ``config.lookback_days`` (default 14) — RE-DISPATCH-pass window: only
+  re-dispatch genuinely-missing media for posts published in the last N
+  days (older drift is surfaced for operator triage, not auto-healed).
+  The cheap row-stamp pass ignores this and scans the full
+  ``max_lookback_days`` window — stamping a missing row for an old post
+  costs nothing.
 - ``config.max_lookback_days`` (default 0 = unbounded) — SCAN window
   for the row-stamp pass. ``0`` scans every published media-wanting
   post regardless of age, which is what closes #560 (the gap is
   dominated by posts older than 14 days). Set a positive value to bound
   the per-cycle HEAD-check fan-out on very large sites.
-- ``config.podcast_cap_per_cycle`` (default 3) — regen at most N missing
-  podcasts per cycle. Podcast gen is fast (~30 s) so this is mostly a
-  rate-limit on the disk/R2 side.
-- ``config.video_cap_per_cycle`` (default 2) — regen at most N missing
-  videos per cycle. Video gen runs on the 5090 (~5-10 min per video)
-  so the cap matters more.
+- ``config.podcast_cap_per_cycle`` (default 3) — re-dispatch at most N
+  missing podcasts per cycle. Each re-dispatch just clears a marker (the
+  gated podcast_pipeline does the actual render), so this is a light
+  rate-limit on how many tasks re-arm per cycle.
+- ``config.video_cap_per_cycle`` (default 2) — re-dispatch at most N
+  missing videos per cycle. The gated Stage-2 pipeline runs the render
+  on the 5090 (~5-10 min), so the cap bounds GPU pile-up downstream.
 - ``config.alert_on_drift`` (default true) — emit a finding when drift
-  is detected, in addition to running the regen.
+  is detected, in addition to re-dispatching.
 - ``config.r2_public_base`` (default
   ``https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev``) — the base
   URL we HEAD against to verify R2 has the file. Falls back to the
   ``storage_public_url`` app_setting when not provided.
 - ``config.podcast_cdn_version`` (default ``v2``) — path prefix on R2.
-  Mirrors the upload_podcast_episode contract.
+  Mirrors the podcast delivery R2 key (``podcast/{ver}/{post_id}.mp3``).
 """
 
 from __future__ import annotations
@@ -314,14 +320,7 @@ class MediaReconciliationJob:
                 # scanned ids keeps this O(1) round-trips.
                 post_ids = [r["id"] for r in rows]
                 existing_rows = (
-                    await conn.fetch(
-                        """
-                        SELECT post_id::text AS post_id, type
-                          FROM media_assets
-                         WHERE post_id::text = ANY($1::text[])
-                        """,
-                        post_ids,
-                    )
+                    await conn.fetch(self._EXISTING_MEDIA_SQL, post_ids)
                     if post_ids
                     else []
                 )
@@ -334,10 +333,25 @@ class MediaReconciliationJob:
         # Set of (post_id, asset_type) pairs that already have a row. Post-#1460
         # the long-form video type is just ``video`` (``video_long`` was
         # collapsed in), so the (post, "video") membership the video-drift check
-        # consults is a direct type match.
+        # consults is a direct type match. ``existing_assets`` carries the
+        # storage columns alongside it so the podcast integrity check (#1904)
+        # can tell a delivered (cloudflare_r2) episode from a pending local one.
         existing_pairs: set[tuple[str, str]] = set()
+        existing_assets: dict[tuple[str, str], dict[str, Any]] = {}
         for er in existing_rows:
-            existing_pairs.add((er["post_id"], er["type"]))
+            key = (er["post_id"], er["type"])
+            existing_pairs.add(key)
+            cand = {
+                "storage_provider": er.get("storage_provider"),
+                "storage_path": er.get("storage_path"),
+                "url": er.get("url"),
+            }
+            # When several rows resolve to one (post, type) — e.g. a task-keyed
+            # local render plus a post-keyed delivered row — prefer the
+            # delivered one, since that's the row whose R2 object we integrity-check.
+            prior = existing_assets.get(key)
+            if prior is None or cand["storage_provider"] == "cloudflare_r2":
+                existing_assets[key] = cand
 
         if not rows:
             window = (
@@ -358,7 +372,8 @@ class MediaReconciliationJob:
             results = await asyncio.gather(
                 *[
                     self._check_post_media(
-                        client, r2_base, cdn_ver, dict(row), existing_pairs
+                        client, r2_base, cdn_ver, dict(row), existing_pairs,
+                        existing_assets,
                     )
                     for row in rows
                 ],
@@ -367,6 +382,11 @@ class MediaReconciliationJob:
 
         missing_podcast = [r for r in results if r["podcast_missing"]]
         missing_video = [r for r in results if r["video_missing"]]
+        # Delivered-then-lost: an episode that WAS on R2 (storage_provider=
+        # cloudflare_r2) whose object has since vanished. Not "missing" (the row
+        # exists) — re-delivered from the durable local render in Pass 2, never
+        # re-rendered.
+        redeliver_podcast = [r for r in results if r.get("podcast_delivered_gone")]
 
         # ---- Pass 1: row-stamp (unbounded, cheap, no GPU) ---------------
         # The #560 gap: file IS on R2 but the media_assets row is absent.
@@ -400,7 +420,7 @@ class MediaReconciliationJob:
                 stamped_total,
             )
 
-        if not missing_podcast and not missing_video:
+        if not missing_podcast and not missing_video and not redeliver_podcast:
             return JobResult(
                 ok=True,
                 detail=(
@@ -418,18 +438,17 @@ class MediaReconciliationJob:
 
         logger.warning(
             "media_reconciliation: drift detected — %d missing podcast, "
-            "%d missing video out of %d scanned",
-            len(missing_podcast), len(missing_video), len(rows),
+            "%d missing video, %d podcast R2-lost out of %d scanned",
+            len(missing_podcast), len(missing_video),
+            len(redeliver_podcast), len(rows),
         )
 
         # ---- Pass 2: self-heal genuinely-absent media ------------------
-        # Podcast: regen + upload + stamp (capped, GPU-bound, regen-window
-        # only). Video (#1460): the Stage-2 pipeline is the SOLE video
-        # producer, so on drift we do NOT regenerate video directly — we
-        # re-dispatch Stage-2 by clearing the source task's
-        # ``media_pipeline_dispatched_at`` (capped per task by
-        # ``media_pipeline_redispatch_count``) and let dispatch_media_pipeline
-        # re-run it through the full quality gates. Posts with no resolvable
+        # NEITHER lane authors media. On drift the watchdog re-dispatches the
+        # gated pipeline (clear the source task's dispatch marker, capped per
+        # task) and lets the dispatcher re-run it through the full quality gates
+        # + Gate-2 — a watchdog must never generate content directly (the
+        # regenerate_stock_images class of bug, #1904). Posts with no resolvable
         # ``pipeline_task_id`` seam can't be re-dispatched and only surface in
         # the finding (fail-loud, not silently healed). Only posts inside
         # ``lookback_days`` are acted on; older drift is surfaced, not healed.
@@ -437,22 +456,42 @@ class MediaReconciliationJob:
             pub = r.get("published_at")
             return pub is not None and pub >= regen_cutoff
 
-        regen_podcast = [r for r in missing_podcast if _in_regen_window(r)]
-
-        regen_podcast_ok = 0
-        regen_podcast_fail = 0
-        for r in regen_podcast[:podcast_cap]:
+        # Podcast re-dispatch (bounded per cycle by podcast_cap). Like video,
+        # _redispatch_podcast returns False for the can't-re-dispatch cases (no
+        # pipeline_task_id, or the per-task cap was hit) — surfaced, not failed.
+        redispatch_podcast = [r for r in missing_podcast if _in_regen_window(r)]
+        redispatched_podcast = 0
+        podcast_attempts = 0
+        for r in redispatch_podcast[:podcast_cap]:
+            podcast_attempts += 1
             try:
-                if await self._regen_podcast(pool, r):
-                    regen_podcast_ok += 1
-                else:
-                    regen_podcast_fail += 1
-            except Exception as e:
+                if await self._redispatch_podcast(pool, r):
+                    redispatched_podcast += 1
+            except Exception as e:  # noqa: BLE001
                 logger.exception(
-                    "media_reconciliation: podcast regen for %s raised: %s",
+                    "media_reconciliation: podcast re-dispatch for %s raised: %s",
                     r["id"], e,
                 )
-                regen_podcast_fail += 1
+        podcast_unresolved = podcast_attempts - redispatched_podcast
+
+        # Podcast re-delivery (bounded per cycle by podcast_cap): an already-
+        # delivered episode whose R2 object vanished is re-uploaded from the
+        # durable local render — no re-render, no Gate-2 re-entry (it was already
+        # approved). If the local file is also gone, fall back to a gated
+        # re-dispatch (which re-runs it through Gate-2). Not window-bound — an
+        # approved episode that lost its file is worth restoring at any age.
+        redelivered_podcast = 0
+        for r in redeliver_podcast[:podcast_cap]:
+            try:
+                if await self._redeliver_podcast(r):
+                    redelivered_podcast += 1
+                elif await self._redispatch_podcast(pool, r):
+                    redispatched_podcast += 1
+            except Exception as e:  # noqa: BLE001
+                logger.exception(
+                    "media_reconciliation: podcast re-deliver for %s raised: %s",
+                    r["id"], e,
+                )
 
         # Video re-dispatch (bounded per cycle by video_cap). _redispatch_video
         # returns False for the can't-re-dispatch cases (no pipeline_task_id, or
@@ -472,12 +511,10 @@ class MediaReconciliationJob:
                 )
         redispatch_unresolved = redispatch_attempts - redispatched_video
 
-        # Only podcast regen drives ok/critical — a video that can't be
-        # re-dispatched is surfaced in the finding, not counted as a failure.
-        regen_failed = regen_podcast_fail
-
+        # Neither lane authors media, so nothing here marks the job failed —
+        # drift that can't be re-dispatched (no task seam / capped) is surfaced
+        # in the finding for the operator, mirroring the video lane.
         if alert_on_drift:
-            severity = "critical" if regen_failed > 0 else "warning"
             preview_podcast = "\n".join(
                 f"- {r['id']} — {r['title'][:60]}"
                 for r in missing_podcast[:5]
@@ -489,11 +526,14 @@ class MediaReconciliationJob:
             emit_finding(
                 source="media_reconciliation",
                 kind="media_drift",
-                severity=severity,
+                severity="warning",
                 title=(
                     f"Media drift: {len(missing_podcast)} missing podcast, "
                     f"{len(missing_video)} missing video"
-                    + (" (regen failures)" if regen_failed > 0 else "")
+                    + (
+                        f", {len(redeliver_podcast)} podcast R2-lost"
+                        if redeliver_podcast else ""
+                    )
                 ),
                 body=(
                     f"## Missing podcast ({len(missing_podcast)})\n\n"
@@ -502,19 +542,21 @@ class MediaReconciliationJob:
                     f"{preview_video}\n\n"
                     f"## Podcast rows stamped this cycle (file present, row absent)\n"
                     f"- podcast: {stamped_podcast}\n\n"
-                    f"## Self-heal this cycle (capped, regen-window only)\n"
-                    f"- podcast regen: {regen_podcast_ok}/{podcast_cap} ok, "
-                    f"{regen_podcast_fail} failed\n"
+                    f"## Self-heal this cycle (gated re-dispatch, regen-window only)\n"
+                    f"- podcast re-dispatch: {redispatched_podcast}/{podcast_attempts} "
+                    f"cleared, {podcast_unresolved} unresolved (no task / capped)\n"
                     f"- video re-dispatch: {redispatched_video}/{redispatch_attempts} "
-                    f"cleared, {redispatch_unresolved} unresolved (no task / capped)\n\n"
+                    f"cleared, {redispatch_unresolved} unresolved (no task / capped)\n"
+                    f"- podcast re-deliver (R2 object lost): {redelivered_podcast}/"
+                    f"{len(redeliver_podcast)} re-uploaded from local render\n\n"
                     f"## Likely causes\n"
                     f"1. Worker container UID/HOME mismatch wrote files to "
                     f"unmounted dir (fixed 2026-05-12 — see docker-compose "
                     f"pinpoint bind mounts).\n"
-                    f"2. R2 upload silently failed (check r2_upload_service "
-                    f"logs for the post_id).\n"
-                    f"3. Video re-dispatch unresolved: the post has no "
-                    f"pipeline_task_id seam, or it hit media_pipeline_redispatch_max.\n"
+                    f"2. The source task never produced a podcast/video script, "
+                    f"so the gated pipeline has nothing to render.\n"
+                    f"3. Re-dispatch unresolved: the post has no pipeline_task_id "
+                    f"seam, or it hit its {{podcast,media_pipeline}}_redispatch_max.\n"
                 ),
                 dedup_key="media_drift",
                 extra={
@@ -522,31 +564,36 @@ class MediaReconciliationJob:
                     "missing_podcast": len(missing_podcast),
                     "missing_video": len(missing_video),
                     "stamped_podcast": stamped_podcast,
-                    "regen_podcast_ok": regen_podcast_ok,
-                    "regen_podcast_fail": regen_podcast_fail,
+                    "redispatched_podcast": redispatched_podcast,
+                    "podcast_unresolved": podcast_unresolved,
+                    "redelivered_podcast": redelivered_podcast,
                     "redispatched_video": redispatched_video,
                     "redispatch_unresolved": redispatch_unresolved,
                 },
             )
 
         return JobResult(
-            ok=regen_failed == 0,
+            ok=True,
             detail=(
                 f"drift: -{len(missing_podcast)} podcast / "
                 f"-{len(missing_video)} video; "
                 f"stamped {stamped_total} podcast rows; "
-                f"regen podcast={regen_podcast_ok}, "
-                f"video re-dispatched={redispatched_video}, "
-                f"failed={regen_failed}"
+                f"podcast re-dispatched={redispatched_podcast}, "
+                f"podcast re-delivered={redelivered_podcast}, "
+                f"video re-dispatched={redispatched_video}"
             ),
-            changes_made=stamped_total + regen_podcast_ok + redispatched_video,
+            changes_made=(
+                stamped_total + redispatched_podcast
+                + redelivered_podcast + redispatched_video
+            ),
             metrics={
                 "scanned": len(rows),
                 "missing_podcast": len(missing_podcast),
                 "missing_video": len(missing_video),
                 "stamped_podcast": stamped_podcast,
-                "regen_podcast_ok": regen_podcast_ok,
-                "regen_podcast_fail": regen_podcast_fail,
+                "redispatched_podcast": redispatched_podcast,
+                "podcast_unresolved": podcast_unresolved,
+                "redelivered_podcast": redelivered_podcast,
                 "redispatched_video": redispatched_video,
                 "redispatch_unresolved": redispatch_unresolved,
             },
@@ -559,20 +606,28 @@ class MediaReconciliationJob:
         cdn_ver: str,
         row: dict[str, Any],
         existing_pairs: set[tuple[str, str]] | None = None,
+        existing_assets: dict[tuple[str, str], dict[str, Any]] | None = None,
     ) -> dict[str, Any]:
-        """HEAD-check the podcast R2 key; derive video presence from the DB.
+        """Derive podcast + video presence from the DB row, not an R2 HEAD.
 
-        Podcast lives at a deterministic R2 URL, so its HEAD is the source of
-        truth (a post can have podcast_url populated but the MP3 missing — an
-        upload that failed mid-flight). Video (#1460) is produced task-keyed by
-        Stage-2 and back-stamped as a ``media_assets`` row at distribution — it
-        is NOT uploaded to the ``{post_id}.mp4`` R2 path — so video presence is
-        "has a media_assets video row" (``existing_pairs``), not an R2 HEAD.
+        Podcast presence (#1904) is "has a ``media_assets`` podcast row"
+        (``existing_assets``, resolved via the post_id OR the task seam), exactly
+        like video. A post is *genuinely missing* a podcast only when it has no
+        row AND no R2 file — a file-present-row-absent post is healed by the
+        cheap #560 stamp pass, and a rendered-but-pending podcast
+        (``storage_provider='local'``, not yet on R2) is correctly waiting in the
+        Gate-2 queue, not missing. The R2 HEAD is retained only to drive that
+        stamp pass and to flag a *delivered* (cloudflare_r2) episode whose object
+        has since vanished (``podcast_delivered_gone`` → re-deliver, not
+        re-render). Video (#1460) is produced task-keyed by Stage-2 and
+        back-stamped at distribution — presence is its ``existing_pairs`` row.
 
         Returns the row dict augmented with ``podcast_missing`` /
-        ``video_missing`` (and the podcast file-present flags for the stamp pass).
+        ``podcast_delivered_gone`` / ``video_missing`` (plus the podcast
+        file-present + resolved-asset fields the Pass-1/Pass-2 paths consume).
         """
         existing_pairs = existing_pairs or set()
+        existing_assets = existing_assets or {}
         post_id = row["id"]
         podcast_url = f"{r2_base}/podcast/{cdn_ver}/{post_id}.mp3"
 
@@ -598,9 +653,33 @@ class MediaReconciliationJob:
         # posts and avoids spurious 404 noise in R2 access logs. File-present
         # drives the cheap row-stamp pass (#560).
         podcast_exists = await _exists(podcast_url) if wants_podcast else False
-        row["podcast_missing"] = wants_podcast and not podcast_exists
+        podcast_asset = (
+            existing_assets.get((post_id, "podcast")) if wants_podcast else None
+        )
+        has_podcast_row = podcast_asset is not None
+        podcast_delivered = bool(
+            podcast_asset
+            and (podcast_asset.get("storage_provider") or "") == "cloudflare_r2"
+        )
+        # Presence is the DB row, not the R2 HEAD (#1904). "Genuinely missing"
+        # = no row AND no R2 file: a file-present-row-absent post is healed by
+        # the cheap #560 stamp pass below (never a re-dispatch), and a
+        # rendered-but-pending podcast (row present, storage_provider='local',
+        # not yet on R2) is correctly waiting in the Gate-2 queue.
+        row["podcast_missing"] = (
+            wants_podcast and not has_podcast_row and not podcast_exists
+        )
+        # A delivered (R2) episode whose object has since vanished → re-deliver
+        # the durable local render (no re-render). The HEAD is retained only for
+        # this integrity check + the stamp pass.
+        row["podcast_delivered_gone"] = (
+            wants_podcast and podcast_delivered and not podcast_exists
+        )
         row["podcast_exists"] = wants_podcast and podcast_exists
         row["podcast_url"] = podcast_url if wants_podcast else ""
+        # Stash the resolved podcast asset (storage_path/url/provider) so the
+        # Pass-2 re-deliver path needn't re-query the DB.
+        row["podcast_asset"] = podcast_asset or {}
 
         # Video: presence is a media_assets video row, not an R2 file. No HEAD,
         # no row-stamp pass for video (it's never on the {post_id}.mp4 path); a
@@ -707,66 +786,103 @@ class MediaReconciliationJob:
                 post_id, asset_type, e,
             )
 
-    # --- Reuse an existing Stage-3 render (finding #6-sub: dup podcast) -----
-    # The podcast_pipeline persists a *task-keyed* render at
-    # PODCAST_DIR/{task_id}.mp3 with a media_assets row (type='podcast',
-    # post_id=NULL) that ``podcast_distribute`` normally LINKS to the post and
-    # uploads. When that lane is dormant (podcast_pipeline_trigger_enabled=false)
-    # this watchdog is the only distributor — so it must UPLOAD the existing
-    # render, NOT re-run TTS. Re-rendering produced two files + two rows per
-    # post with different durations (wasted GPU) on the 2026-06-19 validation.
-    _EXISTING_PODCAST_RENDER_SQL = """
-        SELECT mas.id::text AS id, mas.storage_path
+    # Which (post_id, type) media_assets rows exist for the scanned posts, with
+    # the storage columns the podcast integrity check (#1904) needs. Resolved via
+    # BOTH the post_id and the task seam (``posts.metadata->>'pipeline_task_id'``)
+    # so a freshly-rendered podcast row that is still task-keyed (post_id NULL,
+    # not yet linked by ``podcast_distribute``) reads as present — otherwise the
+    # watchdog would treat a pending render as missing and (pre-#1904) author a
+    # Gate-2-bypassing duplicate. ``FROM media_assets`` stays the lead clause so
+    # existing-pair membership semantics are unchanged for the video lane.
+    _EXISTING_MEDIA_SQL = """
+        SELECT p.id::text AS post_id,
+               mas.type,
+               mas.storage_provider,
+               mas.storage_path,
+               mas.url
           FROM media_assets mas
-          JOIN posts p ON p.metadata->>'pipeline_task_id' = mas.task_id
+          JOIN posts p
+            ON (mas.post_id = p.id
+                OR (COALESCE(mas.task_id, '') <> ''
+                    AND mas.task_id = p.metadata->>'pipeline_task_id'))
+         WHERE p.id::text = ANY($1::text[])
+    """
+
+    # --- Podcast re-dispatch (#1904) ---------------------------------------
+    # The gated ``podcast_pipeline`` is the SOLE podcast producer. On podcast
+    # drift the watchdog re-dispatches it rather than authoring a podcast
+    # directly (the old ``_regen_podcast`` path double-rendered AND bypassed
+    # Gate-2 — the regenerate_stock_images class of bug). Resolve the source
+    # task via the canonical ``posts.metadata->>'pipeline_task_id'`` seam, then
+    # NULL its ``podcast_dispatched_at`` marker so ``dispatch_podcast_pipeline``
+    # re-claims it and runs it through the full quality gates + Gate-2. Capped
+    # per task by ``podcast_redispatch_count`` so a permanently-failing render
+    # can't loop forever. Symmetric with the video re-dispatch below.
+    _PODCAST_RESOLVE_TASK_SQL = """
+        SELECT pt.task_id, pt.podcast_redispatch_count
+          FROM pipeline_tasks pt
+          JOIN posts p ON p.metadata->>'pipeline_task_id' = pt.task_id
          WHERE p.id = $1::uuid
-           AND mas.type = 'podcast'
-           AND COALESCE(mas.storage_path, '') <> ''
-         ORDER BY mas.created_at DESC
          LIMIT 1
     """
-    # LINK the existing task-keyed row in place (set post_id + the R2 URL) —
-    # never INSERT a second row (that's the duplicate we're eliminating).
-    _LINK_PROMOTED_PODCAST_SQL = """
-        UPDATE media_assets
-           SET post_id = $1::uuid,
-               url = $2,
-               storage_provider = 'cloudflare_r2',
-               source = 'reconciliation',
-               updated_at = NOW()
-         WHERE id = $3::uuid
+    _PODCAST_CLEAR_MARKER_SQL = """
+        UPDATE pipeline_tasks
+           SET podcast_dispatched_at = NULL,
+               podcast_redispatch_count = podcast_redispatch_count + 1
+         WHERE task_id = $1
+           AND podcast_redispatch_count < $2
     """
 
-    async def _promote_existing_podcast(
-        self, pool: Any, row: dict[str, Any],
-    ) -> bool:
-        """Upload an already-rendered task-keyed podcast to the post-keyed R2
-        URL instead of re-running TTS.
-
-        Returns True iff an existing on-disk render was found, uploaded, and
-        linked; False otherwise (the caller then falls back to a full
-        re-render). Best-effort: any lookup/upload/link failure returns False
-        so the regen fallback still runs.
+    async def _redispatch_podcast(self, pool: Any, post_row: dict[str, Any]) -> bool:
+        """Re-run the gated ``podcast_pipeline`` for a drifted post by clearing
+        its ``podcast_dispatched_at`` marker (capped via
+        ``podcast_redispatch_count``). ``dispatch_podcast_pipeline`` re-claims
+        the task next cycle and runs it through the full quality gates + Gate-2.
+        Posts with no resolvable ``pipeline_task_id`` can't be re-dispatched —
+        they only surface in the ``media_drift`` finding (fail-loud, not
+        silently healed). The watchdog NEVER authors a podcast itself. Returns
+        True iff the dispatch marker was cleared this call.
         """
-        post_id = row["id"]
+        sc = getattr(self, "_site_config", None)
+        cap = int(
+            (sc.get("podcast_redispatch_max", "3") if sc is not None else "3")
+            or 3
+        )
+        row = await pool.fetchrow(self._PODCAST_RESOLVE_TASK_SQL, post_row["id"])
+        if not row or not row["task_id"]:
+            logger.warning(
+                "media_reconciliation: no pipeline_task_id for post %s — cannot "
+                "re-dispatch podcast (surfaced in finding)", post_row["id"],
+            )
+            return False
+        if row["podcast_redispatch_count"] >= cap:
+            logger.warning(
+                "media_reconciliation: post %s hit podcast re-dispatch cap (%d)",
+                post_row["id"], cap,
+            )
+            return False
+        result = await pool.execute(
+            self._PODCAST_CLEAR_MARKER_SQL, row["task_id"], cap,
+        )
+        return str(result).strip().endswith(" 1")
+
+    async def _redeliver_podcast(self, post_row: dict[str, Any]) -> bool:
+        """Re-upload an already-delivered podcast whose R2 object vanished, from
+        the durable local render — no re-render, no Gate-2 re-entry (the episode
+        was already approved and shipped). The deterministic R2 key is unchanged,
+        so the existing ``media_assets`` row stays valid; this only restores the
+        object. Returns True iff the local render was found and re-uploaded;
+        False (→ caller falls back to a gated re-dispatch) when there is no local
+        file left to reuse.
+        """
         sc = getattr(self, "_site_config", None)
         if sc is None:
             return False
-        try:
-            async with pool.acquire() as conn:
-                rec = await conn.fetchrow(
-                    self._EXISTING_PODCAST_RENDER_SQL, post_id,
-                )
-        except Exception as e:  # noqa: BLE001 — lookup failure → regen fallback
-            logger.warning(
-                "media_reconciliation: existing-render lookup failed for "
-                "%s: %s", post_id, e,
-            )
-            return False
-        storage_path = (rec.get("storage_path") if rec else "") or ""
-        asset_id = (rec.get("id") if rec else "") or ""
+        asset = post_row.get("podcast_asset") or {}
+        storage_path = asset.get("storage_path") or ""
         if not storage_path or not os.path.exists(storage_path):
-            return False  # nothing on disk to reuse → re-render
+            return False  # nothing local to reuse → re-dispatch fallback
+        post_id = post_row["id"]
         cdn_ver = sc.get("podcast_cdn_version", "v2") or "v2"
         key = f"podcast/{cdn_ver}/{post_id}.mp3"
         try:
@@ -774,75 +890,17 @@ class MediaReconciliationJob:
 
             r2 = R2UploadService(site_config=sc)
             url = await r2.upload_to_r2(storage_path, key, "audio/mpeg")
-        except Exception as e:  # noqa: BLE001 — upload failure → regen fallback
+        except Exception as e:  # noqa: BLE001 — upload failure → re-dispatch fallback
             logger.warning(
-                "media_reconciliation: promote-upload failed for %s: %s — "
-                "falling back to re-render", post_id, e,
+                "media_reconciliation: podcast re-deliver upload failed for "
+                "%s: %s", post_id, e,
             )
             return False
         if not url:
             return False
-        try:
-            async with pool.acquire() as conn:
-                await conn.execute(
-                    self._LINK_PROMOTED_PODCAST_SQL, post_id, url, asset_id,
-                )
-        except Exception as e:  # noqa: BLE001 — link failure → regen fallback
-            logger.warning(
-                "media_reconciliation: promote-link failed for %s: %s",
-                post_id, e,
-            )
-            return False
-        # Seed the Gate-2 approval like the regen path's _record_media_asset does.
-        await self._seed_approval_gate(pool, post_id, "podcast")
         logger.info(
-            "media_reconciliation: promoted existing podcast render for %s → "
-            "%s (reused Stage-3 render — no re-render)", post_id, url,
-        )
-        return True
-
-    async def _regen_podcast(self, pool: Any, row: dict[str, Any]) -> bool:
-        """Regenerate one missing podcast + upload to R2 + stamp media_assets.
-
-        Returns True when both the gen and upload succeeded (signalled
-        by a non-None upload URL).
-        """
-        # REUSE the Stage-3 render if one already exists on disk — don't burn
-        # the GPU re-running TTS for a podcast the pipeline already produced
-        # (finding #6-sub). Only fall through to a full re-render when there is
-        # genuinely nothing to promote.
-        if await self._promote_existing_podcast(pool, row):
-            return True
-
-        # Lazy imports — these pull in TTS heavyweight deps we don't want
-        # to load when no regen is needed this cycle.
-        from services.podcast_service import generate_podcast_episode
-        from services.r2_upload_service import R2UploadService
-
-        # Resolve site_config FIRST — generate_podcast_episode now requires
-        # it (#272 Phase-2f). The scheduler seeds ``self._site_config`` from
-        # ``config['_site_config']``; a None here is a real wiring bug, so
-        # bail before doing work rather than fabricating an empty config.
-        sc = getattr(self, "_site_config", None)
-        if sc is None:
-            logger.warning(
-                "media_reconciliation: no site_config in scope — cannot "
-                "regenerate/upload podcast",
-            )
-            return False
-        await generate_podcast_episode(
-            row["id"], row["title"], row["content"], site_config=sc,
-        )
-        r2 = R2UploadService(site_config=sc)
-        url = await r2.upload_podcast_episode(row["id"])
-        if not url:
-            logger.warning(
-                "media_reconciliation: podcast upload returned None for %s",
-                row["id"],
-            )
-            return False
-        await self._record_media_asset(
-            pool, post_id=row["id"], asset_type="podcast", url=url,
+            "media_reconciliation: re-delivered podcast for %s → %s (durable "
+            "local render re-uploaded — no re-render)", post_id, url,
         )
         return True
 

@@ -651,6 +651,15 @@ DEFAULTS: dict[str, str] = {
     'podcast_pipeline_trigger_enabled': 'false',
     'podcast_pipeline_max_per_cycle': '2',
     'podcast_distribute_max_per_cycle': '20',
+    # media_reconciliation (the Stage-2 drift watchdog) re-dispatches the gated
+    # video / podcast pipelines on a genuine miss instead of authoring media
+    # directly. Each re-dispatch bumps pipeline_tasks.{media_pipeline,podcast}_
+    # redispatch_count; the watchdog refuses to clear the dispatch marker once
+    # the count reaches the matching cap below, so a permanently-failing render
+    # can't loop forever. Both previously relied on an inline .get(...,'3')
+    # fallback — seeded here so they're DB-tunable like every other knob.
+    'media_pipeline_redispatch_max': '3',
+    'podcast_redispatch_max': '3',
     # Per-medium call-to-action outros (DB-tunable; ML-optimizable later).
     # ``media.cta.podcast`` is LIVE — ``podcast.render`` appends it to the script
     # before TTS so the episode asks for ratings/reviews. The video CTAs are
