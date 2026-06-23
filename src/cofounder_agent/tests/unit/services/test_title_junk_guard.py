@@ -288,6 +288,29 @@ def test_real_capture_bb878d6b_meta_commentary_is_junk():
     assert _is_junk_title(junk) is True
 
 
+def test_real_capture_12db663a_version_phase_is_junk():
+    """Task 12db663a (2026-06-21 23:12 UTC, niche pc-hardware): the title-gen
+    LLM emitted a rubric bullet describing the title style — it leaked into
+    pipeline_versions.title and the published post's media read it as the
+    spoken title. The structural fix (#1822 / ff4866a21) landed 34 min later,
+    so this exact string predates the guard; pinning it ensures the leading
+    descriptive-verb rule (_META_LEADING_VERB_RE, 'Avoids the …') keeps
+    catching it through any future refactor of the junk guard."""
+    junk = 'Avoids the "Version/Phase" style: No mention of PRs, commits, or phase numbers.'
+    assert _is_junk_title(junk) is True
+
+
+def test_real_capture_no_symbols_diary_meta_clause_is_junk():
+    """Sibling capture from the same 2026-06-21 batch (22:00 UTC): a
+    '<label>: It <lowercase prose>' meta-clause — the model narrating what its
+    title avoids, not a title. Caught by _RUBRIC_META_CLAUSE_RE."""
+    junk = (
+        "No symbols or diary formats: It avoids the `>` prefix and the "
+        "date-stamped commit style."
+    )
+    assert _is_junk_title(junk) is True
+
+
 @pytest.mark.parametrize(
     "junk",
     [
