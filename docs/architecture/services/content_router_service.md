@@ -30,7 +30,7 @@ unnoticed.
 
 - `process_content_generation_task(topic, style, tone, target_length, ...) -> dict[str, Any]` —
   runs the full pipeline. Required: `database_service` (for
-  `content_tasks` persistence). Optional: `task_id`,
+  `pipeline_tasks` persistence). Optional: `task_id`,
   `generate_featured_image`, `models_by_phase`, `quality_preference`,
   `category`, `target_audience`, `tags`. Returns the shared `result`
   dict — see the `result["status"]` field for `pending`, `published`,
@@ -65,11 +65,11 @@ Every other tunable lives on the individual stages — see
   - `services.image_style_rotation.ImageStyleTracker`
   - `services.image_service.get_image_service`
   - `services.gpu_scheduler.gpu` for the SDXL/Ollama mode switch
-  - `services.site_config.site_config` for the writer-fallback +
+  - `site_config` (from `AppContainer` or DI) for the writer-fallback +
     dry-run checks
   - `plugins.registry.get_core_samples()` for the stage list
 - **Writes to:**
-  - `content_tasks` (status, error_message, task_metadata) via
+  - `pipeline_tasks` (status, error_message, task_metadata) via
     `database_service.update_task`
   - `audit_log` (multiple event_types: `task_started`,
     `generation_complete`, `qa_passed`/`qa_failed`,
@@ -113,15 +113,14 @@ Every other tunable lives on the individual stages — see
   `process_content_generation_task(...)` with the same `task_id`. The
   function tolerates re-entry; downstream stages handle idempotency
   (e.g. publish_service has a slug-suffix guard).
-- **Toggle dry-run:** set `pipeline_dry_run_mode=true` via OpenClaw or
-  `poindexter settings set` to short-circuit the writer chain without
-  consuming GPU/cloud time.
+- **Toggle dry-run:** `poindexter settings set pipeline_dry_run_mode true`
+  to short-circuit the writer chain without consuming GPU/cloud time.
 - **Check writer-fallback events:**
   `SELECT * FROM audit_log WHERE event_type = 'writer_fallback' ORDER BY created_at DESC LIMIT 20;`
 - **Disable featured-image stage for one task:** pass
   `generate_featured_image=False`. The stage runs but short-circuits.
 - **Inspect what halted:** the failure path stores `error_stage` and
-  `error_message` in `content_tasks.task_metadata`.
+  `error_message` in `pipeline_tasks.task_metadata`.
 
 ## See also
 

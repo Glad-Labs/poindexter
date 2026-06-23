@@ -21,17 +21,25 @@ NOT cached — `get_secret()` is async and hits the DB on every call so
 they don't leak into debug dumps. Both flow through the same
 `app_settings` table; only the cache treatment differs.
 
-**Module-level singleton deleted 2026-05-09 (glad-labs-stack#330).**
-There is no longer a module-level `site_config` instance to import.
-Per-module utilities own their own `site_config: SiteConfig` attribute
-that `main.py`'s lifespan wires by iterating `WIRED_MODULES` in
-`services/di_wiring.py` and calling each module's `set_site_config()`
-with the loaded instance. A scheduled `reload_site_config` job refreshes
-the DB-loaded values every minute via the same wired instance.
+**Module-level singleton and `set_site_config` fan-out both retired.**
+The module-level `site_config` singleton was deleted 2026-05-09 (glad-labs-stack#330).
+The intermediate per-module `set_site_config()` / `WIRED_MODULES` fan-out pattern
+was retired by the #788 capstone — `services/di_wiring.py::WIRED_MODULES` is now
+an **empty tuple**. Do **not** add new `set_site_config` setters or rely on
+`WIRED_MODULES`; that seam is dead.
+
+The live composition root is **`AppContainer`** (`services/container.py`), built
+once per entry point by `services.bootstrap.build_container`. It holds the
+process-wide `SiteConfig` and exposes migrated services as `cached_property`
+accessors. A scheduled `reload_site_config` job refreshes the DB-loaded values
+every minute via `site_config.reload(pool)` — because `AppContainer` holds the
+same instance by reference, fresh DB values propagate to every service the
+container constructed.
 
 Tests construct their own `SiteConfig(initial_config={...})` or use the
-shared fixture in `tests/unit/conftest.py` (which fans out to every
-wired module via `set_site_config` at collection time).
+`default_container_active` fixture from `tests/unit/conftest.py`, which registers
+a seeded `SiteConfig` on an `AppContainer` so container-accessor modules
+(`prompt_manager`, `gpu_scheduler`, …) see the brand seed.
 
 ## Public API
 
@@ -64,7 +72,7 @@ wired module via `set_site_config` at collection time).
 
 `SiteConfig` reads from `app_settings`; it doesn't read its own
 settings. The set of keys depends entirely on what's in the table —
-717 keys (62 secret) as of May 2026. See
+~1,090 keys (~68 secret) as of 2026-06. See
 [`docs/reference/app-settings.md`](../../reference/app-settings.md)
 for the current inventory, or run
 `poindexter settings list` to query the table directly.
@@ -111,7 +119,7 @@ in app_settings table or as env var <KEY>.")`. This is the "fail
 ## Common ops
 
 - **Set a value via CLI:** `poindexter settings set <key> <value>`.
-- **List all settings:** `poindexter list-settings` or
+- **List all settings:** `poindexter settings list` or
   `SELECT key, value, is_secret FROM app_settings ORDER BY key;`
 - **Reload after a manual DB edit:** call
   `await app.state.site_config.reload(app.state.pool)` from a
@@ -123,11 +131,10 @@ in app_settings table or as env var <KEY>.")`. This is the "fail
 - **Mark a key as secret:** `UPDATE app_settings SET is_secret = true
 WHERE key = '<key>';` — then update callers to use `get_secret()`
   instead of `get()`. The cache will skip it on next `reload()`.
-- **Test seam:** use the `test_site_config` fixture or
-  `SiteConfig(initial_config={"site_url": "https://test"})`. The
-  module-level singleton was deleted 2026-05-09; per-module
-  utilities now own their own `site_config` attribute that the
-  conftest fans out to via `set_site_config(...)`.
+- **Test seam:** use the `default_container_active` fixture or
+  `SiteConfig(initial_config={"site_url": "https://test"})` passed
+  via constructor DI. The module-level singleton and `set_site_config`
+  fan-out are retired; do not add new `set_site_config` calls.
 - **Find the env var equivalent:** any `cfg.get("foo_bar")` falls
   back to `FOO_BAR`. Use sparingly — DB-first is the policy.
 

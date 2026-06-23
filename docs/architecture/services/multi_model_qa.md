@@ -2,7 +2,7 @@
 
 **File:** `src/cofounder_agent/modules/content/multi_model_qa.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_multi_model_qa.py`
-**Last reviewed:** 2026-04-30
+**Last reviewed:** 2026-06-22
 
 ## What it does
 
@@ -155,7 +155,7 @@ ollama/glm-4.7` (or `anthropic/claude-haiku-4-5` for cloud — note
 - **Audit recent critic fallbacks:**
   `SELECT created_at, payload FROM audit_log WHERE event_type = 'critic_fallback' ORDER BY created_at DESC LIMIT 50;`
 - **Read the full feedback for a specific task:**
-  `SELECT qa_feedback FROM content_tasks WHERE task_id = '<uuid>';`
+  `SELECT qa_feedback FROM pipeline_tasks WHERE task_id = '<uuid>';`
 
 ## See also
 

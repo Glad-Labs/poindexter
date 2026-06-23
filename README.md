@@ -3,7 +3,7 @@
 **A plug-and-play AI/ML content creation OSS stack.** Your PC is the factory: Poindexter researches, writes, reviews, and publishes — autonomously. Local-first, Ollama-powered, zero API costs. Built by [Glad Labs LLC](https://www.gladlabs.io).
 
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
-[![Tests](https://img.shields.io/badge/tests-10%2C000%2B_passing-brightgreen)]()
+[![Tests](https://img.shields.io/badge/tests-11%2C000%2B_passing-brightgreen)]()
 [![Status](https://img.shields.io/badge/status-alpha-orange.svg)]()
 [![Built by Glad Labs LLC](https://img.shields.io/badge/built_by-Glad_Labs_LLC-blueviolet.svg)](https://www.gladlabs.io)
 
@@ -36,7 +36,7 @@ One engine, eight jobs:
 
 Run it on your machine. Own your data. No cloud lock-in.
 
-**Not a spam cannon.** ~50% of generated drafts are rejected by QA. Multi-model adversarial review, deterministic anti-hallucination validation, and research-backed content. Speed comes from generating more candidates and filtering aggressively — not from lowering the bar.
+**Not a spam cannon.** ~50% of generated drafts are rejected by QA. Multi-model adversarial review, deterministic anti-hallucination validation, and research-backed content. Speed comes from generating more candidates and filtering hard — not from lowering the bar.
 
 ## Quick start
 
@@ -123,7 +123,7 @@ Full diagram and design rationale in [`docs/architecture/`](docs/architecture/).
 | **Local AI by default**      | Ollama for inference. Your GPU, your data, zero API costs.                                  |
 | **Cloud opt-in**             | LiteLLM provider plugin routes to Anthropic, OpenAI, Groq, OpenRouter — gated by cost guard |
 | **Anti-hallucination**       | 3 independent layers: prompts, multi-model QA, deterministic validator                      |
-| **DB-as-config**             | 900+ settings (67 secret) in PostgreSQL. Change with SQL or REST. No deploys.               |
+| **DB-as-config**             | 1,090+ settings (68 secret) in PostgreSQL. Change with SQL or REST. No deploys.             |
 | **Langfuse-managed prompts** | Edit prompts in a UI; runtime falls back to YAML defaults if Langfuse is offline            |
 | **LangGraph pipelines**      | `template_runner.py` runs declarative DAGs with checkpointing                               |
 | **Multi-modal output**       | Markdown posts, AI images (SDXL / Flux), podcast audio, text-to-video (Wan 2.1 — alpha)     |
@@ -238,8 +238,8 @@ Poindexter is in **alpha**. Honest snapshot:
 **What works today**
 
 - Full content pipeline end-to-end on the author's daily-driver setup (RTX 5090, 64 GB RAM, Windows 11). Single-operator content business publishing daily.
-- 100 live posts on [gladlabs.io](https://www.gladlabs.io) (269 total drafts, 1,678 pipeline runs).
-- 10,000+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
+- 110 live posts on [gladlabs.io](https://www.gladlabs.io) (279 total posts, 1,798 pipeline runs).
+- 11,000+ unit tests passing in CI on every push, plus migrations smoke test and link-rot CI.
 - `poindexter setup` takes a fresh clone to a healthy local stack — generates secrets, tests DB, runs migrations, writes bootstrap.toml. No `.env` file required.
 - Live in-place upgrades — schema changes, container renames, env var migrations applied to a running instance with zero data loss and no in-flight task downtime.
 - Multi-model QA scoring with deterministic validators, an LLM critic chain, and a programmatic anti-hallucination layer.

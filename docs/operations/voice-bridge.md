@@ -1,5 +1,10 @@
 # Voice bridge — voice as a session-agnostic UI surface
 
+> **Production status (2026-06-22):** the Glad Labs prod instance has `voice_bridge_enabled=false`
+> (bridge worker removed; Emma/Speaches always-on TTS surface replaced it).
+> This doc describes the mechanism for operators who want to enable it.
+> Toggle with `poindexter settings set voice_bridge_enabled true`.
+
 The LiveKit MCP bridge lets a _running_ Claude Code session use voice as
 a UI surface: voice in becomes the next user input to that session;
 session output becomes voice out. No subprocess spawn, no fresh

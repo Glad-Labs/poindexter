@@ -85,7 +85,7 @@ content with human oversight**, not "AI content factory" and not
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │  Prefect flow  →  ContentRouterService                     │ │
 │  │     → TemplateRunner (LangGraph canonical_blog template,   │ │
-│  │       36 nodes; dev_diary template, 5 nodes)               │ │
+│  │       39 nodes; dev_diary template, 5 nodes)               │ │
 │  │  LiteLLM router (primary on prod for all 5 cost tiers;     │ │
 │  │     Ollama default, cloud providers behind cost_guard +    │ │
 │  │     allow_paid_base_url opt-in per feedback_no_paid_apis)  │ │
@@ -178,7 +178,7 @@ LOCKED` and hands them to `content_router_service`. Retry /
 
 - RESTful API (~70 endpoints across tasks, posts, media, memory, pipeline, analytics, webhooks)
 - WebSocket support (planned)
-- LangGraph-orchestrated pipeline — `canonical_blog` graph_def (36 nodes, seeded into the `pipeline_templates` table from `services/canonical_blog_spec.py`), dispatched by Prefect via `services/flows/content_generation.py`.
+- LangGraph-orchestrated pipeline — `canonical_blog` graph_def (39 nodes, seeded into the `pipeline_templates` table from `services/canonical_blog_spec.py`), dispatched by Prefect via `services/flows/content_generation.py`.
 - LLM router via LiteLLM (`services/llm_providers/litellm_provider.py`) — primary on prod for all 5 cost tiers (`plugin.llm_provider.primary.{free,budget,standard,premium,flagship}='litellm'`) as of 2026-05-16. Provider routing, cost tracking, and retries all delegated to mature OSS. Paid-vendor model prefixes (`openai/`, `anthropic/`, `gemini/`, …) refuse to dispatch unless `plugin.llm_provider.litellm.allow_paid_base_url=true` (cycle-5 #251, 2026-05-27).
 - Semantic memory via pgvector (writer-segregated)
 - Async task processing with atomic task-claim via `SELECT ... FOR UPDATE SKIP LOCKED`
@@ -198,17 +198,15 @@ LOCKED` and hands them to `content_router_service`. Retry /
 
 ### AI Model Providers (Ollama-only pipeline)
 
-| Provider          | Models (production)                                               | Cost                               | Status      |
-| ----------------- | ----------------------------------------------------------------- | ---------------------------------- | ----------- |
-| **Ollama**        | gemma3:27b, qwen3:8b, phi4:14b, phi3, glm-4.7-5090 (custom build) | Free (local, GPU electricity only) | ✅ Primary  |
-| **HuggingFace**   | transformers direct (emergency fallback)                          | Free (CPU)                         | 🟡 Fallback |
-| ~~Anthropic~~     | _Removed session 55_                                              | —                                  | ❌          |
-| ~~OpenAI~~        | _Removed session 55_                                              | —                                  | ❌          |
-| ~~Google Gemini~~ | _Removed session 55_                                              | —                                  | ❌          |
+| Provider        | Models (production)                                                    | Cost                               | Status                                                                                 |
+| --------------- | ---------------------------------------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------- |
+| **Ollama**      | gemma-4-31b (writer), glm-4.7 (reviser), qwen3:8b, gemma3:27b (critic) | Free (local, GPU electricity only) | ✅ Primary                                                                             |
+| **LiteLLM**     | Anthropic / OpenAI / Groq / Gemini / OpenRouter / Bedrock              | Per-token, cloud rates             | 🟡 Opt-in — `plugin.llm_provider.litellm.allow_paid_base_url=true` + `cost_guard` caps |
+| **HuggingFace** | transformers direct (emergency fallback)                               | Free (CPU)                         | 🟡 Fallback                                                                            |
 
-**Current chain:** Ollama primary → `pipeline_fallback_model` (also Ollama, default gemma3:27b) → HuggingFace transformers (emergency, CPU).
+**Default chain:** Ollama primary → `pipeline_fallback_model` (also Ollama, default gemma3:27b).
 
-Cloud LLM providers were removed from the pipeline in session 55 to honor the "no paid APIs" rule. Customers forking the repo can re-enable them via community plugins (future Phase J of the [plugin architecture refactor](plugin-architecture)).
+Cloud LLM providers (Anthropic, OpenAI, Groq, etc.) are available via the LiteLLM provider plugin — gated off by default (`allow_paid_base_url=false`) and bounded by `cost_guard` daily/monthly caps when enabled. Operators opt in per the `feedback_no_paid_apis` policy. Local Ollama is the default and zero-cost path.
 
 Use cost tiers (`free`/`budget`/`standard`/`premium`/`flagship`) for model selection — never hardcode model names. Cost tiers live in `app_settings` and map to Ollama models at runtime.
 
@@ -413,91 +411,25 @@ GET  /api/metrics            # Performance metrics
 
 ## 🗄️ Data Architecture
 
-### Entity Relationship Diagram
+### Key tables
 
-```text
-┌─────────────┐         ┌─────────────┐
-│   Posts     │────────▶│ Categories  │
-│ (many)      │  1..n   │   (1)       │
-└─────────────┘         └─────────────┘
+The full schema lives in `services/migrations/0000_baseline.py`. The most operationally important tables:
 
-┌─────────────┐         ┌─────────────┐
-│   Posts     │────────▶│    Tags     │
-│ (many)      │  m..n   │  (many)     │
-└─────────────┘         └─────────────┘
+| Table                   | What it stores                                                                       |
+| ----------------------- | ------------------------------------------------------------------------------------ |
+| `posts`                 | Published blog posts. `metadata->>'pipeline_task_id'` links back to the source task. |
+| `pipeline_tasks`        | Content pipeline queue — Prefect claims pending rows.                                |
+| `pipeline_versions`     | Per-task generated content + qa_feedback snapshots.                                  |
+| `atom_runs`             | Per-atom run + outcome for the graph_def pipeline path.                              |
+| `app_settings`          | All runtime config (~1,090 keys, ~68 secret).                                        |
+| `embeddings`            | pgvector 768-dim vectors (posts / audit / brain / memory / claude_sessions).         |
+| `audit_log`             | Canonical historical record for every pipeline event.                                |
+| `pipeline_gate_history` | HITL gate approvals + regen retries.                                                 |
+| `qa_gates`              | Declarative QA gate definitions (required_to_pass, advisory).                        |
+| `brain_knowledge`       | Self-maintained knowledge graph (entity / attribute / value).                        |
+| `cost_logs`             | Per-call LLM cost tracking.                                                          |
 
-┌─────────────┐         ┌─────────────┐
-│   Posts     │────────▶│   Authors   │
-│ (many)      │  1..n   │   (1)       │
-└─────────────┘         └─────────────┘
-
-┌─────────────┐         ┌─────────────┐
-│   Tasks     │────────▶│   Agents    │
-│ (many)      │  1..n   │  (many)     │
-└─────────────┘         └─────────────┘
-
-┌──────────────┐        ┌─────────────┐
-│  Memories    │────────▶│   Agents    │
-│ (many)       │  1..n   │   (1)       │
-└──────────────┘        └─────────────┘
-```
-
-### Database Schema
-
-**Posts Table:**
-
-```sql
-CREATE TABLE posts (
-  id UUID PRIMARY KEY,
-  title VARCHAR(255) NOT NULL,
-  slug VARCHAR(255) UNIQUE NOT NULL,
-  content TEXT NOT NULL,
-  excerpt VARCHAR(500),
-  featured_image_id UUID,
-  cover_image_id UUID,
-  category_id UUID REFERENCES categories(id),
-  author_id UUID REFERENCES authors(id),
-  status VARCHAR(50) DEFAULT 'draft',
-  seo_title VARCHAR(255),
-  seo_description VARCHAR(500),
-  seo_keywords VARCHAR(255),
-  published_at TIMESTAMP,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW()
-);
-```
-
-**Tasks Table:**
-
-```sql
-CREATE TABLE tasks (
-  id UUID PRIMARY KEY,
-  title VARCHAR(255) NOT NULL,
-  description TEXT,
-  type VARCHAR(100) NOT NULL,
-  status VARCHAR(50) DEFAULT 'pending',
-  assigned_agents TEXT[],
-  result_data JSONB,
-  error_message TEXT,
-  created_at TIMESTAMP DEFAULT NOW(),
-  updated_at TIMESTAMP DEFAULT NOW(),
-  completed_at TIMESTAMP
-);
-```
-
-**Memory Table:**
-
-```sql
-CREATE TABLE memories (
-  id UUID PRIMARY KEY,
-  agent_id UUID NOT NULL,
-  content TEXT NOT NULL,
-  embedding VECTOR(768),
-  memory_type VARCHAR(50),
-  created_at TIMESTAMP DEFAULT NOW(),
-  accessed_at TIMESTAMP DEFAULT NOW()
-);
-```
+See [`docs/architecture/database-schema.md`](database-schema.md) for the complete table inventory, and [`docs/operations/migrations.md`](../operations/migrations.md) for the migration system.
 
 ---
 
