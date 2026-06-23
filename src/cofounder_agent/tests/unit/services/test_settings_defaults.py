@@ -46,6 +46,22 @@ def test_rag_rerank_device_default_is_cpu():
     assert METADATA["rag_rerank_device"]["value_type"] == "string"
 
 
+def test_vram_budget_defaults_present():
+    """The VRAM budget guard reads four DB-tunable knobs: total VRAM, the
+    desktop reserve carved out so the WDDM compositor never starves, the KV
+    cache dtype that sets bytes/element, and the on/off switch."""
+    from services.settings_defaults import DEFAULTS, METADATA
+
+    assert DEFAULTS["gpu_vram_total_gb"] == "32"
+    assert DEFAULTS["gpu_desktop_reserve_gb"] == "3"
+    assert DEFAULTS["ollama_kv_cache_type"] == "q8_0"
+    assert DEFAULTS["vram_budget_guard_enabled"] == "true"
+    assert METADATA["gpu_vram_total_gb"]["value_type"] == "float"
+    assert METADATA["gpu_desktop_reserve_gb"]["value_type"] == "float"
+    assert METADATA["ollama_kv_cache_type"]["value_type"] == "string"
+    assert METADATA["vram_budget_guard_enabled"]["value_type"] == "boolean"
+
+
 def test_qa_vision_num_predict_has_headroom_for_thinking_plus_json():
     """qwen3-vl's <think> trace shares the num_predict budget with the JSON
     verdict; the old hardcoded 400 truncated the JSON and the vision rail

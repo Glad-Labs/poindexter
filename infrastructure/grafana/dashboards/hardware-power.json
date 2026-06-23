@@ -302,6 +302,56 @@
       ]
     },
     {
+      "id": 56,
+      "type": "timeseries",
+      "title": "VRAM headroom (dedicated)",
+      "description": "Dedicated-VRAM headroom = (gpu_vram_total_gb - gpu_desktop_reserve_gb) - VRAM used. The 32/3 literals mirror the gpu_vram_total_gb / gpu_desktop_reserve_gb app_settings the dispatcher clamp reads. When this trends toward the 0 line the NVIDIA driver is about to spill VRAM into system RAM (the WDDM desktop freeze). The Windows shared-memory spill counter itself isn't in Prometheus yet (windows_exporter has no GPU collector) — a future exporter task.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 13
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": {
+            "mode": "thresholds"
+          },
+          "custom": {
+            "fillOpacity": 10,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "dark-orange", "value": null },
+              { "color": "orange", "value": 0 },
+              { "color": "blue", "value": 4294967296 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "((32 - 3) * 1073741824) - (nvidia_gpu_memory_used_mib * 1048576)",
+          "legendFormat": "Headroom",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "type": "row",
       "title": "Power — PSU / wall / CPU",
       "collapsed": false,

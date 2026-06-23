@@ -102,3 +102,32 @@ ollama run gemma-4-31B-it-qat:latest "ok" ; ollama ps
 Re-run the streaming counter from "Confirming it on your box" while a content
 task runs end-to-end. Success = `Shared Usage` stays at its idle baseline and the
 desktop stays responsive.
+
+## 4. Watch headroom in Grafana
+
+The **Hardware & Power** dashboard (`/d/hardware-power`) carries a **VRAM
+headroom (dedicated)** panel in the _GPU — live (Prometheus)_ row. It plots:
+
+```
+( gpu_vram_total_gb - gpu_desktop_reserve_gb ) - VRAM used
+= ((32 - 3) * 1GiB) - (nvidia_gpu_memory_used_mib * 1MiB)
+```
+
+The 32 / 3 literals mirror the `gpu_vram_total_gb` / `gpu_desktop_reserve_gb`
+app_settings the in-app dispatcher clamp reads, so the panel shows the same
+budget the guard enforces. The series is blue with comfortable headroom and
+turns amber as it approaches the **0 line** (the threshold line is the spill
+boundary); crossing 0 means the projected footprint has eaten the desktop
+reserve. (Blue/amber, not red/green — the operator is red-green colorblind.)
+
+If headroom trends toward 0 during normal runs, either lower a context-hungry
+phase's `<phase>_num_ctx`, raise `gpu_desktop_reserve_gb`, or confirm
+`OLLAMA_KV_CACHE_TYPE=q8_0` is actually live (section 2). The clamp will also
+emit a `num_ctx_clamped` finding (severity `warn`) whenever it reduces a
+request — visible on the **Findings** dashboard (`/d/findings`).
+
+> The Windows _Shared Usage_ (spill) counter itself is **not** in Prometheus —
+> `windows_exporter` ships no GPU collector — so the headroom panel is a
+> pre-spill **early-warning** derived from dedicated-VRAM use, not a direct read
+> of the spill pool. Surfacing the spill counter is a future exporter task; for
+> now the PowerShell counter in "Confirming it on your box" is the ground truth.

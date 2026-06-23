@@ -213,6 +213,17 @@ DEFAULTS: dict[str, str] = {
     # it's a no-op inside content stages that already hold the lock. Default ON;
     # operators with abundant VRAM can flip to 'false' to skip the serialization.
     'gpu_serialize_llm_dispatch': 'true',
+    # VRAM budget guard (services/vram_budget.py + dispatcher clamp). The guard
+    # estimates a model's footprint (weights + KV cache + overhead) and clamps
+    # num_ctx so the projected footprint stays within (total - desktop_reserve),
+    # keeping the NVIDIA driver from spilling VRAM into system RAM (a WDDM
+    # sysmem-fallback that freezes the desktop). total/reserve are GB; the KV
+    # dtype sets bytes/element for the cache math (mirror OLLAMA_KV_CACHE_TYPE
+    # on the host — see docs/operations/single-gpu-vram-tuning.md). Default ON.
+    'gpu_vram_total_gb': '32',
+    'gpu_desktop_reserve_gb': '3',
+    'ollama_kv_cache_type': 'q8_0',
+    'vram_budget_guard_enabled': 'true',
     # why: when true, after issuing keep_alive=0 the unload helper re-polls
     # Ollama /api/ps until the model is actually gone BEFORE the next
     # (SDXL/video) model loads — instead of blind-sleeping and hoping. On a
@@ -1264,6 +1275,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'vision_alt_model': {'owner': 'image_service', 'value_type': 'model'},
     'rag_rerank_model': {'owner': 'rag_engine', 'value_type': 'model'},
     'rag_rerank_device': {'owner': 'rag_engine', 'value_type': 'string'},
+    'gpu_vram_total_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
+    'gpu_desktop_reserve_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
+    'ollama_kv_cache_type': {'owner': 'vram_budget', 'value_type': 'string'},
+    'vram_budget_guard_enabled': {'owner': 'vram_budget', 'value_type': 'boolean'},
 
     # ----- LLM provider gates (security — paid-API lock) -----
     'plugin.llm_provider.litellm.allow_paid_base_url': {

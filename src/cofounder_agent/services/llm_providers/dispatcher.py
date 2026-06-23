@@ -161,6 +161,113 @@ def _gpu_serialize_local_dispatch(
         return True
 
 
+# ---------------------------------------------------------------------------
+# VRAM budget guard (Plan 2 Task 5)
+# ---------------------------------------------------------------------------
+# Before a LOCAL dispatch takes the GPU lock, project the model footprint at the
+# requested num_ctx and clamp it down if it would breach the dedicated-VRAM
+# budget (total - desktop_reserve). This stops the NVIDIA driver spilling VRAM
+# into system RAM — a WDDM sysmem-fallback that freezes the desktop. The pure
+# math lives in services/vram_budget.py; here is the wiring + config read.
+
+
+def _budget_inputs(provider_config: dict[str, Any]) -> tuple[float, float, float]:
+    """``(total_gb, desktop_reserve_gb, kv_bytes_per_elem)`` from app_settings.
+
+    Sync — reads the in-memory SiteConfig cache. Falls back to the seeded
+    defaults (32 / 3 / q8_0) when no container is bootstrapped (CLI, tests).
+    """
+    from services.vram_budget import kv_bytes_per_elem
+
+    from services.container_registry import get_container
+
+    container = get_container()
+    if container is None:
+        return 32.0, 3.0, kv_bytes_per_elem("q8_0")
+    sc = container.site_config
+    total = sc.get_float("gpu_vram_total_gb", 32.0)
+    reserve = sc.get_float("gpu_desktop_reserve_gb", 3.0)
+    kv = kv_bytes_per_elem(sc.get("ollama_kv_cache_type", "q8_0") or "q8_0")
+    return total, reserve, kv
+
+
+async def _read_arch_for_budget(model: str):
+    """Read the model arch off Ollama ``/api/show`` (cached per tag). Returns
+    None when unreachable so the clamp fails open."""
+    import httpx
+
+    from services.vram_budget import read_model_arch
+
+    from services.container_registry import get_container
+
+    base = "http://host.docker.internal:11434"
+    container = get_container()
+    if container is not None:
+        sc = container.site_config
+        base = sc.get("ollama_base_url", "") or sc.get("ollama_host", "") or base
+    async with httpx.AsyncClient() as client:
+        return await read_model_arch(model, base, client)
+
+
+async def _clamp_num_ctx_to_budget(
+    pool: Any, model: str, num_ctx: int, provider_config: dict[str, Any],
+) -> int:
+    """Clamp num_ctx to the largest context that fits the VRAM budget.
+
+    Fails OPEN — returns num_ctx unchanged when the model arch can't be read
+    (the no-sysmem-fallback driver setting is the backstop). Emits a ``warn``
+    finding when it actually clamps so the operator sees the budget pressure.
+    """
+    from services.vram_budget import (
+        estimate_kv_cache_gb,
+        estimate_model_vram_gb,
+        fits,
+        max_safe_num_ctx,
+    )
+
+    arch = await _read_arch_for_budget(model)
+    if arch is None:
+        return num_ctx
+    total, reserve, kv = _budget_inputs(provider_config)
+    footprint = estimate_model_vram_gb(arch, estimate_kv_cache_gb(arch, num_ctx, kv))
+    ok, _headroom = fits(footprint, total, reserve)
+    if ok:
+        return num_ctx
+    safe = max_safe_num_ctx(arch, total, reserve, kv)
+    from utils.findings import emit_finding
+
+    emit_finding(
+        source="vram_budget",
+        kind="num_ctx_clamped",
+        severity="warn",
+        title=f"num_ctx clamped {num_ctx}->{safe} for {model}",
+        body=(
+            f"Requested context {num_ctx} would put {model} at ~{footprint:.1f}GB, "
+            f"over the VRAM budget (total {total}GB - desktop reserve {reserve}GB). "
+            f"Clamped to {safe} to avoid a sysmem spill / desktop freeze."
+        ),
+        dedup_key=f"num_ctx_clamp_{model}",
+    )
+    return safe
+
+
+def _vram_guard_enabled() -> bool:
+    """Master switch for the clamp. Default ON; a config-read failure leaves the
+    guard ON (its clamp fails open anyway) rather than blocking the dispatch."""
+    try:
+        from services.container_registry import get_container
+
+        container = get_container()
+        if container is None:
+            return True
+        return container.site_config.get_bool("vram_budget_guard_enabled", True)
+    except Exception:  # silent-ok: a config-read failure on this hot dispatch
+        # path defaults to the guard's SAFE behavior (clamp stays ON; it fails
+        # open if arch is unreadable). Per-call logging would be noise here —
+        # mirrors _gpu_serialize_local_dispatch's silent-ok config read.
+        return True
+
+
 async def _enforce_budget_if_paid(
     *,
     pool: Any,
@@ -356,6 +463,20 @@ async def dispatch_complete(
                 pool=pool, provider=provider, model=model,
                 provider_config=provider_config,
             )
+            # VRAM budget guard: clamp num_ctx to the dedicated-VRAM budget
+            # before the GPU lock, so a context-hungry writer can't project a
+            # footprint that spills into system RAM (the WDDM freeze). Only
+            # fires when a caller actually threads num_ctx (the LiteLLM writer
+            # path); a guard error logs and falls through to the requested ctx
+            # rather than breaking the dispatch.
+            req_num_ctx = kwargs.get("num_ctx")
+            if req_num_ctx and _vram_guard_enabled():
+                try:
+                    kwargs["num_ctx"] = await _clamp_num_ctx_to_budget(
+                        pool, model, int(req_num_ctx), provider_config or {},
+                    )
+                except Exception as exc:  # guard must never break dispatch
+                    logger.warning("[vram_budget] clamp skipped (%s)", exc)
             # GPU-serialize fix: hold gpu.lock("ollama") around a LOCAL provider
             # call so it can't run concurrently with a media render (which
             # evicts Ollama on gpu.lock("video") and needs the freed VRAM). The
