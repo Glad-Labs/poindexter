@@ -17,7 +17,9 @@ import pytest
 
 from modules.content.stages.generate_media_scripts import (
     GenerateMediaScriptsStage,
+    _build_video_narration_prompt,
     _parse_scene_output,
+    _resolve_media_title,
 )
 
 
@@ -511,7 +513,7 @@ async def test_video_long_script_emitted_via_context_updates():
         prompt = messages[0]["content"]
         if "voiceover narration" in prompt:
             return SimpleNamespace(
-                text="On screen we see the new GPU. Here is why it matters.",
+                text="The new GPU changes the math for local inference.",
             )
         return SimpleNamespace(text="1. a cinematic shot\n\nSHORT: quick hook here")
 
@@ -533,4 +535,67 @@ async def test_video_long_script_emitted_via_context_updates():
     assert result.ok
     vls = result.context_updates.get("video_long_script", "")
     assert vls.strip() != ""
-    assert "screen" in vls.lower()
+    assert "inference" in vls.lower()
+
+
+# --- Bug A: long-video narration must not direct the viewer's eye ---------
+# The renderer pairs narration with generic static images, so a script that
+# says "on screen / here we see / watch as" promises visuals the footage can't
+# deliver (the mismatch a viewer notices). The prompt must produce pure spoken
+# narration. See fix/media-script-narration-and-title.
+
+_STAGE_DIRECTION_TELLS = (
+    "on screen",
+    "on-screen",
+    "here we see",
+    "as you can see",
+    "you can see",
+    "watch as",
+    "pictured",
+    "in this image",
+    "in this shot",
+    "in this clip",
+)
+
+
+def test_video_narration_prompt_has_no_visual_stage_directions():
+    prompt = _build_video_narration_prompt("My Title", "Some article body.").lower()
+    for tell in _STAGE_DIRECTION_TELLS:
+        assert tell not in prompt, f"narration prompt still invites '{tell}'"
+
+
+def test_video_narration_prompt_signals_audio_only_framing():
+    # Guards against silently reverting to a visuals-referencing prompt: the
+    # rewrite must positively frame the narration as standalone audio.
+    prompt = _build_video_narration_prompt("My Title", "Some article body.").lower()
+    assert any(w in prompt for w in ("spoken", "audio", "for the ear", "listener"))
+    assert "my title" in prompt and "some article body." in prompt
+
+
+# --- Bug C2: media narration must speak the real title, not a polluted one --
+# content.generate_title can leak a style-rubric line into the title channel;
+# the podcast intro ("Today's episode: {title}") then speaks rubric text. The
+# clean title lives in seo_title / the content H1.
+
+def test_resolve_media_title_prefers_clean_seo_title_over_polluted_title():
+    ctx = {
+        "title": "Avoids the \"Version/Phase\" style: No mention of PRs or commits.",
+        "seo_title": "Mechanical Keyboard Switches: Linear vs Tactile vs Clicky",
+        "content": "# Some H1\n\nbody",
+    }
+    assert _resolve_media_title(ctx) == (
+        "Mechanical Keyboard Switches: Linear vs Tactile vs Clicky"
+    )
+
+
+def test_resolve_media_title_falls_back_to_content_h1_when_no_seo_title():
+    ctx = {
+        "title": "polluted rubric line, not a title",
+        "content": "# Mechanical Keyboard Switches Explained\n\nbody text",
+    }
+    assert _resolve_media_title(ctx) == "Mechanical Keyboard Switches Explained"
+
+
+def test_resolve_media_title_last_resort_raw_title():
+    ctx = {"title": "Only Title Here", "content": "no heading body"}
+    assert _resolve_media_title(ctx) == "Only Title Here"

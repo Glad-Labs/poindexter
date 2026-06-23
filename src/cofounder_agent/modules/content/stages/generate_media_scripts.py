@@ -51,7 +51,11 @@ class GenerateMediaScriptsStage:
             _strip_markdown,
         )
 
-        title = context.get("title", "")
+        # Bug C2: prefer a clean title for narration. The ``title`` channel
+        # can carry a style-rubric line leaked by content.generate_title; the
+        # podcast intro ("Today's episode: …") + video voiceover must speak the
+        # real title, which lives in seo_title / the content H1.
+        title = _resolve_media_title(context)
         content_text = context.get("content", "")
 
         if not content_text or not title:
@@ -343,28 +347,80 @@ class GenerateMediaScriptsStage:
             )
 
 
-def _build_video_narration_prompt(title: str, clean_content: str) -> str:
-    """Prompt for the long-form VIDEO narration script — distinct from the
-    podcast script (paced to on-screen visuals, no audio-only filler). Length is
-    left to the work (no pinned word count); the CTA is appended at render time.
+def _first_h1(content: str) -> str:
+    """Return the text of the first Markdown H1 (``# ...``), or '' if none."""
+    for line in (content or "").splitlines():
+        stripped = line.strip()
+        if stripped.startswith("# "):
+            return stripped[2:].strip()
+    return ""
+
+
+def _resolve_media_title(context: dict[str, Any]) -> str:
+    """Resolve the reader-facing title for media narration (Bug C2).
+
+    The ``title`` channel can carry a polluted value: a style-rubric line
+    leaked by content.generate_title lands in ``pipeline_versions.title`` even
+    when the published post recovers a clean title from its content H1. Media
+    narration (the podcast intro "Today's episode: …" and the video voiceover)
+    must speak the real title, so prefer the clean sources — ``seo_title``,
+    then the content H1 — falling back to the raw ``title`` only as a last
+    resort.
     """
-    return (
-        "Write a voiceover narration script for a long-form video about the "
-        "article below. It is spoken over on-screen visuals (b-roll, diagrams, "
-        "stock footage), so:\n"
-        "- Write for the ear, but assume the viewer also sees supporting imagery "
-        "— reference what's shown where it's natural ('here we see…', 'on "
-        "screen…').\n"
-        "- Tighter and more visual than an audio-only podcast; no 'welcome back' "
-        "radio filler.\n"
-        "- Open with a brief hook, walk the key points in order, then a natural "
-        "closing line. Do NOT add a like/subscribe call-to-action — that's "
-        "appended separately.\n"
-        "- Plain prose. No headings, no bracketed stage directions.\n\n"
-        f"TITLE: {title}\n\n"
-        f"ARTICLE:\n{clean_content[:3500]}\n\n"
-        "NARRATION:"
-    )
+    seo_title = (context.get("seo_title") or "").strip()
+    if seo_title:
+        return seo_title
+    h1 = _first_h1(context.get("content") or "")
+    if h1:
+        return h1
+    return (context.get("title") or "").strip()
+
+
+# Long-form video narration prompt. DB-configurable via UnifiedPromptManager
+# (key ``video.long_form_narration`` in skills/content/video/SKILL.md; a
+# Langfuse / prompt-store override wins). This module-level fallback mirrors
+# the SKILL.md default so tests + bootstrap resolve without a prompt store.
+#
+# Bug A: the renderer pairs narration with generic static imagery, so the
+# script must read as standalone audio and must NEVER direct the viewer's eye
+# ("on screen", "here we see", "watch as") — those promise visuals the footage
+# cannot deliver, which a viewer immediately notices.
+_VIDEO_NARRATION_FALLBACK = (
+    "Write a voiceover narration script for a long-form video about the "
+    "article below.\n\n"
+    "The narration is spoken aloud and must stand on its own as audio. Write "
+    "it for the ear: explain the subject directly to the listener. Do not "
+    "refer to any accompanying imagery — the supporting footage is generic and "
+    "will not match specific visual references, so keep every line meaningful "
+    "with the eyes closed.\n"
+    "- Tighter and more focused than an audio-only podcast; no 'welcome back' "
+    "radio filler.\n"
+    "- Open with a brief hook, walk the key points in order, then a natural "
+    "closing line. Do NOT add a like/subscribe call-to-action — that is "
+    "appended separately.\n"
+    "- Plain spoken prose. No headings, no stage directions.\n\n"
+    "TITLE: {title}\n\n"
+    "ARTICLE:\n{content}\n\n"
+    "NARRATION:"
+)
+
+
+def _build_video_narration_prompt(title: str, clean_content: str) -> str:
+    """Prompt for the long-form VIDEO narration script.
+
+    Pure spoken narration (Bug A) — the renderer shows generic static imagery,
+    so the script never references on-screen visuals. Operator-tunable via
+    UnifiedPromptManager (``video.long_form_narration``); the module-level
+    fallback mirrors the SKILL.md default for tests / bootstrap.
+    """
+    content = clean_content[:3500]
+    try:
+        from services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt(
+            "video.long_form_narration", title=title, content=content,
+        )
+    except Exception:  # noqa: BLE001 — prompt resolution is best-effort
+        return _VIDEO_NARRATION_FALLBACK.format(title=title, content=content)
 
 
 def _build_scene_prompt(title: str, clean_content: str, site_name: str) -> str:
