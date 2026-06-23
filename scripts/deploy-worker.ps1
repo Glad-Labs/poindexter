@@ -4,13 +4,16 @@
     "deploy" for the self-hosted worker/brain.
 
 .DESCRIPTION
-    The worker, brain, pipeline-bot and prefect-worker containers BIND-MOUNT
-    the dedicated deploy clone (POINDEXTER_DEPLOY_ROOT, defaulting to
-    ~/.poindexter/deploy/glad-labs-stack). That clone is what the running
-    pipeline actually executes - this dev checkout is NOT what the containers
-    run. This was the root cause of the long-running "merged != deployed" drift:
-    deploy-worker used to fast-forward the dev checkout only, leaving the deploy
-    clone (and therefore the running containers) lagging up to 10 minutes.
+    The worker, pipeline-bot and prefect-worker containers BIND-MOUNT the
+    dedicated deploy clone (POINDEXTER_DEPLOY_ROOT, defaulting to
+    ~/.poindexter/deploy/glad-labs-stack) - that clone is what the running
+    pipeline actually executes, NOT this dev checkout. The brain-daemon is the
+    one EXCEPTION: its code is baked into its image (the ./brain mount was
+    removed in Glad-Labs/poindexter#456 because the brain's bare-name imports
+    resolve against the image-baked /app, not the mount), so it is REBUILT,
+    not restarted - a restart re-runs the old image and ships nothing.
+    Fast-forwarding only the dev checkout was the root cause of the long-running
+    "merged != deployed" drift; this script syncs the deploy clone too.
 
     This script makes the deploy a single guarded command:
       1. Refuses to run with a dirty working tree (so it never clobbers WIP).
@@ -19,12 +22,16 @@
       3b. Syncs the deploy clone to origin/main via deploy-checkout-sync.ps1
           (the deploy clone is what the containers bind-mount and run).
       4. Verifies both the dev checkout AND the deploy clone HEAD == origin/main.
-      5. Restarts the pipeline containers so they reload the bind-mounted code.
-      6. Waits for the worker healthcheck to go healthy and confirms
+      5. Reloads the pipeline containers: restarts the bind-mounted worker
+         family, REBUILDS the image-baked brain-daemon (via start-stack.sh).
+      6. Waits for the worker AND brain healthchecks to go healthy and confirms
          poindexter_worker_up=1 via Prometheus.
 
-    It does NOT rebuild any image - app code is bind-mounted, so a restart is
-    the deploy. Base-image/dependency changes still need `docker compose build`.
+    Bind-mounted app code (the worker family) goes live on a restart - no image
+    rebuild. The brain-daemon's baked code needs a `docker compose build
+    brain-daemon`, which this script runs through start-stack.sh so the
+    bootstrap.toml secrets resolve and COMPOSE_PROJECT_NAME stays pinned. Other
+    base-image/dependency changes still need a manual `docker compose build`.
 
 .PARAMETER Force
     Proceed even if the working tree has uncommitted changes (they are stashed
@@ -34,7 +41,8 @@
     Update the checkout to main but do not restart containers (dry-run-ish).
 
 .PARAMETER Containers
-    Containers to restart. Defaults to the four that bind-mount app/brain code.
+    Pipeline containers to reload. Defaults to the worker family (restarted -
+    bind-mounted code) plus poindexter-brain-daemon (rebuilt - image-baked).
 
 .EXAMPLE
     pwsh ./scripts/deploy-worker.ps1
@@ -61,6 +69,24 @@ $ErrorActionPreference = 'Stop'
 function Fail($msg) { Write-Host "[deploy-worker] ABORT: $msg" -ForegroundColor Red; exit 1 }
 function Info($msg) { Write-Host "[deploy-worker] $msg" -ForegroundColor Cyan }
 function Ok($msg)   { Write-Host "[deploy-worker] OK: $msg" -ForegroundColor Green }
+
+# Resolve Git Bash explicitly. On Windows the PATH `bash` is usually WSL's
+# C:\Windows\System32\bash.exe, which runs in a separate filesystem namespace and
+# cannot see Docker or the C:\ paths the stack uses. git IS on PATH (this script
+# shells out to it), so derive Git Bash from git's location
+# (<GitRoot>\cmd\git.exe -> <GitRoot>\bin\bash.exe); fall back to standard installs.
+# Mirrors scripts/deploy-checkout-sync.ps1 + scripts/docker-watchdog.ps1.
+function Resolve-GitBash {
+    $git = (Get-Command git -ErrorAction SilentlyContinue).Source
+    if ($git) {
+        $cand = Join-Path (Split-Path (Split-Path $git)) 'bin\bash.exe'
+        if (Test-Path $cand) { return $cand }
+    }
+    foreach ($p in @("$env:ProgramFiles\Git\bin\bash.exe", "${env:ProgramFiles(x86)}\Git\bin\bash.exe")) {
+        if ($p -and (Test-Path $p)) { return $p }
+    }
+    return 'bash'  # last resort; a failed rebuild surfaces if this is WSL bash
+}
 
 # Repo root = parent of the scripts/ dir this file lives in.
 $RepoRoot = Split-Path -Parent $PSScriptRoot
@@ -126,9 +152,36 @@ if (Test-Path (Join-Path $deployRoot '.git')) {
 
 if ($SkipRestart) { Info "-SkipRestart set - checkout updated, leaving containers as-is."; exit 0 }
 
-# 5. Restart the pipeline containers (reloads bind-mounted code).
-Info "restarting: $($Containers -join ', ')"
-docker restart @Containers | Out-Null
+# 5. Reload the pipeline containers.
+#    The worker family bind-mounts its app code from the deploy clone, so a
+#    plain `docker restart` reloads their .py edits. The brain-daemon is the
+#    EXCEPTION: its code is baked into the image (the ./brain mount was removed
+#    in Glad-Labs/poindexter#456), so a restart re-runs the OLD image. It must
+#    be REBUILT. Route the rebuild through start-stack.sh so the bootstrap.toml
+#    secrets resolve (the compose file aborts on ${SECRET:?} sentinels with no
+#    deploy-dir .env) and COMPOSE_PROJECT_NAME stays pinned (a bare
+#    `docker compose` from the deploy dir would fork a divergent project and
+#    orphan the data volumes).
+$brainContainer = 'poindexter-brain-daemon'
+$restartTargets = @($Containers | Where-Object { $_ -ne $brainContainer })
+$rebuildBrain   = $Containers -contains $brainContainer
+
+if ($rebuildBrain) {
+    $startStack = (Join-Path $deployRoot 'scripts/start-stack.sh') -replace '\\', '/'
+    if (-not (Test-Path $startStack)) {
+        Fail "start-stack.sh not found at $startStack - cannot rebuild the image-baked brain. Run scripts/setup-deploy-checkout.sh first."
+    }
+    $bash = Resolve-GitBash
+    Info "rebuilding brain-daemon image (baked code - a restart alone ships nothing)..."
+    & $bash $startStack up -d --build brain-daemon
+    if ($LASTEXITCODE -ne 0) { Fail "brain-daemon rebuild failed (start-stack.sh via '$bash' exit $LASTEXITCODE) - check 'docker logs poindexter-brain-daemon'. If '$bash' is WSL bash, install Git Bash." }
+    Ok "brain-daemon rebuilt + recreated"
+}
+
+if ($restartTargets.Count -gt 0) {
+    Info "restarting (bind-mounted code): $($restartTargets -join ', ')"
+    docker restart @restartTargets | Out-Null
+}
 
 # 6. Wait for the worker healthcheck + confirm worker_up.
 Info "waiting for poindexter-worker healthcheck..."
@@ -140,6 +193,21 @@ for ($i = 1; $i -le 24; $i++) {
     if ($status -eq 'healthy') { $healthy = $true; break }
 }
 if (-not $healthy) { Fail "worker did not reach 'healthy' in ~2 min - check 'docker logs poindexter-worker'." }
+
+# 6b. Confirm the REBUILT brain-daemon came back healthy. Its code is the thing
+#     we just swapped, so verify it rather than trust the build exit code.
+if ($rebuildBrain) {
+    Info "waiting for poindexter-brain-daemon healthcheck..."
+    $brainHealthy = $false
+    for ($i = 1; $i -le 24; $i++) {
+        Start-Sleep -Seconds 5
+        $bstatus = (docker inspect poindexter-brain-daemon --format '{{.State.Health.Status}}' 2>$null)
+        Write-Host "  [$i] brain health=$bstatus"
+        if ($bstatus -eq 'healthy') { $brainHealthy = $true; break }
+    }
+    if (-not $brainHealthy) { Fail "brain-daemon did not reach 'healthy' in ~2 min after rebuild - check 'docker logs poindexter-brain-daemon'." }
+    Ok "brain-daemon healthy on the rebuilt image"
+}
 
 # Best-effort: confirm the Prometheus liveness gauge agrees.
 try {
