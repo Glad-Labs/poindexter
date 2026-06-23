@@ -68,16 +68,18 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # break the pipeline, so a single try/except covers the whole block.
     site_config = state.get("site_config")
     repoint_on = True
+    strip_on = True
     mt_hosts: frozenset[str] | None = None
     if site_config is not None:
         try:
             if not site_config.get_bool("citation_reconcile_enabled", True):
                 return {}
             repoint_on = site_config.get_bool("citation_repoint_enabled", True)
+            strip_on = site_config.get_bool("citation_strip_unlinked_enabled", True)
             mt_list = site_config.get_list("citation_repoint_multitenant_hosts", "")
             mt_hosts = frozenset(h.lower() for h in mt_list) if mt_list else None
         except Exception:  # noqa: BLE001 — config read must never break the pipeline
-            repoint_on, mt_hosts = True, None
+            repoint_on, strip_on, mt_hosts = True, True, None
 
     research_context = state.get("research_context") or ""
     if not research_context.strip():
@@ -87,6 +89,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         link_matched_attributions,
         parse_corpus,
         repoint_fabricated_citations,
+        strip_unmatched_attributions,
     )
 
     sources = parse_corpus(research_context)
@@ -104,7 +107,17 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if repoint_on:
         new_content, repointed = repoint_fabricated_citations(new_content, sources, mt_hosts)
 
-    if not linked and not repointed:
+    # Scan-4: STRIP residual unlinked attributions whose subject grounds to no
+    # corpus source — remove the dangling attribution frame, keep the claim
+    # (Matt 2026-06-23: strip rather than negatively prompt the writer). Runs
+    # last, so scan-1/scan-3 link or re-point everything groundable first and
+    # only the truly unmatched remain. The advisory ``qa.unlinked_attribution``
+    # rail then flags whatever the strip frames were too conservative to remove.
+    stripped: list[str] = []
+    if strip_on:
+        new_content, stripped = strip_unmatched_attributions(new_content, sources)
+
+    if not linked and not repointed and not stripped:
         return {}
 
     if linked:
@@ -122,6 +135,14 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             len(repointed),
             str(state.get("task_id") or "?")[:8],
             ", ".join(f"{rp['text']}: {rp['old']}→{rp['new']}" for rp in repointed[:5]),
+        )
+    if stripped:
+        logger.info(
+            "[content.reconcile_citations] stripped %d ungroundable attribution(s) "
+            "(task=%s): %s",
+            len(stripped),
+            str(state.get("task_id") or "?")[:8],
+            ", ".join(stripped[:5]),
         )
     return {"content": new_content}
 

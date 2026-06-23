@@ -66,6 +66,56 @@ async def test_reconcile_noop_without_corpus():
     assert await run(state) == {}
 
 
+# --- content.reconcile_citations — strip pass (scan-4, Matt 2026-06-23) ------
+
+async def test_reconcile_strips_ungroundable_attribution():
+    """A source the writer named but can't ground (no corpus URL) is stripped,
+    keeping the claim — strip rather than negatively prompt the writer."""
+    from modules.content.atoms.content_reconcile_citations import run
+
+    state = {
+        "content": "According to Ai Insights, memory must be reinforced over time.",
+        "research_context": _CORPUS,
+        "site_config": SiteConfig(initial_config={}),
+    }
+    out = await run(state)
+    assert out["content"] == "Memory must be reinforced over time."
+
+
+async def test_reconcile_strip_noop_when_disabled():
+    """citation_strip_unlinked_enabled=false leaves the ungroundable attribution
+    for the advisory rail; with nothing to link/re-point the atom returns {}."""
+    from modules.content.atoms.content_reconcile_citations import run
+
+    state = {
+        "content": "According to Ai Insights, memory must be reinforced over time.",
+        "research_context": _CORPUS,
+        "site_config": SiteConfig(
+            initial_config={"citation_strip_unlinked_enabled": "false"},
+        ),
+    }
+    assert await run(state) == {}
+
+
+async def test_reconcile_links_matched_and_strips_unmatched_together():
+    """One pass: a corpus-matched subject is LINKED, an ungroundable one is
+    STRIPPED — never the reverse."""
+    from modules.content.atoms.content_reconcile_citations import run
+
+    state = {
+        "content": (
+            "GetMaxim points out that drift hurts coherence. "
+            "According to Ai Insights, memory must be reinforced."
+        ),
+        "research_context": _CORPUS,
+        "site_config": SiteConfig(initial_config={}),
+    }
+    out = await run(state)
+    assert "[GetMaxim](https://getmaxim.ai/blog/drift)" in out["content"]
+    assert "Ai Insights" not in out["content"]
+    assert "Memory must be reinforced." in out["content"]
+
+
 # --- content.reconcile_citations — re-point pass (#765 follow-up) -----------
 
 _REPOINT_CORPUS = (

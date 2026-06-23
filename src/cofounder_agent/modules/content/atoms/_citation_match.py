@@ -514,6 +514,151 @@ def repoint_fabricated_citations(
     return new, repointed
 
 
+# --- strip unmatched attributions (repair, scan-4) --------------------------
+#
+# The strip-only counterpart to ``find_unmatched_attributions`` (Matt,
+# 2026-06-23): rather than negatively prompt the writer, deterministically
+# remove the dangling source attribution it can't ground (no corpus URL, left
+# unlinked) while keeping the underlying claim. Each frame is anchored so the
+# residual is a grammatically complete sentence/clause. Leading frames capture
+# ``sep`` (the sentence-separating whitespace, preserved across the edit) and
+# ``lead`` (the claim's first letter, recapitalised); trailing/parenthetical
+# frames drop a dangling clause and keep the preceding claim.
+
+# Sentence-initial "According to X, <Claim>".
+_STRIP_ACCORDING_RE = re.compile(
+    rf"(?:(?<=[.!?])(?P<sep>\s+)|^)according\s+to\s+(?P<subj>{_SUBJECT_CS}),\s+(?P<lead>[A-Za-z])",
+    re.IGNORECASE,
+)
+# Sentence-initial "X <verb> that <Claim>" — the trailing "that" guarantees the
+# residual is a clean clause (no "that" → fragment → never stripped).
+_STRIP_SUBJ_FIRST_THAT_RE = re.compile(
+    rf"(?:(?<=[.!?])(?P<sep>\s+)|^)(?P<subj>{_SUBJECT_CS})\s+(?:{_SUBJECT_VERBS})\s+that\s+(?P<lead>[A-Za-z])",
+    re.IGNORECASE,
+)
+# Sentence-initial "(Other |Several |…)reports from X <verb> that <Claim>".
+_STRIP_REPORTS_FROM_RE = re.compile(
+    rf"(?:(?<=[.!?])(?P<sep>\s+)|^)"
+    rf"(?:other\s+|several\s+|many\s+|some\s+|additional\s+|further\s+|various\s+)?"
+    rf"reports?\s+from\s+(?P<subj>{_SUBJECT_CS})\s+"
+    rf"(?:confirms?|shows?|notes?|indicates?|suggests?|reveals?|finds?|states?)\s+that\s+(?P<lead>[A-Za-z])",
+    re.IGNORECASE,
+)
+# Sentence-initial "Experts/Analysts/… like X <verb> that <Claim>".
+_STRIP_LIKE_RE = re.compile(
+    rf"(?:(?<=[.!?])(?P<sep>\s+)|^)"
+    rf"(?:experts?|analysts?|developers?|engineers?|researchers?|sources?|outlets?|publications?)\s+like\s+"
+    rf"(?P<subj>{_SUBJECT_CS})\s+"
+    rf"(?:highlights?|notes?|points?\s+out|emphasi[sz]es?|argues?|explains?|stress(?:es)?|observes?|warns?)\s+that\s+(?P<lead>[A-Za-z])",
+    re.IGNORECASE,
+)
+# Trailing ", (as )?<prepverb> (by|in) X" right before the sentence end.
+_STRIP_TRAILING_PREP_RE = re.compile(
+    rf",\s+(?:as\s+)?(?:{_PREP_VERBS})\s+(?:by|in)\s+(?P<subj>{_SUBJECT_CS})(?=[.!?]|$)",
+    re.IGNORECASE,
+)
+# Parenthetical " (X)" — gated by the brandish-shape heuristic so editorial
+# asides ("(Recommended)") are never stripped.
+_STRIP_PAREN_RE = re.compile(rf"\s*\(\s*(?P<subj>{_SUBJECT_CS})\s*\)")
+
+# (regex, is_leading). Leading frames recapitalise via ``sep`` + ``lead``.
+_STRIP_FRAMES: tuple[tuple[re.Pattern[str], bool], ...] = (
+    (_STRIP_ACCORDING_RE, True),
+    (_STRIP_SUBJ_FIRST_THAT_RE, True),
+    (_STRIP_REPORTS_FROM_RE, True),
+    (_STRIP_LIKE_RE, True),
+    (_STRIP_TRAILING_PREP_RE, False),
+    (_STRIP_PAREN_RE, False),
+)
+
+
+def strip_unmatched_attributions(
+    content: str | None, sources: list[CorpusSource],
+) -> tuple[str, list[str]]:
+    """REPAIR (scan-4): remove the attribution FRAME of each unlinked attribution
+    whose subject grounds to NO corpus source, keeping the underlying claim.
+
+    The strip-only counterpart to :func:`find_unmatched_attributions`: rather
+    than negatively prompt the writer, deterministically delete the dangling
+    source attribution it can't ground. Same target set as the advisory scan
+    (non-corpus, unlinked) — it edits instead of flagging.
+
+    Only the highest-precision frame shapes are stripped, and only when the
+    residual is a complete sentence/clause: sentence-initial "According to X,"
+    and "X <verb> that …" / "reports from X … that …" / "experts like X … that
+    …"; trailing "…, as noted by X"; and brandish parentheticals "(X)". A
+    subject-first frame with no "that" (would leave a fragment), an editorial
+    parenthetical ("(Recommended)"), a corpus-matched subject (scan-1 links it),
+    and an already-linked subject are all left untouched.
+
+    The claim is kept verbatim — only the attribution is removed. Claim
+    *veracity* is a separate concern (the faithfulness / web-factcheck rails);
+    this scan only removes the ungroundable citation, never the fact.
+
+    Returns ``(new_content, stripped)`` with ``stripped`` the removed subject
+    strings in document order. Idempotent. Returns the input unchanged when
+    there's no corpus (can't tell real from fabricated — defer to the LLM pass).
+    """
+    if not content or not sources:
+        return content or "", []
+
+    link_spans = _markdown_link_text_spans(content)
+    # (frame_start, frame_end, replacement, subject)
+    candidates: list[tuple[int, int, str, str]] = []
+    for rx, leading in _STRIP_FRAMES:
+        for m in rx.finditer(content):
+            subject = m.group("subj").strip()
+            if not subject:
+                continue
+            first_tok = subject.split()[0].lower().rstrip(".")
+            if first_tok in _SUBJECT_STOPWORDS:
+                continue
+            if rx is _STRIP_PAREN_RE and not _looks_like_source_name(subject):
+                continue  # editorial aside, not a source
+            s_start, s_end = m.span("subj")
+            if _overlaps(s_start, s_end, link_spans):
+                continue  # already linked — never strip a real citation
+            # The subject can greedily absorb the sentence-final terminator
+            # ('.'/'!'/'?' live in the token char class); peel it so the subject
+            # matches cleanly and the residual keeps its punctuation.
+            subject = subject.rstrip(".!?").strip() or subject
+            if match_subject(subject, sources) is not None:
+                continue  # grounds to the corpus → scan-1 links it, never strip
+            start, end = m.start(), m.end()
+            if leading:
+                repl = (m.group("sep") or "") + m.group("lead").upper()
+            else:
+                # Keep any sentence terminator the greedy subject pulled into the
+                # trailing frame — strip the attribution, not the period.
+                matched = m.group(0)
+                n = 0
+                while n < len(matched) and matched[-(n + 1)] in ".!?":
+                    n += 1
+                end -= n
+                repl = ""
+            candidates.append((start, end, repl, subject))
+
+    if not candidates:
+        return content, []
+
+    # Resolve overlaps greedily left-to-right (attributions rarely nest); apply
+    # surviving edits right-to-left so earlier offsets stay valid.
+    candidates.sort(key=lambda c: c[0])
+    edits: list[tuple[int, int, str, str]] = []
+    last_end = -1
+    for start, end, repl, subject in candidates:
+        if start < last_end:
+            continue
+        edits.append((start, end, repl, subject))
+        last_end = end
+
+    new = content
+    for start, end, repl, _subject in sorted(edits, key=lambda c: c[0], reverse=True):
+        new = f"{new[:start]}{repl}{new[end:]}"
+    stripped = [subject for _s, _e, _r, subject in edits]
+    return new, stripped
+
+
 __all__ = [
     "Attribution",
     "CorpusSource",
@@ -524,4 +669,5 @@ __all__ = [
     "match_subject",
     "parse_corpus",
     "repoint_fabricated_citations",
+    "strip_unmatched_attributions",
 ]

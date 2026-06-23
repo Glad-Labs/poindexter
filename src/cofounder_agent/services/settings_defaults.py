@@ -534,6 +534,12 @@ DEFAULTS: dict[str, str] = {
     # single-brand corpus domain for that source's real URL (a 404 the trusted-
     # host scrub keeps) before qa.citations flags it dead. On by default.
     'citation_repoint_enabled': 'true',
+    # why: scan-4 strip pass — deterministically REMOVE a dangling source
+    # attribution whose subject grounds to no corpus source (keeping the claim),
+    # rather than negatively prompting the writer. Runs after link/re-point, so
+    # only the truly ungroundable remain; the advisory qa.unlinked_attribution
+    # rail flags whatever the conservative strip frames leave behind. On by default.
+    'citation_strip_unlinked_enabled': 'true',
     # Multi-tenant hosts where "same domain, different path" = DIFFERENT content
     # (re-pointing would mis-cite), so the re-point pass skips them. Empty =
     # use the built-in DEFAULT_MULTITENANT_HOSTS denylist; a non-empty CSV

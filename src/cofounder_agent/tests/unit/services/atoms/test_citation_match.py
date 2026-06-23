@@ -21,6 +21,7 @@ from modules.content.atoms._citation_match import (
     match_subject,
     parse_corpus,
     repoint_fabricated_citations,
+    strip_unmatched_attributions,
 )
 
 # --- parse_corpus -----------------------------------------------------------
@@ -449,3 +450,132 @@ def test_repoint_honors_explicit_multitenant_override():
     )
     assert new == content
     assert repointed == []
+
+
+# --- strip_unmatched_attributions (repair, scan-4) --------------------------
+#
+# The strip-only counterpart to find_unmatched_attributions (Matt 2026-06-23):
+# the writer names a source it can't ground (no corpus URL, left unlinked).
+# Rather than negatively prompt the writer, we deterministically REMOVE the
+# dangling attribution FRAME and keep the underlying claim. Same target set as
+# the advisory scan (non-corpus, unlinked) — but it edits instead of flagging.
+#
+# Precision boundary: strip ONLY the high-confidence frame shapes, and ONLY
+# when the residual is a complete sentence/clause. Never touch a corpus-matched
+# subject (scan-1 links those), an already-linked subject, an editorial
+# parenthetical, or a grammar-unsafe frame (subject-first with no "that").
+
+
+def test_strip_according_to_unmatched_keeps_claim():
+    # "According to <non-corpus>, <claim>" → claim kept + recapitalised.
+    content = "According to Ai Insights, memory must be decoupled from the window."
+    new, stripped = strip_unmatched_attributions(content, _sources())
+    assert new == "Memory must be decoupled from the window."
+    assert "Ai Insights" in stripped
+
+
+def test_strip_subject_first_that_unmatched():
+    content = "TechFlux reports that drift erodes coherence over long sessions."
+    new, stripped = strip_unmatched_attributions(content, _sources())
+    assert new == "Drift erodes coherence over long sessions."
+    assert "TechFlux" in stripped
+
+
+def test_strip_trailing_as_noted_by_unmatched():
+    content = "Relying solely on tokens is the wrong fix, as noted by M. Huzaifa Rizwan."
+    new, stripped = strip_unmatched_attributions(content, _sources())
+    assert new == "Relying solely on tokens is the wrong fix."
+    assert "M. Huzaifa Rizwan" in stripped
+
+
+def test_strip_parenthetical_unmatched():
+    content = "AI companions suffer identity erasure if not reinforced (Ai Insights)."
+    new, stripped = strip_unmatched_attributions(content, _sources())
+    assert new == "AI companions suffer identity erasure if not reinforced."
+    assert "Ai Insights" in stripped
+
+
+def test_strip_reports_from_confirm_that_frame():
+    # New frame the writer used on 4a4b9054 — not previously detected at all.
+    content = "Other reports from TechFlux confirm that latency drops under load."
+    new, stripped = strip_unmatched_attributions(content, _sources())
+    assert new == "Latency drops under load."
+    assert "TechFlux" in stripped
+
+
+def test_strip_experts_like_highlight_that_frame():
+    content = "Experts like Jane Foobar highlight that undervolting lowers temps."
+    new, stripped = strip_unmatched_attributions(content, _sources())
+    assert new == "Undervolting lowers temps."
+    assert "Jane Foobar" in stripped
+
+
+def test_strip_skips_corpus_matched_subject():
+    # GetMaxim grounds to getmaxim.ai → scan-1 links it; strip must NEVER touch it.
+    content = "According to GetMaxim, context drift hurts coherence."
+    new, stripped = strip_unmatched_attributions(content, _sources())
+    assert new == content
+    assert stripped == []
+
+
+def test_strip_skips_already_linked_subject():
+    content = "According to [GetMaxim](https://getmaxim.ai/blog/drift), drift hurts."
+    new, stripped = strip_unmatched_attributions(content, _sources())
+    assert new == content
+    assert stripped == []
+
+
+def test_strip_noop_without_corpus():
+    # No corpus → can't tell real from fabricated; defer to the LLM pass. Never strip.
+    content = "According to Someone Important, this really matters."
+    assert strip_unmatched_attributions(content, []) == (content, [])
+    assert strip_unmatched_attributions("", _sources()) == ("", [])
+
+
+def test_strip_skips_subject_first_without_that():
+    # No "that" → removing "TechFlux reports " leaves a fragment. Grammar-unsafe → skip.
+    content = "TechFlux reports impressive cooling numbers for the card."
+    new, stripped = strip_unmatched_attributions(content, _sources())
+    assert new == content
+    assert stripped == []
+
+
+def test_strip_skips_editorial_parenthetical():
+    # "(Recommended)" is an editorial aside, not a source — single-word, no
+    # internal caps / dot / acronym → must not be stripped even though it grounds
+    # to no corpus source.
+    content = "Use linear switches for fast games (Recommended)."
+    new, stripped = strip_unmatched_attributions(content, _sources())
+    assert new == content
+    assert stripped == []
+
+
+def test_strip_ignores_first_person_rhetoric():
+    # "our analysis" is lowercase → not a named source subject → never stripped.
+    content = "According to our analysis, drift is real and worsens over time."
+    new, stripped = strip_unmatched_attributions(content, _sources())
+    assert new == content
+    assert stripped == []
+
+
+def test_strip_is_idempotent():
+    content = "According to Ai Insights, memory must be decoupled from the window."
+    once, first = strip_unmatched_attributions(content, _sources())
+    twice, second = strip_unmatched_attributions(once, _sources())
+    assert once == twice
+    assert "Ai Insights" in first
+    assert second == []  # nothing left to strip the second time
+
+
+def test_strip_leaves_claim_when_multiple_frames_mixed():
+    # One corpus-matched (kept for linking) + one fabricated (stripped) in the
+    # same content — only the fabricated frame is removed.
+    content = (
+        "GetMaxim points out that drift hurts coherence. "
+        "Other reports from TechFlux confirm that latency climbs."
+    )
+    new, stripped = strip_unmatched_attributions(content, _sources())
+    assert "GetMaxim points out that drift hurts coherence." in new
+    assert "Latency climbs." in new
+    assert "TechFlux" in stripped
+    assert "GetMaxim" not in stripped
