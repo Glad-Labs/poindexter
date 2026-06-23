@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+## [0.86.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.85.0...v0.86.0) (2026-06-23)
+
+
+### Features
+
+* **brain:** lead alert triage follow-up with the alert it diagnoses ([#1877](https://github.com/Glad-Labs/glad-labs-stack/issues/1877)) ([665c9b4](https://github.com/Glad-Labs/glad-labs-stack/commit/665c9b4847ed56c7c6bd0cdbc0d03eec408375d8))
+* **cli:** graduate QA rails from the CLI (qa-gates require/advisory) ([#1858](https://github.com/Glad-Labs/glad-labs-stack/issues/1858)) ([8bcb11e](https://github.com/Glad-Labs/glad-labs-stack/commit/8bcb11e892645b35d64a9fb8c2062d72b1b9f28a))
+* **cost:** honest cost attribution — P1 (api/electricity ledger) ([#1852](https://github.com/Glad-Labs/glad-labs-stack/issues/1852)) ([43cb5d9](https://github.com/Glad-Labs/glad-labs-stack/commit/43cb5d972679d88be4bb576b8fd33de79d1044f7))
+* **cost:** metrics budget route reads app_settings cap, not $150 ([#1862](https://github.com/Glad-Labs/glad-labs-stack/issues/1862)) ([4372951](https://github.com/Glad-Labs/glad-labs-stack/commit/4372951604c9aec9d2d77f355d4d87074b751f21))
+* **pipeline:** CI gate catches atom-contract drift in active graph_defs ([#1889](https://github.com/Glad-Labs/glad-labs-stack/issues/1889)) ([bea5e56](https://github.com/Glad-Labs/glad-labs-stack/commit/bea5e5666e97c51a7a1b91a2cc21667abfc8c810))
+* **qa:** self-heal before paging — QA gate flags-and-continues instead of discarding drafts ([#1868](https://github.com/Glad-Labs/glad-labs-stack/issues/1868)) ([de2f2cd](https://github.com/Glad-Labs/glad-labs-stack/commit/de2f2cdb66aa2c71cfa244904e51bec61ab9090e))
+* **vram:** single-GPU budget machinery — calculator + dispatch clamp + headroom panel ([#1888](https://github.com/Glad-Labs/glad-labs-stack/issues/1888)) ([4f15291](https://github.com/Glad-Labs/glad-labs-stack/commit/4f1529161a13b9119b26f7836aa80a30f6755bb0))
+
+
+### Bug Fixes
+
+* **citations:** YouTube channel attribution + persist research_context ([#1894](https://github.com/Glad-Labs/glad-labs-stack/issues/1894)) ([25a355e](https://github.com/Glad-Labs/glad-labs-stack/commit/25a355e4b5b90e499cd3dd6d5de5dd5f3ee5efb0))
+* **content:** deterministically strip ungroundable source attributions ([#1892](https://github.com/Glad-Labs/glad-labs-stack/issues/1892)) ([e74bed5](https://github.com/Glad-Labs/glad-labs-stack/commit/e74bed5ec35c40cbd2bfe15d613936917622a959))
+* **content:** finalize awaiting_approval at the canonical_blog terminal node ([#1861](https://github.com/Glad-Labs/glad-labs-stack/issues/1861)) ([58dd774](https://github.com/Glad-Labs/glad-labs-stack/commit/58dd7748a2015723430b581891debeafd31417db))
+* **content:** render glued intro→list as a real list (normalize_draft) ([#1881](https://github.com/Glad-Labs/glad-labs-stack/issues/1881)) ([6df55ce](https://github.com/Glad-Labs/glad-labs-stack/commit/6df55ce6af42fc971155065d9ad758574221a043))
+* **deploy:** rebuild the image-baked brain-daemon instead of restarting it ([#1887](https://github.com/Glad-Labs/glad-labs-stack/issues/1887)) ([7cbd8bf](https://github.com/Glad-Labs/glad-labs-stack/commit/7cbd8bfc9b0dcf1420ec05ed3c2e903a86d23194))
+* **llm:** writer honors per-phase num_ctx (close LiteLLM seam gap) ([#1885](https://github.com/Glad-Labs/glad-labs-stack/issues/1885)) ([ab209ce](https://github.com/Glad-Labs/glad-labs-stack/commit/ab209cea729ef905c2e76d16587cee80186bd60c))
+* **media:** long-video narration is standalone audio + podcast speaks the real title ([#1873](https://github.com/Glad-Labs/glad-labs-stack/issues/1873)) ([e21a8e3](https://github.com/Glad-Labs/glad-labs-stack/commit/e21a8e3692d37957e131e4c99e77d2ae705b5134))
+* **media:** pad short-video visuals to narration so the voiceover isn't cut off ([#1874](https://github.com/Glad-Labs/glad-labs-stack/issues/1874)) ([ed119b5](https://github.com/Glad-Labs/glad-labs-stack/commit/ed119b56c42d3839c4decdfc3c0fdd579c365efa))
+* **media:** QA podcast audio + re-encode TTS to one clean stream ([#1876](https://github.com/Glad-Labs/glad-labs-stack/issues/1876)) ([9d32b8f](https://github.com/Glad-Labs/glad-labs-stack/commit/9d32b8f28ba40b2f42919d9098d1cafd3245b314))
+* **observability:** probe Tempo/Loki via compose DNS, not the host port ([#1872](https://github.com/Glad-Labs/glad-labs-stack/issues/1872)) ([9ce6ea0](https://github.com/Glad-Labs/glad-labs-stack/commit/9ce6ea0135e694dd1976c156d242b0a0d8ad0326))
+* **pipeline:** self-heal unstamped graph_defs at boot ([#755](https://github.com/Glad-Labs/glad-labs-stack/issues/755)) ([#1864](https://github.com/Glad-Labs/glad-labs-stack/issues/1864)) ([02ba0e8](https://github.com/Glad-Labs/glad-labs-stack/commit/02ba0e8aa8dc232da34c76c49a0c31576c81d821))
+* **qa:** make vision_gate graduatable to required_to_pass ([#1863](https://github.com/Glad-Labs/glad-labs-stack/issues/1863)) ([054525e](https://github.com/Glad-Labs/glad-labs-stack/commit/054525e9a351b113f54c1528939c76c75eb6d2d2))
+* **site:** update stale version/stack claims on about + storefront ([#1879](https://github.com/Glad-Labs/glad-labs-stack/issues/1879)) ([915efce](https://github.com/Glad-Labs/glad-labs-stack/commit/915efcee7962941b3e9e552f708ac572c3329cc2))
+* **tasks_db:** stop writing phantom featured_image_data column to content_tasks ([#1860](https://github.com/Glad-Labs/glad-labs-stack/issues/1860)) ([f4584cd](https://github.com/Glad-Labs/glad-labs-stack/commit/f4584cdeb0a790bc30befb8b12bf2097361471d7))
+
 ## [0.85.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.84.0...v0.85.0) (2026-06-22)
 
 
