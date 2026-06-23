@@ -33,7 +33,7 @@ nitpick approval status more than they nitpick the number.
 - `MultiModelResult.summary: str` — single-line human summary.
 - `MultiModelResult.format_feedback_text(max_chars=4000) -> str` —
   human-readable critique for the approval UI; lands in
-  `content_tasks.qa_feedback` and `pipeline_versions.qa_feedback`.
+  `pipeline_tasks.qa_feedback` and `pipeline_versions.qa_feedback`.
 - `format_qa_feedback_from_reviews(qa_reviews, final_score, approved, max_chars)` —
   module-level helper for callers that hold the serialized review
   dicts (e.g. finalize) without reconstructing the `MultiModelResult`.

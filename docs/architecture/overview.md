@@ -144,7 +144,7 @@ LOCKED` and hands them to `content_router_service`. Retry /
    ↓
 8. the 12-atom qa.* rail block (qa.programmatic → qa.critic → qa.deepeval → qa.ragas → … → qa.aggregate) runs each reviewer; qa.aggregate combines the scores into the gate decision and halts the graph on reject
    ↓
-9. finalize_task writes content_tasks (status=awaiting_approval)
+9. finalize_task writes pipeline_tasks (status=awaiting_approval)
    ↓
 10. Human operator approves via /api/tasks/{id}/approve → published
 ```

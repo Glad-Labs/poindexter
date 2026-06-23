@@ -114,7 +114,7 @@ that goes through the database service directly.
 ## Ground truth
 
 - Source: `services/rag_engine.py` (524 LOC), `poindexter/memory/client.py:418-690`
-- Migration: `services/migrations/0000_baseline.py` (originally `20260510_040315_seed_rag_engine_master_switch.py`, folded in by the 2026-06-06 squash)
+- Migration: `services/migrations/0000_baseline.py` (originally `20260510_040315_seed_rag_engine_master_switch.py`, folded in by the 2026-06-22 squash)
 - Tests: `tests/unit/services/test_rag_engine.py` (15 cases),
   `tests/unit/poindexter/memory/test_rag_engine_routing.py` (11 cases)
 - Issue: `Glad-Labs/glad-labs-stack#329` sub-issue 4 — third sub-issue

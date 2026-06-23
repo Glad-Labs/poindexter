@@ -7,9 +7,11 @@
 ## What it does
 
 `publish_post_from_task()` is the ONE place where a completed
-`content_tasks` row becomes a row in `posts`. It runs from three
+`pipeline_tasks` row becomes a row in `posts`. It runs from three
 entry points (the `/approve` endpoint with `auto_publish=True`, the
-explicit `/publish` endpoint, and `TaskExecutor._auto_publish_task`)
+explicit `/publish` endpoint, and the `auto_publish_gate` atom in the
+content pipeline — `TaskExecutor` was deleted 2026-05-16; its
+`_auto_publish_task` was ported to `services/auto_publish.py`)
 and handles everything that should happen exactly once when a post
 goes live: parse merged result+metadata, extract title from content,
 slugify, resolve author + category + tags, insert the `posts` row,
@@ -76,17 +78,17 @@ Bootstrap-only env var:
 ## Dependencies
 
 - **Reads from:**
-  - `content_tasks` (the task arg, plus the existing-slug guard)
+  - `pipeline_tasks` (the task arg, plus the existing-slug guard)
   - `tags` table (resolved tag rows for `post_tags` junction)
   - `services.category_resolver.select_category_for_topic`
   - `services.default_author.get_or_create_default_author`
-  - `services.site_config.site_config` for IndexNow + URL settings
+  - `site_config` (from AppContainer or DI) for IndexNow + URL settings
   - `utils.text_utils.extract_title_from_content` (LLM `# Title` lift)
 - **Writes to:**
   - `posts` (the central INSERT)
   - `tags` (upserts each new term — `ON CONFLICT (slug) DO UPDATE`)
   - `post_tags` (via `db_service.create_post`'s `tag_ids` handling)
-  - `content_tasks` (status → `published`, result JSON updated)
+  - `pipeline_tasks` (status → `published`, result JSON updated)
   - `webhook_events` indirectly via `emit_webhook_event("post.published", ...)` (the helper's actual target — earlier docs miscalled it `pipeline_events`; that unrelated table was dropped 2026-05-04 in poindexter#366)
   - `audit_log` indirectly via the `[content_published]` log line
 - **External APIs (all fire-and-forget, errors swallowed):**

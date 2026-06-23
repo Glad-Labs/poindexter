@@ -18,7 +18,7 @@ The cost-tier API makes the model selection a configuration concern, not a code 
 | `premium`  | `anthropic/claude-haiku-4-5` | Cloud cross-model QA critic; cost_guard-gated AND paid-base-url-gated. Use sparingly for high-stakes calls.                                                                   |
 | `flagship` | _(unseeded)_                 | Reserved for top-of-stack workloads (e.g. a frontier-model critic for niche-launch QA). Operator seeds the row when a use case lands; the validator already accepts the name. |
 
-The defaults are seeded in the baseline migration (`services/migrations/0000_baseline.py`; originally `20260509_203928_seed_cost_tier_model_mappings.py`, folded in by the 2026-06-06 squash). Operators tune by updating the row:
+The defaults are seeded in the baseline migration (`services/migrations/0000_baseline.py`; originally `20260509_203928_seed_cost_tier_model_mappings.py`, folded in by the 2026-06-22 squash). Operators tune by updating the row:
 
 ```sql
 -- Pin the standard tier to a heavier local model

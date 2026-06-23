@@ -21,7 +21,7 @@ ideas drift down naturally.
 `show_batch`, `rank_batch`, `edit_winner`, `resolve_batch`,
 `reject_batch` form the operator-side workflow that follows discovery.
 `resolve_batch` hands the rank-1 candidate to the content pipeline by
-inserting a `content_tasks` row with `topic_batch_id` provenance.
+inserting a `pipeline_tasks` row with `topic_batch_id` provenance.
 
 This service replaces the older `topic_proposal_service`. Shipped 2026-04-30.
 
@@ -65,7 +65,7 @@ not `app_settings`:
 
 - `niche.batch_size` — final winner count.
 - `niche.discovery_cadence_minute_floor` — min minutes between sweeps.
-- `niche.writer_rag_mode` — threaded into `content_tasks` on resolve.
+- `niche.writer_rag_mode` — threaded into `pipeline_tasks` on resolve.
 
 ## Dependencies
 
@@ -86,7 +86,7 @@ not `app_settings`:
     rows with `score`, `score_breakdown`, `rank_in_batch`,
     `decay_factor`, `operator_rank`, `operator_edited_topic`,
     `operator_edited_angle`).
-  - `content_tasks` on `resolve_batch` — inserts a `pending` row with
+  - `pipeline_tasks` on `resolve_batch` — inserts a `pending` row with
     `topic_batch_id` set so provenance traces back from post to batch.
 - **External APIs:** none directly. External topic sources (when
   wired) live in `services.topic_sources/` and call out from there.
@@ -129,7 +129,7 @@ topic_discovery wiring is not yet implemented` warning in logs.
   `niche_carry_forward_decay_factor` toward 1.0 to keep older
   candidates competitive longer; lower toward 0 to flush them faster.
 - **Audit provenance for a published post:**
-  `SELECT topic_batch_id FROM content_tasks WHERE task_id = '<uuid>';`
+  `SELECT topic_batch_id FROM pipeline_tasks WHERE task_id = '<uuid>';`
   then look up the batch + winner via `picked_candidate_id`.
 
 ## See also

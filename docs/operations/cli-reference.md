@@ -763,7 +763,7 @@ Total: 5 migrations — 4 applied, 1 pending
 
 `0000_baseline.py` is the only legacy 4-digit file remaining — it
 captures the squashed history (collapsed into one baseline, re-rolled
-most recently by the Phase E squash on 2026-06-06). Every NEW migration uses a UTC timestamp
+most recently by the Phase F squash on 2026-06-22). Every NEW migration uses a UTC timestamp
 prefix `YYYYMMDD_HHMMSS_<slug>.py` per Glad-Labs/poindexter#378
 (2026-05-05). See [`migrations.md`](migrations) for the naming
 convention.

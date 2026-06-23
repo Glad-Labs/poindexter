@@ -5,11 +5,12 @@ entire system uses PostgreSQL 16 with the pgvector extension through
 asyncpg. There is no ORM — queries are hand-written SQL, and schema
 changes are tracked as migration files in
 `src/cofounder_agent/services/migrations/` (the history is squashed
-into `0000_baseline.py`, re-rolled most recently by the Phase E squash
-on 2026-06-06; new migrations use a UTC timestamp prefix per
-poindexter#378).
+into `0000_baseline.py`, re-rolled most recently by the Phase F squash
+on 2026-06-22 (which folded the Phase E baseline + 73 post-E migrations
+and retired the `pipeline_tasks.category` column); new migrations use a
+UTC timestamp prefix per poindexter#378).
 
-**Last Updated:** 2026-06-13
+**Last Updated:** 2026-06-22
 **Version:** 0.1.x (alpha)
 **Architecture:** PostgreSQL 16 + pgvector + FastAPI + asyncpg background workers
 
@@ -74,6 +75,7 @@ CREATE TABLE pipeline_tasks (
     status VARCHAR(50) NOT NULL DEFAULT 'pending',
     priority VARCHAR(20) DEFAULT 'medium',
     task_type VARCHAR(50),
+    niche_slug VARCHAR(100),  -- added 2026-05; supersedes the retired category column (dropped by Phase F squash 2026-06-22)
     task_metadata JSONB DEFAULT '{}',
     quality_score FLOAT,
     auto_cancelled_at TIMESTAMP,
@@ -112,6 +114,7 @@ CREATE TABLE posts (
     author VARCHAR(255),
     tags TEXT[],
     category VARCHAR(100),
+    metadata JSONB DEFAULT '{}',  -- metadata->>'pipeline_task_id' is the canonical seam back to the source pipeline_tasks row (backfilled 2026-05-28)
     view_count INTEGER DEFAULT 0,
     published_at TIMESTAMP,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

@@ -21,7 +21,7 @@ When Langfuse isn't configured (no host + key in `app_settings`) or the lookup f
 
 ## DI seams
 
-Per CLAUDE.md "Configuration" section, the module-level `services.site_config.site_config` singleton was deleted 2026-05-09 (glad-labs-stack#330). The actual loaded SiteConfig is the one passed to `load_from_db` at worker startup; it gets captured on `self._site_config` and used by the lazy Langfuse init. Per-module utilities own their own `site_config` attribute that `main.py`'s lifespan wires via `set_site_config(loaded_instance)`.
+The module-level `services.site_config.site_config` singleton and the per-module `set_site_config` fan-out are both retired (#788 capstone). `UnifiedPromptManager` receives its `SiteConfig` as a constructor arg (DI) — the `AppContainer` composition root builds the manager with the process-wide `SiteConfig`. The actual loaded SiteConfig is captured on `self._site_config` and used by the lazy Langfuse init.
 
 The pre-fetched secret cache (`self._langfuse_secret_key`) exists because `_init_langfuse_client` runs from the sync `get_prompt` path and can't `await site_config.get_secret(...)`. Pre-fetching during the async `load_from_db` step puts the value in hand by the time the lazy init runs.
 
@@ -65,4 +65,4 @@ After that, prompt edits in the Langfuse UI propagate to the worker on the next 
 - `feedback_prompts_must_be_db_configurable` (operator design note) — why every prompt routes through this manager.
 - `feedback_module_singleton_gotcha` (operator design note) — DI gotcha that bit phase 1 of #47.
 - `scripts/activate_langfuse.py` + `scripts/import_prompts_to_langfuse.py` — operator activation tools.
-- `services/migrations/0000_baseline.py` — seeds placeholder rows for the three Langfuse credentials (originally migration 0153, folded into the baseline by the 2026-06-06 squash).
+- `services/migrations/0000_baseline.py` — seeds placeholder rows for the three Langfuse credentials (originally migration 0153, folded into the baseline by the 2026-06-22 squash).

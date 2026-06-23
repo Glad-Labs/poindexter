@@ -45,7 +45,7 @@ Each column below describes the full "how" per extension type.
 
 A **Stage** is a pipeline step that runs on a single content task.
 Stages are wired into LangGraph pipelines — the `canonical_blog`
-graph_def (`services/canonical_blog_spec.py`, 36 nodes, seeded into the
+graph_def (`services/canonical_blog_spec.py`, 39 nodes, seeded into the
 `pipeline_templates` table) and the `dev_diary` factory in
 `services/pipeline_templates/__init__.py`; `TemplateRunner` orchestrates
 them via the spec's edge list.
