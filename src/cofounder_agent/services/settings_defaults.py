@@ -645,9 +645,15 @@ DEFAULTS: dict[str, str] = {
     'podcast_tts_voice': 'bf_emma',
     'podcast_tts_model': 'speaches-ai/Kokoro-82M-v1.0-ONNX',
     'podcast_tts_format': 'mp3',
-    # Repair the duration header after Speaches byte-concatenates its internal
-    # segments (else players cut off mid-episode). Fail-soft; needs ffmpeg.
+    # Normalize the audio after Speaches byte-concatenates its internal segments
+    # (else players cut off mid-episode AND transcoders can mishandle the
+    # multi-header structure at the tail). Fail-soft; needs ffmpeg.
     'podcast_tts_remux_enabled': 'true',
+    # 'reencode' (default) collapses the per-segment Xing/LAME headers into one
+    # clean stream; 'copy' is the legacy lossless `-c copy` header-only repair.
+    'podcast_tts_remux_mode': 'reencode',
+    # Output bitrate for re-encode mode (mono spoken-word; 96k is ample).
+    'podcast_tts_remux_bitrate': '96k',
     'scheduled_publisher_poll_seconds': '60',
     # TTS pronunciation defaults — JSON objects operators can tune via
     # `poindexter settings set`. The code merges DB values on top of the

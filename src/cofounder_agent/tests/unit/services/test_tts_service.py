@@ -213,8 +213,10 @@ class TestTtsService:
 
         called = {}
 
-        async def _fake_remux(audio_bytes, fmt):
+        async def _fake_remux(audio_bytes, fmt, *, mode="reencode", bitrate="96k"):
             called["args"] = (audio_bytes, fmt)
+            called["mode"] = mode
+            called["bitrate"] = bitrate
             return b"REMUXED"
 
         monkeypatch.setattr(mod, "_remux_concatenated_audio", _fake_remux)
@@ -233,6 +235,7 @@ class TestTtsService:
             )
 
         assert called["args"] == (b"RAW-from-speaches", "mp3")
+        assert called["mode"] == "reencode"  # default mode resolved from config
         assert result == b"REMUXED"
 
     async def test_synthesize_skips_remux_when_disabled(self, monkeypatch):
@@ -290,3 +293,113 @@ class TestTtsService:
             return float(r.stdout.strip())
 
         assert abs(_dur(dst) - _dur(src)) < 0.5
+
+    # ---- re-encode mode (collapse Speaches' byte-concatenated segments) ----
+
+    async def test_remux_reencode_uses_lame_for_mp3(self, monkeypatch):
+        """``mode='reencode'`` builds an ffmpeg re-encode (libmp3lame + bitrate),
+        NOT ``-c copy`` — that is what collapses the byte-concatenated, multi-
+        header Speaches stream into one clean single-stream MP3."""
+        import services.tts_service as mod
+        monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+        captured = {}
+
+        async def _fake_exec(*args, **_k):
+            captured["argv"] = list(args)
+            mod._write_bytes(args[-1], b"REENCODED")
+
+            class _Proc:
+                returncode = 0
+
+                async def communicate(self):
+                    return (b"", b"")
+
+            return _Proc()
+
+        monkeypatch.setattr(mod.asyncio, "create_subprocess_exec", _fake_exec)
+        out = await mod._remux_concatenated_audio(
+            b"raw", "mp3", mode="reencode", bitrate="96k"
+        )
+        assert out == b"REENCODED"
+        argv = captured["argv"]
+        assert "libmp3lame" in argv
+        assert "96k" in argv
+        assert "copy" not in argv
+
+    async def test_remux_copy_mode_preserves_c_copy(self, monkeypatch):
+        """``mode='copy'`` keeps the legacy lossless ``-c copy`` path for back-
+        compat (operators who want zero re-encode can set it)."""
+        import services.tts_service as mod
+        monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+        captured = {}
+
+        async def _fake_exec(*args, **_k):
+            captured["argv"] = list(args)
+            mod._write_bytes(args[-1], b"COPIED")
+
+            class _Proc:
+                returncode = 0
+
+                async def communicate(self):
+                    return (b"", b"")
+
+            return _Proc()
+
+        monkeypatch.setattr(mod.asyncio, "create_subprocess_exec", _fake_exec)
+        out = await mod._remux_concatenated_audio(b"raw", "mp3", mode="copy")
+        assert out == b"COPIED"
+        assert "copy" in captured["argv"]
+        assert "libmp3lame" not in captured["argv"]
+
+    def test_remux_mode_default_is_reencode(self):
+        """The module default mode is reencode — the structural fix is the
+        default, not opt-in (copy stays available for back-compat)."""
+        from services.tts_service import _DEFAULT_REMUX_MODE
+        assert _DEFAULT_REMUX_MODE == "reencode"
+
+    @pytest.mark.skipif(
+        not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
+        reason="needs ffmpeg + ffprobe on PATH",
+    )
+    async def test_reencode_collapses_concatenated_segments_to_single_stream(
+        self, tmp_path
+    ):
+        """The real fix: a byte-concatenated 2-segment MP3 (≥2 embedded Xing/Info
+        headers, exactly the shape Speaches emits) re-encodes to ONE clean stream
+        (≤1 header) with BOTH segments preserved (not truncated to the first)."""
+        import subprocess
+
+        from services.tts_service import _remux_concatenated_audio
+
+        def _mk(path, freq, dur):
+            subprocess.run(
+                ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
+                 "-i", f"sine=frequency={freq}:duration={dur}",
+                 "-c:a", "libmp3lame", str(path)],
+                check=True,
+            )
+
+        a = tmp_path / "a.mp3"
+        b = tmp_path / "b.mp3"
+        _mk(a, 440, 2)
+        _mk(b, 660, 2)
+        # Byte-concatenate, exactly how Speaches glues its internal segments.
+        concatenated = a.read_bytes() + b.read_bytes()
+        headers_in = concatenated.count(b"Xing") + concatenated.count(b"Info")
+        assert headers_in >= 2  # each LAME segment carries its own header
+
+        out = await _remux_concatenated_audio(
+            concatenated, "mp3", mode="reencode", bitrate="96k"
+        )
+        headers_out = out.count(b"Xing") + out.count(b"Info")
+        assert headers_out <= 1  # collapsed to a single clean stream
+
+        dst = tmp_path / "out.mp3"
+        dst.write_bytes(out)
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nokey=1:noprint_wrappers=1", str(dst)],
+            capture_output=True, text=True, check=True,
+        )
+        # ~4s total (both 2s segments), NOT truncated to the first segment's 2s.
+        assert float(r.stdout.strip()) > 3.5

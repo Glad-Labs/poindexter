@@ -20,13 +20,20 @@ Configuration (all in app_settings, default-off):
   input into segments internally and byte-concatenates them. A
   multi-segment WAV keeps only the FIRST segment's RIFF header, so
   players stop at ~24s and it is unrecoverable. Concatenated MP3 frames
-  are all present, but the stream's duration header still reports only
-  the first segment — so we remux with ffmpeg ``-c copy`` (losslessly
-  rewriting a correct whole-file header) before returning. Without the
-  remux, players honor the short header and cut off mid-episode.
-- podcast_tts_remux_enabled true  — flip false to skip the ffmpeg
-  header remux (e.g. a TTS provider without the concat bug, or hosts
-  with no ffmpeg). The remux is fail-soft regardless.
+  are all present, but the byte-concat leaves N embedded per-segment
+  Xing/LAME headers and only the first segment's duration in the stream
+  header — so we normalize the stream with ffmpeg before returning (see
+  ``_remux_concatenated_audio``). Without it, players honor the short
+  header and cut off mid-episode, and strict transcoders can mishandle
+  the multi-header structure at the tail.
+- podcast_tts_remux_enabled true  — flip false to skip normalization
+  (e.g. a TTS provider without the concat bug, or hosts with no
+  ffmpeg). Fail-soft regardless.
+- podcast_tts_remux_mode   reencode — 'reencode' (default) decodes and
+  re-encodes ONCE to a single clean stream, collapsing the per-segment
+  headers (the robust fix); 'copy' is the legacy lossless `-c copy`
+  that only rewrites the duration header.
+- podcast_tts_remux_bitrate 96k — output bitrate for re-encode mode.
 
 Never raises — callers in generate_media_scripts treat audio as
 best-effort; a missing Speaches container is logged, not fatal. The
@@ -57,11 +64,23 @@ _DEFAULT_MODEL = "speaches-ai/Kokoro-82M-v1.0-ONNX"
 _DEFAULT_FORMAT = "mp3"
 _HTTP_TIMEOUT = httpx.Timeout(120.0, connect=5.0)
 
-# Formats whose duration header we repair via an ffmpeg `-c copy` remux after
-# Speaches byte-concatenates its internal segments (see module docstring).
-# Self-synchronizing / streamable containers only — a concatenated WAV is NOT
-# listed because `-c copy` would read just the first RIFF chunk and truncate.
+# Formats we normalize after Speaches byte-concatenates its internal segments
+# (see module docstring). Self-synchronizing / streamable containers only — a
+# concatenated WAV is NOT listed because ffmpeg would read just the first RIFF
+# chunk and truncate.
 _REMUX_FORMATS = frozenset({"mp3", "aac", "opus"})
+
+# How to normalize the byte-concatenated stream:
+#   'reencode' (default) — decode all segments and re-encode ONCE to a single
+#     clean stream, collapsing the per-segment Xing/LAME headers that players /
+#     podcast transcoders can mishandle at segment + tail boundaries.
+#   'copy' — legacy lossless `-c copy`: rewrites the whole-file duration header
+#     but LEAVES the embedded per-segment headers in place.
+# DB-tunable via podcast_tts_remux_mode / podcast_tts_remux_bitrate.
+_DEFAULT_REMUX_MODE = "reencode"
+_DEFAULT_REMUX_BITRATE = "96k"
+# Per-format encoder used in re-encode mode (libmp3lame is universally built in).
+_REENCODE_CODEC = {"mp3": "libmp3lame", "aac": "aac", "opus": "libopus"}
 
 
 def is_tts_enabled(site_config: Any) -> bool:
@@ -181,12 +200,19 @@ async def synthesize_speech(
         logger.warning("[tts_service] Speaches returned empty body")
         return None
 
-    # Speaches byte-concatenates its internal segments, leaving only the first
-    # segment's duration in the stream header → players cut off mid-episode.
-    # Remux (lossless `-c copy`) to rewrite a correct whole-file header. This
-    # is the single TTS boundary, so podcast AND video narration are covered.
+    # Speaches byte-concatenates its internal segments, leaving N embedded
+    # per-segment headers and only the first segment's duration in the stream
+    # header. Normalize to a single clean stream (re-encode by default) so
+    # players don't cut off mid-episode AND transcoders don't mishandle the
+    # multi-header structure. Single TTS boundary → podcast AND video covered.
     if _resolve_bool(site_config, "podcast_tts_remux_enabled", True):
-        audio_bytes = await _remux_concatenated_audio(audio_bytes, fmt)
+        mode = _resolve(site_config, "podcast_tts_remux_mode", _DEFAULT_REMUX_MODE)
+        bitrate = _resolve(
+            site_config, "podcast_tts_remux_bitrate", _DEFAULT_REMUX_BITRATE
+        )
+        audio_bytes = await _remux_concatenated_audio(
+            audio_bytes, fmt, mode=mode, bitrate=bitrate
+        )
 
     logger.info(
         "[tts_service] TTS synthesized: %d bytes (voice=%s, fmt=%s)",
@@ -215,27 +241,50 @@ def _read_bytes(path: str) -> bytes:
         return f.read()
 
 
-async def _remux_concatenated_audio(audio_bytes: bytes, fmt: str) -> bytes:
-    """Rewrite the container duration header so players don't truncate.
+async def _remux_concatenated_audio(
+    audio_bytes: bytes,
+    fmt: str,
+    *,
+    mode: str = _DEFAULT_REMUX_MODE,
+    bitrate: str = _DEFAULT_REMUX_BITRATE,
+) -> bytes:
+    """Normalize Speaches' byte-concatenated multi-segment audio to one stream.
 
-    Speaches byte-concatenates its per-segment audio for long input, leaving
-    only the FIRST segment's duration in the stream header — so players cut
-    off mid-episode even though every frame is present. An ffmpeg ``-c copy``
-    remux re-reads all frames and writes one correct whole-file header,
-    losslessly (no re-encode). Fail-soft: returns the original bytes on any
-    error, and is a no-op for non-self-synchronizing formats (a concatenated
-    WAV would truncate to segment 1 under ``-c copy``).
+    Speaches splits long input into segments, encodes each to its own MP3, and
+    byte-concatenates them — leaving N embedded per-segment Xing/LAME headers
+    and only the FIRST segment's duration in the stream header. Two modes repair
+    it (selected by ``mode``):
+
+    - ``reencode`` (default): decode every frame and re-encode ONCE to a single
+      clean stream at ``bitrate``. This both rewrites a correct whole-file
+      duration header AND collapses the embedded per-segment headers — the
+      multi-header structure is what some players / podcast transcoders mishandle
+      at segment and tail boundaries (a duplicated/garbled ending). One lossy
+      pass on spoken-word audio is inaudible.
+    - ``copy``: legacy lossless ``-c copy`` — re-reads all frames and writes one
+      correct duration header, but LEAVES the embedded per-segment headers in
+      place. Kept for back-compat / operators who want zero re-encode.
+
+    Fail-soft: returns the original bytes on any error, and is a no-op for non-
+    self-synchronizing formats (a concatenated WAV would truncate to segment 1).
     """
     if fmt not in _REMUX_FORMATS:
         return audio_bytes
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
         logger.warning(
-            "[tts_service] ffmpeg not found — skipping duration-header remux; "
+            "[tts_service] ffmpeg not found — skipping audio normalization; "
             "podcast/narration may report a short duration and cut off. Install "
             "ffmpeg or set podcast_tts_remux_enabled=false to silence this."
         )
         return audio_bytes
+
+    # Re-encode collapses the multi-segment headers; copy is the lossless
+    # header-only repair. libmp3lame is always built into ffmpeg.
+    if mode == "copy":
+        codec_args = ["-c", "copy"]
+    else:
+        codec_args = ["-c:a", _REENCODE_CODEC.get(fmt, "libmp3lame"), "-b:a", bitrate]
 
     tmpdir = tempfile.mkdtemp(prefix="tts-remux-")
     try:
@@ -244,15 +293,16 @@ async def _remux_concatenated_audio(audio_bytes: bytes, fmt: str) -> bytes:
         await asyncio.to_thread(_write_bytes, src, audio_bytes)
         proc = await asyncio.create_subprocess_exec(
             ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-            "-i", src, "-c", "copy", dst,
+            "-i", src, *codec_args, dst,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )
         _, stderr = await proc.communicate()
         if proc.returncode != 0 or not os.path.exists(dst):
             logger.warning(
-                "[tts_service] duration remux failed (rc=%s): %s — using raw audio",
-                proc.returncode,
+                "[tts_service] audio normalize failed (mode=%s, rc=%s): %s — "
+                "using raw audio",
+                mode, proc.returncode,
                 (stderr or b"").decode("utf-8", "replace")[:300],
             )
             return audio_bytes
@@ -260,14 +310,14 @@ async def _remux_concatenated_audio(audio_bytes: bytes, fmt: str) -> bytes:
         if not fixed:
             return audio_bytes
         logger.info(
-            "[tts_service] remuxed concatenated %s audio: %d → %d bytes "
-            "(duration header rewritten)",
-            fmt, len(audio_bytes), len(fixed),
+            "[tts_service] normalized concatenated %s audio (mode=%s): "
+            "%d → %d bytes",
+            fmt, mode, len(audio_bytes), len(fixed),
         )
         return fixed
     except Exception as exc:
         logger.warning(
-            "[tts_service] duration remux errored: %s — using raw audio", exc
+            "[tts_service] audio normalize errored: %s — using raw audio", exc
         )
         return audio_bytes
     finally:

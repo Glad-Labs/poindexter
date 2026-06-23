@@ -315,6 +315,53 @@ async def test_qa_audio_run_failsoft_no_audio_both_lanes():
 
 
 # ---------------------------------------------------------------------------
+# run() — podcast lane (Stage-3 podcast_pipeline)
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_qa_audio_checks_podcast_lane(monkeypatch):
+    """run() QAs the podcast narration audio when ``podcast_audio_path`` is
+    present, nesting the result under ``audio_qa_result['podcast']``.
+
+    Regression guard for the gap where the podcast_pipeline's qa.audio node ran
+    but never inspected ``podcast_audio_path`` — only the video long/short lanes
+    — so podcast audio shipped to Apple/Spotify entirely un-QA'd.
+    """
+    seen = []
+
+    async def _fake_one(*, audio_path, script, task_id, label, site_config):
+        seen.append((label, audio_path, script))
+        return {"duration_check": "ok"}
+
+    monkeypatch.setattr(qa, "_qa_one", _fake_one)
+    out = await qa.run({
+        "task_id": "t1",
+        "podcast_audio_path": "/tmp/ep.mp3",
+        "podcast_script": "the podcast body script",
+    })
+
+    assert ("podcast", "/tmp/ep.mp3", "the podcast body script") in seen
+    assert out["audio_qa_result"]["podcast"]["duration_check"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_qa_audio_omits_podcast_lane_without_path(monkeypatch):
+    """A video-only run (no ``podcast_audio_path``) does NOT add a 'podcast'
+    key — the media_pipeline's audio_qa_result contract is unchanged."""
+    async def _fake_one(*, audio_path, script, task_id, label, site_config):
+        return {}
+
+    monkeypatch.setattr(qa, "_qa_one", _fake_one)
+    out = await qa.run({
+        "task_id": "t1",
+        "long_narration_audio_path": "/tmp/long.mp3",
+        "short_narration_audio_path": "/tmp/short.mp3",
+    })
+
+    assert "podcast" not in out["audio_qa_result"]
+
+
+# ---------------------------------------------------------------------------
 # ATOM_META shape
 # ---------------------------------------------------------------------------
 

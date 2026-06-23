@@ -107,6 +107,24 @@ ATOM_META = AtomMeta(
             ),
             required=False,
         ),
+        FieldSpec(
+            name="podcast_audio_path",
+            type="str",
+            description=(
+                "podcast-lane narration audio (Stage-3 podcast_pipeline, "
+                "produced by podcast.render). QA'd when present."
+            ),
+            required=False,
+        ),
+        FieldSpec(
+            name="podcast_script",
+            type="str",
+            description=(
+                "podcast-lane source script — the literal narration text, so "
+                "its word count gives a tight duration estimate (Check F)."
+            ),
+            required=False,
+        ),
         FieldSpec(name="task_id", type="str", description="pipeline task id"),
         FieldSpec(
             name="site_config",
@@ -467,11 +485,20 @@ async def _qa_one(  # noqa: C901
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
-    """QA both narration lanes (long + short). Best-effort — NEVER raises.
+    """QA the narration lanes present in ``state``. Best-effort — NEVER raises.
 
-    Returns ``{"audio_qa_result": {"long": {...}, "short": {...}}}`` — each lane
-    QA'd against its OWN narration audio + source script. A missing lane audio
-    path yields an empty per-lane result rather than failing the graph.
+    Two pipelines feed this atom:
+
+    - **media_pipeline (video):** always QAs the ``long`` + ``short`` lanes, so
+      the result is ``{"long": {...}, "short": {...}}`` (each ``{}`` when its
+      audio path is absent).
+    - **podcast_pipeline (Stage-3):** ``podcast.render`` produces
+      ``podcast_audio_path``; when present, a ``podcast`` lane is added and QA'd
+      against the literal ``podcast_script``. Without that wiring the podcast
+      audio shipped to Apple/Spotify entirely un-QA'd — the gap this closes.
+
+    The ``podcast`` key is added ONLY when ``podcast_audio_path`` is set, so the
+    video pipeline's ``{long, short}`` contract is unchanged.
     """
     task_id = state.get("task_id")
     site_config = state.get("site_config")
@@ -492,7 +519,21 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         label="short",
         site_config=site_config,
     )
-    return {"audio_qa_result": {"long": long_res, "short": short_res}}
+    result: dict[str, Any] = {"long": long_res, "short": short_res}
+
+    # Podcast lane (Stage-3 podcast_pipeline). The script is the EXACT text that
+    # was synthesized, so its word count makes Check F's duration estimate tight.
+    podcast_audio = (state.get("podcast_audio_path") or "").strip()
+    if podcast_audio:
+        result["podcast"] = await _qa_one(
+            audio_path=podcast_audio,
+            script=state.get("podcast_script") or "",
+            task_id=task_id,
+            label="podcast",
+            site_config=site_config,
+        )
+
+    return {"audio_qa_result": result}
 
 
 __all__ = ["ATOM_META", "run"]
