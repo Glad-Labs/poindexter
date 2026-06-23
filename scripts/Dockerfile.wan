@@ -30,7 +30,8 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
     pydantic \
     httpx \
     "imageio[ffmpeg]" \
-    sentencepiece
+    sentencepiece \
+    ftfy
 
 COPY wan-server.py /app/server.py
 

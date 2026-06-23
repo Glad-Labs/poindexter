@@ -1063,7 +1063,11 @@ services:
     ports:
       - "9840:9840"
     environment:
-      WAN_MODEL_ID: "Wan-AI/Wan2.1-T2V-1.3B-Diffusers"
+      # Wan 2.2 TI2V-5B — unified text+image-to-video (i2v hero renderer,
+      # video-quality spec §3.3, Piece 4). Apache-2.0. ~24GB resident in
+      # VRAM; the worker's gpu.lock("video") evicts Ollama before a render
+      # so the 5B model fits the 32GB card. Override per-host via this env.
+      WAN_MODEL_ID: "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
       WAN_IDLE_TIMEOUT_S: "900"
     volumes:
       # Mount under /home/appuser — Dockerfile.wan runs as USER appuser, so the
