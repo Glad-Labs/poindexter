@@ -338,7 +338,6 @@ run_niche_topic_sweep = "cofounder_agent.services.jobs.run_niche_topic_sweep:Run
 run_dev_diary_post = "cofounder_agent.services.jobs.run_dev_diary_post:RunDevDiaryPostJob"
 detect_anomalies = "cofounder_agent.services.jobs.detect_anomalies:DetectAnomaliesJob"
 check_memory_staleness = "cofounder_agent.services.jobs.check_memory_staleness:CheckMemoryStalenessJob"
-regenerate_stock_images = "cofounder_agent.services.jobs.regenerate_stock_images:RegenerateStockImagesJob"
 collapse_old_embeddings = "cofounder_agent.services.jobs.collapse_old_embeddings:CollapseOldEmbeddingsJob"
 morning_brief = "cofounder_agent.services.jobs.morning_brief:MorningBriefJob"
 run_taps = "cofounder_agent.services.jobs.run_taps:RunTapsJob"

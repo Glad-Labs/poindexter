@@ -747,8 +747,7 @@ def get_core_samples() -> dict[str, list[Any]]:
         # path. All 4 are idempotent sweeps with valid schedule attrs.
         # CheckMemoryStaleness alerts when a pgvector writer goes silent
         # (every 30m). PruneOrphan/PruneStale handle embedding cleanup
-        # (cron 03:23 / 03:17). RegenerateStockImages replaces Pexels
-        # stock with SDXL on already-published posts (every 6h, GPU-cap).
+        # (cron 03:23 / 03:17).
         # CollapseOldEmbeddings clusters+summarizes old per-source_table
         # rows (every 7 days, opt-in via embedding_collapse_enabled) —
         # added 2026-05-20 (finding #189): entry_point was declared in
@@ -759,7 +758,6 @@ def get_core_samples() -> dict[str, list[Any]]:
         ("jobs", "services.jobs.check_memory_staleness", "CheckMemoryStalenessJob"),
         ("jobs", "services.jobs.prune_orphan_embeddings", "PruneOrphanEmbeddingsJob"),
         ("jobs", "services.jobs.prune_stale_embeddings", "PruneStaleEmbeddingsJob"),
-        ("jobs", "services.jobs.regenerate_stock_images", "RegenerateStockImagesJob"),
         ("jobs", "services.jobs.collapse_old_embeddings", "CollapseOldEmbeddingsJob"),
         # (backfill_podcasts / backfill_videos removed #1460 — subsumed by
         # media_distribute (video) + the podcast lane / reconciliation

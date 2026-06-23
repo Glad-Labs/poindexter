@@ -166,9 +166,6 @@ async def _build_sdxl_prompt(
     already used by ``topic_ranking._ollama_chat_json`` and
     ``llm_text.ollama_chat_text``.
 
-    Shared shape with services/jobs/regenerate_stock_images.py — kept in
-    sync so both the Job and the Provider produce similar output.
-
     Human/anthropomorphic terms are scrubbed from the result (#522): they
     belong in the NEGATIVE prompt, not the positive — putting "no people" in
     the positive backfires (SDXL tokenizes "people"), and any human the LLM

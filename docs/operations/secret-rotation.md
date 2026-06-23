@@ -631,7 +631,7 @@ Keys: `cloudinary_api_key` + `cloudinary_api_secret` (both encrypted).
 # 3. docker restart poindexter-worker
 ```
 
-**Verify.** Trigger an image upload (e.g., re-run `RegenerateStockImagesJob`). Watch worker logs for Cloudinary 200 responses.
+**Verify.** Trigger a Cloudinary-backed image upload and watch worker logs for Cloudinary 200 responses.
 
 ---
 

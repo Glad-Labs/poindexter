@@ -114,7 +114,6 @@
   "src/cofounder_agent/services/jobs/findings_alert_router.py": 3,
   "src/cofounder_agent/services/jobs/media_reconciliation.py": 2,
   "src/cofounder_agent/services/jobs/podcast_distribute.py": 1,
-  "src/cofounder_agent/services/jobs/regenerate_stock_images.py": 1,
   "src/cofounder_agent/services/jobs/render_alertmanager_config.py": 1,
   "src/cofounder_agent/services/jobs/render_grafana_alerts.py": 1,
   "src/cofounder_agent/services/jobs/static_export_reconciliation.py": 1,
