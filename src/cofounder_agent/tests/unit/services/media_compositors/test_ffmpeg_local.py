@@ -32,6 +32,7 @@ from services.media_compositors.ffmpeg_local import (
     _build_ken_burns_filter,
     _build_normalize_cmd,
     _build_soundtrack_mix_cmd,
+    _compute_narration_pad_s,
     _is_still_image,
     _parse_probe,
     _validate_inputs,
@@ -520,6 +521,47 @@ class TestBuildConcatCmd:
 
 
 # ---------------------------------------------------------------------------
+# _compute_narration_pad_s  (short-video narration cutoff fix)
+# ---------------------------------------------------------------------------
+
+
+class TestComputeNarrationPadS:
+    def test_zero_when_narration_fits_within_visuals(self):
+        # Long-form: the assembled scenes already cover the voiceover, so no
+        # padding is needed (legacy duration=first overlay applies).
+        assert _compute_narration_pad_s(
+            video_dur_s=120.0, narration_dur_s=110.0, tail_pad_s=0.5,
+        ) == 0.0
+
+    def test_zero_when_durations_equal(self):
+        assert _compute_narration_pad_s(
+            video_dur_s=60.0, narration_dur_s=60.0, tail_pad_s=0.5,
+        ) == 0.0
+
+    def test_covers_overhang_plus_tail_when_narration_longer(self):
+        # Short profile: 48s of visuals, ~58s narration → pad the 10s
+        # overhang plus a short tail hold so the final syllable isn't clipped.
+        assert _compute_narration_pad_s(
+            video_dur_s=48.0, narration_dur_s=58.0, tail_pad_s=0.5,
+        ) == pytest.approx(10.5)
+
+    def test_zero_on_nonpositive_durations(self):
+        # Missing/unprobeable durations must not produce a bogus pad.
+        assert _compute_narration_pad_s(
+            video_dur_s=0.0, narration_dur_s=58.0, tail_pad_s=0.5,
+        ) == 0.0
+        assert _compute_narration_pad_s(
+            video_dur_s=48.0, narration_dur_s=0.0, tail_pad_s=0.5,
+        ) == 0.0
+
+    def test_negative_tail_clamped_to_zero(self):
+        # A misconfigured negative tail never shortens the overhang pad.
+        assert _compute_narration_pad_s(
+            video_dur_s=48.0, narration_dur_s=58.0, tail_pad_s=-5.0,
+        ) == pytest.approx(10.0)
+
+
+# ---------------------------------------------------------------------------
 # _build_soundtrack_mix_cmd  (#media-render-fixes: narration overlay)
 # ---------------------------------------------------------------------------
 
@@ -578,11 +620,51 @@ class TestBuildSoundtrackMixCmd:
         assert "volume=-18.0dB" in af
 
     def test_duration_follows_video_not_audio(self):
-        # duration=first → the mix length tracks the video (input 0), so a
-        # short narration doesn't truncate the video and a long one is cut
-        # to the visual length.
+        # No pad (video_pad_s=0, the long-form case where the narration
+        # already fits the visuals): duration=first tracks the video, so a
+        # short narration plays out and the video continues silent after.
         cmd = _build_soundtrack_mix_cmd(**self._kwargs())
         af = cmd[cmd.index("-filter_complex") + 1]
+        assert "duration=first" in af
+
+    def test_no_pad_maps_video_stream_directly(self):
+        # Backcompat: the no-pad path maps the raw video stream (0:v:0),
+        # not a filtered label.
+        cmd = _build_soundtrack_mix_cmd(**self._kwargs())
+        map_idxs = [i for i, tok in enumerate(cmd) if tok == "-map"]
+        mapped = {cmd[i + 1] for i in map_idxs}
+        assert "0:v:0" in mapped
+
+    def test_pad_holds_final_frame_when_narration_longer(self):
+        # When the narration runs longer than the assembled visuals, the
+        # video is extended by holding (cloning) its final frame for the
+        # overhang so the speaker is never cut off mid-sentence.
+        cmd = _build_soundtrack_mix_cmd(**self._kwargs(video_pad_s=12.5))
+        af = cmd[cmd.index("-filter_complex") + 1]
+        assert "tpad=stop_mode=clone:stop_duration=12.500" in af
+
+    def test_pad_uses_duration_longest_so_narration_not_truncated(self):
+        # With a pad, the (now-longest) narration must drive the mixed-audio
+        # length — duration=longest — instead of being clipped to the
+        # shorter silent concat track.
+        cmd = _build_soundtrack_mix_cmd(**self._kwargs(video_pad_s=12.5))
+        af = cmd[cmd.index("-filter_complex") + 1]
+        assert "duration=longest" in af
+        assert "duration=first" not in af
+
+    def test_pad_maps_padded_video_label(self):
+        # The padded path maps the filtered [vpad] label, not the raw stream.
+        cmd = _build_soundtrack_mix_cmd(**self._kwargs(video_pad_s=12.5))
+        map_idxs = [i for i, tok in enumerate(cmd) if tok == "-map"]
+        mapped = {cmd[i + 1] for i in map_idxs}
+        assert "[vpad]" in mapped
+        assert "0:v:0" not in mapped
+
+    def test_default_video_pad_is_zero_no_regression(self):
+        # Omitting video_pad_s preserves the legacy duration=first overlay.
+        cmd = _build_soundtrack_mix_cmd(**self._kwargs())
+        af = cmd[cmd.index("-filter_complex") + 1]
+        assert "tpad" not in af
         assert "duration=first" in af
 
 
@@ -877,6 +959,120 @@ class TestComposeHappyPath:
         af = overlay_cmds[0][overlay_cmds[0].index("-filter_complex") + 1]
         assert "normalize=0" in af  # sum → voice stays at full volume
         assert "volume=0.0dB" in af  # full-volume voiceover
+
+    @staticmethod
+    def _probe_payload(duration_s: float) -> str:
+        return (
+            f'{{"format": {{"duration": "{duration_s}", "size": "9",'
+            ' "format_name": "mp4"}, "streams": [{"codec_type": "video",'
+            ' "codec_name": "h264", "width": 1080, "height": 1920,'
+            ' "r_frame_rate": "30/1"}]}'
+        )
+
+    @pytest.mark.asyncio
+    async def test_narration_longer_than_visuals_pads_video(self, tmp_path):
+        """Short-video cutoff fix: when the narration runs longer than the
+        assembled scenes, the overlay holds the final frame (tpad) and mixes
+        duration=longest so the voiceover plays to completion instead of
+        being clipped to the shorter visual track."""
+        compositor = _make_compositor({"binary_path": "ffmpeg"})
+        narr = tmp_path / "narration.mp3"
+        narr.write_bytes(b"\x00" * 64)
+        request = _make_request(
+            tmp_path,
+            scenes=[_make_scene(tmp_path, "a"), _make_scene(tmp_path, "b")],
+            narration_track_path=str(narr),
+        )
+
+        captured_cmds: list[list[str]] = []
+
+        def fake_run(cmd: list[str]):
+            captured_cmds.append(list(cmd))
+            out_path = cmd[-1]
+            try:
+                with open(out_path, "wb") as f:
+                    f.write(b"\x00FAKE_MP4")
+            except OSError:
+                pass
+            return (0, "", "")
+
+        def fake_probe(_probe_bin: str, media_path: str):
+            # Narration (58s) outruns the assembled concat (48s).
+            if media_path == str(narr):
+                return (0, self._probe_payload(58.0), "")
+            return (0, self._probe_payload(48.0), "")
+
+        with patch(
+            "services.media_compositors.ffmpeg_local.shutil.which",
+            side_effect=lambda name: f"/usr/bin/{name}",
+        ):
+            with patch.object(ffmpeg_mod, "_run_blocking", side_effect=fake_run):
+                with patch.object(
+                    ffmpeg_mod, "_ffprobe_blocking", side_effect=fake_probe,
+                ):
+                    result = await compositor.compose(request)
+
+        assert result.success is True, f"unexpected error: {result.error}"
+        overlay_cmds = [
+            c for c in captured_cmds
+            if "-filter_complex" in c and str(narr) in c
+        ]
+        assert len(overlay_cmds) == 1
+        af = overlay_cmds[0][overlay_cmds[0].index("-filter_complex") + 1]
+        # 58s narration - 48s visuals + 0.5s tail = 10.5s held final frame.
+        assert "tpad=stop_mode=clone:stop_duration=10.500" in af
+        assert "duration=longest" in af
+
+    @pytest.mark.asyncio
+    async def test_narration_shorter_than_visuals_no_pad(self, tmp_path):
+        """Long-form: when the visuals already cover the narration, the
+        overlay stays on the legacy duration=first path (no held frame)."""
+        compositor = _make_compositor({"binary_path": "ffmpeg"})
+        narr = tmp_path / "narration.mp3"
+        narr.write_bytes(b"\x00" * 64)
+        request = _make_request(
+            tmp_path,
+            scenes=[_make_scene(tmp_path, "a"), _make_scene(tmp_path, "b")],
+            narration_track_path=str(narr),
+        )
+
+        captured_cmds: list[list[str]] = []
+
+        def fake_run(cmd: list[str]):
+            captured_cmds.append(list(cmd))
+            out_path = cmd[-1]
+            try:
+                with open(out_path, "wb") as f:
+                    f.write(b"\x00FAKE_MP4")
+            except OSError:
+                pass
+            return (0, "", "")
+
+        def fake_probe(_probe_bin: str, media_path: str):
+            # Narration (20s) fits inside the assembled concat (48s).
+            if media_path == str(narr):
+                return (0, self._probe_payload(20.0), "")
+            return (0, self._probe_payload(48.0), "")
+
+        with patch(
+            "services.media_compositors.ffmpeg_local.shutil.which",
+            side_effect=lambda name: f"/usr/bin/{name}",
+        ):
+            with patch.object(ffmpeg_mod, "_run_blocking", side_effect=fake_run):
+                with patch.object(
+                    ffmpeg_mod, "_ffprobe_blocking", side_effect=fake_probe,
+                ):
+                    result = await compositor.compose(request)
+
+        assert result.success is True, f"unexpected error: {result.error}"
+        overlay_cmds = [
+            c for c in captured_cmds
+            if "-filter_complex" in c and str(narr) in c
+        ]
+        assert len(overlay_cmds) == 1
+        af = overlay_cmds[0][overlay_cmds[0].index("-filter_complex") + 1]
+        assert "tpad" not in af
+        assert "duration=first" in af
 
 
 class TestComposeFailurePath:

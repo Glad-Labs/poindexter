@@ -75,6 +75,14 @@ _DEFAULT_KEN_BURNS_ZOOM = 1.10  # 10% zoom over scene duration — slow,
 # after one A/B sample. Operators can override per-install via
 # plugin.media_compositor.ffmpeg_local.ken_burns_zoom.
 
+# Seconds of held final frame AFTER the narration finishes when the
+# voiceover runs longer than the assembled visuals (the 9:16 short
+# profile caps its shot list shorter than a ~150-word script's TTS).
+# A short outro hold reads better than cutting to black the instant the
+# voice stops. Operators tune via
+# plugin.media_compositor.ffmpeg_local.narration_tail_pad_s.
+_DEFAULT_NARRATION_TAIL_PAD_S = 0.5
+
 # Caption styling. ffmpeg's ``subtitles`` filter accepts ASS-style
 # overrides via ``force_style``. Defaults match what Matt wanted on
 # the V0 sample: vertically centered, large enough to read at thumb-
@@ -347,6 +355,35 @@ def _build_concat_cmd(
     ]
 
 
+def _compute_narration_pad_s(
+    *,
+    video_dur_s: float,
+    narration_dur_s: float,
+    tail_pad_s: float = _DEFAULT_NARRATION_TAIL_PAD_S,
+) -> float:
+    """Seconds to extend the visual track so a full-length narration is
+    never truncated by the overlay mix.
+
+    The narration overlay sums the voiceover over the silent concat. When
+    the voiceover runs LONGER than the assembled scenes — the common case
+    on the 9:16 short profile, where a ~150-word script TTS-runs ~56-60s
+    but the capped shot list sums to ~48s — an ``amix=duration=first``
+    would clip the audio to the visual length, cutting the speaker off
+    mid-sentence. Returns the overhang plus a small tail buffer so the
+    final frame holds briefly after the voice finishes.
+
+    Returns ``0.0`` when the narration already fits (the long-form case)
+    or when either duration is unprobeable, preserving the legacy
+    ``duration=first`` overlay.
+    """
+    if video_dur_s <= 0 or narration_dur_s <= 0:
+        return 0.0
+    overhang = narration_dur_s - video_dur_s
+    if overhang <= 0:
+        return 0.0
+    return overhang + max(0.0, tail_pad_s)
+
+
 def _build_soundtrack_mix_cmd(
     *,
     binary: str,
@@ -360,6 +397,7 @@ def _build_soundtrack_mix_cmd(
     loglevel: str,
     hwaccel: str,
     normalize: bool = True,
+    video_pad_s: float = 0.0,
 ) -> list[str]:
     """Mix ``soundtrack_path`` under the existing audio at the requested
     dBFS, re-muxing into a fresh MP4.
@@ -373,6 +411,14 @@ def _build_soundtrack_mix_cmd(
     Pass ``False`` to SUM instead: used for the narration overlay (full-
     volume voiceover over a silent concat) and the ambient-under-narration
     mix, so the voice never drops to 50% just because a quiet bed exists.
+
+    ``video_pad_s`` > 0 holds (clones) the video's final frame for that
+    many seconds and switches the mix to ``duration=longest`` so a
+    voiceover that outruns the visuals plays to completion instead of
+    being guillotined at the shorter video length. ``0.0`` (default)
+    keeps the legacy ``duration=first`` overlay where the video is the
+    source of truth — used for the ambient bed and for long-form, where
+    the narration already fits inside the visuals.
     """
     cmd: list[str] = [binary, "-loglevel", loglevel, "-y"]
     if hwaccel:
@@ -381,18 +427,33 @@ def _build_soundtrack_mix_cmd(
     # First input: composed video; second: soundtrack.
     cmd.extend(["-i", video_in, "-i", soundtrack_path])
 
-    # ``volume`` in dB is exactly what the operator wants. Then amix
-    # blends. ``duration=first`` means the music follows the video,
-    # not the other way around. ``normalize=0`` sums (keeps the primary
-    # track at full volume); ``normalize=1`` averages.
-    af = (
-        f"[1:a]volume={soundtrack_dbfs}dB[bg];"
-        f"[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2:"
-        f"normalize={1 if normalize else 0}[a]"
-    )
+    # ``volume`` in dB is exactly what the operator wants, then amix blends.
+    # ``normalize=0`` sums (keeps the primary track at full volume);
+    # ``normalize=1`` averages.
+    if video_pad_s > 0:
+        # Narration outruns the visuals: hold the final frame for the
+        # overhang (tpad clone) and let the now-longest narration drive the
+        # mix length so the voice is never cut off.
+        video_map = "[vpad]"
+        af = (
+            f"[0:v]tpad=stop_mode=clone:stop_duration={video_pad_s:.3f}[vpad];"
+            f"[1:a]volume={soundtrack_dbfs}dB[bg];"
+            f"[0:a][bg]amix=inputs=2:duration=longest:dropout_transition=2:"
+            f"normalize={1 if normalize else 0}[a]"
+        )
+    else:
+        # ``duration=first`` means the audio follows the video, not the
+        # other way around — correct for the ambient bed and when the
+        # narration already fits the visuals.
+        video_map = "0:v:0"
+        af = (
+            f"[1:a]volume={soundtrack_dbfs}dB[bg];"
+            f"[0:a][bg]amix=inputs=2:duration=first:dropout_transition=2:"
+            f"normalize={1 if normalize else 0}[a]"
+        )
     cmd.extend([
         "-filter_complex", af,
-        "-map", "0:v:0",
+        "-map", video_map,
         "-map", "[a]",
         "-c:v", encoder,
         "-pix_fmt", "yuv420p",
@@ -731,6 +792,35 @@ class FFmpegLocalCompositor:
                 # ambient mix so the music sits under the voice.
                 stage_in = concat_path
                 if success and request.narration_track_path:
+                    # Pad the visual track to the narration when the voiceover
+                    # runs longer than the assembled scenes, so the speaker is
+                    # never cut off mid-sentence (the 9:16 short profile caps
+                    # its shot list shorter than a ~150-word script's TTS).
+                    # Best-effort: needs ffprobe — without it we fall back to
+                    # the legacy duration=first overlay (video = source of truth).
+                    video_pad_s = 0.0
+                    if probe is not None:
+                        _, v_out, _ = await asyncio.to_thread(
+                            _ffprobe_blocking, probe, concat_path,
+                        )
+                        _, a_out, _ = await asyncio.to_thread(
+                            _ffprobe_blocking, probe, request.narration_track_path,
+                        )
+                        video_pad_s = _compute_narration_pad_s(
+                            video_dur_s=float(
+                                _parse_probe(v_out).get("duration_s", 0.0),
+                            ),
+                            narration_dur_s=float(
+                                _parse_probe(a_out).get("duration_s", 0.0),
+                            ),
+                            tail_pad_s=float(
+                                self._get(
+                                    "narration_tail_pad_s",
+                                    _DEFAULT_NARRATION_TAIL_PAD_S,
+                                )
+                                or _DEFAULT_NARRATION_TAIL_PAD_S,
+                            ),
+                        )
                     narrated_path = os.path.join(tmpdir, "narrated.mp4")
                     cmd = _build_soundtrack_mix_cmd(
                         binary=binary,
@@ -744,6 +834,7 @@ class FFmpegLocalCompositor:
                         loglevel=loglevel,
                         hwaccel=hwaccel,
                         normalize=False,  # sum over silence → keep voice at 100%
+                        video_pad_s=video_pad_s,
                     ) + [narrated_path]
                     rc, _, err = await asyncio.to_thread(_run_blocking, cmd)
                     if rc != 0:
