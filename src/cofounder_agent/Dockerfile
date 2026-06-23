@@ -37,22 +37,30 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Poetry
-RUN pip install --no-cache-dir poetry==1.8.5
+# Install Poetry (2.2.1 — matches brain/Dockerfile; 1.8.x rejects the PEP-621
+# [project] table used in pyproject.toml since poetry-core>=2.0.0).
+RUN pip install --no-cache-dir 'poetry==2.2.1'
 
 # Copy project files
 COPY pyproject.toml poetry.lock ./
 
-# Install the project package so entry_points (poindexter.modules, poindexter.stages,
-# etc.) are registered in the distribution metadata and importlib.metadata.entry_points()
-# can discover them at runtime. --no-root was previously used to avoid a missing
-# README.md error, but that stale comment masked the real consequence: the absence of
-# package metadata means entry_points discovery silently falls through to the imperative
-# _SAMPLES fallback in plugins/registry.py. Without --no-root, Poetry includes the
-# package itself (editable in-place, since the code is already at /app) so all
-# poindexter.* entry-point groups resolve correctly.
+# Install dependencies only — no root package install (--no-root).
+#
+# Why --no-root: three blockers make root install impossible from this build
+# context (./src/cofounder_agent):
+#   1. pyproject.toml declares packages = [{ include = "cofounder_agent", from = ".." }]
+#      which reaches *outside* the build context — Poetry can't resolve it.
+#   2. readme = "README.md" is required by the root package, but .dockerignore
+#      excludes README.md (and *.md) from the build context.
+#   3. Poetry 2.x's PEP-621 [project] table requires these to be resolvable at
+#      install time, not just at metadata parse time.
+#
+# Entry-point discovery (poindexter.stages, poindexter.modules, etc.) falls
+# through to the imperative _SAMPLES / Module-v1 directory-scan fallback in
+# plugins/registry.py — the same path the worker image (Dockerfile.worker)
+# relies on with --no-root, proven working in production.
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi --only main --extras "rerank"
+    poetry install --no-root --only main --no-interaction --no-ansi --extras "rerank"
 
 # Fail-fast verification — confirm the rerank stack landed AND that torch is the
 # CPU build (mirror of the worker image). sentence-transformers is an opt-in

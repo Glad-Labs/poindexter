@@ -89,8 +89,10 @@ RUN mkdir -p -m 755 /etc/apt/keyrings \
 RUN git config --system --add safe.directory /app \
     && git config --system --add safe.directory '*'
 
-# Install poetry
-RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir poetry
+# Install poetry (2.2.1 pinned — matches brain/Dockerfile and the cofounder image
+# for reproducibility; unpinned `pip install poetry` was resolving to 2.x anyway
+# but a future pip release could pull a 3.x breaking version unexpectedly).
+RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir 'poetry==2.2.1'
 
 # Copy dependency files first (cache layer)
 COPY pyproject.toml poetry.lock ./
