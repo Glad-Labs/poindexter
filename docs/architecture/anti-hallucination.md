@@ -758,12 +758,16 @@ artificially passing because all the critics returned 0.
 
 ### Rewrite loop (legacy — removed in atom-cutover #355)
 
-> **Not on the live path.** The rewrite loop described below was owned by
-> the `cross_model_qa` stage, which #355 deleted. On the live
-> `canonical_blog` graph_def path there is **no** automatic rewrite —
-> `qa.aggregate` halts the graph on reject (`qa_rewrite_attempts=0`,
-> `status="rejected"`) and the post lands rejected for operator review.
-> The description below is retained for historical context.
+> **Retired stage — live path has a bounded rescue cycle instead.** The
+> unbounded rewrite loop described below was owned by the `cross_model_qa`
+> stage, which #355 deleted. In its place the live `canonical_blog`
+> graph*def has a `qa.rewrite` rescue node: `qa.aggregate` branches to
+> `qa.rewrite` only for a \_rescuable* reject (soft critic veto or
+> below-threshold score — never fabrication/gate/`missing_required`), which
+> gets one targeted revision pass, then re-enters from `qa.programmatic`.
+> Hard rejects halt immediately. The rescue cycle is bounded by
+> `qa_rewrite_attempts` vs `qa_rewrite_max_attempts` (default 1). The
+> description below is retained as the historical cross_model_qa reference.
 
 Owned by the stage, not the orchestrator:
 `src/cofounder_agent/services/stages/cross_model_qa.py`. When

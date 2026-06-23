@@ -41,6 +41,9 @@ ollama bot.
 
 ### `claude-code` profile (dev room) keys
 
+> **Status (2026-06-22):** container removed, `voice_agent_claude_code_enabled=false`.
+> Keys still exist in `app_settings`; see [`voice-host-brain.md`](voice-host-brain) to re-enable.
+
 The `voice_agent_claude_code_*` namespace. The room/identity/enabled trio
 (seeded by migration `20260604_030000`) mirrors the poindexter room's so the
 operator can turn the dev room on/off and rename it from the DB — no

@@ -218,6 +218,6 @@ All from `app_settings` via `services.site_config`:
   triggers newsletter sends.
 - `0000_baseline.py` — seeds `smtp_password` with `is_secret=true`
   (originally migration `0121_flip_smtp_password_secret`, folded into
-  the baseline by the 2026-06-06 squash).
+  the baseline by the Phase F squash (2026-06-22)).
 - `feedback_no_silent_defaults` (operator design note)
   — why `_site_url()` raises rather than defaulting.

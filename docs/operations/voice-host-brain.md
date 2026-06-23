@@ -1,5 +1,11 @@
 # Voice host-brain — dev-on-the-go for the claude-code room (#1006)
 
+> **Production status (2026-06-22):** `voice_agent_claude_code_enabled=false`,
+> container removed. The poindexter room (`poindexter-voice-agent-livekit`) is
+> unaffected. To re-enable: seed the token, start the daemon (step 1–2 below),
+> flip `voice_agent_claude_code_enabled=true`, and `docker compose up -d` the
+> `claude-code` profile.
+
 The `claude-code` voice room lets you talk to a **full dev-capable** Claude Code
 session by voice. Its brain runs `claude -p` on the **host** (full repo + git +
 write + every host MCP server), not inside the read-only voice container. This

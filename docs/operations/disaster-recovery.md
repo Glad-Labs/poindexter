@@ -429,9 +429,10 @@ If no backup → run migrations to create empty schema, then go to **DB-2** Step
 
 ```bash
 ollama pull nomic-embed-text
-ollama pull gemma3:27b
+ollama pull gemma3:27b           # critic model
 ollama pull qwen3:8b
-ollama pull glm-4.7-5090:latest    # writer model — large
+ollama pull gemma-4-31B-it-qat:latest  # writer model (bakeoff winner 2026-06-18)
+ollama pull glm-4.7-5090:latest        # reviser model (qa.rewrite rescue cycle)
 # Confirm with:
 ollama list
 ```

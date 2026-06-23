@@ -330,8 +330,8 @@ docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c 
 **Fix.** Most common cause — `pipeline_writer_model` was flipped off the intended model. See [`troubleshooting.md`](./troubleshooting) "Approval rate drops to ~0%" entry.
 
 ```sql
--- Restore intended writer
-UPDATE app_settings SET value = 'ollama/glm-4.7-5090:latest', updated_at = NOW()
+-- Restore intended writer (gemma-4-31B-it-qat — bakeoff winner 2026-06-18, #1692)
+UPDATE app_settings SET value = 'ollama/gemma-4-31B-it-qat:latest', updated_at = NOW()
 WHERE key = 'pipeline_writer_model';
 ```
 
@@ -431,8 +431,9 @@ nvidia-smi  # Is Ollama using GPU?
 ollama list
 # If missing:
 ollama pull nomic-embed-text
-ollama pull gemma3:27b
-ollama pull glm-4.7-5090:latest
+ollama pull gemma3:27b                 # critic model
+ollama pull gemma-4-31B-it-qat:latest  # writer model (bakeoff winner 2026-06-18)
+ollama pull glm-4.7-5090:latest        # reviser model (qa.rewrite rescue cycle)
 ```
 
 ---

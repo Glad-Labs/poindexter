@@ -888,9 +888,9 @@ Re-enable after the trend passes. Long-term fix: pgvector-based thematic dedup (
 
 **Symptom.** New blog-post tasks keep firing on schedule (hourly, per the content router cadence), they run to completion, but every single one comes back `status=rejected`. The Prometheus `NoPublishedPostsRecently` alert goes pending, then firing. `pipeline_reviews` shows the rejections concentrated under `reviewer=auto_curator` ("Quality score X below threshold 75.0") and `reviewer=multi_model_qa` ("programmatic_validator @ N: Unlinked citation — possible hallucinated reference"). No genuine operator intervention has changed in this window.
 
-**Root cause.** `app_settings.pipeline_writer_model` silently got flipped off the intended writer (`ollama/glm-4.7-5090:latest`) and onto a smaller budget-tier model like `ollama/gemma3:27b`. The content generator reads that key on every run via `services.ai_content_generator._resolve_model_list` (see `ai_content_generator.py` ~line 636) — **not** `model_role_writer`, which looks like a sibling setting but is orphaned and unused by the generator. With the weaker writer active the content hits fact-fabrication / citation-hallucination patterns that the anti-hallucination gates (`modules/content/content_validator.py` `UNLINKED_CITATION_PATTERNS`, `HALLUCINATED_LINK_PATTERNS`) correctly kill.
+**Root cause.** `app_settings.pipeline_writer_model` silently got flipped off the intended writer (`ollama/gemma-4-31B-it-qat:latest` — bakeoff winner 2026-06-18, #1692) and onto a smaller budget-tier model like `ollama/gemma3:27b`. The content generator reads that key on every run via `services.ai_content_generator._resolve_model_list` (see `ai_content_generator.py` ~line 636) — **not** `model_role_writer`, which looks like a sibling setting but is orphaned and unused by the generator. With the weaker writer active the content hits fact-fabrication / citation-hallucination patterns that the anti-hallucination gates (`modules/content/content_validator.py` `UNLINKED_CITATION_PATTERNS`, `HALLUCINATED_LINK_PATTERNS`) correctly kill.
 
-Once this flip is in place the approval rate stays at ~0–5% until the setting is reverted. The `pipeline_tasks.model_used` column reflects what was actually used (will show `gemma3:27b` during the bad window, `glm-4.7-5090:latest` before and after).
+Once this flip is in place the approval rate stays at ~0–5% until the setting is reverted. The `pipeline_tasks.model_used` column reflects what was actually used (will show `gemma3:27b` during the bad window, `gemma-4-31B-it-qat:latest` after the 2026-06-18 bakeoff or `glm-4.7-5090:latest` for earlier posts).
 
 **Debugging checks.**
 
@@ -914,15 +914,17 @@ GROUP BY day ORDER BY day DESC;
 **Fix.**
 
 ```sql
-UPDATE app_settings SET value = 'ollama/glm-4.7-5090:latest', updated_at = NOW()
+-- gemma-4-31B-it-qat is the writer (bakeoff winner 2026-06-18, #1692);
+-- glm-4.7-5090 is the reviser used by qa.rewrite rescue cycle only.
+UPDATE app_settings SET value = 'ollama/gemma-4-31B-it-qat:latest', updated_at = NOW()
 WHERE key = 'pipeline_writer_model';
 ```
 
 Write an `audit_log` row so the flip is traceable next time.
 
-**Thinking-model gotcha.** `glm-4.7-5090` is a thinking model — Ollama returns `message.content` AND `message.thinking`, where thinking can eat the full `num_predict` budget on short prompts. The generator already knows about this (see `_is_thinking = any(t in model_name.lower() for t in ("qwen3", "glm-4", "deepseek-r1"))` and the `content_gen_token_mult_thinking` multiplier, default 7.0). If you're testing the model manually with a small `num_predict`, add `"think": false` to the payload or expect empty `content`.
+**Thinking-model note.** `glm-4.7-5090` (the reviser for the `qa.rewrite` rescue cycle) is a thinking model — Ollama returns `message.content` AND `message.thinking`, where thinking can eat the full `num_predict` budget on short prompts. The generator already knows about this (see `_is_thinking = any(t in model_name.lower() for t in ("qwen3", "glm-4", "deepseek-r1"))` and the `content_gen_token_mult_thinking` multiplier, default 7.0). If you're testing glm manually with a small `num_predict`, add `"think": false` to the payload or expect empty `content`.
 
-**Related.** Surfaced 2026-04-21. Writer flip happened 2026-04-11. Memory `feedback_model_selection.md` ("Use glm-4.7-5090 for writing"). Fixed via `app_settings` UPDATE + audit_log entry.
+**Related.** Originally surfaced 2026-04-21 (writer flip happened 2026-04-11, writer was glm at that time). Writer switched to `gemma-4-31B-it-qat` on 2026-06-18 (bakeoff #1692); glm demoted to reviser. Fixed via `app_settings` UPDATE + audit_log entry.
 
 ---
 

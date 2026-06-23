@@ -287,8 +287,10 @@ the matrix is what the director's policy converges toward.
    rendered video? Showing the shot list lets him fix problems before the
    ~5min render runs. Defer to PR 1 to land before deciding.
 
-3. **Director model** — pin to one model (`glm-4.7-5090` per the writer
-   model setting), or use the cost-tier router? The director's output is
-   structured JSON, not creative prose — a smaller faster model might be fine.
-   Decide after PR 1's first runs show what quality the prompt + a default
-   model can produce.
+3. **Director model** — ~~pin to one model or use the cost-tier router?~~
+   **Resolved (#1712):** pinned to the writer model via the `video_director_model`
+   setting (defaults to `ollama/gemma-4-31B-it-qat:latest`, same model as
+   `pipeline_writer_model`). The director's structured-JSON output is well-served
+   by the same writer-grade capability. `glm-4.7-5090` was the writer at design
+   time; it is now the reviser (`qa_rewrite_model`) since the 2026-06-18 bakeoff
+   (#1692).

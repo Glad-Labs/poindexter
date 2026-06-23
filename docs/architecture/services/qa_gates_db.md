@@ -15,7 +15,7 @@ which are required-to-pass, and what their per-gate config looks like.
 
 This module is the runtime read-side of the declarative `qa_gates`
 table (created + default chain seeded in `0000_baseline.py`; originally
-migrations 0093 + 0094, folded into the baseline by the 2026-06-06 squash)
+migrations 0093 + 0094, folded into the baseline by the Phase F squash (2026-06-22))
 which moved the QA chain out of hardcoded Python and into a
 declarative table — part of the broader "declarative data plane"
 work (see the [integrations framework overview](/docs/integrations/index)).
@@ -152,7 +152,7 @@ will use legacy chain`), returns `[]`. Intentionally DEBUG-level
   ```
   Expect `0000_baseline` — the original `0093_create_qa_gates_table` /
   `0094_seed_qa_gates_default_chain` migrations were folded into it by
-  the 2026-06-06 squash.
+  the Phase F squash (2026-06-22).
 
 ## See also
 

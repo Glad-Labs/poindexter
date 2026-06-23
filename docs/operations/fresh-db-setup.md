@@ -1,8 +1,8 @@
 # Fresh DB Setup — End-to-End Walkthrough
 
-**Last Updated:** 2026-05-23
-**Verified Against:** Glad-Labs/poindexter post-baseline-squash (0000_baseline.py + post-baseline timestamp migrations)
-**Verifier:** dispatched code-writing agent (#378), refreshed 2026-05-23
+**Last Updated:** 2026-06-22
+**Verified Against:** Glad-Labs/poindexter Phase F squash (0000_baseline.py + 20260622_200222_drop_pipeline_tasks_category.py)
+**Verifier:** dispatched code-writing agent (#378), refreshed 2026-05-23; Phase F counts updated 2026-06-22
 
 This doc walks through standing up Poindexter against a fresh,
 empty Postgres database. It's the canonical reference for:
@@ -357,20 +357,13 @@ These were discovered during the #378 fresh-DB verification pass and
 filed as separate issues — they don't block this PR but improve the
 fresh-DB experience.
 
-- **Lazy `app_settings` seeding.** Migrations seed 149 keys; CLAUDE.md
-  documents 698 active keys (regenerated 2026-05-08). The remaining
-  500+ are inserted lazily by the worker via `SettingsService`
-  defaults the first time they're queried. This means a fresh DB looks under-seeded right after step
-  2 — operators reading the DB before booting the worker will see
-  surprising holes. Two viable fixes:
-  - Add a `seed_all_defaults()` helper invoked by the StartupManager
-    after migrations (would also catch the `feedback_no_silent_defaults`
-    class of bug at install time, not query time).
-  - Generate a single sweep-migration during release that seeds every
-    key the codebase currently knows about.
-
-  Either is a follow-up scope; both are non-trivial and shouldn't be
-  bundled into the migration-convention PR.
+- ~~**Lazy `app_settings` seeding.**~~ **Resolved (Phase F squash, 2026-06-22).**
+  The Phase F baseline (`0000_baseline.seeds.sql`) now seeds all 761 non-secret
+  `app_settings` keys generated fold-forward from real DB state, so a fresh
+  install immediately has the full non-secret default set after step 2 — no
+  lazy-load gap. `services/settings_defaults.py::seed_all_defaults()` (run by
+  `StartupManager._run_migrations()` at every boot) remains as an idempotent
+  backstop for keys added after the most recent squash.
 
 - **`--auto` uses `pgvector/pgvector:pg16`** while CI uses the same
   image. Locally Matt's `docker-compose.local.yml` runs `pg17`. Worth

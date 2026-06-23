@@ -13,11 +13,15 @@ Both share one image (`scripts/Dockerfile.voice-agent`) and one pipeline
 (`services.voice_agent.build_voice_pipeline_task`) — only the transport
 differs.
 
-> **Two-room split (#1006).** The always-on LiveKit agent now runs one
+> **Two-room split (#1006).** The always-on LiveKit agent runs one
 > container per room profile — `poindexter-voice-agent-livekit` (the
 > `poindexter` room) and `poindexter-voice-agent-claude-code` (the dev
 > room). This page covers the shared STT→TTS pipeline; see
 > [`voice-settings.md`](voice-settings) for the per-room key inventory.
+>
+> **`claude-code` profile status (2026-06-22):** `voice_agent_claude_code_enabled=false`,
+> container removed. The `poindexter` room remains active. See
+> [`voice-host-brain.md`](voice-host-brain) to re-enable the dev room.
 
 ## Start / stop
 
