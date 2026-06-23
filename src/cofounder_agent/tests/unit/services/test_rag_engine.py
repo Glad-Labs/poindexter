@@ -414,7 +414,8 @@ class TestCrossEncoderRerank:
         r = cls(inner=inner, top_k=3, site_config=None)
         # Pre-populate cache so _get_model returns our stub without
         # importing sentence-transformers.
-        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2"] = fake_model
+        # Device-aware cache key (site_config=None -> device "cpu").
+        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2@cpu"] = fake_model
 
         results = await r._aretrieve(QueryBundle(query_str="query text"))
 
@@ -452,7 +453,8 @@ class TestCrossEncoderRerank:
         _RERANKER_CACHE.clear()
         cls = _build_rerank_retriever_class()
         r = cls(inner=inner, top_k=1, site_config=None)
-        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2"] = fake_model
+        # Device-aware cache key (site_config=None -> device "cpu").
+        _RERANKER_CACHE["cross-encoder/ms-marco-MiniLM-L-6-v2@cpu"] = fake_model
 
         results = await r._aretrieve(QueryBundle(query_str="q"))
         assert len(results) == 1
@@ -532,3 +534,37 @@ class TestRerankGate:
             pool=MagicMock(), site_config=sc, hybrid=False,
         )
         assert "Hybrid" not in type(retriever).__name__
+
+
+def test_reranker_constructs_on_configured_device(monkeypatch):
+    """The cross-encoder reranker must construct on the device from
+    rag_rerank_device (default cpu) so it stops stacking on the resident
+    ~18 GB writer in VRAM. A fake sentence_transformers is injected so the
+    assertion holds regardless of the real dep or the host's hardware."""
+    import sys
+    import types
+
+    import services.rag_engine as rag
+
+    captured: dict = {}
+
+    class _FakeCrossEncoder:
+        def __init__(self, name, device=None):
+            captured["name"] = name
+            captured["device"] = device
+
+        def predict(self, pairs):
+            return [0.0 for _ in pairs]
+
+    fake_st = types.ModuleType("sentence_transformers")
+    setattr(fake_st, "CrossEncoder", _FakeCrossEncoder)
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_st)
+
+    rag._RERANKER_CACHE.clear()
+    cls = rag._build_rerank_retriever_class()
+    sc = _site_config({"rag_rerank_device": "cpu"})
+    r = cls(inner=object(), top_k=5, site_config=sc)
+
+    r._get_model()
+
+    assert captured["device"] == "cpu"

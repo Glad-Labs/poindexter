@@ -611,10 +611,25 @@ def _build_rerank_retriever_class():
                 ) or "cross-encoder/ms-marco-MiniLM-L-6-v2"
             )
 
+        def _device(self) -> str:
+            # CPU by default so the reranker stops stacking on the
+            # resident ~18 GB writer in VRAM (single-GPU stability core).
+            # The '' app_settings sentinel falls back via the trailing or.
+            if self._site_config is None:
+                return "cpu"
+            return (
+                self._site_config.get("rag_rerank_device", "cpu") or "cpu"
+            )
+
         def _get_model(self) -> Any:
             name = self._model_name()
-            if name in _RERANKER_CACHE:
-                return _RERANKER_CACHE[name]
+            device = self._device()
+            # Cache on (name, device) so flipping rag_rerank_device at
+            # runtime loads a fresh model on the new device instead of
+            # handing back the stale one.
+            cache_key = f"{name}@{device}"
+            if cache_key in _RERANKER_CACHE:
+                return _RERANKER_CACHE[cache_key]
             # ImportError is intentionally left to bubble — when the
             # operator has flipped ``rag_rerank_enabled=true`` and the
             # dep is missing, silently dropping back to the inner
@@ -625,10 +640,11 @@ def _build_rerank_retriever_class():
             # logs a clearly-actionable hint about the dep + setting.
             from sentence_transformers import CrossEncoder
             logger.info(
-                "[rag/rerank] Loading cross-encoder %s (first call)", name,
+                "[rag/rerank] Loading cross-encoder %s on %s (first call)",
+                name, device,
             )
-            _RERANKER_CACHE[name] = CrossEncoder(name)
-            return _RERANKER_CACHE[name]
+            _RERANKER_CACHE[cache_key] = CrossEncoder(name, device=device)
+            return _RERANKER_CACHE[cache_key]
 
         async def _aretrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
             candidates = await self._inner._aretrieve(query_bundle)

@@ -36,6 +36,16 @@ def test_ops_triage_defaults_to_small_model_not_heavy_writer():
     assert DEFAULTS["ops_triage_writer_model"] != DEFAULTS["pipeline_writer_model"]
 
 
+def test_rag_rerank_device_default_is_cpu():
+    """The cross-encoder reranker must default to CPU so it stops stacking
+    on the resident ~18 GB writer in VRAM (single-GPU stability core). The
+    device is DB-tunable via rag_rerank_device."""
+    from services.settings_defaults import DEFAULTS, METADATA
+
+    assert DEFAULTS["rag_rerank_device"] == "cpu"
+    assert METADATA["rag_rerank_device"]["value_type"] == "string"
+
+
 def test_qa_vision_num_predict_has_headroom_for_thinking_plus_json():
     """qwen3-vl's <think> trace shares the num_predict budget with the JSON
     verdict; the old hardcoded 400 truncated the JSON and the vision rail

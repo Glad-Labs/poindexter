@@ -310,6 +310,7 @@ DEFAULTS: dict[str, str] = {
     'rag_min_similarity': '0.3',
     'rag_rerank_enabled': 'false',
     'rag_rerank_model': 'cross-encoder/ms-marco-MiniLM-L-6-v2',
+    'rag_rerank_device': 'cpu',
     'rag_rrf_k': '60',
     # CSV of embeddings.source_table values the writer's research RAG may draw
     # from. MUST default to content-only ('posts'): an empty value means "all
@@ -1262,6 +1263,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_vision_num_predict': {'owner': 'multi_model_qa', 'value_type': 'int'},
     'vision_alt_model': {'owner': 'image_service', 'value_type': 'model'},
     'rag_rerank_model': {'owner': 'rag_engine', 'value_type': 'model'},
+    'rag_rerank_device': {'owner': 'rag_engine', 'value_type': 'string'},
 
     # ----- LLM provider gates (security — paid-API lock) -----
     'plugin.llm_provider.litellm.allow_paid_base_url': {
