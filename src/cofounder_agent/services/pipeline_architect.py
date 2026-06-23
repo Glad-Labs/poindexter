@@ -1237,6 +1237,83 @@ def assert_graph_def_current(spec: dict[str, Any]) -> None:
         )
 
 
+def current_atom_fingerprints(specs_by_name: dict[str, Any]) -> dict[str, str]:
+    """Return ``{atom_name: contract_fingerprint}`` for every atom referenced by
+    any node across ``specs_by_name`` (name → graph_def spec), resolved against
+    the **live** atom registry, sorted by atom name.
+
+    Keyed by atom name (the fingerprint is a property of the atom, not the
+    node), so an atom shared by several specs appears once. Atoms a spec
+    references but that are absent from the registry are skipped here — the
+    drift gate (:func:`assert_specs_match_contract_fingerprints`) is what reports
+    those. This is the generator behind the committed fingerprint snapshot the
+    CI freshness gate compares against (poindexter#755 family)."""
+    fps: dict[str, str] = {}
+    for spec in specs_by_name.values():
+        for node in spec.get("nodes", []):
+            atom = node.get("atom")
+            if not isinstance(atom, str) or atom in fps:
+                continue
+            meta = get_atom_meta(atom)
+            if meta is not None:
+                fps[atom] = meta.contract_fingerprint()
+    return dict(sorted(fps.items()))
+
+
+def assert_specs_match_contract_fingerprints(
+    specs_by_name: dict[str, Any], expected: dict[str, str]
+) -> None:
+    """Raise :class:`GraphContractError` if any node in ``specs_by_name`` (name →
+    graph_def spec) references an atom whose **live** contract fingerprint no
+    longer matches ``expected`` (a committed snapshot keyed by atom name), or
+    whose atom is missing from the registry or absent from the snapshot.
+
+    This is the CI stand-in for the load-time gate
+    (:func:`assert_graph_def_current`) that runs against the stored
+    ``pipeline_templates`` rows in prod. CI has no prod DB, so the in-tree specs
+    plus the committed snapshot are the frozen reference: editing an atom's
+    contract drifts its fingerprint from ``expected`` and trips this gate at PR
+    time — before the stale stamp can reach a prod row and halt the pipeline (the
+    #1876 ``qa.audio`` outage). The error names every offending (graph_def, node,
+    atom) so the developer knows exactly what to re-seed."""
+    drift: list[str] = []
+    for name in sorted(specs_by_name):
+        for node in specs_by_name[name].get("nodes", []):
+            atom, nid = node.get("atom"), node.get("id")
+            if not isinstance(atom, str):
+                continue
+            meta = get_atom_meta(atom)
+            if meta is None:
+                drift.append(
+                    f"graph_def {name!r} node {nid!r}: atom {atom!r} no longer "
+                    f"exists in the registry"
+                )
+                continue
+            if atom not in expected:
+                drift.append(
+                    f"graph_def {name!r} node {nid!r}: atom {atom!r} is not in the "
+                    f"contract snapshot — add it (regenerate the snapshot) and "
+                    f"re-seed"
+                )
+                continue
+            current = meta.contract_fingerprint()
+            if current != expected[atom]:
+                drift.append(
+                    f"graph_def {name!r} node {nid!r}: atom {atom!r} contract "
+                    f"drifted (snapshot {expected[atom]}, current {current})"
+                )
+    if drift:
+        raise GraphContractError(
+            "FIX: an atom contract changed without a graph_def reseed - these "
+            "stored graph_defs would go stale and halt the pipeline at load "
+            "(assert_graph_def_current):\n  - "
+            + "\n  - ".join(drift)
+            + "\nRe-seed the affected graph_def(s) via a migration (or rely on "
+            "the boot-time stamp self-heal), then refresh the committed "
+            "fingerprint snapshot."
+        )
+
+
 def is_graph_def_fully_unstamped(spec: dict[str, Any]) -> bool:
     """True iff ``spec`` has at least one node and **no** node carries a truthy
     ``_contract_fp``.
