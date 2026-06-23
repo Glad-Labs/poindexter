@@ -90,18 +90,6 @@ jobs:
         with:
           fetch-depth: 1
 
-      # The full backend env is multi-GB — sentence-transformers pulls torch,
-      # plus litellm / langgraph / llamaindex / deepeval / ragas. On top of the
-      # postgres service image that overran the runner's ~14GB free disk
-      # ("No space left on device" during install). Drop preinstalled SDKs we
-      # don't use to reclaim ~20GB. Shell-only (no 3rd-party action, so no
-      # Actions-allowlist change). Runs before Setup Python so the toolcache
-      # python it installs is untouched.
-      - name: Free disk space for the full poetry env
-        run: |
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup /usr/share/dotnet
-          df -h /
-
       - name: Setup Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v5.6.0 as of 2026-05-12
         with:

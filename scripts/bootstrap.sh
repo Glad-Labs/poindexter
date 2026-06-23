@@ -130,11 +130,15 @@ npm ci 2>/dev/null || npm install
 
 info "Installing Python dependencies..."
 cd src/cofounder_agent
+# --extras rerank keeps the local dev env's cross-encoder reranker working
+# (sentence-transformers + torch). CI installs lean (torch-free) since the
+# 2026-06-23 rerank-extra trim; the host opts in here so a fresh setup matches
+# what the worker runs. See docs/superpowers/specs/2026-06-23-ci-rerank-extra-design.md.
 if command -v poetry >/dev/null 2>&1; then
-    poetry install --no-root
+    poetry install --no-root --extras rerank
 else
     pip install poetry
-    poetry install --no-root
+    poetry install --no-root --extras rerank
 fi
 cd ../..
 

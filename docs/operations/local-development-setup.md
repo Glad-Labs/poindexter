@@ -184,6 +184,12 @@ poetry install
 poetry run pytest tests/unit/ -q
 ```
 
+> The unit suite runs **lean** — the cross-encoder reranker (`sentence-transformers`
+>
+> - `torch`) is an opt-in `rerank` extra that CI deliberately skips, and the tests
+>   that touch it `importorskip`. Add `poetry install --extras rerank` only if you
+>   want to exercise the reranker locally.
+
 Expected: the full unit suite passes (several thousand cases). Some tests
 that depend on the `brain` module or `sentry-sdk` are skipped when running
 inside Docker (these pass on the host where all modules are available).

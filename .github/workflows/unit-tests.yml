@@ -118,25 +118,6 @@ jobs:
       PYTEST: ${{ github.repository == 'Glad-Labs/poindexter' && 'python -m pytest --collect-only' || 'python -m pytest' }}
 
     steps:
-      # Free up GitHub-hosted runner disk space. The ubuntu-latest image ships
-      # ~7 GB of pre-installed tooling (Android SDK, .NET, Haskell GHC, etc.)
-      # that this job never uses. The --forked pytest step spawns one process
-      # per test in the services dir (~8 k tests) and the combined temp-file
-      # churn fills the remaining space, crashing the runner worker mid-run.
-      # Removing the known-large bloat directories runs in ~20s and frees
-      # enough headroom for the full forked suite to complete.
-      - name: Free runner disk space
-        # Hosted-image cleanup only. These ubuntu-latest preinstall paths don't
-        # exist on the self-hosted container, and `sudo` may be unavailable
-        # there, so skip the whole step when CI_RUNNER is set (self-hosted).
-        if: ${{ !vars.CI_RUNNER }}
-        run: |
-          sudo rm -rf /usr/local/lib/android
-          sudo rm -rf /usr/share/dotnet
-          sudo rm -rf /opt/ghc
-          sudo rm -rf /opt/hostedtoolcache/CodeQL
-          df -h /
-
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
         with:
           # Need >=2 so `git diff` against the previous commit works on
@@ -252,22 +233,6 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: pip install "poetry==2.2.1"
 
-      # Reclaim runner disk before the full poetry install. The dep tree pulls
-      # sentence-transformers -> torch (multi-GB wheels); on tight ubuntu-latest
-      # runners the install intermittently hits `OSError(28) No space left on
-      # device` mid-download (PR #1277 — two consecutive runs died installing
-      # sentence-transformers, while main passed on roomier runners). Removing
-      # preinstalled toolchains this job never uses (Android SDK ~9GB, .NET ~3GB,
-      # GHC/Haskell ~5GB) reclaims ~15GB+ of headroom. Inline rm (no third-party
-      # action) keeps the SHA-pin allowlist clean; `|| true` + df are advisory.
-      - name: Free up runner disk
-        # Hosted-only (see the "Free runner disk space" step above) AND only
-        # when tests actually run. `!vars.CI_RUNNER` skips it on self-hosted.
-        if: ${{ steps.changes.outputs.needs_tests == 'true' && !vars.CI_RUNNER }}
-        run: |
-          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc || true
-          df -h /
-
       - name: Install dependencies
         if: steps.changes.outputs.needs_tests == 'true'
         working-directory: src/cofounder_agent
@@ -376,13 +341,15 @@ jobs:
       # order) as a safety margin while spreading files across cores.
       #
       # Worker count is FIXED at 4, NOT `-n auto`: auto saw the WSL2 VM's 16 procs
-      # and spawned 16 workers, each importing the heavy tree (torch /
-      # sentence-transformers ~hundreds of MB resident), which blew past the
-      # runner container's 8g mem_limit — workers got OOM-reaped (`node down: Not
+      # and spawned 16 workers, each importing the heavy tree (llama-index /
+      # langgraph / litellm / playwright ~hundreds of MB resident), which blew past
+      # the runner container's 8g mem_limit — workers got OOM-reaped (`node down: Not
       # properly terminated`) and pytest died with INTERNALERROR. 4 workers fit
       # the memory budget (docker-compose.local.yml `CI_RUNNER_MEM`) and still cut
       # this step from ~11 min (forked) to a few minutes. Bump only alongside the
       # runner's mem_limit / the WSL2 RAM budget — see the self-hosted runbook.
+      # (torch / sentence-transformers — formerly the heaviest imports — are no
+      # longer installed in CI as of the 2026-06-23 rerank-extra trim.)
       #
       # The ignore list was retired in Glad-Labs/poindexter#345
       # (fix/345-triage-ignored-tests). Each path was either re-enabled

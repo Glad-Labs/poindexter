@@ -52,7 +52,13 @@ COPY pyproject.toml poetry.lock ./
 # package itself (editable in-place, since the code is already at /app) so all
 # poindexter.* entry-point groups resolve correctly.
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-interaction --no-ansi --only main
+    poetry install --no-interaction --no-ansi --only main --extras "rerank"
+
+# Fail-fast verification — confirm the rerank stack landed (mirror of the worker
+# image). sentence-transformers is an opt-in `rerank` extra as of the 2026-06-23
+# CI torch-trim; a dropped `[rerank]` extra silently degrades the cross-encoder
+# reranker to passthrough at runtime, so fail the build instead.
+RUN python -c "import sentence_transformers, torch; print('[BUILD] rerank extra OK — sentence_transformers + torch available')"
 
 # Install Playwright's bundled chromium. This downloads ~150MB into
 # /root/.cache/ms-playwright/ during build. We skip the OS deps install

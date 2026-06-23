@@ -112,7 +112,7 @@ COPY pyproject.toml poetry.lock ./
 # which actually runs the backfill_videos publish dispatch — needs them
 # baked in or the publishing.youtube handler ImportErrors at dispatch.
 RUN poetry config virtualenvs.create false && \
-    poetry install --no-root --only main --no-interaction --extras "profiling youtube"
+    poetry install --no-root --only main --no-interaction --extras "profiling youtube rerank"
 
 # Fail-fast verification — confirm the pyroscope-io wheel actually
 # landed in the image. If `[profiling]` was silently dropped (resolver
@@ -133,6 +133,13 @@ RUN python -c "import pyroscope; assert hasattr(pyroscope, 'configure'), 'pyrosc
 # only when the backfill_videos job tries to dispatch an upload — a
 # runtime failure on the publish path. Assert at build time instead.
 RUN python -c "import googleapiclient.discovery, google_auth_oauthlib.flow, google.oauth2.credentials; print('[BUILD] youtube extra OK — google api client + oauth available')"
+
+# Fail-fast verification — confirm the rerank stack landed. sentence-transformers
+# is now an opt-in `rerank` extra (it was a main dep until the 2026-06-23 CI
+# torch-trim); if `[rerank]` is ever dropped from the --extras line above, the
+# LlamaIndex cross-encoder reranker (services/rag_engine.py) would ImportError at
+# first use and silently degrade to passthrough. Assert at build time instead.
+RUN python -c "import sentence_transformers, torch; print('[BUILD] rerank extra OK — sentence_transformers + torch available')"
 
 # Install Playwright's bundled chromium to a shared location so the
 # runtime user (if different from the build user) can find it.

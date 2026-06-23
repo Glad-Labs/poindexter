@@ -71,14 +71,6 @@ jobs:
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.3.1 as of 2026-05-12
 
-      - name: Free disk space
-        # Hosted-image cleanup only — self-hosted runner doesn't ship these
-        # preinstalled toolchains and `sudo` may be unavailable there.
-        if: ${{ !vars.CI_RUNNER }}
-        run: |
-          sudo rm -rf /usr/local/lib/android /opt/ghc /usr/local/.ghcup /usr/share/dotnet
-          df -h /
-
       - name: Setup Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v5.6.0 as of 2026-05-12
         with:
