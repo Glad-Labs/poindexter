@@ -2,7 +2,7 @@
 
 > **Auto-generated from live `app_settings` table on 2026-06-22.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 763 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 762 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -68,7 +68,7 @@ The worker re-reads on every poll; no restart needed.
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
 - [pipeline](#pipeline) (37 keys)
-- [plugins](#plugins) (43 keys)
+- [plugins](#plugins) (42 keys)
 - [plugin_telemetry](#plugin-telemetry) (1 key)
 - [podcast](#podcast) (2 keys)
 - [prometheus](#prometheus) (5 keys)
@@ -960,7 +960,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin.job.postgres_vacuum` | `{"enabled": true, "interval_seconds":...` |  | Config for job postgres_vacuum — tune cadence via config.schedule |
 | `plugin.job.prune_orphan_embeddings` | `{"enabled": true, "interval_seconds":...` |  | Config for job prune_orphan_embeddings — tune cadence via config.schedule |
 | `plugin.job.prune_stale_embeddings` | `{"enabled": true, "interval_seconds":...` |  | Config for job prune_stale_embeddings — tune cadence via config.schedule |
-| `plugin.job.regenerate_stock_images` | `{"enabled": true, "interval_seconds":...` |  | Config for job regenerate_stock_images — tune cadence via config.schedule |
 | `plugin.job.reload_site_config` | `{"enabled": true, "interval_seconds":...` |  | Config for job reload_site_config — tune cadence via config.schedule |
 | `plugin.job.render_alertmanager_config` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderAlertmanagerConfigJob (#524) — renders alertmanager.yml.tmpl with telegram_chat_id and reloads Alert... |
 | `plugin.job.render_prometheus_rules` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderPrometheusRulesJob |
