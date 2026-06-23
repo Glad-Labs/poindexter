@@ -175,6 +175,62 @@ class TestContentNormalizeDraft:
         assert "Local LLM Hardware Requirements" not in out["content"]
         assert "elsewhere too. The hardware press" in out["content"]
 
+    def test_ensure_blank_line_before_lists_pure(self):
+        # Real capture from post 4a4b9054: the writer glued the intro line
+        # straight onto the first ``*`` bullet with no blank line between, so
+        # Markdown rendered the whole thing as a block paragraph with literal
+        # ``*`` and bold pseudo-headers instead of a bulleted list.
+        from modules.content.atoms.content_normalize_draft import (
+            ensure_blank_line_before_lists,
+        )
+        raw = (
+            "By capping your power draw, you:\n"
+            "*   **Reduce Thermal Throttling:** A cooler card downclocks less.\n"
+            "*   **Lower Noise:** Your fans spin slower.\n"
+            "*   **Extend Hardware Life:** Heat is the enemy of longevity.\n"
+        )
+        out = ensure_blank_line_before_lists(raw)
+        # A blank line now separates the intro paragraph from the first bullet.
+        assert "you:\n\n*   **Reduce Thermal" in out
+        # Bullets within the list stay contiguous — no blank inserted between items.
+        assert "less.\n*   **Lower Noise" in out
+
+    def test_ensure_blank_line_before_lists_idempotent(self):
+        from modules.content.atoms.content_normalize_draft import (
+            ensure_blank_line_before_lists,
+        )
+        # Already-correct list (blank line present) must be left untouched.
+        good = "Intro paragraph.\n\n- First item\n- Second item\n\nNext paragraph."
+        assert ensure_blank_line_before_lists(good) == good
+        # Numbered lists are handled too.
+        good_num = "Steps:\n\n1. First\n2. Second\n"
+        assert ensure_blank_line_before_lists(good_num) == good_num
+
+    def test_ensure_blank_line_before_numbered_list_glued(self):
+        from modules.content.atoms.content_normalize_draft import (
+            ensure_blank_line_before_lists,
+        )
+        raw = "Follow these steps:\n1. Apply a power limit.\n2. Monitor tokens/sec."
+        out = ensure_blank_line_before_lists(raw)
+        assert "steps:\n\n1. Apply" in out
+
+    async def test_inserts_blank_line_before_list_block_end_to_end(self, monkeypatch):
+        from modules.content.atoms import content_normalize_draft as atom
+        monkeypatch.setattr(
+            "services.text_utils.normalize_text", lambda t: t, raising=False
+        )
+        monkeypatch.setattr(
+            "services.text_utils.scrub_fabricated_links",
+            lambda t, known_slugs=None: t, raising=False,
+        )
+        content = (
+            "By capping your power draw, you:\n"
+            "*   **Reduce Throttling:** stays cool.\n"
+            "*   **Lower Noise:** quieter."
+        )
+        out = await atom.run(_base_state(content=content))
+        assert "you:\n\n*   **Reduce Throttling" in out["content"]
+
 
 # ---------------------------------------------------------------------------
 # TestContentPlanImageMarkers
