@@ -347,7 +347,82 @@ class TestFollowupThreading:
 
         assert captured_followup_kwargs["parent_telegram_message_id"] == 7777
         assert captured_followup_kwargs["parent_discord_message_id"] == "abc-123"
-        assert captured_followup_kwargs["text"] == "the diagnosis"
+        # The follow-up now leads with the alert it diagnoses (the same
+        # block the operator was paged with), then the diagnosis below.
+        assert captured_followup_kwargs["text"] == (
+            "[FIRING · critical] test_alert — test summary\n\nthe diagnosis"
+        )
+
+    @pytest.mark.asyncio
+    async def test_followup_prepends_alert_info(self, no_sleep):
+        """The diagnosis follow-up leads with the alert it's about.
+
+        The operator asked for the actual alert info referenced inline so
+        the diagnosis is self-contained — threading to the parent page is
+        invisible on the degraded standalone send (no parent ids) and easy
+        to lose when scrolling a phone. Mirrors the coalesced-summary path,
+        which already leads with a ``[SUMMARY · severity] source`` header.
+        """
+        pool = _make_pool()
+        row = {
+            "id": 60,
+            "alertname": "MonthlyAISpendHigh",
+            "status": "firing",
+            "severity": "critical",
+            "category": "cost",
+            "labels": json.dumps(
+                {"severity": "critical", "alertname": "MonthlyAISpendHigh"}
+            ),
+            "annotations": json.dumps(
+                {
+                    "summary": "Monthly AI spend exceeded budget",
+                    "description": "Spend $42 of the $30 budget.",
+                }
+            ),
+        }
+        notify_result = {"telegram_message_id": 4242, "discord_message_id": None}
+
+        def _ok(url, payload, token, timeout):
+            return 200, json.dumps(
+                {
+                    "diagnosis": (
+                        "Likely an Ollama-only spike. Suggested next step: "
+                        "review cost_logs."
+                    ),
+                    "model": "ollama/glm-4.7-5090",
+                    "tokens": 20,
+                    "ms": 60,
+                }
+            ).encode()
+
+        captured: dict[str, Any] = {}
+
+        async def _spy_followup(text, **kwargs):
+            captured["text"] = text
+
+        fake_mod = MagicMock()
+        fake_mod.send_followup = _spy_followup
+
+        async def _spy_sleep(seconds):
+            return None
+
+        with patch.object(ad, "_post_triage_sync", side_effect=_ok), \
+             patch.dict(sys.modules, {"brain_daemon": fake_mod, "brain.brain_daemon": fake_mod}):
+            await ad._triage_one(pool, row, notify_result, sleep_fn=_spy_sleep)
+
+        text = captured["text"]
+        # Leads with the same alert block the page used (header + description)...
+        assert text.startswith(
+            "[FIRING · critical] MonthlyAISpendHigh — Monthly AI spend "
+            "exceeded budget"
+        )
+        assert "Spend $42 of the $30 budget." in text
+        # ...then the diagnosis, after a blank-line separator.
+        assert text.endswith(
+            "Likely an Ollama-only spike. Suggested next step: review cost_logs."
+        )
+        # The alert header precedes the diagnosis paragraph.
+        assert text.index("MonthlyAISpendHigh") < text.index("Ollama-only spike")
 
     @pytest.mark.asyncio
     async def test_empty_diagnosis_skips_followup(self, no_sleep):

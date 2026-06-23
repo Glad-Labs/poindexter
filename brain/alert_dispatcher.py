@@ -1728,6 +1728,20 @@ def _post_triage_sync(
         return e.code, body
 
 
+def _compose_triage_followup(alert: dict[str, Any], diagnosis: str) -> str:
+    """Prefix the LLM diagnosis with the alert it's diagnosing.
+
+    The follow-up is threaded under the original page, but threading is
+    invisible on the degraded standalone send (no parent ids — see
+    ``brain.brain_daemon.send_followup``) and easy to lose when scrolling a
+    phone. Leading with the same ``_format_alert_message`` block the operator
+    was paged with makes the diagnosis self-contained: what fired sits right
+    above why-we-think. Mirrors the coalesced-summary path, which already
+    leads with a ``[SUMMARY · severity] source`` header.
+    """
+    return f"{_format_alert_message(alert)}\n\n{diagnosis}"
+
+
 async def _send_triage_followup(
     diagnosis: str,
     notify_result: dict[str, Any],
@@ -1894,7 +1908,8 @@ async def _triage_one(
                     return None
                 diagnosis = (response_obj.get("diagnosis") or "").strip() if isinstance(response_obj, dict) else ""
                 if diagnosis:
-                    await _send_triage_followup(diagnosis, notify_result, pool)
+                    followup_text = _compose_triage_followup(alert, diagnosis)
+                    await _send_triage_followup(followup_text, notify_result, pool)
                     logger.info(
                         "[alert_dispatcher] triage_ok row=%s model=%s tokens=%d "
                         "ms=%d", row_id,
