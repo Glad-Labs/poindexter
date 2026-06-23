@@ -8,8 +8,12 @@ the WDDM desktop). See docs/superpowers/specs/2026-06-22-single-gpu-vram-budget-
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from services.logger_config import get_logger
+
+if TYPE_CHECKING:
+    import httpx
 
 logger = get_logger(__name__)
 
@@ -18,7 +22,7 @@ _KV_BYTES = {"f16": 2.0, "q8_0": 1.0, "q4_0": 0.5}
 _DEFAULT_OVERHEAD_GB = 1.5  # CUDA context + activations, conservative.
 
 # read_model_arch cache — arch is immutable per model tag.
-_ARCH_CACHE: dict[str, "ModelArch"] = {}
+_ARCH_CACHE: dict[str, ModelArch] = {}
 
 
 @dataclass(frozen=True)
@@ -76,7 +80,9 @@ def max_safe_num_ctx(
     return max(0, (raw // 256) * 256)
 
 
-async def read_model_arch(model: str, base_url: str, client) -> ModelArch | None:
+async def read_model_arch(
+    model: str, base_url: str, client: httpx.AsyncClient,
+) -> ModelArch | None:
     """Read n_layers/n_kv_heads/head_dim/weight_bytes from Ollama /api/show.
 
     Cached per model tag. Returns None (caller fails open with a finding) when

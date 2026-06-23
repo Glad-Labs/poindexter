@@ -50,11 +50,14 @@ from __future__ import annotations
 
 import logging
 import time
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from plugins.config import PluginConfig
 from plugins.registry import get_all_llm_providers
 from services.gpu_scheduler import gpu
+
+if TYPE_CHECKING:
+    from services.vram_budget import ModelArch
 
 logger = logging.getLogger(__name__)
 
@@ -177,9 +180,8 @@ def _budget_inputs(provider_config: dict[str, Any]) -> tuple[float, float, float
     Sync — reads the in-memory SiteConfig cache. Falls back to the seeded
     defaults (32 / 3 / q8_0) when no container is bootstrapped (CLI, tests).
     """
-    from services.vram_budget import kv_bytes_per_elem
-
     from services.container_registry import get_container
+    from services.vram_budget import kv_bytes_per_elem
 
     container = get_container()
     if container is None:
@@ -191,14 +193,13 @@ def _budget_inputs(provider_config: dict[str, Any]) -> tuple[float, float, float
     return total, reserve, kv
 
 
-async def _read_arch_for_budget(model: str):
+async def _read_arch_for_budget(model: str) -> ModelArch | None:
     """Read the model arch off Ollama ``/api/show`` (cached per tag). Returns
     None when unreachable so the clamp fails open."""
     import httpx
 
-    from services.vram_budget import read_model_arch
-
     from services.container_registry import get_container
+    from services.vram_budget import read_model_arch
 
     base = "http://host.docker.internal:11434"
     container = get_container()
