@@ -116,6 +116,13 @@ def build_task_metadata(
         "qa_flagged": bool(state.get("qa_flagged")),
         "content_length": len(content_text),
         "word_count": len(content_text.split()),
+        # research_context — the corpus the writer was handed (name→URL bullets
+        # from web research + RAG). It's threaded to the QA grounding rails at
+        # runtime (#553) but was never persisted, so an operator reviewing a post
+        # couldn't see what research backed it (Matt 2026-06-23: "why did it not
+        # have research context?"). Persist it here so the corpus is inspectable
+        # on pipeline_versions.stage_data. Empty on dev_diary (no research stage).
+        "research_context": state.get("research_context", ""),
         "podcast_script": state.get("podcast_script", ""),
         "video_scenes": state.get("video_scenes", []),
         "short_summary_script": state.get("short_summary_script", ""),

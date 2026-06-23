@@ -540,6 +540,15 @@ DEFAULTS: dict[str, str] = {
     # only the truly ungroundable remain; the advisory qa.unlinked_attribution
     # rail flags whatever the conservative strip frames leave behind. On by default.
     'citation_strip_unlinked_enabled': 'true',
+    # why: YouTube attribution pass — turn a bare YouTube video URL (or a
+    # raw-text YouTube link) into a proper [Channel](url) attribution, resolving
+    # the channel via the authoritative oEmbed author_name. Corpus-independent
+    # (runs even without research). Fail-soft: a dead/private/unresolvable video
+    # is left untouched. On by default.
+    'youtube_attribution_enabled': 'true',
+    # Per-request timeout (s) for the YouTube oEmbed lookup. Kept tight so a slow
+    # YouTube doesn't stall the citation atom; a timeout just leaves the link as-is.
+    'youtube_oembed_timeout_seconds': '8',
     # Multi-tenant hosts where "same domain, different path" = DIFFERENT content
     # (re-pointing would mis-cite), so the re-point pass skips them. Empty =
     # use the built-in DEFAULT_MULTITENANT_HOSTS denylist; a non-empty CSV

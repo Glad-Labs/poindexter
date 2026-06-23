@@ -61,6 +61,7 @@ EXPECTED_METADATA_KEYS = frozenset(
         "qa_flagged",
         "content_length",
         "word_count",
+        "research_context",
         "podcast_script",
         "video_scenes",
         "short_summary_script",

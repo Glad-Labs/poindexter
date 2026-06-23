@@ -116,6 +116,60 @@ async def test_reconcile_links_matched_and_strips_unmatched_together():
     assert "Memory must be reinforced." in out["content"]
 
 
+# --- content.reconcile_citations — YouTube attribution (scan-5) --------------
+
+async def test_reconcile_attributes_bare_youtube_url(monkeypatch):
+    """A bare YouTube URL becomes a proper [Channel](url) attribution — and it
+    runs with NO research corpus (oEmbed-driven, not corpus-driven)."""
+    from modules.content.atoms import content_reconcile_citations as mod
+
+    async def _stub(urls, site_config):
+        return {u: "ImWateringPSUs" for u in urls}
+
+    monkeypatch.setattr(mod, "_resolve_youtube_authors", _stub)
+    state = {
+        "content": "For the newest cards, see https://youtu.be/MhnVyMry9BU for the steps.",
+        "research_context": "",  # no corpus → proves YouTube is corpus-independent
+        "site_config": SiteConfig(initial_config={}),
+    }
+    out = await mod.run(state)
+    assert "[ImWateringPSUs](https://youtu.be/MhnVyMry9BU)" in out["content"]
+
+
+async def test_reconcile_youtube_noop_when_disabled(monkeypatch):
+    from modules.content.atoms import content_reconcile_citations as mod
+
+    async def _stub(urls, site_config):  # must not be called when disabled
+        raise AssertionError("oEmbed resolver called while disabled")
+
+    monkeypatch.setattr(mod, "_resolve_youtube_authors", _stub)
+    state = {
+        "content": "See https://youtu.be/MhnVyMry9BU now.",
+        "research_context": "",
+        "site_config": SiteConfig(
+            initial_config={"youtube_attribution_enabled": "false"},
+        ),
+    }
+    assert await mod.run(state) == {}
+
+
+async def test_reconcile_youtube_failsoft_when_unresolved(monkeypatch):
+    """A dead/private/unresolvable video (oEmbed yields nothing) leaves the link
+    untouched — never fabricates a channel."""
+    from modules.content.atoms import content_reconcile_citations as mod
+
+    async def _stub(urls, site_config):
+        return {}
+
+    monkeypatch.setattr(mod, "_resolve_youtube_authors", _stub)
+    state = {
+        "content": "See https://youtu.be/MhnVyMry9BU now.",
+        "research_context": "",
+        "site_config": SiteConfig(initial_config={}),
+    }
+    assert await mod.run(state) == {}
+
+
 # --- content.reconcile_citations — re-point pass (#765 follow-up) -----------
 
 _REPOINT_CORPUS = (
