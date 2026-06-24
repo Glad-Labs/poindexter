@@ -40,7 +40,7 @@ The shape of the system — pipelines, plugins, modules, retrieval.
   per-niche writer modes (TOPIC_ONLY / CITATION_BUDGET / STORY_SPINE /
   TWO_PASS)
 - [architecture/cost-tier-routing.md](architecture/cost-tier-routing.md) —
-  `cost_tier.{free,budget,standard,premium}.model` resolution
+  model selection via per-step `*_model` pins
 - [architecture/prompt-management.md](architecture/prompt-management.md) —
   UnifiedPromptManager (Langfuse-first, YAML fallback)
 - [architecture/poindexter-as-engine.md](architecture/poindexter-as-engine.md) —

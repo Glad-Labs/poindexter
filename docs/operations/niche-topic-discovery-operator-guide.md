@@ -225,9 +225,11 @@ Honest gap list as of 2026-04-30:
   `services.niche_service.NicheService` Python API. The CLI subgroup
   currently exposes only `niche list` and `niche show`.
 - **Writer-mode model selection is hardcoded to `pipeline_writer_model`.**
-  Migration 0119 deliberately defers the cost-tier router migration —
-  there's no per-mode "use the budget tier for STORY_SPINE outline,
-  premium for the TWO_PASS revise" knob yet.
+  Every niche writer mode uses the one writer pin — there's no per-mode
+  "a smaller model for the STORY_SPINE outline, a heavier one for the
+  TWO_PASS revise" knob yet. (The `cost_tier.*` tier ladder that might once
+  have backed this was removed in PR #1907; a per-mode pin would be the
+  replacement.)
 - **`niche_goal_descriptions` is a single global JSON blob in app_settings.**
   Per-niche goal prompt overrides need a `niche_goal_prompts` table
   keyed by `(niche_id, goal_type)`. Filed as a follow-up; the JSON shape

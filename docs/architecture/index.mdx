@@ -49,9 +49,9 @@ topic you need.
     Per-niche writer modes — TOPIC_ONLY, CITATION_BUDGET, STORY_SPINE,
     TWO_PASS — and when each is appropriate.
   </Card>
-  <Card title="Cost-tier routing" icon="dollar-sign" href="/docs/architecture/cost-tier-routing">
-    `cost_tier.{free,budget,standard,premium}.model` resolution. Operators
-    tune models per tier instead of hardcoding names in code.
+  <Card title="Model selection" icon="dollar-sign" href="/docs/architecture/cost-tier-routing">
+    Per-step `*_model` pins. Operators tune the model for each pipeline
+    step instead of hardcoding names in code.
   </Card>
   <Card title="Prompt management" icon="file-pen" href="/docs/architecture/prompt-management">
     UnifiedPromptManager — Langfuse-first, then YAML defaults. Every

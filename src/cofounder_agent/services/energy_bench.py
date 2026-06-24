@@ -1,9 +1,10 @@
-"""Energy-measurement helpers for the cost/energy eval harness (#530).
+"""Energy-measurement helpers — real GPU watts per LLM call (#530).
 
 A small, DI-friendly service: no module singletons, no app_settings reads
-of its own — the caller passes ``prometheus_url`` in. Reused by both the
-one-off benchmark harness (``scripts/bench/eval_cost_tiers.py``) and any
-future job that wants to attribute real GPU watts to an LLM call.
+of its own — the caller passes ``prometheus_url`` in. Available to any job
+that wants to attribute real GPU watts to an LLM call. (The original
+``scripts/bench/eval_cost_tiers.py`` consumer was retired with the cost_tier
+removal, PR #1907.)
 
 The static-TDP estimate in ``cost_guard.estimate_local_kwh`` (``gpu_power_watts``
 × duration) is a conservative constant; for measuring *true*

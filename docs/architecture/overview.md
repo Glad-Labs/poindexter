@@ -371,7 +371,7 @@ See [`services/template_runner.md`](services/template_runner) for the runner's i
 #### LLM Router (`services/llm_providers/litellm_provider.py` via dispatcher)
 
 - LiteLLM-backed `LLMProvider` plugin — primary router as of 2026-05-16 (`plugin.llm_provider.primary.{free,budget,standard,premium,flagship}='litellm'` on prod)
-- Cost-tier API: `await resolve_tier_model(pool, "standard")` from `services/llm_providers/dispatcher.py`; operators tune per-tier model via `app_settings.cost_tier.<tier>.model` rows
+- Model selection: each step reads its own `*_model` `app_settings` pin (e.g. `pipeline_writer_model`, `pipeline_critic_model`); the `cost_tier.<tier>.model` indirection was removed in PR #1907. The tier→provider axis (`plugin.llm_provider.primary.<tier>`) remains — `dispatch_complete(..., tier=)` still selects the provider
 - Automatic provider routing + cost tracking + retries via mature OSS (LiteLLM)
 - Langfuse callback auto-traces every call
 - The hand-rolled `model_router.py` / `usage_tracker.py` / `model_constants.py` trio was deleted in Phase 2 cleanup (2026-05-08)

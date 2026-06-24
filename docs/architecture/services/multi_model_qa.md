@@ -107,7 +107,7 @@ Gates (mostly opt-in):
   - `services.ollama_client.OllamaClient` (deliberately concrete — it
     exposes `configure_electricity` + `check_health` features the
     Provider Protocol does not).
-  - `services.cost_lookup` + `cost_tier` API (`resolve_tier_model(pool, "<tier>")` in `services/llm_providers/dispatcher.py`) — replaced the deleted `services.model_router.get_model_router` after the 2026-05-08 Phase 2 cleanup. See [`../cost-tier-routing.md`](../cost-tier-routing.md).
+  - `services.cost_lookup` for per-token cost; the critic model is the `pipeline_critic_model` per-step pin (the `cost_tier.*` resolution was removed in PR #1907 — it had replaced the deleted `services.model_router.get_model_router` after the 2026-05-08 Phase 2 cleanup). See [`../cost-tier-routing.md`](../cost-tier-routing.md).
 - **Writes to:**
   - `audit_log` via `audit_log_bg` for `critic_fallback` events.
   - Cost rows return through the caller (the `qa.*` rail atoms that

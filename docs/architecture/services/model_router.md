@@ -5,5 +5,5 @@
 For the equivalent functionality today:
 
 - **Per-call provider routing + cost tracking + retries:** [`services/litellm_provider.md`](litellm_provider.md) — the `LiteLLMProvider` plugin is the primary LLM router on prod for all four cost tiers (`plugin.llm_provider.primary.{free,budget,standard,premium}='litellm'`).
-- **Cost-tier model selection:** [`../cost-tier-routing.md`](../cost-tier-routing.md) — callers do `model = await resolve_tier_model(pool, "standard")` from `services/llm_providers/dispatcher.py`; operators tune via `app_settings.cost_tier.<tier>.model` rows.
+- **Model selection:** [`../cost-tier-routing.md`](../cost-tier-routing.md) — each step reads its own `*_model` `app_settings` pin (e.g. `pipeline_writer_model`, `pipeline_critic_model`); the `cost_tier.<tier>.model` indirection was removed in PR #1907.
 - **Per-1K-token cost lookups:** `services/cost_lookup.py` — wraps `litellm.model_cost`.

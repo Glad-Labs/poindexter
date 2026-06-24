@@ -232,7 +232,8 @@ _DELETED_SERVICES: list[dict[str, str]] = [
         "names": "`model_router.py` / `usage_tracker.py` / `model_constants.py`",
         "note": (
             "Legacy LLM-router trio. Deleted 2026-05-08 (Phase 2). Replaced by "
-            "`cost_lookup.py` + `llm_providers/dispatcher.py::resolve_tier_model`."
+            "`cost_lookup.py` + per-step `*_model` pins (the `cost_tier.*` "
+            "resolver was removed in PR #1907)."
         ),
     },
     {

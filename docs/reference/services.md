@@ -80,7 +80,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `doctor.py` | `poindexter doctor` — unified health check-graph (#527, v1 deterministic). |
 | `embedding_service.py` | Embedding Service |
 | `embeddings_db.py` | Embeddings Database Module |
-| `energy_bench.py` | Energy-measurement helpers for the cost/energy eval harness (#530). |
+| `energy_bench.py` | Energy-measurement helpers — real GPU watts per LLM call (#530). |
 | `enhanced_status_change_service.py` | Enhanced status change validation and logging service. |
 | `error_handler.py` | Domain Error Classes and Error Handling |
 | `excerpt_generator.py` | Excerpt generator — produces 1-2 sentence article summaries for index |
@@ -612,7 +612,7 @@ Rendered in execution order from `services/canonical_blog_spec.py::CANONICAL_BLO
 Referenced in older docs or git history but no longer on disk under these trees — listed so a grep doesn't send you on a wild goose chase.
 
 - **`task_executor.py`** — Legacy polling daemon. Deleted 2026-05-16 (Prefect Stage 4, Glad-Labs/poindexter#410). Replaced by `flows/content_generation.py`; helpers moved to `integrations/operator_notify.py`, `integrations/handlers/webhook_alertmanager.py`, and `auto_publish.py`.
-- **`model_router.py` / `usage_tracker.py` / `model_constants.py`** — Legacy LLM-router trio. Deleted 2026-05-08 (Phase 2). Replaced by `cost_lookup.py` + `llm_providers/dispatcher.py::resolve_tier_model`.
+- **`model_router.py` / `usage_tracker.py` / `model_constants.py`** — Legacy LLM-router trio. Deleted 2026-05-08 (Phase 2). Replaced by `cost_lookup.py` + per-step `*_model` pins (the `cost_tier.*` resolver was removed in PR #1907).
 - **`workflow_executor.py` + `custom_workflows_service.py` + `template_execution_service.py` + `workflow_validator.py` + `phase_mapper.py` + `phase_registry.py` + `workflow_progress_service.py` + `phases/` + `schemas/custom_workflow_schemas.py` + `agents/`** — The workflow-executor chain. Deleted 2026-05-09 (~3,800 LOC). Replaced by `template_runner.py` (LangGraph TemplateRunner).
 - **`experiment_service.py`** — A/B harness. Deleted 2026-05-10 (Glad-Labs/poindexter#202). Replaced by `langfuse_experiments.py` (Langfuse Datasets/Traces/Scores).
 - **`plugins/stage_runner.py`** — Legacy chunked StageRunner. Deleted 2026-05-16 (Lane C Stage 4). `content_router_service.py` is now a thin TemplateRunner dispatcher.

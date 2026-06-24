@@ -155,4 +155,4 @@ One parser reads `SKILL.md` everywhere: `services/skill_frontmatter.py` (`parse_
 - `Glad-Labs/poindexter#47` — the original UnifiedPromptManager migration
 - [`docs/architecture/business-os-endgame.md`](./business-os-endgame) — the agentskills.io pack model and why prompts live as skills
 - [`docs/reference/app-settings.md`](../reference/app-settings.md) — `langfuse_host`, `langfuse_public_key`, `langfuse_secret_key`, `langfuse_tracing_enabled`
-- [`docs/architecture/cost-tier-routing.md`](./cost-tier-routing) — Lane B's sibling migration (model selection, not prompt selection)
+- [`docs/architecture/cost-tier-routing.md`](./cost-tier-routing) — model selection via per-step `*_model` pins (not prompt selection)
