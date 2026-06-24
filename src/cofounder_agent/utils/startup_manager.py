@@ -218,9 +218,9 @@ class StartupManager:
             # Step 10: Register services with routes
             await self._register_route_services()
 
-            # Step 10b: Validate *_model / cost_tier.*.model settings against
-            # installed Ollama models (glad-labs-stack#1284). Best-effort --
-            # never aborts startup; only alerts the operator.
+            # Step 10b: Validate *_model settings against installed Ollama
+            # models (glad-labs-stack#1284). Best-effort -- never aborts
+            # startup; only alerts the operator.
             if self.database_service and self.database_service.pool:
                 try:
                     await self._validate_ollama_model_settings(
@@ -657,10 +657,9 @@ class StartupManager:
             )
 
     async def _validate_ollama_model_settings(self, pool: Any) -> None:
-        """Validate *_model and cost_tier.*.model settings against installed Ollama models.
+        """Validate *_model settings against installed Ollama models.
 
-        Reads every ``app_settings`` key matching ``*_model`` or
-        ``cost_tier.*.model``, then:
+        Reads every ``app_settings`` key matching ``*_model``, then:
 
         1. Fetches the installed model list from Ollama (``GET /api/tags``).
         2. For each configured model value: strips an ``ollama/`` prefix if
@@ -677,8 +676,9 @@ class StartupManager:
         Gated by ``ollama_model_validation_enabled`` (default ``true``).
         Never hard-fails -- startup continues even when Ollama is unreachable.
 
-        Root cause for which this was added: ``cost_tier.standard.model`` was
-        set to ``gemma-4-31B-it-qat:latest`` with a malformed Modelfile
+        Root cause for which this was added: a writer model setting (then
+        ``cost_tier.standard.model``, now the per-step ``pipeline_writer_model``)
+        was set to ``gemma-4-31B-it-qat:latest`` with a malformed Modelfile
         template using ``<|turn>`` pseudo-tokens (should be
         ``<start_of_turn>``) that caused reasoning-channel bleed into all
         canonical_blog drafts for hours (2026-06-09 incident).
@@ -706,7 +706,7 @@ class StartupManager:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
                     "SELECT key, value FROM app_settings"
-                    " WHERE (key LIKE '%_model' OR key LIKE 'cost_tier.%.model')"
+                    " WHERE key LIKE '%_model'"
                     " AND value IS NOT NULL AND value != ''"
                     " ORDER BY key"
                 )
@@ -715,7 +715,7 @@ class StartupManager:
             return
 
         if not rows:
-            logger.debug("[model_validator] No *_model / cost_tier.*.model keys found")
+            logger.debug("[model_validator] No *_model keys found")
             return
 
         # key -> raw value (may include ollama/ prefix)
@@ -859,7 +859,7 @@ class StartupManager:
             lines.append(
                 "Fix: `ollama pull <model>` for missing models, or correct the "
                 "Modelfile template for suspect ones. Then update the relevant "
-                "app_settings *_model / cost_tier.*.model keys."
+                "app_settings *_model keys."
             )
             msg = "\n".join(lines)
             logger.warning("[model_validator] %s", msg)

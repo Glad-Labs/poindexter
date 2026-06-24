@@ -76,42 +76,25 @@ class GenerateMediaScriptsStage:
         database_service = context.get("database_service")
         pool = getattr(database_service, "pool", None) if database_service else None
 
-        # poindexter#716 — route through the cost-tier resolver so that
-        # "auto" / missing configs follow operator settings instead of
-        # silently pinning "llama3:latest" (dangle-after-upgrade footgun).
-        _configured_model = (
+        # Per-step model pin — media scripts use video_scene_model, falling
+        # back to default_ollama_model. "auto"/unset is treated as "no model"
+        # → skip the (non-critical) stage. The cost_tier.standard.model
+        # fallback was removed.
+        model = (
             (sc.get("video_scene_model") if sc is not None else None)
             or (sc.get("default_ollama_model") if sc is not None else None)
         )
-        if not _configured_model or _configured_model == "auto":
-            if pool is not None:
-                from services.llm_providers.dispatcher import resolve_tier_model
-                try:
-                    model = await resolve_tier_model(pool, "standard")
-                except Exception as _exc:
-                    logger.warning(
-                        "generate_media_scripts: resolve_tier_model failed (%s); "
-                        "stage will be skipped",
-                        _exc,
-                    )
-                    return StageResult(
-                        ok=True,
-                        detail=f"model resolution failed: {_exc}",
-                        metrics={"skipped": True},
-                    )
-            else:
-                # No pool in tests/bootstrap — skip rather than hardcode.
-                logger.debug(
-                    "generate_media_scripts: no DB pool and no explicit model; "
-                    "skipping stage",
-                )
-                return StageResult(
-                    ok=True,
-                    detail="no DB pool for tier resolution and no explicit model configured",
-                    metrics={"skipped": True},
-                )
-        else:
-            model = _configured_model
+        if not model or model == "auto":
+            logger.debug(
+                "generate_media_scripts: no media-script model configured "
+                "(video_scene_model / default_ollama_model unset or 'auto') "
+                "— stage skipped",
+            )
+            return StageResult(
+                ok=True,
+                detail="no media-script model configured — stage skipped",
+                metrics={"skipped": True},
+            )
         # Seam 1 Wave 3d (#667): LLM completions go through the capability
         # handle. This non-critical stage already degrades without a DB pool;
         # a missing handle degrades the same way (logged, never silent).

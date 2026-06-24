@@ -1,18 +1,17 @@
-"""Contract test for the cost_tier.budget.model + hygiene-summary baseline seeds.
+"""Contract test for the hygiene-summary model baseline seeds.
 
-Pins the GPU/VRAM fix (2026-06-21): ``cost_tier.budget.model`` had drifted to
-the ~17GB writer-class model (``gemma-4-31B-it-qat``), collapsing the tier
-ladder so ``budget`` ≈ ``standard``. Every ``budget`` caller — the DeepEval +
-Ragas advisory judges, ``image_decision_agent``, and the collapse/retention
-hygiene summary jobs — therefore loaded the heavyweight writer into VRAM,
-pegging the RTX 5090 at ~24GB even when no content task was running. The
-``embedding_collapse_summary_model`` / ``memory_compression_summary_model``
-fallbacks had the same drift, despite their own seed descriptions calling for
-a smaller model.
+Pins the GPU/VRAM fix (2026-06-21): the ``embedding_collapse_summary_model``
+and ``memory_compression_summary_model`` fallbacks had drifted to the ~17GB
+writer-class model (``gemma-4-31B-it-qat``), so the offline collapse/retention
+hygiene-summary jobs loaded the heavyweight writer into VRAM, pegging the
+RTX 5090 at ~24GB even when no content task was running — despite their own
+seed descriptions calling for a smaller model.
 
-A genuinely-cheap budget tier (e.g. ``phi4:14b``, ~8GB) keeps background work
-off the writer-grade model; the 18GB writer only loads for real content
-generation (``pipeline_writer_model``).
+A genuinely-cheap hygiene model (e.g. ``phi4:14b``, ~8GB) keeps background
+work off the writer-grade model; the 18GB writer only loads for real content
+generation (``pipeline_writer_model``). The ``cost_tier.*`` tier indirection
+that previously fronted these jobs was removed (PR #1907) — each job now reads
+its own per-step ``*_model`` pin.
 
 Why a contract test: the baseline gets regenerated periodically, and a stale
 source could re-introduce the 18GB model. Operators can still tune the live
@@ -39,7 +38,6 @@ _WRITER_CLASS_MODELS = {
 # Seed keys whose callers are advisory / hygiene / offline — they must run on
 # a sub-writer-size model.
 _CHEAP_JOB_MODEL_KEYS = (
-    "cost_tier.budget.model",
     "embedding_collapse_summary_model",
     "memory_compression_summary_model",
 )
@@ -64,11 +62,11 @@ def _seed_value(seeds_text: str, key: str) -> str | None:
 
 @pytest.mark.parametrize("key", _CHEAP_JOB_MODEL_KEYS)
 def test_cheap_job_model_is_not_writer_class(baseline_seeds_text: str, key: str) -> None:
-    """budget tier + hygiene-summary models must not be the writer-grade model.
+    """Hygiene-summary models must not be the writer-grade model.
 
-    The bug: all three seeded ``ollama/gemma-4-31B-it-qat`` (the 17GB writer),
-    so advisory judges + hygiene summaries loaded the writer-grade model and
-    pegged VRAM. They must point at a genuinely smaller model.
+    The bug: both seeded ``ollama/gemma-4-31B-it-qat`` (the 17GB writer), so
+    the offline hygiene summaries loaded the writer-grade model and pegged
+    VRAM. They must point at a genuinely smaller model.
     """
     value = _seed_value(baseline_seeds_text, key)
     assert value is not None, f"{key} seed row missing from baseline"
@@ -76,16 +74,4 @@ def test_cheap_job_model_is_not_writer_class(baseline_seeds_text: str, key: str)
         f"{key} seeds the writer-class model {value!r}. Background/advisory "
         "callers would load the ~17GB writer into VRAM, pegging the GPU. Point "
         "it at a genuinely smaller model (e.g. ollama/phi4:14b, ~8GB)."
-    )
-
-
-def test_budget_tier_differs_from_standard(baseline_seeds_text: str) -> None:
-    """The tier ladder must be monotonic — budget genuinely cheaper than standard."""
-    budget = _seed_value(baseline_seeds_text, "cost_tier.budget.model")
-    standard = _seed_value(baseline_seeds_text, "cost_tier.standard.model")
-    assert budget and standard, "cost_tier budget/standard seed rows missing"
-    assert budget != standard, (
-        f"cost_tier.budget.model ({budget!r}) must differ from "
-        f"cost_tier.standard.model ({standard!r}) — a collapsed ladder means "
-        "'budget' callers pay standard-tier VRAM cost."
     )

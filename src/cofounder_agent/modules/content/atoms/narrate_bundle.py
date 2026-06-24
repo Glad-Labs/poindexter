@@ -554,8 +554,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # DI seam (glad-labs-stack#330) — atoms read site_config from state.
     # 2026-05-12 (poindexter#485): replaced the three-place hardcoded
     # ``glm-4.7-5090:latest`` fallback with the shared resolver, which
-    # chains pipeline_writer_model → cost_tier.standard.model → raise.
-    # If neither setting resolves, the atom now fails loud instead of
+    # reads the pipeline_writer_model pin (raise on unset).
+    # If the setting doesn't resolve, the atom now fails loud instead of
     # silently trying a model the operator may not have.
     #
     # Phase 1 lab harness — when an experiment assigned a model-axis
@@ -563,7 +563,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # ``writer_model`` onto state. ``resolve_local_model`` accepts the
     # explicit string and returns it after the ``ollama/`` prefix strip
     # so no app_settings hit happens on the variant path. None = inherit
-    # the niche default via the cost_tier chain.
+    # the niche default writer model (pipeline_writer_model).
     from services.llm_text import resolve_local_model
     site_config = state.get("site_config")
     model_override = state.get("writer_model")

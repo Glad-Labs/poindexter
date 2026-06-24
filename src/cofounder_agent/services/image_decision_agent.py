@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass, field
 
 from services.langfuse_shim import observe
-from services.llm_providers.dispatcher import dispatch_complete, resolve_tier_model
+from services.llm_providers.dispatcher import dispatch_complete
 from services.llm_providers.thinking_models import strip_think_blocks
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
@@ -93,36 +93,19 @@ async def plan_images(
     """
     _sc = site_config
 
-    # Cost-tier API (Lane B sweep). Image decision is a small JSON-shaped
-    # task — budget tier (qwen3:8b-class) is the right home, not standard.
-    # Operators tune via app_settings.cost_tier.budget.model. Per-call-site
-    # key (model_role_image_decision) preserved as last-ditch fallback;
-    # if both miss we page the operator and return an empty plan.
     pool = getattr(_sc, "_pool", None)
-    model: str | None = None
-    if pool is not None:
-        try:
-            model = (
-                await resolve_tier_model(pool, "budget")
-            ).removeprefix("ollama/")
-        except (RuntimeError, ValueError) as tier_err:
-            logger.debug(
-                "[IMAGE_AGENT] cost_tier.budget.model unresolved (%s); "
-                "trying model_role_image_decision fallback",
-                tier_err,
-            )
+    # Per-step model pin (model_role_image_decision) — a small JSON-shaped
+    # task. Empty → page (advisory) and return an empty plan.
+    model = (_sc.get("model_role_image_decision") or "").removeprefix("ollama/")
     if not model:
-        fallback = _sc.get("model_role_image_decision") or ""
-        if not fallback:
-            from services.integrations.operator_notify import notify_operator
-            await notify_operator(
-                "image_decision_agent: cost_tier='budget' has no model AND "
-                "model_role_image_decision is empty — image planning skipped",
-                critical=False,
-                site_config=_sc,
-            )
-            return ImagePlanResult()
-        model = fallback.removeprefix("ollama/")
+        from services.integrations.operator_notify import notify_operator
+        await notify_operator(
+            "image_decision_agent: model_role_image_decision is empty — "
+            "image planning skipped",
+            critical=False,
+            site_config=_sc,
+        )
+        return ImagePlanResult()
 
     # Extract section headings for context.
     #

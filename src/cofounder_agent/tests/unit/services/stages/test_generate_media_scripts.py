@@ -340,22 +340,22 @@ async def test_podcast_audio_paths_preserved_on_scene_failure():
 
 
 # ---------------------------------------------------------------------------
-# poindexter#716 — cost-tier resolver replaces hardcoded model fallbacks
+# Model pin — the "auto"/unset sentinel skips the (non-critical) stage
 # ---------------------------------------------------------------------------
 
 @pytest.mark.asyncio
-async def test_auto_model_resolves_via_tier():
-    """When site_config returns 'auto', resolve_tier_model is called instead
-    of silently pinning llama3:latest."""
+async def test_auto_model_skips_gracefully():
+    """When the media-script model config is 'auto'/unset, the stage skips
+    rather than silently pinning a hardcoded model."""
     sc = MagicMock()
-    sc.get.return_value = "auto"  # video_scene_model = "auto"
+    sc.get.return_value = "auto"  # video_scene_model / default_ollama_model = "auto"
     db = SimpleNamespace(pool=MagicMock())
     ctx = {
         "title": "A Real Title",
         "content": "body " * 200,
         "site_config": sc,
         "database_service": db,
-        "task_id": "t-tier-resolve",
+        "task_id": "t-auto-skip",
     }
     ctx["platform"] = MagicMock()
     ctx["platform"].dispatch.complete = AsyncMock(
@@ -365,15 +365,11 @@ async def test_auto_model_resolves_via_tier():
 
     with patch("services.gpu_scheduler.gpu", gpu), \
          patch("services.podcast_service._build_script_with_llm",
-               new=AsyncMock(return_value="S" * 500)), \
-         patch(
-             "services.llm_providers.dispatcher.resolve_tier_model",
-             new=AsyncMock(return_value="ollama/gemma3:27b"),
-         ) as mock_resolve:
+               new=AsyncMock(return_value="S" * 500)):
         result = await GenerateMediaScriptsStage().execute(ctx, {})
 
     assert result.ok
-    mock_resolve.assert_awaited_once()
+    assert result.metrics.get("skipped") is True
 
 
 @pytest.mark.asyncio

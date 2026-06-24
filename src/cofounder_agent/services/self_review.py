@@ -19,7 +19,6 @@ import re
 from typing import Any
 
 from services.integrations.operator_notify import notify_operator
-from services.llm_providers.dispatcher import resolve_tier_model
 from services.site_config import SiteConfig
 
 logger = logging.getLogger(__name__)
@@ -72,49 +71,29 @@ def _resolve_prompt(key: str, *, fallback: str, **kwargs: Any) -> str:
 async def _resolve_self_review_model(
     pool: Any, *, site_config: SiteConfig,
 ) -> str:
-    """Resolve writer-self-review model via cost-tier API + fallback chain.
+    """Resolve the writer-self-review model from ``writer_self_review_model``.
 
-    Lane B sweep migration. Order:
-    1. ``resolve_tier_model(pool, "standard")`` — operator-tuned tier mapping.
-    2. ``app_settings[writer_self_review_model]`` — per-call-site backstop.
-    3. Raise — per feedback_no_silent_defaults.md.
-
-    ``pool`` may be ``None`` when the caller does not have access to the
-    asyncpg pool (e.g. legacy paths); in that case we skip the tier
-    resolution and try the per-call-site setting directly.
+    Reads the dedicated ``app_settings[writer_self_review_model]`` pin and fails
+    loud (notify + raise) when unset, per feedback_no_silent_defaults.md. The
+    ``cost_tier.*`` tier fallback was removed; ``pool`` is retained for
+    signature stability with the call site.
 
     Phase-2 DI (#272): ``site_config`` is a required keyword arg — the
     module global + ``set_site_config`` shim was retired.
     """
     _sc = site_config
-    if pool is not None:
-        try:
-            return await resolve_tier_model(pool, "standard")
-        except (RuntimeError, ValueError, AttributeError) as exc:
-            tier_exc: Exception | None = exc
-        else:
-            tier_exc = None
-    else:
-        tier_exc = RuntimeError("no asyncpg pool available")
-
-    fallback = _sc.get("writer_self_review_model")
-    if fallback:
-        await notify_operator(
-            f"writer_self_review: cost_tier='standard' resolution failed "
-            f"({tier_exc}); falling back to writer_self_review_model={fallback!r}",
-            critical=False,
-        )
-        return str(fallback)
+    model = _sc.get("writer_self_review_model")
+    if model:
+        return str(model)
 
     await notify_operator(
-        f"writer_self_review: cost_tier='standard' has no model AND "
-        f"writer_self_review_model is empty — review failed: {tier_exc}",
-        critical=True,
+        "writer_self_review: writer_self_review_model is empty — self-review "
+        "skipped (set writer_self_review_model)",
+        critical=False,
     )
     raise RuntimeError(
-        "writer_self_review: no critic model resolvable via tier or "
-        "writer_self_review_model setting"
-    ) from tier_exc
+        "writer_self_review: no model resolvable — set writer_self_review_model"
+    )
 
 
 async def self_review_and_revise(
@@ -148,11 +127,10 @@ async def self_review_and_revise(
     if not draft or len(draft) < 500:
         return draft, stats  # too short for meaningful cross-section review
 
-    # Cost-tier API (Lane B sweep). Operators tune the standard tier via
-    # app_settings.cost_tier.standard.model — no code edit per niche. The
-    # writer_self_review_model setting remains the per-call-site backstop;
-    # _resolve_self_review_model fails loud via notify_operator if both
-    # are missing, per feedback_no_silent_defaults.md.
+    # Per-step pin. Operators tune app_settings.writer_self_review_model —
+    # no code edit per niche. _resolve_self_review_model reads it directly
+    # and fails loud via notify_operator when unset, per
+    # feedback_no_silent_defaults.md.
     try:
         resolved_model = await _resolve_self_review_model(pool, site_config=_sc)
     except RuntimeError as exc:

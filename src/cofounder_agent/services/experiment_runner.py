@@ -109,7 +109,7 @@ class ExperimentVariant:
     writer_model: str | None
     """When set, override the writer model resolution. ``None`` means
     inherit the niche default via :func:`services.llm_text.resolve_local_model`
-    (cost_tier.standard.model chain)."""
+    (the pipeline_writer_model pin)."""
 
     rag_config: dict[str, Any]
     """Shallow-merged INTO any niche-default rag_config when non-empty.

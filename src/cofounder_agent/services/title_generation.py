@@ -506,7 +506,6 @@ async def generate_canonical_title(
     _sc = site_config
     try:
         from plugins.registry import get_all_llm_providers
-        from services.llm_providers.dispatcher import resolve_tier_model
         from services.prompt_manager import get_prompt_manager
         pm = get_prompt_manager()
         providers = {p.name: p for p in get_all_llm_providers()}
@@ -527,36 +526,20 @@ async def generate_canonical_title(
                 "Your title must be DISTINCTLY DIFFERENT in structure and wording."
             )
 
-        # Cost-tier API (Lane B sweep). Operators tune the standard tier
-        # via app_settings.cost_tier.standard.model — no code edit per
-        # niche. Falls back to the legacy pipeline_writer_model setting
-        # if the tier mapping isn't seeded; pages the operator and
-        # aborts (no silent default) if both miss.
-        pool = getattr(_sc, "_pool", None)
-        model: str | None = None
-        if pool is not None:
-            try:
-                model = (
-                    await resolve_tier_model(pool, "standard")
-                ).removeprefix("ollama/")
-            except (RuntimeError, ValueError) as tier_err:
-                logger.debug(
-                    "[TITLE_GEN] cost_tier.standard.model unresolved (%s); "
-                    "trying pipeline_writer_model fallback",
-                    tier_err,
-                )
+        # Per-step pin — title regen reuses the writer model
+        # (pipeline_writer_model). Empty → page the operator and abort the
+        # regen (no silent default). The cost_tier.standard.model indirection
+        # was removed.
+        model = (_sc.get("pipeline_writer_model") or "").removeprefix("ollama/")
         if not model:
-            fallback = _sc.get("pipeline_writer_model") or ""
-            if not fallback:
-                from services.integrations.operator_notify import notify_operator
-                await notify_operator(
-                    "title_generation: cost_tier='standard' has no model "
-                    "AND pipeline_writer_model is empty — title regen aborted",
-                    critical=False,
-                    site_config=_sc,
-                )
-                return None
-            model = fallback.removeprefix("ollama/")
+            from services.integrations.operator_notify import notify_operator
+            await notify_operator(
+                "title_generation: pipeline_writer_model is empty — "
+                "title regen aborted",
+                critical=False,
+                site_config=_sc,
+            )
+            return None
         result = await provider.complete(
             messages=[{"role": "user", "content": prompt}],
             model=model,
@@ -564,11 +547,11 @@ async def generate_canonical_title(
             max_tokens=_sc.get_int(
                 "content_router_seo_title_max_tokens", 4000,
             ),
-            # A title is short copy. The "standard" tier is a reasoning model
-            # (glm-class), so leave thinking ON and it deliberates inside the
-            # 4000-token budget and leaks its rationale as the "title" (task
-            # bb878d6b: 'Avoids the "Dev Diary/PR" style: It is framed as an
-            # evergreen resource rather than a log.'). think=False makes it emit
+            # A title is short copy. pipeline_writer_model may be a reasoning
+            # model that would otherwise deliberate inside the 4000-token
+            # budget and leak its rationale as the "title" (task bb878d6b:
+            # 'Avoids the "Dev Diary/PR" style: It is framed as an evergreen
+            # resource rather than a log.'). think=False makes it emit
             # the title directly. If the resolved model can't disable thinking
             # the call errors and we fall through to None → H1/topic fallback,
             # which is the same safe headline the junk guard would pick anyway.

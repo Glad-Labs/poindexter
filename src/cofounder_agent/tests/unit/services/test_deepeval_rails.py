@@ -340,56 +340,23 @@ class TestResolveJudgeModel:
         assert await _de_mod._resolve_judge_model(sc) == "gpt-4o-mini"
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_budget_tier_setting_when_no_pool(self):
-        """No pool (tests / bootstrap) → direct ``cost_tier.budget.model``
-        read remains the cost-tier path (same data the dispatcher would
-        serve). 2026-06-20 finding 7a: the advisory judge resolves to the
-        *budget* tier (reuses the resident writer) rather than ``standard``,
-        so a no-override install doesn't load a separate heavy judge."""
+    async def test_stale_cost_tier_budget_is_ignored(self):
+        """A stale cost_tier.budget.model row (left on an existing install) is
+        NOT consulted — only deepeval_judge_model is read, so an empty pin
+        fails loud even when cost_tier.budget.model / pipeline_writer_model
+        are present."""
         sc = MagicMock(_pool=None)
         sc.get = MagicMock(side_effect=lambda key, default="": {
             "deepeval_judge_model": "",
             "cost_tier.budget.model": "ollama/glm-4.7-flash:latest",
             "pipeline_writer_model": "ollama/glm-4.7-flash:latest",
         }.get(key, default))
-        # 2026-05-27: resolver preserves the ``ollama/`` prefix so
-        # ``_build_deepeval_judge_model`` can route through OllamaModel.
-        assert await _de_mod._resolve_judge_model(sc) == "ollama/glm-4.7-flash:latest"
-
-    @pytest.mark.asyncio
-    async def test_uses_resolve_tier_model_when_pool_available(self):
-        """When ``site_config._pool`` is set we route through the
-        dispatcher API instead of reading the setting directly — so
-        model-name normalisation matches every other reviewer rail."""
-        sc = MagicMock(_pool=MagicMock())
-        sc.get = MagicMock(side_effect=lambda key, default="": {
-            "deepeval_judge_model": "",
-            "pipeline_writer_model": "",
-        }.get(key, default))
+        notify = AsyncMock()
         with patch(
-            "services.llm_providers.dispatcher.resolve_tier_model",
-            AsyncMock(return_value="ollama/gemma3:27b-it-qat"),
-        ) as tier:
-            model = await _de_mod._resolve_judge_model(sc)
-        # 2026-05-27: resolver preserves the ``ollama/`` prefix.
-        assert model == "ollama/gemma3:27b-it-qat"
-        # 2026-06-20 finding 7a: advisory judge uses the *budget* tier
-        # (the same cheap tier ragas resolves to), not ``standard``.
-        tier.assert_awaited_once_with(sc._pool, "budget")
-
-    @pytest.mark.asyncio
-    async def test_falls_back_to_writer_when_explicit_and_tier_blank(self):
-        """Both explicit + cost_tier blank → fall through to writer."""
-        sc = MagicMock(_pool=None)
-        sc.get = MagicMock(side_effect=lambda key, default="": {
-            "deepeval_judge_model": "",
-            "cost_tier.budget.model": "",
-            "pipeline_writer_model": "ollama/glm-4.7-flash:latest",
-        }.get(key, default))
-        # 2026-05-27: resolver preserves the ``ollama/`` prefix.
-        assert (
-            await _de_mod._resolve_judge_model(sc) == "ollama/glm-4.7-flash:latest"
-        )
+            "services.integrations.operator_notify.notify_operator", notify,
+        ):
+            with pytest.raises(ValueError, match="no judge model resolvable"):
+                await _de_mod._resolve_judge_model(sc)
 
     @pytest.mark.asyncio
     async def test_all_paths_blank_raises_and_notifies(self):
@@ -410,20 +377,14 @@ class TestResolveJudgeModel:
         assert await_args.kwargs.get("critical") is True
 
     @pytest.mark.asyncio
-    async def test_tier_failure_falls_through_to_writer(self):
-        """Dispatcher raising should not be fatal — the writer-model
-        backstop still resolves a usable judge."""
-        sc = MagicMock(_pool=MagicMock())
+    async def test_explicit_pin_preserves_ollama_prefix(self):
+        """The resolver returns the pin verbatim (``ollama/`` prefix kept so
+        ``_build_deepeval_judge_model`` can route through OllamaModel)."""
+        sc = MagicMock(_pool=None)
         sc.get = MagicMock(side_effect=lambda key, default="": {
-            "deepeval_judge_model": "",
-            "pipeline_writer_model": "ollama/glm-4.7-flash:latest",
+            "deepeval_judge_model": "ollama/glm-4.7-flash:latest",
         }.get(key, default))
-        with patch(
-            "services.llm_providers.dispatcher.resolve_tier_model",
-            AsyncMock(side_effect=RuntimeError("no model configured")),
-        ):
-            # 2026-05-27: resolver preserves the ``ollama/`` prefix.
-            assert (
-                await _de_mod._resolve_judge_model(sc)
-                == "ollama/glm-4.7-flash:latest"
-            )
+        assert (
+            await _de_mod._resolve_judge_model(sc)
+            == "ollama/glm-4.7-flash:latest"
+        )

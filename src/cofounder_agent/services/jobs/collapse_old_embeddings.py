@@ -65,7 +65,6 @@ from typing import Any
 
 from plugins.job import JobResult
 from services.integrations.operator_notify import notify_operator
-from services.llm_providers.dispatcher import resolve_tier_model
 
 logger = logging.getLogger(__name__)
 
@@ -94,47 +93,32 @@ async def _get_setting(pool: Any, key: str, default: str) -> str:
 
 
 async def _resolve_summary_model(pool: Any) -> str:
-    """Bridge ``cost_tier="budget"`` → concrete model id for collapse summaries.
+    """Resolve the collapse-summary model from ``embedding_collapse_summary_model``.
 
-    Lane B sweep migration. Order:
-
-    1. ``resolve_tier_model(pool, "budget")`` — operator-tuned tier mapping.
-       Cold-data summarization runs on a smaller / cheaper model, so the
-       budget tier is the right home.
-    2. ``app_settings[embedding_collapse_summary_model]`` — per-call-site
-       fallback gated by ``notify_operator()`` per
-       ``feedback_no_silent_defaults.md``.
-    3. Raise — missing config is a configuration bug, not a quiet fallback.
+    Cold-data cluster summarization runs on a small sub-writer model (phi4
+    14B by default), pinned directly via
+    ``app_settings.embedding_collapse_summary_model``. Fails loud (notify +
+    raise) when unset, per ``feedback_no_silent_defaults.md`` — the
+    ``cost_tier='budget'`` indirection was removed in favour of the per-step
+    pin. The caller catches the raise and falls back to a joined preview.
 
     The returned string is the bare model name (``ollama/`` prefix
     stripped) since :class:`OllamaClient` consumes ``model`` directly.
     """
-    try:
-        tier_model = await resolve_tier_model(pool, "budget")
-    except (RuntimeError, ValueError, AttributeError) as tier_exc:
-        fallback = await _get_setting(
-            pool, "embedding_collapse_summary_model", "",
-        )
-        fallback = fallback.strip()
-        if not fallback:
-            await notify_operator(
-                f"embedding collapse: cost_tier='budget' has no model AND "
-                f"embedding_collapse_summary_model is empty — collapse "
-                f"summaries will use joined-preview fallback: {tier_exc}",
-                critical=True,
-            )
-            raise RuntimeError(
-                "embedding_collapse: no summary model resolvable via tier "
-                "or embedding_collapse_summary_model setting"
-            ) from tier_exc
+    model = (
+        await _get_setting(pool, "embedding_collapse_summary_model", "")
+    ).strip()
+    if not model:
         await notify_operator(
-            f"embedding collapse: cost_tier='budget' resolution failed "
-            f"({tier_exc}); falling back to embedding_collapse_summary_model"
-            f"={fallback!r}",
-            critical=False,
+            "embedding collapse: embedding_collapse_summary_model is empty "
+            "— collapse summaries will use joined-preview fallback",
+            critical=True,
         )
-        return fallback.removeprefix("ollama/")
-    return str(tier_model).removeprefix("ollama/")
+        raise RuntimeError(
+            "embedding_collapse: no summary model — set "
+            "embedding_collapse_summary_model"
+        )
+    return model.removeprefix("ollama/")
 
 
 def _parse_bool(raw: str) -> bool:
@@ -510,13 +494,12 @@ class CollapseOldEmbeddingsJob:
         summary_provider = (await _get_setting(
             pool, "embedding_collapse_summary_provider", "ollama",
         )).strip().lower()
-        # Cost-tier API (Lane B sweep). Operators tune the budget tier via
-        # app_settings.cost_tier.budget.model — cold-data summaries run on
-        # a smaller / cheaper model. The embedding_collapse_summary_model
-        # setting remains as the per-call-site backstop, gated by
-        # notify_operator() per feedback_no_silent_defaults.md. Resolving
-        # only when we'll actually call the LLM avoids paging the operator
-        # when summary_provider=joined_preview (no model needed).
+        # Per-step pin. Operators tune app_settings.embedding_collapse_summary_model
+        # — cold-data summaries run on a smaller / cheaper model than the
+        # writer. _resolve_summary_model reads it directly and fails loud
+        # (notify_operator) per feedback_no_silent_defaults.md when unset.
+        # Resolving only when we'll actually call the LLM avoids paging the
+        # operator when summary_provider=joined_preview (no model needed).
         summary_model = ""
         if summary_provider == "ollama":
             try:

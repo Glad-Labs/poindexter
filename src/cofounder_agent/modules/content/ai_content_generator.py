@@ -7,8 +7,8 @@ LiteLLM is the single trip point for cost tracking + Langfuse OTLP
 spans + provider routing.
 
 Features:
-- Cost-tier-aware writer-model resolution (operator pins via
-  ``app_settings.cost_tier.standard.model``; per-task override via
+- Per-step writer-model resolution (operator pins via
+  ``app_settings.pipeline_writer_model``; per-task override via
   ``models_by_phase`` still honored)
 - Self-checking and validation throughout generation
 - Quality assurance with refinement loops
@@ -699,20 +699,19 @@ class AIContentGenerator:
     ) -> list[str]:
         """Build the ordered writer-model fallback list.
 
-        Order (Glad-Labs/poindexter#407):
+        Order:
         1. ``preferred_model`` (task-row override from ``models_by_phase``)
-        2. ``app_settings.cost_tier.standard.model`` via the dispatcher's
-           ``resolve_tier_model`` — the canonical operator-tunable knob.
-        3. Legacy ``pipeline_writer_model`` row (per-call-site backstop).
-        4. Legacy ``pipeline_fallback_model`` row.
+        2. ``app_settings.pipeline_writer_model`` — the operator-pinned writer.
+        3. ``app_settings.pipeline_fallback_model`` — per-call-site backstop.
 
         Returns the bare model identifiers (``ollama/`` prefix stripped)
         so logs / metrics stay backwards-compatible. The dispatcher's
         provider is responsible for re-applying any namespacing it needs
-        (e.g. LiteLLM auto-prepends ``ollama/`` for bare names).
+        (e.g. LiteLLM auto-prepends ``ollama/`` for bare names). The
+        ``cost_tier.*`` tier fallback was removed; an empty result (every pin
+        unset) is the caller's fail-loud condition. ``pool`` is retained for
+        signature stability with the call site.
         """
-        from services.llm_providers.dispatcher import resolve_tier_model
-
         ordered: list[str] = []
 
         def _push(candidate: str | None) -> None:
@@ -726,31 +725,14 @@ class AIContentGenerator:
         _push(preferred_model)
 
         # 2. pipeline_writer_model — operator-pinned writer (primary).
-        # Canonical precedence: pipeline_writer_model > cost_tier.standard.model.
         # This matches llm_text.resolve_local_model (the canonical reference).
-        # See glad-labs-stack#1281 for the bug that had these swapped.
         _sc = self._site_config
         try:
             _push(_sc.get("pipeline_writer_model", ""))
         except Exception as e:
-            logger.debug(
-                "   pipeline_writer_model read failed: %s — falling through "
-                "to cost_tier.standard.model", e,
-            )
+            logger.debug("   pipeline_writer_model read failed: %s", e)
 
-        # 3. Cost-tier resolution via dispatcher (operator-tunable fallback).
-        if pool is not None:
-            try:
-                tier_model = await resolve_tier_model(pool, "standard")
-                _push(tier_model)
-            except (RuntimeError, ValueError) as exc:
-                logger.warning(
-                    "   cost_tier.standard resolution failed (%s); "
-                    "falling back to pipeline_fallback_model",
-                    exc,
-                )
-
-        # 4. Legacy fallback model
+        # 3. pipeline_fallback_model — per-call-site backstop.
         try:
             _push(_sc.get("pipeline_fallback_model", ""))
         except Exception as e:
@@ -877,19 +859,19 @@ class AIContentGenerator:
                 "platform handle required for dispatch — check pipeline context threading"
             )
 
-        # Pool needed for dispatcher tier→provider lookup. The lifespan-bound
-        # SiteConfig holds it via ``_pool``; tests that pass a pool-less
-        # SiteConfig fall back to the no-pool path in resolve_tier_model
-        # and the dispatcher's get_provider_name swallows the read error
-        # and uses the registered defaults.
+        # Pool needed for the dispatcher's tier→provider lookup (the provider
+        # routing axis — plugin.llm_provider.primary.<tier> — which is separate
+        # from model resolution). The lifespan-bound SiteConfig holds it via
+        # ``_pool``; pool-less SiteConfigs (tests) let the dispatcher's
+        # get_provider_name swallow the read error and use registered defaults.
         pool = getattr(self._site_config, "_pool", None)
-        logger.info("[ATTEMPT 1/3] Dispatching via LLMProvider (cost_tier=standard)...")
+        logger.info("[ATTEMPT 1/3] Dispatching via LLMProvider (tier=standard)...")
 
         model_list = await self._resolve_writer_models(preferred_model, pool)
         if not model_list:
             logger.warning(
-                "   No writer model resolvable (preferred=%r, cost_tier.standard "
-                "unset, pipeline_writer_model unset) — skipping dispatcher path",
+                "   No writer model resolvable (preferred=%r, pipeline_writer_model "
+                "and pipeline_fallback_model unset) — skipping dispatcher path",
                 preferred_model,
             )
             attempts.append(("dispatcher", "no writer model configured"))
@@ -1300,9 +1282,8 @@ async def _resolve_rag_writer_model(
 
     1. ``app_settings[pipeline_writer_model]`` — operator-pinned writer
        (primary). This is the setting operators are directed to tune.
-    2. ``resolve_tier_model(pool, 'standard')`` — cost-tier fallback
-       (``app_settings.cost_tier.standard.model``).
-    3. ``notify_operator()`` + raise — fail loud.
+    2. ``notify_operator()`` + raise — fail loud (the ``cost_tier.*`` fallback
+       was removed; each step reads its own dedicated ``*_model`` pin).
 
     See glad-labs-stack#1281: the order below was previously inverted,
     causing the cost-tier model to silently override ``pipeline_writer_model``.
@@ -1317,39 +1298,26 @@ async def _resolve_rag_writer_model(
     Lane B inventory.
     """
     from services.integrations.operator_notify import notify_operator
-    from services.llm_providers.dispatcher import resolve_tier_model
 
     _sc = site_config
-    pool = getattr(_sc, "_pool", None)
 
     # 1. pipeline_writer_model — primary (operator-pinned).
     primary = (_sc.get("pipeline_writer_model") or "").strip()
     if primary:
         return primary.removeprefix("ollama/")
 
-    # 2. cost_tier.standard.model — fallback via dispatcher.
-    tier_exc: Exception | None = None
-    if pool is not None:
-        try:
-            return (await resolve_tier_model(pool, "standard")).removeprefix(
-                "ollama/",
-            )
-        except (RuntimeError, ValueError, AttributeError) as exc:
-            tier_exc = exc
-    else:
-        tier_exc = RuntimeError("no asyncpg pool available")
-
+    # 2. No writer model resolvable — fail loud. The cost_tier.* fallback was
+    #    removed; pipeline_writer_model is the single source for the writer.
     await notify_operator(
-        f"ai_content_generator (RAG): pipeline_writer_model is empty AND "
-        f"cost_tier='standard' resolution failed ({tier_exc}) — "
-        f"RAG draft generation aborted",
+        "ai_content_generator (RAG): pipeline_writer_model is empty — "
+        "RAG draft generation aborted (set pipeline_writer_model)",
         critical=True,
         site_config=_sc,
     )
     raise RuntimeError(
-        "ai_content_generator: no writer model resolvable via tier or "
-        "pipeline_writer_model setting"
-    ) from tier_exc
+        "ai_content_generator: no writer model resolvable — set "
+        "pipeline_writer_model"
+    )
 
 
 def _format_snippet_block(snippets: list[dict[str, Any]], max_chars: int) -> str:
@@ -1384,9 +1352,8 @@ async def generate_with_context(
 
     Per-snippet length cap is operator-tunable via
     ``writer_rag_context_snippet_max_chars``. Writer model is resolved
-    via the cost-tier API (Lane B sweep) — operators tune
-    ``app_settings.cost_tier.standard.model`` or the legacy
-    ``pipeline_writer_model`` per-call-site backstop.
+    from the per-step ``app_settings.pipeline_writer_model`` pin (fails loud
+    when unset; the cost_tier.* fallback was removed).
 
     ``site_config`` is REQUIRED (#272 Phase-2c) — the ``two_pass_writer``
     atom threads its run-bound instance.

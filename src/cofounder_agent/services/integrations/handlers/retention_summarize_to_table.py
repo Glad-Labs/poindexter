@@ -46,12 +46,10 @@ unknown identifiers via the same regex whitelist used by
 
 ## App settings consumed
 
-- ``cost_tier.budget.model`` — primary tier mapping (Lane B sweep).
-  Operators tune the budget tier; cold-data summaries don't need
-  the standard tier. See ``services.llm_providers.dispatcher``.
-- ``memory_compression_summary_model`` — per-call-site fallback used
-  only if the tier mapping is unset, gated by ``notify_operator()``
-  per ``feedback_no_silent_defaults.md``.
+- ``memory_compression_summary_model`` — the per-step model pin read
+  directly by ``_resolve_summary_model``; fails loud via
+  ``notify_operator()`` per ``feedback_no_silent_defaults.md`` when unset.
+  (The ``cost_tier.budget`` tier mapping was removed.)
 - ``memory_compression_summary_timeout_seconds`` — LLM call timeout
 - ``memory_compression_excerpts_per_bucket`` — how many sample rows
   feed the LLM prompt per bucket
@@ -86,7 +84,6 @@ from services.jobs.collapse_old_embeddings import (
     build_summary_text,
     build_summary_text_via_llm,
 )
-from services.llm_providers.dispatcher import resolve_tier_model
 
 logger = logging.getLogger(__name__)
 
@@ -153,47 +150,32 @@ def _parse_int(raw: str, default: int) -> int:
 
 
 async def _resolve_summary_model(pool: Any) -> str:
-    """Bridge ``cost_tier="budget"`` → concrete model id for retention summaries.
+    """Resolve the retention-summary model from ``memory_compression_summary_model``.
 
-    Lane B sweep migration. Order:
-
-    1. ``resolve_tier_model(pool, "budget")`` — operator-tuned tier mapping.
-       Per-day retention summaries run on cold data, so the budget tier
-       (cheaper / smaller model) is the right home.
-    2. ``app_settings[memory_compression_summary_model]`` — per-call-site
-       fallback gated by ``notify_operator()`` per
-       ``feedback_no_silent_defaults.md``.
-    3. Raise — missing config is a configuration bug, not a quiet fallback.
+    Per-day retention summaries run on cold data via a small sub-writer
+    model (phi4 14B by default), pinned directly via
+    ``app_settings.memory_compression_summary_model``. Fails loud (notify +
+    raise) when unset, per ``feedback_no_silent_defaults.md`` — the
+    ``cost_tier='budget'`` indirection was removed in favour of the per-step
+    pin. The caller catches the raise and falls back to a joined preview.
 
     The returned string is the bare model name (``ollama/`` prefix
     stripped) since :class:`OllamaClient` consumes ``model`` directly.
     """
-    try:
-        tier_model = await resolve_tier_model(pool, "budget")
-    except (RuntimeError, ValueError, AttributeError) as tier_exc:
-        fallback = (
-            await _get_setting(pool, "memory_compression_summary_model", "")
-        ).strip()
-        if not fallback:
-            await notify_operator(
-                f"retention.summarize_to_table: cost_tier='budget' has no "
-                f"model AND memory_compression_summary_model is empty — "
-                f"day-bucket summaries will use joined-preview fallback: "
-                f"{tier_exc}",
-                critical=True,
-            )
-            raise RuntimeError(
-                "retention.summarize_to_table: no summary model resolvable "
-                "via tier or memory_compression_summary_model setting"
-            ) from tier_exc
+    model = (
+        await _get_setting(pool, "memory_compression_summary_model", "")
+    ).strip()
+    if not model:
         await notify_operator(
-            f"retention.summarize_to_table: cost_tier='budget' resolution "
-            f"failed ({tier_exc}); falling back to "
-            f"memory_compression_summary_model={fallback!r}",
-            critical=False,
+            "retention.summarize_to_table: memory_compression_summary_model "
+            "is empty — day-bucket summaries will use joined-preview fallback",
+            critical=True,
         )
-        return fallback.removeprefix("ollama/")
-    return str(tier_model).removeprefix("ollama/")
+        raise RuntimeError(
+            "retention.summarize_to_table: no summary model — set "
+            "memory_compression_summary_model"
+        )
+    return model.removeprefix("ollama/")
 
 
 # ---------------------------------------------------------------------------
@@ -401,15 +383,14 @@ async def summarize_to_table(
     dry_run = bool(config.get("dry_run", False))
 
     # ---- LLM settings
-    # Cost-tier API (Lane B sweep). Operators tune the budget tier via
-    # app_settings.cost_tier.budget.model — cold-data summaries run on a
-    # smaller / cheaper model. The memory_compression_summary_model
-    # setting remains as the per-call-site backstop, gated by
-    # notify_operator() per feedback_no_silent_defaults.md. If both miss,
-    # we proceed with the joined-preview fallback for this pass rather
-    # than crashing the retention runner — buckets that need the LLM
-    # path will tag summary_method=joined_preview and the next pass
-    # picks them up once the operator wires the tier.
+    # Per-step pin. Operators tune app_settings.memory_compression_summary_model
+    # — cold-data summaries run on a smaller / cheaper model than the writer.
+    # _resolve_summary_model reads it directly and fails loud (notify_operator)
+    # per feedback_no_silent_defaults.md when unset. On that failure we proceed
+    # with the joined-preview fallback for this pass rather than crashing the
+    # retention runner — buckets that need the LLM path will tag
+    # summary_method=joined_preview and the next pass picks them up once the
+    # operator sets the pin.
     try:
         summary_model = await _resolve_summary_model(pool)
     except RuntimeError as exc:

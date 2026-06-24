@@ -26,31 +26,8 @@ from services.prompt_manager import UnifiedPromptManager
 from services.title_generation import generate_canonical_title
 
 # --------------------------------------------------------------------------- #
-# Test scaffolding — mirrors test_title_generation_cost_tier.py's fakes so the
-# cost-tier model resolution resolves without a real pool.
+# Test scaffolding — drives the real model-pin resolution path.
 # --------------------------------------------------------------------------- #
-
-
-class _FakeConn:
-    def __init__(self, value: str | None):
-        self._value = value
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        pass
-
-    async def fetchval(self, query: str, *args: Any) -> str | None:
-        return self._value
-
-
-class _FakePool:
-    def __init__(self, value: str | None):
-        self._value = value
-
-    def acquire(self):
-        return _FakeConn(self._value)
 
 
 def _provider_returning(text: str) -> MagicMock:
@@ -69,8 +46,7 @@ def _provider_returning(text: str) -> MagicMock:
 
 def _site_config() -> MagicMock:
     sc = MagicMock()
-    sc._pool = _FakePool("ollama/glm-4.7-5090")  # resolves cost_tier.standard
-    sc.get.return_value = ""
+    sc.get.return_value = "ollama/glm-4.7-5090"  # pipeline_writer_model pin
     sc.get_int.return_value = 4000
     return sc
 

@@ -23,7 +23,6 @@ from typing import Any
 import httpx
 
 from services.integrations.operator_notify import notify_operator
-from services.llm_providers.dispatcher import resolve_tier_model
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
@@ -89,51 +88,32 @@ def _sdxl_server_url(*, site_config: SiteConfig) -> str:
 async def _resolve_slideshow_prompt_model(
     *, site_config: SiteConfig
 ) -> str:
-    """Bridge ``cost_tier='standard'`` -> concrete model id for SDXL prompt-gen.
+    """Resolve the SDXL slideshow-prompt model from ``video_slideshow_prompt_model``.
 
-    Resolution order (highest priority first):
+    Read directly from the per-step pin; fails loud (notify + raise) when
+    empty, per ``feedback_no_silent_defaults.md`` — the ``cost_tier='standard'``
+    fallback was removed. The caller catches the raise and uses deterministic
+    fallback prompts.
 
-    1. ``app_settings[video_slideshow_prompt_model]`` — explicit per-call-site
-       override. Checked first so operators can pin a non-thinking writer even
-       when cost_tier.standard.model points at a thinking model (glm-4, qwen3,
-       etc.). Thinking variants return empty completions on the structured-list
-       prompt below (stack#1151).
-    2. ``resolve_tier_model(pool, 'standard')`` — operator-tuned tier mapping
-       (``app_settings.cost_tier.standard.model``).
-    3. Operator-notify + raise — per ``feedback_no_silent_defaults.md``.
-
-    ``video_slideshow_prompt_model`` is seeded to ``ollama/llama3:latest`` by
-    migration ``20260509_220000_seed_lane_b_misc_keys`` so fresh installs have
-    a safe non-thinking default regardless of what the standard tier resolves to.
+    ``video_slideshow_prompt_model`` is seeded to ``ollama/llama3:latest`` — a
+    non-thinking writer, because thinking variants (glm-4, qwen3, etc.) return
+    empty completions on the structured-list prompt below (stack#1151).
     """
     _sc = site_config
 
-    # Per-call-site override wins over cost-tier — thinking models produce
-    # empty completions on the structured-list prompt (stack#1151).
-    override = _sc.get("video_slideshow_prompt_model")
-    if override:
-        return str(override)
-
-    pool = getattr(_sc, "_pool", None)
-    if pool is not None:
-        try:
-            return await resolve_tier_model(pool, "standard")
-        except (RuntimeError, ValueError, AttributeError) as exc:
-            tier_exc: Exception | None = exc
-    else:
-        tier_exc = RuntimeError("no asyncpg pool available")
+    model = _sc.get("video_slideshow_prompt_model")
+    if model:
+        return str(model)
 
     await notify_operator(
-        f"video_service: video_slideshow_prompt_model is empty AND "
-        f"cost_tier='standard' resolution failed — slideshow prompt generation "
-        f"will use deterministic fallback prompts: {tier_exc}",
+        "video_service: video_slideshow_prompt_model is empty — slideshow "
+        "prompt generation will use deterministic fallback prompts",
         critical=True,
         site_config=_sc,
     )
     raise RuntimeError(
-        "video_service: no model resolvable via video_slideshow_prompt_model "
-        "or cost_tier.standard.model"
-    ) from tier_exc
+        "video_service: no model — set video_slideshow_prompt_model"
+    )
 
 
 @dataclass

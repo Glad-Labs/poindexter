@@ -29,7 +29,7 @@ import httpx
 from services.bootstrap_defaults import DEFAULT_OPENCLAW_URL
 from services.integrations import registry
 from services.integrations.operator_notify import notify_operator
-from services.llm_providers.dispatcher import dispatch_complete, resolve_tier_model
+from services.llm_providers.dispatcher import dispatch_complete
 from services.llm_providers.thinking_models import strip_think_blocks
 from services.logger_config import get_logger
 from services.publishing_adapters_db import load_enabled_publishers
@@ -93,53 +93,26 @@ def _get_discord_ops_channel(*, site_config: SiteConfig) -> str:
 
 
 async def _resolve_social_model(*, site_config: SiteConfig) -> str:
-    """Bridge ``cost_tier='standard'`` -> concrete model id for social copy.
+    """Resolve the social-copy model from ``social_poster_fallback_model``.
 
-    Lane B batch 2 sweep migration. Order:
-
-    1. ``resolve_tier_model(pool, 'standard')`` — operator-tuned tier mapping
-       (``app_settings.cost_tier.standard.model``).
-    2. ``app_settings[social_poster_fallback_model]`` — per-call-site backstop
-       (seeded with ``ollama/llama3:latest`` by migration
-       ``20260509_220000_seed_lane_b_misc_keys``).
-    3. Operator-notify + raise — per ``feedback_no_silent_defaults.md``.
-
-    Pool is read off the lifespan-bound ``site_config._pool`` attribute set
-    by ``main.py``'s lifespan. When unavailable (tests, legacy paths) the
-    tier resolution is skipped and the fallback path is taken directly.
+    Reads the dedicated ``app_settings[social_poster_fallback_model]`` pin and
+    fails loud (notify + raise) when unset, per ``feedback_no_silent_defaults.md``.
+    The ``cost_tier.*`` tier fallback was removed.
     """
     _sc = site_config
-    pool = getattr(_sc, "_pool", None)
-    if pool is not None:
-        try:
-            return await resolve_tier_model(pool, "standard")
-        except (RuntimeError, ValueError, AttributeError) as exc:
-            tier_exc: Exception | None = exc
-        else:
-            tier_exc = None
-    else:
-        tier_exc = RuntimeError("no asyncpg pool available")
-
-    fallback = _sc.get("social_poster_fallback_model")
-    if fallback:
-        await notify_operator(
-            f"social_poster: cost_tier='standard' resolution failed "
-            f"({tier_exc}); falling back to social_poster_fallback_model={fallback!r}",
-            critical=False,
-            site_config=_sc,
-        )
-        return str(fallback)
+    model = _sc.get("social_poster_fallback_model")
+    if model:
+        return str(model)
 
     await notify_operator(
-        f"social_poster: cost_tier='standard' has no model AND "
-        f"social_poster_fallback_model is empty — copy generation skipped: {tier_exc}",
+        "social_poster: social_poster_fallback_model is empty — copy "
+        "generation skipped (set social_poster_fallback_model)",
         critical=True,
         site_config=_sc,
     )
     raise RuntimeError(
-        "social_poster: no model resolvable via tier or "
-        "social_poster_fallback_model setting"
-    ) from tier_exc
+        "social_poster: no model resolvable — set social_poster_fallback_model"
+    )
 
 
 def _twitter_char_limit(*, site_config: SiteConfig) -> int:
@@ -287,11 +260,10 @@ async def _generate_social_text(
     so the existing test suite continues to work without a live DB.
     """
     _sc = site_config
-    # Cost-tier API (Lane B sweep). Operators tune the standard tier via
-    # app_settings.cost_tier.standard.model — no code edit per niche. The
-    # social_poster_fallback_model setting remains the per-call-site
-    # backstop; _resolve_social_model fails loud via notify_operator if
-    # both are missing, per feedback_no_silent_defaults.md.
+    # Per-step pin. Operators tune app_settings.social_poster_fallback_model
+    # — no code edit per niche. _resolve_social_model reads it directly and
+    # fails loud via notify_operator when unset, per
+    # feedback_no_silent_defaults.md.
     try:
         resolved = await _resolve_social_model(site_config=_sc)
     except RuntimeError as exc:

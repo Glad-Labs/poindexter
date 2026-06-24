@@ -508,7 +508,7 @@ class LiteLLMProvider:
             f"key from env. Set "
             f"plugin.llm_provider.litellm.allow_paid_base_url=true in "
             f"app_settings to authorise paid endpoints, or fix the "
-            f"caller / cost_tier.<tier>.model row to use a local "
+            f"caller / per-step *_model setting to use a local "
             f"prefix ({', '.join(sorted(_LOCAL_MODEL_PREFIXES))}). "
             f"Default-deny per feedback_no_paid_apis."
         )

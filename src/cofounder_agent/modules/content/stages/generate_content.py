@@ -825,9 +825,9 @@ class GenerateContentStage:
         # public OSS file. Resolve from site_config so the scheduler
         # logs + metrics match whatever model the operator actually
         # has installed. resolve_local_model fails loud (raise) when
-        # neither pipeline_writer_model nor cost_tier.standard.model
-        # is set; the writer-mode dispatch below would fail for the
-        # same reason, so we're not regressing observability.
+        # pipeline_writer_model is unset; the writer-mode dispatch below
+        # would fail for the same reason, so we're not regressing
+        # observability.
         #
         # Phase 1 lab harness — when a variant assigns ``writer_model``,
         # it short-circuits ``resolve_local_model`` (which accepts an

@@ -82,18 +82,25 @@ def _mock_ollama_client_down():
     return client
 
 
-@pytest.fixture(autouse=True)
-def _stub_resolve_tier_model():
-    """Auto-stub the cost-tier resolver across this whole test module.
+# Captured before the autouse fixture patches it, so the dedicated
+# resolution tests below can restore the real method.
+_REAL_RESOLVE_CRITIC_MODEL = MultiModelQA._resolve_critic_model
 
-    Lane B sweep migration: ``MultiModelQA._resolve_critic_model`` calls
-    ``resolve_tier_model(self.pool, "standard")`` which fails on the
-    no-pool fixture. Tests at this level care about review aggregation,
-    not which concrete model the critic uses, so the resolver returns a
-    fixed string for every test.
+
+@pytest.fixture(autouse=True)
+def _stub_resolve_critic_model():
+    """Auto-stub the critic-model resolver across this whole test module.
+
+    ``MultiModelQA._resolve_critic_model`` reads ``pipeline_critic_model``
+    from settings, which the no-settings ``qa`` fixture doesn't provide.
+    Tests at this level care about review aggregation, not which concrete
+    model the critic uses, so the resolver returns a fixed string for every
+    test. (The dedicated resolution tests restore the real method via
+    ``_REAL_RESOLVE_CRITIC_MODEL``.)
     """
-    with patch(
-        "modules.content.multi_model_qa.resolve_tier_model",
+    with patch.object(
+        MultiModelQA,
+        "_resolve_critic_model",
         AsyncMock(return_value="ollama/gemma3:27b"),
     ):
         yield
@@ -607,12 +614,12 @@ class TestSettingsOverrides:
 
         assert result.approved is True
 
-    async def test_critic_model_resolved_via_cost_tier(self):
-        """Lane B sweep: the critic model is resolved via
-        ``cost_tier="standard"`` inside ``_review_with_ollama``, not
-        threaded through ``review()`` as ``model_override``. This test
-        pins the new contract: ``review()`` no longer reads
-        ``pipeline_critic_model``; the cost-tier API handles selection.
+    async def test_critic_model_resolved_inside_critic_call(self):
+        """The critic model is resolved inside ``_review_with_ollama`` (via
+        ``_resolve_critic_model`` → ``pipeline_critic_model``), not threaded
+        through ``review()`` as ``model_override``. This test pins the
+        contract: ``review()`` does not read ``pipeline_critic_model``; the
+        resolver handles selection inside the critic call.
         """
         settings = _settings_service(pipeline_critic_model="ollama/qwen3:30b")
 
@@ -643,45 +650,62 @@ class TestSettingsOverrides:
 class TestCriticModelDistinctFromWriter:
     """The adversarial critic must run a DIFFERENT model from the writer.
 
-    Both the writer (``ai_content_generator`` #407) and the critic resolve
-    ``cost_tier.standard.model`` by default, so the critic would review its
-    own model's output — defeating adversarial QA. ``_resolve_critic_model``
-    must prefer the dedicated ``pipeline_critic_model`` setting when set,
-    falling back to the standard tier (the Lane B default) when it's not.
+    The writer resolves ``pipeline_writer_model``; the critic resolves its
+    own ``pipeline_critic_model`` pin. Without a distinct critic pin the
+    critic would review its own model's output — defeating adversarial QA.
+    ``_resolve_critic_model`` prefers ``pipeline_critic_model`` when set,
+    falling back to the per-call-site ``setting_key`` (e.g.
+    ``qa_fallback_critic_model``) and failing loud if both are empty.
     2026-06-09 fix. NB: this does NOT re-thread the model through
     ``review()`` — resolution still happens inside the critic call, so the
-    Lane B ``model_override is None`` contract is preserved.
+    ``model_override is None`` contract is preserved.
     """
 
-    async def test_dedicated_critic_model_overrides_writer_tier(self):
+    async def test_dedicated_critic_model_used(self):
         settings = _settings_service(
             pipeline_critic_model="ollama/glm-4.7-5090:latest",
         )
         with MagicMock():
             qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
-        with patch(
-            "modules.content.multi_model_qa.resolve_tier_model",
-            AsyncMock(return_value="ollama/gemma-4-31B-it-qat:latest"),
+        with patch.object(
+            MultiModelQA, "_resolve_critic_model", _REAL_RESOLVE_CRITIC_MODEL,
         ):
             model = await qa._resolve_critic_model(
                 setting_key="qa_fallback_critic_model", site="critic",
             )
-        # The dedicated critic model wins over the writer's standard tier.
+        # The dedicated critic pin is used.
         assert model == "ollama/glm-4.7-5090:latest"
 
-    async def test_falls_back_to_standard_tier_when_no_dedicated_model(self):
-        settings = _settings_service()  # pipeline_critic_model unset → None
+    async def test_falls_back_to_setting_key_when_no_dedicated_model(self):
+        # pipeline_critic_model unset → falls back to the per-call-site
+        # setting_key (qa_fallback_critic_model).
+        settings = _settings_service(
+            qa_fallback_critic_model="ollama/qwen3:30b",
+        )
         with MagicMock():
             qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
-        with patch(
-            "modules.content.multi_model_qa.resolve_tier_model",
-            AsyncMock(return_value="ollama/gemma-4-31B-it-qat:latest"),
+        with patch.object(
+            MultiModelQA, "_resolve_critic_model", _REAL_RESOLVE_CRITIC_MODEL,
         ):
             model = await qa._resolve_critic_model(
                 setting_key="qa_fallback_critic_model", site="critic",
             )
-        # Backward compatible: standard cost-tier (the Lane B default).
-        assert model == "ollama/gemma-4-31B-it-qat:latest"
+        assert model == "ollama/qwen3:30b"
+
+    async def test_raises_when_no_critic_model_configured(self):
+        # Both pipeline_critic_model and the setting_key unset → fail loud.
+        settings = _settings_service()
+        with MagicMock():
+            qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
+        with patch.object(
+            MultiModelQA, "_resolve_critic_model", _REAL_RESOLVE_CRITIC_MODEL,
+        ), patch(
+            "modules.content.multi_model_qa.notify_operator", AsyncMock(),
+        ):
+            with pytest.raises(RuntimeError):
+                await qa._resolve_critic_model(
+                    setting_key="qa_fallback_critic_model", site="critic",
+                )
 
 
 # ---------------------------------------------------------------------------

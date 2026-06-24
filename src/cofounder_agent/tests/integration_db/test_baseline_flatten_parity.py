@@ -131,11 +131,10 @@ _REQUIRED_APP_SETTINGS_KEYS = (
     # Cost-guard rename closed Glad-Labs/poindexter#598
     "daily_spend_limit_usd",
     "monthly_spend_limit_usd",
-    # Lane B cost-tier defaults
-    "cost_tier.free.model",
-    "cost_tier.budget.model",
-    "cost_tier.standard.model",
-    "cost_tier.premium.model",
+    # Per-step model pins (replaced the cost_tier.* indirection, PR #1907)
+    "pipeline_writer_model",
+    "pipeline_critic_model",
+    "pipeline_fallback_model",
     # Lane C cutover seam
     "default_template_slug",
     # Lane D RAG master switch

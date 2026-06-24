@@ -29,7 +29,6 @@ from typing import TYPE_CHECKING, Any
 from modules.content.content_validator import ValidationResult, validate_content
 from services.integrations.operator_notify import notify_operator
 from services.langfuse_shim import observe  # type: ignore[attr-defined]
-from services.llm_providers.dispatcher import resolve_tier_model
 from services.logger_config import get_logger
 from services.prompt_manager import get_prompt_manager
 from services.qa_gates_db import load_qa_gate_chain
@@ -460,26 +459,22 @@ class MultiModelQA:
 
         Order:
         0. ``pipeline_critic_model`` — the dedicated adversarial-critic
-           model. Kept DISTINCT from the writer: both the writer
-           (``ai_content_generator`` #407) and steps 1-2 resolve
-           ``cost_tier.standard``, so without this the critic reviews its
-           OWN model's output and adversarial QA collapses (2026-06-09
-           fix — this setting was previously set-but-never-read). Empty /
-           unset → fall through to the tier mapping (the backward-
-           compatible Lane B default).
-        1. ``resolve_tier_model(pool, "standard")`` — operator-tuned tier mapping.
-        2. ``app_settings[setting_key]`` — per-call-site fallback (e.g.
-           ``qa_fallback_critic_model``). Only used if the tier mapping
-           is missing AND we successfully notify the operator.
-        3. Raise — per feedback_no_silent_defaults.md, missing config is a
-           configuration bug, not a quiet fallback.
+           model. Kept DISTINCT from the writer (which resolves
+           ``pipeline_writer_model``), so the critic never reviews its OWN
+           model's output and adversarial QA collapses (2026-06-09 fix —
+           this setting was previously set-but-never-read).
+        1. ``app_settings[setting_key]`` — per-call-site fallback (e.g.
+           ``qa_fallback_critic_model``). Only used if ``pipeline_critic_model``
+           is empty.
+        2. Raise — per feedback_no_silent_defaults.md, missing config is a
+           configuration bug, not a quiet fallback. The ``cost_tier.standard``
+           indirection was removed in favour of the per-step pin.
 
         NB: resolution happens INSIDE the critic call (not threaded through
-        ``review()`` as a ``model_override``), so the Lane B contract pinned
-        by ``test_critic_model_resolved_via_cost_tier`` is preserved.
+        ``review()`` as a ``model_override``).
         """
         # 0. Dedicated critic model — keeps the critic a DIFFERENT model
-        #    from the writer (both otherwise resolve cost_tier.standard).
+        #    from the writer (which resolves pipeline_writer_model).
         if self.settings is not None:
             try:
                 dedicated = await self.settings.get("pipeline_critic_model")
@@ -487,28 +482,24 @@ class MultiModelQA:
                 dedicated = None
             if dedicated:
                 return dedicated
-        try:
-            return await resolve_tier_model(self.pool, "standard")
-        except (RuntimeError, ValueError, AttributeError) as exc:
-            fallback: str | None = None
-            if self.settings is not None:
-                try:
-                    fallback = await self.settings.get(setting_key)
-                except Exception:
-                    fallback = None
-            if not fallback:
-                await notify_operator(
-                    f"qa critic ({site}): cost_tier='standard' has no model "
-                    f"AND {setting_key} is empty — review failed: {exc}",
-                    critical=True,
-                )
-                raise
+        # 1. Per-call-site fallback (e.g. qa_fallback_critic_model).
+        fallback: str | None = None
+        if self.settings is not None:
+            try:
+                fallback = await self.settings.get(setting_key)
+            except Exception:
+                fallback = None
+        if not fallback:
             await notify_operator(
-                f"qa critic ({site}): cost_tier='standard' resolution failed "
-                f"({exc}); falling back to {setting_key}={fallback!r}",
-                critical=False,
+                f"qa critic ({site}): pipeline_critic_model is empty "
+                f"AND {setting_key} is empty — review failed",
+                critical=True,
             )
-            return fallback
+            raise RuntimeError(
+                f"qa critic ({site}): no critic model — set "
+                f"pipeline_critic_model or {setting_key}"
+            )
+        return fallback
 
     async def review(
         self,
@@ -609,9 +600,9 @@ class MultiModelQA:
             reviews.append(citation_review)
 
         # 2. Cross-model review using a DIFFERENT provider than the writer.
-        # Model is resolved from app_settings.cost_tier.standard.model
-        # (Lane B sweep) inside _review_with_ollama. No model_override
-        # threaded here; _review_with_ollama owns the resolution.
+        # Model is resolved from app_settings.pipeline_critic_model inside
+        # _review_with_ollama (the critic pin — distinct from the writer). No
+        # model_override threaded here; _review_with_ollama owns the resolution.
         # #399: skip the LLM call entirely when qa_gates row "llm_critic"
         # is enabled=False — log INFO so the operator can see what ran.
         qa_cost_log = None
@@ -1119,8 +1110,8 @@ class MultiModelQA:
     ) -> tuple[ReviewerResult, dict] | None:
         """Review content using local Ollama (zero cost).
 
-        Model resolved via ``cost_tier="standard"`` (Lane B sweep) —
-        operators tune ``app_settings.cost_tier.standard.model`` to
+        Model resolved via ``_resolve_critic_model`` —
+        operators tune ``app_settings.pipeline_critic_model`` to
         switch the critic without code edits.
 
         Returns a ``(review, cost_log)`` tuple on success, or ``None`` if
@@ -1185,12 +1176,10 @@ class MultiModelQA:
                 sources_block=sources_block,
             )
 
-            # Cost-tier API (Lane B sweep). Operators tune the standard
-            # tier via app_settings.cost_tier.standard.model — no code edit
-            # per niche. The qa_fallback_critic_model setting remains as
-            # last-ditch backstop per feedback_no_silent_defaults.md: a
-            # missing tier mapping fails loudly via notify_operator before
-            # falling back.
+            # Critic model pin. Operators tune app_settings.pipeline_critic_model
+            # — no code edit per niche. The qa_fallback_critic_model setting
+            # remains as last-ditch backstop per feedback_no_silent_defaults.md:
+            # an empty pin fails loudly via notify_operator before falling back.
             thinking_max = 8000  # Thinking models need budget for reasoning + actual review output
             standard_max = 1500
             temperature = 0.3
@@ -1541,8 +1530,7 @@ class MultiModelQA:
             )
             self._surface_reviewer_skip(
                 "deepeval_g_eval",
-                "judge_model unresolvable — fix deepeval_judge_model OR "
-                "cost_tier.budget.model OR pipeline_writer_model",
+                "judge_model unresolvable — fix deepeval_judge_model",
                 {"exception_message": str(e)[:200]},
             )
             return None
@@ -1661,8 +1649,7 @@ class MultiModelQA:
             )
             self._surface_reviewer_skip(
                 "deepeval_faithfulness",
-                "judge_model unresolvable — fix deepeval_judge_model OR "
-                "cost_tier.budget.model OR pipeline_writer_model",
+                "judge_model unresolvable — fix deepeval_judge_model",
                 {"exception_message": str(e)[:200]},
             )
             return None

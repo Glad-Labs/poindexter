@@ -58,8 +58,6 @@ class _StubSiteConfig:
             return self._model
         if key == "local_llm_api_url":
             return self._base_url
-        if key == "cost_tier.standard.model":
-            return self._model
         return default
 
     def get_float(self, key: str, default: float = 0.0) -> float:
@@ -93,11 +91,12 @@ class TestResolveLocalModel:
         sc = _StubSiteConfig(model="ollama/glm-4.7:latest")
         assert resolve_local_model(site_config=sc) == "glm-4.7:latest"
 
-    def test_pipeline_writer_model_beats_cost_tier_standard(self):
-        """Canonical precedence: pipeline_writer_model > cost_tier.standard.model.
+    def test_cost_tier_standard_is_ignored(self):
+        """pipeline_writer_model is the only source; a stale cost_tier.standard.model
+        row (left over on an existing install) must NOT be consulted.
 
         Regression guard for glad-labs-stack#1281 — this function is the
-        canonical reference that all other writer-model resolvers must follow.
+        canonical reference that all other writer-model resolvers follow.
         """
         sc = MagicMock()
         sc.get = MagicMock(side_effect=lambda k, d=None: {
@@ -106,18 +105,19 @@ class TestResolveLocalModel:
         }.get(k, d or ""))
         result = resolve_local_model(site_config=sc)
         assert result == "my-pinned-writer", (
-            f"pipeline_writer_model must win over cost_tier.standard.model; got {result!r}"
+            f"only pipeline_writer_model is read; got {result!r}"
         )
 
-    def test_cost_tier_standard_used_when_pipeline_writer_empty(self):
-        """cost_tier.standard.model is the correct fallback when pipeline_writer_model unset."""
+    def test_raises_when_pipeline_writer_empty(self):
+        """No silent fallback: an empty pipeline_writer_model fails loud even if a
+        stale cost_tier.standard.model row is present (it is no longer read)."""
         sc = MagicMock()
         sc.get = MagicMock(side_effect=lambda k, d=None: {
             "pipeline_writer_model": "",
             "cost_tier.standard.model": "cost-tier-model",
         }.get(k, d or ""))
-        result = resolve_local_model(site_config=sc)
-        assert result == "cost-tier-model"
+        with pytest.raises(ValueError, match="no writer model resolvable"):
+            resolve_local_model(site_config=sc)
 
     def test_raises_when_nothing_resolves(self):
         """Per ``feedback_no_silent_defaults``: missing config fails loud."""
@@ -144,21 +144,22 @@ class TestResolveStructuredModel:
     def test_explicit_model_wins_and_strips_prefix(self):
         assert resolve_structured_model("ollama/gemma3:27b") == "gemma3:27b"
 
-    def test_structured_setting_is_preferred(self):
+    def test_structured_setting_is_used(self):
         sc = MagicMock()
         sc.get = MagicMock(side_effect=lambda k, d=None: {
             "structured_extraction_model": "ollama/gemma3:27b",
-            "cost_tier.standard.model": "ollama/glm-4.7-5090:latest",
         }.get(k, d))
         assert resolve_structured_model(site_config=sc) == "gemma3:27b"
 
-    def test_falls_back_to_cost_tier_standard(self):
+    def test_raises_when_structured_setting_empty(self):
+        """No silent fallback: an empty structured_extraction_model fails loud
+        (the cost_tier.standard.model fallback was removed)."""
         sc = MagicMock()
         sc.get = MagicMock(side_effect=lambda k, d=None: {
             "structured_extraction_model": "",
-            "cost_tier.standard.model": "ollama/qwen3:30b",
         }.get(k, d))
-        assert resolve_structured_model(site_config=sc) == "qwen3:30b"
+        with pytest.raises(ValueError, match="no structured-extraction model"):
+            resolve_structured_model(site_config=sc)
 
     def test_raises_when_nothing_resolves(self):
         sc = MagicMock()

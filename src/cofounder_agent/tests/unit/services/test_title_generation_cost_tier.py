@@ -1,11 +1,12 @@
-"""Cost-tier resolution path for ``services.title_generation.generate_canonical_title``.
+"""Model-pin resolution path for ``services.title_generation.generate_canonical_title``.
 
-Lane B sweep #2 (Writer / content surface). Pins the new
-``resolve_tier_model(pool, "standard")`` integration: when the cost-tier
-mapping is configured, the resolved model flows through to the provider
-call. When it isn't, the per-call-site ``pipeline_writer_model`` setting
-is the last-ditch fallback. When BOTH miss, ``notify_operator()`` fires
-and the function returns None — no silent literal default.
+Title regen reuses the writer model via the per-step ``pipeline_writer_model``
+pin: when it's set, the resolved model flows through to the provider call
+(``ollama/`` prefix stripped). When it's empty, ``notify_operator()`` fires
+(advisory) and the function returns None — no silent literal default, and the
+caller falls back to the H1/topic headline. The old
+``resolve_tier_model(pool, "standard")`` cost-tier indirection was removed
+(PR #1907).
 """
 
 from __future__ import annotations
@@ -22,28 +23,6 @@ from services.title_generation import (
     sanitize_generated_title,
     strip_qa_batch_suffix,
 )
-
-
-class _FakeConn:
-    def __init__(self, value: str | None):
-        self._value = value
-
-    async def __aenter__(self):
-        return self
-
-    async def __aexit__(self, exc_type, exc, tb):
-        pass
-
-    async def fetchval(self, query: str, *args: Any) -> str | None:
-        return self._value
-
-
-class _FakePool:
-    def __init__(self, value: str | None):
-        self._value = value
-
-    def acquire(self):
-        return _FakeConn(self._value)
 
 
 def _make_provider(captured: dict[str, Any]) -> MagicMock:
@@ -65,14 +44,13 @@ def _make_provider(captured: dict[str, Any]) -> MagicMock:
 
 
 @pytest.mark.asyncio
-async def test_uses_cost_tier_standard_when_mapping_present():
-    """Tier mapping is the primary path; ``ollama/`` prefix is stripped."""
+async def test_uses_pipeline_writer_model_pin():
+    """``pipeline_writer_model`` is the model source; ``ollama/`` prefix stripped."""
     captured: dict[str, Any] = {}
     provider = _make_provider(captured)
 
     fake_sc = MagicMock()
-    fake_sc._pool = _FakePool("ollama/gemma3:27b")
-    fake_sc.get.return_value = ""  # pipeline_writer_model unused on the happy path
+    fake_sc.get.return_value = "ollama/gemma3:27b"  # pipeline_writer_model pin
     fake_sc.get_int.return_value = 4000
 
     with patch(
@@ -95,16 +73,13 @@ async def test_uses_cost_tier_standard_when_mapping_present():
 
 
 @pytest.mark.asyncio
-async def test_falls_back_to_pipeline_writer_model_when_tier_missing():
-    """When ``cost_tier.standard.model`` is empty, the legacy setting wins."""
+async def test_pin_without_prefix_passed_through():
+    """A ``pipeline_writer_model`` value with no ``ollama/`` prefix is used as-is."""
     captured: dict[str, Any] = {}
     provider = _make_provider(captured)
 
     fake_sc = MagicMock()
-    fake_sc._pool = _FakePool(None)  # tier mapping missing
-    # pipeline_writer_model is the last-ditch fallback per the no-silent-
-    # defaults guarantee (resolves through the legacy code path).
-    fake_sc.get.return_value = "ollama/glm-4.7-5090"
+    fake_sc.get.return_value = "glm-4.7-5090"  # no ollama/ prefix to strip
     fake_sc.get_int.return_value = 4000
 
     with patch(
@@ -124,11 +99,10 @@ async def test_falls_back_to_pipeline_writer_model_when_tier_missing():
 
 
 @pytest.mark.asyncio
-async def test_pages_operator_when_both_miss():
-    """No tier mapping AND no pipeline_writer_model — fail loud, return None."""
+async def test_pages_operator_when_pin_empty():
+    """No ``pipeline_writer_model`` pin — fail loud (advisory), return None."""
     fake_sc = MagicMock()
-    fake_sc._pool = _FakePool(None)
-    fake_sc.get.return_value = ""  # pipeline_writer_model also empty
+    fake_sc.get.return_value = ""  # pipeline_writer_model empty
     fake_sc.get_int.return_value = 4000
 
     notify = AsyncMock()
@@ -155,7 +129,7 @@ async def test_pages_operator_when_both_miss():
     notify.assert_awaited_once()
     msg = notify.await_args.args[0]
     assert "title_generation" in msg
-    assert "cost_tier" in msg
+    assert "pipeline_writer_model" in msg
     # Provider was never called because we bailed before dispatch.
     provider.complete.assert_not_awaited()
 
@@ -165,8 +139,8 @@ async def test_disables_thinking_for_short_copy_title():
     """A title is short copy: the writer call MUST pass ``think=False`` so a
     reasoning model emits the title directly instead of deliberating and
     leaking its rationale as the title (task bb878d6b, 2026-06-21). The
-    "standard" cost tier is a thinking model (glm-class), so without this the
-    deliberation trace surfaces as the chosen title."""
+    ``pipeline_writer_model`` pin may be a thinking model (glm-class), so
+    without this the deliberation trace surfaces as the chosen title."""
     captured: dict[str, Any] = {}
     provider = MagicMock()
     provider.name = "ollama_native"
@@ -182,8 +156,7 @@ async def test_disables_thinking_for_short_copy_title():
     provider.complete = AsyncMock(side_effect=_complete)
 
     fake_sc = MagicMock()
-    fake_sc._pool = _FakePool("ollama/glm-4.7-5090")
-    fake_sc.get.return_value = ""
+    fake_sc.get.return_value = "ollama/glm-4.7-5090"  # pipeline_writer_model pin
     fake_sc.get_int.return_value = 4000
 
     with patch(
@@ -315,7 +288,7 @@ async def test_returns_none_when_ollama_native_provider_missing():
     """If ``ollama_native`` isn't in the registry, bail out early — no
     silent default to another provider."""
     fake_sc = MagicMock()
-    fake_sc._pool = _FakePool("ollama/gemma3:27b")
+    # Bails before model resolution (provider missing), so the pin is moot.
     fake_sc.get.return_value = ""
     fake_sc.get_int.return_value = 4000
 
@@ -353,8 +326,7 @@ async def test_returns_none_when_sanitizer_rejects_llm_output():
     provider.complete = AsyncMock(side_effect=_complete)
 
     fake_sc = MagicMock()
-    fake_sc._pool = _FakePool("ollama/gemma3:27b")
-    fake_sc.get.return_value = ""
+    fake_sc.get.return_value = "ollama/gemma3:27b"  # pipeline_writer_model pin
     fake_sc.get_int.return_value = 4000
 
     with patch(
@@ -385,8 +357,7 @@ async def test_topic_is_passed_to_get_prompt():
     provider = _make_provider({})
 
     fake_sc = MagicMock()
-    fake_sc._pool = _FakePool("ollama/gemma3:27b")
-    fake_sc.get.return_value = ""
+    fake_sc.get.return_value = "ollama/gemma3:27b"  # pipeline_writer_model pin
     fake_sc.get_int.return_value = 4000
 
     def _get_prompt(key: str, **kwargs: Any) -> str:
@@ -432,8 +403,7 @@ async def test_existing_titles_appended_to_avoidance_prompt():
     provider.complete = AsyncMock(side_effect=_complete)
 
     fake_sc = MagicMock()
-    fake_sc._pool = _FakePool("ollama/gemma3:27b")
-    fake_sc.get.return_value = ""
+    fake_sc.get.return_value = "ollama/gemma3:27b"  # pipeline_writer_model pin
     fake_sc.get_int.return_value = 4000
 
     with patch(

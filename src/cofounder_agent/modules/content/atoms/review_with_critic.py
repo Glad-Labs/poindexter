@@ -189,10 +189,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     # 2026-05-12 (poindexter#485): removed the trailing "glm-4.7-5090:latest"
     # constants — those baked Matt's specific model name. The chain still
-    # prefers critic-specific settings, then falls back to writer model,
-    # then through the shared resolver (writer → cost_tier.standard.model →
-    # raise). If nothing resolves, the critic raises rather than silently
-    # picking a model the operator may not have installed.
+    # prefers critic-specific settings, then falls back to the writer model
+    # via the shared resolver (the pipeline_writer_model pin → raise). If
+    # nothing resolves, the critic raises rather than silently picking a
+    # model the operator may not have installed.
     model = (
         state.get("critic_model_override")
         or (_sc_get(f"pipeline_critic_model_{critic_role}") if critic_role else None)

@@ -107,15 +107,14 @@ class _FakeConn:
         self._provider_name = provider_name
 
     async def fetchval(self, query: str, *args):  # noqa: ARG002
-        # Dispatcher's get_provider_name queries by key parameter.
+        # Dispatcher's get_provider_name queries by key parameter. The model
+        # is passed to dispatch_complete explicitly (model="tinyllama"), so
+        # there is no cost_tier.* resolution — that indirection was removed
+        # (PR #1907). Only the tier->provider lookup hits the DB now.
         if args and isinstance(args[0], str):
             key = args[0]
             if key.startswith("plugin.llm_provider.primary."):
                 return self._provider_name
-            if key.startswith("cost_tier."):
-                # Bare model name — LiteLLM provider prepends ``ollama/``
-                # via _resolve_model.
-                return "tinyllama"
         return None
 
 

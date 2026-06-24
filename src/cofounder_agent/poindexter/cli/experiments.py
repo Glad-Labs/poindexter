@@ -40,8 +40,9 @@ here as friendly CLI errors):
   promotion per the design doc's line 200-203. The CLI persists the
   winner_variant_label + conclusion_note, then prints the next-step
   guidance the operator follows to actually promote the winning config
-  (Langfuse production label for prompt variants, ``app_settings.cost_tier.standard.model``
-  for model variants, etc.). No silent code path moves prod defaults.
+  (Langfuse production label for prompt variants,
+  ``app_settings.pipeline_writer_model`` for writer-model variants, etc.).
+  No silent code path moves prod defaults.
 
 Patterns match ``poindexter/cli/topics.py``: Click group, lazy
 ``import asyncpg`` inside each ``_impl()``, DSN via
@@ -554,8 +555,8 @@ def experiments_conclude(key: str, winner: str, note: str) -> None:
     if variant["writer_model"]:
         click.echo(
             f"  * Writer model winner: {variant['writer_model']!r}. "
-            "Update app_settings.cost_tier.standard.model "
-            "(or the appropriate tier) to promote."
+            "Update app_settings.pipeline_writer_model "
+            "(or the relevant per-step *_model pin) to promote."
         )
     if variant["prompt_template_key"]:
         ver = variant["prompt_template_version"]

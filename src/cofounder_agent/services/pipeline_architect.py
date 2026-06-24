@@ -281,8 +281,8 @@ async def compose(
     # ``... or "glm-4.7-5090:latest"`` — Matt's specific custom model
     # baked into a public OSS path. Architect prefers its dedicated
     # setting; falls through to the writer-model resolver (which
-    # itself chains ``pipeline_writer_model`` → ``cost_tier.standard.model``
-    # → ValueError). The architect cannot compose pipelines without
+    # itself reads the ``pipeline_writer_model`` pin → ValueError). The
+    # architect cannot compose pipelines without
     # a model, so raising is the right answer for unset config.
     architect_override = (
         _sc.get("pipeline_architect_model") or ""

@@ -396,28 +396,26 @@ class TestPlanImagesErrorPaths:
 
 
 # ---------------------------------------------------------------------------
-# Cost-tier resolution (Lane B sweep #2 — writer/content surface)
+# Model-pin resolution (model_role_image_decision)
 # ---------------------------------------------------------------------------
 
 
-class TestPlanImagesCostTierResolution:
-    """When ``site_config._pool`` is wired, ``plan_images`` resolves the
-    image-decision model via ``cost_tier.budget.model`` (Lane B). The
-    ``model_role_image_decision`` setting stays as a per-call-site
-    fallback so operators upgrading without seeding cost-tier rows
-    don't break."""
+class TestPlanImagesModelPinResolution:
+    """``plan_images`` resolves the image-decision model from the per-step
+    ``model_role_image_decision`` pin, read directly (the cost_tier.budget
+    fallback was removed). An empty pin fails loud (notify) and returns an
+    empty plan."""
 
     @pytest.mark.asyncio
-    async def test_cost_tier_budget_resolves_to_provider_call(self):
-        """Tier mapping is the primary path; model passed to dispatch_complete."""
+    async def test_model_role_pin_passed_to_provider_call(self):
+        """model_role_image_decision is read directly and passed to dispatch_complete."""
         plan_json = {
             "featured": {"source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"},
             "inline": [],
         }
 
-        mock_site = _patched_site_config(model_role="ollama/should-not-be-used")
-        # Wire a pool that resolves cost_tier.budget.model to the tier model.
-        mock_site._pool = _FakePool("ollama/resolved-tier-model")
+        mock_site = _patched_site_config(model_role="ollama/image-decider")
+        mock_site._pool = _FakePool("ollama/unused")
 
         with patch(
             "services.image_decision_agent.dispatch_complete",
@@ -425,22 +423,21 @@ class TestPlanImagesCostTierResolution:
         ) as mock_dispatch:
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
-        # dispatch_complete received the cost-tier-resolved model
-        # (with the ollama/ prefix stripped).
+        # dispatch_complete received the pin (ollama/ prefix stripped).
         call_model = mock_dispatch.await_args.kwargs.get("model")
-        assert call_model == "resolved-tier-model"
+        assert call_model == "image-decider"
         assert result.featured_image is not None
 
     @pytest.mark.asyncio
-    async def test_falls_back_to_per_call_site_setting_when_tier_missing(self):
-        """When cost_tier.budget.model is empty, the legacy setting wins."""
+    async def test_pin_with_prefix_is_stripped(self):
+        """The ollama/ prefix on the pin is stripped before dispatch."""
         plan_json = {
             "featured": {"source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"},
             "inline": [],
         }
 
-        mock_site = _patched_site_config(model_role="ollama/per-site-fallback")
-        mock_site._pool = _FakePool(None)  # tier mapping missing
+        mock_site = _patched_site_config(model_role="ollama/per-site-model")
+        mock_site._pool = _FakePool(None)
 
         with patch(
             "services.image_decision_agent.dispatch_complete",
@@ -449,12 +446,12 @@ class TestPlanImagesCostTierResolution:
             result = await plan_images(SAMPLE_CONTENT, "Topic", site_config=mock_site)
 
         call_model = mock_dispatch.await_args.kwargs.get("model")
-        assert call_model == "per-site-fallback"
+        assert call_model == "per-site-model"
         assert result.featured_image is not None
 
     @pytest.mark.asyncio
-    async def test_pages_operator_when_both_miss(self):
-        """No tier mapping AND no model_role_image_decision — fail loud."""
+    async def test_pages_operator_when_pin_unset(self):
+        """No model_role_image_decision — fail loud (notify) + empty plan."""
         mock_site = _patched_site_config(model_role="")
         mock_site._pool = _FakePool(None)
 
@@ -471,4 +468,4 @@ class TestPlanImagesCostTierResolution:
         notify.assert_awaited_once()
         msg = notify.await_args.args[0]
         assert "image_decision_agent" in msg
-        assert "cost_tier" in msg
+        assert "model_role_image_decision" in msg

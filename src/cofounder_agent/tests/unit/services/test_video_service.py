@@ -31,16 +31,14 @@ _TEST_SC = SiteConfig()
 
 @pytest.fixture(autouse=True)
 def _autopatch_resolve_slideshow_prompt_model():
-    """Lane B sweep — short-circuit ``_resolve_slideshow_prompt_model``.
+    """Short-circuit ``_resolve_slideshow_prompt_model``.
 
-    The production resolver hits the cost-tier dispatcher and the
-    ``video_slideshow_prompt_model`` setting; in unit tests neither
-    exists, so the resolver would raise + notify_operator and the
-    Ollama-mocked tests would fall straight through to the
-    deterministic fallback prompts. Patching the helper keeps the
-    Ollama-mocked tests honest about the prompt-gen path. The
-    dedicated ``test_lane_b_misc_migration.py`` suite pins the
-    resolver branches.
+    The production resolver reads the ``video_slideshow_prompt_model``
+    setting; in unit tests it isn't set, so the resolver would raise +
+    notify_operator and the Ollama-mocked tests would fall straight through
+    to the deterministic fallback prompts. Patching the helper keeps the
+    Ollama-mocked tests honest about the prompt-gen path. The dedicated
+    ``TestResolveSlideshowPromptModel`` cases pin the resolver branches.
     """
     with patch(
         "services.video_service._resolve_slideshow_prompt_model",
@@ -71,49 +69,38 @@ def _seed_host_home():
 
 
 class TestResolveSlideshowPromptModel:
-    """Resolution order: video_slideshow_prompt_model > cost_tier.standard.
+    """The slideshow-prompt model is the per-step ``video_slideshow_prompt_model``
+    pin, read directly (the cost_tier.standard fallback was removed).
 
-    Regression guard for stack#1151: glm-4.7 (a thinking model) was
-    resolved via cost_tier.standard and returned 0-char output.
-    video_slideshow_prompt_model must take priority so operators can
-    pin a non-thinking writer per-call-site.
+    Regression guard for stack#1151: glm-4.7 (a thinking model) returned
+    0-char output, so operators pin a non-thinking writer here.
     """
 
     @pytest.mark.asyncio
-    async def test_explicit_setting_beats_cost_tier(self):
-        """video_slideshow_prompt_model overrides cost_tier even when tier resolves fine."""
+    async def test_returns_video_slideshow_prompt_model(self):
+        """The pin is returned verbatim (``ollama/`` prefix preserved)."""
         sc = MagicMock()
         sc._pool = AsyncMock()
         sc.get = MagicMock(return_value="ollama/llama3:latest")
 
-        with patch(
-            "services.video_service.resolve_tier_model",
-            AsyncMock(return_value="ollama/glm-4.7-5090:latest"),
-        ):
-            # autouse fixture patches _resolve_slideshow_prompt_model globally —
-            # call the real function directly with the autouse patch deactivated.
-            pass
+        # The autouse fixture patches the module-level
+        # _resolve_slideshow_prompt_model, but this test calls the function
+        # imported by name at module top, so it exercises the real resolver.
+        result = await _resolve_slideshow_prompt_model(site_config=sc)
 
-        # Call without the autouse patch.
-        with patch("services.video_service._autopatch_resolve_slideshow_prompt_model", create=True):
-            with patch("services.video_service.resolve_tier_model", AsyncMock(return_value="ollama/glm-4.7")):
-                result = await _resolve_slideshow_prompt_model(site_config=sc)
-
-        # The explicit setting must win — NOT the thinking-model tier value.
         assert result == "ollama/llama3:latest"
         sc.get.assert_called_with("video_slideshow_prompt_model")
 
     @pytest.mark.asyncio
-    async def test_falls_through_to_cost_tier_when_setting_empty(self):
-        """When video_slideshow_prompt_model is empty, cost_tier.standard is used."""
+    async def test_raises_when_setting_empty(self):
+        """An empty video_slideshow_prompt_model fails loud (notify + raise)."""
         sc = MagicMock()
         sc._pool = AsyncMock()
-        sc.get = MagicMock(return_value="")  # explicit setting is empty
+        sc.get = MagicMock(return_value="")  # pin is empty
 
-        with patch("services.video_service.resolve_tier_model", AsyncMock(return_value="ollama/gemma3:27b")):
-            result = await _resolve_slideshow_prompt_model(site_config=sc)
-
-        assert result == "ollama/gemma3:27b"
+        with patch("services.video_service.notify_operator", AsyncMock()):
+            with pytest.raises(RuntimeError, match="no model"):
+                await _resolve_slideshow_prompt_model(site_config=sc)
 
 
 # ---------------------------------------------------------------------------

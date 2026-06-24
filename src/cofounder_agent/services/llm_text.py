@@ -57,29 +57,25 @@ from services.langfuse_shim import langfuse_context, observe
 
 
 def resolve_local_model(model: str | None = None, *, site_config: Any = None) -> str:
-    """Pick the local model to call. Removes ``ollama/`` prefix and
-    falls back through ``pipeline_writer_model`` → ``cost_tier.standard.model``.
+    """Pick the local model to call. Removes ``ollama/`` prefix and reads
+    ``pipeline_writer_model`` from app_settings.
 
     **Canonical precedence reference.** This function defines the authoritative
-    lookup order for writer-model resolution. All other resolvers in the
-    codebase (``_resolve_writer_models`` and ``_resolve_rag_writer_model`` in
-    ``modules/content/ai_content_generator.py``) must follow this same order:
-    ``pipeline_writer_model`` first, ``cost_tier.standard.model`` as fallback.
-    See glad-labs-stack#1281 for the bug that had the ACG resolvers inverted.
+    lookup order for writer-model resolution: explicit ``model`` arg →
+    ``pipeline_writer_model``. All other writer resolvers
+    (``_resolve_writer_models`` and ``_resolve_rag_writer_model`` in
+    ``modules/content/ai_content_generator.py``) must follow this same order.
+    There is no tier fallback — each step reads its own dedicated ``*_model``
+    setting and missing config fails loud (``cost_tier.*`` was removed; see
+    glad-labs-stack#1281 for the bug that had the ACG resolvers inverted while
+    the tier fallback still existed).
 
     Accepts the SiteConfig instance via the DI seam (glad-labs-stack#330).
 
-    2026-05-12 cleanup (poindexter#485): the hardcoded
-    ``"glm-4.7-5090:latest"`` fallback that used to live here baked
-    Matt's specific custom model name into a public OSS file — forks
-    installing Poindexter wouldn't have that model and would get a
-    confusing "model not found" error from Ollama at call time. Now
-    chains through the tier API instead.
-
     Raises:
-        ValueError when every resolution path is unset — fail loud so
-        the operator notices a broken install before content generation
-        blows up mid-stage.
+        ValueError when ``pipeline_writer_model`` is unset — fail loud so the
+        operator notices a broken install before content generation blows up
+        mid-stage.
     """
     if model:
         return model.removeprefix("ollama/")
@@ -89,32 +85,13 @@ def resolve_local_model(model: str | None = None, *, site_config: Any = None) ->
             "resolve the writer model (no hardcoded fallback by design). "
             "Pass site_config explicitly or set the lifespan-bound instance."
         )
-    try:
-        writer = (
-            site_config.get("pipeline_writer_model", "") or ""
-        ).strip()
-        if writer:
-            return writer.removeprefix("ollama/")
-    except Exception as e:  # noqa: BLE001 — defensive against test stubs
-        logger.warning(
-            "[llm_text] site_config.get('pipeline_writer_model') raised %s — "
-            "falling through to cost-tier resolution", e,
-        )
-    try:
-        tier = (
-            site_config.get("cost_tier.standard.model", "") or ""
-        ).strip()
-        if tier:
-            return tier.removeprefix("ollama/")
-    except Exception as e:  # noqa: BLE001
-        logger.warning(
-            "[llm_text] cost-tier lookup failed (%s) — no writer model "
-            "can be resolved", e,
-        )
+    writer = (site_config.get("pipeline_writer_model", "") or "").strip()
+    if writer:
+        return writer.removeprefix("ollama/")
     raise ValueError(
-        "llm_text: no writer model resolvable from app_settings — "
-        "set ``pipeline_writer_model`` OR ``cost_tier.standard.model`` "
-        "via `poindexter set-setting`."
+        "llm_text: no writer model resolvable from app_settings — set "
+        "``pipeline_writer_model`` via `poindexter set-setting` "
+        "(the cost_tier.* fallback was removed)."
     )
 
 
@@ -134,10 +111,10 @@ def resolve_structured_model(
     ``structured_extraction_model`` so an operator can pin a
     JSON-reliable instruct model without touching the writer model.
 
-    Resolution order: explicit ``model`` arg → ``structured_extraction_model``
-    → ``cost_tier.standard.model``. The ``ollama/`` prefix is stripped to
-    match the local-call convention. Raises ``ValueError`` when nothing is
-    resolvable (fail loud per ``feedback_no_silent_defaults``).
+    Resolution order: explicit ``model`` arg → ``structured_extraction_model``.
+    The ``ollama/`` prefix is stripped to match the local-call convention.
+    Raises ``ValueError`` when nothing is resolvable (fail loud per
+    ``feedback_no_silent_defaults``; the ``cost_tier.*`` fallback was removed).
     """
     if model:
         return model.removeprefix("ollama/")
@@ -146,20 +123,12 @@ def resolve_structured_model(
             "llm_text.resolve_structured_model: site_config is required "
             "(no hardcoded fallback by design)."
         )
-    for key in ("structured_extraction_model", "cost_tier.standard.model"):
-        try:
-            val = (site_config.get(key, "") or "").strip()
-        except Exception as e:  # noqa: BLE001 — defensive against test stubs
-            logger.warning(
-                "[llm_text] site_config.get(%r) raised %s — trying next", key, e,
-            )
-            continue
-        if val:
-            return val.removeprefix("ollama/")
+    val = (site_config.get("structured_extraction_model", "") or "").strip()
+    if val:
+        return val.removeprefix("ollama/")
     raise ValueError(
         "llm_text: no structured-extraction model resolvable — set "
-        "``structured_extraction_model`` OR ``cost_tier.standard.model`` "
-        "via `poindexter set-setting`."
+        "``structured_extraction_model`` via `poindexter set-setting`."
     )
 
 

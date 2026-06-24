@@ -44,59 +44,29 @@ logger = get_logger(__name__)
 
 
 async def _resolve_judge_model(site_config: Any = None) -> str:
-    """Resolve Ragas judge model via cost-tier API + per-call-site fallback.
+    """Resolve the Ragas judge model from ``ragas_judge_model``.
 
-    Lane B batch 2 sweep migration. Order:
-
-    1. ``resolve_tier_model(pool, 'budget')`` — operator-tuned tier
-       mapping (``app_settings.cost_tier.budget.model``). Eval is
-       offline + latency-insensitive; the budget tier is correct.
-    2. ``app_settings[ragas_judge_model]`` — per-call-site override
-       (existing key; pre-dates this sweep).
-    3. ``notify_operator()`` + raise — per ``feedback_no_silent_defaults.md``.
-
-    ``site_config`` is the optional DI-injected SiteConfig instance the
-    Ragas helper already accepts. The pool comes off ``site_config._pool``
-    when available; in tests / legacy paths without a pool the tier step
-    is skipped and the legacy setting is used directly.
+    Eval is offline + latency-insensitive; operators pin a small judge via
+    ``app_settings.ragas_judge_model``. Fails loud (notify + raise) when unset,
+    per ``feedback_no_silent_defaults.md`` — the ``cost_tier.*`` fallback was
+    removed.
     """
     from services.integrations.operator_notify import notify_operator
-    from services.llm_providers.dispatcher import resolve_tier_model
 
-    pool = getattr(site_config, "_pool", None) if site_config is not None else None
-    if pool is not None:
-        try:
-            return await resolve_tier_model(pool, "budget")
-        except (RuntimeError, ValueError, AttributeError) as exc:
-            tier_exc: Exception | None = exc
-        else:
-            tier_exc = None
-    else:
-        tier_exc = RuntimeError("no asyncpg pool available")
-
-    fallback: str | None = None
+    judge: str | None = None
     if site_config is not None:
         try:
-            fallback = site_config.get("ragas_judge_model", "") or None
+            judge = site_config.get("ragas_judge_model", "") or None
         except Exception:
-            fallback = None
+            judge = None
 
-    if fallback:
-        try:
-            await notify_operator(
-                f"ragas_eval: cost_tier='budget' resolution failed "
-                f"({tier_exc}); falling back to ragas_judge_model={fallback!r}",
-                critical=False,
-                site_config=site_config,
-            )
-        except Exception:
-            pass  # Ragas eval is best-effort; never crash on notify failure
-        return str(fallback)
+    if judge:
+        return str(judge)
 
     try:
         await notify_operator(
-            f"ragas_eval: cost_tier='budget' has no model AND "
-            f"ragas_judge_model is empty — eval skipped: {tier_exc}",
+            "ragas_eval: ragas_judge_model is empty — eval skipped "
+            "(set ragas_judge_model)",
             critical=True,
             site_config=site_config,
         )
@@ -113,9 +83,8 @@ async def _resolve_judge_model(site_config: Any = None) -> str:
             type(notify_exc).__name__, notify_exc,
         )
     raise RuntimeError(
-        "ragas_eval: no judge model resolvable via tier or "
-        "ragas_judge_model setting"
-    ) from tier_exc
+        "ragas_eval: no judge model resolvable — set ragas_judge_model"
+    )
 
 
 async def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
@@ -129,10 +98,10 @@ async def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
     Ragas + langchain modules so the module imports cleanly when those
     deps aren't available.
 
-    Lane B sweep: judge model is resolved through the cost-tier API
-    (``cost_tier='budget'``) with ``ragas_judge_model`` as the
-    per-call-site backstop. Eval is offline + latency-insensitive,
-    so the budget tier is correct.
+    Judge model is the per-step ``ragas_judge_model`` pin, read directly by
+    ``_resolve_judge_model`` (fails loud when unset; the ``cost_tier.budget``
+    fallback was removed). Eval is offline + latency-insensitive, so a small
+    pinned judge is correct.
     """
     from langchain_ollama import ChatOllama, OllamaEmbeddings
     from ragas.embeddings import LangchainEmbeddingsWrapper

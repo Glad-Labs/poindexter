@@ -601,10 +601,10 @@ async def _revise_node(state: _State) -> _State:
     # the variant path.
     model_override = _MODEL_OVERRIDE_REGISTRY.get(state["pool_thread"])
     # The default writer model — what the pipeline uses when no experiment
-    # is running. Resolved with ``model=None`` so it chains through
-    # ``pipeline_writer_model`` → ``cost_tier.standard.model``. This is the
-    # fallback target when a variant override is unavailable: a single bad
-    # variant model must NEVER zero the whole pipeline (poindexter#574).
+    # is running. Resolved with ``model=None`` so it reads the
+    # ``pipeline_writer_model`` pin. This is the fallback target when a
+    # variant override is unavailable: a single bad variant model must
+    # NEVER zero the whole pipeline (poindexter#574).
     default_model = resolve_local_model(model=None, site_config=site_config)
     model = resolve_local_model(model=model_override, site_config=site_config)
     aug_block = "\n\n".join(
@@ -770,7 +770,7 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
       **Fallback (poindexter#574):** if the overridden model is
       unavailable — the revise call raises or returns empty content —
       ``_revise_node`` falls back to the configured default writer
-      (``pipeline_writer_model`` → ``cost_tier.standard.model``) and
+      (the ``pipeline_writer_model`` pin) and
       emits a loud warning + a ``finding`` row. A single bad experiment
       variant can never zero the whole pipeline.
 

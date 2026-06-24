@@ -170,11 +170,10 @@ async def _sample_summaries(
     )
     # poindexter#485 fail-loud sweep: was previously a literal
     # ``ollama/glm-4.7-5090:latest`` fallback that silently masked a
-    # missing ``pipeline_writer_model`` setting. Now chains via the
-    # shared resolver — raises ValueError if neither
-    # ``pipeline_writer_model`` nor ``cost_tier.standard.model`` is
-    # set, which is the right answer (a self-consistency probe
-    # without a writer model has no work to do).
+    # missing ``pipeline_writer_model`` setting. Now reads it via the
+    # shared resolver — raises ValueError if
+    # ``pipeline_writer_model`` is unset, which is the right answer (a
+    # self-consistency probe without a writer model has no work to do).
     from services.llm_text import resolve_local_model
     writer_model = resolve_local_model(site_config=site_config)
 

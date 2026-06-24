@@ -314,9 +314,9 @@ async def llm_final_score(
     poindexter#485 fail-loud sweep: previously this baked Matt's
     ``glm-4.7-5090:latest`` model name in as a Python-side fallback,
     which silently masked misconfiguration on forks that don't have
-    that model loaded in Ollama. Now resolves via the shared chain
-    (``pipeline_writer_model`` → ``cost_tier.standard.model``) and
-    raises ``ValueError`` if neither is set — surfaces misconfig at
+    that model loaded in Ollama. Now resolves via the shared resolver
+    (the ``pipeline_writer_model`` pin) and
+    raises ``ValueError`` if it is unset — surfaces misconfig at
     pipeline-entry instead of as an opaque Ollama 404 mid-call.
     """
     # DI (#272 Phase-2b): ``site_config`` is keyword-required — threaded

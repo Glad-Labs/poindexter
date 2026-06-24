@@ -49,7 +49,13 @@ class ReviewVideoShotListStage:
     halts_on_failure = False
 
     async def _resolve_model(self, *, cfg: Any, pool: Any) -> str | None:
-        """Mirror generate_video_shot_list's model chain exactly."""
+        """Resolve the director model — mirrors generate_video_shot_list's chain.
+
+        Per-step pin: video_director_model → video_scene_model →
+        default_ollama_model. "auto"/unset → None (review skipped). The
+        cost_tier.standard.model fallback was removed; ``pool`` is retained
+        for call-site signature parity with the sibling stage.
+        """
         configured = (
             cfg.get("video_director_model")
             or cfg.get("video_scene_model")
@@ -57,14 +63,12 @@ class ReviewVideoShotListStage:
         )
         if configured and configured != "auto":
             return configured
-        from services.llm_providers.dispatcher import resolve_tier_model
-        try:
-            return await resolve_tier_model(pool, "standard")
-        except Exception as exc:
-            logger.warning(
-                "[VIDEO_REVIEW] resolve_tier_model failed (%s) — review skipped", exc,
-            )
-            return None
+        logger.warning(
+            "[VIDEO_REVIEW] no director model configured "
+            "(video_director_model / video_scene_model / default_ollama_model "
+            "unset or 'auto') — review skipped",
+        )
+        return None
 
     async def _review_one(
         self,

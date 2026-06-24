@@ -523,7 +523,7 @@ class TestConclude:
         assert "B won 73% approval" in result.output
         # Next-step guidance for model winner.
         assert "gemma4:31b" in result.output
-        assert "cost_tier" in result.output.lower()
+        assert "pipeline_writer_model" in result.output.lower()
         fake_asyncpg["conn"].execute.assert_awaited()
 
     def test_happy_path_with_prompt_winner(self, runner, fake_asyncpg):

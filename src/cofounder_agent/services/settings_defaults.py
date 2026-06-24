@@ -281,8 +281,19 @@ DEFAULTS: dict[str, str] = {
     # The baseline seeds this as 'qwen3-vl:30b'; seeded here too so fresh
     # installs without the baseline seeds can still get a sensible default.
     'vision_alt_model': 'qwen3-vl:30b',
+    # Per-step model pins for utility LLM calls that previously resolved through
+    # the (now-removed) cost_tier.* fallback. Each is read directly and fails
+    # loud when empty — no tier indirection. Seeded to the model the step used
+    # under the old standard/budget tiers so behaviour is unchanged; tune each
+    # step freely.
+    'image_search_query_model': 'ollama/gemma4:31b',  # image_service Pexels query-gen (was standard)
+    'sdxl_prompt_model': 'ollama/gemma4:31b',  # image_providers/ai_generation SDXL prompt-gen (was standard)
+    'writer_self_review_model': 'ollama/gemma4:31b',  # services/self_review writer self-review (was standard)
+    # NOTE: retention/collapse cold-data summaries keep their existing per-step
+    # keys (memory_compression_summary_model / embedding_collapse_summary_model,
+    # both seeded ollama/phi4:14b in 0000_baseline.seeds.sql) — no new key here.
     'use_ollama': 'false',
-    # Boot-time validation of *_model / cost_tier.*.model keys against
+    # Boot-time validation of *_model keys against
     # installed Ollama models (glad-labs-stack#1284). Flip to 'false' on
     # non-Ollama deployments or when Ollama is deliberately unreachable at
     # startup (e.g. remote-only LiteLLM routing).

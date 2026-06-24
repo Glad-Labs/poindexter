@@ -473,32 +473,26 @@ class GenerateVideoShotListStage:
         # dance is needed — ``platform.config`` is the only config seam now.
         cfg = platform.config
 
-        # poindexter#716 — route through the cost-tier resolver when the
-        # operator has not set an explicit director/scene/default model.
-        # "auto" is treated as "not set" so operators can leave the key
-        # in its default state and still have their tier mapping respected.
-        _configured_model = (
+        # Per-step model pin — the director uses video_director_model, falling
+        # back to video_scene_model then default_ollama_model. "auto"/unset is
+        # treated as "no model" → skip the (non-critical) director stage. The
+        # cost_tier.standard.model fallback was removed.
+        model = (
             cfg.get("video_director_model")
             or cfg.get("video_scene_model")
             or cfg.get("default_ollama_model")
         )
-        if not _configured_model or _configured_model == "auto":
-            from services.llm_providers.dispatcher import resolve_tier_model
-            try:
-                model = await resolve_tier_model(pool, "standard")
-            except Exception as _exc:
-                logger.warning(
-                    "generate_video_shot_list: resolve_tier_model failed (%s); "
-                    "director skipped",
-                    _exc,
-                )
-                return StageResult(
-                    ok=True,
-                    detail=f"model resolution failed: {_exc}",
-                    metrics={"skipped": True},
-                )
-        else:
-            model = _configured_model
+        if not model or model == "auto":
+            logger.warning(
+                "generate_video_shot_list: no director model configured "
+                "(video_director_model / video_scene_model / "
+                "default_ollama_model unset or 'auto') — director skipped",
+            )
+            return StageResult(
+                ok=True,
+                detail="no director model configured — director skipped",
+                metrics={"skipped": True},
+            )
 
         now_iso = datetime.now(timezone.utc).isoformat()
         site_name = cfg.get("site_name") or ""

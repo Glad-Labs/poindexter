@@ -186,36 +186,27 @@ async def _build_sdxl_prompt(
         f"1 sentence only. Output ONLY the prompt."
     )
 
-    # Auto-discover the pool via the SiteConfig DI seam (``site_config._pool``)
-    # — the same seam ``ai_content_generator`` / ``topic_ranking`` use. Lets
-    # the production path pick up dispatcher routing for free; tests +
-    # bootstrap paths that don't wire ``_pool`` keep the httpx fallback.
     pool = getattr(site_config, "_pool", None) if site_config is not None else None
 
-    # poindexter#716 — when no explicit model was provided, resolve via the
-    # "standard" cost tier so the operator's app_settings mapping is respected.
+    # When no explicit model was provided, read the per-step pin
+    # (sdxl_prompt_model). Empty → return the generic fallback prompt rather
+    # than sending an empty-model request.
     if not model:
-        if pool is not None:
-            from services.llm_providers.dispatcher import resolve_tier_model
-            try:
-                model = await resolve_tier_model(pool, "standard")
-            except Exception as _exc:
-                logger.warning(
-                    "[AIGeneration] resolve_tier_model failed (%s); "
-                    "returning fallback sdxl prompt",
-                    _exc,
-                )
-                return fallback
-        else:
-            # No pool, no explicit model — return the generic fallback rather
-            # than sending an empty-model request.
+        model = (
+            (site_config.get("sdxl_prompt_model") or "").strip()
+            if site_config is not None
+            else ""
+        )
+        if not model:
             logger.debug(
-                "[AIGeneration] no pool and no explicit model; using fallback prompt",
+                "[AIGeneration] no explicit model and sdxl_prompt_model unset; "
+                "using fallback prompt",
             )
             return fallback
 
-    # At this point model is guaranteed non-None: None/empty either triggered
-    # resolve_tier_model (which assigned a str) or returned the fallback above.
+    # At this point model is guaranteed non-None: it was either passed
+    # explicitly, resolved from the ``sdxl_prompt_model`` pin above, or the
+    # function already returned the fallback prompt.
     assert model is not None
 
     try:

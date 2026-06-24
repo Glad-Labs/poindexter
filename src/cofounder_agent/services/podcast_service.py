@@ -338,16 +338,14 @@ async def _build_script_with_llm(
     on prod). Falls back to regex stripping if the LLM call fails OR if
     no pool is available (tests / bootstrap).
     """
-    from services.llm_providers.dispatcher import dispatch_complete, resolve_tier_model
+    from services.llm_providers.dispatcher import dispatch_complete
 
     _sc = _resolve_site_config(site_config)
 
-    # Cost-tier API (Lane B sweep). Operators tune the standard tier via
-    # app_settings.cost_tier.standard.model — no code edit per niche.
-    # Resolution order: (1) podcast-specific override, (2) cost-tier
-    # mapping, (3) legacy default_ollama_model fallback. Per
-    # feedback_no_silent_defaults.md, if all three miss we page the
-    # operator and let the caller fall back to regex script.
+    # Per-step model pin (podcast_script_model), then the legacy
+    # default_ollama_model fallback. Per feedback_no_silent_defaults.md, if
+    # both miss we page the operator and let the caller fall back to the
+    # regex script. The cost_tier.standard.model indirection was removed.
     pool = getattr(_sc, "_pool", None)
     if pool is None:
         # No DB pool — tests / bootstrap path. Skip the LLM call entirely
@@ -358,38 +356,16 @@ async def _build_script_with_llm(
         return _build_script_fallback(title, content, site_config=_sc)
 
     model = (_sc.get("podcast_script_model") or "").removeprefix("ollama/")
-    if not model:
-        try:
-            model = (
-                await resolve_tier_model(pool, "standard")
-            ).removeprefix("ollama/")
-        except (RuntimeError, ValueError) as tier_err:
-            logger.debug(
-                "[PODCAST] cost_tier.standard.model unresolved (%s); "
-                "trying default_ollama_model fallback",
-                tier_err,
-            )
-    if not model:
+    if not model or model == "auto":
+        # Per-step pin unset or left at the "auto" sentinel — fall back to
+        # default_ollama_model; page + use the regex script if that's empty too.
         fallback = _sc.get("default_ollama_model") or ""
         if not fallback:
             from services.integrations.operator_notify import notify_operator
             await notify_operator(
-                "podcast_service: cost_tier='standard' has no model AND "
+                "podcast_service: podcast_script_model is unset/'auto' AND "
                 "default_ollama_model is empty — falling back to regex "
                 "script for this episode",
-                critical=False,
-                site_config=_sc,
-            )
-            return _build_script_fallback(title, content, site_config=_sc)
-        model = fallback.removeprefix("ollama/")
-    if model == "auto":
-        # Same fallback path — no silent literal default.
-        fallback = _sc.get("default_ollama_model") or ""
-        if not fallback:
-            from services.integrations.operator_notify import notify_operator
-            await notify_operator(
-                "podcast_service: podcast_script_model='auto' AND "
-                "default_ollama_model is empty — falling back to regex script",
                 critical=False,
                 site_config=_sc,
             )

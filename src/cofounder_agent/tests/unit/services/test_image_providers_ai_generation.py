@@ -248,19 +248,19 @@ class TestBuildSDXLPrompt:
             result = await _build_sdxl_prompt("AI chip design", None, site_config=None)
         assert "stylistic or abstract scene related to AI chip design" in result
 
-    async def test_no_model_resolves_via_tier(self):
-        """poindexter#716: model=None + pool → resolve_tier_model, then dispatch."""
+    async def test_no_model_resolves_via_sdxl_prompt_model_pin(self):
+        """model=None + pool → reads the sdxl_prompt_model pin, then dispatch."""
         site_config = MagicMock()
         pool = MagicMock()
         site_config._pool = pool
+        site_config.get = MagicMock(side_effect=lambda k, d=None: {
+            "sdxl_prompt_model": "ollama/gemma3:27b",
+        }.get(k, d))
 
         completion = MagicMock()
         completion.text = '"a cinematic AI chip scene, neon lighting, 4k"'
 
         with patch(
-            "services.llm_providers.dispatcher.resolve_tier_model",
-            new=AsyncMock(return_value="ollama/gemma3:27b"),
-        ) as mock_resolve, patch(
             "services.llm_providers.dispatcher.dispatch_complete",
             new=AsyncMock(return_value=completion),
         ) as mock_dispatch:
@@ -268,22 +268,18 @@ class TestBuildSDXLPrompt:
                 "AI chip design", None, site_config=site_config,
             )
 
-        mock_resolve.assert_awaited_once_with(pool, "standard")
-        # dispatch_complete must receive the resolved model, not a hardcoded name.
+        # dispatch_complete must receive the pin, not a hardcoded name.
         assert mock_dispatch.await_args is not None
         assert mock_dispatch.await_args.kwargs["model"] == "ollama/gemma3:27b"
         assert "AI chip scene" in result
 
-    async def test_no_model_resolve_failure_returns_fallback(self):
-        """poindexter#716: resolve_tier_model failure → fallback prompt, no crash."""
+    async def test_no_model_no_pin_returns_fallback(self):
+        """model=None + sdxl_prompt_model unset → fallback prompt, no crash."""
         site_config = MagicMock()
         site_config._pool = MagicMock()
+        site_config.get = MagicMock(return_value="")  # sdxl_prompt_model unset
 
-        with patch(
-            "services.llm_providers.dispatcher.resolve_tier_model",
-            new=AsyncMock(side_effect=RuntimeError("no tier mapping")),
-        ):
-            result = await _build_sdxl_prompt(
-                "Robotics", None, site_config=site_config,
-            )
+        result = await _build_sdxl_prompt(
+            "Robotics", None, site_config=site_config,
+        )
         assert "stylistic or abstract scene related to Robotics" in result
