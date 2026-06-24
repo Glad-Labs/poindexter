@@ -363,8 +363,22 @@ if ($Install) {
     $pwshExe = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
     if (-not $pwshExe) { $pwshExe = (Get-Command powershell).Source }
 
-    $action = New-ScheduledTaskAction -Execute $pwshExe `
-        -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$scriptPath`""
+    # Wrap in run-hidden.vbs (SW_HIDE at CreateProcess level) so spawned child
+    # processes (git.exe, bash.exe, python.exe) never flash a console window.
+    # A plain -WindowStyle Hidden powershell.exe still allocates a console object
+    # that child CUI executables can un-hide briefly via console API calls.
+    # The VBS lives outside the git checkout so the sync cleanup pass cannot wipe it.
+    $vbsPath = Join-Path $env:USERPROFILE '.poindexter\run-hidden.vbs'
+    if (-not (Test-Path $vbsPath)) {
+        Set-Content -Path $vbsPath -Encoding ASCII -Value @'
+Set objShell = CreateObject("WScript.Shell")
+objShell.Run WScript.Arguments(0), 0, False
+'@
+        Write-Log "Created $vbsPath"
+    }
+    $psCmd   = "$pwshExe -NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File $scriptPath"
+    $action  = New-ScheduledTaskAction -Execute 'wscript.exe' `
+        -Argument "`"$vbsPath`" `"$psCmd`""
     # A daily anchor whose repetition fires every 10 min for 24h = a continuous
     # 10-minute cadence. This two-trigger composition is the robust idiom: a lone
     # -Once trigger's RepetitionDuration default varies by build, and on builds
