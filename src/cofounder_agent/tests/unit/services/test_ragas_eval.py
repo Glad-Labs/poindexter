@@ -113,6 +113,63 @@ class TestEvaluateSampleGuards:
 
 
 # ---------------------------------------------------------------------------
+# _build_ragas_models — JSON-format constraint regression (GH #1910)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestBuildRagasModels:
+    @pytest.mark.asyncio
+    async def test_chat_ollama_receives_json_format_kwarg(self):
+        """ChatOllama must be initialized with format='json'.
+
+        Without Ollama's constrained decoding, phi4:14b (the ragas_judge_model
+        fallback) wraps JSON responses in markdown code fences which cause
+        RagasOutputParserException on every metric — including the fix_output_format
+        retry. All Ragas 0.4.x internal prompts expect bare JSON, so JSON-mode is
+        safe for all three metrics. Regression guard for GH #1910.
+
+        Uses sys.modules injection so the test runs in CI even when ragas is not
+        installed (the function's local imports become fakes; only the ChatOllama
+        call_args matter)."""
+        import sys
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from services.ragas_eval import _build_ragas_models
+
+        mock_chat_cls = MagicMock()
+        fake_langchain_ollama = MagicMock()
+        fake_langchain_ollama.ChatOllama = mock_chat_cls
+        fake_langchain_ollama.OllamaEmbeddings = MagicMock()
+
+        fake_ragas_llms = MagicMock()
+        fake_ragas_embeddings = MagicMock()
+
+        with (
+            patch(
+                "services.ragas_eval._resolve_judge_model",
+                new_callable=AsyncMock,
+                return_value="phi4:14b",
+            ),
+            patch.dict(sys.modules, {
+                "langchain_ollama": fake_langchain_ollama,
+                "ragas": MagicMock(),
+                "ragas.llms": fake_ragas_llms,
+                "ragas.embeddings": fake_ragas_embeddings,
+            }),
+        ):
+            await _build_ragas_models(None)
+
+        mock_chat_cls.assert_called_once()
+        _, kwargs = mock_chat_cls.call_args
+        assert kwargs.get("format") == "json", (
+            "ChatOllama must be called with format='json' so Ollama's "
+            "constrained decoding prevents markdown-wrapped JSON that causes "
+            "RagasOutputParserException. See GH #1910."
+        )
+
+
+# ---------------------------------------------------------------------------
 # evaluate_sample — happy path with stubbed Ragas
 # ---------------------------------------------------------------------------
 

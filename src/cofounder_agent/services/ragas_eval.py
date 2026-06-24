@@ -146,8 +146,15 @@ async def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
                 type(exc).__name__, exc, embed_model,
             )
 
+    # format="json" is required: without Ollama's constrained decoding,
+    # phi4:14b and similar models wrap their responses in markdown code
+    # fences (```json ... ```) that RagasOutputParserException cannot
+    # parse — even on the fix_output_format retry. All Ragas 0.4.x
+    # internal prompts (faithfulness_statements, nli_statements, etc.)
+    # expect bare JSON, so JSON-mode is safe for all three metrics. See
+    # Glad-Labs/glad-labs-stack#1910.
     llm = LangchainLLMWrapper(
-        ChatOllama(model=judge_model, base_url=base_url, temperature=0.0)
+        ChatOllama(model=judge_model, base_url=base_url, temperature=0.0, format="json")
     )
     embeddings = LangchainEmbeddingsWrapper(
         OllamaEmbeddings(model=embed_model, base_url=base_url)
