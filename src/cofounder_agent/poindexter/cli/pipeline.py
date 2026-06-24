@@ -220,9 +220,14 @@ def list_paused_command(limit: int, json_output: bool) -> None:
                            topic,
                            template_slug,
                            COALESCE(
-                               (task_metadata->>'qa_flagged')::boolean, false
+                               ((SELECT stage_data -> 'task_metadata'
+                                   FROM pipeline_versions pv
+                                  WHERE pv.task_id::text = pt.task_id::text
+                                  ORDER BY pv.version DESC LIMIT 1
+                                ) ->> 'qa_flagged')::boolean,
+                               false
                            ) AS qa_flagged
-                      FROM pipeline_tasks
+                      FROM pipeline_tasks pt
                      WHERE awaiting_gate IS NOT NULL
                      ORDER BY gate_paused_at ASC NULLS LAST
                      LIMIT $1
