@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-22.**  
+> **Auto-generated from live `app_settings` table on 2026-06-24.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 762 active rows across 62 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 736 active rows across 60 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -30,7 +30,6 @@ The worker re-reads on every poll; no restart needed.
 - [alerts](#alerts) (5 keys)
 - [api_keys](#api-keys) (1 key)
 - [backup](#backup) (31 keys)
-- [bench](#bench) (2 keys)
 - [brain](#brain) (13 keys)
 - [brain-probes](#brain-probes) (7 keys)
 - [cli](#cli) (5 keys)
@@ -44,21 +43,20 @@ The worker re-reads on every poll; no restart needed.
 - [finance](#finance) (4 keys)
 - [firefighter](#firefighter) (7 keys)
 - [gates](#gates) (3 keys)
-- [general](#general) (325 keys)
+- [general](#general) (321 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (5 keys)
 - [infrastructure](#infrastructure) (1 key)
 - [integration](#integration) (2 keys)
 - [integrations](#integrations) (9 keys)
-- [llm_routing](#llm-routing) (7 keys)
+- [llm_routing](#llm-routing) (3 keys)
 - [logging](#logging) (2 keys)
 - [media](#media) (9 keys)
-- [memory](#memory) (4 keys)
-- [memory_alerts](#memory-alerts) (4 keys)
-- [memory_compression](#memory-compression) (6 keys)
-- [model_roles](#model-roles) (5 keys)
-- [models](#models) (5 keys)
+- [memory_alerts](#memory-alerts) (3 keys)
+- [memory_compression](#memory-compression) (3 keys)
+- [model_roles](#model-roles) (4 keys)
+- [models](#models) (4 keys)
 - [monitoring](#monitoring) (45 keys)
 - [newsletter](#newsletter) (3 keys)
 - [niche_pivot](#niche-pivot) (8 keys)
@@ -67,8 +65,8 @@ The worker re-reads on every poll; no restart needed.
 - [ops-triage](#ops-triage) (1 key)
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
-- [pipeline](#pipeline) (37 keys)
-- [plugins](#plugins) (42 keys)
+- [pipeline](#pipeline) (34 keys)
+- [plugins](#plugins) (39 keys)
 - [plugin_telemetry](#plugin-telemetry) (1 key)
 - [podcast](#podcast) (2 keys)
 - [prometheus](#prometheus) (5 keys)
@@ -141,13 +139,6 @@ The worker re-reads on every poll; no restart needed.
 | `offsite_backup_watch_enabled` | `true` |  | Master switch for the brain auto-retry watch on the offsite tier. |
 | `offsite_backup_watch_max_retries` | `2` |  | docker restart attempts before the watch escalates and emits offsite_backup_stale. |
 | `offsite_backup_watch_retry_delay_seconds` | `120` |  | Wait between docker restart and re-checking the heartbeat. |
-
-## bench
-
-| Key | Default | Classification | Description |
-| --- | --- | --- | --- |
-| `bench_default_prompt_count` | `3` |  | Default --repeat count for the cost/energy eval harness (scripts/bench/eval_cost_tiers.py): how many times each promp... |
-| `bench_prometheus_url` | `http://localhost:9091` |  | Prometheus HTTP API base URL the cost/energy eval harness queries for avg_over_time(nvidia_gpu_power_draw_watts) duri... |
 
 ## brain
 
@@ -338,10 +329,6 @@ The worker re-reads on every poll; no restart needed.
 | `devto_top_days` | `7` |  |  |
 | `disable_auth_for_dev` | `true` |  | Disable auth in development |
 | `docker_port_forward_watch_list` | `[{"container": "poindexter-pyroscope"...` |  |  |
-| `embedding_retention_days.audit` | `90` |  | Days to keep audit_log embeddings before prune_stale_embeddings drops them. 90d covers the typical operator post-mort... |
-| `embedding_retention_days.brain` | `365` |  | Days to keep brain_knowledge embeddings before prune. Brain memory is designed to compound; long horizon by design. |
-| `embedding_retention_days.claude_sessions` | `21` |  | Days to keep Claude Code session embeddings before prune_stale_embeddings drops them. 21d balances semantic-search re... |
-| `embedding_retention_days.issues` | `` |  | Empty = no TTL. Issue embeddings are never auto-pruned — irreplaceable pipeline state. |
 | `embedding_retention_days.memory` | `` |  | Empty = no TTL. Memory embeddings are never auto-pruned — operator's curated state. |
 | `embedding_retention_days.posts` | `` |  | Empty = no TTL. Post embeddings are never auto-pruned — feed live RAG retrieval. |
 | `embed_model` | `nomic-embed-text` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -696,11 +683,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `cost_tier.budget.model` | `ollama/phi4:14b` |  | Model resolved when callers pass cost_tier=budget. Sub-writer-size (phi4 14B, ~8GB): DeepEval/Ragas advisory judges, ... |
-| `cost_tier.free.model` | `ollama/qwen3:8b` |  | Model resolved when callers pass cost_tier=free. Smallest local; image-decision tier. |
-| `cost_tier.premium.model` | `anthropic/claude-haiku-4-5` |  | Model resolved when callers pass cost_tier=premium. Cloud cross-model QA; cost_guard-gated. |
-| `cost_tier.standard.model` | `ollama/glm-4.7-5090:latest` |  | Model resolved when callers pass cost_tier=standard. Default writer + critic. |
-| `social_poster_fallback_model` | `ollama/llama3:latest` |  | Per-call-site backstop for services.social_poster when cost_tier='standard' resolution fails (Lane B batch 2 sweep). |
+| `social_poster_fallback_model` | `ollama/llama3:latest` |  | Per-step model pin for services.social_poster X/LinkedIn post generation; read directly by _resolve_social_model (fai... |
 | `thinking_model_substrings` | `["qwen3","qwen3.5","glm-4","glm-4.7",...` |  | JSON array of substring needles used by services.llm_providers.thinking_models.is_thinking_model() to classify a mode... |
 | `video_slideshow_prompt_model` | `ollama/llama3:latest` |  | Per-call-site backstop for services.video_service SDXL prompt-gen. Deliberately non-thinking — qwen3/glm-4 thinking v... |
 
@@ -725,21 +708,11 @@ The worker re-reads on every poll; no restart needed.
 | `stable_audio_open_default_duration_s` | `5.0` |  | Default audio clip duration in seconds for Stable Audio Open. Capped at 47s (model maximum). 5s is typical for intro ... |
 | `stable_audio_open_output_format` | `wav` |  | Output format for Stable Audio Open clips: wav, mp3, ogg, flac. wav is lossless and preferred for video muxing. |
 
-## memory
-
-| Key | Default | Classification | Description |
-| --- | --- | --- | --- |
-| `embedding_collapse_age_days` | `14` |  | Days before raw embeddings get clustered + summarized into a single is_summary=TRUE row by CollapseOldEmbeddingsJob. ... |
-| `embedding_collapse_cluster_size` | `8` |  | GH-81: target cluster count per (source_table, age-group) when the collapse job runs k-means over candidate embedding... |
-| `embedding_collapse_enabled` | `true` |  | GH-81: master switch for the embeddings collapse job. When true, the scheduled job clusters old rows per source_table... |
-| `embedding_collapse_source_tables` | `claude_sessions,brain,audit` |  | GH-81: comma-separated list of source_table values the collapse job is allowed to touch. posts/issues/memory are deli... |
-
 ## memory_alerts
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `memory_stale_threshold_seconds_audit-legacy` | `31536000` |  | Backfilled label for pre-writer-tagging audit embeddings |
-| `memory_stale_threshold_seconds_collapse_job` | `1209600` |  | CollapseOldEmbeddingsJob runs every 7d; threshold 14d (2x schedule) |
 | `memory_stale_threshold_seconds_poindexter-samples` | `31536000` |  | One-off seed writer; not expected to refresh |
 | `memory_stale_threshold_seconds_worker` | `31536000` |  | Legacy writer label, replaced by auto-embed/brain-daemon |
 
@@ -747,9 +720,6 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `embedding_collapse_summary_model` | `ollama/phi4:14b` |  | Ollama model used for cluster-summary generation. Sub-writer-size (phi4 14B, ~8GB) so this continuous hygiene job doe... |
-| `embedding_collapse_summary_provider` | `ollama` |  | Summarization backend for CollapseOldEmbeddingsJob. 'ollama' calls the local LLM to produce a real summary; 'joined_p... |
-| `embedding_collapse_summary_timeout_seconds` | `60` |  | Per-call timeout for the LLM summary generation. 60s allows headroom over the ~12s typical run; on timeout the cluste... |
 | `memory_compression_excerpts_per_bucket` | `12` |  | How many sample rows feed the LLM prompt and land in the {event_type}_excerpts JSONB column for each day-bucket. 12 i... |
 | `memory_compression_summary_model` | `ollama/phi4:14b` |  | Ollama model used by retention.summarize_to_table for the per-day summary paragraph. Same default as embedding_collap... |
 | `memory_compression_summary_timeout_seconds` | `60` |  | Per-call timeout (seconds) for the LLM summary generation in retention.summarize_to_table. On timeout the handler fal... |
@@ -759,7 +729,6 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `inline_image_prompt_model` | `llama3:latest` |  | Ollama model used to craft SDXL prompts for inline images in blog posts |
-| `model_role_factchecker` | `ollama/gemma4:31b` |  | Best at: factual accuracy, catching hallucinated claims, conservative reviewer. Different training data from writer. |
 | `podcast_script_model` | `ollama/gemma4:31b` |  | Ollama model used to generate podcast scripts from article content |
 | `qa_fallback_critic_model` | `ollama/gemma4:31b` |  | Fallback critic model used when pipeline_critic_model returns empty or errors |
 | `video_scene_model` | `llama3:latest` |  | Ollama model used to generate video scene descriptions from article text |
@@ -772,7 +741,6 @@ The worker re-reads on every poll; no restart needed.
 | `cloud_api_mode` | `emergency_only` |  | Cloud API usage mode: disabled, emergency_only, fallback, always |
 | `pipeline_critic_model` | `ollama/glm-4.7-5090:latest` |  | Model for QA/content review |
 | `pipeline_fallback_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Fallback model when primary is unavailable |
-| `pipeline_social_model` | `ollama/qwen3:8b` |  | Model for social media post generation |
 
 ## monitoring
 
@@ -905,7 +873,6 @@ The worker re-reads on every poll; no restart needed.
 | `create_post_dedup_threshold` | `0.75` |  | Cosine similarity at/above which a caller-supplied topic (create_post MCP tool / POST /api/tasks) is refused as a nea... |
 | `daily_budget_usd` | `1.00` |  | Daily LLM spend budget in USD (ignored if cloud_api_mode=disabled) |
 | `daily_post_limit` | `4` |  | Maximum posts to generate per day |
-| `default_model_tier` | `budget` |  | Default model cost tier (free/budget/standard/premium/flagship) |
 | `default_template_slug` | `canonical_blog` |  | Lane C cutover switch: when set, every new pipeline_tasks row without an explicit caller-supplied template_slug gets ... |
 | `max_approval_queue` | `100` |  | Restored 2026-04-24 after backlog cleared |
 | `max_posts_per_day` | `8` |  | Maximum posts to publish per day |
@@ -916,8 +883,6 @@ The worker re-reads on every poll; no restart needed.
 | `pipeline_architect_model` | `ollama/glm-4.7-5090:latest` |  | Local Ollama model the architect-LLM uses to compose pipelines from intent + atom catalog. Cloud models are opt-in on... |
 | `pipeline_architect_timeout_seconds` | `120.0` |  | Max seconds to wait for the architect LLM to emit its JSON graph spec before timing out and falling back to a default... |
 | `pipeline_gate_draft_gate` | `off` |  | HITL approval gate 'draft_gate': on/off. When on, the canonical_blog pipeline pauses after the writer stage via LangG... |
-| `pipeline_refinement_model` | `ollama/glm-4.7-5090:latest` |  | Model for content refinement (stage 5) |
-| `pipeline_research_model` | `ollama/glm-4.7-5090:latest` |  | Model for research stage (stage 1) |
 | `pipeline.stages.order` | `["verify_task", "generate_content", "...` |  | Ordered list of Stage names the content pipeline runs. Operators can disable (drop from list), reorder, or insert thi... |
 | `pipeline_streaming_channel` | `discord` |  | Where TemplateRunner.run streams per-node progress via its on_event callback: 'discord' (default — existing Discord p... |
 | `pipeline_streaming_min_edit_interval_s` | `5` |  | Minimum seconds between Telegram editMessageText calls when pipeline_streaming_channel='telegram'. Rapid node complet... |
@@ -944,7 +909,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin.job.backfill_post_performance_gsc` | `{"enabled": true, "interval_seconds":...` |  | Config for job backfill_post_performance_gsc — tune cadence via config.schedule |
 | `plugin.job.check_memory_staleness` | `{"enabled": true, "interval_seconds":...` |  | Config for job check_memory_staleness — tune cadence via config.schedule |
 | `plugin.job.check_published_links` | `{"enabled": true, "interval_seconds":...` |  | Config for job check_published_links — tune cadence via config.schedule |
-| `plugin.job.collapse_old_embeddings` | `{"enabled": true, "interval_seconds":...` |  | Config for job collapse_old_embeddings — tune cadence via config.schedule |
 | `plugin.job.crosspost_to_devto` | `{"enabled": true, "interval_seconds":...` |  | Config for job crosspost_to_devto — tune cadence via config.schedule |
 | `plugin.job.db_backup` | `{"enabled": true, "interval_seconds":...` |  | Config for job db_backup — tune cadence via config.schedule |
 | `plugin.job.detect_anomalies` | `{"enabled": true, "interval_seconds":...` |  | Config for job detect_anomalies — tune cadence via config.schedule |
@@ -958,8 +922,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin.job.morning_brief` | `{"enabled": true, "interval_seconds":...` |  | Config for job morning_brief — tune cadence via config.schedule |
 | `plugin.job.poll_mercury` | `{"enabled": true, "interval_seconds":...` |  | Config for job poll_mercury — tune cadence via config.schedule |
 | `plugin.job.postgres_vacuum` | `{"enabled": true, "interval_seconds":...` |  | Config for job postgres_vacuum — tune cadence via config.schedule |
-| `plugin.job.prune_orphan_embeddings` | `{"enabled": true, "interval_seconds":...` |  | Config for job prune_orphan_embeddings — tune cadence via config.schedule |
-| `plugin.job.prune_stale_embeddings` | `{"enabled": true, "interval_seconds":...` |  | Config for job prune_stale_embeddings — tune cadence via config.schedule |
 | `plugin.job.reload_site_config` | `{"enabled": true, "interval_seconds":...` |  | Config for job reload_site_config — tune cadence via config.schedule |
 | `plugin.job.render_alertmanager_config` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderAlertmanagerConfigJob (#524) — renders alertmanager.yml.tmpl with telegram_chat_id and reloads Alert... |
 | `plugin.job.render_prometheus_rules` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderPrometheusRulesJob |
