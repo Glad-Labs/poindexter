@@ -98,6 +98,11 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 npm run dev                  # Start both services concurrently (primary command)
 npm run dev:cofounder        # Backend only (FastAPI + uvicorn)
 npm run dev:public           # Next.js only
+
+# Docker backend stack:
+docker compose -f docker-compose.consumer.yml up -d                     # Consumer stack (8-16 GB VRAM / 32 GB RAM)
+docker compose -f docker-compose.consumer.yml --profile sdxl up -d      # + SDXL image generation
+bash scripts/start-stack.sh up -d                                        # Full operator stack (Matt's PC — decrypts bootstrap.toml first)
 ```
 
 ### Testing
@@ -357,6 +362,8 @@ Source of truth: `docs/operations/ci-deploy-chain.md`. Two-remote model (post-20
 **Local fallback:** `git pushe` (alias for `bash scripts/push-everywhere.sh`) does the same thing locally — useful when CI is broken or you want immediate feedback iterating on the sync filter itself. Set up by `bash scripts/install-git-hooks.sh` after a fresh clone.
 
 Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR frontend slice from glad-labs-stack.
+
+**Consumer stack (`docker-compose.consumer.yml`, PR #1924, 2026-06-24):** Minimal variant for 8-16 GB VRAM / 32 GB RAM hardware. Omits the operator observability tier (Langfuse, GlitchTip, Loki/Promtail/Tempo/Pyroscope, pgAdmin) — idle RAM ~4-6 GB vs ~20+ GB for the full operator stack. SDXL image generation behind `--profile sdxl`. `LANGFUSE_TRACING_ENABLED=false` + `:-` sentinels so missing keys never fail-fast; `ENABLE_TRACING=false` (no Tempo sink). Brain mounts `docker-compose.consumer.yml` as `/app/docker-compose.local.yml` so `compose_drift_probe` audits the right service set. Volume names mirror `docker-compose.local.yml` (same `gladlabs-*` named volumes) so upgrading consumer → operator is seamless. Target hardware: RTX 5060 Ti / 5070 class (8-16 GB VRAM), 32 GB RAM — see glad-labs-stack milestone #9 (Poindexter v1).
 
 **Worker image includes ffmpeg (#1449)** — Stage-2 media rendering (podcast/video) bakes ffmpeg directly into `poindexter-prefect-worker`; no separate sidecar or host install needed. After any worker image change, `docker compose up -d --build poindexter-prefect-worker` to apply.
 
