@@ -163,3 +163,86 @@ def retention_run(name: str | None, dry_run: bool) -> None:
         sys.exit(1)
 
     click.echo(json.dumps(summary.to_dict(), indent=2, default=str))
+
+
+def _coerce(v: str) -> "bool | int | float | str":
+    """Coerce a KEY=VALUE string-value to a Python primitive.
+
+    Order matters: booleans before ints (so "true" stays bool, not int),
+    int before float, fallback to str.
+    """
+    if v.lower() in ("true", "yes"):
+        return True
+    if v.lower() in ("false", "no"):
+        return False
+    try:
+        return int(v)
+    except ValueError:
+        pass  # silent-ok: type-coercion ladder — try float next
+    try:
+        return float(v)
+    except ValueError:
+        pass  # silent-ok: type-coercion ladder — fall back to str
+    return v
+
+
+@retention_group.group("config", help="Read / write the config JSONB for one retention policy.")
+def config_group() -> None:
+    pass
+
+
+@config_group.command("show")
+@click.argument("name")
+def config_show(name: str) -> None:
+    """Print the current config JSONB for a policy as formatted JSON."""
+    try:
+        row = run_service(lambda p: dcs.get_row(p, _SURFACE, name))
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    if row is None:
+        click.echo(f"(no policy named {name!r})", err=True)
+        sys.exit(1)
+    click.echo(json.dumps(row.get("config") or {}, indent=2))
+
+
+@config_group.command("set")
+@click.argument("name")
+@click.argument("pairs", nargs=-1, required=True, metavar="KEY=VALUE ...")
+def config_set(name: str, pairs: tuple) -> None:
+    """Patch one or more config keys for a policy.
+
+    Values are auto-coerced: true/false → bool, integers → int, decimals →
+    float, everything else stays a string.
+
+    \b
+    Examples:
+        poindexter retention config set embeddings.orphan_prune.posts batch_size=500
+        poindexter retention config set embeddings.collapse.brain age_days=365 cluster_size=6
+    """
+    updates: dict = {}
+    for pair in pairs:
+        if "=" not in pair:
+            raise click.BadParameter(
+                f"expected KEY=VALUE, got {pair!r}", param_hint="pairs"
+            )
+        k, _, v = pair.partition("=")
+        updates[k.strip()] = _coerce(v.strip())
+
+    async def _impl(pool):
+        row = await dcs.get_row(pool, _SURFACE, name)
+        if row is None:
+            return None
+        config = dict(row.get("config") or {})
+        config.update(updates)
+        return await dcs.upsert_row(pool, _SURFACE, {**row, "config": config})
+
+    try:
+        updated = run_service(_impl)
+    except Exception as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    if updated is None:
+        click.echo(f"(no policy named {name!r})", err=True)
+        sys.exit(1)
+    click.echo(json.dumps(updated.get("config") or {}, indent=2))

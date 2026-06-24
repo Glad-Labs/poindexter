@@ -128,6 +128,97 @@ def test_retention_enable_missing_reports_and_exits():
     assert "no policy named" in result.output
 
 
+def test_retention_config_show_prints_config_json():
+    from poindexter.cli.retention import retention_group
+
+    row = {"name": "p", "config": {"batch_size": 500, "source_table": "posts"}, "metadata": {}}
+    with patch("poindexter.cli.retention.run_service", _fake_run_service), patch(
+        "services.declarative_config_service.get_row",
+        new=AsyncMock(return_value=row),
+    ):
+        result = CliRunner().invoke(retention_group, ["config", "show", "p"])
+    assert result.exit_code == 0
+    import json
+    parsed = json.loads(result.output)
+    assert parsed == {"batch_size": 500, "source_table": "posts"}
+
+
+def test_retention_config_show_missing_exits_1():
+    from poindexter.cli.retention import retention_group
+
+    with patch("poindexter.cli.retention.run_service", _fake_run_service), patch(
+        "services.declarative_config_service.get_row",
+        new=AsyncMock(return_value=None),
+    ):
+        result = CliRunner().invoke(retention_group, ["config", "show", "ghost"])
+    assert result.exit_code == 1
+    assert "no policy named" in result.output
+
+
+def test_retention_config_set_patches_config_keys():
+    from poindexter.cli.retention import retention_group
+
+    existing = {"name": "p", "config": {"source_table": "posts", "batch_size": 100}, "metadata": {}}
+    captured: dict = {}
+
+    async def _fake_upsert(pool, surface, payload):
+        captured.update(payload)
+        return {**payload}
+
+    with patch("poindexter.cli.retention.run_service", _fake_run_service), patch(
+        "services.declarative_config_service.get_row",
+        new=AsyncMock(return_value=existing),
+    ), patch("services.declarative_config_service.upsert_row", new=_fake_upsert):
+        result = CliRunner().invoke(
+            retention_group, ["config", "set", "p", "batch_size=500", "dry_run=true"]
+        )
+    assert result.exit_code == 0
+    assert captured["config"]["batch_size"] == 500
+    assert captured["config"]["dry_run"] is True
+    assert captured["config"]["source_table"] == "posts"  # existing key preserved
+
+
+def test_retention_config_set_coerces_types():
+    from poindexter.cli.retention import _coerce
+
+    assert _coerce("true") is True
+    assert _coerce("false") is False
+    assert _coerce("42") == 42
+    assert isinstance(_coerce("42"), int)
+    assert _coerce("3.14") == 3.14
+    assert isinstance(_coerce("3.14"), float)
+    assert _coerce("posts") == "posts"
+    assert isinstance(_coerce("posts"), str)
+
+
+def test_retention_config_set_missing_policy_exits_1():
+    from poindexter.cli.retention import retention_group
+
+    with patch("poindexter.cli.retention.run_service", _fake_run_service), patch(
+        "services.declarative_config_service.get_row",
+        new=AsyncMock(return_value=None),
+    ):
+        result = CliRunner().invoke(
+            retention_group, ["config", "set", "ghost", "batch_size=500"]
+        )
+    assert result.exit_code == 1
+    assert "no policy named" in result.output
+
+
+def test_retention_config_set_bad_pair_format_exits():
+    from poindexter.cli.retention import retention_group
+
+    existing = {"name": "p", "config": {}, "metadata": {}}
+    with patch("poindexter.cli.retention.run_service", _fake_run_service), patch(
+        "services.declarative_config_service.get_row",
+        new=AsyncMock(return_value=existing),
+    ):
+        result = CliRunner().invoke(
+            retention_group, ["config", "set", "p", "not_a_key_value_pair"]
+        )
+    assert result.exit_code != 0
+
+
 # --- webhooks -----------------------------------------------------------
 
 

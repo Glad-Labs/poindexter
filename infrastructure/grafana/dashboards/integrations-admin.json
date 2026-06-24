@@ -655,7 +655,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Every retention_policies row. Handler = ttl_prune (simple age-based delete), downsample (rollup to coarser table), or temporal_summarize (deferred \u2014 LLM summarization). Enabled rows run daily via the retention_runner scheduled job.",
+      "description": "Every retention_policies row. min_interval_hours throttles how often collapse-type policies run (collapse rows default to 168 h = weekly).",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -726,11 +726,258 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT name AS \"Name\", handler_name AS \"Handler\", table_name AS \"Table\", ttl_days AS \"TTL days\", enabled AS \"Enabled\", total_runs AS \"Runs\", total_deleted AS \"Deleted\", last_run_at AS \"Last run\", last_run_duration_ms AS \"Last ms\", LEFT(COALESCE(last_error, ''), 80) AS \"Last error\" FROM retention_policies ORDER BY handler_name, name;",
+          "rawSql": "SELECT name AS \"Name\", handler_name AS \"Handler\", table_name AS \"Table\", ttl_days AS \"TTL days\", min_interval_hours AS \"Interval h\", enabled AS \"Enabled\", total_runs AS \"Runs\", total_deleted AS \"Deleted\", last_run_at AS \"Last run\", last_run_duration_ms AS \"Last ms\", LEFT(COALESCE(last_error, ''), 80) AS \"Last error\" FROM retention_policies ORDER BY handler_name, name;",
           "refId": "A"
         }
       ],
       "title": "All retention policies",
+      "type": "table"
+    },
+    {
+      "collapsed": false,
+      "datasource": {
+        "type": "datasource",
+        "uid": "-- Mixed --"
+      },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 36
+      },
+      "id": 26,
+      "title": "Embedding Hygiene -- Orphan Prune & Collapse",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 37
+      },
+      "id": 27,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT COALESCE(SUM(total_deleted), 0)::bigint AS \"Orphans pruned (lifetime)\" FROM retention_policies WHERE handler_name = 'embeddings_orphan_prune';"
+        }
+      ],
+      "title": "Orphans pruned (lifetime)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 37
+      },
+      "id": 28,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT COALESCE(SUM(last_run_summarized), 0)::bigint AS \"Summaries written (last run)\" FROM retention_policies WHERE handler_name = 'embeddings_collapse';"
+        }
+      ],
+      "title": "Summaries written (last run)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 37
+      },
+      "id": 29,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT COUNT(*)::int AS \"Embed hygiene failing\" FROM retention_policies WHERE handler_name IN ('embeddings_orphan_prune', 'embeddings_collapse') AND enabled = TRUE AND last_error IS NOT NULL;"
+        }
+      ],
+      "title": "Embed hygiene failing",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Retention policies for embeddings_orphan_prune and embeddings_collapse. Orphan prune deletes embeddings whose parent row is gone; collapse clusters old same-source embeddings into a summary paragraph then deletes the originals. All seeded enabled=false. Enable: poindexter retention enable <name>. Tune: poindexter retention config set <name> KEY=VALUE.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Enabled"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background",
+                  "mode": "basic"
+                }
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "true": {
+                        "text": "enabled",
+                        "color": "blue"
+                      },
+                      "false": {
+                        "text": "disabled",
+                        "color": "yellow"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 41
+      },
+      "id": 30,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT name AS \"Name\", handler_name AS \"Handler\", table_name AS \"Table\", config AS \"Config\", enabled AS \"Enabled\", total_runs AS \"Runs\", total_deleted AS \"Deleted\", last_run_at AS \"Last run\", last_run_summarized AS \"Summarized\", LEFT(COALESCE(last_error, ''), 80) AS \"Last error\" FROM retention_policies WHERE handler_name IN ('embeddings_orphan_prune', 'embeddings_collapse') ORDER BY handler_name, name;"
+        }
+      ],
+      "title": "Embedding hygiene policies",
       "type": "table"
     },
     {
@@ -767,7 +1014,7 @@
         "h": 4,
         "w": 4,
         "x": 0,
-        "y": 37
+        "y": 51
       },
       "id": 13,
       "options": {
@@ -822,7 +1069,7 @@
         "h": 4,
         "w": 4,
         "x": 4,
-        "y": 37
+        "y": 51
       },
       "id": 14,
       "options": {
@@ -883,7 +1130,7 @@
         "h": 4,
         "w": 4,
         "x": 8,
-        "y": 37
+        "y": 51
       },
       "id": 15,
       "options": {
@@ -965,7 +1212,7 @@
         "h": 10,
         "w": 24,
         "x": 0,
-        "y": 41
+        "y": 55
       },
       "id": 16,
       "options": {
@@ -1001,7 +1248,7 @@
         "h": 1,
         "w": 24,
         "x": 0,
-        "y": 51
+        "y": 65
       },
       "panels": [],
       "id": 17
@@ -1011,7 +1258,7 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 52
+        "y": 66
       },
       "id": 18,
       "options": {
@@ -1030,7 +1277,7 @@
         "h": 3,
         "w": 24,
         "x": 0,
-        "y": 54
+        "y": 68
       },
       "id": 19,
       "options": {
@@ -1049,7 +1296,7 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 57
+        "y": 71
       },
       "id": 20,
       "options": {
@@ -1068,7 +1315,7 @@
         "h": 4,
         "w": 24,
         "x": 0,
-        "y": 59
+        "y": 73
       },
       "id": 21,
       "options": {
@@ -1087,7 +1334,7 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 63
+        "y": 77
       },
       "id": 22,
       "options": {
@@ -1106,7 +1353,7 @@
         "h": 6,
         "w": 24,
         "x": 0,
-        "y": 65
+        "y": 79
       },
       "id": 23,
       "options": {
@@ -1125,7 +1372,7 @@
         "h": 2,
         "w": 24,
         "x": 0,
-        "y": 71
+        "y": 85
       },
       "id": 24,
       "options": {
@@ -1144,7 +1391,7 @@
         "h": 3,
         "w": 24,
         "x": 0,
-        "y": 73
+        "y": 87
       },
       "id": 25,
       "options": {
