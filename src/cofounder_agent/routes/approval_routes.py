@@ -313,8 +313,8 @@ async def get_pending_approvals(
             limit=limit,
             offset=offset,
             # Pydantic validates each projection dict into a PendingApprovalItem.
-            items=[  # type: ignore[arg-type]
-                {
+            items=[
+                {  # type: ignore[misc]
                     "task_id": task.get("task_id") or task.get("id"),  # Try task_id first, then id
                     "task_name": task.get("title")
                     or task.get("task_name"),  # Title is the main column

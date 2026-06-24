@@ -1342,7 +1342,7 @@ class TemplateRunner:
                 # checkpoint-poisoning class). Best-effort: never break the run.
                 if current_graph_sig is not None and checkpointer is not None:
                     try:
-                        existing = await checkpointer.aget_tuple(config)
+                        existing = await checkpointer.aget_tuple(config)  # type: ignore[arg-type]
                     except Exception as exc:  # noqa: BLE001
                         logger.warning(
                             "[template_runner] checkpoint introspection failed "

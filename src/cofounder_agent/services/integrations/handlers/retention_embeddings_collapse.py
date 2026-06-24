@@ -214,6 +214,7 @@ async def build_summary_text_via_llm(
     source_table: str,
     model: str,
     timeout_s: int,
+    prompt_template: str | None = None,
 ) -> str | None:
     """Summarize a cluster via the local Ollama model.
 
@@ -235,7 +236,7 @@ async def build_summary_text_via_llm(
     if not pieces:
         return None
 
-    prompt = _DEFAULT_SUMMARY_PROMPT.format(
+    prompt = (prompt_template or _DEFAULT_SUMMARY_PROMPT).format(
         n=len(pieces),
         source_table=source_table,
         joined="\n---\n".join(pieces),

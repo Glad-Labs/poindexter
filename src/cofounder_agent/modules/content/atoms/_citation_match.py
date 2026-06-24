@@ -492,15 +492,15 @@ def repoint_fabricated_citations(
         reg = rs[0]
         if reg in denylist:
             continue
-        src = by_domain.get(reg)
-        if src is None:  # no corpus source on this domain, or ambiguous (2+)
+        corpus_src = by_domain.get(reg)
+        if corpus_src is None:  # no corpus source on this domain, or ambiguous (2+)
             continue
-        if url == src.url:  # already the real URL — nothing to fix
+        if url == corpus_src.url:  # already the real URL — nothing to fix
             continue
-        if _domain_match(text, [src]) is None:  # link text must name the brand
+        if _domain_match(text, [corpus_src]) is None:  # link text must name the brand
             continue
         url_start, url_end = m.span(2)
-        edits.append((url_start, url_end, text, url, src.url))
+        edits.append((url_start, url_end, text, url, corpus_src.url))
 
     if not edits:
         return content, []
