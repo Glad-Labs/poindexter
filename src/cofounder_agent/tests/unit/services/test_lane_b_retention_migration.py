@@ -1,16 +1,20 @@
 """Model-pin resolution tests — retention / housekeeping summary surfaces.
 
-Pins the per-step ``*_model`` resolution contract for the cold-data summary
-call sites. The ``cost_tier.budget`` indirection was removed; each resolver
-now reads its dedicated pin directly via ``_get_setting`` and fails loud
-(``notify_operator(critical=True)`` + raise) when unset, per
-``feedback_no_silent_defaults.md``. The caller then downgrades the run to
-``joined_preview`` rather than landing on a hardcoded literal.
+Pins the ``cost_tier="budget"`` resolution path for:
 
-- ``services.jobs.collapse_old_embeddings._resolve_summary_model`` →
-  ``embedding_collapse_summary_model``
-- ``services.integrations.handlers.retention_summarize_to_table._resolve_summary_model`` →
-  ``memory_compression_summary_model``
+- ``services.integrations.handlers.retention_summarize_to_table._resolve_summary_model``
+  (consumed by ``summarize_to_table`` for per-day LLM summaries)
+
+Note: ``services.jobs.collapse_old_embeddings._resolve_summary_model`` was
+also tested here, but the job was retired 2026-06-24 (folded into the
+``embeddings_collapse`` retention handler). The collapse handler resolves
+the budget model inline without a separate helper.
+
+Per ``feedback_no_silent_defaults.md``, a missing tier mapping must
+fail loudly (``notify_operator``) before falling back to the per-call-
+site setting key. If both are missing, the helper raises and the
+caller downgrades the run to ``joined_preview`` rather than landing on
+a hardcoded literal.
 """
 
 from __future__ import annotations
@@ -18,41 +22,6 @@ from __future__ import annotations
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-
-# ---------------------------------------------------------------------------
-# collapse_old_embeddings._resolve_summary_model
-# ---------------------------------------------------------------------------
-
-
-class TestCollapseResolveSummaryModel:
-    @pytest.mark.asyncio
-    async def test_returns_pin_strips_prefix(self):
-        from services.jobs import collapse_old_embeddings as mod
-
-        with patch(
-            "services.jobs.collapse_old_embeddings._get_setting",
-            AsyncMock(return_value="ollama/gemma3:27b-it-qat"),
-        ):
-            model = await mod._resolve_summary_model(MagicMock())
-        # ``ollama/`` prefix is stripped — OllamaClient consumes the bare name.
-        assert model == "gemma3:27b-it-qat"
-
-    @pytest.mark.asyncio
-    async def test_raises_and_notifies_when_pin_unset(self):
-        from services.jobs import collapse_old_embeddings as mod
-
-        notify = AsyncMock()
-        with patch(
-            "services.jobs.collapse_old_embeddings._get_setting",
-            AsyncMock(return_value=""),
-        ), patch(
-            "services.jobs.collapse_old_embeddings.notify_operator", notify,
-        ):
-            with pytest.raises(RuntimeError, match="no summary model"):
-                await mod._resolve_summary_model(MagicMock())
-        # Critical operator notification fired before raising.
-        assert notify.await_count == 1
-        assert notify.await_args.kwargs.get("critical") is True
 
 
 # ---------------------------------------------------------------------------

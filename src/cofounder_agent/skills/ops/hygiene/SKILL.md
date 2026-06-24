@@ -23,11 +23,12 @@ Operational summarization prompts that bound storage growth.
 `ops.retention.summarize_to_table` is used by
 `services/integrations/handlers/retention_summarize_to_table.py` to
 compress one calendar day of rows (e.g. audit_log) into a single summary
-row. `memory.collapse_old_embeddings.summary` is used by
-`services/jobs/collapse_old_embeddings.py` (#242 migration from inline
-`_DEFAULT_SUMMARY_PROMPT`) to compress a cluster of older same-source
-memories into one paragraph that gets re-embedded; the original rows are
-then deleted.
+row. `memory.collapse_old_embeddings.summary` is registered here for
+Langfuse/DB tunability; the consuming handler is
+`services/integrations/handlers/retention_embeddings_collapse.py` (#242,
+retired `services/jobs/collapse_old_embeddings.py` 2026-06-24) — it uses
+the inline `_DEFAULT_SUMMARY_PROMPT` constant as a fallback but prefers
+the DB-registered key if present.
 
 `UnifiedPromptManager` resolves each template by `key`; both callers
 fetch the raw template and apply the `{...}` placeholders themselves. A

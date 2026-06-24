@@ -1,6 +1,6 @@
 """Pin the cycle-4 UnifiedPromptManager migrations.
 
-Four inline prompts migrated to YAML+Langfuse per
+Three inline prompts migrated to YAML+Langfuse per
 ``feedback_prompts_must_be_db_configurable``:
 
 * ``services.social_poster._build_twitter_prompt`` →
@@ -9,8 +9,13 @@ Four inline prompts migrated to YAML+Langfuse per
   ``social.linkedin_promote``
 * ``modules.content.quality_service._resolve_quality_prompt`` →
   ``qa.quality_evaluation_llm_rubric``
-* ``services.jobs.collapse_old_embeddings._resolve_summary_prompt_template`` →
-  ``memory.collapse_old_embeddings.summary``
+
+Note: ``memory.collapse_old_embeddings.summary`` was migrated from
+``services.jobs.collapse_old_embeddings._resolve_summary_prompt_template``
+— the job was retired 2026-06-24 (folded into retention_policies handler
+``embeddings_collapse``). The handler uses the inline prompt constant
+directly; the YAML key remains registered so the prompt can be tuned via
+Langfuse if needed in the future.
 
 Each resolver pulls from UnifiedPromptManager and falls back to the
 inline constant on any lookup failure — same pattern as the cycle-3
@@ -122,36 +127,14 @@ def test_quality_resolver_falls_back_on_pm_failure():
 
 
 @pytest.mark.unit
-def test_collapse_resolver_returns_raw_template_from_prompt_manager():
-    """The memory-collapse resolver returns the *raw* template so the
-    caller fills {n}/{source_table}/{joined} downstream via
-    build_summary_text_via_llm — same shape as the retention resolver
-    in #612."""
-    from services.jobs import collapse_old_embeddings
+def test_collapse_summary_prompt_constant_has_required_placeholders():
+    """The inline summary prompt in the collapse handler must contain the
+    three format placeholders used by build_summary_text_via_llm."""
+    from services.integrations.handlers.retention_embeddings_collapse import (
+        _DEFAULT_SUMMARY_PROMPT,
+    )
 
-    with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
-        mock_pm.return_value._fetch_from_langfuse.return_value = None
-        mock_pm.return_value.prompts = {
-            "memory.collapse_old_embeddings.summary": {
-                "template": "PM RAW: {n}/{source_table}/{joined}",
-            },
-        }
-        result = collapse_old_embeddings._resolve_summary_prompt_template()
-    assert "{n}" in result
-    assert "{source_table}" in result
-    assert "{joined}" in result
-
-
-@pytest.mark.unit
-def test_collapse_resolver_falls_back_on_pm_failure():
-    from services.jobs import collapse_old_embeddings
-
-    with patch(
-        "services.prompt_manager.get_prompt_manager",
-        side_effect=ImportError("module missing"),
-    ):
-        result = collapse_old_embeddings._resolve_summary_prompt_template()
-    assert "compressing a cluster of older memories" in result
-    assert "{n}" in result
-    assert "{source_table}" in result
-    assert "{joined}" in result
+    assert "{n}" in _DEFAULT_SUMMARY_PROMPT
+    assert "{source_table}" in _DEFAULT_SUMMARY_PROMPT
+    assert "{joined}" in _DEFAULT_SUMMARY_PROMPT
+    assert "compressing a cluster of older memories" in _DEFAULT_SUMMARY_PROMPT

@@ -756,9 +756,9 @@ def get_core_samples() -> dict[str, list[Any]]:
         # never ran and ``memory_sync_stale`` was paging on its
         # never-updating ``writer='collapse_job'``.
         ("jobs", "services.jobs.check_memory_staleness", "CheckMemoryStalenessJob"),
-        ("jobs", "services.jobs.prune_orphan_embeddings", "PruneOrphanEmbeddingsJob"),
-        ("jobs", "services.jobs.prune_stale_embeddings", "PruneStaleEmbeddingsJob"),
-        ("jobs", "services.jobs.collapse_old_embeddings", "CollapseOldEmbeddingsJob"),
+        # prune_orphan_embeddings / prune_stale_embeddings / collapse_old_embeddings
+        # retired 2026-06-24 — folded into retention_policies declarative framework
+        # as embeddings_orphan_prune and embeddings_collapse handlers.
         # (backfill_podcasts / backfill_videos removed #1460 — subsumed by
         # media_distribute (video) + the podcast lane / reconciliation
         # approval-seed (podcast); the disk-scan producers are retired.)

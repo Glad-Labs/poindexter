@@ -69,7 +69,7 @@ async def test_interval_next_run_seeds_short_delay_when_no_persisted_run():
     """poindexter#561: a never-run interval job must get an explicit first-fire
     shortly after boot. Returning None let APScheduler re-anchor to
     boot+interval every restart, so a >restart-cadence interval (e.g. 7d
-    collapse_old_embeddings) never fired."""
+    run_newsletter) never fired."""
     from plugins.scheduler import _FIRST_FIRE_BASE_DELAY_S, _FIRST_FIRE_STAGGER_S
 
     scheduler = PluginScheduler(_pool_with_fetchval(None))

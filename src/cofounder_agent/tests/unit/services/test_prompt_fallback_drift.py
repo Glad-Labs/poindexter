@@ -86,12 +86,6 @@ def _social_linkedin():
     )
 
 
-def _collapse():
-    from services.jobs import collapse_old_embeddings as m
-
-    return m._resolve_summary_prompt_template()
-
-
 def _ops_triage():
     from services import firefighter_service as m
 
@@ -107,7 +101,9 @@ _CASES = [
     ("pipeline_architect", "atoms.pipeline_architect.system_prompt", _architect),
     ("social_twitter", "social.twitter_promote", _social_twitter),
     ("social_linkedin", "social.linkedin_promote", _social_linkedin),
-    ("collapse", "memory.collapse_old_embeddings.summary", _collapse),
+    # ("collapse", "memory.collapse_old_embeddings.summary", ...) removed
+    # 2026-06-24: embeddings_collapse retention handler uses an inline constant
+    # (not a resolver function), so it doesn't participate in this drift-guard.
     ("ops_triage", "ops.triage.system_prompt", _ops_triage),
 ]
 

@@ -80,7 +80,7 @@ from typing import Any
 
 from services.integrations.operator_notify import notify_operator
 from services.integrations.registry import register_handler
-from services.jobs.collapse_old_embeddings import (
+from services.integrations.handlers.retention_embeddings_collapse import (
     build_summary_text,
     build_summary_text_via_llm,
 )

@@ -17,6 +17,7 @@ import json
 import logging
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from services.integrations import registry
@@ -71,6 +72,18 @@ async def run_all(
 
     for row in rows:
         name = row["name"]
+
+        # Per-policy cadence throttle: skip if last run was within min_interval_hours.
+        min_h = row.get("min_interval_hours")
+        last_ran = row.get("last_run_at")
+        if min_h and last_ran:
+            if last_ran.tzinfo is None:
+                last_ran = last_ran.replace(tzinfo=timezone.utc)
+            next_due = last_ran + timedelta(hours=float(min_h))
+            if datetime.now(timezone.utc) < next_due:
+                logger.debug("[retention-runner] %s: not due for %.0fh", name, min_h)
+                continue
+
         start = time.perf_counter()
         try:
             result = await registry.dispatch(

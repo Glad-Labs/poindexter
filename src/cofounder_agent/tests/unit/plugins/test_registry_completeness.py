@@ -218,10 +218,11 @@ def test_known_unregistered_links_to_an_issue() -> None:
 # ---------------------------------------------------------------------------
 # Cross-check: every pyproject.toml entry_point must be in ``_SAMPLES``.
 #
-# Captured 2026-05-20 (finding #189). Five plugins (CollapseOldEmbeddingsJob,
-# BackfillPodcastsJob, BackfillVideosJob, OpenClawSQLiteTap, IGDBSource)
+# Captured 2026-05-20 (finding #189). Five plugins (BackfillPodcastsJob,
+# BackfillVideosJob, OpenClawSQLiteTap, IGDBSource, CollapseOldEmbeddingsJob)
 # had ``[project.entry-points."poindexter.*"]`` declarations in pyproject.toml
-# but were never added to ``_SAMPLES``. In production the worker doesn't
+# but were never added to ``_SAMPLES``. CollapseOldEmbeddingsJob was later
+# retired 2026-06-24 (folded into the embeddings_collapse retention handler). In production the worker doesn't
 # pip-install the package (it only bind-mounts the source), so
 # ``importlib.metadata.entry_points()`` returns 0 and the imperative
 # ``_SAMPLES`` list is the only thing that loads plugins. Without registry

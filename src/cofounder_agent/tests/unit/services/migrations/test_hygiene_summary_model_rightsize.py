@@ -1,11 +1,12 @@
 """Contract test for the hygiene-summary model baseline seeds.
 
-Pins the GPU/VRAM fix (2026-06-21): the ``embedding_collapse_summary_model``
-and ``memory_compression_summary_model`` fallbacks had drifted to the ~17GB
-writer-class model (``gemma-4-31B-it-qat``), so the offline collapse/retention
-hygiene-summary jobs loaded the heavyweight writer into VRAM, pegging the
-RTX 5090 at ~24GB even when no content task was running — despite their own
-seed descriptions calling for a smaller model.
+Pins the GPU/VRAM fix (2026-06-21): ``memory_compression_summary_model``
+(used by ``retention_summarize_to_table``) must not drift to the ~17GB
+writer-class model. The offline collapse handler previously read
+``embedding_collapse_summary_model`` from app_settings, but that key was
+retired when the job was folded into the ``embeddings_collapse`` retention
+handler (2026-06-24). The collapse handler now reads ``summary_model`` from
+its ``retention_policies.config`` JSONB — pinned separately below.
 
 A genuinely-cheap hygiene model (e.g. ``phi4:14b``, ~8GB) keeps background
 work off the writer-grade model; the 18GB writer only loads for real content
@@ -21,6 +22,7 @@ the shipped default.
 
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
@@ -35,10 +37,11 @@ _WRITER_CLASS_MODELS = {
     "ollama/qwen3.6:latest",
 }
 
-# Seed keys whose callers are advisory / hygiene / offline — they must run on
-# a sub-writer-size model.
+# app_settings keys whose callers are advisory / hygiene / offline — they must
+# run on a sub-writer-size model. ``embedding_collapse_summary_model`` was
+# removed: the collapse handler now reads ``summary_model`` from its
+# retention_policies.config JSONB (see test_collapse_config_model_not_writer below).
 _CHEAP_JOB_MODEL_KEYS = (
-    "embedding_collapse_summary_model",
     "memory_compression_summary_model",
 )
 
@@ -54,6 +57,17 @@ def baseline_seeds_text() -> str:
     return seeds_path.read_text(encoding="utf-8")
 
 
+@pytest.fixture(scope="module")
+def collapse_migration_text() -> str:
+    mig_path = (
+        Path(__file__).resolve().parents[4]
+        / "services"
+        / "migrations"
+        / "20260624_004835_embedding_retention_consolidation.py"
+    )
+    return mig_path.read_text(encoding="utf-8")
+
+
 def _seed_value(seeds_text: str, key: str) -> str | None:
     """Extract the seeded value for ``key`` from the baseline SQL."""
     match = re.search(rf"VALUES \('{re.escape(key)}', '([^']+)'", seeds_text)
@@ -62,12 +76,7 @@ def _seed_value(seeds_text: str, key: str) -> str | None:
 
 @pytest.mark.parametrize("key", _CHEAP_JOB_MODEL_KEYS)
 def test_cheap_job_model_is_not_writer_class(baseline_seeds_text: str, key: str) -> None:
-    """Hygiene-summary models must not be the writer-grade model.
-
-    The bug: both seeded ``ollama/gemma-4-31B-it-qat`` (the 17GB writer), so
-    the offline hygiene summaries loaded the writer-grade model and pegged
-    VRAM. They must point at a genuinely smaller model.
-    """
+    """Hygiene-summary app_settings must not be the writer-grade model."""
     value = _seed_value(baseline_seeds_text, key)
     assert value is not None, f"{key} seed row missing from baseline"
     assert value not in _WRITER_CLASS_MODELS, (
@@ -75,3 +84,19 @@ def test_cheap_job_model_is_not_writer_class(baseline_seeds_text: str, key: str)
         "callers would load the ~17GB writer into VRAM, pegging the GPU. Point "
         "it at a genuinely smaller model (e.g. ollama/phi4:14b, ~8GB)."
     )
+
+
+def test_collapse_config_model_not_writer(collapse_migration_text: str) -> None:
+    """The embeddings_collapse retention policy seeds must not use a writer-class model.
+
+    The collapse handler reads ``summary_model`` from its retention_policies.config
+    JSONB (not app_settings). This test pins the seeded default.
+    """
+    # Extract all JSON config strings seeded for embeddings_collapse rows.
+    for match in re.finditer(r'"embeddings_collapse",\s*\n\s*\'(\{[^\']+\})\'', collapse_migration_text):
+        config = json.loads(match.group(1))
+        model = config.get("summary_model", "")
+        assert model not in _WRITER_CLASS_MODELS, (
+            f"embeddings_collapse policy seeds writer-class model {model!r}. "
+            "Use a sub-writer-size model (e.g. phi4:14b, ~8GB)."
+        )

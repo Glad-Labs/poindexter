@@ -2706,6 +2706,7 @@ CREATE TABLE IF NOT EXISTS public.retention_policies (
     filter_sql text,
     age_column text DEFAULT 'created_at'::text NOT NULL,
     ttl_days integer,
+    min_interval_hours real,
     downsample_rule jsonb,
     summarize_handler text,
     enabled boolean DEFAULT false NOT NULL,
@@ -2719,8 +2720,7 @@ CREATE TABLE IF NOT EXISTS public.retention_policies (
     total_runs bigint DEFAULT 0 NOT NULL,
     total_deleted bigint DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL,
-    CONSTRAINT retention_policies_parameter_required_chk CHECK (((ttl_days IS NOT NULL) OR (downsample_rule IS NOT NULL) OR (summarize_handler IS NOT NULL)))
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
 );
 
 
