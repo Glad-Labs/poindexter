@@ -146,14 +146,6 @@
       type: 'int',
       description: 'Task considered stale after this',
     },
-    {
-      key: 'default_model_tier',
-      value: 'budget',
-      category: 'pipeline',
-      type: 'select',
-      options: ['free', 'budget', 'standard', 'premium', 'flagship'],
-      description: 'Default cost tier',
-    },
 
     // models
     {

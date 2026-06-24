@@ -195,7 +195,6 @@ INSERT INTO app_settings (key, value, category, description, is_secret) VALUES
 ('pipeline_writer_model', 'ollama/qwen3:8b', 'models', 'Content generation model', false),
 ('pipeline_critic_model', 'ollama/gemma3:27b', 'models', 'QA/review model', false),
 ('pipeline_seo_model', 'ollama/qwen3:8b', 'models', 'SEO metadata model', false),
-('pipeline_social_model', 'ollama/qwen3:8b', 'models', 'Social post generation model', false),
 ('pipeline_fallback_model', 'ollama/gemma3:27b', 'models', 'Fallback when primary unavailable', false),
 
 -- Token limits

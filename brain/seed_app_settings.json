@@ -134,36 +134,6 @@
       "description": "Fallback model when primary is unavailable"
     },
     {
-      "key": "pipeline_social_model",
-      "value": "ollama/qwen3:8b",
-      "category": "models",
-      "description": "Social media post generation"
-    },
-    {
-      "key": "pipeline_refinement_model",
-      "value": "ollama/gemma3:27b",
-      "category": "pipeline",
-      "description": "Content refinement stage. Premium seed swaps this for a higher-capability model."
-    },
-    {
-      "key": "pipeline_research_model",
-      "value": "ollama/gemma3:27b",
-      "category": "pipeline",
-      "description": "Research stage. Premium seed swaps this for a higher-capability model."
-    },
-    {
-      "key": "model_role_factchecker",
-      "value": "ollama/gemma3:27b",
-      "category": "model_roles",
-      "description": "Fact-checking. Kept separate from writer on purpose."
-    },
-    {
-      "key": "default_model_tier",
-      "value": "budget",
-      "category": "pipeline",
-      "description": "Default cost tier (free/budget/standard/premium/flagship)"
-    },
-    {
       "key": "cloud_api_mode",
       "value": "disabled",
       "category": "models",
