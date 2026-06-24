@@ -993,7 +993,7 @@ async def generate_task_image(
             try:
                 import aiohttp
 
-                pexels_key = site_config_dep.get("pexels_api_key")
+                pexels_key = await site_config_dep.get_secret("pexels_api_key")
                 if not pexels_key:
                     raise HTTPException(status_code=400, detail="Pexels API key not configured")
 

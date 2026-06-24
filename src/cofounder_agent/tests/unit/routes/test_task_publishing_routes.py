@@ -1196,3 +1196,52 @@ class TestGenerateTaskImage:
 
         # Should get 404 (task not found) rather than validation error
         assert resp.status_code == 404
+
+    def test_pexels_key_read_via_get_secret(self):
+        """Regression: pexels_api_key is stored as a secret (is_secret=true) and
+        excluded from the SiteConfig in-memory cache. The route must use get_secret()
+        so it hits the DB, not get() which always returns None for secret keys.
+
+        A SiteConfig where get() returns empty but get_secret() returns the key
+        reproduces the pre-fix failure mode: using get() means no key → 400/500;
+        using get_secret() means the key is found → Pexels call proceeds."""
+        mock_db = make_mock_db()
+        task = _make_task()
+        mock_db.get_task = AsyncMock(return_value=task)
+        mock_db.update_task = AsyncMock(return_value=True)
+
+        app = _build_app(mock_db)
+
+        class _SecretAwareCfg:
+            """Simulates a SiteConfig where pexels_api_key is a secret (not in cache)."""
+
+            def get(self, key, default=""):
+                return default  # secret excluded from in-memory cache
+
+            async def get_secret(self, key, default=""):
+                return "fake-pexels-key" if key == "pexels_api_key" else default
+
+        from utils.route_utils import get_site_config_dependency
+
+        app.dependency_overrides[get_site_config_dependency] = lambda: _SecretAwareCfg()
+
+        pexels_data = {"photos": [{"src": {"large": "https://img.px.com/1.jpg", "original": "..."}, "photographer": "X"}]}
+        mock_resp = MagicMock()
+        mock_resp.status = 200
+        mock_resp.json = AsyncMock(return_value=pexels_data)
+        mock_get_ctx = MagicMock()
+        mock_get_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_get_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock()
+        mock_session.get = MagicMock(return_value=mock_get_ctx)
+        mock_session_cls = MagicMock()
+        mock_session_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+        with patch("aiohttp.ClientSession", mock_session_cls):
+            client = TestClient(app)
+            resp = self._post_generate(client)
+
+        assert resp.status_code == 200, (
+            "get_secret() should find the pexels key even when get() returns empty"
+        )

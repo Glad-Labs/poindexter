@@ -30,6 +30,13 @@ _UPDATE_FEATURED_SQL = (
     "UPDATE pipeline_versions SET featured_image_url = $1 "
     "WHERE task_id = $2 AND version = $3"
 )
+_CHECK_TASK_STATUS_SQL = (
+    "SELECT status FROM pipeline_tasks WHERE task_id = $1"
+)
+_UPDATE_POST_FEATURED_SQL = (
+    "UPDATE posts SET featured_image_url = $1, updated_at = NOW() "
+    "WHERE metadata->>'pipeline_task_id' = $2"
+)
 _IMG_TAG_RE = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]*)(")', re.IGNORECASE)
 
 
@@ -142,8 +149,9 @@ class PostEditService:
             _, version = await self._latest(task_id)
             await self._pool.execute(_UPDATE_FEATURED_SQL, url, task_id, version)
             await self._sync_task_featured(task_id, url)
+            warnings = await self._sync_published_post_featured(task_id, url)
             await self._audit("post_image_replace", task_id, {"which": "featured", "url": url})
-            return EditResult(task_id, "featured", True, f"featured image → {url}", new_url=url)
+            return EditResult(task_id, "featured", True, f"featured image → {url}", new_url=url, warnings=warnings)
 
         if norm.startswith("inline:"):
             try:
@@ -196,7 +204,8 @@ class PostEditService:
             {"which": res.field, "prompt": prompt[:200], "url": url},
         )
         return EditResult(
-            task_id, res.field, True, f"regenerated {res.field} image", new_url=url,
+            task_id, res.field, True, f"regenerated {res.field} image",
+            new_url=url, warnings=res.warnings,
         )
 
     # -- helpers ------------------------------------------------------------
@@ -248,6 +257,56 @@ class PostEditService:
                 "featured-image task mirror skipped for %s (canonical field "
                 "already saved): %s", task_id, e,
             )
+
+    async def _sync_published_post_featured(self, task_id: str, url: str) -> list[str]:
+        """Update posts.featured_image_url and trigger a static rebuild for published tasks.
+
+        posts.featured_image_url is what the static-export JSON reads; pipeline_versions
+        is the canonical draft store but not what the live site serves. Skips silently
+        for non-published tasks (drafts, approved-but-not-live, etc.).
+        """
+        warnings: list[str] = []
+        try:
+            status = await self._pool.fetchval(_CHECK_TASK_STATUS_SQL, task_id)
+            if status != "published":
+                return warnings
+            await self._pool.execute(_UPDATE_POST_FEATURED_SQL, url, task_id)
+            logger.info("posts.featured_image_url updated for published task %s", task_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning(
+                "posts.featured_image_url sync failed for %s: %s — "
+                "run rebuild_static_export manually",
+                task_id, e,
+            )
+            warnings.append(
+                f"posts.featured_image_url update failed ({e!s})"
+                " — run rebuild_static_export manually"
+            )
+            return warnings
+        if self._site_config is None:
+            warnings.append(
+                "no site_config wired — run rebuild_static_export manually to update the live site"
+            )
+            return warnings
+        try:
+            from services.static_export_service import export_full_rebuild
+
+            result = await export_full_rebuild(self._pool, site_config=self._site_config)
+            if result.get("success"):
+                warnings.append("static export rebuild triggered — live site will reflect the new image")
+            else:
+                warnings.append(
+                    "static export rebuild did not fully succeed"
+                    " — verify on Grafana or run rebuild_static_export manually"
+                )
+        except Exception as e:  # noqa: BLE001 — export failure must not block the image swap
+            logger.warning(
+                "static export rebuild failed after image update for %s: %s", task_id, e,
+            )
+            warnings.append(
+                f"static export rebuild failed ({e!s}) — run rebuild_static_export manually"
+            )
+        return warnings
 
     def _validate_warn_only(self, body: str) -> list[str]:
         """Re-run the programmatic validator; never block. Returns warning strings.

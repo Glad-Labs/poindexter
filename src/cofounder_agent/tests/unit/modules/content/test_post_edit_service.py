@@ -30,14 +30,20 @@ class _FakePlatform:
 class FakePool:
     """Minimal asyncpg-pool stand-in: canned latest-version row + execute log."""
 
-    def __init__(self, content: str = "body", version: int = 1):
+    def __init__(self, content: str = "body", version: int = 1, task_status: str = "awaiting_approval"):
         self._content = content
         self._version = version
+        self._task_status = task_status
         self.executed: list[tuple] = []
 
     async def fetchrow(self, sql, *args):
         if "pipeline_versions" in sql:
             return {"content": self._content, "version": self._version}
+        return None
+
+    async def fetchval(self, sql, *args):
+        if "pipeline_tasks" in sql:
+            return self._task_status
         return None
 
     async def execute(self, sql, *args):
@@ -205,3 +211,91 @@ async def test_regen_image_raises_when_generation_fails():
     svc = PostEditService(pool=FakePool(), image_service=_FakeImageSvc(ok=False))
     with pytest.raises(RuntimeError, match="produced no output"):
         await svc.regen_image("t1", which="featured", prompt="x")
+
+
+# ---------------------------------------------------------------------------
+# _sync_published_post_featured — published-post featured image propagation
+# ---------------------------------------------------------------------------
+
+
+async def test_sync_published_post_featured_updates_posts_row(monkeypatch):
+    """For a published task, posts.featured_image_url must be updated so the
+    static export reads the new URL. Regression test for the bug where only
+    pipeline_versions was updated."""
+    pool = FakePool(content="body", version=4, task_status="published")
+
+    async def _fake_rebuild(p, *, site_config):
+        return {"success": True}
+
+    monkeypatch.setattr(
+        "services.static_export_service.export_full_rebuild", _fake_rebuild,
+    )
+
+    svc = PostEditService(pool=pool)  # no site_config → warns, no rebuild
+    warnings = await svc._sync_published_post_featured("task-123", "https://cdn/new.png")
+
+    posts_updates = [e for e in pool.executed if "UPDATE posts" in e[0]]
+    assert posts_updates, "expected UPDATE posts for published task"
+    _, args = posts_updates[0]
+    assert args[0] == "https://cdn/new.png"
+    assert args[1] == "task-123"
+    assert any("no site_config" in w for w in warnings)
+
+
+async def test_sync_published_post_featured_skips_non_published():
+    """Non-published tasks must not touch the posts table."""
+    pool = FakePool(content="body", version=4, task_status="awaiting_approval")
+    svc = PostEditService(pool=pool)
+
+    warnings = await svc._sync_published_post_featured("task-123", "https://cdn/new.png")
+
+    posts_updates = [e for e in pool.executed if "UPDATE posts" in e[0]]
+    assert not posts_updates, "must not UPDATE posts for non-published task"
+    assert warnings == []
+
+
+async def test_sync_published_post_featured_triggers_rebuild(monkeypatch):
+    """When the task is published and site_config is wired, export_full_rebuild is called."""
+    pool = FakePool(content="body", version=4, task_status="published")
+    rebuild_calls: list = []
+
+    async def _fake_rebuild(p, *, site_config):
+        rebuild_calls.append(site_config)
+        return {"success": True}
+
+    monkeypatch.setattr("services.static_export_service.export_full_rebuild", _fake_rebuild)
+
+    from services.site_config import SiteConfig
+
+    sc = SiteConfig(initial_config={})
+    svc = PostEditService(pool=pool, site_config=sc)
+    warnings = await svc._sync_published_post_featured("task-abc", "https://cdn/img.png")
+
+    assert len(rebuild_calls) == 1, "export_full_rebuild should be called exactly once"
+    assert any("rebuild triggered" in w for w in warnings)
+
+
+async def test_regen_image_propagates_warnings_from_published_post(monkeypatch):
+    """Warnings from replace_image (e.g. rebuild triggered) surface in the regen result."""
+    pool = FakePool(content="body", version=1, task_status="published")
+
+    async def fake_upload(self, path, task_id):
+        return "https://cdn/generated/new.webp"
+
+    monkeypatch.setattr(PostEditService, "_upload_image", fake_upload, raising=True)
+
+    async def _fake_rebuild(p, *, site_config):
+        return {"success": True}
+
+    monkeypatch.setattr("services.static_export_service.export_full_rebuild", _fake_rebuild)
+
+    from services.site_config import SiteConfig
+
+    sc = SiteConfig(initial_config={})
+    svc = PostEditService(pool=pool, image_service=_FakeImageSvc(), site_config=sc)
+    result = await svc.regen_image("t1", which="featured", prompt="a teal robot")
+
+    assert result.ok
+    assert any("rebuild" in w for w in result.warnings), (
+        "rebuild warning should propagate through regen_image → replace_image"
+    )
