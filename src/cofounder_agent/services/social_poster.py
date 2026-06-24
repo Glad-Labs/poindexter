@@ -696,9 +696,9 @@ async def _distribute_to_adapters(
     text = generic_post.text
     url = generic_post.post_url
 
-    db_rows = await load_enabled_publishers(pool)
+    db_rows = await load_enabled_publishers(pool, surface="social")
     if not db_rows:
-        logger.info("[social_poster] publishing dispatch: no enabled adapters")
+        logger.info("[social_poster] publishing dispatch: no enabled social adapters")
         # No silent default — still warn about advisory platforms that
         # don't have a wired DB row, so a stale config doesn't hide.
         for name in sorted(enabled):

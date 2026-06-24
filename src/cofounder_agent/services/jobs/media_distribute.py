@@ -163,6 +163,7 @@ _ADAPTERS_SQL = """
     SELECT name, platform, handler_name, config, metadata
       FROM publishing_adapters
      WHERE enabled = true
+       AND COALESCE(surface, 'social') = 'media'
        AND platform = ANY($1::text[])
 """
 

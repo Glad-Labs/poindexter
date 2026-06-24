@@ -127,7 +127,7 @@ class TestDispatchEdgeCases:
             result = await _distribute_to_adapters(posts, set(), site_config=_TEST_SC)
         assert result == {}
         assert any(
-            "no enabled adapters" in rec.getMessage()
+            "no enabled social adapters" in rec.getMessage()
             for rec in caplog.records
         )
 

@@ -169,7 +169,7 @@ _FOOTER = (
 _PROMPT_KEY = "atoms.narrate_bundle.system_prompt"
 
 
-def _resolve_system_prompt() -> tuple[str, str | None, int | None]:
+def _resolve_system_prompt(site_config: Any = None) -> tuple[str, str | None, int | None]:
     """Pull the narrate-bundle system prompt + provenance metadata.
 
     Returns ``(prompt_text, prompt_template_key, prompt_template_version)``
@@ -191,10 +191,21 @@ def _resolve_system_prompt() -> tuple[str, str | None, int | None]:
     paragraphs`` instruction, the title extraction will fall back to
     the heuristic (first sentence of prose). Update the DB prompt to
     match the new OUTPUT FORMAT section in _NARRATIVE_SYSTEM_PROMPT_FALLBACK.
+
+    ``site_config`` is required to render ``{site_name}``/``{site_url}``
+    placeholders via ``get_prompt_resolution``'s format pass. Without
+    it, ``get_prompt_resolution`` raises ``KeyError`` on the missing
+    vars and falls back to the inline constant. Passing it here avoids
+    the error log and ensures the SKILL.md prompt (or a Langfuse
+    override) is used rather than always falling back.
     """
+    site_name = (site_config.get("site_name") if site_config else "") or ""
+    site_url = (site_config.get("site_url") if site_config else "") or ""
     try:
         from services.prompt_manager import get_prompt_manager
-        resolution = get_prompt_manager().get_prompt_resolution(_PROMPT_KEY)
+        resolution = get_prompt_manager().get_prompt_resolution(
+            _PROMPT_KEY, site_name=site_name, site_url=site_url,
+        )
         return resolution.text, resolution.key, resolution.version
     except Exception as exc:  # noqa: BLE001
         logger.error(
@@ -333,14 +344,10 @@ VOICE TIGHTENING (positive directives — what good looks like):
 - Match the register of an indie-dev blog post that draws readers
   in — short paragraphs, real arcs, peer-to-peer voice.
 
-OUTPUT FORMAT: Start your response with exactly one line:
-  TITLE: [a punchy, specific headline — never a date, never "Dev diary
-  for ...", never "What we shipped on ..." — names the most interesting
-  thing shipped today in plain English]
-
-Then a blank line, then the narrative paragraphs. The caller appends the
-deterministic header + footer. Plain markdown prose, no headings, no
-lists, no surrounding JSON.
+OUTPUT: emit only the narrative paragraphs. The caller appends a
+deterministic header + footer. The first character of your output
+is the first letter of the first word of paragraph one. Plain
+markdown prose, no headings, no lists, no surrounding JSON.
 """
 
 
@@ -570,14 +577,19 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     model = resolve_local_model(model=model_override, site_config=site_config)
 
     bundle_text = _format_bundle_for_narrative(bundle)
+    # Pass site_config so {site_name}/{site_url} placeholders are rendered
+    # inside get_prompt_resolution's format pass (avoids a KeyError that
+    # caused every run to fall back to the inline constant instead of the
+    # SKILL.md prompt). For the inline fallback path (exception case),
+    # _resolve_system_prompt returns the unrendered constant; the .format()
+    # call below then fills the same placeholders as before.
     system_prompt, prompt_template_key, prompt_template_version = (
-        _resolve_system_prompt()
+        _resolve_system_prompt(site_config)
     )
-    # The migrated prompt carries the operator persona as {site_name} /
-    # {site_url} placeholders (the brand text used to be hardcoded "Glad
-    # Labs" / "gladlabs.io"). Render them from the run-bound site_config
-    # before the text reaches the model. Empty string when site_config is
-    # absent (bootstrap / tests) so .format never raises on a missing key.
+    # Inline-fallback path: the returned text still contains {site_name} /
+    # {site_url} and needs one more render. SKILL.md / Langfuse path: the
+    # text was already rendered inside _resolve_system_prompt; the format()
+    # call is a no-op (no remaining placeholders to substitute).
     system_prompt = system_prompt.format(
         site_name=(site_config.get("site_name") if site_config else "") or "",
         site_url=(site_config.get("site_url") if site_config else "") or "",

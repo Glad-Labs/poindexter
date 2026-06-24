@@ -19,6 +19,12 @@ Design notes
   hasn't migrated), :func:`load_enabled_publishers` returns an empty list.
   ``social_poster`` interprets that as "no platforms wired — skip
   distribution" and logs an INFO line.
+
+- **surface column (added 20260624_010045_publishing_adapters_surface).**
+  ``surface = 'social'`` rows are dispatched by ``social_poster``
+  (text + URL payload); ``surface = 'media'`` rows are dispatched by
+  ``media_distribute`` (MP4 + title payload). The filter prevents the
+  YouTube handler from receiving social-post payloads.
 """
 
 from __future__ import annotations
@@ -47,6 +53,7 @@ class PublishingAdapterRow:
     handler_name: str
     credentials_ref: str | None
     enabled: bool
+    surface: str = "social"
     config: dict[str, Any] = field(default_factory=dict)
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -59,17 +66,26 @@ class PublishingAdapterRow:
             "handler_name": self.handler_name,
             "credentials_ref": self.credentials_ref,
             "enabled": self.enabled,
+            "surface": self.surface,
             "config": dict(self.config),
             "metadata": dict(self.metadata),
         }
 
 
-async def load_enabled_publishers(pool: Any) -> list[PublishingAdapterRow]:
+async def load_enabled_publishers(
+    pool: Any,
+    surface: str | None = None,
+) -> list[PublishingAdapterRow]:
     """Return the ordered enabled publisher chain from the DB.
 
     Args:
         pool: asyncpg pool. ``None`` is tolerated and yields ``[]`` —
             the caller falls back to skipping distribution entirely.
+        surface: when set, only rows with a matching ``surface`` value
+            are returned. Pass ``'social'`` from ``social_poster`` and
+            ``'media'`` from ``media_distribute`` to prevent cross-surface
+            dispatch (e.g. YouTube receiving a text+URL payload).  ``None``
+            (the default) returns all enabled rows regardless of surface.
 
     Returns:
         List of :class:`PublishingAdapterRow`, ordered by ``name``.
@@ -80,15 +96,30 @@ async def load_enabled_publishers(pool: Any) -> list[PublishingAdapterRow]:
 
     try:
         async with pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT id, name, platform, handler_name, credentials_ref,
-                       enabled, config, metadata
-                  FROM publishing_adapters
-                 WHERE enabled = TRUE
-              ORDER BY name ASC
-                """
-            )
+            if surface is not None:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, name, platform, handler_name, credentials_ref,
+                           enabled, config, metadata,
+                           COALESCE(surface, 'social') AS surface
+                      FROM publishing_adapters
+                     WHERE enabled = TRUE
+                       AND COALESCE(surface, 'social') = $1
+                  ORDER BY name ASC
+                    """,
+                    surface,
+                )
+            else:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, name, platform, handler_name, credentials_ref,
+                           enabled, config, metadata,
+                           COALESCE(surface, 'social') AS surface
+                      FROM publishing_adapters
+                     WHERE enabled = TRUE
+                  ORDER BY name ASC
+                    """
+                )
     except Exception as exc:  # noqa: BLE001
         # Same fallback semantics as qa_gates_db.load_qa_gate_chain —
         # missing table on a fresh checkout shouldn't fail the loop.
@@ -107,6 +138,7 @@ async def load_enabled_publishers(pool: Any) -> list[PublishingAdapterRow]:
                 handler_name=r["handler_name"],
                 credentials_ref=r["credentials_ref"],
                 enabled=bool(r["enabled"]),
+                surface=r["surface"] or "social",
                 config=_parse_jsonb(r["config"]),
                 metadata=_parse_jsonb(r["metadata"]),
             )

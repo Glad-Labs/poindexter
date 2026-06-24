@@ -2621,7 +2621,8 @@ CREATE TABLE IF NOT EXISTS public.publishing_adapters (
     total_runs bigint DEFAULT 0 NOT NULL,
     total_failures bigint DEFAULT 0 NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
-    updated_at timestamp with time zone DEFAULT now() NOT NULL
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    surface text DEFAULT 'social'::text NOT NULL
 );
 
 

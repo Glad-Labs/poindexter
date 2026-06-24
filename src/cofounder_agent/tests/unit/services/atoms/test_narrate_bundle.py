@@ -617,3 +617,89 @@ class TestRunBodyH1MatchesTitle:
         assert extracted == result["title"], (
             f"quiet-day body H1 {extracted!r} must equal title {result['title']!r}"
         )
+
+
+@pytest.mark.unit
+class TestResolveSystemPrompt:
+    """Regression guard for the prompt_manager KeyError bug.
+
+    _resolve_system_prompt() used to call get_prompt_resolution() with no
+    kwargs, causing a KeyError on the {site_name}/{site_url} placeholders
+    in the SKILL.md template. Every dev_diary run logged logger.error and
+    fell back to the inline constant instead of the SKILL.md prompt.
+    """
+
+    def test_passes_site_config_values_to_prompt_resolution(self):
+        """get_prompt_resolution must receive site_name and site_url kwargs
+        so the placeholders in the SKILL.md template don't raise KeyError."""
+        from unittest.mock import MagicMock, patch
+
+        from modules.content.atoms.narrate_bundle import _resolve_system_prompt
+
+        site_config = _CaptureSiteConfig()
+        captured_kwargs: list[dict] = []
+
+        class _FakeResolution:
+            text = "rendered-{site_name}"
+            key = "atoms.narrate_bundle.system_prompt"
+            version = 1
+
+        def _fake_get_resolution(key, **kwargs):
+            captured_kwargs.append(kwargs)
+            return _FakeResolution()
+
+        mock_mgr = MagicMock()
+        mock_mgr.get_prompt_resolution.side_effect = _fake_get_resolution
+
+        with patch(
+            "services.prompt_manager.get_prompt_manager",
+            return_value=mock_mgr,
+        ):
+            text, key, version = _resolve_system_prompt(site_config)
+
+        assert captured_kwargs, "get_prompt_resolution must be called"
+        assert "site_name" in captured_kwargs[0], "site_name kwarg must be passed"
+        assert "site_url" in captured_kwargs[0], "site_url kwarg must be passed"
+        assert key == "atoms.narrate_bundle.system_prompt"
+
+    def test_falls_back_to_inline_constant_and_logs_error(self, caplog):
+        """When the prompt registry raises, _resolve_system_prompt must
+        log at ERROR (the operator needs to know the registry is down) and
+        return the inline fallback constant with unrendered placeholders.
+
+        Note: before the kwargs fix, the fallback fired on every dev_diary run
+        (missing {site_name}/{site_url} kwargs → KeyError in every call), so
+        the log level was temporarily lowered to WARNING to reduce noise.
+        Now that kwargs are passed correctly, the fallback only fires when the
+        registry is genuinely unreachable — ERROR is appropriate.
+        """
+        import logging
+
+        from modules.content.atoms.narrate_bundle import (
+            _NARRATIVE_SYSTEM_PROMPT_FALLBACK,
+            _resolve_system_prompt,
+        )
+        from unittest.mock import MagicMock, patch
+
+        def _raise(_key, **_kw):
+            raise KeyError("atoms.narrate_bundle.system_prompt")
+
+        mock_mgr = MagicMock()
+        mock_mgr.get_prompt_resolution.side_effect = _raise
+
+        with patch(
+            "services.prompt_manager.get_prompt_manager",
+            return_value=mock_mgr,
+        ):
+            with caplog.at_level(logging.ERROR, logger="modules.content.atoms.narrate_bundle"):
+                text, key, version = _resolve_system_prompt(None)
+
+        assert text == _NARRATIVE_SYSTEM_PROMPT_FALLBACK, (
+            "inline fallback must be returned when registry lookup fails"
+        )
+        assert key is None
+        assert version is None
+        error_records = [r for r in caplog.records if r.levelno >= logging.ERROR]
+        assert error_records, (
+            "fallback must log at ERROR so the operator knows the registry is unreachable"
+        )

@@ -52,7 +52,12 @@ def _quality():
 def _narrate():
     from modules.content.atoms import narrate_bundle as m
 
-    return m._resolve_system_prompt()
+    # _resolve_system_prompt returns a (text, key, version) tuple; run() applies
+    # .format(site_name, site_url) after the call. Mirror that here so the
+    # drift comparison works on the final rendered string (same as SKILL.md path,
+    # which renders placeholders inside get_prompt_resolution).
+    text, _key, _version = m._resolve_system_prompt(None)
+    return text.format(site_name="", site_url="")
 
 
 def _architect():

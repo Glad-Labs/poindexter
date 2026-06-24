@@ -51,6 +51,7 @@ def _bluesky_row(**overrides) -> dict[str, Any]:
         "handler_name": "bluesky",
         "credentials_ref": "bluesky_",
         "enabled": True,
+        "surface": "social",
         "config": {},
         "metadata": {"seeded_by": "poindexter#112"},
     }
@@ -218,3 +219,77 @@ class TestAsDictMetadataIndependence:
         d = row.as_dict()
         d["metadata"]["seeded_by"] = "mutated"
         assert row.metadata == {"seeded_by": "test"}
+
+
+class _CapturingConn(_FakeConn):
+    """Wraps _FakeConn to record query args passed to fetch()."""
+
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        super().__init__(rows)
+        self.last_args: tuple[Any, ...] = ()
+
+    async def fetch(self, query: str, *args: Any) -> list[dict[str, Any]]:  # type: ignore[override]
+        self.last_args = args
+        return self._rows  # type: ignore[return-value]
+
+
+class _CapturingPool:
+    def __init__(self, rows: list[dict[str, Any]]) -> None:
+        self.conn = _CapturingConn(rows)
+
+    def acquire(self) -> _CapturingConn:
+        return self.conn
+
+
+class TestSurfaceFilter:
+    """Coverage for the surface column added by migration 20260624_010045.
+
+    social_poster filters surface='social'; media_distribute filters
+    surface='media'. These tests verify: (1) the surface field is
+    populated from the DB row, (2) NULL surface is coalesced to 'social',
+    (3) when surface is set, the value is passed as the SQL $1 argument,
+    (4) when surface is None, no extra SQL argument is sent, and (5) the
+    surface field appears in as_dict().
+    """
+
+    @pytest.mark.asyncio
+    async def test_surface_field_populated_social(self) -> None:
+        pool = _FakePool([_bluesky_row(surface="social")])
+        rows = await load_enabled_publishers(pool)
+        assert rows[0].surface == "social"
+
+    @pytest.mark.asyncio
+    async def test_surface_field_populated_media(self) -> None:
+        pool = _FakePool([_bluesky_row(surface="media", platform="youtube")])
+        rows = await load_enabled_publishers(pool)
+        assert rows[0].surface == "media"
+
+    @pytest.mark.asyncio
+    async def test_null_surface_coalesced_to_social(self) -> None:
+        # Rows that pre-date the migration have surface=NULL in the DB;
+        # COALESCE renders them as 'social'. The fake simulates this by
+        # returning None for the column value.
+        pool = _FakePool([_bluesky_row(surface=None)])
+        rows = await load_enabled_publishers(pool)
+        assert rows[0].surface == "social"
+
+    @pytest.mark.asyncio
+    async def test_surface_filter_passes_sql_arg(self) -> None:
+        # When surface is provided, the filtered SQL path fires with $1 = surface.
+        pool = _CapturingPool([_bluesky_row(surface="social")])
+        await load_enabled_publishers(pool, surface="social")
+        assert pool.conn.last_args == ("social",)
+
+    @pytest.mark.asyncio
+    async def test_no_surface_filter_sends_no_sql_arg(self) -> None:
+        # When surface is None, the unfiltered SQL path fires with no positional args.
+        pool = _CapturingPool([_bluesky_row(surface="social")])
+        await load_enabled_publishers(pool, surface=None)
+        assert pool.conn.last_args == ()
+
+    @pytest.mark.asyncio
+    async def test_surface_included_in_as_dict(self) -> None:
+        pool = _FakePool([_bluesky_row(surface="media", platform="youtube")])
+        rows = await load_enabled_publishers(pool)
+        d = rows[0].as_dict()
+        assert d["surface"] == "media"

@@ -613,7 +613,7 @@ class TestDistributeToAdapters:
 
         assert result == {}
         mock_logger.info.assert_any_call(
-            "[social_poster] publishing dispatch: no enabled adapters"
+            "[social_poster] publishing dispatch: no enabled social adapters"
         )
 
     @pytest.mark.asyncio
