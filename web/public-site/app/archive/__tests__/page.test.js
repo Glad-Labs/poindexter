@@ -6,6 +6,14 @@ jest.mock('next/link', () => {
   return ({ children, href }) => <a href={href}>{children}</a>;
 });
 
+// Mock next/navigation
+const mockNotFound = jest.fn(() => {
+  throw new Error('NEXT_NOT_FOUND');
+});
+jest.mock('next/navigation', () => ({
+  notFound: mockNotFound,
+}));
+
 // Mock next/image
 jest.mock('next/image', () => ({
   __esModule: true,
@@ -51,6 +59,7 @@ const mockPosts = [
 ];
 
 beforeEach(() => {
+  mockNotFound.mockClear();
   global.fetch = jest.fn(() =>
     Promise.resolve({
       ok: true,
@@ -144,6 +153,26 @@ describe('Archive Page (/archive/[page])', () => {
     await renderPage();
     const matches = screen.getAllByText(/nothing on this page yet|no articles/i);
     expect(matches.length).toBeGreaterThan(0);
+  });
+
+  test('calls notFound() for out-of-bounds page (page 99 with no posts)', async () => {
+    global.fetch = jest.fn(() =>
+      Promise.resolve({
+        ok: true,
+        json: () =>
+          Promise.resolve({
+            posts: [],
+            total: 0,
+            exported_at: '2026-01-15T00:00:00Z',
+          }),
+      })
+    );
+
+    await expect(
+      ArchivePage({ params: Promise.resolve({ page: '99' }) })
+    ).rejects.toThrow('NEXT_NOT_FOUND');
+
+    expect(mockNotFound).toHaveBeenCalled();
   });
 
   test('renders pagination when total exceeds page size', async () => {

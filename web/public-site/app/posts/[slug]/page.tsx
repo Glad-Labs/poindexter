@@ -58,10 +58,7 @@ export async function generateMetadata({
   const post = await getPost(slug);
 
   if (!post) {
-    return {
-      title: `Post Not Found | ${SITE_NAME}`,
-      description: 'The article you are looking for does not exist.',
-    };
+    notFound();
   }
 
   const imageUrl =

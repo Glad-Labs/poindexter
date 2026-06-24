@@ -229,16 +229,16 @@ describe('generateMetadata', () => {
     expect(metadata.title).toContain('AI in Healthcare');
   });
 
-  it('returns not-found metadata for unknown slug', async () => {
+  it('calls notFound() for unknown slug (no "Post Not Found" 200)', async () => {
     global.fetch = jest.fn().mockResolvedValue({
       ok: false,
       status: 404,
     });
 
-    const metadata = await generateMetadata({
-      params: Promise.resolve({ slug: 'does-not-exist' }),
-    });
+    await expect(
+      generateMetadata({ params: Promise.resolve({ slug: 'does-not-exist' }) })
+    ).rejects.toThrow('NEXT_NOT_FOUND');
 
-    expect(metadata.title).toMatch(/not found/i);
+    expect(mockNotFound).toHaveBeenCalled();
   });
 });

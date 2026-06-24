@@ -42,6 +42,14 @@ export async function generateMetadata({
   if (!isNaN(parsed) && parsed < 1) notFound();
   const pageNum = parsed || 1;
 
+  // For pages beyond page 1, verify the page actually has content so that
+  // /archive/99 returns 404 rather than a 200 empty-state. Page 1 is always
+  // valid (shows the "nothing yet" placeholder for new installs).
+  if (pageNum > 1) {
+    const { posts } = await getArchivePosts(pageNum);
+    if (posts.length === 0) notFound();
+  }
+
   return {
     title: `Article Archive — Page ${pageNum} | ${SITE_NAME}`,
     description: `Browse our collection of in-depth articles and insights. Page ${pageNum} of the ${SITE_NAME} article archive.`,
@@ -73,6 +81,9 @@ export default async function ArchivePage({ params }: ArchivePageProps) {
   const pageNum = parsed || 1;
   const { posts, total } = await getArchivePosts(pageNum);
   const totalPages = Math.ceil(total / POSTS_PER_PAGE);
+
+  // 404 for out-of-bounds requests. Page 1 is always valid.
+  if (posts.length === 0 && pageNum > 1) notFound();
 
   return (
     <div className="gl-atmosphere min-h-screen">
