@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## [0.87.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.86.0...v0.87.0) (2026-06-24)
+
+
+### Features
+
+* **consumer:** add docker-compose.consumer.yml for 8-16GB VRAM / 32GB RAM installs ([#1924](https://github.com/Glad-Labs/glad-labs-stack/issues/1924)) ([26db0a8](https://github.com/Glad-Labs/glad-labs-stack/commit/26db0a8b3dad696444fed486adcb9c59ae2f280c))
+* **qa:** score the featured/hero image in the qa.vision relevance gate ([#1900](https://github.com/Glad-Labs/glad-labs-stack/issues/1900)) ([398dde3](https://github.com/Glad-Labs/glad-labs-stack/commit/398dde3b9538a13cc7d3bec865b0be2d851c944d))
+* **retention:** fold embedding hygiene jobs into retention_policies declarative framework ([#1909](https://github.com/Glad-Labs/glad-labs-stack/issues/1909)) ([2e0e8c1](https://github.com/Glad-Labs/glad-labs-stack/commit/2e0e8c18e15242c86274e6468a210cb1dabfa19f))
+* **retention:** retention config CLI subcommand + Grafana embedding hygiene panels ([#1911](https://github.com/Glad-Labs/glad-labs-stack/issues/1911)) ([cc0fd66](https://github.com/Glad-Labs/glad-labs-stack/commit/cc0fd6600ecbef91dce2d833c0d7fc6a83330519))
+* **video:** Wan 2.2 TI2V-5B i2v hero renderer — infra half (Piece 4) ([#1902](https://github.com/Glad-Labs/glad-labs-stack/issues/1902)) ([cf00ba8](https://github.com/Glad-Labs/glad-labs-stack/commit/cf00ba8a04274793a8640ab089b92f78a789c72e))
+* **video:** Wan i2v hero renderer code-half — generative source + still fallback (Piece 4) ([#1895](https://github.com/Glad-Labs/glad-labs-stack/issues/1895)) ([84c19a9](https://github.com/Glad-Labs/glad-labs-stack/commit/84c19a9f7ad53374b20ff6a8ef1ecad0bba6434e))
+
+
+### Bug Fixes
+
+* **bugs:** narrate_bundle prompt kwargs + YouTube surface segregation ([#1908](https://github.com/Glad-Labs/glad-labs-stack/issues/1908)) ([27e3e00](https://github.com/Glad-Labs/glad-labs-stack/commit/27e3e00b0a126373d5ab7640fc31b0450ccf3fa5))
+* **cli:** resolve task_metadata UndefinedColumnError in pipeline list-paused ([#1916](https://github.com/Glad-Labs/glad-labs-stack/issues/1916)) ([95897a2](https://github.com/Glad-Labs/glad-labs-stack/commit/95897a21c9b13f16b9441d4ac96f91b868b343a4))
+* **docker:** repair cofounder Dockerfile — Poetry 2.2.1 + --no-root ([#1901](https://github.com/Glad-Labs/glad-labs-stack/issues/1901)) ([ebb12e4](https://github.com/Glad-Labs/glad-labs-stack/commit/ebb12e42e268d33b2d277f08adb7b6884ca88f2e))
+* **media:** podcast watchdog detects + gated-re-dispatches, never authors ([#1905](https://github.com/Glad-Labs/glad-labs-stack/issues/1905)) ([f9d7ebb](https://github.com/Glad-Labs/glad-labs-stack/commit/f9d7ebb5c776aadec4dc78359ec7b0d1cebdae79))
+* **media:** reseed media_pipeline + podcast_pipeline graph_defs (qa.audio drift, [#1876](https://github.com/Glad-Labs/glad-labs-stack/issues/1876)) ([#1884](https://github.com/Glad-Labs/glad-labs-stack/issues/1884)) ([b10bb3e](https://github.com/Glad-Labs/glad-labs-stack/commit/b10bb3ec4cb85f49636ae36a99204a3ecb029d53))
+* **mypy:** resolve 4 type errors surfaced by test run ([#1923](https://github.com/Glad-Labs/glad-labs-stack/issues/1923)) ([4882577](https://github.com/Glad-Labs/glad-labs-stack/commit/4882577c88f42efee0b38c4cf6339cd71e18c5c6))
+* **pipeline:** remove overlooked pipeline_tasks.category reader causing 384 UndefinedColumnErrors ([#1903](https://github.com/Glad-Labs/glad-labs-stack/issues/1903)) ([a1e3c87](https://github.com/Glad-Labs/glad-labs-stack/commit/a1e3c87bb5cc811fd8ecf6dc38163311ac4406f7))
+* **post-edit:** sync posts.featured_image_url + trigger rebuild on published-post image swap; fix Pexels key secret access ([#1918](https://github.com/Glad-Labs/glad-labs-stack/issues/1918)) ([d0fa4f6](https://github.com/Glad-Labs/glad-labs-stack/commit/d0fa4f6d74604542f3dc37f05256a9a06368978d))
+* **ragas:** add format=json to ChatOllama to prevent RagasOutputParserException ([#1914](https://github.com/Glad-Labs/glad-labs-stack/issues/1914)) ([6a6f492](https://github.com/Glad-Labs/glad-labs-stack/commit/6a6f4921525d51faa641977405a4edf0221dd2e8))
+* **tasks:** wrap DeployCheckoutSync in run-hidden.vbs to stop console flash ([#1917](https://github.com/Glad-Labs/glad-labs-stack/issues/1917)) ([296ca02](https://github.com/Glad-Labs/glad-labs-stack/commit/296ca0273b5291c312f4de534d4b5564bdbd849b))
+
 ## [0.86.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.85.0...v0.86.0) (2026-06-23)
 
 
