@@ -475,20 +475,31 @@ class MultiModelQA:
         """
         # 0. Dedicated critic model — keeps the critic a DIFFERENT model
         #    from the writer (which resolves pipeline_writer_model).
-        if self.settings is not None:
-            try:
+        #
+        #    Two settings paths: SettingsService (async, FastAPI process) and
+        #    SiteConfig (sync in-memory cache, Prefect subprocess).  The Prefect
+        #    worker never runs main.py's lifespan, so service_container["settings"]
+        #    is None there — fall back to self._site_config which build_container
+        #    always populates with all non-secret app_settings rows.
+        dedicated: str | None = None
+        try:
+            if self.settings is not None:
                 dedicated = await self.settings.get("pipeline_critic_model")
-            except Exception:  # noqa: BLE001 — settings hiccup → fall through
-                dedicated = None
-            if dedicated:
-                return dedicated
+            elif self._site_config is not None:
+                dedicated = self._site_config.get("pipeline_critic_model")
+        except Exception:  # noqa: BLE001 — settings hiccup → fall through
+            dedicated = None
+        if dedicated:
+            return dedicated
         # 1. Per-call-site fallback (e.g. qa_fallback_critic_model).
         fallback: str | None = None
-        if self.settings is not None:
-            try:
+        try:
+            if self.settings is not None:
                 fallback = await self.settings.get(setting_key)
-            except Exception:
-                fallback = None
+            elif self._site_config is not None:
+                fallback = self._site_config.get(setting_key)
+        except Exception:
+            fallback = None
         if not fallback:
             await notify_operator(
                 f"qa critic ({site}): pipeline_critic_model is empty "

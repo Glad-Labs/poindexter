@@ -77,6 +77,28 @@ class TestMultiModelQAResolveCriticModel:
                 )
         assert notify.await_count == 1
 
+    @pytest.mark.asyncio
+    async def test_settings_service_none_falls_back_to_site_config_dedicated(self):
+        # Prefect subprocess path: settings_service=None, SiteConfig has
+        # pipeline_critic_model loaded from build_container.
+        sc = SiteConfig(initial_config={"pipeline_critic_model": "ollama/phi4:14b"})
+        qa = MultiModelQA(pool=MagicMock(), settings_service=None, site_config=sc)
+        model = await qa._resolve_critic_model(
+            setting_key="qa_fallback_critic_model", site="critic",
+        )
+        assert model == "ollama/phi4:14b"
+
+    @pytest.mark.asyncio
+    async def test_settings_service_none_falls_back_to_site_config_fallback(self):
+        # Prefect subprocess path: pipeline_critic_model unset, falls through
+        # to qa_fallback_critic_model via SiteConfig.
+        sc = SiteConfig(initial_config={"qa_fallback_critic_model": "ollama/qwen2.5:32b"})
+        qa = MultiModelQA(pool=MagicMock(), settings_service=None, site_config=sc)
+        model = await qa._resolve_critic_model(
+            setting_key="qa_fallback_critic_model", site="critic",
+        )
+        assert model == "ollama/qwen2.5:32b"
+
 
 # ---------------------------------------------------------------------------
 # self_review._resolve_self_review_model
