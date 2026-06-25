@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## [0.87.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.87.0...v0.87.1) (2026-06-25)
+
+
+### Bug Fixes
+
+* **alerting:** correct datasource routing in brain/alert_sync — SQL→local-brain-db, PromQL→local-prometheus ([#1934](https://github.com/Glad-Labs/glad-labs-stack/issues/1934)) ([02e5355](https://github.com/Glad-Labs/glad-labs-stack/commit/02e5355ed05f1c3834ce8f41964267a5ad8ce824))
+* **frontend:** return HTTP 404 for missing posts and out-of-bounds archive pages ([#1925](https://github.com/Glad-Labs/glad-labs-stack/issues/1925)) ([d9be074](https://github.com/Glad-Labs/glad-labs-stack/commit/d9be074823316ca406de3079cb941e110b3ec383))
+* **image:** use per-call httpx client for SDXL to avoid stale keep-alive 503s ([#1930](https://github.com/Glad-Labs/glad-labs-stack/issues/1930)) ([0c08688](https://github.com/Glad-Labs/glad-labs-stack/commit/0c08688c5a7be8477815e5985fc80b20d418f080))
+* **qa:** prevent qa.critic pipeline halt when critic model settings are empty ([64e9c99](https://github.com/Glad-Labs/glad-labs-stack/commit/64e9c9989de3b67b148df4e9b2aa2c128264586f))
+* **qa:** resolve critic model via SiteConfig when SettingsService is absent ([#1932](https://github.com/Glad-Labs/glad-labs-stack/issues/1932)) ([af7e09a](https://github.com/Glad-Labs/glad-labs-stack/commit/af7e09a7e57b82dc686b2b56ac2f27fc979080dd))
+* **retention:** register embeddings_collapse + embeddings_orphan_prune in load_all ([7db2975](https://github.com/Glad-Labs/glad-labs-stack/commit/7db29752a587f7fed178ce3ea09e4e53c7ffffa3))
+* **retention:** register embeddings_collapse + embeddings_orphan_prune in load_all ([#1933](https://github.com/Glad-Labs/glad-labs-stack/issues/1933)) ([b2bd52c](https://github.com/Glad-Labs/glad-labs-stack/commit/b2bd52cd40a97ef10bc76d058f255025a33e14ca))
+
 ## [0.87.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.86.0...v0.87.0) (2026-06-24)
 
 
