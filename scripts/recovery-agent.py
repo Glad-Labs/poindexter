@@ -72,6 +72,18 @@ logger = logging.getLogger("poindexter-recovery-agent")
 SERVICES: dict[str, dict[str, str]] = {
     "mcp-http": {"kind": "task", "task": "Poindexter MCP HTTP"},
     "compose-reapply": {"kind": "compose"},
+    # Ollama runs as a host process (not a Docker container), so the brain
+    # cannot docker-restart it. This entry kills all ollama.exe instances and
+    # relaunches `ollama serve` hidden — no tray icon, but the API binds to
+    # :11434 as normal and the brain's ollama_models probe confirms recovery.
+    "ollama": {
+        "kind": "process",
+        "command": (
+            "Get-Process -Name ollama -ErrorAction SilentlyContinue | Stop-Process -Force; "
+            "Start-Sleep -Seconds 2; "
+            "Start-Process -FilePath ollama -ArgumentList serve -WindowStyle Hidden"
+        ),
+    },
 }
 
 DEFAULT_HOST = "0.0.0.0"
@@ -204,6 +216,30 @@ def _restart_task(task_name: str) -> tuple[bool, str]:
     return False, (result.stderr or result.stdout or "unknown error").strip()
 
 
+def _restart_process(command: str) -> tuple[bool, str]:
+    """Run a PowerShell command to stop/start a host process.
+
+    Fire-and-forget for long-running services (like ``ollama serve``): the
+    child process outlives this call. Returns immediately after confirming
+    the PowerShell invocation itself succeeded. The brain probe confirms
+    the service recovered on its next cycle.
+    """
+    try:
+        result = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", command],
+            capture_output=True,
+            text=True,
+            timeout=TASK_TIMEOUT_SECONDS,
+            creationflags=_NO_WINDOW,
+        )
+    except Exception as exc:
+        logger.error("Process restart subprocess error: %s", exc)
+        return False, f"{type(exc).__name__}: {exc}"
+    if result.returncode == 0:
+        return True, "process restart command succeeded"
+    return False, (result.stderr or result.stdout or "unknown error").strip()[:300]
+
+
 def _compose_reapply() -> tuple[bool, str]:
     """Reconcile drifted containers to the compose spec via ``start-stack.sh``.
 
@@ -259,6 +295,8 @@ def dispatch_recovery(
         ok, detail = task_fn(spec["task"])
     elif kind == "compose":
         ok, detail = compose_fn()
+    elif kind == "process":
+        ok, detail = _restart_process(spec["command"])
     else:  # registry typo — fail loud, don't silently 200
         return 400, {"ok": False, "error": f"unknown action kind: {kind!r}"}
 

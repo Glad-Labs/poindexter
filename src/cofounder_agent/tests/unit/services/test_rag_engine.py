@@ -121,7 +121,7 @@ class TestFactoryDefaults:
 
         captured: dict = {}
 
-        def _capture_embed(model_name, base_url):
+        def _capture_embed(model_name, base_url, *, embed_options=None):
             captured["model_name"] = model_name
             captured["base_url"] = base_url
             return _stub_embed_model()

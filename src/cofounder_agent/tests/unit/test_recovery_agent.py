@@ -337,3 +337,66 @@ def test_scheduled_task_status_subprocess_error_is_reported(monkeypatch):
     monkeypatch.setattr(agent.subprocess, "run", boom)
     ok, detail = agent._scheduled_task_status(["A"])
     assert ok is False and "FileNotFoundError" in detail
+
+
+# --- _restart_process + "process" kind + "ollama" service ------------------
+
+
+def test_ollama_registered_as_process_kind():
+    """SERVICES must declare "ollama" with kind="process" so dispatch_recovery
+    routes it to _restart_process instead of the scheduled-task or compose paths."""
+    spec = agent.SERVICES.get("ollama")
+    assert spec is not None, '"ollama" not found in SERVICES'
+    assert spec["kind"] == "process"
+    assert "command" in spec, '"ollama" SERVICES entry missing "command" key'
+
+
+def test_ollama_service_runs_powershell_kill_and_start(monkeypatch):
+    """_restart_process must be invoked with a command that stops ollama
+    and starts 'ollama serve'. We inject _restart_process to stay portable."""
+    seen: dict = {}
+
+    def fake_restart_process(command: str) -> tuple[bool, str]:
+        seen["command"] = command
+        return True, "process restart command succeeded"
+
+    monkeypatch.setattr(agent, "_restart_process", fake_restart_process)
+    status, body = agent.dispatch_recovery("ollama")
+    assert status == 200 and body["ok"] is True
+    cmd = seen.get("command", "")
+    assert "ollama" in cmd.lower()
+    assert "serve" in cmd.lower()
+    assert "Stop-Process" in cmd or "stop" in cmd.lower()
+
+
+def test_restart_process_returns_true_on_zero_exit(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        agent.subprocess,
+        "run",
+        lambda argv, **k: SimpleNamespace(returncode=0, stdout="", stderr=""),
+    )
+    ok, detail = agent._restart_process("echo hi")
+    assert ok is True and "succeeded" in detail
+
+
+def test_restart_process_returns_false_on_nonzero_exit(monkeypatch):
+    from types import SimpleNamespace
+
+    monkeypatch.setattr(
+        agent.subprocess,
+        "run",
+        lambda argv, **k: SimpleNamespace(returncode=1, stdout="", stderr="boom"),
+    )
+    ok, detail = agent._restart_process("echo hi")
+    assert ok is False and "boom" in detail
+
+
+def test_restart_process_reports_subprocess_exception(monkeypatch):
+    def boom(argv, **k):
+        raise OSError("powershell not found")
+
+    monkeypatch.setattr(agent.subprocess, "run", boom)
+    ok, detail = agent._restart_process("cmd")
+    assert ok is False and "OSError" in detail

@@ -91,6 +91,8 @@ _EMBED_MODEL_CACHE: dict[str, Any] = {}
 def _get_embed_model(
     model_name: str = "nomic-embed-text",
     base_url: str = "http://localhost:11434",
+    *,
+    embed_options: dict[str, Any] | None = None,
 ) -> Any:
     """Lazy-load + cache the Ollama embedding adapter.
 
@@ -108,7 +110,8 @@ def _get_embed_model(
     directly; that env var bypasses DB-first config (per
     `feedback_no_silent_defaults` + `feedback_no_env_vars`).
     """
-    cache_key = f"{model_name}@{base_url}"
+    opts_key = json.dumps(embed_options or {}, sort_keys=True)
+    cache_key = f"{model_name}@{base_url}@{opts_key}"
     if cache_key in _EMBED_MODEL_CACHE:
         return _EMBED_MODEL_CACHE[cache_key]
 
@@ -117,6 +120,7 @@ def _get_embed_model(
     embed = OllamaEmbedding(
         model_name=model_name,
         base_url=base_url,
+        ollama_additional_kwargs=embed_options or {},
     )
     _EMBED_MODEL_CACHE[cache_key] = embed
     return embed
@@ -211,6 +215,7 @@ def _build_retriever_class():
             base_url: str = "http://localhost:11434",
             retry_attempts: int = _DEFAULT_EMBED_RETRY_ATTEMPTS,
             retry_base_delay: float = _DEFAULT_EMBED_RETRY_BASE_DELAY,
+            embed_options: dict[str, Any] | None = None,
         ) -> None:
             super().__init__()
             self._pool = pool
@@ -221,13 +226,14 @@ def _build_retriever_class():
             self._base_url = base_url
             self._retry_attempts = retry_attempts
             self._retry_base_delay = retry_base_delay
+            self._embed_options = embed_options
 
         async def _aretrieve(self, query_bundle: QueryBundle) -> list[NodeWithScore]:
             text = query_bundle.query_str
             if not text or not text.strip():
                 return []
 
-            embed = _get_embed_model(self._model_name, self._base_url)
+            embed = _get_embed_model(self._model_name, self._base_url, embed_options=self._embed_options)
             try:
                 vec = await _aembed_query_with_retry(
                     embed,
@@ -365,6 +371,11 @@ async def get_rag_retriever(
             hybrid = bool(site_config.get_bool("rag_hybrid_enabled", False))
         if rerank is None:
             rerank = bool(site_config.get_bool("rag_rerank_enabled", False))
+        try:
+            _num_gpu = int(site_config.get("embed_num_gpu", "0") or "0")
+        except (ValueError, TypeError):
+            _num_gpu = 0
+        embed_options: dict[str, Any] = {"num_gpu": _num_gpu}
     else:
         # No site_config means tests / minimal bootstrap path — defaults
         # only. Production callers MUST pass site_config (the lifespan
@@ -383,6 +394,7 @@ async def get_rag_retriever(
             hybrid = False
         if rerank is None:
             rerank = False
+        embed_options = {"num_gpu": 0}
 
     cls = _build_retriever_class()
     base = cls(
@@ -394,6 +406,7 @@ async def get_rag_retriever(
         base_url=base_url,
         retry_attempts=retry_attempts,
         retry_base_delay=retry_base_delay,
+        embed_options=embed_options,
     )
 
     retriever = base

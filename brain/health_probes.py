@@ -161,6 +161,7 @@ async def _sync_config_from_db(pool):
 PROBE_SCHEDULES = {
     "db_ping": 300,            # 5 min
     "ollama_models": 300,      # 5 min
+    "ollama_embedding": 300,   # 5 min — tests the embed endpoint specifically
     "quality_score": 1800,     # 30 min
     "content_gen": 1800,       # 30 min
     "research_service": 3600,  # 1 hour
@@ -256,6 +257,53 @@ async def probe_ollama_models(_pool) -> dict:
         "model_count": len(models),
         "models": models[:10],  # Cap for storage
         "detail": "models loaded" if has_models else "no models found",
+    }
+
+
+async def probe_ollama_embedding(_pool) -> dict:
+    """Probe: call /api/embed and validate the response contains a float vector.
+
+    ``probe_ollama_models`` only checks ``/api/tags`` (model list). That misses
+    the "chat works, embed refuses" failure mode: under GPU-heavy load Ollama
+    can serve inference requests while the embedding endpoint backs up and refuses
+    new connections. This probe exercises the actual embedding path so the brain
+    detects RAG-grounding outages before the writer produces low-quality drafts.
+
+    Uses ``nomic-embed-text`` — the model baked into the embeddings table schema.
+    The model should be CPU-pinned (``num_gpu 0`` Modelfile) so it doesn't
+    compete for VRAM with the writer or SDXL during inference.
+    """
+    model = "nomic-embed-text"
+
+    def _call_embed() -> tuple[bool, dict]:
+        return _http_json(
+            f"{LOCAL_OLLAMA}/api/embed",
+            method="POST",
+            data={"model": model, "input": "ping"},
+            timeout=30,  # CPU-only embedding may be slow on first call
+        )
+
+    ok, result = await asyncio.to_thread(_call_embed)
+    if not ok:
+        return {
+            "ok": False,
+            "model": model,
+            "detail": f"Ollama embed endpoint failed: {result.get('error', 'unknown')}",
+        }
+
+    embeddings = result.get("embeddings", [])
+    has_vector = (
+        isinstance(embeddings, list)
+        and len(embeddings) > 0
+        and isinstance(embeddings[0], list)
+        and len(embeddings[0]) > 0
+    )
+    dim = len(embeddings[0]) if has_vector else 0
+    return {
+        "ok": has_vector,
+        "model": model,
+        "vector_dim": dim,
+        "detail": f"embed ok, dim={dim}" if has_vector else "no embeddings returned",
     }
 
 
@@ -1511,6 +1559,7 @@ PROBES = {
     # Infrastructure
     "db_ping": probe_db_ping,
     "ollama_models": probe_ollama_models,
+    "ollama_embedding": probe_ollama_embedding,
     "content_gen": probe_content_gen,
     "grafana_datasources": probe_grafana_datasources,
     "public_site": probe_public_site,
@@ -1715,7 +1764,7 @@ async def run_health_probes(pool, notify_fn=None):
     # --- Self-healing: execute remediation actions for persistent failures ---
     for name, count in _failure_counts.items():
         if count >= ALERT_AFTER_FAILURES and name in REMEDIATIONS:
-            await _try_remediation(name, results.get(name, {}), notify_fn)
+            await _try_remediation(name, results.get(name, {}), notify_fn, pool=pool)
 
     if results:
         passed = sum(1 for r in results.values() if r.get("ok"))
@@ -1734,6 +1783,45 @@ _last_remediation: dict[str, float] = {}
 REMEDIATION_COOLDOWN = 900  # 15 minutes between remediation attempts per probe
 
 
+async def _call_agent_recovery(pool, service: str) -> tuple[bool, str]:
+    """POST to the host recovery agent to restart a host-side service.
+
+    Container-safe: the agent runs on the Windows host at the URL stored in
+    ``mcp_http_probe_recovery_url`` and is reachable via ``host.docker.internal``
+    from the brain container. Mirrors ``mcp_http_probe._try_http_recovery`` but
+    reads the URL/token from the DB and is called from health_probes remediation.
+    """
+    if pool is None:
+        return False, "pool unavailable — cannot read recovery agent config"
+
+    recovery_url = (await _read_app_setting(pool, RECOVERY_URL_KEY, "")).strip()
+    recovery_token = (await _read_app_setting(pool, RECOVERY_TOKEN_KEY, "")).strip()
+
+    if not recovery_url or not recovery_token:
+        return False, "recovery agent URL/token not configured in app_settings"
+
+    if httpx is None:
+        return False, "httpx not installed in brain image"
+
+    try:
+        async with httpx.AsyncClient(timeout=15) as client:
+            response = await client.post(
+                recovery_url,
+                json={"service": service},
+                headers={"Authorization": f"Bearer {recovery_token}"},
+            )
+            ok = 200 <= response.status_code < 300
+            detail = f"HTTP {response.status_code}"
+            if not ok:
+                try:
+                    detail += f" — {response.json().get('detail', '')}"
+                except Exception:
+                    pass
+            return ok, detail
+    except Exception as exc:  # noqa: BLE001
+        return False, f"{type(exc).__name__}: {exc}"
+
+
 def _restart_container(container_name: str) -> tuple[bool, str]:
     """Restart a Docker container. Returns (success, message)."""
     try:
@@ -1748,7 +1836,7 @@ def _restart_container(container_name: str) -> tuple[bool, str]:
         return False, f"restart error: {str(e)[:200]}"
 
 
-async def _try_remediation(probe_name: str, result: dict, notify_fn=None):
+async def _try_remediation(probe_name: str, result: dict, notify_fn=None, *, pool=None):
     """Execute a remediation action if cooldown has elapsed."""
     last = _last_remediation.get(probe_name, 0)
     if (time.time() - last) < REMEDIATION_COOLDOWN:
@@ -1773,6 +1861,8 @@ async def _try_remediation(probe_name: str, result: dict, notify_fn=None):
             msgs.append(c_msg)
             ok = ok or c_ok
         msg = "; ".join(msgs)
+    elif action_type == "recover_via_agent":
+        ok, msg = await _call_agent_recovery(pool, action["service"])
 
     _last_remediation[probe_name] = time.time()
 
@@ -1809,5 +1899,19 @@ REMEDIATIONS = {
         "type": "restart_container",
         "container": "poindexter-worker",
         "description": "Restart worker when public site API is down",
+    },
+    # Ollama is a host process (not a Docker container) — cannot docker-restart
+    # it. Both probes target the same service: ollama_models detects total
+    # Ollama outage; ollama_embedding detects the embed-refuses-while-chat-works
+    # failure mode. Both route through the host recovery agent.
+    "ollama_models": {
+        "type": "recover_via_agent",
+        "service": "ollama",
+        "description": "Restart Ollama via recovery agent when model list is unreachable",
+    },
+    "ollama_embedding": {
+        "type": "recover_via_agent",
+        "service": "ollama",
+        "description": "Restart Ollama via recovery agent when embed endpoint fails",
     },
 }

@@ -129,6 +129,14 @@ def _default_electricity_rate_kwh(*, site_config: SiteConfig | None = None) -> f
         ) from exc
 
 
+def _default_embed_num_gpu(*, site_config: SiteConfig | None = None) -> int:
+    """GPU layers for the embedding model. 0 = CPU-only (default), -1 = Ollama default."""
+    try:
+        return int(_sc_get_di("embed_num_gpu", "0", site_config=site_config) or "0")
+    except (ValueError, TypeError):
+        return 0
+
+
 def _default_num_ctx(*, site_config: SiteConfig | None = None) -> int:
     """Context window limit — prevents models from allocating massive KV caches.
     Default 8192 is plenty for article generation and saves ~15GB VRAM vs 65K context."""
@@ -928,10 +936,14 @@ class OllamaClient:
         Returns:
             Embedding vector as list of floats.
         """
+        _num_gpu = _default_embed_num_gpu(site_config=self._site_config)
+        _embed_payload: dict = {"model": model, "input": text}
+        if _num_gpu >= 0:
+            _embed_payload["options"] = {"num_gpu": _num_gpu}
         try:
             response = await self.client.post(
                 f"{self.base_url}/api/embed",
-                json={"model": model, "input": text},
+                json=_embed_payload,
                 timeout=self.timeout,
             )
             response.raise_for_status()
@@ -964,10 +976,14 @@ class OllamaClient:
         Returns:
             List of embedding vectors.
         """
+        _num_gpu = _default_embed_num_gpu(site_config=self._site_config)
+        _embed_payload: dict = {"model": model, "input": texts}
+        if _num_gpu >= 0:
+            _embed_payload["options"] = {"num_gpu": _num_gpu}
         try:
             response = await self.client.post(
                 f"{self.base_url}/api/embed",
-                json={"model": model, "input": texts},
+                json=_embed_payload,
                 timeout=self.timeout,
             )
             response.raise_for_status()

@@ -818,3 +818,179 @@ class TestProbeContentGenGpuLock:
             if "pg_advisory_unlock" in c.args[0]
         ]
         assert len(unlocks) == 1
+
+
+# ---------------------------------------------------------------------------
+# New probes + recovery helpers added for Ollama embed-endpoint monitoring
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestOllamaEmbeddingProbe:
+    """probe_ollama_embedding validates /api/embed, not just /api/tags.
+    The existing probe_ollama_models only checks the model list; this probe
+    exercises the actual embedding path so the brain catches RAG outages."""
+
+    async def test_happy_path_returns_vector_dim(self):
+        resp = MagicMock()
+        resp.read.return_value = b'{"embeddings": [[0.1, 0.2, 0.3]]}'
+        with patch("urllib" + ".request.urlopen", return_value=resp):
+            r = await hp.probe_ollama_embedding(_make_pool())
+        assert r["ok"] is True
+        assert r["vector_dim"] == 3
+        assert r["model"] == "nomic-embed-text"
+
+    async def test_embed_endpoint_down_returns_not_ok(self):
+        with patch("urllib" + ".request.urlopen", side_effect=OSError("connection refused")):
+            r = await hp.probe_ollama_embedding(_make_pool())
+        assert r["ok"] is False
+        assert "detail" in r
+
+    async def test_empty_embeddings_list_returns_not_ok(self):
+        # Ollama may return {"embeddings": []} if the model is not loaded.
+        resp = MagicMock()
+        resp.read.return_value = b'{"embeddings": []}'
+        with patch("urllib" + ".request.urlopen", return_value=resp):
+            r = await hp.probe_ollama_embedding(_make_pool())
+        assert r["ok"] is False
+        assert r["vector_dim"] == 0
+
+    async def test_missing_embeddings_key_returns_not_ok(self):
+        resp = MagicMock()
+        resp.read.return_value = b'{"error": "model not found"}'
+        with patch("urllib" + ".request.urlopen", return_value=resp):
+            r = await hp.probe_ollama_embedding(_make_pool())
+        assert r["ok"] is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestCallAgentRecovery:
+    """_call_agent_recovery POSTs to the host recovery agent via httpx.
+    The recovery agent runs on the Windows host (not in Docker) and stops+starts
+    host processes like Ollama."""
+
+    async def test_pool_none_returns_false(self):
+        ok, msg = await hp._call_agent_recovery(None, "ollama")
+        assert ok is False
+        assert "pool unavailable" in msg
+
+    async def test_unconfigured_url_returns_false(self):
+        # DB has no recovery_url row → fetchrow returns None → empty string → bail.
+        pool = _make_pool()
+        pool.fetchrow.return_value = None
+        ok, msg = await hp._call_agent_recovery(pool, "ollama")
+        assert ok is False
+        assert "not configured" in msg
+
+    async def test_httpx_unavailable_returns_false(self):
+        pool = _make_pool()
+        _configured = AsyncMock(side_effect=["http://host.docker.internal:9841/recover", "tok"])
+        with patch.object(hp, "_read_app_setting", new=_configured), \
+             patch.object(hp, "httpx", None):
+            ok, msg = await hp._call_agent_recovery(pool, "ollama")
+        assert ok is False
+        assert "httpx" in msg
+
+    async def test_agent_200_returns_true(self):
+        pool = _make_pool()
+        _configured = AsyncMock(side_effect=["http://host.docker.internal:9841/recover", "tok"])
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        fake_httpx = MagicMock()
+        fake_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        fake_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(hp, "_read_app_setting", new=_configured), \
+             patch.object(hp, "httpx", fake_httpx):
+            ok, detail = await hp._call_agent_recovery(pool, "ollama")
+
+        assert ok is True
+        assert "200" in detail
+        mock_client.post.assert_called_once()
+        call_kwargs = mock_client.post.call_args
+        assert call_kwargs.kwargs.get("json", {}).get("service") == "ollama"
+
+    async def test_agent_500_returns_false(self):
+        pool = _make_pool()
+        _configured = AsyncMock(side_effect=["http://host.docker.internal:9841/recover", "tok"])
+        mock_response = MagicMock()
+        mock_response.status_code = 500
+        mock_response.json.return_value = {"detail": "internal error"}
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        fake_httpx = MagicMock()
+        fake_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(return_value=mock_client)
+        fake_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(hp, "_read_app_setting", new=_configured), \
+             patch.object(hp, "httpx", fake_httpx):
+            ok, detail = await hp._call_agent_recovery(pool, "ollama")
+
+        assert ok is False
+        assert "500" in detail
+
+    async def test_connection_exception_returns_false(self):
+        pool = _make_pool()
+        _configured = AsyncMock(side_effect=["http://host.docker.internal:9841/recover", "tok"])
+        fake_httpx = MagicMock()
+        fake_httpx.AsyncClient.return_value.__aenter__ = AsyncMock(
+            side_effect=ConnectionError("refused")
+        )
+        fake_httpx.AsyncClient.return_value.__aexit__ = AsyncMock(return_value=False)
+
+        with patch.object(hp, "_read_app_setting", new=_configured), \
+             patch.object(hp, "httpx", fake_httpx):
+            ok, detail = await hp._call_agent_recovery(pool, "ollama")
+
+        assert ok is False
+        assert "ConnectionError" in detail or "refused" in detail
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestOllamaRemediation:
+    """REMEDIATIONS config and _try_remediation routing for Ollama probes."""
+
+    def test_ollama_models_has_recover_via_agent_entry(self):
+        entry = hp.REMEDIATIONS.get("ollama_models")
+        assert entry is not None, '"ollama_models" not in REMEDIATIONS'
+        assert entry["type"] == "recover_via_agent"
+        assert entry.get("service") == "ollama"
+
+    def test_ollama_embedding_has_recover_via_agent_entry(self):
+        entry = hp.REMEDIATIONS.get("ollama_embedding")
+        assert entry is not None, '"ollama_embedding" not in REMEDIATIONS'
+        assert entry["type"] == "recover_via_agent"
+        assert entry.get("service") == "ollama"
+
+    async def test_try_remediation_routes_ollama_models_to_agent_recovery(self):
+        """_try_remediation(ollama_models) must call _call_agent_recovery with
+        service="ollama" rather than falling through to a docker-restart path."""
+        calls: list = []
+
+        async def fake_recovery(inner_pool, service):
+            calls.append(service)
+            return True, "ok"
+
+        with patch.object(hp, "_call_agent_recovery", new=fake_recovery):
+            await hp._try_remediation("ollama_models", {"ok": False}, pool=_make_pool())
+
+        assert calls == ["ollama"]
+
+    async def test_try_remediation_routes_ollama_embedding_to_agent_recovery(self):
+        calls: list = []
+
+        async def fake_recovery(inner_pool, service):
+            calls.append(service)
+            return True, "ok"
+
+        with patch.object(hp, "_call_agent_recovery", new=fake_recovery):
+            await hp._try_remediation("ollama_embedding", {"ok": False}, pool=_make_pool())
+
+        assert calls == ["ollama"]

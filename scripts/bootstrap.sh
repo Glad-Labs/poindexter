@@ -250,6 +250,14 @@ if command -v ollama >/dev/null 2>&1; then
         # (disk full, network, manifest 404) are worth showing to the
         # operator before the single-line warn at end of chain.
         ollama pull nomic-embed-text && ok "nomic-embed-text (embeddings)" || warn "Failed to pull nomic-embed-text — see error above"
+        # CPU-pin the embedding model so it doesn't evict the writer model from VRAM.
+        # The app_settings embed_num_gpu=0 passes num_gpu:0 to every embed call, but
+        # baking it into the Modelfile makes it permanent even for callers that don't
+        # pass options. This overwrites the base model in-place (same name).
+        _mf=$(mktemp)
+        printf 'FROM nomic-embed-text\nPARAMETER num_gpu 0\n' > "${_mf}"
+        ollama create nomic-embed-text -f "${_mf}" && ok "nomic-embed-text CPU-pinned (Modelfile)" || warn "Failed to CPU-pin nomic-embed-text via Modelfile — embed calls will still pass num_gpu=0 via options"
+        rm -f "${_mf}"
         ollama pull qwen3:8b && ok "qwen3:8b (fast tasks, image decisions, SEO)" || warn "Failed to pull qwen3:8b — see error above"
         ollama pull gemma3:27b && ok "gemma3:27b (QA reviews, fallback)" || warn "Failed to pull gemma3:27b — see error above"
         info ""

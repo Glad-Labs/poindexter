@@ -344,6 +344,11 @@ DEFAULTS: dict[str, str] = {
     'rag_default_top_k': '5',
     'rag_embed_retry_attempts': '3',
     'rag_embed_retry_base_delay_seconds': '0.25',
+    # GPU layers to offload for the embedding model (nomic-embed-text).
+    # 0 = CPU-only. Keeps the 768-dim embedding model off the GPU so it
+    # doesn't evict the ~19 GB writer model from VRAM mid-pipeline.
+    # Set to -1 to restore Ollama's default (GPU if available).
+    'embed_num_gpu': '0',
     'rag_hybrid_enabled': 'false',
     'rag_min_similarity': '0.3',
     'rag_rerank_enabled': 'false',
