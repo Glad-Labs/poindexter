@@ -89,6 +89,11 @@ def _rule_uid(name: str) -> str:
     return f"pdx-{h[:20]}"
 
 
+def _is_sql_query(query: str) -> bool:
+    """Return True if query is SQL (SELECT …) rather than PromQL."""
+    return query.strip().upper().startswith("SELECT")
+
+
 def _hash_rule(row: dict[str, Any]) -> str:
     """Stable hash of the rule's sync-relevant fields.
 
@@ -108,6 +113,9 @@ def _hash_rule(row: dict[str, Any]) -> str:
         annotations = json.loads(annotations)
 
     # sort_keys=True → deterministic across dict insertion orders.
+    # datasource_type is included so that fixes to routing logic (SQL vs
+    # PromQL, or UID changes) invalidate stale hashes and force a re-sync
+    # without needing a DB row edit.
     payload = json.dumps(
         {
             "name": row["name"],
@@ -117,6 +125,7 @@ def _hash_rule(row: dict[str, Any]) -> str:
             "severity": row["severity"],
             "labels": labels,
             "annotations": annotations,
+            "datasource_type": "sql" if _is_sql_query(row.get("promql_query", "")) else "promql",
         },
         sort_keys=True,
     )
@@ -136,14 +145,19 @@ def rule_to_grafana_payload(
     * ``uid`` — stable UID per rule (we derive from name)
     * ``title`` — display name
     * ``condition`` — letter ref to the query stage that holds the
-      boolean outcome. We use ``B`` (threshold check on query ``A``).
-    * ``data`` — list of query stages. Two stages: ``A`` = the user's
-      PromQL, ``B`` = threshold check.
+      boolean outcome. ``C`` for SQL rules (A→reduce→threshold),
+      ``B`` for PromQL rules (A→threshold).
+    * ``data`` — list of query stages.
     * ``noDataState`` / ``execErrState`` — what Grafana does when the
       query returns no data or errors. We default to ``OK`` so a
       broken query doesn't page the team.
     * ``for`` — duration the rule must stay firing before it alerts.
     * ``labels`` / ``annotations`` — per-rule metadata.
+
+    SQL vs PromQL routing: ``promql_query`` rows that start with SELECT
+    are routed to the ``local-brain-db`` PostgreSQL datasource with a
+    rawSql model + reduce stage. Everything else is treated as PromQL
+    and routed to ``local-prometheus``.
     """
     labels = row.get("labels_json") or {}
     annotations = row.get("annotations_json") or {}
@@ -155,25 +169,67 @@ def rule_to_grafana_payload(
     # Ensure severity is reflected as a label for Alertmanager routing.
     labels = {**labels, "severity": row["severity"]}
 
-    return {
-        "uid": _rule_uid(row["name"]),
-        "title": row["name"],
-        "folderUID": folder_uid,
-        "ruleGroup": GRAFANA_RULE_GROUP,
-        "condition": "B",
-        "noDataState": "OK",
-        "execErrState": "OK",
-        "for": row["duration"],
-        "labels": labels,
-        "annotations": annotations,
-        "data": [
+    query = row["promql_query"]
+    threshold_params = [float(row["threshold"])]
+
+    if _is_sql_query(query):
+        # SQL → local-brain-db with a reduce stage between query and threshold
+        # so Grafana can extract a scalar from the table result.
+        data = [
             {
                 "refId": "A",
                 "relativeTimeRange": {"from": 600, "to": 0},
-                "datasourceUid": "prometheus",
+                "datasourceUid": "local-brain-db",
                 "model": {
                     "refId": "A",
-                    "expr": row["promql_query"],
+                    "rawSql": query,
+                    "format": "table",
+                    "editorMode": "code",
+                },
+            },
+            {
+                "refId": "B",
+                "relativeTimeRange": {"from": 0, "to": 0},
+                "datasourceUid": "__expr__",
+                "model": {
+                    "refId": "B",
+                    "type": "reduce",
+                    "expression": "A",
+                    "reducer": "last",
+                    "settings": {"mode": "dropNN"},
+                },
+            },
+            {
+                "refId": "C",
+                "relativeTimeRange": {"from": 0, "to": 0},
+                "datasourceUid": "__expr__",
+                "model": {
+                    "refId": "C",
+                    "type": "threshold",
+                    "expression": "B",
+                    "conditions": [
+                        {
+                            "evaluator": {"type": "gt", "params": threshold_params},
+                            "operator": {"type": "and"},
+                            "query": {"params": ["B"]},
+                            "reducer": {"type": "last", "params": []},
+                            "type": "query",
+                        }
+                    ],
+                },
+            },
+        ]
+        condition = "C"
+    else:
+        # PromQL → local-prometheus, threshold directly on the vector value.
+        data = [
+            {
+                "refId": "A",
+                "relativeTimeRange": {"from": 600, "to": 0},
+                "datasourceUid": "local-prometheus",
+                "model": {
+                    "refId": "A",
+                    "expr": query,
                     "instant": True,
                 },
             },
@@ -187,10 +243,7 @@ def rule_to_grafana_payload(
                     "expression": "A",
                     "conditions": [
                         {
-                            "evaluator": {
-                                "type": "gt",
-                                "params": [float(row["threshold"])],
-                            },
+                            "evaluator": {"type": "gt", "params": threshold_params},
                             "operator": {"type": "and"},
                             "query": {"params": ["A"]},
                             "reducer": {"type": "last", "params": []},
@@ -199,7 +252,21 @@ def rule_to_grafana_payload(
                     ],
                 },
             },
-        ],
+        ]
+        condition = "B"
+
+    return {
+        "uid": _rule_uid(row["name"]),
+        "title": row["name"],
+        "folderUID": folder_uid,
+        "ruleGroup": GRAFANA_RULE_GROUP,
+        "condition": condition,
+        "noDataState": "OK",
+        "execErrState": "OK",
+        "for": row["duration"],
+        "labels": labels,
+        "annotations": annotations,
+        "data": data,
     }
 
 

@@ -190,8 +190,21 @@ class TestRuleToGrafanaPayload:
         stage_a = next(d for d in payload["data"] if d["refId"] == "A")
         assert stage_a["model"]["expr"] == "up{job='worker'}"
 
-    def test_threshold_lands_in_refId_B_evaluator(self):
+    def test_threshold_lands_in_refId_C_evaluator_for_sql_rule(self):
+        # Default sample row uses a SQL query → 3-stage pipeline (A, B reduce, C threshold)
         payload = asx.rule_to_grafana_payload(_sample_row(threshold=42.5), folder_uid="test-folder")
+        assert payload["condition"] == "C"
+        stage_c = next(d for d in payload["data"] if d["refId"] == "C")
+        params = stage_c["model"]["conditions"][0]["evaluator"]["params"]
+        assert params == [42.5]
+
+    def test_threshold_lands_in_refId_B_evaluator_for_promql_rule(self):
+        # PromQL query → 2-stage pipeline (A, B threshold)
+        payload = asx.rule_to_grafana_payload(
+            _sample_row(threshold=42.5, promql_query="up{job='worker'}"),
+            folder_uid="test-folder",
+        )
+        assert payload["condition"] == "B"
         stage_b = next(d for d in payload["data"] if d["refId"] == "B")
         params = stage_b["model"]["conditions"][0]["evaluator"]["params"]
         assert params == [42.5]
