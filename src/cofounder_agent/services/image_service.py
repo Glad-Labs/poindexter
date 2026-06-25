@@ -994,23 +994,19 @@ class ImageService:
         sdxl_server_url = _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
         render_timeout = _sc.get_int("image_render_timeout_seconds", 240)
         try:
-            from contextlib import AsyncExitStack
-
             import httpx
 
-            # 60s per-call cap — Lightning generates in ~1-2s, cold-load
-            # takes ~10s, allow headroom for network latency and retries.
-            # Prefer the lifespan-bound shared client (warm pool); fall
-            # back to a per-call client when nothing has been wired.
-            async with AsyncExitStack() as _stack:
-                if http_client is not None:
-                    client = http_client
-                else:
-                    client = await _stack.enter_async_context(
-                        httpx.AsyncClient(
-                            timeout=httpx.Timeout(float(render_timeout), connect=5.0),
-                        )
-                    )
+            # Always use a fresh client for SDXL calls. The shared
+            # http_client pools keep-alive connections, but uvicorn's
+            # default 5s keep-alive means the SDXL server closes the
+            # connection between infrequent regen calls. The pooled
+            # connection then goes stale and the next request gets
+            # "Server disconnected without sending a response" →
+            # silent fallthrough to diffusers (not installed) → 503.
+            # A per-call client never reuses stale connections.
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(float(render_timeout), connect=5.0),
+            ) as client:
                 # Only forward steps / guidance_scale when the caller set
                 # them explicitly; otherwise let the SDXL server's per-model
                 # registry drive them. The old `or 4` / `or 1.0` fallback
@@ -1075,7 +1071,7 @@ class ImageService:
                     return True
                 logger.warning("SDXL server returned %s: %s", resp.status_code, resp.text[:200])
         except Exception as e:
-            logger.info("SDXL host server unavailable (%s), trying local diffusers...", e)
+            logger.warning("SDXL host server unavailable (%s), trying local diffusers...", e)
 
         # Strategy 2: Try local diffusers (if available)
         # Lazy initialize on first generation request
