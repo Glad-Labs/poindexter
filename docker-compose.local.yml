@@ -71,7 +71,7 @@ services:
     volumes:
       - postgres-local-data:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${LOCAL_POSTGRES_USER:-poindexter}"]
+      test: ["CMD-SHELL", "psql -U ${LOCAL_POSTGRES_USER:-poindexter} -d ${LOCAL_POSTGRES_DB:-poindexter_brain} -c 'SELECT 1' > /dev/null 2>&1"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -1401,6 +1401,9 @@ services:
     restart: unless-stopped
     environment:
       DATA_SOURCE_NAME: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}?sslmode=disable"
+    depends_on:
+      postgres-local:
+        condition: service_healthy
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O - http://localhost:9187/metrics 2>/dev/null | head -1 | grep -q '#' || exit 1"]
       interval: 30s
