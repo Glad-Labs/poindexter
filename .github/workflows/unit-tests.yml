@@ -204,7 +204,7 @@ jobs:
           # pyproject.toml, and poetry.lock — the whole testable surface.
           # `brain/**` is tested by tests/unit/brain/ — brain/-only PRs
           # were silently skipping pytest because the pattern below only
-          # matched src/cofounder_agent (Glad-Labs/glad-labs-stack#1293).
+          # matched src/cofounder_agent (Glad-Labs/poindexter#1293).
           # `scripts/**` is tested by tests/unit/scripts/ — same gap.
           # `.github/workflows/unit-tests.yml` self-includes so workflow
           # edits get smoke-tested by actually running.
