@@ -40,6 +40,7 @@ def load_all() -> None:
     #    superseded by the generic apprise_notify handler.)
     # publishing.* surface: publishing_mastodon, publishing_youtube
     # retention.* surface: retention_checkpoint_prune, retention_downsample,
+    #                      retention_embeddings_collapse, retention_embeddings_orphan_prune,
     #                      retention_summarize_to_table, retention_ttl_prune
     # tap.* surface: tap_builtin_topic_source, tap_corsair_csv,
     #                tap_external_metrics_writer, tap_singer_subprocess
@@ -50,6 +51,8 @@ def load_all() -> None:
         publishing_youtube,
         retention_checkpoint_prune,
         retention_downsample,
+        retention_embeddings_collapse,
+        retention_embeddings_orphan_prune,
         retention_summarize_to_table,
         retention_ttl_prune,
         tap_builtin_topic_source,
@@ -68,6 +71,7 @@ def load_all() -> None:
         outbound_apprise, outbound_vercel_isr,
         publishing_mastodon, publishing_youtube,
         retention_checkpoint_prune, retention_downsample,
+        retention_embeddings_collapse, retention_embeddings_orphan_prune,
         retention_summarize_to_table, retention_ttl_prune,
         tap_builtin_topic_source, tap_corsair_csv,
         tap_external_metrics_writer, tap_singer_subprocess,
