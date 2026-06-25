@@ -122,8 +122,10 @@ class TestRouteManifestStructure:
         (SEO-refresh opportunity summary at /api/seo, #1466).
         Updated 2026-06-17 (#1522): added data_plane_router (declarative
         data-plane CRUD at /api/data-plane/*).
+        Updated 2026-06-25 (PR #1938): added social_router
+        (social draft management at /api/social/*).
         """
-        assert len(_WORKER_ROUTES) == 27
+        assert len(_WORKER_ROUTES) == 28
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

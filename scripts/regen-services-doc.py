@@ -192,11 +192,19 @@ def pipeline_node_order(graph_def: dict) -> list[tuple[str, str]]:
 def render_pipeline_section(graph_def: dict) -> list[str]:
     order = pipeline_node_order(graph_def)
     counts = Counter(atom.split(".", 1)[0] + ".*" for _id, atom in order)
-    comp = (
-        f"{counts['stage.*']} `stage.*` + {counts['content.*']} `content.*` + "
-        f"{counts['qa.*']} `qa.*` + {counts['seo.*']} `seo.*` + "
-        f"{counts['atoms.*']} `atoms.approval_gate`"
-    )
+    comp_parts = [
+        f"{counts['stage.*']} `stage.*`",
+        f"{counts['content.*']} `content.*`",
+        f"{counts['qa.*']} `qa.*`",
+        f"{counts['seo.*']} `seo.*`",
+        f"{counts['atoms.*']} `atoms.approval_gate`",
+    ]
+    # Append any additional prefixes introduced by new atom families
+    _known = {"stage.*", "content.*", "qa.*", "seo.*", "atoms.*"}
+    for prefix, n in sorted(counts.items()):
+        if prefix not in _known:
+            comp_parts.append(f"{n} `{prefix}`")
+    comp = " + ".join(comp_parts)
     out = [
         f"## Content pipeline (`canonical_blog` graph_def) — {len(order)} nodes",
         "",
@@ -204,7 +212,7 @@ def render_pipeline_section(graph_def: dict) -> list[str]:
             "Rendered in execution order from "
             "`services/canonical_blog_spec.py::CANONICAL_BLOG_GRAPH_DEF` "
             f"({comp}). `stage.*` atoms live in `modules/content/stages/`; "
-            "`content.*` / `qa.*` / `seo.*` and the approval gate in "
+            "`content.*` / `qa.*` / `seo.*` / `social.*` and the approval gate in "
             "`modules/content/atoms/`."
         ),
         "",

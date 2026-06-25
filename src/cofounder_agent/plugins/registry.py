@@ -662,6 +662,7 @@ def get_core_samples() -> dict[str, list[Any]]:
             "MediaReconciliationJob",
         ),
         ("jobs", "services.jobs.crosspost_to_devto", "CrosspostToDevtoJob"),
+        ("jobs", "services.jobs.retry_failed_social_drafts", "RetryFailedSocialDraftsJob"),
         ("jobs", "services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
         ("jobs", "services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
         # One-shot backfill — patches google_* columns on existing

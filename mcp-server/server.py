@@ -1354,6 +1354,47 @@ async def start_voice_call(
         return json.dumps({"error": _format_tool_error("start_voice_call", e)})
 
 
+@mcp.tool()
+async def list_social_drafts(
+    post_id: str = "",
+    task_id: str = "",
+    status: str = "",
+) -> str:
+    """List social post drafts. Optionally filter by post_id, task_id, or status."""
+    params: list[str] = []
+    if post_id:
+        params.append(f"post_id={post_id}")
+    if task_id:
+        params.append(f"task_id={task_id}")
+    if status:
+        params.append(f"status={status}")
+    qs = "&".join(params)
+    path = f"/api/social/drafts{'?' + qs if qs else ''}"
+    result = await _api("GET", path)
+    return json.dumps(result)
+
+
+@mcp.tool()
+async def approve_social_draft(draft_id: str) -> str:
+    """Approve a social post draft — fires it to the platform via Postiz immediately."""
+    result = await _api("POST", f"/api/social/drafts/{draft_id}/approve")
+    return json.dumps(result)
+
+
+@mcp.tool()
+async def reject_social_draft(draft_id: str) -> str:
+    """Reject a social post draft (terminal — no retry)."""
+    result = await _api("POST", f"/api/social/drafts/{draft_id}/reject")
+    return json.dumps(result)
+
+
+@mcp.tool()
+async def edit_social_draft(draft_id: str, content: str) -> str:
+    """Edit the copy of a social post draft before approving it."""
+    result = await _api("PATCH", f"/api/social/drafts/{draft_id}", {"content": content})
+    return json.dumps(result)
+
+
 def _stdio_main() -> None:
     """Entry point for the stdio transport (existing local clients).
 

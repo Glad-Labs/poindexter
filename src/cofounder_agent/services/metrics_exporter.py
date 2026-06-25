@@ -108,6 +108,11 @@ from services.social_poster import (  # noqa: F401 — imported for metric regis
     SOCIAL_ADAPTER_ERRORS_TOTAL,
     SOCIAL_ADAPTER_POSTS_TOTAL,
 )
+from services.social_drafts import (  # noqa: F401 — imported for metric registration
+    SOCIAL_DRAFT_CREATED_TOTAL,
+    SOCIAL_DRAFT_FAILED_TOTAL,
+    SOCIAL_DRAFT_POSTED_TOTAL,
+)
 
 # Imported for its side effect: template_runner registers NODE_DURATION_SECONDS
 # (poindexter#652) at module import. Without this, the histogram only lands on

@@ -1206,6 +1206,13 @@ def _queue_social_distribution(
     the row-driven ``publishing_adapters`` dispatch actually runs (#556 — every
     call site previously dropped it, leaving the dispatch loop permanently inert).
     """
+    # When Postiz draft flow is enabled, the social.generate_drafts atom
+    # already created drafts in social_post_drafts; skip the old
+    # Telegram/Discord distribute path so we don't double-post.
+    if site_config.get("social_drafts_enabled", "false").lower() in ("true", "1", "yes"):
+        logger.debug("[SOCIAL] social_drafts_enabled — skipping legacy distribute path")
+        return
+
     try:
         from services.social_poster import generate_and_distribute_social_posts
 
@@ -1632,6 +1639,20 @@ async def publish_post_from_task(
     # 9b. Queue Dev.to cross-posting (fire-and-forget) — phase 9b
     # ---------------------------------------------------------------
     _queue_devto_crosspost(db_service, background_tasks, post_id, _sc)
+
+    # ---------------------------------------------------------------
+    # 9c. Backfill post_id on social_post_drafts (best-effort)
+    # ---------------------------------------------------------------
+    # When social_drafts_enabled=true, the atom created draft rows
+    # before the post existed; now that we have post_id, link them.
+    if _sc.get("social_drafts_enabled", "false").lower() in ("true", "1", "yes"):
+        try:
+            from services.social_drafts import SocialDraftsService
+            pool = getattr(db_service, "pool", None)
+            if pool:
+                await SocialDraftsService().backfill_post_id(task_id, post_id, pool)
+        except Exception as _e:  # noqa: BLE001
+            logger.warning("[SOCIAL] backfill_post_id failed (non-fatal): %s", _e)
 
     # ---------------------------------------------------------------
     # 10. ISR revalidation — phase 10

@@ -133,6 +133,10 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         # content.finalize_task decomposition (#362):
         {"id": "compile_meta", "atom": "content.compile_meta"},
         {"id": "persist_task", "atom": "content.persist_task"},
+        # Social draft generation: create Postiz drafts for review after the
+        # post is persisted. No-op when social_drafts_enabled=false (default),
+        # so the old Telegram/Discord notify path is unaffected.
+        {"id": "social_generate_drafts", "atom": "social.generate_drafts"},
         {"id": "record_pipeline_version", "atom": "content.record_pipeline_version"},
         # Component-scoped regen gate (preview_gate). Sits AFTER the draft is
         # persisted (status=awaiting_approval) so the operator reviews the real
@@ -193,7 +197,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         # finalize_task atom chain
         {"from": "capture_training_data", "to": "compile_meta"},
         {"from": "compile_meta", "to": "persist_task"},
-        {"from": "persist_task", "to": "record_pipeline_version"},
+        {"from": "persist_task", "to": "social_generate_drafts"},
+        {"from": "social_generate_drafts", "to": "record_pipeline_version"},
         # preview_gate (component-scoped regen). Default forward edge = approve;
         # the two branch+loop back-edges are the operator's regen choices the
         # gate atom routes to via _goto (loop-flagged so the backward edges are

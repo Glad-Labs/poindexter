@@ -40,6 +40,7 @@
   "qa.web_factcheck": "52b8807a41d2",
   "seo.generate_all_metadata": "0ae063664634",
   "seo.optimize_metadata": "81dc42429ccc",
+  "social.generate_drafts": "6b33576f73a9",
   "stage.caption_images": "4045f58835c4",
   "stage.capture_training_data": "4045f58835c4",
   "stage.generate_media_scripts": "4045f58835c4",

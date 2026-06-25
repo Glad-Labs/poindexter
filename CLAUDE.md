@@ -71,6 +71,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 | AlertManager       | http://localhost:9093            | Alert-routing UI                                                                                                                                                                                                                 |
 | LiveKit (local)    | ws://localhost:7880              | Local LiveKit server (the Tailscale **Serve** tailnet proxy fronts `/voice/join` → this; moved off the public Funnel 2026-06-02)                                                                                                 |
 | SDXL server        | http://localhost:9836            | Local image generation backend                                                                                                                                                                                                   |
+| Postiz             | http://localhost:5003            | Self-hosted social distribution hub (opt-in: `--profile postiz`). Connect X/LinkedIn/Reddit/Mastodon/TikTok/Instagram OAuth accounts here; copy integration UUIDs into `postiz_integration_id_*` app_settings.                 |
 
 ### Key Numbers (code-derived stats as of 2026-06-21; DB-derived counts — posts, embeddings, app_settings totals — last refreshed 2026-06-10, pending a prod-DB probe)
 
@@ -232,6 +233,7 @@ The legacy 6-stage chunked StageRunner flow (`content_router_service.process_con
 - `pipeline_gate_history` — typed history of HITL gate approvals + regen retries (poindexter#366 phase 1, replaces gate-state slice of the dropped pipeline_events table)
 - `audit_log` — canonical historical record (queried by `routes/pipeline_events_routes.py` despite the legacy URL prefix)
 - `cost_logs` — LLM API cost tracking
+- `social_post_drafts` — pending / approved / posted / failed Postiz draft rows, one per platform per post. Created by the `social.generate_drafts` atom after `content.persist_task`; approved via `poindexter social approve <id>` / `POST /api/social/drafts/<id>/approve` / MCP `approve_social_draft`. The `post_id` column is backfilled by `publish_post_from_task` once the post exists. `RetryFailedSocialDraftsJob` hourly retries rows in `failed` status up to `social_draft_max_retries` (default 3).
 
 ### Frontend (`web/public-site/`)
 

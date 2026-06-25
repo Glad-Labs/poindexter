@@ -197,6 +197,6 @@ class TestCanonicalBlogSpec:
         )
         assert txt.get("branch") is True and txt.get("loop") is True
 
-    def test_node_count_is_39(self):
-        # 38 + preview_gate (component-scoped regen gate, seeded disabled)
-        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 39
+    def test_node_count_is_40(self):
+        # 38 + preview_gate (component-scoped regen gate, seeded disabled) + social.generate_drafts
+        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 40

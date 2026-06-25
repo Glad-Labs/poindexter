@@ -24,6 +24,7 @@ from .posts import post_group, posts_group
 from .premium import premium_group
 from .publish_approval import PUBLISH_FLAT_ALIASES
 from .publishers import publishers_group
+from .social import social_group
 from .qa_gates import qa_gates_group
 from .retention import retention_group
 from .schedule import SCHEDULE_FLAT_ALIASES, schedule_group
@@ -99,6 +100,7 @@ main.add_command(validators_group, name="validators")
 main.add_command(auto_publish_group, name="auto-publish")
 main.add_command(dev_diary_group, name="dev-diary")
 main.add_command(publishers_group, name="publishers")
+main.add_command(social_group, name="social")
 main.add_command(media_group, name="media")
 main.add_command(doctor_group, name="doctor")
 # Tier 2 off-machine backup operator surface (#386): setup wizard + status /

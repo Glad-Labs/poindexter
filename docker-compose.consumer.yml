@@ -704,6 +704,74 @@ services:
       timeout: 10s
       retries: 3
 
+  # ---------------------------------------------------------------------------
+  # Postiz — self-hosted social media distribution (opt-in, --profile postiz)
+  # ---------------------------------------------------------------------------
+  # Start with: docker compose -f docker-compose.consumer.yml --profile postiz up -d
+  # ---------------------------------------------------------------------------
+
+  postiz-redis:
+    image: redis:7-alpine
+    container_name: poindexter-postiz-redis
+    profiles: ["postiz"]
+    restart: unless-stopped
+    volumes:
+      - postiz-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  postiz-db:
+    image: postgres:16-alpine
+    container_name: poindexter-postiz-db
+    profiles: ["postiz"]
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postiz
+      POSTGRES_PASSWORD: ${POSTIZ_DB_PASSWORD:?Set POSTIZ_DB_PASSWORD in your environment or .env}
+      POSTGRES_DB: postiz
+    volumes:
+      - postiz-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postiz -d postiz"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  postiz:
+    image: ghcr.io/gitroomhq/postiz-app:latest
+    container_name: poindexter-postiz
+    profiles: ["postiz"]
+    restart: unless-stopped
+    ports:
+      - "5003:5000"
+    environment:
+      MAIN_URL: "${POSTIZ_URL:-http://localhost:5003}"
+      FRONTEND_URL: "${POSTIZ_URL:-http://localhost:5003}"
+      NEXT_PUBLIC_BACKEND_URL: "${POSTIZ_URL:-http://localhost:5003}"
+      JWT_SECRET: "${POSTIZ_JWT_SECRET:?Set POSTIZ_JWT_SECRET in your environment or .env}"
+      DATABASE_URL: "postgresql://postiz:${POSTIZ_DB_PASSWORD:?Set POSTIZ_DB_PASSWORD}@postiz-db:5432/postiz"
+      REDIS_URL: "redis://postiz-redis:6379"
+      BACKEND_INTERNAL_URL: "http://postiz:3000"
+      IS_GENERAL: "false"
+      STORAGE_PROVIDER: "local"
+      UPLOAD_DIRECTORY: "/uploads"
+    volumes:
+      - postiz-uploads:/uploads
+    depends_on:
+      postiz-db:
+        condition: service_healthy
+      postiz-redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:3000/api/healthz || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 60s
+
 # Volume names mirror docker-compose.local.yml so data persists across
 # stack upgrades. Renaming a volume creates a fresh empty one and orphans
 # the old data — keep these names in sync with the operator stack.
@@ -720,4 +788,11 @@ volumes:
     name: gladlabs-alertmanager-data
   alertmanager-config:
     name: gladlabs-alertmanager-config
+  # Postiz volumes (profile: postiz)
+  postiz-redis-data:
+    name: gladlabs-postiz-redis-data
+  postiz-db-data:
+    name: gladlabs-postiz-db-data
+  postiz-uploads:
+    name: gladlabs-postiz-uploads
   prefect-redis-data:

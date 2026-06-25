@@ -1265,6 +1265,19 @@ DEFAULTS: dict[str, str] = {
     # for the browser-side beacon; set this app_setting to the same URL.
     'cloudflare_beacon_url': '',
 
+    # Social media distribution — Postiz integration
+    'social_drafts_enabled': 'false',
+    'social_draft_platforms': '',
+    'social_reddit_subreddits': '',
+    'social_draft_max_retries': '3',
+    'postiz_api_url': 'http://postiz:3000',
+    'postiz_integration_id_twitter': '',
+    'postiz_integration_id_linkedin': '',
+    'postiz_integration_id_mastodon': '',
+    'postiz_integration_id_reddit': '',
+    'postiz_integration_id_tiktok': '',
+    'postiz_integration_id_instagram': '',
+
 }
 
 
