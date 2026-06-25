@@ -138,6 +138,13 @@ DEFAULTS: dict[str, str] = {
     # hedging or qwen2.5's stat fabrication, and rarely needs the rescue. The
     # cross-model rescue reviser is glm (qa_rewrite_model). Operators tune live.
     'pipeline_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
+    # Adversarial critic — must be a DIFFERENT model family from the writer and
+    # reviser so biases don't cancel (cross-model QA principle). phi4:14b is fast,
+    # reliable at JSON output, and distinct from Gemma (writer) and GLM (reviser).
+    # _resolve_critic_model reads this key first; if empty it falls to
+    # qa_fallback_critic_model, then raises (notify_operator + RuntimeError).
+    # Empty-string sentinel would halt every canonical_blog run — seed a real default.
+    'pipeline_critic_model': 'ollama/phi4:14b',
     # Ops alert-triage (firefighter /api/triage) is a one-paragraph diagnosis,
     # NOT content — it defaults to the small free-tier model, never the 19 GB
     # writer. Unset before, it fell through to pipeline_writer_model, so a triage
@@ -255,6 +262,7 @@ DEFAULTS: dict[str, str] = {
     # Interval (seconds) between confirm-poll /api/ps checks. Smaller =
     # tighter handoff (less wasted wait once the model frees), more polls.
     'pipeline_writer_unload_poll_interval_seconds': '0.5',
+    'qa_fallback_critic_model': 'ollama/qwen2.5:32b',
     'qa_fallback_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
     # Cross-model rescue reviser. The qa.rewrite step routes here instead of the
     # writer (pipeline_writer_model). Default glm-4.7: cautious and never
@@ -1286,6 +1294,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
 
     # ----- LLM model selection (writer-flip = canary per feedback_writer_model_canary) -----
     'pipeline_writer_model': {'owner': 'content_router', 'value_type': 'model'},
+    'pipeline_critic_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'video_director_model': {'owner': 'video_director', 'value_type': 'model'},
     'video_director_timeout_seconds': {'owner': 'video_director', 'value_type': 'integer'},
     'video_shot_qa_enabled': {'owner': 'video', 'value_type': 'boolean'},
@@ -1310,6 +1319,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
         'owner': 'caption_providers', 'value_type': 'string',
     },
     'pipeline_fallback_model': {'owner': 'content_router', 'value_type': 'model'},
+    'qa_fallback_critic_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'qa_fallback_writer_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'structured_extraction_model': {'owner': 'content_router', 'value_type': 'model'},
     'embed_model': {'owner': 'rag_engine', 'value_type': 'model'},

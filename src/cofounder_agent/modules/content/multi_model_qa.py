@@ -1058,12 +1058,22 @@ class MultiModelQA:
         # qa_fallback_critic_model setting remains the per-call-site
         # backstop; if both are missing, _resolve_critic_model raises
         # via notify_operator per feedback_no_silent_defaults.md.
-        fallback_model = (
-            await self._resolve_critic_model(
-                setting_key="qa_fallback_critic_model",
-                site="critic_fallback",
+        # The try/except here ensures a missing-settings RuntimeError
+        # degrades the critic to a skip rather than halting the pipeline
+        # (the primary path already fires notify_operator — no need for
+        # a second halt on the same misconfiguration).
+        try:
+            fallback_model = (
+                await self._resolve_critic_model(
+                    setting_key="qa_fallback_critic_model",
+                    site="critic_fallback",
+                )
+            ).removeprefix("ollama/")
+        except Exception as _cfg_exc:
+            logger.warning(
+                "[MULTI_QA] critic fallback config error — skipping review: %s", _cfg_exc,
             )
-        ).removeprefix("ollama/")
+            return None
         if model_override != fallback_model:
             logger.warning(
                 "[MULTI_QA] Primary critic %s failed (empty response or error), falling back to %s",
