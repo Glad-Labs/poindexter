@@ -111,6 +111,39 @@ groups:
       # tune the 20/10 GB free thresholds and 200 GB total-size filter via
       # app_settings (prometheus.threshold.disk_free_warning_gb etc.).
 
+      # --- Prefect dispatch-plane containers (poindexter#710) ---
+      # cAdvisor exposes container_last_seen for every running container.
+      # absent() fires when the metric disappears — i.e. the container is
+      # no longer running. for: 3m absorbs brief restarts so a normal
+      # `docker compose restart prefect-server` won't page.
+      # Container names match container_name: in docker-compose.local.yml.
+      - alert: PrefectServerDown
+        expr: absent(container_last_seen{name="/poindexter-prefect-server"})
+        for: 3m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Prefect server (dispatch plane) is down"
+          description: |
+            cAdvisor has not seen poindexter-prefect-server for 3+ minutes.
+            The content dispatch plane is halted — no flow runs will be
+            submitted until it recovers.
+            Check: docker ps | grep prefect; docker logs poindexter-prefect-server --tail 50
+
+      - alert: PrefectWorkerDown
+        expr: absent(container_last_seen{name="/poindexter-prefect-worker"})
+        for: 3m
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "Prefect worker is down"
+          description: |
+            cAdvisor has not seen poindexter-prefect-worker for 3+ minutes.
+            Claimed flow runs will not execute until the worker recovers.
+            Check: docker ps | grep prefect; docker logs poindexter-prefect-worker --tail 50
+
       # --- Metrics-refresh self-monitoring (audit H2b) ---
       # refresh_metrics wraps each phase in its own try/except so one failing
       # query can't fail the whole /metrics scrape — but a failing phase leaves
