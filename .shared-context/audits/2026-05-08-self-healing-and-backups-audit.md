@@ -32,22 +32,22 @@ Everything else is housekeeping.
 
 All up 10+ hours and healthy except one zombie:
 
-| Container                                                                                                | Status                                      |
-| -------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
-| poindexter-postgres-local                                                                                | Up 10h healthy                              |
-| poindexter-worker                                                                                        | Up 10h healthy                              |
-| poindexter-brain-daemon                                                                                  | Up 10h healthy                              |
-| poindexter-backup-hourly                                                                                 | Up 10h healthy                              |
-| poindexter-backup-daily                                                                                  | Up 10h healthy                              |
-| poindexter-livekit                                                                                       | Up 10h healthy                              |
-| poindexter-voice-agent-livekit                                                                           | Up 19m healthy _(restarted by you tonight)_ |
-| poindexter-voice-agent-webrtc                                                                            | Up 10h healthy                              |
-| poindexter-grafana, prometheus, loki, tempo, pyroscope, alertmanager, promtail                           | Up 10h healthy                              |
-| poindexter-pgadmin, sdxl-server, gpu-exporter, auto-embed, pipeline-bot, prefect-{server,services,redis} | Up 10h healthy                              |
-| poindexter-langfuse-{web,worker,redis,clickhouse,minio}                                                  | Up 10h healthy                              |
-| poindexter-glitchtip-{web,worker,redis,db}                                                               | Up 10h healthy                              |
-| poindexter-uptime-kuma                                                                                   | Up 10h healthy                              |
-| **poindexter-voice-bot**                                                                                 | **Exited (137) 2 days ago** ⚠️              |
+| Container                                                                                                     | Status                                      |
+| ------------------------------------------------------------------------------------------------------------- | ------------------------------------------- |
+| poindexter-postgres-local                                                                                     | Up 10h healthy                              |
+| poindexter-worker                                                                                             | Up 10h healthy                              |
+| poindexter-brain-daemon                                                                                       | Up 10h healthy                              |
+| poindexter-backup-hourly                                                                                      | Up 10h healthy                              |
+| poindexter-backup-daily                                                                                       | Up 10h healthy                              |
+| poindexter-livekit                                                                                            | Up 10h healthy                              |
+| poindexter-voice-agent-livekit                                                                                | Up 19m healthy _(restarted by you tonight)_ |
+| poindexter-voice-agent-webrtc                                                                                 | Up 10h healthy                              |
+| poindexter-grafana, prometheus, loki, tempo, pyroscope, alertmanager, promtail                                | Up 10h healthy                              |
+| poindexter-pgadmin, image-gen-server, gpu-exporter, auto-embed, pipeline-bot, prefect-{server,services,redis} | Up 10h healthy                              |
+| poindexter-langfuse-{web,worker,redis,clickhouse,minio}                                                       | Up 10h healthy                              |
+| poindexter-glitchtip-{web,worker,redis,db}                                                                    | Up 10h healthy                              |
+| poindexter-uptime-kuma                                                                                        | Up 10h healthy                              |
+| **poindexter-voice-bot**                                                                                      | **Exited (137) 2 days ago** ⚠️              |
 
 All containers have `restart: unless-stopped` policy. The voice-bot zombie exited 2 days ago and Docker considers `unless-stopped` to mean "user stopped it" (since the kill came from a Docker shutdown), so it doesn't auto-recover.
 

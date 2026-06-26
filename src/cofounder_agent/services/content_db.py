@@ -124,8 +124,8 @@ class ContentDatabase(DatabaseServiceMixin):
                 reading_time = max(1, round(word_count / 200)) if word_count else 0
 
                 # featured_image_data — JSONB reproducibility blob from
-                # source_featured_image (SDXL prompt / model / seed /
-                # negative_prompt / generation_seconds for the SDXL
+                # source_featured_image (image-gen prompt / model / seed /
+                # negative_prompt / generation_seconds for the image-gen
                 # branch; basic provenance for the Pexels branch).
                 # Defaults to {} so legacy callers that never carried
                 # this dict don't NULL the column out. Same dead-seam

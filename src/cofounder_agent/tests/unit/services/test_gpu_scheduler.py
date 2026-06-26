@@ -1,5 +1,5 @@
 """
-Tests for GPU scheduler — async lock serializing Ollama/SDXL access.
+Tests for GPU scheduler — async lock serializing Ollama/image-gen access.
 """
 
 import asyncio
@@ -9,7 +9,7 @@ import pytest
 
 from services.gpu_scheduler import GPU_ADVISORY_LOCK_KEY, GPUScheduler
 
-# Network isolation for gpu.lock("sdxl"/"video") (which delegates to the
+# Network isolation for gpu.lock("image_gen"/"video") (which delegates to the
 # real unload_loaded_ollama_models + confirm poll) is provided globally by
 # the ``_isolate_gpu_ollama_unload`` autouse fixture in tests/unit/conftest.py.
 # The unload-assertion tests below re-patch the symbol within their own
@@ -33,10 +33,10 @@ class TestGPUScheduler:
 
     @pytest.mark.asyncio
     async def test_status_shows_duration(self):
-        async with self.gpu.lock("sdxl"):
+        async with self.gpu.lock("image_gen"):
             status = self.gpu.status
             assert status["busy"] is True
-            assert status["owner"] == "sdxl"
+            assert status["owner"] == "image_gen"
             assert status["duration_s"] >= 0
 
     @pytest.mark.asyncio
@@ -77,17 +77,17 @@ class TestGPUScheduler:
         assert not self.gpu.is_busy
 
     @pytest.mark.asyncio
-    async def test_sdxl_unloads_ollama_models(self):
-        """Acquiring for SDXL delegates to the unified confirmed unloader, so
-        the writer is verified gone (re-polled out of /api/ps) before SDXL
-        loads — preventing the 18 GB-writer-over-SDXL VRAM overlap that
+    async def test_image_gen_unloads_ollama_models(self):
+        """Acquiring for image_gen delegates to the unified confirmed unloader, so
+        the writer is verified gone (re-polled out of /api/ps) before image-gen
+        loads — preventing the 18 GB-writer-over-image-gen VRAM overlap that
         freezes the desktop (lever 3, 2026-06-21)."""
         with patch.object(self.gpu, "_wait_for_gaming_clear", new=AsyncMock()):
             with patch(
                 "services.gpu_scheduler.unload_loaded_ollama_models",
                 new=AsyncMock(return_value=["gemma-4-31B-it-qat:latest"]),
             ) as mock_unload:
-                async with self.gpu.lock("sdxl"):
+                async with self.gpu.lock("image_gen"):
                     pass
 
         mock_unload.assert_awaited_once()
@@ -97,10 +97,10 @@ class TestGPUScheduler:
 
     @pytest.mark.asyncio
     async def test_video_unloads_ollama_models(self):
-        """Acquiring for the video render evicts Ollama, same as SDXL — the
-        render is a wan+SDXL consumer with no Ollama of its own, so the resident
-        writer/director must be freed for it (validation findings 4b/7). It
-        routes through the same confirmed unloader as the SDXL owner."""
+        """Acquiring for the video render evicts Ollama, same as image_gen — the
+        render is a wan+image-gen consumer with no Ollama of its own, so the
+        resident writer/director must be freed for it (validation findings 4b/7).
+        It routes through the same confirmed unloader as the image_gen owner."""
         with patch.object(self.gpu, "_wait_for_gaming_clear", new=AsyncMock()):
             with patch(
                 "services.gpu_scheduler.unload_loaded_ollama_models",
@@ -126,13 +126,13 @@ class TestGPUScheduler:
 
     @pytest.mark.asyncio
     async def test_unload_failure_does_not_block(self):
-        """If the delegated unload raises, the SDXL lock still acquires and
+        """If the delegated unload raises, the image_gen lock still acquires and
         releases — eviction is best-effort and must never wedge the lock."""
         with patch(
             "services.gpu_scheduler.unload_loaded_ollama_models",
             new=AsyncMock(side_effect=Exception("ollama unreachable")),
         ):
-            async with self.gpu.lock("sdxl"):
+            async with self.gpu.lock("image_gen"):
                 assert self.gpu.is_busy
             assert not self.gpu.is_busy
 
@@ -488,31 +488,31 @@ class TestWaitForGamingClear:
 
 class TestPrepareMode:
     @pytest.mark.asyncio
-    async def test_sdxl_mode_unloads_ollama(self):
+    async def test_image_gen_mode_unloads_ollama(self):
         from unittest.mock import AsyncMock
 
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         scheduler._unload_ollama_models = AsyncMock()
-        scheduler._unload_sdxl = AsyncMock()
+        scheduler._unload_image_gen = AsyncMock()
 
-        await scheduler.prepare_mode("sdxl")
+        await scheduler.prepare_mode("image_gen")
         scheduler._unload_ollama_models.assert_awaited_once()
-        scheduler._unload_sdxl.assert_not_awaited()
+        scheduler._unload_image_gen.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_ollama_mode_unloads_sdxl(self):
+    async def test_ollama_mode_unloads_image_gen(self):
         from unittest.mock import AsyncMock
 
         from services.gpu_scheduler import GPUScheduler
 
         scheduler = GPUScheduler()
         scheduler._unload_ollama_models = AsyncMock()
-        scheduler._unload_sdxl = AsyncMock()
+        scheduler._unload_image_gen = AsyncMock()
 
         await scheduler.prepare_mode("ollama")
-        scheduler._unload_sdxl.assert_awaited_once()
+        scheduler._unload_image_gen.assert_awaited_once()
         scheduler._unload_ollama_models.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -523,11 +523,11 @@ class TestPrepareMode:
 
         scheduler = GPUScheduler()
         scheduler._unload_ollama_models = AsyncMock()
-        scheduler._unload_sdxl = AsyncMock()
+        scheduler._unload_image_gen = AsyncMock()
 
         await scheduler.prepare_mode("idle")
         scheduler._unload_ollama_models.assert_awaited_once()
-        scheduler._unload_sdxl.assert_awaited_once()
+        scheduler._unload_image_gen.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_unknown_mode_no_op(self):
@@ -537,19 +537,19 @@ class TestPrepareMode:
 
         scheduler = GPUScheduler()
         scheduler._unload_ollama_models = AsyncMock()
-        scheduler._unload_sdxl = AsyncMock()
+        scheduler._unload_image_gen = AsyncMock()
 
         await scheduler.prepare_mode("unknown")
         scheduler._unload_ollama_models.assert_not_awaited()
-        scheduler._unload_sdxl.assert_not_awaited()
+        scheduler._unload_image_gen.assert_not_awaited()
 
 
 # ===========================================================================
-# _unload_sdxl
+# _unload_image_gen
 # ===========================================================================
 
 
-class TestUnloadSdxl:
+class TestUnloadImageGen:
     @pytest.mark.asyncio
     async def test_post_to_unload_endpoint(self):
         from unittest.mock import AsyncMock, MagicMock, patch
@@ -567,7 +567,7 @@ class TestUnloadSdxl:
 
         with patch("httpx.AsyncClient", return_value=mock_client), \
              patch("services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
-            await scheduler._unload_sdxl()
+            await scheduler._unload_image_gen()
 
         mock_client.post.assert_awaited_once()
         url = mock_client.post.await_args.args[0]
@@ -588,7 +588,7 @@ class TestUnloadSdxl:
         with patch("httpx.AsyncClient", return_value=mock_client), \
              patch("services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
             # Should not raise
-            await scheduler._unload_sdxl()
+            await scheduler._unload_image_gen()
 
 
 # ===========================================================================
@@ -857,7 +857,7 @@ class TestPgAdvisoryLock:
         scheduler._unload_ollama_models = AsyncMock()
 
         with pytest.raises(ValueError, match="body error"):
-            async with scheduler.lock("sdxl"):
+            async with scheduler.lock("image_gen"):
                 raise ValueError("body error")
 
         scheduler._release_pg_advisory_lock.assert_awaited_once()

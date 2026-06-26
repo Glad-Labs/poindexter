@@ -14,7 +14,7 @@ The `poindexter-worker` container runs the FastAPI process as **`appuser`** (UID
 | -------------------------------- | -------------------------------------------- | --------------------------------------------------------------------------------------------------- |
 | `~/.poindexter/podcast`          | `/home/appuser/.poindexter/podcast`          | Generated podcast `.mp3` files (one per post).                                                      |
 | `~/.poindexter/video`            | `/home/appuser/.poindexter/video`            | Generated video `.mp4` files.                                                                       |
-| `~/.poindexter/generated-images` | `/home/appuser/.poindexter/generated-images` | SDXL outputs before R2 upload.                                                                      |
+| `~/.poindexter/generated-images` | `/home/appuser/.poindexter/generated-images` | image-gen outputs before R2 upload.                                                                 |
 | `~/.poindexter/generated-videos` | `/home/appuser/.poindexter/generated-videos` | Wan2 intermediate clips.                                                                            |
 | `~/.poindexter` (entire dir)     | `/root/.poindexter`                          | Legacy mount kept for code paths that still reference `/root/.poindexter` or use `HOST_HOME=/root`. |
 

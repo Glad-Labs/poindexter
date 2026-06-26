@@ -126,7 +126,7 @@ Routes the vision call through ``dispatch_complete`` (provider-swappable,
 Matt's directive) using OpenAI-style image content blocks, which the active
 litellm provider forwards to the local qwen3-vl Ollama model. The raw model
 output is post-processed by ``alt_text.sanitize_alt_text`` so every existing
-guard (token strip, mid-word, SDXL-prompt-shape) still applies. Fail-soft:
+guard (token strip, mid-word, image-gen-prompt-shape) still applies. Fail-soft:
 returns None on any error so callers keep the prior alt — a backfill must
 never blank or degrade a post.
 """
@@ -203,7 +203,7 @@ async def caption_image(
         ],
     }]
 
-    # GPU coordination — qwen3-vl is ~19.6 GB; serialize against SDXL/writer.
+    # GPU coordination — qwen3-vl is ~19.6 GB; serialize against image-gen/writer.
     from services.gpu_scheduler import gpu
     try:
         async with gpu.lock("ollama", model=vmodel, task_id=task_id, phase="caption_image"):

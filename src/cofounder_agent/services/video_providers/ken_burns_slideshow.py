@@ -1,5 +1,5 @@
 """KenBurnsSlideshowProvider — VideoProvider wrapper around the legacy
-slideshow video pipeline (SDXL frames + podcast audio + Ken Burns
+slideshow video pipeline (image-gen frames + podcast audio + Ken Burns
 zoom/pan, assembled by the host video server on port 9837).
 
 Tracks GitHub #124 — exists so the cutover from the legacy pipeline to
@@ -10,7 +10,7 @@ the legacy ``VideoResult`` dataclass into the plugin
 :class:`VideoResult <plugins.video_provider.VideoResult>`.
 
 **Why a wrapper, not a duplicate?** The legacy pipeline has been in
-production for weeks and has working ffmpeg/SDXL/edge-TTS plumbing.
+production for weeks and has working ffmpeg/image-gen/edge-TTS plumbing.
 Reimplementing it as a provider would duplicate ~600 lines of code for
 no benefit. The wrapper lets the new VideoProvider Protocol drive the
 existing engine until somebody decides the slideshow path is dead and
@@ -24,7 +24,7 @@ also accepts these keys via the dispatcher's per-call forwarding):
 - ``content`` (str): post body. The legacy pipeline mines it for
   reusable images.
 - ``podcast_path`` (str, optional): path to the narration MP3.
-- ``pre_generated_scenes`` (list[str], optional): SDXL prompts already
+- ``pre_generated_scenes`` (list[str], optional): image-gen prompts already
   written by the writer model.
 - ``output_path`` (str, optional): where to write the MP4. Ignored —
   the legacy pipeline writes to its hardcoded

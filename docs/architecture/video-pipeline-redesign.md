@@ -149,8 +149,8 @@ The existing `Shot` schema is extended with `source` and `aspect`.
 
 Per shot, the renderer:
 
-1. **Selects a source** — `slideshow` (Ken Burns over a stylized SDXL still) · `stock` (Pexels B-roll) · `generative` (Wan2.1, future #669). Resolved from `shot.source_hint` + a **per-niche source policy in `app_settings`** (e.g. tech → stylized SDXL; real-world/human subjects → Pexels, honoring the no-photoreal-humans rule, #675).
-2. **Produces the visual** — SDXL stylized render, or Pexels fetch.
+1. **Selects a source** — `slideshow` (Ken Burns over a stylized image-gen still) · `stock` (Pexels B-roll) · `generative` (Wan2.1, future #669). Resolved from `shot.source_hint` + a **per-niche source policy in `app_settings`** (e.g. tech → stylized image-gen; real-world/human subjects → Pexels, honoring the no-photoreal-humans rule, #675).
+2. **Produces the visual** — image-gen stylized render, or Pexels fetch.
 3. **Composes** via `FFmpegLocalCompositor`: shots concat + transitions → narration layered at each shot's `narration_offset_s` (#517) → **ambient bed mixed under** (#679, finally consumed) → **captions burned in** (#676).
 4. **Output profiles** (DB-config): long = 16:9 1080p; short = 9:16 1080×1920, ≤60s, punchier pacing + larger captions.
 
@@ -248,7 +248,7 @@ Per "docs + tests default," contract tests pin:
 | #517 director multi-source composition | Shot-list + per-shot source selection + `narration_offset_s`              | 1      |
 | #573 video_long stall                  | **Dissolved** — long_video is a first-class render; orphan flavor deleted | 1      |
 | #668 video_short re-home               | **Subsumed** — shorts first-class; reconciliation already exists          | 1      |
-| #675 photoreal prompts                 | Stylized SDXL + DB per-niche source policy                                | 1      |
+| #675 photoreal prompts                 | Stylized image-gen + DB per-niche source policy                           | 1      |
 | #676 captions                          | ASR-pass burn-in                                                          | 1      |
 | #677 render retry + voice              | Render retry/backoff + DB voice + rotation                                | 1      |
 | #679 ambient bed                       | Mixed under in the compositor                                             | 1      |

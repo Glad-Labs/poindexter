@@ -30,7 +30,7 @@ def _valid_shot(idx: int = 0, source: str = "pexels", **overrides) -> dict:
     }
     if source == "pexels":
         base["query"] = "data center"
-    elif source in ("sdxl", "sdxl_kenburns", "wan21", "generative"):
+    elif source in ("image_gen", "image_kenburns", "wan21", "generative"):
         base["prompt"] = "test prompt"
     base.update(overrides)
     return base
@@ -42,7 +42,7 @@ def _valid_shot_list(**overrides) -> dict:
         "total_duration_s": 15.0,
         "shots": [
             _valid_shot(0, "pexels"),
-            _valid_shot(1, "sdxl_kenburns"),
+            _valid_shot(1, "image_kenburns"),
             _valid_shot(2, "pexels"),
         ],
         "director_model": "test-model",
@@ -58,9 +58,9 @@ def _valid_shot_list(**overrides) -> dict:
 # ---------------------------------------------------------------------------
 
 
-def test_sdxl_requires_prompt() -> None:
+def test_image_gen_requires_prompt() -> None:
     with pytest.raises(ValidationError, match="requires a non-empty"):
-        Shot.model_validate(_valid_shot(0, "sdxl", prompt=None))
+        Shot.model_validate(_valid_shot(0, "image_gen", prompt=None))
 
 
 def test_wan21_requires_prompt() -> None:
@@ -70,7 +70,7 @@ def test_wan21_requires_prompt() -> None:
 
 def test_generative_requires_prompt() -> None:
     # ``generative`` is the i2v hero source — the prompt is the conditioning
-    # text alongside the SDXL still, so it's mandatory just like wan21/sdxl.
+    # text alongside the image_gen still, so it's mandatory just like wan21/image_gen.
     with pytest.raises(ValidationError, match="requires a non-empty"):
         Shot.model_validate(_valid_shot(0, "generative", prompt=None))
 
@@ -87,9 +87,9 @@ def test_wan21_accepted_with_prompt_backcompat() -> None:
     assert shot.source == "wan21"
 
 
-def test_sdxl_kenburns_requires_prompt() -> None:
+def test_image_kenburns_requires_prompt() -> None:
     with pytest.raises(ValidationError, match="requires a non-empty"):
-        Shot.model_validate(_valid_shot(0, "sdxl_kenburns", prompt=None))
+        Shot.model_validate(_valid_shot(0, "image_kenburns", prompt=None))
 
 
 def test_pexels_requires_query() -> None:
@@ -129,7 +129,7 @@ def test_zero_duration_rejected() -> None:
 def test_kenburns_zoom_positive() -> None:
     with pytest.raises(ValidationError, match="kenburns_zoom"):
         Shot.model_validate(
-            _valid_shot(0, "sdxl_kenburns", kenburns_zoom=(0.0, 1.2)),
+            _valid_shot(0, "image_kenburns", kenburns_zoom=(0.0, 1.2)),
         )
 
 
@@ -163,7 +163,7 @@ def test_shot_idx_must_be_contiguous() -> None:
     """Skipping idx values would break renderer ordering."""
     bad = _valid_shot_list(shots=[
         _valid_shot(0, "pexels"),
-        _valid_shot(2, "sdxl_kenburns"),  # skipped 1
+        _valid_shot(2, "image_kenburns"),  # skipped 1
         _valid_shot(3, "pexels"),
     ])
     bad["total_duration_s"] = 15.0
@@ -186,13 +186,13 @@ def test_no_more_than_2_consecutive_same_source() -> None:
 def test_two_consecutive_same_source_allowed() -> None:
     """Two in a row is fine — three is the line."""
     ok = _valid_shot_list(shots=[
-        _valid_shot(0, "sdxl_kenburns"),
-        _valid_shot(1, "sdxl_kenburns"),
+        _valid_shot(0, "image_kenburns"),
+        _valid_shot(1, "image_kenburns"),
         _valid_shot(2, "pexels"),
     ])
     ok["total_duration_s"] = 15.0
     shot_list = VideoShotList.model_validate(ok)
-    assert shot_list.shots[0].source == shot_list.shots[1].source == "sdxl_kenburns"
+    assert shot_list.shots[0].source == shot_list.shots[1].source == "image_kenburns"
 
 
 def test_holdover_does_not_count_in_streak() -> None:
@@ -249,9 +249,9 @@ def test_ai_source_human_prompt_warns_but_accepts(caplog: pytest.LogCaptureFixtu
     the slop risk so we can tune the director prompt later."""
     with caplog.at_level(logging.WARNING, logger="schemas.video_shot_list"):
         shot = Shot.model_validate(
-            _valid_shot(0, "sdxl_kenburns", prompt="a developer typing at a keyboard"),
+            _valid_shot(0, "image_kenburns", prompt="a developer typing at a keyboard"),
         )
-    assert shot.source == "sdxl_kenburns"  # NOT rejected
+    assert shot.source == "image_kenburns"  # NOT rejected
     assert "developer" in caplog.text
     assert "human-indicator" in caplog.text
 

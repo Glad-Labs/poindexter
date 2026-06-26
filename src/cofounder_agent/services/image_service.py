@@ -3,7 +3,7 @@ Unified Image Service
 
 Consolidates all image processing functionality:
 - Featured image sourcing (Pexels API - free, unlimited)
-- Image generation (switchable models: SDXL, SDXL Lightning, Flux)
+- Image generation (switchable models: image-gen, image-gen Lightning, Flux)
 - Image optimization and attribution
 - Gallery image sourcing
 - Metadata generation
@@ -47,7 +47,7 @@ if TYPE_CHECKING:
 
 
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
-# set_http_client() at startup. The Pexels search + SDXL generation
+# set_http_client() at startup. The Pexels search + image-gen generation
 # paths prefer it so the per-task connection pool is reused.
 http_client: "httpx.AsyncClient | None" = None
 
@@ -64,9 +64,9 @@ _import_logger = get_logger(__name__)
 
 
 def _write_image_bytes(path: str, content: bytes) -> None:
-    """Sync helper for ``asyncio.to_thread`` — writes SDXL response to disk.
+    """Sync helper for ``asyncio.to_thread`` — writes image-gen response to disk.
 
-    SDXL images are 1–5 MB on typical prompts; a blocking ``open()`` at
+    image-gen images are 1–5 MB on typical prompts; a blocking ``open()`` at
     that size would stall the event loop for the duration of the write
     under concurrent load (ASYNC230).
     """
@@ -143,16 +143,16 @@ class ImageModelConfig:
 IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
     ImageModel.SDXL_BASE: ImageModelConfig(
         model_id="stabilityai/stable-diffusion-xl-base-1.0",
-        display_name="SDXL Base",
+        display_name="Stable Diffusion XL Base",
         default_steps=30,
         default_guidance_scale=7.5,
         pipeline_class="diffusers.StableDiffusionXLPipeline",
         vram_gb=6.5,
-        notes="Original SDXL, high quality at 30-50 steps",
+        notes="Original Stable Diffusion XL, high quality at 30-50 steps",
     ),
     ImageModel.SDXL_LIGHTNING: ImageModelConfig(
         model_id="stabilityai/stable-diffusion-xl-base-1.0",
-        display_name="SDXL Lightning",
+        display_name="Stable Diffusion XL Lightning",
         default_steps=4,
         default_guidance_scale=0.0,
         pipeline_class="diffusers.StableDiffusionXLPipeline",
@@ -253,7 +253,7 @@ class ImageService:
 
     Consolidates:
     - PexelsClient functionality (featured image, gallery)
-    - ImageGenClient functionality (SDXL generation)
+    - ImageGenClient functionality (image-gen generation)
     - ImageAgent functionality (orchestration, metadata)
 
     All operations are async-first to prevent blocking in FastAPI event loop.
@@ -291,8 +291,8 @@ class ImageService:
         # Image generation state (lazy-loaded on first generate_image call)
         self._gen_pipe = None  # Active generation pipeline
         self._active_model: ImageModel | None = None  # Currently loaded model
-        self.sdxl_available = False  # Kept for backward compat (True when any model loaded)
-        self.sdxl_initialized = False  # Track if we've attempted initialization
+        self.gen_available = False  # Kept for backward compat (True when any model loaded)
+        self.gen_initialized = False  # Track if we've attempted initialization
         self.use_device = "cpu"  # Updated during model initialization
         # NOTE: Models are lazily initialized only when generate_image() is called.
         # This avoids loading huge models if only Pexels search is needed.
@@ -320,12 +320,12 @@ class ImageService:
         # Check prerequisites
         if not DIFFUSERS_AVAILABLE:
             logger.warning("Diffusers library not installed - image generation will be unavailable")
-            self.sdxl_available = False
+            self.gen_available = False
             return
 
         if not TORCH_AVAILABLE:
             logger.warning("PyTorch not installed - image generation will be unavailable")
-            self.sdxl_available = False
+            self.gen_available = False
             return
 
         # Unload any previously loaded model first
@@ -409,7 +409,7 @@ class ImageService:
 
             pipe = pipeline_cls.from_pretrained(config.model_id, **load_kwargs).to(use_device)
 
-            # Apply LoRA weights if configured (e.g. SDXL Lightning)
+            # Apply LoRA weights if configured (e.g. Stable Diffusion XL Lightning)
             if config.lora_repo:
                 logger.info("Loading LoRA weights from %s...", config.lora_repo)
                 pipe.load_lora_weights(config.lora_repo, weight_name=config.lora_weight_name)
@@ -433,7 +433,7 @@ class ImageService:
             self._gen_pipe = pipe
             self._active_model = model
             self.use_device = use_device
-            self.sdxl_available = True
+            self.gen_available = True
 
             logger.info("%s loaded successfully", config.display_name)
             logger.info("   Device: %s", use_device.upper())
@@ -448,9 +448,9 @@ class ImageService:
 
         except Exception as e:
             logger.error("Failed to load %s: %s", config.display_name, e, exc_info=True)
-            self.sdxl_available = False
+            self.gen_available = False
 
-    def _initialize_sdxl(self) -> None:
+    def _initialize_image_gen(self) -> None:
         """Backward-compatible alias for _initialize_model()."""
         self._initialize_model()
 
@@ -463,7 +463,7 @@ class ImageService:
 
         self._gen_pipe = None
         self._active_model = None
-        self.sdxl_available = False
+        self.gen_available = False
 
         if TORCH_AVAILABLE and torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -489,7 +489,7 @@ class ImageService:
 
     def _apply_model_optimizations(self, pipe, device: str) -> None:
         """
-        Apply performance optimizations to SDXL pipeline.
+        Apply performance optimizations to image-gen pipeline.
 
         Optimizations:
         - Memory-efficient attention (xformers if available)
@@ -597,10 +597,10 @@ class ImageService:
             logger.info("Pexels API key loaded from app_settings (encrypted)")
         else:
             # Empty key is a legitimate state — Pexels is a fallback
-            # image source, SDXL is primary. Log info, leave unavailable.
+            # image source, image-gen is primary. Log info, leave unavailable.
             logger.info(
                 "pexels_api_key not set in app_settings — Pexels search "
-                "disabled (SDXL remains primary)"
+                "disabled (image-gen remains primary)"
             )
 
     # =========================================================================
@@ -989,16 +989,16 @@ class ImageService:
         Returns:
             True if successful, False otherwise
         """
-        # Strategy 1: Try host SDXL server (runs on GPU outside Docker)
+        # Strategy 1: Try host image-gen server (runs on GPU outside Docker)
         _sc = self._site_config
-        sdxl_server_url = _sc.get("sdxl_server_url", "http://host.docker.internal:9836")
+        image_gen_server_url = _sc.get("image_gen_server_url", "http://host.docker.internal:9836")
         render_timeout = _sc.get_int("image_render_timeout_seconds", 240)
         try:
             import httpx
 
-            # Always use a fresh client for SDXL calls. The shared
+            # Always use a fresh client for image-gen calls. The shared
             # http_client pools keep-alive connections, but uvicorn's
-            # default 5s keep-alive means the SDXL server closes the
+            # default 5s keep-alive means the image-gen server closes the
             # connection between infrequent regen calls. The pooled
             # connection then goes stale and the next request gets
             # "Server disconnected without sending a response" →
@@ -1008,9 +1008,9 @@ class ImageService:
                 timeout=httpx.Timeout(float(render_timeout), connect=5.0),
             ) as client:
                 # Only forward steps / guidance_scale when the caller set
-                # them explicitly; otherwise let the SDXL server's per-model
+                # them explicitly; otherwise let the image-gen server's per-model
                 # registry drive them. The old `or 4` / `or 1.0` fallback
-                # forced SDXL-Turbo's params onto z_image_turbo, which is
+                # forced Stable Diffusion XL-Turbo's params onto z_image_turbo, which is
                 # guidance-distilled (wants 9 steps / CFG 0) — the mismatch
                 # produced degraded images. Matches replace_inline_images.
                 # #image-zimage-and-variety.
@@ -1023,11 +1023,11 @@ class ImageService:
                 if guidance_scale is not None:
                     _gen_body["guidance_scale"] = guidance_scale
                 resp = await client.post(
-                    f"{sdxl_server_url}/generate",
+                    f"{image_gen_server_url}/generate",
                     json=_gen_body,
                     timeout=render_timeout,
                 )
-                # The sidecar at scripts/sdxl-server.py returns JSON
+                # The sidecar at scripts/image-gen-server.py returns JSON
                 # (image_path + filename + generation_time_ms), NOT raw
                 # bytes. Fetch the actual image via the secondary endpoint
                 # ``GET /images/{filename}`` since the worker container
@@ -1040,16 +1040,16 @@ class ImageService:
                     filename = body.get("filename")
                     if not filename:
                         logger.warning(
-                            "SDXL server response missing filename: %s", body,
+                            "image-gen server response missing filename: %s", body,
                         )
                         return False
                     img_resp = await client.get(
-                        f"{sdxl_server_url}/images/{filename}",
+                        f"{image_gen_server_url}/images/{filename}",
                         timeout=render_timeout,
                     )
                     if img_resp.status_code != 200:
                         logger.warning(
-                            "SDXL /images/%s returned %s",
+                            "image-gen /images/%s returned %s",
                             filename, img_resp.status_code,
                         )
                         return False
@@ -1057,7 +1057,7 @@ class ImageService:
                         _write_image_bytes, output_path, img_resp.content,
                     )
                     logger.info(
-                        "SDXL image generated via host server in %sms: %s",
+                        "image-gen image generated via host server in %sms: %s",
                         body.get("generation_time_ms", "?"), output_path,
                     )
                     return True
@@ -1067,21 +1067,21 @@ class ImageService:
                 if resp.status_code == 200 and ctype.startswith("image/"):
                     await asyncio.to_thread(_write_image_bytes, output_path, resp.content)
                     elapsed = resp.headers.get("X-Elapsed-Seconds", "?")
-                    logger.info("SDXL image generated via host server in %ss: %s", elapsed, output_path)
+                    logger.info("image-gen image generated via host server in %ss: %s", elapsed, output_path)
                     return True
-                logger.warning("SDXL server returned %s: %s", resp.status_code, resp.text[:200])
+                logger.warning("image-gen server returned %s: %s", resp.status_code, resp.text[:200])
         except Exception as e:
-            logger.warning("SDXL host server unavailable (%s), trying local diffusers...", e)
+            logger.warning("image-gen host server unavailable (%s), trying local diffusers...", e)
 
         # Strategy 2: Try local diffusers (if available)
         # Lazy initialize on first generation request
-        if not self.sdxl_initialized or (model is not None and model != self._active_model):
+        if not self.gen_initialized or (model is not None and model != self._active_model):
             target = model or get_default_image_model(site_config=self._site_config)
             logger.info("First generation request detected - initializing %s...", target.value)
             self._initialize_model(target)
-            self.sdxl_initialized = True
+            self.gen_initialized = True
 
-        if not self.sdxl_available:
+        if not self.gen_available:
             logger.warning("Image generation model not available - generation skipped")
             return False
 

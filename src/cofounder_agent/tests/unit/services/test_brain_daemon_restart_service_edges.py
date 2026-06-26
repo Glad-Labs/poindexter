@@ -5,7 +5,7 @@ Complements the baseline tests in
 inspect/restart happy + sad paths). Here we cover the gaps:
 
 * Container-name aliases (``api`` / ``site`` → poindexter-worker,
-  ``sdxl`` and ``sdxl-server`` → poindexter-sdxl-server) — proves the
+  ``image-gen-server`` (formerly ``sdxl``) → poindexter-image-gen-server) — proves the
   ``_container_map`` is wired the way the brain's health probes expect.
 * ``FileNotFoundError`` when the Docker CLI isn't in the brain
   container — should notify with a CLI-specific message, NOT swallow.
@@ -80,15 +80,15 @@ def _inspect_result(returncode: int, stdout: str = "", stderr: str = ""):
     [
         ("api", "poindexter-worker"),
         ("site", "poindexter-worker"),
-        ("sdxl", "poindexter-sdxl-server"),
-        ("sdxl-server", "poindexter-sdxl-server"),
+        ("image_gen", "poindexter-image-gen-server"),
+        ("image-gen-server", "poindexter-image-gen-server"),
     ],
 )
 async def test_container_aliases_resolve_to_correct_container(
     mock_notify, service_name, expected_container,
 ):
-    """``api`` and ``site`` share the worker container; ``sdxl`` and
-    ``sdxl-server`` share the SDXL container. The health probes use
+    """``api`` and ``site`` share the worker container; ``image_gen`` and
+    ``image-gen-server`` share the image-gen container. The health probes use
     these short names, so the map must keep them aligned with the
     actual Docker container names.
     """

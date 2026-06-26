@@ -250,7 +250,7 @@ After Module v1:
     site_config, audit_log, memory_client, telegram-bot, MCP server, CLI)
   - the **`content` module** as the reference implementation:
     canonical_blog template, multi-model QA, programmatic validator,
-    SDXL/Pexels image stage, publish to a self-hosted Next.js + DB.
+    image-gen/Pexels image stage, publish to a self-hosted Next.js + DB.
   - the **`base` module** that provides shared utilities every
     module needs (admin settings UI, audit_log explorer, healthcheck
     aggregator). Could also be inlined into substrate; the spec

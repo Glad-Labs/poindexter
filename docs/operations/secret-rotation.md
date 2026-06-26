@@ -606,7 +606,7 @@ docker restart poindexter-worker
 
 **Lives in.** `app_settings.pexels_api_key` (encrypted).
 
-**Used for.** Stock image fallback when SDXL is degraded.
+**Used for.** Stock image fallback when image-gen is degraded.
 
 **Procedure.**
 

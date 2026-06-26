@@ -7,7 +7,7 @@ instantiations across 58 files in ``services/``. Each ``async with``
 block opens + tears down its own connection pool (TCP + TLS handshake
 amortised over a single request). Under concurrent pipeline runs
 this is wasteful — a single content task could spin up 10+ short-lived
-pools against the same handful of hosts (Ollama / SDXL / Pexels /
+pools against the same handful of hosts (Ollama / image-gen / Pexels /
 Discord / Vercel) when a single shared pool keeps the TLS sessions
 warm across the whole run.
 

@@ -31,7 +31,7 @@ deps) is functionally identical for the reranker.
 ### Why this was deferred from #1891
 
 #1891 was a _subtractive_ change (stop pulling torch into CI). This is a
-_substitutive_ one (cu128 → cpu) that touches the prod GPU/SDXL story, so it got
+_substitutive_ one (cu128 → cpu) that touches the prod GPU/image-gen story, so it got
 its own spec. The crux #1891 flagged: torch is pinned `source = "pytorch-cu128"`,
 so giving the worker CPU torch either (a) erodes lock-authority (pip-installing
 torch outside poetry — the drift class behind a 28 h Prefect outage) or (b)
@@ -40,12 +40,12 @@ needs re-homing the pin. This spec picks (b), done cleanly.
 ## Investigation findings (the crux, resolved)
 
 The brief's premise was "cu128's only real consumer is the in-process diffusers
-SDXL fallback." The code says that fallback is **unwired everywhere**:
+image-gen fallback." The code says that fallback is **unwired everywhere**:
 
-1. **Two SDXL paths exist** in `services/image_service.py::generate_image`:
-   - **Strategy 1** (lines 1012–1098): HTTP POST to `sdxl_server_url`
-     (`host.docker.internal:9836`) — the self-contained `sdxl-server` container
-     (`scripts/Dockerfile.sdxl`, `FROM pytorch/pytorch:2.9.1-cuda12.8`,
+1. **Two image-gen paths exist** in `services/image_service.py::generate_image`:
+   - **Strategy 1** (lines 1012–1098): HTTP POST to `image_gen_server_url`
+     (`host.docker.internal:9836`) — the self-contained `image-gen-server` container
+     (`scripts/Dockerfile.image-gen`, `FROM pytorch/pytorch:2.9.1-cuda12.8`,
      pip-installs its **own** torch + diffusers; does **not** consume the
      cofounder lock).
    - **Strategy 2** (lines 1100+): in-process diffusers, gated by
@@ -59,14 +59,14 @@ SDXL fallback." The code says that fallback is **unwired everywhere**:
 4. `modules/content/stages/source_featured_image.py:228–235` states it
    authoritatively: _"The worker container no longer installs the `ml` extras
    (diffusers + torch + sentence-transformers moved out to dedicated
-   containers), so `sdxl_available` is permanently False… The real SDXL path
-   goes through … HTTP POST to `sdxl_server_url`."_
+   containers), so `gen_available` is permanently False… The real image-gen path
+   goes through … HTTP POST to `image_gen_server_url`."_
 
 **Conclusion.** The in-process diffusers path is not live in any deployed
-surface. The cu128 that actually renders SDXL lives in the `sdxl-server`
+surface. The cu128 that actually renders image-gen lives in the `image-gen-server`
 container with its own torch. cu128 in the _cofounder lock_ serves nothing
 live — so "re-home cu128 for the in-process path" is really "retire a dead pin
-and let cu128 live where it's already exercised (the SDXL container)."
+and let cu128 live where it's already exercised (the image-gen container)."
 
 ### Runtime-invariance (the core safety argument)
 
@@ -79,7 +79,7 @@ branch. **The image gets ~2 GB smaller; runtime behavior is byte-identical.**
 
 **Drop cu128 from the cofounder lock entirely.** Add a `pytorch-cpu` explicit
 source and pin torch to it. One torch, one source, no two-torch ambiguity, no
-lock-erosion. cu128 stays solely in `scripts/Dockerfile.sdxl`. Confirmed by Matt
+lock-erosion. cu128 stays solely in `scripts/Dockerfile.image-gen`. Confirmed by Matt
 (brainstorming, 2026-06-23): the in-process path is retired in favour of the
 container; `--extras ml` becoming a _CPU_ diffusers fallback is acceptable (it's
 strictly more useful than today's GPU-only, never-installed extra).
@@ -87,7 +87,7 @@ strictly more useful than today's GPU-only, never-installed extra).
 ### Approaches considered
 
 - **A — CPU as the single cofounder-lock torch (chosen).** cu128 leaves the
-  cofounder pyproject; lives only in the SDXL container. Clean, honest graph,
+  cofounder pyproject; lives only in the image-gen container. Clean, honest graph,
   fixes the footgun. `--extras ml` resolves CPU torch.
 - **B — two-source split (cu128 for `--extras ml`, cpu otherwise).** Rejected:
   Poetry locks exactly one `(version, source)` for torch per environment; the
@@ -121,7 +121,7 @@ torch = { version = ">=2.7,<2.12", source = "pytorch-cpu", optional = true }
 - The `ml` and `rerank` extras are **untouched** — torch resolves `+cpu` through
   both. `ml` becomes a functional CPU diffusers fallback.
 - The cu128/5090 comment block (≈lines 88–94, 420–429) is rewritten to explain
-  the CPU default and that cu128 lives in `scripts/Dockerfile.sdxl`.
+  the CPU default and that cu128 lives in `scripts/Dockerfile.image-gen`.
 
 ### Same re-home in the root dev-harness — `pyproject.toml`
 
@@ -148,7 +148,7 @@ No `--extras` line changes — the swap is purely pyproject + lock.
 
 Reword the warmup hint away from the non-existent `scripts/requirements-ml.txt`
 to the real options: `poetry install --extras ml` (CPU in-process diffusers) or
-the `sdxl-server` container (GPU).
+the `image-gen-server` container (GPU).
 
 ### Expected lock diff (cofounder)
 
@@ -176,7 +176,7 @@ source treatment.)
 7. `src/cofounder_agent/utils/startup_manager.py` — fix the stale warmup hint.
 8. Dev docs (`README.md`, `docs/operations/local-development-setup.md`,
    `src/cofounder_agent/README.md`) — update any cu128/GPU-torch setup note to
-   reflect CPU-default + cu128-in-SDXL-container. (Plan greps; updates only what
+   reflect CPU-default + cu128-in-image-gen-container. (Plan greps; updates only what
    actually references it.)
 
 ## Error handling / fail-loud

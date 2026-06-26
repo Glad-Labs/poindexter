@@ -794,13 +794,38 @@ async def run_prefect_stuck_flow_probe(
                     "(stuck-run detection unaffected): %s", exc,
                 )
     except Exception as exc:
+        detail = f"{type(exc).__name__}: {exc}"
+        # ConnectError / ConnectTimeout = Prefect server is unreachable.
+        # Page immediately — this is the "dispatch plane is down" signal.
+        # Other errors (parse failures, unexpected API changes) are log-only
+        # to avoid noisy paging on transient problems.
+        if httpx is not None and isinstance(
+            exc, (httpx.ConnectError, httpx.ConnectTimeout)
+        ):
+            notify_fn(
+                title="Prefect dispatch plane unreachable",
+                detail=(
+                    f"Brain cannot connect to the Prefect API ({base_url}): "
+                    f"{detail}. Content dispatch is halted until the server "
+                    f"recovers. Check: docker ps | grep prefect; "
+                    f"docker logs poindexter-prefect-server --tail 50"
+                ),
+                source="brain.prefect_stuck_flow_probe",
+                severity="critical",
+            )
+            await _emit_audit_event(
+                pool,
+                "probe.prefect_dispatch_plane_unreachable",
+                f"Prefect API unreachable at {base_url}: {detail}",
+                payload={"base_url": base_url, "error": detail},
+            )
         logger.warning(
             "[PREFECT_STUCK_FLOW] cycle raised: %s — returning unknown", exc,
         )
         return {
             "ok": False,
             "status": "error",
-            "detail": f"{type(exc).__name__}: {exc}",
+            "detail": detail,
             "elapsed_ms": int((time.time() - started) * 1000),
         }
 

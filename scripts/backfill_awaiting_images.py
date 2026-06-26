@@ -2,14 +2,14 @@
 that missed the source_featured_image stage.
 
 Built 2026-04-25 as a manual recovery tool — the 17 awaiting_approval
-tasks generated before the SDXL service was healed today have
+tasks generated before the image-gen service was healed today have
 ``featured_image_url IS NULL``, so the operator's review-page previews
 show no thumbnails. This script regenerates featured images for them
-by calling the same SDXL sidecar + R2 upload path the live pipeline
+by calling the same image-gen sidecar + R2 upload path the live pipeline
 uses.
 
 Run from inside the worker container so it inherits DB access, the
-SDXL host route, and the R2 creds:
+image-gen host route, and the R2 creds:
 
     docker exec poindexter-worker python /app/scripts/backfill_awaiting_images.py
 
@@ -36,7 +36,7 @@ logger = logging.getLogger("backfill")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [backfill] %(message)s")
 
 
-SDXL_URL = os.getenv("SDXL_SERVER_URL", "http://host.docker.internal:9836")
+image_gen_url = os.getenv("image_gen_server_url", "http://host.docker.internal:9836")
 R2_BASE = os.getenv(
     "R2_PUBLIC_BASE_URL",
     "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev",
@@ -44,7 +44,7 @@ R2_BASE = os.getenv(
 
 
 def _build_prompt(topic: str, category: str | None) -> str:
-    """Turn a topic into a featured-image SDXL prompt.
+    """Turn a topic into a featured-image prompt.
 
     Mirrors the production prompt-building shape (no faces, no text,
     abstract scene tied to the topic). Kept simple — no LLM round-trip
@@ -65,11 +65,11 @@ def _build_prompt(topic: str, category: str | None) -> str:
 
 
 async def _generate_png(prompt: str) -> bytes | None:
-    """POST the SDXL sidecar and return raw PNG bytes (or None on failure)."""
+    """POST the image-gen sidecar and return raw PNG bytes (or None on failure)."""
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
             resp = await client.post(
-                f"{SDXL_URL}/generate",
+                f"{image_gen_url}/generate",
                 json={
                     "prompt": prompt,
                     "steps": 4,
@@ -85,11 +85,11 @@ async def _generate_png(prompt: str) -> bytes | None:
             if local_path and Path(local_path).is_file():
                 return Path(local_path).read_bytes()
         logger.warning(
-            "SDXL returned %s (ct=%r) body=%s",
+            "image-gen returned %s (ct=%r) body=%s",
             resp.status_code, ct, resp.text[:200],
         )
     except Exception as exc:
-        logger.warning("SDXL call failed: %s", exc)
+        logger.warning("image-gen call failed: %s", exc)
     return None
 
 
@@ -194,7 +194,7 @@ async def main(task_ids: list[str] | None) -> int:
             logger.info("generating for %s — %s", tid[:8], topic[:60])
             png = await _generate_png(prompt)
             if not png:
-                logger.warning("  skipped: SDXL returned no image")
+                logger.warning("  skipped: image-gen returned no image")
                 continue
             url = await _upload_to_r2(png, tid, site_config)
             if not url:

@@ -1,7 +1,7 @@
-"""Self-heal watchdog tests for scripts/sdxl-server.py.
+"""Self-heal watchdog tests for scripts/image-gen-server.py.
 
 Regression cover for the 21-hour silent outage on 2026-06-04: on a host
-reboot, sdxl-server raced postgres-local (compose `depends_on` is not honored
+reboot, image-gen-server raced postgres-local (compose `depends_on` is not honored
 by restart-policy restarts), read app_settings while Postgres was still in
 startup (57P03 "the database system is starting up"), latched `degraded`, and
 never retried — so every /generate returned 503 and ALL image + video
@@ -23,12 +23,12 @@ from pathlib import Path
 
 def _find_repo_root(start: Path) -> Path:
     for parent in start.resolve().parents:
-        if (parent / "scripts" / "sdxl-server.py").exists():
+        if (parent / "scripts" / "image-gen-server.py").exists():
             return parent
-    raise RuntimeError("could not locate scripts/sdxl-server.py from " + str(start))
+    raise RuntimeError("could not locate scripts/image-gen-server.py from " + str(start))
 
 
-def _load_sdxl_module():
+def _load_image_gen_server():
     if "torch" not in sys.modules:
         torch_stub = types.ModuleType("torch")
         # __spec__=None causes ValueError in importlib.util.find_spec() (Python 3.12+),
@@ -38,14 +38,14 @@ def _load_sdxl_module():
         torch_stub.cuda = types.SimpleNamespace(is_available=lambda: False)
         sys.modules["torch"] = torch_stub
 
-    server_path = _find_repo_root(Path(__file__)) / "scripts" / "sdxl-server.py"
-    spec = importlib.util.spec_from_file_location("sdxl_server_under_test", server_path)
+    server_path = _find_repo_root(Path(__file__)) / "scripts" / "image-gen-server.py"
+    spec = importlib.util.spec_from_file_location("img_gen_server_server_under_test", server_path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-sdxl = _load_sdxl_module()
+img_gen_server = _load_image_gen_server()
 
 
 def test_next_retry_delay_contract():
@@ -54,9 +54,9 @@ def test_next_retry_delay_contract():
     Any reasonable cadence/backoff policy must: return a positive float, and
     poll at least as fast while degraded as it does when healthy (so a boot
     race heals promptly rather than waiting a full idle cycle)."""
-    assert sdxl.next_retry_delay(0) > 0
-    assert sdxl.next_retry_delay(1) > 0
-    assert sdxl.next_retry_delay(1) <= sdxl.next_retry_delay(0)
+    assert img_gen_server.next_retry_delay(0) > 0
+    assert img_gen_server.next_retry_delay(1) > 0
+    assert img_gen_server.next_retry_delay(1) <= img_gen_server.next_retry_delay(0)
 
 
 def test_z_image_turbo_registry_contract():
@@ -64,8 +64,8 @@ def test_z_image_turbo_registry_contract():
     model swap renders correctly: a distinct pipeline kind, bf16, 9 steps,
     guidance 0, no fp16 variant, no negative prompt. #image-zimage-and-variety.
     """
-    cfg = sdxl.REGISTRY.get("z_image_turbo")
-    assert cfg is not None, "z_image_turbo missing from SDXL server REGISTRY"
+    cfg = img_gen_server.REGISTRY.get("z_image_turbo")
+    assert cfg is not None, "z_image_turbo missing from image-gen server REGISTRY"
     assert cfg.model_id == "Tongyi-MAI/Z-Image-Turbo"
     assert cfg.pipeline_kind == "zimage"
     assert cfg.torch_dtype == "bfloat16"
@@ -75,12 +75,12 @@ def test_z_image_turbo_registry_contract():
     assert cfg.default_guidance_scale == 0.0
 
 
-def test_sdxl_models_keep_sdxl_pipeline_defaults():
-    """The SDXL entries must stay on the sdxl pipeline kind with an fp16
+def test_image_models_keep_img_gen_server_pipeline_defaults():
+    """The sdxl_lightning entry must stay on the sdxl pipeline kind with an fp16
     variant + negative prompt — the new ModelConfig fields default correctly
     so existing models are unaffected by the Z-Image addition.
     """
-    light = sdxl.REGISTRY["sdxl_lightning"]
+    light = img_gen_server.REGISTRY["sdxl_lightning"]
     assert light.pipeline_kind == "sdxl"
     assert light.use_fp16_variant is True
     assert light.supports_negative_prompt is True
@@ -101,24 +101,24 @@ def test_reload_config_preserves_pipeline_on_transient_db_failure():
         def tracking_unload():
             unloaded["n"] += 1
 
-        sdxl.unload_pipeline = tracking_unload
+        img_gen_server.unload_pipeline = tracking_unload
 
         async def failing_read():
             raise RuntimeError("connection refused")
 
-        sdxl.read_model_setting = failing_read
-        sdxl.state.degraded = False
+        img_gen_server.read_model_setting = failing_read
+        img_gen_server.state.degraded = False
         # Simulate a previously-loaded config.
-        sdxl.state.config = sdxl.REGISTRY.get("sdxl_lightning")
+        img_gen_server.state.config = img_gen_server.REGISTRY.get("sdxl_lightning")
 
-        await sdxl.reload_config()
+        await img_gen_server.reload_config()
 
-        assert sdxl.state.degraded is True, "should enter degraded on DB failure"
+        assert img_gen_server.state.degraded is True, "should enter degraded on DB failure"
         assert unloaded["n"] == 0, (
             "pipeline must NOT be unloaded on a transient DB failure — "
             "stack#1152: this caused a 2-min reload delay after Postgres restart"
         )
-        assert sdxl.state.config is not None, (
+        assert img_gen_server.state.config is not None, (
             "state.config must be preserved — we don't know the model changed"
         )
 
@@ -135,21 +135,21 @@ def test_reload_config_recovers_from_transient_db_failure():
                 raise RuntimeError("the database system is starting up")
             return "sdxl_lightning"
 
-        sdxl.read_model_setting = fake_read
-        sdxl.unload_pipeline = lambda: None
-        sdxl.state.degraded = False
-        sdxl.state.config = None
+        img_gen_server.read_model_setting = fake_read
+        img_gen_server.unload_pipeline = lambda: None
+        img_gen_server.state.degraded = False
+        img_gen_server.state.config = None
 
         # First read raises -> degraded latches (the 2026-06-04 failure)
-        await sdxl.reload_config()
-        assert sdxl.state.degraded is True
-        assert "starting up" in sdxl.state.degraded_reason
+        await img_gen_server.reload_config()
+        assert img_gen_server.state.degraded is True
+        assert "starting up" in img_gen_server.state.degraded_reason
 
         # Second read succeeds -> recovered (what the watchdog drives)
-        await sdxl.reload_config()
-        assert sdxl.state.degraded is False
-        assert sdxl.state.config is not None
-        assert sdxl.state.config.friendly_name == "sdxl_lightning"
+        await img_gen_server.reload_config()
+        assert img_gen_server.state.degraded is False
+        assert img_gen_server.state.config is not None
+        assert img_gen_server.state.config.friendly_name == "sdxl_lightning"
 
     asyncio.run(body())
 
@@ -159,29 +159,29 @@ def test_degraded_watchdog_self_heals():
     recovers. next_retry_delay is stubbed tiny so this isolates the loop from
     whatever cadence policy is chosen."""
     async def body():
-        sdxl.next_retry_delay = lambda attempt: 0.01
-        sdxl.unload_pipeline = lambda: None
+        img_gen_server.next_retry_delay = lambda attempt: 0.01
+        img_gen_server.unload_pipeline = lambda: None
 
         async def fake_read():
             return "sdxl_lightning"
 
-        sdxl.read_model_setting = fake_read
-        sdxl.state.degraded = True
-        sdxl.state.degraded_reason = (
+        img_gen_server.read_model_setting = fake_read
+        img_gen_server.state.degraded = True
+        img_gen_server.state.degraded_reason = (
             "DB read failed for 'image_generation_model': "
             "the database system is starting up"
         )
-        sdxl.state.config = None
+        img_gen_server.state.config = None
 
-        task = asyncio.create_task(sdxl.degraded_watchdog())
+        task = asyncio.create_task(img_gen_server.degraded_watchdog())
         try:
             for _ in range(50):
                 await asyncio.sleep(0.01)
-                if not sdxl.state.degraded:
+                if not img_gen_server.state.degraded:
                     break
-            assert sdxl.state.degraded is False
-            assert sdxl.state.config is not None
-            assert sdxl.state.config.friendly_name == "sdxl_lightning"
+            assert img_gen_server.state.degraded is False
+            assert img_gen_server.state.config is not None
+            assert img_gen_server.state.config.friendly_name == "sdxl_lightning"
         finally:
             task.cancel()
             try:

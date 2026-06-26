@@ -118,21 +118,21 @@ Full diagram and design rationale in [`docs/architecture/`](docs/architecture/).
 
 ## Key features
 
-| Feature                      | Description                                                                                 |
-| ---------------------------- | ------------------------------------------------------------------------------------------- |
-| **Local AI by default**      | Ollama for inference. Your GPU, your data, zero API costs.                                  |
-| **Cloud opt-in**             | LiteLLM provider plugin routes to Anthropic, OpenAI, Groq, OpenRouter — gated by cost guard |
-| **Anti-hallucination**       | 3 independent layers: prompts, multi-model QA, deterministic validator                      |
-| **DB-as-config**             | 1,090+ settings (68 secret) in PostgreSQL. Change with SQL or REST. No deploys.             |
-| **Langfuse-managed prompts** | Edit prompts in a UI; runtime falls back to YAML defaults if Langfuse is offline            |
-| **LangGraph pipelines**      | `template_runner.py` runs declarative DAGs with checkpointing                               |
-| **Multi-modal output**       | Markdown posts, AI images (SDXL / Flux), podcast audio, text-to-video (Wan 2.1 — alpha)     |
-| **Push-only output**         | Static JSON + RSS + JSON Feed 1.1 to any S3-compatible storage                              |
-| **Multi-site**               | One daemon manages N sites. Each site = config row + storage bucket.                        |
-| **Self-healing**             | Brain daemon monitors all services, restarts failures, alerts via Telegram/Discord          |
-| **Production observability** | Grafana, Prometheus, Loki, Pyroscope (CPU profiling), Sentry/GlitchTip                      |
-| **OAuth 2.1 throughout**     | Every consumer (CLI, MCP, brain, scripts) mints scoped JWTs. No static API keys.            |
-| **10,000+ tests**            | Unit coverage across all services, smoke tests on migrations, link-rot CI                   |
+| Feature                      | Description                                                                                  |
+| ---------------------------- | -------------------------------------------------------------------------------------------- |
+| **Local AI by default**      | Ollama for inference. Your GPU, your data, zero API costs.                                   |
+| **Cloud opt-in**             | LiteLLM provider plugin routes to Anthropic, OpenAI, Groq, OpenRouter — gated by cost guard  |
+| **Anti-hallucination**       | 3 independent layers: prompts, multi-model QA, deterministic validator                       |
+| **DB-as-config**             | 1,090+ settings (68 secret) in PostgreSQL. Change with SQL or REST. No deploys.              |
+| **Langfuse-managed prompts** | Edit prompts in a UI; runtime falls back to YAML defaults if Langfuse is offline             |
+| **LangGraph pipelines**      | `template_runner.py` runs declarative DAGs with checkpointing                                |
+| **Multi-modal output**       | Markdown posts, AI images (image-gen / Flux), podcast audio, text-to-video (Wan 2.1 — alpha) |
+| **Push-only output**         | Static JSON + RSS + JSON Feed 1.1 to any S3-compatible storage                               |
+| **Multi-site**               | One daemon manages N sites. Each site = config row + storage bucket.                         |
+| **Self-healing**             | Brain daemon monitors all services, restarts failures, alerts via Telegram/Discord           |
+| **Production observability** | Grafana, Prometheus, Loki, Pyroscope (CPU profiling), Sentry/GlitchTip                       |
+| **OAuth 2.1 throughout**     | Every consumer (CLI, MCP, brain, scripts) mints scoped JWTs. No static API keys.             |
+| **10,000+ tests**            | Unit coverage across all services, smoke tests on migrations, link-rot CI                    |
 
 ## Stack
 
@@ -183,7 +183,7 @@ Poindexter is built on a small extension framework. Eighteen plugin types let yo
 | **Stage**          | A step in the content pipeline (research, draft, QA, etc.)                             |
 | **TopicSource**    | Discovers candidate topics (HackerNews, dev.to, web search, etc.)                      |
 | **LLMProvider**    | Inference backend (Ollama is default; LiteLLM, OpenAI-compat, etc.)                    |
-| **ImageProvider**  | Featured + inline images (SDXL, Flux, Pexels, etc.)                                    |
+| **ImageProvider**  | Featured + inline images (image-gen, Flux, Pexels, etc.)                               |
 | **PublishAdapter** | Where finished posts go (S3-compatible, Discord, custom CMS, etc.)                     |
 | **Module**         | Bundles the above + migrations + routes into a versioned business function (Module v1) |
 

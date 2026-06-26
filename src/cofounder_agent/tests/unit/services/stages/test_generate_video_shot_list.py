@@ -130,7 +130,7 @@ def _make_valid_director_output() -> str:
             },
             {
                 "idx": 1, "duration_s": 5.0, "intent": "abstract",
-                "source": "sdxl_kenburns",
+                "source": "image_kenburns",
                 "prompt": "a glass door with data flowing through",
                 "narration_offset_s": 5.0,
             },
@@ -319,7 +319,7 @@ async def test_invalid_json_output_records_failure() -> None:
 async def test_invalid_schema_output_records_failure() -> None:
     """Director returning genuinely-broken JSON → failure recorded.
 
-    The example is an ``sdxl`` shot with no ``prompt`` — a per-shot source
+    The example is an ``image_gen`` shot with no ``prompt`` — a per-shot source
     violation that ``_reconcile_shot_list`` deliberately does NOT repair (it
     never fabricates creative fields). Arithmetic / count slips are now
     reconciled instead (see ``test_stage_recovers_arithmetic_slip_via_reconcile``),
@@ -331,7 +331,7 @@ async def test_invalid_schema_output_records_failure() -> None:
         "shots": [
             {
                 "idx": 0, "duration_s": 5.0, "intent": "x",
-                "source": "sdxl",  # requires a non-empty prompt — none given
+                "source": "image_gen",  # requires a non-empty prompt — none given
                 "narration_offset_s": 0.0,
             },
         ],
@@ -382,7 +382,7 @@ def _director_json() -> str:
         "shots": [
             {"idx": 0, "duration_s": 5.0, "intent": "open", "source": "pexels",
              "query": "data center", "narration_offset_s": 0.0},
-            {"idx": 1, "duration_s": 5.0, "intent": "mid", "source": "sdxl_kenburns",
+            {"idx": 1, "duration_s": 5.0, "intent": "mid", "source": "image_kenburns",
              "prompt": "abstract data flow", "narration_offset_s": 5.0},
             {"idx": 2, "duration_s": 5.0, "intent": "close", "source": "pexels",
              "query": "server racks", "narration_offset_s": 10.0},
@@ -452,7 +452,7 @@ def _make_valid_short_director_output() -> str:
         "shots": [
             {
                 "idx": 0, "duration_s": 2.0, "intent": "cold-open hook",
-                "source": "sdxl_kenburns",
+                "source": "image_kenburns",
                 "prompt": "cyberpunk neon illustration of a glowing server rack",
                 "narration_offset_s": 0.0,
             },
@@ -656,7 +656,7 @@ def _raw_shot(idx: int, source: str, duration: float = 5.0, **extra) -> dict:
     }
     if source == "pexels":
         shot["query"] = "data center server room"
-    elif source in ("sdxl", "sdxl_kenburns", "wan21"):
+    elif source in ("image_gen", "image_kenburns", "wan21"):
         shot["prompt"] = "an abstract neon circuit board, faceless"
     shot.update(extra)
     return shot
@@ -676,7 +676,7 @@ def _raw_list(shots: list[dict], total: float) -> dict:
 def test_reconcile_sets_total_duration_to_sum_of_shots() -> None:
     """The #1 observed failure: total_duration_s=300 but shots sum to 15."""
     raw = _raw_list(
-        [_raw_shot(0, "pexels"), _raw_shot(1, "sdxl"), _raw_shot(2, "pexels")],
+        [_raw_shot(0, "pexels"), _raw_shot(1, "image_gen"), _raw_shot(2, "pexels")],
         total=300.0,
     )
     fixed = _reconcile_shot_list(raw)
@@ -688,7 +688,7 @@ def test_reconcile_sets_total_duration_to_sum_of_shots() -> None:
 def test_reconcile_caps_shots_to_30_and_reindexes() -> None:
     """>30 shots (schema max) — keep the first 30, idx 0..29 contiguous."""
     shots = [
-        _raw_shot(i, "pexels" if i % 2 == 0 else "sdxl") for i in range(33)
+        _raw_shot(i, "pexels" if i % 2 == 0 else "image_gen") for i in range(33)
     ]
     fixed = _reconcile_shot_list(_raw_list(shots, total=999.0))
     assert len(fixed["shots"]) == 30
@@ -698,7 +698,7 @@ def test_reconcile_caps_shots_to_30_and_reindexes() -> None:
 
 def test_reconcile_reindexes_noncontiguous_idx() -> None:
     """Director skipped/duplicated idx values — renormalize to 0..n-1."""
-    shots = [_raw_shot(0, "pexels"), _raw_shot(7, "sdxl"), _raw_shot(99, "pexels")]
+    shots = [_raw_shot(0, "pexels"), _raw_shot(7, "image_gen"), _raw_shot(99, "pexels")]
     fixed = _reconcile_shot_list(_raw_list(shots, total=15.0))
     assert [s["idx"] for s in fixed["shots"]] == [0, 1, 2]
 
@@ -717,7 +717,7 @@ def test_reconcile_tolerates_non_numeric_duration() -> None:
     """A non-numeric duration_s must not crash reconcile — it contributes 0.0
     to the recomputed total (the per-shot schema validator rejects the shot
     later). Guards the recovery path that replaced the bare except."""
-    shots = [_raw_shot(0, "pexels", duration=5.0), _raw_shot(1, "sdxl")]
+    shots = [_raw_shot(0, "pexels", duration=5.0), _raw_shot(1, "image_gen")]
     shots[1]["duration_s"] = "not-a-number"
     fixed = _reconcile_shot_list(_raw_list(shots, total=999.0))
     # 5.0 (valid) + 0.0 (the bad one) = 5.0
@@ -744,7 +744,7 @@ async def test_stage_recovers_arithmetic_slip_via_reconcile() -> None:
     root cause) — now yields a valid 30-shot list via reconcile."""
     shots = []
     for i in range(31):
-        src = "pexels" if i % 3 else "sdxl"
+        src = "pexels" if i % 3 else "image_gen"
         shot = {
             "idx": i, "duration_s": 5.0, "intent": "x", "source": src,
             "narration_offset_s": float(i) * 5,

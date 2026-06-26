@@ -27,7 +27,7 @@ Resolved **before** any code, per the design's verify-first gate:
 
 | File                                                                                          | Responsibility                                                                                   | Action |
 | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------ | ------ |
-| `docker-compose.local.yml`                                                                    | Add the `speaches` GPU service (mirror of `sdxl-server`)                                         | Modify |
+| `docker-compose.local.yml`                                                                    | Add the `speaches` GPU service (mirror of `image-gen-server`)                                    | Modify |
 | `src/cofounder_agent/services/migrations/20260604_120000_seed_voice_speaches_sidecar_keys.py` | Seed the 6 sidecar `app_settings` keys (modes default `inprocess`)                               | Create |
 | `src/cofounder_agent/services/voice_agent.py`                                                 | Add `_build_stt()` / `_build_tts()` mode-aware seams; wire them into `build_voice_pipeline_task` | Modify |
 | `src/cofounder_agent/tests/unit/services/test_voice_agent_build_stt_tts.py`                   | Unit tests for the two seams (both modes + fail-loud)                                            | Create |
@@ -52,7 +52,7 @@ Reused unchanged: `voice_agent_whisper_model` (in-process enum), `voice_agent_tt
 
 ### Task 1: Add the `speaches` compose service (Phase 1)
 
-Mirrors `sdxl-server` (GPU reservation + HF cache + healthcheck). `WHISPER__TTL: "-1"` keeps the faster-whisper model resident so "warm" is actually warm (the model is NOT idle-offloaded). No `depends_on` from the voice agents — sidecar mode is opt-in, and coupling startup would delay voice boot in the default `inprocess` mode.
+Mirrors `image-gen-server` (GPU reservation + HF cache + healthcheck). `WHISPER__TTL: "-1"` keeps the faster-whisper model resident so "warm" is actually warm (the model is NOT idle-offloaded). No `depends_on` from the voice agents — sidecar mode is opt-in, and coupling startup would delay voice boot in the default `inprocess` mode.
 
 **Files:**
 
@@ -88,7 +88,7 @@ speaches:
     WHISPER__TTL: '-1'
   volumes:
     # Share the host HuggingFace cache (faster-whisper + Kokoro weights
-    # download once, survive rebuilds) — same idiom as sdxl/wan.
+    # download once, survive rebuilds) — same idiom as image-gen/wan.
     - ${USERPROFILE:-.}/.cache/huggingface:/home/ubuntu/.cache/huggingface
   deploy:
     resources:

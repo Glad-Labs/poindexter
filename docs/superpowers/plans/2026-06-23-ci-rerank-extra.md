@@ -12,7 +12,7 @@
 
 ## Global Constraints
 
-- **Do NOT change** the `torch` declaration or its `source = "pytorch-cu128"` pin — it is load-bearing for prod SDXL on the RTX 5090. Only its _reachability_ changes (optional, no longer pulled by a main dep).
+- **Do NOT change** the `torch` declaration or its `source = "pytorch-cu128"` pin — it is load-bearing for prod image-gen on the RTX 5090. Only its _reachability_ changes (optional, no longer pulled by a main dep).
 - **Both pipeline images stay byte-identical** in contents: operator worker (`Dockerfile.worker`) and OSS standalone (`Dockerfile`) must still install `sentence-transformers` + cu128 `torch` via `--extras rerank`.
 - **No version drift in `poetry.lock`** — only the optional/extras metadata for `sentence-transformers`/`torch` may change; no transitive version bumps.
 - **New extra name:** `rerank` (lowercase). Members: `["sentence-transformers", "torch"]`.

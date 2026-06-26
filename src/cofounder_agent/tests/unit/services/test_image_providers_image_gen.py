@@ -1,4 +1,4 @@
-"""Unit tests for ``services/image_providers/sdxl.py``.
+"""Unit tests for ``services/image_providers/image_gen.py``.
 
 The underlying ImageService (torch/diffusers/GPU) is mocked so the
 tests run without a GPU. Focus: Protocol conformance, empty-prompt
@@ -11,27 +11,27 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.image_providers.sdxl import SdxlProvider
+from services.image_providers.image_gen import ImageGenProvider
 
 
 @pytest.mark.unit
-class TestSdxlProviderMetadata:
+class TestImageGenProviderMetadata:
     def test_name(self):
-        assert SdxlProvider.name == "sdxl"
+        assert ImageGenProvider.name == "image_gen"
 
     def test_kind_is_generate(self):
-        assert SdxlProvider.kind == "generate"
+        assert ImageGenProvider.kind == "generate"
 
 
 @pytest.mark.unit
 @pytest.mark.asyncio
-class TestSdxlProviderFetch:
+class TestImageGenProviderFetch:
     async def test_empty_prompt_returns_empty(self):
-        result = await SdxlProvider().fetch("", {})
+        result = await ImageGenProvider().fetch("", {})
         assert result == []
 
     async def test_whitespace_prompt_returns_empty(self):
-        result = await SdxlProvider().fetch("   ", {})
+        result = await ImageGenProvider().fetch("   ", {})
         assert result == []
 
     async def test_generate_success_returns_file_url(self, tmp_path):
@@ -56,11 +56,11 @@ class TestSdxlProviderFetch:
             {"services.image_service": fake_image_service},
         ), \
              patch("tempfile.NamedTemporaryFile", return_value=fake_ctx):
-            results = await SdxlProvider().fetch("a cinematic scene", {})
+            results = await ImageGenProvider().fetch("a cinematic scene", {})
 
         assert len(results) == 1
         assert results[0].url.startswith("file://")
-        assert results[0].source == "sdxl"
+        assert results[0].source == "image_gen"
         assert results[0].search_query == "a cinematic scene"
         svc.generate_image.assert_awaited_once()
 
@@ -84,7 +84,7 @@ class TestSdxlProviderFetch:
         ), \
              patch("tempfile.NamedTemporaryFile", return_value=fake_ctx), \
              patch("os.path.exists", return_value=False):
-            results = await SdxlProvider().fetch("a scene", {})
+            results = await ImageGenProvider().fetch("a scene", {})
 
         assert results == []
 
@@ -107,7 +107,7 @@ class TestSdxlProviderFetch:
             {"services.image_service": fake_image_service},
         ), \
              patch("tempfile.NamedTemporaryFile", return_value=fake_ctx):
-            results = await SdxlProvider().fetch("a scene", {})
+            results = await ImageGenProvider().fetch("a scene", {})
 
         assert results == []
 
@@ -131,7 +131,7 @@ class TestSdxlProviderFetch:
             {"services.image_service": fake_image_service},
         ), \
              patch("tempfile.NamedTemporaryFile", return_value=fake_ctx):
-            await SdxlProvider().fetch("x", {"negative_prompt": "no watermark"})
+            await ImageGenProvider().fetch("x", {"negative_prompt": "no watermark"})
 
         # The negative_prompt from config was forwarded to generate_image.
         call = svc.generate_image.await_args
@@ -161,7 +161,7 @@ class TestSdxlProviderFetch:
                 "services.cloudinary_upload_service.upload_to_cloudinary",
                 new=AsyncMock(return_value="https://cdn.cloudinary/x.png"),
              ) as up:
-            results = await SdxlProvider().fetch("x", {"upload_to": "cloudinary"})
+            results = await ImageGenProvider().fetch("x", {"upload_to": "cloudinary"})
 
         assert results[0].url == "https://cdn.cloudinary/x.png"
         up.assert_awaited_once()
@@ -170,5 +170,5 @@ class TestSdxlProviderFetch:
         """If services.image_service can't be imported (torch missing etc.),
         the provider must return [] instead of raising."""
         with patch.dict("sys.modules", {"services.image_service": None}):
-            results = await SdxlProvider().fetch("x", {})
+            results = await ImageGenProvider().fetch("x", {})
         assert results == []

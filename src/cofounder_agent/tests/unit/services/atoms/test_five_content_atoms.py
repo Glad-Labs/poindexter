@@ -464,15 +464,15 @@ class TestContentGenerateImages:
 
         assert out == {"image_results": []}
 
-    async def test_sdxl_path_stores_result(self, monkeypatch):
-        """SDXL succeeds → image_results contains sdxl source entry."""
+    async def test_image_gen_path_stores_result(self, monkeypatch):
+        """image-gen succeeds → image_results contains image_gen source entry."""
         from modules.content.atoms import content_generate_images as atom
 
-        sdxl_url = "https://r2.example.com/img-001.png"
+        image_gen_url = "https://r2.example.com/img-001.png"
 
         monkeypatch.setattr(
-            "modules.content.stages.replace_inline_images._try_sdxl",
-            AsyncMock(return_value=sdxl_url),
+            "modules.content.stages.replace_inline_images._try_image_gen",
+            AsyncMock(return_value=image_gen_url),
         )
         monkeypatch.setattr(
             "modules.content.stages.replace_inline_images._try_pexels",
@@ -501,18 +501,18 @@ class TestContentGenerateImages:
         assert len(out["image_results"]) == 1
         result = out["image_results"][0]
         assert result["num"] == "1"
-        assert result["url"] == sdxl_url
-        assert result["source"] == "sdxl"
+        assert result["url"] == image_gen_url
+        assert result["source"] == "image_gen"
 
-    async def test_pexels_fallback_when_sdxl_fails(self, monkeypatch):
-        """SDXL returns None → Pexels fallback provides the image."""
+    async def test_pexels_fallback_when_image_gen_fails(self, monkeypatch):
+        """image-gen returns None → Pexels fallback provides the image."""
         from modules.content.atoms import content_generate_images as atom
 
         pexels_url = "https://images.pexels.com/photo.jpg"
         photographer = "Jane Doe"
 
         monkeypatch.setattr(
-            "modules.content.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_image_gen",
             AsyncMock(return_value=None),
         )
         monkeypatch.setattr(
@@ -545,11 +545,11 @@ class TestContentGenerateImages:
         assert "Jane Doe" in result["alt_text"]
 
     async def test_both_sources_fail_returns_none_url(self, monkeypatch):
-        """Both SDXL and Pexels fail → entry has url=None, source='none'."""
+        """Both image-gen and Pexels fail → entry has url=None, source='none'."""
         from modules.content.atoms import content_generate_images as atom
 
         monkeypatch.setattr(
-            "modules.content.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_image_gen",
             AsyncMock(return_value=None),
         )
         monkeypatch.setattr(
@@ -587,10 +587,10 @@ class TestContentGenerateImages:
         urls = ["https://r2.example.com/a.png", "https://r2.example.com/b.png"]
         url_iter = iter(urls)
 
-        async def _sdxl(num, query, topic, *, site_config, task_id, platform):
+        async def _image_gen(num, query, topic, *, site_config, task_id, platform):
             return next(url_iter, None)
 
-        monkeypatch.setattr("modules.content.stages.replace_inline_images._try_sdxl", _sdxl)
+        monkeypatch.setattr("modules.content.stages.replace_inline_images._try_image_gen", _image_gen)
         monkeypatch.setattr("modules.content.stages.replace_inline_images._try_pexels", AsyncMock(return_value=None))
         monkeypatch.setattr("modules.content.stages.replace_inline_images._record_inline_image_asset", AsyncMock())
         monkeypatch.setattr("services.image_service.get_image_service", MagicMock(return_value=MagicMock()))

@@ -190,7 +190,7 @@ class TestCreatePost:
         pool = _make_pool(fetchrow_result=object())
         db = _make_db(pool)
 
-        sdxl_blob = {
+        gen_blob = {
             "source": "sdxl_local",
             "provider_plugin": "image.sdxl_local",
             "sdxl_model": "sdxl_lightning",
@@ -207,7 +207,7 @@ class TestCreatePost:
                 "slug": "test-slug",
                 "title": "T",
                 "content": "Hello world.",
-                "featured_image_data": sdxl_blob,
+                "featured_image_data": gen_blob,
             })
 
         # Inspect the fetchrow call args — positional params include

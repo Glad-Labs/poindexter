@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-24.**  
+> **Auto-generated from live `app_settings` table on 2026-06-25.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 736 active rows across 60 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -333,7 +333,7 @@ The worker re-reads on every poll; no restart needed.
 | `embedding_retention_days.posts` | `` |  | Empty = no TTL. Post embeddings are never auto-pruned — feed live RAG retrieval. |
 | `embed_model` | `nomic-embed-text` |  | Auto-seeded by services.settings_defaults (#379) |
 | `enabled_topic_sources` | `knowledge,codebase,hackernews,devto,w...` |  |  |
-| `enable_sdxl_warmup` | `true` |  | Warm up SDXL models on startup |
+| `enable_image_gen_warmup` | `true` |  | Warm up image-gen models on startup |
 | `enable_writer_self_review` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
 | `environment` | `development` |  | Auto-seeded by services.settings_defaults (#379) |
 | `findings.anomaly.cooldown_minutes` | `60` |  |  |
@@ -432,7 +432,7 @@ The worker re-reads on every poll; no restart needed.
 | `owner_name` | `*(per-operator)*` | per-operator | Site owner display name |
 | `pexels_api_base` | `https://api.pexels.com/v1` |  | Auto-seeded by services.settings_defaults (#379) |
 | `pipeline_dry_run_mode` | `false` |  |  |
-| `pipeline_explicit_writer_unload_before_sdxl` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
+| `pipeline_writer_unload_before_image_gen` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
 | `pipeline_gate_final_publish_approval` | `off` |  | HITL approval gate 'final_publish_approval': on/off (auto-managed by approval_service) |
 | `pipeline_use_graph_def` | `true` |  |  |
 | `pipeline_writer_model` | `ollama/gemma-4-31B-it-qat:latest` |  |  |
@@ -556,8 +556,8 @@ The worker re-reads on every poll; no restart needed.
 | `restore_test_tier` | `daily` |  |  |
 | `scheduled_publisher_poll_seconds` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
 | `scheduler_alert_on_job_failure` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
-| `sdxl_enabled` | `true` |  | Master toggle for the SDXL featured/inline image pipeline. When false, source_featured_image skips the SDXL HTTP serv... |
-| `sdxl_server_url` | `http://host.docker.internal:9836` |  | SDXL image generation server |
+| `sdxl_enabled` | `true` |  | Master toggle for the image-gen featured/inline image pipeline. When false, source_featured_image skips the image-gen HTTP serv... |
+| `image_gen_server_url` | `http://host.docker.internal:9836` |  | image-gen server |
 | `self_consistency_enabled` | `true` |  |  |
 | `sentry_enabled` | `true` |  | Enable Sentry error tracking |
 | `shared_http_client_max_connections` | `100` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -647,10 +647,10 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `enable_featured_image` | `true` |  | Generate/search featured images for posts |
-| `image_negative_prompt` | `text, words, letters, numbers, waterm...` |  | Negative prompt for all SDXL generations |
+| `image_negative_prompt` | `text, words, letters, numbers, waterm...` |  | Negative prompt for all image-gen generations |
 | `image_primary_source` | `ai_generation` |  | Primary image source: pexels or ai_generation |
-| `image_style_default` | `professional digital art, abstract te...` |  | Default SDXL style for uncategorized posts |
-| `image_styles` | `[     {"name": "flat_vector", "scene"...` |  | JSON array of image styles for SDXL featured/inline image generation. Each has name, scene, and tags. |
+| `image_style_default` | `professional digital art, abstract te...` |  | Default image-gen style for uncategorized posts |
+| `image_styles` | `[     {"name": "flat_vector", "scene"...` |  | JSON array of image styles for image-gen featured/inline image generation. Each has name, scene, and tags. |
 
 ## infrastructure
 
@@ -685,7 +685,7 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `social_poster_fallback_model` | `ollama/llama3:latest` |  | Per-step model pin for services.social_poster X/LinkedIn post generation; read directly by _resolve_social_model (fai... |
 | `thinking_model_substrings` | `["qwen3","qwen3.5","glm-4","glm-4.7",...` |  | JSON array of substring needles used by services.llm_providers.thinking_models.is_thinking_model() to classify a mode... |
-| `video_slideshow_prompt_model` | `ollama/llama3:latest` |  | Per-call-site backstop for services.video_service SDXL prompt-gen. Deliberately non-thinking — qwen3/glm-4 thinking v... |
+| `video_slideshow_prompt_model` | `ollama/llama3:latest` |  | Per-call-site backstop for services.video_service image-gen prompt-gen. Deliberately non-thinking — qwen3/glm-4 thinking v... |
 
 ## logging
 
@@ -728,7 +728,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `inline_image_prompt_model` | `llama3:latest` |  | Ollama model used to craft SDXL prompts for inline images in blog posts |
+| `inline_image_prompt_model` | `llama3:latest` |  | Ollama model used to craft image-gen prompts for inline images in blog posts |
 | `podcast_script_model` | `ollama/gemma4:31b` |  | Ollama model used to generate podcast scripts from article content |
 | `qa_fallback_critic_model` | `ollama/gemma4:31b` |  | Fallback critic model used when pipeline_critic_model returns empty or errors |
 | `video_scene_model` | `llama3:latest` |  | Ollama model used to generate video scene descriptions from article text |

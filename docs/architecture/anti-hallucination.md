@@ -320,7 +320,7 @@ Wiring the rail was necessary but not sufficient: when `vision_gate` was first
 flipped to `required_to_pass=true` it rejected **100%** of posts. Three
 independent defects stacked, each only fatal once the gate was load-bearing:
 
-1. **WebP is undecodable by the vision model.** SDXL inline images are stored
+1. **WebP is undecodable by the vision model.** image-gen inline images are stored
    as WebP on R2 (`r2_upload_service` converts PNG/JPEG → WebP for the web), but
    `qwen3-vl` (via Ollama) cannot decode WebP — it receives no image and returns
    an empty / "no image" verdict. `_check_image_relevance` now normalizes every

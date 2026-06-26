@@ -248,13 +248,13 @@ class TestContentPlanImageMarkers:
         from modules.content.atoms import content_plan_image_markers as atom
         # Patch VRAM guard so it's a no-op.
         monkeypatch.setattr(
-            "modules.content.atoms.content_plan_image_markers.maybe_unload_writer_before_sdxl",
+            "modules.content.atoms.content_plan_image_markers.maybe_unload_writer_before_image_gen",
             AsyncMock(),
             raising=False,
         )
         # Patch the import inside the function.
         with patch(
-            "services.llm_providers.ollama_unload.maybe_unload_writer_before_sdxl",
+            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
             AsyncMock(),
         ):
             content = "## Intro\n\n[IMAGE-1: a blue server]\n\n## Body\n\n[IMAGE-2: a graph]\n\nText."
@@ -284,7 +284,7 @@ class TestContentPlanImageMarkers:
             _fake_plan,
         )
         with patch(
-            "services.llm_providers.ollama_unload.maybe_unload_writer_before_sdxl",
+            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
             AsyncMock(),
         ):
             out = await atom.run(_base_state(content="## Section\n\nNo markers here."))
@@ -304,10 +304,10 @@ class TestContentInjectImages:
         assert ATOM_META.idempotent is True
         assert "db_write" in ATOM_META.side_effects
 
-    async def test_injects_sdxl_image(self):
+    async def test_injects_image_gen_image(self):
         from modules.content.atoms import content_inject_images as atom
         content = "## Section\n\n[IMAGE-1: a futuristic city]\n\nBody."
-        image_results = [{"num": "1", "url": "https://r2.example.com/img.png", "alt_text": "futuristic city", "source": "sdxl"}]
+        image_results = [{"num": "1", "url": "https://r2.example.com/img.png", "alt_text": "futuristic city", "source": "image_gen"}]
         state = _base_state(content=content, image_results=image_results)
         out = await atom.run(state)
         assert "[IMAGE-1:" not in out["content"]

@@ -15,7 +15,7 @@ Chain of causation:
 
 1. `torch` is pinned to the CUDA index — `torch = { version = ">=2.7", source = "pytorch-cu128", optional = true }`
    ([`src/cofounder_agent/pyproject.toml`](../../../src/cofounder_agent/pyproject.toml)).
-   The pin is load-bearing for **prod SDXL** on the RTX 5090 (Blackwell sm_120) and
+   The pin is load-bearing for **prod image-gen** on the RTX 5090 (Blackwell sm_120) and
    must not change.
 2. `sentence-transformers` is a **non-optional main dependency** (it powers the
    LlamaIndex cross-encoder reranker). It requires `torch` transitively.
@@ -46,13 +46,13 @@ Every `import torch` / `import sentence_transformers` in production code is
 `try/except ImportError` that sets a `*_AVAILABLE` flag. None is an unguarded top-level
 import. Verified by grep:
 
-| File                                       | Line | Style                                                                              |
-| ------------------------------------------ | ---- | ---------------------------------------------------------------------------------- |
-| `services/rag_engine.py`                   | 641  | lazy — `from sentence_transformers import CrossEncoder` inside the reranker method |
-| `services/topic_dedup_semantic.py`         | 58   | lazy — inside a function                                                           |
-| `utils/startup_manager.py`                 | 897  | lazy — inside the lifespan warmup                                                  |
-| `services/image_service.py`                | 84   | module-level, `try/except ImportError` → `TORCH_AVAILABLE`                         |
-| `services/image_providers/_sdxl_models.py` | 44   | module-level, `try/except ImportError` → `TORCH_AVAILABLE` / `torch = None`        |
+| File                                        | Line | Style                                                                              |
+| ------------------------------------------- | ---- | ---------------------------------------------------------------------------------- |
+| `services/rag_engine.py`                    | 641  | lazy — `from sentence_transformers import CrossEncoder` inside the reranker method |
+| `services/topic_dedup_semantic.py`          | 58   | lazy — inside a function                                                           |
+| `utils/startup_manager.py`                  | 897  | lazy — inside the lifespan warmup                                                  |
+| `services/image_service.py`                 | 84   | module-level, `try/except ImportError` → `TORCH_AVAILABLE`                         |
+| `services/image_providers/_image_models.py` | 44   | module-level, `try/except ImportError` → `TORCH_AVAILABLE` / `torch = None`        |
 
 Neither style is an unguarded top-level import, so **removing torch from the CI env does
 not break test collection** — the guarded modules import fine with `TORCH_AVAILABLE =
@@ -71,10 +71,10 @@ False`. Only two test files reference these libs, and both already tolerate abse
 
 ## Non-goals
 
-- Changing the cu128 source pin (prod SDXL depends on it).
+- Changing the cu128 source pin (prod image-gen depends on it).
 - Switching the **worker** to CPU torch. Now that the reranker runs on CPU (#1882) the
   worker arguably no longer needs the CUDA build — a potential ~2 GB image saving — but
-  that touches the GPU/SDXL story and is a separate, higher-risk change. Captured as a
+  that touches the GPU/image-gen story and is a separate, higher-risk change. Captured as a
   follow-up below.
 - pytest-testmon / incremental test selection (de-scoped this session).
 
@@ -124,7 +124,7 @@ into `rerank`; CI and everything else omit it.
 | **OSS standalone** (`docker-compose.yml` → `cofounder`, `src/cofounder_agent/Dockerfile`)                       | `--only main` → sentence-transformers + cu128 torch via main                              | `--only main --extras "rerank"`                   | **identical contents** |
 | **CI** (`unit-tests` / `integration-db` / `benchmarks`)                                                         | `poetry install --no-root` → pulls cu128 torch                                            | `poetry install --no-root` → lean, no torch       | **the win**            |
 | **Host dev** (`scripts/bootstrap.sh`)                                                                           | `poetry install --no-root` → sentence-transformers via main                               | `poetry install --no-root --extras rerank`        | **parity preserved**   |
-| **SDXL** (`scripts/Dockerfile.sdxl`)                                                                            | own CUDA base image (`pytorch/pytorch:2.9.1-cuda12.8`), pip-installs diffusers directly   | unchanged                                         | unaffected             |
+| **image-gen** (`scripts/Dockerfile.image-gen`)                                                                  | own CUDA base image (`pytorch/pytorch:2.9.1-cuda12.8`), pip-installs diffusers directly   | unchanged                                         | unaffected             |
 | **auto-embed / brain / wan / voice / backup**                                                                   | own context; pip-install minimal deps or own pyproject (no torch)                         | unchanged                                         | unaffected             |
 
 ### Files touched
@@ -199,7 +199,7 @@ All install sites were enumerated and classified before the plan was written:
 - **`src/cofounder_agent/Dockerfile`** — **NOT** an unused coordinator. It is the OSS
   standalone `cofounder` pipeline service in `docker-compose.yml` ("the simplest way to
   run the pipeline"). It runs the reranker → **gets `--extras rerank`** (table above).
-- **`scripts/Dockerfile.sdxl`** — `FROM pytorch/pytorch:2.9.1-cuda12.8` base image,
+- **`scripts/Dockerfile.image-gen`** — `FROM pytorch/pytorch:2.9.1-cuda12.8` base image,
   pip-installs diffusers directly; does not consume the cofounder lock. Unaffected.
 - **`scripts/Dockerfile.auto-embed`** — pip-installs its own minimal deps (asyncpg/httpx/
   pydantic/apscheduler), no torch, embeddings via Ollama HTTP. Unaffected.
@@ -227,11 +227,11 @@ Evidence gathered this session that de-risks the follow-up:
   extra). So `torch.cuda.is_available()` is `False` in the worker and there is no
   in-process GPU path — the cu128 build is ~2 GB of dead weight; CPU torch is
   functionally equivalent there.
-- **The SDXL container is self-contained:** [`scripts/Dockerfile.sdxl`](../../../scripts/Dockerfile.sdxl)
+- **The image-gen container is self-contained:** [`scripts/Dockerfile.image-gen`](../../../scripts/Dockerfile.image-gen)
   is `FROM pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime` and pip-installs diffusers
   directly — it does **not** consume the cofounder lock's torch. So the cofounder cu128
   pin's only real consumer is the **in-process diffusers fallback** (host + `--extras ml`
-  - a GPU), not the SDXL container.
+  - a GPU), not the image-gen container.
 
 Follow-up scope: confirm whether the in-process diffusers path is still live and where
 cu128 must remain, then make **CPU the cofounder-default torch** with cu128 retained only

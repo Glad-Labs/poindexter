@@ -244,7 +244,7 @@ curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
 | Pipeline        | `GET /api/pipeline/events/task/{task_id}` | bearer | Event history for a single task                                 |
 | **Analytics**   | `GET /api/analytics/views`                | bearer | Page view rollups (day, post_id, geo if configured)             |
 | **Export**      | `POST /api/export/rebuild`                | bearer | Trigger static JSON + RSS rebuild to R2 / configured storage    |
-| **Media**       | `GET /images/generated/{filename}`        | public | Serve a generated SDXL / Pexels image                           |
+| **Media**       | `GET /images/generated/{filename}`        | public | Serve a generated image-gen / Pexels image                           |
 | Media           | `GET /episodes`                           | public | List all podcast episodes                                       |
 | Media           | `GET /episodes/{post_id}.mp3`             | public | Stream a podcast audio episode                                  |
 | Media           | `GET /episodes/{post_id}.mp4`             | public | Stream a podcast video episode                                  |

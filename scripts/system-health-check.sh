@@ -129,7 +129,7 @@ check infra "Docker daemon responding" bash -c '
 '
 
 check infra "Expected containers running" bash -c '
-  expected="poindexter-postgres-local poindexter-worker poindexter-grafana poindexter-prometheus poindexter-alertmanager poindexter-sdxl-server poindexter-voice-bot poindexter-brain-daemon"
+  expected="poindexter-postgres-local poindexter-worker poindexter-grafana poindexter-prometheus poindexter-alertmanager poindexter-image-gen-server poindexter-voice-bot poindexter-brain-daemon"
   missing=""
   for c in $expected; do
     state=$(docker inspect -f "{{.State.Status}}" "$c" 2>/dev/null)
@@ -228,14 +228,14 @@ check models "Configured writer model exists locally" bash -c '
   echo "writer=$writer"
 '
 
-check models "SDXL server idle/ready" bash -c '
+check models "image-gen server idle/ready" bash -c '
   resp=$(curl -s -m 3 http://localhost:9836/health 2>&1)
   status=$(echo "$resp" | python3 -c "import sys,json; print(json.load(sys.stdin).get(\"status\", \"\"))" 2>/dev/null)
   case "$status" in
-    idle|ok|ready) echo "sdxl status=$status" ;;
-    busy) echo "sdxl busy — in use by pipeline"; exit 1 ;;
-    degraded) echo "sdxl degraded — restart: docker restart poindexter-sdxl-server"; exit 2 ;;
-    *) echo "sdxl status=$status"; exit 2 ;;
+    idle|ok|ready) echo "image-gen status=$status" ;;
+    busy) echo "image-gen busy — in use by pipeline"; exit 1 ;;
+    degraded) echo "image-gen degraded — restart: docker restart poindexter-image-gen-server"; exit 2 ;;
+    *) echo "image-gen status=$status"; exit 2 ;;
   esac
 '
 

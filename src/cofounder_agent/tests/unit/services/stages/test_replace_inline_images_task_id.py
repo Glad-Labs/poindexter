@@ -1,13 +1,13 @@
 """Regression tests for Glad-Labs/poindexter#157.
 
 The inline-image phase (``ReplaceInlineImagesStage``) takes the GPU
-lock twice — once for the Ollama prompt build, once for the SDXL
+lock twice — once for the Ollama prompt build, once for the image-gen
 render. Pre-#157 the lock calls didn't carry ``task_id`` / ``phase``,
 so ``gpu_task_sessions`` (and downstream ``cost_logs`` rows) ended up
 unattributed — the kWh + electricity-cost metrics couldn't be rolled
 up per pipeline task.
 
-These tests pin the contract: when ``_try_sdxl`` runs, both
+These tests pin the contract: when ``_try_image_gen`` runs, both
 ``gpu.lock`` calls receive the originating ``task_id`` plus a phase
 label, mirroring the featured-image flow in
 ``source_featured_image.py``.
@@ -24,7 +24,7 @@ import pytest
 
 from modules.content.stages.replace_inline_images import (
     ReplaceInlineImagesStage,
-    _try_sdxl,
+    _try_image_gen,
 )
 from plugins.fake_platform import FakePlatform
 
@@ -42,7 +42,7 @@ class _LockRecorder:
 
     Records each ``lock(...)`` call's kwargs so tests can assert that
     ``task_id`` + ``phase`` reach the scheduler. The underlying async
-    context manager is a no-op so ``_try_sdxl`` can run end-to-end.
+    context manager is a no-op so ``_try_image_gen`` can run end-to-end.
     """
 
     def __init__(self) -> None:
@@ -55,31 +55,31 @@ class _LockRecorder:
 
 
 @pytest.mark.asyncio
-async def test_try_sdxl_threads_task_id_to_both_gpu_locks():
-    """Both ``gpu.lock`` calls inside ``_try_sdxl`` carry task_id+phase.
+async def test_try_image_gen_threads_task_id_to_both_gpu_locks():
+    """Both ``gpu.lock`` calls inside ``_try_image_gen`` carry task_id+phase.
 
-    The function takes the GPU twice (LLM prompt → SDXL render).
+    The function takes the GPU twice (LLM prompt → image-gen render).
     Cost attribution in ``gpu_task_sessions`` / cost_logs needs both
     sessions tagged with the pipeline task UUID.
     """
     recorder = _LockRecorder()
 
     # Wave 3f (#667): dispatch now goes through platform.dispatch.complete.
-    # FakePlatform returns a usable SDXL prompt (>20 chars). The SDXL
+    # FakePlatform returns a usable image-gen prompt (>20 chars). The image-gen
     # POST returns 200 so the path proceeds to R2 upload, which we
-    # short-circuit with a stub ``_resolve_sdxl_response``.
+    # short-circuit with a stub ``_resolve_gen_response``.
     completion = MagicMock()
     completion.text = "a serene server room with cyan accents"
 
     platform = FakePlatform(dispatch_response=completion)
 
-    sdxl_resp = MagicMock()
-    sdxl_resp.status_code = 200
+    gen_resp = MagicMock()
+    gen_resp.status_code = 200
 
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
-    mock_client.post = AsyncMock(return_value=sdxl_resp)
+    mock_client.post = AsyncMock(return_value=gen_resp)
 
     site_config = SimpleNamespace(
         get=lambda _k, _d=None: _d if _d is not None else "",
@@ -97,13 +97,13 @@ async def test_try_sdxl_threads_task_id_to_both_gpu_locks():
         "modules.content.stages.replace_inline_images.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.stages.replace_inline_images._resolve_sdxl_response",
+        "modules.content.stages.replace_inline_images._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/glad-labs-generated-images/x.png"),
     ), patch(
         "modules.content.stages.replace_inline_images._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/x.png"),
     ):
-        result = await _try_sdxl(
+        result = await _try_image_gen(
             num="1",
             search_query="server racks",
             topic="Database performance",
@@ -115,22 +115,22 @@ async def test_try_sdxl_threads_task_id_to_both_gpu_locks():
     assert result == "https://r2.example/x.png"
     assert len(recorder.calls) == 2
 
-    ollama_call, sdxl_call = recorder.calls
+    ollama_call, gen_call = recorder.calls
     assert ollama_call["owner"] == "ollama"
     assert ollama_call["task_id"] == "task-abc-123"
     assert ollama_call["phase"] == "inline_image_prompt"
 
-    assert sdxl_call["owner"] == "sdxl"
-    assert sdxl_call["task_id"] == "task-abc-123"
-    assert sdxl_call["phase"] == "inline_image"
+    assert gen_call["owner"] == "image_gen"
+    assert gen_call["task_id"] == "task-abc-123"
+    assert gen_call["phase"] == "inline_image"
 
 
 @pytest.mark.asyncio
-async def test_stage_propagates_task_id_into_try_sdxl():
-    """End-to-end through the Stage: task_id from context reaches _try_sdxl."""
+async def test_stage_propagates_task_id_into_try_image_gen():
+    """End-to-end through the Stage: task_id from context reaches _try_image_gen."""
     captured: dict[str, Any] = {}
 
-    async def fake_try_sdxl(num, search_query, topic, *, site_config, task_id, platform=None):
+    async def fake_try_image_gen(num, search_query, topic, *, site_config, task_id, platform=None):
         captured["task_id"] = task_id
         captured["num"] = num
         return None  # force Pexels fallback so the rest of the stage runs
@@ -154,8 +154,8 @@ async def test_stage_propagates_task_id_into_try_sdxl():
     }
 
     with patch(
-        "modules.content.stages.replace_inline_images._try_sdxl",
-        new=AsyncMock(side_effect=fake_try_sdxl),
+        "modules.content.stages.replace_inline_images._try_image_gen",
+        new=AsyncMock(side_effect=fake_try_image_gen),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,
     ):
@@ -167,11 +167,11 @@ async def test_stage_propagates_task_id_into_try_sdxl():
 
 
 @pytest.mark.asyncio
-async def test_sdxl_prompt_in_placeholder_does_not_leak_to_alt():
-    """Glad-Labs/poindexter#469 — SDXL-shaped descriptor → topic fallback alt.
+async def test_image_gen_prompt_in_placeholder_does_not_leak_to_alt():
+    """Glad-Labs/poindexter#469 — image-gen-shaped descriptor → topic fallback alt.
 
-    When the Image Decision Agent injects ``[IMAGE-N: <SDXL-prompt>]``
-    and the SDXL render succeeds, the rendered ``<img alt="...">`` must
+    When the Image Decision Agent injects ``[IMAGE-N: <image-gen-prompt>]``
+    and the image-gen render succeeds, the rendered ``<img alt="...">`` must
     show the topic-derived fallback, not the raw imperative-mood prompt.
     """
     from modules.content.stages.replace_inline_images import _resolve_one_placeholder
@@ -185,9 +185,9 @@ async def test_sdxl_prompt_in_placeholder_does_not_leak_to_alt():
     topic = "Stable Diffusion XL on a Single RTX 5090"
     content_text = f"Intro\n\n[IMAGE-1: {poisoned_desc}]\n\nOutro"
 
-    # SDXL path succeeds — returns a URL we can assert on.
+    # image-gen path succeeds — returns a URL we can assert on.
     with patch(
-        "modules.content.stages.replace_inline_images._try_sdxl",
+        "modules.content.stages.replace_inline_images._try_image_gen",
         new=AsyncMock(return_value="https://r2.example/inline-1.png"),
     ), patch(
         "modules.content.stages.replace_inline_images._record_inline_image_asset",
@@ -205,13 +205,13 @@ async def test_sdxl_prompt_in_placeholder_does_not_leak_to_alt():
             post_id=None,
         )
 
-    # The raw SDXL prompt must NOT appear in the alt attribute.
+    # The raw image-gen prompt must NOT appear in the alt attribute.
     assert "Show the key components" not in result
     assert "no text" not in result
     assert "no faces" not in result
     # And the topic-derived fallback must.
     assert "Stable Diffusion XL on a Single RTX 5090" in result
-    # Sanity-check the image src is the SDXL URL.
+    # Sanity-check the image src is the image-gen URL.
     assert 'src="https://r2.example/inline-1.png"' in result
 
 
@@ -230,7 +230,7 @@ async def test_real_human_alt_in_placeholder_passes_through():
     content_text = f"Intro\n\n[IMAGE-1: {clean_desc}]\n\nOutro"
 
     with patch(
-        "modules.content.stages.replace_inline_images._try_sdxl",
+        "modules.content.stages.replace_inline_images._try_image_gen",
         new=AsyncMock(return_value="https://r2.example/inline-1.png"),
     ), patch(
         "modules.content.stages.replace_inline_images._record_inline_image_asset",

@@ -301,7 +301,7 @@ const MAP_NODES = [
   { key: 'worker', x: 50, y: 48, core: true },
   { key: 'postgres-local', x: 22, y: 26 },
   { key: 'ollama', x: 76, y: 24 },
-  { key: 'sdxl-server', x: 84, y: 52 },
+  { key: 'image-gen-server', x: 84, y: 52 },
   { key: 'brain-daemon', x: 50, y: 16 },
   { key: 'prometheus', x: 20, y: 70 },
   { key: 'loki', x: 38, y: 84 },
@@ -318,11 +318,11 @@ const MAP_EDGES = [
   ['brain-daemon', 'worker', 'hot'],
   ['brain-daemon', 'prometheus', ''],
   ['ollama', 'gpu', 'hot'],
-  ['sdxl-server', 'gpu', 'amber'],
+  ['image-gen-server', 'gpu', 'amber'],
   ['prometheus', 'worker', ''],
   ['prefect-server', 'worker', 'err'],
   ['worker', 'glitchtip-web', ''],
-  ['worker', 'sdxl-server', 'hot'],
+  ['worker', 'image-gen-server', 'hot'],
 ];
 
 function SystemMap({ services, gpu, onOpen, onOpenGpu, onRestart }) {

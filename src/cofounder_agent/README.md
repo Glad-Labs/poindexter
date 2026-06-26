@@ -29,7 +29,7 @@ poetry run uvicorn main:app --reload --port 8002
 > an opt-in `rerank` extra. With the lean `poetry install` above the reranker
 > degrades to passthrough; to run it locally use `poetry install --extras rerank`
 > (or `pip install -e "src/cofounder_agent[rerank]"`). The reranker runs on CPU
-> (#1882); the CUDA torch that drives SDXL lives in the sdxl-server container.
+> (#1882); the CUDA torch that drives the image-gen server lives in the image-gen-server container.
 
 Requires `~/.poindexter/bootstrap.toml` with `database_url` (created by `poindexter setup`). Ollama is the default LLM provider — no cloud API keys required. All other config lives in the `app_settings` DB table.
 

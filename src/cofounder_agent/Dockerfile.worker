@@ -144,7 +144,7 @@ RUN python -c "import googleapiclient.discovery, google_auth_oauthlib.flow, goog
 # torch.version.cuda assertion guards the 2026-06-23 CPU-trim: this image has no
 # GPU passthrough and no diffusers, so it must carry the ~2 GB-smaller CPU wheel,
 # not cu128. A future re-lock that re-pulls a CUDA torch reddens the build here
-# instead of silently re-bloating the image. cu128 lives in scripts/Dockerfile.sdxl.
+# instead of silently re-bloating the image. cu128 lives in scripts/Dockerfile.image-gen.
 RUN python -c "import sentence_transformers, torch; assert torch.version.cuda is None, f'expected CPU torch, got CUDA {torch.version.cuda}'; print('[BUILD] rerank extra OK — sentence_transformers + CPU torch', torch.__version__)"
 
 # Install Playwright's bundled chromium to a shared location so the
@@ -157,11 +157,11 @@ RUN python -m playwright install chromium && \
 COPY . .
 
 # Non-root user. chmod 0711 on /root so appuser can *traverse* it to reach
-# SDXL-generated images under /root/.poindexter/generated-images/ (via the
+# image-gen-generated images under /root/.poindexter/generated-images/ (via the
 # compose volume mount) — the directory's own 0777 perms let appuser read
 # files; only /root itself blocked traversal until now. Without this,
 # featured-image generation silently fell back to Pexels because
-# os.path.exists() on the SDXL-returned path raised PermissionError.
+# os.path.exists() on the image-gen-returned path raised PermissionError.
 RUN addgroup --system --gid 1001 appgroup && \
     adduser --system --uid 1001 --ingroup appgroup --home /home/appuser appuser && \
     chown -R appuser:appgroup /app && \

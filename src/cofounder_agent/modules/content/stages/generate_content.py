@@ -91,6 +91,9 @@ class GenerateContentStage:
         style = context.get("style", "")
         tone = context.get("tone", "")
         target_length = int(context.get("target_length", 1200))
+        # Operator steering injected by atoms.approval_gate on a regen-at-gate
+        # resume (#149). Empty string when no regen or no --reason was given.
+        regen_steering = context.get("regen_steering") or ""
         tags = context.get("tags") or []
         models_by_phase = context.get("models_by_phase") or {}
         database_service = context.get("database_service")
@@ -169,9 +172,19 @@ class GenerateContentStage:
                 niche_slug=niche_slug,
                 site_config=context.get("site_config"),
                 research_context=research_context,
+                regen_steering=regen_steering,
             )
         else:
             # Generate content (GPU-locked to ollama mode).
+            # Inject operator regen steering as a style prefix when present (#149).
+            # The legacy path has no writer_prompt_override seam, so style is the
+            # closest equivalent — a bare regen with no --reason leaves style unchanged.
+            effective_style = (
+                f"IMPORTANT — Operator feedback from prior review:\n"
+                f"{regen_steering}\n\n"
+                f"Address this feedback in your draft.\n\n"
+                + (style or "")
+            ).strip() if regen_steering else style
             from services.gpu_scheduler import gpu
             async with gpu.lock(
                 "ollama", model=preferred_model,
@@ -179,7 +192,7 @@ class GenerateContentStage:
             ):
                 content_text, model_used, metrics = await content_generator.generate_blog_post(
                     topic=topic,
-                    style=style,
+                    style=effective_style,
                     tone=tone,
                     target_length=target_length,
                     tags=tags,
@@ -731,6 +744,7 @@ class GenerateContentStage:
         niche_slug: str | None = None,
         site_config: Any = None,
         research_context: str = "",
+        regen_steering: str = "",
     ) -> tuple[str, str, dict[str, Any]]:
         """Run ``atoms.two_pass_writer`` and shape the result into the
         (content_text, model_used, metrics) tuple the rest of this stage
@@ -806,6 +820,19 @@ class GenerateContentStage:
         writer_prompt_override = await self._read_writer_prompt_override(
             database_service, task_id,
         )
+
+        # Operator regen steering (#149) — prepend before any niche-level
+        # writer_prompt_override so the operator's note is the first thing
+        # the writer sees. A bare regen with no --reason leaves the override
+        # unchanged. Truncated to 1000 chars to guard against a runaway
+        # reason string eating the context window.
+        if regen_steering:
+            steering_prefix = (
+                f"IMPORTANT — Operator feedback from prior review:\n"
+                f"{regen_steering[:1000]}\n\n"
+                f"Address this feedback in your draft.\n\n"
+            )
+            writer_prompt_override = steering_prefix + (writer_prompt_override or "")
 
         # task_metadata.context_bundle — set by the dev_diary job
         # (PRs/commits/decisions/audit/recent posts/cost summary). We

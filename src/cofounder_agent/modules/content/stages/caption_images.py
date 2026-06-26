@@ -9,7 +9,7 @@ the featured image into ``featured_image_alt``. No-op when
 
 Why this stage exists: legacy alt text was derived from the writer's
 ``[IMAGE-N: <description>]`` placeholder — the generation *intent*, not the
-rendered pixels. SDXL produces abstract editorial art (no people/faces), so
+rendered pixels. image-gen produces abstract editorial art (no people/faces), so
 those alts routinely describe content the image doesn't contain. This stage
 fixes it forward at generation time; ``scripts/backfill-image-alt-vision.py``
 fixes existing posts. Both share :mod:`services.image_captioner`.

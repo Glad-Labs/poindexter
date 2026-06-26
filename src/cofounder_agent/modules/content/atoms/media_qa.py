@@ -15,7 +15,7 @@ B. **Caption presence** (deterministic): captions are best-effort upstream
 C. **Frame human-detection** (vision, GATED + fail-soft): when
    ``media_qa_frame_detection_enabled`` is on, extract a midpoint frame and ask
    the local vision model whether it shows a PHOTOREALISTIC human (policy #675 —
-   SDXL renders abstract editorial art, "no people"). A "yes" emits an advisory
+   image-gen renders abstract editorial art, "no people"). A "yes" emits an advisory
    ``human_in_frame`` finding. Entirely fail-soft: a missing ffmpeg / vision
    error records ``"unavailable"`` and emits NO finding (don't cry wolf when the
    tool isn't there).
@@ -243,7 +243,7 @@ async def _detect_human_in_frame(
         }
     ]
 
-    # GPU coordination — qwen3-vl is ~19.6 GB; serialize against SDXL/writer.
+    # GPU coordination — qwen3-vl is ~19.6 GB; serialize against image-gen/writer.
     from services.gpu_scheduler import gpu
 
     try:
@@ -384,7 +384,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                         f"The vision model flagged a photorealistic human in a "
                         f"midpoint frame of the rendered {label} video for task "
                         f"{task_id}. Glad Labs media is abstract editorial art "
-                        "(SDXL, 'no people') — a real human likely means a "
+                        "(image-gen, 'no people') — a real human likely means a "
                         "stock-frame leak or a misrendered shot. Advisory only."
                     ),
                     severity="warn",

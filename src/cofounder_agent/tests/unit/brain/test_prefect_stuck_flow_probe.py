@@ -625,6 +625,90 @@ async def test_prefect_api_error_returns_error_summary():
 
 
 @pytest.mark.asyncio
+async def test_connect_error_pages_dispatch_plane_down():
+    """ConnectError → probe pages 'dispatch plane unreachable' (poindexter#710).
+
+    A 500 from Prefect (above) means the server answered but is unhealthy;
+    a ConnectError means the server is not reachable at all. Only the latter
+    is the 'dispatch plane is down' signal that warrants an immediate page.
+    """
+    import httpx
+
+    pool = _make_pool()
+    notify = MagicMock()
+
+    class _ConnectErrorClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *exc):
+            return False
+        async def post(self, *_a, **_kw):
+            raise httpx.ConnectError("Connection refused")
+
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: _ConnectErrorClient(),
+    )
+    assert summary["ok"] is False
+    assert summary["status"] == "error"
+    notify.assert_called_once()
+    kwargs = notify.call_args[1]
+    assert "unreachable" in kwargs["title"].lower()
+    assert kwargs["severity"] == "critical"
+    # audit event should also be written
+    event_types = [r[1][0] for r in pool._audit_rows]
+    assert "probe.prefect_dispatch_plane_unreachable" in event_types
+
+
+@pytest.mark.asyncio
+async def test_connect_timeout_pages_dispatch_plane_down():
+    """ConnectTimeout (slow server) also pages — same 'plane is down' signal."""
+    import httpx
+
+    pool = _make_pool()
+    notify = MagicMock()
+
+    class _TimeoutClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *exc):
+            return False
+        async def post(self, *_a, **_kw):
+            raise httpx.ConnectTimeout("timed out")
+
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: _TimeoutClient(),
+    )
+    assert summary["ok"] is False
+    notify.assert_called_once()
+    assert notify.call_args[1]["severity"] == "critical"
+
+
+@pytest.mark.asyncio
+async def test_generic_exception_does_not_page():
+    """Non-connection exceptions (e.g. JSON parse error) are log-only.
+
+    Only ConnectError/ConnectTimeout indicate the dispatch plane is down;
+    other errors are transient and should not generate operator noise.
+    """
+    pool = _make_pool()
+    notify = MagicMock()
+
+    class _BrokenClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, *exc):
+            return False
+        async def post(self, *_a, **_kw):
+            raise ValueError("unexpected JSON structure")
+
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: _BrokenClient(),
+    )
+    assert summary["ok"] is False
+    notify.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_filter_payload_uses_flow_names_setting():
     """Operator-configurable flow_names — the POST body must carry the
     parsed list. Pins the seam so a future operator who adds

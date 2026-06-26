@@ -13,7 +13,7 @@ Three specialized sub-protocols for specific transformations:
   Examples: ``mastodon``, ``youtube`` (already in
   ``services/social_adapters/``); future ``linkedin``, ``reddit``.
 - :class:`Provider` — generates media (images, audio, video). Examples:
-  ``pexels``, ``sdxl``, ``ai_generation``, future ``midjourney``,
+  ``pexels``, ``image_gen``, ``ai_generation``, future ``midjourney``,
   ``flux``.
 
 This module promotes the existing ``services/phases/base_phase.py``
@@ -33,7 +33,7 @@ Register via ``pyproject.toml``:
     mastodon = "poindexter.adapters.mastodon:MastodonAdapter"
 
     [project.entry-points."poindexter.providers"]
-    sdxl = "poindexter.providers.sdxl:SDXLProvider"
+    image_gen = "poindexter.providers.image_gen:ImageGenProvider"
 """
 
 from __future__ import annotations

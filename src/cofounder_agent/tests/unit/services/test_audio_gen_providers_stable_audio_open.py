@@ -2,7 +2,7 @@
 
 Glad-Labs/poindexter#125 — first AudioGenProvider implementation. The
 provider speaks to a separate inference server (default port 9839) and
-mirrors the SDXL/FLUX sidecar response shapes (raw bytes OR JSON with
+mirrors the image-gen/FLUX sidecar response shapes (raw bytes OR JSON with
 ``audio_path``). Tests mock ``httpx.AsyncClient`` so they never touch
 a real server.
 
@@ -29,7 +29,7 @@ from services.audio_gen_providers.stable_audio_open import (
 )
 
 # ---------------------------------------------------------------------------
-# Helpers — mirror the SDXL/FLUX test fixtures so failure modes match.
+# Helpers — mirror the image-gen/FLUX test fixtures so failure modes match.
 # ---------------------------------------------------------------------------
 
 

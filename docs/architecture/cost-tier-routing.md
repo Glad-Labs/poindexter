@@ -57,7 +57,7 @@ is on the critical content path:
   jobs) → `notify_operator(critical=True)` + raise. The pipeline halts loudly
   rather than degrade output quality silently.
 - **Non-critical enhancers** (title regen, the media/video director stages, the
-  SDXL prompt synthesiser) → log + soft-skip or return `None`, so a missing
+  image-gen prompt synthesiser) → log + soft-skip or return `None`, so a missing
   optional pin degrades that one enhancement without killing the post. Several
   still `notify_operator(critical=False)` so the gap is visible.
 
@@ -78,24 +78,24 @@ return model.removeprefix("ollama/")  # OllamaClient wants the bare name
 Each model-selecting call site and the pin it reads. To move a step to a
 different model, set its pin — nothing else is affected.
 
-| Call site                                           | Pin (`app_settings` key)                             | On unset                                  |
-| --------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------- |
-| `ai_content_generator` (writer)                     | `pipeline_writer_model` → `pipeline_fallback_model`  | critic rejects everything → check the pin |
-| `multi_model_qa` critic + gate critics              | `pipeline_critic_model` → `qa_fallback_critic_model` | notify(critical) + raise                  |
-| `self_review.self_review_and_revise`                | `writer_self_review_model`                           | notify + raise                            |
-| `title_generation` (SEO title regen)                | `pipeline_writer_model`                              | notify(advisory) + return None            |
-| `podcast_service` (script generation)               | `podcast_script_model` → `default_ollama_model`      | notify + regex-script fallback            |
-| `image_service` (search-query gen)                  | `image_search_query_model`                           | notify + raise                            |
-| `image_decision_agent` (image direction)            | `model_role_image_decision`                          | notify + page                             |
-| `image_providers.ai_generation` (SDXL prompt synth) | `sdxl_prompt_model`                                  | soft fallback prompt                      |
-| `video_service` (SDXL slideshow prompt)             | `video_slideshow_prompt_model`                       | notify(critical) + raise                  |
-| `stages.generate_media_scripts`                     | `video_scene_model` → `default_ollama_model`         | skip stage (non-critical)                 |
-| `stages.generate_video_shot_list` / `review_…`      | `video_director_model` → `video_scene_model`         | skip stage (non-critical)                 |
-| `jobs.collapse_old_embeddings`                      | `embedding_collapse_summary_model`                   | notify(critical) + raise                  |
-| `handlers.retention_summarize_to_table`             | `memory_compression_summary_model`                   | notify(critical) + raise                  |
-| `social_poster` (social copy gen)                   | `social_poster_fallback_model`                       | notify(critical) + raise                  |
-| `ragas_eval` (judge model)                          | `ragas_judge_model`                                  | notify(critical) + raise                  |
-| `deepeval_rails` (judge model)                      | `deepeval_judge_model`                               | notify(critical) + raise                  |
+| Call site                                                | Pin (`app_settings` key)                             | On unset                                  |
+| -------------------------------------------------------- | ---------------------------------------------------- | ----------------------------------------- |
+| `ai_content_generator` (writer)                          | `pipeline_writer_model` → `pipeline_fallback_model`  | critic rejects everything → check the pin |
+| `multi_model_qa` critic + gate critics                   | `pipeline_critic_model` → `qa_fallback_critic_model` | notify(critical) + raise                  |
+| `self_review.self_review_and_revise`                     | `writer_self_review_model`                           | notify + raise                            |
+| `title_generation` (SEO title regen)                     | `pipeline_writer_model`                              | notify(advisory) + return None            |
+| `podcast_service` (script generation)                    | `podcast_script_model` → `default_ollama_model`      | notify + regex-script fallback            |
+| `image_service` (search-query gen)                       | `image_search_query_model`                           | notify + raise                            |
+| `image_decision_agent` (image direction)                 | `model_role_image_decision`                          | notify + page                             |
+| `image_providers.ai_generation` (image-gen prompt synth) | `image_prompt_model`                                 | soft fallback prompt                      |
+| `video_service` (image-gen slideshow prompt)             | `video_slideshow_prompt_model`                       | notify(critical) + raise                  |
+| `stages.generate_media_scripts`                          | `video_scene_model` → `default_ollama_model`         | skip stage (non-critical)                 |
+| `stages.generate_video_shot_list` / `review_…`           | `video_director_model` → `video_scene_model`         | skip stage (non-critical)                 |
+| `jobs.collapse_old_embeddings`                           | `embedding_collapse_summary_model`                   | notify(critical) + raise                  |
+| `handlers.retention_summarize_to_table`                  | `memory_compression_summary_model`                   | notify(critical) + raise                  |
+| `social_poster` (social copy gen)                        | `social_poster_fallback_model`                       | notify(critical) + raise                  |
+| `ragas_eval` (judge model)                               | `ragas_judge_model`                                  | notify(critical) + raise                  |
+| `deepeval_rails` (judge model)                           | `deepeval_judge_model`                               | notify(critical) + raise                  |
 
 The two LLM-judge advisory rails (`ragas_eval`, `deepeval_rails`) and the two
 hygiene-summary jobs (`collapse_old_embeddings`, `retention_summarize_to_table`)

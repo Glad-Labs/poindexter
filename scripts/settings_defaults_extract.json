@@ -370,7 +370,7 @@
       "receiver": "site_config"
     },
     {
-      "key": "enable_sdxl_warmup",
+      "key": "enable_image_gen_warmup",
       "value": "",
       "value_type": "str",
       "getter": "get",
@@ -590,7 +590,7 @@
       "value": "sdxl_lightning",
       "value_type": "str",
       "getter": "get",
-      "file": "src\\cofounder_agent\\services\\image_providers\\_sdxl_models.py",
+      "file": "src\\cofounder_agent\\services\\image_providers\\_image_models.py",
       "line": 149,
       "receiver": "site_config"
     },
@@ -617,7 +617,7 @@
       "value": "",
       "value_type": "str",
       "getter": "get",
-      "file": "src\\cofounder_agent\\services\\image_providers\\sdxl.py",
+      "file": "src\\cofounder_agent\\services\\image_providers\\image_gen.py",
       "line": 57,
       "receiver": "site_config"
     },
@@ -2251,7 +2251,7 @@
       "receiver": "site_config"
     },
     {
-      "key": "sdxl_server_url",
+      "key": "image_gen_server_url",
       "value": "http://host.docker.internal:9836",
       "value_type": "str",
       "getter": "get",
@@ -2260,7 +2260,7 @@
       "receiver": "site_config"
     },
     {
-      "key": "sdxl_server_url",
+      "key": "image_gen_server_url",
       "value": "http://host.docker.internal:9836",
       "value_type": "str",
       "getter": "get",
@@ -2269,7 +2269,7 @@
       "receiver": "site_config"
     },
     {
-      "key": "sdxl_server_url",
+      "key": "image_gen_server_url",
       "value": "http://host.docker.internal:9836",
       "value_type": "str",
       "getter": "get",
@@ -3242,8 +3242,8 @@
       "line": 32,
       "receiver": "site_config"
     },
-    "enable_sdxl_warmup": {
-      "key": "enable_sdxl_warmup",
+    "enable_image_gen_warmup": {
+      "key": "enable_image_gen_warmup",
       "value": "",
       "value_type": "str",
       "getter": "get",
@@ -4610,8 +4610,8 @@
       "line": 38,
       "receiver": "site_config"
     },
-    "sdxl_server_url": {
-      "key": "sdxl_server_url",
+    "image_gen_server_url": {
+      "key": "image_gen_server_url",
       "value": "http://host.docker.internal:9836",
       "value_type": "str",
       "getter": "get",

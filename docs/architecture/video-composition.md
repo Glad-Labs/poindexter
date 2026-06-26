@@ -3,7 +3,7 @@
 **Status:** Design proposal (2026-05-28). Captures the architecture for moving from
 single-source video generation ("always Ken Burns" OR "always Wan2.1") to a
 director-driven, multi-source approach where each post gets a custom shot list
-mixing SDXL stills, Pexels stock footage, Wan2.1 short clips, and Ken-Burns
+mixing image-gen stills, Pexels stock footage, Wan2.1 short clips, and Ken-Burns
 treatments — chosen per-shot by an LLM director, rendered by the existing
 `MediaCompositor` plugin.
 
@@ -24,7 +24,7 @@ bottom). Each PR is independently shippable and useful.
 ## Background — what's broken today
 
 `services/video_service.py` hardcodes a single composition strategy: generate
-8 SDXL stills, stitch them with Ken Burns motion + the podcast audio, hand off
+8 image-gen stills, stitch them with Ken Burns motion + the podcast audio, hand off
 to a video server. There are no per-post creative decisions.
 
 At the same time, the wan-server was migrated to Wan2.1 text-to-video, but
@@ -43,7 +43,7 @@ shot needs**.
 ## Goal
 
 Each video gets a **shot list** — an ordered sequence of shots, each with a
-target duration, an intent, a content source (SDXL / Pexels / Wan2.1 / Ken
+target duration, an intent, a content source (image-gen / Pexels / Wan2.1 / Ken
 Burns / future), and a generation prompt or stock query. The compositor
 fetches the per-shot media, assembles into the final MP4, overlays the
 narration audio.
@@ -55,8 +55,8 @@ narration audio.
    operator's approve/reject feedback.
 
 2. **The source plugins** — each shot's `source` value resolves to an
-   existing plugin (already have SDXL, Pexels, Wan2.1 video provider) or a
-   new one (Ken Burns wrapper over SDXL).
+   existing plugin (already have image-gen, Pexels, Wan2.1 video provider) or a
+   new one (Ken Burns wrapper over image-gen).
 
 3. **The renderer (`MediaCompositor`)** — already exists as a protocol with
    an `ffmpeg_local` implementation. Takes a list of `CompositionScene`s
@@ -89,7 +89,7 @@ problems at the shot-list level is cheaper than re-rendering.
       "idx": 1,
       "duration_s": 5,
       "intent": "abstract — illustrate the metaphor",
-      "source": "sdxl_kenburns",
+      "source": "image_kenburns",
       "prompt": "an open glass door with abstract data flowing through, cinematic lighting",
       "kenburns_zoom": [1.0, 1.2],
       "narration_offset_s": 6
@@ -116,7 +116,7 @@ problems at the shot-list level is cheaper than re-rendering.
 - `intent` — natural-language note from the director ("why this shot exists").
   Useful for debugging + the quality feedback loop.
 - `source` — discriminator for which plugin renders this shot. Initial set:
-  `"sdxl"` (static still), `"sdxl_kenburns"` (still + motion), `"pexels"`
+  `"image_gen"` (static still), `"image_kenburns"` (still + motion), `"pexels"`
   (stock clip), `"wan21"` (native T2V), `"holdover"` (fade from previous shot
   — used for breathing room).
 - `prompt` / `query` — generation prompt OR stock-library query, depending on
@@ -149,7 +149,7 @@ The prompt lives in YAML + Langfuse like every other production prompt
 >
 > - **Pexels stock** for concrete real-world subjects (people, places,
 >   products, recognizable scenes)
-> - **SDXL stills with Ken Burns motion** for abstract concepts and
+> - **image-gen stills with Ken Burns motion** for abstract concepts and
 >   metaphors that need a custom look
 > - **Wan2.1 short clips** when a shot benefits from native motion (water,
 >   wind, hands manipulating objects) — keep under 6 seconds
@@ -161,13 +161,13 @@ Output: validated JSON per the schema above.
 
 Each `source` value resolves to one of:
 
-| `source`        | Renderer            | Output            | Notes                                                          |
-| --------------- | ------------------- | ----------------- | -------------------------------------------------------------- |
-| `sdxl`          | existing SDXL svc   | PNG → static clip | Held for `duration_s` as still frame                           |
-| `sdxl_kenburns` | SDXL + KB wrapper   | PNG + Ken Burns   | Today's "Ken Burns slideshow" code, refactored into one plugin |
-| `pexels`        | new — Pexels API    | MP4 clip          | Trim/loop to `duration_s`; respect license                     |
-| `wan21`         | existing wan-server | MP4 clip          | New schema: send `prompt`, get `duration_s` clip               |
-| `holdover`      | renderer-internal   | fade transition   | No source plugin; renderer cross-fades                         |
+| `source`         | Renderer               | Output            | Notes                                                          |
+| ---------------- | ---------------------- | ----------------- | -------------------------------------------------------------- |
+| `image_gen`      | existing image-gen svc | PNG → static clip | Held for `duration_s` as still frame                           |
+| `image_kenburns` | image-gen + KB wrapper | PNG + Ken Burns   | Today's "Ken Burns slideshow" code, refactored into one plugin |
+| `pexels`         | new — Pexels API       | MP4 clip          | Trim/loop to `duration_s`; respect license                     |
+| `wan21`          | existing wan-server    | MP4 clip          | New schema: send `prompt`, get `duration_s` clip               |
+| `holdover`       | renderer-internal      | fade transition   | No source plugin; renderer cross-fades                         |
 
 Each plugin returns a path to a local file. The renderer treats them all the
 same — concat in shot-list order, transition between, overlay narration.
@@ -200,14 +200,14 @@ The director is the SMART decider; the matrix below is the FALLBACK / prior
 that the director's prompt encodes initially. As the feedback loop matures,
 the matrix is what the director's policy converges toward.
 
-| Shot intent                       | Recommended source            | Why                                          |
-| --------------------------------- | ----------------------------- | -------------------------------------------- |
-| Real-world subject (person/place) | Pexels                        | Stock photography > AI hallucination         |
-| Abstract concept / metaphor       | SDXL still + Ken Burns        | Custom aesthetic; AI handles abstraction     |
-| Motion / time-evolution           | Wan2.1 short clip             | Native video > static frame with KB pan      |
-| Breathing room / transition       | Holdover with fade            | Lets the audio breathe; no compute cost      |
-| Establishing shot                 | Pexels OR SDXL+KB             | Whichever has stronger visual on first beat  |
-| Punchy closer                     | SDXL + KB (high-impact still) | Posters work; native AI motion often fizzles |
+| Shot intent                       | Recommended source                 | Why                                          |
+| --------------------------------- | ---------------------------------- | -------------------------------------------- |
+| Real-world subject (person/place) | Pexels                             | Stock photography > AI hallucination         |
+| Abstract concept / metaphor       | image-gen still + Ken Burns        | Custom aesthetic; AI handles abstraction     |
+| Motion / time-evolution           | Wan2.1 short clip                  | Native video > static frame with KB pan      |
+| Breathing room / transition       | Holdover with fade                 | Lets the audio breathe; no compute cost      |
+| Establishing shot                 | Pexels OR image-gen+KB             | Whichever has stronger visual on first beat  |
+| Punchy closer                     | image-gen + KB (high-impact still) | Posters work; native AI motion often fizzles |
 
 **Pacing rules** (in the director prompt):
 
@@ -244,8 +244,8 @@ the matrix is what the director's policy converges toward.
 **Scope:**
 
 - New `pexels_video.py` plugin (stock-clip lookup via Pexels API)
-- Refactor existing SDXL + Ken Burns logic from `video_service.py` into a
-  `sdxl_kenburns` source plugin
+- Refactor existing image-gen + Ken Burns logic from `video_service.py` into a
+  `image_kenburns` source plugin
 - Fix wan-server schema mismatch — update `video_service.py` to send `prompt`
   to `/generate` (or wrap the wan-server call in a `wan21` source plugin
   with the correct request body)

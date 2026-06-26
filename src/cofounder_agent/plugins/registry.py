@@ -812,12 +812,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         # was never plugged into the imperative load path.
         ("topic_sources", "services.topic_sources.igdb", "IGDBSource"),
         # Core ImageProviders — Phase G migration. Pexels first (search);
-        # SDXL generation provider lands in a follow-up slice.
+        # image-gen generation provider lands in a follow-up slice.
         ("image_providers", "services.image_providers.pexels", "PexelsProvider"),
-        ("image_providers", "services.image_providers.sdxl", "SdxlProvider"),
+        ("image_providers", "services.image_providers.image_gen", "ImageGenProvider"),
         ("image_providers", "services.image_providers.ai_generation", "AIGenerationProvider"),
         # FLUX.1-schnell — second-generation text-to-image alternative to
-        # SDXL Lightning. Apache-2.0 licensed (the non-commercial flux_dev
+        # image-gen Lightning. Apache-2.0 licensed (the non-commercial flux_dev
         # variant is intentionally NOT registered). GH#123.
         ("image_providers", "services.image_providers.flux_schnell", "FluxSchnellProvider"),
         # Core VideoProviders. Imperative load until the packaging issue

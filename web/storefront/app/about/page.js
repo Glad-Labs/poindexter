@@ -81,8 +81,8 @@ export default function AboutPage() {
               <em>Local-first</em>
             </div>
             <p className="sf-fact__body">
-              Every model runs on hardware you own. Ollama, SDXL, Piper. No paid
-              inference, no egress to a vendor dashboard.
+              Every model runs on hardware you own. Ollama, image-gen, Piper. No
+              paid inference, no egress to a vendor dashboard.
             </p>
           </div>
 

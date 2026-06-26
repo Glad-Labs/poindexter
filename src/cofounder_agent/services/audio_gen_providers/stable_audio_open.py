@@ -23,7 +23,7 @@ Strategy
 --------
 
 HTTP POST to a dedicated Stable Audio Open inference server. Default
-port **9839** (sits next to the SDXL sidecar on 9836 and the FLUX server
+port **9839** (sits next to the image-gen sidecar on 9836 and the FLUX server
 on 9838). The server side is a small wrapper around the
 ``stable-audio-tools`` library; standing it up is a deploy step, not a
 provider concern. When the server is unreachable the provider logs a
@@ -58,7 +58,7 @@ from plugins.audio_gen_provider import AudioGenResult, AudioKind
 logger = logging.getLogger(__name__)
 
 
-# Default inference-server URL. Sits at port 9839 next to the SDXL
+# Default inference-server URL. Sits at port 9839 next to the image-gen
 # (9836) and FLUX (9838) sidecars so all media generators run as
 # parallel host processes.
 _DEFAULT_SERVER_URL = "http://host.docker.internal:9839"
@@ -431,7 +431,7 @@ def _materialize_sidecar_json(
     """Copy the audio file the sidecar wrote to its filesystem to the
     caller's ``output_path``. Returns rendered duration in seconds.
 
-    Mirrors the SDXL/FLUX sidecar JSON contract — server returns
+    Mirrors the image-gen/FLUX sidecar JSON contract — server returns
     ``{"audio_path": "...", "duration_s": ..., "sample_rate": ...}``
     so a single sidecar implementation can serve multiple media
     generators if desired.

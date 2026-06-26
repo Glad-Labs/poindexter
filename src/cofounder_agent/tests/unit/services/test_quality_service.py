@@ -753,7 +753,7 @@ class TestDetectArtifacts:
         artifacts = UnifiedQualityService._detect_artifacts(content)
         assert any("Photo metadata" in a for a in artifacts)
 
-    def test_sdxl_leak_detected(self):
+    def test_image_gen_prompt_leak_detected(self):
         from modules.content.quality_service import UnifiedQualityService
         content = "Generate with stable diffusion. negative prompt: ugly, low quality."
         artifacts = UnifiedQualityService._detect_artifacts(content)

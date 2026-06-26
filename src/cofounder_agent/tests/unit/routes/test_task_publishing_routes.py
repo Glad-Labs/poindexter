@@ -207,7 +207,7 @@ class TestDraftEditingRoutes:
                 )
 
         monkeypatch.setattr(_pub_mod, "PostEditService", FakeSvc)
-        # Keep regen from building the real (SDXL) image service.
+        # Keep regen from building the real (image-gen) image service.
         monkeypatch.setattr(
             "services.image_service.get_image_service",
             lambda site_config=None: object(),

@@ -59,7 +59,7 @@ def test_openclaw_on_host_is_a_restart_target():
         assert bd._should_auto_restart("openclaw") is True
 
 
-@pytest.mark.parametrize("name", ["api", "site", "sdxl", "grafana", "loki", "redis"])
+@pytest.mark.parametrize("name", ["api", "site", "image_gen", "grafana", "loki", "redis"])
 def test_other_services_are_not_restart_targets(name):
     """Only worker (always) and openclaw (host only) qualify. Everything
     else falls through to the alert-actions auto-triage path — restart

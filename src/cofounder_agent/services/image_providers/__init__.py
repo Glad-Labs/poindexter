@@ -1,6 +1,6 @@
 """services.image_providers — ImageProvider plugin implementations.
 
-Each module is one image source: Pexels search, SDXL generation, future
+Each module is one image source: Pexels search, image-gen generation, future
 Unsplash / Flux / DALL-E providers. Providers conform to
 ``plugins.image_provider.ImageProvider`` and register via entry_points
 under ``poindexter.image_providers``.

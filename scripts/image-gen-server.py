@@ -1,5 +1,5 @@
 """
-SDXL Image Generation Server — DB-driven, graceful-degradation HTTP service.
+Image Generation Server — DB-driven, graceful-degradation HTTP service.
 
 Single host process, single GPU, multiple Docker callers reach it via
 host.docker.internal:9836. The choice of model lives in poindexter_brain
@@ -73,8 +73,8 @@ IDLE_TIMEOUT = 60  # seconds — unload after idle so Ollama can use VRAM
 # Self-heal watchdog bounds (see degraded_watchdog / next_retry_delay below).
 # reload_config() latches `degraded` on any failure and is otherwise only
 # re-run on an explicit POST /reload. On a host reboot Docker's restart policy
-# brings sdxl-server + postgres-local up in PARALLEL (compose `depends_on` is
-# honored only by `docker compose up`, NOT by restart-policy restarts), so SDXL
+# brings image-gen-server + postgres-local up in PARALLEL (compose `depends_on` is
+# honored only by `docker compose up`, NOT by restart-policy restarts), so image-gen server
 # can read app_settings while Postgres is still in startup (57P03 "the database
 # system is starting up") and then stay degraded forever. The watchdog turns
 # that permanent latch into a few seconds of self-healing.
@@ -83,8 +83,8 @@ DEGRADED_POLL_MAX_SECONDS = 60   # ceiling — don't spam the DB/logs forever
 HEALTHY_POLL_SECONDS = 30        # cadence when not degraded (cheap idle check)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
-logger = logging.getLogger("sdxl-server")
-app = FastAPI(title="SDXL Image Server", version="2.0")
+logger = logging.getLogger("image-gen-server")
+app = FastAPI(title="image-gen Server", version="2.0")
 
 
 # ============================================================================
@@ -108,7 +108,7 @@ class ModelConfig:
     # "zimage" -> ZImagePipeline (bf16, guidance-distilled: no negative prompt)
     pipeline_kind: str = "sdxl"
     torch_dtype: str = "float16"  # "float16" or "bfloat16"
-    use_fp16_variant: bool = True  # SDXL repos ship an fp16 variant; Z-Image does not
+    use_fp16_variant: bool = True  # Stable Diffusion XL repos ship an fp16 variant; Z-Image does not
     supports_negative_prompt: bool = True
     notes: str = ""
 
@@ -116,18 +116,18 @@ class ModelConfig:
 REGISTRY: Dict[str, ModelConfig] = {
     "sdxl_lightning": ModelConfig(
         friendly_name="sdxl_lightning",
-        display_name="SDXL Lightning (4-step LoRA)",
+        display_name="Stable Diffusion XL Lightning (4-step LoRA)",
         model_id="stabilityai/stable-diffusion-xl-base-1.0",
         default_steps=4,
         default_guidance_scale=0.0,
         lora_repo="ByteDance/SDXL-Lightning",
         lora_weight_name="sdxl_lightning_4step_lora.safetensors",
         scheduler_trailing=True,
-        notes="Distilled 4-step LoRA on top of SDXL base. Requires guidance_scale=0.",
+        notes="Distilled 4-step LoRA on top of Stable Diffusion XL base. Requires guidance_scale=0.",
     ),
     "sdxl_turbo": ModelConfig(
         friendly_name="sdxl_turbo",
-        display_name="SDXL Turbo",
+        display_name="Stable Diffusion XL Turbo",
         model_id="stabilityai/sdxl-turbo",
         default_steps=4,
         default_guidance_scale=0.0,
@@ -135,11 +135,11 @@ REGISTRY: Dict[str, ModelConfig] = {
     ),
     "sdxl_base": ModelConfig(
         friendly_name="sdxl_base",
-        display_name="SDXL Base 1.0",
+        display_name="Stable Diffusion XL Base 1.0",
         model_id="stabilityai/stable-diffusion-xl-base-1.0",
         default_steps=30,
         default_guidance_scale=7.5,
-        notes="Original SDXL — high quality, slower.",
+        notes="Original Stable Diffusion XL — high quality, slower.",
     ),
     "z_image_turbo": ModelConfig(
         friendly_name="z_image_turbo",
@@ -216,8 +216,7 @@ async def reload_config() -> None:
     DB-unreachable (exception) vs bad-config (wrong model name) are handled
     differently (stack#1152): a transient DB failure preserves the current
     config + pipeline — the model didn't change, only the DB went away.
-    Clearing them on a 30-second Postgres restart caused a 2-minute SDXL
-    model reload delay after recovery (the Postgres-restart cascade).
+    Clearing them on a 30-second Postgres restart caused a 2-minute model reload delay after recovery (the Postgres-restart cascade).
     Bad config (unknown model, setting removed) still unloads because we
     have definitive information the current config is wrong.
     """
@@ -267,7 +266,7 @@ async def reload_config() -> None:
 # ============================================================================
 
 def _ask_ollama_to_unload() -> None:
-    """Best-effort: ask Ollama to free VRAM before we load SDXL.
+    """Best-effort: ask Ollama to free VRAM before we load the model.
     Ignored if Ollama isn't reachable."""
     try:
         import httpx
@@ -403,7 +402,7 @@ def next_retry_delay(attempt: int) -> float:
 
     >>> CONTRIBUTION POINT — implement the cadence/backoff policy here. <<<
 
-    Contract pinned by tests/unit/scripts/test_sdxl_self_heal.py:
+    Contract pinned by tests/unit/scripts/test_image_gen_self_heal.py:
       * always return a positive float
       * a degraded poll heals at least as fast as the idle cadence:
         next_retry_delay(1) <= next_retry_delay(0)
@@ -454,7 +453,7 @@ async def degraded_watchdog() -> None:
 
 @app.on_event("startup")
 async def startup():
-    logger.info("SDXL server starting — DB: %s", HOST_DB_URL.split("@")[-1])
+    logger.info("image-gen server starting — DB: %s", HOST_DB_URL.split("@")[-1])
     await reload_config()
     if state.degraded:
         logger.warning(
@@ -515,7 +514,7 @@ async def generate(req: GenerateRequest):
     if state.degraded:
         raise HTTPException(
             status_code=503,
-            detail=f"SDXL server degraded: {state.degraded_reason}",
+            detail=f"image-gen server degraded: {state.degraded_reason}",
         )
 
     state.last_used = time.time()
@@ -558,7 +557,7 @@ async def generate(req: GenerateRequest):
 
     seed = req.seed if req.seed >= 0 else int(torch.randint(0, 2**32, (1,)).item())
     generator = torch.Generator(device="cuda").manual_seed(seed)
-    filename = f"sdxl_{uuid.uuid4().hex[:8]}.png"
+    filename = f"img_{uuid.uuid4().hex[:8]}.png"
     output_path = OUTPUT_DIR / filename
 
     logger.info(
@@ -627,5 +626,5 @@ if __name__ == "__main__":
     parser.add_argument("--port", type=int, default=9836)
     parser.add_argument("--host", default="0.0.0.0")
     args = parser.parse_args()
-    logger.info("SDXL server listening on %s:%d", args.host, args.port)
+    logger.info("image-gen server listening on %s:%d", args.host, args.port)
     uvicorn.run(app, host=args.host, port=args.port, log_level="info")

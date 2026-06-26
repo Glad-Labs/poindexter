@@ -69,7 +69,7 @@ RUN poetry config virtualenvs.create false && \
 # torch.version.cuda assertion guards the CPU-trim — this image carries the
 # ~2 GB-smaller CPU wheel (no GPU here), and a re-lock that re-pulls CUDA torch
 # reddens the build instead of silently re-bloating it. cu128 lives in
-# scripts/Dockerfile.sdxl.
+# scripts/Dockerfile.image-gen.
 RUN python -c "import sentence_transformers, torch; assert torch.version.cuda is None, f'expected CPU torch, got CUDA {torch.version.cuda}'; print('[BUILD] rerank extra OK — sentence_transformers + CPU torch', torch.__version__)"
 
 # Install Playwright's bundled chromium. This downloads ~150MB into

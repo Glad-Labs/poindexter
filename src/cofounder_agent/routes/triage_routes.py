@@ -177,7 +177,7 @@ class _DefaultModelRouter:
         # ``dispatch_complete`` (which holds ``gpu.lock("ollama")``, #1794)
         # rather than ``ollama_chat_text``'s direct-httpx fallback that
         # BYPASSES the GPU lock. The bypass let triage reload the writer
-        # model mid-video-render and CUDA-OOM the SDXL server (2026-06-21).
+        # model mid-video-render and CUDA-OOM the image-gen server (2026-06-21).
         self._pool = pool
 
     async def invoke(

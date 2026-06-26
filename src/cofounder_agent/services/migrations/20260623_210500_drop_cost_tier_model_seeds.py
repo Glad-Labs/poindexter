@@ -20,7 +20,7 @@ that resolved the same tier. The per-step pins
 ``ragas_judge_model``, ``podcast_script_model``, ``video_director_model`` /
 ``video_scene_model`` / ``video_slideshow_prompt_model``,
 ``embedding_collapse_summary_model``, ``memory_compression_summary_model``,
-``image_search_query_model``, ``sdxl_prompt_model``, ``writer_self_review_model``,
+``image_search_query_model``, ``image_prompt_model``, ``writer_self_review_model``,
 …) give granular control and a loud failure when a step's model is missing — no
 quiet fallthrough to a shared default.
 

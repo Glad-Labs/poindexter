@@ -37,23 +37,23 @@ class TestRenderOneShot:
     """Per-source shot rendering dispatches to the right backend."""
 
     @pytest.mark.asyncio
-    async def test_sdxl_kenburns_calls_sdxl_with_correct_body(self, tmp_path):
-        """The SDXL render must POST {'prompt': ..., 'negative_prompt': ...}
+    async def test_image_kenburns_calls_image_gen_with_correct_body(self, tmp_path):
+        """The image-gen render must POST {'prompt': ..., 'negative_prompt': ...}
         to ``/generate`` and OMIT steps / guidance_scale so the server's
         per-model registry drives them (z_image_turbo wants 9 / CFG0;
-        hardcoding SDXL-Turbo's 4 / 1.0 blew the render past the timeout).
+        hardcoding image-gen model settings blew the render past the timeout).
         Wan21's wrong-body 422 issue should never resurface here."""
         shot = Shot(
             idx=0,
             duration_s=5.0,
             intent="opening shot",
-            source="sdxl_kenburns",
+            source="image_kenburns",
             prompt="a clean modern desk with a monitor",
             kenburns_zoom=(1.0, 1.2),
             narration_offset_s=0.0,
         )
 
-        # Mock the SDXL response with image bytes content-type.
+        # Mock the image-gen response with image bytes content-type.
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"content-type": "image/png"}
@@ -71,7 +71,7 @@ class TestRenderOneShot:
             shot,
             prior_clip=None,
             work_dir=tmp_path,
-            sdxl_url="http://sdxl:9836",
+            image_gen_url="http://image-gen:9836",
             site_config=None,
             http_client_factory=_factory,
         )
@@ -80,7 +80,7 @@ class TestRenderOneShot:
         assert result.clip_path is not None
         assert result.clip_path.endswith(".png")
 
-        # Verify the SDXL POST body shape — must include 'prompt' and
+        # Verify the image-gen POST body shape — must include 'prompt' and
         # 'negative_prompt', NOT image_paths / audio_path / ken_burns.
         call_kwargs = mock_client.post.call_args.kwargs
         body = call_kwargs.get("json")
@@ -95,8 +95,8 @@ class TestRenderOneShot:
         assert "guidance_scale" not in body
 
     @pytest.mark.asyncio
-    async def test_sdxl_render_timeout_comes_from_site_config(self, tmp_path):
-        """The SDXL render timeout is read from image_render_timeout_seconds so a
+    async def test_image_gen_render_timeout_comes_from_site_config(self, tmp_path):
+        """The image-gen render timeout is read from image_render_timeout_seconds so a
         cold Z-Image load (~133s) survives — not a hardcoded 60s cap."""
         from services.site_config import SiteConfig
 
@@ -104,7 +104,7 @@ class TestRenderOneShot:
             idx=0,
             duration_s=5.0,
             intent="opening shot",
-            source="sdxl_kenburns",
+            source="image_kenburns",
             prompt="a clean modern desk",
             kenburns_zoom=(1.0, 1.2),
             narration_offset_s=0.0,
@@ -129,7 +129,7 @@ class TestRenderOneShot:
             shot,
             prior_clip=None,
             work_dir=tmp_path,
-            sdxl_url="http://sdxl:9836",
+            image_gen_url="http://image-gen:9836",
             site_config=sc,
             http_client_factory=_factory,
         )
@@ -139,7 +139,7 @@ class TestRenderOneShot:
 
     @pytest.mark.asyncio
     async def test_wan21_calls_provider_with_image_path(self, tmp_path):
-        """A hero shot (wan21/generative) renders its SDXL still first, then
+        """A hero shot (wan21/generative) renders its image-gen still first, then
         routes through ``Wan21Provider.fetch`` with that still as ``image_path``
         (i2v conditioning). This pins the 422 fix too: the body MUST NOT carry
         the old slideshow fields image_paths/audio_path/ken_burns."""
@@ -169,18 +169,18 @@ class TestRenderOneShot:
                     f.write(b"\x00\x00\x00\x18ftypisom" + b"fake_mp4")
             return [MagicMock(file_path=output)]
 
-        async def _fake_sdxl(*, prompt, output_path, **kw):
+        async def _fake_image_gen(*, prompt, output_path, **kw):
             with open(output_path, "wb") as f:
                 f.write(b"\x89PNG")
             return True
 
         with patch.object(wan21_mod.Wan21Provider, "fetch", _fake_fetch), \
-                patch.object(mod, "_render_sdxl_image", _fake_sdxl):
+                patch.object(mod, "_render_image_gen_image", _fake_image_gen):
             result = await _render_one_shot(
                 shot,
                 prior_clip=None,
                 work_dir=tmp_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=None,
                 http_client_factory=AsyncMock,
             )
@@ -224,18 +224,18 @@ class TestRenderOneShot:
                 f.write(b"fake")
             return [MagicMock(file_path=config["output_path"])]
 
-        async def _fake_sdxl(*, prompt, output_path, **kw):
+        async def _fake_image_gen(*, prompt, output_path, **kw):
             with open(output_path, "wb") as f:
                 f.write(b"\x89PNG")
             return True
 
         with patch.object(wan21_mod.Wan21Provider, "fetch", _fake_fetch), \
-                patch.object(mod, "_render_sdxl_image", _fake_sdxl):
+                patch.object(mod, "_render_image_gen_image", _fake_image_gen):
             await _render_one_shot(
                 shot,
                 prior_clip=None,
                 work_dir=tmp_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=None,
                 http_client_factory=AsyncMock,
             )
@@ -243,8 +243,8 @@ class TestRenderOneShot:
         assert captured_config["duration_s"] == 6
 
     @pytest.mark.asyncio
-    async def test_generative_animates_sdxl_still(self, tmp_path):
-        """Piece 4: a ``generative`` hero shot renders the stylized SDXL still
+    async def test_generative_animates_image_gen_still(self, tmp_path):
+        """Piece 4: a ``generative`` hero shot renders the stylized image-gen still
         first, then animates it into a clip — the success path returns the
         .mp4."""
         import services.video_renderers.shot_list_renderer as mod
@@ -252,7 +252,7 @@ class TestRenderOneShot:
         shot = Shot(idx=0, duration_s=5.0, intent="hero", source="generative",
                     prompt="neon GPU die, cyberpunk", narration_offset_s=0.0)
 
-        async def _fake_sdxl(*, prompt, output_path, **kw):
+        async def _fake_image_gen(*, prompt, output_path, **kw):
             with open(output_path, "wb") as f:
                 f.write(b"\x89PNG")
             return True
@@ -263,10 +263,10 @@ class TestRenderOneShot:
                 f.write(b"MP4")
             return True
 
-        with patch.object(mod, "_render_sdxl_image", _fake_sdxl), \
+        with patch.object(mod, "_render_image_gen_image", _fake_image_gen), \
                 patch.object(mod, "_render_generative_clip", _fake_clip):
             result = await _render_one_shot(
-                shot, prior_clip=None, work_dir=tmp_path, sdxl_url="http://x",
+                shot, prior_clip=None, work_dir=tmp_path, image_gen_url="http://x",
                 site_config=None, http_client_factory=AsyncMock)
 
         assert result.success is True
@@ -274,7 +274,7 @@ class TestRenderOneShot:
 
     @pytest.mark.asyncio
     async def test_generative_falls_back_to_still_on_clip_miss(self, tmp_path):
-        """When i2v produces no clip, fall back to the SDXL still (the
+        """When i2v produces no clip, fall back to the image-gen still (the
         compositor Ken-Burns it) and emit a ``hero_render_fallback`` finding —
         NOT a holdover of the prior clip."""
         import services.video_renderers.shot_list_renderer as mod
@@ -283,7 +283,7 @@ class TestRenderOneShot:
                     prompt="neon GPU die", narration_offset_s=0.0)
         findings: list[dict] = []
 
-        async def _fake_sdxl(*, prompt, output_path, **kw):
+        async def _fake_image_gen(*, prompt, output_path, **kw):
             with open(output_path, "wb") as f:
                 f.write(b"\x89PNG")
             return True
@@ -291,13 +291,13 @@ class TestRenderOneShot:
         async def _fake_clip(**kw):
             return False  # i2v miss
 
-        with patch.object(mod, "_render_sdxl_image", _fake_sdxl), \
+        with patch.object(mod, "_render_image_gen_image", _fake_image_gen), \
                 patch.object(mod, "_render_generative_clip", _fake_clip), \
                 patch.object(mod, "emit_finding",
                              lambda **kw: findings.append(kw)):
             result = await _render_one_shot(
                 shot, prior_clip="/prior/clip.mp4", work_dir=tmp_path,
-                sdxl_url="http://x", site_config=None,
+                image_gen_url="http://x", site_config=None,
                 http_client_factory=AsyncMock, post_id="post-1")
 
         assert result.success is True
@@ -307,19 +307,19 @@ class TestRenderOneShot:
 
     @pytest.mark.asyncio
     async def test_generative_still_render_failure_is_hard_fail(self, tmp_path):
-        """If even the SDXL still can't render, there's nothing to fall back
+        """If even the image-gen still can't render, there's nothing to fall back
         to — the shot fails (the render pass drops it)."""
         import services.video_renderers.shot_list_renderer as mod
 
         shot = Shot(idx=0, duration_s=5.0, intent="hero", source="generative",
                     prompt="neon GPU die", narration_offset_s=0.0)
 
-        async def _fake_sdxl(*, prompt, output_path, **kw):
+        async def _fake_image_gen(*, prompt, output_path, **kw):
             return False
 
-        with patch.object(mod, "_render_sdxl_image", _fake_sdxl):
+        with patch.object(mod, "_render_image_gen_image", _fake_image_gen):
             result = await _render_one_shot(
-                shot, prior_clip=None, work_dir=tmp_path, sdxl_url="http://x",
+                shot, prior_clip=None, work_dir=tmp_path, image_gen_url="http://x",
                 site_config=None, http_client_factory=AsyncMock)
 
         assert result.success is False
@@ -348,7 +348,7 @@ class TestRenderOneShot:
             shot,
             prior_clip=prior,
             work_dir=tmp_path,
-            sdxl_url="http://sdxl:9836",
+            image_gen_url="http://image-gen:9836",
             site_config=None,
             http_client_factory=AsyncMock,
         )
@@ -372,7 +372,7 @@ class TestRenderOneShot:
             shot,
             prior_clip=None,
             work_dir=tmp_path,
-            sdxl_url="http://sdxl:9836",
+            image_gen_url="http://image-gen:9836",
             site_config=None,
             http_client_factory=AsyncMock,
         )
@@ -387,7 +387,7 @@ class TestRenderShotList:
 
     @pytest.mark.asyncio
     async def test_three_shot_pipeline_composes_via_ffmpeg(self, tmp_path):
-        """A 3-shot list (sdxl_kenburns + pexels + wan21) renders each
+        """A 3-shot list (image_kenburns + pexels + wan21) renders each
         shot then calls ``FFmpegLocalCompositor.compose`` with the
         per-shot scenes. Pins the seam between per-shot rendering and
         the concat pipeline."""
@@ -396,7 +396,7 @@ class TestRenderShotList:
                 idx=0,
                 duration_s=3.0,
                 intent="opening still",
-                source="sdxl_kenburns",
+                source="image_kenburns",
                 prompt="modern server room with cool blue lighting",
                 kenburns_zoom=(1.0, 1.15),
                 narration_offset_s=0.0,
@@ -424,7 +424,7 @@ class TestRenderShotList:
             f.write(b"fake audio")
         output_path = str(tmp_path / "final.mp4")
 
-        # Mock SDXL responses (covers sdxl_kenburns + pexels fallback).
+        # Mock image-gen responses (covers image_kenburns + pexels fallback).
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"content-type": "image/png"}
@@ -480,7 +480,7 @@ class TestRenderShotList:
                 shot_list=shot_list,
                 audio_path=audio_path,
                 output_path=output_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=None,
                 pool=None,
                 http_client_factory=_factory,
@@ -521,20 +521,20 @@ class TestRenderShotListAspectAndAmbient:
     the ``CompositionRequest`` so we can assert the dims + soundtrack.
     """
 
-    def _single_sdxl_shot_list(self):
+    def _single_image_gen_shot_list(self):
         shots = [
             Shot(
                 idx=0,
                 duration_s=3.0,
                 intent="opening still",
-                source="sdxl",
+                source="image_gen",
                 prompt="a clean abstract gradient backdrop",
                 narration_offset_s=0.0,
             ),
         ]
         return _build_shot_list(shots)
 
-    def _sdxl_client_factory(self):
+    def _image_gen_client_factory(self):
         mock_resp = MagicMock()
         mock_resp.status_code = 200
         mock_resp.headers = {"content-type": "image/png"}
@@ -576,7 +576,7 @@ class TestRenderShotListAspectAndAmbient:
         """Passing width=1080, height=1920 (the 9:16 short profile) sets
         those dims on the CompositionRequest — Gap A. The renderer must
         not hardcode 1920x1080 anymore."""
-        shot_list = self._single_sdxl_shot_list()
+        shot_list = self._single_image_gen_shot_list()
         audio_path = str(tmp_path / "narration.mp3")
         with open(audio_path, "wb") as f:
             f.write(b"fake audio")
@@ -592,10 +592,10 @@ class TestRenderShotListAspectAndAmbient:
                 shot_list=shot_list,
                 audio_path=audio_path,
                 output_path=output_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=None,
                 pool=None,
-                http_client_factory=self._sdxl_client_factory(),
+                http_client_factory=self._image_gen_client_factory(),
                 width=1080,
                 height=1920,
             )
@@ -607,7 +607,7 @@ class TestRenderShotListAspectAndAmbient:
     @pytest.mark.asyncio
     async def test_default_dims_remain_16_9(self, tmp_path):
         """No width/height args → backcompat 1920x1080 (16:9 long-form)."""
-        shot_list = self._single_sdxl_shot_list()
+        shot_list = self._single_image_gen_shot_list()
         audio_path = str(tmp_path / "narration.mp3")
         with open(audio_path, "wb") as f:
             f.write(b"fake audio")
@@ -623,10 +623,10 @@ class TestRenderShotListAspectAndAmbient:
                 shot_list=shot_list,
                 audio_path=audio_path,
                 output_path=output_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=None,
                 pool=None,
-                http_client_factory=self._sdxl_client_factory(),
+                http_client_factory=self._image_gen_client_factory(),
             )
 
         assert captured["width"] == 1920
@@ -637,7 +637,7 @@ class TestRenderShotListAspectAndAmbient:
         """Passing ambient_path routes it to soundtrack_path — the ambient
         bed channel (#679) is now consumed, and narration is no longer
         double-used as the soundtrack."""
-        shot_list = self._single_sdxl_shot_list()
+        shot_list = self._single_image_gen_shot_list()
         audio_path = str(tmp_path / "narration.mp3")
         with open(audio_path, "wb") as f:
             f.write(b"fake audio")
@@ -653,10 +653,10 @@ class TestRenderShotListAspectAndAmbient:
                 shot_list=shot_list,
                 audio_path=audio_path,
                 output_path=output_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=None,
                 pool=None,
-                http_client_factory=self._sdxl_client_factory(),
+                http_client_factory=self._image_gen_client_factory(),
                 ambient_path="/x/amb.wav",
             )
 
@@ -666,7 +666,7 @@ class TestRenderShotListAspectAndAmbient:
     async def test_no_ambient_leaves_soundtrack_none(self, tmp_path):
         """No ambient_path → soundtrack_path is None (clean narration,
         no -18dB second copy of the voice over the whole video)."""
-        shot_list = self._single_sdxl_shot_list()
+        shot_list = self._single_image_gen_shot_list()
         audio_path = str(tmp_path / "narration.mp3")
         with open(audio_path, "wb") as f:
             f.write(b"fake audio")
@@ -682,10 +682,10 @@ class TestRenderShotListAspectAndAmbient:
                 shot_list=shot_list,
                 audio_path=audio_path,
                 output_path=output_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=None,
                 pool=None,
-                http_client_factory=self._sdxl_client_factory(),
+                http_client_factory=self._image_gen_client_factory(),
             )
 
         assert captured["soundtrack_path"] is None
@@ -695,7 +695,7 @@ class TestRenderShotListAspectAndAmbient:
         """Passing caption_path routes it to caption_track_path on the
         CompositionRequest so the compositor burns the captions into the
         video (#676 Plan 5)."""
-        shot_list = self._single_sdxl_shot_list()
+        shot_list = self._single_image_gen_shot_list()
         audio_path = str(tmp_path / "narration.mp3")
         with open(audio_path, "wb") as f:
             f.write(b"fake audio")
@@ -711,10 +711,10 @@ class TestRenderShotListAspectAndAmbient:
                 shot_list=shot_list,
                 audio_path=audio_path,
                 output_path=output_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=None,
                 pool=None,
-                http_client_factory=self._sdxl_client_factory(),
+                http_client_factory=self._image_gen_client_factory(),
                 caption_path="/x/c.srt",
             )
 
@@ -724,7 +724,7 @@ class TestRenderShotListAspectAndAmbient:
     async def test_no_caption_path_leaves_caption_track_none(self, tmp_path):
         """No caption_path → caption_track_path is None (backcompat: the
         existing video_service.py caller renders without captions)."""
-        shot_list = self._single_sdxl_shot_list()
+        shot_list = self._single_image_gen_shot_list()
         audio_path = str(tmp_path / "narration.mp3")
         with open(audio_path, "wb") as f:
             f.write(b"fake audio")
@@ -740,10 +740,10 @@ class TestRenderShotListAspectAndAmbient:
                 shot_list=shot_list,
                 audio_path=audio_path,
                 output_path=output_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=None,
                 pool=None,
-                http_client_factory=self._sdxl_client_factory(),
+                http_client_factory=self._image_gen_client_factory(),
             )
 
         assert captured["caption_track_path"] is None
@@ -751,7 +751,7 @@ class TestRenderShotListAspectAndAmbient:
 
 class TestPexelsSource:
     """#media-render-fixes: pexels shots fetch a REAL stock photo and NEVER
-    fall back to SDXL — AI-generated humans (six-fingered hands) are a hard
+    fall back to image-gen — AI-generated humans (six-fingered hands) are a hard
     brand no-no. On any Pexels miss the renderer holds over the prior clip.
     """
 
@@ -766,9 +766,9 @@ class TestPexelsSource:
         )
 
     @pytest.mark.asyncio
-    async def test_pexels_fetches_real_photo_not_sdxl(self, tmp_path):
+    async def test_pexels_fetches_real_photo_not_image_gen(self, tmp_path):
         """A configured key + a Pexels hit writes a .jpg and never touches
-        SDXL."""
+        image-gen."""
         # Download client returns jpeg bytes.
         mock_resp = MagicMock()
         mock_resp.content = b"\xff\xd8\xff\xe0_fake_jpeg_bytes"
@@ -786,17 +786,17 @@ class TestPexelsSource:
         async def _fake_fetch(self, query, config):
             return [MagicMock(url="https://images.pexels.com/photos/x.jpg")]
 
-        sdxl_spy = AsyncMock()
+        image_gen_spy = AsyncMock()
         with patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch), \
              patch(
-                "services.video_renderers.shot_list_renderer._render_sdxl_image",
-                sdxl_spy,
+                "services.video_renderers.shot_list_renderer._render_image_gen_image",
+                image_gen_spy,
              ):
             result = await _render_one_shot(
                 self._pexels_shot(),
                 prior_clip=None,
                 work_dir=tmp_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=None,
                 http_client_factory=_factory,
                 pexels_key="PEXELS-KEY",
@@ -806,26 +806,26 @@ class TestPexelsSource:
         assert result.success is True
         assert result.clip_path is not None
         assert result.clip_path.endswith(".jpg")
-        sdxl_spy.assert_not_called()  # the whole point: no AI human
+        image_gen_spy.assert_not_called()  # the whole point: no AI human
 
     @pytest.mark.asyncio
-    async def test_pexels_miss_holds_over_prior_never_sdxl(self, tmp_path):
-        """No key (or no result) → hold over the prior clip; SDXL is never
+    async def test_pexels_miss_holds_over_prior_never_image_gen(self, tmp_path):
+        """No key (or no result) → hold over the prior clip; image-gen is never
         invoked to fake the human."""
         prior = str(tmp_path / "shot_00.png")
         with open(prior, "wb") as f:
             f.write(b"prior image bytes")
 
-        sdxl_spy = AsyncMock()
+        image_gen_spy = AsyncMock()
         with patch(
-            "services.video_renderers.shot_list_renderer._render_sdxl_image",
-            sdxl_spy,
+            "services.video_renderers.shot_list_renderer._render_image_gen_image",
+            image_gen_spy,
         ):
             result = await _render_one_shot(
                 self._pexels_shot(idx=1, offset=4.0),
                 prior_clip=prior,
                 work_dir=tmp_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=None,
                 http_client_factory=AsyncMock,
                 pexels_key="",  # no key → Pexels miss
@@ -834,22 +834,22 @@ class TestPexelsSource:
 
         assert result.success is True
         assert result.clip_path == prior  # held over
-        sdxl_spy.assert_not_called()
+        image_gen_spy.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_pexels_miss_at_idx0_fails_never_sdxl(self, tmp_path):
+    async def test_pexels_miss_at_idx0_fails_never_image_gen(self, tmp_path):
         """A Pexels miss as the FIRST shot has nothing to hold over — fail
-        (the shot drops out) rather than SDXL-faking a person."""
-        sdxl_spy = AsyncMock()
+        (the shot drops out) rather than image-gen-faking a person."""
+        image_gen_spy = AsyncMock()
         with patch(
-            "services.video_renderers.shot_list_renderer._render_sdxl_image",
-            sdxl_spy,
+            "services.video_renderers.shot_list_renderer._render_image_gen_image",
+            image_gen_spy,
         ):
             result = await _render_one_shot(
                 self._pexels_shot(idx=0),
                 prior_clip=None,
                 work_dir=tmp_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=None,
                 http_client_factory=AsyncMock,
                 pexels_key="",
@@ -858,7 +858,7 @@ class TestPexelsSource:
 
         assert result.success is False
         assert "pexels" in (result.error or "")
-        sdxl_spy.assert_not_called()
+        image_gen_spy.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_render_shot_list_threads_secret_key_and_aspect(self, tmp_path):
@@ -927,7 +927,7 @@ class TestPexelsSource:
                 shot_list=shot_list,
                 audio_path=audio_path,
                 output_path=output_path,
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=_SC(),
                 pool=None,
                 http_client_factory=AsyncMock,
@@ -970,7 +970,7 @@ class _QASC:
 class TestRenderCheckLoop:
     """Per-shot vision-QA verify-and-repair loop (video-quality Piece 2, §3.2)."""
 
-    def _sdxl_factory(self):
+    def _image_gen_factory(self):
         resp = MagicMock()
         resp.status_code = 200
         resp.headers = {"content-type": "image/png"}
@@ -999,7 +999,7 @@ class TestRenderCheckLoop:
     async def test_accept_above_threshold_no_regen(self, tmp_path):
         import services.video_renderers.shot_list_renderer as mod
         from services.video_renderers.shot_vision_qa import ShotQAResult
-        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="a cyan abstract circuit", narration_offset_s=0.0)]
         scorer = AsyncMock(return_value=ShotQAResult(score=90.0, reason="great"))
         with patch.object(mod, "score_shot_frame", scorer), \
@@ -1008,8 +1008,8 @@ class TestRenderCheckLoop:
             result = await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
-                sdxl_url="http://sdxl:9836", site_config=_QASC(),
-                http_client_factory=self._sdxl_factory())
+                image_gen_url="http://image-gen:9836", site_config=_QASC(),
+                http_client_factory=self._image_gen_factory())
         assert result.success is True
         assert scorer.await_count == 1  # scored once, accepted, no regen
 
@@ -1017,9 +1017,9 @@ class TestRenderCheckLoop:
     async def test_regenerate_then_fallback_emits_finding(self, tmp_path):
         import services.video_renderers.shot_list_renderer as mod
         from services.video_renderers.shot_vision_qa import ShotQAResult
-        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0),
-                 Shot(idx=1, duration_s=3.0, intent="beat", source="sdxl",
+                 Shot(idx=1, duration_s=3.0, intent="beat", source="image_gen",
                       prompt="teal mesh", narration_offset_s=3.0)]
         # shot 0 passes (90, gives a prior clip); shot 1 fails every attempt.
         scorer = AsyncMock(side_effect=[ShotQAResult(90.0), ShotQAResult(20.0),
@@ -1032,8 +1032,8 @@ class TestRenderCheckLoop:
             result = await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
-                sdxl_url="http://sdxl:9836", site_config=_QASC(),
-                http_client_factory=self._sdxl_factory())
+                image_gen_url="http://image-gen:9836", site_config=_QASC(),
+                http_client_factory=self._image_gen_factory())
         assert result.success is True
         # shot 0: 1 score; shot 1: 1 initial + 2 regens = 3 → 4 total.
         assert scorer.await_count == 4
@@ -1043,7 +1043,7 @@ class TestRenderCheckLoop:
     async def test_qa_disabled_when_site_config_none(self, tmp_path):
         """site_config=None ⇒ QA never runs (backcompat for the existing suite)."""
         import services.video_renderers.shot_list_renderer as mod
-        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0)]
         scorer = AsyncMock()
         with patch.object(mod, "score_shot_frame", scorer), \
@@ -1052,15 +1052,15 @@ class TestRenderCheckLoop:
             result = await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
-                sdxl_url="http://sdxl:9836", site_config=None,
-                http_client_factory=self._sdxl_factory())
+                image_gen_url="http://image-gen:9836", site_config=None,
+                http_client_factory=self._image_gen_factory())
         assert result.success is True
         scorer.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_disabled_via_flag(self, tmp_path):
         import services.video_renderers.shot_list_renderer as mod
-        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0)]
         scorer = AsyncMock()
         with patch.object(mod, "score_shot_frame", scorer), \
@@ -1069,9 +1069,9 @@ class TestRenderCheckLoop:
             await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
-                sdxl_url="http://sdxl:9836",
+                image_gen_url="http://image-gen:9836",
                 site_config=_QASC(video_shot_qa_enabled="false"),
-                http_client_factory=self._sdxl_factory())
+                http_client_factory=self._image_gen_factory())
         scorer.assert_not_awaited()
 
     @pytest.mark.asyncio
@@ -1079,7 +1079,7 @@ class TestRenderCheckLoop:
         """Pexels is deterministic — a low score falls back without re-fetching."""
         import services.video_renderers.shot_list_renderer as mod
         from services.video_renderers.shot_vision_qa import ShotQAResult
-        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0),
                  Shot(idx=1, duration_s=3.0, intent="person", source="pexels",
                       query="developer at desk", narration_offset_s=3.0)]
@@ -1093,19 +1093,19 @@ class TestRenderCheckLoop:
             await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
-                sdxl_url="http://sdxl:9836", site_config=_QASC(),
-                http_client_factory=self._sdxl_factory())
+                image_gen_url="http://image-gen:9836", site_config=_QASC(),
+                http_client_factory=self._image_gen_factory())
         # pexels shot scored once (10 < 60) but NOT re-fetched (deterministic).
         assert pexels.await_count == 1
-        assert scorer.await_count == 2  # sdxl(1) + pexels(1), no regen
+        assert scorer.await_count == 2  # image_gen(1) + pexels(1), no regen
 
     @pytest.mark.asyncio
     async def test_fallback_finding_shape_is_dashboard_ready(self, tmp_path):
         import services.video_renderers.shot_list_renderer as mod
         from services.video_renderers.shot_vision_qa import ShotQAResult
-        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0),
-                 Shot(idx=1, duration_s=3.0, intent="beat", source="sdxl",
+                 Shot(idx=1, duration_s=3.0, intent="beat", source="image_gen",
                       prompt="teal mesh", narration_offset_s=3.0)]
         scorer = AsyncMock(side_effect=[ShotQAResult(90.0)] + [ShotQAResult(15.0)] * 3)
         captured = []
@@ -1116,8 +1116,8 @@ class TestRenderCheckLoop:
             await render_shot_list(
                 post_id="post-xyz", shot_list=_build_shot_list(shots),
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
-                sdxl_url="http://sdxl:9836", site_config=_QASC(),
-                http_client_factory=self._sdxl_factory())
+                image_gen_url="http://image-gen:9836", site_config=_QASC(),
+                http_client_factory=self._image_gen_factory())
         f = next(f for f in captured if f["kind"] == "shot_quality_fallback")
         assert f["source"] == "shot_list_renderer"
         assert f["severity"] == "warn"
@@ -1127,7 +1127,7 @@ class TestRenderCheckLoop:
     @pytest.mark.asyncio
     async def test_all_renders_precede_any_vision_call(self, tmp_path):
         """Anti-thrash invariant: with QA on, EVERY shot is rendered before
-        ANY vision score runs — so SDXL stays resident for the whole render
+        ANY vision score runs — so image-gen stays resident for the whole render
         pass instead of being evicted by an interleaved Ollama call per shot.
 
         On the old interleaved loop the timeline was
@@ -1141,11 +1141,11 @@ class TestRenderCheckLoop:
         # Distinct sources keep the ≤2-consecutive-same-source streak guard
         # happy; all three are fresh-render sources, so each is scored once.
         shots = [
-            Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+            Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                  prompt="cyan circuit", narration_offset_s=0.0),
             Shot(idx=1, duration_s=3.0, intent="beat", source="wan21",
                  prompt="teal mesh in motion", narration_offset_s=3.0),
-            Shot(idx=2, duration_s=3.0, intent="close", source="sdxl",
+            Shot(idx=2, duration_s=3.0, intent="close", source="image_gen",
                  prompt="gold grid", narration_offset_s=6.0),
         ]
         timeline: list[tuple[str, int]] = []
@@ -1171,8 +1171,8 @@ class TestRenderCheckLoop:
             result = await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
-                sdxl_url="http://sdxl:9836", site_config=_QASC(),
-                http_client_factory=self._sdxl_factory())
+                image_gen_url="http://image-gen:9836", site_config=_QASC(),
+                http_client_factory=self._image_gen_factory())
 
         assert result.success is True
         # All three passed (90 ≥ 60) → each scored exactly once, no repair.
@@ -1192,7 +1192,7 @@ class TestRenderCheckLoop:
 
 def test_cap_hero_shots_downgrades_excess_to_kenburns():
     """Past ``max_hero`` generative/wan21 shots, the rest downgrade to
-    sdxl_kenburns (same prompt) so the director over-asking can't blow the
+    image_kenburns (same prompt) so the director over-asking can't blow the
     GPU budget (spec §3.3). Non-hero shots are untouched, order preserved."""
     import services.video_renderers.shot_list_renderer as mod
 
@@ -1211,9 +1211,9 @@ def test_cap_hero_shots_downgrades_excess_to_kenburns():
     out = mod._cap_hero_shots(shots, 2)
 
     assert [s.source for s in out] == [
-        "generative", "generative", "pexels", "sdxl_kenburns", "sdxl_kenburns",
+        "generative", "generative", "pexels", "image_kenburns", "image_kenburns",
     ]
-    # Downgraded shots keep their prompt (sdxl_kenburns needs one too).
+    # Downgraded shots keep their prompt (image_kenburns needs one too).
     assert out[3].prompt == "neon die"
     assert out[4].prompt == "neon die"
     # Idx order preserved.

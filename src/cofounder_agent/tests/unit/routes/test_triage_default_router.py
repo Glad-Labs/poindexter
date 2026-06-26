@@ -154,7 +154,7 @@ async def test_router_threads_pool_into_ollama_chat_text(fake_site_config):
     ``gpu.lock("ollama")`` (#1794) and therefore blocks while a video render
     holds ``gpu.lock("video")``. The pool-less path takes the direct-httpx
     fallback that BYPASSES the GPU lock, reloading the 19GB writer model
-    mid-render and CUDA-OOMing the SDXL server (validation 2026-06-21).
+    mid-render and CUDA-OOMing the image-gen server (validation 2026-06-21).
     """
     from routes.triage_routes import _DefaultModelRouter
 

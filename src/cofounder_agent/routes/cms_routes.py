@@ -26,7 +26,7 @@ router = APIRouter(tags=["cms"])
 
 @router.get("/images/generated/{filename}")
 async def serve_generated_image(filename: str):
-    """Serve SDXL-generated images from the local output directory."""
+    """Serve image-gen-generated images from the local output directory."""
     import os
 
     from fastapi.responses import FileResponse
@@ -277,7 +277,7 @@ async def preview_post_html(
     )
     # Remove bullet items that are just labels with colons but no URLs
     content = _clean_re.sub(r'^\s*[-*]\s+[^(\[]*:\s*$', '', content, flags=_clean_re.MULTILINE)
-    # Remove leaked SDXL prompts after images
+    # Remove leaked image-gen prompts after images
     content = _clean_re.sub(r'(!\[[^\]]*\]\([^\)]+\))\s*\n\s*:\s+[^\n]+', r'\1', content)
     # Remove unresolved placeholders
     content = _clean_re.sub(r'\[IMAGE-\d+[^\]]*\]', '', content)

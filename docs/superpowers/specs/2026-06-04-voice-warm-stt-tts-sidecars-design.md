@@ -18,7 +18,7 @@ are ~0.3s).
 Because the containers bind-mount `./src/cofounder_agent` and rely on a restart
 to pick up code changes (Python module cache), **restarts are frequent** — so
 the always-on voice line pays the ~12s cold-start tax repeatedly, and now pays
-it *twice* (once per room). The user-visible symptom: the first utterance after
+it _twice_ (once per room). The user-visible symptom: the first utterance after
 any restart gets ~12s of dead air, and can time out entirely or be cancelled by
 VAD interruption (observed live 2026-06-04 — multiple voice turns timed out
 during this very design session).
@@ -33,16 +33,17 @@ after a restart should be ~as fast as a warm turn, because the models live in a
 separate, long-lived, warm service.
 
 **Non-goals:**
+
 - Context/session continuity — already solved (pinned `claude -p --resume`,
   ahead of VoiceMode). This issue is **only** the STT/TTS latency layer.
 - Changing the LLM/brain dispatch, the two-room split, or LiveKit transport.
 - Streaming/partial-transcript STT. We keep the current segmented (VAD-bounded)
-  turn model; we only move *where* the segment is transcribed.
+  turn model; we only move _where_ the segment is transcribed.
 
 ## 3. Approach
 
-Mirror the **SDXL idiom** already in the stack: a GPU model runs as its own
-long-lived HTTP container (`sdxl-server` on `:9836`), and callers are thin
+Mirror the **image-gen idiom** already in the stack: a GPU model runs as its own
+long-lived HTTP container (`image-gen-server` on `:9836`), and callers are thin
 clients.
 
 **Decision (Matt, 2026-06-04): use [Speaches](https://github.com/speaches-ai/speaches)
@@ -54,6 +55,7 @@ to `faster-whisper-server`) is an OpenAI-compatible server exposing both
 and **both voice rooms become thin clients of the one Speaches service.**
 
 Why one container beats the original two-sidecar plan:
+
 - One GPU process, one weight cache volume, one healthcheck, one thing to
   monitor — less surface area.
 - Same model family we already run (faster-whisper / Kokoro) → no quality
@@ -63,11 +65,12 @@ Why one container beats the original two-sidecar plan:
 
 **Config seam stays decoupled even though the implementation is one box:** the
 STT and TTS client nodes read **two separate base-URL settings** that both
-*default* to the same Speaches URL. If we ever want to split them back onto
+_default_ to the same Speaches URL. If we ever want to split them back onto
 separate hosts (e.g. STT on GPU, TTS on CPU elsewhere), it's a settings change,
 not a schema migration.
 
 ### Considered alternatives
+
 1. **Two separate sidecars** (`faster-whisper-server` + `kokoro-fastapi`) — the
    rev-1 plan. Rejected in favor of Speaches: same engines, but two containers,
    two caches, two healthchecks for no functional gain.
@@ -104,17 +107,17 @@ The Pipecat pipeline shape in `build_voice_pipeline_task` is **unchanged**:
 transport.input() → STT → user_aggregator → LLM → TTS → transport.output() → assistant_aggregator
 ```
 
-Only the `STT` and `TTS` *node implementations* swap from in-process model
+Only the `STT` and `TTS` _node implementations_ swap from in-process model
 holders to HTTP clients pointed at Speaches. VAD, turn-taking, the LLM/brain
 stage, and tool wiring are untouched.
 
 ### Components
 
-| Unit | What it does | Interface | Depends on |
-| --- | --- | --- | --- |
-| `speaches` container | Warm faster-whisper + Kokoro; transcribes a segment / synthesizes an utterance per call | `POST /v1/audio/transcriptions`, `POST /v1/audio/speech` | GPU, weight cache volume |
-| `_build_stt()` in `voice_agent.py` | Returns a Pipecat STT node: Speaches client when `stt_mode=sidecar`, else in-process | `(site_config) → STTService` | `voice_agent_stt_base_url` |
-| `_build_tts()` in `voice_agent.py` | Returns a Pipecat TTS node: Speaches client when `tts_mode=sidecar`, else in-process | `(site_config) → TTSService` | `voice_agent_tts_base_url` |
+| Unit                               | What it does                                                                            | Interface                                                | Depends on                 |
+| ---------------------------------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------- | -------------------------- |
+| `speaches` container               | Warm faster-whisper + Kokoro; transcribes a segment / synthesizes an utterance per call | `POST /v1/audio/transcriptions`, `POST /v1/audio/speech` | GPU, weight cache volume   |
+| `_build_stt()` in `voice_agent.py` | Returns a Pipecat STT node: Speaches client when `stt_mode=sidecar`, else in-process    | `(site_config) → STTService`                             | `voice_agent_stt_base_url` |
+| `_build_tts()` in `voice_agent.py` | Returns a Pipecat TTS node: Speaches client when `tts_mode=sidecar`, else in-process    | `(site_config) → TTSService`                             | `voice_agent_tts_base_url` |
 
 **Isolation note:** `build_voice_pipeline_task` is already a ~160-line builder
 doing several jobs (LLM, STT, TTS, VAD, context). Extracting `_build_stt` and
@@ -138,7 +141,7 @@ options, in preference order:
   `OpenAITTSService` (or a thin TTS client) pointed at `/v1/audio/speech`.
 
 **Phase 0 of implementation is a verification spike** that resolves A-vs-B
-against the actually-installed Pipecat version *before* any container work.
+against the actually-installed Pipecat version _before_ any container work.
 This is the "verify-first" gate from the prior session notes — we do not refactor
 the live audio path on an assumption.
 
@@ -146,11 +149,11 @@ the live audio path on an assumption.
 
 New `app_settings` keys (seeded by a migration):
 
-| Key | Default | Meaning |
-| --- | --- | --- |
-| `voice_agent_stt_mode` | `inprocess` | `sidecar` \| `inprocess` — explicit, no silent default |
-| `voice_agent_stt_base_url` | `http://speaches:8000/v1` | STT endpoint (compose service name) |
-| `voice_agent_tts_mode` | `inprocess` | `sidecar` \| `inprocess` |
+| Key                        | Default                   | Meaning                                                                                    |
+| -------------------------- | ------------------------- | ------------------------------------------------------------------------------------------ |
+| `voice_agent_stt_mode`     | `inprocess`               | `sidecar` \| `inprocess` — explicit, no silent default                                     |
+| `voice_agent_stt_base_url` | `http://speaches:8000/v1` | STT endpoint (compose service name)                                                        |
+| `voice_agent_tts_mode`     | `inprocess`               | `sidecar` \| `inprocess`                                                                   |
 | `voice_agent_tts_base_url` | `http://speaches:8000/v1` | TTS endpoint — **same Speaches service by default**, separate key so it can be split later |
 
 Existing `voice_agent_whisper_model` and `voice_agent_tts_voice` (plus the
@@ -166,7 +169,7 @@ two voice containers to cut over. Flipping back is instant if anything regresses
 
 ## 7. VRAM / resource budget
 
-The GPU (RTX 5090, 32GB) is already shared by Ollama, SDXL, and Wan (Wan
+The GPU (RTX 5090, 32GB) is already shared by Ollama, image-gen, and Wan (Wan
 auto-unloads on idle). The warm Speaches process holds VRAM **continuously**:
 
 - **faster-whisper medium, int8/float16:** ~1.5–2GB resident.
@@ -180,7 +183,7 @@ Net new continuous VRAM ≈ 2GB for the one Speaches process. Confirm against
 
 ## 8. Observability
 
-- Speaches gets a Docker `healthcheck` (HTTP probe) like sdxl/wan.
+- Speaches gets a Docker `healthcheck` (HTTP probe) like image-gen/wan.
 - Add the service to the System Health / Hardware & Power dashboards (up/down).
 - The existing Pipecat metrics (`enable_metrics=True`) already time the STT/TTS
   stages — confirm the first-utterance-after-restart time drops from ~12s to
@@ -203,7 +206,7 @@ Net new continuous VRAM ≈ 2GB for the one Speaches process. Confirm against
 ## 10. Rollout / acceptance
 
 1. **Phase 0** — Pipecat verification spike (resolve §5 A-vs-B). Gate.
-2. **Phase 1** — add the `speaches` compose service (SDXL-style), weight-cache
+2. **Phase 1** — add the `speaches` compose service (image-gen-style), weight-cache
    volume, healthcheck, GPU reservation. Bring it up, verify out-of-band (curl
    both OpenAI endpoints; confirm `bf_emma` TTS works).
 3. **Phase 2** — `_build_stt`/`_build_tts` seams + the client(s) + migration

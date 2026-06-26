@@ -79,7 +79,7 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # GPU hardware (audit C3). Thresholds for the container-supervised
     # nvidia-smi exporter (job="nvidia-smi", gpu-exporter:9835). 85°C is a
     # safe warning ceiling well below the ~90°C throttle point; 95% VRAM
-    # catches OOM-imminent before Ollama/SDXL allocations start failing.
+    # catches OOM-imminent before Ollama/image-gen allocations start failing.
     "gpu_temperature_celsius": "85",
     "gpu_vram_utilization_percent": "95",
     # Host disk space. Absolute GB thresholds (not percentage) because what
@@ -277,7 +277,7 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "nvidia_gpu_temperature_celsius > threshold for 2m (container "
             "exporter, job=nvidia-smi). Sustained high temp risks thermal "
             "throttling or hardware damage. Check airflow/fans, pause heavy "
-            "GPU jobs (Ollama/SDXL), and confirm the card isn't dust-clogged."
+            "GPU jobs (Ollama/image-gen), and confirm the card isn't dust-clogged."
         ),
     },
     "GpuVramHigh": {
@@ -294,7 +294,7 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "summary": "GPU VRAM utilization critically high",
         "description": (
             "nvidia_gpu_memory_utilization_percent > threshold for 5m. VRAM is "
-            "nearly exhausted — the next Ollama/SDXL model load may OOM and "
+            "nearly exhausted — the next Ollama/image-gen model load may OOM and "
             "fail silently. Unload idle models (the gpu_scheduler should), or "
             "reduce concurrent model residency."
         ),

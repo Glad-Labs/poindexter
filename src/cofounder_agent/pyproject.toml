@@ -85,14 +85,14 @@ python-multipart = ">=0.0.31"
 # pillow removed — never imported in production code (issue #1341)
 # aiofiles removed — never imported in production code (poindexter#714)
 
-# ML/AI - Image Generation (SDXL)
+# ML/AI - Image Generation (image-gen)
 # torch is the CPU build here: the two pipeline images (worker + OSS
 # standalone) install it only via the `rerank` extra to drive the
 # LlamaIndex cross-encoder reranker, which runs on CPU (#1882). Neither
 # image has GPU passthrough or `diffusers`, so the CUDA build was ~2 GB
 # of dead weight (the nvidia-*/cuda-* + triton transitive wheels). The cu128 build
-# that actually renders SDXL on Matt's RTX 5090 lives self-contained in
-# scripts/Dockerfile.sdxl (its own pytorch/pytorch:*-cuda12.8 base), not
+# that actually renders images on Matt's RTX 5090 lives self-contained in
+# scripts/Dockerfile.image-gen (its own pytorch/pytorch:*-cuda12.8 base), not
 # in this lock. <2.12 bounds the pin so a re-lock can't silently jump to
 # a new CUDA-major torch (the 2.12/CUDA-13 split that bit #1891). See
 # docs/superpowers/specs/2026-06-23-worker-cpu-torch-design.md.
@@ -374,7 +374,7 @@ igdb = "cofounder_agent.services.topic_sources.igdb:IGDBSource"
 
 [project.entry-points."poindexter.image_providers"]
 pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"
-sdxl = "cofounder_agent.services.image_providers.sdxl:SdxlProvider"
+image_gen = "cofounder_agent.services.image_providers.image_gen:ImageGenProvider"
 ai_generation = "cofounder_agent.services.image_providers.ai_generation:AIGenerationProvider"
 
 # Stages moved from services/stages/ to modules/content/stages/ in the
@@ -427,8 +427,8 @@ build-backend = "poetry.core.masonry.api"
 # cross-encoder reranker, so the CPU build is correct and ~2 GB smaller
 # than cu128. priority="explicit" means poetry only consults this index
 # for packages that pin source = "pytorch-cpu"; everything else still
-# resolves from PyPI. The CUDA (cu128) torch that drives SDXL lives in
-# scripts/Dockerfile.sdxl, not here. See glad-labs-stack#334 for the
+# resolves from PyPI. The CUDA (cu128) torch that drives image-gen lives in
+# scripts/Dockerfile.image-gen, not here. See glad-labs-stack#334 for the
 # original cu128 pin and the 2026-06-23 CPU-trim follow-up spec.
 [[tool.poetry.source]]
 name = "pytorch-cpu"

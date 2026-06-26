@@ -627,8 +627,8 @@ def _parse_publish_inputs(
         seo_description = re.sub(r"\s+", " ", seo_description)
     seo_keywords = merged.get("seo_keywords", [])
     featured_image_url = merged.get("featured_image_url") or task.get("featured_image_url")
-    # featured_image_data — reproducibility blob (SDXL prompt / model /
-    # seed / generation_seconds for the SDXL branch, basic provenance
+    # featured_image_data — reproducibility blob (image-gen prompt / model /
+    # seed / generation_seconds for the image-gen branch, basic provenance
     # for the Pexels branch). Sourced by source_featured_image.execute
     # and threaded through pipeline_versions.stage_data ->
     # task_metadata.featured_image_data so it survives the

@@ -15,17 +15,17 @@ This guide is prescriptive. If you want design rationale, read
 
 ## Quick picker
 
-| I want to...                                              | Add a...     | Protocol                               | Example                                          |
-| --------------------------------------------------------- | ------------ | -------------------------------------- | ------------------------------------------------ |
-| Run a new step in the content pipeline                    | **Stage**    | `plugins/stage.py::Stage`              | `modules/content/stages/writer_self_review.py`   |
-| Score a draft against a new quality rule                  | **Reviewer** | `plugins/stage.py::Reviewer`           | `modules/content/content_validator.py`           |
-| Publish finished posts to a new social platform           | **Adapter**  | `plugins/stage.py::Adapter`            | `services/social_adapters/mastodon.py`           |
-| Generate media (image / audio / video) from a new engine  | **Provider** | `plugins/stage.py::Provider`           | `services/image_providers/sdxl.py` (in-progress) |
-| Ingest content ideas from a new source (API, file, queue) | **Tap**      | `plugins/tap.py::Tap`                  | `services/topic_sources/hackernews.py`           |
-| Run a background probe for health / business metrics      | **Probe**    | `plugins/probe.py::Probe`              | `brain/health_probes.py`                         |
-| Schedule a recurring background task                      | **Job**      | `plugins/job.py::Job`                  | `services/jobs/reload_site_config.py`            |
-| Swap the LLM backend (Ollama → vLLM / OpenAI / Claude)    | **Provider** | `plugins/llm_provider.py::LLMProvider` | Phase J, tracked at GH-104                       |
-| **Add an entire business function (finance, HR, ...)**    | **Module**   | `plugins/module.py::Module`            | `src/cofounder_agent/modules/content/`           |
+| I want to...                                              | Add a...     | Protocol                               | Example                                               |
+| --------------------------------------------------------- | ------------ | -------------------------------------- | ----------------------------------------------------- |
+| Run a new step in the content pipeline                    | **Stage**    | `plugins/stage.py::Stage`              | `modules/content/stages/writer_self_review.py`        |
+| Score a draft against a new quality rule                  | **Reviewer** | `plugins/stage.py::Reviewer`           | `modules/content/content_validator.py`                |
+| Publish finished posts to a new social platform           | **Adapter**  | `plugins/stage.py::Adapter`            | `services/social_adapters/mastodon.py`                |
+| Generate media (image / audio / video) from a new engine  | **Provider** | `plugins/stage.py::Provider`           | `services/image_providers/image_gen.py` (in-progress) |
+| Ingest content ideas from a new source (API, file, queue) | **Tap**      | `plugins/tap.py::Tap`                  | `services/topic_sources/hackernews.py`                |
+| Run a background probe for health / business metrics      | **Probe**    | `plugins/probe.py::Probe`              | `brain/health_probes.py`                              |
+| Schedule a recurring background task                      | **Job**      | `plugins/job.py::Job`                  | `services/jobs/reload_site_config.py`                 |
+| Swap the LLM backend (Ollama → vLLM / OpenAI / Claude)    | **Provider** | `plugins/llm_provider.py::LLMProvider` | Phase J, tracked at GH-104                            |
+| **Add an entire business function (finance, HR, ...)**    | **Module**   | `plugins/module.py::Module`            | `src/cofounder_agent/modules/content/`                |
 
 **Capability plugins vs business modules.** Every row above the last is a
 _capability plugin_ — a discrete piece (one tap, one provider, one stage) the

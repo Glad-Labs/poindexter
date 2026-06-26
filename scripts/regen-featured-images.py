@@ -1,12 +1,12 @@
 """
 One-shot script to regenerate featured images for live published posts that
-were generated against the host SDXL server while it defaulted to Turbo.
+were generated against the host image-gen server while it defaulted to Turbo.
 
 Approach:
 - Read all published posts whose featured_image_url points at our R2 bucket.
-- For each post, build an SDXL prompt from the title + category-appropriate
+- For each post, build an image prompt from the title + category-appropriate
   style (using Ollama if available, falling back to a category style template).
-- Call the host SDXL server's /generate (now Lightning).
+- Call the host image-gen server's /generate (now Lightning).
 - Read the produced PNG and upload it back to R2 at the SAME object key, so
   the post's featured_image_url stays valid (cache-busting handled by R2).
 - Print a one-line per-post status to stdout. Errors don't abort the loop.
@@ -59,7 +59,7 @@ def _resolve_db_url() -> str:
 
 
 DB_URL = _resolve_db_url()
-SDXL_URL = "http://localhost:9836"
+image_gen_url = "http://localhost:9836"
 OLLAMA_URL = "http://localhost:11434"
 OLLAMA_MODEL = "llama3:latest"
 
@@ -130,7 +130,7 @@ async def fetch_target_posts(conn, limit: int | None, one_post_id: str | None):
 
 
 async def craft_prompt(title: str, _category: str | None) -> tuple[str, str]:
-    """Use Ollama to write an editorial SDXL prompt for this post.
+    """Use Ollama to write an editorial image prompt for this post.
 
     Falls back to a templated prompt if Ollama is unreachable.
     Returns (prompt, chosen_style_name) for logging.
@@ -171,10 +171,10 @@ async def craft_prompt(title: str, _category: str | None) -> tuple[str, str]:
 
 
 async def generate_image(prompt: str, negative: str) -> str | None:
-    """Call the host SDXL server. Returns local image_path or None on failure."""
+    """Call the host image-gen server. Returns local image_path or None on failure."""
     async with httpx.AsyncClient(timeout=180) as c:
         r = await c.post(
-            f"{SDXL_URL}/generate",
+            f"{image_gen_url}/generate",
             json={
                 "prompt": prompt,
                 "negative_prompt": negative,
@@ -183,7 +183,7 @@ async def generate_image(prompt: str, negative: str) -> str | None:
             },
         )
         if r.status_code != 200:
-            print(f"  ! sdxl returned {r.status_code}: {r.text[:200]}", flush=True)
+            print(f"  ! image-gen returned {r.status_code}: {r.text[:200]}", flush=True)
             return None
         return r.json().get("image_path")
 
@@ -257,7 +257,7 @@ async def main():
         try:
             image_path = await generate_image(prompt, negative)
         except Exception as e:
-            print(f"  ! sdxl call raised: {e}", flush=True)
+            print(f"  ! image-gen call raised: {e}", flush=True)
             failed += 1
             continue
 

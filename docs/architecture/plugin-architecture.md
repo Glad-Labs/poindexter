@@ -29,14 +29,14 @@
 
 Poindexter keeps inventing "feature parent + sources as children" informally in config (`enabled_topic_sources`, `image_primary_source`, `qa_workflow_*`) but the code doesn't match. The result is god files that make every new integration a painful edit:
 
-| File                                            | Lines | What it does                     |
-| ----------------------------------------------- | ----- | -------------------------------- |
-| `services/content_router_service.py`            | 2776  | Pipeline orchestration           |
-| `services/idle_worker.py`                       | 2169  | 20+ housekeeping jobs, hardcoded |
-| `scripts/auto-embed.py`                         | 1157  | 6 embedding phases, each bespoke |
-| `services/image_service.py`                     | 1143  | Pexels + SDXL + AI-gen fused     |
-| `services/topic_discovery.py`                   | 955   | Sources dispatched via if-chain  |
-| `brain/health_probes.py` + `business_probes.py` | ~1000 | Flat functions; Protocol unused  |
+| File                                            | Lines | What it does                      |
+| ----------------------------------------------- | ----- | --------------------------------- |
+| `services/content_router_service.py`            | 2776  | Pipeline orchestration            |
+| `services/idle_worker.py`                       | 2169  | 20+ housekeeping jobs, hardcoded  |
+| `scripts/auto-embed.py`                         | 1157  | 6 embedding phases, each bespoke  |
+| `services/image_service.py`                     | 1143  | Pexels + image-gen + AI-gen fused |
+| `services/topic_discovery.py`                   | 955   | Sources dispatched via if-chain   |
+| `brain/health_probes.py` + `business_probes.py` | ~1000 | Flat functions; Protocol unused   |
 
 Every new Tap (Slack, Notion, Gmail), Provider (Midjourney, Flux), Reviewer (plagiarism check), or Adapter (new social platform) requires editing a 1000+ line file instead of dropping in a file. That blocks the plugin ecosystem vision and the Pro subscription overlay.
 
@@ -112,7 +112,7 @@ Promotes the existing `services/phases/base_phase.py` contract. Stage specializa
 
 - **`Reviewer(Stage)`** — scores content (programmatic_validator, llm_critic, seo_checker, url_verifier)
 - **`Adapter(Stage)`** — publishes to a platform (`social_adapters/` already clean)
-- **`Provider(Stage)`** — generates media (Pexels, SDXL, AI-generation, future Midjourney/Flux)
+- **`Provider(Stage)`** — generates media (Pexels, image-gen, AI-generation, future Midjourney/Flux)
 
 No workflow-engine adoption in this refactor. Pipeline stays hand-rolled. Temporal/Dagster revisit when managing multiple customer pipelines.
 
@@ -240,7 +240,7 @@ One pane of glass (Grafana). No new vendor UIs.
 | Dep                                                                                           | Status                                                   | Notes                                        |
 | --------------------------------------------------------------------------------------------- | -------------------------------------------------------- | -------------------------------------------- |
 | Grafana, Prometheus, Alertmanager                                                             | ✅ In-theme, already running                             | Role unchanged                               |
-| Postgres + pgvector, Redis, Ollama, SDXL                                                      | ✅ In-theme                                              | Unchanged                                    |
+| Postgres + pgvector, Redis, Ollama, image-gen                                                 | ✅ In-theme                                              | Unchanged                                    |
 | apscheduler (new), Singer runtime (new), prometheus_client (new), importlib.metadata (stdlib) | ✅ Apache / MIT / stdlib                                 | Net-new; all tiny libs, zero new daemons     |
 | Lemon Squeezy                                                                                 | 💰 Kept                                                  | Payments — intentional business-model choice |
 | Vercel                                                                                        | 💰 Kept (free tier)                                      | Public site hosting                          |

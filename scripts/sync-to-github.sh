@@ -189,7 +189,7 @@ git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_regen_app_se
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_sync_script_leak_guard_delegation.py 2>/dev/null || true
 
 # === Operator-specific files (Glad Labs internal, not customer-facing) ===
-git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # Matt's full local stack with pgAdmin, SDXL, etc.
+git rm --cached --quiet docker-compose.local.yml 2>/dev/null || true          # Matt's full local stack with pgAdmin, image-gen, etc.
 
 # === Operator skill toggles (private to Glad Labs install) ===
 # Renamed skills/openclaw/ → skills/poindexter/ on 2026-05-05; keep the

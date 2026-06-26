@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## [0.88.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.87.1...v0.88.0) (2026-06-26)
+
+
+### Features
+
+* **console:** newsletter + brain daemon observability ([#1942](https://github.com/Glad-Labs/glad-labs-stack/issues/1942)) ([042e1ff](https://github.com/Glad-Labs/glad-labs-stack/commit/042e1ff16774652e5daa1ba66b250cc78a6b9b66))
+* **console:** social/Postiz per-post visibility + action inbox integration ([#1941](https://github.com/Glad-Labs/glad-labs-stack/issues/1941)) ([44aa854](https://github.com/Glad-Labs/glad-labs-stack/commit/44aa8547f4face4e941b395af46176be4231ae39))
+* **feedback:** brain_knowledge signals on operator approval + Grafana rejection-reason panel ([#149](https://github.com/Glad-Labs/glad-labs-stack/issues/149) PR1) ([#1944](https://github.com/Glad-Labs/glad-labs-stack/issues/1944)) ([75b35eb](https://github.com/Glad-Labs/glad-labs-stack/commit/75b35eb97c014d483690448911f94bbdf21d3f57))
+* **feedback:** inject operator regen --reason into the next writer pass ([#149](https://github.com/Glad-Labs/glad-labs-stack/issues/149) PR2) ([#1945](https://github.com/Glad-Labs/glad-labs-stack/issues/1945)) ([7b48dbb](https://github.com/Glad-Labs/glad-labs-stack/commit/7b48dbb8e898988729b3b38a4c3008063210148f))
+* **observability:** Ollama embed-endpoint probe + host process auto-recovery ([#1935](https://github.com/Glad-Labs/glad-labs-stack/issues/1935)) ([e131742](https://github.com/Glad-Labs/glad-labs-stack/commit/e131742f0925a5b950258a8f79155158668555d1))
+* **social:** Postiz social distribution system ([#1938](https://github.com/Glad-Labs/glad-labs-stack/issues/1938)) ([e7aa9bf](https://github.com/Glad-Labs/glad-labs-stack/commit/e7aa9bfba6a79818ef5fc297f2ded73ded464092))
+* **voice:** track LLM token usage per turn in cost_logs ([c3809b2](https://github.com/Glad-Labs/glad-labs-stack/commit/c3809b26506a7f93722b32f0112588a57f155c6d))
+
+
+### Bug Fixes
+
+* **cli:** media open looks up storage_path from DB ([#1940](https://github.com/Glad-Labs/glad-labs-stack/issues/1940)) ([a00f026](https://github.com/Glad-Labs/glad-labs-stack/commit/a00f02606f857d63f6207fe8bea8cceda5633e19))
+* **compose:** strengthen postgres readiness gate + add postgres-exporter dep ([#1939](https://github.com/Glad-Labs/glad-labs-stack/issues/1939)) ([8ab99f2](https://github.com/Glad-Labs/glad-labs-stack/commit/8ab99f21831f234bc66a427cb4011f7cad390aa6))
+* **obs:** Loki log quality — JSON format, level labels, task_id structured metadata ([#1943](https://github.com/Glad-Labs/glad-labs-stack/issues/1943)) ([7e8091c](https://github.com/Glad-Labs/glad-labs-stack/commit/7e8091c712c52438e2451c949d0b1085600899f3))
+
 ## [0.87.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.87.0...v0.87.1) (2026-06-25)
 
 
@@ -221,7 +241,7 @@
 
 * **brain:** await async notify_fn in health_probes (dropped probe pages) ([#1715](https://github.com/Glad-Labs/glad-labs-stack/issues/1715)) ([c6ff281](https://github.com/Glad-Labs/glad-labs-stack/commit/c6ff2817267ff5df0bf584d7ca169d39208ba8c4))
 * **brain:** progress-aware Prefect stuck-flow detection (no more false backlog pages) ([#1713](https://github.com/Glad-Labs/glad-labs-stack/issues/1713)) ([c539e9b](https://github.com/Glad-Labs/glad-labs-stack/commit/c539e9bf9de12d9a49f34922968dedd4d4c21435))
-* **media:** mount sdxl-server generated-images + HF cache under /home/appuser ([#1703](https://github.com/Glad-Labs/glad-labs-stack/issues/1703)) ([266f512](https://github.com/Glad-Labs/glad-labs-stack/commit/266f512de0107ecc93fd91ce316db4242ce5c03e))
+* **media:** mount image-gen-server generated-images + HF cache under /home/appuser ([#1703](https://github.com/Glad-Labs/glad-labs-stack/issues/1703)) ([266f512](https://github.com/Glad-Labs/glad-labs-stack/commit/266f512de0107ecc93fd91ce316db4242ce5c03e))
 * **media:** mount wan-server generated-videos + HF cache under /home/appuser ([#1704](https://github.com/Glad-Labs/glad-labs-stack/issues/1704)) ([d9a9d3f](https://github.com/Glad-Labs/glad-labs-stack/commit/d9a9d3fc71feb23df7512be30536f7e471f63a0e))
 * **media:** narration spans whole video, real photos for humans, strip TTS labels ([#1694](https://github.com/Glad-Labs/glad-labs-stack/issues/1694)) ([6ff828d](https://github.com/Glad-Labs/glad-labs-stack/commit/6ff828d1150760cba78a619816bb75e8de9603eb))
 * **media:** route human video shots to pexels, kill human-token advisory warnings ([#1697](https://github.com/Glad-Labs/glad-labs-stack/issues/1697)) ([8a22ecf](https://github.com/Glad-Labs/glad-labs-stack/commit/8a22ecfec6d98b347b20fccd798ff5aaaad4e456))
@@ -639,7 +659,7 @@
 * **probe:** mcp_http_probe discovery path /healthz, re-enable (poindexter[#670](https://github.com/Glad-Labs/glad-labs-stack/issues/670)) ([9dd1987](https://github.com/Glad-Labs/glad-labs-stack/commit/9dd1987c1407b41d5d4c29edbe8cc700eddd16f1))
 * **prometheus:** add self-scrape + Alertmanager scrape jobs (poindexter[#649](https://github.com/Glad-Labs/glad-labs-stack/issues/649)) ([#1168](https://github.com/Glad-Labs/glad-labs-stack/issues/1168)) ([b37a805](https://github.com/Glad-Labs/glad-labs-stack/commit/b37a80587519b9401cb214f9a5d415509a35d0c8))
 * refuse log_only fallback for critical findings (closes Glad-Labs/poindexter[#548](https://github.com/Glad-Labs/glad-labs-stack/issues/548)) ([#1163](https://github.com/Glad-Labs/glad-labs-stack/issues/1163)) ([0788550](https://github.com/Glad-Labs/glad-labs-stack/commit/0788550ab3d88da5f03650a475a740fc91264f8b))
-* **sdxl-server:** preserve pipeline on transient Postgres restart (stack[#1152](https://github.com/Glad-Labs/glad-labs-stack/issues/1152)) ([#1170](https://github.com/Glad-Labs/glad-labs-stack/issues/1170)) ([e340514](https://github.com/Glad-Labs/glad-labs-stack/commit/e34051493e51709afadc828b0ee1f7555be60d06))
+* **image-gen-server:** preserve pipeline on transient Postgres restart (stack[#1152](https://github.com/Glad-Labs/glad-labs-stack/issues/1152)) ([#1170](https://github.com/Glad-Labs/glad-labs-stack/issues/1170)) ([e340514](https://github.com/Glad-Labs/glad-labs-stack/commit/e34051493e51709afadc828b0ee1f7555be60d06))
 * **taps:** parallelize CodebaseSource embed queries to avoid 60s timeout ([ec6ded3](https://github.com/Glad-Labs/glad-labs-stack/commit/ec6ded322fbc741498bddb9c8f8121cb660ddfa1))
 * **tests:** re-point phase1 Grafana panel tests at experiments-dryrun.json (stack[#1082](https://github.com/Glad-Labs/glad-labs-stack/issues/1082)) ([654e9c0](https://github.com/Glad-Labs/glad-labs-stack/commit/654e9c0740f2a995ccf5ebf0d63cdfa5a44cbfa2))
 * **validator:** don't flag emphasis-wrapped final sentences as truncated ([ed77a43](https://github.com/Glad-Labs/glad-labs-stack/commit/ed77a4349d1c69358e4fee6f8d5966c2b914dcd9))

@@ -492,7 +492,7 @@ class TestReplaceInlineImagesAdapter:
         db.update_task.assert_not_called()
 
     async def test_placeholder_gets_replaced_via_pexels_fallback(self):
-        # Force SDXL to fail (by making the helper return None), verify
+        # Force image-gen to fail (by making the helper return None), verify
         # Pexels fallback takes over and the placeholder becomes an <img>.
         img_obj = SimpleNamespace(url="https://pexels.example/cat.jpg", photographer="Jane")
         image_service = SimpleNamespace(search_featured_image=AsyncMock(return_value=img_obj))
@@ -506,7 +506,7 @@ class TestReplaceInlineImagesAdapter:
 
         # Stage calls _normalize_text via lazy import into content_router_service
         with patch(
-            "modules.content.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_image_gen",
             AsyncMock(return_value=None),
         ), patch(
             "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -531,7 +531,7 @@ class TestReplaceInlineImagesAdapter:
             "database_service": db, "image_service": image_service,
         }
         with patch(
-            "modules.content.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_image_gen",
             AsyncMock(return_value=None),
         ), patch(
             "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -589,7 +589,7 @@ class TestReplaceInlineImagesAltTextScrub:
             "database_service": db, "image_service": image_service,
         }
         with patch(
-            "modules.content.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_image_gen",
             AsyncMock(return_value=None),
         ), patch(
             "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -606,9 +606,9 @@ class TestReplaceInlineImagesAltTextScrub:
         assert "pexels" not in alt.lower()
         assert "A server room." in alt
 
-    async def test_strips_sdxl_hint_too(self):
-        alt = await self._run_with_pexels("Cinematic blueprint ||sdxl:editorial||")
-        assert "sdxl" not in alt.lower()
+    async def test_strips_image_gen_hint_too(self):
+        alt = await self._run_with_pexels("Cinematic blueprint ||image_gen:editorial||")
+        assert "image_gen" not in alt.lower()
         assert "Cinematic blueprint" in alt
 
     async def test_preserves_normal_alt(self):
@@ -622,7 +622,7 @@ class TestSourceFeaturedImageAdapter:
 
     async def test_disabled_flag_skips_without_calls(self):
         image_service = SimpleNamespace(
-            sdxl_available=False, sdxl_initialized=True,
+            gen_available=False, gen_initialized=True,
             search_featured_image=AsyncMock(),
         )
         ctx: dict[str, Any] = {
@@ -634,21 +634,21 @@ class TestSourceFeaturedImageAdapter:
         assert result.context_updates["stages"]["3_featured_image_found"] is False
         image_service.search_featured_image.assert_not_called()
 
-    async def test_pexels_fallback_when_sdxl_unavailable(self):
+    async def test_pexels_fallback_when_image_gen_unavailable(self):
         pexels_img = SimpleNamespace(
             url="https://pex.example/photo.jpg", photographer="Alex",
             source="pexels", width=800, height=600,
         )
         image_service = SimpleNamespace(
-            sdxl_available=False, sdxl_initialized=True,
+            gen_available=False, gen_initialized=True,
             search_featured_image=AsyncMock(return_value=pexels_img),
         )
-        # sdxl_enabled=false — the new app_settings-driven SDXL gate (#603)
-        # checks this row before deciding to hit the SDXL HTTP server. Without
-        # explicitly disabling it, the test runs against the dev SDXL server
+        # image_gen_enabled=false — the app_settings-driven image-gen gate (#603)
+        # checks this row before deciding to hit the image-gen HTTP server. Without
+        # explicitly disabling it, the test runs against the dev image-gen server
         # (if reachable) and the pexels assertions below fail.
         site_config = SimpleNamespace(
-            get=lambda k, d="": "false" if k == "sdxl_enabled" else (d if d is not None else ""),
+            get=lambda k, d="": "false" if k == "image_gen_enabled" else (d if d is not None else ""),
             get_int=lambda _k, d=0: d,
             get_float=lambda _k, d=0.0: d,
             get_bool=lambda _k, d=False: d,
@@ -659,10 +659,10 @@ class TestSourceFeaturedImageAdapter:
             "generate_featured_image": True, "image_service": image_service,
             "site_config": site_config,
         }
-        # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
-        # force the SDXL path to miss so the Pexels fallback runs.
+        # image-gen is now always attempted (2026-05-27 gate change in source_featured_image.py);
+        # force the image-gen path to miss so the Pexels fallback runs.
         with patch(
-            "modules.content.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})
@@ -673,10 +673,10 @@ class TestSourceFeaturedImageAdapter:
         assert u["stages"]["3_featured_image_found"] is True
         assert u["stages"]["3_image_source"] == "pexels"
 
-    async def test_sdxl_succeeds_populates_sdxl_source(self):
+    async def test_image_gen_succeeds_populates_image_gen_source(self):
         from modules.content.stages.source_featured_image import GeneratedImage
         image_service = SimpleNamespace(
-            sdxl_available=True, sdxl_initialized=True,
+            gen_available=True, gen_initialized=True,
             search_featured_image=AsyncMock(),
         )
         ctx: dict[str, Any] = {
@@ -684,24 +684,24 @@ class TestSourceFeaturedImageAdapter:
             "generate_featured_image": True, "image_service": image_service,
         }
         with patch(
-            "modules.content.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=GeneratedImage(
                 url="https://r2.example/featured.jpg",
-                photographer="AI Generated (SDXL)",
-                source="sdxl_local",
+                photographer="AI Generated (image-gen)",
+                source="image_gen_local",
             )),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})
         u = result.context_updates
         assert u["featured_image_url"] == "https://r2.example/featured.jpg"
-        assert u["featured_image_source"] == "sdxl_local"
-        assert u["stages"]["3_image_source"] == "sdxl"
-        # Pexels not consulted when SDXL wins
+        assert u["featured_image_source"] == "image_gen_local"
+        assert u["stages"]["3_image_source"] == "image_gen"
+        # Pexels not consulted when image-gen wins
         image_service.search_featured_image.assert_not_called()
 
     async def test_both_strategies_fail_records_not_found(self):
         image_service = SimpleNamespace(
-            sdxl_available=True, sdxl_initialized=True,
+            gen_available=True, gen_initialized=True,
             search_featured_image=AsyncMock(return_value=None),
         )
         ctx: dict[str, Any] = {
@@ -709,7 +709,7 @@ class TestSourceFeaturedImageAdapter:
             "generate_featured_image": True, "image_service": image_service,
         }
         with patch(
-            "modules.content.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})

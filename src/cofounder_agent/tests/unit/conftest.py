@@ -429,7 +429,7 @@ def _reset_env_between_tests(monkeypatch):
 def _isolate_gpu_ollama_unload():
     """Keep unit tests off the real host Ollama via the GPU lock.
 
-    ``gpu.lock("sdxl"|"video")`` — acquired deep inside image / media stages
+    ``gpu.lock("image_gen"|"video")`` — acquired deep inside image / media stages
     and atoms — calls ``GPUScheduler._unload_ollama_models``, which delegates
     to ``unload_loaded_ollama_models``: real HTTP to ``/api/ps`` plus a
     confirm poll that waits (up to

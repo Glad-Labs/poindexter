@@ -136,7 +136,7 @@ def _gpu_serialize_local_dispatch(
     """Whether this dispatch should hold ``gpu.lock("ollama")`` around
     ``provider.complete`` (GPU-serialize fix).
 
-    Local Ollama inference shares the one GPU with media renders (SDXL / wan).
+    Local Ollama inference shares the one GPU with media renders (image-gen / wan).
     Content stages already wrap their LLM work in ``gpu.lock("ollama")``, but
     scheduled worker jobs (topic research, SEO, newsletter) reach the LLM only
     through ``dispatch_complete`` — so without this they can load the ~19 GB

@@ -318,7 +318,7 @@ async def _backfill_featured_image(
         else "image/jpeg"
     )
     provider_plugin = (
-        "image.sdxl"
+        "image.image_gen"
         if "/sdxl" in featured_image_url or "/featured/" in featured_image_url
         else "image.pexels" if "pexels" in featured_image_url
         else "image.unknown"
@@ -369,7 +369,7 @@ async def _backfill_inline_images(
             else "image/png"
         )
         provider_plugin = (
-            "image.sdxl"
+            "image.image_gen"
             if "/inline/" in url or "/glad-labs-generated-images/" in url
             else "image.pexels" if "pexels" in url
             else "image.unknown"

@@ -18,7 +18,7 @@ This runbook covers catastrophic-loss scenarios — the kind where "just restart
 - **CONFIG-1.** `bootstrap.toml` lost — need to reconstruct it
 - **CONFIG-2.** `POINDEXTER_SECRET_KEY` lost — every encrypted secret in `app_settings` is unreadable
 
-For per-service recovery (worker crashed, SDXL degraded, Vercel down), see the **Per-service recovery** section at the bottom.
+For per-service recovery (worker crashed, image-gen degraded, Vercel down), see the **Per-service recovery** section at the bottom.
 
 ---
 
@@ -371,14 +371,14 @@ docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c 
 
 ### Step 1 — Install prerequisites
 
-| Tool                                   | Why                          |
-| -------------------------------------- | ---------------------------- |
-| Docker Desktop 4.26+ with WSL2 backend | Runs all containers          |
-| Git + Git Bash (Windows)               | start-stack.sh uses bash     |
-| Python 3.13+                           | poindexter CLI               |
-| Node.js 22+                            | Public site dev/build        |
-| Ollama 0.1.40+                         | Local LLM inference          |
-| NVIDIA driver supporting CUDA 12.8+    | SDXL + Wan video on RTX 5090 |
+| Tool                                   | Why                               |
+| -------------------------------------- | --------------------------------- |
+| Docker Desktop 4.26+ with WSL2 backend | Runs all containers               |
+| Git + Git Bash (Windows)               | start-stack.sh uses bash          |
+| Python 3.13+                           | poindexter CLI                    |
+| Node.js 22+                            | Public site dev/build             |
+| Ollama 0.1.40+                         | Local LLM inference               |
+| NVIDIA driver supporting CUDA 12.8+    | image-gen + Wan video on RTX 5090 |
 
 ### Step 2 — Clone the repo
 
@@ -442,7 +442,7 @@ ollama list
 ```bash
 curl -s http://localhost:8002/api/health | python -m json.tool
 curl -s http://localhost:3000/api/health
-curl -s http://localhost:9836/health     # SDXL
+curl -s http://localhost:9836/health     # image-gen
 curl -s http://localhost:11434/api/tags  # Ollama
 ```
 
@@ -639,14 +639,14 @@ ollama serve   # If not running as service
 ollama list    # Verify required models present
 ```
 
-### SDXL Server — posts publishing with Pexels stock images
+### image-gen Server — posts publishing with Pexels stock images
 
 ```bash
 curl -s http://localhost:9836/health | python -m json.tool
-docker compose -f docker-compose.local.yml up -d sdxl-server
+docker compose -f docker-compose.local.yml up -d image-gen-server
 # If torch/torchvision mismatch:
-docker exec poindexter-sdxl-server pip install --upgrade torchvision peft
-docker restart poindexter-sdxl-server
+docker exec poindexter-image-gen-server pip install --upgrade torchvision peft
+docker restart poindexter-image-gen-server
 ```
 
 ### Vercel — site returns 500 / blank page

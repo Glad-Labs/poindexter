@@ -1,7 +1,7 @@
 """Unit tests for the vision-model image normalization helper.
 
 Root cause of the cold ``vision_gate`` (Glad-Labs/poindexter#563): the vision
-model (``qwen3-vl:30b`` via Ollama) cannot decode WebP, and the SDXL-generated
+model (``qwen3-vl:30b`` via Ollama) cannot decode WebP, and the image-gen-generated
 inline images are stored as WebP on R2 (``r2_upload_service`` converts
 PNG/JPEG -> WebP before upload). So ``_check_image_relevance`` downloaded a
 WebP, the model received no decodable image, and the rail returned ``None`` --

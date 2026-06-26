@@ -392,3 +392,177 @@ class TestGenerateContentStageExecute:
         assert "too-short draft" in db.updates[-1]["error_message"].lower()
         assert len(findings) == 1
         assert findings[0]["kind"] == "writer_empty_draft"
+
+
+# ---------------------------------------------------------------------------
+# Regen steering (#149) — operator feedback injected into the next draft
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+class TestRegenSteeringInExecute:
+    """When ``regen_steering`` is on context (injected by atoms.approval_gate),
+    it must reach the writer so the next draft directly addresses the
+    operator's note.  Two paths tested: the niche two_pass_atom path and the
+    legacy content_generator.generate_blog_post path."""
+
+    _LONG_BODY = (
+        "# A Realistic Draft\n\nThis is a generated blog post body with "
+        "enough substance to comfortably clear the minimum-draft-length "
+        "guard the pipeline now enforces. It has a heading, multiple "
+        "sentences, and well over two hundred characters so the happy-path "
+        "stage flow runs end to end without tripping the empty/too-short "
+        "writer guard."
+    )
+
+    async def test_regen_steering_forwarded_to_niche_path(self):
+        """regen_steering must be passed through to _generate_via_two_pass_atom
+        so the two_pass writer can prepend it to writer_prompt_override."""
+        captured: dict[str, Any] = {}
+
+        async def _fake_two_pass(**kw: Any) -> tuple[str, str, dict[str, Any]]:
+            captured.update(kw)
+            return (
+                self._LONG_BODY,
+                "gemma-4-31b",
+                {
+                    "models_used_by_phase": {"writer": "gemma-4-31b"},
+                    "model_selection_log": {},
+                    "cost_log": {"cost_usd": 0.0, "provider": "ollama", "model": "gemma-4-31b"},
+                },
+            )
+
+        db = _FakeDb()
+        ctx: dict[str, Any] = {
+            "task_id": "t5",
+            "topic": "AI trends",
+            "style": "tech",
+            "tone": "neutral",
+            "target_length": 1200,
+            "tags": [],
+            "models_by_phase": {},
+            "database_service": db,
+            "regen_steering": "be more specific about GPU architecture",
+        }
+        stage = GenerateContentStage()
+        patches = _patch_everything()
+        for p in patches:
+            p.start()
+        try:
+            with (
+                patch.object(stage, "_read_niche_slug", AsyncMock(return_value="gaming")),
+                patch.object(stage, "_generate_via_two_pass_atom", _fake_two_pass),
+            ):
+                result = await stage.execute(ctx, {})
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        assert result.ok is True
+        assert captured.get("regen_steering") == "be more specific about GPU architecture"
+
+    async def test_regen_steering_prepended_to_style_in_legacy_path(self):
+        """When no niche_slug is set (legacy path), regen_steering is prepended
+        to the style parameter passed to content_generator.generate_blog_post."""
+        captured_style: list[str] = []
+
+        async def _spy_generate(*, style: str = "", **_kw: Any) -> tuple[str, str, dict[str, Any]]:
+            captured_style.append(style)
+            return (
+                self._LONG_BODY,
+                "glm-4.7-5090",
+                {
+                    "models_used_by_phase": {"writer": "glm-4.7-5090"},
+                    "model_selection_log": {},
+                    "cost_log": {"cost_usd": 0.0, "provider": "ollama", "model": "glm-4.7-5090"},
+                },
+            )
+
+        db = _FakeDb()
+        ctx: dict[str, Any] = {
+            "task_id": "t6",
+            "topic": "PC hardware",
+            "style": "casual",
+            "tone": "neutral",
+            "target_length": 1200,
+            "tags": [],
+            "models_by_phase": {},
+            "database_service": db,
+            "regen_steering": "add benchmark comparisons",
+        }
+        patches = _patch_everything()
+        for p in patches:
+            p.start()
+        try:
+            with patch(
+                "modules.content.ai_content_generator.get_content_generator",
+                return_value=SimpleNamespace(
+                    _internal_links_cache=[
+                        '- "Real Post" -> https://www.gladlabs.io/posts/real-slug'
+                    ],
+                    generate_blog_post=_spy_generate,
+                ),
+            ):
+                result = await GenerateContentStage().execute(ctx, {})
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        assert result.ok is True
+        assert captured_style, "generate_blog_post was never called"
+        effective_style = captured_style[0]
+        assert "IMPORTANT — Operator feedback from prior review:" in effective_style
+        assert "add benchmark comparisons" in effective_style
+        assert "casual" in effective_style  # original style preserved as suffix
+
+    async def test_no_regen_steering_leaves_style_unchanged_in_legacy_path(self):
+        """Without regen_steering, the legacy path passes the original style
+        string unchanged — no prefix injected."""
+        captured_style: list[str] = []
+
+        async def _spy_generate(*, style: str = "", **_kw: Any) -> tuple[str, str, dict[str, Any]]:
+            captured_style.append(style)
+            return (
+                self._LONG_BODY,
+                "glm-4.7-5090",
+                {
+                    "models_used_by_phase": {"writer": "glm-4.7-5090"},
+                    "model_selection_log": {},
+                    "cost_log": {"cost_usd": 0.0, "provider": "ollama", "model": "glm-4.7-5090"},
+                },
+            )
+
+        db = _FakeDb()
+        ctx: dict[str, Any] = {
+            "task_id": "t7",
+            "topic": "PC hardware",
+            "style": "casual",
+            "tone": "neutral",
+            "target_length": 1200,
+            "tags": [],
+            "models_by_phase": {},
+            "database_service": db,
+            # No "regen_steering" key — simulates first-pass (not a regen)
+        }
+        patches = _patch_everything()
+        for p in patches:
+            p.start()
+        try:
+            with patch(
+                "modules.content.ai_content_generator.get_content_generator",
+                return_value=SimpleNamespace(
+                    _internal_links_cache=[
+                        '- "Real Post" -> https://www.gladlabs.io/posts/real-slug'
+                    ],
+                    generate_blog_post=_spy_generate,
+                ),
+            ):
+                result = await GenerateContentStage().execute(ctx, {})
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        assert result.ok is True
+        assert captured_style, "generate_blog_post was never called"
+        assert "IMPORTANT" not in captured_style[0]
+        assert captured_style[0] == "casual"

@@ -1,7 +1,7 @@
 """content.generate_images — generate images for each planned placeholder.
 
 Takes image_plans produced by content.plan_image_markers and generates one
-image per plan: SDXL primary, Pexels fallback. Records media_assets rows.
+image per plan: image-gen primary, Pexels fallback. Records media_assets rows.
 
 Produces: image_results (list of {num, url, alt_text, source}).
 
@@ -21,7 +21,7 @@ ATOM_META = AtomMeta(
     type="atom",
     version="1.0.0",
     description=(
-        "Generate one image per image_plan entry: SDXL primary, Pexels fallback. "
+        "Generate one image per image_plan entry: image-gen primary, Pexels fallback. "
         "Records media_assets rows. Returns image_results list."
     ),
     inputs=(
@@ -55,7 +55,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     from modules.content.stages.replace_inline_images import (
         _record_inline_image_asset,
         _try_pexels,
-        _try_sdxl,
+        _try_image_gen,
     )
     from services.image_service import get_image_service
 
@@ -78,22 +78,22 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         img_url: str | None = None
         source = "none"
 
-        # Strategy 1: SDXL.
-        sdxl_url = await _try_sdxl(
+        # Strategy 1: image-gen.
+        image_gen_url = await _try_image_gen(
             num, search_query, topic,
             site_config=site_config,
             task_id=task_id,
             platform=platform,
         )
-        if sdxl_url and sdxl_url not in used_image_ids:
-            used_image_ids.add(sdxl_url)
-            img_url = sdxl_url
-            source = "sdxl"
+        if image_gen_url and image_gen_url not in used_image_ids:
+            used_image_ids.add(image_gen_url)
+            img_url = image_gen_url
+            source = "image_gen"
             await _record_inline_image_asset(
                 site_config=site_config,
                 post_id=post_id,
-                public_url=sdxl_url,
-                provider_plugin="image.sdxl",
+                public_url=image_gen_url,
+                provider_plugin="image.image_gen",
                 # R2UploadService converts PNG→WebP at upload time (#732).
                 width=1024, height=1024, mime_type="image/webp",
                 metadata={

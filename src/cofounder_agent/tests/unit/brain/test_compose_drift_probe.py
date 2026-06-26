@@ -10,7 +10,7 @@ Covers the noise-suppression behavior added in #425:
 3. A service flagged as on-demand whose container IS running but has
    real spec drift (missing mount) → still reported as drifted (the
    suppression only covers `container_missing`, not genuine drift).
-4. The default on-demand list seeds `wan-server` and `sdxl-server` so
+4. The default on-demand list seeds `wan-server` and `image-gen-server` so
    a fresh install gets the right behavior without an operator config
    step.
 
@@ -89,17 +89,17 @@ def _reset_compose_drift_module_state():
 
 @pytest.mark.asyncio
 async def test_on_demand_service_missing_is_suppressed():
-    """wan-server/sdxl-server missing → no drift row, no notify."""
+    """wan-server/image-gen-server missing → no drift row, no notify."""
     cd._last_notified_drifted = frozenset()  # reset module-level state
     pool = _make_pool(
         setting_values={
-            cd.ON_DEMAND_SERVICES_SETTING_KEY: "wan-server,sdxl-server",
+            cd.ON_DEMAND_SERVICES_SETTING_KEY: "wan-server,image-gen-server",
         }
     )
 
     spec = _spec({
         "wan-server": {"container_name": "poindexter-wan-server"},
-        "sdxl-server": {"container_name": "poindexter-sdxl-server"},
+        "image-gen-server": {"container_name": "poindexter-image-gen-server"},
     })
 
     notify = MagicMock()
@@ -194,8 +194,8 @@ async def test_on_demand_running_with_real_drift_still_alerts():
 
 
 @pytest.mark.asyncio
-async def test_default_on_demand_list_covers_wan_and_sdxl():
-    """No operator config → wan-server and sdxl-server are suppressed by
+async def test_default_on_demand_list_covers_wan_and_image_gen():
+    """No operator config → wan-server and image-gen-server are suppressed by
     default. Guards the issue #425 acceptance: out-of-the-box the noise
     is gone without requiring `poindexter settings set` first."""
     cd._last_notified_drifted = frozenset()
@@ -203,7 +203,7 @@ async def test_default_on_demand_list_covers_wan_and_sdxl():
 
     spec = _spec({
         "wan-server": {"container_name": "poindexter-wan-server"},
-        "sdxl-server": {"container_name": "poindexter-sdxl-server"},
+        "image-gen-server": {"container_name": "poindexter-image-gen-server"},
         "worker": {"container_name": "poindexter-worker"},
     })
 
@@ -227,7 +227,7 @@ async def test_default_on_demand_list_covers_wan_and_sdxl():
         docker_reachable_fn=lambda: (True, ""),
     )
 
-    # worker has no drift, wan/sdxl missing-but-suppressed → overall ok.
+    # worker has no drift, wan/image-gen missing-but-suppressed → overall ok.
     assert summary["status"] == "no_drift"
     notify.assert_not_called()
 
@@ -237,7 +237,7 @@ async def test_read_on_demand_services_uses_default_when_unset():
     """Direct test of the setting reader — defaults match the constant."""
     pool = _make_pool(setting_values={})
     out = await cd._read_on_demand_services(pool)
-    assert out == {"wan-server", "sdxl-server"}
+    assert out == {"wan-server", "image-gen-server"}
 
 
 @pytest.mark.asyncio

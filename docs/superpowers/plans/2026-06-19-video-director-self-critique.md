@@ -117,19 +117,19 @@ REVISE it against these criteria, then output the REVISED shot list:
 1. COVERAGE - every important beat of the narration has a shot that carries
    it; no dead air where the visual stops tracking the script.
 2. VARIETY - kill runs of near-identical shots. Vary subject AND source
-   (pexels / sdxl_kenburns / sdxl / wan21). Visual monotony is the #1 quality
+   (pexels / image_kenburns / image_gen / wan21). Visual monotony is the #1 quality
    killer.
 3. HERO SHOTS - pick the 1-3 highest-impact beats (the open's payoff, a key
    reveal, the close) and upgrade them to source "wan21" for real motion. Keep
    wan21 OFF the very first and very last shot. Never exceed 3 wan21 shots.
-4. ON-BRAND - sdxl / sdxl_kenburns / wan21 prompts use the dark-techno palette
+4. ON-BRAND - image_gen / image_kenburns / wan21 prompts use the dark-techno palette
    (deep navy, cyan, teal, gold accents) and a stylized modifier (flat vector /
    cinematic illustration / isometric 3D / cyberpunk neon / glassmorphism).
    Never photoreal.
 
 CONSTRAINTS (keep the draft valid):
 - HUMAN-SUBJECT POLICY unchanged: humans go to source "pexels"; never name a
-  human noun in an sdxl / sdxl_kenburns / wan21 prompt, not even as "no people".
+  human noun in an image_gen / image_kenburns / wan21 prompt, not even as "no people".
 - shots idx 0-indexed and contiguous; sum of duration_s equals total_duration_s
   within 0.5s; narration_offset_s equals the cumulative prior durations; never
   more than 2 consecutive shots with the same source.
@@ -230,7 +230,7 @@ class _FakeLock:
         return False
 
 
-def _valid_list(*, source1: str = "sdxl_kenburns") -> dict:
+def _valid_list(*, source1: str = "image_kenburns") -> dict:
     return {
         "version": 1,
         "aspect": "16:9",
@@ -289,7 +289,7 @@ async def test_revised_list_replaces_original() -> None:
 async def test_failure_keeps_original_non_halting() -> None:
     from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
 
-    original = _valid_list()  # shot[1].source == "sdxl_kenburns"
+    original = _valid_list()  # shot[1].source == "image_kenburns"
     ctx = {
         "title": "T", "content": "C body " * 20, "podcast_script": "script " * 20,
         "video_shot_list": original,
@@ -304,7 +304,7 @@ async def test_failure_keeps_original_non_halting() -> None:
         result = await ReviewVideoShotListStage().execute(ctx, {})
 
     assert result.ok  # non-halting
-    assert result.context_updates["video_shot_list"]["shots"][1]["source"] == "sdxl_kenburns"
+    assert result.context_updates["video_shot_list"]["shots"][1]["source"] == "image_kenburns"
 
 
 @pytest.mark.asyncio

@@ -31,7 +31,7 @@ ATOM_META = AtomMeta(
         FieldSpec(name="short_narration_audio_path", type="str", description="short narration MP3 path", required=False),
         FieldSpec(name="short_caption_srt_path", type="str", description="short-lane burned-in SRT", required=False),
         FieldSpec(name="video_ambient_audio_path", type="str", description="ambient bed path", required=False),
-        FieldSpec(name="site_config", type="object", description="DI seam (SDXL/Wan2.1 config)", required=False),
+        FieldSpec(name="site_config", type="object", description="DI seam (image-gen/Wan2.1 config)", required=False),
         FieldSpec(name="database_service", type="object", description="DB service (pool source)", required=False),
         FieldSpec(name="task_id", type="str", description="pipeline task id"),
     ),

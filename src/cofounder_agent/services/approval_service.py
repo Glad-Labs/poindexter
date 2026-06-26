@@ -167,6 +167,45 @@ async def _record_router_outcome(
         )
 
 
+async def _record_approve_brain_signal(
+    *,
+    pool: Any,
+    task_id: str,
+    gate_name: str,
+    topic: str | None,
+    feedback: str,
+) -> None:
+    """Best-effort: write a brain_knowledge weight-up row on non-empty approval feedback (#149).
+
+    Operator notes on a manual approve encode preference signal that auto-metrics
+    can't capture — "loved the personal tone" shapes the next writer call.
+    Written to ``brain_knowledge`` so the brain's topic-ranking and
+    ``search_memory`` pick it up on the next BrainKnowledgeTap cycle (hourly).
+    Never raises — a failure here must never affect the approval outcome.
+    """
+    entity = f"topic:{(topic or '')[:200]}" if topic else f"gate:{gate_name}"
+    try:
+        await pool.execute(
+            """
+            INSERT INTO brain_knowledge
+                (entity, attribute, value, confidence, source, created_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            ON CONFLICT DO NOTHING
+            """,
+            entity,
+            "approved_by_operator",
+            feedback[:500],
+            0.7,
+            f"approval_service.approve.{gate_name}",
+        )
+    except Exception as exc:  # noqa: BLE001  # silent-ok: best-effort brain signal — pool errors must never affect approval outcome
+        logger.debug(
+            "[approval_service] brain approve-signal write failed "
+            "(task=%s gate=%s): %s",
+            task_id[:8], gate_name, exc,
+        )
+
+
 async def _fetch_task_row(pool: Any, task_id: str) -> dict[str, Any] | None:
     """Return the minimal task row needed for gate decisions, or None.
 
@@ -494,6 +533,18 @@ async def approve(
         pool=pool, task_id=str(task_id), decision="approved",
         site_config=site_config,
     )
+
+    # Operator approval feedback → brain learning signal (#149).
+    # Only when the operator included a non-empty note — a bare approve
+    # without feedback is not meaningful enough to encode as a preference.
+    if feedback:
+        await _record_approve_brain_signal(
+            pool=pool,
+            task_id=str(task_id),
+            gate_name=cleared_gate,
+            topic=row.get("topic"),
+            feedback=feedback,
+        )
 
     return {
         "ok": True,

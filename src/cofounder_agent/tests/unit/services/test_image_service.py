@@ -4,7 +4,7 @@ Unit tests for services/image_service.py
 Tests FeaturedImageMetadata (to_dict, to_markdown), ImageService initialization,
 search_featured_image, get_images_for_gallery, _pexels_search (mocked httpx),
 generate_image_markdown, optimize_image_for_web, cache helpers, and factory.
-Heavy GPU/SDXL paths are not exercised; they are tested via flag checks only.
+Heavy GPU/image-gen paths are not exercised; they are tested via flag checks only.
 """
 
 from contextlib import asynccontextmanager
@@ -182,10 +182,10 @@ class TestImageServiceInit:
         svc = ImageService(site_config=_test_sc())
         assert "pexels.com" in svc.pexels_base_url
 
-    def test_sdxl_not_initialized_at_startup(self):
+    def test_image_gen_not_initialized_at_startup(self):
         svc = ImageService(site_config=_test_sc())
         # Models are lazily initialized only when generate_image() is called
-        assert svc.sdxl_initialized is False
+        assert svc.gen_initialized is False
         assert svc._gen_pipe is None
         assert svc._active_model is None
 
@@ -600,21 +600,21 @@ class TestInitializeModel:
         # Pipeline reference unchanged — no reload happened
         assert svc._gen_pipe is original_pipe
 
-    def test_sets_sdxl_available_false_when_diffusers_unavailable(self):
+    def test_sets_gen_available_false_when_diffusers_unavailable(self):
         svc = ImageService(site_config=_test_sc())
         with patch("services.image_service.DIFFUSERS_AVAILABLE", False):
             svc._initialize_model(ImageModel.SDXL_BASE)
-        assert svc.sdxl_available is False
+        assert svc.gen_available is False
         assert svc._gen_pipe is None
 
-    def test_sets_sdxl_available_false_when_torch_unavailable(self):
+    def test_sets_gen_available_false_when_torch_unavailable(self):
         svc = ImageService(site_config=_test_sc())
         with (
             patch("services.image_service.DIFFUSERS_AVAILABLE", True),
             patch("services.image_service.TORCH_AVAILABLE", False),
         ):
             svc._initialize_model(ImageModel.SDXL_BASE)
-        assert svc.sdxl_available is False
+        assert svc.gen_available is False
         assert svc._gen_pipe is None
 
     def test_unloads_previous_model_before_loading_new(self):
@@ -658,14 +658,14 @@ class TestUnloadModel:
         svc = ImageService(site_config=_test_sc())
         svc._gen_pipe = MagicMock()
         svc._active_model = ImageModel.SDXL_BASE
-        svc.sdxl_available = True
+        svc.gen_available = True
 
         with patch("services.image_service.TORCH_AVAILABLE", False):
             svc._unload_model()
 
         assert svc._gen_pipe is None
         assert svc._active_model is None
-        assert svc.sdxl_available is False
+        assert svc.gen_available is False
 
     def test_noop_when_no_pipeline_loaded(self):
         svc = ImageService(site_config=_test_sc())
@@ -674,7 +674,7 @@ class TestUnloadModel:
             svc._unload_model()  # Should not raise
         assert svc._gen_pipe is None
         assert svc._active_model is None
-        assert svc.sdxl_available is False
+        assert svc.gen_available is False
 
     def test_clears_cuda_cache_when_available(self):
         svc = ImageService(site_config=_test_sc())
@@ -770,8 +770,8 @@ class TestGenerateImage:
     """Coverage for the 3-strategy generate_image method."""
 
     @pytest.mark.asyncio
-    async def test_host_sdxl_server_happy_path(self, tmp_path):
-        """Strategy 1: host SDXL server returns image bytes -> file written + True."""
+    async def test_host_image_gen_server_happy_path(self, tmp_path):
+        """Strategy 1: host image-gen server returns image bytes -> file written + True."""
         svc = ImageService(site_config=_test_sc())
 
         png_bytes = b"\x89PNG fake image data"
@@ -800,10 +800,10 @@ class TestGenerateImage:
         assert _P(output_path).read_bytes() == png_bytes
 
     @pytest.mark.asyncio
-    async def test_host_sdxl_non_200_falls_through_to_local(self, tmp_path):
-        """If host SDXL returns 500 and local diffusers unavailable -> False."""
+    async def test_host_image_gen_non_200_falls_through_to_local(self, tmp_path):
+        """If host image-gen returns 500 and local diffusers unavailable -> False."""
         svc = ImageService(site_config=_test_sc())
-        svc.sdxl_available = False  # local diffusers not available
+        svc.gen_available = False  # local diffusers not available
 
         mock_resp = MagicMock()
         mock_resp.status_code = 500
@@ -818,7 +818,7 @@ class TestGenerateImage:
 
         with patch("httpx.AsyncClient", return_value=mock_client), \
              patch.object(svc, "_initialize_model"):
-            svc.sdxl_initialized = True  # skip the lazy init
+            svc.gen_initialized = True  # skip the lazy init
             result = await svc.generate_image(
                 prompt="x",
                 output_path=str(tmp_path / "x.png"),
@@ -827,10 +827,10 @@ class TestGenerateImage:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_host_sdxl_exception_falls_through_to_local(self, tmp_path):
-        """Connection error on host SDXL + diffusers unavailable -> False."""
+    async def test_host_image_gen_exception_falls_through_to_local(self, tmp_path):
+        """Connection error on host image-gen + diffusers unavailable -> False."""
         svc = ImageService(site_config=_test_sc())
-        svc.sdxl_available = False
+        svc.gen_available = False
 
         mock_client = AsyncMock()
         mock_client.__aenter__ = AsyncMock(return_value=mock_client)
@@ -839,7 +839,7 @@ class TestGenerateImage:
 
         with patch("httpx.AsyncClient", return_value=mock_client), \
              patch.object(svc, "_initialize_model"):
-            svc.sdxl_initialized = True
+            svc.gen_initialized = True
             result = await svc.generate_image(
                 prompt="x", output_path=str(tmp_path / "x.png"),
             )
@@ -847,10 +847,10 @@ class TestGenerateImage:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_host_sdxl_wrong_content_type_falls_through(self, tmp_path):
+    async def test_host_image_gen_wrong_content_type_falls_through(self, tmp_path):
         """200 with text/html content-type is treated as failure."""
         svc = ImageService(site_config=_test_sc())
-        svc.sdxl_available = False
+        svc.gen_available = False
 
         mock_resp = MagicMock()
         mock_resp.status_code = 200
@@ -865,7 +865,7 @@ class TestGenerateImage:
 
         with patch("httpx.AsyncClient", return_value=mock_client), \
              patch.object(svc, "_initialize_model"):
-            svc.sdxl_initialized = True
+            svc.gen_initialized = True
             result = await svc.generate_image(
                 prompt="x", output_path=str(tmp_path / "x.png"),
             )
@@ -874,16 +874,16 @@ class TestGenerateImage:
 
     @pytest.mark.asyncio
     async def test_local_diffusers_no_active_model_returns_false(self, tmp_path):
-        """sdxl_available=True but no model activated -> guard returns False (no KeyError).
+        """gen_available=True but no model activated -> guard returns False (no KeyError).
 
-        When the host SDXL call fails and we fall through to Strategy 2 with
+        When the host image-gen call fails and we fall through to Strategy 2 with
         diffusers reportedly available but ``_active_model`` still None, the
         ``IMAGE_MODEL_REGISTRY[self._active_model]`` lookup would raise
         ``KeyError(None)``. The defensive guard converts that into the method's
         standard False failure return.
         """
         svc = ImageService(site_config=_test_sc())
-        svc.sdxl_available = True  # pass the diffusers-available gate
+        svc.gen_available = True  # pass the diffusers-available gate
         svc._active_model = None  # ...but nothing was activated
 
         mock_client = AsyncMock()
@@ -893,7 +893,7 @@ class TestGenerateImage:
 
         with patch("httpx.AsyncClient", return_value=mock_client), \
              patch.object(svc, "_initialize_model"):
-            svc.sdxl_initialized = True  # skip lazy init so _active_model stays None
+            svc.gen_initialized = True  # skip lazy init so _active_model stays None
             result = await svc.generate_image(
                 prompt="x", output_path=str(tmp_path / "x.png"),
             )

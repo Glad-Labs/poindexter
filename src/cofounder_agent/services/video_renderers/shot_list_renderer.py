@@ -8,19 +8,19 @@ NULL means "director hasn't run, fall back to legacy slideshow".
 
 Per-source dispatch:
 
-- ``sdxl`` — single SDXL frame, held static for ``duration_s``
-- ``sdxl_kenburns`` — single SDXL frame with Ken Burns motion
+- ``image_gen`` — single image-gen frame, held static for ``duration_s``
+- ``image_kenburns`` — single image-gen frame with Ken Burns motion
 - ``pexels`` — real Pexels stock photo via ``PexelsProvider`` (image,
   not video — pexels-video is a future provider). The director routes
   human / real-world subjects here on purpose; on any Pexels miss the
-  renderer holds over the prior clip rather than SDXL-generating a
+  renderer holds over the prior clip rather than image-gen-generating a
   person (AI faces/hands are the strongest "AI slop" tell). Ken Burns
   disabled (real photos with motion look fine static for shorter shots).
 - ``wan21`` — Wan2.1 T2V model clip via ``Wan21Provider``. Capped at
   6 seconds per the director prompt (artifacts beyond that show
   seams in the diffusion).
 - ``holdover`` — cross-fade transition placeholder. V1 treats this
-  the same as ``sdxl`` by carrying the prior shot's prompt — a true
+  the same as ``image_gen`` by carrying the prior shot's prompt — a true
   cross-fade filtergraph is a follow-up.
 
 Concat happens via ``FFmpegLocalCompositor`` (the existing
@@ -57,10 +57,10 @@ logger = logging.getLogger(__name__)
 # something through.
 _WAN21_MAX_DURATION_S = 6
 
-# Stochastic sources worth re-rolling on a vision-QA miss — a fresh SDXL/Wan
+# Stochastic sources worth re-rolling on a vision-QA miss — a fresh image-gen/Wan
 # seed yields a different image. Pexels is deterministic (same top result), so
 # it's excluded: a pexels miss falls straight through to the holdover fallback.
-_REGENERABLE_SOURCES = frozenset({"sdxl", "sdxl_kenburns", "wan21", "generative"})
+_REGENERABLE_SOURCES = frozenset({"image_gen", "image_kenburns", "wan21", "generative"})
 
 # Hero sources — generative image-to-video clips. The most expensive +
 # failure-prone source, so the per-video count is capped (spec §3.3).
@@ -106,9 +106,9 @@ class _ShotState:
     """Per-shot working state threaded across the render → score → repair →
     finalize passes.
 
-    The two-pass split exists to stop the SDXL↔vision-model GPU thrash: the
+    The two-pass split exists to stop the image-gen↔vision-model GPU thrash: the
     old per-shot loop ran ``render → score`` for each shot, so every vision
-    call evicted SDXL and the next shot's render paid a ~133s cold reload.
+    call evicted image-gen and the next shot's render paid a ~133s cold reload.
     Batching all renders, then all scores, keeps each model resident for a
     whole pass. ``_ShotState`` is the mutable carrier that lets the later
     passes update a shot's best result/score without re-rendering.
@@ -189,15 +189,15 @@ async def _log_shot_audit(
         )
 
 
-async def _render_sdxl_image(
+async def _render_image_gen_image(
     *,
     prompt: str,
     output_path: str,
-    sdxl_url: str,
+    image_gen_url: str,
     http_client_factory: Any,
     render_timeout: int = 240,
 ) -> bool:
-    """Render one SDXL image to disk via the SDXL server.
+    """Render one image-gen image to disk via the image-gen server.
 
     Mirrors the shape used in
     ``video_service._generate_images_from_scenes`` but writes to a
@@ -205,7 +205,7 @@ async def _render_sdxl_image(
     """
     import httpx
 
-    from services.video_service import _consume_sdxl_image_response
+    from services.video_service import _consume_image_gen_response
 
     neg = (
         "text, words, letters, watermark, face, person, hands, blurry, "
@@ -216,28 +216,28 @@ async def _render_sdxl_image(
             timeout=httpx.Timeout(float(render_timeout), connect=5.0),
         ) as client:
             resp = await client.post(
-                f"{sdxl_url}/generate",
+                f"{image_gen_url}/generate",
                 json={
                     "prompt": prompt,
                     "negative_prompt": neg,
-                    # steps / guidance_scale omitted — the SDXL server's
+                    # steps / guidance_scale omitted — the image-gen server's
                     # per-model registry drives them (z_image_turbo is
-                    # guidance-distilled: 9 steps / CFG 0). SDXL-Turbo's
+                    # guidance-distilled: 9 steps / CFG 0). image-gen-Turbo's
                     # hardcoded 4 / 1.0 produced degraded frames. Matches the
                     # inline-image path (replace_inline_images). #image-zimage-and-variety.
                 },
                 timeout=render_timeout,
             )
-            got = await _consume_sdxl_image_response(
+            got = await _consume_image_gen_response(
                 resp,
-                sdxl_url=sdxl_url,
+                image_gen_url=image_gen_url,
                 output_path=output_path,
-                frame_label=f"shot SDXL {os.path.basename(output_path)}",
+                frame_label=f"shot image-gen {os.path.basename(output_path)}",
             )
             return got is not None
     except Exception as exc:  # noqa: BLE001
         logger.warning(
-            "[SHOT_LIST] SDXL render failed for %s: %s",
+            "[SHOT_LIST] image-gen render failed for %s: %s",
             os.path.basename(output_path), exc,
         )
         return False
@@ -257,10 +257,10 @@ async def _render_pexels_image(
     purpose (its HUMAN-SUBJECT POLICY — AI faces/hands are the strongest
     "AI slop" tell). This wires the EXISTING ``PexelsProvider`` so those
     shots get actual footage instead of the old behaviour, which ignored the
-    configured key and SDXL-generated the human query (six-fingered hands).
+    configured key and image-gen-generated the human query (six-fingered hands).
 
     Returns True only when a JPG is on disk. On any miss the caller holds
-    over the prior clip rather than SDXL-faking the subject.
+    over the prior clip rather than image-gen-faking the subject.
     """
     if not api_key or not query.strip():
         return False
@@ -307,7 +307,7 @@ async def _render_generative_clip(
 ) -> bool:
     """Render one hero clip to ``output_path`` via the Wan provider.
 
-    When ``image_path`` is set it's the shot's stylized SDXL still, passed
+    When ``image_path`` is set it's the shot's stylized image-gen still, passed
     as the image-to-video init frame (animating the brand still keeps visual
     consistency — spec §3.3). Absent → text-to-video. Delegates to the
     existing ``Wan21Provider`` so the request body shape is the correct one
@@ -343,7 +343,7 @@ async def _render_one_shot(
     *,
     prior_clip: str | None,
     work_dir: Path,
-    sdxl_url: str,
+    image_gen_url: str,
     site_config: Any,
     http_client_factory: Any,
     pexels_key: str = "",
@@ -377,10 +377,10 @@ async def _render_one_shot(
     if source == "pexels":
         # Human / real-world subjects route here on purpose (the director's
         # HUMAN-SUBJECT POLICY) — AI faces/hands are the strongest "AI slop"
-        # tell, so we fetch a REAL stock photo instead of SDXL-generating a
+        # tell, so we fetch a REAL stock photo instead of image-gen-generating a
         # person. On any Pexels miss we hold over the prior clip rather than
-        # SDXL-faking the subject (#media-render-fixes: the short video shipped
-        # a six-fingered AI human because this branch used to SDXL the query).
+        # image-gen-faking the subject (#media-render-fixes: the short video shipped
+        # a six-fingered AI human because this branch used to image-gen the query).
         query = (shot.query or shot.prompt or "").strip()
         if not query:
             return ShotRenderResult(
@@ -405,13 +405,13 @@ async def _render_one_shot(
                 clip_path=clip_path,
                 duration_s=shot.duration_s,
             )
-        # Pexels miss (no key / no result / download fail) — NEVER SDXL a
+        # Pexels miss (no key / no result / download fail) — NEVER image-gen a
         # human. Hold over the prior clip if we have one; otherwise this
         # shot drops out and the rest of the video still renders.
         if prior_clip:
             logger.info(
                 "[SHOT_LIST] pexels miss at idx=%d — holding over prior clip "
-                "(no SDXL human fallback)", shot.idx,
+                "(no image-gen human fallback)", shot.idx,
             )
             return ShotRenderResult(
                 idx=shot.idx,
@@ -427,9 +427,9 @@ async def _render_one_shot(
             error="pexels miss at idx=0 with no prior clip to hold over",
         )
 
-    if source in ("sdxl", "sdxl_kenburns"):
-        sdxl_prompt = shot.prompt if shot.prompt else (shot.query or "")
-        if not sdxl_prompt:
+    if source in ("image_gen", "image_kenburns"):
+        image_gen_prompt = shot.prompt if shot.prompt else (shot.query or "")
+        if not image_gen_prompt:
             return ShotRenderResult(
                 idx=shot.idx,
                 source=source,
@@ -441,10 +441,10 @@ async def _render_one_shot(
             site_config.get_int("image_render_timeout_seconds", 240)
             if site_config is not None else 240
         )
-        ok = await _render_sdxl_image(
-            prompt=sdxl_prompt,
+        ok = await _render_image_gen_image(
+            prompt=image_gen_prompt,
             output_path=clip_path,
-            sdxl_url=sdxl_url,
+            image_gen_url=image_gen_url,
             http_client_factory=http_client_factory,
             render_timeout=render_timeout,
         )
@@ -453,7 +453,7 @@ async def _render_one_shot(
                 idx=shot.idx,
                 source=source,
                 success=False,
-                error="SDXL render returned no image",
+                error="image-gen render returned no image",
             )
         return ShotRenderResult(
             idx=shot.idx,
@@ -471,7 +471,7 @@ async def _render_one_shot(
                 success=False,
                 error=f"{source} shot missing prompt",
             )
-        # Render the stylized SDXL still FIRST — it's both the image-to-video
+        # Render the stylized image-gen still FIRST — it's both the image-to-video
         # init frame and the Ken-Burns fallback if the clip render misses
         # (spec §3.3). If even the still fails there's nothing to animate or
         # fall back to, so the shot hard-fails.
@@ -480,10 +480,10 @@ async def _render_one_shot(
             site_config.get_int("image_render_timeout_seconds", 240)
             if site_config is not None else 240
         )
-        still_ok = await _render_sdxl_image(
+        still_ok = await _render_image_gen_image(
             prompt=shot.prompt,
             output_path=still_path,
-            sdxl_url=sdxl_url,
+            image_gen_url=image_gen_url,
             http_client_factory=http_client_factory,
             render_timeout=render_timeout,
         )
@@ -492,7 +492,7 @@ async def _render_one_shot(
                 idx=shot.idx,
                 source=source,
                 success=False,
-                error="generative shot: SDXL still render failed",
+                error="generative shot: image-gen still render failed",
             )
         clip_path = str(work_dir / f"shot_{shot.idx:02d}.mp4")
         clip_ok = await _render_generative_clip(
@@ -540,8 +540,8 @@ async def _render_pass(
 
     Threads ``render_prior`` (the last successful fresh clip) so holdover and
     pexels-miss shots resolve against the prior clip exactly as the old
-    sequential loop did. The key property: only ``sdxl`` / ``wan21`` shots
-    touch the GPU here, and nothing scores, so SDXL loads once and stays warm
+    sequential loop did. The key property: only ``image_gen`` / ``wan21`` shots
+    touch the GPU here, and nothing scores, so image-gen loads once and stays warm
     for the whole pass instead of being evicted by a per-shot vision call.
 
     ``is_reused`` flags a shot whose result reused the prior clip (a holdover,
@@ -664,14 +664,14 @@ def _emit_fallback_finding(
 def _emit_hero_fallback_finding(*, shot: Shot, post_id: str) -> None:
     """Emit the ``hero_render_fallback`` finding — a generative hero shot's
     image-to-video render produced no clip, so the renderer fell back to the
-    stylized SDXL still (Ken-Burns'd by the compositor). Distinct kind from
+    stylized image-gen still (Ken-Burns'd by the compositor). Distinct kind from
     ``shot_quality_fallback`` so the Findings dashboard can track i2v render
     misses separately from QA-score fallbacks (spec §3.3)."""
     emit_finding(
         source="shot_list_renderer", kind="hero_render_fallback",
         title=f"hero shot {shot.idx} fell back to still (Ken Burns)",
         body=(f"shot {shot.idx} ({shot.source}) — image-to-video render "
-              f"produced no clip; used the stylized SDXL still with Ken Burns "
+              f"produced no clip; used the stylized image-gen still with Ken Burns "
               f"motion instead."),
         severity="warn",
         dedup_key=f"hero_render_fallback:{post_id}:{shot.idx}",
@@ -759,7 +759,7 @@ async def _finalize_pass(
 
 def _cap_hero_shots(shots: list[Shot], max_hero: int) -> list[Shot]:
     """Keep at most ``max_hero`` hero (generative/wan21) shots; downgrade the
-    rest to ``sdxl_kenburns`` — the still+Ken-Burns cousin, carrying the same
+    rest to ``image_kenburns`` — the still+Ken-Burns cousin, carrying the same
     prompt. The hero render is the most expensive + failure-prone source, so
     the director over-asking shouldn't blow the GPU budget (spec §3.3). A
     negative ``max_hero`` disables the cap (keep everything). Order and
@@ -773,7 +773,7 @@ def _cap_hero_shots(shots: list[Shot], max_hero: int) -> list[Shot]:
         if s.source in _HERO_SOURCES:
             seen += 1
             if seen > max_hero:
-                out.append(s.model_copy(update={"source": "sdxl_kenburns"}))
+                out.append(s.model_copy(update={"source": "image_kenburns"}))
                 continue
         out.append(s)
     return out
@@ -785,7 +785,7 @@ async def render_shot_list(
     shot_list: VideoShotList,
     audio_path: str,
     output_path: str,
-    sdxl_url: str,
+    image_gen_url: str,
     site_config: Any,
     pool: Any = None,
     http_client_factory: Any = None,
@@ -804,7 +804,7 @@ async def render_shot_list(
             the body-only sibling — see
             ``video_service.generate_video_for_post``).
         output_path: Where to write the final MP4.
-        sdxl_url: Base URL of the SDXL inference server.
+        image_gen_url: Base URL of the image-gen inference server.
         site_config: DI seam — required for Wan2.1 provider config.
         pool: asyncpg pool for audit-log inserts. Optional.
         http_client_factory: ``httpx.AsyncClient`` factory — defaults
@@ -839,7 +839,7 @@ async def render_shot_list(
     # is_secret=true so it MUST come through get_secret (async, DB-backed);
     # orientation follows the shot list's aspect so portrait shorts fetch
     # portrait photos. An empty key just means pexels shots hold over the
-    # prior clip rather than SDXL-faking a human (see _render_one_shot).
+    # prior clip rather than image-gen-faking a human (see _render_one_shot).
     pexels_key = ""
     if site_config is not None:
         pexels_key = (await site_config.get_secret("pexels_api_key", "")) or ""
@@ -858,7 +858,7 @@ async def render_shot_list(
     qa = _build_qa_config(site_config)
     render_kwargs = dict(
         work_dir=work_dir,
-        sdxl_url=sdxl_url,
+        image_gen_url=image_gen_url,
         site_config=site_config,
         http_client_factory=http_client_factory,
         pexels_key=pexels_key,
@@ -866,14 +866,14 @@ async def render_shot_list(
         post_id=post_id,
     )
 
-    # Two-pass to stop the SDXL↔vision-model GPU thrash: render every shot
+    # Two-pass to stop the image-gen↔vision-model GPU thrash: render every shot
     # (image model resident for the whole pass), then score every fresh frame
     # (vision model resident), then batched keep-best regen of the
     # sub-threshold stochastic shots, then assign outcomes + audit. The old
-    # per-shot ``render → score`` loop evicted SDXL on every vision call, so
+    # per-shot ``render → score`` loop evicted image-gen on every vision call, so
     # each next render paid a ~133s cold reload. See ``_ShotState``.
     # Cap the per-video hero-shot budget (spec §3.3) — excess generative shots
-    # downgrade to sdxl_kenburns so the director over-asking can't serialise a
+    # downgrade to image_kenburns so the director over-asking can't serialise a
     # dozen heavy i2v renders. shots_total below still counts the original list.
     max_hero = (
         site_config.get_int("video_hero_shots_max", 3)

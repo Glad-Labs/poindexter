@@ -1,17 +1,17 @@
 """VRAM-guard tests for ``ReplaceInlineImagesStage``.
 
 Pins the 2026-05-19 jank-audit finding #4 fix: the writer LLM (~20 GB
-for ``gemma3:27b``) must be explicitly unloaded before the SDXL phase
+for ``gemma3:27b``) must be explicitly unloaded before the image-gen phase
 begins, so 24 GB cards don't OOM at the stage-5→stage-7 transition.
 
 The unload utility itself lives in
 ``services.llm_providers.ollama_unload`` and is tested independently —
 these tests pin only the stage-level wiring:
 
-* ``maybe_unload_writer_before_sdxl`` is called once at stage entry.
+* ``maybe_unload_writer_before_image_gen`` is called once at stage entry.
 * The current ``site_config`` (DI seam) is passed through.
-* The unload runs BEFORE any SDXL or Pexels work begins (so the VRAM
-  is freed by the time ``_try_sdxl`` is called).
+* The unload runs BEFORE any image-gen or Pexels work begins (so the VRAM
+  is freed by the time ``_try_image_gen`` is called).
 * When the gate is off, the rest of the stage still runs normally
   (we only assert the gate flag reached the helper — the helper's own
   branching is tested in ``test_ollama_unload.py``).
@@ -35,7 +35,7 @@ def _site_config(unload_enabled: bool = True) -> Any:
         get_float=lambda key, default=0.0: default,
         get_bool=lambda key, default=False: (
             unload_enabled
-            if key == "pipeline_explicit_writer_unload_before_sdxl"
+            if key == "pipeline_writer_unload_before_image_gen"
             else default
         ),
     )
@@ -62,17 +62,17 @@ def _stage_context(
 
 @pytest.mark.asyncio
 async def test_stage_invokes_writer_unload_at_entry():
-    """``maybe_unload_writer_before_sdxl`` runs once per stage execution."""
+    """``maybe_unload_writer_before_image_gen`` runs once per stage execution."""
     sc = _site_config()
     ctx = _stage_context(site_config=sc)
 
     unload_mock = AsyncMock(return_value=["gemma3:27b"])
 
     with patch(
-        "services.llm_providers.ollama_unload.maybe_unload_writer_before_sdxl",
+        "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
         new=unload_mock,
     ), patch(
-        "modules.content.stages.replace_inline_images._try_sdxl",
+        "modules.content.stages.replace_inline_images._try_image_gen",
         new=AsyncMock(return_value=None),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -89,10 +89,10 @@ async def test_stage_invokes_writer_unload_at_entry():
 
 
 @pytest.mark.asyncio
-async def test_stage_unloads_before_calling_try_sdxl():
-    """The writer unload happens BEFORE the first ``_try_sdxl`` call.
+async def test_stage_unloads_before_calling_try_image_gen():
+    """The writer unload happens BEFORE the first ``_try_image_gen`` call.
 
-    Order matters — if SDXL fires before Ollama has had its grace
+    Order matters — if image-gen fires before Ollama has had its grace
     seconds to release VRAM, the 32 GB card hits 98% (and the 24 GB
     card OOMs). Use a call recorder to pin the order.
     """
@@ -104,39 +104,39 @@ async def test_stage_unloads_before_calling_try_sdxl():
         call_order.append("unload")
         return []
 
-    async def record_sdxl(*_args, **_kwargs):
-        call_order.append("try_sdxl")
+    async def record_image_gen(*_args, **_kwargs):
+        call_order.append("try_image_gen")
         return None
 
     with patch(
-        "services.llm_providers.ollama_unload.maybe_unload_writer_before_sdxl",
+        "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
         new=AsyncMock(side_effect=record_unload),
     ), patch(
-        "modules.content.stages.replace_inline_images._try_sdxl",
-        new=AsyncMock(side_effect=record_sdxl),
+        "modules.content.stages.replace_inline_images._try_image_gen",
+        new=AsyncMock(side_effect=record_image_gen),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,
     ):
         await ReplaceInlineImagesStage().execute(ctx, {})
 
     assert call_order[0] == "unload", (
-        f"unload must precede any SDXL work; saw {call_order}"
+        f"unload must precede any image-gen work; saw {call_order}"
     )
-    assert "try_sdxl" in call_order
+    assert "try_image_gen" in call_order
 
 
 @pytest.mark.asyncio
 async def test_stage_skips_unload_when_no_content():
     """Empty content → stage short-circuits before the unload sweep.
 
-    The unload tax (~3-5 s) is wasted if there's no SDXL work coming.
+    The unload tax (~3-5 s) is wasted if there's no image-gen work coming.
     """
     sc = _site_config()
     ctx = _stage_context(site_config=sc, content="")
     unload_mock = AsyncMock(return_value=[])
 
     with patch(
-        "services.llm_providers.ollama_unload.maybe_unload_writer_before_sdxl",
+        "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
         new=unload_mock,
     ):
         result = await ReplaceInlineImagesStage().execute(ctx, {})
@@ -158,10 +158,10 @@ async def test_stage_threads_site_config_with_gate_off():
     unload_mock = AsyncMock(return_value=[])
 
     with patch(
-        "services.llm_providers.ollama_unload.maybe_unload_writer_before_sdxl",
+        "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
         new=unload_mock,
     ), patch(
-        "modules.content.stages.replace_inline_images._try_sdxl",
+        "modules.content.stages.replace_inline_images._try_image_gen",
         new=AsyncMock(return_value=None),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,

@@ -93,10 +93,10 @@ async def _build_resume_handles(site_config: Any) -> tuple[Any, Any]:
     ``preview_gate`` sits MID-GRAPH: resuming it (approve OR regen) re-runs the
     image / QA / finalize atoms, which call full ``DatabaseService`` delegate
     methods (``update_task``, ``create_quality_evaluation`` …) and dispatch
-    SDXL / LLM prompts through ``platform.dispatch.complete``. The earlier thin
+    image-gen / LLM prompts through ``platform.dispatch.complete``. The earlier thin
     pool shim exposed neither, so a real ``regen --images`` halted at
     ``content.persist_task`` with ``'_PoolShim' object has no attribute
-    'update_task'`` and SDXL inline silently fell back to Pexels (``platform``
+    'update_task'`` and image-gen inline silently fell back to Pexels (``platform``
     was ``None``).
 
     Build the same handles the Prefect subprocess builds in

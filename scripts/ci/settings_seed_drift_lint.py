@@ -46,6 +46,13 @@ ALLOWLIST: dict[str, str] = {
         "stages (replace_inline_images/source_featured_image) — intentionally "
         "retained in the seed files"
     ),
+    "operator_url_probe_skip_keys": (
+        "false positive in 20260625_120000_rename_sdxl_settings_to_image_gen: "
+        "the migration only UPDATEs this key (replaces sdxl_server_url with "
+        "image_gen_server_url in the value); the DELETE regex captures 300 chars "
+        "and bleeds into the subsequent UPDATE WHERE clause, mis-tagging this key "
+        "as deleted"
+    ),
 }
 
 _SEED_KEY_RE = re.compile(r"INTO app_settings[^;]*?VALUES\s*\(\s*'([^']+)'", re.I)

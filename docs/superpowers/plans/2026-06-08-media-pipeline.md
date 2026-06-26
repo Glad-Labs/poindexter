@@ -6,7 +6,7 @@
 
 **Architecture:** A second LangGraph `graph_def` template (`media_pipeline`), seeded into `pipeline_templates` and run by `TemplateRunner` exactly like `canonical_blog`. Stage 1 persists scripts/shot-lists (done: #1226/#1233); Stage 2 loads them and renders deterministically — a re-render never re-invents prompts (root fix for #674/#675).
 
-**Tech Stack:** LangGraph graph_def, atom registry (filesystem-discovered atoms under `modules/content/atoms/`), `pipeline_templates` DB table, FFmpeg compositor, SDXL/Pexels sources, Speaches TTS + Whisper ASR.
+**Tech Stack:** LangGraph graph_def, atom registry (filesystem-discovered atoms under `modules/content/atoms/`), `pipeline_templates` DB table, FFmpeg compositor, image-gen/Pexels sources, Speaches TTS + Whisper ASR.
 
 ---
 
@@ -18,7 +18,7 @@ Each plan is one PR off `origin/main`, TDD + contract tests, landed before the n
 | --------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ---------- | ---------------------------------- |
 | **2 (this PR)** | `media_pipeline` graph_def **spine**: `media.load_scripts` atom + spec module + seed migration (dormant — no live trigger yet)                    | #674 spine | none — fully unit/compile testable |
 | 3               | Director emits **long + short shot-lists** (`source_hint`, `narration_offset_s`, `aspect`); extend `Shot` schema                                  | #517-core  | none (schema + LLM-mocked)         |
-| 4               | `FFmpegLocalCompositor` render engine — per-shot source select (slideshow/Pexels) + compose + ambient mix + 16:9/9:16 profiles                    | #675/#679  | ffmpeg, SDXL, Pexels               |
+| 4               | `FFmpegLocalCompositor` render engine — per-shot source select (slideshow/Pexels) + compose + ambient mix + 16:9/9:16 profiles                    | #675/#679  | ffmpeg, image-gen, Pexels          |
 | 5               | One-ASR pass — captions (.srt burn-in) + fidelity QA diff                                                                                         | #676       | Whisper/Speaches                   |
 | 6               | `media_qa` atom (frame human-detection, caption-presence, A/V sync) + `qa.audio`                                                                  | #1193      | audio model                        |
 | 7               | Per-piece **Gate 1** + per-asset tiered **Gate 2** state machines + voice rotation + **Stage-2 trigger wiring** (approval → `media_pipeline` run) | #677/#531  | none (state machine, mocked)       |

@@ -111,7 +111,7 @@ $enc=New-Object System.Text.UTF8Encoding($false)  # UTF-8, no BOM (file is now p
 
 **Symptom.** You queued a content task, it shows `status='in_progress'` in `pipeline_tasks`, but there's no progress in the logs. The Prefect stale-task sweep hasn't reclaimed it, and the per-stage timeouts in the LangGraph template haven't fired either.
 
-**Root cause (historical).** Before the timeout hygiene pass on 2026-04-10, several external call sites (`OllamaClient`, SDXL server, nvidia-smi exporter, `DuckDuckGo` via `run_in_executor`) had either no per-call timeout or a very long one (up to 3600s). When the underlying connection hung in a state that didn't yield to asyncio, `asyncio.wait_for` at the stage level couldn't cancel it. One test task this session hung 20+ minutes in multi_model_qa because of this.
+**Root cause (historical).** Before the timeout hygiene pass on 2026-04-10, several external call sites (`OllamaClient`, image-gen server, nvidia-smi exporter, `DuckDuckGo` via `run_in_executor`) had either no per-call timeout or a very long one (up to 3600s). When the underlying connection hung in a state that didn't yield to asyncio, `asyncio.wait_for` at the stage level couldn't cancel it. One test task this session hung 20+ minutes in multi_model_qa because of this.
 
 **Fix (current).** The timeout hygiene pass commits (`0bfd4389`, `4168f87b`, `f0c6cc0b`, `2bb77afa`, `3690abfd`) added:
 
@@ -120,7 +120,7 @@ $enc=New-Object System.Text.UTF8Encoding($false)  # UTF-8, no BOM (file is now p
 3. `asyncio.wait_for` wrappers around Ollama calls in `multi_model_qa.py` (90s for the main critic, 60s for each gate, 5s for health checks).
 4. `asyncio.wait_for` wrappers around the DDGS thread-executor call in `web_research.py` (20s).
 
-After these fixes, the worst-case stall for any external call is its per-call budget. A hung Ollama, SDXL, DDG, or other service surfaces as a timeout error within ~60-180 seconds, not silently forever.
+After these fixes, the worst-case stall for any external call is its per-call budget. A hung Ollama, image-gen, DDG, or other service surfaces as a timeout error within ~60-180 seconds, not silently forever.
 
 **If it happens anyway.** Clear the stuck row manually:
 
@@ -236,29 +236,29 @@ Both layers clear on their own within 5 minutes.
 
 ---
 
-## SDXL server "degraded" — posts publish with Pexels stock photos
+## image-gen server "degraded" — posts publish with Pexels stock photos
 
-**Symptom.** `curl http://localhost:9836/health` returns `"status":"degraded"` with a `degraded_reason` mentioning `CLIPImageProcessor` or `PEFT backend`. Posts publish with generic Pexels stock images instead of SDXL-generated ones. The pipeline doesn't fail — it silently falls back.
+**Symptom.** `curl http://localhost:9836/health` returns `"status":"degraded"` with a `degraded_reason` mentioning `CLIPImageProcessor` or `PEFT backend`. Posts publish with generic Pexels stock images instead of image-gen-generated ones. The pipeline doesn't fail — it silently falls back.
 
-**Root cause.** torch/torchvision version mismatch inside the SDXL container. When torch gets upgraded (e.g., base image update) but torchvision stays pinned at an older version, `torchvision::nms` operator doesn't exist and CLIPImageProcessor fails to import. Similarly, the `peft` package may be missing if the container was rebuilt.
+**Root cause.** torch/torchvision version mismatch inside the image-gen container. When torch gets upgraded (e.g., base image update) but torchvision stays pinned at an older version, `torchvision::nms` operator doesn't exist and CLIPImageProcessor fails to import. Similarly, the `peft` package may be missing if the container was rebuilt.
 
 **Fix.**
 
 ```bash
-docker exec poindexter-sdxl-server pip install --upgrade torchvision peft
-docker restart poindexter-sdxl-server
+docker exec poindexter-image-gen-server pip install --upgrade torchvision peft
+docker restart poindexter-image-gen-server
 curl http://localhost:9836/health  # should show "status":"idle"
 ```
 
-**Prevention.** `scripts/Dockerfile.sdxl` now includes both `torchvision` and `peft` in the explicit pip install list, so container rebuilds pick them up.
+**Prevention.** `scripts/Dockerfile.image-gen` now includes both `torchvision` and `peft` in the explicit pip install list, so container rebuilds pick them up.
 
 ---
 
-## SDXL server "degraded — the database system is starting up" (boot race)
+## image-gen server "degraded — the database system is starting up" (boot race)
 
-**Symptom.** `curl http://localhost:9836/health` returns `"status":"degraded"`, `"model":null`, and a `degraded_reason` of `DB read failed for 'image_generation_model': the database system is starting up`. Every `/generate` returns 503, so ALL SDXL image generation is down — blog posts silently fall back to Pexels, but **video generation hard-fails** (`[VIDEO] No images could be generated`) because it has no Pexels fallback for frames. `media_reconciliation` then reports `job_failure` with `media_drift: ... N missing video (regen failures)`. The Docker healthcheck still shows the container "healthy" because `/health` returns HTTP 200 even while degraded.
+**Symptom.** `curl http://localhost:9836/health` returns `"status":"degraded"`, `"model":null`, and a `degraded_reason` of `DB read failed for 'image_generation_model': the database system is starting up`. Every `/generate` returns 503, so ALL image-gen image generation is down — blog posts silently fall back to Pexels, but **video generation hard-fails** (`[VIDEO] No images could be generated`) because it has no Pexels fallback for frames. `media_reconciliation` then reports `job_failure` with `media_drift: ... N missing video (regen failures)`. The Docker healthcheck still shows the container "healthy" because `/health` returns HTTP 200 even while degraded.
 
-**Root cause.** A startup race after a host reboot or Docker-daemon restart. `restart: unless-stopped` brings `sdxl-server` and `postgres-local` back up in parallel — compose `depends_on: condition: service_healthy` is honored only by `docker compose up`, NOT by restart-policy restarts. SDXL's `startup()` reads `app_settings.image_generation_model` while Postgres is still initialising (Postgres error `57P03`), calls `mark_degraded()`, and — historically — never retried, so it stayed degraded until a manual `POST /reload`. (Observed 2026-06-04: ~21h silent outage; podcasts reconciled to 0 while video stuck at 18 — the podcast-vs-video differential isolates SDXL, since only video depends on SDXL frames.)
+**Root cause.** A startup race after a host reboot or Docker-daemon restart. `restart: unless-stopped` brings `image-gen-server` and `postgres-local` back up in parallel — compose `depends_on: condition: service_healthy` is honored only by `docker compose up`, NOT by restart-policy restarts. image-gen's `startup()` reads `app_settings.image_generation_model` while Postgres is still initialising (Postgres error `57P03`), calls `mark_degraded()`, and — historically — never retried, so it stayed degraded until a manual `POST /reload`. (Observed 2026-06-04: ~21h silent outage; podcasts reconciled to 0 while video stuck at 18 — the podcast-vs-video differential isolates image-gen, since only video depends on image-gen frames.)
 
 **Immediate fix.**
 
@@ -268,9 +268,9 @@ curl http://localhost:9836/health              # should show "status":"idle", "m
 # the missing-video backlog drains on the next media_reconciliation cycle (hourly)
 ```
 
-`docker restart poindexter-sdxl-server` also works (re-runs `startup()`), but `/reload` is lighter — no model reload, no VRAM churn.
+`docker restart poindexter-image-gen-server` also works (re-runs `startup()`), but `/reload` is lighter — no model reload, no VRAM churn.
 
-**Prevention (self-heal).** `scripts/sdxl-server.py` now runs a `degraded_watchdog()` background task that re-runs `reload_config()` while degraded, with exponential backoff (`next_retry_delay`: 5s → 60s cap). A boot-race latch now clears itself within ~5s instead of waiting for a manual `/reload`. Covered by `src/cofounder_agent/tests/unit/scripts/test_sdxl_self_heal.py`. The compose `depends_on` health-gate is kept too, but it only covers `docker compose up`, not reboots — the watchdog is the reliable backstop.
+**Prevention (self-heal).** `scripts/image-gen-server.py` now runs a `degraded_watchdog()` background task that re-runs `reload_config()` while degraded, with exponential backoff (`next_retry_delay`: 5s → 60s cap). A boot-race latch now clears itself within ~5s instead of waiting for a manual `/reload`. Covered by `src/cofounder_agent/tests/unit/scripts/test_image_gen_self_heal.py`. The compose `depends_on` health-gate is kept too, but it only covers `docker compose up`, not reboots — the watchdog is the reliable backstop.
 
 ---
 
@@ -284,7 +284,7 @@ RuntimeError: CUDA error: no kernel image is available for execution on the devi
 
 The error originates in the UMT5 text encoder forward pass.
 
-**Root cause.** PyTorch base images <2.6 don't ship CUDA kernels for sm_120 (Blackwell, the RTX 5090 family). The SDXL sidecar happens to dodge those kernels but Wan's UMT5 hits them. CUDA 12.8 is the first version with sm_120 support, so the base image needs PyTorch 2.7+ on CUDA 12.8.
+**Root cause.** PyTorch base images <2.6 don't ship CUDA kernels for sm_120 (Blackwell, the RTX 5090 family). The image-gen sidecar happens to dodge those kernels but Wan's UMT5 hits them. CUDA 12.8 is the first version with sm_120 support, so the base image needs PyTorch 2.7+ on CUDA 12.8.
 
 **Fix.** Already applied in `scripts/Dockerfile.wan` — base image is `pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime`. If you see this on a fresh `docker build`, confirm the Dockerfile hasn't been reverted to an older base.
 
@@ -308,7 +308,7 @@ The error originates in the UMT5 text encoder forward pass.
 
 **Symptom.** A run of `scripts/run_video_pipeline_sample.py` finishes "successfully" — final MP4 lands in `~/.poindexter/generated-videos/` — but every scene visibly looks like Pexels stock footage. Wall clock matches a Pexels-only run (~5 min) instead of the expected ~12-42 min for Wan. `[Wan21Provider] inference server returned ...` errors do NOT appear; instead each scene logs an `httpx.ReadTimeout` or `httpx.ConnectTimeout` and the strategy falls through to the next provider.
 
-**Root cause.** `Wan21Provider` previously used `_HTTP_TIMEOUT = httpx.Timeout(300.0, connect=10.0)`. A first-call cold load (Hugging Face shard read off WSL2 disk into VRAM) plus 50-step diffusion on 5s @ 16 fps can run 8-10 min on a 5090. The 300 s ceiling fired ~5 min in, the dispatcher caught the exception, and the fall-through to SDXL/Pexels happened transparently for every scene.
+**Root cause.** `Wan21Provider` previously used `_HTTP_TIMEOUT = httpx.Timeout(300.0, connect=10.0)`. A first-call cold load (Hugging Face shard read off WSL2 disk into VRAM) plus 50-step diffusion on 5s @ 16 fps can run 8-10 min on a 5090. The 300 s ceiling fired ~5 min in, the dispatcher caught the exception, and the fall-through to image-gen/Pexels happened transparently for every scene.
 
 **Detection.**
 
@@ -383,7 +383,7 @@ torch.cuda.OutOfMemoryError: CUDA out of memory. Tried to allocate XX.XX GiB
 
 Provider receives HTTP 500 with `detail="OutOfMemoryError: CUDA out of memory..."`. Subsequent calls at the **same** dimensions also fail until the pipeline is unloaded.
 
-**Root cause.** Wan 2.1 1.3B's native res is 832×480 @ 16 fps for 5 s (~80 frames). Peak VRAM at native settings is ~14 GB; doubling pixel count or duration scales memory roughly linearly through the diffusion stack. On a 32 GB 5090 sharing with SDXL/Ollama, anything beyond ~960×540 / 8 s starts hitting OOM. The server enforces an upper-bound `_MAX_FRAMES = 240` (15 s @ 16 fps) but does NOT cap dimensions — the Pydantic model allows up to 1280×1280, which exceeds the model's safe envelope.
+**Root cause.** Wan 2.1 1.3B's native res is 832×480 @ 16 fps for 5 s (~80 frames). Peak VRAM at native settings is ~14 GB; doubling pixel count or duration scales memory roughly linearly through the diffusion stack. On a 32 GB 5090 sharing with image-gen/Ollama, anything beyond ~960×540 / 8 s starts hitting OOM. The server enforces an upper-bound `_MAX_FRAMES = 240` (15 s @ 16 fps) but does NOT cap dimensions — the Pydantic model allows up to 1280×1280, which exceeds the model's safe envelope.
 
 **Detection.**
 
@@ -410,11 +410,11 @@ docker logs poindexter-worker 2>&1 | grep "Wan21Provider" | tail -20
 
 ---
 
-## Worker OOMs on 24 GB cards at the inline-image stage (writer + SDXL collide)
+## Worker OOMs on 24 GB cards at the inline-image stage (writer + image-gen collide)
 
 **Symptom.** On a 24 GB card (RTX 3090 / 4090) the worker crashes with `CUDA out of memory` somewhere between `quality_evaluation` (stage 5) finishing and `replace_inline_images` (stage 7) starting. On a 32 GB card (RTX 5090) the same boundary briefly hits ~98% VRAM (32003 MiB / 32607 MiB, ~604 MB headroom) and survives, but is a single Chrome tab away from OOMing. Discord/Telegram alerts may fire on `nvidia_gpu_memory_used_bytes` between the two stages.
 
-**Root cause.** The writer LLM (~20 GB for `gemma3:27b`) stays resident from the preceding LLM stages because Ollama's default `keep_alive` is 5 minutes. SDXL Lightning then loads ~12 GB on top before the writer has been evicted. `services/gpu_scheduler` already calls `_unload_ollama_models()` when `gpu.lock("sdxl", ...)` acquires, but Ollama treats `keep_alive: 0` as fire-and-forget — the API call returns immediately and the actual VRAM release is asynchronous. A `/generate` request issued seconds later (the inline-image prompt build) can land before the prior unload has finished. See 2026-05-19 jank-audit finding #4.
+**Root cause.** The writer LLM (~20 GB for `gemma3:27b`) stays resident from the preceding LLM stages because Ollama's default `keep_alive` is 5 minutes. Stable Diffusion XL Lightning then loads ~12 GB on top before the writer has been evicted. `services/gpu_scheduler` already calls `_unload_ollama_models()` when `gpu.lock("image_gen", ...)` acquires, but Ollama treats `keep_alive: 0` as fire-and-forget — the API call returns immediately and the actual VRAM release is asynchronous. A `/generate` request issued seconds later (the inline-image prompt build) can land before the prior unload has finished. See 2026-05-19 jank-audit finding #4.
 
 **Detection.**
 
@@ -426,7 +426,7 @@ watch -n 0.5 'nvidia-smi --query-gpu=memory.used,memory.free,memory.total --form
 docker logs poindexter-worker 2>&1 | grep -E "(generate_content|replace_inline_images).*GPU acquired" | tail -10
 ```
 
-**Fix.** Default-on as of 2026-05-19: `replace_inline_images.execute()` now calls `services.llm_providers.ollama_unload.maybe_unload_writer_before_sdxl()` at stage entry, which:
+**Fix.** Default-on as of 2026-05-19: `replace_inline_images.execute()` now calls `services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen()` at stage entry, which:
 
 1. Walks `/api/ps` to find currently-loaded models.
 2. Issues `POST /api/generate` with `keep_alive: 0` for each.
@@ -435,21 +435,21 @@ docker logs poindexter-worker 2>&1 | grep -E "(generate_content|replace_inline_i
 The log marker to confirm the guard is active:
 
 ```
-[REPLACE_INLINE_IMAGES] Unloaded writer model gemma3:27b before SDXL phase (grace=2.0s)
+[REPLACE_INLINE_IMAGES] Unloaded writer model gemma3:27b before image-gen phase (grace=2.0s)
 ```
 
 **Tunables.** Both via `app_settings`:
 
-- `pipeline_explicit_writer_unload_before_sdxl` (bool, default `true`) — flip to `false` on 80+ GB hardware where the ~3-5 s writer-reload tax (when the `qa.critic` rail later needs the LLM back) isn't worth the safety margin.
+- `pipeline_writer_unload_before_image_gen` (bool, default `true`) — flip to `false` on 80+ GB hardware where the ~3-5 s writer-reload tax (when the `qa.critic` rail later needs the LLM back) isn't worth the safety margin.
 - `pipeline_writer_unload_grace_seconds` (int, default `2`) — bump on slower hardware if `nvidia-smi` shows VRAM still occupied after the unload returns.
 
-**Prevention.** Don't disable the gate unless you've confirmed your card has enough headroom for writer (~20 GB) + SDXL (~12 GB) + OS overhead in parallel. The default-on path costs one model reload (~3-5 s) per task; the OOM costs the whole task plus a restart.
+**Prevention.** Don't disable the gate unless you've confirmed your card has enough headroom for writer (~20 GB) + image-gen (~12 GB) + OS overhead in parallel. The default-on path costs one model reload (~3-5 s) per task; the OOM costs the whole task plus a restart.
 
 ---
 
 ## Too many content flows run at once and pin the GPU at ~98% VRAM
 
-**Symptom.** Multiple `content_generation_flow` runs execute simultaneously, each loading an LLM + SDXL onto the single 5090. VRAM climbs toward ~98% (32.0/32.6 GB) and the GPU VRAM alert fires. (The section above covers the _intra-task_ writer↔SDXL collision; this is the _inter-task_ version — N whole pipelines stacked.)
+**Symptom.** Multiple `content_generation_flow` runs execute simultaneously, each loading an LLM + image-gen onto the single 5090. VRAM climbs toward ~98% (32.0/32.6 GB) and the GPU VRAM alert fires. (The section above covers the _intra-task_ writer↔image-gen collision; this is the _inter-task_ version — N whole pipelines stacked.)
 
 **Root cause.** The number of simultaneous content flows is the Prefect work-pool `concurrency_limit` on `content-pool`. Per the 2026-05-31 stress test (Glad-Labs/poindexter#578): **3 concurrent** flows sit at a stable ~60% VRAM with healthy headroom; **5 concurrent** pin the GPU at ~98% — no OOM yet (Ollama self-gates model residency and serializes), but one model-load from the edge. Throughput barely improves past ~3 anyway, since each `canonical_blog` task is 6-7 min and the extra flows mostly deepen the Ollama queue rather than run in true parallel.
 
@@ -568,7 +568,7 @@ docker inspect poindexter-wan-server --format '{{json .State.Health}}' | jq
 
 **Symptom.** A long pipeline run (e.g. 14-scene long-form video) takes radically longer than expected. First scene completes in ~3 min (warm), scene 2 starts and the worker logs show another full ~8-10 min cold-load before the second `/generate` returns. Repeats per scene. Wall clock balloons from ~42 min to ~2.5 h.
 
-**Root cause.** The idle-unload background task in `wan-server.py` (`idle_unloader`) compares `time.time() - state.last_used` to `IDLE_TIMEOUT_S` every 30 s. `state.last_used` is updated on `/generate` **completion**, not start. If the worker spends > `IDLE_TIMEOUT_S` between completing scene N and starting scene N+1 (e.g. doing TTS, scene-stitch prep, or waiting on the GPU lock for SDXL), the model gets unloaded and the next scene pays full cold-load cost. With `IDLE_TIMEOUT_S=120` (the in-code default) this triggers constantly; with `WAN_IDLE_TIMEOUT_S=900` (the compose-file override) it only triggers on long inter-scene gaps.
+**Root cause.** The idle-unload background task in `wan-server.py` (`idle_unloader`) compares `time.time() - state.last_used` to `IDLE_TIMEOUT_S` every 30 s. `state.last_used` is updated on `/generate` **completion**, not start. If the worker spends > `IDLE_TIMEOUT_S` between completing scene N and starting scene N+1 (e.g. doing TTS, scene-stitch prep, or waiting on the GPU lock for image-gen), the model gets unloaded and the next scene pays full cold-load cost. With `IDLE_TIMEOUT_S=120` (the in-code default) this triggers constantly; with `WAN_IDLE_TIMEOUT_S=900` (the compose-file override) it only triggers on long inter-scene gaps.
 
 **Detection.**
 
@@ -594,7 +594,7 @@ curl -s http://localhost:9840/health | jq '.idle_timeout_s'
 
 **Prevention.** Treat `WAN_IDLE_TIMEOUT_S` as a runbook-tuned value, not a default. Rule of thumb: `idle_timeout_s >= max(inter_scene_gap_s) * 1.5`. Track via the `Unloading WanPipeline` log line frequency — if it appears more than once per pipeline run, the timeout is too short.
 
-**Related.** This is the same setting tension flagged in the GPU-contention entry above — long timeout helps render throughput, hurts GPU sharing with ollama/SDXL. The current `gpu_gaming_detection_mode=off` default makes the long-timeout side of the trade-off safe.
+**Related.** This is the same setting tension flagged in the GPU-contention entry above — long timeout helps render throughput, hurts GPU sharing with ollama/image-gen. The current `gpu_gaming_detection_mode=off` default makes the long-timeout side of the trade-off safe.
 
 ---
 
@@ -1003,7 +1003,7 @@ The function also mirrors the special-case gate logic for `internal_consistency`
 
 **Symptom.** A content task rejects at a score that would otherwise pass, with error `Likely hallucinated library/API reference: 'pgvector'` (or `LoRA`, `REST`, `PostgreSQL`, `transformers`, etc.). All of those are real things, just not in the PyPI top-500.
 
-**Root cause.** `services/content_validator._extract_library_candidates()` flags any backticked identifier that isn't in the stdlib / PyPI-top-500 / Ollama-models whitelist. AI/ML acronyms (LoRA, RAG, REST, SDXL), database extensions (pgvector), and product names (PostgreSQL, Redis) aren't in those lists.
+**Root cause.** `services/content_validator._extract_library_candidates()` flags any backticked identifier that isn't in the stdlib / PyPI-top-500 / Ollama-models whitelist. AI/ML acronyms (LoRA, RAG, REST, Stable Diffusion XL), database extensions (pgvector), and product names (PostgreSQL, Redis) aren't in those lists.
 
 **Partial fix.** The plain-TitleCase English-word filter (commit `9e802e60`) catches single-word cases like "Use" or "Large", but not multi-word acronyms or snake_case extensions.
 

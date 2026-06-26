@@ -26,7 +26,7 @@ from services.site_config import SiteConfig
 
 @pytest.mark.unit
 def test_inline_styles_are_stylized_not_photoreal():
-    """Photoreal inline styles were removed — low-step SDXL butchers photoreal
+    """Photoreal inline styles were removed — low-step image-gen butchers photoreal
     detail and the brand is stylized. The fallback pool must carry none."""
     joined = " ".join(INLINE_STYLES).lower()
     assert "photoreal" not in joined

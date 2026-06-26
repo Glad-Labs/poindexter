@@ -579,14 +579,14 @@ class UnifiedQualityService:
         if photo_meta:
             artifacts.append(f"Photo metadata/attribution ({len(photo_meta)} instances)")
 
-        # Leaked SDXL/image generation prompts
-        sdxl_leaks = re.findall(
+        # Leaked image generation prompts
+        img_gen_prompt_leaks = re.findall(
             r"(?i)(?:stable\s+diffusion|SDXL|negative\s+prompt|guidance.scale|cinematic\s+lighting,\s+no\s+(?:people|text|faces))"
             r"|(?::\s+A\s+(?:diagram|flowchart|illustration|visualization)\s+(?:showing|comparing|depicting))",
             content,
         )
-        if sdxl_leaks:
-            artifacts.append(f"Leaked image generation prompts ({len(sdxl_leaks)} instances)")
+        if img_gen_prompt_leaks:
+            artifacts.append(f"Leaked image generation prompts ({len(img_gen_prompt_leaks)} instances)")
 
         # Unresolved placeholders
         placeholders = re.findall(

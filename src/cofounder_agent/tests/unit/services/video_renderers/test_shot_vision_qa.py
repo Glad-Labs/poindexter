@@ -10,7 +10,7 @@ from services.site_config import SiteConfig
 from services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 
 
-def _shot(source="sdxl", prompt="a cyan circuit board, dark navy backdrop"):
+def _shot(source="image_gen", prompt="a cyan circuit board, dark navy backdrop"):
     return Shot(
         idx=0,
         duration_s=4.0,

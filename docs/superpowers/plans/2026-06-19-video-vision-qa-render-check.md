@@ -159,7 +159,7 @@ from services.config.site_config import SiteConfig
 from services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 
 
-def _shot(source="sdxl", prompt="a cyan circuit board, dark navy backdrop"):
+def _shot(source="image_gen", prompt="a cyan circuit board, dark navy backdrop"):
     return Shot(idx=0, duration_s=4.0, intent="opening payoff",
                 source=source, prompt=prompt, narration_offset_s=0.0)
 
@@ -435,7 +435,7 @@ git commit -m "feat(video): per-shot vision-QA frame scorer + qa.video_shot_qual
 **Interfaces:**
 
 - Consumes: `score_shot_frame` / `ShotQAResult` (Task 2), `emit_finding` (`utils.findings`), the 3 settings (Task 1) off `site_config`.
-- Produces: same `ShotListRenderResult`; per-shot behaviour now includes regenerate/fallback. New module-level constant `_REGENERABLE_SOURCES = {"sdxl", "sdxl_kenburns", "wan21"}`. New helpers `_build_qa_config(site_config) -> _QAConfig`, `_render_shot_with_qa(...)`. `_log_shot_audit` gains optional `qa_score`/`qa_outcome` kwargs.
+- Produces: same `ShotListRenderResult`; per-shot behaviour now includes regenerate/fallback. New module-level constant `_REGENERABLE_SOURCES = {"image_gen", "image_kenburns", "wan21"}`. New helpers `_build_qa_config(site_config) -> _QAConfig`, `_render_shot_with_qa(...)`. `_log_shot_audit` gains optional `qa_score`/`qa_outcome` kwargs.
 
 - [ ] **Step 1: Write the failing state-machine tests**
 
@@ -445,8 +445,8 @@ Append a `TestRenderCheckLoop` class to `test_shot_list_renderer.py`. These patc
 class TestRenderCheckLoop:
     """Per-shot vision-QA verify-and-repair loop (video-quality Piece 2)."""
 
-    def _sdxl_list(self, n=1):
-        shots = [Shot(idx=i, duration_s=3.0, intent=f"beat {i}", source="sdxl",
+    def _image_gen_list(self, n=1):
+        shots = [Shot(idx=i, duration_s=3.0, intent=f"beat {i}", source="image_gen",
                       prompt=f"a cyan abstract circuit {i}", narration_offset_s=3.0 * i)
                  for i in range(n)]
         return _build_shot_list(shots)
@@ -458,7 +458,7 @@ class TestRenderCheckLoop:
         cfg.update(over)
         return SiteConfig(initial_config=cfg)
 
-    def _sdxl_factory(self):
+    def _image_gen_factory(self):
         resp = MagicMock(status_code=200, headers={"content-type": "image/png"},
                          content=b"png")
         client = AsyncMock()
@@ -488,10 +488,10 @@ class TestRenderCheckLoop:
              patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
             result = await render_shot_list(
-                post_id="p", shot_list=self._sdxl_list(1),
+                post_id="p", shot_list=self._image_gen_list(1),
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
-                sdxl_url="http://sdxl:9836", site_config=self._qa_site_config(),
-                http_client_factory=self._sdxl_factory())
+                image_gen_url="http://image-gen-server:9836", site_config=self._qa_site_config(),
+                http_client_factory=self._image_gen_factory())
         assert result.success is True
         assert scorer.await_count == 1  # scored once, accepted
 
@@ -502,9 +502,9 @@ class TestRenderCheckLoop:
         import services.video_renderers.shot_list_renderer as mod
         from services.video_renderers.shot_vision_qa import ShotQAResult
         # Two shots: shot 0 passes (gives a prior clip), shot 1 always fails.
-        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0),
-                 Shot(idx=1, duration_s=3.0, intent="beat", source="sdxl",
+                 Shot(idx=1, duration_s=3.0, intent="beat", source="image_gen",
                       prompt="teal mesh", narration_offset_s=3.0)]
         shot_list = _build_shot_list(shots)
         scorer = AsyncMock(side_effect=[ShotQAResult(90.0), ShotQAResult(20.0),
@@ -517,8 +517,8 @@ class TestRenderCheckLoop:
             result = await render_shot_list(
                 post_id="p", shot_list=shot_list,
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
-                sdxl_url="http://sdxl:9836", site_config=self._qa_site_config(),
-                http_client_factory=self._sdxl_factory())
+                image_gen_url="http://image-gen-server:9836", site_config=self._qa_site_config(),
+                http_client_factory=self._image_gen_factory())
         assert result.success is True
         # shot 1: 1 initial + 2 regens = 3 scores; shot 0: 1 score => 4 total.
         assert scorer.await_count == 4
@@ -533,10 +533,10 @@ class TestRenderCheckLoop:
              patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
             result = await render_shot_list(
-                post_id="p", shot_list=self._sdxl_list(1),
+                post_id="p", shot_list=self._image_gen_list(1),
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
-                sdxl_url="http://sdxl:9836", site_config=None,
-                http_client_factory=self._sdxl_factory())
+                image_gen_url="http://image-gen-server:9836", site_config=None,
+                http_client_factory=self._image_gen_factory())
         assert result.success is True
         scorer.assert_not_awaited()
 
@@ -545,7 +545,7 @@ class TestRenderCheckLoop:
         """Pexels is deterministic — a low score falls back without re-fetching."""
         import services.video_renderers.shot_list_renderer as mod
         from services.video_renderers.shot_vision_qa import ShotQAResult
-        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0),
                  Shot(idx=1, duration_s=3.0, intent="person", source="pexels",
                       query="developer at desk", narration_offset_s=3.0)]
@@ -559,11 +559,11 @@ class TestRenderCheckLoop:
             await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
-                sdxl_url="http://sdxl:9836", site_config=self._qa_site_config(),
-                http_client_factory=self._sdxl_factory())
+                image_gen_url="http://image-gen-server:9836", site_config=self._qa_site_config(),
+                http_client_factory=self._image_gen_factory())
         # pexels shot scored once (10 < 60) but NOT re-fetched: 1 pexels call total.
         assert pexels.await_count == 1
-        assert scorer.await_count == 2  # sdxl(1) + pexels(1), no regen
+        assert scorer.await_count == 2  # image_gen(1) + pexels(1), no regen
 ```
 
 - [ ] **Step 2: Run them to confirm they fail**
@@ -583,7 +583,7 @@ from dataclasses import dataclass
 from services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_frame
 from utils.findings import emit_finding
 
-_REGENERABLE_SOURCES = frozenset({"sdxl", "sdxl_kenburns", "wan21"})
+_REGENERABLE_SOURCES = frozenset({"image_gen", "image_kenburns", "wan21"})
 ```
 
 (b) Add the QA config + builder:
@@ -733,7 +733,7 @@ async def _render_shot_with_qa(
 ```python
     qa = _build_qa_config(site_config)
     render_kwargs = dict(
-        work_dir=work_dir, sdxl_url=sdxl_url, site_config=site_config,
+        work_dir=work_dir, image_gen_url=image_gen_url, site_config=site_config,
         http_client_factory=http_client_factory, pexels_key=pexels_key,
         orientation=orientation,
     )
@@ -787,9 +787,9 @@ git commit -m "feat(video): per-shot vision-QA verify-and-repair loop in render_
     async def test_fallback_finding_shape_is_dashboard_ready(self, tmp_path):
         import services.video_renderers.shot_list_renderer as mod
         from services.video_renderers.shot_vision_qa import ShotQAResult
-        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="sdxl",
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0),
-                 Shot(idx=1, duration_s=3.0, intent="beat", source="sdxl",
+                 Shot(idx=1, duration_s=3.0, intent="beat", source="image_gen",
                       prompt="teal mesh", narration_offset_s=3.0)]
         scorer = AsyncMock(side_effect=[ShotQAResult(90.0)] + [ShotQAResult(15.0)] * 3)
         captured = []
@@ -800,8 +800,8 @@ git commit -m "feat(video): per-shot vision-QA verify-and-repair loop in render_
             await render_shot_list(
                 post_id="post-xyz", shot_list=_build_shot_list(shots),
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
-                sdxl_url="http://sdxl:9836", site_config=self._qa_site_config(),
-                http_client_factory=self._sdxl_factory())
+                image_gen_url="http://image-gen-server:9836", site_config=self._qa_site_config(),
+                http_client_factory=self._image_gen_factory())
         f = next(f for f in captured if f["kind"] == "shot_quality_fallback")
         assert f["source"] == "shot_list_renderer"
         assert f["severity"] == "warn"
@@ -880,7 +880,7 @@ git commit -m "feat(grafana): per-source shot vision-QA outcome panel"
 **Deliberate scope cuts (documented, not gaps):**
 
 - **Regenerate = re-render (re-roll), not LLM-prompt-revision.** Per `feedback_calculated_vs_generated` (prefer deterministic) + `feedback_always_keep_ml_in_mind` — re-roll is the deterministic V1; a critic-revised prompt is the noted ML successor.
-- **Fallback terminal = holdover (no stock-query intermediate).** Holdover already guarantees "never ship a bad shot" + termination; deriving a stock query from a stylized SDXL prompt is unreliable. Stock-intermediate is a documented follow-up.
+- **Fallback terminal = holdover (no stock-query intermediate).** Holdover already guarantees "never ship a bad shot" + termination; deriving a stock query from a stylized image-gen prompt is unreliable. Stock-intermediate is a documented follow-up.
 - **No `gpu.lock` around the vision call** — matches the existing `_check_image_relevance` (Ollama serialises internally). Note as a refinement if GPU contention shows on the Hardware board.
 
 **Type consistency:** `ShotQAResult.score: float | None` is the single "couldn't score" signal threaded everywhere; `score_shot_frame` is the one name used in both the scorer module and the renderer import; `_render_shot_with_qa` returns the `(result, qa_score, qa_outcome)` triple consumed verbatim by the loop and `_log_shot_audit`.

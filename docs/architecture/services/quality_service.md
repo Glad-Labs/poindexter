@@ -23,7 +23,7 @@ Three evaluation modes:
 
 - **`PATTERN_BASED`** (default) — fast, deterministic. Heuristics
   delegated to `services.quality_scorers` (per-dimension functions),
-  plus in-service artifact detection (photo metadata, leaked SDXL
+  plus in-service artifact detection (photo metadata, leaked image-gen prompt
   prompts, raw HTML), LLM pattern detection (cliché openers,
   buzzwords, filler phrases, generic transitions, repetitive starters,
   listicle titles, hedging, exclamation spam, formulaic structure),
@@ -94,7 +94,7 @@ the full list. The most-touched ones:
   clarity/readability/relevance falls below this the overall is capped
   at that value).
 - `qa_artifact_penalty_per` (default `5.0`) — points subtracted per
-  artifact category found (photo metadata, SDXL leak, etc.).
+  artifact category found (photo metadata, image-gen prompt leak, etc.).
 - `qa_artifact_penalty_max` (default `20.0`) — total artifact-penalty cap.
 - `qa_fk_target_min` / `qa_fk_target_max` (defaults `8.0` / `12.0`) —
   Flesch-Kincaid grade-level acceptance band.

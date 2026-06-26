@@ -1,8 +1,8 @@
 """Unit tests for ``services/image_providers/flux_schnell.py``.
 
-GitHub issue #123 — A/B FLUX.1-schnell against SDXL Lightning. The
+GitHub issue #123 — A/B FLUX.1-schnell against Stable Diffusion XL Lightning. The
 provider speaks to a separate FLUX inference server (default port 9838)
-and mirrors the SDXL sidecar's response shapes (raw image bytes OR
+and mirrors the image-gen sidecar's response shapes (raw image bytes OR
 JSON with ``image_path``). Tests mock ``httpx.AsyncClient`` so we
 never touch a real server.
 
@@ -26,7 +26,7 @@ from services.image_providers.flux_schnell import (
 )
 
 # ---------------------------------------------------------------------------
-# Helpers — mirror the SDXL test fixtures so failure modes match.
+# Helpers — mirror the image-gen test fixtures so failure modes match.
 # ---------------------------------------------------------------------------
 
 

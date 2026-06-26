@@ -138,3 +138,70 @@ class TestShowAndPause:
         assert out["post_id"] == "p1"
         assert out["notify"] == {"sent": False, "reason": "skipped"}
         assert "UPDATE posts" in executed_sql(conn)
+
+
+# ---------------------------------------------------------------------------
+# _record_approve_brain_signal (#149)
+# ---------------------------------------------------------------------------
+
+
+class TestRecordApproveBrainSignalPublish:
+    async def test_entity_uses_title_when_present(self):
+        conn = FakeConn()
+        pool = FakePool(conn)
+        await svc._record_approve_brain_signal(
+            pool=pool, post_id="p1", gate_name="final_publish_approval",
+            title="AI Trends 2026", feedback="looks great, ship it",
+        )
+        brain_calls = [(s, a) for (s, a) in conn.executed if "brain_knowledge" in s]
+        assert brain_calls, "expected a brain_knowledge INSERT"
+        entity = brain_calls[0][1][0]
+        assert entity.startswith("post:")
+        assert "AI Trends 2026" in entity
+
+    async def test_entity_falls_back_to_gate_when_no_title(self):
+        conn = FakeConn()
+        pool = FakePool(conn)
+        await svc._record_approve_brain_signal(
+            pool=pool, post_id="p1", gate_name="g",
+            title=None, feedback="ok",
+        )
+        brain_calls = [(s, a) for (s, a) in conn.executed if "brain_knowledge" in s]
+        entity = brain_calls[0][1][0]
+        assert entity == "gate:g"
+
+    async def test_attribute_and_confidence_are_publish_specific(self):
+        conn = FakeConn()
+        pool = FakePool(conn)
+        await svc._record_approve_brain_signal(
+            pool=pool, post_id="p1", gate_name="g",
+            title="T", feedback="note",
+        )
+        brain_calls = [(s, a) for (s, a) in conn.executed if "brain_knowledge" in s]
+        args = brain_calls[0][1]
+        assert args[1] == "approved_for_publish_by_operator"
+        assert args[3] == 0.6  # publish gate confidence is lower than mid-pipeline
+
+    async def test_pool_error_is_swallowed(self):
+        class _ErrorPool:
+            async def execute(self, sql: str, *args: object) -> None:
+                raise RuntimeError("down")
+
+        await svc._record_approve_brain_signal(
+            pool=_ErrorPool(), post_id="p1", gate_name="g",
+            title=None, feedback="ok",
+        )
+
+    async def test_approve_publish_with_feedback_fires_brain_signal(self):
+        row = {"id": "p1", "status": "scheduled", "awaiting_gate": "final_publish_approval"}
+        conn = FakeConn(fetchrow_result=row)
+        pool = FakePool(conn)
+        await svc.approve_publish(post_id="p1", feedback="ship it", site_config=None, pool=pool)
+        assert "brain_knowledge" in executed_sql(conn)
+
+    async def test_approve_publish_without_feedback_skips_brain_signal(self):
+        row = {"id": "p1", "status": "scheduled", "awaiting_gate": "final_publish_approval"}
+        conn = FakeConn(fetchrow_result=row)
+        pool = FakePool(conn)
+        await svc.approve_publish(post_id="p1", feedback=None, site_config=None, pool=pool)
+        assert "brain_knowledge" not in executed_sql(conn)

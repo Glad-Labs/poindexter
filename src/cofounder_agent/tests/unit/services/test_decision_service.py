@@ -35,7 +35,7 @@ class TestLogDecision:
             decision_type="image_source",
             decision_point="image_decision_agent",
             context={"section": "Schema"},
-            decision={"source": "sdxl", "style": "blueprint"},
+            decision={"source": "image_gen", "style": "blueprint"},
             task_id="task-1",
             post_id="post-1",
             model_used="qwen3:8b",
@@ -52,7 +52,7 @@ class TestLogDecision:
         assert args[2] == "image_decision_agent"
         # context is JSON-serialized
         assert json.loads(args[3]) == {"section": "Schema"}
-        assert json.loads(args[4]) == {"source": "sdxl", "style": "blueprint"}
+        assert json.loads(args[4]) == {"source": "image_gen", "style": "blueprint"}
         assert args[5] == "task-1"
         assert args[6] == "post-1"
         assert args[7] == "qwen3:8b"

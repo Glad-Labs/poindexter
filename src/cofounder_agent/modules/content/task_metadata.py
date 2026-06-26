@@ -86,7 +86,7 @@ def build_task_metadata(
         # rotation so styles repeated. Persisting it here (the unified builder
         # feeds both finalize paths) restores the dedup. #image-zimage-and-variety.
         "image_style": state.get("image_style", ""),
-        # featured_image_data — SDXL reproducibility blob (model / seed / prompt /
+        # featured_image_data — image-gen reproducibility blob (model / seed / prompt /
         # negative_prompt / dimensions). publish_service reads it from the metadata
         # to populate posts.featured_image_data, which was NULL on every post —
         # an auditability gap (no way to see which style/seed produced an image).

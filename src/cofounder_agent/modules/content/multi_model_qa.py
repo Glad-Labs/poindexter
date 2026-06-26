@@ -85,7 +85,7 @@ SKIP_TYPES_EXCLUDED_FROM_RATIO = (SKIP_TYPE_MASTER_FLAG_OFF, SKIP_TYPE_CONDITION
 
 
 # --- Vision-model image normalization (Glad-Labs/poindexter#563) ------------
-# qwen3-vl (via Ollama) decodes JPEG and PNG but NOT WebP. The SDXL-generated
+# qwen3-vl (via Ollama) decodes JPEG and PNG but NOT WebP. The image-gen-generated
 # inline images are stored as WebP on R2 (r2_upload_service converts PNG/JPEG ->
 # WebP before upload), so the vision rail downloaded a WebP, the model received
 # no decodable image, and _check_image_relevance returned None — which fails the
@@ -2208,7 +2208,7 @@ class MultiModelQA:
                     img_bytes = resp.content
                     if not img_bytes or len(img_bytes) > 8 * 1024 * 1024:
                         continue  # skip empty or oversized (>8MB)
-                    # The vision model can't decode WebP (the SDXL->R2 inline
+                    # The vision model can't decode WebP (the image-gen->R2 inline
                     # image format); convert to JPEG so it actually sees the
                     # image instead of returning an empty/"no image" verdict
                     # (Glad-Labs/poindexter#563).
