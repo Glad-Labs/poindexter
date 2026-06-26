@@ -282,6 +282,48 @@ async def _notify_publish_gate_tripped(
 
 
 # ---------------------------------------------------------------------------
+# Internal helpers
+# ---------------------------------------------------------------------------
+
+
+async def _record_approve_brain_signal(
+    *,
+    pool: Any,
+    post_id: str,
+    gate_name: str,
+    title: str | None,
+    feedback: str,
+) -> None:
+    """Best-effort: write a brain_knowledge signal on non-empty publish-gate approval (#149).
+
+    Symmetric with ``approval_service._record_approve_brain_signal``, but keyed
+    on post title (confidence 0.6 — one step removed from the mid-pipeline gate
+    because the operator can't yet see QA scores). Never raises.
+    """
+    entity = f"post:{(title or '')[:200]}" if title else f"gate:{gate_name}"
+    try:
+        await pool.execute(
+            """
+            INSERT INTO brain_knowledge
+                (entity, attribute, value, confidence, source, created_at)
+            VALUES ($1, $2, $3, $4, $5, NOW())
+            ON CONFLICT DO NOTHING
+            """,
+            entity,
+            "approved_for_publish_by_operator",
+            feedback[:500],
+            0.6,
+            f"posts_approval_service.approve_publish.{gate_name}",
+        )
+    except Exception as exc:  # noqa: BLE001  # silent-ok: best-effort brain signal — pool errors must never affect publish-gate outcome
+        logger.debug(
+            "[posts_approval_service] brain approve-signal write failed "
+            "(post=%s gate=%s): %s",
+            post_id[:8], gate_name, exc,
+        )
+
+
+# ---------------------------------------------------------------------------
 # Approve — operator green-lights the publish
 # ---------------------------------------------------------------------------
 
@@ -366,6 +408,16 @@ async def approve_publish(
     # approve/reject helpers and lets future per-gate logic pick up
     # config without changing every call site.
     _ = site_config
+
+    # Operator approval feedback → brain learning signal (#149).
+    if feedback:
+        await _record_approve_brain_signal(
+            pool=pool,
+            post_id=str(post_id),
+            gate_name=cleared_gate,
+            title=row.get("title"),
+            feedback=feedback,
+        )
 
     return {
         "ok": True,

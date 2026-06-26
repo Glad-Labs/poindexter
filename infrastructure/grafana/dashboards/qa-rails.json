@@ -1469,6 +1469,92 @@
       ],
       "title": "QA Flagged vs Discarded per Hour",
       "type": "timeseries"
+    },
+    {
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 61 },
+      "id": 20,
+      "panels": [],
+      "title": "Operator Rejection Reasons",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Top 10 reasons operators have rejected tasks at a gate in the selected time window. Helps identify recurring quality issues that prompt engineering or the QA rails should address. Powered by audit_log rows where event_type='approval_gate_rejected' (#149).",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "align": "auto",
+            "cellOptions": { "type": "auto" },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Count" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": { "mode": "gradient", "type": "color-background" }
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "blue", "value": null },
+                    { "color": "yellow", "value": 2 },
+                    { "color": "orange", "value": 4 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "Last Seen" },
+            "properties": [
+              { "id": "unit", "value": "dateTimeAsIso" },
+              { "id": "custom.width", "value": 200 }
+            ]
+          }
+        ]
+      },
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 62 },
+      "id": 21,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n    details->>'gate_name' AS \"Gate\",\n    details->>'reason'   AS \"Reason\",\n    COUNT(*)::int        AS \"Count\",\n    MAX(timestamp)       AS \"Last Seen\"\nFROM audit_log\nWHERE event_type = 'approval_gate_rejected'\n  AND details->>'reason' IS NOT NULL\n  AND details->>'reason' != ''\n  AND $__timeFilter(timestamp)\nGROUP BY 1, 2\nORDER BY \"Count\" DESC\nLIMIT 10;",
+          "refId": "A"
+        }
+      ],
+      "title": "Top 10 Rejection Reasons (by count, current window)",
+      "type": "table"
     }
   ]
 }

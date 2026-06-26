@@ -255,3 +255,81 @@ class TestShowAndPause:
         await svc.approve(task_id="t1", pool=pool, site_config=None)
         sql = executed_sql(conn)
         assert "status = 'in_progress'" in sql
+
+
+# ---------------------------------------------------------------------------
+# _record_approve_brain_signal (#149)
+# ---------------------------------------------------------------------------
+
+
+class TestRecordApproveBrainSignal:
+    async def test_entity_uses_topic_when_present(self):
+        conn = FakeConn()
+        pool = FakePool(conn)
+        await svc._record_approve_brain_signal(
+            pool=pool, task_id="t1", gate_name="draft_gate",
+            topic="AI trends 2026", feedback="loved the personal angle",
+        )
+        brain_calls = [(s, a) for (s, a) in conn.executed if "brain_knowledge" in s]
+        assert brain_calls, "expected a brain_knowledge INSERT"
+        entity = brain_calls[0][1][0]
+        assert entity.startswith("topic:")
+        assert "AI trends 2026" in entity
+
+    async def test_entity_falls_back_to_gate_when_no_topic(self):
+        conn = FakeConn()
+        pool = FakePool(conn)
+        await svc._record_approve_brain_signal(
+            pool=pool, task_id="t1", gate_name="draft_gate",
+            topic=None, feedback="ship it",
+        )
+        brain_calls = [(s, a) for (s, a) in conn.executed if "brain_knowledge" in s]
+        entity = brain_calls[0][1][0]
+        assert entity == "gate:draft_gate"
+
+    async def test_feedback_truncated_to_500_chars(self):
+        conn = FakeConn()
+        pool = FakePool(conn)
+        await svc._record_approve_brain_signal(
+            pool=pool, task_id="t1", gate_name="g",
+            topic=None, feedback="x" * 600,
+        )
+        brain_calls = [(s, a) for (s, a) in conn.executed if "brain_knowledge" in s]
+        stored_value = brain_calls[0][1][2]
+        assert len(stored_value) == 500
+
+    async def test_attribute_and_confidence(self):
+        conn = FakeConn()
+        pool = FakePool(conn)
+        await svc._record_approve_brain_signal(
+            pool=pool, task_id="t1", gate_name="g",
+            topic="topic", feedback="note",
+        )
+        brain_calls = [(s, a) for (s, a) in conn.executed if "brain_knowledge" in s]
+        args = brain_calls[0][1]
+        assert args[1] == "approved_by_operator"
+        assert args[3] == 0.7
+
+    async def test_pool_error_is_swallowed(self):
+        class _ErrorPool:
+            async def execute(self, sql: str, *args: object) -> None:
+                raise RuntimeError("db gone")
+
+        await svc._record_approve_brain_signal(
+            pool=_ErrorPool(), task_id="t1", gate_name="g",
+            topic=None, feedback="note",
+        )
+
+    async def test_approve_with_feedback_fires_brain_signal(self):
+        row = {"id": "t1", "status": "in_progress", "awaiting_gate": "g"}
+        conn = FakeConn(fetchrow_result=row)
+        pool = FakePool(conn)
+        await svc.approve(task_id="t1", feedback="great draft", site_config=None, pool=pool)
+        assert "brain_knowledge" in executed_sql(conn)
+
+    async def test_approve_without_feedback_skips_brain_signal(self):
+        row = {"id": "t1", "status": "in_progress", "awaiting_gate": "g"}
+        conn = FakeConn(fetchrow_result=row)
+        pool = FakePool(conn)
+        await svc.approve(task_id="t1", feedback=None, site_config=None, pool=pool)
+        assert "brain_knowledge" not in executed_sql(conn)
