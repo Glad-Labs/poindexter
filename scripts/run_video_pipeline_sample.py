@@ -14,7 +14,7 @@ Environment:
                            pgcrypto decryption).
 
 Why bias to Pexels for the sample run:
-    SDXL's ~30s/scene × ~10 scenes = ~5 min just on visuals. Pexels
+    image-gen's ~30s/scene × ~10 scenes = ~5 min just on visuals. Pexels
     is API-fast (~1s/scene) and produces respectable stock photos
     for hardware / cooling topics. The strategy override is local to
     this script — production picks via app_settings unchanged.
@@ -100,7 +100,7 @@ async def _run_stages(
     ``video_script`` after script_for_video produces it, BEFORE
     scene_visuals runs. The downstream Stages (scene_visuals, tts,
     stitch_long_form) gracefully no-op when long_form has no scenes —
-    no long-form Wan/SDXL/Pexels work runs, no long-form TTS, no
+    no long-form Wan/image-gen/Pexels work runs, no long-form TTS, no
     long-form stitch. Real wall-clock saving: 10 Wan scenes × ~3min
     each = ~30min on a Wan-strategy run.
 
@@ -203,7 +203,7 @@ class _FakeDatabaseService:
 
 # NOTE (Glad-Labs/poindexter#160): the previous _pre_unload_wan() helper
 # was removed once the cooperative sidecar-unload protocol landed in
-# ``services.gpu_scheduler``. Pipeline stages that compete with Wan/SDXL
+# ``services.gpu_scheduler``. Pipeline stages that compete with Wan/image-gen
 # for VRAM (script_for_video, tts_for_video, generate_content,
 # featured_image, replace_inline_images) now request the appropriate
 # sidecars to release VRAM via gpu.lock(), driven by
@@ -249,10 +249,10 @@ async def main(
                 # itself; rewrite to localhost so the bare-host process
                 # can reach Ollama.
                 "ollama_base_url": "http://localhost:11434",
-                # SDXL / Wan / video sidecars are also addressed via
+                # image-gen / Wan / video sidecars are also addressed via
                 # host.docker.internal in production. Map all of them
                 # to localhost for the host runner.
-                "sdxl_server_url": "http://localhost:9836",
+                "image_gen_server_url": "http://localhost:9836",
                 "plugin.video_provider.wan2.1-1.3b.server_url": "http://localhost:9840",
             },
         )
@@ -306,7 +306,7 @@ if __name__ == "__main__":
     if len(sys.argv) < 2:
         print(
             "usage: run_video_pipeline_sample.py <post_slug> "
-            "[strategy=pexels|sdxl|wan|mixed|reuse_first] "
+            "[strategy=pexels|image_gen|wan|mixed|reuse_first] "
             "[--short-only]"
         )
         sys.exit(1)

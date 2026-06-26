@@ -9,13 +9,13 @@ Matt's directive: everything through the dispatcher so the LLM provider can
 be swapped without rewrites) using OpenAI-style image content blocks, which
 the active litellm provider forwards to the local qwen3-vl Ollama model. The
 raw model output is post-processed by ``alt_text.sanitize_alt_text`` so every
-existing guard (token strip, mid-word truncation, SDXL-prompt-shape) still
+existing guard (token strip, mid-word truncation, image-gen-prompt-shape) still
 applies. Fail-soft: returns ``None`` on any error so callers keep the prior
 alt — a backfill must never blank or degrade a post.
 
 Why vision (not text cleanup): the legacy alt text was derived from the
 writer's ``[IMAGE-N: <description>]`` placeholder, i.e. the generation
-*intent*. SDXL renders abstract editorial art (negative prompt: "no people,
+*intent*. image-gen renders abstract editorial art (negative prompt: "no people,
 no faces"), so the stored alt frequently describes people/scenes the image
 does not contain. Only reading the actual pixels makes the alt accurate.
 """
@@ -146,7 +146,7 @@ async def caption_image(
         }
     ]
 
-    # GPU coordination — qwen3-vl is ~19.6 GB; serialize against SDXL/writer.
+    # GPU coordination — qwen3-vl is ~19.6 GB; serialize against image-gen/writer.
     from services.gpu_scheduler import gpu
 
     try:

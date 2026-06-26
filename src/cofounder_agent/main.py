@@ -260,7 +260,7 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
         # across 58 files; each ``async with httpx.AsyncClient(...)`` paid
         # the TCP + TLS handshake for a single request. A single shared
         # client keeps the underlying connection pool warm across the
-        # whole pipeline run (Ollama / SDXL / Pexels / Discord / Vercel).
+        # whole pipeline run (Ollama / image-gen / Pexels / Discord / Vercel).
         # See ``services/http_client.py`` for the wiring contract.
         try:
             import httpx as _httpx

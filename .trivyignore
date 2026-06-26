@@ -6,7 +6,7 @@
 # DS-0002 ("Specify at least 1 USER command in Dockerfile with non-root
 # user") used to be suppressed for scripts/Dockerfile.voice-agent and
 # scripts/Dockerfile.backup — both now run non-root after #488. The
-# remaining 5 Dockerfiles (voice-bot, sdxl, wan, gpu-exporter,
+# remaining 5 Dockerfiles (voice-bot, image-gen, wan, gpu-exporter,
 # auto-embed) already had USER directives. No suppression is currently
 # needed.
 #

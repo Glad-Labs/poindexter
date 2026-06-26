@@ -10,7 +10,7 @@ Shows Glad Labs pipeline spending and budget consumption by combining two API en
 - `GET /api/metrics/costs/budget` — daily/monthly spend vs. configured limits
 - `GET /api/metrics/operational` — task counts and throughput metrics that indirectly reflect cost
 
-Costs are primarily electricity for local GPU inference (Ollama + SDXL on RTX 5090).
+Costs are primarily electricity for local GPU inference (Ollama + image-gen on RTX 5090).
 Per-token "cost" is calculated from GPU power draw × duration × `electricity_rate_kwh`
 (currently $0.2552/kWh, Rhode Island residential).
 

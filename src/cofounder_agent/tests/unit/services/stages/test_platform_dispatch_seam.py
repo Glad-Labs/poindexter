@@ -46,18 +46,18 @@ async def _noop_gpu_lock(*_args: Any, **_kwargs: Any):  # type: ignore[misc]
 
 
 # ---------------------------------------------------------------------------
-# source_featured_image._build_sdxl_prompt
+# source_featured_image._build_image_gen_prompt
 # ---------------------------------------------------------------------------
 
 
-class TestBuildSdxlPromptDispatch:
-    """Pins the platform-vs-substrate dispatch routing in _build_sdxl_prompt."""
+class TestBuildImageGenPromptDispatch:
+    """Pins the platform-vs-substrate dispatch routing in _build_image_gen_prompt."""
 
     _PROMPT_TEXT = "a neon-lit cyberpunk skyline at dusk, editorial magazine art"
 
     @pytest.mark.asyncio
     async def test_uses_platform_dispatch_when_set(self):
-        from modules.content.stages.source_featured_image import _build_sdxl_prompt
+        from modules.content.stages.source_featured_image import _build_image_gen_prompt
 
         result_obj = MagicMock(text=self._PROMPT_TEXT)
         platform = FakePlatform(dispatch_response=result_obj)
@@ -70,7 +70,7 @@ class TestBuildSdxlPromptDispatch:
             "modules.content.stages.source_featured_image._load_recent_published_styles",
             AsyncMock(return_value=[]),
         ):
-            text = await _build_sdxl_prompt(
+            text = await _build_image_gen_prompt(
                 "AI and the future city",
                 MagicMock(),
                 style_tracker,
@@ -84,9 +84,9 @@ class TestBuildSdxlPromptDispatch:
     @pytest.mark.asyncio
     async def test_raises_when_no_platform(self):
         """Wave 3f (#667): platform=None raises RuntimeError (caught by caller's
-        except-block), so _build_sdxl_prompt returns the deterministic fallback
+        except-block), so _build_image_gen_prompt returns the deterministic fallback
         string instead of calling dispatch_complete."""
-        from modules.content.stages.source_featured_image import _build_sdxl_prompt
+        from modules.content.stages.source_featured_image import _build_image_gen_prompt
 
         style_tracker = MagicMock(recent=MagicMock(return_value=[]))
 
@@ -97,7 +97,7 @@ class TestBuildSdxlPromptDispatch:
             "modules.content.stages.source_featured_image._load_recent_published_styles",
             AsyncMock(return_value=[]),
         ):
-            text = await _build_sdxl_prompt(
+            text = await _build_image_gen_prompt(
                 "mountains at dawn",
                 MagicMock(),
                 style_tracker,
@@ -113,7 +113,7 @@ class TestBuildSdxlPromptDispatch:
     @pytest.mark.asyncio
     async def test_no_pool_returns_fallback_without_dispatch(self):
         """No DB pool → deterministic style+tags fallback; neither path dispatches."""
-        from modules.content.stages.source_featured_image import _build_sdxl_prompt
+        from modules.content.stages.source_featured_image import _build_image_gen_prompt
 
         platform = FakePlatform()
         style_tracker = MagicMock(recent=MagicMock(return_value=[]))
@@ -125,7 +125,7 @@ class TestBuildSdxlPromptDispatch:
             "modules.content.stages.source_featured_image._load_recent_published_styles",
             AsyncMock(return_value=[]),
         ):
-            text = await _build_sdxl_prompt(
+            text = await _build_image_gen_prompt(
                 "topic",
                 MagicMock(),
                 style_tracker,
@@ -138,14 +138,14 @@ class TestBuildSdxlPromptDispatch:
 
 
 # ---------------------------------------------------------------------------
-# replace_inline_images._try_sdxl
+# replace_inline_images._try_image_gen
 # ---------------------------------------------------------------------------
 
 
-class TestTrySdxlDispatch:
-    """Pins the platform-vs-substrate dispatch routing in _try_sdxl.
+class TestTryImageGenDispatch:
+    """Pins the platform-vs-substrate dispatch routing in _try_image_gen.
 
-    ``_try_sdxl`` calls GPU-scheduler and the SDXL HTTP server after the
+    ``_try_image_gen`` calls GPU-scheduler and the image-gen HTTP server after the
     prompt is built.  The tests end early by returning a sub-20-char
     dispatch response, which triggers the ``len(sdxl_prompt) <= 20``
     guard and returns ``None`` before any HTTP call is made.  That's
@@ -154,20 +154,20 @@ class TestTrySdxlDispatch:
 
     @pytest.mark.asyncio
     async def test_uses_platform_dispatch_when_set(self):
-        from modules.content.stages.replace_inline_images import _try_sdxl
+        from modules.content.stages.replace_inline_images import _try_image_gen
 
-        # Short prompt → function returns None after dispatch; no SDXL HTTP call.
+        # Short prompt → function returns None after dispatch; no image-gen HTTP call.
         result_obj = MagicMock(text="short")
         platform = FakePlatform(dispatch_response=result_obj)
         gpu_mock = MagicMock(lock=_noop_gpu_lock)
 
-        # gpu is a local import inside _try_sdxl — create=True is required.
+        # gpu is a local import inside _try_image_gen — create=True is required.
         with patch(
             "modules.content.stages.replace_inline_images.gpu",
             gpu_mock,
             create=True,
         ):
-            out = await _try_sdxl(
+            out = await _try_image_gen(
                 "1",
                 "the query",
                 "the topic",
@@ -181,9 +181,9 @@ class TestTrySdxlDispatch:
 
     @pytest.mark.asyncio
     async def test_raises_when_no_platform(self):
-        """Wave 3f (#667): platform=None raises RuntimeError; _try_sdxl catches
+        """Wave 3f (#667): platform=None raises RuntimeError; _try_image_gen catches
         it and returns None (non-critical path — image is skipped, not fatal)."""
-        from modules.content.stages.replace_inline_images import _try_sdxl
+        from modules.content.stages.replace_inline_images import _try_image_gen
 
         gpu_mock = MagicMock(lock=_noop_gpu_lock)
 
@@ -192,7 +192,7 @@ class TestTrySdxlDispatch:
             gpu_mock,
             create=True,
         ):
-            out = await _try_sdxl(
+            out = await _try_image_gen(
                 "2",
                 "search terms",
                 "article topic",
@@ -201,18 +201,18 @@ class TestTrySdxlDispatch:
                 platform=None,
             )
 
-        # RuntimeError is caught inside _try_sdxl (non-critical inline image)
+        # RuntimeError is caught inside _try_image_gen (non-critical inline image)
         # and the function returns None.
         assert out is None
 
     @pytest.mark.asyncio
     async def test_no_pool_returns_none_without_dispatch(self):
         """No DB pool → returns None immediately; no dispatch on either path."""
-        from modules.content.stages.replace_inline_images import _try_sdxl
+        from modules.content.stages.replace_inline_images import _try_image_gen
 
         platform = FakePlatform()
 
-        out = await _try_sdxl(
+        out = await _try_image_gen(
             "3",
             "query",
             "topic",

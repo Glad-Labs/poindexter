@@ -252,11 +252,11 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | File | Summary |
 | --- | --- |
 | `__init__.py` | services.image_providers — ImageProvider plugin implementations. |
-| `_sdxl_models.py` | Shared SDXL model registry + torch availability probes. |
-| `ai_generation.py` | AIGenerationProvider — LLM-crafted prompt → SDXL (or other generator). |
+| `_image_models.py` | Shared image model registry (image-gen + future models) + torch availability probes. |
+| `ai_generation.py` | AIGenerationProvider — LLM-crafted prompt → image-gen (or other generator). |
 | `flux_schnell.py` | FluxSchnellProvider — text-to-image via FLUX.1-schnell inference server. |
+| `image_gen.py` | ImageGenProvider — text-to-image via the image-gen sidecar (or in-process diffusers). |
 | `pexels.py` | PexelsProvider — search the free Pexels stock-photo API. |
-| `sdxl.py` | SdxlProvider — text-to-image via the SDXL sidecar (or in-process diffusers). |
 
 ## services/integrations/
 
@@ -623,7 +623,7 @@ Referenced in older docs or git history but no longer on disk under these trees 
 - **`experiment_service.py`** — A/B harness. Deleted 2026-05-10 (Glad-Labs/poindexter#202). Replaced by `langfuse_experiments.py` (Langfuse Datasets/Traces/Scores).
 - **`plugins/stage_runner.py`** — Legacy chunked StageRunner. Deleted 2026-05-16 (Lane C Stage 4). `content_router_service.py` is now a thin TemplateRunner dispatcher.
 - **`admin_database.py` / `content_database.py` / `embeddings_database.py` / `tasks_database.py` / `users_database.py` / `writing_style_database.py`** — The six modular DB files. Consolidated into `database_service.py` (+ `database_mixin.py`); callers reach typed CRUD through the single coordinator.
-- **`image_generation_config.py` / `image_generation_runner.py` / `image_prompt_builder.py` / `image_selection_service.py`** — Old image stack. Restructured into the `services/image_providers/` package (sdxl / pexels / flux_schnell / ai_generation) + `image_service.py` / `image_captioner.py` / `image_decision_agent.py` + content image atoms/stages under `modules/content/`.
+- **`image_generation_config.py` / `image_generation_runner.py` / `image_prompt_builder.py` / `image_selection_service.py`** — Old image stack. Restructured into the `services/image_providers/` package (image_gen / pexels / flux_schnell / ai_generation) + `image_service.py` / `image_captioner.py` / `image_decision_agent.py` + content image atoms/stages under `modules/content/`.
 - **`notifications_service.py`, `paging_helpers.py`, `html_sanitizer.py`, `slugify_service.py`, `quality_checker.py`, `rag_embeddings_service.py`, `vector_similarity_search.py`, `media_script_generator.py`, `transcription_service.py`, `handle_task_status_change.py`, `stateless_decision_handler.py`, `idle_worker.py`** — Removed in the 2026-05/06 cleanup waves (no direct successor — folded into callers or made obsolete by the atom pipeline). `idle_worker.py` retired in #1171.
 
 ---

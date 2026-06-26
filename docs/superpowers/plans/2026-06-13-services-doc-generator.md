@@ -603,7 +603,7 @@ _DELETED_SERVICES: list[dict[str, str]] = [
         ),
         "note": (
             "Old image stack. Restructured into the `services/image_providers/` "
-            "package (sdxl / pexels / flux_schnell / ai_generation) + "
+            "package (image_gen / pexels / flux_schnell / ai_generation) + "
             "`image_service.py` / `image_captioner.py` / `image_decision_agent.py` "
             "+ content image atoms/stages under `modules/content/`."
         ),

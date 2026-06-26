@@ -421,7 +421,7 @@ class TestRunnerPartitionsServicesFromState:
 
         The featured-image stage + the inline-image atom both reach the
         capability kernel through ``context.get("platform")`` to build
-        LLM-crafted SDXL prompts (``platform.dispatch.complete``). This
+        LLM-crafted image-gen prompts (``platform.dispatch.complete``). This
         pins the runner guarantee that a platform handle seeded into the
         initial state survives the state/services partition and lands in
         the node's merged context — i.e. the image stages DO receive it,

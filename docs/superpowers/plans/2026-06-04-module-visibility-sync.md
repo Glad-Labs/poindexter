@@ -666,6 +666,6 @@ Expected: green (catches any caller of `get_modules`/`get_core_samples`/route re
 
 ## Notes for the implementer
 
-- **Why the scan is light enough for the CLI:** `get_modules()` now calls `_scan_intree_modules()` directly (not the heavy `get_core_samples()` with its torch/SDXL provider imports). The scan only imports `modules/<name>/<name>_module.py` + `modules/<name>/jobs`, all lightweight. The CLI's new iteration loop therefore does not slow `poindexter --help`. Verify with Step 9 of Task 3.
+- **Why the scan is light enough for the CLI:** `get_modules()` now calls `_scan_intree_modules()` directly (not the heavy `get_core_samples()` with its torch/image-gen provider imports). The scan only imports `modules/<name>/<name>_module.py` + `modules/<name>/jobs`, all lightweight. The CLI's new iteration loop therefore does not slow `poindexter --help`. Verify with Step 9 of Task 3.
 - **`feedback_no_silent_defaults` is honored two ways:** in-tree present-but-broken raises `ModuleDiscoveryError`; `register_cli`/`register_routes`/`register_probes` on a non-None, wrong-shaped host raise `RuntimeError`. Only _expected absence_ (a module directory not on disk) is silent — and even that is logged.
 - **Do not push during this work.** A push to `origin` triggers the live mirror sync. All verification is local (Task 6 uses a throwaway branch). The first real sync should be a deliberate, observed run after this branch merges.

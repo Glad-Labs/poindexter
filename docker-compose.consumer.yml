@@ -10,7 +10,7 @@
 #   DB backups, cAdvisor, postgres_exporter
 #
 # Optional add-ons (via --profile):
-#   sdxl   — SDXL image generation server (GPU-resident)
+#   image-gen — image generation server (GPU-resident)
 #            without it the pipeline sources images from Pexels only
 #
 # Excluded vs docker-compose.local.yml (the full operator stack):
@@ -28,9 +28,9 @@
 # Start:
 #   docker compose -f docker-compose.consumer.yml up -d
 #
-# Start with SDXL image generation (needs GPU; gpu.lock arbitrates SDXL
+# Start with image generation (needs GPU; gpu.lock arbitrates image-gen
 # vs Ollama VRAM so they don't oversubscribe concurrently):
-#   docker compose -f docker-compose.consumer.yml --profile sdxl up -d
+#   docker compose -f docker-compose.consumer.yml --profile image-gen up -d
 #
 # Prerequisites:
 #   poindexter setup   — writes ~/.poindexter/bootstrap.toml + .env
@@ -668,18 +668,18 @@ services:
         condition: service_healthy
 
   # ===========================================
-  # SDXL Image Server — optional (--profile sdxl)
+  # image-gen Server — optional (--profile image-gen)
   # ===========================================
   # Without this the pipeline sources images from Pexels only.
   # With it: AI-generated images via Z-Image-Turbo (Apache-2.0).
-  # gpu.lock arbitrates SDXL vs Ollama VRAM so they never oversubscribe.
-  # Needs: docker compose -f docker-compose.consumer.yml --profile sdxl up -d
-  sdxl-server:
-    profiles: ["sdxl"]
+  # gpu.lock arbitrates image-gen vs Ollama VRAM so they never oversubscribe.
+  # Needs: docker compose -f docker-compose.consumer.yml --profile image-gen up -d
+  image-gen-server:
+    profiles: ["image-gen"]
     build:
       context: ./scripts
-      dockerfile: Dockerfile.sdxl
-    container_name: poindexter-sdxl-server
+      dockerfile: Dockerfile.image-gen
+    container_name: poindexter-image-gen-server
     restart: unless-stopped
     ports:
       - "9836:9836"

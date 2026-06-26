@@ -112,7 +112,7 @@ INTERNAL_COMPOSE_URL_KEYS: tuple[str, ...] = (
     "internal_api_base_url",
     "api_base_url",
     "openclaw_gateway_url",
-    "sdxl_server_url",
+    "image_gen_server_url",
 )
 
 # Suffix that triggers automatic probing for any app_settings key. Matches

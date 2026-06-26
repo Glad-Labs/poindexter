@@ -9,7 +9,7 @@
 
 ## 1. Problem
 
-Phase 1 of the media pipeline renders 16:9 long + 9:16 short video from an LLM director's shot list (slideshow SDXL stills + Pexels stock), with narration, ambient bed, captions, QA gates, and YouTube distribution. It works, but the quality ceiling is capped by three gaps:
+Phase 1 of the media pipeline renders 16:9 long + 9:16 short video from an LLM director's shot list (slideshow image-gen stills + Pexels stock), with narration, ambient bed, captions, QA gates, and YouTube distribution. It works, but the quality ceiling is capped by three gaps:
 
 1. **The director is generate-and-pray.** [`generate_video_shot_list.py`](../../../src/cofounder_agent/modules/content/stages/generate_video_shot_list.py) emits a `visual_prompt`/stock-query per beat on a _standard-tier_ local model, and the result ships with no check that the picture matches the beat, looks good, or is on-brand. `media_qa` only validates mechanical things (human-detection, caption presence, A/V sync) — never "is this the _right_ visual?"
 2. **No motion.** Every shot is a still (Ken Burns) or stock clip. There's no way to spend extra effort on a few high-impact beats.
@@ -17,7 +17,7 @@ Phase 1 of the media pipeline renders 16:9 long + 9:16 short video from an LLM d
 
 ## 2. Decisions (from the 2026-06-19 brainstorm)
 
-- **Visual ceiling = Hybrid.** Polished motion-graphics base (stylized SDXL/Z-Image stills + Ken Burns + curated Pexels stock, on-brand palette) with **1–3 generative "hero" shots** per long video for impact. Not full generative video (impractical/uncanny on a single 5090 for 3–8 min explainers); not slideshow-only.
+- **Visual ceiling = Hybrid.** Polished motion-graphics base (stylized image-gen/Z-Image stills + Ken Burns + curated Pexels stock, on-brand palette) with **1–3 generative "hero" shots** per long video for impact. Not full generative video (impractical/uncanny on a single 5090 for 3–8 min explainers); not slideshow-only.
 - **Scene quality = two loops.** A **plan-review** pass (director self-critiques its shot list before render) **and** a **render-check** (per-shot vision-QA scores the rendered frame and regenerates or falls back on a miss). This is the centerpiece — it turns generate-and-pray into a closed loop.
 - **Hero renderer = Wan 2.2 `TI2V-5B`** behind the existing source seam. Verified current latest open Wan (the "Wan 2.7" in SEO blogs does not exist — the official `Wan-Video` GitHub org has only 2.1/2.2). Apache-2.0, in-family bump to the existing `wan-server`, 5B coexists with Ollama without GPU swap-thrash. The 14B variant and LTX-2.3 (native audio+video, custom revenue-capped license) are weight-swaps behind the same seam if 5B underwhelms.
 - **SFX = director callouts only.** SFX fire **only** where the director intentionally places an `sfx_cue` on a beat that earns it — no mechanical whoosh on every transition (rejected as too random). Placed via ffmpeg `adelay` into the existing mix; clips from a curated royalty-free library + Stable Audio Open for stings. Master switch `video_sfx_enabled` defaults **off**, so "no SFX at all" is the out-of-the-box state. One layer covers slideshow, stock, _and_ hero shots.
@@ -66,9 +66,9 @@ for shot in reviewed_shot_list:
 
 ### 3.3 Wan 2.2 hero-shot source atom (Stage 2)
 
-When `shot.source == "generative"`, `resolve_source` routes to the generative renderer instead of SDXL/Pexels; the result still passes through the §3.2 vision-QA gate like any other shot.
+When `shot.source == "generative"`, `resolve_source` routes to the generative renderer instead of image-gen/Pexels; the result still passes through the §3.2 vision-QA gate like any other shot.
 
-- **Renderer:** the existing [`scripts/wan-server.py`](../../../scripts/wan-server.py) container, weights bumped to **`Wan-AI/Wan2.2-TI2V-5B`** (Apache-2.0). Image-to-video: animate the shot's stylized SDXL still (keeps brand consistency) into a short clip.
+- **Renderer:** the existing [`scripts/wan-server.py`](../../../scripts/wan-server.py) container, weights bumped to **`Wan-AI/Wan2.2-TI2V-5B`** (Apache-2.0). Image-to-video: animate the shot's stylized image-gen still (keeps brand consistency) into a short clip.
 - **Budget:** `video_hero_shots_max` (default 3) caps count; each is GPU-scheduled (`gpu.lock`) against Ollama, run async post-publish (the pipeline already does). A hero render failure → fall back to the still (Ken Burns), emit a finding.
 - **Seam:** `wan_server_url` + a `generative_video_model` DB key so the renderer/model is swappable (14B, or LTX-2.3 later) without code changes.
 

@@ -4,7 +4,7 @@ Image Decision Agent — LLM-powered reasoning for image selection.
 Analyzes finished article content and decides:
 - WHERE images should go (which sections)
 - WHAT type of image (abstract, photo, diagram, mood)
-- HOW to source it (SDXL generation vs Pexels stock)
+- HOW to source it (image-gen generation vs Pexels stock)
 - WHAT prompt/query to use
 
 This is the first ML decision point in the pipeline. The pattern
@@ -50,9 +50,9 @@ logger = get_logger(__name__)
 class ImagePlan:
     """A single image decision."""
     section_heading: str
-    source: str  # "sdxl" or "pexels"
+    source: str  # "image_gen" or "pexels"
     style: str  # e.g. "blueprint", "dramatic", "minimal", "photorealistic"
-    prompt: str  # SDXL prompt or Pexels search query
+    prompt: str  # image-gen prompt or Pexels search query
     position: str  # "after_heading" — where to insert
     reasoning: str  # why the agent chose this
 
@@ -220,7 +220,7 @@ async def plan_images(
         if featured:
             result.featured_image = ImagePlan(
                 section_heading="featured",
-                source=featured.get("source", "sdxl"),
+                source=featured.get("source", "image_gen"),
                 style=featured.get("style", "editorial"),
                 prompt=featured.get("prompt", topic),
                 position="hero",
@@ -231,7 +231,7 @@ async def plan_images(
         for img in plan_data.get("inline", [])[:max_images]:
             result.images.append(ImagePlan(
                 section_heading=img.get("section", ""),
-                source=img.get("source", "sdxl"),
+                source=img.get("source", "image_gen"),
                 style=img.get("style", "editorial"),
                 prompt=img.get("prompt", ""),
                 position="after_heading",

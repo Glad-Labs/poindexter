@@ -241,7 +241,7 @@ class TestVideoServiceRecordsAsset:
         podcast_path.write_bytes(b"fake-podcast")
 
         # Stub the image-extraction + image-generation calls so we don't
-        # need an SDXL server. Return a single fake image path.
+        # need an image-gen server. Return a single fake image path.
         fake_img = tmp_path / "img.jpg"
         fake_img.write_bytes(b"img-bytes")
 

@@ -1,14 +1,14 @@
 """
 GPU Scheduler — serializes access to the shared GPU across the stack's own
-model consumers (Ollama LLM inference, SDXL image gen, wan video render), and
+model consumers (Ollama LLM inference, image-gen image gen, wan video render), and
 *optionally* yields to external (non-stack) GPU workloads when sharing the box.
 
 With a single GPU (RTX 5090, 32GB), only one large workload can run at a time.
 This module provides an async lock so that:
-  - Ollama LLM inference, SDXL image generation, and video render don't fight
+  - Ollama LLM inference, image-gen image generation, and video render don't fight
     for VRAM
-  - Before SDXL / video render starts, any loaded Ollama model is unloaded
-  - Before Ollama starts, SDXL pipeline is released (if loaded)
+  - Before image-gen / video render starts, any loaded Ollama model is unloaded
+  - Before Ollama starts, image-gen pipeline is released (if loaded)
   - Small models (embeddings) can coexist and skip the lock
   - If a non-stack app (e.g. a game) shares the GPU, optionally pause (gated;
     see "External-workload detection" below — off by default)
@@ -16,7 +16,7 @@ This module provides an async lock so that:
 Cross-process locking (poindexter#731):
   The in-process ``asyncio.Lock`` only serializes within one Python process.
   When ``poindexter-worker`` and ``poindexter-prefect-worker`` both need the
-  GPU they race — SDXL model-loads evict each other's Ollama models.
+  GPU they race — image-gen model-loads evict each other's Ollama models.
 
   The fix: a PostgreSQL ``pg_advisory_lock`` held on a DEDICATED connection
   (not a pool checkout) acts as the cross-process barrier.  Session-level
@@ -224,7 +224,7 @@ class GPUScheduler:
 
     def __init__(self):
         self._lock = asyncio.Lock()
-        self._current_owner: str | None = None  # "ollama", "sdxl", or "video"
+        self._current_owner: str | None = None  # "ollama", "image_gen", or "video"
         self._current_model: str | None = None
         self._acquired_at: float = 0
         self._gaming_detected: bool = False
@@ -238,12 +238,12 @@ class GPUScheduler:
         self._pg_lock_conn: "asyncpg.Connection | None" = None  # type: ignore[name-defined]  # noqa: UP037, F821
         # Lazily-initialised shared httpx client. Every public-API call
         # used to spin up a fresh ``httpx.AsyncClient(...)`` for one GET
-        # (nvidia-smi exporter, Ollama /api/ps, SDXL /unload) — that's
+        # (nvidia-smi exporter, Ollama /api/ps, image-gen /unload) — that's
         # TCP handshake + httpx-init overhead amortised over a single
         # request. With a shared client the underlying connection pool
         # reuses keep-alive sockets across the scheduler's ~5s-cadence
         # ticks, which matters because all four hot-path callers talk
-        # to localhost services (the nvidia-smi exporter, Ollama, SDXL
+        # to localhost services (the nvidia-smi exporter, Ollama, image-gen
         # server) on a single host port each.
         self._http_client: httpx.AsyncClient | None = None
 
@@ -383,7 +383,7 @@ class GPUScheduler:
         Waits for any gaming/external workload to finish before acquiring.
 
         Args:
-            owner: "ollama" or "sdxl"
+            owner: "ollama" or "image_gen"
             model: model name (for logging/tracking)
             task_id: optional pipeline task UUID — when set, a row is
                 written to ``gpu_task_sessions`` on release so the
@@ -436,12 +436,12 @@ class GPUScheduler:
         # async chain (e.g. dispatch_complete inside a stage) are no-ops.
         token = _gpu_session_active.set(True)
         try:
-            # Prepare GPU for the new owner. The video render is a wan + SDXL
+            # Prepare GPU for the new owner. The video render is a wan + image-gen
             # consumer (no Ollama of its own), so it evicts Ollama exactly like
-            # SDXL does to free VRAM for the render — validation finding 4b: the
+            # image-gen does to free VRAM for the render — validation finding 4b: the
             # render path never went through the lock, so the 18GB writer/director
-            # stayed resident and starved wan+SDXL, failing the render.
-            if owner in ("sdxl", "video"):
+            # stayed resident and starved wan+image-gen, failing the render.
+            if owner in ("image_gen", "video"):
                 await self._unload_ollama_models()
             yield
         finally:
@@ -691,12 +691,12 @@ class GPUScheduler:
         self._gaming_detected = False
 
     async def _unload_ollama_models(self):
-        """Unload all Ollama models to free VRAM for SDXL / the video render.
+        """Unload all Ollama models to free VRAM for image-gen / the video render.
 
         Delegates to the unified ``unload_loaded_ollama_models`` so the
         eviction is *confirmed*: it re-polls ``/api/ps`` until the model is
         gone before returning, rather than firing ``keep_alive:0`` and hoping.
-        The caller (the ``sdxl`` / ``video`` lock owner) loads its diffusion /
+        The caller (the ``image_gen`` / ``video`` lock owner) loads its diffusion /
         video model the instant we return; on a single 32 GB GPU shared with
         the desktop, returning while the 18 GB writer is still resident
         overlaps the two models, exhausts VRAM, and freezes WDDM. Tunable via
@@ -726,38 +726,38 @@ class GPUScheduler:
         The pipeline knows what's coming next — no idle timeouts needed.
 
         Modes:
-            "ollama"  — unload SDXL, Ollama auto-loads on next request
-            "sdxl"    — unload Ollama models, SDXL server loads on next /generate
-            "idle"    — unload everything, free all VRAM
+            "ollama"    — unload image_gen, Ollama auto-loads on next request
+            "image_gen" — unload Ollama models, image-gen server loads on next /generate
+            "idle"      — unload everything, free all VRAM
         """
-        if mode == "sdxl":
+        if mode == "image_gen":
             await self._unload_ollama_models()
-            logger.info("[GPU] Prepared for SDXL — Ollama models unloaded")
+            logger.info("[GPU] Prepared for image_gen — Ollama models unloaded")
         elif mode == "ollama":
-            await self._unload_sdxl()
-            logger.info("[GPU] Prepared for Ollama — SDXL unloaded")
+            await self._unload_image_gen()
+            logger.info("[GPU] Prepared for Ollama — image-gen unloaded")
         elif mode == "idle":
             await self._unload_ollama_models()
-            await self._unload_sdxl()
+            await self._unload_image_gen()
             logger.info("[GPU] All models unloaded — VRAM freed")
 
-    async def _unload_sdxl(self):
-        """Tell the SDXL server to unload its model and free VRAM immediately."""
-        from services.bootstrap_defaults import DEFAULT_SDXL_URL
-        sdxl_url = _sc_get("sdxl_server_url", DEFAULT_SDXL_URL)
+    async def _unload_image_gen(self):
+        """Tell the image-gen server to unload its model and free VRAM immediately."""
+        from services.bootstrap_defaults import DEFAULT_IMAGE_GEN_URL
+        image_gen_url = _sc_get("image_gen_server_url", DEFAULT_IMAGE_GEN_URL)
         try:
             client = self._get_http_client()
-            resp = await client.post(f"{sdxl_url}/unload", timeout=10)
+            resp = await client.post(f"{image_gen_url}/unload", timeout=10)
             if resp.status_code == 200:
-                logger.info("[GPU] SDXL model unloaded via /unload endpoint")
+                logger.info("[GPU] image-gen model unloaded via /unload endpoint")
         except Exception as exc:
             # poindexter#455 — used to be `except: pass`. Log at debug
-            # because the SDXL server being offline is the common case
-            # (it's only running when SDXL phase is active), not a
+            # because the image-gen server being offline is the common case
+            # (it's only running when image-gen phase is active), not a
             # genuine bug. A persistent failure would surface via the
-            # nvidia-exporter finding when SDXL is supposed to be up.
+            # nvidia-exporter finding when image-gen is supposed to be up.
             logger.debug(
-                "[GPU] SDXL /unload call failed (server likely offline): %s: %s",
+                "[GPU] image-gen /unload call failed (server likely offline): %s: %s",
                 type(exc).__name__, exc,
             )
 

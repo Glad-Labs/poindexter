@@ -17,7 +17,7 @@ Tunables (all read from ``app_settings`` at deploy time):
 - ``prefect_content_flow_concurrency`` — work-pool concurrency
   (default ``3``). This is the native Prefect cap on how many
   ``content_generation_flow`` runs execute simultaneously. Each run
-  loads an LLM + SDXL onto the single 5090, so the value is a direct
+  loads an LLM + image-gen onto the single 5090, so the value is a direct
   VRAM lever (Glad-Labs/poindexter#578 stress test: 3 concurrent sits
   at a stable ~60% VRAM; 5 pins the GPU at ~98% and risks OOM).
 - ``content_flow_max_concurrency`` — hard safety ceiling for this GPU

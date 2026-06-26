@@ -25,7 +25,7 @@ ATOM_META = AtomMeta(
     version="1.0.0",
     description=(
         "Replace [IMAGE-N] placeholders with <img> tags using image_results. "
-        "Cleans up leaked SDXL descriptions. Persists updated content to DB."
+        "Cleans up leaked image-gen descriptions. Persists updated content to DB."
     ),
     inputs=(
         FieldSpec(name="content", type="str", description="draft body with [IMAGE-N] markers"),
@@ -73,12 +73,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             content_text = re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
             continue
 
-        if source == "sdxl":
+        if source == "image_gen":
             content_text = _inject_html_image(
                 content_text, num, img_url, alt_text, width=1024, height=1024,
             )
             replaced_count += 1
-            logger.info("  [IMAGE-%s] SDXL injected", num)
+            logger.info("  [IMAGE-%s] image_gen injected", num)
         elif source == "pexels":
             photographer = alt_text.replace("Photo by ", "").strip()
             pexels_html = (

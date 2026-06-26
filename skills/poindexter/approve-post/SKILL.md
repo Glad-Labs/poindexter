@@ -20,7 +20,7 @@ scripts/run.sh "task_id" [publish_at]
 - **human_feedback** (string, optional): Free-form reviewer notes captured on the task.
 - **reviewer_id** (string, optional): Identifier of the reviewer recorded with the approval.
 - **featured_image_url** (string, optional): Override the featured image URL before publish.
-- **image_source** (string, optional): Source of the featured image — `pexels` or `sdxl`.
+- **image_source** (string, optional): Source of the featured image — `pexels` or `image_gen`.
 - **auto_publish** (boolean, optional): Defaults to `false`. Approving a task **stages** it — it does NOT publish by default. To publish, either pass `auto_publish=true` or call the `publish-post` skill separately. (This matches the deliberate "approve != publish" behavior.)
 - **publish_at** (ISO-8601 string, optional): When set together with `auto_publish=true`, the task is scheduled rather than published immediately. The value is parsed as ISO-8601 (`Z` suffix accepted) and stored as `scheduled_at`; the scheduled publisher job picks it up at that time. If parsing fails the task is published immediately and a warning is logged.
 

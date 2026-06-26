@@ -41,20 +41,21 @@ class TestCapabilities:
         assert "platform" in caps
         assert "python" in caps
         assert "ollama_url" in caps
-        assert "sdxl" in caps
+        assert "image_gen" in caps
 
     def test_caches_capabilities(self, service):
         caps1 = service.capabilities
         caps2 = service.capabilities
         assert caps1 is caps2
 
-    @patch.dict("os.environ", {"SDXL_API_URL": "http://localhost:5000"})
-    def test_sdxl_detected_from_env(self):
+    def test_image_gen_detected_from_site_config(self):
+        from services.site_config import SiteConfig
         from services.worker_service import WorkerService
 
         pool = MagicMock()
-        ws = WorkerService(pool)
-        assert ws.capabilities["sdxl"] is True
+        sc = SiteConfig(initial_config={"image_gen_api_url": "http://localhost:9836"})
+        ws = WorkerService(pool, site_config=sc)
+        assert ws.capabilities["image_gen"] is True
 
 
 class TestRegister:

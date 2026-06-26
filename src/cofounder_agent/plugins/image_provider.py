@@ -1,10 +1,10 @@
 """ImageProvider — data-ingestion Protocol for featured + inline images.
 
 An ImageProvider either SEARCHES an external catalog (Pexels, Unsplash,
-Pixabay) or GENERATES images (SDXL, Flux, etc.) and returns
+Pixabay) or GENERATES images (image_gen/Z-Image, Flux, etc.) and returns
 :class:`ImageResult` metadata that callers can drop into a post.
 
-Replaces the god-file ``services/image_service.py`` (1132 lines, SDXL
+Replaces the god-file ``services/image_service.py`` (1132 lines, image-gen
 pipeline + Pexels API + caching + model management all mushed together).
 Phase G migration (GitHub #71) splits each concern into its own module
 under ``services/image_providers/``.
@@ -15,7 +15,7 @@ Register an ImageProvider via ``pyproject.toml``:
 
     [project.entry-points."poindexter.image_providers"]
     pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"
-    sdxl = "cofounder_agent.services.image_providers.sdxl:SdxlProvider"
+    image_gen = "cofounder_agent.services.image_providers.image_gen:ImageGenProvider"
 
 Per-install config lives in ``app_settings.plugin.image_provider.<name>``.
 """
@@ -44,7 +44,7 @@ class ImageResult:
     height: int | None = None
     alt_text: str = ""
     caption: str = ""
-    source: str = "unknown"      # provider name: pexels, sdxl, flux, etc.
+    source: str = "unknown"      # provider name: pexels, image_gen, flux, etc.
     search_query: str = ""
     metadata: dict[str, Any] = field(default_factory=dict)
 
@@ -78,7 +78,7 @@ class ImageProvider(Protocol):
 
     - **Search providers** (Pexels, Unsplash) — query an external
       catalog with a free-text term, return the top N hits.
-    - **Generation providers** (SDXL, Flux) — synthesize an image
+    - **Generation providers** (image_gen/Z-Image, Flux) — synthesize an image
       from a prompt + style. May take many seconds; callers should
       await with a generous timeout.
 

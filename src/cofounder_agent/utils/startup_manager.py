@@ -5,7 +5,7 @@ Handles all startup and shutdown operations for Poindexter (the AI cofounder pip
 - Database initialization (PostgreSQL + asyncpg)
 - Cache setup (Redis)
 - Migrations + module migrations
-- Retention janitor + SDXL warmup
+- Retention janitor + image-gen warmup
 - Route service registration
 - Graceful shutdown
 
@@ -35,7 +35,7 @@ class StartupManager:
         Args:
             site_config: SiteConfig instance — threaded from main.py lifespan
                 into every sub-service that needs DB-backed config at startup
-                (Redis cache, retention janitor, SDXL warmup). Phase H (GH#95)
+                (Redis cache, retention janitor, image-gen warmup). Phase H (GH#95)
                 dropped the transitional module-singleton imports in favour
                 of this single construction site. Defaults to None so any
                 test that constructs StartupManager() bare still works.
@@ -254,19 +254,19 @@ class StartupManager:
                     "[retention_janitor] Failed to start: %s", rj_err,
                 )
 
-            # Step 14: Warmup SDXL models (async, non-blocking)
-            # Only if GPU is available - this prevents timeout issues when users first request SDXL
+            # Step 14: Warmup image-gen models (async, non-blocking)
+            # Only if GPU is available - this prevents timeout issues when users first request image-gen
             try:
-                await self._warmup_sdxl_models()
+                await self._warmup_image_models()
             except Exception as e:
                 import traceback
 
                 logger.warning(
-                    f"[WARNING] SDXL warmup failed (non-critical): {type(e).__name__}: {e}",
+                    f"[WARNING] image-gen warmup failed (non-critical): {type(e).__name__}: {e}",
                     exc_info=True,
                 )
                 logger.debug(f"    Traceback: {traceback.format_exc()}")
-                # Continue anyway - SDXL will load lazily when first used
+                # Continue anyway - image-gen will load lazily when first used
 
             logger.info(" Application started successfully!")
             self._log_startup_summary()
@@ -873,11 +873,11 @@ class StartupManager:
                 len(configured),
             )
 
-    async def _warmup_sdxl_models(self) -> None:
-        """Warmup SDXL models to avoid timeout on first request.
+    async def _warmup_image_models(self) -> None:
+        """Warmup image-gen models to avoid timeout on first request.
 
-        Disabled by default — SDXL loads lazily on first image generation
-        request. Enable with ENABLE_SDXL_WARMUP=true if you want faster
+        Disabled by default — image-gen loads lazily on first image generation
+        request. Enable with enable_image_gen_warmup=true if you want faster
         first-image response at the cost of 20-30s slower startup.
         """
         import os
@@ -885,33 +885,33 @@ class StartupManager:
         # Skip warmup unless explicitly enabled (lazy loading is the default).
         # Uses the DI-seam'd SiteConfig from the constructor (glad-labs-stack#330).
         sc = self._site_config
-        warmup_flag = sc.get("enable_sdxl_warmup", "") if sc is not None else ""
+        warmup_flag = sc.get("enable_image_gen_warmup", "") if sc is not None else ""
         if warmup_flag.lower() not in ("true", "1", "yes"):
             logger.info(
-                "  SDXL warmup: Skipped (lazy loading on first request). Set ENABLE_SDXL_WARMUP=true to pre-load."
+                "  image-gen warmup: Skipped (lazy loading on first request). Set enable_image_gen_warmup=true to pre-load."
             )
             return
 
-        # Check if torch is even available (optional dependency for SDXL)
+        # Check if torch is even available (optional dependency for image-gen)
         try:
             import torch
         except ModuleNotFoundError:
-            logger.info("  SDXL warmup: torch not installed - SDXL disabled")
+            logger.info("  image-gen warmup: torch not installed - image-gen disabled")
             logger.info(
-                "     In-process SDXL needs the `ml` extra (poetry install "
-                "--extras ml); GPU rendering runs in the sdxl-server container."
+                "     In-process image-gen needs the `ml` extra (poetry install "
+                "--extras ml); GPU rendering runs in the image-gen-server container."
             )
             return
 
-        # Skip warmup if GPU is not available (SDXL only works on GPU)
+        # Skip warmup if GPU is not available (image-gen only works on GPU)
         if not torch.cuda.is_available():
             logger.debug(
-                "  SDXL warmup: GPU not available, skipping model warmup (lazy loading enabled)"
+                "  image-gen warmup: GPU not available, skipping model warmup (lazy loading enabled)"
             )
             return
 
         try:
-            logger.info("  🎨 Warming up SDXL models (this may take 20-30 seconds)...")
+            logger.info("  🎨 Warming up image-gen models (this may take 20-30 seconds)...")
             import tempfile
 
             from services.image_service import ImageService
@@ -935,11 +935,11 @@ class StartupManager:
 
                 if success:
                     logger.info(
-                        "  [OK] SDXL models loaded successfully! First requests will be fast."
+                        "  [OK] image-gen models loaded successfully! First requests will be fast."
                     )
                 else:
                     logger.warning(
-                        "  [WARNING] SDXL warmup generation failed (will initialize lazily)"
+                        "  [WARNING] image-gen warmup generation failed (will initialize lazily)"
                     )
 
             finally:
@@ -954,11 +954,11 @@ class StartupManager:
             import traceback
 
             logger.warning(
-                f"  [WARNING] SDXL warmup error (non-critical): {type(e).__name__}: {e}",
+                f"  [WARNING] image-gen warmup error (non-critical): {type(e).__name__}: {e}",
                 exc_info=True,
             )
             logger.warning(f"     Full traceback:\n{traceback.format_exc()}", exc_info=True)
-            logger.info("     SDXL will initialize on first request")
+            logger.info("     image-gen will initialize on first request")
 
     def _log_startup_summary(self) -> None:
         """Log summary of startup state"""

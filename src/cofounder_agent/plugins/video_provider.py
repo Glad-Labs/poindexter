@@ -146,7 +146,7 @@ class VideoProvider(Protocol):
             ``source`` label attached to each VideoResult).
         kind: Either ``"generate"`` (true T2V) or ``"compose"``
             (slideshow / image+audio assembly). ``video_service`` uses
-            this to decide whether to run the SDXL+TTS prep pipeline
+            this to decide whether to run the image-gen+TTS prep pipeline
             before dispatching.
     """
 

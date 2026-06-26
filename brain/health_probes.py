@@ -100,10 +100,10 @@ LOCAL_OLLAMA = localize_url(os.getenv("OLLAMA_URL") or "http://localhost:11434")
 # in its own container (stdlib + asyncpg only) and cannot import the worker's
 # gpu_scheduler, so the key is duplicated here rather than imported. The
 # worker's GPUScheduler holds ``pg_advisory_lock(this key)`` on a dedicated
-# connection for the whole of every GPU session (Ollama inference, SDXL image
+# connection for the whole of every GPU session (Ollama inference, image-gen
 # gen, wan video render); the brain's writer-model probe takes the same lock
 # NON-BLOCKINGLY (``pg_try_advisory_lock``) so it never loads the ~19GB writer
-# into VRAM mid-render (would oversubscribe the 32GB card → SDXL CUDA-OOM →
+# into VRAM mid-render (would oversubscribe the 32GB card → image-gen CUDA-OOM →
 # degraded video; observed 2026-06-21).
 GPU_ADVISORY_LOCK_KEY: int = 7_777_777_777
 # Where Alertmanager is reachable from the brain. Used to decide whether the
@@ -170,7 +170,7 @@ PROBE_SCHEDULES = {
     "public_site": 300,          # 5 min
     "scheduled_tasks": 3600,     # 1 hour
     "disk_space": 3600,          # 1 hour
-    "gpu_temperature": 300,      # 5 min — temp can spike fast under SDXL + LLM
+    "gpu_temperature": 300,      # 5 min — temp can spike fast under image-gen + LLM
     # P0 — pipeline health
     "stuck_tasks": 1800,         # 30 min
     "approval_queue": 3600,      # 1 hour
@@ -271,7 +271,7 @@ async def probe_ollama_embedding(_pool) -> dict:
 
     Uses ``nomic-embed-text`` — the model baked into the embeddings table schema.
     The model should be CPU-pinned (``num_gpu 0`` Modelfile) so it doesn't
-    compete for VRAM with the writer or SDXL during inference.
+    compete for VRAM with the writer or image-gen during inference.
     """
     model = "nomic-embed-text"
 
@@ -456,8 +456,8 @@ async def probe_content_gen(pool) -> dict:
     """Probe: Check Ollama can generate text — 1-sentence test.
 
     GPU arbitration (2026-06-21): exercising the writer loads the ~19GB model
-    into VRAM. Firing during a media render (wan + SDXL already near the 32GB
-    ceiling) oversubscribes the GPU → SDXL CUDA-OOM → degraded video. The brain
+    into VRAM. Firing during a media render (wan + image-gen already near the 32GB
+    ceiling) oversubscribes the GPU → image-gen CUDA-OOM → degraded video. The brain
     can't import ``services.gpu_scheduler`` (separate stdlib+asyncpg container),
     but it shares Postgres, so it takes the SAME cross-process GPU advisory lock
     NON-BLOCKINGLY: if a render/LLM job holds it, the probe SKIPS this cycle

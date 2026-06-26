@@ -122,7 +122,7 @@ def test_short_director_renders_9x16_and_brand() -> None:
 # ---------------------------------------------------------------------------
 # HUMAN-SUBJECT POLICY regression — the SCHEMA example shots are what the
 # director LLM imitates. A human subject in an example must route to
-# source="pexels" (Pexels queries are never scanned); an sdxl / sdxl_kenburns
+# source="pexels" (Pexels queries are never scanned); an image_gen / image_kenburns
 # / wan21 example prompt must NEVER carry a _HUMAN_TOKENS noun — not even
 # inside a "no people" negation, which scan_for_human_tokens flags regardless
 # (only the literal "silhouette"/"faceless" escape hatch clears it). Clean
@@ -131,7 +131,7 @@ def test_short_director_renders_9x16_and_brand() -> None:
 # "no people"/"developer"/… in either director's example block.
 # ---------------------------------------------------------------------------
 
-_AI_SOURCES = ("sdxl", "sdxl_kenburns", "wan21", "generative")
+_AI_SOURCES = ("image_gen", "image_kenburns", "wan21", "generative")
 
 
 def _example_ai_prompts(rendered: str) -> list[str]:

@@ -212,7 +212,7 @@
       value: 'ollama/qwen3:8b',
       category: 'model_roles',
       type: 'text',
-      description: 'Generates SDXL prompts from post content',
+      description: 'Generates AI image prompts from post content',
     },
 
     // quality
@@ -341,7 +341,7 @@
         'professional digital art, abstract technology concept, blue and cyan color scheme, clean modern aesthetic, no people, no text',
       category: 'image',
       type: 'textarea',
-      description: 'Default SDXL style for uncategorized posts',
+      description: 'Default image-gen style for uncategorized posts',
     },
 
     // features

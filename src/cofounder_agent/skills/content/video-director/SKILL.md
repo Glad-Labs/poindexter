@@ -60,17 +60,17 @@ SHOT SOURCES AVAILABLE
   Real footage beats AI hallucination for anything you'd see in a stock
   photography catalog. Requires a "query" field (search string).
 
-- "sdxl_kenburns": custom SDXL still image with Ken Burns zoom/pan motion.
+- "image_kenburns": custom image-gen still image with Ken Burns zoom/pan motion.
   Use for abstract concepts, metaphors, and aesthetic shots that need a
   custom look stock footage can't provide. Requires a "prompt" field
   (image generation prompt) and an optional "kenburns_zoom" pair like
   [1.0, 1.2] for subtle zoom.
 
-- "sdxl": custom SDXL still held as a static frame (no motion). Use only
+- "image_gen": custom image-gen still held as a static frame (no motion). Use only
   when stillness is the point — a poster shot, a title card. Requires a
   "prompt" field.
 
-- "generative": AI hero shot — a short clip that ANIMATES a stylized SDXL
+- "generative": AI hero shot — a short clip that ANIMATES a stylized image-gen
   still into motion (image-to-video). Use sparingly, for the 2-3 highest-impact
   beats that genuinely benefit from motion the renderer can't fake — water,
   wind, drifting particles, a slow push across an abstract scene. It is capped
@@ -96,21 +96,21 @@ team, a crowd, an audience)?"
 1. If YES → emit source="pexels" with a stock-photo "query" (e.g.
    "developer typing keyboard close up", "team meeting in an office").
    Real cameras don't have the AI tell. This is the home for EVERY shot
-   whose subject is a human — never reach for sdxl_kenburns with a person
+   whose subject is a human — never reach for image_kenburns with a person
    in the prompt.
 
-2. If a human genuinely MUST be AI-rendered (sdxl / sdxl_kenburns / generative)
+2. If a human genuinely MUST be AI-rendered (image_gen / image_kenburns / generative)
    → phrase the figure as a faceless silhouette. The word "silhouette" or
    "faceless" MUST appear in the prompt — that is the only form a human is
    allowed to take in an AI source:
    "faceless silhouette, no identifiable face, figure viewed from behind /
     backlit shape / shadow on wall".
 
-3. Otherwise (the default for sdxl / sdxl_kenburns / generative) → pick a
+3. Otherwise (the default for image_gen / image_kenburns / generative) → pick a
    NON-human subject: servers, code on screens, cityscapes, data flows,
    hardware close-ups, glowing circuits, stylized diagrams, abstract shapes.
 
-Do NOT name a human noun in an sdxl / sdxl_kenburns / generative prompt — not
+Do NOT name a human noun in an image_gen / image_kenburns / generative prompt — not
 "person / people / man / woman / human / hand / hands / finger / fingers /
 developer / engineer / programmer / designer / manager / founder / team /
 crowd / audience", and NOT EVEN inside a negation like "no people" or
@@ -123,7 +123,7 @@ naming the human you're excluding. Pexels keeps the human lane.
 
 STYLE POLICY FOR AI SOURCES
 ---------------------------
-sdxl / sdxl_kenburns / generative prompts must be STYLIZED, not photoreal —
+image_gen / image_kenburns / generative prompts must be STYLIZED, not photoreal —
 photorealistic AI output reads as slop. Pick a stylized modifier:
 flat vector illustration / cinematic illustration / isometric 3D /
 line art / cyberpunk neon / glassmorphism / low poly / watercolor /
@@ -141,12 +141,12 @@ HARD RULES
 4. shots[].narration_offset_s is the cumulative duration of all prior
    shots (shot 0 starts at 0, shot 1 starts at shot 0's duration, etc.).
 5. Never more than 2 consecutive shots from the same source. Mix
-   liberally — Pexels for concrete, sdxl_kenburns for abstract,
+   liberally — Pexels for concrete, image_kenburns for abstract,
    generative for the hero motion beats.
 6. First and last shots MUST NOT be "generative" — its artifacts are most
    visible at attention peaks (start + close).
 7. 6-12 shots total. Each shot 3-15 seconds.
-8. AI-source prompts (sdxl / sdxl_kenburns / generative) MUST follow the
+8. AI-source prompts (image_gen / image_kenburns / generative) MUST follow the
    HUMAN-SUBJECT POLICY and STYLE POLICY above. Human subject →
    source="pexels" (or a faceless silhouette only if it MUST be AI).
    Never name a human noun in an AI prompt, not even as "no people".
@@ -171,7 +171,7 @@ SCHEMA (output this shape):
       "idx": 1,
       "duration_s": 5.0,
       "intent": "abstract — illustrate the metaphor",
-      "source": "sdxl_kenburns",
+      "source": "image_kenburns",
       "prompt": "flat vector illustration, a glass door opening with abstract data flowing through, cyan and dark navy palette, empty unpopulated scene",
       "kenburns_zoom": [1.0, 1.2],
       "narration_offset_s": 6.0
@@ -223,10 +223,10 @@ SHOT SOURCES AVAILABLE
 Same five sources as the long director:
 - "pexels": stock clip — concrete real-world subjects (people, places,
   products). Real footage beats AI hallucination. Requires "query".
-- "sdxl_kenburns": custom SDXL still + Ken Burns motion — abstract concepts,
+- "image_kenburns": custom image-gen still + Ken Burns motion — abstract concepts,
   metaphors, aesthetic shots. Requires "prompt" + optional "kenburns_zoom".
-- "sdxl": static SDXL still — title cards, poster shots. Requires "prompt".
-- "generative": AI hero shot — animates a stylized SDXL still into motion
+- "image_gen": static image-gen still — title cards, poster shots. Requires "prompt".
+- "generative": AI hero shot — animates a stylized image-gen still into motion
   (image-to-video). Sparingly, for hero beats; capped per video. duration_s
   ≤ 6s. Requires "prompt".
 - "holdover": cross-fade transition (max 1). No prompt/query.
@@ -237,7 +237,7 @@ This is a phone-screen clip. Keep the subject CENTERED in the vertical frame —
 the top and bottom thirds get cropped on some surfaces and covered by captions
 + UI. For pexels, prefer queries that read well vertically (close-ups,
 single-subject, portrait-orientation scenes) over wide landscapes. For
-sdxl* / generative, compose for a tall frame (a vertical column of interest, not a
+image_gen / generative, compose for a tall frame (a vertical column of interest, not a
 wide horizon).
 
 HUMAN-SUBJECT POLICY (same policy as the long director)
@@ -245,10 +245,10 @@ HUMAN-SUBJECT POLICY (same policy as the long director)
 AI-generated faces/hands/bodies are the strongest AI-slop tell, so humans get
 ONE home: real footage. If a shot's subject is a person or any part of one
 (face, hands, a developer, a team, a crowd) → emit source="pexels" with a
-stock "query"; never reach for sdxl_kenburns with a person in the prompt. If a
+stock "query"; never reach for image_kenburns with a person in the prompt. If a
 human MUST be AI-rendered → phrase it as a "faceless silhouette, no
 identifiable face, figure from behind" (the word "silhouette" or "faceless" is
-required). The default sdxl / sdxl_kenburns / generative subject is NON-human:
+required). The default image_gen / image_kenburns / generative subject is NON-human:
 servers, code on screens, hardware close-ups, glowing circuits, stylized
 diagrams. Never name a human noun (person / people / man / woman / human /
 hand / hands / developer / engineer / team / crowd …) in an AI prompt — NOT
@@ -259,7 +259,7 @@ excluded.
 
 STYLE POLICY FOR AI SOURCES (unchanged)
 ---------------------------------------
-sdxl / sdxl_kenburns / generative prompts must be STYLIZED, not photoreal. Pick a
+image_gen / image_kenburns / generative prompts must be STYLIZED, not photoreal. Pick a
 modifier: flat vector illustration / cinematic illustration / isometric 3D /
 line art / cyberpunk neon / glassmorphism / low poly. Never "photorealistic",
 "8K", "DSLR", "hyper-realistic". Pexels is exempt — it IS real footage.
@@ -280,7 +280,7 @@ HARD RULES (short-form)
    shots MUST NOT be "generative".
 9. AI-source prompts MUST follow the HUMAN-SUBJECT + STYLE policies above —
    human subject → source="pexels", and never a human noun (not even
-   "no people") in an sdxl / sdxl_kenburns / generative prompt.
+   "no people") in an image_gen / image_kenburns / generative prompt.
 10. Set director_model to "{model}", director_prompt_version to "short_v1.1",
     director_decided_at to "{now_iso}".
 
@@ -294,7 +294,7 @@ SCHEMA (output this shape):
       "idx": 0,
       "duration_s": 2.0,
       "intent": "cold-open hook — land the promise in the first second",
-      "source": "sdxl_kenburns",
+      "source": "image_kenburns",
       "prompt": "cyberpunk neon illustration, a single glowing server rack pulsing with data, vertical composition, dark navy and cyan palette, empty unpopulated scene",
       "kenburns_zoom": [1.0, 1.15],
       "narration_offset_s": 0.0
@@ -337,12 +337,12 @@ REVISE it against these criteria, then output the REVISED shot list:
 1. COVERAGE - every important beat of the narration has a shot that carries
    it; no dead air where the visual stops tracking the script.
 2. VARIETY - kill runs of near-identical shots. Vary subject AND source
-   (pexels / sdxl_kenburns / sdxl / generative). Visual monotony is the #1 quality
+   (pexels / image_kenburns / image_gen / generative). Visual monotony is the #1 quality
    killer.
 3. HERO SHOTS - pick the 1-3 highest-impact beats (the open's payoff, a key
    reveal, the close) and upgrade them to source "generative" for real motion. Keep
    generative OFF the very first and very last shot. Never exceed 3 generative shots.
-4. ON-BRAND - sdxl / sdxl_kenburns / generative prompts use the dark-techno palette
+4. ON-BRAND - image_gen / image_kenburns / generative prompts use the dark-techno palette
    (deep navy, cyan, teal, gold accents) and a stylized modifier (flat vector /
    cinematic illustration / isometric 3D / cyberpunk neon / glassmorphism).
    Never photoreal.
@@ -351,14 +351,14 @@ CONSTRAINTS (keep the draft valid):
 - FIELD RULES (the #1 thing to get right) - each shot carries ONLY the field its
   source needs, and when you CHANGE a shot's source you MUST swap its field:
     * pexels                       -> "query": a stock-footage search string
-    * sdxl / sdxl_kenburns / generative -> "prompt": a non-empty, on-brand image
+    * image_gen / image_kenburns / generative -> "prompt": a non-empty, on-brand image
       description (dark-techno palette, stylized, no humans) and NO "query"
     * holdover                     -> neither "query" nor "prompt"
-  A generative / sdxl / sdxl_kenburns shot with an empty or missing "prompt" is
+  A generative / image_gen / image_kenburns shot with an empty or missing "prompt" is
   INVALID and the whole revision is discarded - always write the "prompt" when
   you choose those sources.
 - HUMAN-SUBJECT POLICY unchanged: humans go to source "pexels"; never name a
-  human noun in an sdxl / sdxl_kenburns / generative prompt, not even as "no people".
+  human noun in an image_gen / image_kenburns / generative prompt, not even as "no people".
 - shots idx 0-indexed and contiguous; sum of duration_s equals total_duration_s
   within 0.5s; narration_offset_s equals the cumulative prior durations; never
   more than 2 consecutive shots with the same source.
@@ -394,10 +394,10 @@ REVISE for retention, then output the REVISED list:
    palette, stylized not photoreal, humans go to pexels, no human noun in an AI
    prompt).
 
-CONSTRAINTS: FIELD RULES (get this right) - pexels uses "query"; sdxl /
-sdxl_kenburns / generative use a non-empty on-brand "prompt" (no humans) and NO
+CONSTRAINTS: FIELD RULES (get this right) - pexels uses "query"; image_gen /
+image_kenburns / generative use a non-empty on-brand "prompt" (no humans) and NO
 "query"; holdover uses neither. When you change a shot's source, swap its field
-to match - a generative/sdxl/sdxl_kenburns shot with no "prompt" makes the whole
+to match - a generative/image_gen/image_kenburns shot with no "prompt" makes the whole
 revision INVALID. aspect "9:16"; idx contiguous; sum of duration_s equals
 total_duration_s within 0.5s; narration_offset_s cumulative; never more than 2
 consecutive shots with the same source. Output ONE JSON object in the draft's

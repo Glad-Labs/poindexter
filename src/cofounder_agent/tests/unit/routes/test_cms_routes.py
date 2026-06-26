@@ -474,12 +474,12 @@ class TestConvertMarkdownToHtml:
         from routes.cms_routes import convert_markdown_to_html
         mixed = (
             "## Section\n\nText before.\n\n"
-            '<img src="https://r2/sdxl/pic.png" alt="diagram" width="1024" loading="lazy" />\n\n'
+            '<img src="https://r2/image-gen/pic.png" alt="diagram" width="1024" loading="lazy" />\n\n'
             "Text after with *emphasis*."
         )
         html = convert_markdown_to_html(mixed)
         assert "<h2>" in html
-        assert 'src="https://r2/sdxl/pic.png"' in html
+        assert 'src="https://r2/image-gen/pic.png"' in html
         assert "<em>" in html
 
 

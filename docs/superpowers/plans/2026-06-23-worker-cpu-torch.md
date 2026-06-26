@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Replace the cu128 (CUDA) torch pin in the cofounder lock with CPU torch so the worker + OSS standalone images shed ~2 GB each; cu128 stays only in the self-contained `sdxl-server` container.
+**Goal:** Replace the cu128 (CUDA) torch pin in the cofounder lock with CPU torch so the worker + OSS standalone images shed ~2 GB each; cu128 stays only in the self-contained `image-gen-server` container.
 
 **Architecture:** Re-home torch's Poetry source from `pytorch-cu128` to a new `pytorch-cpu` explicit source and bound it `<2.12`, in both `src/cofounder_agent/pyproject.toml` and the root dev-harness `pyproject.toml`; regenerate both locks. Strengthen the existing Dockerfile rerank asserts to fail the build if torch is ever CUDA again. No `--extras` line changes — the swap is purely pyproject + lock.
 
@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - **No version drift.** The cofounder lock diff must be ONLY: `torch 2.11.0+cu128 → 2.11.0+cpu` (source swap) + removal of the 18 `nvidia-*`/`cuda-*` package blocks + torch's own `[package.source]`/marker churn. Any other package version change is a red flag — investigate before committing.
-- **cu128 stays in `scripts/Dockerfile.sdxl` only.** Do not touch that file; it has its own CUDA base image and torch.
+- **cu128 stays in `scripts/Dockerfile.image-gen` only.** Do not touch that file; it has its own CUDA base image and torch.
 - **torch pin is exactly** `{ version = ">=2.7,<2.12", source = "pytorch-cpu", optional = true }` in both pyprojects.
 - **New source is exactly** `name = "pytorch-cpu"`, `url = "https://download.pytorch.org/whl/cpu"`, `priority = "explicit"`.
 - **All changes via PR** against `Glad-Labs/glad-labs-stack`; CI green is the gate (`feedback_all_changes_via_pr`).
@@ -33,17 +33,17 @@
 
 - [ ] **Step 1: Edit the torch pin + its comment**
 
-In `src/cofounder_agent/pyproject.toml`, replace the SDXL torch comment block + pin (currently lines ~88-94):
+In `src/cofounder_agent/pyproject.toml`, replace the image-gen torch comment block + pin (currently lines ~88-94):
 
 ```toml
-# ML/AI - Image Generation (SDXL)
+# ML/AI - Image Generation (image-gen)
 # torch is the CPU build here: the two pipeline images (worker + OSS
 # standalone) install it only via the `rerank` extra to drive the
 # LlamaIndex cross-encoder reranker, which runs on CPU (#1882). Neither
 # image has GPU passthrough or `diffusers`, so the CUDA build was ~2 GB
 # of dead weight (18 transitive nvidia-*/cuda-* wheels). The cu128 build
-# that actually renders SDXL on Matt's RTX 5090 lives self-contained in
-# scripts/Dockerfile.sdxl (its own pytorch/pytorch:*-cuda12.8 base), not
+# that actually renders image-gen on Matt's RTX 5090 lives self-contained in
+# scripts/Dockerfile.image-gen (its own pytorch/pytorch:*-cuda12.8 base), not
 # in this lock. <2.12 bounds the pin so a re-lock can't silently jump to
 # a new CUDA-major torch (the 2.12/CUDA-13 split that bit #1891). See
 # docs/superpowers/specs/2026-06-23-worker-cpu-torch-design.md.
@@ -61,8 +61,8 @@ Replace the `[[tool.poetry.source]]` block (currently lines ~420-429):
 # cross-encoder reranker, so the CPU build is correct and ~2 GB smaller
 # than cu128. priority="explicit" means poetry only consults this index
 # for packages that pin source = "pytorch-cpu"; everything else still
-# resolves from PyPI. The CUDA (cu128) torch that drives SDXL lives in
-# scripts/Dockerfile.sdxl, not here. See glad-labs-stack#334 for the
+# resolves from PyPI. The CUDA (cu128) torch that drives image-gen lives in
+# scripts/Dockerfile.image-gen, not here. See glad-labs-stack#334 for the
 # original cu128 pin and the 2026-06-23 CPU-trim follow-up spec.
 [[tool.poetry.source]]
 name = "pytorch-cpu"
@@ -105,7 +105,7 @@ Re-home torch from pytorch-cu128 to a new pytorch-cpu explicit source and
 bound it <2.12. The worker + OSS images install torch only via the rerank
 extra for the CPU cross-encoder (#1882) — no GPU passthrough, no diffusers
 — so the cu128 build (18 nvidia/cuda transitive wheels, ~2 GB) was dead
-weight. cu128 stays in scripts/Dockerfile.sdxl. Spec:
+weight. cu128 stays in scripts/Dockerfile.image-gen. Spec:
 docs/superpowers/specs/2026-06-23-worker-cpu-torch-design.md
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
@@ -132,8 +132,8 @@ In the root `pyproject.toml`, replace the torch comment + pin (currently lines ~
 ```toml
 # Optional ML/AI dependencies. torch is the CPU build (sourced from the
 # explicit pytorch-cpu index defined at the bottom of this file). The
-# CUDA (cu128) torch that drives SDXL on the 5090 lives self-contained
-# in scripts/Dockerfile.sdxl, not in this dev-harness lock — see
+# CUDA (cu128) torch that drives image-gen on the 5090 lives self-contained
+# in scripts/Dockerfile.image-gen, not in this dev-harness lock — see
 # Glad-Labs/glad-labs-stack#334 and the CPU-trim follow-up spec
 # docs/superpowers/specs/2026-06-23-worker-cpu-torch-design.md. <2.12
 # bounds the pin against a silent CUDA-major bump on re-lock.
@@ -148,8 +148,8 @@ Replace the `[[tool.poetry.source]]` block (currently lines ~59-67):
 # Explicit-priority source for the CPU-only torch wheels.
 # priority="explicit" means poetry only consults this index for
 # packages that pin source = "pytorch-cpu"; everything else still
-# resolves from PyPI. The CUDA (cu128) torch that drives SDXL on the
-# 5090 lives in scripts/Dockerfile.sdxl, not here. See
+# resolves from PyPI. The CUDA (cu128) torch that drives image-gen on the
+# 5090 lives in scripts/Dockerfile.image-gen, not here. See
 # Glad-Labs/glad-labs-stack#334 for the original cu128 pin.
 [[tool.poetry.source]]
 name = "pytorch-cpu"
@@ -178,7 +178,7 @@ git commit -m "build(deps): CPU torch for the root dev-harness lock
 
 Mirror the cofounder CPU-torch re-home (Task 1) in the root pyproject so
 both install contexts agree: pytorch-cpu source, torch>=2.7,<2.12. cu128
-stays in scripts/Dockerfile.sdxl.
+stays in scripts/Dockerfile.image-gen.
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
@@ -210,7 +210,7 @@ In `src/cofounder_agent/Dockerfile.worker`, replace the rerank fail-fast comment
 # torch.version.cuda assertion guards the 2026-06-23 CPU-trim: this image has no
 # GPU passthrough and no diffusers, so it must carry the ~2 GB-smaller CPU wheel,
 # not cu128. A future re-lock that re-pulls a CUDA torch reddens the build here
-# instead of silently re-bloating the image. cu128 lives in scripts/Dockerfile.sdxl.
+# instead of silently re-bloating the image. cu128 lives in scripts/Dockerfile.image-gen.
 RUN python -c "import sentence_transformers, torch; assert torch.version.cuda is None, f'expected CPU torch, got CUDA {torch.version.cuda}'; print('[BUILD] rerank extra OK — sentence_transformers + CPU torch', torch.__version__)"
 ```
 
@@ -226,7 +226,7 @@ In `src/cofounder_agent/Dockerfile`, replace the rerank fail-fast comment + RUN 
 # torch.version.cuda assertion guards the CPU-trim — this image carries the
 # ~2 GB-smaller CPU wheel (no GPU here), and a re-lock that re-pulls CUDA torch
 # reddens the build instead of silently re-bloating it. cu128 lives in
-# scripts/Dockerfile.sdxl.
+# scripts/Dockerfile.image-gen.
 RUN python -c "import sentence_transformers, torch; assert torch.version.cuda is None, f'expected CPU torch, got CUDA {torch.version.cuda}'; print('[BUILD] rerank extra OK — sentence_transformers + CPU torch', torch.__version__)"
 ```
 
@@ -269,10 +269,10 @@ In `src/cofounder_agent/utils/startup_manager.py`, replace the `ModuleNotFoundEr
 
 ```python
         except ModuleNotFoundError:
-            logger.info("  SDXL warmup: torch not installed - SDXL disabled")
+            logger.info("  image-gen warmup: torch not installed - image-gen disabled")
             logger.info(
-                "     In-process SDXL needs the `ml` extra (poetry install "
-                "--extras ml); GPU rendering runs in the sdxl-server container."
+                "     In-process image-gen needs the `ml` extra (poetry install "
+                "--extras ml); GPU rendering runs in the image-gen-server container."
             )
             return
 ```
@@ -286,11 +286,11 @@ Expected: `no stale ref (good)`.
 
 ```bash
 git add src/cofounder_agent/utils/startup_manager.py
-git commit -m "fix(startup): correct the SDXL warmup hint
+git commit -m "fix(startup): correct the image-gen warmup hint
 
 The warmup pointed operators at scripts/requirements-ml.txt, which does
 not exist. Point at the real options: poetry install --extras ml (CPU
-in-process diffusers) or the sdxl-server container (GPU).
+in-process diffusers) or the image-gen-server container (GPU).
 
 Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ```
@@ -316,7 +316,7 @@ In `src/cofounder_agent/README.md`, replace the rerank blockquote (currently lin
 > an opt-in `rerank` extra. With the lean `poetry install` above the reranker
 > degrades to passthrough; to run it locally use `poetry install --extras rerank`
 > (or `pip install -e "src/cofounder_agent[rerank]"`). The reranker runs on CPU
-> (#1882); the CUDA torch that drives SDXL lives in the sdxl-server container.
+> (#1882); the CUDA torch that drives image-gen lives in the image-gen-server container.
 ```
 
 - [ ] **Step 2: Verify no other doc claims a CUDA rerank wheel**
@@ -399,7 +399,7 @@ Per `feedback_check_issue_routing_first`: this is OSS-product CI/dependency stru
 git push -u origin claude/fervent-mirzakhani-f7937f
 ```
 
-Open a PR against `Glad-Labs/glad-labs-stack` `main`. PR body: the problem (cu128 dead weight), the decision (CPU re-home, cu128 stays in SDXL container), the before/after image size from Task 6, the clean lock diff, and the verification evidence. Reference the spec + the tracking issue. CI green is the merge gate.
+Open a PR against `Glad-Labs/glad-labs-stack` `main`. PR body: the problem (cu128 dead weight), the decision (CPU re-home, cu128 stays in image-gen container), the before/after image size from Task 6, the clean lock diff, and the verification evidence. Reference the spec + the tracking issue. CI green is the merge gate.
 
 - [ ] **Step 3: Verify CI is green, then merge** (`feedback_ci_is_the_review_gate`, `feedback_manage_prs_yourself`).
 

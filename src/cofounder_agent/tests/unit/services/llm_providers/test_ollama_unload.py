@@ -1,18 +1,18 @@
 """Tests for ``services.llm_providers.ollama_unload``.
 
 Pins the VRAM-guard contract introduced for the 2026-05-19 jank-audit
-finding #4 (writer LLM + SDXL Lightning hitting 98% VRAM at the
+finding #4 (writer LLM + Stable Diffusion XL Lightning hitting 98% VRAM at the
 stage-5→stage-7 transition):
 
 * ``unload_loaded_ollama_models`` enumerates ``/api/ps``, issues
   ``POST /api/generate`` with ``keep_alive: 0`` for each loaded model,
   then sleeps ``grace_seconds``.
-* ``maybe_unload_writer_before_sdxl`` honours the
-  ``pipeline_explicit_writer_unload_before_sdxl`` bool gate (default
+* ``maybe_unload_writer_before_image_gen`` honours the
+  ``pipeline_writer_unload_before_image_gen`` bool gate (default
   on) and the ``pipeline_writer_unload_grace_seconds`` int (default 2).
 * When Ollama is unreachable, a WARNING is logged and the helper
   returns ``[]`` without raising (``feedback_no_silent_defaults`` —
-  loud, but not pipeline-fatal: SDXL still runs, just on a tighter
+  loud, but not pipeline-fatal: image-gen still runs, just on a tighter
   VRAM budget).
 * When the gate is ``false``, no HTTP traffic happens at all — operators
   on 80+ GB hardware can opt out of the reload tax.
@@ -28,7 +28,7 @@ import httpx
 import pytest
 
 from services.llm_providers.ollama_unload import (
-    maybe_unload_writer_before_sdxl,
+    maybe_unload_writer_before_image_gen,
     unload_loaded_ollama_models,
 )
 
@@ -56,7 +56,7 @@ def _site_config(
             "pipeline_writer_unload_confirm_timeout_seconds": confirm_timeout,
         }.get(key, default),
         get_bool=lambda key, default=False: {
-            "pipeline_explicit_writer_unload_before_sdxl": unload_enabled,
+            "pipeline_writer_unload_before_image_gen": unload_enabled,
             "pipeline_writer_unload_confirm_enabled": confirm_enabled,
         }.get(key, default),
         get_float=lambda key, default=0.0: {
@@ -166,7 +166,7 @@ async def test_unload_logs_warning_and_returns_empty_when_ollama_unreachable(cap
     """Connection error → WARNING log, empty return, no raise.
 
     Enforces feedback_no_silent_defaults: the operator must know if
-    their VRAM guard is broken. But the pipeline keeps moving (SDXL
+    their VRAM guard is broken. But the pipeline keeps moving (image-gen
     will still run, just on a tighter VRAM budget).
     """
     client = _mock_http_client(
@@ -288,13 +288,13 @@ async def test_unload_uses_resolved_base_url():
 
 
 # ---------------------------------------------------------------------------
-# maybe_unload_writer_before_sdxl — gate + log marker
+# maybe_unload_writer_before_image_gen — gate + log marker
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_maybe_unload_no_ops_when_gate_disabled():
-    """``pipeline_explicit_writer_unload_before_sdxl=false`` → zero HTTP traffic.
+    """``pipeline_writer_unload_before_image_gen=false`` → zero HTTP traffic.
 
     The opt-out for operators with abundant VRAM (80+ GB hardware) where
     the ~3-5 s reload tax isn't worth the safety margin.
@@ -305,7 +305,7 @@ async def test_maybe_unload_no_ops_when_gate_disabled():
         "services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ):
-        unloaded = await maybe_unload_writer_before_sdxl(
+        unloaded = await maybe_unload_writer_before_image_gen(
             site_config=_site_config(unload_enabled=False),
             stage_label="replace_inline_images",
         )
@@ -332,7 +332,7 @@ async def test_maybe_unload_runs_when_gate_enabled(caplog):
     ), patch(
         "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
     ), caplog.at_level("INFO", logger="services.llm_providers.ollama_unload"):
-        unloaded = await maybe_unload_writer_before_sdxl(
+        unloaded = await maybe_unload_writer_before_image_gen(
             site_config=_site_config(unload_enabled=True),
             stage_label="replace_inline_images",
         )
@@ -363,7 +363,7 @@ async def test_maybe_unload_threads_grace_seconds_from_settings():
     ), patch(
         "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
     ):
-        await maybe_unload_writer_before_sdxl(
+        await maybe_unload_writer_before_image_gen(
             site_config=_site_config(
                 unload_enabled=True, grace_seconds=5, confirm_enabled=False,
             ),
@@ -385,7 +385,7 @@ async def test_maybe_unload_defaults_to_on_when_site_config_missing():
         "services.llm_providers.ollama_unload.httpx.AsyncClient",
         return_value=client,
     ):
-        unloaded = await maybe_unload_writer_before_sdxl(
+        unloaded = await maybe_unload_writer_before_image_gen(
             site_config=None,
             stage_label="replace_inline_images",
         )
@@ -400,7 +400,7 @@ async def test_maybe_unload_defaults_to_on_when_site_config_missing():
 # unload_loaded_ollama_models — confirm-release poll (lever 3, 2026-06-21)
 #
 # Replaces the blind ``asyncio.sleep(grace_seconds)`` with an actual check
-# that Ollama released the model BEFORE the next (SDXL/video) model loads.
+# that Ollama released the model BEFORE the next (image-gen/video) model loads.
 # On a single 32 GB GPU shared with the Windows desktop, the old "sleep 2s
 # and hope" let the 18 GB writer overlap the incoming diffusion model →
 # VRAM exhaustion → WDDM desktop freeze.
@@ -517,7 +517,7 @@ async def test_confirm_false_uses_blind_grace_sleep():
 
 @pytest.mark.asyncio
 async def test_maybe_unload_threads_confirm_settings_from_site_config():
-    """maybe_unload_writer_before_sdxl reads the confirm settings and runs the
+    """maybe_unload_writer_before_image_gen reads the confirm settings and runs the
     confirm-poll path (no blind grace sleep) when confirm is enabled."""
     present = _resp([{"name": "gemma-4-31B-it-qat:latest"}])
     client = _mock_http_client(ps_response=present)
@@ -530,7 +530,7 @@ async def test_maybe_unload_threads_confirm_settings_from_site_config():
     ), patch(
         "services.llm_providers.ollama_unload.asyncio.sleep", new=sleep_mock,
     ):
-        unloaded = await maybe_unload_writer_before_sdxl(
+        unloaded = await maybe_unload_writer_before_image_gen(
             site_config=_site_config(
                 unload_enabled=True, confirm_enabled=True, grace_seconds=9,
             ),

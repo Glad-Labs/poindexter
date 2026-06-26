@@ -70,7 +70,7 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 | Prometheus         | http://localhost:9091            | Metrics storage (consumed via Grafana datasource)                                                                                                                                                                                |
 | AlertManager       | http://localhost:9093            | Alert-routing UI                                                                                                                                                                                                                 |
 | LiveKit (local)    | ws://localhost:7880              | Local LiveKit server (the Tailscale **Serve** tailnet proxy fronts `/voice/join` → this; moved off the public Funnel 2026-06-02)                                                                                                 |
-| SDXL server        | http://localhost:9836            | Local image generation backend                                                                                                                                                                                                   |
+| image-gen server   | http://localhost:9836            | Local image generation backend                                                                                                                                                                                                   |
 | Postiz             | http://localhost:5003            | Self-hosted social distribution hub (opt-in: `--profile postiz`). Connect X/LinkedIn/Reddit/Mastodon/TikTok/Instagram OAuth accounts here; copy integration UUIDs into `postiz_integration_id_*` app_settings.                 |
 
 ### Key Numbers (code-derived stats as of 2026-06-21; DB-derived counts — posts, embeddings, app_settings totals — last refreshed 2026-06-10, pending a prod-DB probe)
@@ -102,7 +102,7 @@ npm run dev:public           # Next.js only
 
 # Docker backend stack:
 docker compose -f docker-compose.consumer.yml up -d                     # Consumer stack (8-16 GB VRAM / 32 GB RAM)
-docker compose -f docker-compose.consumer.yml --profile sdxl up -d      # + SDXL image generation
+docker compose -f docker-compose.consumer.yml --profile image-gen up -d      # + image-gen generation
 bash scripts/start-stack.sh up -d                                        # Full operator stack (Matt's PC — decrypts bootstrap.toml first)
 ```
 
@@ -365,7 +365,7 @@ Source of truth: `docs/operations/ci-deploy-chain.md`. Two-remote model (post-20
 
 Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR frontend slice from glad-labs-stack.
 
-**Consumer stack (`docker-compose.consumer.yml`, PR #1924, 2026-06-24):** Minimal variant for 8-16 GB VRAM / 32 GB RAM hardware. Omits the operator observability tier (Langfuse, GlitchTip, Loki/Promtail/Tempo/Pyroscope, pgAdmin) — idle RAM ~4-6 GB vs ~20+ GB for the full operator stack. SDXL image generation behind `--profile sdxl`. `LANGFUSE_TRACING_ENABLED=false` + `:-` sentinels so missing keys never fail-fast; `ENABLE_TRACING=false` (no Tempo sink). Brain mounts `docker-compose.consumer.yml` as `/app/docker-compose.local.yml` so `compose_drift_probe` audits the right service set. Volume names mirror `docker-compose.local.yml` (same `gladlabs-*` named volumes) so upgrading consumer → operator is seamless. Target hardware: RTX 5060 Ti / 5070 class (8-16 GB VRAM), 32 GB RAM — see glad-labs-stack milestone #9 (Poindexter v1).
+**Consumer stack (`docker-compose.consumer.yml`, PR #1924, 2026-06-24):** Minimal variant for 8-16 GB VRAM / 32 GB RAM hardware. Omits the operator observability tier (Langfuse, GlitchTip, Loki/Promtail/Tempo/Pyroscope, pgAdmin) — idle RAM ~4-6 GB vs ~20+ GB for the full operator stack. image-gen behind `--profile image-gen`. `LANGFUSE_TRACING_ENABLED=false` + `:-` sentinels so missing keys never fail-fast; `ENABLE_TRACING=false` (no Tempo sink). Brain mounts `docker-compose.consumer.yml` as `/app/docker-compose.local.yml` so `compose_drift_probe` audits the right service set. Volume names mirror `docker-compose.local.yml` (same `gladlabs-*` named volumes) so upgrading consumer → operator is seamless. Target hardware: RTX 5060 Ti / 5070 class (8-16 GB VRAM), 32 GB RAM — see glad-labs-stack milestone #9 (Poindexter v1).
 
 **Worker image includes ffmpeg (#1449)** — Stage-2 media rendering (podcast/video) bakes ffmpeg directly into `poindexter-prefect-worker`; no separate sidecar or host install needed. After any worker image change, `docker compose up -d --build poindexter-prefect-worker` to apply.
 

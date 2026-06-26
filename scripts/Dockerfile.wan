@@ -1,11 +1,11 @@
 # Wan 2.1 1.3B Text-to-Video Server — GPU-accelerated container
-# Mirrors Dockerfile.sdxl in shape; CMD launches scripts/wan-server.py.
+# Mirrors Dockerfile.image-gen in shape; CMD launches scripts/wan-server.py.
 #
 # Base image: PyTorch 2.8 / CUDA 12.8. Required for Blackwell (sm_120,
 # RTX 5090 family) — earlier PyTorch builds don't ship the matching
 # CUDA kernels and inference fails with "no kernel image is available
 # for execution on the device" on the UMT5 text-encoder pass.
-# sdxl-server stays on the older 2.5.1/12.4 image because SDXL doesn't
+# image-gen-server stays on the older 2.5.1/12.4 image because the image-gen model doesn't
 # hit the offending kernels; Wan's text encoder does.
 FROM pytorch/pytorch:2.8.0-cuda12.8-cudnn9-runtime
 

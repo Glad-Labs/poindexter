@@ -13,12 +13,12 @@ something needs attention.
 Each cycle (default: every 5 minutes) the daemon runs a set of
 probes against the local stack:
 
-| Probe                        | Module                       | What it watches                                                                |
-| ---------------------------- | ---------------------------- | ------------------------------------------------------------------------------ |
-| Service health               | `health_probes.py`           | FastAPI worker, Ollama, Postgres, Grafana, Prometheus, Loki, Tempo containers  |
-| Business probes              | `business_probes.py`         | Pipeline throughput, queue depth, recent quality scores                        |
-| Alert sync                   | `alert_sync.py`              | Reconciles Grafana alert rules with the canonical definitions in `app_settings`|
-| **Operator URL probe**       | `operator_url_probe.py`      | Operator-facing URLs and Tailscale IPs that have drifted or gone dark          |
+| Probe                  | Module                  | What it watches                                                                 |
+| ---------------------- | ----------------------- | ------------------------------------------------------------------------------- |
+| Service health         | `health_probes.py`      | FastAPI worker, Ollama, Postgres, Grafana, Prometheus, Loki, Tempo containers   |
+| Business probes        | `business_probes.py`    | Pipeline throughput, queue depth, recent quality scores                         |
+| Alert sync             | `alert_sync.py`         | Reconciles Grafana alert rules with the canonical definitions in `app_settings` |
+| **Operator URL probe** | `operator_url_probe.py` | Operator-facing URLs and Tailscale IPs that have drifted or gone dark           |
 
 Failures are routed through `operator_notifier.notify_operator()`
 (Telegram by default, Discord webhook optional) and persisted to
@@ -41,7 +41,7 @@ Each cycle the probe walks four sources of operator-facing URLs:
 1. **Grafana dashboard links** — every `*.json` in `infrastructure/grafana/dashboards/`, including dashboard-level `links`, panel-level `links`, and `fieldConfig.defaults.links` (data-link drill-downs). Templated URLs containing `${var}` or `$__time` are skipped.
 2. **`system_devices.tailscale_ip`** — DB rows are compared against the live `tailscale status --json` output. Drift is reported with the exact `UPDATE` statement to fix it. If the `tailscale` CLI isn't installed, this step is skipped silently.
 3. **`app_settings` keys ending in `_url`** — `site_url`, `storefront_url`, `oauth_issuer_url`, etc.
-4. **Internal compose URL keys** — a curated list including `prefect_api_url`, `grafana_url`, `loki_url`, `tempo_url`, `prometheus_url`, `ollama_base_url`, `internal_api_base_url`, `openclaw_gateway_url`, `sdxl_server_url`.
+4. **Internal compose URL keys** — a curated list including `prefect_api_url`, `grafana_url`, `loki_url`, `tempo_url`, `prometheus_url`, `ollama_base_url`, `internal_api_base_url`, `openclaw_gateway_url`, `image_gen_server_url`.
 
 Each URL is hit with `HEAD` (falling back to a ranged `GET` on 405/501).
 Probes run in parallel via `httpx.AsyncClient` with a `Semaphore(10)` cap
@@ -78,13 +78,13 @@ to disable it temporarily, comment out the call in
 
 Tunables are module-level constants in `operator_url_probe.py`:
 
-| Constant                     | Default | Purpose                                            |
-| ---------------------------- | ------- | -------------------------------------------------- |
-| `HTTP_CONNECT_TIMEOUT_S`     | `3.0`   | Per-request connect timeout                        |
-| `HTTP_READ_TIMEOUT_S`        | `5.0`   | Per-request read timeout                           |
-| `DEFAULT_CONCURRENCY`        | `10`    | Max in-flight HTTP probes                          |
-| `PROBE_INTERVAL_SECONDS`     | `900`   | Minimum gap between probe runs (15 minutes)        |
-| `INTERNAL_COMPOSE_URL_KEYS`  | (list)  | `app_settings` keys that don't end in `_url` but should still be probed |
+| Constant                    | Default | Purpose                                                                 |
+| --------------------------- | ------- | ----------------------------------------------------------------------- |
+| `HTTP_CONNECT_TIMEOUT_S`    | `3.0`   | Per-request connect timeout                                             |
+| `HTTP_READ_TIMEOUT_S`       | `5.0`   | Per-request read timeout                                                |
+| `DEFAULT_CONCURRENCY`       | `10`    | Max in-flight HTTP probes                                               |
+| `PROBE_INTERVAL_SECONDS`    | `900`   | Minimum gap between probe runs (15 minutes)                             |
+| `INTERNAL_COMPOSE_URL_KEYS` | (list)  | `app_settings` keys that don't end in `_url` but should still be probed |
 
 ### Running the probe directly
 
@@ -151,11 +151,11 @@ opens a span named `brain.probe.<name>` (for example,
 `brain.probe.embeddings_freshness`). Each span carries three
 attributes:
 
-| Attribute         | Type    | Meaning                                          |
-| ----------------- | ------- | ------------------------------------------------ |
-| `probe.name`      | string  | The probe key (matches the `PROBES` registry)    |
-| `probe.ok`        | bool    | Final pass/fail result returned by the probe     |
-| `probe.duration_s`| float   | Wall-clock seconds the probe took to run         |
+| Attribute          | Type   | Meaning                                       |
+| ------------------ | ------ | --------------------------------------------- |
+| `probe.name`       | string | The probe key (matches the `PROBES` registry) |
+| `probe.ok`         | bool   | Final pass/fail result returned by the probe  |
+| `probe.duration_s` | float  | Wall-clock seconds the probe took to run      |
 
 Probes that raise call `span.record_exception(e)` so the stack trace
 shows up on the span in Tempo.
@@ -185,18 +185,18 @@ named `poindexter.brain.probes`.
 
 ## Files in this directory
 
-| File                          | Purpose                                                               |
-| ----------------------------- | --------------------------------------------------------------------- |
-| `brain_daemon.py`             | Main daemon entry point and cycle scheduler                           |
-| `health_probes.py`            | Service-level health checks                                           |
-| `business_probes.py`          | Pipeline throughput / quality probes                                  |
-| `alert_sync.py`               | Reconciles Grafana alert rules                                        |
-| `operator_url_probe.py`       | Operator-facing URL/IP drift probe                                    |
-| `operator_notifier.py`        | Telegram/Discord notification dispatcher                              |
-| `probe_interface.py`          | Probe Protocol + base classes                                         |
-| `bootstrap.py`                | Brain bootstrap / first-boot setup                                    |
-| `seed_loader.py`              | Loads `seed_app_settings.json` defaults on first boot                 |
-| `seed_app_settings.json`      | Default `app_settings` rows shipped with the brain daemon             |
-| `docker_utils.py`             | Helpers for inspecting / restarting compose containers                |
-| `Dockerfile`                  | Container image for `poindexter-brain-daemon`                         |
-| `hallucination-check/`        | Reference data (PyPI top-500, stdlib modules, Ollama models, etc.)    |
+| File                     | Purpose                                                            |
+| ------------------------ | ------------------------------------------------------------------ |
+| `brain_daemon.py`        | Main daemon entry point and cycle scheduler                        |
+| `health_probes.py`       | Service-level health checks                                        |
+| `business_probes.py`     | Pipeline throughput / quality probes                               |
+| `alert_sync.py`          | Reconciles Grafana alert rules                                     |
+| `operator_url_probe.py`  | Operator-facing URL/IP drift probe                                 |
+| `operator_notifier.py`   | Telegram/Discord notification dispatcher                           |
+| `probe_interface.py`     | Probe Protocol + base classes                                      |
+| `bootstrap.py`           | Brain bootstrap / first-boot setup                                 |
+| `seed_loader.py`         | Loads `seed_app_settings.json` defaults on first boot              |
+| `seed_app_settings.json` | Default `app_settings` rows shipped with the brain daemon          |
+| `docker_utils.py`        | Helpers for inspecting / restarting compose containers             |
+| `Dockerfile`             | Container image for `poindexter-brain-daemon`                      |
+| `hallucination-check/`   | Reference data (PyPI top-500, stdlib modules, Ollama models, etc.) |

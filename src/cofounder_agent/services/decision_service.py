@@ -18,7 +18,7 @@ Usage:
         decision_type="image_source",
         decision_point="image_decision_agent",
         context={"section": "Schema Design", "category": "technology"},
-        decision={"source": "sdxl", "style": "blueprint", "prompt": "..."},
+        decision={"source": "image_gen", "style": "blueprint", "prompt": "..."},
         task_id=task_id,
         model_used="qwen3:8b",
         duration_ms=1200,

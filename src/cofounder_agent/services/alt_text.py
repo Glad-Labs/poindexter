@@ -1,23 +1,23 @@
 """Alt-text sanitation and budget-aware summarization.
 
 Fixes GitHub issue Glad-Labs/poindexter#84: pipeline stage tokens
-(``||sdxl:*||``, ``||pexels:*||``) were leaking into the ``alt`` attribute
+(``||image_gen:*||``, ``||pexels:*||``) were leaking into the ``alt`` attribute
 of inline ``<img>`` tags, and alt strings were being mid-word-truncated
 via ``.slice(0, N)``.
 
-Also fixes Glad-Labs/poindexter#469: SDXL-prompt-shaped descriptors
+Also fixes Glad-Labs/poindexter#469: image-gen-prompt-shaped descriptors
 (imperative verbs, style-rotation prefixes, canonical negative-prompt
 fragments) were landing as the ``alt`` attribute when the Image
-Decision Agent injected ``[IMAGE-N: <SDXL-prompt>]`` placeholders.
-See :func:`looks_like_sdxl_prompt` for the detection heuristic.
+Decision Agent injected ``[IMAGE-N: <image-gen-prompt>]`` placeholders.
+See :func:`looks_like_image_gen_prompt` for the detection heuristic.
 
 This module is the single source of truth for:
 
 1. :func:`strip_pipeline_tokens` — remove ``||provider:hint||`` markers.
-2. :func:`looks_like_sdxl_prompt` — detect SDXL-prompt-shaped strings.
+2. :func:`looks_like_image_gen_prompt` — detect image-gen-prompt-shaped strings.
 3. :func:`sanitize_alt_text`     — produce a budgeted, complete-sentence
    alt string without mid-word truncation. Substitutes a topic-derived
-   fallback when the draft looks like an SDXL prompt.
+   fallback when the draft looks like an image-gen prompt.
 4. :func:`strip_tokens_from_img_tags` — scrub every ``alt="..."`` in a
    rendered block of HTML/Markdown (used post image-stage finalization
    and by the one-shot backfill script).
@@ -37,10 +37,11 @@ import re
 logger = logging.getLogger(__name__)
 
 # Matches ``||<lowercase-provider>:<anything-without-pipe>||``
-# Examples: ``||sdxl:blueprint||``, ``||pexels:screens with code||``
-# The provider segment is lowercase a-z; content between ``:`` and the
+# Examples: ``||image_gen:blueprint||``, ``||pexels:screens with code||``
+# The provider segment starts with a letter then allows letters/digits/underscore
+# (e.g. ``image_gen`` has an underscore); content between ``:`` and the
 # next ``||`` can include spaces and punctuation but never a pipe.
-_PIPELINE_TOKEN_RE = re.compile(r"\|\|[a-z]+:[^|]+\|\|")
+_PIPELINE_TOKEN_RE = re.compile(r"\|\|[a-z][a-z0-9_]*:[^|]+\|\|")
 
 # Matches an ``<img ... alt="..." ...>`` tag and captures the alt contents.
 # We handle only double-quoted alt values because the pipeline never
@@ -53,14 +54,14 @@ _WORD_CHAR_RE = re.compile(r"\w")
 
 
 # ---------------------------------------------------------------------------
-# SDXL-prompt-shape detection (Glad-Labs/poindexter#469)
+# image-gen-prompt-shape detection (Glad-Labs/poindexter#469)
 # ---------------------------------------------------------------------------
 #
 # Three orthogonal signals — any one fires the fallback path:
 #
 # 1. **Imperative-verb opener.** Match the verb at the start of the
 #    string OR at the start of any sentence (after ``. ! ? ;``). The
-#    real-world bug had "An isometric diagram of a simplified SDXL
+#    real-world bug had "An isometric diagram of a simplified image-gen
 #    architecture. Show the key components..." — the first clause is
 #    a legitimate-looking phrase, but the second sentence is the
 #    smoking gun.
@@ -70,19 +71,19 @@ _WORD_CHAR_RE = re.compile(r"\w")
 #    shadows``). The list is sourced from
 #    ``services/stages/replace_inline_images.py::INLINE_STYLES`` plus
 #    ``services/stages/source_featured_image.py::DEFAULT_STYLES``.
-# 3. **Canonical SDXL negative-prompt fragments.** Literal substrings
+# 3. **Canonical image-gen negative-prompt fragments.** Literal substrings
 #    that only appear in our prompt-construction code (``no text``,
 #    ``no faces``, ``negative prompt``, ``faceless silhouettes``,
 #    ``bokeh``, ``low quality``).
 #
 # The matchers are deliberately conservative on edge cases (e.g.
 # ``macro`` alone is NOT a flag — only ``macro,`` or ``macro close-up
-# photograph`` followed by SDXL-style adjective clauses). Real human
+# photograph`` followed by image-gen-style adjective clauses). Real human
 # alts like "A close-up macro photo of a circuit board" pass through
-# unchanged. See ``test_alt_text.py::TestLooksLikeSdxlPrompt`` for the
+# unchanged. See ``test_alt_text.py::TestLooksLikeImageGenPrompt`` for the
 # locked-in positive-case set.
 
-# Verbs the SDXL prompt builder reaches for in inline + featured
+# Verbs the image-gen prompt builder reaches for in inline + featured
 # image construction. Case-insensitive match at a sentence boundary.
 _IMPERATIVE_VERBS: tuple[str, ...] = (
     "show",
@@ -162,7 +163,7 @@ _STYLE_PREFIX_RE = re.compile(
 )
 
 # Canonical negative-prompt phrases. These literal strings live in
-# our SDXL prompt builders (``SDXL_NEGATIVE_PROMPT`` in both
+# our image-gen prompt builders (``image-gen_NEGATIVE_PROMPT`` in both
 # replace_inline_images.py and source_featured_image.py, plus the
 # ``no text, no faces`` requirement passed to Ollama). If we see them
 # in an alt, the model echoed the prompt back into the placeholder.
@@ -181,8 +182,8 @@ _NEGATIVE_FRAGMENT_RE = re.compile(
 )
 
 
-def looks_like_sdxl_prompt(text: str) -> bool:
-    """Return True when *text* looks like an SDXL prompt, not an alt.
+def looks_like_image_gen_prompt(text: str) -> bool:
+    """Return True when *text* looks like an image-gen prompt, not an alt.
 
     Three orthogonal signals — any one is enough to flag the string:
 
@@ -217,7 +218,7 @@ def strip_pipeline_tokens(text: str) -> str:
     """Remove ``||provider:hint||`` stage markers from a string.
 
     Works regardless of which provider emitted the token — both
-    ``||sdxl:*||`` and ``||pexels:*||`` are stripped. Collapses the
+    ``||image_gen:*||`` and ``||pexels:*||`` are stripped. Collapses the
     whitespace the token leaves behind so ``foo ||x:y|| bar`` becomes
     ``foo bar`` (not ``foo  bar``), and a trailing token like
     ``foo. ||x:y||`` becomes ``foo.`` (no dangling space).
@@ -334,14 +335,14 @@ def sanitize_alt_text(
     if not cleaned:
         return _fallback_alt(topic, budget)
 
-    # GH-469: when the Image Decision Agent injects [IMAGE-N: <SDXL-prompt>],
+    # GH-469: when the Image Decision Agent injects [IMAGE-N: <image-gen-prompt>],
     # the prompt text reaches us as the descriptor. Detect that shape and
     # substitute the topic-derived fallback so screen readers / SEO don't
     # see "Show the key components (encoder, decoder, refiner)..." text.
-    if looks_like_sdxl_prompt(cleaned):
+    if looks_like_image_gen_prompt(cleaned):
         # Log a WARN so future false-positives surface (no silent defaults).
         logger.warning(
-            "alt_text: dropping SDXL-prompt-shaped draft, using topic fallback: %r",
+            "alt_text: dropping image-gen-prompt-shaped draft, using topic fallback: %r",
             cleaned[:80],
         )
         return _fallback_alt(topic, budget)

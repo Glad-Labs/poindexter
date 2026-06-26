@@ -168,12 +168,12 @@ All in `docker-compose.local.yml` / `.env`. **The budget that matters is the
 WSL2 VM, not the 64 GB host.** `.wslconfig` pins WSL2 to **24 GB / 16 procs**,
 and the entire Docker stack lives in it — `docker info` shows the cap, and
 `docker stats --no-stream` shows the stack already using ~14–15 GB (so ~8–9 GB
-free, less when SDXL spikes). Size the runner to fit that, not the host.
+free, less when image-gen spikes). Size the runner to fit that, not the host.
 
 - **Resource caps:** `CI_RUNNER_CPUS` (default 8) and `CI_RUNNER_MEM` (default
   **8g**) for the one runner. `unit-tests` is serial (`pytest --forked` runs one
   subprocess at a time, no xdist), so real peak is only a few GB; 8g is generous
-  and fits the free headroom. Lower `CI_RUNNER_MEM` if SDXL/Wan and CI ever
+  and fits the free headroom. Lower `CI_RUNNER_MEM` if image-gen/Wan and CI ever
   pressure the VM together.
 - **Concurrency / a second runner:** one runner handles unit-tests fine — a
   second concurrent run just queues behind it. Only add a `github-runner-2` if

@@ -7,10 +7,10 @@
 ## Problem
 
 The stack shares one 32 GB GPU across Ollama LLM inference (writer/director,
-~19 GB), SDXL image generation, and wan video render (~14.8 GB).
+~19 GB), image-gen image generation, and wan video render (~14.8 GB).
 `services/gpu_scheduler.py::gpu.lock(owner)` serializes these through a
 two-tier lock — an in-process `asyncio.Lock` plus a cross-process
-`pg_advisory_lock` on a dedicated connection — and `gpu.lock("sdxl"|"video")`
+`pg_advisory_lock` on a dedicated connection — and `gpu.lock("image_gen"|"video")`
 evicts any loaded Ollama model before a render.
 
 Content-pipeline stages correctly wrap their LLM work in `gpu.lock("ollama")`.
@@ -50,7 +50,7 @@ future caller can reintroduce the gap.
    still catching every previously-unwrapped scheduled call.
 
 3. **Tunable** `gpu_serialize_llm_dispatch` (default `true`) in
-   `settings_defaults.py`, mirroring `pipeline_explicit_writer_unload_before_sdxl`
+   `settings_defaults.py`, mirroring `pipeline_writer_unload_before_image_gen`
    — abundant-VRAM operators can opt out.
 
 ## Net effect
@@ -150,7 +150,7 @@ caller hitting that fallback: `routes/triage_routes.py::_DefaultModelRouter`
 called `ollama_chat_text` without threading the route's pool. During a media
 render holding `gpu.lock("video")`, an inbound triage (the brain triages every
 alert, and a degrading render _raises_ alerts) reloaded the 19 GB writer model
-into VRAM — gemma(19) + wan + SDXL oversubscribed the 32 GB card and the SDXL
+into VRAM — gemma(19) + wan + image-gen oversubscribed the 32 GB card and the image-gen
 server hit a CUDA OOM mid-render, degrading the video (most shots fell back to
 held-over clips; `media.qa` rejected it). Confirmed in the 2026-06-21 media-lane
 validation: `triage_ok ... model=gemma-4-31B` logged at 17:52, inside a

@@ -3,7 +3,7 @@ name: image-generation
 description: >
   Image-direction prompts for the content pipeline. Generate featured-image
   prompts, build stock image search queries, and run the image-director
-  reasoning that picks which sections get visuals (sdxl vs pexels, style,
+  reasoning that picks which sections get visuals (image_gen vs pexels, style,
   and prompt/query for each) plus one featured hero image.
 license: Apache-2.0
 metadata:
@@ -20,7 +20,7 @@ metadata:
       description: 'Generate stock-image search queries for a topic'
     - key: image.decision
       output_format: json
-      description: 'Image-director reasoning prompt — picks which sections get visuals, sdxl vs pexels, style, and prompt/query for each, plus one featured hero image'
+      description: 'Image-director reasoning prompt — picks which sections get visuals, image_gen vs pexels, style, and prompt/query for each, plus one featured hero image'
 ---
 
 # Image generation skill
@@ -78,20 +78,20 @@ SECTIONS:
 {section_list}
 
 AVAILABLE IMAGE SOURCES:
-- "sdxl": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, diagrams, conceptual scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
+- "image_gen": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, diagrams, conceptual scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
 - "pexels": Stock photography. Best for: real-world objects, environments, workspaces, hardware close-ups, materials. Avoid shots of people.
 
 RULES:
 1. Pick {max_images} sections that would benefit most from a visual (skip sections that are mostly code)
-2. For each, decide: sdxl or pexels? What style? What specific image?
+2. For each, decide: image_gen or pexels? What style? What specific image?
 3. Also decide on 1 featured image (the hero/header image for the article)
 4. Be specific in your prompts — describe the exact scene, not vague concepts
-5. NEVER depict people, hands, faces, or human figures in ANY image — the brand style is objects, hardware, and environments only. Also never put text, words, or letters in SDXL images.
+5. NEVER depict people, hands, faces, or human figures in ANY image — the brand style is objects, hardware, and environments only. Also never put text, words, or letters in AI-generated images.
 
 Output ONLY valid JSON (no markdown, no explanation):
 {{
   "featured": {{
-    "source": "sdxl" or "pexels",
+    "source": "image_gen" or "pexels",
     "style": "style_name",
     "prompt": "detailed image prompt or search query",
     "reasoning": "why this image works for the hero"
@@ -99,7 +99,7 @@ Output ONLY valid JSON (no markdown, no explanation):
   "inline": [
     {{
       "section": "exact section title",
-      "source": "sdxl" or "pexels",
+      "source": "image_gen" or "pexels",
       "style": "style_name",
       "prompt": "detailed image prompt or search query",
       "reasoning": "why this visual helps this section"

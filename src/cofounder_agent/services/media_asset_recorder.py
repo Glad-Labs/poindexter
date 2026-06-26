@@ -111,7 +111,7 @@ async def record_media_asset(
         cost_usd: Generation cost (LLM / TTS API). ``0.0`` for free local.
         electricity_kwh: GPU energy cost from the cost guard.
         provider_plugin: Registered plugin name that produced the file
-            (e.g. ``image.sdxl``, ``tts.edge_tts``,
+            (e.g. ``image.image_gen``, ``tts.edge_tts``,
             ``compositor.ffmpeg_local``).
         source: Pipeline phase label — defaults to ``"pipeline"``.
             Backfill scripts pass ``"backfill"`` to keep rows distinct.

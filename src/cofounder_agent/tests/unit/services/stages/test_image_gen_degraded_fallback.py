@@ -1,7 +1,7 @@
-"""Pinning test for the SDXL-degraded → Pexels-fallback path.
+"""Pinning test for the image-gen-degraded → Pexels-fallback path.
 
 Live incident 2026-05-11 17:48 UTC: after a worker restart cascade,
-``poindexter-sdxl-server`` lost its connection to ``poindexter-postgres-
+``poindexter-image-gen-server`` lost its connection to ``poindexter-postgres-
 local`` and entered DEGRADED state — ``/health`` reported ``"DB read
 failed for 'image_generation_model'"`` and ``/generate`` returned HTTP
 503 to every caller. Worker correctly fell back to Pexels for all 9
@@ -16,9 +16,9 @@ through to the Pexels fallback rather than crashing or returning a
 broken image.
 
 See also:
-- Glad-Labs/poindexter#459 (the SDXL HTTP-fetch fix that introduced
+- Glad-Labs/poindexter#459 (the image-gen HTTP-fetch fix that introduced
   the new code path being tested here)
-- ``services/stages/source_featured_image.py::_render_sdxl`` (the
+- ``services/stages/source_featured_image.py::_render_image_gen`` (the
   early-return on ``resp.status_code != 200``)
 """
 
@@ -68,14 +68,14 @@ def _gpu_lock_noop():
 
 
 # ---------------------------------------------------------------------------
-# _render_sdxl: non-200 → None
+# _render_image_gen: non-200 → None
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
-class TestRenderSdxlNon200ReturnsNone:
+class TestRenderImageGenNon200ReturnsNone:
     """The early-return on ``resp.status_code != 200`` is the actual
-    fallback trigger. Pin it for every error-shape the SDXL server
+    fallback trigger. Pin it for every error-shape the image-gen server
     might emit when degraded.
     """
 
@@ -84,7 +84,7 @@ class TestRenderSdxlNon200ReturnsNone:
         [
             (503, "service degraded — the scenario we saw 2026-05-11 17:48 UTC"),
             (500, "internal server error"),
-            (502, "bad gateway (load balancer in front of SDXL)"),
+            (502, "bad gateway (load balancer in front of image-gen)"),
             (504, "gateway timeout"),
             (404, "endpoint not found (deploy / route mismatch)"),
             (401, "auth required"),
@@ -93,17 +93,17 @@ class TestRenderSdxlNon200ReturnsNone:
     )
     @pytest.mark.asyncio
     async def test_non_200_response_returns_none(self, status_code, scenario):
-        """``_render_sdxl`` returns ``(None, {})`` on any non-200 — the
+        """``_render_image_gen`` returns ``(None, {})`` on any non-200 — the
         stage's Pexels-fallback branch keys on the None local path.
 
         Post-2026-05-19 the function returns a tuple of
-        ``(local_path, sdxl_meta)`` so the SDXL response payload can be
+        ``(local_path, gen_meta)`` so the image-gen response payload can be
         threaded onto ``posts.featured_image_data``. The Pexels-fallback
         contract on non-200 is preserved by returning ``None`` in
-        position 0; ``sdxl_meta`` is ``{}`` because there's no JSON to
+        position 0; ``gen_meta`` is ``{}`` because there's no JSON to
         parse on an error response.
         """
-        from modules.content.stages.source_featured_image import _render_sdxl
+        from modules.content.stages.source_featured_image import _render_image_gen
 
         post_resp = _fake_response(status_code)
         with patch(
@@ -112,36 +112,36 @@ class TestRenderSdxlNon200ReturnsNone:
         ), patch(
             "services.gpu_scheduler.gpu", _gpu_lock_noop(),
         ):
-            output_path, sdxl_meta = await _render_sdxl(
-                sdxl_url="http://sdxl.example:9836",
-                sdxl_prompt="a serene server room",
+            output_path, gen_meta = await _render_image_gen(
+                image_gen_url="http://image-gen-server:9836",
+                img_gen_prompt="a serene server room",
                 negative_prompt="text, words",
                 task_id="task-degraded-test",
             )
 
         assert output_path is None, (
-            f"_render_sdxl must return None local-path on HTTP {status_code} "
+            f"_render_image_gen must return None local-path on HTTP {status_code} "
             f"({scenario}) so the featured-image stage falls through to Pexels."
         )
-        assert sdxl_meta == {}, (
-            "sdxl_meta must be empty on the error branch — no JSON to parse."
+        assert gen_meta == {}, (
+            "gen_meta must be empty on the error branch — no JSON to parse."
         )
 
 
 # ---------------------------------------------------------------------------
-# Stage-level: SDXL degraded → Pexels image makes it onto the context
+# Stage-level: image-gen degraded → Pexels image makes it onto the context
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.unit
 class TestStageFallsBackToPexels:
     """End-to-end through ``SourceFeaturedImageStage.execute``: when
-    the SDXL branch returns None, the Pexels branch runs and the
+    the image-gen branch returns None, the Pexels branch runs and the
     resulting context carries the Pexels image (not NULL, not a
     crashed pipeline)."""
 
     @pytest.mark.asyncio
-    async def test_sdxl_returns_none_yields_pexels_featured_image(self):
+    async def test_image_gen_returns_none_yields_pexels_featured_image(self):
         from modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
         pexels_image = SimpleNamespace(
@@ -152,8 +152,8 @@ class TestStageFallsBackToPexels:
         )
 
         image_service = SimpleNamespace(
-            sdxl_available=True,
-            sdxl_initialized=True,
+            gen_available=True,
+            gen_initialized=True,
             search_featured_image=AsyncMock(return_value=pexels_image),
         )
 
@@ -161,7 +161,7 @@ class TestStageFallsBackToPexels:
             "topic": "NVMe Gen5 thermal throttling",
             "tags": ["nvme", "thermal"],
             "generate_featured_image": True,
-            "task_id": "task-sdxl-degraded",
+            "task_id": "task-image-gen-degraded",
             "image_service": image_service,
             "site_config": SimpleNamespace(
                 get=lambda key, default=None: default,
@@ -171,10 +171,10 @@ class TestStageFallsBackToPexels:
             ),
         }
 
-        # Force the SDXL branch to return None — simulating the
+        # Force the image-gen branch to return None — simulating the
         # 2026-05-11 17:48 UTC degraded scenario.
         with patch(
-            "modules.content.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_image_gen_featured",
             new=AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})
@@ -197,8 +197,8 @@ class TestStageFallsBackToPexels:
         assert updates["stages"]["3_featured_image_found"] is True
 
     @pytest.mark.asyncio
-    async def test_sdxl_and_pexels_both_fail_yields_no_image_no_crash(self):
-        """If BOTH SDXL and Pexels fail (or return None), the stage
+    async def test_image_gen_and_pexels_both_fail_yields_no_image_no_crash(self):
+        """If BOTH image-gen and Pexels fail (or return None), the stage
         completes with ``featured_image=None`` and the pipeline keeps
         running. This is the "graceful third-tier degradation" path —
         the post lands without a featured image rather than crashing
@@ -207,8 +207,8 @@ class TestStageFallsBackToPexels:
         from modules.content.stages.source_featured_image import SourceFeaturedImageStage
 
         image_service = SimpleNamespace(
-            sdxl_available=True,
-            sdxl_initialized=True,
+            gen_available=True,
+            gen_initialized=True,
             search_featured_image=AsyncMock(return_value=None),
         )
 
@@ -226,7 +226,7 @@ class TestStageFallsBackToPexels:
         }
 
         with patch(
-            "modules.content.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_image_gen_featured",
             new=AsyncMock(return_value=None),
         ):
             result = await SourceFeaturedImageStage().execute(ctx, {})

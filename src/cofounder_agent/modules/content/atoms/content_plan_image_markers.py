@@ -60,10 +60,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     category = state.get("category", "technology")
     site_config = state.get("site_config")
 
-    # VRAM guard: unload writer LLM before SDXL may load.
+    # VRAM guard: unload writer LLM before image-gen may load.
     try:
-        from services.llm_providers.ollama_unload import maybe_unload_writer_before_sdxl
-        await maybe_unload_writer_before_sdxl(
+        from services.llm_providers.ollama_unload import maybe_unload_writer_before_image_gen
+        await maybe_unload_writer_before_image_gen(
             site_config=site_config,
             stage_label="content.plan_image_markers",
         )

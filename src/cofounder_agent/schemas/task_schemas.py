@@ -616,7 +616,7 @@ class ApproveTaskRequest(BaseModel):
     human_feedback: str | None = Field(None, description="Feedback from reviewer")
     reviewer_id: str | None = Field(None, description="ID of the reviewer")
     featured_image_url: str | None = Field(None, description="Featured image URL for the post")
-    image_source: str | None = Field(None, description="Source of image (pexels, sdxl, etc.)")
+    image_source: str | None = Field(None, description="Source of image (pexels, image_gen, etc.)")
 
     model_config = ConfigDict(
         json_schema_extra={

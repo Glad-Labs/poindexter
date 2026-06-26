@@ -46,7 +46,7 @@ def _patch_gpu_lock():
         yield lock_mock
 
 # A minimal valid 16:9 long-form shot-list dict (rehydratable by
-# VideoShotList.model_validate). One sdxl shot keeps it trivial.
+# VideoShotList.model_validate). One image_gen shot keeps it trivial.
 _LONG_SHOT_LIST = {
     "version": 1,
     "aspect": "16:9",
@@ -56,7 +56,7 @@ _LONG_SHOT_LIST = {
             "idx": 0,
             "duration_s": 3.0,
             "intent": "opening still",
-            "source": "sdxl",
+            "source": "image_gen",
             "prompt": "a clean abstract gradient backdrop",
             "narration_offset_s": 0.0,
         },
@@ -114,7 +114,7 @@ class TestRenderFromStateHelper:
         """The render runs inside ``gpu.lock("video")`` so the scheduler evicts
         Ollama + holds the cross-process pg_advisory_lock for the render's
         duration (validation findings 4b/7 — the render path used to bypass the
-        scheduler entirely, so the resident writer/director starved wan+SDXL →
+        scheduler entirely, so the resident writer/director starved wan+image-gen →
         'inference server unreachable' → render failures)."""
         state = {"task_id": "t-1", "video_shot_list": _LONG_SHOT_LIST}
         mock_render = AsyncMock(return_value=_ok_result())
@@ -322,9 +322,9 @@ class TestRenderFromStateHelper:
         assert mock_render.await_args.kwargs["pool"] is pool_obj
 
     @pytest.mark.asyncio
-    async def test_sdxl_url_from_site_config(self):
+    async def test_image_gen_url_from_site_config(self):
         site_config = MagicMock()
-        site_config.get = MagicMock(return_value="http://sdxl-host:9836")
+        site_config.get = MagicMock(return_value="http://image-gen-host:9836")
         state = {
             "task_id": "t-1",
             "video_shot_list": _LONG_SHOT_LIST,
@@ -335,10 +335,10 @@ class TestRenderFromStateHelper:
             await _media_render.render_from_state(
                 state, shot_list_key="video_shot_list", output_key="long_video_path"
             )
-        assert mock_render.await_args.kwargs["sdxl_url"] == "http://sdxl-host:9836"
+        assert mock_render.await_args.kwargs["image_gen_url"] == "http://image-gen-host:9836"
 
     @pytest.mark.asyncio
-    async def test_sdxl_url_default_when_no_site_config(self):
+    async def test_image_gen_url_default_when_no_site_config(self):
         state = {"task_id": "t-1", "video_shot_list": _LONG_SHOT_LIST}
         mock_render = AsyncMock(return_value=_ok_result())
         with patch.object(_media_render, "render_shot_list", mock_render):
@@ -346,7 +346,7 @@ class TestRenderFromStateHelper:
                 state, shot_list_key="video_shot_list", output_key="long_video_path"
             )
         assert (
-            mock_render.await_args.kwargs["sdxl_url"]
+            mock_render.await_args.kwargs["image_gen_url"]
             == "http://host.docker.internal:9836"
         )
 

@@ -35,7 +35,7 @@ services:
       #   auto-embed                         = 4
       #   memory client per tap (shared)     = ~5
       #   gitea / pgadmin / psql ad-hoc      = ~10
-      #   ancillary (voice-bot, sdxl, etc.)  = ~10
+      #   ancillary (voice-bot, image-gen, etc.)  = ~10
       #   --- steady state ~100, transient peaks to ~150 under stress.
       # 300 gives 2× headroom for concurrent stress tests + future SaaS
       # auth fan-out. Revisit if pgbouncer is added (deferred, GH-92).
@@ -796,7 +796,7 @@ services:
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ./scripts:/opt/scripts:ro
     extra_hosts:
-      # Ollama + SDXL servers run on the host machine, not in the
+      # Ollama + image-gen servers run on the host machine, not in the
       # docker network. host.docker.internal resolves to host-gateway
       # so flow bodies can reach them when invoked by this worker.
       - "host.docker.internal:host-gateway"
@@ -1007,20 +1007,20 @@ services:
       LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:?Run 'poindexter setup' — LANGFUSE_INIT_USER_PASSWORD is generated in bootstrap.toml}
 
   # ===========================================
-  # SDXL Image Server — GPU-accelerated image generation
+  # image-gen Server — GPU-accelerated image generation
   # ===========================================
-  sdxl-server:
+  image-gen-server:
     build:
       context: ./scripts
-      dockerfile: Dockerfile.sdxl
-    container_name: poindexter-sdxl-server
+      dockerfile: Dockerfile.image-gen
+    container_name: poindexter-image-gen-server
     restart: unless-stopped
     ports:
       - "9836:9836"
     environment:
       POINDEXTER_BRAIN_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
     volumes:
-      # Mount under /home/appuser — Dockerfile.sdxl runs as USER appuser, so the
+      # Mount under /home/appuser — Dockerfile.image-gen runs as USER appuser, so the
       # server's OUTPUT_DIR (expanduser("~")/.poindexter/generated-images) and HF
       # cache resolve to /home/appuser. Mounting at /root left renders + the model
       # cache in the container's ephemeral layer (the worker, which reads from the
@@ -1036,7 +1036,7 @@ services:
               capabilities: [gpu]
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    # SDXL reads image_generation_model / image_negative_prompt / style
+    # image-gen reads image_generation_model / image_negative_prompt / style
     # settings from app_settings. Wait for brain to seed them first.
     depends_on:
       postgres-local:
@@ -1051,9 +1051,9 @@ services:
 
   # ===========================================
   # Wan 2.1 1.3B Video Server — GPU-accelerated text-to-video
-  # Sidecar mate of sdxl-server. Listens on 9840; the
+  # Sidecar mate of image-gen-server. Listens on 9840; the
   # ``Wan21Provider`` plugin POSTs to it via host.docker.internal:9840.
-  # Idle timeout (~120s) auto-unloads the model so SDXL / Ollama can
+  # Idle timeout (~120s) auto-unloads the model so image-gen / Ollama can
   # reclaim VRAM when no video work is queued.
   # ===========================================
   wan-server:
@@ -1116,7 +1116,7 @@ services:
       # -1 = never idle-offload, so the model stays resident and warm.
       WHISPER__TTL: "-1"
       # Pin the HF cache to an explicit mount (don't guess the image user's
-      # HOME); shares downloaded weights with sdxl/wan via the same host dir.
+      # HOME); shares downloaded weights with image-gen/wan via the same host dir.
       HF_HOME: /cache/huggingface
     volumes:
       - ${USERPROFILE:-.}/.cache/huggingface:/cache/huggingface
@@ -2032,8 +2032,8 @@ services:
     command: ["./bin/Runner.Listener", "run", "--startuptype", "service"]
     # IMPORTANT — caps are relative to the WSL2 VM, NOT the 64 GB host.
     # `.wslconfig` pins WSL2 to 24 GB / 16 procs, and the ENTIRE Docker stack
-    # (postgres, grafana, sdxl, worker, langfuse, observability…) shares that
-    # VM — ~14-15 GB is already in use, leaving ~8-9 GB free (less when SDXL
+    # (postgres, grafana, image-gen, worker, langfuse, observability…) shares that
+    # VM — ~14-15 GB is already in use, leaving ~8-9 GB free (less when image-gen
     # spikes). So this is ONE runner sized to fit that headroom, not two at
     # 16 GB. unit-tests is a SERIAL workload (pytest --forked runs one
     # subprocess at a time, no xdist), so its real peak is only a few GB and a

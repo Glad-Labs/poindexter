@@ -9,7 +9,7 @@
 A full audit of gladlabs.io (105 live URLs + the live `poindexter_brain` DB)
 surfaced 7 fixable SEO issues. The headline problem (Matt's original concern):
 **inline `<img>` alt text describes the image-generation _prompt_, not the
-actual rendered image** — many alts claim people/scenes that SDXL was
+actual rendered image** — many alts claim people/scenes that image-gen was
 explicitly told _not_ to render (negative prompt: "no people, no faces"),
 so the alt is factually wrong for crawlers and screen readers.
 
@@ -94,7 +94,7 @@ R2**.
   factual, concise, one sentence, ≤{budget} chars. Do NOT begin with 'image
   of'/'photo of'. Do NOT invent details that aren't visible."_
 - Post-process through existing `services.alt_text.sanitize_alt_text(...,
-budget=..., topic=...)` so all the leak-token / mid-word / SDXL-prompt-shape
+budget=..., topic=...)` so all the leak-token / mid-word / image-gen-prompt-shape
   guards still apply.
 - **Fail-soft:** on any fetch/inference error, return `None` so callers keep the
   existing alt (never blank a post). Logs a WARN (no silent default).
@@ -125,7 +125,7 @@ budget=..., topic=...)` so all the leak-token / mid-word / SDXL-prompt-shape
   inline `<img>`:
   - Parse each `<img src alt>` and **re-caption every inline image.** Empirical
     verification (2026-06-02) found even clean-looking alts are inaccurate
-    (they describe prompt intent, not the abstract image SDXL rendered), so
+    (they describe prompt intent, not the abstract image image-gen rendered), so
     text-pattern targeting would skip the dangerous "reads-clean-but-lies"
     cases. Re-caption all; don't try to pre-judge from the text.
   - **Idempotency via marker, not text-shape:** after processing a post, stamp

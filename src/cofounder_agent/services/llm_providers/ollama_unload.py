@@ -4,15 +4,15 @@ The content pipeline keeps the writer LLM (~20 GB for ``gemma3:27b``)
 hot via Ollama's ``keep_alive`` default of 5 minutes. That is great for
 back-to-back LLM stages but creates a VRAM cliff at the boundary
 between ``quality_evaluation`` (last LLM stage) and
-``replace_inline_images`` / ``source_featured_image`` (the SDXL pair).
+``replace_inline_images`` / ``source_featured_image`` (the image-gen pair).
 
-On a 32 GB card the writer (~20 GB) plus SDXL Lightning (~12 GB) hit
+On a 32 GB card the writer (~20 GB) plus image-gen Lightning (~12 GB) hit
 ~98% VRAM during the ~30 s window the GPU scheduler takes to acquire
-the SDXL lock and unload the writer. On a 24 GB card the same window
+the image-gen lock and unload the writer. On a 24 GB card the same window
 OOM-crashes the worker.
 
 ``services.gpu_scheduler.GPUScheduler`` already calls
-``_unload_ollama_models()`` when ``gpu.lock("sdxl", ...)`` is acquired,
+``_unload_ollama_models()`` when ``gpu.lock("image_gen", ...)`` is acquired,
 but Ollama treats ``keep_alive: 0`` as fire-and-forget — the API call
 returns immediately and the actual VRAM release is asynchronous. A
 ``/generate`` request issued seconds later (the inline-image prompt
@@ -28,14 +28,14 @@ This helper provides a deterministic seam:
   ``15``, polled every ``pipeline_writer_unload_poll_interval_seconds``,
   default ``0.5``). ``keep_alive: 0`` is fire-and-forget — the API returns
   before the driver frees the VRAM — so on a single 32 GB GPU shared with
-  the Windows desktop, an immediate SDXL/video load would overlap the
+  the Windows desktop, an immediate image-gen/video load would overlap the
   18 GB writer, exhaust VRAM, and freeze WDDM. Waiting on the real signal
   (model gone from ``/api/ps`` ⇒ runner exited ⇒ VRAM reclaimed) prevents
   that. Set ``pipeline_writer_unload_confirm_enabled=false`` to fall back
   to the legacy blind ``pipeline_writer_unload_grace_seconds`` sleep
   (default ``2``).
 
-The bool gate ``pipeline_explicit_writer_unload_before_sdxl`` (default
+The bool gate ``pipeline_writer_unload_before_image_gen`` (default
 ``true``) lets operators with abundant VRAM (80+ GB hardware) skip the
 unload tax (~3-5 s reload when a later LLM stage needs the model back).
 
@@ -56,7 +56,7 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-__all__ = ["maybe_unload_writer_before_sdxl", "unload_loaded_ollama_models"]
+__all__ = ["maybe_unload_writer_before_image_gen", "unload_loaded_ollama_models"]
 
 
 def _ollama_base_url(site_config: Any) -> str:
@@ -139,7 +139,7 @@ async def unload_loaded_ollama_models(
     * ``/api/ps`` returns non-200 (a WARNING is logged).
 
     When ``confirm`` is true (the production default via
-    ``maybe_unload_writer_before_sdxl``), the helper re-polls ``/api/ps``
+    ``maybe_unload_writer_before_image_gen``), the helper re-polls ``/api/ps``
     after issuing the unloads and returns only once the models are gone
     (or ``confirm_timeout_seconds`` elapses, polling every
     ``poll_interval_seconds``) — the real "VRAM is free" signal. When
@@ -147,7 +147,7 @@ async def unload_loaded_ollama_models(
     ``grace_seconds`` (keep small, 1-3 s) — the legacy behavior.
 
     The helper never raises — callers treat a missing unload as
-    advisory; the downstream SDXL phase still works (just on a tighter
+    advisory; the downstream image-gen phase still works (just on a tighter
     VRAM budget), so an exception here would needlessly fail the task.
     """
     base_url = _ollama_base_url(site_config).rstrip("/")
@@ -162,10 +162,10 @@ async def unload_loaded_ollama_models(
             except httpx.HTTPError as exc:
                 # Per feedback_no_silent_defaults — operator should know
                 # the VRAM guard couldn't query Ollama. Don't crash the
-                # pipeline; the SDXL phase will still run.
+                # pipeline; the image-gen phase will still run.
                 logger.warning(
                     "[OLLAMA_UNLOAD] /api/ps unreachable at %s (%s: %s) — "
-                    "skipping explicit writer unload; SDXL may collide with "
+                    "skipping explicit writer unload; image-gen may collide with "
                     "writer VRAM on cards <32 GB",
                     base_url, type(exc).__name__, exc,
                 )
@@ -217,7 +217,7 @@ async def unload_loaded_ollama_models(
 
             if unloaded and confirm:
                 # Confirm the VRAM was actually released BEFORE returning —
-                # the next caller (SDXL / video render) loads its model the
+                # the next caller (image-gen / video render) loads its model the
                 # instant we return, and on a single 32 GB GPU shared with the
                 # desktop, overlapping the 18 GB writer exhausts VRAM and
                 # freezes WDDM. keep_alive=0 is fire-and-forget, so we poll
@@ -253,14 +253,14 @@ async def unload_loaded_ollama_models(
     return unloaded
 
 
-async def maybe_unload_writer_before_sdxl(
+async def maybe_unload_writer_before_image_gen(
     *,
     site_config: Any,
     stage_label: str = "replace_inline_images",
 ) -> list[str]:
-    """Conditionally unload the writer LLM before an SDXL phase.
+    """Conditionally unload the writer LLM before an image-gen phase.
 
-    Gate: ``app_settings.pipeline_explicit_writer_unload_before_sdxl``
+    Gate: ``app_settings.pipeline_writer_unload_before_image_gen``
     (bool, default ``true``). When ``false``, this is a no-op — useful
     on hardware with abundant VRAM (80+ GB) where the ~3-5 s reload tax
     isn't worth the safety margin.
@@ -291,7 +291,7 @@ async def maybe_unload_writer_before_sdxl(
     if site_config is not None:
         try:
             enabled = site_config.get_bool(
-                "pipeline_explicit_writer_unload_before_sdxl", True,
+                "pipeline_writer_unload_before_image_gen", True,
             )
             grace = float(
                 site_config.get_int("pipeline_writer_unload_grace_seconds", 2),
@@ -316,7 +316,7 @@ async def maybe_unload_writer_before_sdxl(
 
     if not enabled:
         logger.debug(
-            "[%s] pipeline_explicit_writer_unload_before_sdxl=false — "
+            "[%s] pipeline_writer_unload_before_image_gen=false — "
             "skipping explicit writer unload", stage_label.upper(),
         )
         return []
@@ -332,14 +332,14 @@ async def maybe_unload_writer_before_sdxl(
     if unloaded:
         # The log marker the verification step in the PR description
         # looks for: ``[REPLACE_INLINE_IMAGES] Unloaded writer model X
-        # before SDXL phase``.
+        # before image-gen phase``.
         detail = (
             f"confirm-poll, timeout={confirm_timeout:.0f}s"
             if confirm else f"blind grace={grace:.1f}s"
         )
         for name in unloaded:
             logger.info(
-                "[%s] Unloaded writer model %s before SDXL phase (%s)",
+                "[%s] Unloaded writer model %s before image-gen phase (%s)",
                 stage_label.upper(), name, detail,
             )
 

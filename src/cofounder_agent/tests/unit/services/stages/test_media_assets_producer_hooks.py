@@ -26,13 +26,13 @@ from modules.content.stages.source_featured_image import (
 )
 
 
-def _fake_site_config(pool: Any | None = None, *, sdxl_enabled: bool = True):
-    """SiteConfig stub. ``sdxl_enabled=False`` disables the SDXL HTTP path
-    via the ``app_settings.sdxl_enabled`` gate added in #603 — tests that
+def _fake_site_config(pool: Any | None = None, *, image_gen_enabled: bool = True):
+    """SiteConfig stub. ``image_gen_enabled=False`` disables the image-gen HTTP path
+    via the ``app_settings.image_gen_enabled`` gate added in #603 — tests that
     want to exercise the Pexels fallback must pass False (otherwise the
-    SDXL HTTP server, if reachable in the dev env, will produce an
+    image-gen HTTP server, if reachable in the dev env, will produce an
     image and the test asserts the wrong source URL)."""
-    overrides = {"sdxl_enabled": "true" if sdxl_enabled else "false"}
+    overrides = {"image_gen_enabled": "true" if image_gen_enabled else "false"}
     return SimpleNamespace(
         get=lambda k, d="": overrides.get(k, d if d is not None else ""),
         get_int=lambda _k, d=0: d,
@@ -43,13 +43,13 @@ def _fake_site_config(pool: Any | None = None, *, sdxl_enabled: bool = True):
 
 
 # ---------------------------------------------------------------------------
-# source_featured_image — SDXL + Pexels both record
+# source_featured_image — image-gen + Pexels both record
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 class TestSourceFeaturedImageRecordsAsset:
-    async def test_sdxl_success_records_media_asset(self):
+    async def test_image_gen_success_records_media_asset(self):
         pool = MagicMock()  # marker — recorder is patched, value doesn't matter
         sc = _fake_site_config(pool=pool)
         ctx: dict[str, Any] = {
@@ -59,18 +59,18 @@ class TestSourceFeaturedImageRecordsAsset:
             "tags": [],
             "generate_featured_image": True,
             "image_service": SimpleNamespace(
-                sdxl_available=True, sdxl_initialized=True,
+                gen_available=True, gen_initialized=True,
                 search_featured_image=AsyncMock(),
             ),
             "site_config": sc,
         }
         recorder = AsyncMock(return_value="asset-row-1")
         with patch(
-            "modules.content.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=GeneratedImage(
                 url="https://r2.example/featured.png",
-                photographer="AI Generated (SDXL)",
-                source="sdxl_local",
+                photographer="AI Generated (image-gen)",
+                source="image_gen_local",
             )),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -84,16 +84,16 @@ class TestSourceFeaturedImageRecordsAsset:
         assert kwargs["asset_type"] == "featured_image"
         assert kwargs["post_id"] == "post-uuid-1"
         assert kwargs["public_url"] == "https://r2.example/featured.png"
-        assert kwargs["provider_plugin"] == "image.sdxl_local"
+        assert kwargs["provider_plugin"] == "image.image_gen_local"
         assert kwargs["pool"] is pool
 
     async def test_pexels_success_records_media_asset(self):
         pool = MagicMock()
-        # sdxl_enabled=False so the new app_settings-driven SDXL gate
+        # image_gen_enabled=False so the new app_settings-driven image-gen gate
         # (#603) skips the HTTP path. Without this the test runs against
-        # the dev SDXL server (if present) and the assertions about
+        # the dev image-gen server (if present) and the assertions about
         # pexels-shaped URLs fail.
-        sc = _fake_site_config(pool=pool, sdxl_enabled=False)
+        sc = _fake_site_config(pool=pool, image_gen_enabled=False)
         pexels_img = SimpleNamespace(
             url="https://pex.example/photo.jpg",
             photographer="Alex",
@@ -101,7 +101,7 @@ class TestSourceFeaturedImageRecordsAsset:
             width=800, height=600,
         )
         image_service = SimpleNamespace(
-            sdxl_available=False, sdxl_initialized=True,
+            gen_available=False, gen_initialized=True,
             search_featured_image=AsyncMock(return_value=pexels_img),
         )
         ctx: dict[str, Any] = {
@@ -114,10 +114,10 @@ class TestSourceFeaturedImageRecordsAsset:
             "site_config": sc,
         }
         recorder = AsyncMock(return_value="asset-row-2")
-        # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
-        # force the SDXL path to miss so the Pexels fallback runs.
+        # image-gen is now always attempted (2026-05-27 gate change in source_featured_image.py);
+        # force the image-gen path to miss so the Pexels fallback runs.
         with patch(
-            "modules.content.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -134,11 +134,11 @@ class TestSourceFeaturedImageRecordsAsset:
         assert kwargs["provider_plugin"] == "image.pexels"
 
     async def test_no_image_found_does_not_record(self):
-        # sdxl_enabled=False — exercises the no-image-found path without
-        # contention from the new app_settings-driven SDXL gate (#603).
-        sc = _fake_site_config(pool=MagicMock(), sdxl_enabled=False)
+        # image_gen_enabled=False — exercises the no-image-found path without
+        # contention from the new app_settings-driven image-gen gate (#603).
+        sc = _fake_site_config(pool=MagicMock(), image_gen_enabled=False)
         image_service = SimpleNamespace(
-            sdxl_available=False, sdxl_initialized=True,
+            gen_available=False, gen_initialized=True,
             search_featured_image=AsyncMock(return_value=None),
         )
         ctx: dict[str, Any] = {
@@ -151,10 +151,10 @@ class TestSourceFeaturedImageRecordsAsset:
             "site_config": sc,
         }
         recorder = AsyncMock()
-        # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
-        # force the SDXL path to miss so search_featured_image is reached.
+        # image-gen is now always attempted (2026-05-27 gate change in source_featured_image.py);
+        # force the image-gen path to miss so search_featured_image is reached.
         with patch(
-            "modules.content.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -176,11 +176,11 @@ class TestFeaturedImageDataContextUpdates:
     publisher can persist it on ``posts.featured_image_data``.
 
     Pre-2026-05-19 the column was a silent dead seam — never written by
-    any production code. These tests pin the contract for both SDXL and
+    any production code. These tests pin the contract for both image-gen and
     Pexels success branches.
     """
 
-    async def test_sdxl_branch_populates_featured_image_data(self):
+    async def test_image_gen_branch_populates_featured_image_data(self):
         pool = MagicMock()
         sc = _fake_site_config(pool=pool)
         ctx: dict[str, Any] = {
@@ -190,16 +190,16 @@ class TestFeaturedImageDataContextUpdates:
             "tags": [],
             "generate_featured_image": True,
             "image_service": SimpleNamespace(
-                sdxl_available=True, sdxl_initialized=True,
+                gen_available=True, gen_initialized=True,
                 search_featured_image=AsyncMock(),
             ),
             "site_config": sc,
         }
-        sdxl_img = GeneratedImage(
+        gen_img = GeneratedImage(
             url="https://r2.example/img.png",
-            photographer="AI Generated (SDXL)",
-            source="sdxl_local",
-            sdxl_meta={
+            photographer="AI Generated (image-gen)",
+            source="image_gen_local",
+            gen_meta={
                 "model": "sdxl_lightning",
                 "seed": 42,
                 "prompt": "editorial illustration of agents",
@@ -207,12 +207,12 @@ class TestFeaturedImageDataContextUpdates:
                 "generation_time_ms": 1850,
                 "width": 1024,
                 "height": 1024,
-                "filename": "sdxl_abc.png",
+                "filename": "image_gen_abc.png",
             },
         )
         with patch(
-            "modules.content.stages.source_featured_image._try_sdxl_featured",
-            AsyncMock(return_value=sdxl_img),
+            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            AsyncMock(return_value=gen_img),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
             AsyncMock(return_value="asset-row"),
@@ -221,25 +221,25 @@ class TestFeaturedImageDataContextUpdates:
 
         assert result.ok is True
         fid = result.context_updates["featured_image_data"]
-        assert fid["source"] == "sdxl_local"
-        assert fid["provider_plugin"] == "image.sdxl_local"
-        assert fid["sdxl_model"] == "sdxl_lightning"
-        assert fid["sdxl_seed"] == 42
-        assert fid["sdxl_prompt"] == "editorial illustration of agents"
-        assert fid["sdxl_negative_prompt"] == "text, faces, hands"
-        assert fid["sdxl_dimensions"] == [1024, 1024]
+        assert fid["source"] == "image_gen_local"
+        assert fid["provider_plugin"] == "image.image_gen_local"
+        assert fid["image_gen_model"] == "sdxl_lightning"
+        assert fid["image_gen_seed"] == 42
+        assert fid["image_gen_prompt"] == "editorial illustration of agents"
+        assert fid["image_gen_negative_prompt"] == "text, faces, hands"
+        assert fid["image_gen_dimensions"] == [1024, 1024]
         # generation_time_ms = 1850 → 1.85s, rounded to 3 decimals
         assert fid["generation_seconds"] == 1.85
         assert fid["width"] == 1024
         assert fid["height"] == 1024
         assert fid["topic"] == "Designing autonomous agents"
-        assert fid["photographer"] == "AI Generated (SDXL)"
+        assert fid["photographer"] == "AI Generated (image-gen)"
         # generated_at must be ISO-8601 — exact value isn't pinned (it's
         # ``datetime.now``-derived), but the field must exist.
         assert "generated_at" in fid
 
-    async def test_sdxl_branch_extends_media_assets_metadata(self):
-        """The media_assets row gets the same SDXL params for one-stop debugging."""
+    async def test_image_gen_branch_extends_media_assets_metadata(self):
+        """The media_assets row gets the same image-gen params for one-stop debugging."""
         pool = MagicMock()
         sc = _fake_site_config(pool=pool)
         ctx: dict[str, Any] = {
@@ -249,16 +249,16 @@ class TestFeaturedImageDataContextUpdates:
             "tags": [],
             "generate_featured_image": True,
             "image_service": SimpleNamespace(
-                sdxl_available=True, sdxl_initialized=True,
+                gen_available=True, gen_initialized=True,
                 search_featured_image=AsyncMock(),
             ),
             "site_config": sc,
         }
-        sdxl_img = GeneratedImage(
+        gen_img = GeneratedImage(
             url="https://r2.example/img.png",
-            photographer="AI Generated (SDXL)",
-            source="sdxl_local",
-            sdxl_meta={
+            photographer="AI Generated (image-gen)",
+            source="image_gen_local",
+            gen_meta={
                 "model": "sdxl_lightning",
                 "seed": 7,
                 "prompt": "p",
@@ -268,8 +268,8 @@ class TestFeaturedImageDataContextUpdates:
         )
         recorder = AsyncMock(return_value="row")
         with patch(
-            "modules.content.stages.source_featured_image._try_sdxl_featured",
-            AsyncMock(return_value=sdxl_img),
+            "modules.content.stages.source_featured_image._try_image_gen_featured",
+            AsyncMock(return_value=gen_img),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
             recorder,
@@ -278,16 +278,16 @@ class TestFeaturedImageDataContextUpdates:
 
         recorder.assert_awaited_once()
         meta = recorder.await_args.kwargs["metadata"]
-        assert meta["sdxl_model"] == "sdxl_lightning"
-        assert meta["sdxl_seed"] == 7
-        assert meta["sdxl_prompt"] == "p"
-        assert meta["sdxl_negative_prompt"] == "n"
-        assert meta["sdxl_generation_time_ms"] == 100
+        assert meta["image_gen_model"] == "sdxl_lightning"
+        assert meta["image_gen_seed"] == 7
+        assert meta["image_gen_prompt"] == "p"
+        assert meta["image_gen_negative_prompt"] == "n"
+        assert meta["image_gen_generation_time_ms"] == 100
 
     async def test_pexels_branch_populates_featured_image_data(self):
-        # sdxl_enabled=False — exercises the pexels-only branch under
-        # the new app_settings-driven SDXL gate (#603).
-        sc = _fake_site_config(pool=MagicMock(), sdxl_enabled=False)
+        # image_gen_enabled=False — exercises the pexels-only branch under
+        # the new app_settings-driven image-gen gate (#603).
+        sc = _fake_site_config(pool=MagicMock(), image_gen_enabled=False)
         pexels_img = SimpleNamespace(
             url="https://pex.example/p.jpg",
             photographer="Alex",
@@ -295,7 +295,7 @@ class TestFeaturedImageDataContextUpdates:
             width=800, height=600,
         )
         image_service = SimpleNamespace(
-            sdxl_available=False, sdxl_initialized=True,
+            gen_available=False, gen_initialized=True,
             search_featured_image=AsyncMock(return_value=pexels_img),
         )
         ctx: dict[str, Any] = {
@@ -307,10 +307,10 @@ class TestFeaturedImageDataContextUpdates:
             "image_service": image_service,
             "site_config": sc,
         }
-        # SDXL is now always attempted (2026-05-27 gate change in source_featured_image.py);
-        # force the SDXL path to miss so the Pexels branch populates featured_image_data.
+        # image-gen is now always attempted (2026-05-27 gate change in source_featured_image.py);
+        # force the image-gen path to miss so the Pexels branch populates featured_image_data.
         with patch(
-            "modules.content.stages.source_featured_image._try_sdxl_featured",
+            "modules.content.stages.source_featured_image._try_image_gen_featured",
             AsyncMock(return_value=None),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -325,7 +325,7 @@ class TestFeaturedImageDataContextUpdates:
         assert fid["height"] == 600
         assert fid["photographer"] == "Alex"
         assert fid["topic"] == "Cats"
-        # SDXL-only keys must NOT appear on the Pexels branch — keeps
+        # image-gen-only keys must NOT appear on the Pexels branch — keeps
         # operator queries like ``WHERE sdxl_model IS NOT NULL`` clean.
         assert "sdxl_model" not in fid
         assert "sdxl_seed" not in fid
@@ -345,7 +345,7 @@ class TestFeaturedImageDataContextUpdates:
             "tags": [],
             "generate_featured_image": False,
             "image_service": SimpleNamespace(
-                sdxl_available=False, sdxl_initialized=True,
+                gen_available=False, gen_initialized=True,
             ),
             "site_config": sc,
         }
@@ -354,13 +354,13 @@ class TestFeaturedImageDataContextUpdates:
 
 
 # ---------------------------------------------------------------------------
-# replace_inline_images — SDXL + Pexels both record per placeholder
+# replace_inline_images — image-gen + Pexels both record per placeholder
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 class TestReplaceInlineImagesRecordsAsset:
-    async def test_sdxl_inline_success_records(self):
+    async def test_image_gen_inline_success_records(self):
         sc = _fake_site_config(pool=MagicMock())
         ctx: dict[str, Any] = {
             "task_id": "t1",
@@ -378,7 +378,7 @@ class TestReplaceInlineImagesRecordsAsset:
         }
         recorder = AsyncMock(return_value="asset-uuid")
         with patch(
-            "modules.content.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_image_gen",
             AsyncMock(return_value="https://r2.example/inline-1.png"),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -393,7 +393,7 @@ class TestReplaceInlineImagesRecordsAsset:
         assert kwargs["asset_type"] == "inline_image"
         assert kwargs["post_id"] == "post-uuid-1"
         assert kwargs["public_url"] == "https://r2.example/inline-1.png"
-        assert kwargs["provider_plugin"] == "image.sdxl"
+        assert kwargs["provider_plugin"] == "image.image_gen"
 
     async def test_pexels_inline_success_records(self):
         sc = _fake_site_config(pool=MagicMock())
@@ -416,8 +416,8 @@ class TestReplaceInlineImagesRecordsAsset:
         }
         recorder = AsyncMock(return_value="asset-uuid")
         with patch(
-            "modules.content.stages.replace_inline_images._try_sdxl",
-            AsyncMock(return_value=None),  # SDXL fails → falls through to Pexels
+            "modules.content.stages.replace_inline_images._try_image_gen",
+            AsyncMock(return_value=None),  # image-gen fails → falls through to Pexels
         ), patch(
             "services.media_asset_recorder.record_media_asset",
             recorder,
@@ -449,7 +449,7 @@ class TestReplaceInlineImagesRecordsAsset:
         }
         recorder = AsyncMock()
         with patch(
-            "modules.content.stages.replace_inline_images._try_sdxl",
+            "modules.content.stages.replace_inline_images._try_image_gen",
             AsyncMock(return_value="https://r2.example/x.png"),
         ), patch(
             "services.media_asset_recorder.record_media_asset",

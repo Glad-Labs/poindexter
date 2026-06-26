@@ -38,8 +38,8 @@ from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
-# SDXL URL convention (mirrors source_featured_image.py / the shot renderer).
-_DEFAULT_SDXL_URL = "http://host.docker.internal:9836"
+# image-gen URL convention (mirrors source_featured_image.py / the shot renderer).
+_DEFAULT_IMAGE_GEN_URL = "http://host.docker.internal:9836"
 
 
 def _resolve_dims(aspect: str) -> tuple[int, int]:
@@ -100,10 +100,10 @@ async def render_from_state(
 
     task_id = state.get("task_id")
     site_config = state.get("site_config")
-    sdxl_url = (
-        site_config.get("sdxl_server_url", _DEFAULT_SDXL_URL)
+    image_gen_url = (
+        site_config.get("image_gen_server_url", _DEFAULT_IMAGE_GEN_URL)
         if site_config is not None
-        else _DEFAULT_SDXL_URL
+        else _DEFAULT_IMAGE_GEN_URL
     )
 
     database_service = state.get("database_service")
@@ -124,10 +124,10 @@ async def render_from_state(
     out_path = f"{tempfile.gettempdir()}/media_{task_id}_{output_key}.mp4"
 
     try:
-        # Hold the GPU for the whole render. The render drives wan + SDXL over
+        # Hold the GPU for the whole render. The render drives wan + image-gen over
         # HTTP and never went through the scheduler before (validation findings
         # 4b/7): the ~18GB writer/director stayed resident in Ollama and starved
-        # wan+SDXL → "inference server unreachable" → render failures. The
+        # wan+image-gen → "inference server unreachable" → render failures. The
         # "video" owner evicts Ollama on acquire, and the cross-process
         # pg_advisory_lock blocks the content pipeline (prefect-worker) for the
         # render's duration so they can't oversubscribe the 32GB card.
@@ -142,7 +142,7 @@ async def render_from_state(
                 shot_list=shot_list,
                 audio_path=narration,
                 output_path=out_path,
-                sdxl_url=sdxl_url,
+                image_gen_url=image_gen_url,
                 site_config=site_config,
                 pool=pool,
                 width=width,

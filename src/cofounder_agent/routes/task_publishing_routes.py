@@ -209,7 +209,7 @@ async def approve_task(
     - human_feedback: Optional feedback from reviewer
     - reviewer_id: Optional ID of reviewer
     - featured_image_url: Optional featured image URL for the task
-    - image_source: Optional source of image (pexels, sdxl)
+    - image_source: Optional source of image (pexels, image_gen)
     - auto_publish: Stage-and-ship in one call (default: ``false``).
       The Telegram/Discord/MCP approval surfaces should leave this off
       and call ``/publish`` separately.
@@ -930,7 +930,7 @@ async def go_live(
 class GenerateImageRequest(BaseModel):
     """Request model for image generation"""
 
-    source: str = "pexels"  # "pexels" or "sdxl"
+    source: str = "pexels"  # "pexels" or "image_gen"
     topic: str | None = None
     content_summary: str | None = None
     page: int = 1  # Pagination for Pexels results (1-based)
@@ -950,10 +950,10 @@ async def generate_task_image(
     site_config_dep = Depends(get_site_config_dependency),
 ) -> dict[str, str]:
     """
-    Generate or fetch an image for a task using Pexels or SDXL.
+    Generate or fetch an image for a task using Pexels or image-gen.
 
     **Request Body Parameters:**
-    - source: Image source - "pexels" or "sdxl" (default: "pexels")
+    - source: Image source - "pexels" or "image_gen" (default: "pexels")
     - topic: Topic for image search/generation (optional)
     - content_summary: Summary of content for image generation (optional)
 
@@ -966,7 +966,7 @@ async def generate_task_image(
       -H "Content-Type: application/json" \
       -H "Authorization: Bearer YOUR_JWT_TOKEN" \
       -d '{
-        "source": "sdxl",
+        "source": "image_gen",
         "topic": "AI Marketing",
         "content_summary": "How AI is transforming marketing..."
       }'
@@ -1152,8 +1152,8 @@ async def generate_task_image(
                     status_code=500, detail="Unexpected error fetching image from Pexels"
                 ) from e
 
-        elif source == "sdxl":
-            # Use SDXL to generate an image
+        elif source == "image_gen":
+            # Use image-gen server to generate an image
             try:
                 from pathlib import Path
 
@@ -1167,7 +1167,7 @@ async def generate_task_image(
                     # Extract key concepts from content summary
                     generation_prompt = f"{request.topic}: {request.content_summary[:200]}"
 
-                logger.info("Generating image with SDXL: %s", generation_prompt)
+                logger.info("Generating image: %s", generation_prompt)
 
                 # Save to user's Downloads folder for preview
                 downloads_path = str(Path.home() / "Downloads" / "glad-labs-generated-images")
@@ -1175,12 +1175,12 @@ async def generate_task_image(
 
                 # Create filename with UUID to prevent collisions (UUID instead of timestamp)
                 unique_id = str(uuid_lib.uuid4())[:8]
-                output_file = f"sdxl_{unique_id}.png"
+                output_file = f"image_gen_{unique_id}.png"
                 output_path = os.path.join(downloads_path, output_file)
 
-                logger.info("Generating SDXL image to: %s", output_path)
+                logger.info("Generating image to: %s", output_path)
 
-                # Generate image with SDXL
+                # Generate image
                 success = await image_service.generate_image(
                     prompt=generation_prompt,
                     output_path=output_path,
@@ -1190,36 +1190,36 @@ async def generate_task_image(
                 )
 
                 if success and os.path.exists(output_path):
-                    logger.info("SDXL image generated: %s", output_path)
+                    logger.info("Image generated: %s", output_path)
                     image_url = output_path
                     logger.info("   Generated image saved locally for preview")
                 else:
-                    raise RuntimeError("SDXL image generation failed or file not created")
+                    raise RuntimeError("Image generation failed or file not created")
 
             except asyncio.TimeoutError as exc:
-                logger.warning("SDXL image generation timeout for task %s", task_id, exc_info=True)
+                logger.warning("Image generation timeout for task %s", task_id, exc_info=True)
                 raise HTTPException(
                     status_code=408,
                     detail="Image generation timeout. Please try again with 'pexels' source.",
                 ) from exc
             except (OSError, RuntimeError, ValueError) as e:
                 logger.error(
-                    "SDXL image generation error - %s: %s", type(e).__name__, e, exc_info=True
+                    "Image generation error - %s: %s", type(e).__name__, e, exc_info=True
                 )
                 raise HTTPException(
                     status_code=500,
-                    detail="SDXL image generation failed. Ensure GPU available or use 'pexels' source.",
+                    detail="Image generation failed. Ensure GPU available or use 'pexels' source.",
                 ) from e
             except Exception as e:
                 logger.critical(
-                    "Unexpected error in SDXL generation: %s: %s", type(e).__name__, e, exc_info=True
+                    "Unexpected error in image generation: %s: %s", type(e).__name__, e, exc_info=True
                 )
                 raise HTTPException(
                     status_code=500, detail="Internal server error during image generation"
                 ) from e
         else:
             raise HTTPException(
-                status_code=400, detail=f"Invalid image source: {source}. Use 'pexels' or 'sdxl'"
+                status_code=400, detail=f"Invalid image source: {source}. Use 'pexels' or 'image_gen'"
             )
 
         if not image_url:
@@ -1327,7 +1327,7 @@ def _build_edit_service(
     platform: Any = None, need_image: bool = False,
 ) -> PostEditService:
     """Construct the shared edit service from request-scoped deps. The image
-    service is only built for regen (avoids loading the SDXL pipeline on body
+    service is only built for regen (avoids loading the image-gen pipeline on body
     edits); if it can't initialise, regen surfaces a 503. ``platform`` is the
     kernel handle (``app.state.kernel_platform``) the service writes audit rows
     through — the module-purity seam; ``None`` simply drops the audit row."""

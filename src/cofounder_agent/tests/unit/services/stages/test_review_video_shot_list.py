@@ -22,7 +22,7 @@ class _FakeLock:
         return False
 
 
-def _valid_list(*, source1: str = "sdxl_kenburns") -> dict:
+def _valid_list(*, source1: str = "image_kenburns") -> dict:
     return {
         "version": 1,
         "aspect": "16:9",
@@ -84,7 +84,7 @@ async def test_revised_list_replaces_original() -> None:
 async def test_failure_keeps_original_non_halting() -> None:
     from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
 
-    original = _valid_list()  # shot[1].source == "sdxl_kenburns"
+    original = _valid_list()  # shot[1].source == "image_kenburns"
     ctx = {
         "title": "T", "content": "C body " * 20, "podcast_script": "script " * 20,
         "video_shot_list": original,
@@ -99,7 +99,7 @@ async def test_failure_keeps_original_non_halting() -> None:
         result = await ReviewVideoShotListStage().execute(ctx, {})
 
     assert result.ok  # non-halting
-    assert result.context_updates["video_shot_list"]["shots"][1]["source"] == "sdxl_kenburns"
+    assert result.context_updates["video_shot_list"]["shots"][1]["source"] == "image_kenburns"
 
 
 @pytest.mark.asyncio

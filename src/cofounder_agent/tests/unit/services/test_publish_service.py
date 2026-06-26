@@ -346,7 +346,7 @@ class TestPublishHappyPath:
     @patch("services.publish_service._ping_search_engines", new_callable=AsyncMock)
     @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     async def test_threads_featured_image_data_from_task_result(self, mock_sched, mock_ping, mock_hooks, mock_export):
-        """SDXL reproducibility blob flows task.result → post_data.
+        """image-gen reproducibility blob flows task.result → post_data.
 
         ``source_featured_image`` writes ``featured_image_data`` into
         the pipeline state, which lands on ``pipeline_versions.stage_data``
@@ -354,9 +354,12 @@ class TestPublishHappyPath:
         ``publish_post_from_task`` must pluck it through to
         ``content_db.create_post`` so it ends up on
         ``posts.featured_image_data``.
+
+        Note: the fixture below uses historical sdxl_* key names — this
+        test is checking opaque pass-through, not the current key schema.
         """
         db = _make_db()
-        sdxl_blob = {
+        gen_blob = {
             "source": "sdxl_local",
             "provider_plugin": "image.sdxl_local",
             "sdxl_model": "sdxl_lightning",
@@ -372,7 +375,7 @@ class TestPublishHappyPath:
             result={
                 "seo_description": "desc",
                 "seo_keywords": ["ai"],
-                "featured_image_data": sdxl_blob,
+                "featured_image_data": gen_blob,
             },
         )
 
@@ -389,7 +392,7 @@ class TestPublishHappyPath:
 
         db.create_post.assert_awaited_once()
         post_data = db.create_post.call_args[0][0]
-        assert post_data["featured_image_data"] == sdxl_blob
+        assert post_data["featured_image_data"] == gen_blob
 
     @pytest.mark.asyncio
     @patch("services.static_export_service.export_post", new_callable=AsyncMock)

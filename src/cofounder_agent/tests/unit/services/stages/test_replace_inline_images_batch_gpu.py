@@ -2,19 +2,19 @@
 
 Before this fix, ``replace_inline_images`` acquired the GPU lock once per
 image placeholder for prompt generation (Ollama) and once for rendering
-(SDXL).  3 images = 6 lock acquisitions = 5 model swaps = ~95 s avg stage.
+(image-gen).  3 images = 6 lock acquisitions = 5 model swaps = ~95 s avg stage.
 
 The fix batches the work into two phases:
-  Phase 1: ONE Ollama lock → generate ALL SDXL prompts sequentially.
-  Phase 2: ONE SDXL lock → render ALL images sequentially.
+  Phase 1: ONE Ollama lock → generate ALL image-gen prompts sequentially.
+  Phase 2: ONE image-gen lock → render ALL images sequentially.
 
 These tests verify:
-1. ``_batch_generate_all_sdxl_images`` makes exactly 2 gpu.lock calls (one
-   Ollama, one SDXL) regardless of how many placeholders are processed.
+1. ``_batch_generate_all_images`` makes exactly 2 gpu.lock calls (one
+   Ollama, one image-gen) regardless of how many placeholders are processed.
 2. Per-placeholder failures don't abort the batch — the caller gets None for
    that slot and falls through to Pexels.
 3. ``ReplaceInlineImagesStage.execute`` uses the batch path when going through
-   the normal execute() flow (not the legacy _try_sdxl per-call path).
+   the normal execute() flow (not the legacy _try_image_gen per-call path).
 4. When no DB pool is available (tests without DB), the batch function
    gracefully returns [None]*n so _resolve_one_placeholder can use Pexels.
 """
@@ -30,7 +30,7 @@ import pytest
 
 from modules.content.stages.replace_inline_images import (
     ReplaceInlineImagesStage,
-    _batch_generate_all_sdxl_images,
+    _batch_generate_all_images,
 )
 from plugins.fake_platform import FakePlatform
 
@@ -77,27 +77,27 @@ class _LockRecorder:
 
 
 # ---------------------------------------------------------------------------
-# _batch_generate_all_sdxl_images: lock-count contract
+# _batch_generate_all_images: lock-count contract
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_batch_makes_exactly_two_gpu_locks_for_three_images():
-    """3 placeholders → 1 Ollama lock + 1 SDXL lock (not 6)."""
+    """3 placeholders → 1 Ollama lock + 1 image-gen lock (not 6)."""
     recorder = _LockRecorder()
 
     completion = MagicMock()
     completion.text = "a dramatic server room with cyan lighting and fog"
     platform = FakePlatform(dispatch_response=completion)
 
-    sdxl_resp = MagicMock()
-    sdxl_resp.status_code = 200
+    gen_resp = MagicMock()
+    gen_resp.status_code = 200
     # Phase 2 iterates inside a single AsyncClient context — mock at the
     # client.post level rather than wrapping AsyncClient.
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
-    mock_client.post = AsyncMock(return_value=sdxl_resp)
+    mock_client.post = AsyncMock(return_value=gen_resp)
 
     placeholders = [
         ("1", "server racks"),
@@ -111,13 +111,13 @@ async def test_batch_makes_exactly_two_gpu_locks_for_three_images():
         "modules.content.stages.replace_inline_images.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.stages.replace_inline_images._resolve_sdxl_response",
+        "modules.content.stages.replace_inline_images._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/glad-labs-generated-images/test.png"),
     ), patch(
         "modules.content.stages.replace_inline_images._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/img.png"),
     ):
-        urls = await _batch_generate_all_sdxl_images(
+        urls = await _batch_generate_all_images(
             placeholders=placeholders,
             topic="GPU Computing",
             site_config=_site_config_with_pool(),
@@ -131,7 +131,7 @@ async def test_batch_makes_exactly_two_gpu_locks_for_three_images():
     )
     assert recorder.calls[0]["owner"] == "ollama"
     assert recorder.calls[0]["phase"] == "inline_image_prompt_batch"
-    assert recorder.calls[1]["owner"] == "sdxl"
+    assert recorder.calls[1]["owner"] == "image_gen"
     assert recorder.calls[1]["phase"] == "inline_image_batch"
 
     # Should have produced 3 URLs (one per placeholder).
@@ -141,19 +141,19 @@ async def test_batch_makes_exactly_two_gpu_locks_for_three_images():
 
 @pytest.mark.asyncio
 async def test_batch_task_id_forwarded_to_both_locks():
-    """task_id reaches both the Ollama and SDXL lock calls for cost attribution."""
+    """task_id reaches both the Ollama and image-gen lock calls for cost attribution."""
     recorder = _LockRecorder()
 
     completion = MagicMock()
     completion.text = "a glowing RTX 5090 graphics card on a workbench"
     platform = FakePlatform(dispatch_response=completion)
 
-    sdxl_resp = MagicMock()
-    sdxl_resp.status_code = 200
+    gen_resp = MagicMock()
+    gen_resp.status_code = 200
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
-    mock_client.post = AsyncMock(return_value=sdxl_resp)
+    mock_client.post = AsyncMock(return_value=gen_resp)
 
     with patch(
         "services.gpu_scheduler.gpu", recorder,
@@ -161,13 +161,13 @@ async def test_batch_task_id_forwarded_to_both_locks():
         "modules.content.stages.replace_inline_images.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.stages.replace_inline_images._resolve_sdxl_response",
+        "modules.content.stages.replace_inline_images._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/test.png"),
     ), patch(
         "modules.content.stages.replace_inline_images._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/img.png"),
     ):
-        await _batch_generate_all_sdxl_images(
+        await _batch_generate_all_images(
             placeholders=[("1", "graphics card")],
             topic="GPU Benchmarks",
             site_config=_site_config_with_pool(),
@@ -181,7 +181,7 @@ async def test_batch_task_id_forwarded_to_both_locks():
 
 
 # ---------------------------------------------------------------------------
-# _batch_generate_all_sdxl_images: per-placeholder failure isolation
+# _batch_generate_all_images: per-placeholder failure isolation
 # ---------------------------------------------------------------------------
 
 
@@ -201,17 +201,17 @@ async def test_batch_one_prompt_failure_does_not_abort_batch():
             if call_count == 2:
                 raise RuntimeError("simulated LLM timeout")
             r = MagicMock()
-            r.text = "a valid SDXL prompt for testing purposes"
+            r.text = "a valid image-gen prompt for testing purposes"
             return r
 
     platform = SimpleNamespace(dispatch=_FailOnSecondCall())
 
-    sdxl_resp = MagicMock()
-    sdxl_resp.status_code = 200
+    gen_resp = MagicMock()
+    gen_resp.status_code = 200
     mock_client = AsyncMock()
     mock_client.__aenter__ = AsyncMock(return_value=mock_client)
     mock_client.__aexit__ = AsyncMock(return_value=False)
-    mock_client.post = AsyncMock(return_value=sdxl_resp)
+    mock_client.post = AsyncMock(return_value=gen_resp)
 
     placeholders = [("1", "topic A"), ("2", "topic B"), ("3", "topic C")]
 
@@ -221,13 +221,13 @@ async def test_batch_one_prompt_failure_does_not_abort_batch():
         "modules.content.stages.replace_inline_images.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.stages.replace_inline_images._resolve_sdxl_response",
+        "modules.content.stages.replace_inline_images._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/test.png"),
     ), patch(
         "modules.content.stages.replace_inline_images._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/ok.png"),
     ):
-        urls = await _batch_generate_all_sdxl_images(
+        urls = await _batch_generate_all_images(
             placeholders=placeholders,
             topic="Test",
             site_config=_site_config_with_pool(),
@@ -244,12 +244,12 @@ async def test_batch_one_prompt_failure_does_not_abort_batch():
 
 
 @pytest.mark.asyncio
-async def test_batch_one_sdxl_render_failure_does_not_abort_batch():
-    """A single SDXL render failure yields None for that slot, others succeed."""
+async def test_batch_one_image_gen_render_failure_does_not_abort_batch():
+    """A single image-gen render failure yields None for that slot, others succeed."""
     recorder = _LockRecorder()
 
     completion = MagicMock()
-    completion.text = "a valid SDXL prompt that is long enough to pass the check"
+    completion.text = "a valid image-gen prompt that is long enough to pass the check"
     platform = FakePlatform(dispatch_response=completion)
 
     # First and third render 200, second returns 500.
@@ -275,15 +275,15 @@ async def test_batch_one_sdxl_render_failure_does_not_abort_batch():
         "modules.content.stages.replace_inline_images.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.stages.replace_inline_images._resolve_sdxl_response",
+        "modules.content.stages.replace_inline_images._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/test.png"),
     ), patch(
         "modules.content.stages.replace_inline_images._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/img.png"),
     ):
-        urls = await _batch_generate_all_sdxl_images(
+        urls = await _batch_generate_all_images(
             placeholders=placeholders,
-            topic="SDXL",
+            topic="image-gen",
             site_config=_site_config_with_pool(),
             task_id="task-render-fail",
             platform=platform,
@@ -296,7 +296,7 @@ async def test_batch_one_sdxl_render_failure_does_not_abort_batch():
 
 
 # ---------------------------------------------------------------------------
-# _batch_generate_all_sdxl_images: guard cases
+# _batch_generate_all_images: guard cases
 # ---------------------------------------------------------------------------
 
 
@@ -309,7 +309,7 @@ async def test_batch_returns_none_list_when_no_pool():
     with patch(
         "services.gpu_scheduler.gpu", recorder,
     ):
-        urls = await _batch_generate_all_sdxl_images(
+        urls = await _batch_generate_all_images(
             placeholders=[("1", "cat"), ("2", "dog")],
             topic="Pets",
             site_config=_site_config_no_pool(),
@@ -329,7 +329,7 @@ async def test_batch_returns_empty_list_for_empty_placeholders():
     with patch(
         "services.gpu_scheduler.gpu", recorder,
     ):
-        urls = await _batch_generate_all_sdxl_images(
+        urls = await _batch_generate_all_images(
             placeholders=[],
             topic="Anything",
             site_config=_site_config_with_pool(),
@@ -349,7 +349,7 @@ async def test_batch_returns_none_list_when_no_platform():
     with patch(
         "services.gpu_scheduler.gpu", recorder,
     ):
-        urls = await _batch_generate_all_sdxl_images(
+        urls = await _batch_generate_all_images(
             placeholders=[("1", "anything")],
             topic="Test",
             site_config=_site_config_with_pool(),
@@ -363,14 +363,14 @@ async def test_batch_returns_none_list_when_no_platform():
 
 @pytest.mark.asyncio
 async def test_batch_returns_none_list_on_ollama_lock_failure():
-    """If the Ollama lock can't be acquired, return [None]*n (no SDXL lock)."""
+    """If the Ollama lock can't be acquired, return [None]*n (no image-gen lock)."""
     recorder = _LockRecorder(fail_on_owner="ollama")
     platform = FakePlatform()
 
     with patch(
         "services.gpu_scheduler.gpu", recorder,
     ):
-        urls = await _batch_generate_all_sdxl_images(
+        urls = await _batch_generate_all_images(
             placeholders=[("1", "alpha"), ("2", "beta")],
             topic="Lock test",
             site_config=_site_config_with_pool(),
@@ -379,8 +379,8 @@ async def test_batch_returns_none_list_on_ollama_lock_failure():
         )
 
     assert urls == [None, None]
-    # Only the failed Ollama lock attempt — no SDXL lock should have fired.
-    assert all(c["owner"] != "sdxl" for c in recorder.calls)
+    # Only the failed Ollama lock attempt — no image-gen lock should have fired.
+    assert all(c["owner"] != "image_gen" for c in recorder.calls)
 
 
 # ---------------------------------------------------------------------------
@@ -390,22 +390,22 @@ async def test_batch_returns_none_list_on_ollama_lock_failure():
 
 @pytest.mark.asyncio
 async def test_stage_execute_uses_batch_path():
-    """execute() goes through _batch_generate_all_sdxl_images, not per-call _try_sdxl.
+    """execute() goes through _batch_generate_all_images, not per-call _try_image_gen.
 
     Pins that the stage calls the batch helper rather than the per-image
-    ``_try_sdxl`` when there are existing placeholders.  We spy on both
+    ``_try_image_gen`` when there are existing placeholders.  We spy on both
     to confirm exactly which one runs.
     """
     batch_calls: list[Any] = []
-    try_sdxl_calls: list[Any] = []
+    try_image_gen_calls: list[Any] = []
 
     async def fake_batch(**kwargs: Any) -> list[str | None]:
         batch_calls.append(kwargs)
         # Return a URL for the one placeholder in the test content.
         return ["https://r2.example/batched.png"]
 
-    async def fake_try_sdxl(*_a: Any, **_kw: Any) -> str | None:
-        try_sdxl_calls.append(True)
+    async def fake_try_image_gen(*_a: Any, **_kw: Any) -> str | None:
+        try_image_gen_calls.append(True)
         return None
 
     db = MagicMock()
@@ -428,11 +428,11 @@ async def test_stage_execute_uses_batch_path():
     }
 
     with patch(
-        "modules.content.stages.replace_inline_images._batch_generate_all_sdxl_images",
+        "modules.content.stages.replace_inline_images._batch_generate_all_images",
         new=AsyncMock(side_effect=fake_batch),
     ), patch(
-        "modules.content.stages.replace_inline_images._try_sdxl",
-        new=AsyncMock(side_effect=fake_try_sdxl),
+        "modules.content.stages.replace_inline_images._try_image_gen",
+        new=AsyncMock(side_effect=fake_try_image_gen),
     ), patch(
         "modules.content.stages.replace_inline_images._record_inline_image_asset",
         new=AsyncMock(return_value=None),
@@ -446,8 +446,8 @@ async def test_stage_execute_uses_batch_path():
     assert result.ok is True
     # Batch path was invoked.
     assert len(batch_calls) == 1
-    # Per-image _try_sdxl was NOT invoked (batch path pre-generates all URLs).
-    assert len(try_sdxl_calls) == 0
+    # Per-image _try_image_gen was NOT invoked (batch path pre-generates all URLs).
+    assert len(try_image_gen_calls) == 0
     # The batched URL ended up in the content (read from context_updates, not ctx).
     updated_content = (result.context_updates or {}).get("content", "")
     assert "https://r2.example/batched.png" in updated_content
@@ -457,7 +457,7 @@ async def test_stage_execute_uses_batch_path():
 async def test_stage_falls_back_to_pexels_when_batch_returns_none():
     """When batch returns None for a placeholder, Pexels is used as fallback.
 
-    Validates that pregenerated_sdxl_url=None correctly triggers Strategy 2
+    Validates that pregenerated_image_url=None correctly triggers Strategy 2
     (Pexels) in _resolve_one_placeholder.
     """
     async def fake_batch(**kwargs: Any) -> list[str | None]:
@@ -487,7 +487,7 @@ async def test_stage_falls_back_to_pexels_when_batch_returns_none():
     }
 
     with patch(
-        "modules.content.stages.replace_inline_images._batch_generate_all_sdxl_images",
+        "modules.content.stages.replace_inline_images._batch_generate_all_images",
         new=AsyncMock(side_effect=fake_batch),
     ), patch(
         "modules.content.stages.replace_inline_images._record_inline_image_asset",

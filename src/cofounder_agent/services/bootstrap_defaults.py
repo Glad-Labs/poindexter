@@ -10,7 +10,7 @@ service quietly forked a new copy of the default.
 Owning the canonical values here does two things:
 
 1. **Single source of truth for fallbacks.** If Poindexter ever needs a
-   different default (say, SDXL moves to a new port in the shipped
+   different default (say, image-gen moves to a new port in the shipped
    compose), one line in this module updates every call site.
 
 2. **Grep-ability for auditors.** `grep -rn DEFAULT_OLLAMA_URL
@@ -37,9 +37,9 @@ DEFAULT_OLLAMA_URL = "http://localhost:11434"
 """Ollama's default listen port. Set by compose as OLLAMA_BASE_URL;
 `site_config.get('ollama_base_url', DEFAULT_OLLAMA_URL)` fallback."""
 
-DEFAULT_SDXL_URL = "http://localhost:9836"
-"""SDXL image-generation server (shipped in docker-compose.local.yml as
-the `sdxl` service). Fallback for `sdxl_server_url`."""
+DEFAULT_IMAGE_GEN_URL = "http://localhost:9836"
+"""image-gen server (shipped in docker-compose.local.yml as
+the `image-gen-server` service). Fallback for `image_gen_server_url`."""
 
 # -------- Internal service mesh --------------------------------------------
 

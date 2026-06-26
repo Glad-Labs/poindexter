@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Upgrade the existing Wan render seam from Wan 2.1 1.3B text-to-video to Wan 2.2 TI2V-5B **image-to-video** that animates the shot's stylized SDXL still, with a still+Ken-Burns fallback and a swappable-model DB seam — per video-quality spec §3.3.
+**Goal:** Upgrade the existing Wan render seam from Wan 2.1 1.3B text-to-video to Wan 2.2 TI2V-5B **image-to-video** that animates the shot's stylized image-gen still, with a still+Ken-Burns fallback and a swappable-model DB seam — per video-quality spec §3.3.
 
 **Architecture:** The wan render seam is already built, deployed, and live (`scripts/wan-server.py` sidecar + `Wan21Provider` + `shot_list_renderer._render_wan21_clip`). Piece 4 is a model-tier / i2v / fallback **upgrade** on a working seam, not a from-scratch build. It splits into a **code-half** (Tasks 1–6, pure-code + TDD, no GPU) and an **infra-half deploy runbook** (Tasks 7–9, GPU + host-stability gated). The two halves are decoupled by a forward-compatible request contract: the current `GenerateRequest` pydantic model ignores unknown fields, so the code-half's new `image_b64` field is silently dropped by the live T2V server until the server-half lands — **the code-half deploys with zero regression** and `generative` shots render as T2V (init image ignored) with the improved still fallback until i2v is enabled.
 
@@ -24,9 +24,9 @@
 
 **Code-half (Tasks 1–6):**
 
-- `src/cofounder_agent/schemas/video_shot_list.py` — add `"generative"` to the `ShotSource` Literal; treat it like `wan21`/`sdxl` in the prompt-required + human-token validators. **Owns:** the director↔renderer source contract.
+- `src/cofounder_agent/schemas/video_shot_list.py` — add `"generative"` to the `ShotSource` Literal; treat it like `wan21`/`image_gen` in the prompt-required + human-token validators. **Owns:** the director↔renderer source contract.
 - `src/cofounder_agent/services/video_providers/wan2_1.py` — `fetch()` + `_generate_to_path()` accept an optional init image (`image_path` → base64 `image_b64` in the POST body); resolve `generative_video_model` for the model label/metadata. **Owns:** the worker→wan-server HTTP contract.
-- `src/cofounder_agent/services/video_renderers/shot_list_renderer.py` — `generative`/`wan21` shots render the SDXL still first (i2v conditioning), animate it, and on miss fall back to the still PNG (compositor Ken-Burns it) + a `hero_render_fallback` finding; a hero-shot cap downgrades excess `generative` shots to `sdxl_kenburns`. **Owns:** per-shot render orchestration + fallback.
+- `src/cofounder_agent/services/video_renderers/shot_list_renderer.py` — `generative`/`wan21` shots render the image-gen still first (i2v conditioning), animate it, and on miss fall back to the still PNG (compositor Ken-Burns it) + a `hero_render_fallback` finding; a hero-shot cap downgrades excess `generative` shots to `image_kenburns`. **Owns:** per-shot render orchestration + fallback.
 - `src/cofounder_agent/services/settings_defaults.py` — `generative_video_model`, `video_hero_shots_max` defaults. **Owns:** DB-config defaults.
 - `src/cofounder_agent/skills/content/video-director/SKILL.md` — rename `wan21` → `generative` in the allowed-source list + guidance; describe it as "animate a stylized brand still" and the per-video hero cap. **Owns:** director prompt.
 
@@ -99,16 +99,16 @@ In `video_shot_list.py`, add `generative` to the Literal (keep `wan21` for backc
 
 ```python
 ShotSource = Literal[
-    "sdxl",            # Static SDXL image, held for ``duration_s``
-    "sdxl_kenburns",   # SDXL image + Ken Burns zoom/pan animation
+    "image_gen",            # Static image-gen image, held for ``duration_s``
+    "image_kenburns",   # image-gen image + Ken Burns zoom/pan animation
     "pexels",          # Pexels stock video clip (real footage)
-    "generative",      # Hero shot: animate the stylized SDXL still (Wan i2v)
+    "generative",      # Hero shot: animate the stylized image-gen still (Wan i2v)
     "wan21",           # DEPRECATED alias of ``generative`` (legacy shot lists)
     "holdover",        # Cross-fade transition from prior shot (no asset)
 ]
 ```
 
-Then in `_validate_source_inputs`, add `"generative"` everywhere `"wan21"` appears in a source tuple — there are three such tuples (the prompt-required check, the human-token scan). Replace each `("sdxl", "sdxl_kenburns", "wan21")` with `("sdxl", "sdxl_kenburns", "wan21", "generative")`.
+Then in `_validate_source_inputs`, add `"generative"` everywhere `"wan21"` appears in a source tuple — there are three such tuples (the prompt-required check, the human-token scan). Replace each `("image_gen", "image_kenburns", "wan21")` with `("image_gen", "image_kenburns", "wan21", "generative")`.
 
 - [ ] **Step 4: Run to verify pass**
 
@@ -132,7 +132,7 @@ git commit -m "feat(video): add 'generative' hero shot source (wan21 backcompat 
 
 **Interfaces:**
 
-- Consumes: `config["image_path"]` (str, optional) — local path to the SDXL still PNG; `config["_site_config"]` for `generative_video_model`.
+- Consumes: `config["image_path"]` (str, optional) — local path to the image-gen still PNG; `config["_site_config"]` for `generative_video_model`.
 - Produces: when `image_path` is set and the file exists, the `/generate` POST body carries `image_b64` (base64 of the file bytes). When absent, the body has no `image_b64` (T2V — current behaviour). The returned `VideoResult.metadata["model"]` reflects the resolved `generative_video_model`.
 
 - [ ] **Step 1: Write the failing tests**
@@ -275,8 +275,8 @@ git commit -m "feat(video): Wan provider sends image_b64 init frame for i2v (T2V
 
 **Interfaces:**
 
-- Consumes: `_render_sdxl_image(prompt, output_path, sdxl_url, http_client_factory, render_timeout) -> bool` (existing), `Wan21Provider` via `image_path` (Task 2), `emit_finding(...)` (existing import).
-- Produces: for `source in ("generative", "wan21")`, `_render_one_shot` returns a `ShotRenderResult` whose `clip_path` is the animated `.mp4` on success, or the SDXL still `.png` on i2v-miss (with `_emit_hero_fallback_finding` called). `_REGENERABLE_SOURCES` includes `"generative"`.
+- Consumes: `_render_image_gen_image(prompt, output_path, image_gen_url, http_client_factory, render_timeout) -> bool` (existing), `Wan21Provider` via `image_path` (Task 2), `emit_finding(...)` (existing import).
+- Produces: for `source in ("generative", "wan21")`, `_render_one_shot` returns a `ShotRenderResult` whose `clip_path` is the animated `.mp4` on success, or the image-gen still `.png` on i2v-miss (with `_emit_hero_fallback_finding` called). `_REGENERABLE_SOURCES` includes `"generative"`.
 
 - [ ] **Step 1: Write the failing tests**
 
@@ -288,20 +288,20 @@ from schemas.video_shot_list import Shot
 
 
 @pytest.mark.asyncio
-async def test_generative_shot_animates_sdxl_still(tmp_path, monkeypatch):
+async def test_generative_shot_animates_image_gen_still(tmp_path, monkeypatch):
     shot = Shot(idx=0, duration_s=5.0, intent="hero", source="generative",
                 prompt="neon GPU die", narration_offset_s=0.0)
 
-    async def fake_sdxl(*, prompt, output_path, **kw):
+    async def fake_image_gen(*, prompt, output_path, **kw):
         open(output_path, "wb").write(b"PNG"); return True
     async def fake_clip(*, prompt, output_path, image_path, duration_s, site_config):
         assert image_path and image_path.endswith(".png")
         open(output_path, "wb").write(b"MP4"); return True
 
-    monkeypatch.setattr(slr, "_render_sdxl_image", fake_sdxl)
+    monkeypatch.setattr(slr, "_render_image_gen_image", fake_image_gen)
     monkeypatch.setattr(slr, "_render_generative_clip", fake_clip)
     res = await slr._render_one_shot(
-        shot, prior_clip=None, work_dir=tmp_path, sdxl_url="http://x",
+        shot, prior_clip=None, work_dir=tmp_path, image_gen_url="http://x",
         site_config=None, http_client_factory=None)
     assert res.success and res.clip_path.endswith(".mp4")
 
@@ -312,16 +312,16 @@ async def test_generative_shot_falls_back_to_still_on_clip_miss(tmp_path, monkey
                 prompt="neon GPU die", narration_offset_s=0.0)
     findings = []
 
-    async def fake_sdxl(*, prompt, output_path, **kw):
+    async def fake_image_gen(*, prompt, output_path, **kw):
         open(output_path, "wb").write(b"PNG"); return True
     async def fake_clip(**kw):
         return False  # i2v miss
 
-    monkeypatch.setattr(slr, "_render_sdxl_image", fake_sdxl)
+    monkeypatch.setattr(slr, "_render_image_gen_image", fake_image_gen)
     monkeypatch.setattr(slr, "_render_generative_clip", fake_clip)
     monkeypatch.setattr(slr, "emit_finding", lambda **kw: findings.append(kw))
     res = await slr._render_one_shot(
-        shot, prior_clip=None, work_dir=tmp_path, sdxl_url="http://x",
+        shot, prior_clip=None, work_dir=tmp_path, image_gen_url="http://x",
         site_config=None, http_client_factory=None)
     assert res.success and res.clip_path.endswith(".png")  # still, KB'd by compositor
     assert any(f.get("kind") == "hero_render_fallback" for f in findings)
@@ -341,7 +341,7 @@ Expected: FAIL — `_render_generative_clip` doesn't exist; `generative` not in 
 Add `"generative"` to `_REGENERABLE_SOURCES`:
 
 ```python
-_REGENERABLE_SOURCES = frozenset({"sdxl", "sdxl_kenburns", "wan21", "generative"})
+_REGENERABLE_SOURCES = frozenset({"image_gen", "image_kenburns", "wan21", "generative"})
 ```
 
 Rename/extend the clip helper to take an init image (keep the old name as a thin wrapper for any other caller, or just rename — grep shows the only caller is `_render_one_shot`):
@@ -376,7 +376,7 @@ def _emit_hero_fallback_finding(*, shot: Shot, post_id: str) -> None:
         source="shot_list_renderer", kind="hero_render_fallback",
         title=f"hero shot {shot.idx} fell back to still (Ken Burns)",
         body=(f"shot {shot.idx} (generative) — i2v render produced no clip; "
-              f"used the stylized SDXL still with Ken Burns motion instead."),
+              f"used the stylized image-gen still with Ken Burns motion instead."),
         severity="warn",
         dedup_key=f"hero_render_fallback:{post_id}:{shot.idx}",
         extra={"shot_idx": shot.idx, "source": shot.source},
@@ -393,12 +393,12 @@ if source in ("generative", "wan21"):
     still_path = str(work_dir / f"shot_{shot.idx:02d}.png")
     render_timeout = (site_config.get_int("image_render_timeout_seconds", 240)
                       if site_config is not None else 240)
-    still_ok = await _render_sdxl_image(
-        prompt=shot.prompt, output_path=still_path, sdxl_url=sdxl_url,
+    still_ok = await _render_image_gen_image(
+        prompt=shot.prompt, output_path=still_path, image_gen_url=image_gen_url,
         http_client_factory=http_client_factory, render_timeout=render_timeout)
     if not still_ok:
         return ShotRenderResult(idx=shot.idx, source=source, success=False,
-                                error="generative shot: SDXL still render failed")
+                                error="generative shot: image-gen still render failed")
     clip_path = str(work_dir / f"shot_{shot.idx:02d}.mp4")
     clip_ok = await _render_generative_clip(
         prompt=shot.prompt, output_path=clip_path, image_path=still_path,
@@ -422,7 +422,7 @@ Run the same pytest command. Expected: PASS (3 new + existing).
 
 ```bash
 git add src/cofounder_agent/services/video_renderers/shot_list_renderer.py src/cofounder_agent/tests/unit/services/video_renderers/test_shot_list_renderer.py
-git commit -m "feat(video): hero shots render SDXL still then i2v-animate; still+KenBurns fallback + finding"
+git commit -m "feat(video): hero shots render image-gen still then i2v-animate; still+KenBurns fallback + finding"
 ```
 
 ---
@@ -436,7 +436,7 @@ git commit -m "feat(video): hero shots render SDXL still then i2v-animate; still
 
 **Interfaces:**
 
-- Produces: a module-level `_cap_hero_shots(shots: list[Shot], max_hero: int) -> list[Shot]` that returns a new list where, past the first `max_hero` `generative`/`wan21` shots, excess hero shots are rewritten to `source="sdxl_kenburns"` (a still+KB cousin that keeps the same prompt). Called in `render_shot_list` before the render pass with `max_hero = site_config.get_int("video_hero_shots_max", 3)`.
+- Produces: a module-level `_cap_hero_shots(shots: list[Shot], max_hero: int) -> list[Shot]` that returns a new list where, past the first `max_hero` `generative`/`wan21` shots, excess hero shots are rewritten to `source="image_kenburns"` (a still+KB cousin that keeps the same prompt). Called in `render_shot_list` before the render pass with `max_hero = site_config.get_int("video_hero_shots_max", 3)`.
 
 - [ ] **Step 1: Write the failing test**
 
@@ -447,10 +447,10 @@ def test_cap_hero_shots_downgrades_excess_to_kenburns():
                              prompt="neon die", narration_offset_s=0.0)
     shots = [mk(0, "generative"), mk(1, "generative"), mk(2, "pexels"),
              mk(3, "generative"), mk(4, "generative")]
-    # cap at 2 generatives: idx 0,1 stay; idx 3,4 become sdxl_kenburns
+    # cap at 2 generatives: idx 0,1 stay; idx 3,4 become image_kenburns
     out = slr._cap_hero_shots(shots, 2)
     assert [s.source for s in out] == [
-        "generative", "generative", "pexels", "sdxl_kenburns", "sdxl_kenburns"]
+        "generative", "generative", "pexels", "image_kenburns", "image_kenburns"]
 ```
 
 (`mk` uses `query=None` — fine, pexels needs a query; give it one: `Shot(..., source="pexels", prompt=None, query="gpu")`. Adjust the pexels shot in the test to pass `query="gpu", prompt=None`.)
@@ -468,7 +468,7 @@ _HERO_SOURCES = frozenset({"generative", "wan21"})
 
 def _cap_hero_shots(shots: list[Shot], max_hero: int) -> list[Shot]:
     """Keep at most ``max_hero`` hero (generative/wan21) shots; downgrade the
-    rest to ``sdxl_kenburns`` (the still+Ken-Burns cousin, same prompt). The
+    rest to ``image_kenburns`` (the still+Ken-Burns cousin, same prompt). The
     hero render is the most expensive + failure-prone source, so the director
     over-asking shouldn't blow the GPU budget (spec §3.3)."""
     if max_hero < 0:
@@ -479,7 +479,7 @@ def _cap_hero_shots(shots: list[Shot], max_hero: int) -> list[Shot]:
         if s.source in _HERO_SOURCES:
             seen += 1
             if seen > max_hero:
-                out.append(s.model_copy(update={"source": "sdxl_kenburns"}))
+                out.append(s.model_copy(update={"source": "image_kenburns"}))
                 continue
         out.append(s)
     return out
@@ -502,7 +502,7 @@ Run the same pytest command (full file). Expected: PASS.
 
 ```bash
 git add src/cofounder_agent/services/video_renderers/shot_list_renderer.py src/cofounder_agent/tests/unit/services/video_renderers/test_shot_list_renderer.py
-git commit -m "feat(video): cap hero shots at video_hero_shots_max, downgrade excess to sdxl_kenburns"
+git commit -m "feat(video): cap hero shots at video_hero_shots_max, downgrade excess to image_kenburns"
 ```
 
 ---
@@ -542,7 +542,7 @@ Add to the `DEFAULTS` dict, with comment block, near other `video_*` keys:
     # (14B / LTX later) read by the Wan provider + wan-server; keep it the
     # ``Wan-AI/...`` repo id. ``video_hero_shots_max`` caps the per-video
     # generative-shot budget (each is a heavy GPU render); excess hero shots
-    # downgrade to sdxl_kenburns.
+    # downgrade to image_kenburns.
     "generative_video_model": "Wan-AI/Wan2.2-TI2V-5B",
     "video_hero_shots_max": "3",
 ```
@@ -568,14 +568,14 @@ git commit -m "feat(video): seed generative_video_model + video_hero_shots_max d
 - [ ] **Step 1: Edit the SKILL.md** — replace the `"wan21"` source bullet (line ~73) with:
 
 ```markdown
-- "generative": AI hero shot — a short clip that **animates a stylized SDXL
+- "generative": AI hero shot — a short clip that **animates a stylized image-gen
   still** (image-to-video). Use sparingly for the 2–3 highest-impact beats
   that benefit from motion (a pan across an abstract scene, a slow push-in).
   Capped per video; excess generative shots are auto-downgraded to a
   Ken-Burns still, so reserve it for genuine hero moments.
 ```
 
-Replace every other `wan21` mention (`sdxl / sdxl_kenburns / wan21` enumerations at ~98, 105, 109, 122, 145, 147; the "First and last shots MUST NOT be wan21" rule at ~142; the mix guidance at ~139–140) with `generative`. Keep the rule "First and last shots MUST NOT be 'generative' — its artifacts are most visible at cut-in/cut-out."
+Replace every other `wan21` mention (`image_gen / image_kenburns / wan21` enumerations at ~98, 105, 109, 122, 145, 147; the "First and last shots MUST NOT be wan21" rule at ~142; the mix guidance at ~139–140) with `generative`. Keep the rule "First and last shots MUST NOT be 'generative' — its artifacts are most visible at cut-in/cut-out."
 
 - [ ] **Step 2: Verify no stray `wan21`** — Run: `grep -n wan21 src/cofounder_agent/skills/content/video-director/SKILL.md` → expect no output.
 
@@ -642,7 +642,7 @@ Expected: all PASS.
 
 **Spec §3.3 coverage:**
 
-- "Renderer: wan-server, weights → Wan2.2-TI2V-5B, image-to-video animate the SDXL still" → Tasks 2 (provider sends still), 3 (renderer renders still first + animates), 8 (server i2v). ✅
+- "Renderer: wan-server, weights → Wan2.2-TI2V-5B, image-to-video animate the image-gen still" → Tasks 2 (provider sends still), 3 (renderer renders still first + animates), 8 (server i2v). ✅
 - "`video_hero_shots_max` (default 3) caps count" → Task 4 + Task 5. ✅
 - "hero render failure → fall back to the still (Ken Burns), emit a finding" → Task 3 (`hero_render_fallback`). ✅
 - "Seam: `wan_server_url` + a `generative_video_model` DB key" → `wan_server_url` already resolved in the provider; `generative_video_model` → Tasks 2 + 5. ✅
@@ -652,4 +652,4 @@ Expected: all PASS.
 
 **Type consistency:** `_render_generative_clip(*, prompt, output_path, image_path, duration_s, site_config) -> bool` used identically in Task 3 def + `_render_one_shot` call. `_cap_hero_shots(shots, max_hero) -> list[Shot]` consistent in Task 4. `image_b64` is the field name across provider (Task 2), server (Task 8). `generative_video_model` / `video_hero_shots_max` keys identical across Tasks 2/4/5/9.
 
-**Non-regression check:** the live wan-server's `GenerateRequest` ignores unknown fields → code-half (`image_b64` in the body) is dropped, server renders T2V, `generative` shots still produce clips. The still-first change means even pre-i2v, a `generative` shot now has a proper SDXL still to fall back to (strict improvement over the old holdover). ✅
+**Non-regression check:** the live wan-server's `GenerateRequest` ignores unknown fields → code-half (`image_b64` in the body) is dropped, server renders T2V, `generative` shots still produce clips. The still-first change means even pre-i2v, a `generative` shot now has a proper image-gen still to fall back to (strict improvement over the old holdover). ✅

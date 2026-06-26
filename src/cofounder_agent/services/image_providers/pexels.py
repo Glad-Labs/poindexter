@@ -2,7 +2,7 @@
 
 The Pexels API (https://www.pexels.com/api/) is free, no rate-limit
 gotchas at our scale, and covers most of what the pipeline needs for
-inline content images. SDXL handles the "must be on-brand" featured
+inline content images. image-gen handles the "must be on-brand" featured
 images; Pexels handles the "just need a relevant photo" inline cases.
 
 Config (``plugin.image_provider.pexels`` in app_settings):

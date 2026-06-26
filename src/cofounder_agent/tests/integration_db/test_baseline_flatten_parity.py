@@ -147,8 +147,8 @@ _REQUIRED_APP_SETTINGS_KEYS = (
     "use_prefect_orchestration",
     # Auto-publish global gate
     "auto_publish_threshold",
-    # SDXL
-    "sdxl_enabled",
+    # image gen
+    "image_gen_enabled",
     # Phase-C late additions (ops triage + prefect probe + alert dedup tuning)
     "ops_triage_writer_model",
     "prefect_stuck_flow_pending_threshold_minutes",

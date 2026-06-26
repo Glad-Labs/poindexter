@@ -11,7 +11,7 @@ addressable and so an operator who DOES want Cloudinary can flip
 provider-specific code living inside each provider module.
 
 Pre-2026-05-27 the upload helper was duplicated across
-``flux_schnell.py`` and ``sdxl.py`` with subtly divergent signatures
+``flux_schnell.py`` and ``image_gen.py`` with subtly divergent signatures
 (positional vs keyword-only ``site_config``, different tag arrays,
 different error messages). Consolidated here so adding a third
 caller — or a new Cloudinary feature (eager transformations, signed
@@ -62,7 +62,7 @@ async def upload_to_cloudinary(
             Cloudinary credentials are ``is_secret=true`` rows that only
             ``site_config.get_secret`` decrypts. Sync ``.get()`` returns
             ciphertext for secret rows (#334 regression).
-        provider_tag: The caller's identity (``"flux_schnell"`` / ``"sdxl"``
+        provider_tag: The caller's identity (``"flux_schnell"`` / ``"image_gen"``
             / ``"wan2_1"``). Lands in Cloudinary's tags so the operator
             can filter by source provider in the Cloudinary console.
 

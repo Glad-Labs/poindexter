@@ -1419,8 +1419,8 @@ async def restart_service(name: str, *, pool=None):
             "worker": "poindexter-worker",
             "api": "poindexter-worker",
             "site": "poindexter-worker",
-            "sdxl": "poindexter-sdxl-server",
-            "sdxl-server": "poindexter-sdxl-server",
+            "image_gen": "poindexter-image-gen-server",
+            "image-gen-server": "poindexter-image-gen-server",
         }
         container = _container_map.get(name)
         if container:

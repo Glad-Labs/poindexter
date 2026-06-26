@@ -1,7 +1,7 @@
-"""Shared SDXL model registry + torch availability probes.
+"""Shared image model registry (image-gen + future models) + torch availability probes.
 
 Extracted from ``services/image_service.py`` in Phase G (GH#71) so the
-``SdxlProvider`` can own the model lifecycle without image_service acting
+``ImageGenProvider`` can own the model lifecycle without image_service acting
 as a middleman. The registry + enum + default-resolver are imported from
 both sides during the cutover; image_service re-exports them for
 backward compatibility so existing callers and test patches keep working.
@@ -29,7 +29,7 @@ logger = get_logger(__name__)
 
 # ---------------------------------------------------------------------------
 # Optional dependency probes. Kept as module-level constants so both
-# image_service (legacy callers, tests) and sdxl provider can branch on
+# image_service (legacy callers, tests) and image_gen provider can branch on
 # availability without re-running the imports.
 #
 # ``torch`` is bound at module scope so test patches like
@@ -104,16 +104,16 @@ class ImageModelConfig:
 IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
     ImageModel.SDXL_BASE: ImageModelConfig(
         model_id="stabilityai/stable-diffusion-xl-base-1.0",
-        display_name="SDXL Base",
+        display_name="Stable Diffusion XL Base",
         default_steps=30,
         default_guidance_scale=7.5,
         pipeline_class="diffusers.StableDiffusionXLPipeline",
         vram_gb=6.5,
-        notes="Original SDXL, high quality at 30-50 steps",
+        notes="Original Stable Diffusion XL, high quality at 30-50 steps",
     ),
     ImageModel.SDXL_LIGHTNING: ImageModelConfig(
         model_id="stabilityai/stable-diffusion-xl-base-1.0",
-        display_name="SDXL Lightning",
+        display_name="Stable Diffusion XL Lightning",
         default_steps=4,
         default_guidance_scale=0.0,
         pipeline_class="diffusers.StableDiffusionXLPipeline",
@@ -144,8 +144,8 @@ IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
         vram_gb=13.0,
         notes=(
             "Apache-2.0 6B guidance-distilled turbo (9 steps / CFG 0 / bf16, "
-            "no negative prompt). 2026-06-19 bake-off default. Mirrors the SDXL "
-            "HTTP server registry (scripts/sdxl-server.py), the live render path."
+            "no negative prompt). 2026-06-19 bake-off default. Mirrors the Stable Diffusion XL "
+            "HTTP server registry (scripts/image-gen-server.py), the live render path."
         ),
     ),
 }

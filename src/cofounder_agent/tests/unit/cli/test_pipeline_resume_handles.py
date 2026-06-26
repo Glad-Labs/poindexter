@@ -7,10 +7,10 @@ interrupt()-paused graph from its checkpoint. Both used to hand the runner a
 That was silently fine for the original *terminal* gate (``draft_gate`` resume
 just flips status), but ``preview_gate`` sits MID-GRAPH: resuming it re-runs the
 image / QA / finalize atoms. Those call full ``DatabaseService`` delegate
-methods (``update_task``, ``create_quality_evaluation`` …) and dispatch SDXL /
+methods and dispatch image-gen /
 LLM prompts through ``platform.dispatch.complete``. With the thin shim a real
 ``regen --images`` halted at ``content.persist_task`` with
-``'_PoolShim' object has no attribute 'update_task'`` and SDXL inline silently
+``'_PoolShim' object has no attribute 'update_task'`` and image-gen inline silently
 fell back to Pexels (``platform`` was ``None``).
 
 The fix: build the same handles the Prefect subprocess builds — a real

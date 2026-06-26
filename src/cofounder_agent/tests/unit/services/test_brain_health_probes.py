@@ -738,8 +738,8 @@ class TestProbeContentGenGpuLock:
     """probe_content_gen must yield the GPU to active renders / LLM jobs.
 
     Exercising the writer loads the ~19GB model into VRAM. Firing during a
-    media render (wan + SDXL already near the 32GB ceiling) oversubscribes the
-    GPU → SDXL CUDA-OOM → degraded video (observed 2026-06-21). The brain runs
+    media render (wan + image-gen already near the 32GB ceiling) oversubscribes the
+    GPU → image-gen CUDA-OOM → degraded video (observed 2026-06-21). The brain runs
     in its own stdlib+asyncpg container and can't import
     ``services.gpu_scheduler``, but it shares Postgres, so it takes the SAME
     cross-process advisory lock NON-BLOCKINGLY: ``pg_try_advisory_lock(

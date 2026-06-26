@@ -98,7 +98,7 @@
   "src/cofounder_agent/services/image_decision_agent.py": 2,
   "src/cofounder_agent/services/image_providers/ai_generation.py": 1,
   "src/cofounder_agent/services/image_providers/flux_schnell.py": 2,
-  "src/cofounder_agent/services/image_providers/sdxl.py": 1,
+  "src/cofounder_agent/services/image_providers/image_gen.py": 1,
   "src/cofounder_agent/services/image_service.py": 6,
   "src/cofounder_agent/services/integrations/handlers/outbound_telegram.py": 1,
   "src/cofounder_agent/services/integrations/handlers/retention_summarize_to_table.py": 1,

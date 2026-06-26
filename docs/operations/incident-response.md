@@ -151,7 +151,7 @@ docker restart poindexter-brain-daemon
 nvidia-smi --query-gpu=temperature.gpu,utilization.gpu,memory.used --format=csv
 
 # What's hammering the GPU right now?
-docker stats --no-stream poindexter-sdxl-server poindexter-wan-server poindexter-worker
+docker stats --no-stream poindexter-image-gen-server poindexter-wan-server poindexter-worker
 ```
 
 **Fix.**
@@ -160,9 +160,9 @@ docker stats --no-stream poindexter-sdxl-server poindexter-wan-server poindexter
    ```bash
    poindexter settings set pipeline_paused true
    ```
-2. **If it's an SDXL or Wan render:** stop the in-flight job.
+2. **If it's an image-gen or Wan render:** stop the in-flight job.
    ```bash
-   docker restart poindexter-sdxl-server   # nuclear; cancels any in-flight render
+   docker restart poindexter-image-gen-server   # nuclear; cancels any in-flight render
    docker restart poindexter-wan-server
    ```
 3. **If it's a third-party workload (gaming, a stray process):** kill that process or accept the temperature.
@@ -546,7 +546,7 @@ gh run rerun <latest_run_id> --repo Glad-Labs/glad-labs-stack
 
 ## Wan Server DEGRADED
 
-**Means.** `curl http://localhost:9840/health` returned `degraded:true`. Video generation will silently fall back to SDXL/Pexels stills.
+**Means.** `curl http://localhost:9840/health` returned `degraded:true`. Video generation will silently fall back to image-gen/Pexels stills.
 
 **Fix.** See [`troubleshooting.md`](./troubleshooting) entries:
 

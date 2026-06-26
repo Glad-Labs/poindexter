@@ -2,7 +2,7 @@
 
 Covers the four acceptance criteria from the bug:
 
-1. Regex strip on representative fixtures (mixed ``||sdxl:||`` and
+1. Regex strip on representative fixtures (mixed ``||image_gen:||`` and
    ``||pexels:||`` tokens).
 2. At-budget alt text is accepted.
 3. Mid-word-truncated alt text is rejected (loud-fail).
@@ -18,7 +18,7 @@ import pytest
 from services.alt_text import (
     assert_alt_text_clean,
     iter_img_alts,
-    looks_like_sdxl_prompt,
+    looks_like_image_gen_prompt,
     sanitize_alt_text,
     strip_pipeline_tokens,
     strip_tokens_from_img_tags,
@@ -30,8 +30,8 @@ from services.alt_text import (
 
 
 class TestStripPipelineTokens:
-    def test_removes_sdxl_token(self):
-        out = strip_pipeline_tokens("A blueprint diagram ||sdxl:blueprint||")
+    def test_removes_image_gen_token(self):
+        out = strip_pipeline_tokens("A blueprint diagram ||image_gen:blueprint||")
         assert out == "A blueprint diagram"
 
     def test_removes_pexels_token(self):
@@ -48,7 +48,7 @@ class TestStripPipelineTokens:
 
     def test_removes_multiple_tokens(self):
         out = strip_pipeline_tokens(
-            "foo ||sdxl:x|| bar ||pexels:y|| baz"
+            "foo ||image_gen:x|| bar ||pexels:y|| baz"
         )
         assert out == "foo bar baz"
 
@@ -62,7 +62,7 @@ class TestStripPipelineTokens:
         assert strip_pipeline_tokens(None) is None  # type: ignore[arg-type]
 
     def test_trailing_period_stays_attached(self):
-        out = strip_pipeline_tokens("Complete sentence. ||sdxl:blueprint||")
+        out = strip_pipeline_tokens("Complete sentence. ||image_gen:blueprint||")
         assert out == "Complete sentence."
 
     def test_single_pipe_is_not_stripped(self):
@@ -72,10 +72,10 @@ class TestStripPipelineTokens:
 
     def test_uppercase_provider_not_stripped(self):
         # Pipeline emits lowercase providers; something else is going on
-        # if we see ``||SDXL:x||`` and we should leave it for the
+        # if we see ``||IMAGE_GEN:x||`` and we should leave it for the
         # assertion to loud-fail on.
-        out = strip_pipeline_tokens("foo ||SDXL:x||")
-        assert "||SDXL:x||" in out
+        out = strip_pipeline_tokens("foo ||IMAGE_GEN:x||")
+        assert "||IMAGE_GEN:x||" in out
 
 
 # ---------------------------------------------------------------------------
@@ -92,11 +92,11 @@ class TestSanitizeAltText:
 
     def test_strips_pipeline_tokens(self):
         out = sanitize_alt_text(
-            "A diagram of Kubernetes ||sdxl:blueprint||",
+            "A diagram of Kubernetes ||image_gen:blueprint||",
             budget=120,
         )
         assert "||" not in out
-        assert "sdxl" not in out
+        assert "image_gen" not in out
         assert out.startswith("A diagram of Kubernetes")
 
     def test_strips_image_prefix(self):
@@ -199,10 +199,10 @@ class TestAssertAltTextClean:
         with pytest.raises(ValueError, match="pipe"):
             assert_alt_text_clean(alt, budget=120)
 
-    def test_rejects_unstripped_sdxl_token(self):
+    def test_rejects_unstripped_image_gen_token(self):
         with pytest.raises(ValueError, match="pipeline token"):
             assert_alt_text_clean(
-                "A blueprint ||sdxl:blueprint||", budget=120
+                "A blueprint ||image_gen:blueprint||", budget=120
             )
 
     def test_rejects_unstripped_pexels_token(self):
@@ -224,14 +224,14 @@ class TestAssertAltTextClean:
 
 class TestStripTokensFromImgTags:
     def test_strips_from_single_img(self):
-        html = '<img src="x.png" alt="A cat ||sdxl:blueprint||" />'
+        html = '<img src="x.png" alt="A cat ||image_gen:blueprint||" />'
         out = strip_tokens_from_img_tags(html)
         assert '||' not in out
         assert 'alt="A cat"' in out
 
     def test_strips_from_multiple_imgs(self):
         html = (
-            '<img src="a.png" alt="X ||sdxl:a||" />\n'
+            '<img src="a.png" alt="X ||image_gen:a||" />\n'
             '<img src="b.png" alt="Y ||pexels:b||" />\n'
         )
         out = strip_tokens_from_img_tags(html)
@@ -240,14 +240,14 @@ class TestStripTokensFromImgTags:
         assert 'alt="Y"' in out
 
     def test_preserves_other_attributes(self):
-        html = '<img src="x.png" alt="A ||sdxl:b||" width="1024" height="1024" />'
+        html = '<img src="x.png" alt="A ||image_gen:b||" width="1024" height="1024" />'
         out = strip_tokens_from_img_tags(html)
         assert 'width="1024"' in out
         assert 'height="1024"' in out
         assert 'src="x.png"' in out
 
     def test_idempotent(self):
-        html = '<img src="x.png" alt="A cat ||sdxl:blueprint||" />'
+        html = '<img src="x.png" alt="A cat ||image_gen:blueprint||" />'
         once = strip_tokens_from_img_tags(html)
         twice = strip_tokens_from_img_tags(once)
         assert once == twice
@@ -261,7 +261,7 @@ class TestStripTokensFromImgTags:
         assert strip_tokens_from_img_tags(None) is None  # type: ignore[arg-type]
 
     def test_case_insensitive_img_tag(self):
-        html = '<IMG src="x.png" alt="A ||sdxl:b||" />'
+        html = '<IMG src="x.png" alt="A ||image_gen:b||" />'
         out = strip_tokens_from_img_tags(html)
         assert '||' not in out
 
@@ -288,26 +288,26 @@ class TestIterImgAlts:
 
 
 # ---------------------------------------------------------------------------
-# looks_like_sdxl_prompt — Glad-Labs/poindexter#469
+# looks_like_image_gen_prompt — Glad-Labs/poindexter#469
 # ---------------------------------------------------------------------------
 
 
-class TestLooksLikeSdxlPrompt:
-    """Positive cases — these MUST be flagged as SDXL-prompt-shaped."""
+class TestLooksLikeImageGenPrompt:
+    """Positive cases — these MUST be flagged as image-gen-prompt-shaped."""
 
     @pytest.mark.parametrize("verb", [
         "Show", "Render", "Depict", "Create", "Generate",
         "Draw", "Illustrate", "Visualize", "Visualise", "Imagine",
     ])
     def test_imperative_opener_at_string_start(self, verb):
-        assert looks_like_sdxl_prompt(f"{verb} the key components of SDXL")
+        assert looks_like_image_gen_prompt(f"{verb} the key components of SDXL")
 
     @pytest.mark.parametrize("verb", [
         "show", "render", "depict", "create", "generate",
         "draw", "illustrate", "visualize", "visualise", "imagine",
     ])
     def test_imperative_opener_case_insensitive(self, verb):
-        assert looks_like_sdxl_prompt(f"{verb} a serene server room")
+        assert looks_like_image_gen_prompt(f"{verb} a serene server room")
 
     def test_imperative_after_first_sentence(self):
         # The exact bug from issue #469.
@@ -315,72 +315,72 @@ class TestLooksLikeSdxlPrompt:
             "An isometric diagram of a simplified SDXL architecture. "
             "Show the key components (encoder, decoder, refiner)..."
         )
-        assert looks_like_sdxl_prompt(poisoned)
+        assert looks_like_image_gen_prompt(poisoned)
 
     def test_imperative_after_semicolon(self):
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "A serene server room; render with cinematic lighting"
         )
 
     def test_style_prefix_isometric(self):
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "isometric 3D illustration, clean vector style, soft shadows"
         )
 
     def test_style_prefix_photorealistic(self):
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "photorealistic scene, cinematic lighting"
         )
 
     def test_style_prefix_cinematic(self):
         # Bare "cinematic, ..." opener IS a prompt shape.
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "cinematic lighting, dramatic shadows, no text"
         )
 
     def test_style_prefix_flat_vector(self):
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "flat vector illustration, simple geometric shapes, cyan and dark navy"
         )
 
     def test_style_prefix_cyberpunk(self):
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "cyberpunk neon style, dark background, glowing cyan purple"
         )
 
     def test_style_prefix_dark_moody_editorial(self):
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "dark moody editorial photograph, dramatic lighting"
         )
 
     def test_style_prefix_macro_close_up(self):
         # The full style entry from INLINE_STYLES, not the word "macro" alone.
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "macro close-up photograph, extreme detail, bokeh"
         )
 
     def test_negative_fragment_no_text(self):
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "A diagram of three layers of cloud infrastructure, no text, no faces"
         )
 
     def test_negative_fragment_no_faces(self):
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "Server room with monitors, no faces, soft shadows"
         )
 
     def test_negative_fragment_faceless_silhouettes(self):
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "Engineers working at terminals, faceless silhouettes only"
         )
 
     def test_negative_fragment_negative_prompt_phrase(self):
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "A serene server room. Negative prompt: people, text, watermark"
         )
 
     def test_negative_fragment_low_quality(self):
-        assert looks_like_sdxl_prompt(
+        assert looks_like_image_gen_prompt(
             "A blueprint diagram, low quality, distorted"
         )
 
@@ -392,10 +392,10 @@ class TestLooksLikeSdxlPrompt:
             "Show the key components (encoder, decoder, refiner) with "
             "interconnected arrows, no text, no faces."
         )
-        assert looks_like_sdxl_prompt(poisoned)
+        assert looks_like_image_gen_prompt(poisoned)
 
 
-class TestLooksLikeSdxlPromptNegatives:
+class TestLooksLikeImageGenPromptNegatives:
     """Negative cases — real human-written alts must pass through unchanged.
 
     These are the false-positive guards. The heuristic is deliberately
@@ -405,65 +405,65 @@ class TestLooksLikeSdxlPromptNegatives:
 
     def test_macro_photo_of_circuit_board(self):
         # "macro" appears, but as a noun modifier, not a style prefix.
-        assert not looks_like_sdxl_prompt(
+        assert not looks_like_image_gen_prompt(
             "A close-up macro photo of a circuit board"
         )
 
     def test_isometric_tile_maps_in_retro_games(self):
         # "isometric" appears as an adjective in normal prose.
-        assert not looks_like_sdxl_prompt(
+        assert not looks_like_image_gen_prompt(
             "Isometric tile maps in classic retro RPGs"
         )
 
     def test_cinematic_still_from_trailer(self):
         # "Cinematic" as an adjective, no comma-delimited style chain.
-        assert not looks_like_sdxl_prompt(
+        assert not looks_like_image_gen_prompt(
             "Cinematic still from the 1982 Blade Runner trailer"
         )
 
     def test_server_room_with_blue_lighting(self):
-        assert not looks_like_sdxl_prompt(
+        assert not looks_like_image_gen_prompt(
             "A modern server room with cool blue accent lighting"
         )
 
     def test_diagram_of_kubernetes_architecture(self):
         # No imperative verb, no style prefix, no negative fragment.
-        assert not looks_like_sdxl_prompt(
+        assert not looks_like_image_gen_prompt(
             "A diagram showing the Kubernetes control-plane architecture"
         )
 
     def test_developer_workspace_with_dual_monitors(self):
-        assert not looks_like_sdxl_prompt(
+        assert not looks_like_image_gen_prompt(
             "A developer workspace with dual monitors and a mechanical keyboard"
         )
 
     def test_chart_comparing_training_time(self):
-        assert not looks_like_sdxl_prompt(
+        assert not looks_like_image_gen_prompt(
             "A line chart comparing training time across three GPU generations"
         )
 
     def test_show_inside_noun_phrase(self):
         # "show" not at sentence boundary — "trade show booth" type usage.
-        assert not looks_like_sdxl_prompt(
+        assert not looks_like_image_gen_prompt(
             "Photograph of a busy trade show booth at SIGGRAPH 2024"
         )
 
     def test_empty_and_whitespace_return_false(self):
-        assert not looks_like_sdxl_prompt("")
-        assert not looks_like_sdxl_prompt("   ")
-        assert not looks_like_sdxl_prompt(None)  # type: ignore[arg-type]
+        assert not looks_like_image_gen_prompt("")
+        assert not looks_like_image_gen_prompt("   ")
+        assert not looks_like_image_gen_prompt(None)  # type: ignore[arg-type]
 
     def test_short_real_alt(self):
-        assert not looks_like_sdxl_prompt("A cat napping on a windowsill")
+        assert not looks_like_image_gen_prompt("A cat napping on a windowsill")
 
 
 # ---------------------------------------------------------------------------
-# sanitize_alt_text + the SDXL heuristic — falls back to topic alt
+# sanitize_alt_text + the image-gen heuristic — falls back to topic alt
 # ---------------------------------------------------------------------------
 
 
-class TestSanitizeAltTextDropsSdxlPrompts:
-    """Integration of looks_like_sdxl_prompt into sanitize_alt_text."""
+class TestSanitizeAltTextDropsImageGenPrompts:
+    """Integration of looks_like_image_gen_prompt into sanitize_alt_text."""
 
     def test_imperative_prompt_returns_topic_fallback(self):
         out = sanitize_alt_text(

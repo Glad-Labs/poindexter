@@ -1,7 +1,7 @@
 """
 Stable Audio Open 1.0 inference server — DB-driven, graceful-degradation HTTP service.
 
-Runs on port 9839 as a sidecar, alongside the SDXL server (9836).
+Runs on port 9839 as a sidecar, alongside the image-gen server (9836).
 Docker callers reach it via host.docker.internal:9839.
 
 The model + config live in poindexter_brain (app_settings) so they can be

@@ -51,8 +51,8 @@ class WorkerService:
             # Check for Ollama
             ollama_url = self._site_config.get("ollama_base_url", "http://host.docker.internal:11434")
             caps["ollama_url"] = ollama_url
-            # Check for SDXL
-            caps["sdxl"] = bool(self._site_config.get("sdxl_api_url"))
+            # Check for image gen server
+            caps["image_gen"] = bool(self._site_config.get("image_gen_api_url"))
             # GPU info (basic — enhance later with nvidia-smi)
             caps["gpu"] = self._site_config.get("gpu_name", "unknown")
             caps["vram_gb"] = int(self._site_config.get("gpu_vram_gb", "0"))

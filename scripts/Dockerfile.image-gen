@@ -1,4 +1,4 @@
-# SDXL Image Generation Server — GPU-accelerated container
+# Image Generation Server — GPU-accelerated container
 # Requires NVIDIA runtime (deploy.resources.reservations.devices in compose)
 #
 # 2026-05-08: bumped 2.5.1-cu124 → 2.9.1-cu128 to add Blackwell (sm_120)
@@ -31,7 +31,7 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
     invisible-watermark \
     peft
 
-COPY sdxl-server.py /app/server.py
+COPY image-gen-server.py /app/server.py
 
 # Non-root user (GPU access via group, not root)
 RUN addgroup --system --gid 1001 appgroup && \

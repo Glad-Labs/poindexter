@@ -419,7 +419,7 @@ class TestOllamaNoModelsLoadedRule:
     ``metrics_exporter`` zeroes BOTH ``poindexter_ollama_reachable`` AND
     ``poindexter_ollama_model_count`` in one ``except`` branch when its 3s
     ``/api/tags`` scrape errors — which happens transiently under heavy GPU
-    render load (wan + SDXL saturating the box). A bare ``model_count == 0``
+    render load (wan + image-gen saturating the box). A bare ``model_count == 0``
     expr then pages a CRITICAL "up but no models" even though the truth is
     "Ollama didn't answer a health ping in time" — already covered by the
     static ``PoindexterOllamaDown`` (``reachable == 0``) alert. The

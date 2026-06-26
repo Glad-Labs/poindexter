@@ -20,7 +20,7 @@ StageRunner path was deleted in the same Stage 4 cut along with
 `plugins/stage_runner.py` itself.
 
 The router also owns two cross-cutting concerns the stages can't see:
-the GPU mode switch (Ollama → SDXL → Ollama) around the featured image
+the GPU mode switch (Ollama → image-gen → Ollama) around the featured image
 stage, and the writer-fallback canary that compares
 `pipeline_writer_model` against the model the draft actually came back
 with so a silent 72B → 27B downgrade is logged loudly instead of going
@@ -64,7 +64,7 @@ Every other tunable lives on the individual stages — see
     `None` outside lifespan)
   - `services.image_style_rotation.ImageStyleTracker`
   - `services.image_service.get_image_service`
-  - `services.gpu_scheduler.gpu` for the SDXL/Ollama mode switch
+  - `services.gpu_scheduler.gpu` for the image-gen/Ollama mode switch
   - `site_config` (from `AppContainer` or DI) for the writer-fallback +
     dry-run checks
   - `plugins.registry.get_core_samples()` for the stage list

@@ -30,10 +30,10 @@ logger = logging.getLogger(__name__)
 # references this set explicitly, so the LLM knows what it's allowed
 # to choose.
 ShotSource = Literal[
-    "sdxl",            # Static SDXL image, held for ``duration_s``
-    "sdxl_kenburns",   # SDXL image + Ken Burns zoom/pan animation
+    "image_gen",       # Static generated image, held for ``duration_s``
+    "image_kenburns",  # Generated image + Ken Burns zoom/pan animation
     "pexels",          # Pexels stock video clip (real footage)
-    "generative",      # Hero shot: animate the stylized SDXL still (Wan i2v)
+    "generative",      # Hero shot: animate the stylized generated still (Wan i2v)
     "wan21",           # DEPRECATED alias of ``generative`` (legacy shot lists)
     "holdover",        # Cross-fade transition from prior shot (no asset)
 ]
@@ -81,7 +81,7 @@ def scan_for_human_tokens(text: str) -> list[str]:
 class Shot(BaseModel):
     """One shot in the composition.
 
-    ``prompt`` is the generation prompt for SDXL / Wan2.1 sources;
+    ``prompt`` is the generation prompt for image-gen / Wan2.1 sources;
     ``query`` is the stock-library search query for Pexels. Exactly
     one of the two is required for those sources (validated below).
     ``holdover`` shots need neither — they're pure transitions.
@@ -95,11 +95,11 @@ class Shot(BaseModel):
     duration_s: float = Field(..., gt=0, le=30, description="Target shot duration in seconds")
     intent: str = Field(..., min_length=1, max_length=200, description="Director's note on why this shot exists")
     source: ShotSource = Field(..., description="Which plugin renders this shot")
-    prompt: str | None = Field(None, max_length=2000, description="Generation prompt for SDXL/Wan2.1 sources")
+    prompt: str | None = Field(None, max_length=2000, description="Generation prompt for image-gen/Wan2.1 sources")
     query: str | None = Field(None, max_length=200, description="Stock-library search query for Pexels source")
     kenburns_zoom: tuple[float, float] | None = Field(
         None,
-        description="Start/end zoom for sdxl_kenburns shots (e.g. (1.0, 1.2))",
+        description="Start/end zoom for image_kenburns shots (e.g. (1.0, 1.2))",
     )
     narration_offset_s: float = Field(..., ge=0, description="Audio offset where this shot's narration starts")
 
@@ -108,10 +108,10 @@ class Shot(BaseModel):
         """Each source requires its specific input fields.
 
         Fail loud per ``feedback_no_silent_defaults`` — a director that
-        returns an SDXL shot with no prompt would otherwise produce an
+        returns an image-gen shot with no prompt would otherwise produce an
         empty clip silently.
         """
-        if self.source in ("sdxl", "sdxl_kenburns", "wan21", "generative"):
+        if self.source in ("image_gen", "image_kenburns", "wan21", "generative"):
             if not self.prompt:
                 raise ValueError(
                     f"source={self.source!r} requires a non-empty ``prompt``",
@@ -128,12 +128,12 @@ class Shot(BaseModel):
                     "source='holdover' must not have a prompt or query",
                 )
 
-        if self.source == "sdxl_kenburns" and self.kenburns_zoom is not None:
+        if self.source == "image_kenburns" and self.kenburns_zoom is not None:
             start, end = self.kenburns_zoom
             if start <= 0 or end <= 0:
                 raise ValueError("kenburns_zoom values must be positive")
 
-        if self.source in ("sdxl", "sdxl_kenburns", "wan21", "generative") and self.prompt:
+        if self.source in ("image_gen", "image_kenburns", "wan21", "generative") and self.prompt:
             human_tokens = scan_for_human_tokens(self.prompt)
             if human_tokens:
                 logger.warning(

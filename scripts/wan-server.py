@@ -1,9 +1,9 @@
-"""Wan 2.2 TI2V-5B Image/Text-to-Video inference server — sidecar mate of sdxl-server.
+"""Wan 2.2 TI2V-5B Image/Text-to-Video inference server — sidecar mate of image-gen-server.
 
 Loads ``Wan-AI/Wan2.2-TI2V-5B-Diffusers`` lazily on first request and
 exposes a single ``/generate`` endpoint that the
 :class:`Wan21Provider <services.video_providers.wan2_1.Wan21Provider>`
-plugin POSTs to. Mirrors the request/response shape the SDXL sidecar
+plugin POSTs to. Mirrors the request/response shape the image-gen sidecar
 uses so one operator runbook covers both:
 
 - POST ``/generate`` with JSON body matching the provider's request
@@ -14,7 +14,7 @@ uses so one operator runbook covers both:
   can fetch via shared filesystem.
 
 **Image-to-video is the primary path** (video-quality spec §3.3, Piece 4).
-The hero renderer renders an SDXL still first, then POSTs it as
+The hero renderer renders an image-gen still first, then POSTs it as
 ``image_b64``; the server decodes it and animates it via
 ``WanImageToVideoPipeline`` (i2v). A text-to-video fallback (no
 ``image_b64``) shares the loaded components through ``WanPipeline.from_pipe``,
@@ -24,7 +24,7 @@ any caller that doesn't send an init image.
 Why a sidecar, not in-process: Wan 2.2 TI2V-5B is a 5B diffusion
 transformer with a fp32 high-compression VAE and an UMT5-XXL text
 encoder (~34GB of weights on disk). Loading it inside the worker
-container would compete with Ollama / SDXL for VRAM and serialize
+container would compete with Ollama / image-gen for VRAM and serialize
 requests through the worker's event loop. A dedicated server with its
 own GPU lock + idle-timeout unload mirrors how every other GPU-bound
 model lives on this host. The model loads component-by-component
@@ -39,7 +39,7 @@ Endpoints:
     POST /generate  — generate video clip from prompt (+ optional init image)
     POST /unload    — free VRAM (called by GPU scheduler)
 
-Failure model: matches sdxl-server. Anything wrong (model load fails,
+Failure model: matches image-gen-server. Anything wrong (model load fails,
 CUDA OOM, etc.) puts the server in DEGRADED state — /generate returns
 503 with a useful error string, /health reports the reason, server
 keeps running so it can recover.
@@ -69,13 +69,13 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # Default model — Wan 2.2 TI2V-5B, the unified text+image-to-video 5B
 # model (Apache-2.0). Operators override via WAN_MODEL_ID env (no DB
 # roundtrip on this server, since model selection here is much narrower
-# than SDXL's multi-model registry). The provider's swappable
+# than image-gen's multi-model registry). The provider's swappable
 # ``generative_video_model`` seam (spec §3.3) sets this env in compose.
 MODEL_ID = os.getenv(
     "WAN_MODEL_ID", "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
 )
 
-# Idle unload — the loaded model is large; release it so SDXL / Ollama
+# Idle unload — the loaded model is large; release it so image-gen / Ollama
 # can reclaim VRAM when no video work is queued.
 IDLE_TIMEOUT_S = int(os.getenv("WAN_IDLE_TIMEOUT_S", "120"))
 
@@ -238,7 +238,7 @@ def _unload_pipeline_blocking() -> None:
 
 
 def _decode_image_b64(b64: str) -> Any:
-    """Decode a base64 image (the shot's SDXL still) to an RGB PIL image."""
+    """Decode a base64 image (the shot's image-gen still) to an RGB PIL image."""
     from PIL import Image
 
     raw = base64.b64decode(b64)
@@ -276,7 +276,7 @@ class GenerateRequest(BaseModel):
     height: int = Field(default=480, ge=256, le=1280)
     fps: int = Field(default=16, ge=8, le=30)
     model: str = Field(default="wan2.1-1.3b")  # caller-supplied label, ignored
-    # Piece 4 (spec §3.3): base64 init image (the shot's SDXL still). When
+    # Piece 4 (spec §3.3): base64 init image (the shot's image-gen still). When
     # present the server animates it via i2v; absent → text-to-video.
     image_b64: Optional[str] = Field(default=None)
 
@@ -355,7 +355,7 @@ async def health() -> dict[str, Any]:
 @app.post("/unload")
 async def unload() -> dict[str, str]:
     """Manual VRAM release — called by the worker's GPU scheduler when
-    Ollama / SDXL needs the card.
+    Ollama / image-gen needs the card.
     """
     async with state.gpu_lock:
         _unload_pipeline_blocking()

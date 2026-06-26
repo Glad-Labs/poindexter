@@ -1,9 +1,9 @@
 """FluxSchnellProvider — text-to-image via FLUX.1-schnell inference server.
 
 A second-generation generation provider sibling to
-:class:`SdxlProvider <services.image_providers.sdxl.SdxlProvider>`.
+:class:`ImageGenProvider <services.image_providers.image_gen.ImageGenProvider>`.
 Tracks GitHub issue #123 — A/B testing FLUX.1-schnell against
-SDXL Lightning for prompt adherence and text-in-image quality.
+image-gen Lightning for prompt adherence and text-in-image quality.
 
 License: **Apache-2.0** (FLUX.1-schnell). The non-commercial
 **FLUX.1-dev** variant is intentionally NOT supported here — adding a
@@ -11,7 +11,7 @@ License: **Apache-2.0** (FLUX.1-schnell). The non-commercial
 ``schnell`` or wait for an explicit commercial license decision.
 
 Strategy: HTTP POST to a dedicated FLUX inference server (default
-``http://host.docker.internal:9838``). Mirrors the SDXL host-sidecar
+``http://host.docker.internal:9838``). Mirrors the image-gen host-sidecar
 contract (``image/*`` raw bytes OR ``application/json`` with
 ``image_path``) so the same operational tooling applies. Standing up
 the inference server itself is an infra task — the provider fails with
@@ -30,7 +30,7 @@ accepts these keys via the dispatcher's per-call forwarding):
 - ``guidance_scale`` (default 0.0 — schnell ignores guidance by design)
 - ``task_id`` — WebSocket progress stream identifier
 - ``upload_to`` — ``""`` / ``"cloudinary"`` / ``"r2"``. Same shape as
-  SdxlProvider; the ImageResult.url reflects the upload target.
+  ImageGenProvider; the ImageResult.url reflects the upload target.
 
 Kind: ``"generate"``.
 """
@@ -64,7 +64,7 @@ def set_http_client(client: httpx.AsyncClient | None) -> None:
 logger = logging.getLogger(__name__)
 
 
-# Default inference-server URL. Lives at a different port from the SDXL
+# Default inference-server URL. Lives at a different port from the image-gen
 # sidecar so both can run side-by-side during the A/B period.
 _DEFAULT_SERVER_URL = "http://host.docker.internal:9838"
 
@@ -102,7 +102,7 @@ class FluxSchnellProvider:
             return []
 
         # Phase H step 5 (GH#95): site_config is resolved from the
-        # dispatcher's reserved ``_site_config`` key. Mirror SdxlProvider
+        # dispatcher's reserved ``_site_config`` key. Mirror ImageGenProvider
         # — log a warning when the dispatcher hasn't seeded it and fall
         # through to per-call config + library defaults.
         site_config = config.get("_site_config")
@@ -242,7 +242,7 @@ def _resolve_server_url(config: dict[str, Any], site_config: Any) -> str:
 
 def _resolve_negative(config: dict[str, Any], site_config: Any) -> str:
     """Pick the negative prompt — config wins, else the site_config
-    fallback ``image_negative_prompt`` (matching SdxlProvider)."""
+    fallback ``image_negative_prompt`` (matching ImageGenProvider)."""
     direct = str(config.get("negative_prompt", "") or "")
     if direct:
         return direct
@@ -272,7 +272,7 @@ async def _generate_to_path(
     """POST the prompt to the FLUX inference server; write the resulting
     PNG to ``output_path``. Returns True when the file was written.
 
-    Handles both response formats the SDXL sidecar uses (so a single
+    Handles both response formats the image-gen sidecar uses (so a single
     operator-written sidecar can drive both providers if desired):
 
     - ``image/*`` — raw PNG body. Written directly.
@@ -353,7 +353,7 @@ def _materialize_sidecar_json(
     """Copy the sidecar-generated PNG at the path advertised in its JSON
     response to the caller's ``output_path``. Returns True on success.
 
-    Mirrors ``services.image_providers.sdxl._materialize_sidecar_json``
+    Mirrors ``services.image_providers.image_gen._materialize_sidecar_json``
     so a single sidecar implementation can serve both providers.
     """
     try:

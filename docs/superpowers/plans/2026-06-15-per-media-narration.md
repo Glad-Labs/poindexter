@@ -669,7 +669,7 @@ async def test_long_render_uses_long_narration_channel(monkeypatch):
     from modules.content.atoms import media_render_long_video
     await media_render_long_video.run({
         "task_id": "t1",
-        "video_shot_list": {"aspect": "16:9", "shots": [{"idx": 0, "source": "sdxl", "prompt": "x", "duration_s": 2.0}], "total_duration_s": 2.0},
+        "video_shot_list": {"aspect": "16:9", "shots": [{"idx": 0, "source": "image_gen", "prompt": "x", "duration_s": 2.0}], "total_duration_s": 2.0},
         "long_narration_audio_path": "/tmp/long.mp3",
         "short_narration_audio_path": "/tmp/short.mp3",
         "long_caption_srt_path": "/tmp/long.srt",

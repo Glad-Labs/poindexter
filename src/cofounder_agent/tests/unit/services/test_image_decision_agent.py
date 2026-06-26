@@ -87,14 +87,14 @@ class TestImagePlanDataclass:
     def test_required_fields(self):
         plan = ImagePlan(
             section_heading="Intro",
-            source="sdxl",
+            source="image_gen",
             style="blueprint",
             prompt="abstract neural network",
             position="after_heading",
             reasoning="visualizes the topic",
         )
         assert plan.section_heading == "Intro"
-        assert plan.source == "sdxl"
+        assert plan.source == "image_gen"
         assert plan.style == "blueprint"
 
 
@@ -177,7 +177,7 @@ class TestPlanImagesShortCircuits:
             "Body of the second section.\n"
         )
         plan_json = {
-            "featured": {"source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"},
+            "featured": {"source": "image_gen", "style": "x", "prompt": "p", "reasoning": "r"},
             "inline": [],
         }
 
@@ -222,7 +222,7 @@ class TestPlanImagesHappyPath:
     async def test_happy_path_with_valid_json(self):
         plan_json = {
             "featured": {
-                "source": "sdxl",
+                "source": "image_gen",
                 "style": "editorial",
                 "prompt": "abstract scene",
                 "reasoning": "hero",
@@ -237,7 +237,7 @@ class TestPlanImagesHappyPath:
                 },
                 {
                     "section": "Performance",
-                    "source": "sdxl",
+                    "source": "image_gen",
                     "style": "blueprint",
                     "prompt": "graph going up",
                     "reasoning": "abstract metric",
@@ -253,7 +253,7 @@ class TestPlanImagesHappyPath:
             result = await plan_images(SAMPLE_CONTENT, "Test Topic", category="technology", site_config=mock_site)
 
         assert result.featured_image is not None
-        assert result.featured_image.source == "sdxl"
+        assert result.featured_image.source == "image_gen"
         assert result.featured_image.style == "editorial"
         assert result.featured_image.position == "hero"
         assert len(result.images) == 2
@@ -265,9 +265,9 @@ class TestPlanImagesHappyPath:
     @pytest.mark.asyncio
     async def test_max_images_cap(self):
         plan_json = {
-            "featured": {"source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"},
+            "featured": {"source": "image_gen", "style": "x", "prompt": "p", "reasoning": "r"},
             "inline": [
-                {"section": f"Sec {i}", "source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"}
+                {"section": f"Sec {i}", "source": "image_gen", "style": "x", "prompt": "p", "reasoning": "r"}
                 for i in range(8)
             ],
         }
@@ -285,7 +285,7 @@ class TestPlanImagesHappyPath:
     async def test_routes_through_budget_tier(self):
         """dispatch_complete must be called with tier='budget'."""
         plan_json = {
-            "featured": {"source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"},
+            "featured": {"source": "image_gen", "style": "x", "prompt": "p", "reasoning": "r"},
             "inline": [],
         }
         mock_site = _patched_site_config()
@@ -314,8 +314,8 @@ class TestPlanImagesThinkingModel:
         thinking_output = (
             "Let me think about this article. The sections are clear...\n"
             "I'll go with these choices:\n"
-            '{"featured": {"source": "sdxl", "style": "dramatic", "prompt": "moody data center", "reasoning": "ok"}, '
-            '"inline": [{"section": "How It Works", "source": "sdxl", "style": "blueprint", "prompt": "neural net", "reasoning": "ok"}]}'
+            '{"featured": {"source": "image_gen", "style": "dramatic", "prompt": "moody data center", "reasoning": "ok"}, '
+            '"inline": [{"section": "How It Works", "source": "image_gen", "style": "blueprint", "prompt": "neural net", "reasoning": "ok"}]}'
         )
 
         mock_site = _patched_site_config(model_role="qwen3:8b")
@@ -334,7 +334,7 @@ class TestPlanImagesThinkingModel:
         """<think>...</think> tags wrapping the JSON must be stripped."""
         wrapped = (
             "<think>I'm reasoning about this...</think>\n"
-            '{"featured": {"source": "sdxl", "style": "editorial", "prompt": "p", "reasoning": "r"}, "inline": []}'
+            '{"featured": {"source": "image_gen", "style": "editorial", "prompt": "p", "reasoning": "r"}, "inline": []}'
         )
 
         mock_site = _patched_site_config(model_role="qwen3:8b")
@@ -410,7 +410,7 @@ class TestPlanImagesModelPinResolution:
     async def test_model_role_pin_passed_to_provider_call(self):
         """model_role_image_decision is read directly and passed to dispatch_complete."""
         plan_json = {
-            "featured": {"source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"},
+            "featured": {"source": "image_gen", "style": "x", "prompt": "p", "reasoning": "r"},
             "inline": [],
         }
 
@@ -432,7 +432,7 @@ class TestPlanImagesModelPinResolution:
     async def test_pin_with_prefix_is_stripped(self):
         """The ollama/ prefix on the pin is stripped before dispatch."""
         plan_json = {
-            "featured": {"source": "sdxl", "style": "x", "prompt": "p", "reasoning": "r"},
+            "featured": {"source": "image_gen", "style": "x", "prompt": "p", "reasoning": "r"},
             "inline": [],
         }
 

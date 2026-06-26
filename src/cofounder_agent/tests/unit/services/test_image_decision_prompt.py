@@ -54,20 +54,20 @@ SECTIONS:
   2. Section Two
 
 AVAILABLE IMAGE SOURCES:
-- "sdxl": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, diagrams, conceptual scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
+- "image_gen": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, diagrams, conceptual scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
 - "pexels": Stock photography. Best for: real-world objects, environments, workspaces, hardware close-ups, materials. Avoid shots of people.
 
 RULES:
 1. Pick 3 sections that would benefit most from a visual (skip sections that are mostly code)
-2. For each, decide: sdxl or pexels? What style? What specific image?
+2. For each, decide: image_gen or pexels? What style? What specific image?
 3. Also decide on 1 featured image (the hero/header image for the article)
 4. Be specific in your prompts — describe the exact scene, not vague concepts
-5. NEVER depict people, hands, faces, or human figures in ANY image — the brand style is objects, hardware, and environments only. Also never put text, words, or letters in SDXL images.
+5. NEVER depict people, hands, faces, or human figures in ANY image — the brand style is objects, hardware, and environments only. Also never put text, words, or letters in AI-generated images.
 
 Output ONLY valid JSON (no markdown, no explanation):
 {
   "featured": {
-    "source": "sdxl" or "pexels",
+    "source": "image_gen" or "pexels",
     "style": "style_name",
     "prompt": "detailed image prompt or search query",
     "reasoning": "why this image works for the hero"
@@ -75,7 +75,7 @@ Output ONLY valid JSON (no markdown, no explanation):
   "inline": [
     {
       "section": "exact section title",
-      "source": "sdxl" or "pexels",
+      "source": "image_gen" or "pexels",
       "style": "style_name",
       "prompt": "detailed image prompt or search query",
       "reasoning": "why this visual helps this section"
@@ -245,7 +245,7 @@ class TestPlanImagesEdgeCases:
         )
         plan_json = json.dumps(
             {
-                "featured": {"source": "sdxl", "style": "blueprint",
+                "featured": {"source": "image_gen", "style": "blueprint",
                              "prompt": "hero", "reasoning": "r"},
                 "inline": [
                     {"section": "First Idea", "source": "pexels",
@@ -262,7 +262,7 @@ class TestPlanImagesEdgeCases:
 
         assert mock_dispatch.await_count == 1, "expected a dispatch_complete call"
         assert result.featured_image is not None
-        assert result.featured_image.source == "sdxl"
+        assert result.featured_image.source == "image_gen"
         assert len(result.images) == 1
         assert result.images[0].section_heading == "First Idea"
         assert result.images[0].source == "pexels"
@@ -288,7 +288,7 @@ class TestPlanImagesEdgeCases:
     async def test_embedded_json_extracted_from_reasoning(self):
         """JSON buried in reasoning prose is recovered by the regex fallback."""
         inner = {
-            "featured": {"source": "sdxl", "style": "minimal",
+            "featured": {"source": "image_gen", "style": "minimal",
                          "prompt": "p", "reasoning": "r"},
             "inline": [],
         }
@@ -321,7 +321,7 @@ class TestPlanImagesEdgeCases:
         """Missing fields fall back to defaults; featured prompt → topic."""
         partial = json.dumps(
             {
-                "featured": {"source": "sdxl"},  # no style/prompt/reasoning
+                "featured": {"source": "image_gen"},  # no style/prompt/reasoning
                 "inline": [{"section": "S1"}],    # no source/style/prompt
             }
         )
@@ -338,14 +338,14 @@ class TestPlanImagesEdgeCases:
         assert result.featured_image.style == "editorial"
         assert result.featured_image.prompt == "My Topic"  # defaults to topic
         assert len(result.images) == 1
-        assert result.images[0].source == "sdxl"
+        assert result.images[0].source == "image_gen"
         assert result.images[0].style == "editorial"
         assert result.images[0].prompt == ""
 
     async def test_inline_images_capped_at_max_images(self):
         """More inline entries than max_images → list is truncated."""
         inline = [
-            {"section": f"S{i}", "source": "sdxl", "style": "editorial",
+            {"section": f"S{i}", "source": "image_gen", "style": "editorial",
              "prompt": f"p{i}", "reasoning": ""}
             for i in range(5)
         ]

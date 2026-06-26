@@ -377,13 +377,13 @@
       "key": "image_negative_prompt",
       "value": "text, words, letters, numbers, watermark, signature, logo, face, person, human, hands, fingers, blurry, low quality, distorted, deformed",
       "category": "image",
-      "description": "Negative prompt for all SDXL generations"
+      "description": "Negative prompt for all image-gen generations"
     },
     {
       "key": "image_style_default",
       "value": "professional digital art, abstract technology concept, blue and cyan color scheme, clean modern aesthetic, no people, no text, no faces, no letters",
       "category": "image",
-      "description": "Default SDXL style for uncategorized posts"
+      "description": "Default image-gen style for uncategorized posts"
     },
     {
       "key": "prometheus.threshold.embeddings_stale_seconds",
@@ -437,7 +437,7 @@
       "key": "prometheus.threshold.gpu_vram_utilization_percent",
       "value": "95",
       "category": "prometheus",
-      "description": "GPU VRAM utilization % that fires GpuVramHigh \u2014 95% signals OOM-imminent before Ollama/SDXL starts failing"
+      "description": "GPU VRAM utilization % that fires GpuVramHigh \u2014 95% signals OOM-imminent before Ollama/image-gen starts failing"
     },
     {
       "key": "prometheus.threshold.disk_free_warning_gb",

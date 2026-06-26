@@ -1,8 +1,8 @@
 """ReplaceInlineImagesStage — stage 2C of the content pipeline.
 
 Finds / injects [IMAGE-N] placeholders in the draft and replaces each
-with either an SDXL-generated image or a Pexels photo. Post-processes
-the draft to strip any leaked SDXL prompt text.
+with either an image-gen-generated image or a Pexels photo. Post-processes
+the draft to strip any leaked image-gen prompt text.
 
 Fully ported from ``_stage_replace_inline_images`` in content_router_service.py.
 No more thin-wrapper delegation. Helper logic is split into internal
@@ -11,10 +11,10 @@ preserved byte-for-byte.
 
 ## Strategy (per placeholder)
 
-1. **SDXL (primary)** — Ollama generates a prompt (random inline style),
-   then the SDXL server renders. Path traversal guard on the returned
+1. **image-gen (primary)** — Ollama generates a prompt (random inline style),
+   then the image-gen server renders. Path traversal guard on the returned
    path; R2 upload with local-path fallback if R2 unavailable.
-2. **Pexels (fallback)** — used when SDXL fails, the server returns
+2. **Pexels (fallback)** — used when image-gen fails, the server returns
    non-200, or the generated image collides with another placeholder.
 3. **Remove placeholder** — if both fail, strip the placeholder so no
    raw `[IMAGE-N]` reaches the reader.
@@ -77,7 +77,7 @@ _BOLD_HEADING_RE = re.compile(r"^\*\*(.{1,80}?)\*\*\s*$", re.MULTILINE)
 
 # Stylized-only fallback pool for inline illustrations. The photoreal styles
 # ("photorealistic scene", "editorial photograph", "macro photograph") were
-# removed deliberately: low-step SDXL butchers photoreal detail (the "PC
+# removed deliberately: low-step image-gen butchers photoreal detail (the "PC
 # hardware slop" / mangled-hands problem) and the brand is stylized, not
 # photographic. Operators tune the live pool via the ``inline_image_styles``
 # app_setting (JSON array of style strings); this tuple is the fallback.
@@ -92,22 +92,22 @@ INLINE_STYLES: tuple[str, ...] = (
 )
 
 
-SDXL_NEGATIVE_PROMPT = (
+IMAGE_GEN_NEGATIVE_PROMPT = (
     "text, words, letters, watermark, face, person, hands, blurry, "
     "low quality, distorted, ugly, deformed"
 )
 
 
-def _get_sdxl_negative_prompt(site_config: Any) -> str:
+def _get_image_gen_negative_prompt(site_config: Any) -> str:
     """Return operator-configured negative prompt, or the safe default."""
     if site_config is None:
-        return SDXL_NEGATIVE_PROMPT
+        return IMAGE_GEN_NEGATIVE_PROMPT
     override = (site_config.get("image_negative_prompt", "") or "").strip()
-    return override if override else SDXL_NEGATIVE_PROMPT
+    return override if override else IMAGE_GEN_NEGATIVE_PROMPT
 
 
 def _apply_base_style(prompt: str, site_config: Any) -> str:
-    """Append operator-configured base style suffix to an SDXL prompt.
+    """Append operator-configured base style suffix to an image-gen prompt.
 
     ``image_base_style_prompt`` lets operators set a niche-wide style
     (e.g. ``cyberpunk, neon accents`` for tech, ``natural light, botanical``
@@ -141,7 +141,7 @@ def _load_inline_styles(site_config: Any) -> tuple[str, ...]:
 def _build_inline_prompt_instruction(
     search_query: str, topic: str, style: str,
 ) -> str:
-    """LLM instruction for an inline SDXL prompt.
+    """LLM instruction for an inline image-gen prompt.
 
     The wording lives in the ``image.inline_illustration`` skill prompt
     (UnifiedPromptManager: Langfuse override → skill YAML default), so it's
@@ -174,7 +174,7 @@ def _build_inline_prompt_instruction(
 
 class ReplaceInlineImagesStage:
     name = "replace_inline_images"
-    description = "Decide + generate inline images (SDXL primary, Pexels fallback)"
+    description = "Decide + generate inline images (image-gen primary, Pexels fallback)"
     timeout_seconds = 300
     halts_on_failure = False
 
@@ -221,18 +221,18 @@ class ReplaceInlineImagesStage:
         # VRAM guard (glad-labs-stack 2026-05-19 jank-audit finding #4):
         # the writer LLM (~20 GB for gemma3:27b) stays resident from the
         # preceding LLM stages because Ollama's default keep_alive is 5
-        # min. SDXL Lightning loads ~12 GB on top, which OOMs 24 GB
+        # min. image-gen Lightning loads ~12 GB on top, which OOMs 24 GB
         # cards and runs at ~98% VRAM on a 32 GB card. The
-        # gpu_scheduler already unloads on the SDXL lock acquire, but
+        # gpu_scheduler already unloads on the image-gen lock acquire, but
         # keep_alive=0 is fire-and-forget — without the grace sleep an
         # immediate /generate (the inline-image prompt build a few
         # lines below) can re-load before the writer's VRAM has been
         # released. This helper makes the unload deterministic +
-        # tunable per ``app_settings.pipeline_explicit_writer_unload_before_sdxl``.
+        # tunable per ``app_settings.pipeline_writer_unload_before_image_gen``.
         from services.llm_providers.ollama_unload import (
-            maybe_unload_writer_before_sdxl,
+            maybe_unload_writer_before_image_gen,
         )
-        await maybe_unload_writer_before_sdxl(
+        await maybe_unload_writer_before_image_gen(
             site_config=site_config,
             stage_label=self.name,
         )
@@ -269,17 +269,17 @@ class ReplaceInlineImagesStage:
         used_image_ids: set[str] = set()
         # poindexter#733 — batch GPU work into two phases:
         #   Phase 1: one Ollama lock → generate ALL prompts
-        #   Phase 2: one SDXL lock → render ALL images
+        #   Phase 2: one image-gen lock → render ALL images
         # This eliminates N×2 GPU lock acquisitions (6 for 3 images) and
-        # the Ollama↔SDXL model-swap churn that caused ~95 s avg stage time.
-        sdxl_urls = await _batch_generate_all_sdxl_images(
+        # the Ollama↔image-gen model-swap churn that caused ~95 s avg stage time.
+        image_gen_urls = await _batch_generate_all_images(
             placeholders=placeholders,
             topic=topic,
             site_config=site_config,
             task_id=task_id,
             platform=platform,
         )
-        for (num, desc), img_url in zip(placeholders, sdxl_urls, strict=False):
+        for (num, desc), img_url in zip(placeholders, image_gen_urls, strict=False):
             content_text = await _resolve_one_placeholder(
                 num=num,
                 desc=desc,
@@ -291,7 +291,7 @@ class ReplaceInlineImagesStage:
                 task_id=task_id,
                 post_id=post_id,
                 platform=platform,
-                pregenerated_sdxl_url=img_url,
+                pregenerated_image_url=img_url,
             )
 
         content_text = _cleanup_leaked_descriptions(content_text)
@@ -447,12 +447,12 @@ async def _resolve_one_placeholder(
     task_id: str | None,
     post_id: Any = None,
     platform: Any = None,
-    pregenerated_sdxl_url: str | None = None,
+    pregenerated_image_url: str | None = None,
 ) -> str:
     """Replace one ``[IMAGE-N]`` placeholder with a real image or strip it.
 
-    ``task_id`` is forwarded to :func:`_try_sdxl` so the GPU scheduler
-    can attribute Ollama-prompt + SDXL-render electricity cost back to
+    ``task_id`` is forwarded to :func:`_try_image_gen` so the GPU scheduler
+    can attribute Ollama-prompt + image-gen-render electricity cost back to
     the originating pipeline task — see Glad-Labs/poindexter#157.
 
     ``post_id`` is forwarded so a successful image generation lands a
@@ -460,10 +460,10 @@ async def _resolve_one_placeholder(
     poindexter#161). When ``post_id`` is None (early-pipeline calls
     before the post is persisted), the row is skipped.
 
-    ``pregenerated_sdxl_url`` accepts an already-generated SDXL URL so
+    ``pregenerated_image_url`` accepts an already-generated image-gen URL so
     the batched two-phase path (poindexter#733) can skip the per-placeholder
     GPU lock cycle. When set to a non-None non-empty string, Strategy 1
-    uses this URL directly instead of calling ``_try_sdxl``.
+    uses this URL directly instead of calling ``_try_image_gen``.
     """
     from services.alt_text import sanitize_alt_text
     search_query = desc.strip() if desc else topic
@@ -473,7 +473,7 @@ async def _resolve_one_placeholder(
     alt_text = re.sub(r"^(?:IMAGE|FIGURE|Image|Figure)\s*[-:]\s*", "", alt_text).strip()
     # GH-84: strip ``||provider:hint||`` pipeline tokens + enforce a
     # DB-configurable budget with word-boundary truncation (no mid-word chop).
-    # GH-469: pass topic so SDXL-prompt-shaped descriptors fall back to
+    # GH-469: pass topic so image-gen-prompt-shaped descriptors fall back to
     # a topic-derived alt instead of leaking imperative-mood prompt text.
     alt_text = sanitize_alt_text(
         alt_text,
@@ -484,14 +484,14 @@ async def _resolve_one_placeholder(
         topic=topic,
     )
 
-    # Strategy 1: SDXL.
+    # Strategy 1: image-gen.
     # Use the pre-generated URL when available (poindexter#733 batch path);
-    # fall back to the per-image _try_sdxl call when not (legacy path, used
+    # fall back to the per-image _try_image_gen call when not (legacy path, used
     # when callers don't go through the batched execute() loop).
-    if pregenerated_sdxl_url is not None:
-        img_url = pregenerated_sdxl_url or None
+    if pregenerated_image_url is not None:
+        img_url = pregenerated_image_url or None
     else:
-        img_url = await _try_sdxl(
+        img_url = await _try_image_gen(
             num, search_query, topic, site_config=site_config, task_id=task_id,
             platform=platform,
         )
@@ -501,12 +501,12 @@ async def _resolve_one_placeholder(
             content_text, num, img_url, alt_text,
             width=1024, height=1024,
         )
-        logger.info("  [IMAGE-%s] SDXL generated + R2 uploaded", num)
+        logger.info("  [IMAGE-%s] image-gen generated + R2 uploaded", num)
         await _record_inline_image_asset(
             site_config=site_config,
             post_id=post_id,
             public_url=img_url,
-            provider_plugin="image.sdxl",
+            provider_plugin="image.image_gen",
             width=1024,
             height=1024,
             # R2UploadService converts PNG→WebP at upload time (#732).
@@ -607,7 +607,7 @@ async def _record_inline_image_asset(
     )
 
 
-async def _batch_generate_all_sdxl_images(
+async def _batch_generate_all_images(
     placeholders: list[tuple[str, str]],
     topic: str,
     *,
@@ -615,12 +615,12 @@ async def _batch_generate_all_sdxl_images(
     task_id: str | None,
     platform: Any,
 ) -> list[str | None]:
-    """Generate SDXL images for all placeholders using two batched GPU locks.
+    """Generate image-gen images for all placeholders using two batched GPU locks.
 
-    poindexter#733 — eliminates the per-placeholder Ollama↔SDXL swap churn.
+    poindexter#733 — eliminates the per-placeholder Ollama↔image-gen swap churn.
 
-    Phase 1 (one Ollama lock): generate ALL SDXL prompts sequentially.
-    Phase 2 (one SDXL lock): render ALL images sequentially.
+    Phase 1 (one Ollama lock): generate ALL image-gen prompts sequentially.
+    Phase 2 (one image-gen lock): render ALL images sequentially.
 
     Returns a list of URLs (or None on failure) in the same order as
     ``placeholders``. A per-placeholder failure never stops the others —
@@ -639,21 +639,21 @@ async def _batch_generate_all_sdxl_images(
 
     pool = getattr(site_config, "_pool", None) if site_config is not None else None
     if pool is None:
-        logger.debug("[IMAGE-BATCH] no DB pool — skipping batched SDXL generation")
+        logger.debug("[IMAGE-BATCH] no DB pool — skipping batched image-gen generation")
         return [None] * n
 
     if platform is None:
-        logger.debug("[IMAGE-BATCH] no platform handle — skipping batched SDXL generation")
+        logger.debug("[IMAGE-BATCH] no platform handle — skipping batched image-gen generation")
         return [None] * n
 
-    sdxl_url = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
+    image_gen_url = site_config.get("image_gen_server_url", "http://host.docker.internal:9836")
     model = site_config.get("inline_image_prompt_model", "llama3:latest")
 
     # ------------------------------------------------------------------ #
     # Phase 1: generate ALL prompts under a single Ollama lock            #
     # ------------------------------------------------------------------ #
-    neg_prompt = _get_sdxl_negative_prompt(site_config)
-    sdxl_prompts: list[str | None] = []
+    neg_prompt = _get_image_gen_negative_prompt(site_config)
+    img_gen_prompts: list[str | None] = []
     try:
         async with gpu.lock(
             "ollama", model=model, task_id=task_id, phase="inline_image_prompt_batch",
@@ -674,43 +674,43 @@ async def _batch_generate_all_sdxl_images(
                         temperature=site_config.get_float("image_prompt_temperature", 0.8),
                         max_tokens=site_config.get_int("image_prompt_max_tokens", 150),
                     )
-                    sdxl_prompt = (getattr(result, "text", "") or "").strip().strip('"')
-                    sdxl_prompt = _apply_base_style(sdxl_prompt, site_config)
-                    if sdxl_prompt and len(sdxl_prompt) > 20:
+                    img_gen_prompt = (getattr(result, "text", "") or "").strip().strip('"')
+                    img_gen_prompt = _apply_base_style(img_gen_prompt, site_config)
+                    if img_gen_prompt and len(img_gen_prompt) > 20:
                         logger.info(
-                            "  [IMAGE-%s] SDXL prompt (batch): %s...", num, sdxl_prompt[:60],
+                            "  [IMAGE-%s] image-gen prompt (batch): %s...", num, img_gen_prompt[:60],
                         )
-                        sdxl_prompts.append(sdxl_prompt)
+                        img_gen_prompts.append(img_gen_prompt)
                     else:
-                        logger.warning("  [IMAGE-%s] SDXL prompt too short/empty — Pexels fallback", num)
-                        sdxl_prompts.append(None)
+                        logger.warning("  [IMAGE-%s] image-gen prompt too short/empty — Pexels fallback", num)
+                        img_gen_prompts.append(None)
                 except Exception as err:
-                    logger.warning("  [IMAGE-%s] SDXL prompt generation failed: %s", num, err)
-                    sdxl_prompts.append(None)
+                    logger.warning("  [IMAGE-%s] image-gen prompt generation failed: %s", num, err)
+                    img_gen_prompts.append(None)
     except Exception as err:
         logger.warning("[IMAGE-BATCH] Ollama lock acquire failed: %s — falling back per-image", err)
         return [None] * n
 
     # ------------------------------------------------------------------ #
-    # Phase 2: render ALL images under a single SDXL lock                #
+    # Phase 2: render ALL images under a single image-gen lock                #
     # ------------------------------------------------------------------ #
-    sdxl_urls: list[str | None] = []
+    image_gen_urls: list[str | None] = []
     render_timeout = site_config.get_int("image_render_timeout_seconds", 90) if site_config is not None else 90
-    gpu_model_label = site_config.get("image_generation_model", "sdxl") if site_config is not None else "sdxl"
+    gpu_model_label = site_config.get("image_generation_model", "image_gen") if site_config is not None else "image_gen"
     try:
         async with gpu.lock(
-            "sdxl", model=gpu_model_label, task_id=task_id, phase="inline_image_batch",
+            "image_gen", model=gpu_model_label, task_id=task_id, phase="inline_image_batch",
         ):
             async with httpx.AsyncClient(timeout=httpx.Timeout(render_timeout, connect=5.0)) as client:
-                for (num, _desc), sdxl_prompt in zip(placeholders, sdxl_prompts, strict=False):
-                    if sdxl_prompt is None:
-                        sdxl_urls.append(None)
+                for (num, _desc), img_gen_prompt in zip(placeholders, img_gen_prompts, strict=False):
+                    if img_gen_prompt is None:
+                        image_gen_urls.append(None)
                         continue
                     try:
                         img_resp = await client.post(
-                            f"{sdxl_url}/generate",
+                            f"{image_gen_url}/generate",
                             json={
-                                "prompt": sdxl_prompt,
+                                "prompt": img_gen_prompt,
                                 "negative_prompt": neg_prompt,
                                 # steps / guidance omitted — server's per-model
                                 # registry drives them. #image-zimage-and-variety.
@@ -719,25 +719,25 @@ async def _batch_generate_all_sdxl_images(
                         )
                         if img_resp.status_code != 200:
                             logger.warning(
-                                "  [IMAGE-%s] SDXL returned %s (batch)", num, img_resp.status_code,
+                                "  [IMAGE-%s] image-gen returned %s (batch)", num, img_resp.status_code,
                             )
-                            sdxl_urls.append(None)
+                            image_gen_urls.append(None)
                             continue
-                        tmp_path = await _resolve_sdxl_response(img_resp, sdxl_url=sdxl_url)
+                        tmp_path = await _resolve_gen_response(img_resp, image_gen_url=image_gen_url)
                         img_url = await _upload_to_r2_with_fallback(tmp_path, site_config=site_config)
-                        logger.info("  [IMAGE-%s] SDXL generated + uploaded (batch)", num)
-                        sdxl_urls.append(img_url)
+                        logger.info("  [IMAGE-%s] image-gen generated + uploaded (batch)", num)
+                        image_gen_urls.append(img_url)
                     except Exception as err:
-                        logger.warning("  [IMAGE-%s] SDXL render failed (batch): %s", num, err)
-                        sdxl_urls.append(None)
+                        logger.warning("  [IMAGE-%s] image-gen render failed (batch): %s", num, err)
+                        image_gen_urls.append(None)
     except Exception as err:
-        logger.warning("[IMAGE-BATCH] SDXL lock acquire failed: %s — no SDXL images this run", err)
+        logger.warning("[IMAGE-BATCH] image-gen lock acquire failed: %s — no image-gen images this run", err)
         return [None] * n
 
-    return sdxl_urls
+    return image_gen_urls
 
 
-async def _try_sdxl(
+async def _try_image_gen(
     num: str,
     search_query: str,
     topic: str,
@@ -746,10 +746,10 @@ async def _try_sdxl(
     task_id: str | None,
     platform: Any = None,
 ) -> str | None:
-    """Generate an SDXL image and return its final URL (R2 or local).
+    """Generate an image-gen image and return its final URL (R2 or local).
 
     ``task_id`` is threaded through to :meth:`gpu.lock` for both the
-    Ollama prompt-build and the SDXL render so ``gpu_task_sessions`` /
+    Ollama prompt-build and the image-gen render so ``gpu_task_sessions`` /
     cost_logs rows attribute kWh + electricity cost to the originating
     pipeline task. Without this, the inline-image phase logged un-
     attributed sessions — see Glad-Labs/poindexter#157.
@@ -757,20 +757,20 @@ async def _try_sdxl(
     from services.gpu_scheduler import gpu
 
     try:
-        sdxl_url = site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
+        image_gen_url = site_config.get("image_gen_server_url", "http://host.docker.internal:9836")
         model = site_config.get("inline_image_prompt_model", "llama3:latest")
         inline_style = random.choice(_load_inline_styles(site_config))
         img_prompt_req = _build_inline_prompt_instruction(
             search_query, topic, inline_style,
         )
 
-        # Step 1: dispatcher generates the SDXL prompt. When no pool is
+        # Step 1: dispatcher generates the image-gen prompt. When no pool is
         # reachable (tests / bootstrap), bail to Pexels fallback by
-        # returning None — the caller treats it as "no SDXL image".
+        # returning None — the caller treats it as "no image-gen image".
         pool = getattr(site_config, "_pool", None) if site_config is not None else None
         if pool is None:
             logger.debug(
-                "  [IMAGE-%s] no DB pool — skipping SDXL prompt generation", num,
+                "  [IMAGE-%s] no DB pool — skipping image-gen prompt generation", num,
             )
             return None
 
@@ -791,29 +791,29 @@ async def _try_sdxl(
                 raise RuntimeError(
                     "platform handle required for dispatch — check pipeline context threading"
                 )
-            sdxl_prompt = (getattr(result, "text", "") or "").strip().strip('"')
-        sdxl_prompt = _apply_base_style(sdxl_prompt, site_config)
+            img_gen_prompt = (getattr(result, "text", "") or "").strip().strip('"')
+        img_gen_prompt = _apply_base_style(img_gen_prompt, site_config)
 
-        if not sdxl_prompt or len(sdxl_prompt) <= 20:
+        if not img_gen_prompt or len(img_gen_prompt) <= 20:
             return None
 
-        logger.info("  [IMAGE-%s] SDXL prompt: %s...", num, sdxl_prompt[:60])
+        logger.info("  [IMAGE-%s] image-gen prompt: %s...", num, img_gen_prompt[:60])
 
-        # Step 2: SDXL renders the image
-        neg_prompt = _get_sdxl_negative_prompt(site_config)
+        # Step 2: image-gen renders the image
+        neg_prompt = _get_image_gen_negative_prompt(site_config)
         render_timeout = site_config.get_int("image_render_timeout_seconds", 90) if site_config is not None else 90
-        gpu_model_label = site_config.get("image_generation_model", "sdxl") if site_config is not None else "sdxl"
+        gpu_model_label = site_config.get("image_generation_model", "image_gen") if site_config is not None else "image_gen"
         async with gpu.lock(
-            "sdxl", model=gpu_model_label,
+            "image_gen", model=gpu_model_label,
             task_id=task_id, phase="inline_image",
         ):
             async with httpx.AsyncClient(timeout=httpx.Timeout(render_timeout, connect=5.0)) as client:
                 img_resp = await client.post(
-                    f"{sdxl_url}/generate",
+                    f"{image_gen_url}/generate",
                     json={
-                        "prompt": sdxl_prompt,
+                        "prompt": img_gen_prompt,
                         "negative_prompt": neg_prompt,
-                        # steps / guidance_scale omitted — the SDXL server's
+                        # steps / guidance_scale omitted — the image-gen server's
                         # per-model registry drives them (see featured-image
                         # stage). #image-zimage-and-variety.
                     },
@@ -821,28 +821,28 @@ async def _try_sdxl(
                 )
 
         if img_resp.status_code != 200:
-            logger.warning("  [IMAGE-%s] SDXL returned %s", num, img_resp.status_code)
+            logger.warning("  [IMAGE-%s] image-gen returned %s", num, img_resp.status_code)
             return None
 
-        tmp_path = await _resolve_sdxl_response(img_resp, sdxl_url=sdxl_url)
-        logger.info("  [IMAGE-%s] SDXL generated: %s", num, os.path.basename(tmp_path))
+        tmp_path = await _resolve_gen_response(img_resp, image_gen_url=image_gen_url)
+        logger.info("  [IMAGE-%s] image-gen generated: %s", num, os.path.basename(tmp_path))
 
         # Step 3: R2 upload, with local-path fallback.
         return await _upload_to_r2_with_fallback(tmp_path, site_config=site_config)
     except Exception as err:
-        logger.warning("  [IMAGE-%s] SDXL inline failed: %s", num, err)
+        logger.warning("  [IMAGE-%s] image-gen inline failed: %s", num, err)
         return None
 
 
-async def _resolve_sdxl_response(
-    img_resp: httpx.Response, *, sdxl_url: str,
+async def _resolve_gen_response(
+    img_resp: httpx.Response, *, image_gen_url: str,
 ) -> str:
-    """Materialise an SDXL server response as a worker-local file path.
+    """Materialise an image-gen server response as a worker-local file path.
 
     The server either:
     - Returns JSON with ``filename``/``image_path``. We fetch the bytes
-      back via ``GET <sdxl_url>/images/<filename>`` rather than trusting
-      the path — SDXL and the worker run in separate containers as
+      back via ``GET <image_gen_url>/images/<filename>`` rather than trusting
+      the path — image-gen and the worker run in separate containers as
       ``appuser`` whose in-container ``$HOME`` is ephemeral and not
       reliably bind-mount-shared. Closes Glad-Labs/poindexter#459.
     - Returns raw image bytes (older code path, kept for compatibility).
@@ -857,18 +857,18 @@ async def _resolve_sdxl_response(
         )
         if not filename:
             raise RuntimeError(
-                "SDXL returned JSON without filename / image_path",
+                "image-gen returned JSON without filename / image_path",
             )
-        return await _download_sdxl_image(sdxl_url, filename)
+        return await _download_gen_image(image_gen_url, filename)
 
     if ct.startswith("image/"):
         return _write_bytes_to_tempfile(img_resp.content)
 
-    raise RuntimeError(f"SDXL returned unexpected content-type: {ct}")
+    raise RuntimeError(f"image-gen returned unexpected content-type: {ct}")
 
 
 def _generated_images_dir() -> str:
-    """Worker-local directory for materialised SDXL bytes.
+    """Worker-local directory for materialised image-gen bytes.
 
     Matches the path fragment that ``_upload_to_r2_with_fallback`` keys
     on (``/glad-labs-generated-images/``) so the post-R2 local-serve URL
@@ -890,22 +890,22 @@ def _write_bytes_to_tempfile(content: bytes) -> str:
         return tmp.name
 
 
-async def _download_sdxl_image(sdxl_url: str, filename: str) -> str:
-    """GET the bytes from the SDXL server's ``/images/<filename>`` and save.
+async def _download_gen_image(image_gen_url: str, filename: str) -> str:
+    """GET the bytes from the image-gen server's ``/images/<filename>`` and save.
 
-    Avoids the filesystem coupling between the SDXL and worker
-    containers — the SDXL server already exposes its outputs over HTTP
-    (see ``scripts/sdxl-server.py``'s ``GET /images/{filename}``).
+    Avoids the filesystem coupling between the image-gen and worker
+    containers — the image-gen server already exposes its outputs over HTTP
+    (see ``scripts/image-gen-server.py``'s ``GET /images/{filename}``).
     """
     safe_name = os.path.basename(filename)
-    url = f"{sdxl_url.rstrip('/')}/images/{safe_name}"
+    url = f"{image_gen_url.rstrip('/')}/images/{safe_name}"
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(30.0, connect=5.0),
     ) as client:
         resp = await client.get(url)
     if resp.status_code != 200:
         raise RuntimeError(
-            f"SDXL /images returned {resp.status_code} for {safe_name}",
+            f"image-gen /images returned {resp.status_code} for {safe_name}",
         )
     return _write_bytes_to_tempfile(resp.content)
 

@@ -10,7 +10,7 @@
 #   2. PostgreSQL accessible with correct schema
 #   3. Required app_settings populated
 #   4. Ollama reachable with at least one model
-#   5. SDXL server responding (if GPU available)
+#   5. image-gen server responding (if GPU available)
 #   6. Worker connected and processing
 #   7. API endpoints responding
 #
@@ -48,7 +48,7 @@ echo ""
 info "1. Docker Containers"
 # ============================================================
 
-REQUIRED_CONTAINERS="poindexter-postgres-local poindexter-worker poindexter-brain-daemon poindexter-grafana poindexter-prometheus poindexter-sdxl-server"
+REQUIRED_CONTAINERS="poindexter-postgres-local poindexter-worker poindexter-brain-daemon poindexter-grafana poindexter-prometheus poindexter-image-gen-server"
 # Optional containers — gitea stays with gladlabs-* prefix (internal-only).
 OPTIONAL_CONTAINERS="gladlabs-gitea gladlabs-gitea-runner poindexter-pgadmin poindexter-voice-bot"
 
@@ -152,16 +152,16 @@ fi
 
 # ============================================================
 echo ""
-info "4. SDXL Server (Image Generation)"
+info "4. image-gen Server"
 # ============================================================
 
-SDXL_URL="${SDXL_SERVER_URL:-http://localhost:9836}"
-SDXL_HEALTH=$(curl -s "$SDXL_URL/health" 2>/dev/null)
-if [ -n "$SDXL_HEALTH" ]; then
-    GPU_NAME=$(echo "$SDXL_HEALTH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('gpu','unknown'))" 2>/dev/null || echo "unknown")
-    pass "SDXL server: running on $GPU_NAME"
+image_gen_url="${image_gen_server_url:-http://localhost:9836}"
+IMAGE_GEN_HEALTH=$(curl -s "$image_gen_url/health" 2>/dev/null)
+if [ -n "$IMAGE_GEN_HEALTH" ]; then
+    GPU_NAME=$(echo "$IMAGE_GEN_HEALTH" | python3 -c "import json,sys; print(json.load(sys.stdin).get('gpu','unknown'))" 2>/dev/null || echo "unknown")
+    pass "image-gen server: running on $GPU_NAME"
 else
-    warn "SDXL server: not running at $SDXL_URL — AI image generation will be disabled (Pexels fallback used)"
+    warn "image-gen server: not running at $image_gen_url — AI image generation will be disabled (Pexels fallback used)"
 fi
 
 # ============================================================

@@ -202,10 +202,10 @@ async def test_api_alias_maps_to_worker_container(mock_notify):
     assert "poindexter-worker" in mock_notify.call_args.args[0]
 
 
-async def test_sdxl_server_alias_maps_to_sdxl_container(mock_notify):
-    """``sdxl-server`` (and ``sdxl``) route to the SDXL image-gen
-    container, not the worker. Regression guard against a copy-paste
-    mistake collapsing both aliases to ``poindexter-worker``.
+async def test_image_gen_server_alias_maps_to_image_gen_container(mock_notify):
+    """``image-gen-server`` routes to the image-gen container, not the worker.
+    Regression guard against a copy-paste mistake collapsing the alias to
+    ``poindexter-worker``.
     """
     inspect_hit = _inspect_result(returncode=0, stdout="running\n")
     restart_ok = _inspect_result(returncode=0)
@@ -215,15 +215,15 @@ async def test_sdxl_server_alias_maps_to_sdxl_container(mock_notify):
              bd.subprocess, "run",
              side_effect=[inspect_hit, restart_ok],
          ) as run_mock:
-        await bd.restart_service("sdxl-server", pool=None)
+        await bd.restart_service("image-gen-server", pool=None)
 
     inspect_args = run_mock.call_args_list[0].args[0]
     restart_args = run_mock.call_args_list[1].args[0]
-    assert "poindexter-sdxl-server" in inspect_args
-    assert restart_args == ["docker", "restart", "poindexter-sdxl-server"]
-    # Recovery notification names the SDXL container, not the worker.
+    assert "poindexter-image-gen-server" in inspect_args
+    assert restart_args == ["docker", "restart", "poindexter-image-gen-server"]
+    # Recovery notification names the image-gen container, not the worker.
     mock_notify.assert_called_once()
-    assert "poindexter-sdxl-server" in mock_notify.call_args.args[0]
+    assert "poindexter-image-gen-server" in mock_notify.call_args.args[0]
 
 
 async def test_inspect_command_uses_state_status_format(mock_notify):

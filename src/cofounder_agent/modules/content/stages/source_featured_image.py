@@ -1,22 +1,22 @@
 """SourceFeaturedImageStage — stage 3 of the content pipeline.
 
 Full port of ``_stage_source_featured_image`` from content_router_service.py
-(no longer a thin wrapper). Tries SDXL editorial-illustration generation
-first, falls back to a Pexels photo if SDXL is unavailable or fails.
+(no longer a thin wrapper). Tries image-gen editorial-illustration generation
+first, falls back to a Pexels photo if image-gen is unavailable or fails.
 
 ## Strategy
 
 1. **Early out** — if ``generate_featured_image`` is False in context,
    record the skip and return.
-2. **SDXL editorial illustration** — the style is picked by a DB-driven
+2. **image-gen editorial illustration** — the style is picked by a DB-driven
    rotation (``image_styles`` app_setting) that filters out the last 5
    published posts' styles and this worker's recent in-memory picks.
-   An Ollama prompt build goes through first; SDXL server renders with
+   An Ollama prompt build goes through first; image-gen server renders with
    the chosen style's palette/mood.
-3. **R2 upload** — SDXL output uploads to R2 (replaced Cloudinary for
+3. **R2 upload** — image-gen output uploads to R2 (replaced Cloudinary for
    cost reasons). Falls back to the worker's local serve path if R2
    fails.
-4. **Pexels fallback** — if SDXL is unavailable, unreachable, or the
+4. **Pexels fallback** — if image-gen is unavailable, unreachable, or the
    pipeline errors at any point, the Pexels stock-photo search is used.
 5. **Nothing found** — set ``stages["3_featured_image_found"] = False``
    and return None. Pipeline continues without a featured image.
@@ -27,7 +27,7 @@ first, falls back to a Pexels photo if SDXL is unavailable or fails.
 - ``generate_featured_image`` (bool, default True)
 - ``task_id`` (str)
 - ``image_service`` (falls back to ``get_image_service()``)
-- ``featured_image_prompt`` (optional — if set upstream, skips SDXL
+- ``featured_image_prompt`` (optional — if set upstream, skips image-gen
   prompt generation and uses this verbatim)
 
 ## Context writes
@@ -37,18 +37,18 @@ first, falls back to a Pexels photo if SDXL is unavailable or fails.
 - ``featured_image_alt`` (str, capped at 200 chars)
 - ``featured_image_width``, ``featured_image_height`` (int)
 - ``featured_image_photographer`` (str)
-- ``featured_image_source`` (str: "sdxl_local" / "sdxl_cloudinary" / "pexels")
-- ``image_style`` (str, set when SDXL's rotation picked one)
+- ``featured_image_source`` (str: "image_gen_local" / "image_gen_cloudinary" / "pexels")
+- ``image_style`` (str, set when image-gen's rotation picked one)
 - ``featured_image_data`` (dict) — reproducibility metadata for the
   featured image: ``source``, ``provider_plugin``, ``width``, ``height``,
   ``photographer``, ``generated_at``, ``image_style``, ``topic``. For the
-  SDXL branch this also captures ``sdxl_model``, ``sdxl_seed``,
-  ``sdxl_prompt``, ``sdxl_negative_prompt``, ``sdxl_dimensions``, and
-  ``generation_seconds`` so an operator can regenerate a similar image
+  image-gen branch this also captures ``image_gen_model``, ``image_gen_seed``,
+  ``image_gen_prompt``, ``image_gen_negative_prompt``, ``image_gen_dimensions``,
+  and ``generation_seconds`` so an operator can regenerate a similar image
   later. Lands on ``posts.featured_image_data`` via
   ``publish_service.publish_post_from_task``.
 - ``stages["3_featured_image_found"]`` (bool)
-- ``stages["3_image_source"]`` (str, "sdxl" or "pexels")
+- ``stages["3_image_source"]`` (str, "image_gen" or "pexels")
 """
 
 from __future__ import annotations
@@ -95,23 +95,23 @@ DEFAULT_NEGATIVE = (
 
 @dataclass
 class GeneratedImage:
-    """Return shape for an SDXL-generated featured image.
+    """Return shape for an image-gen-generated featured image.
 
-    ``sdxl_meta`` carries the reproducibility payload (model name,
+    ``gen_meta`` carries the reproducibility payload (model name,
     seed, prompt, negative prompt, dimensions, generation time) so
     callers can stash it on ``posts.featured_image_data`` for later
     regeneration / debugging. Empty dict on Pexels and on the
-    image-bytes branch where the SDXL server didn't return JSON.
+    image-bytes branch where the image-gen server didn't return JSON.
     """
 
     url: str
     photographer: str
     source: str
-    sdxl_meta: dict[str, Any] = None  # type: ignore[assignment]
+    gen_meta: dict[str, Any] = None  # type: ignore[assignment]
 
     def __post_init__(self) -> None:
-        if self.sdxl_meta is None:
-            self.sdxl_meta = {}
+        if self.gen_meta is None:
+            self.gen_meta = {}
 
 
 # ---------------------------------------------------------------------------
@@ -119,10 +119,10 @@ class GeneratedImage:
 # ---------------------------------------------------------------------------
 
 
-def _build_sdxl_featured_image_data(
+def _build_gen_featured_image_data(
     *,
-    sdxl_image: GeneratedImage,
-    sdxl_meta: dict[str, Any],
+    gen_image: GeneratedImage,
+    gen_meta: dict[str, Any],
     topic: str,
     width: int,
     height: int,
@@ -131,37 +131,37 @@ def _build_sdxl_featured_image_data(
     """Compose the reproducibility blob persisted on posts.featured_image_data.
 
     The shape is intentionally flat and stable so operator-side queries
-    (``WHERE featured_image_data->>'sdxl_model' = 'sdxl_lightning'``)
-    don't need to know about nested envelopes. ``sdxl_*`` keys mirror
-    the SDXL server's response fields; the prompt + negative_prompt
+    (``WHERE featured_image_data->>'image_gen_model' = 'sdxl_lightning'``)
+    don't need to know about nested envelopes. ``image_gen_*`` keys mirror
+    the image-gen server's response fields; the prompt + negative_prompt
     were the ones the worker sent, not the ones the server echoed
     (the server doesn't echo them).
     """
-    gen_ms = int(sdxl_meta.get("generation_time_ms") or 0)
+    gen_ms = int(gen_meta.get("generation_time_ms") or 0)
     payload: dict[str, Any] = {
-        "source": sdxl_image.source,
-        "provider_plugin": f"image.{sdxl_image.source}",
+        "source": gen_image.source,
+        "provider_plugin": f"image.{gen_image.source}",
         "width": int(width),
         "height": int(height),
-        "photographer": sdxl_image.photographer,
+        "photographer": gen_image.photographer,
         "topic": topic,
         "image_style": image_style or "",
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "generation_seconds": round(gen_ms / 1000.0, 3) if gen_ms else 0.0,
-        "sdxl_dimensions": [int(width), int(height)],
+        "image_gen_dimensions": [int(width), int(height)],
     }
-    # Pull each SDXL response field if present. Missing fields stay
+    # Pull each image-gen response field if present. Missing fields stay
     # absent — never emit empty placeholders ("no mock/dummy data").
-    if "model" in sdxl_meta:
-        payload["sdxl_model"] = sdxl_meta["model"]
-    if "seed" in sdxl_meta:
-        payload["sdxl_seed"] = sdxl_meta["seed"]
-    if sdxl_meta.get("prompt"):
-        payload["sdxl_prompt"] = sdxl_meta["prompt"]
-    if sdxl_meta.get("negative_prompt"):
-        payload["sdxl_negative_prompt"] = sdxl_meta["negative_prompt"]
-    if sdxl_meta.get("filename"):
-        payload["sdxl_filename"] = sdxl_meta["filename"]
+    if "model" in gen_meta:
+        payload["image_gen_model"] = gen_meta["model"]
+    if "seed" in gen_meta:
+        payload["image_gen_seed"] = gen_meta["seed"]
+    if gen_meta.get("prompt"):
+        payload["image_gen_prompt"] = gen_meta["prompt"]
+    if gen_meta.get("negative_prompt"):
+        payload["image_gen_negative_prompt"] = gen_meta["negative_prompt"]
+    if gen_meta.get("filename"):
+        payload["image_gen_filename"] = gen_meta["filename"]
     return payload
 
 
@@ -172,7 +172,7 @@ def _build_sdxl_featured_image_data(
 
 class SourceFeaturedImageStage:
     name = "source_featured_image"
-    description = "Source a featured image — SDXL primary, Pexels fallback"
+    description = "Source a featured image — image-gen primary, Pexels fallback"
     timeout_seconds = 300
     halts_on_failure = False
 
@@ -194,8 +194,8 @@ class SourceFeaturedImageStage:
         # Seam 1 Wave 3f (#667) — content's capability-scoped kernel handle,
         # threaded onto the stage context by the TemplateRunner (__services__
         # merge), exactly as the writer + inline-image atom receive it. It MUST
-        # be forwarded into _try_sdxl_featured so the SDXL prompt build can run
-        # the LLM; without it _build_sdxl_prompt raises "platform handle
+        # be forwarded into _try_image_gen_featured so the image-gen prompt build can run
+        # the LLM; without it _build_image_gen_prompt raises "platform handle
         # required for dispatch" and the featured image falls back to the bare
         # style-only prompt (generic, not subject-specific — the 2026-06-18
         # production bug).
@@ -223,35 +223,35 @@ class SourceFeaturedImageStage:
 
         updates: dict[str, Any] = {"stages": stages}
 
-        # Strategy 1: attempt the SDXL HTTP server.
+        # Strategy 1: attempt the image-gen HTTP server.
         #
         # 2026-05-27 fix: the previous gate checked
-        # ``image_service.sdxl_available or not image_service.sdxl_initialized``,
+        # ``image_service.gen_available or not image_service.gen_initialized``,
         # which is a leftover from the in-process diffusers era. The
         # worker container no longer installs the ``ml`` extras (diffusers
         # + torch + sentence-transformers moved out to dedicated
-        # containers), so ``sdxl_available`` is permanently False here
-        # and the gate skipped SDXL on every run — silently falling
+        # containers), so ``gen_available`` is permanently False here
+        # and the gate skipped image-gen on every run — silently falling
         # back to Pexels.
         #
-        # The real SDXL path goes through ``_try_sdxl_featured`` ->
-        # ``_render_sdxl`` -> HTTP POST to ``sdxl_server_url``. That
+        # The real image-gen path goes through ``_try_image_gen_featured`` ->
+        # ``_render_image_gen`` -> HTTP POST to ``image_gen_server_url``. That
         # path returns None gracefully on transport / 5xx errors, so the
-        # gate adds no value beyond letting the operator switch SDXL off
-        # via ``app_settings.sdxl_enabled``. Default behaviour is to
-        # attempt SDXL; operators flip the setting to ``false`` only when
-        # the SDXL server is intentionally down.
-        sdxl_enabled = True
+        # gate adds no value beyond letting the operator switch image-gen off
+        # via ``app_settings.image_gen_enabled``. Default behaviour is to
+        # attempt image-gen; operators flip the setting to ``false`` only when
+        # the image-gen server is intentionally down.
+        image_gen_enabled = True
         if site_config is not None:
             try:
                 raw = str(
-                    site_config.get("sdxl_enabled", "true") or "true"
+                    site_config.get("image_gen_enabled", "true") or "true"
                 ).strip().lower()
-                sdxl_enabled = raw in ("true", "1", "yes", "on")
+                image_gen_enabled = raw in ("true", "1", "yes", "on")
             except Exception:  # noqa: BLE001 — defensive
-                sdxl_enabled = True
-        sdxl_attempted = sdxl_enabled
-        if sdxl_attempted:
+                image_gen_enabled = True
+        image_gen_attempted = image_gen_enabled
+        if image_gen_attempted:
             # Pull / lazily-create the style-rotation tracker. Production
             # keeps one long-lived instance per worker process (stashed on
             # app.state by lifespan); tests inject their own mock; absent
@@ -301,7 +301,7 @@ class SourceFeaturedImageStage:
                 except RuntimeError:
                     pass  # no running loop — tests/bootstrap
 
-            sdxl_image = await _try_sdxl_featured(
+            gen_image = await _try_image_gen_featured(
                 topic=topic,
                 existing_prompt=context.get("featured_image_prompt", ""),
                 task_id=task_id,
@@ -310,43 +310,43 @@ class SourceFeaturedImageStage:
                 site_config=site_config,
                 platform=platform,
             )
-            if sdxl_image is not None:
+            if gen_image is not None:
                 stages["3_featured_image_found"] = True
-                stages["3_image_source"] = "sdxl"
-                # Prefer dimensions reported by the SDXL server (it can
+                stages["3_image_source"] = "image_gen"
+                # Prefer dimensions reported by the image-gen server (it can
                 # return non-1024 sizes), fall back to the historical
-                # default. ``sdxl_meta`` is empty on the legacy
+                # default. ``gen_meta`` is empty on the legacy
                 # image-bytes branch — same fallback applies there.
-                sdxl_meta = sdxl_image.sdxl_meta or {}
-                width = int(sdxl_meta.get("width") or 1024)
-                height = int(sdxl_meta.get("height") or 1024)
+                gen_meta = gen_image.gen_meta or {}
+                width = int(gen_meta.get("width") or 1024)
+                height = int(gen_meta.get("height") or 1024)
                 # featured_image_data — reproducibility blob landing on
                 # posts.featured_image_data via publish_service.
                 # Closes the dead seam from the 2026-05-19 jank-audit:
                 # the column existed but nothing wrote to it.
-                featured_image_data = _build_sdxl_featured_image_data(
-                    sdxl_image=sdxl_image,
-                    sdxl_meta=sdxl_meta,
+                featured_image_data = _build_gen_featured_image_data(
+                    gen_image=gen_image,
+                    gen_meta=gen_meta,
                     topic=topic,
                     width=width,
                     height=height,
                     image_style=updates.get("image_style", ""),
                 )
                 updates.update({
-                    "featured_image": sdxl_image,
-                    "featured_image_url": sdxl_image.url,
+                    "featured_image": gen_image,
+                    "featured_image_url": gen_image.url,
                     "featured_image_alt": f"{topic} — AI generated illustration"[:200],
                     "featured_image_width": width,
                     "featured_image_height": height,
-                    "featured_image_photographer": sdxl_image.photographer,
-                    "featured_image_source": sdxl_image.source,
+                    "featured_image_photographer": gen_image.photographer,
+                    "featured_image_source": gen_image.source,
                     "featured_image_data": featured_image_data,
                     "stages": stages,
                 })
                 # Glad-Labs/poindexter#161: record media_assets row for
                 # cleanup / retention / cost-attribution. Best-effort —
                 # never breaks the Stage. We extend the metadata blob
-                # with the SDXL reproducibility payload so media_assets
+                # with the image-gen reproducibility payload so media_assets
                 # carries the same info as posts.featured_image_data
                 # (one seam for retention-time queries, one seam for
                 # operator-debug-time queries).
@@ -354,18 +354,18 @@ class SourceFeaturedImageStage:
                     site_config=site_config,
                     post_id=post_id,
                     task_id=task_id,
-                    public_url=sdxl_image.url,
+                    public_url=gen_image.url,
                     width=width,
                     height=height,
-                    provider_plugin=f"image.{sdxl_image.source}",
+                    provider_plugin=f"image.{gen_image.source}",
                     metadata={
                         "topic": topic,
                         "task_id": str(task_id or ""),
-                        "photographer": sdxl_image.photographer,
+                        "photographer": gen_image.photographer,
                         "image_style": updates.get("image_style", ""),
                         **{
-                            f"sdxl_{k}": v
-                            for k, v in sdxl_meta.items()
+                            f"image_gen_{k}": v
+                            for k, v in gen_meta.items()
                             if k in ("model", "seed", "prompt",
                                      "negative_prompt", "generation_time_ms")
                         },
@@ -373,12 +373,12 @@ class SourceFeaturedImageStage:
                     # R2UploadService converts PNG→WebP at upload time (#732).
                     mime_type="image/webp",
                 )
-                logger.info("Featured image generated via SDXL + R2")
+                logger.info("Featured image generated via image-gen + R2")
                 return StageResult(
                     ok=True,
-                    detail=f"sdxl: {sdxl_image.url[:60]}",
+                    detail=f"image_gen: {gen_image.url[:60]}",
                     context_updates=updates,
-                    metrics={"source": "sdxl"},
+                    metrics={"source": "image_gen"},
                 )
 
         # Strategy 2: Pexels fallback.
@@ -414,7 +414,7 @@ class SourceFeaturedImageStage:
                     "featured_image_data": featured_image_data,
                     "stages": stages,
                 })
-                # Glad-Labs/poindexter#161 — same insert as the SDXL
+                # Glad-Labs/poindexter#161 — same insert as the image-gen
                 # branch above; Pexels images need a media_assets row
                 # too so backfill scripts can find them.
                 await _record_featured_image_asset(
@@ -451,7 +451,7 @@ class SourceFeaturedImageStage:
         updates.setdefault("featured_image", None)
         return StageResult(
             ok=True,
-            detail="no image (SDXL unavailable + pexels returned none)",
+            detail="no image (image-gen unavailable + pexels returned none)",
             context_updates=updates,
             metrics={"source": "none"},
         )
@@ -478,7 +478,7 @@ async def _record_featured_image_asset(
 
     Wraps :func:`services.media_asset_recorder.record_media_asset` so
     the call site stays one line and never propagates DB errors out
-    of the Stage. Used by both the SDXL and Pexels success branches.
+    of the Stage. Used by both the image-gen and Pexels success branches.
 
     ``task_id`` is required as a kwarg because this stage runs BEFORE
     the post exists in the canonical_blog pipeline — ``post_id`` is
@@ -517,11 +517,11 @@ async def _record_featured_image_asset(
 
 
 # ---------------------------------------------------------------------------
-# SDXL: prompt building + rendering + R2 upload
+# image-gen: prompt building + rendering + R2 upload
 # ---------------------------------------------------------------------------
 
 
-async def _try_sdxl_featured(
+async def _try_image_gen_featured(
     topic: str,
     existing_prompt: str,
     task_id: str | None,
@@ -531,13 +531,13 @@ async def _try_sdxl_featured(
     site_config: Any = None,
     platform: Any = None,
 ) -> GeneratedImage | None:
-    """Full SDXL path: pick style → build prompt → render → upload to R2.
+    """Full image-gen path: pick style → build prompt → render → upload to R2.
 
-    The returned ``GeneratedImage`` carries ``sdxl_meta`` populated with
-    the prompt + negative_prompt actually sent to the SDXL server PLUS
+    The returned ``GeneratedImage`` carries ``gen_meta`` populated with
+    the prompt + negative_prompt actually sent to the image-gen server PLUS
     the response payload (model name, seed, generation_time_ms,
-    dimensions). Empty when the SDXL server returns raw image bytes
-    instead of JSON (legacy code path — current SDXL server always
+    dimensions). Empty when the image-gen server returns raw image bytes
+    instead of JSON (legacy code path — current image-gen server always
     emits JSON).
     """
     # site_config is the DI seam (glad-labs-stack#330) — passed by execute().
@@ -546,15 +546,15 @@ async def _try_sdxl_featured(
             site_config.get("image_negative_prompt", DEFAULT_NEGATIVE)
             if site_config is not None else DEFAULT_NEGATIVE
         )
-        sdxl_prompt = existing_prompt
-        if not sdxl_prompt:
-            sdxl_prompt = await _build_sdxl_prompt(
+        img_gen_prompt = existing_prompt
+        if not img_gen_prompt:
+            img_gen_prompt = await _build_image_gen_prompt(
                 topic, on_style_picked, style_tracker,
                 site_config=site_config, platform=platform,
             )
 
-        sdxl_url = (
-            site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
+        image_gen_url = (
+            site_config.get("image_gen_server_url", "http://host.docker.internal:9836")
             if site_config is not None
             else "http://host.docker.internal:9836"
         )
@@ -563,11 +563,11 @@ async def _try_sdxl_featured(
             if site_config is not None else 90
         )
         gpu_model_label = (
-            site_config.get("image_generation_model", "sdxl")
-            if site_config is not None else "sdxl"
+            site_config.get("image_generation_model", "image_gen")
+            if site_config is not None else "image_gen"
         )
-        output_path, server_meta = await _render_sdxl(
-            sdxl_url, sdxl_prompt, negative, task_id=task_id,
+        output_path, server_meta = await _render_image_gen(
+            image_gen_url, img_gen_prompt, negative, task_id=task_id,
             timeout_seconds=render_timeout, gpu_model_label=gpu_model_label,
         )
         if output_path is None:
@@ -576,23 +576,23 @@ async def _try_sdxl_featured(
         image_url = await _upload_featured_to_r2(
             output_path, task_id, site_config=site_config,
         )
-        source = "sdxl_cloudinary" if "cloudinary" in image_url else "sdxl_local"
+        source = "image_gen_cloudinary" if "cloudinary" in image_url else "image_gen_local"
         # Compose the reproducibility blob — prompt + negative come
         # from this function (the server doesn't echo them back), the
-        # rest is the SDXL JSON response.
-        sdxl_meta: dict[str, Any] = {
-            "prompt": sdxl_prompt,
+        # rest is the image-gen JSON response.
+        gen_meta: dict[str, Any] = {
+            "prompt": img_gen_prompt,
             "negative_prompt": negative,
         }
-        sdxl_meta.update(server_meta or {})
+        gen_meta.update(server_meta or {})
         return GeneratedImage(
             url=image_url,
-            photographer="AI Generated (SDXL)",
+            photographer="AI Generated (image-gen)",
             source=source,
-            sdxl_meta=sdxl_meta,
+            gen_meta=gen_meta,
         )
     except Exception as e:
-        logger.info("SDXL generation skipped (%s), falling back to Pexels", e)
+        logger.info("image-gen generation skipped (%s), falling back to Pexels", e)
         return None
 
 
@@ -625,7 +625,7 @@ def _resolve_image_prompt(key: str, **kwargs: Any) -> str:
         )
 
 
-async def _build_sdxl_prompt(
+async def _build_image_gen_prompt(
     topic: str,
     on_style_picked: Any,
     style_tracker: Any,
@@ -691,7 +691,7 @@ async def _build_sdxl_prompt(
             )
         prompt_text = (getattr(result, "text", "") or "").strip().strip('"')
         logger.info(
-            "[IMAGE] Style: %s | SDXL prompt: %s", chosen_style, prompt_text[:80],
+            "[IMAGE] Style: %s | image-gen prompt: %s", chosen_style, prompt_text[:80],
         )
         return prompt_text
     except Exception as e:
@@ -717,7 +717,7 @@ async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
     """Fetch recently-published posts' image_style for cross-post dedup.
 
     Reads the chosen rotation style off ``featured_image_data->>'image_style'``
-    (the SDXL reproducibility blob, reliably persisted on both finalize paths)
+    (the image-gen reproducibility blob, reliably persisted on both finalize paths)
     and falls back to ``metadata->>'image_style'``. The window size is the
     ``image_style_dedup_window`` setting (default 5).
 
@@ -725,7 +725,7 @@ async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
     was NULL on every published post (the finalize metadata builder never wrote
     it), so the query always returned [] and cross-post rotation was silently
     dead — the same style recurred across posts. ``featured_image_data`` carries
-    ``image_style`` from ``_build_sdxl_featured_image_data`` and now persists via
+    ``image_style`` from ``_build_gen_featured_image_data`` and now persists via
     ``build_task_metadata``, so this read is populated going forward.
     #image-zimage-and-variety.
 
@@ -787,18 +787,18 @@ async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
         return []
 
 
-async def _render_sdxl(
-    sdxl_url: str,
-    sdxl_prompt: str,
+async def _render_image_gen(
+    image_gen_url: str,
+    img_gen_prompt: str,
     negative_prompt: str,
     task_id: str | None = None,
     *,
     timeout_seconds: float = 90.0,
-    gpu_model_label: str = "sdxl",
+    gpu_model_label: str = "image_gen",
 ) -> tuple[str | None, dict[str, Any]]:
-    """Call the SDXL server, return (local_path, sdxl_meta).
+    """Call the image-gen server, return (local_path, server_meta).
 
-    ``sdxl_meta`` carries the response payload the SDXL server emits
+    ``gen_meta`` carries the response payload the image-gen server emits
     (``model``, ``seed``, ``generation_time_ms``, ``width``, ``height``,
     ``filename``) so the caller can persist it on
     ``posts.featured_image_data`` for later regeneration. Empty dict
@@ -812,7 +812,7 @@ async def _render_sdxl(
     from services.gpu_scheduler import gpu
 
     async with gpu.lock(
-        "sdxl", model=gpu_model_label,
+        "image_gen", model=gpu_model_label,
         task_id=task_id, phase="featured_image",
     ):
         # Cap from image_render_timeout_seconds — headroom for a cold model
@@ -821,11 +821,11 @@ async def _render_sdxl(
             timeout=httpx.Timeout(timeout_seconds, connect=5.0)
         ) as client:
             resp = await client.post(
-                f"{sdxl_url}/generate",
+                f"{image_gen_url}/generate",
                 json={
-                    "prompt": sdxl_prompt,
+                    "prompt": img_gen_prompt,
                     "negative_prompt": negative_prompt,
-                    # steps / guidance_scale are intentionally omitted: the SDXL
+                    # steps / guidance_scale are intentionally omitted: the image-gen
                     # server drives them from its per-model registry
                     # (sdxl_lightning=4/0, z_image_turbo=9/0). Hardcoding them
                     # here forced wrong values on a model swap (and was already
@@ -837,24 +837,24 @@ async def _render_sdxl(
     if resp.status_code != 200:
         return None, {}
 
-    return await _resolve_sdxl_featured_response(resp, sdxl_url=sdxl_url)
+    return await _resolve_gen_featured_response(resp, image_gen_url=image_gen_url)
 
 
-async def _resolve_sdxl_featured_response(
-    resp: httpx.Response, *, sdxl_url: str,
+async def _resolve_gen_featured_response(
+    resp: httpx.Response, *, image_gen_url: str,
 ) -> tuple[str | None, dict[str, Any]]:
-    """Materialise the SDXL server's featured-image response on disk.
+    """Materialise the image-gen server's featured-image response on disk.
 
-    Fetches bytes via ``GET <sdxl_url>/images/<filename>`` when SDXL
-    returns JSON, rather than trusting the in-container path. The SDXL
+    Fetches bytes via ``GET <image_gen_url>/images/<filename>`` when image-gen
+    returns JSON, rather than trusting the in-container path. The image-gen
     and worker containers both run as ``appuser`` with ephemeral
     in-container homes — the volume mount that was supposed to bridge
-    them lands on ``/root/.poindexter/`` while the SDXL server writes
+    them lands on ``/root/.poindexter/`` while the image-gen server writes
     to ``/home/appuser/.poindexter/``, so the worker never sees the
     file on disk. Closes Glad-Labs/poindexter#459.
 
-    Returns ``(local_path, sdxl_meta)`` — ``sdxl_meta`` carries the
-    JSON the SDXL server emitted on the JSON branch, empty dict on
+    Returns ``(local_path, gen_meta)`` — ``gen_meta`` carries the
+    JSON the image-gen server emitted on the JSON branch, empty dict on
     the image-bytes branch.
     """
     ct = resp.headers.get("content-type", "")
@@ -866,23 +866,23 @@ async def _resolve_sdxl_featured_response(
         gen_ms = data.get("generation_time_ms", 0)
         if not filename:
             logger.warning(
-                "[IMAGE] SDXL returned JSON without filename / image_path",
+                "[IMAGE] image-gen returned JSON without filename / image_path",
             )
             return None, {}
         try:
-            output_path = await _download_featured_sdxl_image(
-                sdxl_url, filename,
+            output_path = await _download_featured_gen_image(
+                image_gen_url, filename,
             )
         except Exception as e:
             logger.warning(
-                "[IMAGE] SDXL /images fetch failed for %s: %s", filename, e,
+                "[IMAGE] image-gen /images fetch failed for %s: %s", filename, e,
             )
             return None, {}
         logger.info(
-            "[IMAGE] Featured SDXL generated: %s (%dms)",
+            "[IMAGE] Featured image-gen generated: %s (%dms)",
             os.path.basename(output_path), gen_ms,
         )
-        # The SDXL server's GenerateResponse pins ``model``,
+        # The image-gen server's GenerateResponse pins ``model``,
         # ``generation_time_ms``, ``seed``, ``width``, ``height``. Capture
         # all of them so reproducibility doesn't depend on which fields
         # the operator later regenerates from.
@@ -900,7 +900,7 @@ async def _resolve_sdxl_featured_response(
 
 
 def _featured_generated_images_dir() -> str:
-    """Worker-local directory for materialised SDXL bytes.
+    """Worker-local directory for materialised image-gen bytes.
 
     Matches the path fragment that ``_upload_featured_to_r2``'s
     local-fallback URL rewrite keys on (``/glad-labs-generated-images/``),
@@ -922,23 +922,23 @@ def _write_featured_bytes_to_tempfile(content: bytes) -> str:
         return tmp.name
 
 
-async def _download_featured_sdxl_image(sdxl_url: str, filename: str) -> str:
-    """GET the bytes from the SDXL server's ``/images/<filename>``.
+async def _download_featured_gen_image(image_gen_url: str, filename: str) -> str:
+    """GET the bytes from the image-gen server's ``/images/<filename>``.
 
-    The SDXL server already serves its outputs over HTTP (see
-    ``scripts/sdxl-server.py``'s ``GET /images/{filename}``), so the
-    worker no longer needs the SDXL container's filesystem to be
+    The image-gen server already serves its outputs over HTTP (see
+    ``scripts/image-gen-server.py``'s ``GET /images/{filename}``), so the
+    worker no longer needs the image-gen container's filesystem to be
     mounted in.
     """
     safe_name = os.path.basename(filename)
-    url = f"{sdxl_url.rstrip('/')}/images/{safe_name}"
+    url = f"{image_gen_url.rstrip('/')}/images/{safe_name}"
     async with httpx.AsyncClient(
         timeout=httpx.Timeout(30.0, connect=5.0),
     ) as client:
         get_resp = await client.get(url)
     if get_resp.status_code != 200:
         raise RuntimeError(
-            f"SDXL /images returned {get_resp.status_code} for {safe_name}",
+            f"image-gen /images returned {get_resp.status_code} for {safe_name}",
         )
     return _write_featured_bytes_to_tempfile(get_resp.content)
 

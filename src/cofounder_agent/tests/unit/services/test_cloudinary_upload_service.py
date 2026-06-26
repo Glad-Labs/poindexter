@@ -1,7 +1,7 @@
 """Tests for the shared Cloudinary upload service.
 
 Locks in the contract that pre-2026-05-27 was duplicated across
-``flux_schnell.py`` and ``sdxl.py``:
+``flux_schnell.py`` and ``image_gen.py``:
 
 - Missing ``site_config`` raises RuntimeError (caller forgot the DI seam)
 - ``cloudinary_api_key`` / ``api_secret`` go through ``get_secret`` (not
@@ -101,11 +101,11 @@ async def test_provider_tag_lands_in_cloudinary_tags(
         "/tmp/x.png",
         "prompt",
         site_config=mock_site_config,
-        provider_tag="sdxl",
+        provider_tag="image_gen",
     )
 
     upload_kwargs = mock_cloudinary.call_args.kwargs
-    assert "sdxl" in upload_kwargs["tags"]
+    assert "image_gen" in upload_kwargs["tags"]
     assert "provider" in upload_kwargs["tags"]
 
 
@@ -231,7 +231,7 @@ async def test_upload_kwargs_pin_folder_and_resource_type(
         "/tmp/x.png",
         "prompt",
         site_config=mock_site_config,
-        provider_tag="sdxl",
+        provider_tag="image_gen",
     )
 
     upload_kwargs = mock_cloudinary.call_args.kwargs

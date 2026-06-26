@@ -192,7 +192,7 @@ def _is_still_image(path: str) -> bool:
 
     Used by the normalize step to decide whether ``-loop 1 -framerate``
     is needed before ``-i``. Cheap extension check covers every
-    format the SDXL / Pexels / media_assets reuse paths produce.
+    format the image-gen / Pexels / media_assets reuse paths produce.
     """
     return os.path.splitext(path)[1].lower() in _STILL_IMAGE_EXTS
 

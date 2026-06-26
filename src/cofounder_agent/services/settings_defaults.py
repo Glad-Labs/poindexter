@@ -127,11 +127,11 @@ DEFAULTS: dict[str, str] = {
     'local_llm_api_url': 'http://localhost:11434',
     'model_role_image_decision': 'qwen3:8b',
     'pipeline_architect_timeout_seconds': '120.0',
-    # why: VRAM guard against the writer (~20GB) + SDXL (~12GB) overlap
+    # why: VRAM guard against the writer (~20GB) + image-gen (~12GB) overlap
     # at the stage-5→stage-7 boundary. Default-on fixes the 24GB-card OOM;
     # operators on 80+GB hardware can flip to 'false' to skip the
     # ~3-5s reload tax (see services/llm_providers/ollama_unload.py).
-    'pipeline_explicit_writer_unload_before_sdxl': 'true',
+    'pipeline_writer_unload_before_image_gen': 'true',
     'pipeline_fallback_model': 'ollama/gemma-4-31B-it-qat:latest',
     # Daily-driver content writer. gemma-4-31B won the 2026-06-18 writer bakeoff
     # (98/100): it names grounded specifics without the glm writer's [placeholder]
@@ -148,8 +148,8 @@ DEFAULTS: dict[str, str] = {
     # Ops alert-triage (firefighter /api/triage) is a one-paragraph diagnosis,
     # NOT content — it defaults to the small free-tier model, never the 19 GB
     # writer. Unset before, it fell through to pipeline_writer_model, so a triage
-    # reloaded the writer into VRAM mid-media-render and CUDA-OOM'd the SDXL
-    # server (2026-06-21). A 2 GB model coexists with wan + SDXL on a 32 GB card,
+    # reloaded the writer into VRAM mid-media-render and CUDA-OOM'd the image-gen
+    # server (2026-06-21). A 2 GB model coexists with wan + image-gen on a 32 GB card,
     # so triage can't oversubscribe the GPU even when un-gated.
     'ops_triage_writer_model': 'ollama/llama3.2:3b',
     # Video director + self-critique run on the writer model — scene judgment is
@@ -177,7 +177,7 @@ DEFAULTS: dict[str, str] = {
     # repo id; point at a 14B / LTX checkpoint later with no code change) read
     # by the Wan provider + the wan-server. ``video_hero_shots_max`` caps the
     # per-video count of heavy generative i2v renders; the renderer downgrades
-    # excess hero shots to sdxl_kenburns (see shot_list_renderer._cap_hero_shots).
+    # excess hero shots to image_kenburns (see shot_list_renderer._cap_hero_shots).
     'generative_video_model': 'Wan-AI/Wan2.2-TI2V-5B',
     'video_hero_shots_max': '3',
     # Caption ASR engine for media.transcribe_narration. Default 'speaches'
@@ -241,7 +241,7 @@ DEFAULTS: dict[str, str] = {
     'vram_budget_guard_enabled': 'true',
     # why: when true, after issuing keep_alive=0 the unload helper re-polls
     # Ollama /api/ps until the model is actually gone BEFORE the next
-    # (SDXL/video) model loads — instead of blind-sleeping and hoping. On a
+    # (image-gen/video) model loads — instead of blind-sleeping and hoping. On a
     # single 32GB GPU shared with the Windows desktop, returning while the
     # 18GB writer is still resident overlaps it with the incoming diffusion
     # model, exhausts VRAM, and freezes WDDM. See
@@ -295,7 +295,7 @@ DEFAULTS: dict[str, str] = {
     # under the old standard/budget tiers so behaviour is unchanged; tune each
     # step freely.
     'image_search_query_model': 'ollama/gemma4:31b',  # image_service Pexels query-gen (was standard)
-    'sdxl_prompt_model': 'ollama/gemma4:31b',  # image_providers/ai_generation SDXL prompt-gen (was standard)
+    'image_prompt_model': 'ollama/gemma4:31b',  # image_providers/ai_generation image-gen prompt-gen (was standard)
     'writer_self_review_model': 'ollama/gemma4:31b',  # services/self_review writer self-review (was standard)
     # NOTE: retention/collapse cold-data summaries keep their existing per-step
     # keys (memory_compression_summary_model / embedding_collapse_summary_model,
@@ -331,7 +331,7 @@ DEFAULTS: dict[str, str] = {
     # model prefixes; flip to 'true' to authorise any paid LiteLLM path.
     'plugin.llm_provider.litellm.allow_paid_base_url': 'false',
     'plugin.video_provider.wan2.1-1.3b.server_url': '',
-    'sdxl_server_url': 'http://host.docker.internal:9836',
+    'image_gen_server_url': 'http://host.docker.internal:9836',
     'stable_audio_open_server_url': '',
     'video_server_url': 'http://host.docker.internal:9837',
     'wan_server_url': '',
@@ -595,9 +595,10 @@ DEFAULTS: dict[str, str] = {
     'unlinked_attribution_score_floor': '60',
 
     # ----- Image generation -----
-    'enable_sdxl_warmup': '',
+    'image_gen_enabled': 'true',
+    'enable_image_gen_warmup': '',
     # Worker in-process diffusers registry default (services/image_providers).
-    # The live render path is the SDXL HTTP server, which reads the separate
+    # The live render path is the image-gen HTTP server, which reads the separate
     # 'image_generation_model' key (seeded in 0000_baseline.seeds.sql); both
     # point at z_image_turbo as of the 2026-06-19 bake-off. #image-zimage-and-variety.
     'image_model': 'z_image_turbo',
@@ -606,7 +607,7 @@ DEFAULTS: dict[str, str] = {
     # (Ignored by guidance-distilled models like z_image_turbo, which run at
     # CFG 0 and take no negative prompt.)
     'image_negative_prompt': '',
-    # Style suffix appended to every SDXL prompt — niche brand voice.
+    # Style suffix appended to every image-gen prompt — niche brand voice.
     # Examples: "cyberpunk, neon accents" (tech), "natural light, botanical" (gardening)
     'image_base_style_prompt': '',
     # Pexels orientation default for featured + inline images.
@@ -620,7 +621,7 @@ DEFAULTS: dict[str, str] = {
     # Inline-illustration style pool (JSON array of style strings). Empty =>
     # the stylized code fallback (modules/content/stages/replace_inline_images.py
     # INLINE_STYLES). Parallels 'image_styles' for the featured image. Photoreal
-    # styles were dropped from the fallback — low-step SDXL butchers photoreal
+    # styles were dropped from the fallback — low-step image-gen butchers photoreal
     # detail and the brand is stylized. #image-zimage-and-variety.
     'inline_image_styles': '',
     # Cross-post style-dedup window: how many recently-published posts' image
@@ -636,8 +637,8 @@ DEFAULTS: dict[str, str] = {
     'image_style_history_size': '10',
     'image_style_history_ttl_seconds': '3600',
     # Per-call HTTP timeout (seconds) for a local image inference server
-    # (SDXL / FLUX / Z-Image `/generate`) to render one image. Must cover a
-    # COLD model load: the SDXL server unloads after 60s idle (so Ollama can
+    # (image-gen / FLUX / Z-Image `/generate`) to render one image. Must cover a
+    # COLD model load: the image-gen server unloads after 60s idle (so Ollama can
     # use the GPU) and is re-evicted on every Ollama call, so most renders pay
     # the reload. Measured cold-load for Z-Image-Turbo (6B) is ~133s + render;
     # 90s was too tight and silently fell back to Pexels / failed the shot.
@@ -645,7 +646,7 @@ DEFAULTS: dict[str, str] = {
     # Wired into the featured + inline + video render calls. #image-zimage-and-variety.
     'image_render_timeout_seconds': '240',
     # LLM params for the image-PROMPT generation step — the small model that
-    # writes the SDXL prompt from the topic + chosen style (NOT the image
+    # writes the image-gen prompt from the topic + chosen style (NOT the image
     # render itself). Externalised so prompt creativity / length / patience are
     # tunable without a code edit. #image-zimage-and-variety.
     'image_prompt_temperature': '0.8',
@@ -1054,7 +1055,7 @@ DEFAULTS: dict[str, str] = {
     # ----- Content-flow concurrency cap (Glad-Labs/poindexter#578) -----
     # The native Prefect work-pool concurrency limit caps how many
     # content_generation_flow runs execute simultaneously. Each run loads
-    # an LLM + SDXL onto the single 5090, so this is a direct VRAM lever:
+    # an LLM + image-gen onto the single 5090, so this is a direct VRAM lever:
     # the 2026-05-31 stress test found 3 concurrent flows sit at a stable
     # ~60% VRAM (healthy headroom) while 5 pin the GPU at ~98% and risk
     # OOM. ``scripts/deploy_content_flow.py`` reads ``concurrency`` and
@@ -1139,7 +1140,7 @@ DEFAULTS: dict[str, str] = {
     # ----- Shared httpx.AsyncClient (lifespan-bound, services/http_client.py) -----
     # The whole worker / coordinator process shares ONE httpx.AsyncClient
     # so the connection pool stays warm across 100+ per-task HTTP calls
-    # (Ollama / SDXL / Pexels / Discord / Vercel). Per-call timeouts at
+    # (Ollama / image-gen / Pexels / Discord / Vercel). Per-call timeouts at
     # the request site override these defaults when a specific caller
     # needs aggressive cutoffs (health checks) or generous ones (LLM gen).
     'shared_http_client_timeout_seconds': '30.0',

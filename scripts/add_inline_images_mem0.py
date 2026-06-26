@@ -1,4 +1,4 @@
-"""One-off: inject 3 inline SDXL images into the mem0 awaiting_approval task,
+"""One-off: inject 3 inline AI-generated images into the mem0 awaiting_approval task,
 strip the broken /posts/the-architects-guide-... reference (links to a draft
 post that never published), and write the cleaned content back.
 
@@ -28,7 +28,7 @@ logger = logging.getLogger("inline")
 logging.basicConfig(level=logging.INFO, format="%(asctime)s [inline] %(message)s")
 
 TASK_ID = "346f4919-5a4f-4452-a500-09a1382534bb"
-SDXL_URL = os.getenv("SDXL_SERVER_URL", "http://host.docker.internal:9836")
+image_gen_url = os.getenv("image_gen_server_url", "http://host.docker.internal:9836")
 
 # Three image targets — one per architectural milestone in the post.
 # The marker is the H3 line; the image goes immediately after it (with the
@@ -73,7 +73,7 @@ async def _generate_png(prompt: str) -> bytes | None:
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=5.0)) as client:
             resp = await client.post(
-                f"{SDXL_URL}/generate",
+                f"{image_gen_url}/generate",
                 json={"prompt": prompt, "steps": 4, "guidance_scale": 1.0},
             )
         ct = resp.headers.get("content-type", "")
@@ -85,7 +85,7 @@ async def _generate_png(prompt: str) -> bytes | None:
             if local and Path(local).is_file():
                 return Path(local).read_bytes()
     except Exception as exc:
-        logger.warning("SDXL call failed: %s", exc)
+        logger.warning("image-gen call failed: %s", exc)
     return None
 
 
@@ -180,7 +180,7 @@ async def main() -> int:
         logger.info("generating image %d: %s", i, spec["after_heading"][:50])
         png = await _generate_png(spec["prompt"])
         if not png:
-            logger.warning("  skipped image %d — SDXL returned nothing", i)
+            logger.warning("  skipped image %d — image-gen returned nothing", i)
             continue
         url = await _upload(png, f"img{i}", site_config)
         if not url:

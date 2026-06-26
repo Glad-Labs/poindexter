@@ -218,7 +218,7 @@ COMPOSE_WORKING_DIR_LABEL = "com.docker.compose.project.working_dir"
 # container *does* happen to be running, so genuine spec drift on these
 # services is still caught. See Glad-Labs/poindexter#425.
 ON_DEMAND_SERVICES_SETTING_KEY = "compose_drift_on_demand_services"
-ON_DEMAND_SERVICES_DEFAULT = "wan-server,sdxl-server"
+ON_DEMAND_SERVICES_DEFAULT = "wan-server,image-gen-server"
 
 # Compose `profiles:` the operator has activated at `docker compose up` (CSV,
 # e.g. "operator,ci-runner"). A service gated behind a profile NOT in this set
@@ -1147,7 +1147,7 @@ async def run_compose_drift_probe(
         inspected_count += 1
         diff = _diff_service(svc_block, inspect)
         # Suppress `container_missing` (only) for services that are EXPECTED to
-        # be down: (1) on-demand services (wan-server, sdxl-server) that spin up
+        # be down: (1) on-demand services (wan-server, image-gen-server) that spin up
         # only when needed (Glad-Labs/poindexter#425), and (2) services gated
         # behind a compose `profiles:` that isn't active — e.g. gpu-exporter
         # `profiles:[linux-gpu]` on a Windows host where the host nvidia-smi

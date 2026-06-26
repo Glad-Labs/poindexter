@@ -1,7 +1,7 @@
 """Video Generation Server — creates narrated slideshow videos from images + audio.
 
 Listens on port 9837. Worker calls POST /generate with images and audio to get MP4.
-Uses ffmpeg with Ken Burns effect (slow zoom/pan) on SDXL-generated images.
+Uses ffmpeg with Ken Burns effect (slow zoom/pan) on image-gen-generated images.
 
 Usage:
     pythonw scripts/video-server.py     # windowless background

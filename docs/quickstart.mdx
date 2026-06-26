@@ -12,15 +12,14 @@ verification command, see
 <Note>
 Poindexter is built and tested against Windows 11 + WSL2 + Docker Desktop with
 an NVIDIA GPU. macOS and Linux should work — the steps are identical — but the
-SDXL image server expects CUDA, so on machines without an NVIDIA card the
+image-gen server expects CUDA, so on machines without an NVIDIA card the
 image-generation step degrades to placeholders. Everything else is platform
 neutral.
 </Note>
 
 <Warning>
-The full stack pulls about **21 GB** of LLM weights on first run and the SDXL
-image server expects roughly **16 GB of VRAM** to run alongside Ollama. If
-you're on a smaller card, stop the SDXL container and let Pexels fill the
+The full stack pulls about **21 GB** of LLM weights on first run and the image-gen server expects roughly **16 GB of VRAM** to run alongside Ollama. If
+you're on a smaller card, stop the image-gen container and let Pexels fill the
 image slot.
 </Warning>
 
@@ -88,7 +87,7 @@ image slot.
   <Step title="Bring the stack up">
     The launcher reads `bootstrap.toml`, exports the values as env vars for
     the Compose file, and starts the worker, brain daemon, Postgres, Grafana,
-    SDXL server, Prefect, Langfuse, GlitchTip, and the observability stack.
+    image-gen server, Prefect, Langfuse, GlitchTip, and the observability stack.
 
     <Tabs>
       <Tab title="Windows (Git Bash)">

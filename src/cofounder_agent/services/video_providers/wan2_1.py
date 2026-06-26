@@ -58,12 +58,12 @@ logger = logging.getLogger(__name__)
 
 
 # Default inference-server URL. Lives at a different port from the
-# slideshow video server (9837) and from the SDXL/FLUX image servers
+# slideshow video server (9837) and from the image-gen/FLUX image servers
 # (9836/9838) so all four can run side-by-side during the A/B period.
 _DEFAULT_SERVER_URL = "http://host.docker.internal:9840"
 
 # Wan 2.1 1.3B defaults. The model is full-precision diffusion (not a
-# distilled fast model) so steps + guidance are higher than the SDXL
+# distilled fast model) so steps + guidance are higher than the image-gen
 # Lightning / FLUX.1-schnell defaults.
 _DEFAULT_STEPS = 50
 _DEFAULT_GUIDANCE = 5.0
@@ -96,7 +96,7 @@ def _write_video_bytes(path: str, content: bytes) -> None:
 
 def _read_image_bytes(path: str) -> bytes:
     """Sync helper for ``asyncio.to_thread`` — read the init-image (the
-    shot's SDXL still) for image-to-video. A stylized PNG is small
+    shot's image-gen still) for image-to-video. A stylized PNG is small
     (~1 MB), but reading it off the event loop keeps ASYNC230 happy.
     """
     with open(path, "rb") as f:
@@ -157,7 +157,7 @@ class Wan21Provider:
                 output_path = tmp.name
             cleanup_on_failure = True
 
-        # Image-to-video (Piece 4): a hero shot passes its stylized SDXL still
+        # Image-to-video (Piece 4): a hero shot passes its stylized image-gen still
         # via ``image_path``. We base64-encode it into the request body so the
         # wan-server conditions the clip on it (animating the brand still keeps
         # visual consistency). Absent ``image_path`` → text-to-video, exactly
@@ -348,12 +348,12 @@ async def _generate_to_path(
     """POST the prompt to the Wan inference server; write the resulting
     MP4 to ``output_path``. Returns True when the file was written.
 
-    When ``image_b64`` is set (a base64 PNG — the shot's SDXL still), it
+    When ``image_b64`` is set (a base64 PNG — the shot's image-gen still), it
     rides the request body so an image-to-video server conditions the
     clip on it. A text-to-video server simply ignores the extra field
     (pydantic drops unknown keys), so the same call works against both.
 
-    Handles both response formats the SDXL/FLUX sidecars use, so a single
+    Handles both response formats the image-gen/FLUX sidecars use, so a single
     sidecar operator runbook can describe all four servers:
 
     - ``video/mp4`` (or any ``video/*``) — raw MP4 body. Written

@@ -206,14 +206,14 @@ class _FakeLock:
 
 
 def _director_json() -> str:
-    # A valid VideoShotList payload (2 pexels + 1 sdxl_kenburns, 15s total).
+    # A valid VideoShotList payload (2 pexels + 1 image_kenburns, 15s total).
     return json.dumps({
         "version": 1,
         "total_duration_s": 15.0,
         "shots": [
             {"idx": 0, "duration_s": 5.0, "intent": "open", "source": "pexels",
              "query": "data center", "narration_offset_s": 0.0},
-            {"idx": 1, "duration_s": 5.0, "intent": "mid", "source": "sdxl_kenburns",
+            {"idx": 1, "duration_s": 5.0, "intent": "mid", "source": "image_kenburns",
              "prompt": "abstract data flow", "narration_offset_s": 5.0},
             {"idx": 2, "duration_s": 5.0, "intent": "close", "source": "pexels",
              "query": "server racks", "narration_offset_s": 10.0},

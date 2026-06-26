@@ -2,7 +2,7 @@
 
 GitHub issue #124 — Wan 2.1 T2V 1.3B (Apache-2.0). The provider speaks
 to a separate Wan inference server (default port 9840) and mirrors the
-SDXL/FLUX sidecars' response shapes (raw video bytes OR JSON with
+image-gen/FLUX sidecars' response shapes (raw video bytes OR JSON with
 ``video_path``). Tests mock ``httpx.AsyncClient`` so we never touch a
 real server (and the operator hasn't stood one up yet — that's
 explicitly out of scope for this PR).
@@ -360,7 +360,7 @@ class TestWan21ProviderFetch:
             )
 
         # Wan 2.1 is full-precision diffusion, not a distilled fast
-        # model — defaults are higher than SDXL Lightning / FLUX.1-schnell.
+        # model — defaults are higher than Stable Diffusion XL Lightning / FLUX.1-schnell.
         assert captured["json"]["steps"] == 50
         assert captured["json"]["guidance_scale"] == 5.0
         assert captured["json"]["duration_s"] == 5
@@ -369,7 +369,7 @@ class TestWan21ProviderFetch:
         assert captured["json"]["fps"] == 16
 
     async def test_image_path_sends_image_b64_for_i2v(self, tmp_path):
-        """Piece 4: a hero shot passes its SDXL still via ``image_path``; the
+        """Piece 4: a hero shot passes its image-gen still via ``image_path``; the
         provider base64-encodes it into the POST body as ``image_b64`` so the
         wan-server can condition image-to-video on it."""
         still = tmp_path / "still.png"
@@ -562,7 +562,7 @@ class TestWan21ProviderFetch:
     async def test_sidecar_json_accepts_file_path_alias(self, tmp_path):
         """Operators may write a sidecar that emits ``file_path``
         instead of ``video_path`` — accept both for compatibility with
-        the FLUX/SDXL sidecar shape."""
+        the FLUX/image-gen sidecar shape."""
         sidecar_src = tmp_path / "wan_alias.mp4"
         sidecar_src.write_bytes(b"\x00\x00ALIAS")
         output_path = str(tmp_path / "alias-out.mp4")

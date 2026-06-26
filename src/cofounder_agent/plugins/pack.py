@@ -7,7 +7,7 @@ on install:
 - ``prompt_templates`` table — individual prompts keyed by name +
   version
 - ``writing_styles`` app_setting — JSON array of voice configurations
-- ``image_styles`` app_setting — JSON array of SDXL style prompts
+- ``image_styles`` app_setting — JSON array of image-gen style prompts
 - ``qa_workflow_*`` app_settings — Reviewer chain configurations
 
 Distribution:

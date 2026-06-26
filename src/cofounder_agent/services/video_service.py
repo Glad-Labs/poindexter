@@ -1,8 +1,8 @@
 """
 Video Service — generates narrated slideshow videos from published posts.
 
-Takes SDXL-generated images + podcast audio → Ken Burns slideshow → MP4.
-Calls the host video-server (port 9837) via HTTP, similar to SDXL server pattern.
+Takes image-gen-generated images + podcast audio → Ken Burns slideshow → MP4.
+Calls the host video-server (port 9837) via HTTP, similar to image-gen server pattern.
 
 Usage:
     from services.video_service import generate_video_for_post
@@ -43,7 +43,7 @@ VIDEO_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "video"
 def _write_bytes(path: str, content: bytes) -> None:
     """Sync file-write helper suitable for ``asyncio.to_thread``.
 
-    Used throughout video generation to write SDXL frames / downloaded
+    Used throughout video generation to write image-gen frames / downloaded
     MP4 chunks without blocking the event loop (ASYNC230). Binary
     mode; caller supplies the full bytes payload.
     """
@@ -80,15 +80,15 @@ def _video_server_url(*, site_config: SiteConfig) -> str:
     return url
 
 
-def _sdxl_server_url(*, site_config: SiteConfig) -> str:
-    """Resolve SDXL_SERVER_URL from site_config per-call (same rationale)."""
-    return site_config.get("sdxl_server_url", "http://host.docker.internal:9836")
+def _image_gen_server_url(*, site_config: SiteConfig) -> str:
+    """Resolve image_gen_server_url from site_config per-call (same rationale)."""
+    return site_config.get("image_gen_server_url", "http://host.docker.internal:9836")
 
 
 async def _resolve_slideshow_prompt_model(
     *, site_config: SiteConfig
 ) -> str:
-    """Resolve the SDXL slideshow-prompt model from ``video_slideshow_prompt_model``.
+    """Resolve the image-gen slideshow-prompt model from ``video_slideshow_prompt_model``.
 
     Read directly from the per-step pin; fails loud (notify + raise) when
     empty, per ``feedback_no_silent_defaults.md`` — the ``cost_tier='standard'``
@@ -127,32 +127,32 @@ class VideoResult:
     error: str | None = None
 
 
-async def _consume_sdxl_image_response(
+async def _consume_image_gen_response(
     resp: httpx.Response,
     *,
-    sdxl_url: str,
+    image_gen_url: str,
     output_path: str,
     frame_label: str,
 ) -> str | None:
-    """Materialise SDXL image bytes from either response shape.
+    """Materialise image-gen image bytes from either response shape.
 
-    The SDXL server returns either:
+    The image-gen server returns either:
 
     - **Raw image bytes** (``Content-Type: image/png``) — older behaviour;
       caller writes the bytes directly to ``output_path``.
     - **JSON** (``Content-Type: application/json``) with
-      ``{"filename": "sdxl_<hash>.png", "image_path": ...}`` — current
-      behaviour. The image is sitting on the SDXL container's disk; the
-      worker fetches it via ``GET <sdxl_url>/images/<filename>`` (matches
+      ``{"filename": "img_<hash>.png", "image_path": ...}`` — current
+      behaviour. The image is sitting on the image-gen container's disk; the
+      worker fetches it via ``GET <image_gen_url>/images/<filename>`` (matches
       the helper for the featured-image path, see
-      ``services/stages/source_featured_image._download_featured_sdxl_image``).
+      ``services/stages/source_featured_image._download_featured_gen_image``).
 
     Prior to 2026-05-20, the video-slideshow path only handled the
     ``image/*`` branch — every JSON response was logged as a failure with
-    "SDXL returned 200 for frame N" and the image path was discarded. All
+    "image-gen returned 200 for frame N" and the image path was discarded. All
     8 frames per cycle would silently fail, surfacing as
     ``VideoResult.error = "No images could be generated"`` even though
-    SDXL was succeeding. Closes
+    image-gen was succeeding. Closes
     Glad-Labs/glad-labs-stack#198 follow-up (the underlying
     ``poindexter#459`` fix was already applied to the featured-image
     path; this extends it to the slideshow path).
@@ -160,7 +160,7 @@ async def _consume_sdxl_image_response(
     if resp.status_code != 200:
         body = resp.text[:200] if resp.text else "(empty)"
         logger.warning(
-            "[VIDEO] SDXL returned %d for %s: %s",
+            "[VIDEO] image-gen returned %d for %s: %s",
             resp.status_code, frame_label, body,
         )
         return None
@@ -173,7 +173,7 @@ async def _consume_sdxl_image_response(
             data = resp.json()
         except Exception as exc:  # noqa: BLE001 — defensive
             logger.warning(
-                "[VIDEO] SDXL returned non-JSON for %s: %s", frame_label, exc,
+                "[VIDEO] image-gen returned non-JSON for %s: %s", frame_label, exc,
             )
             return None
         filename = data.get("filename") or os.path.basename(
@@ -181,12 +181,12 @@ async def _consume_sdxl_image_response(
         )
         if not filename:
             logger.warning(
-                "[VIDEO] SDXL JSON missing filename/image_path for %s: %s",
+                "[VIDEO] image-gen JSON missing filename/image_path for %s: %s",
                 frame_label, str(data)[:120],
             )
             return None
         safe_name = os.path.basename(filename)
-        url = f"{sdxl_url.rstrip('/')}/images/{safe_name}"
+        url = f"{image_gen_url.rstrip('/')}/images/{safe_name}"
         try:
             async with httpx.AsyncClient(
                 timeout=httpx.Timeout(30.0, connect=5.0),
@@ -194,13 +194,13 @@ async def _consume_sdxl_image_response(
                 fetch_resp = await fetch_client.get(url)
         except Exception as exc:  # noqa: BLE001
             logger.warning(
-                "[VIDEO] SDXL /images fetch failed for %s: %s",
+                "[VIDEO] image-gen /images fetch failed for %s: %s",
                 safe_name, exc,
             )
             return None
         if fetch_resp.status_code != 200:
             logger.warning(
-                "[VIDEO] SDXL /images returned %d for %s",
+                "[VIDEO] image-gen /images returned %d for %s",
                 fetch_resp.status_code, safe_name,
             )
             return None
@@ -210,7 +210,7 @@ async def _consume_sdxl_image_response(
         return output_path
     body = resp.text[:200] if resp.text else "(empty)"
     logger.warning(
-        "[VIDEO] SDXL unknown content-type %r for %s: %s",
+        "[VIDEO] image-gen unknown content-type %r for %s: %s",
         ct, frame_label, body,
     )
     return None
@@ -219,9 +219,9 @@ async def _consume_sdxl_image_response(
 async def _generate_images_for_video(
     title: str, content: str, num_images: int = 4, *, site_config: SiteConfig
 ) -> list[str]:
-    """Generate SDXL images for the video slideshow.
+    """Generate image-gen images for the video slideshow.
 
-    Uses Ollama to create topic-specific prompts, then SDXL to generate images.
+    Uses Ollama to create topic-specific prompts, then image-gen to generate images.
     Returns list of local file paths to generated images.
     """
     # Cost-tier API (Lane B sweep). The standard tier resolves to a
@@ -301,35 +301,35 @@ async def _generate_images_for_video(
             "abstract data visualization, flowing light particles, cyberpunk palette, cinematic",
         ][:num_images]
 
-    # Generate images via SDXL
+    # Generate images via image-gen
     _neg_default = "text, words, letters, watermark, face, person, hands, blurry, low quality, distorted, ugly, deformed"
     neg = site_config.get("video_negative_prompt", "") or _neg_default
     output_dir = VIDEO_DIR / "frames"
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    logger.info("[VIDEO] Generating %d SDXL images from %d prompts", len(prompts), len(prompts))
-    sdxl_url = _sdxl_server_url(site_config=site_config)
+    logger.info("[VIDEO] Generating %d image-gen images from %d prompts", len(prompts), len(prompts))
+    image_gen_url = _image_gen_server_url(site_config=site_config)
     render_timeout = site_config.get_int("image_render_timeout_seconds", 240)
     async with httpx.AsyncClient(timeout=httpx.Timeout(float(render_timeout), connect=5.0)) as client:
         for i, prompt in enumerate(prompts):
             try:
-                logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
+                logger.info("[VIDEO] image-gen frame %d: %s", i + 1, prompt[:80])
                 resp = await client.post(
-                    f"{sdxl_url}/generate",
+                    f"{image_gen_url}/generate",
                     json={
                         "prompt": prompt, "negative_prompt": neg,
                         # steps / guidance_scale omitted — server's per-model
                         # registry drives them (z_image_turbo is guidance-
-                        # distilled: 9 steps / CFG 0). SDXL-Turbo's hardcoded
+                        # distilled: 9 steps / CFG 0). image-gen-Turbo's hardcoded
                         # 4 / 1.0 produced degraded frames. Matches
                         # replace_inline_images. #image-zimage-and-variety.
                     },
                     timeout=render_timeout,
                 )
                 img_path = str(output_dir / f"frame_{i:02d}.png")
-                got = await _consume_sdxl_image_response(
+                got = await _consume_image_gen_response(
                     resp,
-                    sdxl_url=sdxl_url,
+                    image_gen_url=image_gen_url,
                     output_path=img_path,
                     frame_label=f"frame {i}",
                 )
@@ -389,7 +389,7 @@ async def _extract_images_from_content(content: str) -> list[str]:
 async def _generate_images_from_scenes(
     scenes: list[str], *, site_config: SiteConfig
 ) -> list[str]:
-    """Generate SDXL images from pre-generated scene descriptions.
+    """Generate image-gen images from pre-generated scene descriptions.
 
     Skips Ollama prompt generation since scenes are already written.
     """
@@ -398,29 +398,29 @@ async def _generate_images_from_scenes(
     output_dir.mkdir(parents=True, exist_ok=True)
     image_paths = []
 
-    logger.info("[VIDEO] Generating %d SDXL images from pre-generated scenes", len(scenes))
-    sdxl_url = _sdxl_server_url(site_config=site_config)
+    logger.info("[VIDEO] Generating %d image-gen images from pre-generated scenes", len(scenes))
+    image_gen_url = _image_gen_server_url(site_config=site_config)
     render_timeout = site_config.get_int("image_render_timeout_seconds", 240)
     async with httpx.AsyncClient(timeout=httpx.Timeout(float(render_timeout), connect=5.0)) as client:
         for i, prompt in enumerate(scenes):
             try:
-                logger.info("[VIDEO] SDXL frame %d: %s", i + 1, prompt[:80])
+                logger.info("[VIDEO] image-gen frame %d: %s", i + 1, prompt[:80])
                 resp = await client.post(
-                    f"{sdxl_url}/generate",
+                    f"{image_gen_url}/generate",
                     json={
                         "prompt": prompt, "negative_prompt": neg,
                         # steps / guidance_scale omitted — server's per-model
                         # registry drives them (z_image_turbo is guidance-
-                        # distilled: 9 steps / CFG 0). SDXL-Turbo's hardcoded
+                        # distilled: 9 steps / CFG 0). image-gen-Turbo's hardcoded
                         # 4 / 1.0 produced degraded frames. Matches
                         # replace_inline_images. #image-zimage-and-variety.
                     },
                     timeout=render_timeout,
                 )
                 img_path = str(output_dir / f"frame_{i:02d}.png")
-                got = await _consume_sdxl_image_response(
+                got = await _consume_image_gen_response(
                     resp,
-                    sdxl_url=sdxl_url,
+                    image_gen_url=image_gen_url,
                     output_path=img_path,
                     frame_label=f"frame {i}",
                 )
@@ -504,14 +504,14 @@ async def _render_via_shot_list(
     from services.video_renderers.shot_list_renderer import render_shot_list
 
     pool = getattr(site_config, "_pool", None)
-    sdxl_url = _sdxl_server_url(site_config=site_config)
+    image_gen_url = _image_gen_server_url(site_config=site_config)
 
     render_result = await render_shot_list(
         post_id=post_id,
         shot_list=shot_list,
         audio_path=podcast_path,
         output_path=str(output_path),
-        sdxl_url=sdxl_url,
+        image_gen_url=image_gen_url,
         site_config=site_config,
         pool=pool,
     )
@@ -563,7 +563,7 @@ async def generate_video_for_post(
 ) -> VideoResult:
     """Generate a video for a published post.
 
-    Uses podcast audio as narration over a Ken Burns slideshow of SDXL images.
+    Uses podcast audio as narration over a Ken Burns slideshow of image-gen images.
 
     Args:
         post_id: Post identifier (used as filename).
@@ -659,7 +659,7 @@ async def generate_video_for_post(
     # Glad-Labs/glad-labs-stack#649 PR 2 — director-driven shot list path.
     # When ``posts.video_shot_list`` is populated for this post, hand off
     # to ``services/video_renderers/shot_list_renderer.render_shot_list``
-    # which composes the video from per-shot SDXL / Pexels / Wan2.1
+    # which composes the video from per-shot image-gen / Pexels / Wan2.1
     # clips via FFmpegLocalCompositor. NULL shot list = director hasn't
     # run for this post → fall through to the legacy slideshow path.
     shot_list = await _load_video_shot_list(post_id, site_config=_sc)
@@ -687,12 +687,12 @@ async def generate_video_for_post(
             post_id, result.error,
         )
 
-    # Collect images: reuse from post content + supplement with SDXL
+    # Collect images: reuse from post content + supplement with image-gen
     logger.info("[VIDEO] Collecting images for '%s'", title[:50])
     post_images = await _extract_images_from_content(content)
     logger.info("[VIDEO] Reusing %d images from post content", len(post_images))
 
-    # Supplement with new SDXL images to reach ~8 total
+    # Supplement with new image-gen images to reach ~8 total
     supplement_count = max(0, 8 - len(post_images))
     new_images = []
     if supplement_count > 0:
@@ -973,7 +973,7 @@ async def generate_short_video_for_post(
     """Generate a vertical short-form video (TikTok/YouTube Shorts).
 
     Generates a separate 60-second summary narration (not the full podcast).
-    Uses post images + SDXL images for visuals.
+    Uses post images + image-gen images for visuals.
     Output: 1080x1920 MP4, max 60 seconds.
 
     ``site_config`` is a required injected SiteConfig (#272 Phase-2e) —
@@ -1027,7 +1027,7 @@ async def generate_short_video_for_post(
         short_audio = podcast_path
         logger.info("[SHORT] Falling back to full podcast audio")
 
-    # Collect images: reuse from post + supplement with SDXL
+    # Collect images: reuse from post + supplement with image-gen
     post_images = await _extract_images_from_content(content)
     supplement_count = max(0, 4 - len(post_images))
     new_images = []

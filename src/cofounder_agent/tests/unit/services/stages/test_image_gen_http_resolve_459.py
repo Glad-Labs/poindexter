@@ -1,23 +1,23 @@
 """Regression tests for Glad-Labs/poindexter#459.
 
-The SDXL server and the worker both run as ``appuser`` (uid 1001) in
+The image-gen server and the worker both run as ``appuser`` (uid 1001) in
 their respective containers, with ephemeral in-container ``$HOME`` of
 ``/home/appuser``. The docker-compose volume mount that was supposed to
 bridge them lands on ``/root/.poindexter/`` in both containers — but
-the SDXL server writes to ``~/.poindexter/generated-images/`` which
+the image-gen server writes to ``~/.poindexter/generated-images/`` which
 resolves to ``/home/appuser/.poindexter/generated-images/`` and is
-*not* on the shared mount. Result: the SDXL server returned a JSON
+*not* on the shared mount. Result: the image-gen server returned a JSON
 ``image_path`` the worker could not see, ``os.path.exists`` returned
 False, and every featured-image render silently fell back to Pexels.
 
 Fix: the worker no longer trusts the in-container path. Instead it
-calls ``GET <sdxl_url>/images/<filename>`` (which the SDXL server
+calls ``GET <image_gen_url>/images/<filename>`` (which the image-gen server
 already exposes) and materialises the bytes to a worker-local
-tempfile. No filesystem coupling between containers; the SDXL server
+tempfile. No filesystem coupling between containers; the image-gen server
 is now a self-contained HTTP service.
 
 These tests pin the new contract: both stages must (a) extract the
-filename from the JSON response, (b) GET the bytes via the SDXL
+filename from the JSON response, (b) GET the bytes via the image-gen server
 server, and (c) materialise them on the worker's local disk before
 returning the path.
 """
@@ -31,10 +31,10 @@ import httpx
 import pytest
 
 from modules.content.stages.replace_inline_images import (
-    _resolve_sdxl_response,
+    _resolve_gen_response,
 )
 from modules.content.stages.source_featured_image import (
-    _resolve_sdxl_featured_response,
+    _resolve_gen_featured_response,
 )
 
 # ---------------------------------------------------------------------------
@@ -43,7 +43,7 @@ from modules.content.stages.source_featured_image import (
 
 
 def _json_resp(payload: dict) -> MagicMock:
-    """Fake an httpx.Response carrying SDXL's JSON generate-output."""
+    """Fake an httpx.Response carrying the image-gen server's JSON generate-output."""
     resp = MagicMock(spec=httpx.Response)
     resp.headers = {"content-type": "application/json"}
     resp.json = MagicMock(return_value=payload)
@@ -72,7 +72,7 @@ def _get_client_returning(status_code: int, content: bytes = b"") -> AsyncMock:
 
 
 # ---------------------------------------------------------------------------
-# Inline stage — replace_inline_images._resolve_sdxl_response
+# Inline stage — replace_inline_images._resolve_gen_response
 # ---------------------------------------------------------------------------
 
 
@@ -83,13 +83,13 @@ class TestInlineResolverFetchesViaHttp:
     async def test_json_response_triggers_http_fetch(self, tmp_path):
         """JSON response → GET /images/<filename> → bytes on local disk.
 
-        The SDXL container's filesystem is not shared with the worker,
+        The image-gen container's filesystem is not shared with the worker,
         so the worker must download via HTTP rather than reading the
         returned ``image_path``. Pins that contract.
         """
-        sdxl_resp = _json_resp({
-            "image_path": "/home/appuser/.poindexter/generated-images/sdxl_abc.png",
-            "filename": "sdxl_abc.png",
+        gen_resp = _json_resp({
+            "image_path": "/home/appuser/.poindexter/generated-images/img_abc.png",
+            "filename": "img_abc.png",
         })
         client = _get_client_returning(200, content=b"\x89PNG\r\n\x1a\n--bytes--")
 
@@ -100,12 +100,12 @@ class TestInlineResolverFetchesViaHttp:
             "modules.content.stages.replace_inline_images._generated_images_dir",
             return_value=str(tmp_path),
         ):
-            result = await _resolve_sdxl_response(
-                sdxl_resp, sdxl_url="http://sdxl.internal:9836",
+            result = await _resolve_gen_response(
+                gen_resp, image_gen_url="http://image-gen-server:9836",
             )
 
         # The result must be a real, worker-visible local path with the
-        # downloaded bytes — not the SDXL container's in-container path.
+        # downloaded bytes — not the image-gen container's in-container path.
         assert os.path.exists(result)
         assert result.startswith(str(tmp_path))
         with open(result, "rb") as f:
@@ -115,18 +115,18 @@ class TestInlineResolverFetchesViaHttp:
         # else the server happens to expose.
         client.get.assert_awaited_once()
         get_url = client.get.await_args.args[0]
-        assert get_url == "http://sdxl.internal:9836/images/sdxl_abc.png"
+        assert get_url == "http://image-gen-server:9836/images/img_abc.png"
 
     @pytest.mark.asyncio
     async def test_filename_derived_from_image_path_when_omitted(self, tmp_path):
-        """Older SDXL builds returned only ``image_path`` — basename still works.
+        """Older image-gen server builds returned only ``image_path`` — basename still works.
 
         Forward-compat: a server that doesn't surface ``filename`` as a
         separate field shouldn't break the worker. Using basename of
         ``image_path`` is enough.
         """
-        sdxl_resp = _json_resp({
-            "image_path": "/whatever/dir/sdxl_legacy_99.png",
+        gen_resp = _json_resp({
+            "image_path": "/whatever/dir/img_legacy_99.png",
         })
         client = _get_client_returning(200, content=b"bytes")
 
@@ -137,22 +137,22 @@ class TestInlineResolverFetchesViaHttp:
             "modules.content.stages.replace_inline_images._generated_images_dir",
             return_value=str(tmp_path),
         ):
-            await _resolve_sdxl_response(
-                sdxl_resp, sdxl_url="http://sdxl:9836",
+            await _resolve_gen_response(
+                gen_resp, image_gen_url="http://image-gen-server:9836",
             )
 
         get_url = client.get.await_args.args[0]
-        assert get_url.endswith("/images/sdxl_legacy_99.png")
+        assert get_url.endswith("/images/img_legacy_99.png")
 
     @pytest.mark.asyncio
     async def test_get_failure_raises_runtimeerror(self):
         """A non-200 from /images is a hard failure for the inline path.
 
-        ``_try_sdxl`` catches it and falls back to Pexels — but the
+        ``_try_image_gen`` catches it and falls back to Pexels — but the
         resolver itself must surface the error so the caller can log it
         properly. Silent None would mask the regression.
         """
-        sdxl_resp = _json_resp({"filename": "sdxl_missing.png"})
+        gen_resp = _json_resp({"filename": "img_missing.png"})
         client = _get_client_returning(404)
 
         with patch(
@@ -160,8 +160,8 @@ class TestInlineResolverFetchesViaHttp:
             return_value=client,
         ):
             with pytest.raises(RuntimeError, match="404"):
-                await _resolve_sdxl_response(
-                    sdxl_resp, sdxl_url="http://sdxl:9836",
+                await _resolve_gen_response(
+                    gen_resp, image_gen_url="http://image-gen-server:9836",
                 )
 
     @pytest.mark.asyncio
@@ -171,22 +171,22 @@ class TestInlineResolverFetchesViaHttp:
         The resolver has no way to know what to GET, so refuse to make
         up a name. Same surface as other broken-server cases.
         """
-        sdxl_resp = _json_resp({})
+        gen_resp = _json_resp({})
         with pytest.raises(RuntimeError, match="filename"):
-            await _resolve_sdxl_response(
-                sdxl_resp, sdxl_url="http://sdxl:9836",
+            await _resolve_gen_response(
+                gen_resp, image_gen_url="http://image-gen-server:9836",
             )
 
     @pytest.mark.asyncio
     async def test_filename_basename_stripped_to_block_path_traversal(self, tmp_path):
         """``filename`` from the server is treated as basename only.
 
-        Even though the SDXL server is internal, the response is still
+        Even though the image-gen server is internal, the response is still
         external input from the worker's POV. Stripping to basename
         prevents a malicious / buggy server from steering ``GET`` to
         an unrelated path like ``../../etc/passwd``.
         """
-        sdxl_resp = _json_resp({"filename": "../../etc/passwd"})
+        gen_resp = _json_resp({"filename": "../../etc/passwd"})
         client = _get_client_returning(200, content=b"x")
 
         with patch(
@@ -196,18 +196,18 @@ class TestInlineResolverFetchesViaHttp:
             "modules.content.stages.replace_inline_images._generated_images_dir",
             return_value=str(tmp_path),
         ):
-            await _resolve_sdxl_response(
-                sdxl_resp, sdxl_url="http://sdxl:9836",
+            await _resolve_gen_response(
+                gen_resp, image_gen_url="http://image-gen-server:9836",
             )
 
         get_url = client.get.await_args.args[0]
-        assert get_url == "http://sdxl:9836/images/passwd"
+        assert get_url == "http://image-gen-server:9836/images/passwd"
 
     @pytest.mark.asyncio
     async def test_image_content_type_still_writes_bytes_locally(self, tmp_path):
         """Legacy bytes-content path must keep working post-fix.
 
-        Some SDXL configurations stream PNG bytes directly. The
+        Some image-gen server configurations stream PNG bytes directly. The
         resolver should write them to the worker-local generated-images
         dir without ever touching the network.
         """
@@ -217,8 +217,8 @@ class TestInlineResolverFetchesViaHttp:
             "modules.content.stages.replace_inline_images._generated_images_dir",
             return_value=str(tmp_path),
         ):
-            result = await _resolve_sdxl_response(
-                resp, sdxl_url="http://unused:9836",
+            result = await _resolve_gen_response(
+                resp, image_gen_url="http://unused:9836",
             )
 
         assert os.path.exists(result)
@@ -227,7 +227,7 @@ class TestInlineResolverFetchesViaHttp:
 
 
 # ---------------------------------------------------------------------------
-# Featured-image stage — source_featured_image._resolve_sdxl_featured_response
+# Featured-image stage — source_featured_image._resolve_gen_featured_response
 # ---------------------------------------------------------------------------
 
 
@@ -241,16 +241,16 @@ class TestFeaturedResolverFetchesViaHttp:
 
     @pytest.mark.asyncio
     async def test_json_response_triggers_http_fetch(self, tmp_path):
-        """JSON branch returns ``(local_path, sdxl_meta)`` post-2026-05-19.
+        """JSON branch returns ``(local_path, gen_meta)`` post-2026-05-19.
 
-        ``sdxl_meta`` carries the SDXL server's response payload
+        ``gen_meta`` carries the image-gen server's response payload
         (``filename``, ``generation_time_ms``, plus ``model``,
         ``seed``, ``width``, ``height`` when present) so the stage
         can persist it on ``posts.featured_image_data``.
         """
-        sdxl_resp = _json_resp({
-            "image_path": "/home/appuser/.poindexter/generated-images/sdxl_feat.png",
-            "filename": "sdxl_feat.png",
+        gen_resp = _json_resp({
+            "image_path": "/home/appuser/.poindexter/generated-images/img_feat.png",
+            "filename": "img_feat.png",
             "generation_time_ms": 1234,
             "model": "sdxl_lightning",
             "seed": 7,
@@ -266,8 +266,8 @@ class TestFeaturedResolverFetchesViaHttp:
             "modules.content.stages.source_featured_image._featured_generated_images_dir",
             return_value=str(tmp_path),
         ):
-            output_path, sdxl_meta = await _resolve_sdxl_featured_response(
-                sdxl_resp, sdxl_url="http://sdxl.internal:9836",
+            output_path, gen_meta = await _resolve_gen_featured_response(
+                gen_resp, image_gen_url="http://image-gen-server:9836",
             )
 
         assert output_path is not None
@@ -277,51 +277,51 @@ class TestFeaturedResolverFetchesViaHttp:
             assert f.read() == b"feature-bytes"
 
         get_url = client.get.await_args.args[0]
-        assert get_url == "http://sdxl.internal:9836/images/sdxl_feat.png"
+        assert get_url == "http://image-gen-server:9836/images/img_feat.png"
         # Reproducibility payload captured for posts.featured_image_data.
-        assert sdxl_meta["filename"] == "sdxl_feat.png"
-        assert sdxl_meta["generation_time_ms"] == 1234
-        assert sdxl_meta["model"] == "sdxl_lightning"
-        assert sdxl_meta["seed"] == 7
-        assert sdxl_meta["width"] == 1024
-        assert sdxl_meta["height"] == 1024
+        assert gen_meta["filename"] == "img_feat.png"
+        assert gen_meta["generation_time_ms"] == 1234
+        assert gen_meta["model"] == "sdxl_lightning"
+        assert gen_meta["seed"] == 7
+        assert gen_meta["width"] == 1024
+        assert gen_meta["height"] == 1024
 
     @pytest.mark.asyncio
     async def test_get_failure_returns_none(self):
         """Featured path degrades to ``(None, {})`` on fetch failure.
 
         Pexels fallback keys on position 0 being None — same contract
-        as before the 2026-05-19 tuple-return change. ``sdxl_meta`` is
+        as before the 2026-05-19 tuple-return change. ``gen_meta`` is
         empty because the JSON response was never reachable.
         """
-        sdxl_resp = _json_resp({"filename": "sdxl_feat.png"})
+        gen_resp = _json_resp({"filename": "img_feat.png"})
         client = _get_client_returning(500)
 
         with patch(
             "modules.content.stages.source_featured_image.httpx.AsyncClient",
             return_value=client,
         ):
-            output_path, sdxl_meta = await _resolve_sdxl_featured_response(
-                sdxl_resp, sdxl_url="http://sdxl:9836",
+            output_path, gen_meta = await _resolve_gen_featured_response(
+                gen_resp, image_gen_url="http://image-gen-server:9836",
             )
 
         assert output_path is None
-        assert sdxl_meta == {}
+        assert gen_meta == {}
 
     @pytest.mark.asyncio
     async def test_missing_filename_returns_none(self):
         """JSON response with neither filename nor image_path → ``(None, {})``."""
-        sdxl_resp = _json_resp({})
-        output_path, sdxl_meta = await _resolve_sdxl_featured_response(
-            sdxl_resp, sdxl_url="http://sdxl:9836",
+        gen_resp = _json_resp({})
+        output_path, gen_meta = await _resolve_gen_featured_response(
+            gen_resp, image_gen_url="http://image-gen-server:9836",
         )
         assert output_path is None
-        assert sdxl_meta == {}
+        assert gen_meta == {}
 
     @pytest.mark.asyncio
     async def test_filename_basename_stripped_to_block_path_traversal(self, tmp_path):
         """Featured-side filename hygiene — same guarantee as inline."""
-        sdxl_resp = _json_resp({"filename": "/etc/passwd"})
+        gen_resp = _json_resp({"filename": "/etc/passwd"})
         client = _get_client_returning(200, content=b"x")
 
         with patch(
@@ -331,19 +331,19 @@ class TestFeaturedResolverFetchesViaHttp:
             "modules.content.stages.source_featured_image._featured_generated_images_dir",
             return_value=str(tmp_path),
         ):
-            await _resolve_sdxl_featured_response(
-                sdxl_resp, sdxl_url="http://sdxl:9836",
+            await _resolve_gen_featured_response(
+                gen_resp, image_gen_url="http://image-gen-server:9836",
             )
 
         get_url = client.get.await_args.args[0]
-        assert get_url == "http://sdxl:9836/images/passwd"
+        assert get_url == "http://image-gen-server:9836/images/passwd"
 
     @pytest.mark.asyncio
     async def test_image_content_type_still_writes_bytes_locally(self, tmp_path):
         """Legacy bytes-content path returns ``(local_path, {})``.
 
-        ``sdxl_meta`` is empty on the image-bytes branch because there
-        is no JSON payload to parse — the SDXL server emits raw bytes,
+        ``gen_meta`` is empty on the image-bytes branch because there
+        is no JSON payload to parse — the image-gen server emits raw bytes,
         not the GenerateResponse shape.
         """
         resp = _bytes_resp(b"feature-bytes-direct")
@@ -352,23 +352,23 @@ class TestFeaturedResolverFetchesViaHttp:
             "modules.content.stages.source_featured_image._featured_generated_images_dir",
             return_value=str(tmp_path),
         ):
-            output_path, sdxl_meta = await _resolve_sdxl_featured_response(
-                resp, sdxl_url="http://unused:9836",
+            output_path, gen_meta = await _resolve_gen_featured_response(
+                resp, image_gen_url="http://unused:9836",
             )
 
         assert output_path is not None
         assert os.path.exists(output_path)
         with open(output_path, "rb") as f:
             assert f.read() == b"feature-bytes-direct"
-        assert sdxl_meta == {}
+        assert gen_meta == {}
 
     @pytest.mark.asyncio
     async def test_unknown_content_type_returns_none(self):
         """An unexpected content-type degrades to ``(None, {})``."""
         resp = MagicMock(spec=httpx.Response)
         resp.headers = {"content-type": "text/html"}
-        output_path, sdxl_meta = await _resolve_sdxl_featured_response(
-            resp, sdxl_url="http://sdxl:9836",
+        output_path, gen_meta = await _resolve_gen_featured_response(
+            resp, image_gen_url="http://image-gen-server:9836",
         )
         assert output_path is None
-        assert sdxl_meta == {}
+        assert gen_meta == {}

@@ -1,21 +1,20 @@
-"""AIGenerationProvider — LLM-crafted prompt → SDXL (or other generator).
+"""AIGenerationProvider — LLM-crafted prompt → image-gen (or other generator).
 
-Phase G follow-up (GitHub #71). One layer above ``SdxlProvider``: takes a
-BLOG TOPIC (not a pre-baked SDXL prompt), asks an LLM to write a tailored
-SDXL prompt, then delegates to the configured generator.
+Phase G follow-up (GitHub #71). One layer above ``ImageGenProvider``: takes a
+BLOG TOPIC (not a pre-baked image prompt), asks an LLM to write a tailored
+image-gen prompt, then delegates to the configured generator.
 
-Today's implementation hardcodes SDXL as the backend; the ``generator``
-config knob exists so a future Flux/DALL-E provider can swap in without
-code change.
+The ``generator`` config knob lets a future Flux/DALL-E provider swap in
+without code change.
 
 Config (``plugin.image_provider.ai_generation`` in app_settings):
 
 - ``enabled`` (default true)
 - ``config.prompt_model`` (default ``"llama3:latest"``) — Ollama model
-  used to write SDXL prompts
-- ``config.generator`` (default ``"sdxl"``) — which image provider to
+  used to write image-gen prompts
+- ``config.generator`` (default ``"image_gen"``) — which image provider to
   delegate to
-- All ``SdxlProvider`` config keys are forwarded when ``generator="sdxl"``
+- All ``ImageGenProvider`` config keys are forwarded when ``generator="image_gen"``
 
 Kind: ``"generate"``.
 """
@@ -34,7 +33,7 @@ logger = logging.getLogger(__name__)
 
 
 # Lifespan-bound shared httpx.AsyncClient — main.py wires this via
-# set_http_client() at startup. ``_build_sdxl_prompt`` prefers it so
+# set_http_client() at startup. ``_build_image_gen_prompt`` prefers it so
 # the Ollama connection pool stays warm across per-task image
 # generations.
 http_client: httpx.AsyncClient | None = None
@@ -62,17 +61,17 @@ class AIGenerationProvider:
             return []
 
         # poindexter#716 — only honour an explicit plugin-config override; pass
-        # None when the key is missing or set to "auto" so _build_sdxl_prompt
+        # None when the key is missing or set to "auto" so _build_image_gen_prompt
         # can resolve via the cost-tier router instead of pinning a literal.
         _explicit = config.get("prompt_model") or ""
         prompt_model: str | None = (
             str(_explicit) if (_explicit and _explicit != "auto") else None
         )
-        generator_name = str(config.get("generator", "sdxl") or "sdxl")
+        generator_name = str(config.get("generator", "image_gen") or "image_gen")
 
         # DI seam (glad-labs-stack#330) — image_provider plugins receive
         # `_site_config` from the dispatcher per CLAUDE.md.
-        sdxl_prompt = await _build_sdxl_prompt(
+        image_gen_prompt = await _build_image_gen_prompt(
             topic, prompt_model, site_config=config.get("_site_config"),
         )
 
@@ -83,12 +82,12 @@ class AIGenerationProvider:
         target = providers.get(generator_name)
         if target is None:
             logger.warning(
-                "[AIGeneration] generator %r not registered; falling back to sdxl",
+                "[AIGeneration] generator %r not registered; falling back to image_gen",
                 generator_name,
             )
-            target = providers.get("sdxl")
+            target = providers.get("image_gen")
             if target is None:
-                logger.error("[AIGeneration] no sdxl provider registered either")
+                logger.error("[AIGeneration] no image_gen provider registered either")
                 return []
 
         # Strip our prompt_model + generator keys before forwarding so the
@@ -98,7 +97,7 @@ class AIGenerationProvider:
             for k, v in config.items()
             if k not in {"prompt_model", "generator"}
         }
-        results = await target.fetch(sdxl_prompt, forward_config)
+        results = await target.fetch(image_gen_prompt, forward_config)
 
         # Re-label with our name so upstream callers know which provider
         # did the work end-to-end; keep the downstream source in metadata
@@ -116,12 +115,12 @@ _HUMAN_TERM_RE = None
 
 
 def _scrub_human_terms(prompt: str) -> tuple[str, bool]:
-    """Strip anthropomorphic terms from an SDXL POSITIVE prompt (#522).
+    """Strip anthropomorphic terms from an image-gen POSITIVE prompt (#522).
 
     Faces/hands/people are the worst AI image tells, and a human named in the
     positive prompt slips past the negative prompt (it's central to the scene
-    SDXL is asked to render). We remove those terms at build time so the
-    builder never emits a human-centric scene. Returns
+    the image-gen model is asked to render). We remove those terms at build time
+    so the builder never emits a human-centric scene. Returns
     ``(cleaned_prompt, had_human_terms)``.
     """
     import re
@@ -144,10 +143,10 @@ def _scrub_human_terms(prompt: str) -> tuple[str, bool]:
     return cleaned, True
 
 
-async def _build_sdxl_prompt(
+async def _build_image_gen_prompt(
     topic: str, model: str | None, *, site_config: Any = None,
 ) -> str:
-    """Ask the configured LLM to write a tailored SDXL prompt. Fall back
+    """Ask the configured LLM to write a tailored image-gen prompt. Fall back
     to a generic stylistic or abstract template when the model is unreachable.
 
     ``model`` may be ``None`` when the caller has no explicit override — in
@@ -168,7 +167,7 @@ async def _build_sdxl_prompt(
 
     Human/anthropomorphic terms are scrubbed from the result (#522): they
     belong in the NEGATIVE prompt, not the positive — putting "no people" in
-    the positive backfires (SDXL tokenizes "people"), and any human the LLM
+    the positive backfires (image-gen tokenizes "people"), and any human the LLM
     injects gets stripped so it can't anchor the scene.
     """
     # NOTE: exclusion lives in the negative prompt; the positive describes the
@@ -178,7 +177,7 @@ async def _build_sdxl_prompt(
         f"4k, detailed, objects and environment only, unpopulated"
     )
     instruction = (
-        f"Write a Stable Diffusion XL prompt for a blog featured "
+        f"Write an image generation prompt for a blog featured "
         f"image about: {topic[:80]}\n"
         f"Requirements: stylistic or abstract scene, cinematic lighting. "
         f"Depict objects, technology, landscapes, or abstract concepts "
@@ -189,23 +188,23 @@ async def _build_sdxl_prompt(
     pool = getattr(site_config, "_pool", None) if site_config is not None else None
 
     # When no explicit model was provided, read the per-step pin
-    # (sdxl_prompt_model). Empty → return the generic fallback prompt rather
+    # (image_prompt_model). Empty → return the generic fallback prompt rather
     # than sending an empty-model request.
     if not model:
         model = (
-            (site_config.get("sdxl_prompt_model") or "").strip()
+            (site_config.get("image_prompt_model") or "").strip()
             if site_config is not None
             else ""
         )
         if not model:
             logger.debug(
-                "[AIGeneration] no explicit model and sdxl_prompt_model unset; "
+                "[AIGeneration] no explicit model and image_prompt_model unset; "
                 "using fallback prompt",
             )
             return fallback
 
     # At this point model is guaranteed non-None: it was either passed
-    # explicitly, resolved from the ``sdxl_prompt_model`` pin above, or the
+    # explicitly, resolved from the ``image_prompt_model`` pin above, or the
     # function already returned the fallback prompt.
     assert model is not None
 
@@ -221,7 +220,7 @@ async def _build_sdxl_prompt(
                 messages=[{"role": "user", "content": instruction}],
                 model=model,
                 tier="standard",
-                phase="ai_generation.sdxl_prompt",
+                phase="ai_generation.image_gen_prompt",
                 timeout_s=30,
                 temperature=0.7,
                 max_tokens=100,
@@ -258,7 +257,7 @@ async def _build_sdxl_prompt(
             if had_humans:
                 logger.info(
                     "[AIGeneration] scrubbed human/anthropomorphic terms from "
-                    "generated SDXL prompt (#522)"
+                    "generated image-gen prompt (#522)"
                 )
             # Only use the cleaned prompt if scrubbing didn't gut it.
             if len(cleaned) >= 20:

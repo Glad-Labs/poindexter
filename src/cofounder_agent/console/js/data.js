@@ -202,7 +202,7 @@
         detail:
           '24 source rows changed since last embed cycle. Threshold is 15m; currently 41m behind. nomic-embed-text queue depth = 24.',
         recommend:
-          'Embedding worker is up but throttled behind GPU contention (SDXL running). Will self-clear when illustrate stage drains, or trigger embed cycle manually.',
+          'Embedding worker is up but throttled behind GPU contention (image-gen running). Will self-clear when illustrate stage drains, or trigger embed cycle manually.',
         firstSeen: ago(41),
       },
     },
@@ -331,8 +331,8 @@
       img: 'host process',
     },
     {
-      name: 'sdxl-server',
-      container: 'poindexter-sdxl-server',
+      name: 'image-gen-server',
+      container: 'poindexter-image-gen-server',
       port: 9836,
       status: 'ok',
       metric: 'gen 8.4s',
@@ -341,7 +341,7 @@
       cpu: 71,
       mem: 6200,
       probe: 'image_gen ✓',
-      img: 'glad-labs-website-sdxl-server',
+      img: 'glad-labs-website-image-gen-server',
     },
     {
       name: 'prefect-server',
@@ -544,7 +544,7 @@
     clockMax: 2950,
     procs: [
       { name: 'ollama (glm-4.7-50b)', vram: 14.2, util: 48 },
-      { name: 'sdxl-server', vram: 6.1, util: 21 },
+      { name: 'image-gen-server', vram: 6.1, util: 21 },
       { name: 'nomic-embed-text', vram: 1.1, util: 2 },
     ],
     utilHist: [
@@ -1057,7 +1057,7 @@
   const restarts = [
     { name: 'ollama', count: 3, last: ago(64), tone: 'amber' },
     { name: 'prefect-server', count: 5, last: ago(73), tone: 'red' },
-    { name: 'sdxl-server', count: 1, last: ago(220), tone: 'mint' },
+    { name: 'image-gen-server', count: 1, last: ago(220), tone: 'mint' },
   ];
 
   // ── Sub-tool launcher (Mission Control link registry) ───────
@@ -1206,7 +1206,7 @@
             id: 'cand-hw-3',
             kind: 'internal',
             title: 'Our local-first GPU scheduler, one year in',
-            summary: 'Time-sharing one card across SDXL and Ollama',
+            summary: 'Time-sharing one card across image-gen and Ollama',
             score: 72.3,
             effective_score: 72.3,
             rank_in_batch: 3,
