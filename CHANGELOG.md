@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## [0.88.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.87.1...v0.88.0) (2026-06-26)
+
+
+### Features
+
+* **console:** newsletter + brain daemon observability ([#1942](https://github.com/Glad-Labs/glad-labs-stack/issues/1942)) ([042e1ff](https://github.com/Glad-Labs/glad-labs-stack/commit/042e1ff16774652e5daa1ba66b250cc78a6b9b66))
+* **console:** social/Postiz per-post visibility + action inbox integration ([#1941](https://github.com/Glad-Labs/glad-labs-stack/issues/1941)) ([44aa854](https://github.com/Glad-Labs/glad-labs-stack/commit/44aa8547f4face4e941b395af46176be4231ae39))
+* **feedback:** brain_knowledge signals on operator approval + Grafana rejection-reason panel ([#149](https://github.com/Glad-Labs/glad-labs-stack/issues/149) PR1) ([#1944](https://github.com/Glad-Labs/glad-labs-stack/issues/1944)) ([75b35eb](https://github.com/Glad-Labs/glad-labs-stack/commit/75b35eb97c014d483690448911f94bbdf21d3f57))
+* **feedback:** inject operator regen --reason into the next writer pass ([#149](https://github.com/Glad-Labs/glad-labs-stack/issues/149) PR2) ([#1945](https://github.com/Glad-Labs/glad-labs-stack/issues/1945)) ([7b48dbb](https://github.com/Glad-Labs/glad-labs-stack/commit/7b48dbb8e898988729b3b38a4c3008063210148f))
+* **observability:** Ollama embed-endpoint probe + host process auto-recovery ([#1935](https://github.com/Glad-Labs/glad-labs-stack/issues/1935)) ([e131742](https://github.com/Glad-Labs/glad-labs-stack/commit/e131742f0925a5b950258a8f79155158668555d1))
+* **social:** Postiz social distribution system ([#1938](https://github.com/Glad-Labs/glad-labs-stack/issues/1938)) ([e7aa9bf](https://github.com/Glad-Labs/glad-labs-stack/commit/e7aa9bfba6a79818ef5fc297f2ded73ded464092))
+* **voice:** track LLM token usage per turn in cost_logs ([c3809b2](https://github.com/Glad-Labs/glad-labs-stack/commit/c3809b26506a7f93722b32f0112588a57f155c6d))
+
+
+### Bug Fixes
+
+* **cli:** media open looks up storage_path from DB ([#1940](https://github.com/Glad-Labs/glad-labs-stack/issues/1940)) ([a00f026](https://github.com/Glad-Labs/glad-labs-stack/commit/a00f02606f857d63f6207fe8bea8cceda5633e19))
+* **compose:** strengthen postgres readiness gate + add postgres-exporter dep ([#1939](https://github.com/Glad-Labs/glad-labs-stack/issues/1939)) ([8ab99f2](https://github.com/Glad-Labs/glad-labs-stack/commit/8ab99f21831f234bc66a427cb4011f7cad390aa6))
+* **obs:** Loki log quality — JSON format, level labels, task_id structured metadata ([#1943](https://github.com/Glad-Labs/glad-labs-stack/issues/1943)) ([7e8091c](https://github.com/Glad-Labs/glad-labs-stack/commit/7e8091c712c52438e2451c949d0b1085600899f3))
+
 ## [0.87.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.87.0...v0.87.1) (2026-06-25)
 
 
