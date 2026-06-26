@@ -263,31 +263,58 @@ def _decide(post_id: str, medium: str, *, approved: bool, note: str | None):
 # ``open`` subcommand — cross-platform "open the file with the OS default app"
 # ---------------------------------------------------------------------------
 
+# Worker container runs as appuser; the CLI runs on the host where the same
+# volume is bind-mounted.  Strip the container prefix to get the host path.
+_CONTAINER_POINDEXTER = "/home/appuser/.poindexter/"
+_HOST_POINDEXTER = Path(os.path.expanduser("~")) / ".poindexter"
 
-def _resolve_media_path(post_id: str, medium: str) -> Path:
-    """Return the on-disk path the backfill writes for ``(post_id, medium)``.
 
-    Imports ``PODCAST_DIR`` / ``VIDEO_DIR`` from the producing services so
-    the operator surface can't drift from the writer surface if those
-    directories ever move.
+def _translate_container_path(storage_path: str) -> Path:
+    """Translate a container-side ``storage_path`` to the equivalent host path.
+
+    Videos are rendered by name derived from the pipeline task UUID, not the
+    post UUID, so constructing the path from ``post_id`` is wrong for video
+    assets.  Reading ``media_assets.storage_path`` from the DB and translating
+    it here is the single source of truth for where each file actually lives.
     """
-    # Lazy-import the directory constants so the CLI import path stays
-    # cheap (these modules pull ffmpeg / torch helpers).
-    from services.podcast_service import PODCAST_DIR
-    from services.video_service import VIDEO_DIR
+    if storage_path.startswith(_CONTAINER_POINDEXTER):
+        relative = storage_path[len(_CONTAINER_POINDEXTER):]
+        return _HOST_POINDEXTER / relative
+    return Path(storage_path)
 
-    if medium == "podcast":
-        return PODCAST_DIR / f"{post_id}.mp3"
-    if medium == "video":
-        return VIDEO_DIR / f"{post_id}.mp4"
-    if medium == "video_short":
-        # The composed short lives next to the long-form video — see
-        # ``services/video_service.py`` (``{post_id}-short.mp4``). The
-        # ``-short-audio.mp3`` file is an intermediate TTS scratch piece;
-        # the operator wants to preview the final composed short, not
-        # the source narration.
-        return VIDEO_DIR / f"{post_id}-short.mp4"
-    raise ValueError(f"unknown medium {medium!r}")
+
+async def _resolve_open_path(post_id: str, medium: str) -> tuple[str, Path | None]:
+    """Resolve post_id prefix and look up ``media_assets.storage_path`` in one pool.
+
+    Returns ``(resolved_uuid, host_path)``; ``host_path`` is ``None`` when no
+    asset row exists for the ``(post_id, medium)`` pair (not yet rendered).
+    Raises ``click.BadParameter`` for an unresolvable id prefix.
+    """
+    from services import media_approval_service
+
+    pool = await _make_pool()
+    try:
+        if looks_like_full_uuid(post_id):
+            resolved = post_id
+        else:
+            resolved = await resolve_uuid_prefix(
+                pool, table="posts", column="id", prefix=post_id, noun="post",
+            )
+            if resolved is None:
+                raise click.BadParameter(
+                    f"no post matches {post_id!r} (need a full UUID or a known id prefix)",
+                    param_hint="post_id",
+                )
+
+        storage_path = await media_approval_service.get_asset_storage_path(
+            pool, resolved, medium,
+        )
+    finally:
+        await pool.close()
+
+    if storage_path is None:
+        return resolved, None
+    return resolved, _translate_container_path(storage_path)
 
 
 def _open_with_default_app(path: Path) -> None:
@@ -310,35 +337,6 @@ def _open_with_default_app(path: Path) -> None:
     subprocess.run(["xdg-open", str(path)], check=False)
 
 
-async def _resolve_open_post_id(post_id: str) -> str:
-    """Expand an 8-char post-id prefix to its full UUID for ``media open``.
-
-    Full UUIDs skip the DB entirely, so ``open`` keeps working from a
-    full id even when the DB is unreachable. A prefix is resolved against
-    ``posts.id``; a no-match raises ``click.BadParameter`` so a typo'd id
-    still fails loud per ``feedback_no_silent_defaults`` (the strict-UUID
-    guard this replaced), and an ambiguous prefix raises
-    ``AmbiguousPrefixError`` (a ``click.UsageError``).
-    """
-    if looks_like_full_uuid(post_id):
-        return post_id
-
-    pool = await _make_pool()
-    try:
-        resolved = await resolve_uuid_prefix(
-            pool, table="posts", column="id", prefix=post_id, noun="post",
-        )
-    finally:
-        await pool.close()
-
-    if resolved is None:
-        raise click.BadParameter(
-            f"no post matches {post_id!r} (need a full UUID or a known id prefix)",
-            param_hint="post_id",
-        )
-    return resolved
-
-
 @media_group.command(name="open")
 @click.argument("post_id")
 @click.argument("medium", type=click.Choice(_VALID_MEDIA, case_sensitive=False))
@@ -346,18 +344,16 @@ def cmd_open(post_id: str, medium: str):
     """Open a generated media file with the OS default application.
 
     Accepts a full post UUID or the 8-char prefix the dashboards /
-    ``media pending`` render. The path matches what the backfill jobs
-    write to disk — imports ``PODCAST_DIR`` / ``VIDEO_DIR`` from the
-    producing services so the operator surface and the writer surface
-    can't drift.
+    ``media pending`` render. Looks up the canonical path from
+    ``media_assets.storage_path`` so the path is always correct regardless
+    of whether the file is named after the post UUID or the pipeline task UUID.
     """
-    resolved = _run(_resolve_open_post_id(post_id))
+    resolved, path = _run(_resolve_open_path(post_id, medium))
 
-    path = _resolve_media_path(resolved, medium)
-
-    if not path.exists():
+    if path is None or not path.exists():
+        label = str(path) if path is not None else "(no asset record — not rendered yet)"
         click.echo(
-            f"No file at {path} — has the backfill produced this medium yet? "
+            f"No file at {label} — has the backfill produced this medium yet? "
             f"Check 'poindexter media pending'.",
             err=True,
         )

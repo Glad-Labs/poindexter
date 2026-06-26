@@ -636,3 +636,30 @@ async def list_pending(
         medium, limit,
     )
     return [dict(r) for r in rows]
+
+
+async def get_asset_storage_path(
+    db: Any, post_id: str, medium: str,
+) -> str | None:
+    """Return the canonical ``storage_path`` for the most-recent asset of
+    ``medium`` type belonging to ``post_id``, or ``None`` when no row exists.
+
+    Used by the ``poindexter media open`` CLI to resolve the on-disk path
+    without coupling the transport layer to raw SQL.
+
+    ``db`` accepts either an asyncpg Pool or Connection.
+    """
+    row = await db.fetchrow(
+        """
+        SELECT storage_path
+          FROM media_assets
+         WHERE post_id = $1::uuid
+           AND type = $2
+           AND COALESCE(storage_path, '') <> ''
+         ORDER BY created_at DESC
+         LIMIT 1
+        """,
+        post_id,
+        medium,
+    )
+    return row["storage_path"] if row is not None else None
