@@ -86,6 +86,7 @@ method has a `live:` branch (real `fetch`) and a `mock:` branch via
 | media (Gate-2)    | `GET /api/media-approval/pending` · `POST /{post_id}/{medium}/decide`                                        |
 | schedule          | `GET /api/scheduling` · `PATCH /api/scheduling/shift` (reschedule)                                           |
 | seo               | `GET /api/seo` (SEO-refresh queue + outcomes, #1466)                                                         |
+| social            | `GET /api/social/drafts` (per-post per-platform) · `POST /api/social/drafts/{id}/{approve\|reject}`          |
 | voice             | `GET /api/settings` → `voice_agent_public_join_url` (operator config)                                        |
 | rebuild           | `POST /api/export/rebuild` (full static re-export + ISR revalidate)                                          |
 | posts / analytics | `GET /api/posts` · `GET /api/analytics/views`                                                                |

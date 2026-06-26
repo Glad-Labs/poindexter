@@ -42,6 +42,8 @@
      media         GET  /api/media-approval/pending  · POST /{post_id}/{medium}/decide (Gate-2)
      schedule      GET  /api/scheduling  · PATCH /api/scheduling/shift (reschedule)
      seo           GET  /api/seo  (SEO-refresh queue + outcomes, #1466; read-only)
+     social        GET  /api/social/drafts (filterable; per-post per-platform breakdown)
+                   POST /api/social/drafts/{id}/{approve|reject}
      voice         GET  /api/settings (voice_agent_public_join_url; operator config)
      rebuild       POST /api/export/rebuild  (full static re-export + ISR revalidate)
      health/svc    Prometheus GET /api/v1/query  (cAdvisor container_* :9091) + /api/health
@@ -804,6 +806,34 @@
       return pick(
         () => http('GET', '/api/seo'),
         () => mock().seo
+      );
+    },
+
+    // ── social / Postiz draft queue (social_routes.py) ───────
+    // GET /api/social/drafts → {drafts:[…]} — filterable by post_id/task_id/
+    // status. Returns id, pipeline_task_id, post_id, platform, content,
+    // platform_config, status, postiz_post_id, error, retry_count, and three
+    // timestamps (created_at / approved_at / posted_at). Per-post + per-
+    // platform granularity the aggregate Prometheus counters can't provide.
+    // Mock returns honest-empty (no fabricated draft rows).
+    socialDrafts(params = '') {
+      return pick(
+        () => http('GET', '/api/social/drafts' + params),
+        () => pair({ drafts: [] }, { drafts: [] })
+      );
+    },
+
+    // POST /api/social/drafts/{id}/approve — enqueues the draft for Postiz
+    //   /api/social/drafts/{id}/reject  — marks rejected (won't retry)
+    // action is literally 'approve' or 'reject'.
+    socialDraftAction(draftId, action) {
+      return pick(
+        () =>
+          http(
+            'POST',
+            `/api/social/drafts/${encodeURIComponent(draftId)}/${action}`
+          ),
+        () => ({ ok: true })
       );
     },
 

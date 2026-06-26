@@ -1,7 +1,239 @@
 /* ──────────────────────────────────────────────────────────────
    Poindexter Operator Console — gap-closing panels.
-   Revenue · Media (Stage 2) · QA Rails · Sub-tool Launcher.
+   Revenue · Media (Stage 2) · QA Rails · Sub-tool Launcher · Social.
    ────────────────────────────────────────────────────────────── */
+
+/* ─── Social Distribution — per-post per-platform draft queue ── */
+// GET /api/social/drafts → {drafts:[…]}. Shows every draft's status, error,
+// retry count, and Postiz post ID — granularity the Grafana aggregate stats
+// don't have. Pending drafts surface here AND in the action inbox (kind='social').
+// No mock data: honest-empty in mock mode (no fabricated draft rows).
+const SOCIAL_STATUS_TAG = {
+  pending: 'amber',
+  approved: 'cyan',
+  posted: 'mint',
+  failed: 'red',
+  rejected: 'red',
+};
+const SOCIAL_PLAT_TAG = {
+  twitter: 'cyan',
+  x: 'cyan',
+  linkedin: 'cyan',
+  reddit: 'amber',
+  mastodon: 'mint',
+  instagram: 'amber',
+  tiktok: 'red',
+};
+function SocialPanel({ social, onApprove, onReject }) {
+  const PX = window.PX;
+  const drafts = (social && social.drafts) || [];
+  const pending = drafts.filter((d) => d.status === 'pending').length;
+  const posted = drafts.filter((d) => d.status === 'posted').length;
+  const failed = drafts.filter((d) => d.status === 'failed').length;
+  return (
+    <Panel
+      idx="SD"
+      title="SOCIAL DISTRIBUTION"
+      meta={`${pending} PENDING · ${posted} POSTED · ${failed} FAILED`}
+      flush
+    >
+      <div
+        style={{
+          padding: 12,
+          borderBottom: '1px solid var(--gl-hairline)',
+          display: 'flex',
+          gap: 24,
+          alignItems: 'flex-end',
+        }}
+      >
+        <div>
+          <span
+            className={`kpi__value ${pending > 0 ? 'is-amber' : ''}`}
+            style={{ fontSize: 26 }}
+          >
+            {pending}
+          </span>
+          <div className="mono c-dim" style={{ fontSize: 10 }}>
+            pending approval
+          </div>
+        </div>
+        <div>
+          <span className="kpi__value is-mint" style={{ fontSize: 26 }}>
+            {posted}
+          </span>
+          <div className="mono c-dim" style={{ fontSize: 10 }}>
+            posted
+          </div>
+        </div>
+        <div>
+          <span
+            className={`kpi__value ${failed > 0 ? 'is-red' : ''}`}
+            style={{ fontSize: 26 }}
+          >
+            {failed}
+          </span>
+          <div className="mono c-dim" style={{ fontSize: 10 }}>
+            failed
+          </div>
+        </div>
+        {!PX.api.isLive() && (
+          <span
+            className="mono c-dim"
+            style={{ fontSize: 10, marginLeft: 'auto' }}
+          >
+            live only · no mock data
+          </span>
+        )}
+      </div>
+      {drafts.length === 0 ? (
+        <div className="empty">
+          <span className="glyph" aria-hidden="true">
+            ◌
+          </span>
+          {PX.api.isLive()
+            ? 'No social drafts found'
+            : 'Connect live to see drafts'}
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table
+            style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}
+          >
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--gl-hairline)' }}>
+                {[
+                  'Platform',
+                  'Status',
+                  'Post ID',
+                  'Error',
+                  'Retries',
+                  'Postiz ID',
+                  'Posted',
+                  '',
+                ].map((h) => (
+                  <th
+                    key={h}
+                    style={{
+                      padding: '5px 10px',
+                      textAlign: 'left',
+                      fontFamily: 'var(--gl-font-mono)',
+                      fontSize: 9,
+                      letterSpacing: '.12em',
+                      color: 'var(--gl-text-dim)',
+                      fontWeight: 500,
+                    }}
+                  >
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {drafts.map((d) => (
+                <tr
+                  key={d.id}
+                  style={{ borderBottom: '1px solid var(--gl-hairline)' }}
+                >
+                  <td style={{ padding: '6px 10px' }}>
+                    <span
+                      className={`tag tag--${SOCIAL_PLAT_TAG[d.platform] || 'cyan'}`}
+                    >
+                      {d.platform}
+                    </span>
+                  </td>
+                  <td style={{ padding: '6px 10px' }}>
+                    <span
+                      className={`tag tag--${SOCIAL_STATUS_TAG[d.status] || 'cyan'}`}
+                    >
+                      {d.status}
+                    </span>
+                  </td>
+                  <td
+                    className="mono c-dim"
+                    style={{
+                      padding: '6px 10px',
+                      maxWidth: 90,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      fontSize: 10,
+                    }}
+                    title={d.post_id || ''}
+                  >
+                    {d.post_id ? String(d.post_id).slice(0, 8) : '—'}
+                  </td>
+                  <td
+                    style={{
+                      padding: '6px 10px',
+                      maxWidth: 180,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                      color: d.error ? 'var(--gl-red)' : 'var(--gl-text-dim)',
+                      fontSize: 10,
+                    }}
+                    title={d.error || ''}
+                  >
+                    {d.error || '—'}
+                  </td>
+                  <td className="mono c-dim" style={{ padding: '6px 10px' }}>
+                    {d.retry_count || 0}
+                  </td>
+                  <td
+                    className="mono c-dim"
+                    style={{
+                      padding: '6px 10px',
+                      fontSize: 10,
+                      maxWidth: 100,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                    title={d.postiz_post_id || ''}
+                  >
+                    {d.postiz_post_id
+                      ? String(d.postiz_post_id).slice(0, 14)
+                      : '—'}
+                  </td>
+                  <td
+                    className="mono c-dim"
+                    style={{ padding: '6px 10px', fontSize: 10 }}
+                  >
+                    {d.posted_at
+                      ? new Date(d.posted_at).toLocaleDateString()
+                      : '—'}
+                  </td>
+                  <td style={{ padding: '6px 10px', whiteSpace: 'nowrap' }}>
+                    {d.status === 'pending' && (
+                      <div style={{ display: 'flex', gap: 4 }}>
+                        <button
+                          className="mbtn mbtn--primary"
+                          style={{ padding: '2px 8px', fontSize: 10 }}
+                          onClick={() => onApprove && onApprove(d)}
+                        >
+                          <Icon name="check" size={10} />
+                          Post
+                        </button>
+                        <button
+                          className="mbtn mbtn--ghost"
+                          style={{ padding: '2px 6px', fontSize: 10 }}
+                          onClick={() => onReject && onReject(d)}
+                          title="Reject"
+                        >
+                          <Icon name="x" size={10} />
+                        </button>
+                      </div>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  );
+}
 
 /* ─── Findings — probe-routing triage (#461) ────────────────── */
 // Read-only: findings are audit_log rows the brain's findings_alert_router

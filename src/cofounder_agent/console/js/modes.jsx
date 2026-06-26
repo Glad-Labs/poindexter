@@ -10,6 +10,7 @@ const FEED_ICON = {
   alert: 'bell',
   drift: 'link',
   media: 'play',
+  social: 'pulse',
 };
 const FEED_VERB = {
   approve: 'needs approval',
@@ -17,6 +18,7 @@ const FEED_VERB = {
   alert: 'raised an alert',
   drift: 'detected drift',
   media: 'rendered · needs review',
+  social: 'social draft · needs approval',
 };
 const FEED_ACTOR = {
   approve: 'pipeline',
@@ -24,6 +26,7 @@ const FEED_ACTOR = {
   alert: 'brain',
   drift: 'brain',
   media: 'media pipeline',
+  social: 'social poster',
 };
 
 function FeedMode({ inbox, feed, filter, setFilter, onOpen, A }) {
@@ -203,6 +206,24 @@ function FeedMode({ inbox, feed, filter, setFilter, onOpen, A }) {
                     <button
                       className="mbtn mbtn--ghost mbtn--danger"
                       onClick={() => A.reject(it)}
+                    >
+                      <Icon name="x" size={12} />
+                      Reject
+                    </button>
+                  </>
+                )}
+                {it.kind === 'social' && (
+                  <>
+                    <button
+                      className="mbtn mbtn--primary"
+                      onClick={() => A.socialApproveDraft(it)}
+                    >
+                      <Icon name="check" size={12} />
+                      Post
+                    </button>
+                    <button
+                      className="mbtn mbtn--ghost mbtn--danger"
+                      onClick={() => A.socialRejectDraft(it)}
                     >
                       <Icon name="x" size={12} />
                       Reject

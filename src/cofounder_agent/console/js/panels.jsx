@@ -77,6 +77,7 @@ const INBOX_ICON = {
   alert: 'bell',
   drift: 'link',
   media: 'play',
+  social: 'pulse',
 };
 function ActionInbox({
   items,
@@ -86,6 +87,8 @@ function ActionInbox({
   onRetry,
   onAck,
   onFix,
+  onSocialApprove,
+  onSocialReject,
   filter,
   setFilter,
 }) {
@@ -99,6 +102,7 @@ function ActionInbox({
     ['all', 'All', items.length],
     ['approve', 'Approvals', counts.approve || 0],
     ['media', 'Media', counts.media || 0],
+    ['social', 'Social', counts.social || 0],
     ['fail', 'Failures', counts.fail || 0],
     ['alert', 'Alerts', counts.alert || 0],
     ['drift', 'Drift', counts.drift || 0],
@@ -252,6 +256,24 @@ function ActionInbox({
                     <button
                       className="mbtn mbtn--ghost"
                       onClick={() => onReject(it)}
+                      title="Reject"
+                    >
+                      <Icon name="x" size={12} />
+                    </button>
+                  </>
+                )}
+                {it.kind === 'social' && (
+                  <>
+                    <button
+                      className="mbtn mbtn--primary"
+                      onClick={() => onSocialApprove && onSocialApprove(it)}
+                    >
+                      <Icon name="check" size={12} />
+                      Post
+                    </button>
+                    <button
+                      className="mbtn mbtn--ghost"
+                      onClick={() => onSocialReject && onSocialReject(it)}
                       title="Reject"
                     >
                       <Icon name="x" size={12} />

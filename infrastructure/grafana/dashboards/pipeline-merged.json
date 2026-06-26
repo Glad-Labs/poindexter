@@ -5307,6 +5307,131 @@
           "refId": "C"
         }
       ]
+    },
+    {
+      "id": 82,
+      "type": "table",
+      "title": "Social drafts — per-post breakdown",
+      "description": "Per-draft detail: platform, status, error message, retry count, Postiz post ID, and timestamps. Shows the 50 most recent drafts. Drill into error column to diagnose failed Postiz submissions.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "displayMode": "auto",
+            "inspect": false,
+            "minWidth": 80
+          },
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "green", "value": null }]
+          }
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "status" },
+            "properties": [
+              { "id": "custom.displayMode", "value": "color-background" },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "pending": {
+                        "color": "orange",
+                        "index": 0,
+                        "text": "pending"
+                      },
+                      "approved": {
+                        "color": "blue",
+                        "index": 1,
+                        "text": "approved"
+                      },
+                      "posted": {
+                        "color": "green",
+                        "index": 2,
+                        "text": "posted"
+                      },
+                      "failed": {
+                        "color": "red",
+                        "index": 3,
+                        "text": "failed"
+                      },
+                      "rejected": {
+                        "color": "red",
+                        "index": 4,
+                        "text": "rejected"
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "retry_count" },
+            "properties": [
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    { "color": "green", "value": null },
+                    { "color": "orange", "value": 1 },
+                    { "color": "red", "value": 3 }
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "error" },
+            "properties": [
+              { "id": "custom.width", "value": 240 },
+              { "id": "custom.inspect", "value": true }
+            ]
+          },
+          {
+            "matcher": { "id": "byName", "options": "content" },
+            "properties": [{ "id": "custom.width", "value": 280 }]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 221
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": [{ "displayName": "created_at", "desc": true }],
+        "footer": { "show": false, "reducer": ["sum"] }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT\n  id,\n  post_id,\n  platform,\n  status,\n  COALESCE(error, '') AS error,\n  retry_count,\n  COALESCE(postiz_post_id::text, '') AS postiz_post_id,\n  LEFT(content, 120) AS content,\n  created_at,\n  posted_at\nFROM social_post_drafts\nORDER BY created_at DESC\nLIMIT 50;",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",

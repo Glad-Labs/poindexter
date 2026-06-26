@@ -13,6 +13,7 @@ const RAIL = [
   { id: 'overview', icon: 'overview', label: 'Overview' },
   { id: 'pipeline', icon: 'pipeline', label: 'Pipeline' },
   { id: 'topics', icon: 'overview', label: 'Topics' },
+  { id: 'social', icon: 'pulse', label: 'Social' },
   { id: 'brain', icon: 'brain', label: 'Brain' },
   { id: 'gpu', icon: 'gpu', label: 'GPU' },
   { id: 'services', icon: 'services', label: 'Services' },
@@ -36,6 +37,7 @@ function App() {
   const [media, setMedia] = useS(PX.media); // live: GET /api/media-approval/pending
   const [schedule, setSchedule] = useS(PX.schedule); // live: GET /api/scheduling
   const [seo, setSeo] = useS(PX.seo); // live: GET /api/seo
+  const [social, setSocial] = useS({ drafts: [] }); // live: GET /api/social/drafts
   // live: KPI-strip reads with no home panel — GET /api/posts (published 30d +
   // a real per-day histogram) + GET /api/analytics/views (page views 24h). Mock
   // keeps PX.kpis untouched (the `kpis` memo below short-circuits in mock mode).
@@ -433,6 +435,39 @@ function App() {
     };
     load();
     const timer = setInterval(load, 5 * 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: social draft queue (GET /api/social/drafts) ───────
+  // Fetches all recent drafts for per-post per-platform visibility — granularity
+  // the Grafana aggregate Prometheus counters don't provide. Pending drafts also
+  // surface in the action inbox as kind='social' for inline approve/reject.
+  // Mock: honest-empty (no fabricated rows per feedback_no_dummy_data). 60s cadence
+  // (drafts move on the same scale as publishing tasks, not second-to-second).
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await PX.api.socialDrafts('?limit=50');
+        if (!alive || !res) return;
+        setSocial(res);
+        const pendingDrafts = (res.drafts || []).filter(
+          (d) => d.status === 'pending'
+        );
+        setInbox((prev) => {
+          const nonSocial = prev.filter((i) => i.kind !== 'social');
+          return [...nonSocial, ...pendingDrafts.map(draftToInbox)];
+        });
+      } catch (e) {
+        pushToast(`Social drafts load failed — ${e.message}`, 'red', '✕');
+      }
+    };
+    load();
+    const timer = setInterval(load, 60 * 1000);
     return () => {
       alive = false;
       clearInterval(timer);
@@ -906,6 +941,60 @@ function App() {
         );
       }
     },
+
+    // ── Social draft approve / reject ──────────────────────
+    // Accepts either a raw draft object (from SocialPanel) or an inbox item
+    // (from ActionInbox / FeedMode) — detects by presence of `detail.draft`.
+    socialApproveDraft: async (itemOrDraft) => {
+      const draft =
+        (itemOrDraft.detail && itemOrDraft.detail.draft) || itemOrDraft;
+      const prevSocial = social;
+      setSocial((s) => ({
+        ...s,
+        drafts: (s.drafts || []).filter((x) => x.id !== draft.id),
+      }));
+      setInbox((prev) => prev.filter((i) => i.id !== draft.id));
+      closeDrawer();
+      try {
+        await PX.api.socialDraftAction(draft.id, 'approve');
+        pushToast(
+          `${draft.platform} draft approved — queued for Postiz`,
+          'mint',
+          '✓'
+        );
+        pushFeed(
+          ['mint', 'SOCIAL'],
+          `operator approved <b>${escHtml(draft.platform)}</b> draft · enqueued`
+        );
+      } catch (err) {
+        setSocial(prevSocial);
+        setInbox((prev) => [...prev, draftToInbox(draft)]);
+        pushToast(`Social approve failed — ${err.message}`, 'red', '✕');
+      }
+    },
+    socialRejectDraft: async (itemOrDraft) => {
+      const draft =
+        (itemOrDraft.detail && itemOrDraft.detail.draft) || itemOrDraft;
+      const prevSocial = social;
+      setSocial((s) => ({
+        ...s,
+        drafts: (s.drafts || []).filter((x) => x.id !== draft.id),
+      }));
+      setInbox((prev) => prev.filter((i) => i.id !== draft.id));
+      closeDrawer();
+      try {
+        await PX.api.socialDraftAction(draft.id, 'reject');
+        pushToast(`${draft.platform} draft rejected`, 'amber', '⚠');
+        pushFeed(
+          ['amber', 'SOCIAL'],
+          `operator rejected <b>${escHtml(draft.platform)}</b> draft`
+        );
+      } catch (err) {
+        setSocial(prevSocial);
+        setInbox((prev) => [...prev, draftToInbox(draft)]);
+        pushToast(`Social reject failed — ${err.message}`, 'red', '✕');
+      }
+    },
   };
 
   const open = (type, data) => setEntity({ type, data });
@@ -1107,7 +1196,11 @@ function App() {
                 ? services.filter((s) => s.status === 'err').length
                 : r.id === 'topics'
                   ? ((topics && topics.items) || []).length
-                  : 0;
+                  : r.id === 'social'
+                    ? ((social && social.drafts) || []).filter(
+                        (d) => d.status === 'pending'
+                      ).length
+                    : 0;
           return (
             <button
               key={r.id}
@@ -1205,6 +1298,8 @@ function App() {
                   onRetry={A.retry}
                   onAck={A.ack}
                   onFix={A.fix}
+                  onSocialApprove={(it) => A.socialApproveDraft(it)}
+                  onSocialReject={(it) => A.socialRejectDraft(it)}
                 />
               </div>
               {approved.length > 0 && (
@@ -1236,6 +1331,13 @@ function App() {
                   onPick={A.topicPick}
                   onResolve={A.topicResolve}
                   onReject={A.topicReject}
+                />
+              </div>
+              <div id="sec-social">
+                <SocialPanel
+                  social={social}
+                  onApprove={A.socialApproveDraft}
+                  onReject={A.socialRejectDraft}
                 />
               </div>
               <div id="sec-gpu">
@@ -1410,6 +1512,38 @@ function App() {
 // Minutes since an ISO timestamp (for relative-age display).
 function minsSince(iso) {
   return Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000));
+}
+
+// HTML-escape a value before embedding in dangerouslySetInnerHTML feed lines.
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(
+    /[&<>"']/g,
+    (c) =>
+      ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[
+        c
+      ]
+  );
+}
+
+// Map a social_post_drafts row → Action Inbox item shape (kind='social').
+// draft.id is the draft_id; the inbox item carries detail.draft for the action
+// handlers to unpack. Pending drafts only (caller filters before calling).
+function draftToInbox(d) {
+  const PX = window.PX;
+  return {
+    id: d.id,
+    kind: 'social',
+    priority: 2,
+    title: `${d.platform}: ${trunc(d.content || '', 60)}`,
+    sub: [
+      ['PLATFORM', d.platform || '—'],
+      ['POST', d.post_id ? String(d.post_id).slice(0, 8) : '—'],
+      ['RETRIES', String(d.retry_count || 0)],
+    ],
+    age: d.created_at ? PX.ago(minsSince(d.created_at)) : '',
+    tags: [['amber', 'SOCIAL']],
+    detail: { draft: d },
+  };
 }
 
 // Map a /api/tasks/pending-approval row → the Action Inbox item shape.
