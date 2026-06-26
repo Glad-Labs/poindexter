@@ -51,3 +51,32 @@ scrape_configs:
       # Unwrap so Loki sees the raw log line.
       - cri: {}
       - docker: {}
+
+      # Worker + prefect-worker emit structlog JSON (LOG_FORMAT=json). Parse the
+      # log line as JSON, promote `level` to a Loki stream label so
+      # `detected_level` resolves correctly in Grafana, and surface task_id /
+      # prefect_run_id as structured_metadata for per-task log retrieval without
+      # label-cardinality cost.
+      - match:
+          selector: '{container=~"poindexter-(worker|prefect-worker)"}'
+          stages:
+            - json:
+                expressions:
+                  level: level
+                  task_id: task_id
+                  prefect_run_id: prefect_run_id
+            - labels:
+                level:
+            - structured_metadata:
+                task_id:
+                prefect_run_id:
+
+      # Brain-daemon uses plain stdlib logging (text, not JSON). Extract level
+      # from the formatted line so detected_level works for those logs too.
+      - match:
+          selector: '{container="poindexter-brain-daemon"}'
+          stages:
+            - regex:
+                expression: '\b(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL)\b'
+            - labels:
+                level:
