@@ -1056,6 +1056,19 @@ async def _send_post_newsletter_bg(
             _pool, title, excerpt, slug, site_config=site_config,
         )
         logger.info("[NEWSLETTER] Result: %s", result)
+        from services.audit_log import audit_log_bg
+        audit_log_bg(
+            "newsletter_campaign_sent",
+            "newsletter_service",
+            {
+                "slug": slug,
+                "title": title,
+                "sent": result.get("sent", 0),
+                "failed": result.get("failed", 0),
+                "total_subscribers": result.get("total_subscribers", 0),
+                "skipped_reason": result.get("skipped_reason"),
+            },
+        )
     except Exception as e:
         logger.warning("[NEWSLETTER] Failed (non-fatal): %s", e)
 

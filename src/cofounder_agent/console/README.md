@@ -81,12 +81,14 @@ method has a `live:` branch (real `fetch`) and a `mock:` branch via
 | tasks             | `GET /api/tasks`, `/{id}` · `PUT /api/tasks/{id}/status` (retry→pending) · `DELETE /api/tasks/{id}` (cancel) |
 | events            | `GET /api/pipeline/events` (the live audit feed)                                                             |
 | brain / memory    | `GET /api/memory/stats` · `GET /api/memory/search`                                                           |
+| brain activity    | `GET /api/brain/stats` (decisions_24h/7d + knowledge_total + recent 10 decisions)                            |
 | cost              | `GET /api/metrics/costs/budget` (spend vs cap)                                                               |
 | findings          | `GET /api/findings` (probe-routing triage, #461)                                                             |
 | media (Gate-2)    | `GET /api/media-approval/pending` · `POST /{post_id}/{medium}/decide`                                        |
 | schedule          | `GET /api/scheduling` · `PATCH /api/scheduling/shift` (reschedule)                                           |
 | seo               | `GET /api/seo` (SEO-refresh queue + outcomes, #1466)                                                         |
 | social            | `GET /api/social/drafts` (per-post per-platform) · `POST /api/social/drafts/{id}/{approve\|reject}`          |
+| newsletter        | `GET /api/newsletter/stats` (subscriber count + 30d delivery summary + recent campaigns)                     |
 | voice             | `GET /api/settings` → `voice_agent_public_join_url` (operator config)                                        |
 | rebuild           | `POST /api/export/rebuild` (full static re-export + ISR revalidate)                                          |
 | posts / analytics | `GET /api/posts` · `GET /api/analytics/views`                                                                |

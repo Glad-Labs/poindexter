@@ -1,4 +1,4 @@
-{
+﻿{
   "annotations": {
     "list": []
   },
@@ -9,7 +9,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Core Services & Pipeline Health",
+      "title": "Core Services \u0026 Pipeline Health",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -100,7 +100,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Postgres reachable via the local-brain-db datasource. If 0 the dashboard itself would fail \u2014 this is a belt+suspenders sanity check.",
+      "description": "Postgres reachable via the local-brain-db datasource. If 0 the dashboard itself would fail — this is a belt+suspenders sanity check.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -521,7 +521,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Tasks (24h)\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COUNT(*) AS \"Tasks (24h)\" FROM content_tasks WHERE created_at \u003e NOW() - INTERVAL \u002724 hours\u0027;",
           "refId": "A"
         }
       ],
@@ -533,7 +533,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Approval rate over last 24h. Controlled test batches (CTS-v1, post-whitelist) run 70-90%. Autonomous topic-discovery baseline is lower (10-30%) because the idle worker re-queues topics that keep tripping real-quality vetoes. Threshold targets the autonomous baseline \u2014 bump to 40% green once topic-discovery dedup (GH-101) ships.",
+      "description": "Approval rate over last 24h. Controlled test batches (CTS-v1, post-whitelist) run 70-90%. Autonomous topic-discovery baseline is lower (10-30%) because the idle worker re-queues topics that keep tripping real-quality vetoes. Threshold targets the autonomous baseline — bump to 40% green once topic-discovery dedup (GH-101) ships.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -593,7 +593,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status IN ('awaiting_approval','approved','published'))::numeric / NULLIF(COUNT(*) FILTER (WHERE status IN ('rejected','awaiting_approval','approved','published')), 0), 1) AS \"Approval %\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE status IN (\u0027awaiting_approval\u0027,\u0027approved\u0027,\u0027published\u0027))::numeric / NULLIF(COUNT(*) FILTER (WHERE status IN (\u0027rejected\u0027,\u0027awaiting_approval\u0027,\u0027approved\u0027,\u0027published\u0027)), 0), 1) AS \"Approval %\" FROM content_tasks WHERE created_at \u003e NOW() - INTERVAL \u002724 hours\u0027;",
           "refId": "A"
         }
       ],
@@ -661,7 +661,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT ROUND(100.0 * (SELECT COUNT(*) FROM content_tasks WHERE status='awaiting_approval')::numeric / NULLIF((SELECT value::int FROM app_settings WHERE key='max_approval_queue'), 0), 0) AS \"Queue % of cap\";",
+          "rawSql": "SELECT ROUND(100.0 * (SELECT COUNT(*) FROM content_tasks WHERE status=\u0027awaiting_approval\u0027)::numeric / NULLIF((SELECT value::int FROM app_settings WHERE key=\u0027max_approval_queue\u0027), 0), 0) AS \"Queue % of cap\";",
           "refId": "A"
         }
       ],
@@ -673,7 +673,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Tasks stuck in_progress longer than 30 minutes. Should be 0. Anything >0 means a stage hung \u2014 see docs/operations/troubleshooting.md.",
+      "description": "Tasks stuck in_progress longer than 30 minutes. Should be 0. Anything \u003e0 means a stage hung — see docs/operations/troubleshooting.md.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -723,11 +723,11 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Stuck tasks\" FROM content_tasks WHERE status='in_progress' AND started_at < NOW() - INTERVAL '30 minutes';",
+          "rawSql": "SELECT COUNT(*) AS \"Stuck tasks\" FROM content_tasks WHERE status=\u0027in_progress\u0027 AND started_at \u003c NOW() - INTERVAL \u002730 minutes\u0027;",
           "refId": "A"
         }
       ],
-      "title": "Stuck >30m",
+      "title": "Stuck \u003e30m",
       "type": "stat"
     },
     {
@@ -789,7 +789,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Published (7d)\" FROM posts WHERE status='published' AND published_at > NOW() - INTERVAL '7 days';",
+          "rawSql": "SELECT COUNT(*) AS \"Published (7d)\" FROM posts WHERE status=\u0027published\u0027 AND published_at \u003e NOW() - INTERVAL \u00277 days\u0027;",
           "refId": "A"
         }
       ],
@@ -801,7 +801,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Hours since the most recent publish. Green if <48h, yellow 48h-7d, red >7d.",
+      "description": "Hours since the most recent publish. Green if \u003c48h, yellow 48h-7d, red \u003e7d.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -855,7 +855,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(published_at)))/3600 AS \"Hours since publish\" FROM posts WHERE status='published';",
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(published_at)))/3600 AS \"Hours since publish\" FROM posts WHERE status=\u0027published\u0027;",
           "refId": "A"
         }
       ],
@@ -867,7 +867,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Total embedding rows. Above 100k should trigger the collapse_old_embeddings job \u2014 see GH-106.",
+      "description": "Total embedding rows. Above 100k should trigger the collapse_old_embeddings job — see GH-106.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -987,7 +987,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT (pg_total_relation_size('embeddings') / 1024.0 / 1024.0) AS \"MB\";",
+          "rawSql": "SELECT (pg_total_relation_size(\u0027embeddings\u0027) / 1024.0 / 1024.0) AS \"MB\";",
           "refId": "A"
         }
       ],
@@ -1065,7 +1065,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "24h cost across cost_logs \u2014 electricity for running the 24/7 stack + amortized GPU inference cost + any cloud LLM calls. Baseline on Matt's 5090 stack is ~$1.50/day (system electricity at 120W + inference peaks). Red threshold targets unexpected cloud-API spend.",
+      "description": "24h cost across cost_logs — electricity for running the 24/7 stack + amortized GPU inference cost + any cloud LLM calls. Baseline on Matt\u0027s 5090 stack is ~$1.50/day (system electricity at 120W + inference peaks). Red threshold targets unexpected cloud-API spend.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1119,7 +1119,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(SUM(cost_usd), 0) AS \"Cost 24h\" FROM cost_logs WHERE created_at > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COALESCE(SUM(cost_usd), 0) AS \"Cost 24h\" FROM cost_logs WHERE created_at \u003e NOW() - INTERVAL \u002724 hours\u0027;",
           "refId": "A"
         }
       ],
@@ -1131,7 +1131,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Alerts firing (not resolved) in the last hour. Each row in alert_events with status='firing' is one Alertmanager fire event.",
+      "description": "Alerts firing (not resolved) in the last hour. Each row in alert_events with status=\u0027firing\u0027 is one Alertmanager fire event.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1185,7 +1185,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Firing (1h)\" FROM alert_events WHERE status='firing' AND received_at > NOW() - INTERVAL '1 hour';",
+          "rawSql": "SELECT COUNT(*) AS \"Firing (1h)\" FROM alert_events WHERE status=\u0027firing\u0027 AND received_at \u003e NOW() - INTERVAL \u00271 hour\u0027;",
           "refId": "A"
         }
       ],
@@ -1261,7 +1261,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 \u2014 any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
+      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 — any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1311,7 +1311,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Plaintext secrets\" FROM app_settings WHERE is_secret = true AND value != '' AND value NOT LIKE 'enc:v1:%';",
+          "rawSql": "SELECT COUNT(*) AS \"Plaintext secrets\" FROM app_settings WHERE is_secret = true AND value != \u0027\u0027 AND value NOT LIKE \u0027enc:v1:%\u0027;",
           "refId": "A"
         }
       ],
@@ -1323,7 +1323,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline \u2014 expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
+      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline — expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1377,7 +1377,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Hard rejects (24h)\" FROM content_tasks WHERE created_at > NOW() - INTERVAL '24 hours' AND status = 'rejected' AND (error_message ILIKE '%veto: programmatic_validator%' OR error_message ILIKE '%veto: citation_verifier%' OR error_message ILIKE '%veto: topic_delivery%');",
+          "rawSql": "SELECT COUNT(*) AS \"Hard rejects (24h)\" FROM content_tasks WHERE created_at \u003e NOW() - INTERVAL \u002724 hours\u0027 AND status = \u0027rejected\u0027 AND (error_message ILIKE \u0027%veto: programmatic_validator%\u0027 OR error_message ILIKE \u0027%veto: citation_verifier%\u0027 OR error_message ILIKE \u0027%veto: topic_delivery%\u0027);",
           "refId": "A"
         }
       ],
@@ -1386,7 +1386,7 @@
     },
     {
       "id": 22,
-      "title": "Pipeline & Worker Status",
+      "title": "Pipeline \u0026 Worker Status",
       "type": "stat",
       "gridPos": {
         "h": 4,
@@ -1433,9 +1433,9 @@
     },
     {
       "id": 713,
-      "title": "Scheduled jobs \u2014 freshness + last-run status",
+      "title": "Scheduled jobs — freshness + last-run status",
       "type": "table",
-      "description": "Auto-populated for every PluginScheduler job. Healthy = age below the job's expected interval (every-2h jobs sit at 0-7200s, every-60s jobs at 0-90s). Orange highlight = age suggests the loop is dead. ok=0 = ran recently but failed; click the job_name to grep Loki for details.",
+      "description": "Auto-populated for every PluginScheduler job. Healthy = age below the job\u0027s expected interval (every-2h jobs sit at 0-7200s, every-60s jobs at 0-90s). Orange highlight = age suggests the loop is dead. ok=0 = ran recently but failed; click the job_name to grep Loki for details.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1606,7 +1606,7 @@
       "id": 714,
       "title": "Stalest jobs (top 10)",
       "type": "bargauge",
-      "description": "Top 10 jobs by last-run age. Healthy state: all bars below their respective scheduled intervals. One bar far above the others = the loop has stopped firing. The threshold color flips to orange at the 1-hour mark \u2014 but a job that's scheduled to run every 6h naturally stays orange between fires. Cross-reference with the freshness table.",
+      "description": "Top 10 jobs by last-run age. Healthy state: all bars below their respective scheduled intervals. One bar far above the others = the loop has stopped firing. The threshold color flips to orange at the 1-hour mark — but a job that\u0027s scheduled to run every 6h naturally stays orange between fires. Cross-reference with the freshness table.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1670,7 +1670,7 @@
       "id": 715,
       "title": "Jobs whose last fire failed",
       "type": "stat",
-      "description": "Number of scheduler jobs where the most recent fire status was 'err'. Healthy = 0. >0 = at least one job ran but raised \u2014 open the freshness table, sort by Last status, and check Loki for the underlying traceback.",
+      "description": "Number of scheduler jobs where the most recent fire status was \u0027err\u0027. Healthy = 0. \u003e0 = at least one job ran but raised — open the freshness table, sort by Last status, and check Loki for the underlying traceback.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1730,7 +1730,7 @@
     },
     {
       "type": "row",
-      "title": "Audit Log \u00b7 GlitchTip \u00b7 Publish Queues",
+      "title": "Audit Log · GlitchTip · Publish Queues",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1834,7 +1834,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) FROM audit_log WHERE severity='error' AND $__timeFilter(\"timestamp\")",
+          "rawSql": "SELECT COUNT(*) FROM audit_log WHERE severity=\u0027error\u0027 AND $__timeFilter(\"timestamp\")",
           "refId": "A"
         }
       ]
@@ -1941,7 +1941,7 @@
       "id": 29,
       "type": "stat",
       "title": "GT open",
-      "description": "Unresolved GlitchTip issues from the latest brain triage probe cycle. Sourced from audit_log details->>'issues_seen' on the most recent probe.glitchtip_triage_cycle row (5-min cadence). Triage at http://localhost:8080.",
+      "description": "Unresolved GlitchTip issues from the latest brain triage probe cycle. Sourced from audit_log details-\u003e\u003e\u0027issues_seen\u0027 on the most recent probe.glitchtip_triage_cycle row (5-min cadence). Triage at http://localhost:8080.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -1997,7 +1997,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT (details->>'issues_seen')::int AS \"Open issues\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle'\nORDER BY timestamp DESC LIMIT 1;",
+          "rawSql": "SELECT (details-\u003e\u003e\u0027issues_seen\u0027)::int AS \"Open issues\"\nFROM audit_log\nWHERE event_type = \u0027probe.glitchtip_triage_cycle\u0027\nORDER BY timestamp DESC LIMIT 1;",
           "refId": "A"
         }
       ]
@@ -2062,7 +2062,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT (details->>'alerted_count')::int AS \"Alerted\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle'\nORDER BY timestamp DESC LIMIT 1;",
+          "rawSql": "SELECT (details-\u003e\u003e\u0027alerted_count\u0027)::int AS \"Alerted\"\nFROM audit_log\nWHERE event_type = \u0027probe.glitchtip_triage_cycle\u0027\nORDER BY timestamp DESC LIMIT 1;",
           "refId": "A"
         }
       ]
@@ -2071,7 +2071,7 @@
       "id": 31,
       "type": "stat",
       "title": "GT resolved",
-      "description": "Issues auto-resolved in the last 24h via glitchtip_triage_auto_resolve_patterns. Healthy when growing \u2014 operator's noise rules absorbing known-flapping issues.",
+      "description": "Issues auto-resolved in the last 24h via glitchtip_triage_auto_resolve_patterns. Healthy when growing — operator\u0027s noise rules absorbing known-flapping issues.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2119,7 +2119,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(SUM((details->>'auto_resolved_count')::int), 0) AS \"Auto-resolved\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle'\n  AND timestamp > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COALESCE(SUM((details-\u003e\u003e\u0027auto_resolved_count\u0027)::int), 0) AS \"Auto-resolved\"\nFROM audit_log\nWHERE event_type = \u0027probe.glitchtip_triage_cycle\u0027\n  AND timestamp \u003e NOW() - INTERVAL \u002724 hours\u0027;",
           "refId": "A"
         }
       ]
@@ -2128,7 +2128,7 @@
       "id": 32,
       "type": "stat",
       "title": "GT probe",
-      "description": "Seconds since the brain last ran the GlitchTip triage probe. Healthy < 600s (5-min cadence). >900s means the brain isn't iterating \u2014 check `docker logs poindexter-brain`.",
+      "description": "Seconds since the brain last ran the GlitchTip triage probe. Healthy \u003c 600s (5-min cadence). \u003e900s means the brain isn\u0027t iterating — check `docker logs poindexter-brain`.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2184,7 +2184,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(timestamp)))::int AS \"Seconds since\"\nFROM audit_log\nWHERE event_type = 'probe.glitchtip_triage_cycle';",
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (NOW() - MAX(timestamp)))::int AS \"Seconds since\"\nFROM audit_log\nWHERE event_type = \u0027probe.glitchtip_triage_cycle\u0027;",
           "refId": "A"
         }
       ]
@@ -2193,7 +2193,7 @@
       "id": 33,
       "type": "stat",
       "title": "Sched depth",
-      "description": "Count of posts queued for future publish. Populated by `poindexter schedule batch ...` or `poindexter publish-at <id> <when>`. Zero is fine if the operator publishes manually; non-zero means the scheduled_publisher daemon will fire them at published_at.",
+      "description": "Count of posts queued for future publish. Populated by `poindexter schedule batch ...` or `poindexter publish-at \u003cid\u003e \u003cwhen\u003e`. Zero is fine if the operator publishes manually; non-zero means the scheduled_publisher daemon will fire them at published_at.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2249,7 +2249,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Pending\" FROM posts WHERE status = 'scheduled' AND published_at > NOW();",
+          "rawSql": "SELECT COUNT(*) AS \"Pending\" FROM posts WHERE status = \u0027scheduled\u0027 AND published_at \u003e NOW();",
           "refId": "A"
         }
       ]
@@ -2306,7 +2306,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT EXTRACT(EPOCH FROM (MIN(published_at) - NOW()))::int AS \"Seconds\" FROM posts WHERE status = 'scheduled' AND published_at > NOW();",
+          "rawSql": "SELECT EXTRACT(EPOCH FROM (MIN(published_at) - NOW()))::int AS \"Seconds\" FROM posts WHERE status = \u0027scheduled\u0027 AND published_at \u003e NOW();",
           "refId": "A"
         }
       ]
@@ -2315,7 +2315,7 @@
       "id": 35,
       "type": "stat",
       "title": "Sched overdue",
-      "description": "Posts whose published_at has passed but status is still 'scheduled'. Should be 0 \u2014 the scheduled_publisher daemon polls every poll_interval_seconds (default 60s) and flips them to published. Anything >0 sustained for >2 minutes means the daemon is wedged or the worker is down; check `docker logs poindexter-worker | grep scheduled_publisher`.",
+      "description": "Posts whose published_at has passed but status is still \u0027scheduled\u0027. Should be 0 — the scheduled_publisher daemon polls every poll_interval_seconds (default 60s) and flips them to published. Anything \u003e0 sustained for \u003e2 minutes means the daemon is wedged or the worker is down; check `docker logs poindexter-worker | grep scheduled_publisher`.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2367,7 +2367,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Overdue\" FROM posts WHERE status = 'scheduled' AND published_at <= NOW();",
+          "rawSql": "SELECT COUNT(*) AS \"Overdue\" FROM posts WHERE status = \u0027scheduled\u0027 AND published_at \u003c= NOW();",
           "refId": "A"
         }
       ]
@@ -2376,7 +2376,7 @@
       "id": 36,
       "type": "stat",
       "title": "Approved q",
-      "description": "Count of pipeline_tasks in 'approved' status \u2014 posts the operator has approved but not yet published. This is the post-approval, pre-publish queue (distinct from the awaiting_approval review queue). Once published, each gets media via the 4h backfill jobs. Zero means nothing is waiting. A sustained non-zero count is the cue to publish (`poindexter publish <id>` / go-live) \u2014 these will not publish themselves. See the 'Approved \u2014 awaiting publish' table below for the per-task detail.",
+      "description": "Count of pipeline_tasks in \u0027approved\u0027 status — posts the operator has approved but not yet published. This is the post-approval, pre-publish queue (distinct from the awaiting_approval review queue). Once published, each gets media via the 4h backfill jobs. Zero means nothing is waiting. A sustained non-zero count is the cue to publish (`poindexter publish \u003cid\u003e` / go-live) — these will not publish themselves. See the \u0027Approved — awaiting publish\u0027 table below for the per-task detail.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2432,7 +2432,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT count(*) AS \"Approved\" FROM pipeline_tasks WHERE status = 'approved';",
+          "rawSql": "SELECT count(*) AS \"Approved\" FROM pipeline_tasks WHERE status = \u0027approved\u0027;",
           "refId": "A"
         }
       ]
@@ -2691,7 +2691,7 @@
       "id": 41,
       "type": "table",
       "title": "Upcoming scheduled publishes (next 24h)",
-      "description": "Posts queued to publish within the next 24 hours. Empty when the queue is dry. Pin to the dashboard playlist so operators can see at a glance what's coming up.",
+      "description": "Posts queued to publish within the next 24 hours. Empty when the queue is dry. Pin to the dashboard playlist so operators can see at a glance what\u0027s coming up.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2743,7 +2743,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT published_at AS \"Publish at (UTC)\", slug AS \"Slug\", title AS \"Title\", EXTRACT(EPOCH FROM (published_at - NOW()))::int AS \"In (s)\" FROM posts WHERE status = 'scheduled' AND published_at BETWEEN NOW() AND NOW() + INTERVAL '24 hours' ORDER BY published_at LIMIT 25;",
+          "rawSql": "SELECT published_at AS \"Publish at (UTC)\", slug AS \"Slug\", title AS \"Title\", EXTRACT(EPOCH FROM (published_at - NOW()))::int AS \"In (s)\" FROM posts WHERE status = \u0027scheduled\u0027 AND published_at BETWEEN NOW() AND NOW() + INTERVAL \u002724 hours\u0027 ORDER BY published_at LIMIT 25;",
           "refId": "A"
         }
       ]
@@ -2751,8 +2751,8 @@
     {
       "id": 42,
       "type": "table",
-      "title": "Approved \u2014 awaiting publish",
-      "description": "Tasks the operator has approved (pipeline_tasks.status='approved') that have not yet been published. The post-approval, pre-publish queue \u2014 distinct from the awaiting_approval review queue surfaced elsewhere. Empty when nothing is waiting. Each row stays here until published (`poindexter publish <task>` / go-live), after which media generation runs via the 4h backfill jobs. Ordered most-recently-approved first.",
+      "title": "Approved — awaiting publish",
+      "description": "Tasks the operator has approved (pipeline_tasks.status=\u0027approved\u0027) that have not yet been published. The post-approval, pre-publish queue — distinct from the awaiting_approval review queue surfaced elsewhere. Empty when nothing is waiting. Each row stays here until published (`poindexter publish \u003ctask\u003e` / go-live), after which media generation runs via the 4h backfill jobs. Ordered most-recently-approved first.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2804,14 +2804,14 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT left(task_id, 8) AS \"Task\", topic AS \"Topic\", updated_at AS \"Approved at (UTC)\" FROM pipeline_tasks WHERE status = 'approved' ORDER BY updated_at DESC LIMIT 25;",
+          "rawSql": "SELECT left(task_id, 8) AS \"Task\", topic AS \"Topic\", updated_at AS \"Approved at (UTC)\" FROM pipeline_tasks WHERE status = \u0027approved\u0027 ORDER BY updated_at DESC LIMIT 25;",
           "refId": "A"
         }
       ]
     },
     {
       "type": "row",
-      "title": "Exporter Signals \u2014 LLM Engine \u00b7 Embeddings \u00b7 Schema \u00b7 Brain \u00b7 Prometheus",
+      "title": "Exporter Signals — LLM Engine · Embeddings · Schema · Brain · Prometheus",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2827,7 +2827,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_ollama_reachable \u2014 1 if Ollama /api/tags returned 200 on the last scrape. Ollama is the local LLM engine the whole pipeline runs on, yet it had no health tile anywhere until now.",
+      "description": "poindexter_ollama_reachable — 1 if Ollama /api/tags returned 200 on the last scrape. Ollama is the local LLM engine the whole pipeline runs on, yet it had no health tile anywhere until now.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2839,11 +2839,11 @@
               "options": {
                 "0": {
                   "color": "red",
-                  "text": "\u2717 DOWN"
+                  "text": "✗ DOWN"
                 },
                 "1": {
                   "color": "green",
-                  "text": "\u2713 up"
+                  "text": "✓ up"
                 }
               }
             }
@@ -2905,7 +2905,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_ollama_model_count \u2014 number of models Ollama reports. 0 while reachable=1 is the 'up but no models pulled' failure the plain up-check misses \u2014 every generation would fail with that state.",
+      "description": "poindexter_ollama_model_count — number of models Ollama reports. 0 while reachable=1 is the \u0027up but no models pulled\u0027 failure the plain up-check misses — every generation would fail with that state.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2969,7 +2969,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_embeddings_missing_posts \u2014 published posts with no embeddings row. Catches 'new posts stopped getting embedded' even when overall embedding throughput looks fine. 0 is healthy; any positive value means RAG/search coverage is silently degrading.",
+      "description": "poindexter_embeddings_missing_posts — published posts with no embeddings row. Catches \u0027new posts stopped getting embedded\u0027 even when overall embedding throughput looks fine. 0 is healthy; any positive value means RAG/search coverage is silently degrading.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2981,7 +2981,7 @@
               "options": {
                 "0": {
                   "color": "green",
-                  "text": "\u2713 0"
+                  "text": "✓ 0"
                 }
               }
             }
@@ -3046,7 +3046,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_unapplied_migrations_count \u2014 migration .py files on disk not yet recorded in schema_migrations. >0 means the running worker is on a stale schema (container updated, process not restarted). Surfaced by /api/health but never on a dashboard until now.",
+      "description": "poindexter_unapplied_migrations_count — migration .py files on disk not yet recorded in schema_migrations. \u003e0 means the running worker is on a stale schema (container updated, process not restarted). Surfaced by /api/health but never on a dashboard until now.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3058,7 +3058,7 @@
               "options": {
                 "0": {
                   "color": "green",
-                  "text": "\u2713 current"
+                  "text": "✓ current"
                 }
               }
             }
@@ -3119,7 +3119,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "Age of the most recent brain.cycle_heartbeat (time() - poindexter_brain_cycle_heartbeat_timestamp_seconds). The brain writes one heartbeat per ~5-min cycle; this is the delivery-plane dead-man's switch. 'No data' or red (>15m) means the brain has stopped \u2014 the same condition the BrainDeliveryDeadMansSwitch alert fires on, now visible on the dashboard.",
+      "description": "Age of the most recent brain.cycle_heartbeat (time() - poindexter_brain_cycle_heartbeat_timestamp_seconds). The brain writes one heartbeat per ~5-min cycle; this is the delivery-plane dead-man\u0027s switch. \u0027No data\u0027 or red (\u003e15m) means the brain has stopped — the same condition the BrainDeliveryDeadMansSwitch alert fires on, now visible on the dashboard.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -3362,6 +3362,345 @@
           },
           "expr": "increase(container_restart_count{job=\"cadvisor\",image!=\"\"}[24h])",
           "legendFormat": "{{name}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 60,
+      "type": "row",
+      "title": "Brain Daemon — Decisions \u0026 Knowledge",
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 90
+      },
+      "panels": []
+    },
+    {
+      "id": 61,
+      "type": "stat",
+      "title": "Decisions (24h)",
+      "description": "Brain daemon decisions in the last 24 hours",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 91
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRESQL}"
+          },
+          "rawSql": "SELECT COUNT(*) AS value FROM brain_decisions WHERE created_at \u003e NOW() - INTERVAL \u00271 day\u0027",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 62,
+      "type": "stat",
+      "title": "Decisions (7d)",
+      "description": "Brain daemon decisions in the last 7 days",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 91
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRESQL}"
+          },
+          "rawSql": "SELECT COUNT(*) AS value FROM brain_decisions WHERE created_at \u003e NOW() - INTERVAL \u00277 days\u0027",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 63,
+      "type": "stat",
+      "title": "Avg confidence (7d)",
+      "description": "Mean brain decision confidence over the last 7 days (0–1)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 91
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "value",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0.5
+              },
+              {
+                "color": "green",
+                "value": 0.75
+              }
+            ]
+          },
+          "unit": "percentunit",
+          "decimals": 2
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRESQL}"
+          },
+          "rawSql": "SELECT AVG(confidence) AS value FROM brain_decisions WHERE created_at \u003e NOW() - INTERVAL \u00277 days\u0027",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 64,
+      "type": "stat",
+      "title": "Knowledge entries",
+      "description": "Total rows in brain_knowledge (entity/attribute/value graph)",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 91
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "orientation": "auto",
+        "textMode": "auto",
+        "colorMode": "background",
+        "graphMode": "none"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 1
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRESQL}"
+          },
+          "rawSql": "SELECT COUNT(*) AS value FROM brain_knowledge",
+          "format": "table",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 65,
+      "type": "table",
+      "title": "Recent brain decisions",
+      "description": "Last 10 brain daemon decisions (brain_decisions table)",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 95
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "${DS_POSTGRESQL}"
+      },
+      "options": {
+        "footer": {
+          "show": false,
+          "reducer": ["sum"],
+          "fields": [],
+          "enablePagination": false
+        },
+        "showHeader": true
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "confidence"
+            },
+            "properties": [
+              {
+                "id": "custom.width",
+                "value": 90
+              },
+              {
+                "id": "thresholds",
+                "value": {
+                  "mode": "absolute",
+                  "steps": [
+                    {
+                      "color": "red",
+                      "value": null
+                    },
+                    {
+                      "color": "orange",
+                      "value": 0.5
+                    },
+                    {
+                      "color": "green",
+                      "value": 0.75
+                    }
+                  ]
+                }
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              }
+            ]
+          }
+        ]
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "${DS_POSTGRESQL}"
+          },
+          "rawSql": "SELECT\n  created_at,\n  outcome,\n  ROUND(confidence::numeric, 2) AS confidence,\n  LEFT(decision, 100)           AS decision\nFROM brain_decisions\nORDER BY created_at DESC\nLIMIT 10",
+          "format": "table",
           "refId": "A"
         }
       ]

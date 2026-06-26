@@ -35,6 +35,7 @@
                    DELETE /api/tasks/{id}  (cancel)
      events        GET  /api/pipeline/events
      memory        GET  /api/memory/stats, /api/memory/search
+     brain         GET  /api/brain/stats  (decisions_24h/7d + knowledge_total + recent 10)
      posts         GET  /api/posts
      analytics     GET  /api/analytics/views
      budget        GET  /api/metrics/costs/budget  (spend vs cap; by-model NOT routed)
@@ -697,6 +698,27 @@
       );
     },
 
+    // ── brain daemon activity (brain_routes.py) ──────────────
+    // GET /api/brain/stats → { decisions_24h, decisions_7d, avg_confidence_7d,
+    //   last_cycle_at, knowledge_total,
+    //   recent_decisions: [{id, decision, outcome, confidence, created_at}] }
+    // Reads brain_decisions + brain_knowledge — NOT brain_queue (dropped 2026-04-21).
+    // Mock returns honest-empty (no fabricated decision rows).
+    brainActivity() {
+      const empty = {
+        decisions_24h: null,
+        decisions_7d: null,
+        avg_confidence_7d: null,
+        last_cycle_at: null,
+        knowledge_total: null,
+        recent_decisions: [],
+      };
+      return pick(
+        () => http('GET', '/api/brain/stats'),
+        () => pair(empty, empty)
+      );
+    },
+
     // GET /api/memory/search?q=&source_table=&limit= → {query, count, hits[]}.
     // Semantic recall over the pgvector corpus — also the "recall decision"
     // surface (scope source_table to memory/brain). Read-only. `opts` is an
@@ -834,6 +856,31 @@
             `/api/social/drafts/${encodeURIComponent(draftId)}/${action}`
           ),
         () => ({ ok: true })
+      );
+    },
+
+    // ── newsletter (newsletter_routes.py) ────────────────────
+    // GET /api/newsletter/stats → { subscriber_count, unsubscribed_count,
+    //   last_30d: {sent, failed, total, delivery_rate, last_send_at},
+    //   recent_campaigns: [{subject, date, sent, failed, total}, ...] }
+    // Data from newsletter_subscribers + campaign_email_logs tables.
+    // Mock returns honest-empty (no fabricated subscriber counts).
+    newsletter() {
+      const empty = {
+        subscriber_count: 0,
+        unsubscribed_count: 0,
+        last_30d: {
+          sent: 0,
+          failed: 0,
+          total: 0,
+          delivery_rate: null,
+          last_send_at: null,
+        },
+        recent_campaigns: [],
+      };
+      return pick(
+        () => http('GET', '/api/newsletter/stats'),
+        () => pair(empty, empty)
       );
     },
 

@@ -458,13 +458,10 @@ function PipelinePanel({ pipeline, onOpen, onOpenTask, onRetry }) {
 
 /* ─── Brain panel ───────────────────────────────────────────────
    Corpus headline (total + by-source) is the real /api/memory/stats read.
-   Queue depth + the decisions feed are brain-daemon internals (brain_queue /
-   brain_decisions) with NO HTTP route, so in live mode (queueDepth == null /
-   decisions == []) they render an honest "no HTTP route" state instead of the
-   mock's fabricated numbers (feedback_no_dummy_data). */
+   decisions24h / decisions + knowledgeTotal come from /api/brain/stats
+   (brain_routes.py). brain_queue was dropped 2026-04-21 — not referenced. */
 function BrainPanel({ brain, onOpen, onEmbed }) {
-  const queueKnown = brain.queueDepth != null;
-  const queueHot = queueKnown && brain.queueDepth > 15;
+  const decisionsKnown = brain.decisions24h != null;
   const sources = brain.bySource || [];
   const max = sources[0]?.[1] || 1;
   const decisions = brain.decisions || [];
@@ -486,34 +483,30 @@ function BrainPanel({ brain, onOpen, onEmbed }) {
         }}
       >
         <div style={{ background: 'var(--gl-surface)', padding: 12 }}>
-          <div className="kpi__label">Queue depth</div>
-          {queueKnown ? (
+          <div className="kpi__label">Decisions (24h)</div>
+          {decisionsKnown ? (
             <>
               <div
                 className="kpi__value"
-                style={{
-                  fontSize: 30,
-                  color: queueHot ? 'var(--gl-amber)' : 'var(--gl-text)',
-                }}
+                style={{ fontSize: 30, color: 'var(--gl-text)' }}
               >
-                {brain.queueDepth}
+                {brain.decisions24h}
               </div>
               <div
                 className="mono c-dim"
                 style={{ fontSize: 10, marginTop: 4 }}
               >
-                last cycle {brain.lastCycle}
+                {brain.decisions7d} past 7d ·{' '}
+                {brain.avgConfidence7d != null
+                  ? `avg conf ${brain.avgConfidence7d}`
+                  : 'conf n/a'}
               </div>
-              {queueHot && (
-                <button
-                  className="mbtn mbtn--amber"
-                  style={{ marginTop: 8 }}
-                  onClick={onEmbed}
-                >
-                  <Icon name="bolt" size={11} />
-                  Trigger embed cycle
-                </button>
-              )}
+              <div
+                className="mono c-dim"
+                style={{ fontSize: 10, marginTop: 2 }}
+              >
+                knowledge {(brain.knowledgeTotal ?? 0).toLocaleString()} entries
+              </div>
             </>
           ) : (
             <>
@@ -527,7 +520,7 @@ function BrainPanel({ brain, onOpen, onEmbed }) {
                 className="mono c-dim"
                 style={{ fontSize: 10, marginTop: 4 }}
               >
-                brain_queue · no HTTP route
+                brain_decisions · loading…
               </div>
             </>
           )}
@@ -563,7 +556,7 @@ function BrainPanel({ brain, onOpen, onEmbed }) {
         }}
       >
         <div className="kpi__label" style={{ marginBottom: 8 }}>
-          Brain decisions
+          Recent decisions
         </div>
         {decisions.length > 0 ? (
           <div className="feed" style={{ padding: 0 }}>
@@ -579,7 +572,9 @@ function BrainPanel({ brain, onOpen, onEmbed }) {
           </div>
         ) : (
           <div className="mono c-dim" style={{ fontSize: 10 }}>
-            brain_decisions · no HTTP route — see Grafana / Langfuse
+            {PX.api.isLive()
+              ? 'no decisions yet'
+              : 'brain_decisions · mock mode'}
           </div>
         )}
       </div>
