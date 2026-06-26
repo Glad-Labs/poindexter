@@ -80,9 +80,13 @@ import asyncio
 import logging
 import os
 import sys
+import uuid as _uuid
 from typing import Any
 
 from pipecat.audio.vad.silero import SileroVADAnalyzer
+from pipecat.frames.frames import Frame, MetricsFrame
+from pipecat.metrics.metrics import LLMUsageMetricsData
+from pipecat.processors.frame_processor import FrameDirection, FrameProcessor
 from pipecat.audio.vad.vad_analyzer import VADParams
 from pipecat.pipeline.pipeline import Pipeline
 from pipecat.pipeline.runner import PipelineRunner
@@ -250,6 +254,69 @@ def _build_tts(site_config: Any, tts_voice_override: str | None) -> Any:
     return KokoroTTSService(settings=KokoroTTSService.Settings(voice=voice))
 
 
+class VoiceCostTrackerProcessor(FrameProcessor):
+    """Record LLM token usage per voice turn into cost_logs.
+
+    Intercepts MetricsFrame (a SystemFrame emitted by PipelineTask when
+    enable_usage_metrics=True) and inserts a cost_logs row. Local Ollama
+    calls cost $0, but the rows feed the existing Grafana Cost dashboard
+    and let cost_guard count voice tokens in daily/monthly totals.
+    All frames pass through unchanged — this is a pure side-effect stage.
+    """
+
+    def __init__(
+        self,
+        pool: Any,
+        *,
+        model: str,
+        session_id: str,
+        log: logging.Logger | None = None,
+    ) -> None:
+        super().__init__()
+        self._pool = pool
+        self._model = model
+        self._session_id = session_id
+        self._log = log or logging.getLogger("voice_cost_tracker")
+
+    async def process_frame(self, frame: Frame, direction: FrameDirection) -> None:
+        await super().process_frame(frame, direction)
+        if isinstance(frame, MetricsFrame):
+            for metric in frame.data:
+                if isinstance(metric, LLMUsageMetricsData):
+                    await self._record(
+                        metric.value.prompt_tokens,
+                        metric.value.completion_tokens,
+                    )
+        await self.push_frame(frame, direction)
+
+    async def _record(self, prompt_tokens: int, completion_tokens: int) -> None:
+        try:
+            async with self._pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    INSERT INTO cost_logs (
+                        task_id, phase, model, provider,
+                        input_tokens, output_tokens, total_tokens,
+                        cost_usd, success, created_at, updated_at
+                    ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+                    """,
+                    self._session_id,
+                    "voice",
+                    self._model,
+                    "ollama",
+                    prompt_tokens,
+                    completion_tokens,
+                    prompt_tokens + completion_tokens,
+                    0.0,
+                    True,
+                )
+        except Exception as e:  # noqa: BLE001
+            self._log.warning(
+                "VoiceCostTracker: failed to log %d+%d tokens (session %s): %s",
+                prompt_tokens, completion_tokens, self._session_id, e,
+            )
+
+
 def build_voice_pipeline_task(
     transport: BaseTransport,
     site_config: Any,
@@ -259,6 +326,8 @@ def build_voice_pipeline_task(
     llm: Any | None = None,
     system_prompt_override: str | None = None,
     tts_voice_override: str | None = None,
+    pool: Any | None = None,
+    voice_session_id: str | None = None,
 ) -> PipelineTask:
     """Build a configured :class:`PipelineTask` for the given transport.
 
@@ -291,6 +360,15 @@ def build_voice_pipeline_task(
             as a distinct voice while the public ``poindexter`` room
             keeps Emma. Empty/None falls back to the shared key, so
             surfaces that don't pass it are unaffected.
+        pool: Optional asyncpg pool for writing cost_logs rows. When
+            provided and the default Ollama LLM is used, a
+            ``VoiceCostTrackerProcessor`` is inserted after the LLM
+            stage to record token usage per turn. Omit for surfaces
+            where cost tracking is not needed (e.g. local-mic debug).
+        voice_session_id: Stable UUID identifying this bot session in
+            cost_logs. Generated fresh if omitted (each ``run_bot``
+            call should generate one and pass it so all turns in a
+            session share the same ``task_id``).
     """
     log = log or logging.getLogger("voice_agent")
 
@@ -334,6 +412,9 @@ def build_voice_pipeline_task(
     # Build (or reuse) the LLM stage. Default is the local Ollama path;
     # callers can inject any Pipecat LLM service to swap brains — the
     # Claude Code subprocess bridge is the marquee alternative.
+    # Capture before reassignment: cost tracking only fires for the
+    # Ollama path (custom llm callers own their own cost accounting).
+    _built_ollama_llm = llm is None
     if llm is None:
         llm = OLLamaLLMService(model=llm_model, base_url=ollama_url)
     assert llm is not None  # narrow for the type checker
@@ -396,17 +477,27 @@ def build_voice_pipeline_task(
         ),
     )
 
-    pipeline = Pipeline(
-        [
-            transport.input(),
-            stt,
-            context_aggregator.user(),
-            llm,
-            tts,
-            transport.output(),
-            context_aggregator.assistant(),
-        ],
-    )
+    # Cost tracker: record token usage per turn when the caller supplies
+    # a pool AND we built the default Ollama LLM (not a custom service).
+    cost_tracker: VoiceCostTrackerProcessor | None = None
+    if _built_ollama_llm and pool is not None:
+        _sid = voice_session_id or str(_uuid.uuid4())
+        cost_tracker = VoiceCostTrackerProcessor(
+            pool, model=llm_model, session_id=_sid, log=log,
+        )
+        log.info("VoiceCostTracker wired for session %s", _sid)
+
+    _stages: list[Any] = [
+        transport.input(),
+        stt,
+        context_aggregator.user(),
+        llm,
+    ]
+    if cost_tracker is not None:
+        _stages.append(cost_tracker)
+    _stages.extend([tts, transport.output(), context_aggregator.assistant()])
+
+    pipeline = Pipeline(_stages)
 
     return PipelineTask(
         pipeline,

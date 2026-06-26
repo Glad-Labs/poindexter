@@ -1252,8 +1252,13 @@ async def run_bot(
     async def _on_part_left(_t: Any, participant_id: str) -> None:
         log.info("Participant left: %s", participant_id)
 
+    import uuid as _uuid
+
     dsn = require_database_url(source="voice_agent_livekit")
     pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
+    # Stable session ID shared across all turns in this bot's lifetime —
+    # cost_logs rows use this as task_id so the whole session is queryable.
+    _voice_session_id = str(_uuid.uuid4())
     try:
         site_config = SiteConfig()
         await site_config.load(pool)
@@ -1406,6 +1411,7 @@ async def run_bot(
         else:
             task = build_voice_pipeline_task(
                 transport, site_config, log=log, tools=_DEFAULT_TOOLS,
+                pool=pool, voice_session_id=_voice_session_id,
             )
 
         # Proactive JWT refresh (#564). Mint a fresh join token + drive a
