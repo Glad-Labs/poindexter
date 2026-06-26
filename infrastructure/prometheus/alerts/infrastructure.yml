@@ -116,9 +116,10 @@ groups:
       # absent() fires when the metric disappears — i.e. the container is
       # no longer running. for: 3m absorbs brief restarts so a normal
       # `docker compose restart prefect-server` won't page.
-      # Container names match container_name: in docker-compose.local.yml.
+      # Container names match container_name: in docker-compose.local.yml
+      # (cAdvisor on Docker Desktop exposes them without the "/" prefix).
       - alert: PrefectServerDown
-        expr: absent(container_last_seen{name="/poindexter-prefect-server"})
+        expr: absent(container_last_seen{name="poindexter-prefect-server"})
         for: 3m
         labels:
           severity: critical
@@ -132,7 +133,7 @@ groups:
             Check: docker ps | grep prefect; docker logs poindexter-prefect-server --tail 50
 
       - alert: PrefectWorkerDown
-        expr: absent(container_last_seen{name="/poindexter-prefect-worker"})
+        expr: absent(container_last_seen{name="poindexter-prefect-worker"})
         for: 3m
         labels:
           severity: critical
