@@ -2119,7 +2119,7 @@ services:
     profiles: ["postiz"]
     restart: unless-stopped
     environment:
-      DB: postgresql
+      DB: postgres12
       DB_PORT: "5432"
       POSTGRES_USER: postiz
       POSTGRES_PWD: "${POSTIZ_DB_PASSWORD:?Set POSTIZ_DB_PASSWORD}"
