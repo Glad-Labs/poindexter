@@ -470,6 +470,7 @@ services:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
       POINDEXTER_SECRET_KEY: ${POINDEXTER_SECRET_KEY:?Set POINDEXTER_SECRET_KEY in .env (mirror of bootstrap.toml poindexter_secret_key)}
       LOG_TO_FILE: "false"
+      LOG_FORMAT: json
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONPATH: "/app:/opt/poindexter"
       PYTHONUTF8: "1"
@@ -779,7 +780,7 @@ services:
       DATABASE_URL: "postgresql://postiz:${POSTIZ_DB_PASSWORD:?Set POSTIZ_DB_PASSWORD}@postiz-db:5432/postiz"
       REDIS_URL: "redis://postiz-redis:6379"
       TEMPORAL_ADDRESS: "poindexter-postiz-temporal:7233"
-      BACKEND_INTERNAL_URL: "http://localhost:3000"
+      BACKEND_INTERNAL_URL: "http://postiz:3000"
       IS_GENERAL: "false"
       STORAGE_PROVIDER: "local"
       UPLOAD_DIRECTORY: "/uploads"

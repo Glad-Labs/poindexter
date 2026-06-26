@@ -1,6 +1,6 @@
 /* ──────────────────────────────────────────────────────────────
    Poindexter Operator Console — gap-closing panels.
-   Revenue · Media (Stage 2) · QA Rails · Sub-tool Launcher · Social.
+   Revenue · Media (Stage 2) · QA Rails · Sub-tool Launcher · Social · Newsletter.
    ────────────────────────────────────────────────────────────── */
 
 /* ─── Social Distribution — per-post per-platform draft queue ── */
@@ -1258,6 +1258,192 @@ function TopicsPanel({ topics, onPick, onResolve, onReject }) {
   );
 }
 
+/* ─── Newsletter — subscriber count + campaign delivery summary ── */
+// GET /api/newsletter/stats → {subscriber_count, unsubscribed_count,
+//   last_30d:{sent,failed,total,delivery_rate,last_send_at}, recent_campaigns:[…]}
+// Data from newsletter_subscribers + campaign_email_logs. Honest-empty in mock.
+function NewsletterPanel({ newsletter }) {
+  const PX = window.PX;
+  const data = newsletter || {};
+  const sub = data.subscriber_count || 0;
+  const unsub = data.unsubscribed_count || 0;
+  const d30 = data.last_30d || {};
+  const campaigns = data.recent_campaigns || [];
+  const deliveryRate =
+    d30.delivery_rate != null ? `${d30.delivery_rate}%` : '—';
+  const lastSend = d30.last_send_at
+    ? new Date(d30.last_send_at).toLocaleDateString()
+    : '—';
+
+  return (
+    <Panel
+      idx="NL"
+      title="NEWSLETTER"
+      meta={`${sub} subscribers · last send ${lastSend}`}
+      flush
+    >
+      <div
+        style={{
+          padding: 12,
+          borderBottom: '1px solid var(--gl-hairline)',
+          display: 'flex',
+          gap: 24,
+          alignItems: 'flex-end',
+        }}
+      >
+        <div>
+          <span className="kpi__value is-cyan" style={{ fontSize: 26 }}>
+            {sub}
+          </span>
+          <div className="mono c-dim" style={{ fontSize: 10 }}>
+            active subscribers
+          </div>
+        </div>
+        <div>
+          <span className="kpi__value" style={{ fontSize: 26 }}>
+            {d30.sent || 0}
+          </span>
+          <div className="mono c-dim" style={{ fontSize: 10 }}>
+            sent (30d)
+          </div>
+        </div>
+        <div>
+          <span
+            className={`kpi__value ${(d30.failed || 0) > 0 ? 'is-red' : ''}`}
+            style={{ fontSize: 26 }}
+          >
+            {d30.failed || 0}
+          </span>
+          <div className="mono c-dim" style={{ fontSize: 10 }}>
+            failed (30d)
+          </div>
+        </div>
+        <div>
+          <span className="kpi__value is-mint" style={{ fontSize: 26 }}>
+            {deliveryRate}
+          </span>
+          <div className="mono c-dim" style={{ fontSize: 10 }}>
+            delivery rate
+          </div>
+        </div>
+        <div>
+          <span className="kpi__value c-dim" style={{ fontSize: 18 }}>
+            {unsub}
+          </span>
+          <div className="mono c-dim" style={{ fontSize: 10 }}>
+            unsubscribed
+          </div>
+        </div>
+        {!PX.api.isLive() && (
+          <span
+            className="mono c-dim"
+            style={{ fontSize: 10, marginLeft: 'auto' }}
+          >
+            live only · no mock data
+          </span>
+        )}
+      </div>
+      {campaigns.length === 0 ? (
+        <div className="empty">
+          <span className="glyph" aria-hidden="true">
+            ◌
+          </span>
+          {PX.api.isLive()
+            ? 'No campaigns sent yet'
+            : 'Connect live to see campaigns'}
+        </div>
+      ) : (
+        <div style={{ overflowX: 'auto' }}>
+          <table
+            style={{ width: '100%', fontSize: 11, borderCollapse: 'collapse' }}
+          >
+            <thead>
+              <tr style={{ borderBottom: '1px solid var(--gl-hairline)' }}>
+                {['Date', 'Subject', 'Sent', 'Failed', 'Total', 'Rate'].map(
+                  (h) => (
+                    <th
+                      key={h}
+                      style={{
+                        padding: '5px 10px',
+                        textAlign: 'left',
+                        fontFamily: 'var(--gl-font-mono)',
+                        fontSize: 9,
+                        letterSpacing: '.12em',
+                        color: 'var(--gl-text-dim)',
+                        fontWeight: 500,
+                      }}
+                    >
+                      {h}
+                    </th>
+                  )
+                )}
+              </tr>
+            </thead>
+            <tbody>
+              {campaigns.map((c, i) => {
+                const rate =
+                  c.total > 0
+                    ? `${Math.round((c.sent / c.total) * 100)}%`
+                    : '—';
+                return (
+                  <tr
+                    key={i}
+                    style={{ borderBottom: '1px solid var(--gl-hairline)' }}
+                  >
+                    <td
+                      className="mono c-dim"
+                      style={{ padding: '6px 10px', fontSize: 10 }}
+                    >
+                      {c.date}
+                    </td>
+                    <td
+                      style={{
+                        padding: '6px 10px',
+                        maxWidth: 280,
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}
+                      title={c.subject || ''}
+                    >
+                      {c.subject || '—'}
+                    </td>
+                    <td className="mono" style={{ padding: '6px 10px' }}>
+                      {c.sent}
+                    </td>
+                    <td
+                      className="mono"
+                      style={{
+                        padding: '6px 10px',
+                        color: c.failed > 0 ? 'var(--gl-red)' : 'inherit',
+                      }}
+                    >
+                      {c.failed}
+                    </td>
+                    <td className="mono c-dim" style={{ padding: '6px 10px' }}>
+                      {c.total}
+                    </td>
+                    <td
+                      className="mono"
+                      style={{
+                        padding: '6px 10px',
+                        color:
+                          c.failed > 0 ? 'var(--gl-amber)' : 'var(--gl-mint)',
+                      }}
+                    >
+                      {rate}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
 Object.assign(window, {
   RevenuePanel,
   MediaPanel,
@@ -1266,4 +1452,6 @@ Object.assign(window, {
   QAPanel,
   LauncherPanel,
   TopicsPanel,
+  SocialPanel,
+  NewsletterPanel,
 });

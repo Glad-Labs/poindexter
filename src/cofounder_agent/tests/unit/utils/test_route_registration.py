@@ -124,8 +124,10 @@ class TestRouteManifestStructure:
         data-plane CRUD at /api/data-plane/*).
         Updated 2026-06-25 (PR #1938): added social_router
         (social draft management at /api/social/*).
+        Updated 2026-06-25 (PR #1943): added brain_router
+        (brain daemon observability at /api/brain/stats).
         """
-        assert len(_WORKER_ROUTES) == 28
+        assert len(_WORKER_ROUTES) == 29
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

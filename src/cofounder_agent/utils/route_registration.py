@@ -78,6 +78,7 @@ _WORKER_ROUTES = [
     ("routes.seo_routes", "router", "seo_router", "SEO-refresh opportunity summary (/api/seo, #1466)"),
     ("routes.pipeline_events_routes", "router", "pipeline_events_router", "pipeline events observability (/api/pipeline, /pipeline)"),
     ("routes.memory_dashboard_routes", "router", "memory_dashboard_router", "shared-memory observability (/api/memory/*, /memory)"),
+    ("routes.brain_routes", "router", "brain_router", "brain daemon observability (/api/brain/stats)"),
     ("routes.alertmanager_webhook_routes", "router", "alertmanager_webhook_router", "Alertmanager webhook consumer (Phase D4)"),
     ("routes.triage_routes", "router", "triage_router", "firefighter ops LLM diagnosis route (#347 step 3)"),
     ("routes.external_webhooks", "external_webhooks_router", "external_webhooks_router", "Lemon Squeezy + Resend webhook sinks (internal tracker Phase 3.B)"),

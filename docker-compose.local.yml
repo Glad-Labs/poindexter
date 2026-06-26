@@ -361,6 +361,7 @@ services:
     environment:
       DEPLOYMENT_MODE: worker
       ENVIRONMENT: ${ENVIRONMENT:-development}
+      LOG_FORMAT: json
       DEVELOPMENT_MODE: "true"
       PORT: "8002"
       # Secrets loaded from DB (app_settings) at startup — no env vars needed
@@ -751,6 +752,7 @@ services:
       # stdout instead. This is what sidesteps Phase 1's WinError 32
       # mess — no file rotation contention with the legacy worker.
       LOG_TO_FILE: "false"
+      LOG_FORMAT: json
       PYTHONDONTWRITEBYTECODE: "1"
       PYTHONPATH: "/app:/opt/poindexter"
       PYTHONUTF8: "1"
@@ -2149,7 +2151,7 @@ services:
       DATABASE_URL: "postgresql://postiz:${POSTIZ_DB_PASSWORD:?Set POSTIZ_DB_PASSWORD}@postiz-db:5432/postiz"
       REDIS_URL: "redis://postiz-redis:6379"
       TEMPORAL_ADDRESS: "poindexter-postiz-temporal:7233"
-      BACKEND_INTERNAL_URL: "http://localhost:3000"
+      BACKEND_INTERNAL_URL: "http://postiz:3000"
       IS_GENERAL: "false"
       STORAGE_PROVIDER: "local"
       UPLOAD_DIRECTORY: "/uploads"

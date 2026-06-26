@@ -307,3 +307,26 @@ async def get_subscriber_count(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to fetch subscriber count",
         ) from e
+
+
+@router.get("/stats")
+async def get_newsletter_stats(
+    db=Depends(get_database_dependency),
+    token: str = Depends(verify_api_token),
+):
+    """Operator newsletter stats: subscriber count + campaign delivery summary.
+
+    Delegates to services.newsletter_service.get_newsletter_stats so the
+    route stays a thin adapter (transport-adapter contract, ADR 2026-06-10).
+    """
+    try:
+        from services.newsletter_service import get_newsletter_stats as _stats
+
+        pool = getattr(db, "cloud_pool", None) or db.pool
+        return await _stats(pool)
+    except Exception as e:
+        logger.error("Newsletter stats error: %s", e, exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch newsletter stats",
+        ) from e

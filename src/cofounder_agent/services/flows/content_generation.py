@@ -29,6 +29,7 @@ from typing import Any
 from prefect import flow, task
 from prefect.cache_policies import NO_CACHE
 from prefect.context import get_run_context
+from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from plugins.tracing import get_tracer, traced_span
 
@@ -268,6 +269,9 @@ async def content_generation_flow(
             database_service=database_service,
         )
     finally:
+        # Clear structlog context so task_id/prefect_run_id don't bleed into
+        # any subsequent flow invocation that reuses this async context.
+        clear_contextvars()
         if own_database_service and database_service is not None:
             try:
                 await database_service.close()
@@ -443,6 +447,14 @@ async def _run_content_generation_flow(
             "[CONTENT_FLOW] task_id=%s prefect_run_id=%s",
             task_id, prefect_run_id,
         )
+
+    # Bind task_id + prefect_run_id into the structlog async-local context so
+    # every downstream structlog log call (pipeline stages, QA rails, etc.)
+    # automatically includes these fields in the JSON output. Promtail then
+    # extracts them as structured_metadata so per-task log retrieval works in
+    # Loki without label-cardinality cost. Cleared by content_generation_flow's
+    # finally block regardless of success/failure/retry.
+    bind_contextvars(task_id=str(task_id), prefect_run_id=prefect_run_id or "")
 
     if not topic:
         raise ValueError("content_generation_flow requires a topic")

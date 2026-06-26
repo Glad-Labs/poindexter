@@ -63,6 +63,69 @@ def _ensure_pipecat_stubs() -> None:
         PipelineParams=type("PipelineParams", (), {"__init__": lambda self, **kw: None}),
         PipelineTask=type("PipelineTask", (), {"__init__": lambda self, *a, **kw: None}),
     )
+    # Frames — voice_agent.py imports Frame/MetricsFrame at module level
+    # (added by the voice cost tracker, c3809b265). TextFrame is used by
+    # test_voice_cost_tracker so the stub must carry it too.
+    class _Frame:
+        def __init__(self, **kw):
+            pass
+
+    class _MetricsFrame(_Frame):
+        def __init__(self, *, data=None, **kw):
+            self.data = data or []
+
+    class _TextFrame(_Frame):
+        def __init__(self, *, text="", **kw):
+            self.text = text
+
+    _stub_module("pipecat.frames")
+    _stub_module(
+        "pipecat.frames.frames",
+        Frame=_Frame,
+        MetricsFrame=_MetricsFrame,
+        TextFrame=_TextFrame,
+    )
+
+    # Metrics — LLMUsageMetricsData / LLMTokenUsage / TTSUsageMetricsData
+    # are accessed by VoiceCostTrackerProcessor and test_voice_cost_tracker.
+    class _LLMTokenUsage:
+        def __init__(self, *, prompt_tokens=0, completion_tokens=0, total_tokens=0, **kw):
+            self.prompt_tokens = prompt_tokens
+            self.completion_tokens = completion_tokens
+            self.total_tokens = total_tokens
+
+    class _LLMUsageMetricsData:
+        def __init__(self, *, processor=None, model=None, value=None, **kw):
+            self.processor = processor
+            self.model = model
+            self.value = value
+
+    _stub_module("pipecat.metrics")
+    _stub_module(
+        "pipecat.metrics.metrics",
+        LLMTokenUsage=_LLMTokenUsage,
+        LLMUsageMetricsData=_LLMUsageMetricsData,
+        TTSUsageMetricsData=type("TTSUsageMetricsData", (), {"__init__": lambda self, **kw: None}),
+    )
+
+    # FrameProcessor / FrameDirection — base class for VoiceCostTrackerProcessor.
+    # process_frame calls push_frame so the test mock is reached.
+    class _FrameProcessor:
+        def __init__(self, *a, **kw):
+            pass
+
+        async def process_frame(self, frame, direction):
+            # Real pipecat FrameProcessor.process_frame is a no-op;
+            # subclasses call push_frame themselves.
+            pass
+
+        async def push_frame(self, frame, direction):
+            pass
+
+    _FrameDirection = type(
+        "FrameDirection", (), {"DOWNSTREAM": "downstream", "UPSTREAM": "upstream"}
+    )
+
     _stub_module("pipecat.processors")
     _stub_module("pipecat.processors.aggregators")
     _stub_module(
@@ -73,6 +136,11 @@ def _ensure_pipecat_stubs() -> None:
         "pipecat.processors.aggregators.llm_response_universal",
         LLMContextAggregatorPair=type("LLMContextAggregatorPair", (), {"__init__": lambda self, **kw: None}),
         LLMUserAggregatorParams=type("LLMUserAggregatorParams", (), {"__init__": lambda self, **kw: None}),
+    )
+    _stub_module(
+        "pipecat.processors.frame_processor",
+        FrameProcessor=_FrameProcessor,
+        FrameDirection=_FrameDirection,
     )
     # User-turn strategy modules added when smart-turn was replaced with
     # VAD speech-timeout (#265 — fix(voice): replace smart-turn ML stop).

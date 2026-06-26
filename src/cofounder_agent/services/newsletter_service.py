@@ -333,3 +333,81 @@ async def send_post_newsletter(
         result["sent"], result["failed"], result["total_subscribers"],
     )
     return result
+
+
+async def get_newsletter_stats(pool) -> dict:
+    """Aggregate newsletter stats for the operator console / Grafana.
+
+    Returns:
+        subscriber_count: active verified subscribers
+        unsubscribed_count: total who have unsubscribed
+        last_30d: { sent, failed, total, delivery_rate, last_send_at }
+        recent_campaigns: last 5 campaigns by (subject, date)
+    """
+    from datetime import timezone
+
+    subscriber_count = await pool.fetchval(
+        "SELECT COUNT(*) FROM newsletter_subscribers"
+        " WHERE unsubscribed_at IS NULL AND verified = TRUE"
+    )
+    unsubscribed_count = await pool.fetchval(
+        "SELECT COUNT(*) FROM newsletter_subscribers WHERE unsubscribed_at IS NOT NULL"
+    )
+    stats_30d = await pool.fetchrow(
+        """
+        SELECT
+            COUNT(*) FILTER (WHERE delivery_status = 'delivered') AS sent,
+            COUNT(*) FILTER (WHERE delivery_status = 'failed')    AS failed,
+            COUNT(*)                                               AS total,
+            MAX(sent_at)                                           AS last_send_at
+        FROM campaign_email_logs
+        WHERE sent_at > NOW() - INTERVAL '30 days'
+        """
+    )
+    recent_rows = await pool.fetch(
+        """
+        SELECT
+            email_subject                                              AS subject,
+            DATE(sent_at)                                              AS campaign_date,
+            COUNT(*) FILTER (WHERE delivery_status = 'delivered')     AS sent,
+            COUNT(*) FILTER (WHERE delivery_status = 'failed')        AS failed,
+            COUNT(*)                                                   AS total
+        FROM campaign_email_logs
+        GROUP BY email_subject, DATE(sent_at)
+        ORDER BY campaign_date DESC
+        LIMIT 5
+        """
+    )
+
+    sent = int(stats_30d["sent"] or 0)
+    failed = int(stats_30d["failed"] or 0)
+    total = int(stats_30d["total"] or 0)
+    delivery_rate = round(sent / total * 100, 1) if total > 0 else None
+    raw_last = stats_30d["last_send_at"]
+    if raw_last is not None and raw_last.tzinfo is None:
+        raw_last = raw_last.replace(tzinfo=timezone.utc)
+    last_send_at = raw_last.isoformat() if raw_last else None
+
+    campaigns = [
+        {
+            "subject": r["subject"],
+            "date": str(r["campaign_date"]),
+            "sent": int(r["sent"] or 0),
+            "failed": int(r["failed"] or 0),
+            "total": int(r["total"] or 0),
+        }
+        for r in recent_rows
+    ]
+
+    return {
+        "subscriber_count": int(subscriber_count or 0),
+        "unsubscribed_count": int(unsubscribed_count or 0),
+        "last_30d": {
+            "sent": sent,
+            "failed": failed,
+            "total": total,
+            "delivery_rate": delivery_rate,
+            "last_send_at": last_send_at,
+        },
+        "recent_campaigns": campaigns,
+    }

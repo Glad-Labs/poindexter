@@ -55,8 +55,9 @@ KERNEL_PURITY_BASELINE = {
     "services/post_pipeline_actions.py:541",
     # publish_service calls record_post_approve_metrics lazily (via
     # modules/content/api public seam — same pattern as post_pipeline_actions).
-    # Line shifted 1038 -> 1082 by the #729 _niche_allowlist_block helper.
-    "services/publish_service.py:1082",
+    # Line shifted 1038 -> 1082 by the #729 _niche_allowlist_block helper;
+    # shifted again 1082 -> 1095 by the #1942 newsletter audit_log_bg addition.
+    "services/publish_service.py:1095",
     # research_context calls internal_link_coherence lazily.
     "services/research_context.py:146",
     # topic_proposal_service calls build_topic_decision_artifact lazily

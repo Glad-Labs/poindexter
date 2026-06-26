@@ -350,6 +350,11 @@ def configure_structlog() -> bool:
             processors=[
                 # Filter by log level
                 structlog.stdlib.filter_by_level,
+                # Merge bound context (task_id, prefect_run_id, etc.) from
+                # structlog.contextvars.bind_contextvars() calls into every
+                # event dict. Must precede add_logger_name/add_log_level so
+                # downstream processors see the merged fields.
+                structlog.contextvars.merge_contextvars,
                 # Add context information
                 structlog.stdlib.add_logger_name,
                 structlog.stdlib.add_log_level,
@@ -553,6 +558,7 @@ def set_log_level(level: str) -> None:
         structlog.configure(
             processors=[
                 structlog.stdlib.filter_by_level,
+                structlog.contextvars.merge_contextvars,
                 structlog.stdlib.add_logger_name,
                 structlog.stdlib.add_log_level,
                 _add_request_id,  # type: ignore[list-item]

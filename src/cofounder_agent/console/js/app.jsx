@@ -38,6 +38,7 @@ function App() {
   const [schedule, setSchedule] = useS(PX.schedule); // live: GET /api/scheduling
   const [seo, setSeo] = useS(PX.seo); // live: GET /api/seo
   const [social, setSocial] = useS({ drafts: [] }); // live: GET /api/social/drafts
+  const [newsletter, setNewsletter] = useS(null); // live: GET /api/newsletter/stats
   // live: KPI-strip reads with no home panel — GET /api/posts (published 30d +
   // a real per-day histogram) + GET /api/analytics/views (page views 24h). Mock
   // keeps PX.kpis untouched (the `kpis` memo below short-circuits in mock mode).
@@ -346,8 +347,7 @@ function App() {
   }, []);
 
   // ── Live: real embedding corpus (GET /api/memory/stats) ───
-  // Maps total + by_source_table + by_writer onto the Brain panel. queueDepth /
-  // decisions / growth / recent have no HTTP route → honest-empty in live.
+  // Maps total + by_source_table + by_writer onto the Brain panel.
   // Mock mode keeps PX.brain. 60s cadence (the corpus grows slowly).
   useE(() => {
     if (!PX.api.isLive()) return;
@@ -356,13 +356,51 @@ function App() {
       try {
         const res = await PX.api.memoryStats();
         if (!alive || !res) return;
-        setBrain(res);
+        setBrain((prev) => ({ ...prev, ...res }));
       } catch (e) {
         pushToast(`Memory stats load failed — ${e.message}`, 'red', '✕');
       }
     };
     load();
     const timer = setInterval(load, 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: brain daemon activity (GET /api/brain/stats) ───
+  // Merges decisions_24h/7d + knowledge_total + recent_decisions into the same
+  // brain state the corpus fetch above populates. Functional update avoids
+  // overwriting the corpus fields. 5min cadence (brain cycles are ~5 min).
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await PX.api.brainActivity();
+        if (!alive || !res) return;
+        setBrain((prev) => ({
+          ...prev,
+          decisions24h: res.decisions_24h,
+          decisions7d: res.decisions_7d,
+          avgConfidence7d: res.avg_confidence_7d,
+          lastCycleAt: res.last_cycle_at,
+          knowledgeTotal: res.knowledge_total,
+          decisions: (res.recent_decisions || []).map((d) => ({
+            ts: d.created_at ? d.created_at.slice(11, 16) : '??:??',
+            kind: d.outcome || 'decision',
+            msg: d.decision,
+            tone:
+              d.confidence != null && d.confidence >= 0.8 ? 'cyan' : 'amber',
+          })),
+        }));
+      } catch (_e) {
+        /* honest-empty — panel keeps placeholders */
+      }
+    };
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
     return () => {
       alive = false;
       clearInterval(timer);
@@ -468,6 +506,29 @@ function App() {
     };
     load();
     const timer = setInterval(load, 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: newsletter stats (GET /api/newsletter/stats) ──────────
+  // Subscriber count + 30d campaign delivery summary from campaign_email_logs.
+  // 5-min cadence — subscriber counts don't change second-to-second.
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await PX.api.newsletter();
+        if (!alive || !res) return;
+        setNewsletter(res);
+      } catch (_e) {
+        /* honest-empty: leave panel as-is on transient error */
+      }
+    };
+    load();
+    const timer = setInterval(load, 5 * 60 * 1000);
     return () => {
       alive = false;
       clearInterval(timer);
@@ -1339,6 +1400,9 @@ function App() {
                   onApprove={A.socialApproveDraft}
                   onReject={A.socialRejectDraft}
                 />
+              </div>
+              <div id="sec-newsletter">
+                <NewsletterPanel newsletter={newsletter} />
               </div>
               <div id="sec-gpu">
                 <GpuHud gpu={gpu} onOpen={() => open('gpu', gpu)} />
