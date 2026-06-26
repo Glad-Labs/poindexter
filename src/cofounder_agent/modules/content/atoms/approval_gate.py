@@ -180,10 +180,20 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         if pending is not None:
             out = _regen_output(pending, state.get("regen_targets") or {})
             if "_goto" in out:
+                # Read before consume — steering is in pipeline_gate_history
+                # (independent of the pipeline_tasks flag), but reading first
+                # is semantically cleaner.
+                regen_steering = await _read_regen_steering(
+                    pool, str(task_id), gate_name,
+                )
                 await _consume_regen(pool, str(task_id), pending)
+                if regen_steering:
+                    out["regen_steering"] = regen_steering
                 logger.info(
-                    "[atoms.approval_gate:%s] regen_%s consumed → _goto %s",
+                    "[atoms.approval_gate:%s] regen_%s consumed → _goto %s "
+                    "(steering=%s)",
                     gate_name, pending, out["_goto"],
+                    repr(regen_steering[:40]) if regen_steering else "none",
                 )
             else:
                 logger.error(
@@ -436,6 +446,40 @@ async def _consume_regen(pool: Any, task_id: str, component: str) -> None:
             f"UPDATE pipeline_tasks SET {col} = false WHERE task_id::text = $1",
             str(task_id),
         )
+
+
+async def _read_regen_steering(pool: Any, task_id: str, gate_name: str) -> str | None:
+    """Read the operator's regen reason from the latest gate_history row (#149).
+
+    ``approval_service.regen_at_gate`` writes the operator's ``--reason`` to
+    ``pipeline_gate_history.feedback`` with event_kind ``'regen_text'`` or
+    ``'regen_draft'``. Here we read it back so the regen backward-loop can
+    inject it into ``PipelineState`` as ``'regen_steering'`` — a key the
+    writer stage reads and prepends to its prompt override so the next draft
+    directly addresses the operator's note.
+
+    Best-effort: returns ``None`` on any error or when the feedback is empty
+    (bare regen with no reason). A ``None`` result is safe — the writer falls
+    back to the un-steered prompt, exactly as before #149.
+    """
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT feedback FROM pipeline_gate_history
+                 WHERE task_id = $1
+                   AND gate_name = $2
+                   AND event_kind IN ('regen_text', 'regen_draft')
+                   AND feedback != ''
+                 ORDER BY created_at DESC
+                 LIMIT 1
+                """,
+                str(task_id), gate_name,
+            )
+        return row["feedback"] if row else None
+    except Exception as exc:  # noqa: BLE001  # silent-ok: best-effort steering read — pool errors must not affect the regen path
+        logger.debug("[atoms.approval_gate] regen steering read failed: %s", exc)
+        return None
 
 
 __all__ = ["ATOM_META", "run"]
