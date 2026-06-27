@@ -2,6 +2,15 @@
 
 ## Unreleased
 
+## [0.88.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.88.0...v0.88.1) (2026-06-27)
+
+
+### Bug Fixes
+
+* **migrations:** drop orphaned SDXL-era app_settings keys ([#1951](https://github.com/Glad-Labs/glad-labs-stack/issues/1951)) ([6ee1f65](https://github.com/Glad-Labs/glad-labs-stack/commit/6ee1f65b2cb59995548a64c9c8ddcd5192ed98b6))
+* **obs:** page on Prefect connect errors + add cAdvisor container alerts (poindexter[#710](https://github.com/Glad-Labs/glad-labs-stack/issues/710)) ([#1946](https://github.com/Glad-Labs/glad-labs-stack/issues/1946)) ([ead233f](https://github.com/Glad-Labs/glad-labs-stack/commit/ead233fb5d062c86662ccf96e12201ea31f75096))
+* **obs:** remove stale "/" prefix from cAdvisor container_last_seen label matchers ([#1952](https://github.com/Glad-Labs/glad-labs-stack/issues/1952)) ([c55c0ed](https://github.com/Glad-Labs/glad-labs-stack/commit/c55c0ed65679f071a1051fc573843872abf78e43))
+
 ## [0.88.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.87.1...v0.88.0) (2026-06-26)
 
 
