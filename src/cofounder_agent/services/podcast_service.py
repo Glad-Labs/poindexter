@@ -227,17 +227,29 @@ def _get_acronym_regex(*, site_config: "SiteConfig | None" = None) -> list:
     return [(re.compile(rf"\b{re.escape(k)}\b"), v) for k, v in acronyms.items()]
 
 
+def _apply_spoken_replacement(text: str, written: str, spoken: str) -> str:
+    """Apply one written→spoken substitution, case-insensitively.
+
+    Pure-letter tokens (e.g. ``GB``, ``VRAM``, ``CI``) get ``\\b`` word
+    boundaries so a short abbreviation fires only as a whole token — ``GB``
+    must not match inside ``RGB``, ``CI`` must not match inside ``social``.
+    Tokens containing punctuation (``vs.``, ``CI/CD``, ``->``) use plain
+    matching, which is correct for their punctuation-delimited role.
+
+    Shared by ``_normalize_for_speech`` (script generation) and the TTS
+    render boundary in ``_generate_with_voice`` so both passes apply
+    pronunciations with identical, word-safe semantics.
+    """
+    if re.fullmatch(r"\w+", written):
+        return re.sub(r"\b" + re.escape(written) + r"\b", spoken, text, flags=re.IGNORECASE)
+    return re.sub(re.escape(written), spoken, text, flags=re.IGNORECASE)
+
+
 def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
     """Convert written English conventions to natural spoken form."""
     # Simple replacements (DB-configurable via tts_pronunciations).
-    # Pure-letter tokens (e.g. "GB", "VRAM", "vs") get \b word boundaries so
-    # they don't fire inside longer words — "GB" must not match inside "RGB".
-    # Entries with punctuation (e.g. "vs.", "e.g.", "->") use plain re.escape.
     for written, spoken in _get_tts_replacements(site_config=site_config):
-        if re.fullmatch(r'\w+', written):
-            text = re.sub(r'\b' + re.escape(written) + r'\b', spoken, text, flags=re.IGNORECASE)
-        else:
-            text = re.sub(re.escape(written), spoken, text, flags=re.IGNORECASE)
+        text = _apply_spoken_replacement(text, written, spoken)
     # Structural regex patterns (static)
     for pattern, replacement in _SPOKEN_REGEX_STATIC:
         text = pattern.sub(replacement, text)  # type: ignore[call-overload]
@@ -440,12 +452,45 @@ def _build_intro(spoken_title: str, *, site_config: "SiteConfig | None" = None) 
     return f"Welcome to {_pname}. Today's episode: {spoken_title}."
 
 
+def _spoken_domain(domain: str, *, site_config: "SiteConfig | None" = None) -> str:
+    """Render a domain for natural speech.
+
+    Dots become " dot " and the final segment (the TLD) is mapped through the
+    DB-configurable ``tts_domain_tld_pronunciations`` table, so ``gladlabs.io``
+    is spoken "gladlabs dot eye oh" rather than "gladlabs dot eoh".
+
+    A bare two-letter TLD like ``io`` cannot live in ``tts_pronunciations``:
+    those entries also run at the render boundary, where matching "io" inside
+    body words like "audio" would corrupt them. Confining the mapping to the
+    last domain segment here avoids that.
+    """
+    import json as _json
+
+    _sc = _resolve_site_config(site_config)
+    tld_map: dict[str, str] = {}
+    raw_map = _sc.get("tts_domain_tld_pronunciations", "")
+    if raw_map:
+        try:
+            tld_map = {str(k).lower(): str(v) for k, v in _json.loads(raw_map).items()}
+        except (ValueError, TypeError, AttributeError):
+            logger.warning(
+                "tts_domain_tld_pronunciations is not valid JSON — TLD spoken-map skipped"
+            )
+
+    parts = domain.split(".")
+    if len(parts) > 1:
+        spoken_tld = tld_map.get(parts[-1].lower())
+        if spoken_tld:
+            parts[-1] = spoken_tld
+    return " dot ".join(parts)
+
+
 def _build_outro(*, site_config: "SiteConfig | None" = None) -> str:
     """Construct the canonical podcast outro lines. Pure function so the
     sibling ``_unwrap_intro_outro`` can reproduce it for stripping."""
     _sc = _resolve_site_config(site_config)
     _pname = _sc.get("podcast_name", "the podcast")
-    _domain_tts = _sc.get("site_domain", "our site").replace(".", " dot ")
+    _domain_tts = _spoken_domain(_sc.get("site_domain", "our site"), site_config=_sc)
     return (
         f"Thanks for listening to {_pname}. "
         f"Visit {_domain_tts} for more episodes, articles, and insights. "
@@ -936,9 +981,11 @@ class PodcastService:
         # generation (generate_media_scripts); re-applying ONLY the simple
         # pronunciation map here lets operator-tuned pronunciations reach the
         # EXISTING script backlog on re-render without regeneration. Idempotent
-        # — the spoken forms never contain their written keys.
+        # — the spoken forms never contain their written keys. Uses the same
+        # word-boundary helper as _normalize_for_speech so short tokens (CI,
+        # MB) fire only as whole words — never inside "social" or "number".
         for written, spoken in _get_tts_replacements(site_config=self._site_config):
-            script = re.sub(re.escape(written), spoken, script, flags=re.IGNORECASE)
+            script = _apply_spoken_replacement(script, written, spoken)
 
         audio_bytes = await tts_service.synthesize_speech(
             script,

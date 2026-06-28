@@ -756,12 +756,21 @@ DEFAULTS: dict[str, str] = {
         ' "GraphQL": "graph Q L", "WebSocket": "web socket",'
         ' "TypeScript": "type script", "JavaScript": "java script",'
         ' "Next.js": "next J S", "Node.js": "node J S", "Vue.js": "view J S",'
-        ' "CI/CD": "CI CD", "I/O": "I O", "TCP/IP": "TCP IP", "OS/2": "OS 2",'
+        ' "CI/CD": "See Eye See Dee", "I/O": "I O", "TCP/IP": "TCP IP", "OS/2": "OS 2",'
         ' "e.g.": "for example", "i.e.": "that is", "etc.": "and so on",'
         ' "vs": "versus", "vs.": "versus",'
         ' "approx.": "approximately", "incl.": "including",'
-        ' "w/": "with", "w/o": "without"}'
+        ' "w/": "with", "w/o": "without",'
+        # "CI" must come after "CI/CD" so the slash form matches first.
+        ' "CI": "See Eye"}'
     ),
+    # Domain TLD pronunciation for the spoken podcast outro. The outro speaks
+    # site_domain aloud ("Visit gladlabs dot io ..."); a bare two-letter TLD
+    # like "io" reads as "eoh" in TTS. This map rewrites ONLY the final domain
+    # segment, so — unlike tts_pronunciations, whose entries also run at the
+    # render boundary — it can't corrupt body words like "audio". Add niche
+    # TLDs as needed, e.g. '{"io": "eye oh", "ai": "A I", "gg": "G G"}'.
+    'tts_domain_tld_pronunciations': '{"io": "eye oh"}',
     # Voice-rotation pool (#689 Plan 7) — DB-configurable override of the
     # podcast_service VOICE_POOL constant. Default-off / empty falls back to
     # the constant (zero behavior change); an operator supplies engine-

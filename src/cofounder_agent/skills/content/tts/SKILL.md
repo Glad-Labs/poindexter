@@ -71,6 +71,8 @@ poindexter settings set tts_pronunciations \
 | GraphQL    | graph Q L           |
 | TypeScript | type script         |
 | JavaScript | java script         |
+| CI/CD      | See Eye See Dee     |
+| CI         | See Eye             |
 
 In addition to the table above, the code always applies these
 **structural** replacements (hardcoded, not DB-configurable — they are
@@ -121,6 +123,37 @@ poindexter settings set tts_acronym_replacements \
 
 ---
 
+### `tts_domain_tld_pronunciations`
+
+JSON object mapping a domain TLD (the last segment) to its spoken form,
+used **only** by the podcast outro, which speaks `site_domain` aloud
+("Visit gladlabs dot io for more episodes..."). A bare two-letter TLD like
+`io` reads as "eoh" in TTS, so this rewrites it to "eye oh".
+
+This is a separate key from `tts_pronunciations` on purpose: the outro is
+appended _after_ `_normalize_for_speech` runs, and the render-boundary pass
+that does reach it would match a bare `"io"` inside body words like `"audio"`.
+Scoping the mapping to the final domain segment here avoids that.
+
+**Format:**
+
+```json
+{ "io": "eye oh", "ai": "A I", "gg": "G G" }
+```
+
+**Example:**
+
+```bash
+poindexter settings set tts_domain_tld_pronunciations \
+  '{"io": "eye oh", "dev": "dev"}'
+```
+
+**Built-in default:** `{"io": "eye oh"}`. TLDs not in the map are spoken
+as-written (e.g. `example.com` → "example dot com"). Keys are matched
+case-insensitively.
+
+---
+
 ## Word-boundary behaviour
 
 Pure-letter tokens from `tts_pronunciations` are matched with `\b` on both
@@ -129,7 +162,19 @@ sides, so:
 - `"GB"` fires on `"256 GB SSD"` → `"256 gigabyte SSD"` ✓
 - `"GB"` does **not** fire inside `"RGB"` or `"16GB"` (no space before) ✓
 - `"VRAM"` fires on `"16 VRAM"` → `"16 Vee RAM"` ✓
+- `"CI"` fires on `"our CI pipeline"` → `"our See Eye pipeline"` ✓
+- `"CI"` does **not** fire inside `"social"`, `"decision"`, or `"efficiency"` ✓
 
-Tokens that contain punctuation (`"vs."`, `"e.g."`, `"->"`) use plain
-string matching without `\b`, which is correct for their role as
+The same word-boundary helper runs at both the script-generation pass and
+the TTS render boundary (`_generate_with_voice`), so short tokens are
+word-safe on freshly generated **and** re-rendered backlog scripts.
+
+Tokens that contain punctuation (`"vs."`, `"e.g."`, `"CI/CD"`, `"->"`) use
+plain string matching without `\b`, which is correct for their role as
 punctuation-delimited abbreviations.
+
+**Ordering matters for overlapping tokens.** Entries fire in JSON order, so
+a longer punctuation form must precede a shorter pure-letter form that it
+contains — `"CI/CD": "See Eye See Dee"` is listed **before** `"CI": "See Eye"`
+so the slash form is consumed first. (If `"CI"` ran first it would rewrite
+the `CI` inside `CI/CD` and the slash form would no longer match.)

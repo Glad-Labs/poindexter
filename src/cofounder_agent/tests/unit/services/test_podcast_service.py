@@ -561,6 +561,89 @@ class TestNormalizeForSpeechWordBoundaries:
 
 
 # ===========================================================================
+# CI / CI-CD pronunciation — shipped defaults, ordering, and the word-boundary
+# fix that lets a short token like "CI" ship safely.
+# ===========================================================================
+
+
+def _default_pron_sc():
+    """SiteConfig seeded with the real shipped tts_pronunciations default,
+    so these tests pin the actual config operators receive."""
+    from services.settings_defaults import DEFAULTS
+
+    return SiteConfig(initial_config={
+        "tts_pronunciations": DEFAULTS["tts_pronunciations"],
+        "tts_acronym_replacements": "",
+    })
+
+
+class TestCiPronunciation:
+    """``CI`` → "See Eye" must fire standalone, leave words alone, and not
+    clobber the longer ``CI/CD`` form."""
+
+    def test_ci_spoken_as_see_eye(self):
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("Our CI pipeline runs on push", site_config=_default_pron_sc())
+        assert "Our See Eye pipeline" in result
+
+    def test_ci_does_not_corrupt_words(self):
+        # Regression guard: bare "CI" must not fire inside common words.
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech(
+            "A social decision about efficiency and precision", site_config=_default_pron_sc()
+        )
+        assert "See Eye" not in result
+        for word in ("social", "decision", "efficiency", "precision"):
+            assert word in result
+
+    def test_ci_cd_resolves_before_ci(self):
+        # "CI/CD" must become "See Eye See Dee" — the slash form is consumed
+        # first, leaving no stray bare "CI"/"CD".
+        from services.podcast_service import _normalize_for_speech
+        result = _normalize_for_speech("Our CI/CD pipeline ships nightly", site_config=_default_pron_sc())
+        assert "See Eye See Dee" in result
+        assert "CI/CD" not in result
+        assert "CI CD" not in result
+
+
+class TestRenderBoundaryWordSafety:
+    """The TTS render boundary (``_generate_with_voice``) must apply the
+    pronunciation map with the SAME word boundaries as generation — short
+    tokens like CI/MB must not corrupt body words on re-render."""
+
+    @pytest.mark.asyncio
+    async def test_render_boundary_does_not_corrupt_words(self, tmp_path):
+        from services.podcast_service import PodcastService
+        from services.settings_defaults import DEFAULTS
+
+        sc = SiteConfig(initial_config={
+            "tts_pronunciations": DEFAULTS["tts_pronunciations"],
+            "tts_acronym_replacements": "",
+            "podcast_include_intro": "false",
+            "podcast_include_outro": "false",
+        })
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        captured: dict = {}
+
+        async def fake_synth(text, *, site_config, output_path, voice):
+            captured["text"] = text
+            Path(output_path).write_bytes(b"audio-bytes")
+            return b"audio-bytes"
+
+        # "number"/"social" would corrupt under the old no-boundary pass
+        # ("numegabyteer", "soSee Eyeal"); "CI" standalone must still convert.
+        script = "Our CI run measured the number of social signals."
+        with patch("services.tts_service.synthesize_speech", side_effect=fake_synth):
+            result = await svc._generate_with_voice(script, "bf_emma", tmp_path / "r.mp3")
+
+        assert result.success is True
+        rendered = captured["text"]
+        assert "number" in rendered
+        assert "social" in rendered
+        assert "See Eye run" in rendered  # standalone CI still converts
+
+
+# ===========================================================================
 # generate_podcast_episode (fire-and-forget wrapper)
 # ===========================================================================
 
@@ -682,6 +765,91 @@ class TestUnwrapIntroOutro:
         body = "Body only no wrappers at all."
         recovered = _unwrap_intro_outro(body, "Title", site_config=_sc)  # type: ignore[arg-type]
         assert recovered == body
+
+
+class TestSpokenDomain:
+    """``_spoken_domain`` maps the TLD through ``tts_domain_tld_pronunciations``
+    so the podcast outro says "gladlabs dot eye oh", not "gladlabs dot eoh"."""
+
+    @staticmethod
+    def _sc(domain="gladlabs.io", tld_map='{"io": "eye oh"}'):
+        class _StubSC:
+            @staticmethod
+            def get(key, default=None):
+                return {
+                    "podcast_include_intro": "true",
+                    "podcast_include_outro": "true",
+                    "podcast_name": "Test Show",
+                    "site_domain": domain,
+                    "tts_domain_tld_pronunciations": tld_map,
+                }.get(key, default)
+
+        return _StubSC()
+
+    def test_io_tld_spoken_as_eye_oh(self):
+        from services.podcast_service import _spoken_domain
+
+        assert (
+            _spoken_domain("gladlabs.io", site_config=self._sc())  # type: ignore[arg-type]
+            == "gladlabs dot eye oh"
+        )
+
+    def test_unmapped_tld_spoken_as_written(self):
+        from services.podcast_service import _spoken_domain
+
+        # "com" is not in the map → plain " dot " join (no regression).
+        assert (
+            _spoken_domain("example.com", site_config=self._sc())  # type: ignore[arg-type]
+            == "example dot com"
+        )
+
+    def test_tld_match_is_case_insensitive(self):
+        from services.podcast_service import _spoken_domain
+
+        assert (
+            _spoken_domain("GLADLABS.IO", site_config=self._sc())  # type: ignore[arg-type]
+            == "GLADLABS dot eye oh"
+        )
+
+    def test_subdomain_only_tld_rewritten(self):
+        from services.podcast_service import _spoken_domain
+
+        assert (
+            _spoken_domain("www.gladlabs.io", site_config=self._sc())  # type: ignore[arg-type]
+            == "www dot gladlabs dot eye oh"
+        )
+
+    def test_empty_map_falls_back_to_dot_join(self):
+        from services.podcast_service import _spoken_domain
+
+        assert (
+            _spoken_domain("gladlabs.io", site_config=self._sc(tld_map=""))  # type: ignore[arg-type]
+            == "gladlabs dot io"
+        )
+
+    def test_invalid_json_map_falls_back_to_dot_join(self):
+        from services.podcast_service import _spoken_domain
+
+        assert (
+            _spoken_domain("gladlabs.io", site_config=self._sc(tld_map="{not json"))  # type: ignore[arg-type]
+            == "gladlabs dot io"
+        )
+
+    def test_no_dot_domain_unchanged(self):
+        from services.podcast_service import _spoken_domain
+
+        # The "our site" fallback has no TLD — leave it alone.
+        assert (
+            _spoken_domain("our site", site_config=self._sc())  # type: ignore[arg-type]
+            == "our site"
+        )
+
+    def test_build_outro_uses_spoken_tld(self):
+        from services.podcast_service import _build_outro
+
+        outro = _build_outro(site_config=self._sc())  # type: ignore[arg-type]
+        assert "Visit gladlabs dot eye oh for more episodes" in outro
+        assert "dot io" not in outro
 
 
 class TestNarrationSibling:
