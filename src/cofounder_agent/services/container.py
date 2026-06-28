@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 from fastapi import FastAPI
 
 from services.citation_verifier import CitationVerifier
+from services.gpu_registry import GPURegistry
 from services.r2_upload_service import R2UploadService
 from services.redis_cache import RedisCache
 from services.research_quality_service import ResearchQualityService
@@ -353,3 +354,14 @@ class AppContainer:
         ``ContentMetadataGenerator`` for container-aware callers + tests.
         """
         return ContentMetadataGenerator(site_config=self.site_config)
+
+    @cached_property
+    def gpu_registry(self) -> GPURegistry:
+        """Total-VRAM pool auto-detector (2026-06-28).
+
+        Sums the nvidia-smi exporter's per-GPU memory.total via Prometheus and
+        memoizes it. Consumed by the dispatcher VRAM budget guard to resolve
+        ``gpu_vram_total_gb="auto"``. No ``pool`` dependency — it reads VRAM
+        totals through the same telemetry seam ``gpu_scheduler`` uses.
+        """
+        return GPURegistry(site_config=self.site_config)

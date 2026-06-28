@@ -340,3 +340,17 @@ class TestBuildContainer:
         pool.fetch = AsyncMock(side_effect=RuntimeError("connection reset"))
         with pytest.raises(RuntimeError, match="connection reset"):
             await build_container(pool, site_config=SiteConfig())
+
+
+def test_container_exposes_gpu_registry():
+    """AppContainer wires the VRAM pool auto-detector (2026-06-28).
+
+    pool=None: GPURegistry reads VRAM totals from Prometheus, never the DB pool.
+    """
+    from services.container import AppContainer
+    from services.gpu_registry import GPURegistry
+    from services.site_config import SiteConfig
+
+    c = AppContainer(site_config=SiteConfig(initial_config={}), pool=None)
+    assert isinstance(c.gpu_registry, GPURegistry)
+    assert c.gpu_registry is c.gpu_registry  # cached

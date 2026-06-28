@@ -235,8 +235,15 @@ DEFAULTS: dict[str, str] = {
     # sysmem-fallback that freezes the desktop). total/reserve are GB; the KV
     # dtype sets bytes/element for the cache math (mirror OLLAMA_KV_CACHE_TYPE
     # on the host — see docs/operations/single-gpu-vram-tuning.md). Default ON.
-    'gpu_vram_total_gb': '32',
+    # "auto" (default) → the dispatcher detects the total VRAM pool by summing
+    # every GPU's memory.total via Prometheus (GPURegistry). An explicit number
+    # overrides (e.g. a multi-tenant cap below physical VRAM). 2026-06-28.
+    'gpu_vram_total_gb': 'auto',
     'gpu_desktop_reserve_gb': '3',
+    # Conservative VRAM budget (GB) used ONLY when gpu_vram_total_gb="auto" but
+    # detection has never succeeded (Prometheus unreachable). Tunable so an
+    # operator on a smaller card can lower the floor instead of over-promising.
+    'gpu_vram_autodetect_fallback_gb': '32',
     # Which GPU index the content pipeline runs on (the display + Ollama card).
     # The scheduler reads this card's utilisation/power from the nvidia-smi
     # exporter; with >1 GPU in the box an unlabelled query would resolve to a
@@ -1364,8 +1371,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'vision_alt_model': {'owner': 'image_service', 'value_type': 'model'},
     'rag_rerank_model': {'owner': 'rag_engine', 'value_type': 'model'},
     'rag_rerank_device': {'owner': 'rag_engine', 'value_type': 'string'},
-    'gpu_vram_total_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
+    'gpu_vram_total_gb': {'owner': 'gpu_scheduler', 'value_type': 'string'},
     'gpu_desktop_reserve_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
+    'gpu_vram_autodetect_fallback_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
     'pipeline_gpu_index': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
     'ollama_kv_cache_type': {'owner': 'vram_budget', 'value_type': 'string'},
     'vram_budget_guard_enabled': {'owner': 'vram_budget', 'value_type': 'boolean'},

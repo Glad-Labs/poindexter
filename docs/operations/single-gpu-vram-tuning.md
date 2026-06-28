@@ -131,3 +131,26 @@ request — visible on the **Findings** dashboard (`/d/findings`).
 > pre-spill **early-warning** derived from dedicated-VRAM use, not a direct read
 > of the spill pool. Surfacing the spill counter is a future exporter task; for
 > now the PowerShell counter in "Confirming it on your box" is the ground truth.
+
+## Multi-GPU VRAM pool (auto-detection)
+
+`gpu_vram_total_gb` defaults to `auto`. On boot the dispatcher's budget guard
+asks `GPURegistry` for the total VRAM pool — the sum of every GPU's
+`nvidia_gpu_memory_total_mib`, read from Prometheus — and uses it as the budget
+(`pool − gpu_desktop_reserve_gb`). You never hand-set it.
+
+- **Override:** set `gpu_vram_total_gb` to a number to pin the budget below
+  physical VRAM (e.g. a multi-tenant cap). Any non-`auto` value skips detection.
+- **Fallback:** if detection is unavailable (Prometheus unreachable at startup),
+  the guard falls back to `gpu_vram_autodetect_fallback_gb` (default `32`) and
+  emits a `vram_autodetect_failed` finding. Detection self-heals on a later call.
+- **Reserve:** `gpu_desktop_reserve_gb` (default `3`) is subtracted once — it
+  models desktop overhead on the single display card.
+
+### Sharding caveat (mixed cards / slow interconnect)
+
+When a model is larger than the biggest single card, Ollama shards it across
+GPUs. Inter-GPU activations cross the PCIe bus every token, so a card on a
+narrow link (e.g. x4) or an older architecture bottlenecks the shard. The pool
+makes big models *fit*; it does not make them *fast*. Benchmark before committing
+a latency-sensitive workload to a sharded model.

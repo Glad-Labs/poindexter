@@ -352,6 +352,53 @@
       ]
     },
     {
+      "id": 57,
+      "type": "stat",
+      "title": "Detected VRAM pool",
+      "description": "Total GPU VRAM across all cards (sum of nvidia_gpu_memory_total_mib). This is the number the dispatcher's gpu_vram_total_gb=\"auto\" budget guard derives.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 4,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decgbytes",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "blue"
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "sum(nvidia_gpu_memory_total_mib) / 1024",
+          "legendFormat": "VRAM pool",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "type": "row",
       "title": "Power — PSU / wall / CPU",
       "collapsed": false,

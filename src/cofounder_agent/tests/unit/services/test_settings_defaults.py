@@ -52,12 +52,17 @@ def test_vram_budget_defaults_present():
     cache dtype that sets bytes/element, and the on/off switch."""
     from services.settings_defaults import DEFAULTS, METADATA
 
-    assert DEFAULTS["gpu_vram_total_gb"] == "32"
+    # gpu_vram_total_gb defaults to "auto" — detected from the GPU pool, not
+    # hand-set (2026-06-28). Any explicit number still overrides.
+    assert DEFAULTS["gpu_vram_total_gb"] == "auto"
     assert DEFAULTS["gpu_desktop_reserve_gb"] == "3"
+    # Fallback used only when auto-detection has never succeeded; tunable.
+    assert DEFAULTS["gpu_vram_autodetect_fallback_gb"] == "32"
     assert DEFAULTS["ollama_kv_cache_type"] == "q8_0"
     assert DEFAULTS["vram_budget_guard_enabled"] == "true"
-    assert METADATA["gpu_vram_total_gb"]["value_type"] == "float"
+    assert METADATA["gpu_vram_total_gb"]["value_type"] == "string"
     assert METADATA["gpu_desktop_reserve_gb"]["value_type"] == "float"
+    assert METADATA["gpu_vram_autodetect_fallback_gb"]["value_type"] == "float"
     assert METADATA["ollama_kv_cache_type"]["value_type"] == "string"
     assert METADATA["vram_budget_guard_enabled"]["value_type"] == "boolean"
 

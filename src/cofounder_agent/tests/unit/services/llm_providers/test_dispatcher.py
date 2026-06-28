@@ -12,6 +12,16 @@ coroutine tests; an explicit mark would wrongly tag any sync helper here.
 """
 
 
+def _budget(*vals):
+    """Async stand-in for the now-async ``_budget_inputs`` (resolves the
+    gpu_vram_total_gb 'auto' sentinel via the GPU registry, 2026-06-28)."""
+
+    async def _f(_pc):
+        return vals
+
+    return _f
+
+
 def _arch_factory(weight_gb=18):
     from services.vram_budget import ModelArch
 
@@ -32,7 +42,7 @@ async def test_clamp_num_ctx_reduces_when_over_budget(monkeypatch):
     # f16 KV (2.0 bytes/elem — the dangerous *unquantized* case): a 65k context
     # on an 18GB-weights writer projects ~31.5GB, over the 32-3=29GB budget, so
     # it must clamp down to something that fits.
-    monkeypatch.setattr(d, "_budget_inputs", lambda pc: (32.0, 3.0, 2.0))
+    monkeypatch.setattr(d, "_budget_inputs", _budget(32.0, 3.0, 2.0))
     monkeypatch.setattr(d, "_read_arch_for_budget", _arch_factory())
 
     clamped = await d._clamp_num_ctx_to_budget(
@@ -47,7 +57,7 @@ async def test_clamp_noop_when_within_budget(monkeypatch):
 
     # q8 KV (1.0) at 8k ctx on the same writer is ~20GB — comfortably inside the
     # 29GB budget, so the requested context passes through untouched.
-    monkeypatch.setattr(d, "_budget_inputs", lambda pc: (32.0, 3.0, 1.0))
+    monkeypatch.setattr(d, "_budget_inputs", _budget(32.0, 3.0, 1.0))
     monkeypatch.setattr(d, "_read_arch_for_budget", _arch_factory())
 
     out = await d._clamp_num_ctx_to_budget(

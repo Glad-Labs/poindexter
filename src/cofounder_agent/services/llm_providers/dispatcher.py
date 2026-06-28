@@ -174,11 +174,13 @@ def _gpu_serialize_local_dispatch(
 # math lives in services/vram_budget.py; here is the wiring + config read.
 
 
-def _budget_inputs(provider_config: dict[str, Any]) -> tuple[float, float, float]:
+async def _budget_inputs(provider_config: dict[str, Any]) -> tuple[float, float, float]:
     """``(total_gb, desktop_reserve_gb, kv_bytes_per_elem)`` from app_settings.
 
-    Sync — reads the in-memory SiteConfig cache. Falls back to the seeded
-    defaults (32 / 3 / q8_0) when no container is bootstrapped (CLI, tests).
+    ``gpu_vram_total_gb`` defaults to ``"auto"`` — the total VRAM pool detected
+    across all GPUs via :class:`GPURegistry`. An explicit number overrides.
+    Falls back to the seeded defaults when no container is bootstrapped
+    (CLI, tests).
     """
     from services.container_registry import get_container
     from services.vram_budget import kv_bytes_per_elem
@@ -187,10 +189,40 @@ def _budget_inputs(provider_config: dict[str, Any]) -> tuple[float, float, float
     if container is None:
         return 32.0, 3.0, kv_bytes_per_elem("q8_0")
     sc = container.site_config
-    total = sc.get_float("gpu_vram_total_gb", 32.0)
+    raw = (sc.get("gpu_vram_total_gb", "auto") or "auto").strip().lower()
+    if raw in ("", "auto"):
+        total = await _resolve_auto_total(container)
+    else:
+        try:
+            total = float(raw)
+        except ValueError:
+            total = await _resolve_auto_total(container)
     reserve = sc.get_float("gpu_desktop_reserve_gb", 3.0)
     kv = kv_bytes_per_elem(sc.get("ollama_kv_cache_type", "q8_0") or "q8_0")
     return total, reserve, kv
+
+
+async def _resolve_auto_total(container: Any) -> float:
+    """Detected VRAM pool (GB), or the configurable fallback + a fail-loud
+    finding when detection has never succeeded."""
+    detected = await container.gpu_registry.total_vram_gb()
+    if detected is not None:
+        return detected
+    fallback = container.site_config.get_float("gpu_vram_autodetect_fallback_gb", 32.0)
+    from utils.findings import emit_finding
+
+    emit_finding(
+        source="vram_budget",
+        kind="vram_autodetect_failed",
+        severity="warn",
+        title="GPU VRAM auto-detect unavailable",
+        body=(
+            f"Could not read total GPU VRAM from Prometheus; using fallback "
+            f"{fallback}GB for the num_ctx budget guard until detection recovers."
+        ),
+        dedup_key="vram_autodetect_failed",
+    )
+    return fallback
 
 
 async def _read_arch_for_budget(model: str) -> ModelArch | None:
@@ -229,7 +261,7 @@ async def _clamp_num_ctx_to_budget(
     arch = await _read_arch_for_budget(model)
     if arch is None:
         return num_ctx
-    total, reserve, kv = _budget_inputs(provider_config)
+    total, reserve, kv = await _budget_inputs(provider_config)
     footprint = estimate_model_vram_gb(arch, estimate_kv_cache_gb(arch, num_ctx, kv))
     ok, _headroom = fits(footprint, total, reserve)
     if ok:
