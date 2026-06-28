@@ -631,6 +631,10 @@ DEFAULTS: dict[str, str] = {
     # Example for gardening: "plants, garden, outdoor, nature, floral"
     'image_pexels_fallback_keywords': '',
     'image_styles': '',
+    # Seconds the CLI waits for a POST /api/tasks/{id}/regen-image response.
+    # Image generation blocks the HTTP handler, so this must exceed SDXL inference
+    # time (~30-90s typical; longer after a post-crash boot window).
+    'post_edit_regen_image_timeout_s': '300',
     # Inline-illustration style pool (JSON array of style strings). Empty =>
     # the stylized code fallback (modules/content/stages/replace_inline_images.py
     # INLINE_STYLES). Parallels 'image_styles' for the featured image. Photoreal

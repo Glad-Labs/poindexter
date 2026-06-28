@@ -623,11 +623,32 @@ def tasks_approve_batch(
 # ---------------------------------------------------------------------------
 
 
-def _post_edit(path: str, payload: dict[str, Any]) -> dict:
-    """POST an edit to the worker API; return parsed JSON or exit 1 on error."""
+def _post_edit(path: str, payload: dict[str, Any], timeout_key: str | None = None) -> dict:
+    """POST an edit to the worker API; return parsed JSON or exit 1 on error.
+
+    When ``timeout_key`` is given, the HTTP client timeout is read from
+    app_settings at call time so operators can tune slow operations
+    (e.g. ``post_edit_regen_image_timeout_s``) without code changes.
+    """
 
     async def _call():
-        async with WorkerClient() as c:
+        timeout = 30.0
+        if timeout_key:
+            try:
+                import asyncpg
+                from poindexter.cli._bootstrap import resolve_dsn
+                conn = await asyncpg.connect(resolve_dsn())
+                try:
+                    val = await conn.fetchval(
+                        "SELECT value FROM app_settings WHERE key = $1 AND is_active = true",  # noqa: adapter-ok bootstrap read — CLI resolves timeout before API client exists, same pattern as credential resolution
+                        timeout_key,
+                    )
+                    timeout = float(val or "30")
+                finally:
+                    await conn.close()
+            except Exception:  # noqa: BLE001
+                pass  # silent-ok: timeout setting is best-effort; DB unreachable falls back to 30s (WorkerClient raises loudly on the same DB for creds)
+        async with WorkerClient(timeout=timeout) as c:
             resp = await c.post(path, json=payload)
             return await c.json_or_raise(resp)
 
@@ -712,5 +733,9 @@ def tasks_replace_image(task_id: str, which: str, url: str) -> None:
 def tasks_regen_image(task_id: str, which: str, prompt: str) -> None:
     """Regenerate a draft image via the image capability and swap it in (drafts only)."""
     _emit_edit_result(
-        _post_edit(f"/api/tasks/{task_id}/regen-image", {"which": which, "prompt": prompt}),
+        _post_edit(
+            f"/api/tasks/{task_id}/regen-image",
+            {"which": which, "prompt": prompt},
+            timeout_key="post_edit_regen_image_timeout_s",
+        ),
     )

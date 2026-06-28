@@ -138,6 +138,7 @@ class WorkerClient:
         client_id: str | None = None,
         client_secret: str | None = None,
         scopes: str | None = None,
+        timeout: float = 30.0,
     ) -> None:
         self.base_url = _resolve_base_url(base_url)
         # Hold the explicit overrides; finalise during __aenter__ so the
@@ -145,6 +146,7 @@ class WorkerClient:
         self._explicit_client_id = client_id
         self._explicit_client_secret = client_secret
         self._scopes = scopes
+        self._timeout = timeout
         self._oauth: Any | None = None
         self._http: httpx.AsyncClient | None = None
         # ``token`` legacy attribute — populated post-resolution so
@@ -183,6 +185,7 @@ class WorkerClient:
             client_id=client_id,
             client_secret=client_secret,
             scopes=self._scopes,
+            timeout=self._timeout,
         )
         # Backwards-compat introspection: callers that read
         # ``client.token`` (none in the codebase, but third-party
@@ -195,7 +198,7 @@ class WorkerClient:
         # on by tests today.
         self._http = httpx.AsyncClient(
             base_url=self.base_url,
-            timeout=30.0,
+            timeout=self._timeout,
         )
         return self
 
