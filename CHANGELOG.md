@@ -2,6 +2,20 @@
 
 ## Unreleased
 
+## [0.89.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.88.1...v0.89.0) (2026-06-28)
+
+
+### Features
+
+* **console:** Telemetry surface — Loki logs, Langfuse traces, embedded Grafana ([#1959](https://github.com/Glad-Labs/glad-labs-stack/issues/1959)) ([5561fec](https://github.com/Glad-Labs/glad-labs-stack/commit/5561fec08d537e490a6615e25b6a351b861923c8))
+* **gpu:** auto-detect VRAM pool (gpu_vram_total_gb=auto) ([#1958](https://github.com/Glad-Labs/glad-labs-stack/issues/1958)) ([4761562](https://github.com/Glad-Labs/glad-labs-stack/commit/4761562a03c56a572b22b31ab2224a11b422d22d))
+
+
+### Bug Fixes
+
+* **obs:** make GPU telemetry multi-GPU aware (3090 added alongside 5090) ([#1956](https://github.com/Glad-Labs/glad-labs-stack/issues/1956)) ([dcbfb22](https://github.com/Glad-Labs/glad-labs-stack/commit/dcbfb22e5d4182d0ea7a12177227ab663ad6a70b))
+* **tts:** podcast outro says ".io" as "eye oh"; add "CI" = "See Eye" ([#1957](https://github.com/Glad-Labs/glad-labs-stack/issues/1957)) ([81f4063](https://github.com/Glad-Labs/glad-labs-stack/commit/81f4063415a6a0215d08d41e38104abf74de17f8))
+
 ## [0.88.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.88.0...v0.88.1) (2026-06-27)
 
 
