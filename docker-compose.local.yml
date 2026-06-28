@@ -178,6 +178,11 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Run 'poindexter setup' or 'bash scripts/start-stack.sh'}
       GF_INSTALL_PLUGINS: grafana-clock-panel
+      # Allow the operator console to embed /d-solo panels (local/tailnet-only;
+      # anonymous Viewer is safe — Grafana Cloud was retired 2026-05-03).
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
       LOCAL_POSTGRES_PASSWORD: ${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}

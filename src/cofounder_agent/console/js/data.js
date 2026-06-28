@@ -1461,6 +1461,58 @@
     ],
   };
 
+  // Mock telemetry — only used in mock mode (live polls /api/logs + /api/traces).
+  const logs = {
+    lines: [
+      {
+        ts: '2026-06-27T14:31:55Z',
+        service: 'poindexter-worker',
+        level: 'info',
+        line: 'claimed pipeline_task #1842',
+      },
+      {
+        ts: '2026-06-27T14:31:50Z',
+        service: 'poindexter-worker',
+        level: 'error',
+        line: 'qa.aggregate rejected — fabrication veto',
+      },
+      {
+        ts: '2026-06-27T14:31:40Z',
+        service: 'poindexter-brain',
+        level: 'info',
+        line: 'health cycle ok (5m)',
+      },
+    ],
+    stats: { count: 3, query: '{service=~".+"}' },
+  };
+  const traces = {
+    traces: [
+      {
+        id: 'demo-1',
+        name: 'qa_pass',
+        model: 'gemma-4-31b',
+        latency_ms: 2480,
+        cost_usd: 0,
+        qa_score: 87,
+        task_id: '1842',
+        timestamp: '2026-06-27T14:31:00Z',
+        web_url: '',
+      },
+      {
+        id: 'demo-2',
+        name: 'writer_draft',
+        model: 'gemma-4-31b',
+        latency_ms: 18120,
+        cost_usd: 0,
+        qa_score: null,
+        task_id: '1842',
+        timestamp: '2026-06-27T14:29:00Z',
+        web_url: '',
+      },
+    ],
+    stats: { count: 2 },
+  };
+
   window.PX = {
     now,
     hhmmss,
@@ -1481,6 +1533,8 @@
     findings,
     schedule,
     seo,
+    logs,
+    traces,
     restarts,
     launcher,
     nextTs() {

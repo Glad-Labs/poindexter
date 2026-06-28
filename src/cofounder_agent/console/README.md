@@ -94,6 +94,8 @@ method has a `live:` branch (real `fetch`) and a `mock:` branch via
 | posts / analytics | `GET /api/posts` · `GET /api/analytics/views`                                                                |
 | service health    | Prometheus `GET /api/v1/query` — cAdvisor `container_last_seen` (`:9091`) + `/api/health`                    |
 | GPU               | Prometheus `GET /api/v1/query` — `nvidia_gpu_*` (`:9091`)                                                    |
+| logs              | `GET /api/logs` (worker proxy → Loki `query_range`)                                                          |
+| traces            | `GET /api/traces` (worker proxy → Langfuse `/api/public/traces`)                                             |
 
 ### Overview KPI strip (live)
 
@@ -130,6 +132,37 @@ The local stack runs Prometheus on **`:9091`** (not the upstream default
 The Connection panel has a **Dev simulation** dropdown (mock only:
 normal / slow / error / empty) so you can exercise loading/error/empty states
 without a backend.
+
+---
+
+## 4. Telemetry surface (logs · traces · embedded Grafana)
+
+The **Telemetry** rail tab brings the deep-dive surfaces into the console so
+day-to-day operation no longer requires opening Grafana directly:
+
+- **Logs** — native panel, live-tails Loki through the worker proxy
+  `GET /api/logs` (the worker reads `data_fabric_loki_url`). Filter by the
+  `service` and `level` Loki labels; honest-empty when Loki has nothing.
+- **Traces** — native list of recent Langfuse traces (model · latency · QA
+  score) via `GET /api/traces` (worker proxy over Langfuse's public API). The
+  full **waterfall opens in Langfuse in a new tab** (deeplink) — by design, not
+  reimplemented. Requires `langfuse_host` + `langfuse_public_key` +
+  `langfuse_secret_key`. The last two are **secrets** — set them via
+  `poindexter setup` / `set_secret`, never in `settings_defaults.py`. Until
+  they're set, the route 503s and the panel renders honest-empty.
+- **Grafana** — embedded `/d-solo` iframes for the rich time-series history
+  charts and the Database internals board (the views the console's instant
+  Prometheus queries can't render). Base URL is the client-side `px_grafana`
+  Connection setting (default `http://localhost:3000`), set via
+  `PX.api.setGrafanaEmbed(url)` like `px_prom`.
+
+**Grafana embed prerequisite:** the Grafana service must allow framing —
+`GF_SECURITY_ALLOW_EMBEDDING=true` plus anonymous Viewer
+(`GF_AUTH_ANONYMOUS_ENABLED=true`, `GF_AUTH_ANONYMOUS_ORG_ROLE=Viewer`), already
+wired into the `grafana` service in the compose files. Safe because Grafana is
+local/tailnet-only. Recreate Grafana after a fresh pull to apply:
+`docker compose -f docker-compose.local.yml up -d grafana`. Until embedding is
+enabled the iframes are refused with `X-Frame-Options: deny`.
 
 ---
 

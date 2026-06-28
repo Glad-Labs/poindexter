@@ -385,7 +385,7 @@ Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR fro
 
 ## Monitoring
 
-- **Grafana (self-hosted):** http://localhost:3000 (or http://100.81.93.12:3000 from the tailnet) — 13 dashboards. Grafana Cloud was retired 2026-05-03; the local Docker container (poindexter-grafana) is the only Grafana now. Local Prometheus scrapes windows_exporter + nvidia-smi-exporter directly; Alloy was the Cloud shipper and is no longer used.
+- **Grafana (self-hosted):** http://localhost:3000 (or http://100.81.93.12:3000 from the tailnet) — 13 dashboards. Grafana Cloud was retired 2026-05-03; the local Docker container (poindexter-grafana) is the only Grafana now. Local Prometheus scrapes windows_exporter + nvidia-smi-exporter directly; Alloy was the Cloud shipper and is no longer used. **The operator console (`/console/`) now embeds the deep-telemetry surfaces under a Telemetry tab** — Loki logs (worker proxy `GET /api/logs`), Langfuse LLM traces (`GET /api/traces`, full waterfall deeplinks out to Langfuse), and embedded Grafana `/d-solo` history + Database panels — so day-to-day operation no longer requires opening Grafana directly (embedding via `GF_SECURITY_ALLOW_EMBEDDING=true` + anonymous Viewer in the compose `grafana` service).
 - **Dashboards:**
   - **Mission Control** — top-level operator glance (trimmed 2026-06-03: deep media/director detail moved to Pipeline; keeps a single media-pending glance stat)
   - **Pipeline** — content pipeline throughput, plus the consolidated quality/QA rows ("Quality — scores & output" + "QA — rejections & validation", deduped 2026-06-03) and the Media Approval Queue (now holds the media/director detail relocated from Mission Control)

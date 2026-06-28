@@ -61,6 +61,8 @@
     // Prometheus is a different service/port; GPU + some rates come from here.
     // NOTE: the local stack runs Prometheus on :9091 (not the upstream default :9090).
     prometheus: LS.getItem('px_prom') ?? 'http://localhost:9091',
+    // Grafana embed base — browser hits /d-solo iframes directly, like prometheus.
+    grafana: LS.getItem('px_grafana') ?? 'http://localhost:3000',
     // OAuth2 client-credentials. Static Bearer was removed in #249 — every
     // request now rides a short-lived JWT minted from POST /token. Provision a
     // dedicated client with `poindexter auth register-client --name
@@ -606,6 +608,30 @@
             watermark: 0,
           })
       );
+    },
+
+    // ── telemetry: logs + traces + grafana base ─────────────
+    // Loki log proxy (worker GET /api/logs). Mock → PX.logs; empty → no lines.
+    logs(params = '') {
+      return pick(
+        () => http('GET', '/api/logs' + params),
+        () => pair(mock().logs, { lines: [], stats: { count: 0, query: '' } })
+      );
+    },
+    // Langfuse trace proxy (worker GET /api/traces). Mock → PX.traces.
+    traces(params = '') {
+      return pick(
+        () => http('GET', '/api/traces' + params),
+        () => pair(mock().traces, { traces: [], stats: { count: 0 } })
+      );
+    },
+    // Grafana embed base (client-side, like prometheus). Read + set + persist.
+    grafanaBase() {
+      return cfg.grafana;
+    },
+    setGrafanaEmbed(u) {
+      cfg.grafana = u || '';
+      LS.setItem('px_grafana', cfg.grafana);
     },
 
     // ── live event stream ───────────────────────────────────

@@ -86,6 +86,11 @@ services:
       GF_SECURITY_ADMIN_USER: ${GRAFANA_USER:-admin}
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:?Set GRAFANA_PASSWORD in .env}
       GF_INSTALL_PLUGINS: grafana-clock-panel,grafana-simple-json-datasource
+      # Allow the operator console to embed /d-solo panels (local/tailnet-only;
+      # anonymous Viewer is safe — Grafana Cloud was retired 2026-05-03).
+      GF_SECURITY_ALLOW_EMBEDDING: "true"
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
     volumes:
       - grafana-data:/var/lib/grafana
       - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning

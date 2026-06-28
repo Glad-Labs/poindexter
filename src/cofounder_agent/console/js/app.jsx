@@ -21,6 +21,7 @@ const RAIL = [
   { id: 'findings', icon: 'bell', label: 'Findings' },
   { id: 'cost', icon: 'cost', label: 'Cost' },
   { id: 'revenue', icon: 'pulse', label: 'Revenue' },
+  { id: 'telemetry', icon: 'audit', label: 'Telemetry' },
 ];
 
 function App() {
@@ -39,6 +40,9 @@ function App() {
   const [seo, setSeo] = useS(PX.seo); // live: GET /api/seo
   const [social, setSocial] = useS({ drafts: [] }); // live: GET /api/social/drafts
   const [newsletter, setNewsletter] = useS(null); // live: GET /api/newsletter/stats
+  const [logs, setLogs] = useS(PX.logs); // live: GET /api/logs (Loki proxy)
+  const [traces, setTraces] = useS(PX.traces); // live: GET /api/traces (Langfuse)
+  const [logFilter, setLogFilter] = useS({ service: '', level: '' });
   // live: KPI-strip reads with no home panel — GET /api/posts (published 30d +
   // a real per-day histogram) + GET /api/analytics/views (page views 24h). Mock
   // keeps PX.kpis untouched (the `kpis` memo below short-circuits in mock mode).
@@ -559,6 +563,57 @@ function App() {
     return () => {
       alive = false;
       clearInterval(timer);
+    };
+  }, []);
+
+  // ── Live: Loki logs (GET /api/logs) ───────────────────────
+  // Re-fetches when the service/level filter changes; tails on a 10s cadence
+  // (a down service is the thing you want to see fast). Mock keeps PX.logs.
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const qs =
+          `?since=1h&limit=300` +
+          (logFilter.service
+            ? `&service=${encodeURIComponent(logFilter.service)}`
+            : '') +
+          (logFilter.level
+            ? `&level=${encodeURIComponent(logFilter.level)}`
+            : '');
+        const res = await PX.api.logs(qs);
+        if (alive && res) setLogs(res);
+      } catch (_e) {
+        /* honest-empty: leave panel as-is on a transient error */
+      }
+    };
+    load();
+    const id = setInterval(load, 10 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(id);
+    };
+  }, [logFilter]);
+
+  // ── Live: Langfuse traces (GET /api/traces) ───────────────
+  // 60s cadence. A 503 (langfuse keys unset) is swallowed → honest-empty panel.
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    let alive = true;
+    const load = async () => {
+      try {
+        const res = await PX.api.traces('?hours=24&limit=50');
+        if (alive && res) setTraces(res);
+      } catch (_e) {
+        /* honest-empty (incl. 503 when langfuse keys unset) */
+      }
+    };
+    load();
+    const id = setInterval(load, 60 * 1000);
+    return () => {
+      alive = false;
+      clearInterval(id);
     };
   }, []);
 
@@ -1474,6 +1529,18 @@ function App() {
                   findings={findings}
                   onOpen={() => open('findings', findings)}
                 />
+              </div>
+              <div id="sec-telemetry">
+                <LogsPanel
+                  logs={logs}
+                  service={logFilter.service}
+                  level={logFilter.level}
+                  onFilter={(patch) =>
+                    setLogFilter((f) => ({ ...f, ...patch }))
+                  }
+                />
+                <TracesPanel traces={traces} />
+                <GrafanaEmbed />
               </div>
             </div>
 

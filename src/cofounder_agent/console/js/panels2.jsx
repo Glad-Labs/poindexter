@@ -1444,6 +1444,174 @@ function NewsletterPanel({ newsletter }) {
   );
 }
 
+// ── Telemetry: Loki logs (native) ─────────────────────────────
+function LogsPanel({ logs, onFilter, service, level }) {
+  const lines = (logs && logs.lines) || [];
+  const tone = (lv) =>
+    lv === 'error'
+      ? 'c-red'
+      : lv === 'warn' || lv === 'warning'
+        ? 'c-amber'
+        : 'c-dim';
+  return (
+    <div className="panel" id="sec-logs">
+      <div className="panel__head">
+        <span className="panel__title">
+          <span className="idx">▤</span>LOGS
+        </span>
+        <span className="panel__spacer" style={{ flex: 1 }} />
+        <span className="panel__meta">{lines.length} lines · Loki</span>
+      </div>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+        <input
+          className="tinput"
+          placeholder="service (e.g. poindexter-worker)"
+          defaultValue={service || ''}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter') onFilter({ service: e.target.value });
+          }}
+        />
+        {['', 'info', 'warn', 'error'].map((lv) => (
+          <button
+            key={lv || 'all'}
+            className={`chip ${level === lv ? 'is-active' : ''}`}
+            onClick={() => onFilter({ level: lv })}
+          >
+            {lv || 'all'}
+          </button>
+        ))}
+      </div>
+      {lines.length === 0 ? (
+        <div className="empty">no log lines — adjust filters or check Loki</div>
+      ) : (
+        <div className="logfeed">
+          {lines.map((l, i) => (
+            <div className="logline" key={i}>
+              <span className="c-dim tnum">{(l.ts || '').slice(11, 19)}</span>{' '}
+              <span className="c-cyan">{l.service}</span>{' '}
+              <span className={tone(l.level)}>
+                {(l.level || '').toUpperCase()}
+              </span>{' '}
+              <span>{l.line}</span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Telemetry: Langfuse traces (native list, deeplink waterfall) ──
+function TracesPanel({ traces }) {
+  const rows = (traces && traces.traces) || [];
+  return (
+    <div className="panel" id="sec-traces">
+      <div className="panel__head">
+        <span className="panel__title">
+          <span className="idx">⌁</span>LLM TRACES
+        </span>
+        <span className="panel__spacer" style={{ flex: 1 }} />
+        <span className="panel__meta">{rows.length} · Langfuse</span>
+      </div>
+      {rows.length === 0 ? (
+        <div className="empty">
+          no traces — set langfuse keys or widen the window
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+          {rows.map((t) => (
+            <div
+              className="traceRow"
+              key={t.id}
+              style={{ display: 'flex', gap: 10, alignItems: 'center' }}
+            >
+              <span
+                style={{
+                  flex: 1,
+                  minWidth: 0,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
+                {t.name} <span className="c-dim">· {t.model || '—'}</span>
+              </span>
+              <span className="c-dim tnum">
+                {t.latency_ms != null ? Math.round(t.latency_ms) + 'ms' : '—'}
+              </span>
+              <span className="c-dim tnum">
+                {t.qa_score != null ? 'Q' + Math.round(t.qa_score) : '—'}
+              </span>
+              <button
+                className="mbtn"
+                disabled={!t.web_url}
+                onClick={() =>
+                  t.web_url &&
+                  window.open(t.web_url, '_blank', 'noopener,noreferrer')
+                }
+                title={
+                  t.web_url ? 'Open waterfall in Langfuse' : 'No Langfuse URL'
+                }
+              >
+                waterfall ↗
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Telemetry: embedded Grafana panels (history + DB) ─────────
+// UIDs/panelIds are the local Grafana boards. Confirm each uid via
+// search_dashboards / the board URL before relying on it.
+const GRAFANA_EMBEDS = [
+  { uid: 'cost-analytics', panelId: 2, label: 'Spend over time' },
+  { uid: 'hardware-power', panelId: 4, label: 'GPU history' },
+  { uid: 'database', panelId: 2, label: 'DB connections' },
+];
+function GrafanaEmbed() {
+  const base = window.PX.api.grafanaBase();
+  return (
+    <div className="panel" id="sec-grafana">
+      <div className="panel__head">
+        <span className="panel__title">
+          <span className="idx">▦</span>GRAFANA
+        </span>
+        <span className="panel__spacer" style={{ flex: 1 }} />
+        <span className="panel__meta">history · database</span>
+      </div>
+      <div style={{ display: 'grid', gap: 10 }}>
+        {GRAFANA_EMBEDS.map((g) => {
+          const src = window.PX.telemetry.grafanaPanelUrl(
+            base,
+            g.uid,
+            g.panelId
+          );
+          return src ? (
+            <iframe
+              key={g.uid + g.panelId}
+              title={g.label}
+              src={src}
+              style={{
+                width: '100%',
+                height: 220,
+                border: '1px solid var(--gl-line, rgba(255,255,255,.1))',
+                borderRadius: 2,
+              }}
+            />
+          ) : (
+            <div className="empty" key={g.label}>
+              set Grafana base in App Settings → Connection
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 Object.assign(window, {
   RevenuePanel,
   MediaPanel,
@@ -1454,4 +1622,7 @@ Object.assign(window, {
   TopicsPanel,
   SocialPanel,
   NewsletterPanel,
+  LogsPanel,
+  TracesPanel,
+  GrafanaEmbed,
 });
