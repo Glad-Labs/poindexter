@@ -237,6 +237,12 @@ DEFAULTS: dict[str, str] = {
     # on the host — see docs/operations/single-gpu-vram-tuning.md). Default ON.
     'gpu_vram_total_gb': '32',
     'gpu_desktop_reserve_gb': '3',
+    # Which GPU index the content pipeline runs on (the display + Ollama card).
+    # The scheduler reads this card's utilisation/power from the nvidia-smi
+    # exporter; with >1 GPU in the box an unlabelled query would resolve to a
+    # nondeterministic series. Default 0 (the 5090). Re-point only if the
+    # pipeline's primary inference GPU changes.
+    'pipeline_gpu_index': '0',
     'ollama_kv_cache_type': 'q8_0',
     'vram_budget_guard_enabled': 'true',
     # why: when true, after issuing keep_alive=0 the unload helper re-polls
@@ -1351,6 +1357,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'rag_rerank_device': {'owner': 'rag_engine', 'value_type': 'string'},
     'gpu_vram_total_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
     'gpu_desktop_reserve_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
+    'pipeline_gpu_index': {'owner': 'gpu_scheduler', 'value_type': 'integer'},
     'ollama_kv_cache_type': {'owner': 'vram_budget', 'value_type': 'string'},
     'vram_budget_guard_enabled': {'owner': 'vram_budget', 'value_type': 'boolean'},
 

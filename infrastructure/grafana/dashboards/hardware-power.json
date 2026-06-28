@@ -305,7 +305,7 @@
       "id": 56,
       "type": "timeseries",
       "title": "VRAM headroom (dedicated)",
-      "description": "Dedicated-VRAM headroom = (gpu_vram_total_gb - gpu_desktop_reserve_gb) - VRAM used. The 32/3 literals mirror the gpu_vram_total_gb / gpu_desktop_reserve_gb app_settings the dispatcher clamp reads. When this trends toward the 0 line the NVIDIA driver is about to spill VRAM into system RAM (the WDDM desktop freeze). The Windows shared-memory spill counter itself isn't in Prometheus yet (windows_exporter has no GPU collector) — a future exporter task.",
+      "description": "Per-GPU dedicated-VRAM headroom = (card total - 3 GB desktop reserve) - VRAM used, one series per GPU. Uses each card's real nvidia_gpu_memory_total_mib so it stays correct across a mixed-size multi-GPU rig (e.g. 32 GB 5090 + 24 GB 3090) instead of hardcoding the primary card's size. When a series trends toward the 0 line the NVIDIA driver is about to spill that card's VRAM into system RAM (the WDDM desktop freeze). The Windows shared-memory spill counter itself isn't in Prometheus yet (windows_exporter has no GPU collector) — a future exporter task.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -345,8 +345,8 @@
             "type": "prometheus",
             "uid": "local-prometheus"
           },
-          "expr": "((32 - 3) * 1073741824) - (nvidia_gpu_memory_used_mib * 1048576)",
-          "legendFormat": "Headroom",
+          "expr": "((nvidia_gpu_memory_total_mib - 3072) * 1048576) - (nvidia_gpu_memory_used_mib * 1048576)",
+          "legendFormat": "GPU {{gpu}} headroom",
           "refId": "A"
         }
       ]

@@ -278,11 +278,13 @@ class TestGpuMetricsFromPrometheus:
         with patch("httpx.AsyncClient", return_value=client):
             result = await scheduler._get_gpu_utilization()
         assert result == 75.0
-        # Hit the Prometheus instant-query API for the util metric.
+        # Hit the Prometheus instant-query API for the util metric, scoped to
+        # the pipeline GPU (pipeline_gpu_index default 0) so a second card in
+        # the box can't shift the reading to a nondeterministic series.
         assert client.get.call_args.args[0].endswith("/api/v1/query")
         assert (
             client.get.call_args.kwargs["params"]["query"]
-            == "nvidia_gpu_utilization_percent"
+            == 'nvidia_gpu_utilization_percent{gpu="0"}'
         )
 
     @pytest.mark.asyncio
@@ -297,10 +299,11 @@ class TestGpuMetricsFromPrometheus:
             result = await scheduler._get_gpu_power_watts()
         assert result == 284.5
         # Correct metric name (nvidia_gpu_power_draw_watts, NOT the old
-        # nvidia_gpu_power_usage_watts which never existed).
+        # nvidia_gpu_power_usage_watts which never existed), scoped to the
+        # pipeline GPU (pipeline_gpu_index default 0).
         assert (
             client.get.call_args.kwargs["params"]["query"]
-            == "nvidia_gpu_power_draw_watts"
+            == 'nvidia_gpu_power_draw_watts{gpu="0"}'
         )
 
     @pytest.mark.asyncio

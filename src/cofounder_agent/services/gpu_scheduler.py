@@ -612,12 +612,25 @@ class GPUScheduler:
             return None
 
     async def _get_gpu_power_watts(self) -> float | None:
-        """Current GPU power draw (watts), via Prometheus."""
-        return await self._query_prometheus_scalar("nvidia_gpu_power_draw_watts")
+        """Current power draw (watts) of the pipeline GPU, via Prometheus.
+
+        Targets the pipeline/display GPU explicitly (``pipeline_gpu_index``,
+        default 0) rather than an unlabelled metric. The exporter emits one
+        ``nvidia_gpu_*`` series per GPU, so once a second card is in the box an
+        unlabelled query resolves to a nondeterministic ``result[0]`` — it could
+        read the idle 3090 instead of the 5090 the pipeline actually runs on.
+        """
+        idx = _cfg_int("pipeline_gpu_index", 0)
+        return await self._query_prometheus_scalar(
+            f'nvidia_gpu_power_draw_watts{{gpu="{idx}"}}'
+        )
 
     async def _get_gpu_utilization(self) -> float | None:
-        """Current GPU utilization (%), via Prometheus."""
-        return await self._query_prometheus_scalar("nvidia_gpu_utilization_percent")
+        """Current utilization (%) of the pipeline GPU, via Prometheus."""
+        idx = _cfg_int("pipeline_gpu_index", 0)
+        return await self._query_prometheus_scalar(
+            f'nvidia_gpu_utilization_percent{{gpu="{idx}"}}'
+        )
 
     async def _wait_for_gaming_clear(self):
         """Block until GPU is not being used by an external workload (gaming).

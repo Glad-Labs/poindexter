@@ -68,13 +68,71 @@ def _trip_watchdog(reason: str) -> None:
         sys.exit(1)
 
 
+# nvidia-smi --query-gpu order, AFTER the leading `index` field. Each CSV row is
+# therefore `index` + these 10 metric fields.
+_GPU_METRIC_SPECS = [
+    ("nvidia_gpu_utilization_percent", "GPU utilization percentage"),
+    ("nvidia_gpu_memory_utilization_percent", "GPU memory utilization percentage"),
+    ("nvidia_gpu_memory_used_mib", "GPU memory used in MiB"),
+    ("nvidia_gpu_memory_total_mib", "GPU memory total in MiB"),
+    ("nvidia_gpu_temperature_celsius", "GPU temperature in Celsius"),
+    ("nvidia_gpu_power_draw_watts", "GPU power draw in watts"),
+    ("nvidia_gpu_power_limit_watts", "GPU power limit in watts"),
+    ("nvidia_gpu_fan_speed_percent", "GPU fan speed percentage"),
+    ("nvidia_gpu_clock_graphics_mhz", "GPU graphics clock in MHz"),
+    ("nvidia_gpu_clock_memory_mhz", "GPU memory clock in MHz"),
+]
+_GPU_ROW_FIELDS = len(_GPU_METRIC_SPECS) + 1  # + leading index
+
+
+def _format_gpu_rows(stdout: str) -> str:
+    """Turn nvidia-smi CSV (one row per GPU) into Prometheus exposition text.
+
+    Pure function (no subprocess) so it's directly unit-testable. Parses
+    row-by-row and labels every series with nvidia-smi's own ``index`` — so a
+    multi-GPU rig yields one series per card. A malformed row is logged and
+    skipped rather than blanking the whole block: telemetry degrades
+    gracefully (one card glitching shouldn't take down monitoring for both),
+    while genuinely-stuck nvidia-smi is still caught by the watchdog upstream.
+
+    The pre-multi-GPU version unpacked a single 10-tuple and crashed with
+    "too many values to unpack" the instant a second GPU appeared.
+    """
+    rows = []
+    for line in stdout.strip().splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        values = [v.strip() for v in line.split(",")]
+        if len(values) != _GPU_ROW_FIELDS:
+            logger.warning(
+                "nvidia-smi row has %d fields, expected %d — skipping: %r",
+                len(values), _GPU_ROW_FIELDS, line,
+            )
+            continue
+        rows.append(values)
+
+    if not rows:
+        return "# nvidia-smi returned no parseable GPU rows\n"
+
+    lines = []
+    for field_idx, (metric, help_text) in enumerate(_GPU_METRIC_SPECS):
+        lines.append(f"# HELP {metric} {help_text}")
+        lines.append(f"# TYPE {metric} gauge")
+        for values in rows:
+            gpu_index = values[0]
+            lines.append(f'{metric}{{gpu="{gpu_index}"}} {values[field_idx + 1]}')
+
+    return "\n".join(lines) + "\n"
+
+
 def get_gpu_metrics():
-    """Query nvidia-smi and return Prometheus-format metrics."""
+    """Query nvidia-smi and return Prometheus-format metrics (one series per GPU)."""
     global _consecutive_timeouts
     start = time.monotonic()
     try:
         result = subprocess.run(
-            ["nvidia-smi", "--query-gpu=utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed,clocks.current.graphics,clocks.current.memory",
+            ["nvidia-smi", "--query-gpu=index,utilization.gpu,utilization.memory,memory.used,memory.total,temperature.gpu,power.draw,power.limit,fan.speed,clocks.current.graphics,clocks.current.memory",
              "--format=csv,noheader,nounits"],
             capture_output=True, text=True, timeout=_NVIDIA_SMI_TIMEOUT_SEC,
             **_SUBPROCESS_KWARGS,
@@ -88,45 +146,7 @@ def get_gpu_metrics():
         if result.returncode != 0:
             return "# nvidia-smi failed\n"
 
-        values = [v.strip() for v in result.stdout.strip().split(",")]
-        if len(values) < 10:
-            return "# nvidia-smi returned incomplete data\n"
-
-        gpu_util, mem_util, mem_used, mem_total, temp, power, power_limit, fan, clock_gpu, clock_mem = values
-
-        lines = [
-            "# HELP nvidia_gpu_utilization_percent GPU utilization percentage",
-            "# TYPE nvidia_gpu_utilization_percent gauge",
-            f'nvidia_gpu_utilization_percent{{gpu="0"}} {gpu_util}',
-            "# HELP nvidia_gpu_memory_utilization_percent GPU memory utilization percentage",
-            "# TYPE nvidia_gpu_memory_utilization_percent gauge",
-            f'nvidia_gpu_memory_utilization_percent{{gpu="0"}} {mem_util}',
-            "# HELP nvidia_gpu_memory_used_mib GPU memory used in MiB",
-            "# TYPE nvidia_gpu_memory_used_mib gauge",
-            f'nvidia_gpu_memory_used_mib{{gpu="0"}} {mem_used}',
-            "# HELP nvidia_gpu_memory_total_mib GPU memory total in MiB",
-            "# TYPE nvidia_gpu_memory_total_mib gauge",
-            f'nvidia_gpu_memory_total_mib{{gpu="0"}} {mem_total}',
-            "# HELP nvidia_gpu_temperature_celsius GPU temperature in Celsius",
-            "# TYPE nvidia_gpu_temperature_celsius gauge",
-            f'nvidia_gpu_temperature_celsius{{gpu="0"}} {temp}',
-            "# HELP nvidia_gpu_power_draw_watts GPU power draw in watts",
-            "# TYPE nvidia_gpu_power_draw_watts gauge",
-            f'nvidia_gpu_power_draw_watts{{gpu="0"}} {power}',
-            "# HELP nvidia_gpu_power_limit_watts GPU power limit in watts",
-            "# TYPE nvidia_gpu_power_limit_watts gauge",
-            f'nvidia_gpu_power_limit_watts{{gpu="0"}} {power_limit}',
-            "# HELP nvidia_gpu_fan_speed_percent GPU fan speed percentage",
-            "# TYPE nvidia_gpu_fan_speed_percent gauge",
-            f'nvidia_gpu_fan_speed_percent{{gpu="0"}} {fan}',
-            "# HELP nvidia_gpu_clock_graphics_mhz GPU graphics clock in MHz",
-            "# TYPE nvidia_gpu_clock_graphics_mhz gauge",
-            f'nvidia_gpu_clock_graphics_mhz{{gpu="0"}} {clock_gpu}',
-            "# HELP nvidia_gpu_clock_memory_mhz GPU memory clock in MHz",
-            "# TYPE nvidia_gpu_clock_memory_mhz gauge",
-            f'nvidia_gpu_clock_memory_mhz{{gpu="0"}} {clock_mem}',
-        ]
-        return "\n".join(lines) + "\n"
+        return _format_gpu_rows(result.stdout)
     except subprocess.TimeoutExpired:
         elapsed = time.monotonic() - start
         _trip_watchdog(f"nvidia-smi TimeoutExpired after {elapsed:.1f}s")
@@ -217,10 +237,12 @@ def get_total_power_metrics(gpu_text, cpu_text):
     gpu_watts = 0.0
     cpu_watts = 0.0
     try:
+        # Sum power across every GPU (one nvidia_gpu_power_draw_watts series per
+        # card). The old code broke after the first match and silently ignored
+        # additional GPUs, undercounting the system-power estimate.
         for line in gpu_text.split("\n"):
             if line.startswith("nvidia_gpu_power_draw_watts{"):
-                gpu_watts = float(line.split()[-1])
-                break
+                gpu_watts += float(line.split()[-1])
     except (ValueError, IndexError):
         pass
     try:
