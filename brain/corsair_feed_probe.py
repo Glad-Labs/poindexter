@@ -1,5 +1,5 @@
 """brain/corsair_feed_probe.py — freshness watchdog for the corsair_csv
-(iCUE) sensor feed. Closes Glad-Labs/glad-labs-stack#868.
+(iCUE) sensor feed. Closes Glad-Labs/poindexter#868.
 
 The ``tap.corsair_csv`` handler ingests iCUE LINK CSV exports into
 ``sensor_samples`` (source ``corsair_csv``), and that feed is the always-on

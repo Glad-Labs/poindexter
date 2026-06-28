@@ -461,7 +461,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 
 | File | Summary |
 | --- | --- |
-| `__init__.py` | Shot-list-driven video composition (Glad-Labs/glad-labs-stack#649). |
+| `__init__.py` | Shot-list-driven video composition (Glad-Labs/poindexter#649). |
 | `shot_list_renderer.py` | ShotListRenderer — assemble a video from a VideoShotList. |
 | `shot_vision_qa.py` | Per-shot vision-QA frame scorer (video-quality Piece 2, spec §3.2). |
 
