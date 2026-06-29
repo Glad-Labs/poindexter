@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-26.**  
+> **Auto-generated from live `app_settings` table on 2026-06-29.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 736 active rows across 60 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -527,7 +527,7 @@ The worker re-reads on every poll; no restart needed.
 | `qa_relevance_stuffing_hard_density` | `5.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_relevance_stuffing_soft_density` | `3.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_rewrite_max_attempts` | `2` |  | QA rescue cycle: max bounded rewrite passes before a salvageable reject is hard-rejected (write->qa->revise->qa->revi... |
-| `qa_rewrite_model` | `ollama/glm-4.7-5090:latest` |  | Cross-model rescue reviser (qa.rewrite); empty = use the writer model |
+| `qa_rewrite_model` | `` |  | Cross-model rescue reviser (qa.rewrite); empty = use the writer model (gemma, resident). Was glm-4.7-5090 (#1692 bake... |
 | `qa_seo_baseline` | `6.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_title_originality_enabled` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_title_similarity_threshold` | `0.6` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -729,8 +729,8 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `inline_image_prompt_model` | `llama3:latest` |  | Ollama model used to craft AI image prompts for inline images in blog posts |
-| `podcast_script_model` | `ollama/gemma4:31b` |  | Ollama model used to generate podcast scripts from article content |
-| `qa_fallback_critic_model` | `ollama/gemma4:31b` |  | Fallback critic model used when pipeline_critic_model returns empty or errors |
+| `podcast_script_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Ollama model used to generate podcast scripts from article content |
+| `qa_fallback_critic_model` | `ollama/qwen2.5:32b` |  | Fallback critic used when pipeline_critic_model (phi4) returns empty or errors. Must be a DIFFERENT family from the g... |
 | `video_scene_model` | `llama3:latest` |  | Ollama model used to generate video scene descriptions from article text |
 
 ## models
