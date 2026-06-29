@@ -147,6 +147,10 @@ ATOM_META = AtomMeta(
 # publish strips the leading H1. Guarded by
 # test_narrate_bundle.TestRunBodyH1MatchesTitle.
 _SUBTITLE_PREFIX = "What we shipped on "
+# Upper bound for a headline lifted from a ``TITLE:`` marker. A stray
+# ``TITLE:`` glued inside a body sentence would otherwise be accepted as a
+# (very long) "title"; real dev_diary headlines are well under this.
+_MAX_TITLE_LEN = 120
 # Footer matches deterministic_compositor (PR #631, 2026-05-27): a
 # single public-mirror link so readers who want commit-level detail
 # can browse the public repo. That 2026-05-27 fix landed on the OLD
@@ -438,12 +442,24 @@ def _bundle_is_empty(bundle: dict[str, Any]) -> bool:
 def _parse_title_and_prose(raw: str, bundle: dict[str, Any], date: str) -> tuple[str, str]:
     """Split the model's ``TITLE: ...\\n\\nprose`` output into (title, prose).
 
-    The prompt asks for a ``TITLE:`` prefix on the first line. When the
-    model follows the format, the title is extracted verbatim and the
-    prose is everything after the first blank line. When the model ignores
-    the format instruction, a heuristic title is derived from:
-    1. First sentence of the prose (clipped to 80 chars), or
-    2. A bundle-derived summary ("Shipped N PRs on {date}").
+    The prompt asks for a ``TITLE:`` headline, a blank line, then the prose.
+    Two real-world deviations are handled defensively:
+
+    1. **Reasoning leak.** A reasoning-capable writer can dump its entire
+       planning scratchpad — echoed prompt scaffolding, drafting notes, a
+       self-review checklist — *before* the ``TITLE:`` marker, and may glue
+       the marker onto the end of a line (``...(PII leak).TITLE: ...``).
+       The 2026-06-29 incident published exactly this (post
+       ``glad-labs-one-person-indie-shop-07217583``). We therefore locate
+       the marker ANYWHERE in the output and discard everything before it,
+       taking the LAST occurrence — the real headline is emitted right
+       before the body, while any earlier ``TITLE:`` is the model merely
+       *mentioning* the instruction mid-thought.
+    2. **No / malformed marker.** When no usable ``TITLE:`` line is present
+       (empty after the marker, no trailing newline, or an implausibly long
+       candidate from a stray in-prose ``TITLE:``), a heuristic derives the
+       title from the first real sentence of the prose (clipped to 80
+       chars), falling back to a bundle-derived summary.
 
     The heuristic guarantees the structural gate's title check always has
     something to evaluate — the date-only pattern check in
@@ -457,15 +473,25 @@ def _parse_title_and_prose(raw: str, bundle: dict[str, Any], date: str) -> tuple
         n = len(prs)
         return (f"Shipped {n} PR{'s' if n != 1 else ''} today" if n else f"Dev notes — {date}"), ""
 
-    first_line = text.splitlines()[0]
-    if first_line.upper().startswith("TITLE:"):
-        title = first_line[6:].strip()
-        # Everything after the first line is the prose; strip leading blank lines.
-        rest = text[len(first_line):].lstrip("\n").strip()
-        if title:
-            return title, rest
-        # Model emitted "TITLE:" with nothing after it — fall through to heuristic.
-        text = rest
+    # Locate the LAST "TITLE:" marker anywhere in the output and split on it.
+    # Everything before it (any reasoning preamble the model leaked) is
+    # discarded — see deviation (1) in the docstring.
+    markers = list(re.finditer(r"TITLE:", text, re.IGNORECASE))
+    if markers:
+        after = text[markers[-1].end():]
+        title_line, sep, rest = after.partition("\n")
+        title = title_line.strip()
+        # Accept only a plausible single-line headline followed by a line
+        # break (the real format is "TITLE: x\n\nprose"). An empty title, a
+        # missing newline, or an over-long candidate all signal the marker
+        # wasn't a real title line — fall through to the heuristic.
+        if sep and title and len(title) <= _MAX_TITLE_LEN:
+            return title, rest.strip()
+        # Marker present but not a usable split. If it had a real preamble
+        # and a newline after, the post-marker body is still cleaner than the
+        # full raw (preamble dropped); otherwise keep the full original body
+        # so a stray in-prose "TITLE:" never truncates real content.
+        text = rest.strip() if (sep and rest.strip()) else raw.strip()
 
     # Heuristic: first real sentence from the prose, clipped to 80 chars.
     for line in text.splitlines():
@@ -490,6 +516,39 @@ def _parse_title_and_prose(raw: str, bundle: dict[str, Any], date: str) -> tuple
     prs = bundle.get("merged_prs") or []
     n = len(prs)
     return (f"Shipped {n} PR{'s' if n != 1 else ''} today" if n else f"Dev notes — {date}"), text
+
+
+# Distinctive prompt-scaffolding / self-review phrases that must NEVER appear in
+# finished prose. Their presence means the writer leaked its instructions or
+# planning text into the body (the 2026-06-29 incident shape). Used as a
+# warn-only safety net AFTER _parse_title_and_prose has stripped any pre-TITLE
+# preamble — it catches leak shapes the marker split can't, e.g. scaffolding
+# emitted AFTER the title line. Lowercased for case-insensitive matching.
+_PROMPT_LEAK_MARKERS = (
+    "lead with stakes",
+    "thread bundle facts",
+    "thread the bundle facts",
+    "close with reflection",
+    "drafting paragraph",
+    "first-person plural?",
+    "grounding check",
+    "operator_notes",
+    "voice textures",
+    "no surrounding json",
+)
+
+
+def _detect_prompt_leak(prose: str) -> list[str]:
+    """Return distinctive prompt-scaffolding phrases found in ``prose``.
+
+    Warn-only signal (never mutates content): a non-empty result means the
+    writer leaked instruction/planning text into the body. Real dev_diary
+    prose doesn't contain these phrases, so false positives are unlikely.
+    """
+    if not prose:
+        return []
+    low = prose.lower()
+    return [m for m in _PROMPT_LEAK_MARKERS if m in low]
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
@@ -701,6 +760,21 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 sections.append("")
             prose = "\n".join(sections).rstrip()
             post_title = f"Shipped {' and '.join(parts)} — {date}"
+
+    # Warn-only leak guard: catches prompt scaffolding / planning text that
+    # survived into the body (a leak shape the TITLE: split can't catch — see
+    # _detect_prompt_leak). The dev_diary path runs no QA rails, so this is the
+    # last place to surface it; the post still ships (operator review), but the
+    # artifact is now visible in Loki instead of going out silently.
+    leak_markers = _detect_prompt_leak(prose)
+    if leak_markers:
+        logger.warning(
+            "[atoms.narrate_bundle] task=%s prompt scaffolding leaked into the "
+            "body (markers=%s) — the writer emitted instruction/planning text, "
+            "so the prose may contain reasoning artifacts. Check the writer "
+            "model and the narrate_bundle prompt.",
+            task_id, leak_markers,
+        )
 
     # H1 == the generated headline so publish's extract_title_from_content
     # yields the same title preview shows; the date framing drops to an

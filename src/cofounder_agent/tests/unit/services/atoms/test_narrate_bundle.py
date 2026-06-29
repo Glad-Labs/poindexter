@@ -441,6 +441,154 @@ class TestParseTitleAndProse:
         assert title  # must not be empty
         assert "date" not in title.lower() or "2026" not in title  # not just a date
 
+    def test_strips_reasoning_preamble_before_midline_title_marker(self):
+        """Regression for the 2026-06-29 production incident.
+
+        A reasoning-capable writer dumped its ENTIRE planning scratchpad
+        (echoed prompt scaffolding, drafting notes, a self-review
+        checklist) BEFORE the ``TITLE:`` marker, and glued the marker
+        onto the end of a line (``...(PII leak).TITLE: ...``). The old
+        first-line-only check missed it, so the scratchpad became the
+        published body and the title was lifted from a persona line
+        (post ``glad-labs-one-person-indie-shop-07217583``). The parser
+        must locate the marker anywhere and discard everything before it.
+        """
+        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+
+        raw = (
+            "Glad Labs (one-person indie shop).\n"
+            "Poindexter (AI-operated content business).\n"
+            'First-person plural ("we", "our system").\n\n'
+            "    *   Lead with stakes/surprising thing/broken thing.\n"
+            "    *   Thread bundle facts through narrative.\n\n"
+            "    *   *Drafting Paragraph 1 (The Leak):* We found our email...\n\n"
+            '    *   First-person plural? Yes ("we", "our").\n'
+            "    *   Opening with stakes? Yes (PII leak)."
+            "TITLE: PII leaks and the three-stage shakedown of X distribution\n\n"
+            "We found our own personal email live in the public mirror. A routine "
+            "audit revealed a PII leak (PR #1982).\n\n"
+            "Then there was the social distribution pipeline (PR #1981)."
+        )
+        bundle = {"merged_prs": [{"number": 1982}], "notable_commits": []}
+        title, prose = _parse_title_and_prose(raw, bundle, "2026-06-29")
+
+        assert title == "PII leaks and the three-stage shakedown of X distribution"
+        assert prose.startswith("We found our own personal email")
+        # The reasoning scratchpad/preamble must be gone from the body.
+        assert "Lead with stakes" not in prose
+        assert "Drafting Paragraph" not in prose
+        assert "one-person indie shop" not in prose
+        assert "TITLE:" not in prose
+
+    def test_picks_last_title_marker_when_reasoning_mentions_it_earlier(self):
+        """A reasoner may *mention* the TITLE: instruction while planning
+        before emitting the real one. Take the last marker — the real
+        headline is emitted immediately before the body."""
+        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+
+        raw = (
+            "Let me plan. The prompt says the first line must be TITLE: a headline.\n"
+            "I'll open with the gate work.\n\n"
+            "TITLE: Wiring the structural gate\n\n"
+            "Today we shipped the auto-publish structural check (PR #1286)."
+        )
+        bundle = {"merged_prs": [{"number": 1286}], "notable_commits": []}
+        title, prose = _parse_title_and_prose(raw, bundle, "2026-06-29")
+
+        assert title == "Wiring the structural gate"
+        assert prose.startswith("Today we shipped")
+        assert "Let me plan" not in prose
+        assert "TITLE:" not in prose
+
+    def test_overlong_title_after_marker_falls_back_to_heuristic(self):
+        """A stray ``TITLE:`` glued inside a long body line must NOT be
+        accepted as the headline. When the text after the last marker has
+        no newline break (so the 'title' would be the whole rest), reject
+        it as a headline and derive one from the prose instead."""
+        from modules.content.atoms.narrate_bundle import _parse_title_and_prose
+
+        raw = (
+            "We refactored the parser today. The function now scans for the "
+            "TITLE: token anywhere in the output, which is a much longer single "
+            "line than any real headline would ever be and has no break after it."
+        )
+        bundle = {"merged_prs": [{"number": 1}], "notable_commits": []}
+        title, prose = _parse_title_and_prose(raw, bundle, "2026-06-29")
+
+        assert len(title) <= 80
+        assert title  # non-empty, derived from prose
+        # The prose is preserved (the stray marker isn't a real title split).
+        assert "We refactored the parser" in prose
+
+
+# ---------------------------------------------------------------------------
+# _detect_prompt_leak — warn-only safety net for residual scaffolding
+# ---------------------------------------------------------------------------
+
+
+class TestDetectPromptLeak:
+    def test_flags_scaffolding_phrases(self):
+        from modules.content.atoms.narrate_bundle import _detect_prompt_leak
+
+        leaked = (
+            "    *   Lead with stakes/surprising thing.\n"
+            "    *   Drafting Paragraph 1 (The Leak): ...\n"
+            '    *   First-person plural? Yes ("we").'
+        )
+        found = _detect_prompt_leak(leaked)
+        assert found, "scaffolding phrases must be detected"
+        assert any("lead with stakes" in m.lower() for m in found)
+
+    def test_clean_prose_has_no_leak(self):
+        from modules.content.atoms.narrate_bundle import _detect_prompt_leak
+
+        clean = (
+            "We found our own personal email live in the public mirror. A routine "
+            "audit revealed a PII leak (PR #1982). Then the social pipeline took "
+            "three shakedown fixes to land a post on X."
+        )
+        assert _detect_prompt_leak(clean) == []
+
+
+@pytest.mark.asyncio
+class TestRunWarnsOnResidualLeak:
+    async def test_warns_when_scaffolding_survives_into_prose(self, caplog):
+        """If prompt scaffolding survives into the body (a leak shape the
+        TITLE: split can't catch — e.g. emitted AFTER the title), run() must
+        warn loudly so the operator sees it. Warn-only: the post still ships."""
+        import logging
+
+        from modules.content.atoms.narrate_bundle import run
+
+        async def _stub_llm(prompt, *, model=None, **kwargs):
+            return (
+                "TITLE: A real headline\n\n"
+                "Lead with stakes/surprising thing/broken thing. Thread bundle "
+                "facts through narrative. First-person plural? Yes."
+            )
+
+        with patch("modules.content.atoms.narrate_bundle._ollama_chat_text", _stub_llm):
+            with caplog.at_level(
+                logging.WARNING, logger="modules.content.atoms.narrate_bundle"
+            ):
+                result = await run({
+                    "task_id": "leak-guard",
+                    "site_config": _CaptureSiteConfig(),
+                    "context_bundle": {
+                        "date": "2026-06-29",
+                        "merged_prs": [{"number": 1, "title": "x", "body": ""}],
+                        "notable_commits": [],
+                    },
+                })
+
+        assert any(
+            "leak" in r.getMessage().lower()
+            for r in caplog.records
+            if r.levelno >= logging.WARNING
+        ), "run() must warn when prompt scaffolding survives into the body"
+        # Warn-only guard — the post still ships.
+        assert result["content"]
+
 
 # ---------------------------------------------------------------------------
 # run() surfaces title in output
