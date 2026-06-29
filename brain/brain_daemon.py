@@ -569,6 +569,41 @@ def _page_operator_failsafe(
         return False
 
 
+async def _create_brain_pool(db_url: str):
+    """Create the brain's asyncpg pool with a per-query ``command_timeout``.
+
+    ``command_timeout`` bounds EVERY query client-side, so a wedged connection
+    (a Docker host-port proxy that drops the socket mid-query — the 2026-06-29
+    incident) raises ``asyncio.TimeoutError`` after
+    ``BRAIN_DB_COMMAND_TIMEOUT_SECONDS`` instead of parking the daemon's only
+    thread in ``epoll_wait`` forever. The timeout is an env/constant, not an
+    app_settings row, because the pool must exist before settings can be read.
+    """
+    return await asyncpg.create_pool(
+        db_url,
+        min_size=1,
+        max_size=3,
+        command_timeout=BRAIN_DB_COMMAND_TIMEOUT_SECONDS,
+    )
+
+
+async def _run_cycle_with_watchdog(
+    pool, *, cycle_timeout: float, run_cycle_fn=None,
+) -> None:
+    """Run one brain cycle bounded by a watchdog ``cycle_timeout``.
+
+    The main loop's ``try/except`` only catches *exceptions*; a stuck ``await``
+    inside ``run_cycle`` raises nothing and would park the daemon's single
+    thread forever (2026-06-29). Wrapping the cycle in ``asyncio.wait_for``
+    converts a hang into a ``TimeoutError`` — ``wait_for`` cancels the stuck
+    cycle and the main loop accounts for it like any other cycle failure (retry
+    next cycle, page if persistent). Real exceptions propagate unchanged; this
+    only adds the timeout, it never swallows errors.
+    """
+    fn = run_cycle_fn or run_cycle
+    await asyncio.wait_for(fn(pool), timeout=cycle_timeout)
+
+
 async def _init_sentry(pool) -> bool:
     """Initialise Sentry/GlitchTip error capture for the brain daemon (audit H5).
 
@@ -908,6 +943,28 @@ EXTERNAL_SERVICES = {
 _prev_external_status = {}
 
 CYCLE_SECONDS = 300  # 5 minutes between full cycles
+
+# --- Cycle watchdog (2026-06-29 follow-up) -------------------------------
+# A stuck ``await`` inside run_cycle (a DB query on a wedged Docker host-port
+# proxy) parked the daemon's only thread in epoll_wait for ~37 min: the cycle's
+# try/except catches *exceptions*, but a hang raises nothing. Two guards make
+# the cycle hang-proof.
+#
+# 1) Per-query ``command_timeout`` on the asyncpg pool. Client-side (asyncpg's
+#    own timer), so it fires even when the wedged proxy means the server never
+#    sees the query — the exact 2026-06-29 mechanism. MUST be an env/constant,
+#    NOT app_settings: the pool is created before settings are loaded
+#    (chicken-and-egg), same bootstrap tier as the database URL itself.
+BRAIN_DB_COMMAND_TIMEOUT_SECONDS = float(
+    os.getenv("BRAIN_DB_COMMAND_TIMEOUT_SECONDS", "60")
+)
+# 2) Whole-cycle ceiling. Backstops any non-DB stuck await; bounds total cycle
+#    time so the daemon always loops back round. DB-tunable via
+#    app_settings.brain_cycle_timeout_seconds (read mid-loop, after settings
+#    load); this is the fallback default. Generously above the normal <2-min
+#    cycle so it only fires on a genuine hang, and below CYCLE_SECONDS so a
+#    hung cycle is abandoned before the next one is due.
+BRAIN_CYCLE_TIMEOUT_DEFAULT_SECONDS = 240
 
 # Alert dispatch poll cadence — Grafana → webhook → alert_events rows are
 # time-sensitive (operator-facing pages), so we poll faster than the main
@@ -2779,7 +2836,9 @@ async def main():
         sys.exit(1)
 
     logger.info("[BRAIN] Connecting to local brain DB...")
-    pool = await asyncpg.create_pool(db_url, min_size=1, max_size=3)
+    # Pool carries a per-query command_timeout so a wedged connection can't hang
+    # the daemon's only thread forever (2026-06-29) — see _create_brain_pool.
+    pool = await _create_brain_pool(db_url)
     logger.info("[BRAIN] Connected. Starting brain daemon (once=%s)", one_shot)
 
     # Register the pool in the cross-instance registry so send_telegram /
@@ -3038,11 +3097,52 @@ async def main():
 
     consecutive_cycle_failures = 0
     while not shutdown.is_set():
+        # DB-tunable per-cycle ceiling (falls back to the constant if the read
+        # fails — itself now bounded by the pool's command_timeout).
+        cycle_timeout = await _setting_int(
+            pool, "brain_cycle_timeout_seconds",
+            BRAIN_CYCLE_TIMEOUT_DEFAULT_SECONDS,
+        )
+        cycle_started = time.monotonic()
         try:
-            await run_cycle(pool)
+            await _run_cycle_with_watchdog(pool, cycle_timeout=cycle_timeout)
             consecutive_cycle_failures = 0
             # Update heartbeat after successful cycle
             _touch_heartbeat()
+        except TimeoutError:
+            # The cycle blew past its watchdog ceiling — a stuck await was
+            # cancelled. This is the 2026-06-29 fix: the daemon STAYS RESPONSIVE
+            # (no more silent ~37-min epoll_wait hang), loops back round, and
+            # retries next cycle. Account for it like any cycle failure so a
+            # persistent hang still escalates.
+            consecutive_cycle_failures += 1
+            elapsed = time.monotonic() - cycle_started
+            logger.error(
+                "[BRAIN] Cycle aborted by timeout after %.0fs (watchdog "
+                "ceiling=%ds, command_timeout=%.0fs, %d in a row) — a stuck "
+                "await was cancelled; daemon stays responsive and retries "
+                "next cycle.",
+                elapsed, cycle_timeout, BRAIN_DB_COMMAND_TIMEOUT_SECONDS,
+                consecutive_cycle_failures,
+            )
+            if _should_page_cycle_failure(consecutive_cycle_failures):
+                _page_operator_failsafe(
+                    title="Brain monitoring cycle timing out",
+                    detail=(
+                        f"run_cycle() was aborted by its watchdog "
+                        f"{consecutive_cycle_failures} times in a row (last "
+                        f"after {elapsed:.0f}s; ceiling {cycle_timeout}s, "
+                        f"per-query command_timeout "
+                        f"{BRAIN_DB_COMMAND_TIMEOUT_SECONDS:.0f}s). A stuck "
+                        "await — likely a DB query on a wedged Docker host-port "
+                        "proxy — keeps hanging the cycle. The daemon is ALIVE "
+                        "and failing fast (no longer silently hung as on "
+                        "2026-06-29); detection is degraded. Check the brain DB "
+                        "connection / Docker Desktop port proxy."
+                    ),
+                    source="brain:cycle-watchdog",
+                    severity="critical",
+                )
         except Exception as e:
             consecutive_cycle_failures += 1
             logger.error(

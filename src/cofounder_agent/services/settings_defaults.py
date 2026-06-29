@@ -945,6 +945,15 @@ DEFAULTS: dict[str, str] = {
     'brain_anomaly_baseline_window_days': '30',
     'brain_anomaly_current_window_hours': '24',
     'brain_digest_window_hours': '6',
+    # Cycle watchdog ceiling (seconds): a stuck `await` inside run_cycle (a DB
+    # query on a wedged Docker host-port proxy) once parked the daemon for ~37
+    # min (2026-06-29). run_cycle is now wrapped in asyncio.wait_for(this); a
+    # cycle that exceeds it is cancelled, counted as a failure, and retried next
+    # cycle so the daemon never silently hangs. Generously above the normal
+    # <2-min cycle, below the 300s cycle interval. (The per-query asyncpg
+    # command_timeout is a sibling guard set via the BRAIN_DB_COMMAND_TIMEOUT_SECONDS
+    # env var, NOT here — the pool is built before settings load.)
+    'brain_cycle_timeout_seconds': '240',
 
     # ----- Migration-drift in-flight guard (brain/migration_drift_probe.py, #228) -----
     # When true, the migration-drift auto-recover path defers the worker

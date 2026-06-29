@@ -155,6 +155,51 @@ The rolling restart cap (3 per 60 min) still applies to the case it was built
 for: a **flapping** forward that a restart genuinely recovers each cycle but
 which keeps re-wedging.
 
+## The watchdog's own liveness — cycle timeout + DB command timeout
+
+The 2026-06-29 incident had a second half. The probe restarting the shared DB
+was one failure; the other was that **the brain daemon then hung**. `run_cycle`
+issued a query against the now-wedged Docker host-port proxy and the `await`
+never returned — the daemon's single asyncio thread parked in `epoll_wait` for
+~37 min. The main loop's `try/except` only catches **exceptions**; a hang raises
+nothing, so the cycle never failed, the `brain.cycle_heartbeat` went stale, and
+the only alert that fired was the out-of-band `BrainDeliveryDeadMansSwitch`
+(Alertmanager-native, independent of the brain's own — also dark — dispatch
+loop). A watchdog that can silently stop watching is the worst failure mode it
+has, so the cycle now has two guards that convert a hang into a fast, accounted
+failure:
+
+- **Per-query `command_timeout` on the asyncpg pool**
+  (`_create_brain_pool`). asyncpg's own **client-side** timer, so it fires even
+  when the wedged proxy means the server never even sees the query — the exact
+  2026-06-29 mechanism (a server-side Postgres `statement_timeout` would not,
+  because the statement never arrives). Set by the
+  `BRAIN_DB_COMMAND_TIMEOUT_SECONDS` env var (default **60s**). It is an
+  env/constant, **not** an `app_settings` row, because the pool is created
+  before settings can be read — same bootstrap tier as the database URL itself.
+- **Whole-cycle ceiling** (`_run_cycle_with_watchdog`). `run_cycle` is wrapped
+  in `asyncio.wait_for(..., timeout=cycle_timeout)`; a cycle that blows past the
+  ceiling is **cancelled** (freeing the thread) and raises `TimeoutError`. This
+  backstops any non-DB stuck `await` too. The ceiling is DB-tunable via
+  `app_settings.brain_cycle_timeout_seconds` (default **240s**) — read at the
+  top of each loop, so once settings are live an operator can retune it without
+  a restart; it falls back to the `BRAIN_CYCLE_TIMEOUT_DEFAULT_SECONDS` constant
+  if the read itself fails (and that read is, in turn, bounded by the pool's
+  `command_timeout`). Generously above the normal sub-2-minute cycle so it only
+  fires on a genuine hang, and below the 300s `CYCLE_SECONDS` interval so a hung
+  cycle is abandoned before the next one is due.
+
+A timed-out cycle is counted exactly like a raised one: the daemon stays
+responsive, loops back round, and **retries next cycle** — so it self-recovers
+the moment the wedge clears. If the hang is persistent, the same
+`CYCLE_FAILURE_ALERT_THRESHOLD` (3 in a row) escalation that covers a
+repeatedly-**raising** cycle pages the operator, and it pages through the
+**stdlib `operator_notifier` failsafe** (`_page_operator_failsafe`, env-token
+based) rather than the DB-backed `notify()` path — because a wedged DB is
+exactly when that path can reach no one. The dead-man's switch remains the
+ultimate backstop, but it should now never be the **only** thing that fires:
+the brain notices its own stuck cycle first.
+
 ## Compose-drift host-recover
 
 `compose_drift_probe` detects drift between `docker-compose.local.yml` and the
