@@ -33,7 +33,7 @@
     },
     {
       key: 'site_url',
-      value: 'https://www.gladlabs.io',
+      value: 'https://example.com',
       category: 'identity',
       type: 'text',
       description: 'Full production URL with protocol',
@@ -54,14 +54,14 @@
     },
     {
       key: 'owner_email',
-      value: 'matt@gladlabs.io',
+      value: 'owner@example.com',
       category: 'identity',
       type: 'text',
       description: 'Site owner email',
     },
     {
       key: 'support_email',
-      value: 'support@gladlabs.io',
+      value: 'support@example.com',
       category: 'identity',
       type: 'text',
       description: 'Support contact email',

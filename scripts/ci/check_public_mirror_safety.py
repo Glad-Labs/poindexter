@@ -188,6 +188,7 @@ _STRIP_FILES = (
     # load the now-stripped scripts and would break the mirror's unit-tests run).
     "scripts/ci/check_public_mirror_safety.py",
     "scripts/regen-app-settings-doc.py",
+    "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_frontend_exts.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_gitea.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py",
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py",
@@ -463,6 +464,22 @@ _LEAK_PATTERNS = (
         "the '#NNN' or 'Glad-Labs/poindexter#NNN' form.",
     ),
     LeakPattern(
+        # Operator PERSONAL email seeded as a default / sample value. The
+        # gladlabs.io VALUES pattern below is SQL-scoped, so a JS or JSON object
+        # literal (``value: '<firstname>@gladlabs.io'``) slips straight past it — that
+        # exact shape shipped live in ``console/js/settings-data.js`` until the
+        # 2026-06-29 PII audit (the guard didn't even open ``.js`` files; both
+        # gaps are closed now). Scoped to the operator's first-name local-parts
+        # so the role aliases that legitimately ship — ``support@`` / ``hello@``
+        # / ``security@`` / ``conduct@`` / ``sales@`` in README.md, SUPPORT.md,
+        # SECURITY.md, and the pyproject author fields — are NOT flagged.
+        re.compile(r"\b(?:matt|mattg|matthew)@gladlabs\.io\b", re.IGNORECASE),
+        "operator personal email",
+        "Use a neutral placeholder (owner@example.com) — a fresh OSS fork must "
+        "not inherit the operator's personal email. Role aliases (support@, "
+        "security@, hello@) are fine; only first-name@gladlabs.io is flagged.",
+    ),
+    LeakPattern(
         # gladlabs.io as a DEFAULT seeded value. Catches a seed VALUES tuple
         # carrying a gladlabs.io string. Brand attribution mentions in
         # CLAUDE.md / README / public docs are OK (they don't match this
@@ -574,9 +591,22 @@ def would_ship(rel_path: str) -> bool:
 # File extensions we actually scan for leak patterns. Binary types
 # (images, fonts) can contain byte sequences that look like patterns by
 # accident — and there's no operator-private content in a PNG anyway.
+#
+# Front-end extensions (.js/.jsx/.ts/.tsx/.mjs/.cjs/.css/.html/.vue/.svelte)
+# were ADDED 2026-06-29: the shipping operator console
+# (``src/cofounder_agent/console/``) is all JS/JSX, and ``settings-data.js``
+# seeded the operator's personal email + site URL as mock data — live on the
+# public mirror — because the guard never opened ``.js`` files. ``would_ship()``
+# still gates first, so the big STRIPPED front-end trees (web/public-site,
+# web/storefront, packages/) are skipped regardless of extension; only the
+# console + the two Cloudflare Workers actually enter scope. Vendored/minified
+# bundles pulled in by this are skipped via ``_is_vendored_or_minified``.
 _TEXT_EXTS = frozenset({
     ".py", ".md", ".json", ".yml", ".yaml", ".toml", ".sh",
     ".ps1", ".sql", ".txt", ".cfg", ".ini", ".env",
+    # Front-end family (2026-06-29 audit — operator console ships):
+    ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
+    ".css", ".html", ".vue", ".svelte",
 })
 
 
@@ -592,6 +622,25 @@ def _is_text_file(rel_path: str) -> bool:
     if name.startswith(".") and "." not in name[1:]:
         return True
     return Path(rel_path).suffix.lower() in _TEXT_EXTS
+
+
+def _is_vendored_or_minified(rel_path: str) -> bool:
+    """True for third-party / minified bundles the leak scan should skip.
+
+    Adding the front-end extensions to ``_TEXT_EXTS`` (2026-06-29 audit) pulled
+    vendored blobs like ``console/js/vendor/babel.min.js`` into scan scope.
+    Minified third-party bundles carry no operator-authored content and are
+    false-positive magnets — the bare word ``operator`` is all over minified
+    Babel — so skip anything under a ``vendor/`` (or ``node_modules/``) segment
+    or with a ``.min.<ext>`` / ``.bundle.<ext>`` filename. This is scan-only;
+    the cosmetic rewrite in sync-to-github.sh still treats them as text (a no-op
+    there, since they carry no internal-repo URL).
+    """
+    parts = Path(rel_path).parts
+    if "vendor" in parts or "node_modules" in parts:
+        return True
+    name = Path(rel_path).name.lower()
+    return ".min." in name or ".bundle." in name
 
 
 # ---------------------------------------------------------------------------
@@ -618,6 +667,8 @@ def scan(repo_root: Path) -> list[Hit]:
         if rel in _LEAK_GUARD_ALLOW:
             continue
         if not _is_text_file(rel):
+            continue
+        if _is_vendored_or_minified(rel):
             continue
         full = repo_root / rel
         try:

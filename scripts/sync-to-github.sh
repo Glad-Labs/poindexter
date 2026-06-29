@@ -181,6 +181,7 @@ git rm --cached --quiet scripts/regen-app-settings-doc.py 2>/dev/null || true   
 # sync-to-github.sh), so they'd ImportError / FileNotFound on the mirror's
 # unit-tests run. Strip the whole cluster together — it tests operator-only
 # mirror tooling the mirror never executes.
+git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_frontend_exts.py 2>/dev/null || true
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_gitea.py 2>/dev/null || true
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_multiline.py 2>/dev/null || true
 git rm --cached --quiet src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_name_regex.py 2>/dev/null || true
