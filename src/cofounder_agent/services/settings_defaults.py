@@ -136,7 +136,8 @@ DEFAULTS: dict[str, str] = {
     # Daily-driver content writer. gemma-4-31B won the 2026-06-18 writer bakeoff
     # (98/100): it names grounded specifics without the glm writer's [placeholder]
     # hedging or qwen2.5's stat fabrication, and rarely needs the rescue. The
-    # cross-model rescue reviser is glm (qa_rewrite_model). Operators tune live.
+    # rescue reviser (qa_rewrite_model) also defaults to this writer as of
+    # 2026-06-28 (was glm — reverted for VRAM thrash; see that key). Tune live.
     'pipeline_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
     # Adversarial critic — must be a DIFFERENT model family from the writer and
     # reviser so biases don't cancel (cross-model QA principle). phi4:14b is fast,
@@ -277,13 +278,13 @@ DEFAULTS: dict[str, str] = {
     'pipeline_writer_unload_poll_interval_seconds': '0.5',
     'qa_fallback_critic_model': 'ollama/qwen2.5:32b',
     'qa_fallback_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
-    # Cross-model rescue reviser. The qa.rewrite step routes here instead of the
-    # writer (pipeline_writer_model). Default glm-4.7: cautious and never
-    # fabricates — the ideal final-pass reviser. Its [placeholder] weakness is a
-    # from-scratch-WRITER failure mode; when revising already-concrete text it
-    # just applies the targeted fix. Cross-model vs the gemma writer so their
-    # biases cancel (#1692 bakeoff). Empty = use the writer model.
-    'qa_rewrite_model': 'ollama/glm-4.7-5090:latest',
+    # Cross-model rescue reviser for qa.rewrite. EMPTY = reuse the resident
+    # gemma writer (pipeline_writer_model) — the current default. The #1692
+    # bakeoff (2026-06-18) picked glm-4.7-5090 here, but on the 5090+3090 rig glm
+    # can't stay resident beside the 24GB writer, so each rescue cold-loaded a
+    # 19GB thinking model that returned EMPTY ~2x/day. Reverted 2026-06-28;
+    # restore only with GPU pinning that keeps glm warm on the 3090.
+    'qa_rewrite_model': '',
     # poindexter#716: vision QA model keys — seeded here so the DB always has
     # a value and code never falls back to a hardcoded literal.  Empty string =
     # operator deliberately cleared the key — the vision check is skipped.

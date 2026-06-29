@@ -485,6 +485,69 @@ class TestNoDanglingModelDefaults:
 
 
 # ---------------------------------------------------------------------------
+# qa.rewrite rescue reviser must not silently default back to glm-4.7-5090
+# ---------------------------------------------------------------------------
+
+class TestQaRewriteReviserDefault:
+    """``qa_rewrite_model`` (the qa.rewrite rescue reviser) must NOT default to
+    ``glm-4.7-5090`` on either seed surface.
+
+    The #1692 bakeoff (2026-06-18) chose ``glm-4.7-5090`` here as a cautious,
+    cross-model final-pass reviser. But on the 5090+3090 rig (3 hot models, 2
+    cards) glm cannot stay resident beside the 24GB gemma writer, so every
+    rescue cold-loaded a 19GB thinking model that timed out mid-``<think>`` and
+    returned empty ~2x/day (``qa_rewrite_empty_revision``) — turning a rescuable
+    post into a final reject. Reverted to the resident writer (empty default)
+    2026-06-28.
+
+    Empty = reuse ``pipeline_writer_model`` (gemma), already resident, so the
+    rescue never reloads. If you restore ``glm-4.7-5090`` here you MUST first
+    pin it warm on the 3090 (``project_multi_gpu_pool``) — then delete this
+    test and explain why in the PR. Mirrors the dual-surface guard in
+    ``TestNoDanglingModelDefaults`` (baseline wins on fresh install because
+    migrations run before ``seed_all_defaults`` and both use ON CONFLICT DO
+    NOTHING).
+    """
+
+    _THRASH_REVISER = "glm-4.7-5090"
+
+    def test_registry_default_not_thrash_reviser(self):
+        from services.settings_defaults import DEFAULTS
+
+        val = DEFAULTS.get("qa_rewrite_model", "")
+        assert self._THRASH_REVISER not in val, (
+            f"settings_defaults.DEFAULTS re-points qa_rewrite_model at "
+            f"{self._THRASH_REVISER!r} ({val!r}) — it cold-loads under 5090+3090 "
+            "VRAM thrash and returns empty. Keep it empty (reuse the resident "
+            "writer) unless glm is pinned warm on the 3090."
+        )
+
+    def test_baseline_seed_default_not_thrash_reviser(self):
+        import re
+        from pathlib import Path
+
+        from services import settings_defaults
+
+        seeds = (
+            Path(settings_defaults.__file__).parent
+            / "migrations"
+            / "0000_baseline.seeds.sql"
+        )
+        text = seeds.read_text(encoding="utf-8")
+        row_re = re.compile(
+            r"INSERT INTO app_settings \([^)]*\) VALUES \('([^']*)',\s*'([^']*)'"
+        )
+        seeded = dict(row_re.findall(text))
+        val = seeded.get("qa_rewrite_model", "")
+        assert self._THRASH_REVISER not in val, (
+            f"0000_baseline.seeds.sql seeds qa_rewrite_model={val!r} on fresh "
+            f"installs (baseline wins over settings_defaults) — re-points the "
+            f"rescue reviser at {self._THRASH_REVISER!r}, which thrashes VRAM and "
+            "returns empty. Seed it empty unless glm is pinned warm on the 3090."
+        )
+
+
+# ---------------------------------------------------------------------------
 # Retired settings must stay retired
 # ---------------------------------------------------------------------------
 
