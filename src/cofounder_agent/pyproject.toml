@@ -124,7 +124,7 @@ cloudinary = "^1.41"
 playwright = "^1.47"
 mcp = ">=1.23.0"
 pillow = ">=12.2.0"
-apscheduler = "^3.11.2"
+apscheduler = "^3.11.3"
 # Apprise — unified push-notification library backing the generic
 # services/integrations/handlers/outbound_apprise.py handler. Already
 # resolved in poetry.lock at 1.11.0 via Prefect's dependency tree;
