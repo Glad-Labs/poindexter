@@ -81,7 +81,12 @@ class PostizClient:
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                post_id = str(data.get("id", "")) or None
+                # Postiz returns a list of {postId, integration} — one entry
+                # per post in the group (POST /public/v1/posts). A 200 means
+                # Postiz ACCEPTED + queued the post; the actual platform
+                # publish runs async (it can still land in ERROR state on the
+                # Postiz side, e.g. an X "CreditsDepleted" rejection).
+                post_id = _extract_post_id(data)
                 return {"success": True, "post_id": post_id, "error": None}
         except httpx.HTTPStatusError as exc:
             err = f"Postiz HTTP {exc.response.status_code}: {exc.response.text[:200]}"
@@ -112,3 +117,22 @@ class PostizClient:
             if not upload_id:
                 raise ValueError(f"Postiz upload returned no id: {data}")
             return upload_id
+
+
+def _extract_post_id(data: Any) -> str | None:
+    """Pull the Postiz post id out of a create-post response.
+
+    POST /public/v1/posts returns a LIST of ``{postId, integration}`` (one
+    per post in the group). Older/other shapes may return a dict with ``id``.
+    Returns the first post's id, or None if absent.
+    """
+    if isinstance(data, list):
+        if not data:
+            return None
+        first = data[0]
+        if isinstance(first, dict):
+            return str(first.get("postId") or first.get("id") or "") or None
+        return None
+    if isinstance(data, dict):
+        return str(data.get("id", "")) or None
+    return None

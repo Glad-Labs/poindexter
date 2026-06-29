@@ -5,14 +5,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.integrations.postiz_client import PostizClient
+from services.integrations.postiz_client import PostizClient, _extract_post_id
 
 
 def _mock_http(captured: dict):
     """Build a mock httpx.AsyncClient whose .post() captures the JSON body."""
     resp = MagicMock()
     resp.status_code = 200
-    resp.json.return_value = {"id": "pz-1"}
+    # Postiz returns a LIST of {postId, integration} from POST /public/v1/posts.
+    resp.json.return_value = [{"postId": "pz-1", "integration": "uuid-x"}]
     resp.raise_for_status = MagicMock()
 
     async def _post(url, json, headers, timeout):
@@ -43,9 +44,19 @@ async def test_create_post_injects_required_x_settings():
         )
 
     assert result["success"] is True
+    assert result["post_id"] == "pz-1"  # parsed from the list response
     settings = captured["json"]["posts"][0]["settings"]
     assert settings["__type"] == "x"
     assert settings["who_can_reply_post"] == "everyone"
+
+
+def test_extract_post_id_handles_list_dict_and_empty():
+    """Postiz returns a list of {postId,...}; tolerate dict + empty too."""
+    assert _extract_post_id([{"postId": "p1", "integration": "i"}]) == "p1"
+    assert _extract_post_id([{"id": "p2"}]) == "p2"  # field fallback
+    assert _extract_post_id({"id": "p3"}) == "p3"    # dict shape
+    assert _extract_post_id([]) is None
+    assert _extract_post_id(None) is None
 
 
 @pytest.mark.asyncio
