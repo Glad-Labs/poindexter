@@ -126,6 +126,31 @@ class TestModuleConstants:
         # Either None (if not installed) or a class
         assert oi is None or callable(oi)
 
+    def test_httpx_instrumentor_is_none_or_class(self):
+        """Guard against silent removal/rename of HTTPXClientInstrumentor.
+
+        Mirrors the OpenAIInstrumentor guard (#171): telemetry.py assigns
+        the symbol at import time (the class or ``None``), so a future
+        opentelemetry-instrumentation-httpx drop/rename fails loudly here
+        instead of silently disabling egress trace propagation (#1997).
+        """
+        hi = telemetry_mod.HTTPXClientInstrumentor
+        assert hi is None or callable(hi)
+
+    def test_w3c_propagation_symbols_are_none_or_callable(self):
+        """Guard the W3C trace-context propagation API used at setup.
+
+        ``set_global_textmap`` + ``TraceContextTextMapPropagator`` live in
+        opentelemetry-api (already a hard dep), so they should import; the
+        None-tolerance keeps parity with the other guarded symbols.
+        """
+        assert telemetry_mod.set_global_textmap is None or callable(
+            telemetry_mod.set_global_textmap
+        )
+        assert telemetry_mod.TraceContextTextMapPropagator is None or callable(
+            telemetry_mod.TraceContextTextMapPropagator
+        )
+
 
 # ---------------------------------------------------------------------------
 # Full setup path with OTLP endpoint configured
@@ -331,3 +356,121 @@ class TestSetupTelemetryOtlpCaptureEnvVar:
         setup_telemetry(MagicMock())
 
         assert os.getenv("OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT") == "true"
+
+
+# ---------------------------------------------------------------------------
+# httpx egress instrumentation + explicit global W3C propagator
+# (Tier 1a — Glad-Labs/glad-labs-stack#1997). Outbound HTTP must inject the
+# W3C `traceparent` header so trace context survives every egress hop and an
+# adopter's own OTLP collector can stitch the run into a single trace.
+# ---------------------------------------------------------------------------
+
+
+class TestSetupTelemetryHttpxInstrumentation:
+    def test_httpx_instrumented_when_tracing_enabled(self, monkeypatch):
+        monkeypatch.setenv("ENABLE_TRACING", "true")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
+        mocks = _make_mock_components()
+        _apply_mocks(monkeypatch, mocks)
+        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
+
+        mock_httpx_instance = MagicMock()
+        mock_httpx_cls = MagicMock(return_value=mock_httpx_instance)
+        monkeypatch.setattr(
+            telemetry_mod, "HTTPXClientInstrumentor", mock_httpx_cls, raising=False
+        )
+
+        setup_telemetry(MagicMock(), service_name="test-svc")
+
+        mock_httpx_instance.instrument.assert_called_once()
+
+    def test_httpx_instrumentor_skipped_when_none(self, monkeypatch):
+        """No crash when opentelemetry-instrumentation-httpx isn't installed."""
+        monkeypatch.setenv("ENABLE_TRACING", "true")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
+        mocks = _make_mock_components()
+        _apply_mocks(monkeypatch, mocks)
+        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
+        monkeypatch.setattr(telemetry_mod, "HTTPXClientInstrumentor", None, raising=False)
+
+        setup_telemetry(MagicMock())
+
+    def test_httpx_instrumentor_failure_is_caught(self, monkeypatch):
+        """A failure inside httpx instrumentation must not crash setup."""
+        monkeypatch.setenv("ENABLE_TRACING", "true")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
+        mocks = _make_mock_components()
+        _apply_mocks(monkeypatch, mocks)
+        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
+
+        mock_httpx_instance = MagicMock()
+        mock_httpx_instance.instrument.side_effect = RuntimeError("httpx instrument failed")
+        mock_httpx_cls = MagicMock(return_value=mock_httpx_instance)
+        monkeypatch.setattr(
+            telemetry_mod, "HTTPXClientInstrumentor", mock_httpx_cls, raising=False
+        )
+
+        # Should not raise
+        setup_telemetry(MagicMock())
+
+
+class TestSetupTelemetryGlobalPropagator:
+    def test_global_w3c_propagator_set_when_tracing_enabled(self, monkeypatch):
+        monkeypatch.setenv("ENABLE_TRACING", "true")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
+        mocks = _make_mock_components()
+        _apply_mocks(monkeypatch, mocks)
+        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
+
+        mock_propagator_instance = MagicMock()
+        mock_propagator_cls = MagicMock(return_value=mock_propagator_instance)
+        mock_set_global = MagicMock()
+        monkeypatch.setattr(
+            telemetry_mod,
+            "TraceContextTextMapPropagator",
+            mock_propagator_cls,
+            raising=False,
+        )
+        monkeypatch.setattr(
+            telemetry_mod, "set_global_textmap", mock_set_global, raising=False
+        )
+
+        setup_telemetry(MagicMock())
+
+        mock_set_global.assert_called_once_with(mock_propagator_instance)
+
+    def test_propagator_skipped_when_symbols_none(self, monkeypatch):
+        """No crash when the propagation API isn't importable."""
+        monkeypatch.setenv("ENABLE_TRACING", "true")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
+        mocks = _make_mock_components()
+        _apply_mocks(monkeypatch, mocks)
+        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
+        monkeypatch.setattr(telemetry_mod, "set_global_textmap", None, raising=False)
+        monkeypatch.setattr(
+            telemetry_mod, "TraceContextTextMapPropagator", None, raising=False
+        )
+
+        setup_telemetry(MagicMock())
+
+    def test_propagator_failure_is_caught(self, monkeypatch):
+        """A failure setting the propagator must not crash setup."""
+        monkeypatch.setenv("ENABLE_TRACING", "true")
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_ENDPOINT", "http://jaeger:4318")
+        mocks = _make_mock_components()
+        _apply_mocks(monkeypatch, mocks)
+        monkeypatch.setattr(telemetry_mod, "OpenAIInstrumentor", None)
+
+        mock_set_global = MagicMock(side_effect=RuntimeError("propagator boom"))
+        monkeypatch.setattr(
+            telemetry_mod,
+            "TraceContextTextMapPropagator",
+            MagicMock(return_value=MagicMock()),
+            raising=False,
+        )
+        monkeypatch.setattr(
+            telemetry_mod, "set_global_textmap", mock_set_global, raising=False
+        )
+
+        # Should not raise
+        setup_telemetry(MagicMock())

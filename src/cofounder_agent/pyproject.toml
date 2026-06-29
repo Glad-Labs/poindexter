@@ -79,6 +79,11 @@ sentry-sdk = { version = "^2.18.0", extras = ["fastapi"] }
 # worker reports tracing enabled. Closes Glad-Labs/poindexter#505.
 opentelemetry-exporter-otlp = "^1.41"
 opentelemetry-instrumentation-fastapi = "^0.62b0"
+# httpx egress instrumentation — client spans + W3C `traceparent` injection on
+# outbound calls (Ollama / LiteLLM / web research) so trace context survives
+# every HTTP hop and an adopter's own OTLP backend stitches the run into one
+# trace (Glad-Labs/glad-labs-stack#1997 Tier 1a).
+opentelemetry-instrumentation-httpx = "^0.62b0"
 
 # Storage & Files
 python-multipart = ">=0.0.31"

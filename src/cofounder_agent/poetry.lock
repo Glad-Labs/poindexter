@@ -4999,6 +4999,28 @@ opentelemetry-util-http = "0.62b1"
 instruments = ["fastapi (>=0.92,<1.0)"]
 
 [[package]]
+name = "opentelemetry-instrumentation-httpx"
+version = "0.62b1"
+description = "OpenTelemetry HTTPX Instrumentation"
+optional = false
+python-versions = ">=3.9"
+groups = ["main"]
+files = [
+    {file = "opentelemetry_instrumentation_httpx-0.62b1-py3-none-any.whl", hash = "sha256:88614015df451d61bc7e73f22524e6f223611f80b6caad2f6bdcbe05fa0df653"},
+    {file = "opentelemetry_instrumentation_httpx-0.62b1.tar.gz", hash = "sha256:a1fac9bcc3a6ef5996a7990563f1af0798468b2c146de535fd598369383fba7e"},
+]
+
+[package.dependencies]
+opentelemetry-api = ">=1.12,<2.0"
+opentelemetry-instrumentation = "0.62b1"
+opentelemetry-semantic-conventions = "0.62b1"
+opentelemetry-util-http = "0.62b1"
+wrapt = ">=1.0.0,<3.0.0"
+
+[package.extras]
+instruments = ["httpx (>=0.18.0)"]
+
+[[package]]
 name = "opentelemetry-proto"
 version = "1.41.1"
 description = "OpenTelemetry Python Proto"
@@ -9949,4 +9971,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "8a80a8097a64c9eb23cdc520fac77749d6c1fcd668c06d4566d032e57190ca47"
+content-hash = "e1ea97b975a4a5eacab8462a34073f02666dd57fe8128bf5417c4a6224080058"

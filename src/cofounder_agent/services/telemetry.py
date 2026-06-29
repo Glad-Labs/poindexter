@@ -44,6 +44,32 @@ except ImportError:
     except ImportError:
         OpenAIInstrumentor = None  # type: ignore[assignment,misc]
 
+# W3C trace-context propagation API (ships in opentelemetry-api core). The
+# OTel default propagator is already W3C tracecontext, but pinning it
+# explicitly documents the standards contract and guarantees `traceparent`
+# injection across HTTP/process boundaries — the seam that lets an adopter's
+# own OTLP collector stitch our spans into one distributed trace
+# (Glad-Labs/glad-labs-stack#1997).
+try:
+    from opentelemetry.propagate import set_global_textmap  # type: ignore
+    from opentelemetry.trace.propagation.tracecontext import (  # type: ignore
+        TraceContextTextMapPropagator,
+    )
+except ImportError:
+    set_global_textmap = None  # type: ignore[assignment]
+    TraceContextTextMapPropagator = None  # type: ignore[assignment,misc]
+
+# httpx egress instrumentation — emits client spans AND injects the W3C
+# `traceparent` header on every outbound call (Ollama / LiteLLM / web
+# research / publish). Separate distribution; when absent the symbol is None
+# and egress propagation is skipped without error (#1997 Tier 1a).
+try:
+    from opentelemetry.instrumentation.httpx import (  # type: ignore
+        HTTPXClientInstrumentor,
+    )
+except ImportError:
+    HTTPXClientInstrumentor = None  # type: ignore[assignment,misc]
+
 
 def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
     """
@@ -157,6 +183,21 @@ def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
                 exc_info=True,
             )
 
+        # Pin the global propagator to W3C Trace Context. OTel already
+        # defaults to W3C, but setting it explicitly makes the standards
+        # contract first-class and guarantees `traceparent` is injected on
+        # every outbound carrier — the seam that lets a downstream service
+        # (or an adopter's own OTLP backend) join our spans into one trace
+        # (Glad-Labs/glad-labs-stack#1997).
+        if set_global_textmap is not None and TraceContextTextMapPropagator is not None:
+            try:
+                set_global_textmap(TraceContextTextMapPropagator())
+            except Exception as e:
+                logging.error(
+                    f"[setup_telemetry] Failed to set global W3C propagator: {e}",
+                    exc_info=True,
+                )
+
         # Instrument the FastAPI app (skipped when app is None — worker
         # processes that have no FastAPI surface but still want spans).
         if app is not None and FastAPIInstrumentor is not None:
@@ -173,6 +214,20 @@ def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
             except Exception as e:
                 logging.error(
                     f"[setup_telemetry] Failed to instrument OpenAI SDK: {e}", exc_info=True
+                )
+
+        # Instrument outbound httpx so egress calls (Ollama / LiteLLM / web
+        # research / publish) emit client spans AND carry the W3C
+        # `traceparent` header. Without this, trace context dies at the
+        # first HTTP hop and downstream / adopter backends see fragmented
+        # traces instead of one coherent run (#1997 Tier 1a).
+        if HTTPXClientInstrumentor is not None:
+            try:
+                HTTPXClientInstrumentor().instrument()
+                logging.debug("[TELEMETRY] httpx client instrumented successfully")
+            except Exception as e:
+                logging.error(
+                    f"[setup_telemetry] Failed to instrument httpx: {e}", exc_info=True
                 )
 
     except Exception as e:
