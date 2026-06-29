@@ -252,7 +252,7 @@ prefect = ">=3.6.29,<3.8.0"
 # in units (10,000/day default), NOT dollars. videos.insert is ~1,600
 # units, so a single channel can ship ~6 uploads/day without paying
 # anything. This is NOT a `feedback_no_paid_apis` violation.
-google-auth = { version = "^2.36.0", optional = true }
+google-auth = { version = "^2.55.1", optional = true }
 google-auth-oauthlib = { version = "^1.2.1", optional = true }
 google-api-python-client = { version = "^2.151.0", optional = true }
 # pyasn1 is a transitive dep of google-auth but only needed for the YouTube
