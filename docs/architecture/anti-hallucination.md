@@ -833,6 +833,32 @@ for the httpx fallback), and `content.normalize_draft` (the body node
 both writer paths converge on). Like `maybe_unwrap_json`, it is a no-op
 on clean output.
 
+**Planning-scaffold strip + gate (2026-06-28, #1963).** A sibling failure
+to the reasoning-token leak, but **prose-shaped** rather than
+token-shaped: the writer (`gemma-4-31B`) intermittently emits its
+planning/outline scaffold as plain Markdown — a bulleted block of
+meta-notes (`* Topic:`, `* Key elements from sources:`,
+`* Models used/tested:`) and echoed prompt instructions (`Avoid "delve"`,
+`Vary sentence length.`, `No placeholder brackets.`) — **before** the
+article, gluing the article's first heading mid-line onto the last
+bullet (prod task `0f70f736`: `…No placeholder brackets.## The Current
+Ollama Model Stack`). Because there are no control tokens, the
+reasoning-token strip above misses it; the draft reached
+`awaiting_approval` at quality 82 and rendered as a wall of planning
+bullets with the article buried below. Two defenses, both keyed on the
+same echoed-instruction / planning-label tells:
+`content.normalize_draft.strip_leaked_planning_scaffold` removes the
+common case (re-anchoring the article from its first Markdown heading,
+even when the writer glued it mid-line) and, as a QA-gate safety net for
+any residual, the `leaked_planning_scaffold` rule in `content_validator`
+hard-rejects (critical) so the post enters the QA rescue/rewrite cycle
+instead of publishing. Both require **≥ 2 distinct tells** so a single
+benign mention (a writing-tips post that says "vary sentence length")
+never fires, and the gate is **fence-aware** — a post that shows these
+rules as a code example is left alone. Like the reasoning-token strip,
+both are no-ops on clean output and the gate is DB-toggleable via
+`content_validator_rules` (`leaked_planning_scaffold`).
+
 ## What still slips through
 
 - **Plausible-but-wrong factual claims** that don't trigger a regex

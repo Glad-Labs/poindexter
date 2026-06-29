@@ -94,6 +94,67 @@ def ensure_blank_line_before_lists(content: str) -> str:
     return '\n'.join(out)
 
 
+# ---------------------------------------------------------------------------
+# Leaked planning-scaffold strip (#1963)
+# ---------------------------------------------------------------------------
+#
+# The writer model (notably gemma-4-31B) intermittently emits its planning /
+# outline scaffold — bulleted meta-notes plus echoed prompt instructions — as a
+# preamble BEFORE the article, and glues the article's first heading mid-line
+# onto the last scaffold bullet (prod task 0f70f736, 2026-06-28: the body opened
+# with "* Topic:", "* Key elements from sources:", "Avoid 'delve'…", "Vary
+# sentence length.", "No placeholder brackets.## The Current Ollama Model
+# Stack"). ``strip_reasoning_artifacts`` only removes *control-token* reasoning
+# (``<think>`` / ``<|channel|>``), so a plain-Markdown scaffold reaches the
+# reader as a wall of bullets with the article buried below.
+#
+# Tells below are echoed-instruction phrases + bulleted planning labels that
+# never appear in finished prose. The detection rule in
+# ``content_validator.LEAKED_PLANNING_SCAFFOLD_PATTERNS`` is the QA-gate
+# counterpart — kept separate (strip here, detect there) per the reasoning-leak
+# precedent (strip in thinking_models, detect in content_validator).
+_SCAFFOLD_TELL_RE = re.compile(
+    r"(?im)(?:"
+    r"key\s+elements?\s+from\s+sources"
+    r"|models?\s+used\s*/?\s*tested"
+    r"|vary\s+sentence\s+length"
+    r"|no\s+placeholder\s+brackets"
+    r"|avoid\s+[\"'“]?delve"
+    r"|concluding\s+paragraph"
+    r"|\*\s*(?:voice|citations?|structure)\s*:\s*\*"
+    r"|^[ \t]*[*+\-][ \t]+\*?(?:topic|voice|citations?|structure|tone|audience"
+    r"|outline|writer\s+model|reviser|vision\s+qa|key\s+elements?)\b[ \t]*:"
+    r")"
+)
+
+# First Markdown heading (H1-H6), whether at line start OR glued onto preceding
+# text — the writer sometimes emits "...brackets.## Heading" with no newline,
+# so a plain ``^#`` anchor would miss it.
+_FIRST_HEADING_RE = re.compile(r"(?:^|(?<=[^\n#]))(#{1,6}[ \t]+\S)", re.MULTILINE)
+
+
+def strip_leaked_planning_scaffold(content: str) -> str:
+    """Remove a leaked planning/outline scaffold that precedes the article.
+
+    Only acts when the text before the first Markdown heading carries >= 2
+    scaffold tells (echoed prompt instructions / planning labels) — a normal
+    intro paragraph has none, so legitimate content is never touched. Returns
+    the article from its first heading onward, re-anchoring a heading the writer
+    glued mid-line. Leaves content unchanged when no heading anchors the article
+    (the content_validator ``leaked_planning_scaffold`` rule is the safety net
+    for that residual case). Pure + idempotent.
+    """
+    if not content:
+        return content
+    heading = _FIRST_HEADING_RE.search(content)
+    if not heading:
+        return content
+    preamble = content[: heading.start(1)]
+    if len(_SCAFFOLD_TELL_RE.findall(preamble)) < 2:
+        return content
+    return content[heading.start(1):].lstrip()
+
+
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Apply normalize_text + scrub_fabricated_links + strip_leaked_image_prompts."""
     content_text = (state.get("content") or "").strip()
@@ -109,6 +170,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # + two_pass) converge on this node, so it guarantees a clean body even for
     # a future path that bypasses the provider seam. Fence-aware + idempotent.
     content_text = strip_reasoning_artifacts(content_text)
+
+    # Strip a leaked planning/outline scaffold the writer emitted before the
+    # article (#1963, prod task 0f70f736). Runs right after the control-token
+    # strip so a scaffold that was itself wrapped in reasoning tokens is handled
+    # too. Pure + idempotent; no-op when the body is clean.
+    content_text = strip_leaked_planning_scaffold(content_text)
 
     # Build real-slug allowlist from content_generator cache if available.
     real_slug_set: set[str] = set()
@@ -145,4 +212,5 @@ __all__ = [
     "run",
     "strip_leaked_image_prompts",
     "ensure_blank_line_before_lists",
+    "strip_leaked_planning_scaffold",
 ]

@@ -508,6 +508,40 @@ REASONING_TOKEN_LEAK_PATTERNS = [
     r"<\|/thinking\|>",
 ]
 
+# Leaked planning/outline scaffold (#1963).
+#
+# The writer model (notably gemma-4-31B) intermittently emits its planning
+# notes / echoed prompt instructions as a bulleted preamble BEFORE the article
+# (prod task 0f70f736, 2026-06-28: the body opened with "* Topic:", "* Key
+# elements from sources:", "Avoid 'delve'", "Vary sentence length.", "No
+# placeholder brackets.## The Current Ollama Model Stack"). The reasoning-token
+# rule above only catches CONTROL-TOKEN leaks; a plain-Markdown planning
+# scaffold passed every rail to awaiting_approval at quality 82.
+#
+# ``modules/content/atoms/content_normalize_draft.strip_leaked_planning_scaffold``
+# removes the common (heading-anchored) case before QA runs; this rule is the
+# QA-gate safety net for any residual scaffold (e.g. no heading anchored the
+# article, so the strip left it in place). The call site requires >= 2 tells to
+# fire — a single benign "vary sentence length" mention in a writing-tips post
+# must never hard-reject — and blanks code spans first so a post that shows
+# these rules as a code example is safe. Mirror of
+# content_normalize_draft._SCAFFOLD_TELL_RE (strip there, detect here), the same
+# split-of-duties the reasoning-leak case uses (strip in thinking_models, detect
+# here).
+LEAKED_PLANNING_SCAFFOLD_RE = re.compile(
+    r"(?im)(?:"
+    r"key\s+elements?\s+from\s+sources"
+    r"|models?\s+used\s*/?\s*tested"
+    r"|vary\s+sentence\s+length"
+    r"|no\s+placeholder\s+brackets"
+    r"|avoid\s+[\"'“]?delve"
+    r"|concluding\s+paragraph"
+    r"|\*\s*(?:voice|citations?|structure)\s*:\s*\*"
+    r"|^[ \t]*[*+\-][ \t]+\*?(?:topic|voice|citations?|structure|tone|audience"
+    r"|outline|writer\s+model|reviser|vision\s+qa|key\s+elements?)\b[ \t]*:"
+    r")"
+)
+
 # Stock-LLM transition words used at sentence start (poindexter#232).
 # Local LLMs (gemma3, glm, qwen) over-use these as paragraph openers,
 # which both reads as AI-generated and chews into EEAT trust signals.
@@ -1748,6 +1782,30 @@ def validate_content(
                         line_number=_rt_i,
                     ))
                     CONTENT_VALIDATOR_WARNINGS_TOTAL.labels(rule="reasoning_token_leak").inc()
+
+    # 7b-bis. Leaked planning/outline scaffold (#1968). The writer sometimes
+    # emits its outline + echoed prompt instructions as a bulleted preamble
+    # before the article. normalize_draft strips the heading-anchored case; this
+    # is the residual-case gate. Fence-aware (blank code spans first) so a post
+    # that shows these rules as a code example does not fire, and requires >= 2
+    # tells so a single benign mention ("vary sentence length") never hard-
+    # rejects. Scans the body (content), not full_text — the scaffold is body-side.
+    if _enabled("leaked_planning_scaffold"):
+        _scaffold_hits = LEAKED_PLANNING_SCAFFOLD_RE.findall(_strip_code_spans(content))
+        if len(_scaffold_hits) >= 2:
+            _scaffold_examples = ", ".join(h.strip()[:50] for h in _scaffold_hits[:3])
+            issues.append(ValidationIssue(
+                severity="critical",
+                category="leaked_planning_scaffold",
+                description=(
+                    f"Leaked writer planning scaffold in body (tells: "
+                    f"{_scaffold_examples}) — the model emitted its outline / "
+                    f"echoed prompt instructions instead of finished prose. "
+                    f"normalize_draft should strip this; the residual reached QA."
+                ),
+                matched_text=_scaffold_examples[:100],
+            ))
+            CONTENT_VALIDATOR_WARNINGS_TOTAL.labels(rule="leaked_planning_scaffold").inc()
 
     # 7c. Known-wrong facts -- loaded from DB (fact_overrides table).
     # Each row has its own explanation so the rewrite prompt carries the
