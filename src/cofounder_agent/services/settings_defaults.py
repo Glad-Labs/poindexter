@@ -1334,6 +1334,10 @@ DEFAULTS: dict[str, str] = {
     'postiz_integration_id_reddit': '',
     'postiz_integration_id_tiktok': '',
     'postiz_integration_id_instagram': '',
+    # X exposes a "made with AI" disclosure flag on each post. Glad Labs
+    # content is AI-authored, so this defaults true; a future operator can
+    # set it false per their content policy or jurisdiction.
+    'social_x_made_with_ai': 'true',
 
 }
 

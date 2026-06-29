@@ -196,6 +196,58 @@ async def test_approve_draft_passes_api_key_to_postiz():
     )
 
 
+@pytest.mark.asyncio
+async def test_approve_draft_sets_made_with_ai_for_x():
+    """X posts carry the made_with_ai disclosure flag (social_x_made_with_ai)."""
+    row = {
+        "id": "d7", "platform": "twitter",
+        "content": "ai post", "platform_config": "{}",
+        "status": "pending",
+    }
+    pool, _conn = _make_pool(fetchrow=row)
+    sc = _make_site_config({
+        "postiz_integration_id_twitter": "uuid-abc",
+        "postiz_api_url": "http://postiz:3000",
+        "social_x_made_with_ai": "true",
+    })
+    with patch("services.social_drafts.PostizClient") as mock_cls:
+        instance = mock_cls.return_value
+        instance.create_post = AsyncMock(
+            return_value={"success": True, "post_id": "p", "error": None}
+        )
+        svc = SocialDraftsService()
+        await svc.approve_draft("d7", pool, sc)
+
+    settings = mock_cls.return_value.create_post.call_args.kwargs["platform_settings"]
+    assert settings["made_with_ai"] is True
+
+
+@pytest.mark.asyncio
+async def test_approve_draft_made_with_ai_disabled_by_setting():
+    """social_x_made_with_ai=false flips the flag off."""
+    row = {
+        "id": "d8", "platform": "twitter",
+        "content": "human post", "platform_config": "{}",
+        "status": "pending",
+    }
+    pool, _conn = _make_pool(fetchrow=row)
+    sc = _make_site_config({
+        "postiz_integration_id_twitter": "uuid-abc",
+        "postiz_api_url": "http://postiz:3000",
+        "social_x_made_with_ai": "false",
+    })
+    with patch("services.social_drafts.PostizClient") as mock_cls:
+        instance = mock_cls.return_value
+        instance.create_post = AsyncMock(
+            return_value={"success": True, "post_id": "p", "error": None}
+        )
+        svc = SocialDraftsService()
+        await svc.approve_draft("d8", pool, sc)
+
+    settings = mock_cls.return_value.create_post.call_args.kwargs["platform_settings"]
+    assert settings["made_with_ai"] is False
+
+
 # ---------------------------------------------------------------------------
 # backfill_post_id
 # ---------------------------------------------------------------------------

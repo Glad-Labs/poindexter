@@ -152,11 +152,22 @@ class SocialDraftsService:
         api_key = await site_config.get_secret("postiz_api_key", "")
         client = PostizClient(base_url=base_url, api_key=api_key)
 
+        # Operator-tunable per-platform settings, merged over the draft's
+        # platform_config. X carries a "made with AI" disclosure flag
+        # (social_x_made_with_ai, default true — Glad Labs content is
+        # AI-authored). setdefault lets a per-draft override still win.
+        platform_settings = dict(platform_config)
+        if platform == "twitter":
+            made_with_ai = site_config.get("social_x_made_with_ai", "true")
+            platform_settings.setdefault(
+                "made_with_ai", str(made_with_ai).strip().lower() == "true"
+            )
+
         result = await client.create_post(
             integration_id=integration_id,
             content=row["content"],
             platform_type=_PLATFORM_TYPE.get(platform) or platform,
-            platform_settings=platform_config,
+            platform_settings=platform_settings,
             upload_ids=[],
         )
 
