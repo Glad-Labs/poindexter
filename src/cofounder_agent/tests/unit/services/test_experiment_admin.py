@@ -167,7 +167,7 @@ class TestAddVariant:
             weight=1.0,
             prompt_template_key=None,
             prompt_template_version=None,
-            writer_model="gemma4:31b",
+            writer_model="gemma-4-31B-it-qat:latest",
             rag_config={},
         )
         assert got == var_id
@@ -334,7 +334,7 @@ class TestConcludeExperiment:
                 return {"id": exp_id, "status": "active", "niche_slug": "glad-labs"}
             return {
                 "label": "B",
-                "writer_model": "gemma4:31b",
+                "writer_model": "gemma-4-31B-it-qat:latest",
                 "prompt_template_key": None,
                 "prompt_template_version": None,
             }

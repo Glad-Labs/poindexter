@@ -190,7 +190,7 @@ async def test_two_active_variants_both_get_selected() -> None:
     rows = [
         _make_variant_row(
             experiment_id=exp_id, experiment_key="model-bake-off",
-            variant_label="A", writer_model="gemma4:31b",
+            variant_label="A", writer_model="gemma-4-31B-it-qat:latest",
         ),
         _make_variant_row(
             experiment_id=exp_id, experiment_key="model-bake-off",
@@ -320,7 +320,7 @@ async def test_variant_inherits_none_fields() -> None:
         experiment_key="model-only",
         variant_label="gemma4-31b",
         # The axis being tested:
-        writer_model="gemma4:31b",
+        writer_model="gemma-4-31B-it-qat:latest",
         # Held-constant axes (NULL in DB → None on the dataclass):
         prompt_template_key=None,
         prompt_template_version=None,
@@ -331,7 +331,7 @@ async def test_variant_inherits_none_fields() -> None:
     variant = await pick_variant(pool, "glad-labs", task_id="task-Y")
 
     assert variant is not None
-    assert variant.writer_model == "gemma4:31b"
+    assert variant.writer_model == "gemma-4-31B-it-qat:latest"
     assert variant.prompt_template_key is None
     assert variant.prompt_template_version is None
     assert variant.rag_config == {}

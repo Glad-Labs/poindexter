@@ -308,9 +308,9 @@ DEFAULTS: dict[str, str] = {
     # loud when empty — no tier indirection. Seeded to the model the step used
     # under the old standard/budget tiers so behaviour is unchanged; tune each
     # step freely.
-    'image_search_query_model': 'ollama/gemma4:31b',  # image_service Pexels query-gen (was standard)
-    'image_prompt_model': 'ollama/gemma4:31b',  # image_providers/ai_generation image-gen prompt-gen (was standard)
-    'writer_self_review_model': 'ollama/gemma4:31b',  # services/self_review writer self-review (was standard)
+    'image_search_query_model': 'ollama/gemma-4-31B-it-qat:latest',  # image_service Pexels query-gen (was gemma4:31b)
+    'image_prompt_model': 'ollama/gemma-4-31B-it-qat:latest',  # image_providers/ai_generation image-gen prompt-gen (was gemma4:31b)
+    'writer_self_review_model': 'ollama/gemma-4-31B-it-qat:latest',  # services/self_review writer self-review (was gemma4:31b)
     # NOTE: retention/collapse cold-data summaries keep their existing per-step
     # keys (memory_compression_summary_model / embedding_collapse_summary_model,
     # both seeded ollama/phi4:14b in 0000_baseline.seeds.sql) — no new key here.

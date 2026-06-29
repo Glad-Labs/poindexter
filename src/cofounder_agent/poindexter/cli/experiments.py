@@ -247,7 +247,7 @@ def experiments_create(
 @click.option(
     "--writer-model", default=None,
     help=(
-        "Override the writer model for this variant (e.g. ``gemma4:31b``). "
+        "Override the writer model for this variant (e.g. ``gemma-4-31B-it-qat:latest``). "
         "NULL means inherit the niche default."
     ),
 )

@@ -32,7 +32,6 @@ import pytest
 # hygiene job — loading any of these for background work pegs VRAM.
 _WRITER_CLASS_MODELS = {
     "ollama/gemma-4-31B-it-qat:latest",
-    "ollama/gemma4:31b",
     "ollama/glm-4.7-5090:latest",
     "ollama/qwen3.6:latest",
 }

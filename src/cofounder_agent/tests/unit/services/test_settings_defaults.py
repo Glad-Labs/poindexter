@@ -421,12 +421,15 @@ class TestGroupingMakesSense:
 # No dangling (uninstalled) model defaults
 # ---------------------------------------------------------------------------
 
-# The local Ollama ``gemma3`` family (``gemma3:27b`` / ``gemma3:27b-it-qat``)
-# was upgraded to ``gemma4`` around 2026-06-08/09 and uninstalled. Any default
-# still pointing at it would fail or silently CPU-offload budget / fallback /
-# writer / structured-extraction calls on a FRESH install or a settings reset.
+# Uninstalled local Ollama models that must not back any seeded ``*_model``
+# default. ``gemma3`` family (gemma3:27b / gemma3:27b-it-qat): upgraded to gemma4
+# and uninstalled around 2026-06-08/09. ``gemma4:31b``: deleted 2026-06-28 — it
+# was redundant with the QAT writer tag ``gemma-4-31B-it-qat:latest`` (both
+# 18-19GB, so keeping both just thrashed VRAM on swaps). A default pointing at
+# either would fail or silently CPU-offload budget / fallback / writer /
+# structured-extraction calls on a FRESH install or a settings reset.
 # See the ops memory note ``ollama-model-settings-dangle-after-upgrade``.
-_UNINSTALLED_MODEL_SUBSTR = "gemma3"
+_UNINSTALLED_MODEL_SUBSTRS = ("gemma3", "gemma4:31b")
 
 
 class TestNoDanglingModelDefaults:
@@ -442,13 +445,12 @@ class TestNoDanglingModelDefaults:
 
         offenders = {
             k: v for k, v in DEFAULTS.items()
-            if _UNINSTALLED_MODEL_SUBSTR in v
+            if any(s in v for s in _UNINSTALLED_MODEL_SUBSTRS)
         }
         assert offenders == {}, (
-            "settings_defaults.DEFAULTS still seed the uninstalled "
-            f"'{_UNINSTALLED_MODEL_SUBSTR}' model family: {offenders}. Repoint "
-            "to an installed successor (gemma-4-31B-it-qat:latest / gemma4:31b "
-            "/ glm-4.7-5090:latest)."
+            "settings_defaults.DEFAULTS still seed an uninstalled model "
+            f"{_UNINSTALLED_MODEL_SUBSTRS}: {offenders}. Repoint to an installed "
+            "successor (gemma-4-31B-it-qat:latest / glm-4.7-5090:latest / qwen2.5:32b)."
         )
 
     def test_baseline_seed_values_have_no_uninstalled_model(self):
@@ -474,11 +476,11 @@ class TestNoDanglingModelDefaults:
         offenders = {
             key: value
             for key, value in row_re.findall(text)
-            if _UNINSTALLED_MODEL_SUBSTR in value
+            if any(s in value for s in _UNINSTALLED_MODEL_SUBSTRS)
         }
         assert offenders == {}, (
-            "0000_baseline.seeds.sql seeds the uninstalled "
-            f"'{_UNINSTALLED_MODEL_SUBSTR}' model family on fresh installs "
+            "0000_baseline.seeds.sql seeds an uninstalled model "
+            f"{_UNINSTALLED_MODEL_SUBSTRS} on fresh installs "
             f"(baseline wins over settings_defaults): {offenders}. Repoint "
             "each seeded value to an installed successor."
         )

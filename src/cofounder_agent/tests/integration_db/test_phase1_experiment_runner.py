@@ -52,7 +52,7 @@ async def test_pick_variant_returns_active_variant(test_txn) -> None:
         f"glad-labs/runner-test-{uuid.uuid4().hex[:8]}",
     )
     variant_ids = {}
-    for label, model in (("A", "gemma4:31b"), ("B", "qwen3.6:latest")):
+    for label, model in (("A", "gemma-4-31B-it-qat:latest"), ("B", "qwen3.6:latest")):
         vid = await test_txn.fetchval(
             """
             INSERT INTO experiment_variants
@@ -77,7 +77,7 @@ async def test_pick_variant_returns_active_variant(test_txn) -> None:
     assert result.experiment_key.startswith("glad-labs/runner-test-")
     # Expected model override (depends on which variant the random
     # picked, but it must match one of the two configured).
-    assert result.writer_model in ("gemma4:31b", "qwen3.6:latest")
+    assert result.writer_model in ("gemma-4-31B-it-qat:latest", "qwen3.6:latest")
 
 
 # ---------------------------------------------------------------------------

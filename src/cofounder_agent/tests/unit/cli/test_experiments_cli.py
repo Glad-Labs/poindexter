@@ -248,13 +248,13 @@ class TestAddVariant:
             [
                 "add-variant", "k",
                 "--label", "A",
-                "--writer-model", "gemma4:31b",
+                "--writer-model", "gemma-4-31B-it-qat:latest",
             ],
         )
         assert result.exit_code == 0, result.output
         assert new_var_id in result.output
         assert "A" in result.output
-        assert "gemma4:31b" in result.output
+        assert "gemma-4-31B-it-qat:latest" in result.output
 
     def test_unknown_experiment(self, runner, fake_asyncpg):
         fake_asyncpg["conn"].fetchrow = AsyncMock(return_value=None)
@@ -502,7 +502,7 @@ class TestConclude:
             # Variant lookup
             return {
                 "label": "B",
-                "writer_model": "gemma4:31b",
+                "writer_model": "gemma-4-31B-it-qat:latest",
                 "prompt_template_key": None,
                 "prompt_template_version": None,
             }
@@ -522,7 +522,7 @@ class TestConclude:
         assert "B" in result.output
         assert "B won 73% approval" in result.output
         # Next-step guidance for model winner.
-        assert "gemma4:31b" in result.output
+        assert "gemma-4-31B-it-qat:latest" in result.output
         assert "pipeline_writer_model" in result.output.lower()
         fake_asyncpg["conn"].execute.assert_awaited()
 
