@@ -2156,10 +2156,13 @@ services:
       DATABASE_URL: "postgresql://postiz:${POSTIZ_DB_PASSWORD:?Set POSTIZ_DB_PASSWORD}@postiz-db:5432/postiz"
       REDIS_URL: "redis://postiz-redis:6379"
       TEMPORAL_ADDRESS: "poindexter-postiz-temporal:7233"
-      BACKEND_INTERNAL_URL: "http://postiz:3000"
+      BACKEND_INTERNAL_URL: "http://localhost:3000"
+      NOT_SECURED: "true"
       IS_GENERAL: "false"
       STORAGE_PROVIDER: "local"
       UPLOAD_DIRECTORY: "/uploads"
+      X_API_KEY: "${X_API_KEY}"
+      X_API_SECRET: "${X_API_SECRET}"
     volumes:
       - postiz-uploads:/uploads
     depends_on:
@@ -2170,7 +2173,7 @@ services:
       postiz-temporal:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:3000/api/healthz || exit 1"]
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:3000/ || exit 1"]
       interval: 30s
       timeout: 10s
       retries: 5
