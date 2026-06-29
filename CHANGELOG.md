@@ -2,6 +2,29 @@
 
 ## Unreleased
 
+## [0.90.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.89.0...v0.90.0) (2026-06-29)
+
+
+### Features
+
+* **deploy:** auto-rebuild brain-daemon when brain/ changes in deploy-checkout-sync ([#1967](https://github.com/Glad-Labs/glad-labs-stack/issues/1967)) ([3f4bcbc](https://github.com/Glad-Labs/glad-labs-stack/commit/3f4bcbcadd9b2bf572e616c616fbf21d674e75f7))
+* **social:** set X made_with_ai disclosure flag (DB-tunable, default true) ([#1986](https://github.com/Glad-Labs/glad-labs-stack/issues/1986)) ([f31d990](https://github.com/Glad-Labs/glad-labs-stack/commit/f31d990d0b1d009f3534e091f61efe48cfcaa4ec))
+
+
+### Bug Fixes
+
+* **cli:** make regen-image HTTP timeout DB-configurable ([#1962](https://github.com/Glad-Labs/glad-labs-stack/issues/1962)) ([f43f70c](https://github.com/Glad-Labs/glad-labs-stack/commit/f43f70c95027ffb49215eaafd5343b1fa0d9fa4b))
+* **content:** strip + gate leaked writer planning scaffold ([#1963](https://github.com/Glad-Labs/glad-labs-stack/issues/1963)) ([#1964](https://github.com/Glad-Labs/glad-labs-stack/issues/1964)) ([7224761](https://github.com/Glad-Labs/glad-labs-stack/commit/72247613ee475dd60e7f03b14541a18b937a5baf))
+* **jobs:** check_published_links sends crawler UA, skips access-restricted codes ([#1969](https://github.com/Glad-Labs/glad-labs-stack/issues/1969)) ([8f3a40e](https://github.com/Glad-Labs/glad-labs-stack/commit/8f3a40ef7f08892dadd874e77fa7c18c51aa673c))
+* **mirror-safety:** scrub operator email from public console + close front-end leak-guard blind spot ([#1982](https://github.com/Glad-Labs/glad-labs-stack/issues/1982)) ([b7e8d8e](https://github.com/Glad-Labs/glad-labs-stack/commit/b7e8d8ebc59eeb0d93c9effa96f2a464fc958be4))
+* **postiz:** fix local HTTP mode + healthcheck + wire X OAuth credentials ([#1974](https://github.com/Glad-Labs/glad-labs-stack/issues/1974)) ([85a38b1](https://github.com/Glad-Labs/glad-labs-stack/commit/85a38b13615aa5c4db16ea18f51c183eb454cc6e))
+* **qa:** default qa.rewrite reviser to resident writer, not glm ([#1966](https://github.com/Glad-Labs/glad-labs-stack/issues/1966)) ([4c703c6](https://github.com/Glad-Labs/glad-labs-stack/commit/4c703c67306cb38fc4d773e197773d8d28c83bdf))
+* **social:** authenticate PostizClient with the org API key ([#1981](https://github.com/Glad-Labs/glad-labs-stack/issues/1981)) ([2e9c323](https://github.com/Glad-Labs/glad-labs-stack/commit/2e9c32310f4017836d5b5e99fef8f864d7479336))
+* **social:** parse Postiz create-post list response (was assuming dict) ([#1984](https://github.com/Glad-Labs/glad-labs-stack/issues/1984)) ([54fd002](https://github.com/Glad-Labs/glad-labs-stack/commit/54fd00251e4a9372e570c0f1db74198d12c5af6b))
+* **social:** send X's required who_can_reply_post in PostizClient payload ([#1983](https://github.com/Glad-Labs/glad-labs-stack/issues/1983)) ([ef797e3](https://github.com/Glad-Labs/glad-labs-stack/commit/ef797e395641a50f8c8c850d99892f16d34c3c88))
+* **tts:** EBU R128 loudnorm at render seam to stop 0.0 dBFS narration clipping ([#1985](https://github.com/Glad-Labs/glad-labs-stack/issues/1985)) ([fafd05c](https://github.com/Glad-Labs/glad-labs-stack/commit/fafd05c60f33592cc548f6e10adf3fdee462da3a))
+* **video:** center-align burned-in captions (old-SSA convention mismatch) ([#1965](https://github.com/Glad-Labs/glad-labs-stack/issues/1965)) ([3ad26ad](https://github.com/Glad-Labs/glad-labs-stack/commit/3ad26ad6eb1f10219685617e7e05f088e5b3d8bf))
+
 ## [0.89.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.88.1...v0.89.0) (2026-06-28)
 
 
