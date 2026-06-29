@@ -28,6 +28,11 @@ def _make_pool(fetchval=None, fetchrow=None, execute=None, fetch=None):
 def _make_site_config(settings: dict[str, str]) -> MagicMock:
     sc = MagicMock()
     sc.get.side_effect = lambda key, default="": settings.get(key, default)
+    # get_secret is async (hits DB for is_secret rows); mirror it from the
+    # same dict so tests can stub postiz_api_key alongside plain settings.
+    sc.get_secret = AsyncMock(
+        side_effect=lambda key, default="": settings.get(key, default)
+    )
     return sc
 
 
@@ -161,6 +166,34 @@ async def test_approve_draft_success():
 
     assert result["success"] is True
     assert result.get("postiz_post_id") == "pz-1"
+
+
+@pytest.mark.asyncio
+async def test_approve_draft_passes_api_key_to_postiz():
+    """The Postiz org API key (secret) must be forwarded to PostizClient —
+    the public API rejects unauthenticated requests with 401."""
+    row = {
+        "id": "d4", "platform": "twitter",
+        "content": "authed post", "platform_config": "{}",
+        "status": "pending",
+    }
+    pool, _conn = _make_pool(fetchrow=row)
+    sc = _make_site_config({
+        "postiz_integration_id_twitter": "uuid-abc",
+        "postiz_api_url": "http://postiz:3000",
+        "postiz_api_key": "org-secret-key",
+    })
+    with patch("services.social_drafts.PostizClient") as mock_cls:
+        instance = mock_cls.return_value
+        instance.create_post = AsyncMock(
+            return_value={"success": True, "post_id": "pz-2", "error": None}
+        )
+        svc = SocialDraftsService()
+        await svc.approve_draft("d4", pool, sc)
+
+    mock_cls.assert_called_once_with(
+        base_url="http://postiz:3000", api_key="org-secret-key"
+    )
 
 
 # ---------------------------------------------------------------------------

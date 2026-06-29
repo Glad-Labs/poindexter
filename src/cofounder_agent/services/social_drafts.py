@@ -149,7 +149,8 @@ class SocialDraftsService:
             return {"success": False, "error": err}
 
         base_url = site_config.get("postiz_api_url", "http://postiz:3000")
-        client = PostizClient(base_url=base_url)
+        api_key = await site_config.get_secret("postiz_api_key", "")
+        client = PostizClient(base_url=base_url, api_key=api_key)
 
         result = await client.create_post(
             integration_id=integration_id,

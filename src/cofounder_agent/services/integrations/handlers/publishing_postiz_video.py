@@ -69,7 +69,7 @@ async def postiz_video(
             f"expected one of {list(_PLATFORM_TYPE)}"
         )
 
-    base_url = site_config.get("postiz_api_url", "http://localhost:5003")
+    base_url = site_config.get("postiz_api_url", "http://postiz:3000")
     integration_id = site_config.get(_INTEGRATION_KEY[platform], "")
     if not integration_id:
         return {
@@ -83,7 +83,8 @@ async def postiz_video(
             ),
         }
 
-    client = PostizClient(base_url=base_url)
+    api_key = await site_config.get_secret("postiz_api_key", "")
+    client = PostizClient(base_url=base_url, api_key=api_key)
     try:
         upload_id = await client.upload_from_url(media_url)
     except Exception as exc:
