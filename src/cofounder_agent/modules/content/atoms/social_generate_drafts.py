@@ -50,7 +50,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not platforms:
         return {}
 
-    text_platforms = [p for p in platforms if p in ("twitter", "linkedin", "mastodon")]
+    text_platforms = [
+        p for p in platforms if p in ("twitter", "linkedin", "mastodon", "bluesky")
+    ]
     if text_platforms:
         try:
             posts = await generate_social_posts(

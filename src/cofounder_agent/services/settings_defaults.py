@@ -1361,6 +1361,7 @@ DEFAULTS: dict[str, str] = {
     'postiz_integration_id_twitter': '',
     'postiz_integration_id_linkedin': '',
     'postiz_integration_id_mastodon': '',
+    'postiz_integration_id_bluesky': '',
     'postiz_integration_id_reddit': '',
     'postiz_integration_id_tiktok': '',
     'postiz_integration_id_instagram': '',

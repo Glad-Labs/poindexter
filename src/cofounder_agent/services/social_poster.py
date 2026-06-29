@@ -431,6 +431,12 @@ async def generate_social_posts(
     if twitter_text:
         posts.append(SocialPost(platform="twitter", text=twitter_text, post_url=post_url))
         logger.info("[social_poster] Twitter post generated (%d chars)", len(twitter_text))
+        # Bluesky (300 chars) and Mastodon (500) are X-style short-form, so the
+        # ≤280-char tweet copy fits both — reuse it instead of authoring a
+        # separate prompt + spending another LLM call. The draft atom filters
+        # these down to whatever social_draft_platforms actually requests.
+        posts.append(SocialPost(platform="bluesky", text=twitter_text, post_url=post_url))
+        posts.append(SocialPost(platform="mastodon", text=twitter_text, post_url=post_url))
     else:
         logger.error("[social_poster] Twitter post generation failed — empty result")
 

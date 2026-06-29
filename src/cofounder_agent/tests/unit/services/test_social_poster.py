@@ -235,14 +235,25 @@ class TestGenerateSocialPosts:
     """Test the main generate_social_posts function."""
 
     @pytest.mark.asyncio
-    async def test_returns_two_posts(self):
+    async def test_returns_four_posts(self):
         ollama = _make_ollama_mock("Great AI post! #LLM")
         posts = await generate_social_posts(
             SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
-        assert len(posts) == 2
+        # twitter + linkedin generated; bluesky + mastodon reuse the tweet copy
+        assert len(posts) == 4
         platforms = {p.platform for p in posts}
-        assert platforms == {"twitter", "linkedin"}
+        assert platforms == {"twitter", "linkedin", "bluesky", "mastodon"}
+
+    @pytest.mark.asyncio
+    async def test_bluesky_and_mastodon_reuse_tweet_copy(self):
+        ollama = _make_ollama_mock("Great AI post! #LLM")
+        posts = await generate_social_posts(
+            SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
+        )
+        by_platform = {p.platform: p.text for p in posts}
+        assert by_platform["bluesky"] == by_platform["twitter"]
+        assert by_platform["mastodon"] == by_platform["twitter"]
 
     @pytest.mark.asyncio
     async def test_posts_have_correct_url(self):
@@ -280,11 +291,12 @@ class TestGenerateSocialPosts:
         posts = await generate_social_posts(
             SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, ollama=ollama, site_config=_TEST_SC
         )
-        assert len(posts) == 2
+        assert len(posts) == 4
 
     @pytest.mark.asyncio
-    async def test_partial_failure_returns_one_post(self):
-        """If one platform fails, we still get the other."""
+    async def test_partial_failure_still_returns_short_form_posts(self):
+        """Twitter succeeds, LinkedIn fails — we still get twitter + the
+        bluesky/mastodon copies that reuse the tweet text (3 total)."""
         call_count = 0
 
         async def _side_effect(**kwargs):
@@ -299,8 +311,9 @@ class TestGenerateSocialPosts:
         posts = await generate_social_posts(
             SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
-        assert len(posts) == 1
-        assert posts[0].platform == "twitter"
+        platforms = {p.platform for p in posts}
+        assert platforms == {"twitter", "bluesky", "mastodon"}
+        assert "linkedin" not in platforms
 
 
 # ---------------------------------------------------------------------------
@@ -318,9 +331,9 @@ class TestGenerateAndDistribute:
         posts = await generate_and_distribute_social_posts(
             SAMPLE_TITLE, SAMPLE_SLUG, SAMPLE_EXCERPT, SAMPLE_KEYWORDS, ollama, site_config=_TEST_SC
         )
-        assert len(posts) == 2
-        # One notification per post (twitter + linkedin)
-        assert mock_notify.call_count == 2
+        assert len(posts) == 4
+        # One notification per post (twitter + linkedin + bluesky + mastodon)
+        assert mock_notify.call_count == 4
 
     @pytest.mark.asyncio
     @patch("services.social_poster._notify", new_callable=AsyncMock)

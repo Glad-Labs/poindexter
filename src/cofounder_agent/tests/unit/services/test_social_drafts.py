@@ -248,6 +248,35 @@ async def test_approve_draft_made_with_ai_disabled_by_setting():
     assert settings["made_with_ai"] is False
 
 
+@pytest.mark.asyncio
+async def test_approve_draft_bluesky_maps_type_and_integration():
+    """Bluesky drafts resolve to platform_type 'bluesky' + the bluesky
+    integration id, and carry no X-only made_with_ai flag."""
+    row = {
+        "id": "d9", "platform": "bluesky",
+        "content": "skeet", "platform_config": "{}",
+        "status": "pending",
+    }
+    pool, _conn = _make_pool(fetchrow=row)
+    sc = _make_site_config({
+        "postiz_integration_id_bluesky": "uuid-bsky",
+        "postiz_api_url": "http://postiz:3000",
+    })
+    with patch("services.social_drafts.PostizClient") as mock_cls:
+        instance = mock_cls.return_value
+        instance.create_post = AsyncMock(
+            return_value={"success": True, "post_id": "p", "error": None}
+        )
+        svc = SocialDraftsService()
+        result = await svc.approve_draft("d9", pool, sc)
+
+    assert result["success"] is True
+    kwargs = mock_cls.return_value.create_post.call_args.kwargs
+    assert kwargs["integration_id"] == "uuid-bsky"
+    assert kwargs["platform_type"] == "bluesky"
+    assert "made_with_ai" not in kwargs["platform_settings"]
+
+
 # ---------------------------------------------------------------------------
 # backfill_post_id
 # ---------------------------------------------------------------------------
