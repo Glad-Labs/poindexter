@@ -2173,7 +2173,10 @@ services:
       postiz-temporal:
         condition: service_healthy
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:3000/ || exit 1"]
+      # The Postiz image ships no wget/curl/nc — only node. A wget-based check
+      # fails "wget: not found" on every probe → permanent false-unhealthy even
+      # though the app serves HTTP 200. Probe with node's built-in http instead.
+      test: ["CMD", "node", "-e", "require('http').get('http://localhost:3000/',r=>process.exit(r.statusCode<500?0:1)).on('error',()=>process.exit(1))"]
       interval: 30s
       timeout: 10s
       retries: 5

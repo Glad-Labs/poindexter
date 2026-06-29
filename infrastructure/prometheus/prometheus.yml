@@ -37,6 +37,13 @@ scrape_configs:
   # host where GPU passthrough actually works.
   - job_name: nvidia-smi
     scrape_interval: 30s
+    # nvidia-smi can block past the default 10s scrape_timeout under heavy GPU
+    # load (two-GPU enumeration + live CUDA contexts) — the scrape is then
+    # recorded as up=0 and the target flaps (~24x/3h; max scrape_duration pinned
+    # at exactly 10.0s, the clamp signature). Idle scrape is ~1.5s, so 25s gives
+    # ample headroom while staying under the 30s interval: a slow-but-successful
+    # scrape beats a gap. (incident 2026-06-29 triage)
+    scrape_timeout: 25s
     static_configs:
       - targets: ["host.docker.internal:9835"]
     metric_relabel_configs:
@@ -55,6 +62,9 @@ scrape_configs:
   # (two series differing only by ``job`` label).
   - job_name: nvidia-smi-host
     scrape_interval: 30s
+    # Same host :9835 endpoint as the nvidia-smi job above — raise scrape_timeout
+    # off the 10s default so the shared exporter's load spikes don't flap it.
+    scrape_timeout: 25s
     static_configs:
       - targets: ["host.docker.internal:9835"]
     metric_relabel_configs:
