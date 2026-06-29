@@ -191,12 +191,22 @@ litellm = ">=1.83.7,<2.0"
 #
 # Bumped 3.x → 4.x (2026-05-15). The shim's API surface (``observe`` /
 # ``get_client`` / ``update_current_generation`` / ``update_current_trace``)
-# is unchanged across the major; 3.x is EOL. Note: the
-# ``EventSerializer`` cycle-detection bug at ``_utils/serializer.py:134/137/145``
-# exists in EVERY published 3.x and 4.x version — we work around it in
-# ``services/langfuse_shim.py`` via ``_install_cycle_safe_serializer_patch``.
-# Remove that patch once upstream merges a fix.
-langfuse = "^4.6"
+# is unchanged across the major; 3.x is EOL.
+#
+# Floor raised 4.6 → 4.12 (2026-06-29): the ``EventSerializer`` cycle bug
+# (``_utils/serializer.py``) that hung the asyncio loop on cyclic object
+# graphs is fixed upstream by langfuse/langfuse-python#1577 (first released
+# in v4.7.0 — depth limit + cycle detection). 4.6.1 was the last vulnerable
+# release; the deployed worker image stayed stuck on it even though the lock
+# had already advanced to 4.9.0 (fixed, but never rebuilt/deployed). This
+# raises the lock to 4.12.0 and the image rebuild finally ships it. The
+# ``_install_cycle_safe_serializer_patch`` in ``services/langfuse_shim.py``
+# is RETAINED as idempotent defense-in-depth across this 6-minor jump — it
+# no-ops harmlessly on the fixed serializer and self-disables if the import
+# path ever moves. Safe to retire in a fast-follow once re-enabled tracing
+# has soaked. See memory reference_langfuse_serializer_recursion_bug.md +
+# .shared-context/upstream-bug-reports/langfuse-event-serializer-cycle.md.
+langfuse = "^4.12"
 deepeval = "^4.0.7"
 # guardrails-ai dropped 2026-05-12 — PyPI quarantined the package after
 # a suspect 0.10.1 release published that day (CVE-2026-45758, malware /

@@ -1,7 +1,11 @@
 # langfuse-python — `EventSerializer.default` recurses forever on cyclic graphs (dict/list/`__slots__` branches missing cycle detection)
 
 **Target repo:** https://github.com/langfuse/langfuse-python
-**Affects:** Every published version including the latest 4.6.1 (and all of 3.x)
+**Status:** RESOLVED upstream — filed as issue #1655 (CLOSED COMPLETED 2026-06-10),
+fixed by PR #1577 (first release v4.7.0: `_MAX_DEPTH=20` depth limit + cycle
+detection). The text below describes the bug as it stood in versions ≤ 4.6.1.
+Poindexter bumped to 4.12.0 + kept a cycle-safe shim as defense-in-depth (2026-06-29).
+**Affects:** Every published version through 4.6.1 (and all of 3.x); fixed in v4.7.0+
 **Severity:** High — silently blocks the asyncio event loop in any host process
 
 ---
