@@ -2,2069 +2,2066 @@
 
 ## Unreleased
 
-## [0.90.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.89.0...v0.90.0) (2026-06-29)
+## [0.90.0](https://github.com/Glad-Labs/poindexter/compare/v0.89.0...v0.90.0) (2026-06-29)
 
 
 ### Features
 
-* **deploy:** auto-rebuild brain-daemon when brain/ changes in deploy-checkout-sync ([#1967](https://github.com/Glad-Labs/glad-labs-stack/issues/1967)) ([3f4bcbc](https://github.com/Glad-Labs/glad-labs-stack/commit/3f4bcbcadd9b2bf572e616c616fbf21d674e75f7))
-* **social:** set X made_with_ai disclosure flag (DB-tunable, default true) ([#1986](https://github.com/Glad-Labs/glad-labs-stack/issues/1986)) ([f31d990](https://github.com/Glad-Labs/glad-labs-stack/commit/f31d990d0b1d009f3534e091f61efe48cfcaa4ec))
+* **deploy:** auto-rebuild brain-daemon when brain/ changes in deploy-checkout-sync ([#1967](https://github.com/Glad-Labs/poindexter/issues/1967)) ([3f4bcbc](https://github.com/Glad-Labs/poindexter/commit/3f4bcbcadd9b2bf572e616c616fbf21d674e75f7))
+* **social:** set X made_with_ai disclosure flag (DB-tunable, default true) ([#1986](https://github.com/Glad-Labs/poindexter/issues/1986)) ([f31d990](https://github.com/Glad-Labs/poindexter/commit/f31d990d0b1d009f3534e091f61efe48cfcaa4ec))
 
 
 ### Bug Fixes
 
-* **cli:** make regen-image HTTP timeout DB-configurable ([#1962](https://github.com/Glad-Labs/glad-labs-stack/issues/1962)) ([f43f70c](https://github.com/Glad-Labs/glad-labs-stack/commit/f43f70c95027ffb49215eaafd5343b1fa0d9fa4b))
-* **content:** strip + gate leaked writer planning scaffold ([#1963](https://github.com/Glad-Labs/glad-labs-stack/issues/1963)) ([#1964](https://github.com/Glad-Labs/glad-labs-stack/issues/1964)) ([7224761](https://github.com/Glad-Labs/glad-labs-stack/commit/72247613ee475dd60e7f03b14541a18b937a5baf))
-* **jobs:** check_published_links sends crawler UA, skips access-restricted codes ([#1969](https://github.com/Glad-Labs/glad-labs-stack/issues/1969)) ([8f3a40e](https://github.com/Glad-Labs/glad-labs-stack/commit/8f3a40ef7f08892dadd874e77fa7c18c51aa673c))
-* **mirror-safety:** scrub operator email from public console + close front-end leak-guard blind spot ([#1982](https://github.com/Glad-Labs/glad-labs-stack/issues/1982)) ([b7e8d8e](https://github.com/Glad-Labs/glad-labs-stack/commit/b7e8d8ebc59eeb0d93c9effa96f2a464fc958be4))
-* **postiz:** fix local HTTP mode + healthcheck + wire X OAuth credentials ([#1974](https://github.com/Glad-Labs/glad-labs-stack/issues/1974)) ([85a38b1](https://github.com/Glad-Labs/glad-labs-stack/commit/85a38b13615aa5c4db16ea18f51c183eb454cc6e))
-* **qa:** default qa.rewrite reviser to resident writer, not glm ([#1966](https://github.com/Glad-Labs/glad-labs-stack/issues/1966)) ([4c703c6](https://github.com/Glad-Labs/glad-labs-stack/commit/4c703c67306cb38fc4d773e197773d8d28c83bdf))
-* **social:** authenticate PostizClient with the org API key ([#1981](https://github.com/Glad-Labs/glad-labs-stack/issues/1981)) ([2e9c323](https://github.com/Glad-Labs/glad-labs-stack/commit/2e9c32310f4017836d5b5e99fef8f864d7479336))
-* **social:** parse Postiz create-post list response (was assuming dict) ([#1984](https://github.com/Glad-Labs/glad-labs-stack/issues/1984)) ([54fd002](https://github.com/Glad-Labs/glad-labs-stack/commit/54fd00251e4a9372e570c0f1db74198d12c5af6b))
-* **social:** send X's required who_can_reply_post in PostizClient payload ([#1983](https://github.com/Glad-Labs/glad-labs-stack/issues/1983)) ([ef797e3](https://github.com/Glad-Labs/glad-labs-stack/commit/ef797e395641a50f8c8c850d99892f16d34c3c88))
-* **tts:** EBU R128 loudnorm at render seam to stop 0.0 dBFS narration clipping ([#1985](https://github.com/Glad-Labs/glad-labs-stack/issues/1985)) ([fafd05c](https://github.com/Glad-Labs/glad-labs-stack/commit/fafd05c60f33592cc548f6e10adf3fdee462da3a))
-* **video:** center-align burned-in captions (old-SSA convention mismatch) ([#1965](https://github.com/Glad-Labs/glad-labs-stack/issues/1965)) ([3ad26ad](https://github.com/Glad-Labs/glad-labs-stack/commit/3ad26ad6eb1f10219685617e7e05f088e5b3d8bf))
+* **cli:** make regen-image HTTP timeout DB-configurable ([#1962](https://github.com/Glad-Labs/poindexter/issues/1962)) ([f43f70c](https://github.com/Glad-Labs/poindexter/commit/f43f70c95027ffb49215eaafd5343b1fa0d9fa4b))
+* **content:** strip + gate leaked writer planning scaffold ([#1963](https://github.com/Glad-Labs/poindexter/issues/1963)) ([#1964](https://github.com/Glad-Labs/poindexter/issues/1964)) ([7224761](https://github.com/Glad-Labs/poindexter/commit/72247613ee475dd60e7f03b14541a18b937a5baf))
+* **jobs:** check_published_links sends crawler UA, skips access-restricted codes ([#1969](https://github.com/Glad-Labs/poindexter/issues/1969)) ([8f3a40e](https://github.com/Glad-Labs/poindexter/commit/8f3a40ef7f08892dadd874e77fa7c18c51aa673c))
+* **mirror-safety:** scrub operator email from public console + close front-end leak-guard blind spot ([#1982](https://github.com/Glad-Labs/poindexter/issues/1982)) ([b7e8d8e](https://github.com/Glad-Labs/poindexter/commit/b7e8d8ebc59eeb0d93c9effa96f2a464fc958be4))
+* **postiz:** fix local HTTP mode + healthcheck + wire X OAuth credentials ([#1974](https://github.com/Glad-Labs/poindexter/issues/1974)) ([85a38b1](https://github.com/Glad-Labs/poindexter/commit/85a38b13615aa5c4db16ea18f51c183eb454cc6e))
+* **qa:** default qa.rewrite reviser to resident writer, not glm ([#1966](https://github.com/Glad-Labs/poindexter/issues/1966)) ([4c703c6](https://github.com/Glad-Labs/poindexter/commit/4c703c67306cb38fc4d773e197773d8d28c83bdf))
+* **social:** authenticate PostizClient with the org API key ([#1981](https://github.com/Glad-Labs/poindexter/issues/1981)) ([2e9c323](https://github.com/Glad-Labs/poindexter/commit/2e9c32310f4017836d5b5e99fef8f864d7479336))
+* **social:** parse Postiz create-post list response (was assuming dict) ([#1984](https://github.com/Glad-Labs/poindexter/issues/1984)) ([54fd002](https://github.com/Glad-Labs/poindexter/commit/54fd00251e4a9372e570c0f1db74198d12c5af6b))
+* **social:** send X's required who_can_reply_post in PostizClient payload ([#1983](https://github.com/Glad-Labs/poindexter/issues/1983)) ([ef797e3](https://github.com/Glad-Labs/poindexter/commit/ef797e395641a50f8c8c850d99892f16d34c3c88))
+* **tts:** EBU R128 loudnorm at render seam to stop 0.0 dBFS narration clipping ([#1985](https://github.com/Glad-Labs/poindexter/issues/1985)) ([fafd05c](https://github.com/Glad-Labs/poindexter/commit/fafd05c60f33592cc548f6e10adf3fdee462da3a))
+* **video:** center-align burned-in captions (old-SSA convention mismatch) ([#1965](https://github.com/Glad-Labs/poindexter/issues/1965)) ([3ad26ad](https://github.com/Glad-Labs/poindexter/commit/3ad26ad6eb1f10219685617e7e05f088e5b3d8bf))
 
-## [0.89.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.88.1...v0.89.0) (2026-06-28)
+## [0.89.0](https://github.com/Glad-Labs/poindexter/compare/v0.88.1...v0.89.0) (2026-06-28)
 
 
 ### Features
 
-* **console:** Telemetry surface — Loki logs, Langfuse traces, embedded Grafana ([#1959](https://github.com/Glad-Labs/glad-labs-stack/issues/1959)) ([5561fec](https://github.com/Glad-Labs/glad-labs-stack/commit/5561fec08d537e490a6615e25b6a351b861923c8))
-* **gpu:** auto-detect VRAM pool (gpu_vram_total_gb=auto) ([#1958](https://github.com/Glad-Labs/glad-labs-stack/issues/1958)) ([4761562](https://github.com/Glad-Labs/glad-labs-stack/commit/4761562a03c56a572b22b31ab2224a11b422d22d))
+* **console:** Telemetry surface — Loki logs, Langfuse traces, embedded Grafana ([#1959](https://github.com/Glad-Labs/poindexter/issues/1959)) ([5561fec](https://github.com/Glad-Labs/poindexter/commit/5561fec08d537e490a6615e25b6a351b861923c8))
+* **gpu:** auto-detect VRAM pool (gpu_vram_total_gb=auto) ([#1958](https://github.com/Glad-Labs/poindexter/issues/1958)) ([4761562](https://github.com/Glad-Labs/poindexter/commit/4761562a03c56a572b22b31ab2224a11b422d22d))
 
 
 ### Bug Fixes
 
-* **obs:** make GPU telemetry multi-GPU aware (3090 added alongside 5090) ([#1956](https://github.com/Glad-Labs/glad-labs-stack/issues/1956)) ([dcbfb22](https://github.com/Glad-Labs/glad-labs-stack/commit/dcbfb22e5d4182d0ea7a12177227ab663ad6a70b))
-* **tts:** podcast outro says ".io" as "eye oh"; add "CI" = "See Eye" ([#1957](https://github.com/Glad-Labs/glad-labs-stack/issues/1957)) ([81f4063](https://github.com/Glad-Labs/glad-labs-stack/commit/81f4063415a6a0215d08d41e38104abf74de17f8))
+* **obs:** make GPU telemetry multi-GPU aware (3090 added alongside 5090) ([#1956](https://github.com/Glad-Labs/poindexter/issues/1956)) ([dcbfb22](https://github.com/Glad-Labs/poindexter/commit/dcbfb22e5d4182d0ea7a12177227ab663ad6a70b))
+* **tts:** podcast outro says ".io" as "eye oh"; add "CI" = "See Eye" ([#1957](https://github.com/Glad-Labs/poindexter/issues/1957)) ([81f4063](https://github.com/Glad-Labs/poindexter/commit/81f4063415a6a0215d08d41e38104abf74de17f8))
 
-## [0.88.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.88.0...v0.88.1) (2026-06-27)
+## [0.88.1](https://github.com/Glad-Labs/poindexter/compare/v0.88.0...v0.88.1) (2026-06-27)
 
 
 ### Bug Fixes
 
-* **migrations:** drop orphaned SDXL-era app_settings keys ([#1951](https://github.com/Glad-Labs/glad-labs-stack/issues/1951)) ([6ee1f65](https://github.com/Glad-Labs/glad-labs-stack/commit/6ee1f65b2cb59995548a64c9c8ddcd5192ed98b6))
-* **obs:** page on Prefect connect errors + add cAdvisor container alerts (poindexter[#710](https://github.com/Glad-Labs/glad-labs-stack/issues/710)) ([#1946](https://github.com/Glad-Labs/glad-labs-stack/issues/1946)) ([ead233f](https://github.com/Glad-Labs/glad-labs-stack/commit/ead233fb5d062c86662ccf96e12201ea31f75096))
-* **obs:** remove stale "/" prefix from cAdvisor container_last_seen label matchers ([#1952](https://github.com/Glad-Labs/glad-labs-stack/issues/1952)) ([c55c0ed](https://github.com/Glad-Labs/glad-labs-stack/commit/c55c0ed65679f071a1051fc573843872abf78e43))
+* **migrations:** drop orphaned SDXL-era app_settings keys ([#1951](https://github.com/Glad-Labs/poindexter/issues/1951)) ([6ee1f65](https://github.com/Glad-Labs/poindexter/commit/6ee1f65b2cb59995548a64c9c8ddcd5192ed98b6))
+* **obs:** page on Prefect connect errors + add cAdvisor container alerts (poindexter[#710](https://github.com/Glad-Labs/poindexter/issues/710)) ([#1946](https://github.com/Glad-Labs/poindexter/issues/1946)) ([ead233f](https://github.com/Glad-Labs/poindexter/commit/ead233fb5d062c86662ccf96e12201ea31f75096))
+* **obs:** remove stale "/" prefix from cAdvisor container_last_seen label matchers ([#1952](https://github.com/Glad-Labs/poindexter/issues/1952)) ([c55c0ed](https://github.com/Glad-Labs/poindexter/commit/c55c0ed65679f071a1051fc573843872abf78e43))
 
-## [0.88.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.87.1...v0.88.0) (2026-06-26)
+## [0.88.0](https://github.com/Glad-Labs/poindexter/compare/v0.87.1...v0.88.0) (2026-06-26)
 
 
 ### Features
 
-* **console:** newsletter + brain daemon observability ([#1942](https://github.com/Glad-Labs/glad-labs-stack/issues/1942)) ([042e1ff](https://github.com/Glad-Labs/glad-labs-stack/commit/042e1ff16774652e5daa1ba66b250cc78a6b9b66))
-* **console:** social/Postiz per-post visibility + action inbox integration ([#1941](https://github.com/Glad-Labs/glad-labs-stack/issues/1941)) ([44aa854](https://github.com/Glad-Labs/glad-labs-stack/commit/44aa8547f4face4e941b395af46176be4231ae39))
-* **feedback:** brain_knowledge signals on operator approval + Grafana rejection-reason panel ([#149](https://github.com/Glad-Labs/glad-labs-stack/issues/149) PR1) ([#1944](https://github.com/Glad-Labs/glad-labs-stack/issues/1944)) ([75b35eb](https://github.com/Glad-Labs/glad-labs-stack/commit/75b35eb97c014d483690448911f94bbdf21d3f57))
-* **feedback:** inject operator regen --reason into the next writer pass ([#149](https://github.com/Glad-Labs/glad-labs-stack/issues/149) PR2) ([#1945](https://github.com/Glad-Labs/glad-labs-stack/issues/1945)) ([7b48dbb](https://github.com/Glad-Labs/glad-labs-stack/commit/7b48dbb8e898988729b3b38a4c3008063210148f))
-* **observability:** Ollama embed-endpoint probe + host process auto-recovery ([#1935](https://github.com/Glad-Labs/glad-labs-stack/issues/1935)) ([e131742](https://github.com/Glad-Labs/glad-labs-stack/commit/e131742f0925a5b950258a8f79155158668555d1))
-* **social:** Postiz social distribution system ([#1938](https://github.com/Glad-Labs/glad-labs-stack/issues/1938)) ([e7aa9bf](https://github.com/Glad-Labs/glad-labs-stack/commit/e7aa9bfba6a79818ef5fc297f2ded73ded464092))
-* **voice:** track LLM token usage per turn in cost_logs ([c3809b2](https://github.com/Glad-Labs/glad-labs-stack/commit/c3809b26506a7f93722b32f0112588a57f155c6d))
+* **console:** newsletter + brain daemon observability ([#1942](https://github.com/Glad-Labs/poindexter/issues/1942)) ([042e1ff](https://github.com/Glad-Labs/poindexter/commit/042e1ff16774652e5daa1ba66b250cc78a6b9b66))
+* **console:** social/Postiz per-post visibility + action inbox integration ([#1941](https://github.com/Glad-Labs/poindexter/issues/1941)) ([44aa854](https://github.com/Glad-Labs/poindexter/commit/44aa8547f4face4e941b395af46176be4231ae39))
+* **feedback:** brain_knowledge signals on operator approval + Grafana rejection-reason panel ([#149](https://github.com/Glad-Labs/poindexter/issues/149) PR1) ([#1944](https://github.com/Glad-Labs/poindexter/issues/1944)) ([75b35eb](https://github.com/Glad-Labs/poindexter/commit/75b35eb97c014d483690448911f94bbdf21d3f57))
+* **feedback:** inject operator regen --reason into the next writer pass ([#149](https://github.com/Glad-Labs/poindexter/issues/149) PR2) ([#1945](https://github.com/Glad-Labs/poindexter/issues/1945)) ([7b48dbb](https://github.com/Glad-Labs/poindexter/commit/7b48dbb8e898988729b3b38a4c3008063210148f))
+* **observability:** Ollama embed-endpoint probe + host process auto-recovery ([#1935](https://github.com/Glad-Labs/poindexter/issues/1935)) ([e131742](https://github.com/Glad-Labs/poindexter/commit/e131742f0925a5b950258a8f79155158668555d1))
+* **social:** Postiz social distribution system ([#1938](https://github.com/Glad-Labs/poindexter/issues/1938)) ([e7aa9bf](https://github.com/Glad-Labs/poindexter/commit/e7aa9bfba6a79818ef5fc297f2ded73ded464092))
+* **voice:** track LLM token usage per turn in cost_logs ([c3809b2](https://github.com/Glad-Labs/poindexter/commit/c3809b26506a7f93722b32f0112588a57f155c6d))
 
 
 ### Bug Fixes
 
-* **cli:** media open looks up storage_path from DB ([#1940](https://github.com/Glad-Labs/glad-labs-stack/issues/1940)) ([a00f026](https://github.com/Glad-Labs/glad-labs-stack/commit/a00f02606f857d63f6207fe8bea8cceda5633e19))
-* **compose:** strengthen postgres readiness gate + add postgres-exporter dep ([#1939](https://github.com/Glad-Labs/glad-labs-stack/issues/1939)) ([8ab99f2](https://github.com/Glad-Labs/glad-labs-stack/commit/8ab99f21831f234bc66a427cb4011f7cad390aa6))
-* **obs:** Loki log quality — JSON format, level labels, task_id structured metadata ([#1943](https://github.com/Glad-Labs/glad-labs-stack/issues/1943)) ([7e8091c](https://github.com/Glad-Labs/glad-labs-stack/commit/7e8091c712c52438e2451c949d0b1085600899f3))
+* **cli:** media open looks up storage_path from DB ([#1940](https://github.com/Glad-Labs/poindexter/issues/1940)) ([a00f026](https://github.com/Glad-Labs/poindexter/commit/a00f02606f857d63f6207fe8bea8cceda5633e19))
+* **compose:** strengthen postgres readiness gate + add postgres-exporter dep ([#1939](https://github.com/Glad-Labs/poindexter/issues/1939)) ([8ab99f2](https://github.com/Glad-Labs/poindexter/commit/8ab99f21831f234bc66a427cb4011f7cad390aa6))
+* **obs:** Loki log quality — JSON format, level labels, task_id structured metadata ([#1943](https://github.com/Glad-Labs/poindexter/issues/1943)) ([7e8091c](https://github.com/Glad-Labs/poindexter/commit/7e8091c712c52438e2451c949d0b1085600899f3))
 
-## [0.87.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.87.0...v0.87.1) (2026-06-25)
+## [0.87.1](https://github.com/Glad-Labs/poindexter/compare/v0.87.0...v0.87.1) (2026-06-25)
 
 
 ### Bug Fixes
 
-* **alerting:** correct datasource routing in brain/alert_sync — SQL→local-brain-db, PromQL→local-prometheus ([#1934](https://github.com/Glad-Labs/glad-labs-stack/issues/1934)) ([02e5355](https://github.com/Glad-Labs/glad-labs-stack/commit/02e5355ed05f1c3834ce8f41964267a5ad8ce824))
-* **frontend:** return HTTP 404 for missing posts and out-of-bounds archive pages ([#1925](https://github.com/Glad-Labs/glad-labs-stack/issues/1925)) ([d9be074](https://github.com/Glad-Labs/glad-labs-stack/commit/d9be074823316ca406de3079cb941e110b3ec383))
-* **image:** use per-call httpx client for SDXL to avoid stale keep-alive 503s ([#1930](https://github.com/Glad-Labs/glad-labs-stack/issues/1930)) ([0c08688](https://github.com/Glad-Labs/glad-labs-stack/commit/0c08688c5a7be8477815e5985fc80b20d418f080))
-* **qa:** prevent qa.critic pipeline halt when critic model settings are empty ([64e9c99](https://github.com/Glad-Labs/glad-labs-stack/commit/64e9c9989de3b67b148df4e9b2aa2c128264586f))
-* **qa:** resolve critic model via SiteConfig when SettingsService is absent ([#1932](https://github.com/Glad-Labs/glad-labs-stack/issues/1932)) ([af7e09a](https://github.com/Glad-Labs/glad-labs-stack/commit/af7e09a7e57b82dc686b2b56ac2f27fc979080dd))
-* **retention:** register embeddings_collapse + embeddings_orphan_prune in load_all ([7db2975](https://github.com/Glad-Labs/glad-labs-stack/commit/7db29752a587f7fed178ce3ea09e4e53c7ffffa3))
-* **retention:** register embeddings_collapse + embeddings_orphan_prune in load_all ([#1933](https://github.com/Glad-Labs/glad-labs-stack/issues/1933)) ([b2bd52c](https://github.com/Glad-Labs/glad-labs-stack/commit/b2bd52cd40a97ef10bc76d058f255025a33e14ca))
+* **alerting:** correct datasource routing in brain/alert_sync — SQL→local-brain-db, PromQL→local-prometheus ([#1934](https://github.com/Glad-Labs/poindexter/issues/1934)) ([02e5355](https://github.com/Glad-Labs/poindexter/commit/02e5355ed05f1c3834ce8f41964267a5ad8ce824))
+* **frontend:** return HTTP 404 for missing posts and out-of-bounds archive pages ([#1925](https://github.com/Glad-Labs/poindexter/issues/1925)) ([d9be074](https://github.com/Glad-Labs/poindexter/commit/d9be074823316ca406de3079cb941e110b3ec383))
+* **image:** use per-call httpx client for SDXL to avoid stale keep-alive 503s ([#1930](https://github.com/Glad-Labs/poindexter/issues/1930)) ([0c08688](https://github.com/Glad-Labs/poindexter/commit/0c08688c5a7be8477815e5985fc80b20d418f080))
+* **qa:** prevent qa.critic pipeline halt when critic model settings are empty ([64e9c99](https://github.com/Glad-Labs/poindexter/commit/64e9c9989de3b67b148df4e9b2aa2c128264586f))
+* **qa:** resolve critic model via SiteConfig when SettingsService is absent ([#1932](https://github.com/Glad-Labs/poindexter/issues/1932)) ([af7e09a](https://github.com/Glad-Labs/poindexter/commit/af7e09a7e57b82dc686b2b56ac2f27fc979080dd))
+* **retention:** register embeddings_collapse + embeddings_orphan_prune in load_all ([7db2975](https://github.com/Glad-Labs/poindexter/commit/7db29752a587f7fed178ce3ea09e4e53c7ffffa3))
+* **retention:** register embeddings_collapse + embeddings_orphan_prune in load_all ([#1933](https://github.com/Glad-Labs/poindexter/issues/1933)) ([b2bd52c](https://github.com/Glad-Labs/poindexter/commit/b2bd52cd40a97ef10bc76d058f255025a33e14ca))
 
-## [0.87.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.86.0...v0.87.0) (2026-06-24)
+## [0.87.0](https://github.com/Glad-Labs/poindexter/compare/v0.86.0...v0.87.0) (2026-06-24)
 
 
 ### Features
 
-* **consumer:** add docker-compose.consumer.yml for 8-16GB VRAM / 32GB RAM installs ([#1924](https://github.com/Glad-Labs/glad-labs-stack/issues/1924)) ([26db0a8](https://github.com/Glad-Labs/glad-labs-stack/commit/26db0a8b3dad696444fed486adcb9c59ae2f280c))
-* **qa:** score the featured/hero image in the qa.vision relevance gate ([#1900](https://github.com/Glad-Labs/glad-labs-stack/issues/1900)) ([398dde3](https://github.com/Glad-Labs/glad-labs-stack/commit/398dde3b9538a13cc7d3bec865b0be2d851c944d))
-* **retention:** fold embedding hygiene jobs into retention_policies declarative framework ([#1909](https://github.com/Glad-Labs/glad-labs-stack/issues/1909)) ([2e0e8c1](https://github.com/Glad-Labs/glad-labs-stack/commit/2e0e8c18e15242c86274e6468a210cb1dabfa19f))
-* **retention:** retention config CLI subcommand + Grafana embedding hygiene panels ([#1911](https://github.com/Glad-Labs/glad-labs-stack/issues/1911)) ([cc0fd66](https://github.com/Glad-Labs/glad-labs-stack/commit/cc0fd6600ecbef91dce2d833c0d7fc6a83330519))
-* **video:** Wan 2.2 TI2V-5B i2v hero renderer — infra half (Piece 4) ([#1902](https://github.com/Glad-Labs/glad-labs-stack/issues/1902)) ([cf00ba8](https://github.com/Glad-Labs/glad-labs-stack/commit/cf00ba8a04274793a8640ab089b92f78a789c72e))
-* **video:** Wan i2v hero renderer code-half — generative source + still fallback (Piece 4) ([#1895](https://github.com/Glad-Labs/glad-labs-stack/issues/1895)) ([84c19a9](https://github.com/Glad-Labs/glad-labs-stack/commit/84c19a9f7ad53374b20ff6a8ef1ecad0bba6434e))
+* **consumer:** add docker-compose.consumer.yml for 8-16GB VRAM / 32GB RAM installs ([#1924](https://github.com/Glad-Labs/poindexter/issues/1924)) ([26db0a8](https://github.com/Glad-Labs/poindexter/commit/26db0a8b3dad696444fed486adcb9c59ae2f280c))
+* **qa:** score the featured/hero image in the qa.vision relevance gate ([#1900](https://github.com/Glad-Labs/poindexter/issues/1900)) ([398dde3](https://github.com/Glad-Labs/poindexter/commit/398dde3b9538a13cc7d3bec865b0be2d851c944d))
+* **retention:** fold embedding hygiene jobs into retention_policies declarative framework ([#1909](https://github.com/Glad-Labs/poindexter/issues/1909)) ([2e0e8c1](https://github.com/Glad-Labs/poindexter/commit/2e0e8c18e15242c86274e6468a210cb1dabfa19f))
+* **retention:** retention config CLI subcommand + Grafana embedding hygiene panels ([#1911](https://github.com/Glad-Labs/poindexter/issues/1911)) ([cc0fd66](https://github.com/Glad-Labs/poindexter/commit/cc0fd6600ecbef91dce2d833c0d7fc6a83330519))
+* **video:** Wan 2.2 TI2V-5B i2v hero renderer — infra half (Piece 4) ([#1902](https://github.com/Glad-Labs/poindexter/issues/1902)) ([cf00ba8](https://github.com/Glad-Labs/poindexter/commit/cf00ba8a04274793a8640ab089b92f78a789c72e))
+* **video:** Wan i2v hero renderer code-half — generative source + still fallback (Piece 4) ([#1895](https://github.com/Glad-Labs/poindexter/issues/1895)) ([84c19a9](https://github.com/Glad-Labs/poindexter/commit/84c19a9f7ad53374b20ff6a8ef1ecad0bba6434e))
 
 
 ### Bug Fixes
 
-* **bugs:** narrate_bundle prompt kwargs + YouTube surface segregation ([#1908](https://github.com/Glad-Labs/glad-labs-stack/issues/1908)) ([27e3e00](https://github.com/Glad-Labs/glad-labs-stack/commit/27e3e00b0a126373d5ab7640fc31b0450ccf3fa5))
-* **cli:** resolve task_metadata UndefinedColumnError in pipeline list-paused ([#1916](https://github.com/Glad-Labs/glad-labs-stack/issues/1916)) ([95897a2](https://github.com/Glad-Labs/glad-labs-stack/commit/95897a21c9b13f16b9441d4ac96f91b868b343a4))
-* **docker:** repair cofounder Dockerfile — Poetry 2.2.1 + --no-root ([#1901](https://github.com/Glad-Labs/glad-labs-stack/issues/1901)) ([ebb12e4](https://github.com/Glad-Labs/glad-labs-stack/commit/ebb12e42e268d33b2d277f08adb7b6884ca88f2e))
-* **media:** podcast watchdog detects + gated-re-dispatches, never authors ([#1905](https://github.com/Glad-Labs/glad-labs-stack/issues/1905)) ([f9d7ebb](https://github.com/Glad-Labs/glad-labs-stack/commit/f9d7ebb5c776aadec4dc78359ec7b0d1cebdae79))
-* **media:** reseed media_pipeline + podcast_pipeline graph_defs (qa.audio drift, [#1876](https://github.com/Glad-Labs/glad-labs-stack/issues/1876)) ([#1884](https://github.com/Glad-Labs/glad-labs-stack/issues/1884)) ([b10bb3e](https://github.com/Glad-Labs/glad-labs-stack/commit/b10bb3ec4cb85f49636ae36a99204a3ecb029d53))
-* **mypy:** resolve 4 type errors surfaced by test run ([#1923](https://github.com/Glad-Labs/glad-labs-stack/issues/1923)) ([4882577](https://github.com/Glad-Labs/glad-labs-stack/commit/4882577c88f42efee0b38c4cf6339cd71e18c5c6))
-* **pipeline:** remove overlooked pipeline_tasks.category reader causing 384 UndefinedColumnErrors ([#1903](https://github.com/Glad-Labs/glad-labs-stack/issues/1903)) ([a1e3c87](https://github.com/Glad-Labs/glad-labs-stack/commit/a1e3c87bb5cc811fd8ecf6dc38163311ac4406f7))
-* **post-edit:** sync posts.featured_image_url + trigger rebuild on published-post image swap; fix Pexels key secret access ([#1918](https://github.com/Glad-Labs/glad-labs-stack/issues/1918)) ([d0fa4f6](https://github.com/Glad-Labs/glad-labs-stack/commit/d0fa4f6d74604542f3dc37f05256a9a06368978d))
-* **ragas:** add format=json to ChatOllama to prevent RagasOutputParserException ([#1914](https://github.com/Glad-Labs/glad-labs-stack/issues/1914)) ([6a6f492](https://github.com/Glad-Labs/glad-labs-stack/commit/6a6f4921525d51faa641977405a4edf0221dd2e8))
-* **tasks:** wrap DeployCheckoutSync in run-hidden.vbs to stop console flash ([#1917](https://github.com/Glad-Labs/glad-labs-stack/issues/1917)) ([296ca02](https://github.com/Glad-Labs/glad-labs-stack/commit/296ca0273b5291c312f4de534d4b5564bdbd849b))
+* **bugs:** narrate_bundle prompt kwargs + YouTube surface segregation ([#1908](https://github.com/Glad-Labs/poindexter/issues/1908)) ([27e3e00](https://github.com/Glad-Labs/poindexter/commit/27e3e00b0a126373d5ab7640fc31b0450ccf3fa5))
+* **cli:** resolve task_metadata UndefinedColumnError in pipeline list-paused ([#1916](https://github.com/Glad-Labs/poindexter/issues/1916)) ([95897a2](https://github.com/Glad-Labs/poindexter/commit/95897a21c9b13f16b9441d4ac96f91b868b343a4))
+* **docker:** repair cofounder Dockerfile — Poetry 2.2.1 + --no-root ([#1901](https://github.com/Glad-Labs/poindexter/issues/1901)) ([ebb12e4](https://github.com/Glad-Labs/poindexter/commit/ebb12e42e268d33b2d277f08adb7b6884ca88f2e))
+* **media:** podcast watchdog detects + gated-re-dispatches, never authors ([#1905](https://github.com/Glad-Labs/poindexter/issues/1905)) ([f9d7ebb](https://github.com/Glad-Labs/poindexter/commit/f9d7ebb5c776aadec4dc78359ec7b0d1cebdae79))
+* **media:** reseed media_pipeline + podcast_pipeline graph_defs (qa.audio drift, [#1876](https://github.com/Glad-Labs/poindexter/issues/1876)) ([#1884](https://github.com/Glad-Labs/poindexter/issues/1884)) ([b10bb3e](https://github.com/Glad-Labs/poindexter/commit/b10bb3ec4cb85f49636ae36a99204a3ecb029d53))
+* **mypy:** resolve 4 type errors surfaced by test run ([#1923](https://github.com/Glad-Labs/poindexter/issues/1923)) ([4882577](https://github.com/Glad-Labs/poindexter/commit/4882577c88f42efee0b38c4cf6339cd71e18c5c6))
+* **pipeline:** remove overlooked pipeline_tasks.category reader causing 384 UndefinedColumnErrors ([#1903](https://github.com/Glad-Labs/poindexter/issues/1903)) ([a1e3c87](https://github.com/Glad-Labs/poindexter/commit/a1e3c87bb5cc811fd8ecf6dc38163311ac4406f7))
+* **post-edit:** sync posts.featured_image_url + trigger rebuild on published-post image swap; fix Pexels key secret access ([#1918](https://github.com/Glad-Labs/poindexter/issues/1918)) ([d0fa4f6](https://github.com/Glad-Labs/poindexter/commit/d0fa4f6d74604542f3dc37f05256a9a06368978d))
+* **ragas:** add format=json to ChatOllama to prevent RagasOutputParserException ([#1914](https://github.com/Glad-Labs/poindexter/issues/1914)) ([6a6f492](https://github.com/Glad-Labs/poindexter/commit/6a6f4921525d51faa641977405a4edf0221dd2e8))
+* **tasks:** wrap DeployCheckoutSync in run-hidden.vbs to stop console flash ([#1917](https://github.com/Glad-Labs/poindexter/issues/1917)) ([296ca02](https://github.com/Glad-Labs/poindexter/commit/296ca0273b5291c312f4de534d4b5564bdbd849b))
 
-## [0.86.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.85.0...v0.86.0) (2026-06-23)
+## [0.86.0](https://github.com/Glad-Labs/poindexter/compare/v0.85.0...v0.86.0) (2026-06-23)
 
 
 ### Features
 
-* **brain:** lead alert triage follow-up with the alert it diagnoses ([#1877](https://github.com/Glad-Labs/glad-labs-stack/issues/1877)) ([665c9b4](https://github.com/Glad-Labs/glad-labs-stack/commit/665c9b4847ed56c7c6bd0cdbc0d03eec408375d8))
-* **cli:** graduate QA rails from the CLI (qa-gates require/advisory) ([#1858](https://github.com/Glad-Labs/glad-labs-stack/issues/1858)) ([8bcb11e](https://github.com/Glad-Labs/glad-labs-stack/commit/8bcb11e892645b35d64a9fb8c2062d72b1b9f28a))
-* **cost:** honest cost attribution — P1 (api/electricity ledger) ([#1852](https://github.com/Glad-Labs/glad-labs-stack/issues/1852)) ([43cb5d9](https://github.com/Glad-Labs/glad-labs-stack/commit/43cb5d972679d88be4bb576b8fd33de79d1044f7))
-* **cost:** metrics budget route reads app_settings cap, not $150 ([#1862](https://github.com/Glad-Labs/glad-labs-stack/issues/1862)) ([4372951](https://github.com/Glad-Labs/glad-labs-stack/commit/4372951604c9aec9d2d77f355d4d87074b751f21))
-* **pipeline:** CI gate catches atom-contract drift in active graph_defs ([#1889](https://github.com/Glad-Labs/glad-labs-stack/issues/1889)) ([bea5e56](https://github.com/Glad-Labs/glad-labs-stack/commit/bea5e5666e97c51a7a1b91a2cc21667abfc8c810))
-* **qa:** self-heal before paging — QA gate flags-and-continues instead of discarding drafts ([#1868](https://github.com/Glad-Labs/glad-labs-stack/issues/1868)) ([de2f2cd](https://github.com/Glad-Labs/glad-labs-stack/commit/de2f2cdb66aa2c71cfa244904e51bec61ab9090e))
-* **vram:** single-GPU budget machinery — calculator + dispatch clamp + headroom panel ([#1888](https://github.com/Glad-Labs/glad-labs-stack/issues/1888)) ([4f15291](https://github.com/Glad-Labs/glad-labs-stack/commit/4f1529161a13b9119b26f7836aa80a30f6755bb0))
+* **brain:** lead alert triage follow-up with the alert it diagnoses ([#1877](https://github.com/Glad-Labs/poindexter/issues/1877)) ([665c9b4](https://github.com/Glad-Labs/poindexter/commit/665c9b4847ed56c7c6bd0cdbc0d03eec408375d8))
+* **cli:** graduate QA rails from the CLI (qa-gates require/advisory) ([#1858](https://github.com/Glad-Labs/poindexter/issues/1858)) ([8bcb11e](https://github.com/Glad-Labs/poindexter/commit/8bcb11e892645b35d64a9fb8c2062d72b1b9f28a))
+* **cost:** honest cost attribution — P1 (api/electricity ledger) ([#1852](https://github.com/Glad-Labs/poindexter/issues/1852)) ([43cb5d9](https://github.com/Glad-Labs/poindexter/commit/43cb5d972679d88be4bb576b8fd33de79d1044f7))
+* **cost:** metrics budget route reads app_settings cap, not $150 ([#1862](https://github.com/Glad-Labs/poindexter/issues/1862)) ([4372951](https://github.com/Glad-Labs/poindexter/commit/4372951604c9aec9d2d77f355d4d87074b751f21))
+* **pipeline:** CI gate catches atom-contract drift in active graph_defs ([#1889](https://github.com/Glad-Labs/poindexter/issues/1889)) ([bea5e56](https://github.com/Glad-Labs/poindexter/commit/bea5e5666e97c51a7a1b91a2cc21667abfc8c810))
+* **qa:** self-heal before paging — QA gate flags-and-continues instead of discarding drafts ([#1868](https://github.com/Glad-Labs/poindexter/issues/1868)) ([de2f2cd](https://github.com/Glad-Labs/poindexter/commit/de2f2cdb66aa2c71cfa244904e51bec61ab9090e))
+* **vram:** single-GPU budget machinery — calculator + dispatch clamp + headroom panel ([#1888](https://github.com/Glad-Labs/poindexter/issues/1888)) ([4f15291](https://github.com/Glad-Labs/poindexter/commit/4f1529161a13b9119b26f7836aa80a30f6755bb0))
 
 
 ### Bug Fixes
 
-* **citations:** YouTube channel attribution + persist research_context ([#1894](https://github.com/Glad-Labs/glad-labs-stack/issues/1894)) ([25a355e](https://github.com/Glad-Labs/glad-labs-stack/commit/25a355e4b5b90e499cd3dd6d5de5dd5f3ee5efb0))
-* **content:** deterministically strip ungroundable source attributions ([#1892](https://github.com/Glad-Labs/glad-labs-stack/issues/1892)) ([e74bed5](https://github.com/Glad-Labs/glad-labs-stack/commit/e74bed5ec35c40cbd2bfe15d613936917622a959))
-* **content:** finalize awaiting_approval at the canonical_blog terminal node ([#1861](https://github.com/Glad-Labs/glad-labs-stack/issues/1861)) ([58dd774](https://github.com/Glad-Labs/glad-labs-stack/commit/58dd7748a2015723430b581891debeafd31417db))
-* **content:** render glued intro→list as a real list (normalize_draft) ([#1881](https://github.com/Glad-Labs/glad-labs-stack/issues/1881)) ([6df55ce](https://github.com/Glad-Labs/glad-labs-stack/commit/6df55ce6af42fc971155065d9ad758574221a043))
-* **deploy:** rebuild the image-baked brain-daemon instead of restarting it ([#1887](https://github.com/Glad-Labs/glad-labs-stack/issues/1887)) ([7cbd8bf](https://github.com/Glad-Labs/glad-labs-stack/commit/7cbd8bfc9b0dcf1420ec05ed3c2e903a86d23194))
-* **llm:** writer honors per-phase num_ctx (close LiteLLM seam gap) ([#1885](https://github.com/Glad-Labs/glad-labs-stack/issues/1885)) ([ab209ce](https://github.com/Glad-Labs/glad-labs-stack/commit/ab209cea729ef905c2e76d16587cee80186bd60c))
-* **media:** long-video narration is standalone audio + podcast speaks the real title ([#1873](https://github.com/Glad-Labs/glad-labs-stack/issues/1873)) ([e21a8e3](https://github.com/Glad-Labs/glad-labs-stack/commit/e21a8e3692d37957e131e4c99e77d2ae705b5134))
-* **media:** pad short-video visuals to narration so the voiceover isn't cut off ([#1874](https://github.com/Glad-Labs/glad-labs-stack/issues/1874)) ([ed119b5](https://github.com/Glad-Labs/glad-labs-stack/commit/ed119b56c42d3839c4decdfc3c0fdd579c365efa))
-* **media:** QA podcast audio + re-encode TTS to one clean stream ([#1876](https://github.com/Glad-Labs/glad-labs-stack/issues/1876)) ([9d32b8f](https://github.com/Glad-Labs/glad-labs-stack/commit/9d32b8f28ba40b2f42919d9098d1cafd3245b314))
-* **observability:** probe Tempo/Loki via compose DNS, not the host port ([#1872](https://github.com/Glad-Labs/glad-labs-stack/issues/1872)) ([9ce6ea0](https://github.com/Glad-Labs/glad-labs-stack/commit/9ce6ea0135e694dd1976c156d242b0a0d8ad0326))
-* **pipeline:** self-heal unstamped graph_defs at boot ([#755](https://github.com/Glad-Labs/glad-labs-stack/issues/755)) ([#1864](https://github.com/Glad-Labs/glad-labs-stack/issues/1864)) ([02ba0e8](https://github.com/Glad-Labs/glad-labs-stack/commit/02ba0e8aa8dc232da34c76c49a0c31576c81d821))
-* **qa:** make vision_gate graduatable to required_to_pass ([#1863](https://github.com/Glad-Labs/glad-labs-stack/issues/1863)) ([054525e](https://github.com/Glad-Labs/glad-labs-stack/commit/054525e9a351b113f54c1528939c76c75eb6d2d2))
-* **site:** update stale version/stack claims on about + storefront ([#1879](https://github.com/Glad-Labs/glad-labs-stack/issues/1879)) ([915efce](https://github.com/Glad-Labs/glad-labs-stack/commit/915efcee7962941b3e9e552f708ac572c3329cc2))
-* **tasks_db:** stop writing phantom featured_image_data column to content_tasks ([#1860](https://github.com/Glad-Labs/glad-labs-stack/issues/1860)) ([f4584cd](https://github.com/Glad-Labs/glad-labs-stack/commit/f4584cdeb0a790bc30befb8b12bf2097361471d7))
+* **citations:** YouTube channel attribution + persist research_context ([#1894](https://github.com/Glad-Labs/poindexter/issues/1894)) ([25a355e](https://github.com/Glad-Labs/poindexter/commit/25a355e4b5b90e499cd3dd6d5de5dd5f3ee5efb0))
+* **content:** deterministically strip ungroundable source attributions ([#1892](https://github.com/Glad-Labs/poindexter/issues/1892)) ([e74bed5](https://github.com/Glad-Labs/poindexter/commit/e74bed5ec35c40cbd2bfe15d613936917622a959))
+* **content:** finalize awaiting_approval at the canonical_blog terminal node ([#1861](https://github.com/Glad-Labs/poindexter/issues/1861)) ([58dd774](https://github.com/Glad-Labs/poindexter/commit/58dd7748a2015723430b581891debeafd31417db))
+* **content:** render glued intro→list as a real list (normalize_draft) ([#1881](https://github.com/Glad-Labs/poindexter/issues/1881)) ([6df55ce](https://github.com/Glad-Labs/poindexter/commit/6df55ce6af42fc971155065d9ad758574221a043))
+* **deploy:** rebuild the image-baked brain-daemon instead of restarting it ([#1887](https://github.com/Glad-Labs/poindexter/issues/1887)) ([7cbd8bf](https://github.com/Glad-Labs/poindexter/commit/7cbd8bfc9b0dcf1420ec05ed3c2e903a86d23194))
+* **llm:** writer honors per-phase num_ctx (close LiteLLM seam gap) ([#1885](https://github.com/Glad-Labs/poindexter/issues/1885)) ([ab209ce](https://github.com/Glad-Labs/poindexter/commit/ab209cea729ef905c2e76d16587cee80186bd60c))
+* **media:** long-video narration is standalone audio + podcast speaks the real title ([#1873](https://github.com/Glad-Labs/poindexter/issues/1873)) ([e21a8e3](https://github.com/Glad-Labs/poindexter/commit/e21a8e3692d37957e131e4c99e77d2ae705b5134))
+* **media:** pad short-video visuals to narration so the voiceover isn't cut off ([#1874](https://github.com/Glad-Labs/poindexter/issues/1874)) ([ed119b5](https://github.com/Glad-Labs/poindexter/commit/ed119b56c42d3839c4decdfc3c0fdd579c365efa))
+* **media:** QA podcast audio + re-encode TTS to one clean stream ([#1876](https://github.com/Glad-Labs/poindexter/issues/1876)) ([9d32b8f](https://github.com/Glad-Labs/poindexter/commit/9d32b8f28ba40b2f42919d9098d1cafd3245b314))
+* **observability:** probe Tempo/Loki via compose DNS, not the host port ([#1872](https://github.com/Glad-Labs/poindexter/issues/1872)) ([9ce6ea0](https://github.com/Glad-Labs/poindexter/commit/9ce6ea0135e694dd1976c156d242b0a0d8ad0326))
+* **pipeline:** self-heal unstamped graph_defs at boot ([#755](https://github.com/Glad-Labs/poindexter/issues/755)) ([#1864](https://github.com/Glad-Labs/poindexter/issues/1864)) ([02ba0e8](https://github.com/Glad-Labs/poindexter/commit/02ba0e8aa8dc232da34c76c49a0c31576c81d821))
+* **qa:** make vision_gate graduatable to required_to_pass ([#1863](https://github.com/Glad-Labs/poindexter/issues/1863)) ([054525e](https://github.com/Glad-Labs/poindexter/commit/054525e9a351b113f54c1528939c76c75eb6d2d2))
+* **site:** update stale version/stack claims on about + storefront ([#1879](https://github.com/Glad-Labs/poindexter/issues/1879)) ([915efce](https://github.com/Glad-Labs/poindexter/commit/915efcee7962941b3e9e552f708ac572c3329cc2))
+* **tasks_db:** stop writing phantom featured_image_data column to content_tasks ([#1860](https://github.com/Glad-Labs/poindexter/issues/1860)) ([f4584cd](https://github.com/Glad-Labs/poindexter/commit/f4584cdeb0a790bc30befb8b12bf2097361471d7))
 
-## [0.85.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.84.0...v0.85.0) (2026-06-22)
+## [0.85.0](https://github.com/Glad-Labs/poindexter/compare/v0.84.0...v0.85.0) (2026-06-22)
 
 
 ### Features
 
-* **brain:** auto-recover the Postgres host-port-proxy wedge ([#1814](https://github.com/Glad-Labs/glad-labs-stack/issues/1814)) ([36fab93](https://github.com/Glad-Labs/glad-labs-stack/commit/36fab935e4c4670fc7a767f7485852cec10976bb))
-* **cli:** repurpose `posts create` into a manual markdown write/upload ([#1842](https://github.com/Glad-Labs/glad-labs-stack/issues/1842)) ([9c160ac](https://github.com/Glad-Labs/glad-labs-stack/commit/9c160ac5e5b3f5b788ec52c5a468b6ac454ee745))
-* **pipeline:** preview_gate — component-scoped regen gate ([#1851](https://github.com/Glad-Labs/glad-labs-stack/issues/1851)) ([d7b7640](https://github.com/Glad-Labs/glad-labs-stack/commit/d7b76406f2fd257a68470f4350cc25248e361a26))
-* **scheduler:** relocate run/status state from app_settings to job_run_state ([#1820](https://github.com/Glad-Labs/glad-labs-stack/issues/1820)) ([5db2f34](https://github.com/Glad-Labs/glad-labs-stack/commit/5db2f3442e96630995c6e8b01e11118cd04e8d1a))
-* **self-healing:** liveness-check host scheduled tasks via Recovery Agent /tasks ([#1804](https://github.com/Glad-Labs/glad-labs-stack/issues/1804)) ([aca857a](https://github.com/Glad-Labs/glad-labs-stack/commit/aca857a73008dfecf1a4209badd50fb377981b95))
+* **brain:** auto-recover the Postgres host-port-proxy wedge ([#1814](https://github.com/Glad-Labs/poindexter/issues/1814)) ([36fab93](https://github.com/Glad-Labs/poindexter/commit/36fab935e4c4670fc7a767f7485852cec10976bb))
+* **cli:** repurpose `posts create` into a manual markdown write/upload ([#1842](https://github.com/Glad-Labs/poindexter/issues/1842)) ([9c160ac](https://github.com/Glad-Labs/poindexter/commit/9c160ac5e5b3f5b788ec52c5a468b6ac454ee745))
+* **pipeline:** preview_gate — component-scoped regen gate ([#1851](https://github.com/Glad-Labs/poindexter/issues/1851)) ([d7b7640](https://github.com/Glad-Labs/poindexter/commit/d7b76406f2fd257a68470f4350cc25248e361a26))
+* **scheduler:** relocate run/status state from app_settings to job_run_state ([#1820](https://github.com/Glad-Labs/poindexter/issues/1820)) ([5db2f34](https://github.com/Glad-Labs/poindexter/commit/5db2f3442e96630995c6e8b01e11118cd04e8d1a))
+* **self-healing:** liveness-check host scheduled tasks via Recovery Agent /tasks ([#1804](https://github.com/Glad-Labs/poindexter/issues/1804)) ([aca857a](https://github.com/Glad-Labs/poindexter/commit/aca857a73008dfecf1a4209badd50fb377981b95))
 
 
 ### Bug Fixes
 
-* **brain:** gate writer-model probe behind GPU advisory lock; guard OllamaNoModelsLoaded ([#1812](https://github.com/Glad-Labs/glad-labs-stack/issues/1812)) ([1fed4ba](https://github.com/Glad-Labs/glad-labs-stack/commit/1fed4ba640ff827f5e19d7394f812d08337ee647))
-* **brain:** make compose-drift probe profile-aware ([#1809](https://github.com/Glad-Labs/glad-labs-stack/issues/1809)) ([a051e01](https://github.com/Glad-Labs/glad-labs-stack/commit/a051e0130a6ae2a7587ab7251fc3173a0318d5df))
-* **captions:** bias Speaches ASR toward brand vocab via initial_prompt ([#1817](https://github.com/Glad-Labs/glad-labs-stack/issues/1817)) ([453c222](https://github.com/Glad-Labs/glad-labs-stack/commit/453c2224a489e145dceac1e6d2cd6de87c4ab774))
-* **captions:** burn in video captions via Speaches sidecar, not an uninstalled whisper.cpp ([#1815](https://github.com/Glad-Labs/glad-labs-stack/issues/1815)) ([dfa307c](https://github.com/Glad-Labs/glad-labs-stack/commit/dfa307c03d1bf1cf85a7c4ae22968276eda3d89d))
-* **ci:** pin test-exclude@7 so jest --coverage survives the minimatch&gt;=9 override ([#1850](https://github.com/Glad-Labs/glad-labs-stack/issues/1850)) ([0082919](https://github.com/Glad-Labs/glad-labs-stack/commit/008291903ae113d98f32606e1739ef9bc1142877))
-* **ci:** restore runner CMD cleared by the entrypoint override ([#1810](https://github.com/Glad-Labs/glad-labs-stack/issues/1810) follow-up) ([#1811](https://github.com/Glad-Labs/glad-labs-stack/issues/1811)) ([db35282](https://github.com/Glad-Labs/glad-labs-stack/commit/db35282fe388e165ba14be0f3f1bb9dc8b1982d5))
-* **ci:** self-recover the self-hosted runner from ungraceful restarts ([#1810](https://github.com/Glad-Labs/glad-labs-stack/issues/1810)) ([7cb90d1](https://github.com/Glad-Labs/glad-labs-stack/commit/7cb90d1b146255fa013fe43cee3fad86c3821a36))
-* **citation:** link single-word brand parentheticals when corpus-grounded ([#1831](https://github.com/Glad-Labs/glad-labs-stack/issues/1831)) ([c584818](https://github.com/Glad-Labs/glad-labs-stack/commit/c5848185c2f4312f01b493ed763539d2e2aa4c6f))
-* **citation:** link subject-first "describes" attributions in repair scan ([#1837](https://github.com/Glad-Labs/glad-labs-stack/issues/1837)) ([6eed7d1](https://github.com/Glad-Labs/glad-labs-stack/commit/6eed7d133f59d95ae36fbc6e797d3b6b7bd39b62))
-* **cli:** apply the create_post dedup guard to posts create ([#1829](https://github.com/Glad-Labs/glad-labs-stack/issues/1829)) ([d7595d6](https://github.com/Glad-Labs/glad-labs-stack/commit/d7595d6311a0b7615a21387192706b22b08bdc14))
-* **cli:** resume/regen build full DB service + platform for mid-graph gates ([#1854](https://github.com/Glad-Labs/glad-labs-stack/issues/1854)) ([044dbe6](https://github.com/Glad-Labs/glad-labs-stack/commit/044dbe67e618c706b8a9fa3d12d06a1ffd6d9e2f))
-* **console:** coalesce concurrent OAuth token mints to stop /token 429s ([#1806](https://github.com/Glad-Labs/glad-labs-stack/issues/1806)) ([0067681](https://github.com/Glad-Labs/glad-labs-stack/commit/0067681b1fddfcb52c0b946ae0e368ce913f517b))
-* **console:** live-wire the overview KPI strip (was mock in live mode) ([#1807](https://github.com/Glad-Labs/glad-labs-stack/issues/1807)) ([a9fb2a6](https://github.com/Glad-Labs/glad-labs-stack/commit/a9fb2a6410e0262b32c614a81244f84bd68b41fe))
-* **content:** stop title-gen leaking model rationale as the post title ([#1822](https://github.com/Glad-Labs/glad-labs-stack/issues/1822)) ([ff4866a](https://github.com/Glad-Labs/glad-labs-stack/commit/ff4866a211a908c0730e32ab8b25d6a6dd9d950c))
-* **content:** structured-JSON title-gen retires the denylist whack-a-mole ([#1825](https://github.com/Glad-Labs/glad-labs-stack/issues/1825)) ([add2614](https://github.com/Glad-Labs/glad-labs-stack/commit/add2614a866ce32da612ffe6cd946ee2d30d7184))
-* **gpu:** confirm Ollama VRAM release before SDXL/video load to stop desktop lockups ([#1839](https://github.com/Glad-Labs/glad-labs-stack/issues/1839)) ([8240fb6](https://github.com/Glad-Labs/glad-labs-stack/commit/8240fb628b10e0c85ea366aa309a124a14a982fb))
-* **gpu:** size cost_tier.budget below the writer so background jobs stop pegging VRAM ([#1826](https://github.com/Glad-Labs/glad-labs-stack/issues/1826)) ([ad86661](https://github.com/Glad-Labs/glad-labs-stack/commit/ad8666115ef20dc937e1dba9ca119ca9121924d4))
-* **image:** forbid all human depiction in image.decision prompt, not just faces ([#1830](https://github.com/Glad-Labs/glad-labs-stack/issues/1830)) ([8480df3](https://github.com/Glad-Labs/glad-labs-stack/commit/8480df3fb53e368bf41aba00dd7f76656b374e9c))
-* **jobs:** wire checkpoint_prune retention handler + scrub dead-job seeds ([#1818](https://github.com/Glad-Labs/glad-labs-stack/issues/1818)) ([71a072c](https://github.com/Glad-Labs/glad-labs-stack/commit/71a072c17955d33ff9d8060fd15b8065eab13091))
-* **monitoring:** drop stale port-forward watch list, retire dead nvidia_exporter_url, repoint data-fabric URLs to internal DNS ([#1832](https://github.com/Glad-Labs/glad-labs-stack/issues/1832)) ([604bff0](https://github.com/Glad-Labs/glad-labs-stack/commit/604bff0f8ddcc7d7e8e8ecbfb42ba9a8d13ae55f))
-* **observability:** read langfuse_public_key via get_secret so DB-only installs keep tracing ([#1838](https://github.com/Glad-Labs/glad-labs-stack/issues/1838)) ([41db284](https://github.com/Glad-Labs/glad-labs-stack/commit/41db284a27f0ab0ca119344b43c92646c450c2f7))
-* **observability:** register Langfuse OTEL logger in litellm.callbacks so async traces resume ([#1833](https://github.com/Glad-Labs/glad-labs-stack/issues/1833)) ([6a4b7ba](https://github.com/Glad-Labs/glad-labs-stack/commit/6a4b7baaec9fb5dc4cae5870a0df0b79fe075394))
-* **ops:** auto-recover wedged WSL2 backend in docker-watchdog ([#1844](https://github.com/Glad-Labs/glad-labs-stack/issues/1844)) ([d17544e](https://github.com/Glad-Labs/glad-labs-stack/commit/d17544e2f0dfa54830beefffe55eb814f2864e2d))
-* **pipeline:** block near-duplicate topics injected via create_post ([#1823](https://github.com/Glad-Labs/glad-labs-stack/issues/1823)) ([749c623](https://github.com/Glad-Labs/glad-labs-stack/commit/749c6231cfd589bb23ba12a66aade9c23aac496c))
-* **pipeline:** QA-rejected posts no longer trigger the awaiting-approval ping ([#1834](https://github.com/Glad-Labs/glad-labs-stack/issues/1834)) ([f8b17c7](https://github.com/Glad-Labs/glad-labs-stack/commit/f8b17c72fb6db5b293e6c20f96cefce786a330c1))
-* **pipeline:** restore task claim + graph_def load after main deploy ([#1853](https://github.com/Glad-Labs/glad-labs-stack/issues/1853)) ([c5416a1](https://github.com/Glad-Labs/glad-labs-stack/commit/c5416a16e8aa3d3af2d77d917e2197d0675e5e2a))
-* **qa:** whitelist numeric-precision + quantization vocab in content validator ([#1819](https://github.com/Glad-Labs/glad-labs-stack/issues/1819)) ([ddc8da1](https://github.com/Glad-Labs/glad-labs-stack/commit/ddc8da17bf540760d429d854da41cd6a3028e409))
-* resolve cost + probe false-positives surfaced by alert investigation ([#1827](https://github.com/Glad-Labs/glad-labs-stack/issues/1827)) ([3023817](https://github.com/Glad-Labs/glad-labs-stack/commit/30238175dcc11346ac1e69eae1cc325582758f27))
-* **scripts:** resolve DSN via bootstrap + force IPv4 in host one-offs ([#1803](https://github.com/Glad-Labs/glad-labs-stack/issues/1803)) ([bbdd7cc](https://github.com/Glad-Labs/glad-labs-stack/commit/bbdd7cc5c4bac0a276fc0b04939938e32414ba12))
-* **settings:** scrub resurrected dead model keys + guard seed/migration drift ([#1813](https://github.com/Glad-Labs/glad-labs-stack/issues/1813)) ([2833d5d](https://github.com/Glad-Labs/glad-labs-stack/commit/2833d5d2865522e62c8c4d29acd9e917ee5b11bc))
-* **triage:** route /api/triage LLM through the gpu.lock-gated dispatcher ([#1808](https://github.com/Glad-Labs/glad-labs-stack/issues/1808)) ([297c466](https://github.com/Glad-Labs/glad-labs-stack/commit/297c46667249b62fb67ca0d206d3f933b75ccfc5))
+* **brain:** gate writer-model probe behind GPU advisory lock; guard OllamaNoModelsLoaded ([#1812](https://github.com/Glad-Labs/poindexter/issues/1812)) ([1fed4ba](https://github.com/Glad-Labs/poindexter/commit/1fed4ba640ff827f5e19d7394f812d08337ee647))
+* **brain:** make compose-drift probe profile-aware ([#1809](https://github.com/Glad-Labs/poindexter/issues/1809)) ([a051e01](https://github.com/Glad-Labs/poindexter/commit/a051e0130a6ae2a7587ab7251fc3173a0318d5df))
+* **captions:** bias Speaches ASR toward brand vocab via initial_prompt ([#1817](https://github.com/Glad-Labs/poindexter/issues/1817)) ([453c222](https://github.com/Glad-Labs/poindexter/commit/453c2224a489e145dceac1e6d2cd6de87c4ab774))
+* **captions:** burn in video captions via Speaches sidecar, not an uninstalled whisper.cpp ([#1815](https://github.com/Glad-Labs/poindexter/issues/1815)) ([dfa307c](https://github.com/Glad-Labs/poindexter/commit/dfa307c03d1bf1cf85a7c4ae22968276eda3d89d))
+* **ci:** pin test-exclude@7 so jest --coverage survives the minimatch&gt;=9 override ([#1850](https://github.com/Glad-Labs/poindexter/issues/1850)) ([0082919](https://github.com/Glad-Labs/poindexter/commit/008291903ae113d98f32606e1739ef9bc1142877))
+* **ci:** restore runner CMD cleared by the entrypoint override ([#1810](https://github.com/Glad-Labs/poindexter/issues/1810) follow-up) ([#1811](https://github.com/Glad-Labs/poindexter/issues/1811)) ([db35282](https://github.com/Glad-Labs/poindexter/commit/db35282fe388e165ba14be0f3f1bb9dc8b1982d5))
+* **ci:** self-recover the self-hosted runner from ungraceful restarts ([#1810](https://github.com/Glad-Labs/poindexter/issues/1810)) ([7cb90d1](https://github.com/Glad-Labs/poindexter/commit/7cb90d1b146255fa013fe43cee3fad86c3821a36))
+* **citation:** link single-word brand parentheticals when corpus-grounded ([#1831](https://github.com/Glad-Labs/poindexter/issues/1831)) ([c584818](https://github.com/Glad-Labs/poindexter/commit/c5848185c2f4312f01b493ed763539d2e2aa4c6f))
+* **citation:** link subject-first "describes" attributions in repair scan ([#1837](https://github.com/Glad-Labs/poindexter/issues/1837)) ([6eed7d1](https://github.com/Glad-Labs/poindexter/commit/6eed7d133f59d95ae36fbc6e797d3b6b7bd39b62))
+* **cli:** apply the create_post dedup guard to posts create ([#1829](https://github.com/Glad-Labs/poindexter/issues/1829)) ([d7595d6](https://github.com/Glad-Labs/poindexter/commit/d7595d6311a0b7615a21387192706b22b08bdc14))
+* **cli:** resume/regen build full DB service + platform for mid-graph gates ([#1854](https://github.com/Glad-Labs/poindexter/issues/1854)) ([044dbe6](https://github.com/Glad-Labs/poindexter/commit/044dbe67e618c706b8a9fa3d12d06a1ffd6d9e2f))
+* **console:** coalesce concurrent OAuth token mints to stop /token 429s ([#1806](https://github.com/Glad-Labs/poindexter/issues/1806)) ([0067681](https://github.com/Glad-Labs/poindexter/commit/0067681b1fddfcb52c0b946ae0e368ce913f517b))
+* **console:** live-wire the overview KPI strip (was mock in live mode) ([#1807](https://github.com/Glad-Labs/poindexter/issues/1807)) ([a9fb2a6](https://github.com/Glad-Labs/poindexter/commit/a9fb2a6410e0262b32c614a81244f84bd68b41fe))
+* **content:** stop title-gen leaking model rationale as the post title ([#1822](https://github.com/Glad-Labs/poindexter/issues/1822)) ([ff4866a](https://github.com/Glad-Labs/poindexter/commit/ff4866a211a908c0730e32ab8b25d6a6dd9d950c))
+* **content:** structured-JSON title-gen retires the denylist whack-a-mole ([#1825](https://github.com/Glad-Labs/poindexter/issues/1825)) ([add2614](https://github.com/Glad-Labs/poindexter/commit/add2614a866ce32da612ffe6cd946ee2d30d7184))
+* **gpu:** confirm Ollama VRAM release before SDXL/video load to stop desktop lockups ([#1839](https://github.com/Glad-Labs/poindexter/issues/1839)) ([8240fb6](https://github.com/Glad-Labs/poindexter/commit/8240fb628b10e0c85ea366aa309a124a14a982fb))
+* **gpu:** size cost_tier.budget below the writer so background jobs stop pegging VRAM ([#1826](https://github.com/Glad-Labs/poindexter/issues/1826)) ([ad86661](https://github.com/Glad-Labs/poindexter/commit/ad8666115ef20dc937e1dba9ca119ca9121924d4))
+* **image:** forbid all human depiction in image.decision prompt, not just faces ([#1830](https://github.com/Glad-Labs/poindexter/issues/1830)) ([8480df3](https://github.com/Glad-Labs/poindexter/commit/8480df3fb53e368bf41aba00dd7f76656b374e9c))
+* **jobs:** wire checkpoint_prune retention handler + scrub dead-job seeds ([#1818](https://github.com/Glad-Labs/poindexter/issues/1818)) ([71a072c](https://github.com/Glad-Labs/poindexter/commit/71a072c17955d33ff9d8060fd15b8065eab13091))
+* **monitoring:** drop stale port-forward watch list, retire dead nvidia_exporter_url, repoint data-fabric URLs to internal DNS ([#1832](https://github.com/Glad-Labs/poindexter/issues/1832)) ([604bff0](https://github.com/Glad-Labs/poindexter/commit/604bff0f8ddcc7d7e8e8ecbfb42ba9a8d13ae55f))
+* **observability:** read langfuse_public_key via get_secret so DB-only installs keep tracing ([#1838](https://github.com/Glad-Labs/poindexter/issues/1838)) ([41db284](https://github.com/Glad-Labs/poindexter/commit/41db284a27f0ab0ca119344b43c92646c450c2f7))
+* **observability:** register Langfuse OTEL logger in litellm.callbacks so async traces resume ([#1833](https://github.com/Glad-Labs/poindexter/issues/1833)) ([6a4b7ba](https://github.com/Glad-Labs/poindexter/commit/6a4b7baaec9fb5dc4cae5870a0df0b79fe075394))
+* **ops:** auto-recover wedged WSL2 backend in docker-watchdog ([#1844](https://github.com/Glad-Labs/poindexter/issues/1844)) ([d17544e](https://github.com/Glad-Labs/poindexter/commit/d17544e2f0dfa54830beefffe55eb814f2864e2d))
+* **pipeline:** block near-duplicate topics injected via create_post ([#1823](https://github.com/Glad-Labs/poindexter/issues/1823)) ([749c623](https://github.com/Glad-Labs/poindexter/commit/749c6231cfd589bb23ba12a66aade9c23aac496c))
+* **pipeline:** QA-rejected posts no longer trigger the awaiting-approval ping ([#1834](https://github.com/Glad-Labs/poindexter/issues/1834)) ([f8b17c7](https://github.com/Glad-Labs/poindexter/commit/f8b17c72fb6db5b293e6c20f96cefce786a330c1))
+* **pipeline:** restore task claim + graph_def load after main deploy ([#1853](https://github.com/Glad-Labs/poindexter/issues/1853)) ([c5416a1](https://github.com/Glad-Labs/poindexter/commit/c5416a16e8aa3d3af2d77d917e2197d0675e5e2a))
+* **qa:** whitelist numeric-precision + quantization vocab in content validator ([#1819](https://github.com/Glad-Labs/poindexter/issues/1819)) ([ddc8da1](https://github.com/Glad-Labs/poindexter/commit/ddc8da17bf540760d429d854da41cd6a3028e409))
+* resolve cost + probe false-positives surfaced by alert investigation ([#1827](https://github.com/Glad-Labs/poindexter/issues/1827)) ([3023817](https://github.com/Glad-Labs/poindexter/commit/30238175dcc11346ac1e69eae1cc325582758f27))
+* **scripts:** resolve DSN via bootstrap + force IPv4 in host one-offs ([#1803](https://github.com/Glad-Labs/poindexter/issues/1803)) ([bbdd7cc](https://github.com/Glad-Labs/poindexter/commit/bbdd7cc5c4bac0a276fc0b04939938e32414ba12))
+* **settings:** scrub resurrected dead model keys + guard seed/migration drift ([#1813](https://github.com/Glad-Labs/poindexter/issues/1813)) ([2833d5d](https://github.com/Glad-Labs/poindexter/commit/2833d5d2865522e62c8c4d29acd9e917ee5b11bc))
+* **triage:** route /api/triage LLM through the gpu.lock-gated dispatcher ([#1808](https://github.com/Glad-Labs/poindexter/issues/1808)) ([297c466](https://github.com/Glad-Labs/poindexter/commit/297c46667249b62fb67ca0d206d3f933b75ccfc5))
 
-## [0.84.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.83.0...v0.84.0) (2026-06-21)
+## [0.84.0](https://github.com/Glad-Labs/poindexter/compare/v0.83.0...v0.84.0) (2026-06-21)
 
 
 ### Features
 
-* **alerts:** add PyroscopeDown liveness alert ([#1784](https://github.com/Glad-Labs/glad-labs-stack/issues/1784)) ([6e50afa](https://github.com/Glad-Labs/glad-labs-stack/commit/6e50afa0ad513bfab03006cf0655c841143d1d70))
-* **api:** canonical offset-based ListResponse[T] + conformance ratchet ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 2) ([#1776](https://github.com/Glad-Labs/glad-labs-stack/issues/1776)) ([e699569](https://github.com/Glad-Labs/glad-labs-stack/commit/e699569a27deab01537560f9afd8aaed444d07c7))
-* **api:** paginate GET /api/video/episodes (apply [#746](https://github.com/Glad-Labs/glad-labs-stack/issues/746) to video) ([#1798](https://github.com/Glad-Labs/glad-labs-stack/issues/1798)) ([da54383](https://github.com/Glad-Labs/glad-labs-stack/commit/da54383aeb6b9f13bb80d54c781e3f2d627aa3b5))
-* **api:** settings list endpoint returns canonical offset envelope ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 3) ([#1777](https://github.com/Glad-Labs/glad-labs-stack/issues/1777)) ([cfedffe](https://github.com/Glad-Labs/glad-labs-stack/commit/cfedffe72e5b6648a41af50c869795bd2c283493))
-* **api:** task list endpoint returns canonical offset envelope ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 4) ([#1778](https://github.com/Glad-Labs/glad-labs-stack/issues/1778)) ([b8cfb0f](https://github.com/Glad-Labs/glad-labs-stack/commit/b8cfb0f89a13a10d66d5be5f0f7c15d8291b545e))
-* **api:** type data-plane surface list as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 12) ([#1795](https://github.com/Glad-Labs/glad-labs-stack/issues/1795)) ([ef31d7e](https://github.com/Glad-Labs/glad-labs-stack/commit/ef31d7e99f54beadb3222e0e6310fabf1a0bd743))
-* **api:** type gates list as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 8) ([#1787](https://github.com/Glad-Labs/glad-labs-stack/issues/1787)) ([7519ae2](https://github.com/Glad-Labs/glad-labs-stack/commit/7519ae243af466a700502ea57570cfe05c022339))
-* **api:** type gates pending as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 7) ([#1785](https://github.com/Glad-Labs/glad-labs-stack/issues/1785)) ([cc56c94](https://github.com/Glad-Labs/glad-labs-stack/commit/cc56c9472a9f4dcea5b3dc9759a12107598aaac0))
-* **api:** type media-approval pending as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 6) ([#1782](https://github.com/Glad-Labs/glad-labs-stack/issues/1782)) ([74853cf](https://github.com/Glad-Labs/glad-labs-stack/commit/74853cf70dbba6f64c90b7f9b618d40e0c00eb8e))
-* **api:** type pending-approval as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 5) ([#1781](https://github.com/Glad-Labs/glad-labs-stack/issues/1781)) ([359f16b](https://github.com/Glad-Labs/glad-labs-stack/commit/359f16bac7c3b1b81893676d571a3312ea68381b))
-* **api:** type podcast episodes as canonical ListResponse + close path leak ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 10) ([#1789](https://github.com/Glad-Labs/glad-labs-stack/issues/1789)) ([4af09cf](https://github.com/Glad-Labs/glad-labs-stack/commit/4af09cfe0e38061555db1de2c88d1802aff2038a))
-* **api:** type posts-approval pending as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 9) ([#1788](https://github.com/Glad-Labs/glad-labs-stack/issues/1788)) ([c168101](https://github.com/Glad-Labs/glad-labs-stack/commit/c1681010d73cb92333ba60469027b6b9ece025cf))
-* **api:** type topics proposals as canonical ListResponse + console lockstep ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 13) ([#1797](https://github.com/Glad-Labs/glad-labs-stack/issues/1797)) ([2622891](https://github.com/Glad-Labs/glad-labs-stack/commit/2622891f8bc4f41601e617bb813d4cb3181f664b))
-* **api:** type video episodes as canonical ListResponse ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 11) ([#1793](https://github.com/Glad-Labs/glad-labs-stack/issues/1793)) ([41a802d](https://github.com/Glad-Labs/glad-labs-stack/commit/41a802d97b0c4a545c77dd07686565498b0df760))
-* **brain:** auto-embed liveness watch (heartbeat + self-heal probe) ([#1786](https://github.com/Glad-Labs/glad-labs-stack/issues/1786)) ([797a085](https://github.com/Glad-Labs/glad-labs-stack/commit/797a085f3b158c7acb1df68ffd61bb73e017d29c))
-* **brain:** host-routed compose-drift self-heal via the Recovery Agent ([#1791](https://github.com/Glad-Labs/glad-labs-stack/issues/1791)) ([3e2431e](https://github.com/Glad-Labs/glad-labs-stack/commit/3e2431ee0d4d688ffdc3fd0575e5aee4356580ef))
+* **alerts:** add PyroscopeDown liveness alert ([#1784](https://github.com/Glad-Labs/poindexter/issues/1784)) ([6e50afa](https://github.com/Glad-Labs/poindexter/commit/6e50afa0ad513bfab03006cf0655c841143d1d70))
+* **api:** canonical offset-based ListResponse[T] + conformance ratchet ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 2) ([#1776](https://github.com/Glad-Labs/poindexter/issues/1776)) ([e699569](https://github.com/Glad-Labs/poindexter/commit/e699569a27deab01537560f9afd8aaed444d07c7))
+* **api:** paginate GET /api/video/episodes (apply [#746](https://github.com/Glad-Labs/poindexter/issues/746) to video) ([#1798](https://github.com/Glad-Labs/poindexter/issues/1798)) ([da54383](https://github.com/Glad-Labs/poindexter/commit/da54383aeb6b9f13bb80d54c781e3f2d627aa3b5))
+* **api:** settings list endpoint returns canonical offset envelope ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 3) ([#1777](https://github.com/Glad-Labs/poindexter/issues/1777)) ([cfedffe](https://github.com/Glad-Labs/poindexter/commit/cfedffe72e5b6648a41af50c869795bd2c283493))
+* **api:** task list endpoint returns canonical offset envelope ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 4) ([#1778](https://github.com/Glad-Labs/poindexter/issues/1778)) ([b8cfb0f](https://github.com/Glad-Labs/poindexter/commit/b8cfb0f89a13a10d66d5be5f0f7c15d8291b545e))
+* **api:** type data-plane surface list as canonical ListResponse ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 12) ([#1795](https://github.com/Glad-Labs/poindexter/issues/1795)) ([ef31d7e](https://github.com/Glad-Labs/poindexter/commit/ef31d7e99f54beadb3222e0e6310fabf1a0bd743))
+* **api:** type gates list as canonical ListResponse ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 8) ([#1787](https://github.com/Glad-Labs/poindexter/issues/1787)) ([7519ae2](https://github.com/Glad-Labs/poindexter/commit/7519ae243af466a700502ea57570cfe05c022339))
+* **api:** type gates pending as canonical ListResponse ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 7) ([#1785](https://github.com/Glad-Labs/poindexter/issues/1785)) ([cc56c94](https://github.com/Glad-Labs/poindexter/commit/cc56c9472a9f4dcea5b3dc9759a12107598aaac0))
+* **api:** type media-approval pending as canonical ListResponse ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 6) ([#1782](https://github.com/Glad-Labs/poindexter/issues/1782)) ([74853cf](https://github.com/Glad-Labs/poindexter/commit/74853cf70dbba6f64c90b7f9b618d40e0c00eb8e))
+* **api:** type pending-approval as canonical ListResponse ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 5) ([#1781](https://github.com/Glad-Labs/poindexter/issues/1781)) ([359f16b](https://github.com/Glad-Labs/poindexter/commit/359f16bac7c3b1b81893676d571a3312ea68381b))
+* **api:** type podcast episodes as canonical ListResponse + close path leak ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 10) ([#1789](https://github.com/Glad-Labs/poindexter/issues/1789)) ([4af09cf](https://github.com/Glad-Labs/poindexter/commit/4af09cfe0e38061555db1de2c88d1802aff2038a))
+* **api:** type posts-approval pending as canonical ListResponse ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 9) ([#1788](https://github.com/Glad-Labs/poindexter/issues/1788)) ([c168101](https://github.com/Glad-Labs/poindexter/commit/c1681010d73cb92333ba60469027b6b9ece025cf))
+* **api:** type topics proposals as canonical ListResponse + console lockstep ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 13) ([#1797](https://github.com/Glad-Labs/poindexter/issues/1797)) ([2622891](https://github.com/Glad-Labs/poindexter/commit/2622891f8bc4f41601e617bb813d4cb3181f664b))
+* **api:** type video episodes as canonical ListResponse ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 11) ([#1793](https://github.com/Glad-Labs/poindexter/issues/1793)) ([41a802d](https://github.com/Glad-Labs/poindexter/commit/41a802d97b0c4a545c77dd07686565498b0df760))
+* **brain:** auto-embed liveness watch (heartbeat + self-heal probe) ([#1786](https://github.com/Glad-Labs/poindexter/issues/1786)) ([797a085](https://github.com/Glad-Labs/poindexter/commit/797a085f3b158c7acb1df68ffd61bb73e017d29c))
+* **brain:** host-routed compose-drift self-heal via the Recovery Agent ([#1791](https://github.com/Glad-Labs/poindexter/issues/1791)) ([3e2431e](https://github.com/Glad-Labs/poindexter/commit/3e2431ee0d4d688ffdc3fd0575e5aee4356580ef))
 
 
 ### Bug Fixes
 
-* **ci:** export CI runner PEM in start-stack.sh so the self-hosted runner survives deploys ([#1790](https://github.com/Glad-Labs/glad-labs-stack/issues/1790)) ([b42d92f](https://github.com/Glad-Labs/glad-labs-stack/commit/b42d92f94e4f0f4cc53a5bf6b56f5222a624422a))
-* **console:** read GET /api/tasks rows from items, not tasks ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 4 follow-up) ([#1779](https://github.com/Glad-Labs/glad-labs-stack/issues/1779)) ([96a72e1](https://github.com/Glad-Labs/glad-labs-stack/commit/96a72e1359d1b12d3f2815d73b071158cc40b0e9))
-* **deploy:** anchor start-stack.sh compose-file check to PROJECT_DIR (not CWD) ([#1775](https://github.com/Glad-Labs/glad-labs-stack/issues/1775)) ([acf433e](https://github.com/Glad-Labs/glad-labs-stack/commit/acf433e09f3483d516e45d5e0de9275c2d89537b))
-* **deploy:** deploy-checkout-sync applies compose changes (close the launch-dir compose-spec gap) ([#1761](https://github.com/Glad-Labs/glad-labs-stack/issues/1761)) ([060c2f8](https://github.com/Glad-Labs/glad-labs-stack/commit/060c2f80e07f566b4aa76b0f7d2aeca1c9cd69f2))
-* **deploy:** move postgres host publish off Windows-reserved 15432 (-&gt; POSTGRES_HOST_PORT, default 5433) ([#1783](https://github.com/Glad-Labs/glad-labs-stack/issues/1783)) ([0e8f391](https://github.com/Glad-Labs/glad-labs-stack/commit/0e8f391267b490875fbcfe85fc2b84e859c92a10))
-* **deploy:** route the docker watchdog through the bootstrap-only start-stack.sh ([#1780](https://github.com/Glad-Labs/glad-labs-stack/issues/1780)) ([e883740](https://github.com/Glad-Labs/glad-labs-stack/commit/e8837407ee128b035080501dd9b1537c26258512))
-* **gpu:** serialize local LLM dispatch through reentrant gpu.lock ([#1794](https://github.com/Glad-Labs/glad-labs-stack/issues/1794)) ([59e775c](https://github.com/Glad-Labs/glad-labs-stack/commit/59e775c203055bbda0f9f67fb685b510efe702c3))
-* **gpu:** source nvidia_gpu from host exporter; repair gpu-scraper endpoints ([#1796](https://github.com/Glad-Labs/glad-labs-stack/issues/1796)) ([0ccbc78](https://github.com/Glad-Labs/glad-labs-stack/commit/0ccbc78ff0c4e9cfdebd7ddabb7737df60fa524c))
-* **setup:** default local Postgres host port to 5433 (retire 15432) ([#1792](https://github.com/Glad-Labs/glad-labs-stack/issues/1792)) ([e9eb807](https://github.com/Glad-Labs/glad-labs-stack/commit/e9eb807ac5bf002f1c7920ff4d93027a03cd6b9a))
+* **ci:** export CI runner PEM in start-stack.sh so the self-hosted runner survives deploys ([#1790](https://github.com/Glad-Labs/poindexter/issues/1790)) ([b42d92f](https://github.com/Glad-Labs/poindexter/commit/b42d92f94e4f0f4cc53a5bf6b56f5222a624422a))
+* **console:** read GET /api/tasks rows from items, not tasks ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 4 follow-up) ([#1779](https://github.com/Glad-Labs/poindexter/issues/1779)) ([96a72e1](https://github.com/Glad-Labs/poindexter/commit/96a72e1359d1b12d3f2815d73b071158cc40b0e9))
+* **deploy:** anchor start-stack.sh compose-file check to PROJECT_DIR (not CWD) ([#1775](https://github.com/Glad-Labs/poindexter/issues/1775)) ([acf433e](https://github.com/Glad-Labs/poindexter/commit/acf433e09f3483d516e45d5e0de9275c2d89537b))
+* **deploy:** deploy-checkout-sync applies compose changes (close the launch-dir compose-spec gap) ([#1761](https://github.com/Glad-Labs/poindexter/issues/1761)) ([060c2f8](https://github.com/Glad-Labs/poindexter/commit/060c2f80e07f566b4aa76b0f7d2aeca1c9cd69f2))
+* **deploy:** move postgres host publish off Windows-reserved 15432 (-&gt; POSTGRES_HOST_PORT, default 5433) ([#1783](https://github.com/Glad-Labs/poindexter/issues/1783)) ([0e8f391](https://github.com/Glad-Labs/poindexter/commit/0e8f391267b490875fbcfe85fc2b84e859c92a10))
+* **deploy:** route the docker watchdog through the bootstrap-only start-stack.sh ([#1780](https://github.com/Glad-Labs/poindexter/issues/1780)) ([e883740](https://github.com/Glad-Labs/poindexter/commit/e8837407ee128b035080501dd9b1537c26258512))
+* **gpu:** serialize local LLM dispatch through reentrant gpu.lock ([#1794](https://github.com/Glad-Labs/poindexter/issues/1794)) ([59e775c](https://github.com/Glad-Labs/poindexter/commit/59e775c203055bbda0f9f67fb685b510efe702c3))
+* **gpu:** source nvidia_gpu from host exporter; repair gpu-scraper endpoints ([#1796](https://github.com/Glad-Labs/poindexter/issues/1796)) ([0ccbc78](https://github.com/Glad-Labs/poindexter/commit/0ccbc78ff0c4e9cfdebd7ddabb7737df60fa524c))
+* **setup:** default local Postgres host port to 5433 (retire 15432) ([#1792](https://github.com/Glad-Labs/poindexter/issues/1792)) ([e9eb807](https://github.com/Glad-Labs/poindexter/commit/e9eb807ac5bf002f1c7920ff4d93027a03cd6b9a))
 
-## [0.83.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.82.0...v0.83.0) (2026-06-20)
+## [0.83.0](https://github.com/Glad-Labs/poindexter/compare/v0.82.0...v0.83.0) (2026-06-20)
 
 
 ### Features
 
-* **api:** machine-readable deprecation mechanics ([#752](https://github.com/Glad-Labs/glad-labs-stack/issues/752) item 4) ([#1753](https://github.com/Glad-Labs/glad-labs-stack/issues/1753)) ([daffab4](https://github.com/Glad-Labs/glad-labs-stack/commit/daffab49b011a618f3119c636eea44c9934b8a68))
-* **api:** response-contract ADR + re-expose /api/openapi.json behind auth ([#745](https://github.com/Glad-Labs/glad-labs-stack/issues/745) step 1) ([#1767](https://github.com/Glad-Labs/glad-labs-stack/issues/1767)) ([96f40c4](https://github.com/Glad-Labs/glad-labs-stack/commit/96f40c47aff347f21f261dd05571b74fe5a9ea37))
-* **deploy:** make deploy-checkout-sync observable (log + status + -Status/-SelfTest) ([#1721](https://github.com/Glad-Labs/glad-labs-stack/issues/1721)) ([9ddd2cb](https://github.com/Glad-Labs/glad-labs-stack/commit/9ddd2cbc9bd6924da50256ca0100f61794dc55b3))
-* **findings:** once-a-day Discord digest of findings activity ([#549](https://github.com/Glad-Labs/glad-labs-stack/issues/549)) ([#1736](https://github.com/Glad-Labs/glad-labs-stack/issues/1736)) ([3f3a445](https://github.com/Glad-Labs/glad-labs-stack/commit/3f3a445805b9619135db4e463cfcafc567084c2e))
-* **gpu:** media render holds gpu.lock("video"); stop mislabeling the stack's own GPU use as gaming ([#1766](https://github.com/Glad-Labs/glad-labs-stack/issues/1766)) ([17422b0](https://github.com/Glad-Labs/glad-labs-stack/commit/17422b010c448403b1d1c1be66803ee15a772bce))
-* **observability:** Cloudflare Worker relay for frontend error capture ([#711](https://github.com/Glad-Labs/glad-labs-stack/issues/711) item 2) ([#1764](https://github.com/Glad-Labs/glad-labs-stack/issues/1764)) ([ae2931a](https://github.com/Glad-Labs/glad-labs-stack/commit/ae2931ae91cc544bf93cce86a1b66a3f23cc97ff))
-* **observability:** per-node + root-flow OTel spans for the pipeline subprocess ([#711](https://github.com/Glad-Labs/glad-labs-stack/issues/711) item 1) ([#1760](https://github.com/Glad-Labs/glad-labs-stack/issues/1760)) ([9695435](https://github.com/Glad-Labs/glad-labs-stack/commit/96954353fcbf3c20bdc11e5180427c718b987391))
-* **publish:** one-step takedown via `posts unpublish` ([#684](https://github.com/Glad-Labs/glad-labs-stack/issues/684)) ([#1735](https://github.com/Glad-Labs/glad-labs-stack/issues/1735)) ([ab0f9ed](https://github.com/Glad-Labs/glad-labs-stack/commit/ab0f9ed710fa7b7ee1804ef2718e8e166c3f0e5f))
-* **video:** per-shot vision-QA render-check loop (video-quality Piece 2) ([#1726](https://github.com/Glad-Labs/glad-labs-stack/issues/1726)) ([1c131f8](https://github.com/Glad-Labs/glad-labs-stack/commit/1c131f8a7d08abcb6fd1bd75e0ce4ae55b6ea77f))
-* **video:** video quality layer — spec + Piece 1 (director self-critique) ([#1712](https://github.com/Glad-Labs/glad-labs-stack/issues/1712)) ([3151b00](https://github.com/Glad-Labs/glad-labs-stack/commit/3151b007e7fffeba50ddb5ae7f172f0ae84ff899))
-* **voice:** extract voice personas to a skill pack with drift-guarded fallback ([#1757](https://github.com/Glad-Labs/glad-labs-stack/issues/1757)) ([d274cf1](https://github.com/Glad-Labs/glad-labs-stack/commit/d274cf108165976aeda3a6826190d773a965b748))
+* **api:** machine-readable deprecation mechanics ([#752](https://github.com/Glad-Labs/poindexter/issues/752) item 4) ([#1753](https://github.com/Glad-Labs/poindexter/issues/1753)) ([daffab4](https://github.com/Glad-Labs/poindexter/commit/daffab49b011a618f3119c636eea44c9934b8a68))
+* **api:** response-contract ADR + re-expose /api/openapi.json behind auth ([#745](https://github.com/Glad-Labs/poindexter/issues/745) step 1) ([#1767](https://github.com/Glad-Labs/poindexter/issues/1767)) ([96f40c4](https://github.com/Glad-Labs/poindexter/commit/96f40c47aff347f21f261dd05571b74fe5a9ea37))
+* **deploy:** make deploy-checkout-sync observable (log + status + -Status/-SelfTest) ([#1721](https://github.com/Glad-Labs/poindexter/issues/1721)) ([9ddd2cb](https://github.com/Glad-Labs/poindexter/commit/9ddd2cbc9bd6924da50256ca0100f61794dc55b3))
+* **findings:** once-a-day Discord digest of findings activity ([#549](https://github.com/Glad-Labs/poindexter/issues/549)) ([#1736](https://github.com/Glad-Labs/poindexter/issues/1736)) ([3f3a445](https://github.com/Glad-Labs/poindexter/commit/3f3a445805b9619135db4e463cfcafc567084c2e))
+* **gpu:** media render holds gpu.lock("video"); stop mislabeling the stack's own GPU use as gaming ([#1766](https://github.com/Glad-Labs/poindexter/issues/1766)) ([17422b0](https://github.com/Glad-Labs/poindexter/commit/17422b010c448403b1d1c1be66803ee15a772bce))
+* **observability:** Cloudflare Worker relay for frontend error capture ([#711](https://github.com/Glad-Labs/poindexter/issues/711) item 2) ([#1764](https://github.com/Glad-Labs/poindexter/issues/1764)) ([ae2931a](https://github.com/Glad-Labs/poindexter/commit/ae2931ae91cc544bf93cce86a1b66a3f23cc97ff))
+* **observability:** per-node + root-flow OTel spans for the pipeline subprocess ([#711](https://github.com/Glad-Labs/poindexter/issues/711) item 1) ([#1760](https://github.com/Glad-Labs/poindexter/issues/1760)) ([9695435](https://github.com/Glad-Labs/poindexter/commit/96954353fcbf3c20bdc11e5180427c718b987391))
+* **publish:** one-step takedown via `posts unpublish` ([#684](https://github.com/Glad-Labs/poindexter/issues/684)) ([#1735](https://github.com/Glad-Labs/poindexter/issues/1735)) ([ab0f9ed](https://github.com/Glad-Labs/poindexter/commit/ab0f9ed710fa7b7ee1804ef2718e8e166c3f0e5f))
+* **video:** per-shot vision-QA render-check loop (video-quality Piece 2) ([#1726](https://github.com/Glad-Labs/poindexter/issues/1726)) ([1c131f8](https://github.com/Glad-Labs/poindexter/commit/1c131f8a7d08abcb6fd1bd75e0ce4ae55b6ea77f))
+* **video:** video quality layer — spec + Piece 1 (director self-critique) ([#1712](https://github.com/Glad-Labs/poindexter/issues/1712)) ([3151b00](https://github.com/Glad-Labs/poindexter/commit/3151b007e7fffeba50ddb5ae7f172f0ae84ff899))
+* **voice:** extract voice personas to a skill pack with drift-guarded fallback ([#1757](https://github.com/Glad-Labs/poindexter/issues/1757)) ([d274cf1](https://github.com/Glad-Labs/poindexter/commit/d274cf108165976aeda3a6826190d773a965b748))
 
 
 ### Bug Fixes
 
-* **api:** enforce auth at the router for 17 operator surfaces ([#752](https://github.com/Glad-Labs/glad-labs-stack/issues/752) item 2) ([#1751](https://github.com/Glad-Labs/glad-labs-stack/issues/1751)) ([952d150](https://github.com/Glad-Labs/glad-labs-stack/commit/952d1503458c68375d9b5b9879e34b9e7abe8a24))
-* **api:** router-level auth on the 2 dashboard routers ([#752](https://github.com/Glad-Labs/glad-labs-stack/issues/752) item 2 follow-up) ([#1752](https://github.com/Glad-Labs/glad-labs-stack/issues/1752)) ([ea69c09](https://github.com/Glad-Labs/glad-labs-stack/commit/ea69c090ce7b2a753a5bda4e65e1b0f2851dfa23))
-* **auto-embed:** retire redundant scheduler job + bound tap runs ([#1739](https://github.com/Glad-Labs/glad-labs-stack/issues/1739)) ([c37e98b](https://github.com/Glad-Labs/glad-labs-stack/commit/c37e98b53d95c3a02fd5a871e97006514f90a374))
-* **content:** catch bare "(source)" placeholder citations the writer drops ([#1769](https://github.com/Glad-Labs/glad-labs-stack/issues/1769)) ([08970e6](https://github.com/Glad-Labs/glad-labs-stack/commit/08970e6de86a63f4cf41102c0dc45e82cf9a1dc4))
-* **deploy:** robust two-trigger composition for deploy-checkout-sync task ([#1724](https://github.com/Glad-Labs/glad-labs-stack/issues/1724)) ([e843ade](https://github.com/Glad-Labs/glad-labs-stack/commit/e843adec02279292907075c0a8d393509918a298)), closes [#1723](https://github.com/Glad-Labs/glad-labs-stack/issues/1723)
-* **discovery:** cap internal_rag's share of a topic batch ([#1771](https://github.com/Glad-Labs/glad-labs-stack/issues/1771)) ([651c943](https://github.com/Glad-Labs/glad-labs-stack/commit/651c94397075077f5670b185b93670a48315b168))
-* **flow:** close the DB pool the content flow builds itself ([#702](https://github.com/Glad-Labs/glad-labs-stack/issues/702) item 1) ([#1747](https://github.com/Glad-Labs/glad-labs-stack/issues/1747)) ([5d5b483](https://github.com/Glad-Labs/glad-labs-stack/commit/5d5b4838ff7034c5ed42dcfa6e61efb02afab019))
-* **lint:** convert noqa:silent-ok markers to bare # silent-ok: form ([#1748](https://github.com/Glad-Labs/glad-labs-stack/issues/1748)) ([c4a05a8](https://github.com/Glad-Labs/glad-labs-stack/commit/c4a05a859a117e1cc36d613519f5a493826e9612))
-* **lint:** drop noqa: prefix from silent-ok ratchet marker ([#1741](https://github.com/Glad-Labs/glad-labs-stack/issues/1741)) ([1a8768b](https://github.com/Glad-Labs/glad-labs-stack/commit/1a8768b0775d16896f9eab049b90163063c1f299))
-* **mcp:** add pyyaml dep + lazy-load prompt_manager so topic tools work ([#1738](https://github.com/Glad-Labs/glad-labs-stack/issues/1738)) ([f9e0bb0](https://github.com/Glad-Labs/glad-labs-stack/commit/f9e0bb02c99e8aba1daf6dbe635787c9bded4ed5))
-* **media:** correct z_image SDXL params + size render timeout for cold-load ([#1727](https://github.com/Glad-Labs/glad-labs-stack/issues/1727)) ([d650580](https://github.com/Glad-Labs/glad-labs-stack/commit/d650580d54ae09228c5f6152e27efd2474d47b47))
-* **media:** reuse Stage-3 podcast render in reconciliation instead of re-rendering ([#1770](https://github.com/Glad-Labs/glad-labs-stack/issues/1770)) ([9b3cb2d](https://github.com/Glad-Labs/glad-labs-stack/commit/9b3cb2d0defe15e103a23e254abec0d64f0cde3d))
-* **migrations:** make unfinished migration scaffolds fail loud, not cryptic ([#1722](https://github.com/Glad-Labs/glad-labs-stack/issues/1722)) ([8b4c581](https://github.com/Glad-Labs/glad-labs-stack/commit/8b4c5811defa67d02847eef6c2defd3cd1cc5669))
-* **pipeline:** atom nodes stamp pipeline_tasks.stage on the graph_def path ([#1768](https://github.com/Glad-Labs/glad-labs-stack/issues/1768)) ([fd0487c](https://github.com/Glad-Labs/glad-labs-stack/commit/fd0487c6d8fefc6d8526331ac966e239392981a5))
-* **prompts:** drift-guard inline fallbacks + log loud on fallback; migrate qa_rewrite to skill ([#1755](https://github.com/Glad-Labs/glad-labs-stack/issues/1755)) ([829c342](https://github.com/Glad-Labs/glad-labs-stack/commit/829c342207afed7ddfa5d4acb6858dda8d58a282))
-* **prompts:** fold firefighter triage prompt into the shared drift-guard ([#1758](https://github.com/Glad-Labs/glad-labs-stack/issues/1758)) ([9ba589f](https://github.com/Glad-Labs/glad-labs-stack/commit/9ba589f5945cf20e83afa9685d295c701df84a37))
-* **qa:** disable thinking on qwen3-vl vision calls so verdicts parse ([#1732](https://github.com/Glad-Labs/glad-labs-stack/issues/1732)) ([a9cb044](https://github.com/Glad-Labs/glad-labs-stack/commit/a9cb0445b2170c6b56d65cb95c23a6a2d4cc0411))
-* **security:** ratchet against HTTPException detail leaks ([#724](https://github.com/Glad-Labs/glad-labs-stack/issues/724)) ([#1728](https://github.com/Glad-Labs/glad-labs-stack/issues/1728)) ([5d99b9d](https://github.com/Glad-Labs/glad-labs-stack/commit/5d99b9d1531c122aa449996431c3e2bbfedca9c0))
-* **skills:** unify SKILL.md parser + fail loud on import; fix install telemetry ([#1754](https://github.com/Glad-Labs/glad-labs-stack/issues/1754)) ([c7c16ca](https://github.com/Glad-Labs/glad-labs-stack/commit/c7c16ca11f50193f03bef97e0ddeb68e10d64fd9))
-* **video:** make the director LLM timeout a DB setting (was hardcoded 120s) ([#1750](https://github.com/Glad-Labs/glad-labs-stack/issues/1750)) ([b1ba939](https://github.com/Glad-Labs/glad-labs-stack/commit/b1ba939262a7502e8539b6607b13d9287e2791d2))
-* **video:** review_video_shot_list timeout is DB-driven, not hardcoded 120s ([#1763](https://github.com/Glad-Labs/glad-labs-stack/issues/1763)) ([6b37259](https://github.com/Glad-Labs/glad-labs-stack/commit/6b3725908ed02c43922e5804da1dc0fc312ac062))
-* **video:** spell out per-source field rules in shot-list review prompts ([#1725](https://github.com/Glad-Labs/glad-labs-stack/issues/1725)) ([71b0feb](https://github.com/Glad-Labs/glad-labs-stack/commit/71b0feb8220e79fc77acfadaae4ba81e4b1e163b))
-* **voice:** align seeded voice_agent_system_prompt persona with the skill default ([#1759](https://github.com/Glad-Labs/glad-labs-stack/issues/1759)) ([4722c4c](https://github.com/Glad-Labs/glad-labs-stack/commit/4722c4c2966be848307f70a48c6da73fa357c6ba))
+* **api:** enforce auth at the router for 17 operator surfaces ([#752](https://github.com/Glad-Labs/poindexter/issues/752) item 2) ([#1751](https://github.com/Glad-Labs/poindexter/issues/1751)) ([952d150](https://github.com/Glad-Labs/poindexter/commit/952d1503458c68375d9b5b9879e34b9e7abe8a24))
+* **api:** router-level auth on the 2 dashboard routers ([#752](https://github.com/Glad-Labs/poindexter/issues/752) item 2 follow-up) ([#1752](https://github.com/Glad-Labs/poindexter/issues/1752)) ([ea69c09](https://github.com/Glad-Labs/poindexter/commit/ea69c090ce7b2a753a5bda4e65e1b0f2851dfa23))
+* **auto-embed:** retire redundant scheduler job + bound tap runs ([#1739](https://github.com/Glad-Labs/poindexter/issues/1739)) ([c37e98b](https://github.com/Glad-Labs/poindexter/commit/c37e98b53d95c3a02fd5a871e97006514f90a374))
+* **content:** catch bare "(source)" placeholder citations the writer drops ([#1769](https://github.com/Glad-Labs/poindexter/issues/1769)) ([08970e6](https://github.com/Glad-Labs/poindexter/commit/08970e6de86a63f4cf41102c0dc45e82cf9a1dc4))
+* **deploy:** robust two-trigger composition for deploy-checkout-sync task ([#1724](https://github.com/Glad-Labs/poindexter/issues/1724)) ([e843ade](https://github.com/Glad-Labs/poindexter/commit/e843adec02279292907075c0a8d393509918a298)), closes [#1723](https://github.com/Glad-Labs/poindexter/issues/1723)
+* **discovery:** cap internal_rag's share of a topic batch ([#1771](https://github.com/Glad-Labs/poindexter/issues/1771)) ([651c943](https://github.com/Glad-Labs/poindexter/commit/651c94397075077f5670b185b93670a48315b168))
+* **flow:** close the DB pool the content flow builds itself ([#702](https://github.com/Glad-Labs/poindexter/issues/702) item 1) ([#1747](https://github.com/Glad-Labs/poindexter/issues/1747)) ([5d5b483](https://github.com/Glad-Labs/poindexter/commit/5d5b4838ff7034c5ed42dcfa6e61efb02afab019))
+* **lint:** convert noqa:silent-ok markers to bare # silent-ok: form ([#1748](https://github.com/Glad-Labs/poindexter/issues/1748)) ([c4a05a8](https://github.com/Glad-Labs/poindexter/commit/c4a05a859a117e1cc36d613519f5a493826e9612))
+* **lint:** drop noqa: prefix from silent-ok ratchet marker ([#1741](https://github.com/Glad-Labs/poindexter/issues/1741)) ([1a8768b](https://github.com/Glad-Labs/poindexter/commit/1a8768b0775d16896f9eab049b90163063c1f299))
+* **mcp:** add pyyaml dep + lazy-load prompt_manager so topic tools work ([#1738](https://github.com/Glad-Labs/poindexter/issues/1738)) ([f9e0bb0](https://github.com/Glad-Labs/poindexter/commit/f9e0bb02c99e8aba1daf6dbe635787c9bded4ed5))
+* **media:** correct z_image SDXL params + size render timeout for cold-load ([#1727](https://github.com/Glad-Labs/poindexter/issues/1727)) ([d650580](https://github.com/Glad-Labs/poindexter/commit/d650580d54ae09228c5f6152e27efd2474d47b47))
+* **media:** reuse Stage-3 podcast render in reconciliation instead of re-rendering ([#1770](https://github.com/Glad-Labs/poindexter/issues/1770)) ([9b3cb2d](https://github.com/Glad-Labs/poindexter/commit/9b3cb2d0defe15e103a23e254abec0d64f0cde3d))
+* **migrations:** make unfinished migration scaffolds fail loud, not cryptic ([#1722](https://github.com/Glad-Labs/poindexter/issues/1722)) ([8b4c581](https://github.com/Glad-Labs/poindexter/commit/8b4c5811defa67d02847eef6c2defd3cd1cc5669))
+* **pipeline:** atom nodes stamp pipeline_tasks.stage on the graph_def path ([#1768](https://github.com/Glad-Labs/poindexter/issues/1768)) ([fd0487c](https://github.com/Glad-Labs/poindexter/commit/fd0487c6d8fefc6d8526331ac966e239392981a5))
+* **prompts:** drift-guard inline fallbacks + log loud on fallback; migrate qa_rewrite to skill ([#1755](https://github.com/Glad-Labs/poindexter/issues/1755)) ([829c342](https://github.com/Glad-Labs/poindexter/commit/829c342207afed7ddfa5d4acb6858dda8d58a282))
+* **prompts:** fold firefighter triage prompt into the shared drift-guard ([#1758](https://github.com/Glad-Labs/poindexter/issues/1758)) ([9ba589f](https://github.com/Glad-Labs/poindexter/commit/9ba589f5945cf20e83afa9685d295c701df84a37))
+* **qa:** disable thinking on qwen3-vl vision calls so verdicts parse ([#1732](https://github.com/Glad-Labs/poindexter/issues/1732)) ([a9cb044](https://github.com/Glad-Labs/poindexter/commit/a9cb0445b2170c6b56d65cb95c23a6a2d4cc0411))
+* **security:** ratchet against HTTPException detail leaks ([#724](https://github.com/Glad-Labs/poindexter/issues/724)) ([#1728](https://github.com/Glad-Labs/poindexter/issues/1728)) ([5d99b9d](https://github.com/Glad-Labs/poindexter/commit/5d99b9d1531c122aa449996431c3e2bbfedca9c0))
+* **skills:** unify SKILL.md parser + fail loud on import; fix install telemetry ([#1754](https://github.com/Glad-Labs/poindexter/issues/1754)) ([c7c16ca](https://github.com/Glad-Labs/poindexter/commit/c7c16ca11f50193f03bef97e0ddeb68e10d64fd9))
+* **video:** make the director LLM timeout a DB setting (was hardcoded 120s) ([#1750](https://github.com/Glad-Labs/poindexter/issues/1750)) ([b1ba939](https://github.com/Glad-Labs/poindexter/commit/b1ba939262a7502e8539b6607b13d9287e2791d2))
+* **video:** review_video_shot_list timeout is DB-driven, not hardcoded 120s ([#1763](https://github.com/Glad-Labs/poindexter/issues/1763)) ([6b37259](https://github.com/Glad-Labs/poindexter/commit/6b3725908ed02c43922e5804da1dc0fc312ac062))
+* **video:** spell out per-source field rules in shot-list review prompts ([#1725](https://github.com/Glad-Labs/poindexter/issues/1725)) ([71b0feb](https://github.com/Glad-Labs/poindexter/commit/71b0feb8220e79fc77acfadaae4ba81e4b1e163b))
+* **voice:** align seeded voice_agent_system_prompt persona with the skill default ([#1759](https://github.com/Glad-Labs/poindexter/issues/1759)) ([4722c4c](https://github.com/Glad-Labs/poindexter/commit/4722c4c2966be848307f70a48c6da73fa357c6ba))
 
 
 ### Performance Improvements
 
-* **obs:** migrate brain-db-size alert + panel off SQL to Prometheus ([#735](https://github.com/Glad-Labs/glad-labs-stack/issues/735) item 2) ([#1756](https://github.com/Glad-Labs/glad-labs-stack/issues/1756)) ([0209084](https://github.com/Glad-Labs/glad-labs-stack/commit/020908447e3079287f017aca9d2f496605b6e323))
-* **qa:** advisory deepeval judge defaults to budget tier, not a separate heavy model ([#1762](https://github.com/Glad-Labs/glad-labs-stack/issues/1762)) ([6c91edb](https://github.com/Glad-Labs/glad-labs-stack/commit/6c91edbd392c93235676d379187e0f2d4b1d6fb2))
-* **taps:** batch chunk-0 dedup pre-fetch per source ([#735](https://github.com/Glad-Labs/glad-labs-stack/issues/735) item 1) ([#1740](https://github.com/Glad-Labs/glad-labs-stack/issues/1740)) ([80a617c](https://github.com/Glad-Labs/glad-labs-stack/commit/80a617c4b79c397e4eac89074fa270d36ed72aa7))
-* **video:** two-pass shot render to stop SDXL/vision GPU thrash ([#1737](https://github.com/Glad-Labs/glad-labs-stack/issues/1737)) ([db16bb2](https://github.com/Glad-Labs/glad-labs-stack/commit/db16bb2aa1d8bcf033ae932d6b90af705b902055))
+* **obs:** migrate brain-db-size alert + panel off SQL to Prometheus ([#735](https://github.com/Glad-Labs/poindexter/issues/735) item 2) ([#1756](https://github.com/Glad-Labs/poindexter/issues/1756)) ([0209084](https://github.com/Glad-Labs/poindexter/commit/020908447e3079287f017aca9d2f496605b6e323))
+* **qa:** advisory deepeval judge defaults to budget tier, not a separate heavy model ([#1762](https://github.com/Glad-Labs/poindexter/issues/1762)) ([6c91edb](https://github.com/Glad-Labs/poindexter/commit/6c91edbd392c93235676d379187e0f2d4b1d6fb2))
+* **taps:** batch chunk-0 dedup pre-fetch per source ([#735](https://github.com/Glad-Labs/poindexter/issues/735) item 1) ([#1740](https://github.com/Glad-Labs/poindexter/issues/1740)) ([80a617c](https://github.com/Glad-Labs/poindexter/commit/80a617c4b79c397e4eac89074fa270d36ed72aa7))
+* **video:** two-pass shot render to stop SDXL/vision GPU thrash ([#1737](https://github.com/Glad-Labs/poindexter/issues/1737)) ([db16bb2](https://github.com/Glad-Labs/poindexter/commit/db16bb2aa1d8bcf033ae932d6b90af705b902055))
 
-## [0.82.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.81.0...v0.82.0) (2026-06-19)
+## [0.82.0](https://github.com/Glad-Labs/poindexter/compare/v0.81.0...v0.82.0) (2026-06-19)
 
 
 ### Features
 
-* **integrations:** replace Discord/Telegram notify handlers with one generic Apprise handler ([#1711](https://github.com/Glad-Labs/glad-labs-stack/issues/1711)) ([4a6c7ab](https://github.com/Glad-Labs/glad-labs-stack/commit/4a6c7aba1a88c0bf6c0b4656330f33510f27cd85))
-* **media:** Z-Image-Turbo default + fix dead image-style rotation (db/skill-configurable) ([#1700](https://github.com/Glad-Labs/glad-labs-stack/issues/1700)) ([ebf9362](https://github.com/Glad-Labs/glad-labs-stack/commit/ebf9362e580ca74bc33e2456d6d01fd6a342f92b))
-* **pipeline:** atom contract fingerprint handshake for graph_defs (poindexter[#755](https://github.com/Glad-Labs/glad-labs-stack/issues/755)) ([#1709](https://github.com/Glad-Labs/glad-labs-stack/issues/1709)) ([d4e15e3](https://github.com/Glad-Labs/glad-labs-stack/commit/d4e15e3e926586dc88d14848319ce5d5638629e0))
-* **qa:** cross-model rescue reviser + adopt gemma writer / glm reviser (bakeoff) ([#1692](https://github.com/Glad-Labs/glad-labs-stack/issues/1692)) ([b04be2a](https://github.com/Glad-Labs/glad-labs-stack/commit/b04be2aeebcb8c79fcb2ec122cd41c8100c99a20))
-* **tts:** DB/skill-configurable pronunciation table + computing unit entries ([#1699](https://github.com/Glad-Labs/glad-labs-stack/issues/1699)) ([9c0e875](https://github.com/Glad-Labs/glad-labs-stack/commit/9c0e8754e374dc6c4b144b7117d682b3e5f54a11))
+* **integrations:** replace Discord/Telegram notify handlers with one generic Apprise handler ([#1711](https://github.com/Glad-Labs/poindexter/issues/1711)) ([4a6c7ab](https://github.com/Glad-Labs/poindexter/commit/4a6c7aba1a88c0bf6c0b4656330f33510f27cd85))
+* **media:** Z-Image-Turbo default + fix dead image-style rotation (db/skill-configurable) ([#1700](https://github.com/Glad-Labs/poindexter/issues/1700)) ([ebf9362](https://github.com/Glad-Labs/poindexter/commit/ebf9362e580ca74bc33e2456d6d01fd6a342f92b))
+* **pipeline:** atom contract fingerprint handshake for graph_defs (poindexter[#755](https://github.com/Glad-Labs/poindexter/issues/755)) ([#1709](https://github.com/Glad-Labs/poindexter/issues/1709)) ([d4e15e3](https://github.com/Glad-Labs/poindexter/commit/d4e15e3e926586dc88d14848319ce5d5638629e0))
+* **qa:** cross-model rescue reviser + adopt gemma writer / glm reviser (bakeoff) ([#1692](https://github.com/Glad-Labs/poindexter/issues/1692)) ([b04be2a](https://github.com/Glad-Labs/poindexter/commit/b04be2aeebcb8c79fcb2ec122cd41c8100c99a20))
+* **tts:** DB/skill-configurable pronunciation table + computing unit entries ([#1699](https://github.com/Glad-Labs/poindexter/issues/1699)) ([9c0e875](https://github.com/Glad-Labs/poindexter/commit/9c0e8754e374dc6c4b144b7117d682b3e5f54a11))
 
 
 ### Bug Fixes
 
-* **brain:** await async notify_fn in health_probes (dropped probe pages) ([#1715](https://github.com/Glad-Labs/glad-labs-stack/issues/1715)) ([c6ff281](https://github.com/Glad-Labs/glad-labs-stack/commit/c6ff2817267ff5df0bf584d7ca169d39208ba8c4))
-* **brain:** progress-aware Prefect stuck-flow detection (no more false backlog pages) ([#1713](https://github.com/Glad-Labs/glad-labs-stack/issues/1713)) ([c539e9b](https://github.com/Glad-Labs/glad-labs-stack/commit/c539e9bf9de12d9a49f34922968dedd4d4c21435))
-* **media:** mount image-gen-server generated-images + HF cache under /home/appuser ([#1703](https://github.com/Glad-Labs/glad-labs-stack/issues/1703)) ([266f512](https://github.com/Glad-Labs/glad-labs-stack/commit/266f512de0107ecc93fd91ce316db4242ce5c03e))
-* **media:** mount wan-server generated-videos + HF cache under /home/appuser ([#1704](https://github.com/Glad-Labs/glad-labs-stack/issues/1704)) ([d9a9d3f](https://github.com/Glad-Labs/glad-labs-stack/commit/d9a9d3fc71feb23df7512be30536f7e471f63a0e))
-* **media:** narration spans whole video, real photos for humans, strip TTS labels ([#1694](https://github.com/Glad-Labs/glad-labs-stack/issues/1694)) ([6ff828d](https://github.com/Glad-Labs/glad-labs-stack/commit/6ff828d1150760cba78a619816bb75e8de9603eb))
-* **media:** route human video shots to pexels, kill human-token advisory warnings ([#1697](https://github.com/Glad-Labs/glad-labs-stack/issues/1697)) ([8a22ecf](https://github.com/Glad-Labs/glad-labs-stack/commit/8a22ecfec6d98b347b20fccd798ff5aaaad4e456))
-* **media:** self-heal duplicate video renders (idempotent persist + orphan prune) ([#1701](https://github.com/Glad-Labs/glad-labs-stack/issues/1701)) ([473e4d3](https://github.com/Glad-Labs/glad-labs-stack/commit/473e4d39f9a32afd7ccdda793feae4c4bc834779))
-* **media:** strip bracketed/qualifier-prefixed section labels from TTS ([#1695](https://github.com/Glad-Labs/glad-labs-stack/issues/1695)) ([b2959ba](https://github.com/Glad-Labs/glad-labs-stack/commit/b2959ba1db6330df8774faf15008e10b6c6628e8))
-* **media:** thread platform handle into featured-image stage for LLM SDXL prompts ([#1705](https://github.com/Glad-Labs/glad-labs-stack/issues/1705)) ([f71023f](https://github.com/Glad-Labs/glad-labs-stack/commit/f71023fdfe925c47c5d58028a9d4f0bade220cba))
-* **qa:** raise qa_rewrite_max_attempts default 1-&gt;2 + keep-best rescue guard ([#1693](https://github.com/Glad-Labs/glad-labs-stack/issues/1693)) ([17e2185](https://github.com/Glad-Labs/glad-labs-stack/commit/17e2185faa3c38a0a24ecfccafe60a09d0d1cb5b))
-* **qa:** raise qa.rewrite rescue timeout 240s-&gt;600s to match writer budget ([#1687](https://github.com/Glad-Labs/glad-labs-stack/issues/1687)) ([119ba13](https://github.com/Glad-Labs/glad-labs-stack/commit/119ba134b6741de52e6b5623ff02805f50903e73))
-* **security:** resolve telegram_ops chat_id from app_settings, not a seed literal ([#1714](https://github.com/Glad-Labs/glad-labs-stack/issues/1714)) ([2d89e11](https://github.com/Glad-Labs/glad-labs-stack/commit/2d89e1161d711fdd032ac245973f6a70b0c77424))
-* **test:** use app.openapi() to enumerate finance routes (Starlette 0.45+ compat) ([5bd9995](https://github.com/Glad-Labs/glad-labs-stack/commit/5bd9995cbf8d3921a1ba827ef023f8c58074bae8))
-* **tts:** add bare \"vs\" → \"versus\" pronunciation replacement ([#1698](https://github.com/Glad-Labs/glad-labs-stack/issues/1698)) ([ea3a363](https://github.com/Glad-Labs/glad-labs-stack/commit/ea3a36322d0da0cde62fc829476b4301f9742c28))
-* **tts:** mp3 output (fixes ~24s cutoff) + spell out VRAM/SRAM/DRAM ([#1696](https://github.com/Glad-Labs/glad-labs-stack/issues/1696)) ([d55eea9](https://github.com/Glad-Labs/glad-labs-stack/commit/d55eea9303e96da80ce9939e975e0ebf869ffd5c))
-* **tts:** remux Speaches output to repair concatenated duration header (podcast cutoff) ([#1706](https://github.com/Glad-Labs/glad-labs-stack/issues/1706)) ([e7d02a8](https://github.com/Glad-Labs/glad-labs-stack/commit/e7d02a84371acad9eb0a8e0b3672a7599f88ef41))
-* **writer:** ban footnotes + placeholder URLs in canonical_blog writer prompt ([#1685](https://github.com/Glad-Labs/glad-labs-stack/issues/1685)) ([06ab28e](https://github.com/Glad-Labs/glad-labs-stack/commit/06ab28e07ed2a5ea926a7b2042c9f819aaddd82a))
-* **writer:** stop placeholder/generic-entity substitution + feed reviser advisory feedback ([#1691](https://github.com/Glad-Labs/glad-labs-stack/issues/1691)) ([6541c37](https://github.com/Glad-Labs/glad-labs-stack/commit/6541c37b0e25518aa3b19342978209f18371a985))
+* **brain:** await async notify_fn in health_probes (dropped probe pages) ([#1715](https://github.com/Glad-Labs/poindexter/issues/1715)) ([c6ff281](https://github.com/Glad-Labs/poindexter/commit/c6ff2817267ff5df0bf584d7ca169d39208ba8c4))
+* **brain:** progress-aware Prefect stuck-flow detection (no more false backlog pages) ([#1713](https://github.com/Glad-Labs/poindexter/issues/1713)) ([c539e9b](https://github.com/Glad-Labs/poindexter/commit/c539e9bf9de12d9a49f34922968dedd4d4c21435))
+* **media:** mount image-gen-server generated-images + HF cache under /home/appuser ([#1703](https://github.com/Glad-Labs/poindexter/issues/1703)) ([266f512](https://github.com/Glad-Labs/poindexter/commit/266f512de0107ecc93fd91ce316db4242ce5c03e))
+* **media:** mount wan-server generated-videos + HF cache under /home/appuser ([#1704](https://github.com/Glad-Labs/poindexter/issues/1704)) ([d9a9d3f](https://github.com/Glad-Labs/poindexter/commit/d9a9d3fc71feb23df7512be30536f7e471f63a0e))
+* **media:** narration spans whole video, real photos for humans, strip TTS labels ([#1694](https://github.com/Glad-Labs/poindexter/issues/1694)) ([6ff828d](https://github.com/Glad-Labs/poindexter/commit/6ff828d1150760cba78a619816bb75e8de9603eb))
+* **media:** route human video shots to pexels, kill human-token advisory warnings ([#1697](https://github.com/Glad-Labs/poindexter/issues/1697)) ([8a22ecf](https://github.com/Glad-Labs/poindexter/commit/8a22ecfec6d98b347b20fccd798ff5aaaad4e456))
+* **media:** self-heal duplicate video renders (idempotent persist + orphan prune) ([#1701](https://github.com/Glad-Labs/poindexter/issues/1701)) ([473e4d3](https://github.com/Glad-Labs/poindexter/commit/473e4d39f9a32afd7ccdda793feae4c4bc834779))
+* **media:** strip bracketed/qualifier-prefixed section labels from TTS ([#1695](https://github.com/Glad-Labs/poindexter/issues/1695)) ([b2959ba](https://github.com/Glad-Labs/poindexter/commit/b2959ba1db6330df8774faf15008e10b6c6628e8))
+* **media:** thread platform handle into featured-image stage for LLM SDXL prompts ([#1705](https://github.com/Glad-Labs/poindexter/issues/1705)) ([f71023f](https://github.com/Glad-Labs/poindexter/commit/f71023fdfe925c47c5d58028a9d4f0bade220cba))
+* **qa:** raise qa_rewrite_max_attempts default 1-&gt;2 + keep-best rescue guard ([#1693](https://github.com/Glad-Labs/poindexter/issues/1693)) ([17e2185](https://github.com/Glad-Labs/poindexter/commit/17e2185faa3c38a0a24ecfccafe60a09d0d1cb5b))
+* **qa:** raise qa.rewrite rescue timeout 240s-&gt;600s to match writer budget ([#1687](https://github.com/Glad-Labs/poindexter/issues/1687)) ([119ba13](https://github.com/Glad-Labs/poindexter/commit/119ba134b6741de52e6b5623ff02805f50903e73))
+* **security:** resolve telegram_ops chat_id from app_settings, not a seed literal ([#1714](https://github.com/Glad-Labs/poindexter/issues/1714)) ([2d89e11](https://github.com/Glad-Labs/poindexter/commit/2d89e1161d711fdd032ac245973f6a70b0c77424))
+* **test:** use app.openapi() to enumerate finance routes (Starlette 0.45+ compat) ([5bd9995](https://github.com/Glad-Labs/poindexter/commit/5bd9995cbf8d3921a1ba827ef023f8c58074bae8))
+* **tts:** add bare \"vs\" → \"versus\" pronunciation replacement ([#1698](https://github.com/Glad-Labs/poindexter/issues/1698)) ([ea3a363](https://github.com/Glad-Labs/poindexter/commit/ea3a36322d0da0cde62fc829476b4301f9742c28))
+* **tts:** mp3 output (fixes ~24s cutoff) + spell out VRAM/SRAM/DRAM ([#1696](https://github.com/Glad-Labs/poindexter/issues/1696)) ([d55eea9](https://github.com/Glad-Labs/poindexter/commit/d55eea9303e96da80ce9939e975e0ebf869ffd5c))
+* **tts:** remux Speaches output to repair concatenated duration header (podcast cutoff) ([#1706](https://github.com/Glad-Labs/poindexter/issues/1706)) ([e7d02a8](https://github.com/Glad-Labs/poindexter/commit/e7d02a84371acad9eb0a8e0b3672a7599f88ef41))
+* **writer:** ban footnotes + placeholder URLs in canonical_blog writer prompt ([#1685](https://github.com/Glad-Labs/poindexter/issues/1685)) ([06ab28e](https://github.com/Glad-Labs/poindexter/commit/06ab28e07ed2a5ea926a7b2042c9f819aaddd82a))
+* **writer:** stop placeholder/generic-entity substitution + feed reviser advisory feedback ([#1691](https://github.com/Glad-Labs/poindexter/issues/1691)) ([6541c37](https://github.com/Glad-Labs/poindexter/commit/6541c37b0e25518aa3b19342978209f18371a985))
 
 
 ### Reverts
 
-* undo accidental commit to main (finance-routes openapi fix) ([#1688](https://github.com/Glad-Labs/glad-labs-stack/issues/1688)) ([96d61e7](https://github.com/Glad-Labs/glad-labs-stack/commit/96d61e734eb4b675a2cc26647518587882f8418d))
+* undo accidental commit to main (finance-routes openapi fix) ([#1688](https://github.com/Glad-Labs/poindexter/issues/1688)) ([96d61e7](https://github.com/Glad-Labs/poindexter/commit/96d61e734eb4b675a2cc26647518587882f8418d))
 
-## [0.81.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.80.1...v0.81.0) (2026-06-18)
-
-
-### Features
-
-* **api:** declarative data-plane service + HTTP routes + CLI de-SQL ([#1522](https://github.com/Glad-Labs/glad-labs-stack/issues/1522)) ([#1651](https://github.com/Glad-Labs/glad-labs-stack/issues/1651)) ([8cd4d38](https://github.com/Glad-Labs/glad-labs-stack/commit/8cd4d38c07770bf0db4763c81134d58a6f033a0b))
-* **brand+site:** close type-scale gaps, promote nav/link patterns, wire expressive range ([#1659](https://github.com/Glad-Labs/glad-labs-stack/issues/1659)) ([3b54d9b](https://github.com/Glad-Labs/glad-labs-stack/commit/3b54d9b2cde528acb3dd674edb88b1348d061f86))
-* **ci:** adapter-purity guard + bootstrap-allowlist docs ([#1344](https://github.com/Glad-Labs/glad-labs-stack/issues/1344), closes epic [#1340](https://github.com/Glad-Labs/glad-labs-stack/issues/1340)) ([#1655](https://github.com/Glad-Labs/glad-labs-stack/issues/1655)) ([138852e](https://github.com/Glad-Labs/glad-labs-stack/commit/138852e748bd8cb9c7cf5b22c3dc01193580290e))
-* **image:** make image gen prompts + Pexels fallbacks niche-configurable (closes [#219](https://github.com/Glad-Labs/glad-labs-stack/issues/219)) ([#1670](https://github.com/Glad-Labs/glad-labs-stack/issues/1670)) ([4c1c1b7](https://github.com/Glad-Labs/glad-labs-stack/commit/4c1c1b700a59e1c60c311aae78adaef764c73223))
-* **qa:** bounded 1-shot rewrite/rescue cycle before a salvageable QA reject ([#1674](https://github.com/Glad-Labs/glad-labs-stack/issues/1674)) ([fdc4f05](https://github.com/Glad-Labs/glad-labs-stack/commit/fdc4f052d3d3550fddd741f98f98763b397c95f4))
-* **settings:** add lifecycle metadata columns to app_settings (poindexter[#756](https://github.com/Glad-Labs/glad-labs-stack/issues/756)) ([#1678](https://github.com/Glad-Labs/glad-labs-stack/issues/1678)) ([6fb6efa](https://github.com/Glad-Labs/glad-labs-stack/commit/6fb6efa08c11c3ff4a0cfdf68baa8055af772981))
-
-
-### Bug Fixes
-
-* **content:** re-point already-linked fabricated citations to corpus URLs (brand-domain subset) ([#1673](https://github.com/Glad-Labs/glad-labs-stack/issues/1673)) ([93b1e8c](https://github.com/Glad-Labs/glad-labs-stack/commit/93b1e8ce107ec88662266fb96a5b137712c56e2e))
-* **content:** repair orphaned anchor text when scrubbing fabricated links ([#1671](https://github.com/Glad-Labs/glad-labs-stack/issues/1671)) ([1c2fa48](https://github.com/Glad-Labs/glad-labs-stack/commit/1c2fa48fa620f716068988fa1368733c5e8501cf))
-* **deploy:** deploy-sync waits for a flow gap instead of skipping forever ([#1665](https://github.com/Glad-Labs/glad-labs-stack/issues/1665)) ([479d2cb](https://github.com/Glad-Labs/glad-labs-stack/commit/479d2cb0271d6fb19a891738492cd4c8eb142ef4))
-* **deps:** bump cryptography to 49 (Trivy HIGH GHSA-537c-gmf6-5ccf) by retiring atproto/Bluesky ([#1658](https://github.com/Glad-Labs/glad-labs-stack/issues/1658)) ([858411f](https://github.com/Glad-Labs/glad-labs-stack/commit/858411f57ace450768f04cf86096b4a85c93c594))
-* **mcp:** recreate agent_permissions/approval_queue tables; gate fails open on missing table ([#1669](https://github.com/Glad-Labs/glad-labs-stack/issues/1669)) ([df62af1](https://github.com/Glad-Labs/glad-labs-stack/commit/df62af14ea6fd9ac120448420af6778a91f62f82))
-* **obs:** drop GPU SQL alert rules [#13](https://github.com/Glad-Labs/glad-labs-stack/issues/13)/[#14](https://github.com/Glad-Labs/glad-labs-stack/issues/14), single-source to Prometheus (poindexter[#653](https://github.com/Glad-Labs/glad-labs-stack/issues/653)) ([#1675](https://github.com/Glad-Labs/glad-labs-stack/issues/1675)) ([ef94513](https://github.com/Glad-Labs/glad-labs-stack/commit/ef945134e666e45a46a7a38b778a761a6dae07e2))
-* **publish:** [#729](https://github.com/Glad-Labs/glad-labs-stack/issues/729) gate allows known-but-inactive niches (unblocks dev_diary) ([#1648](https://github.com/Glad-Labs/glad-labs-stack/issues/1648)) ([300fd71](https://github.com/Glad-Labs/glad-labs-stack/commit/300fd715d95a303e4c5af452f5cde330749329ac))
-* **qa:** exclude advisory rails from gated score; soften validator warning penalty ([#1668](https://github.com/Glad-Labs/glad-labs-stack/issues/1668)) ([50aba11](https://github.com/Glad-Labs/glad-labs-stack/commit/50aba1111579fcf74d48d5c1d8115e745235e4f4))
-* **research:** ground the writer on real page text, not 100-char snippets ([#1672](https://github.com/Glad-Labs/glad-labs-stack/issues/1672)) ([ee803be](https://github.com/Glad-Labs/glad-labs-stack/commit/ee803be48463d5b4585e4853b3abcb9109604427))
-* **retention:** consolidate dual retention systems into single source of truth (closes [#699](https://github.com/Glad-Labs/glad-labs-stack/issues/699)) ([#1667](https://github.com/Glad-Labs/glad-labs-stack/issues/1667)) ([e7133a4](https://github.com/Glad-Labs/glad-labs-stack/commit/e7133a4db1ff4be43c5ae764cf3253a7617e80a2))
-* **settings:** prune 10 dead model keys and fix qa vision ollama prefix ([#1666](https://github.com/Glad-Labs/glad-labs-stack/issues/1666)) ([4e5a499](https://github.com/Glad-Labs/glad-labs-stack/commit/4e5a499cf7fe61eee92ce8c71368075e01ce536f))
-* **site-config:** share one SiteConfig in the worker so runtime settings reload reaches routes ([#1649](https://github.com/Glad-Labs/glad-labs-stack/issues/1649)) ([aff8c5c](https://github.com/Glad-Labs/glad-labs-stack/commit/aff8c5cb46beb671943c7de0ece2d2d19731a711))
-* **types:** reduce mypy strict backlog 1278→282 errors ([#1550](https://github.com/Glad-Labs/glad-labs-stack/issues/1550)) ([#1660](https://github.com/Glad-Labs/glad-labs-stack/issues/1660)) ([62cbc86](https://github.com/Glad-Labs/glad-labs-stack/commit/62cbc86010d837203f0a94c1436070fb87bbc17d))
-* **types:** resolve remaining 282→0 mypy strict errors ([#1550](https://github.com/Glad-Labs/glad-labs-stack/issues/1550) part 2) ([#1664](https://github.com/Glad-Labs/glad-labs-stack/issues/1664)) ([caad251](https://github.com/Glad-Labs/glad-labs-stack/commit/caad2512e48c96deb01a02986468a7bfd80fed56))
-* **voice:** patch module-level VALID_VOICES dict for Kokoro TTS voices ([#1679](https://github.com/Glad-Labs/glad-labs-stack/issues/1679)) ([7441862](https://github.com/Glad-Labs/glad-labs-stack/commit/74418627cb1dcc6484e0f335b7c5d27b19050c05))
-* **voice:** separate browser WSS URL from bot internal URL (mixed-content fix) ([#1677](https://github.com/Glad-Labs/glad-labs-stack/issues/1677)) ([ef2b5ba](https://github.com/Glad-Labs/glad-labs-stack/commit/ef2b5ba3d0ded06b04ef58b6d4bf65d5b3cf9169))
-* **writer:** enrich bare canonical_blog prompt to clear assembly QA vetoes ([#1676](https://github.com/Glad-Labs/glad-labs-stack/issues/1676)) ([f621b3d](https://github.com/Glad-Labs/glad-labs-stack/commit/f621b3dabeb5df58957f8f5fbd835225d3172fb7))
-* **writer:** stop canonical_blog writer fabricating stats + echoing snippet labels ([#1680](https://github.com/Glad-Labs/glad-labs-stack/issues/1680)) ([9e62803](https://github.com/Glad-Labs/glad-labs-stack/commit/9e62803fbb025fc19697552805ba3251b5394827))
-
-## [0.80.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.80.0...v0.80.1) (2026-06-16)
-
-
-### Bug Fixes
-
-* **backup:** cast asyncpg Decimal→float in _age_of_event ([#386](https://github.com/Glad-Labs/glad-labs-stack/issues/386)) ([168a234](https://github.com/Glad-Labs/glad-labs-stack/commit/168a2346211d3be0272def89e2ea7d9d769faea5))
-* **backup:** pass AWS_DEFAULT_REGION to restic for non-us-east-1 buckets ([#386](https://github.com/Glad-Labs/glad-labs-stack/issues/386)) ([0dcf368](https://github.com/Glad-Labs/glad-labs-stack/commit/0dcf368f75dc42ae56ca27c740ea81666154b4f3))
-* **backup:** use correct audit_log.\"timestamp\" column (not created_at) ([#386](https://github.com/Glad-Labs/glad-labs-stack/issues/386)) ([#1628](https://github.com/Glad-Labs/glad-labs-stack/issues/1628)) ([24d1aa2](https://github.com/Glad-Labs/glad-labs-stack/commit/24d1aa240cdb7b5300f690810f4d42a7165b36d9))
-* **ci:** make mirror-guard checks inversion-proof ([#1481](https://github.com/Glad-Labs/glad-labs-stack/issues/1481)) ([#1631](https://github.com/Glad-Labs/glad-labs-stack/issues/1631)) ([fdb7411](https://github.com/Glad-Labs/glad-labs-stack/commit/fdb741137ad7f4cc2d7a55eb32865971d4044088))
-* **cli:** stamp LOG_LEVEL=WARNING into env so service imports don't flood terminal ([#1630](https://github.com/Glad-Labs/glad-labs-stack/issues/1630)) ([7de86a8](https://github.com/Glad-Labs/glad-labs-stack/commit/7de86a8577f149a45b7494e992e703b56a5b4d0f))
-* **cost_logs:** thread task_id/phase through ollama_chat_text to cost_logs ([#1627](https://github.com/Glad-Labs/glad-labs-stack/issues/1627)) ([4db4f23](https://github.com/Glad-Labs/glad-labs-stack/commit/4db4f235887e78240afadf41584de5a230456954))
-* **db:** drop two zero-scan dead indexes (poindexter[#701](https://github.com/Glad-Labs/glad-labs-stack/issues/701)) ([#1635](https://github.com/Glad-Labs/glad-labs-stack/issues/1635)) ([88790cd](https://github.com/Glad-Labs/glad-labs-stack/commit/88790cd73f1e156f860125e3cc19234f566f77b5))
-* **db:** enforce pipeline_tasks.status values + app_settings.value NOT NULL (poindexter[#700](https://github.com/Glad-Labs/glad-labs-stack/issues/700)) ([#1634](https://github.com/Glad-Labs/glad-labs-stack/issues/1634)) ([4c2073b](https://github.com/Glad-Labs/glad-labs-stack/commit/4c2073b130430525b573abb2bad5decd37a60db5))
-* **observability:** add cycle-safe patch to Langfuse EventSerializer ([#1626](https://github.com/Glad-Labs/glad-labs-stack/issues/1626)) ([54fffd7](https://github.com/Glad-Labs/glad-labs-stack/commit/54fffd7e21a27776fb179740029fdb3afcf45a17))
-* **security:** stop echoing exception detail in HTTP error responses (poindexter[#724](https://github.com/Glad-Labs/glad-labs-stack/issues/724)) ([#1633](https://github.com/Glad-Labs/glad-labs-stack/issues/1633)) ([921b5b0](https://github.com/Glad-Labs/glad-labs-stack/commit/921b5b0d631d038af56d48a6d8fb12d5006cec5f))
-
-## [0.80.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.79.0...v0.80.0) (2026-06-15)
+## [0.81.0](https://github.com/Glad-Labs/poindexter/compare/v0.80.1...v0.81.0) (2026-06-18)
 
 
 ### Features
 
-* **backup:** Tier 2 off-machine backup wizard (S3/B2/R2 via restic) ([#386](https://github.com/Glad-Labs/glad-labs-stack/issues/386)) ([#1620](https://github.com/Glad-Labs/glad-labs-stack/issues/1620)) ([8c3a9c6](https://github.com/Glad-Labs/glad-labs-stack/commit/8c3a9c65bcf16567c99143135ae98abe03e73095))
-* **ci:** lint broad `except: return None` + info-only; noqa cleanup suppress ([#1588](https://github.com/Glad-Labs/glad-labs-stack/issues/1588)) ([e4f8cb8](https://github.com/Glad-Labs/glad-labs-stack/commit/e4f8cb890547a64052fc35b26f76022638597370))
-* **cli+mcp+api:** draft post body/image editing via shared post_edit_service ([#1618](https://github.com/Glad-Labs/glad-labs-stack/issues/1618)) ([ed78dd9](https://github.com/Glad-Labs/glad-labs-stack/commit/ed78dd9380e1191450b8ad5bfc32adf5eee3d9de))
-* **deploy:** auto-restart bind-mount containers on code sync ([#1607](https://github.com/Glad-Labs/glad-labs-stack/issues/1607)) ([26630c6](https://github.com/Glad-Labs/glad-labs-stack/commit/26630c678b5c8931dd6d93e941aae314e6ad8e42))
-* **media:** capture YouTube id/url on backfill_videos dispatch ([#1596](https://github.com/Glad-Labs/glad-labs-stack/issues/1596)) ([#1601](https://github.com/Glad-Labs/glad-labs-stack/issues/1601)) ([0c400c4](https://github.com/Glad-Labs/glad-labs-stack/commit/0c400c419304c9e9bcf2d774efc1b27e66eb137b))
-* **media:** gate video RSS feed on approval + grandfather live videos ([#1587](https://github.com/Glad-Labs/glad-labs-stack/issues/1587)) ([746bd19](https://github.com/Glad-Labs/glad-labs-stack/commit/746bd198ceb018ceb68b4456aa23a3b770423c41))
-* **media:** rebuild matching R2 feed on media approval (self-healing) ([#1589](https://github.com/Glad-Labs/glad-labs-stack/issues/1589)) ([30165e9](https://github.com/Glad-Labs/glad-labs-stack/commit/30165e9fbbc4ff9e5558167f7980b9ec1c279b21))
-* **media:** seed approval gate at reconciliation asset-creation ([#1586](https://github.com/Glad-Labs/glad-labs-stack/issues/1586)) ([687b538](https://github.com/Glad-Labs/glad-labs-stack/commit/687b53816f01bdff321e9f49521e7e68691fabcf))
-* **topic-sourcing:** niche-aware topic_pool + real tap ingestion (b1) ([#1598](https://github.com/Glad-Labs/glad-labs-stack/issues/1598)) ([e033637](https://github.com/Glad-Labs/glad-labs-stack/commit/e033637fb320b5bc006cc6923346ed78f17eb3d1))
+* **api:** declarative data-plane service + HTTP routes + CLI de-SQL ([#1522](https://github.com/Glad-Labs/poindexter/issues/1522)) ([#1651](https://github.com/Glad-Labs/poindexter/issues/1651)) ([8cd4d38](https://github.com/Glad-Labs/poindexter/commit/8cd4d38c07770bf0db4763c81134d58a6f033a0b))
+* **brand+site:** close type-scale gaps, promote nav/link patterns, wire expressive range ([#1659](https://github.com/Glad-Labs/poindexter/issues/1659)) ([3b54d9b](https://github.com/Glad-Labs/poindexter/commit/3b54d9b2cde528acb3dd674edb88b1348d061f86))
+* **ci:** adapter-purity guard + bootstrap-allowlist docs ([#1344](https://github.com/Glad-Labs/poindexter/issues/1344), closes epic [#1340](https://github.com/Glad-Labs/poindexter/issues/1340)) ([#1655](https://github.com/Glad-Labs/poindexter/issues/1655)) ([138852e](https://github.com/Glad-Labs/poindexter/commit/138852e748bd8cb9c7cf5b22c3dc01193580290e))
+* **image:** make image gen prompts + Pexels fallbacks niche-configurable (closes [#219](https://github.com/Glad-Labs/poindexter/issues/219)) ([#1670](https://github.com/Glad-Labs/poindexter/issues/1670)) ([4c1c1b7](https://github.com/Glad-Labs/poindexter/commit/4c1c1b700a59e1c60c311aae78adaef764c73223))
+* **qa:** bounded 1-shot rewrite/rescue cycle before a salvageable QA reject ([#1674](https://github.com/Glad-Labs/poindexter/issues/1674)) ([fdc4f05](https://github.com/Glad-Labs/poindexter/commit/fdc4f052d3d3550fddd741f98f98763b397c95f4))
+* **settings:** add lifecycle metadata columns to app_settings (poindexter[#756](https://github.com/Glad-Labs/poindexter/issues/756)) ([#1678](https://github.com/Glad-Labs/poindexter/issues/1678)) ([6fb6efa](https://github.com/Glad-Labs/poindexter/commit/6fb6efa08c11c3ff4a0cfdf68baa8055af772981))
 
 
 ### Bug Fixes
 
-* **auto-publish:** surface bookkeeping-write failures + lint broad suppress ([#1564](https://github.com/Glad-Labs/glad-labs-stack/issues/1564)) ([d5e2c6c](https://github.com/Glad-Labs/glad-labs-stack/commit/d5e2c6c227c891b95ec3e507a8b4dddf403f4184))
-* **brain:** stop operator URL probe false-positive on POST-only beacon ([#1594](https://github.com/Glad-Labs/glad-labs-stack/issues/1594)) ([8012f24](https://github.com/Glad-Labs/glad-labs-stack/commit/8012f241c304a1a2d5064b2dace3b256b56ea476))
-* **brain:** stop operator_url_probe false-positive pages ([#1594](https://github.com/Glad-Labs/glad-labs-stack/issues/1594) follow-up) ([#1616](https://github.com/Glad-Labs/glad-labs-stack/issues/1616)) ([80e92ed](https://github.com/Glad-Labs/glad-labs-stack/commit/80e92ed947af7e2036bf206db295d058882b5832))
-* **brain:** surface silent exception handlers in watchdog + alert dispatcher ([#1583](https://github.com/Glad-Labs/glad-labs-stack/issues/1583)) ([9dd23c4](https://github.com/Glad-Labs/glad-labs-stack/commit/9dd23c49d7b85d063409fe33bd2352ce9bb28375))
-* **cli:** pass explicit checkpointer DSN on `pipeline resume` ([#1610](https://github.com/Glad-Labs/glad-labs-stack/issues/1610)) ([b071fe1](https://github.com/Glad-Labs/glad-labs-stack/commit/b071fe10f5f19a3be700a7b79813a2be262bdc63))
-* **cli:** silence langgraph allowed_objects warning on every CLI run ([#1590](https://github.com/Glad-Labs/glad-labs-stack/issues/1590)) ([983c99b](https://github.com/Glad-Labs/glad-labs-stack/commit/983c99bf4a7771ac63e381c585375d5edf8b83a3))
-* **db:** stamp app_settings.updated_at on value change ([#1594](https://github.com/Glad-Labs/glad-labs-stack/issues/1594) follow-up) ([#1619](https://github.com/Glad-Labs/glad-labs-stack/issues/1619)) ([2add821](https://github.com/Glad-Labs/glad-labs-stack/commit/2add821a115482f91c1cbf65b4be6a118785b182))
-* **dev_diary:** emit headline as body H1 so published title matches preview ([#1560](https://github.com/Glad-Labs/glad-labs-stack/issues/1560)) ([aef5c5a](https://github.com/Glad-Labs/glad-labs-stack/commit/aef5c5a79631b4609b0d42744b81dcab17ab83f1))
-* **media:** exclude grandfather rows from upload dispatchers ([#1596](https://github.com/Glad-Labs/glad-labs-stack/issues/1596) durable fix) ([#1614](https://github.com/Glad-Labs/glad-labs-stack/issues/1614)) ([3288069](https://github.com/Glad-Labs/glad-labs-stack/commit/32880692368fa74891a40f881db31549fa1e215b))
-* **media:** per-media narration — give long/short video their own script, CTA & audio ([#689](https://github.com/Glad-Labs/glad-labs-stack/issues/689)) ([#1621](https://github.com/Glad-Labs/glad-labs-stack/issues/1621)) ([1876f53](https://github.com/Glad-Labs/glad-labs-stack/commit/1876f53d975b9540206f4b6b3317212d0e131598))
-* **media:** record YouTube external_id/url on successful dispatch ([#1584](https://github.com/Glad-Labs/glad-labs-stack/issues/1584)) ([a2ff475](https://github.com/Glad-Labs/glad-labs-stack/commit/a2ff475ca4c547b0bc20281c208cc2ae99931e59))
-* **media:** stamp dispatched_at on grandfather media_approvals (defuse re-dispatch) ([#1599](https://github.com/Glad-Labs/glad-labs-stack/issues/1599)) ([9bf6bb5](https://github.com/Glad-Labs/glad-labs-stack/commit/9bf6bb5053df2e52ac5a142387139f776c1a39f5))
-* **taps:** add TopicSource.extract() shim to InternalRagSource ([#1615](https://github.com/Glad-Labs/glad-labs-stack/issues/1615)) ([48c7995](https://github.com/Glad-Labs/glad-labs-stack/commit/48c7995ec5b52dd7f94ad805b6961c8fc7dddcac))
-* **template_runner:** warn (not silent debug) when checkpointer DSN fallback fails ([#1612](https://github.com/Glad-Labs/glad-labs-stack/issues/1612)) ([ebbaa40](https://github.com/Glad-Labs/glad-labs-stack/commit/ebbaa40a9fb2538b81bb8ac022d1d9452913def8))
+* **content:** re-point already-linked fabricated citations to corpus URLs (brand-domain subset) ([#1673](https://github.com/Glad-Labs/poindexter/issues/1673)) ([93b1e8c](https://github.com/Glad-Labs/poindexter/commit/93b1e8ce107ec88662266fb96a5b137712c56e2e))
+* **content:** repair orphaned anchor text when scrubbing fabricated links ([#1671](https://github.com/Glad-Labs/poindexter/issues/1671)) ([1c2fa48](https://github.com/Glad-Labs/poindexter/commit/1c2fa48fa620f716068988fa1368733c5e8501cf))
+* **deploy:** deploy-sync waits for a flow gap instead of skipping forever ([#1665](https://github.com/Glad-Labs/poindexter/issues/1665)) ([479d2cb](https://github.com/Glad-Labs/poindexter/commit/479d2cb0271d6fb19a891738492cd4c8eb142ef4))
+* **deps:** bump cryptography to 49 (Trivy HIGH GHSA-537c-gmf6-5ccf) by retiring atproto/Bluesky ([#1658](https://github.com/Glad-Labs/poindexter/issues/1658)) ([858411f](https://github.com/Glad-Labs/poindexter/commit/858411f57ace450768f04cf86096b4a85c93c594))
+* **mcp:** recreate agent_permissions/approval_queue tables; gate fails open on missing table ([#1669](https://github.com/Glad-Labs/poindexter/issues/1669)) ([df62af1](https://github.com/Glad-Labs/poindexter/commit/df62af14ea6fd9ac120448420af6778a91f62f82))
+* **obs:** drop GPU SQL alert rules [#13](https://github.com/Glad-Labs/poindexter/issues/13)/[#14](https://github.com/Glad-Labs/poindexter/issues/14), single-source to Prometheus (poindexter[#653](https://github.com/Glad-Labs/poindexter/issues/653)) ([#1675](https://github.com/Glad-Labs/poindexter/issues/1675)) ([ef94513](https://github.com/Glad-Labs/poindexter/commit/ef945134e666e45a46a7a38b778a761a6dae07e2))
+* **publish:** [#729](https://github.com/Glad-Labs/poindexter/issues/729) gate allows known-but-inactive niches (unblocks dev_diary) ([#1648](https://github.com/Glad-Labs/poindexter/issues/1648)) ([300fd71](https://github.com/Glad-Labs/poindexter/commit/300fd715d95a303e4c5af452f5cde330749329ac))
+* **qa:** exclude advisory rails from gated score; soften validator warning penalty ([#1668](https://github.com/Glad-Labs/poindexter/issues/1668)) ([50aba11](https://github.com/Glad-Labs/poindexter/commit/50aba1111579fcf74d48d5c1d8115e745235e4f4))
+* **research:** ground the writer on real page text, not 100-char snippets ([#1672](https://github.com/Glad-Labs/poindexter/issues/1672)) ([ee803be](https://github.com/Glad-Labs/poindexter/commit/ee803be48463d5b4585e4853b3abcb9109604427))
+* **retention:** consolidate dual retention systems into single source of truth (closes [#699](https://github.com/Glad-Labs/poindexter/issues/699)) ([#1667](https://github.com/Glad-Labs/poindexter/issues/1667)) ([e7133a4](https://github.com/Glad-Labs/poindexter/commit/e7133a4db1ff4be43c5ae764cf3253a7617e80a2))
+* **settings:** prune 10 dead model keys and fix qa vision ollama prefix ([#1666](https://github.com/Glad-Labs/poindexter/issues/1666)) ([4e5a499](https://github.com/Glad-Labs/poindexter/commit/4e5a499cf7fe61eee92ce8c71368075e01ce536f))
+* **site-config:** share one SiteConfig in the worker so runtime settings reload reaches routes ([#1649](https://github.com/Glad-Labs/poindexter/issues/1649)) ([aff8c5c](https://github.com/Glad-Labs/poindexter/commit/aff8c5cb46beb671943c7de0ece2d2d19731a711))
+* **types:** reduce mypy strict backlog 1278→282 errors ([#1550](https://github.com/Glad-Labs/poindexter/issues/1550)) ([#1660](https://github.com/Glad-Labs/poindexter/issues/1660)) ([62cbc86](https://github.com/Glad-Labs/poindexter/commit/62cbc86010d837203f0a94c1436070fb87bbc17d))
+* **types:** resolve remaining 282→0 mypy strict errors ([#1550](https://github.com/Glad-Labs/poindexter/issues/1550) part 2) ([#1664](https://github.com/Glad-Labs/poindexter/issues/1664)) ([caad251](https://github.com/Glad-Labs/poindexter/commit/caad2512e48c96deb01a02986468a7bfd80fed56))
+* **voice:** patch module-level VALID_VOICES dict for Kokoro TTS voices ([#1679](https://github.com/Glad-Labs/poindexter/issues/1679)) ([7441862](https://github.com/Glad-Labs/poindexter/commit/74418627cb1dcc6484e0f335b7c5d27b19050c05))
+* **voice:** separate browser WSS URL from bot internal URL (mixed-content fix) ([#1677](https://github.com/Glad-Labs/poindexter/issues/1677)) ([ef2b5ba](https://github.com/Glad-Labs/poindexter/commit/ef2b5ba3d0ded06b04ef58b6d4bf65d5b3cf9169))
+* **writer:** enrich bare canonical_blog prompt to clear assembly QA vetoes ([#1676](https://github.com/Glad-Labs/poindexter/issues/1676)) ([f621b3d](https://github.com/Glad-Labs/poindexter/commit/f621b3dabeb5df58957f8f5fbd835225d3172fb7))
+* **writer:** stop canonical_blog writer fabricating stats + echoing snippet labels ([#1680](https://github.com/Glad-Labs/poindexter/issues/1680)) ([9e62803](https://github.com/Glad-Labs/poindexter/commit/9e62803fbb025fc19697552805ba3251b5394827))
 
-## [0.79.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.78.0...v0.79.0) (2026-06-14)
+## [0.80.1](https://github.com/Glad-Labs/poindexter/compare/v0.80.0...v0.80.1) (2026-06-16)
+
+
+### Bug Fixes
+
+* **backup:** cast asyncpg Decimal→float in _age_of_event ([#386](https://github.com/Glad-Labs/poindexter/issues/386)) ([168a234](https://github.com/Glad-Labs/poindexter/commit/168a2346211d3be0272def89e2ea7d9d769faea5))
+* **backup:** pass AWS_DEFAULT_REGION to restic for non-us-east-1 buckets ([#386](https://github.com/Glad-Labs/poindexter/issues/386)) ([0dcf368](https://github.com/Glad-Labs/poindexter/commit/0dcf368f75dc42ae56ca27c740ea81666154b4f3))
+* **backup:** use correct audit_log.\"timestamp\" column (not created_at) ([#386](https://github.com/Glad-Labs/poindexter/issues/386)) ([#1628](https://github.com/Glad-Labs/poindexter/issues/1628)) ([24d1aa2](https://github.com/Glad-Labs/poindexter/commit/24d1aa240cdb7b5300f690810f4d42a7165b36d9))
+* **ci:** make mirror-guard checks inversion-proof ([#1481](https://github.com/Glad-Labs/poindexter/issues/1481)) ([#1631](https://github.com/Glad-Labs/poindexter/issues/1631)) ([fdb7411](https://github.com/Glad-Labs/poindexter/commit/fdb741137ad7f4cc2d7a55eb32865971d4044088))
+* **cli:** stamp LOG_LEVEL=WARNING into env so service imports don't flood terminal ([#1630](https://github.com/Glad-Labs/poindexter/issues/1630)) ([7de86a8](https://github.com/Glad-Labs/poindexter/commit/7de86a8577f149a45b7494e992e703b56a5b4d0f))
+* **cost_logs:** thread task_id/phase through ollama_chat_text to cost_logs ([#1627](https://github.com/Glad-Labs/poindexter/issues/1627)) ([4db4f23](https://github.com/Glad-Labs/poindexter/commit/4db4f235887e78240afadf41584de5a230456954))
+* **db:** drop two zero-scan dead indexes (poindexter[#701](https://github.com/Glad-Labs/poindexter/issues/701)) ([#1635](https://github.com/Glad-Labs/poindexter/issues/1635)) ([88790cd](https://github.com/Glad-Labs/poindexter/commit/88790cd73f1e156f860125e3cc19234f566f77b5))
+* **db:** enforce pipeline_tasks.status values + app_settings.value NOT NULL (poindexter[#700](https://github.com/Glad-Labs/poindexter/issues/700)) ([#1634](https://github.com/Glad-Labs/poindexter/issues/1634)) ([4c2073b](https://github.com/Glad-Labs/poindexter/commit/4c2073b130430525b573abb2bad5decd37a60db5))
+* **observability:** add cycle-safe patch to Langfuse EventSerializer ([#1626](https://github.com/Glad-Labs/poindexter/issues/1626)) ([54fffd7](https://github.com/Glad-Labs/poindexter/commit/54fffd7e21a27776fb179740029fdb3afcf45a17))
+* **security:** stop echoing exception detail in HTTP error responses (poindexter[#724](https://github.com/Glad-Labs/poindexter/issues/724)) ([#1633](https://github.com/Glad-Labs/poindexter/issues/1633)) ([921b5b0](https://github.com/Glad-Labs/poindexter/commit/921b5b0d631d038af56d48a6d8fb12d5006cec5f))
+
+## [0.80.0](https://github.com/Glad-Labs/poindexter/compare/v0.79.0...v0.80.0) (2026-06-15)
 
 
 ### Features
 
-* **cli:** canonical secret-setting via `settings set --secret` + `settings get --reveal` ([#1556](https://github.com/Glad-Labs/glad-labs-stack/issues/1556)) ([ad1f641](https://github.com/Glad-Labs/glad-labs-stack/commit/ad1f641dc3b6e2bb5c5f1c3d034112eb37990da8))
-* **console:** Brain on real /api/memory/stats corpus + memory recall search (Phase 8) ([#1571](https://github.com/Glad-Labs/glad-labs-stack/issues/1571)) ([551522e](https://github.com/Glad-Labs/glad-labs-stack/commit/551522e7bd1be5c9e045fb39dded45ec071bf678))
-* **console:** findings triage — GET /api/findings (TDD) + Findings panel (Phase 7) ([#1570](https://github.com/Glad-Labs/glad-labs-stack/issues/1570)) ([6fec661](https://github.com/Glad-Labs/glad-labs-stack/commit/6fec66107bda9a184c735a2b684a269e010b4a40))
-* **console:** Media Gate-2 — live pending queue + approve/reject (Phase 9) ([#1572](https://github.com/Glad-Labs/glad-labs-stack/issues/1572)) ([8eb1da5](https://github.com/Glad-Labs/glad-labs-stack/commit/8eb1da5a609be254a428504c1aee3e7a9105d21d))
-* **console:** Phase 4 — topics triage (rank/resolve/reject open discovery batches) ([#1553](https://github.com/Glad-Labs/glad-labs-stack/issues/1553)) ([1f8315e](https://github.com/Glad-Labs/glad-labs-stack/commit/1f8315efb7c111d5a37ff9c949f82f89e3cd1e49))
-* **console:** real audit feed + voice/rebuild actions (Phase 12) ([#1575](https://github.com/Glad-Labs/glad-labs-stack/issues/1575)) ([f31f8c6](https://github.com/Glad-Labs/glad-labs-stack/commit/f31f8c67a9971e0d8eddced1a980023f8dbbcc08))
-* **console:** real service health from cAdvisor + live GPU HUD (Phase 5.1/5.2) ([#1565](https://github.com/Glad-Labs/glad-labs-stack/issues/1565)) ([d47934e](https://github.com/Glad-Labs/glad-labs-stack/commit/d47934ef46510b0b025200bf65e2aafde3002ac1))
-* **console:** reframe Cost to the honest model — $0 infra + LLM/API spend vs cap (Phase 6) ([#1568](https://github.com/Glad-Labs/glad-labs-stack/issues/1568)) ([f39b06c](https://github.com/Glad-Labs/glad-labs-stack/commit/f39b06c2b0086027b22825c27e8f8c08395c8544))
-* **console:** revenue honest empty-state + mobile fit + README truth pass (Phase 13) ([#1576](https://github.com/Glad-Labs/glad-labs-stack/issues/1576)) ([39dd21b](https://github.com/Glad-Labs/glad-labs-stack/commit/39dd21b9f44d67f9a02de97362ceb95ffe6038d3))
-* **console:** Scheduled-publish queue panel + per-row reschedule (Phase 10) ([#1573](https://github.com/Glad-Labs/glad-labs-stack/issues/1573)) ([ccf8369](https://github.com/Glad-Labs/glad-labs-stack/commit/ccf8369e4a68fff9443f21887553caf99a5446ad))
-* **console:** SEO refresh panel + GET /api/seo (TDD) (Phase 11) ([#1574](https://github.com/Glad-Labs/glad-labs-stack/issues/1574)) ([116ca95](https://github.com/Glad-Labs/glad-labs-stack/commit/116ca9564cb5c9bc8666afde9830c201df1475ef))
+* **backup:** Tier 2 off-machine backup wizard (S3/B2/R2 via restic) ([#386](https://github.com/Glad-Labs/poindexter/issues/386)) ([#1620](https://github.com/Glad-Labs/poindexter/issues/1620)) ([8c3a9c6](https://github.com/Glad-Labs/poindexter/commit/8c3a9c65bcf16567c99143135ae98abe03e73095))
+* **ci:** lint broad `except: return None` + info-only; noqa cleanup suppress ([#1588](https://github.com/Glad-Labs/poindexter/issues/1588)) ([e4f8cb8](https://github.com/Glad-Labs/poindexter/commit/e4f8cb890547a64052fc35b26f76022638597370))
+* **cli+mcp+api:** draft post body/image editing via shared post_edit_service ([#1618](https://github.com/Glad-Labs/poindexter/issues/1618)) ([ed78dd9](https://github.com/Glad-Labs/poindexter/commit/ed78dd9380e1191450b8ad5bfc32adf5eee3d9de))
+* **deploy:** auto-restart bind-mount containers on code sync ([#1607](https://github.com/Glad-Labs/poindexter/issues/1607)) ([26630c6](https://github.com/Glad-Labs/poindexter/commit/26630c678b5c8931dd6d93e941aae314e6ad8e42))
+* **media:** capture YouTube id/url on backfill_videos dispatch ([#1596](https://github.com/Glad-Labs/poindexter/issues/1596)) ([#1601](https://github.com/Glad-Labs/poindexter/issues/1601)) ([0c400c4](https://github.com/Glad-Labs/poindexter/commit/0c400c419304c9e9bcf2d774efc1b27e66eb137b))
+* **media:** gate video RSS feed on approval + grandfather live videos ([#1587](https://github.com/Glad-Labs/poindexter/issues/1587)) ([746bd19](https://github.com/Glad-Labs/poindexter/commit/746bd198ceb018ceb68b4456aa23a3b770423c41))
+* **media:** rebuild matching R2 feed on media approval (self-healing) ([#1589](https://github.com/Glad-Labs/poindexter/issues/1589)) ([30165e9](https://github.com/Glad-Labs/poindexter/commit/30165e9fbbc4ff9e5558167f7980b9ec1c279b21))
+* **media:** seed approval gate at reconciliation asset-creation ([#1586](https://github.com/Glad-Labs/poindexter/issues/1586)) ([687b538](https://github.com/Glad-Labs/poindexter/commit/687b53816f01bdff321e9f49521e7e68691fabcf))
+* **topic-sourcing:** niche-aware topic_pool + real tap ingestion (b1) ([#1598](https://github.com/Glad-Labs/poindexter/issues/1598)) ([e033637](https://github.com/Glad-Labs/poindexter/commit/e033637fb320b5bc006cc6923346ed78f17eb3d1))
 
 
 ### Bug Fixes
 
-* **ci:** catch Claude-projects + escaped Windows operator home-path encodings in leak guard ([#1554](https://github.com/Glad-Labs/glad-labs-stack/issues/1554)) ([ad41958](https://github.com/Glad-Labs/glad-labs-stack/commit/ad41958a82de9867643bee33facdc80a4f855a25))
-* **cli:** load POINDEXTER_SECRET_KEY in `pipeline` commands so secrets decrypt on host ([#1558](https://github.com/Glad-Labs/glad-labs-stack/issues/1558)) ([17da31f](https://github.com/Glad-Labs/glad-labs-stack/commit/17da31f8226f730646d39429f4612be06b1d87ab))
-* **cli:** load POINDEXTER_SECRET_KEY in the root callback for all subcommands ([#1559](https://github.com/Glad-Labs/glad-labs-stack/issues/1559)) ([32d7fe1](https://github.com/Glad-Labs/glad-labs-stack/commit/32d7fe115f8efb4d72f9013a2cf754042a4f4030))
-* **content:** reject rubric-leak titles structurally + repair 2 published rows ([#1567](https://github.com/Glad-Labs/glad-labs-stack/issues/1567)) ([5324ba5](https://github.com/Glad-Labs/glad-labs-stack/commit/5324ba50cf23a40d61d7fd34066516267718a748))
-* correct phantom `poindexter set` command to `poindexter settings set` ([#1562](https://github.com/Glad-Labs/glad-labs-stack/issues/1562)) ([7f3bd40](https://github.com/Glad-Labs/glad-labs-stack/commit/7f3bd40f4e801fa73f9d5f7313fdf96f4785b34f))
-* **scripts:** ASCII-ify em-dashes in PowerShell scripts (PS 5.1 parse failure) ([#1563](https://github.com/Glad-Labs/glad-labs-stack/issues/1563)) ([a738f28](https://github.com/Glad-Labs/glad-labs-stack/commit/a738f28cb8476dae8188f5fd30b439fa04d01d41))
-* **topics:** dedupe niche-batch sweep candidates (intra-batch + vs-existing) ([#1561](https://github.com/Glad-Labs/glad-labs-stack/issues/1561)) ([6102efe](https://github.com/Glad-Labs/glad-labs-stack/commit/6102efe8cb181a70e91f55a5f9991bd72eba4c88))
-* **types:** _check_task_ownership accepts Mapping (arg-type burndown) ([#1555](https://github.com/Glad-Labs/glad-labs-stack/issues/1555)) ([2d248de](https://github.com/Glad-Labs/glad-labs-stack/commit/2d248ded1d625a2d656e9f8241f5a87b104ee5ca))
-* **types:** _emit_progress site_config Optional (arg-type burndown 3/N) ([#1557](https://github.com/Glad-Labs/glad-labs-stack/issues/1557)) ([bed74e6](https://github.com/Glad-Labs/glad-labs-stack/commit/bed74e6646fe380ac86fb4ae592b788f9ba91456))
-* **types:** clear all [index] mypy errors — health_data annotation + None guards ([#1552](https://github.com/Glad-Labs/glad-labs-stack/issues/1552)) ([0b714b5](https://github.com/Glad-Labs/glad-labs-stack/commit/0b714b512c315bcaded09b5cfd4528e76c146db1))
-* **types:** restore the mypy type-check (npm run type:check was fully broken) ([#1551](https://github.com/Glad-Labs/glad-labs-stack/issues/1551)) ([31a0da7](https://github.com/Glad-Labs/glad-labs-stack/commit/31a0da79493bdb3965d58fa326f412d3457dbd9d))
+* **auto-publish:** surface bookkeeping-write failures + lint broad suppress ([#1564](https://github.com/Glad-Labs/poindexter/issues/1564)) ([d5e2c6c](https://github.com/Glad-Labs/poindexter/commit/d5e2c6c227c891b95ec3e507a8b4dddf403f4184))
+* **brain:** stop operator URL probe false-positive on POST-only beacon ([#1594](https://github.com/Glad-Labs/poindexter/issues/1594)) ([8012f24](https://github.com/Glad-Labs/poindexter/commit/8012f241c304a1a2d5064b2dace3b256b56ea476))
+* **brain:** stop operator_url_probe false-positive pages ([#1594](https://github.com/Glad-Labs/poindexter/issues/1594) follow-up) ([#1616](https://github.com/Glad-Labs/poindexter/issues/1616)) ([80e92ed](https://github.com/Glad-Labs/poindexter/commit/80e92ed947af7e2036bf206db295d058882b5832))
+* **brain:** surface silent exception handlers in watchdog + alert dispatcher ([#1583](https://github.com/Glad-Labs/poindexter/issues/1583)) ([9dd23c4](https://github.com/Glad-Labs/poindexter/commit/9dd23c49d7b85d063409fe33bd2352ce9bb28375))
+* **cli:** pass explicit checkpointer DSN on `pipeline resume` ([#1610](https://github.com/Glad-Labs/poindexter/issues/1610)) ([b071fe1](https://github.com/Glad-Labs/poindexter/commit/b071fe10f5f19a3be700a7b79813a2be262bdc63))
+* **cli:** silence langgraph allowed_objects warning on every CLI run ([#1590](https://github.com/Glad-Labs/poindexter/issues/1590)) ([983c99b](https://github.com/Glad-Labs/poindexter/commit/983c99bf4a7771ac63e381c585375d5edf8b83a3))
+* **db:** stamp app_settings.updated_at on value change ([#1594](https://github.com/Glad-Labs/poindexter/issues/1594) follow-up) ([#1619](https://github.com/Glad-Labs/poindexter/issues/1619)) ([2add821](https://github.com/Glad-Labs/poindexter/commit/2add821a115482f91c1cbf65b4be6a118785b182))
+* **dev_diary:** emit headline as body H1 so published title matches preview ([#1560](https://github.com/Glad-Labs/poindexter/issues/1560)) ([aef5c5a](https://github.com/Glad-Labs/poindexter/commit/aef5c5a79631b4609b0d42744b81dcab17ab83f1))
+* **media:** exclude grandfather rows from upload dispatchers ([#1596](https://github.com/Glad-Labs/poindexter/issues/1596) durable fix) ([#1614](https://github.com/Glad-Labs/poindexter/issues/1614)) ([3288069](https://github.com/Glad-Labs/poindexter/commit/32880692368fa74891a40f881db31549fa1e215b))
+* **media:** per-media narration — give long/short video their own script, CTA & audio ([#689](https://github.com/Glad-Labs/poindexter/issues/689)) ([#1621](https://github.com/Glad-Labs/poindexter/issues/1621)) ([1876f53](https://github.com/Glad-Labs/poindexter/commit/1876f53d975b9540206f4b6b3317212d0e131598))
+* **media:** record YouTube external_id/url on successful dispatch ([#1584](https://github.com/Glad-Labs/poindexter/issues/1584)) ([a2ff475](https://github.com/Glad-Labs/poindexter/commit/a2ff475ca4c547b0bc20281c208cc2ae99931e59))
+* **media:** stamp dispatched_at on grandfather media_approvals (defuse re-dispatch) ([#1599](https://github.com/Glad-Labs/poindexter/issues/1599)) ([9bf6bb5](https://github.com/Glad-Labs/poindexter/commit/9bf6bb5053df2e52ac5a142387139f776c1a39f5))
+* **taps:** add TopicSource.extract() shim to InternalRagSource ([#1615](https://github.com/Glad-Labs/poindexter/issues/1615)) ([48c7995](https://github.com/Glad-Labs/poindexter/commit/48c7995ec5b52dd7f94ad805b6961c8fc7dddcac))
+* **template_runner:** warn (not silent debug) when checkpointer DSN fallback fails ([#1612](https://github.com/Glad-Labs/poindexter/issues/1612)) ([ebbaa40](https://github.com/Glad-Labs/poindexter/commit/ebbaa40a9fb2538b81bb8ac022d1d9452913def8))
 
-## [0.78.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.77.0...v0.78.0) (2026-06-13)
+## [0.79.0](https://github.com/Glad-Labs/poindexter/compare/v0.78.0...v0.79.0) (2026-06-14)
 
 
 ### Features
 
-* **api:** mirror 5 operator surfaces over HTTP — gates, posts-approval, scheduling, topic-batch, media-approval ([#1343](https://github.com/Glad-Labs/glad-labs-stack/issues/1343)) ([#1491](https://github.com/Glad-Labs/glad-labs-stack/issues/1491)) ([d2ac3ab](https://github.com/Glad-Labs/glad-labs-stack/commit/d2ac3abac52a3c5f2d23c08ca976cdd87e9e18b1))
-* **console:** operator-console foundation — load + OAuth2 auth ([#1523](https://github.com/Glad-Labs/glad-labs-stack/issues/1523)) ([7934547](https://github.com/Glad-Labs/glad-labs-stack/commit/7934547d807b2d91204041478a4caf270dfee8af))
-* **console:** Phase 1 — real content-approvals surface (approve ≠ publish) ([#1529](https://github.com/Glad-Labs/glad-labs-stack/issues/1529)) ([4fa20eb](https://github.com/Glad-Labs/glad-labs-stack/commit/4fa20ebf14b6ccab1dab3a6bd4ef8959e82e0b95))
-* **console:** Phase 2 — settings surface wired to the real API shape ([#1531](https://github.com/Glad-Labs/glad-labs-stack/issues/1531)) ([76abccb](https://github.com/Glad-Labs/glad-labs-stack/commit/76abccbef3ba6a33a0804f13d8233014a87eaaef))
-* **console:** Phase 3 — pipeline panel models the real graph_def ([#1532](https://github.com/Glad-Labs/glad-labs-stack/issues/1532)) ([895a921](https://github.com/Glad-Labs/glad-labs-stack/commit/895a921705757900a110b912131131e9fe498a78))
-* **console:** Phase 3.3 — task Retry/Cancel actions go live ([#1533](https://github.com/Glad-Labs/glad-labs-stack/issues/1533)) ([c20e99c](https://github.com/Glad-Labs/glad-labs-stack/commit/c20e99c6da101db20b4ea98bcbff747a26c49979))
-* **console:** Phase 3.4 — QA panel re-labeled to the real rails ([#1534](https://github.com/Glad-Labs/glad-labs-stack/issues/1534)) ([95346fa](https://github.com/Glad-Labs/glad-labs-stack/commit/95346fad04dc389e75bc2a170ff86b3e16c9706a))
-* **content:** service layer as API contract — PostsService + MCP convergence ([#1341](https://github.com/Glad-Labs/glad-labs-stack/issues/1341), [#1342](https://github.com/Glad-Labs/glad-labs-stack/issues/1342)) ([#1482](https://github.com/Glad-Labs/glad-labs-stack/issues/1482)) ([2196572](https://github.com/Glad-Labs/glad-labs-stack/commit/2196572f860c8b5109f030ec0819d623bcd47e0f))
-* **observability:** count metrics_refresh per-phase failures (audit H2b) ([#1504](https://github.com/Glad-Labs/glad-labs-stack/issues/1504)) ([24d88de](https://github.com/Glad-Labs/glad-labs-stack/commit/24d88de37b7b5ab8df8ef4b9e57dd6af7a514fa9))
-* **observability:** detect Cloudflare page-views beacon outages ([#1502](https://github.com/Glad-Labs/glad-labs-stack/issues/1502)) ([981a1bc](https://github.com/Glad-Labs/glad-labs-stack/commit/981a1bc208ae75b144e5348da03bd6ae8fc1b399))
-* **scripts:** MCP orphan-sweep host-maintenance task ([#1525](https://github.com/Glad-Labs/glad-labs-stack/issues/1525)) ([24983ed](https://github.com/Glad-Labs/glad-labs-stack/commit/24983ed79462b9428005e91e6aeeae81cae7930f))
-* **seo:** route seo_refresh queued/outcome findings to Discord + awaiting-signoff Grafana panel ([#1469](https://github.com/Glad-Labs/glad-labs-stack/issues/1469)) ([77f22c4](https://github.com/Glad-Labs/glad-labs-stack/commit/77f22c4e4bc69181e40326e1cfda4a647ec917b0))
-* **seo:** SEO Harvest Loop Milestone B — auto-enqueue + outcome measurement ([#763](https://github.com/Glad-Labs/glad-labs-stack/issues/763)) ([#1466](https://github.com/Glad-Labs/glad-labs-stack/issues/1466)) ([7058123](https://github.com/Glad-Labs/glad-labs-stack/commit/7058123783cd474d5085c2cc1fa58e3e045410ca))
-* **topics:** self-heal reaper for stuck open topic_batches ([#1527](https://github.com/Glad-Labs/glad-labs-stack/issues/1527)) ([35a24ad](https://github.com/Glad-Labs/glad-labs-stack/commit/35a24ad2cf114f34cebb513a2571f8a652cc1c6e))
+* **cli:** canonical secret-setting via `settings set --secret` + `settings get --reveal` ([#1556](https://github.com/Glad-Labs/poindexter/issues/1556)) ([ad1f641](https://github.com/Glad-Labs/poindexter/commit/ad1f641dc3b6e2bb5c5f1c3d034112eb37990da8))
+* **console:** Brain on real /api/memory/stats corpus + memory recall search (Phase 8) ([#1571](https://github.com/Glad-Labs/poindexter/issues/1571)) ([551522e](https://github.com/Glad-Labs/poindexter/commit/551522e7bd1be5c9e045fb39dded45ec071bf678))
+* **console:** findings triage — GET /api/findings (TDD) + Findings panel (Phase 7) ([#1570](https://github.com/Glad-Labs/poindexter/issues/1570)) ([6fec661](https://github.com/Glad-Labs/poindexter/commit/6fec66107bda9a184c735a2b684a269e010b4a40))
+* **console:** Media Gate-2 — live pending queue + approve/reject (Phase 9) ([#1572](https://github.com/Glad-Labs/poindexter/issues/1572)) ([8eb1da5](https://github.com/Glad-Labs/poindexter/commit/8eb1da5a609be254a428504c1aee3e7a9105d21d))
+* **console:** Phase 4 — topics triage (rank/resolve/reject open discovery batches) ([#1553](https://github.com/Glad-Labs/poindexter/issues/1553)) ([1f8315e](https://github.com/Glad-Labs/poindexter/commit/1f8315efb7c111d5a37ff9c949f82f89e3cd1e49))
+* **console:** real audit feed + voice/rebuild actions (Phase 12) ([#1575](https://github.com/Glad-Labs/poindexter/issues/1575)) ([f31f8c6](https://github.com/Glad-Labs/poindexter/commit/f31f8c67a9971e0d8eddced1a980023f8dbbcc08))
+* **console:** real service health from cAdvisor + live GPU HUD (Phase 5.1/5.2) ([#1565](https://github.com/Glad-Labs/poindexter/issues/1565)) ([d47934e](https://github.com/Glad-Labs/poindexter/commit/d47934ef46510b0b025200bf65e2aafde3002ac1))
+* **console:** reframe Cost to the honest model — $0 infra + LLM/API spend vs cap (Phase 6) ([#1568](https://github.com/Glad-Labs/poindexter/issues/1568)) ([f39b06c](https://github.com/Glad-Labs/poindexter/commit/f39b06c2b0086027b22825c27e8f8c08395c8544))
+* **console:** revenue honest empty-state + mobile fit + README truth pass (Phase 13) ([#1576](https://github.com/Glad-Labs/poindexter/issues/1576)) ([39dd21b](https://github.com/Glad-Labs/poindexter/commit/39dd21b9f44d67f9a02de97362ceb95ffe6038d3))
+* **console:** Scheduled-publish queue panel + per-row reschedule (Phase 10) ([#1573](https://github.com/Glad-Labs/poindexter/issues/1573)) ([ccf8369](https://github.com/Glad-Labs/poindexter/commit/ccf8369e4a68fff9443f21887553caf99a5446ad))
+* **console:** SEO refresh panel + GET /api/seo (TDD) (Phase 11) ([#1574](https://github.com/Glad-Labs/poindexter/issues/1574)) ([116ca95](https://github.com/Glad-Labs/poindexter/commit/116ca9564cb5c9bc8666afde9830c201df1475ef))
 
 
 ### Bug Fixes
 
-* **api:** accept 8-char id prefixes on tasks/posts mutate routes ([#1517](https://github.com/Glad-Labs/glad-labs-stack/issues/1517)) ([26b1dcc](https://github.com/Glad-Labs/glad-labs-stack/commit/26b1dcc51d2d81fc29190048ec031f464e8d33e2))
-* **approval:** pause_at_gate sets status=awaiting_gate; sweep skips it ([#1480](https://github.com/Glad-Labs/glad-labs-stack/issues/1480)) ([e10be73](https://github.com/Glad-Labs/glad-labs-stack/commit/e10be7324ab43d76839d88171801c777bb4be787))
-* **brain:** exclude gate-paused tasks from the stuck-in_progress auto-cancel ([#1513](https://github.com/Glad-Labs/glad-labs-stack/issues/1513)) ([756205f](https://github.com/Glad-Labs/glad-labs-stack/commit/756205f49f3c3959919b3b88e12ed2bff5757608))
-* **cli:** accept short post_id prefixes in media approve/reject ([#1511](https://github.com/Glad-Labs/glad-labs-stack/issues/1511)) ([777bb07](https://github.com/Glad-Labs/glad-labs-stack/commit/777bb07b58f94be418d44ac44005dc224807357a))
-* **cli:** accept short UUID prefixes in pipeline resume/status ([#1490](https://github.com/Glad-Labs/glad-labs-stack/issues/1490)) ([45ab726](https://github.com/Glad-Labs/glad-labs-stack/commit/45ab7260f08276f814dd7ce625473a677acec98c))
-* **cli:** force SelectorEventLoop on Windows so pipeline resume keeps its checkpoint ([#1510](https://github.com/Glad-Labs/glad-labs-stack/issues/1510)) ([89ae14c](https://github.com/Glad-Labs/glad-labs-stack/commit/89ae14c5bec20e2a7f3a14265efaf0a51ac19138))
-* **cli:** unify UUID-prefix resolution across poindexter CLI ([#1514](https://github.com/Glad-Labs/glad-labs-stack/issues/1514)) ([665d493](https://github.com/Glad-Labs/glad-labs-stack/commit/665d493e7a39bca94cbebf61795c4c7a2efb2858))
-* **findings:** emit topic_gap at warn so the discord policy actually routes ([#1471](https://github.com/Glad-Labs/glad-labs-stack/issues/1471)) ([bb63e1d](https://github.com/Glad-Labs/glad-labs-stack/commit/bb63e1d67bfff4ab1e610f4c9a1d3d0cce1c3b5c))
-* **observability:** log webhook emit_finding failure instead of swallowing it ([#1518](https://github.com/Glad-Labs/glad-labs-stack/issues/1518)) ([#1519](https://github.com/Glad-Labs/glad-labs-stack/issues/1519)) ([b5fdcac](https://github.com/Glad-Labs/glad-labs-stack/commit/b5fdcac6973771d532b3c3b73c78d8179c1d5bdb))
-* **observability:** surface two swallowed failure paths (audit M1/M3) ([#1503](https://github.com/Glad-Labs/glad-labs-stack/issues/1503)) ([96a0b6b](https://github.com/Glad-Labs/glad-labs-stack/commit/96a0b6bb3db7665ec73d0eaa9c1c206c7deff05c))
-* **observability:** surface webhook dead-letters + auto-publish gate failures ([#1495](https://github.com/Glad-Labs/glad-labs-stack/issues/1495)) ([bf2c183](https://github.com/Glad-Labs/glad-labs-stack/commit/bf2c1833489ba63c68c9be5963f9682dd6f27105))
-* **pipeline:** make approve+resume atomic so a failed resume can't auto-publish ([#1516](https://github.com/Glad-Labs/glad-labs-stack/issues/1516)) ([b45b519](https://github.com/Glad-Labs/glad-labs-stack/commit/b45b519f7bfbc0fae2e8d6bd17e3993bfecd705f)), closes [#1515](https://github.com/Glad-Labs/glad-labs-stack/issues/1515)
-* **plugins:** repoint poindexter.stages entry-points to modules/content/stages ([#1512](https://github.com/Glad-Labs/glad-labs-stack/issues/1512)) ([dc57159](https://github.com/Glad-Labs/glad-labs-stack/commit/dc5715940ab89e29ecb26a9100b75dd919391b2e))
-* **settings:** retire vestigial findings.topic_gap.min_severity='info' ([#1473](https://github.com/Glad-Labs/glad-labs-stack/issues/1473)) ([45e0c6d](https://github.com/Glad-Labs/glad-labs-stack/commit/45e0c6d26ac197e742dbe5b1af4bd8ced2ff22f2))
-* **test:** make compose-drift probe tests hermetic re: docker pre-flight ([#1496](https://github.com/Glad-Labs/glad-labs-stack/issues/1496)) ([#1498](https://github.com/Glad-Labs/glad-labs-stack/issues/1498)) ([dce012e](https://github.com/Glad-Labs/glad-labs-stack/commit/dce012e3f1c938b70fcef638034c488827067c6d))
-* **topics:** auto-resolve internal-only batches + suppress empty-batch wedge ([#1521](https://github.com/Glad-Labs/glad-labs-stack/issues/1521)) ([be6a380](https://github.com/Glad-Labs/glad-labs-stack/commit/be6a380690d58a24058ead7ac5808d8701209853))
-* **topics:** guard resolve_batch against a missing niche ([#1524](https://github.com/Glad-Labs/glad-labs-stack/issues/1524)) ([35823d4](https://github.com/Glad-Labs/glad-labs-stack/commit/35823d41aba16017ddfdd3ee351318f8b4c82507))
-* **voice:** voice_join reads room/identity/wss_url DB-first from app_settings ([#717](https://github.com/Glad-Labs/glad-labs-stack/issues/717)) ([#1465](https://github.com/Glad-Labs/glad-labs-stack/issues/1465)) ([91e03db](https://github.com/Glad-Labs/glad-labs-stack/commit/91e03dbf6a96a610cb39034a6179e35920e9a3a1))
+* **ci:** catch Claude-projects + escaped Windows operator home-path encodings in leak guard ([#1554](https://github.com/Glad-Labs/poindexter/issues/1554)) ([ad41958](https://github.com/Glad-Labs/poindexter/commit/ad41958a82de9867643bee33facdc80a4f855a25))
+* **cli:** load POINDEXTER_SECRET_KEY in `pipeline` commands so secrets decrypt on host ([#1558](https://github.com/Glad-Labs/poindexter/issues/1558)) ([17da31f](https://github.com/Glad-Labs/poindexter/commit/17da31f8226f730646d39429f4612be06b1d87ab))
+* **cli:** load POINDEXTER_SECRET_KEY in the root callback for all subcommands ([#1559](https://github.com/Glad-Labs/poindexter/issues/1559)) ([32d7fe1](https://github.com/Glad-Labs/poindexter/commit/32d7fe115f8efb4d72f9013a2cf754042a4f4030))
+* **content:** reject rubric-leak titles structurally + repair 2 published rows ([#1567](https://github.com/Glad-Labs/poindexter/issues/1567)) ([5324ba5](https://github.com/Glad-Labs/poindexter/commit/5324ba50cf23a40d61d7fd34066516267718a748))
+* correct phantom `poindexter set` command to `poindexter settings set` ([#1562](https://github.com/Glad-Labs/poindexter/issues/1562)) ([7f3bd40](https://github.com/Glad-Labs/poindexter/commit/7f3bd40f4e801fa73f9d5f7313fdf96f4785b34f))
+* **scripts:** ASCII-ify em-dashes in PowerShell scripts (PS 5.1 parse failure) ([#1563](https://github.com/Glad-Labs/poindexter/issues/1563)) ([a738f28](https://github.com/Glad-Labs/poindexter/commit/a738f28cb8476dae8188f5fd30b439fa04d01d41))
+* **topics:** dedupe niche-batch sweep candidates (intra-batch + vs-existing) ([#1561](https://github.com/Glad-Labs/poindexter/issues/1561)) ([6102efe](https://github.com/Glad-Labs/poindexter/commit/6102efe8cb181a70e91f55a5f9991bd72eba4c88))
+* **types:** _check_task_ownership accepts Mapping (arg-type burndown) ([#1555](https://github.com/Glad-Labs/poindexter/issues/1555)) ([2d248de](https://github.com/Glad-Labs/poindexter/commit/2d248ded1d625a2d656e9f8241f5a87b104ee5ca))
+* **types:** _emit_progress site_config Optional (arg-type burndown 3/N) ([#1557](https://github.com/Glad-Labs/poindexter/issues/1557)) ([bed74e6](https://github.com/Glad-Labs/poindexter/commit/bed74e6646fe380ac86fb4ae592b788f9ba91456))
+* **types:** clear all [index] mypy errors — health_data annotation + None guards ([#1552](https://github.com/Glad-Labs/poindexter/issues/1552)) ([0b714b5](https://github.com/Glad-Labs/poindexter/commit/0b714b512c315bcaded09b5cfd4528e76c146db1))
+* **types:** restore the mypy type-check (npm run type:check was fully broken) ([#1551](https://github.com/Glad-Labs/poindexter/issues/1551)) ([31a0da7](https://github.com/Glad-Labs/poindexter/commit/31a0da79493bdb3965d58fa326f412d3457dbd9d))
 
-## [0.77.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.76.0...v0.77.0) (2026-06-12)
+## [0.78.0](https://github.com/Glad-Labs/poindexter/compare/v0.77.0...v0.78.0) (2026-06-13)
 
 
 ### Features
 
-* **content:** deterministic citation reconciliation + advisory unlinked-attribution rail ([#765](https://github.com/Glad-Labs/glad-labs-stack/issues/765)) ([#1448](https://github.com/Glad-Labs/glad-labs-stack/issues/1448)) ([48faf04](https://github.com/Glad-Labs/glad-labs-stack/commit/48faf04abe50074100becacae54fa655ae975607))
-* **media:** Stage-3 podcast pipeline — fix the Spotify freeze ([#689](https://github.com/Glad-Labs/glad-labs-stack/issues/689)) ([#1458](https://github.com/Glad-Labs/glad-labs-stack/issues/1458)) ([78f0e46](https://github.com/Glad-Labs/glad-labs-stack/commit/78f0e46a5982d4e5903cf05dfff752b858ca6d41))
-* **ops:** validate *_model settings against installed Ollama models at boot ([#1430](https://github.com/Glad-Labs/glad-labs-stack/issues/1430)) ([82e88d7](https://github.com/Glad-Labs/glad-labs-stack/commit/82e88d75a4c1a8aab95db8aa61bc59acf973f0c1))
-* **ops:** validate *_model settings against installed Ollama models at boot ([#1441](https://github.com/Glad-Labs/glad-labs-stack/issues/1441)) ([ef2b394](https://github.com/Glad-Labs/glad-labs-stack/commit/ef2b3942d925e303c89edbe4b39adb8b7ac9b43f))
-* **security:** settings-driven rate limits on 5 expensive endpoints ([#748](https://github.com/Glad-Labs/glad-labs-stack/issues/748)) ([#1439](https://github.com/Glad-Labs/glad-labs-stack/issues/1439)) ([ecbc2ba](https://github.com/Glad-Labs/glad-labs-stack/commit/ecbc2bae7cf9bf997e1aa88a59cf1beea0284d7b))
-* **seo:** SEO Harvest Loop — Phase 1 (read-only opportunity analyzer) ([#1444](https://github.com/Glad-Labs/glad-labs-stack/issues/1444)) ([604816e](https://github.com/Glad-Labs/glad-labs-stack/commit/604816efbfec5d1e9cb95db52df53c22d1c9a62d))
-* **seo:** SEO Harvest Loop Phase 2A — seo_refresh graph (hand-triggerable, default-off) ([#1451](https://github.com/Glad-Labs/glad-labs-stack/issues/1451)) ([2e1eeb8](https://github.com/Glad-Labs/glad-labs-stack/commit/2e1eeb84b01cfd44791efc53e0e23ab85ec04d5d))
-* **site:** branded favicon — Glad Labs controller logo ([#1454](https://github.com/Glad-Labs/glad-labs-stack/issues/1454)) ([613d513](https://github.com/Glad-Labs/glad-labs-stack/commit/613d513c86b6590e4cff94c5cb5f4a87de4b5561))
+* **api:** mirror 5 operator surfaces over HTTP — gates, posts-approval, scheduling, topic-batch, media-approval ([#1343](https://github.com/Glad-Labs/poindexter/issues/1343)) ([#1491](https://github.com/Glad-Labs/poindexter/issues/1491)) ([d2ac3ab](https://github.com/Glad-Labs/poindexter/commit/d2ac3abac52a3c5f2d23c08ca976cdd87e9e18b1))
+* **console:** operator-console foundation — load + OAuth2 auth ([#1523](https://github.com/Glad-Labs/poindexter/issues/1523)) ([7934547](https://github.com/Glad-Labs/poindexter/commit/7934547d807b2d91204041478a4caf270dfee8af))
+* **console:** Phase 1 — real content-approvals surface (approve ≠ publish) ([#1529](https://github.com/Glad-Labs/poindexter/issues/1529)) ([4fa20eb](https://github.com/Glad-Labs/poindexter/commit/4fa20ebf14b6ccab1dab3a6bd4ef8959e82e0b95))
+* **console:** Phase 2 — settings surface wired to the real API shape ([#1531](https://github.com/Glad-Labs/poindexter/issues/1531)) ([76abccb](https://github.com/Glad-Labs/poindexter/commit/76abccbef3ba6a33a0804f13d8233014a87eaaef))
+* **console:** Phase 3 — pipeline panel models the real graph_def ([#1532](https://github.com/Glad-Labs/poindexter/issues/1532)) ([895a921](https://github.com/Glad-Labs/poindexter/commit/895a921705757900a110b912131131e9fe498a78))
+* **console:** Phase 3.3 — task Retry/Cancel actions go live ([#1533](https://github.com/Glad-Labs/poindexter/issues/1533)) ([c20e99c](https://github.com/Glad-Labs/poindexter/commit/c20e99c6da101db20b4ea98bcbff747a26c49979))
+* **console:** Phase 3.4 — QA panel re-labeled to the real rails ([#1534](https://github.com/Glad-Labs/poindexter/issues/1534)) ([95346fa](https://github.com/Glad-Labs/poindexter/commit/95346fad04dc389e75bc2a170ff86b3e16c9706a))
+* **content:** service layer as API contract — PostsService + MCP convergence ([#1341](https://github.com/Glad-Labs/poindexter/issues/1341), [#1342](https://github.com/Glad-Labs/poindexter/issues/1342)) ([#1482](https://github.com/Glad-Labs/poindexter/issues/1482)) ([2196572](https://github.com/Glad-Labs/poindexter/commit/2196572f860c8b5109f030ec0819d623bcd47e0f))
+* **observability:** count metrics_refresh per-phase failures (audit H2b) ([#1504](https://github.com/Glad-Labs/poindexter/issues/1504)) ([24d88de](https://github.com/Glad-Labs/poindexter/commit/24d88de37b7b5ab8df8ef4b9e57dd6af7a514fa9))
+* **observability:** detect Cloudflare page-views beacon outages ([#1502](https://github.com/Glad-Labs/poindexter/issues/1502)) ([981a1bc](https://github.com/Glad-Labs/poindexter/commit/981a1bc208ae75b144e5348da03bd6ae8fc1b399))
+* **scripts:** MCP orphan-sweep host-maintenance task ([#1525](https://github.com/Glad-Labs/poindexter/issues/1525)) ([24983ed](https://github.com/Glad-Labs/poindexter/commit/24983ed79462b9428005e91e6aeeae81cae7930f))
+* **seo:** route seo_refresh queued/outcome findings to Discord + awaiting-signoff Grafana panel ([#1469](https://github.com/Glad-Labs/poindexter/issues/1469)) ([77f22c4](https://github.com/Glad-Labs/poindexter/commit/77f22c4e4bc69181e40326e1cfda4a647ec917b0))
+* **seo:** SEO Harvest Loop Milestone B — auto-enqueue + outcome measurement ([#763](https://github.com/Glad-Labs/poindexter/issues/763)) ([#1466](https://github.com/Glad-Labs/poindexter/issues/1466)) ([7058123](https://github.com/Glad-Labs/poindexter/commit/7058123783cd474d5085c2cc1fa58e3e045410ca))
+* **topics:** self-heal reaper for stuck open topic_batches ([#1527](https://github.com/Glad-Labs/poindexter/issues/1527)) ([35a24ad](https://github.com/Glad-Labs/poindexter/commit/35a24ad2cf114f34cebb513a2571f8a652cc1c6e))
 
 
 ### Bug Fixes
 
-* **ai_generation:** update fallback prompt description to include stylistic or abstract options ([76ff656](https://github.com/Glad-Labs/glad-labs-stack/commit/76ff65658900b92f2f67e3a6ed58d0eda210284d))
-* **alerts+mcp:** WindowsExporterDown + absent() guards; set_setting fail-closed + REST delegation ([#1455](https://github.com/Glad-Labs/glad-labs-stack/issues/1455)) ([e60f083](https://github.com/Glad-Labs/glad-labs-stack/commit/e60f0830e0bcdf605795ae0cc8416cc2fb4435e7))
-* **alerts:** remove obsolete alert rules and clean up provisioning configuration ([b75a9e1](https://github.com/Glad-Labs/glad-labs-stack/commit/b75a9e1b3e468c1c3c125069e5f2f60524f2fa06))
-* **api:** /api/health returns 503 when unhealthy/degraded; /api/metrics adds auth + no-DB 503 ([#1412](https://github.com/Glad-Labs/glad-labs-stack/issues/1412)) ([a5638aa](https://github.com/Glad-Labs/glad-labs-stack/commit/a5638aa405a4d82e79cdee7b5b39724298da1fe0))
-* **api:** publish/approve state-confirming retries return 200 instead of 409 ([#1418](https://github.com/Glad-Labs/glad-labs-stack/issues/1418)) ([efcaa10](https://github.com/Glad-Labs/glad-labs-stack/commit/efcaa109f11dcdd7cd8da9af86a6b6e2d9e08b54))
-* **brain:** resolve relative bind-mounts in compose drift auto-recover via --project-directory ([#1443](https://github.com/Glad-Labs/glad-labs-stack/issues/1443)) ([4378859](https://github.com/Glad-Labs/glad-labs-stack/commit/4378859da043bca0a5e63a2ef0abb132b30852a1))
-* **content:** add junk-guard to title generator — reject instructional meta-text ([#1280](https://github.com/Glad-Labs/glad-labs-stack/issues/1280)) ([#1423](https://github.com/Glad-Labs/glad-labs-stack/issues/1423)) ([08200fa](https://github.com/Glad-Labs/glad-labs-stack/commit/08200faa6c65e1c61191b6e1972d47410c7dfd22))
-* **content:** hard-gate placeholder citations + tighten writer prompt ([#766](https://github.com/Glad-Labs/glad-labs-stack/issues/766)) ([#1453](https://github.com/Glad-Labs/glad-labs-stack/issues/1453)) ([3300d96](https://github.com/Glad-Labs/glad-labs-stack/commit/3300d96c92850175f48e3ebaaed526283038906b))
-* **content:** make pipeline_writer_model primary in all three writer resolvers ([#1281](https://github.com/Glad-Labs/glad-labs-stack/issues/1281)) ([#1426](https://github.com/Glad-Labs/glad-labs-stack/issues/1426)) ([9dde182](https://github.com/Glad-Labs/glad-labs-stack/commit/9dde182bdd4d5b8c7995884bbe59516e002f2665))
-* **css:** remove pre-E3 animations and align global p/a rules to tokens ([#1415](https://github.com/Glad-Labs/glad-labs-stack/issues/1415)) ([2073fbc](https://github.com/Glad-Labs/glad-labs-stack/commit/2073fbcb472c76f1043c9c8f3b8588cc2ea0d38d))
-* **css:** replace hardcoded cyan/slate values with brand tokens; add lint guard ([#1421](https://github.com/Glad-Labs/glad-labs-stack/issues/1421)) ([6015770](https://github.com/Glad-Labs/glad-labs-stack/commit/6015770144a2a0bf6c322916025d84f82f11ebbe))
-* **deps:** bump web/starter Next.js floor ^15.5.14 → ^15.5.18 (poindexter[#738](https://github.com/Glad-Labs/glad-labs-stack/issues/738)) ([#1438](https://github.com/Glad-Labs/glad-labs-stack/issues/1438)) ([b472ab3](https://github.com/Glad-Labs/glad-labs-stack/commit/b472ab3cad25c7c915a631655c794b6567b66ddc))
-* **deps:** correct glitchtip image tag v6.1.6 → 6.1.6 (no v-prefix) ([#1440](https://github.com/Glad-Labs/glad-labs-stack/issues/1440)) ([f0bfdfe](https://github.com/Glad-Labs/glad-labs-stack/commit/f0bfdfe1719b5fe2072bcf68d278475c4cbb8f6a))
-* **deps:** declare Mastodon.py in backend pyproject — fixes phantom dep in worker image ([#1413](https://github.com/Glad-Labs/glad-labs-stack/issues/1413)) ([43acd6e](https://github.com/Glad-Labs/glad-labs-stack/commit/43acd6ee5e977b9fa3985303c10be173bf3397cd))
-* **grafana:** add deleteRules for zombie brain-disk-space-low + fold api-provenance pdx-* rules ([#1429](https://github.com/Glad-Labs/glad-labs-stack/issues/1429)) ([3902c08](https://github.com/Glad-Labs/glad-labs-stack/commit/3902c083c55080dd0953031cd491f182e0d2a028))
-* **infra:** add host-gateway extra_hosts for Linux Docker + hardware spec in docs (poindexter[#759](https://github.com/Glad-Labs/glad-labs-stack/issues/759)) ([#1425](https://github.com/Glad-Labs/glad-labs-stack/issues/1425)) ([a67050f](https://github.com/Glad-Labs/glad-labs-stack/commit/a67050f9957d0b238ebd940dcd0bdf7faa554f64))
-* **llm:** remove hardcoded model-name fallbacks, route through cost-tier resolver ([#1407](https://github.com/Glad-Labs/glad-labs-stack/issues/1407)) ([16f6e08](https://github.com/Glad-Labs/glad-labs-stack/commit/16f6e081f058d2ff2f8b49b9001f1c9593fd1651))
-* **mcp:** pass site_config + UUID(batch_id) to TopicBatchService topic tools ([#1457](https://github.com/Glad-Labs/glad-labs-stack/issues/1457)) ([3cd6051](https://github.com/Glad-Labs/glad-labs-stack/commit/3cd6051b0286f5622fc5d43d6c94cefb91c4b814))
-* **media:** bake ffmpeg into worker image for Stage-2 media rendering ([#1449](https://github.com/Glad-Labs/glad-labs-stack/issues/1449)) ([63faf2c](https://github.com/Glad-Labs/glad-labs-stack/commit/63faf2c05ee9409ca597446d5eb5f29d614eac5c))
-* **media:** reconcile director shot lists so Stage-2 video actually renders ([#1445](https://github.com/Glad-Labs/glad-labs-stack/issues/1445)) ([f10f0a5](https://github.com/Glad-Labs/glad-labs-stack/commit/f10f0a58e62fabac99ef49286fce6e7e59eb1f5d))
-* **media:** tolerant SHORT: parse so Stage-2 short_summary_script populates ([#689](https://github.com/Glad-Labs/glad-labs-stack/issues/689)) ([#1450](https://github.com/Glad-Labs/glad-labs-stack/issues/1450)) ([d545cdc](https://github.com/Glad-Labs/glad-labs-stack/commit/d545cdca3a44bb93c08a9a7fd705f5ae79f87002))
-* **pipeline:** finalize atoms advance stage/percentage to terminal values ([#1282](https://github.com/Glad-Labs/glad-labs-stack/issues/1282)) ([#1422](https://github.com/Glad-Labs/glad-labs-stack/issues/1422)) ([747318d](https://github.com/Glad-Labs/glad-labs-stack/commit/747318d0238a7242523bee4c38a58d6c8b70fc64))
-* **qa:** add reasoning_token_leak programmatic validator rule ([#1283](https://github.com/Glad-Labs/glad-labs-stack/issues/1283)) ([#1427](https://github.com/Glad-Labs/glad-labs-stack/issues/1427)) ([82d756a](https://github.com/Glad-Labs/glad-labs-stack/commit/82d756ae227c7162001c84402f7cbb3656a3c89a))
-* **qa:** alias citation_verifier/topic_delivery/self_consistency so qa_gates counters bump ([#1446](https://github.com/Glad-Labs/glad-labs-stack/issues/1446)) ([50e62bf](https://github.com/Glad-Labs/glad-labs-stack/commit/50e62bffc2e55e91a496dd7d54d491e6939a738d))
-* **qa:** mark self_consistency review advisory so a failing run can't hard-veto ([#1447](https://github.com/Glad-Labs/glad-labs-stack/issues/1447)) ([2fc5609](https://github.com/Glad-Labs/glad-labs-stack/commit/2fc5609d3881fbaa55aa6b347c83c1975f9eff14))
-* **seo:** mark seo_refresh task terminal in content.republish_post ([#763](https://github.com/Glad-Labs/glad-labs-stack/issues/763)) ([#1461](https://github.com/Glad-Labs/glad-labs-stack/issues/1461)) ([0444fe4](https://github.com/Glad-Labs/glad-labs-stack/commit/0444fe4ef99091a116fe284a42becbfd2cbdb26b))
-* **seo:** sanitize optimizer titles + surface proposed meta at the gate ([#1456](https://github.com/Glad-Labs/glad-labs-stack/issues/1456)) ([b7d33a1](https://github.com/Glad-Labs/glad-labs-stack/commit/b7d33a1f2fd8ec28c27364c1c9b7eec8f8b84a9f))
-* **settings:** allow empty-string value writes via PUT /api/settings/{id} ([#1406](https://github.com/Glad-Labs/glad-labs-stack/issues/1406)) ([16767f2](https://github.com/Glad-Labs/glad-labs-stack/commit/16767f2c0461fa0df2b74c159414fc9ca26cc581))
-* **tasks:** surface swallowed exceptions in background task handlers ([#1408](https://github.com/Glad-Labs/glad-labs-stack/issues/1408)) ([a4975b1](https://github.com/Glad-Labs/glad-labs-stack/commit/a4975b1d4a5a9ceaf921fd3c16148555757a509d))
-* three alerting/reliability hardening fixes ([#705](https://github.com/Glad-Labs/glad-labs-stack/issues/705), [#750](https://github.com/Glad-Labs/glad-labs-stack/issues/750), [#697](https://github.com/Glad-Labs/glad-labs-stack/issues/697)) ([#1459](https://github.com/Glad-Labs/glad-labs-stack/issues/1459)) ([c2f45a0](https://github.com/Glad-Labs/glad-labs-stack/commit/c2f45a091c5cfbaece7f911f2e0dd664a7bc7fb2))
+* **api:** accept 8-char id prefixes on tasks/posts mutate routes ([#1517](https://github.com/Glad-Labs/poindexter/issues/1517)) ([26b1dcc](https://github.com/Glad-Labs/poindexter/commit/26b1dcc51d2d81fc29190048ec031f464e8d33e2))
+* **approval:** pause_at_gate sets status=awaiting_gate; sweep skips it ([#1480](https://github.com/Glad-Labs/poindexter/issues/1480)) ([e10be73](https://github.com/Glad-Labs/poindexter/commit/e10be7324ab43d76839d88171801c777bb4be787))
+* **brain:** exclude gate-paused tasks from the stuck-in_progress auto-cancel ([#1513](https://github.com/Glad-Labs/poindexter/issues/1513)) ([756205f](https://github.com/Glad-Labs/poindexter/commit/756205f49f3c3959919b3b88e12ed2bff5757608))
+* **cli:** accept short post_id prefixes in media approve/reject ([#1511](https://github.com/Glad-Labs/poindexter/issues/1511)) ([777bb07](https://github.com/Glad-Labs/poindexter/commit/777bb07b58f94be418d44ac44005dc224807357a))
+* **cli:** accept short UUID prefixes in pipeline resume/status ([#1490](https://github.com/Glad-Labs/poindexter/issues/1490)) ([45ab726](https://github.com/Glad-Labs/poindexter/commit/45ab7260f08276f814dd7ce625473a677acec98c))
+* **cli:** force SelectorEventLoop on Windows so pipeline resume keeps its checkpoint ([#1510](https://github.com/Glad-Labs/poindexter/issues/1510)) ([89ae14c](https://github.com/Glad-Labs/poindexter/commit/89ae14c5bec20e2a7f3a14265efaf0a51ac19138))
+* **cli:** unify UUID-prefix resolution across poindexter CLI ([#1514](https://github.com/Glad-Labs/poindexter/issues/1514)) ([665d493](https://github.com/Glad-Labs/poindexter/commit/665d493e7a39bca94cbebf61795c4c7a2efb2858))
+* **findings:** emit topic_gap at warn so the discord policy actually routes ([#1471](https://github.com/Glad-Labs/poindexter/issues/1471)) ([bb63e1d](https://github.com/Glad-Labs/poindexter/commit/bb63e1d67bfff4ab1e610f4c9a1d3d0cce1c3b5c))
+* **observability:** log webhook emit_finding failure instead of swallowing it ([#1518](https://github.com/Glad-Labs/poindexter/issues/1518)) ([#1519](https://github.com/Glad-Labs/poindexter/issues/1519)) ([b5fdcac](https://github.com/Glad-Labs/poindexter/commit/b5fdcac6973771d532b3c3b73c78d8179c1d5bdb))
+* **observability:** surface two swallowed failure paths (audit M1/M3) ([#1503](https://github.com/Glad-Labs/poindexter/issues/1503)) ([96a0b6b](https://github.com/Glad-Labs/poindexter/commit/96a0b6bb3db7665ec73d0eaa9c1c206c7deff05c))
+* **observability:** surface webhook dead-letters + auto-publish gate failures ([#1495](https://github.com/Glad-Labs/poindexter/issues/1495)) ([bf2c183](https://github.com/Glad-Labs/poindexter/commit/bf2c1833489ba63c68c9be5963f9682dd6f27105))
+* **pipeline:** make approve+resume atomic so a failed resume can't auto-publish ([#1516](https://github.com/Glad-Labs/poindexter/issues/1516)) ([b45b519](https://github.com/Glad-Labs/poindexter/commit/b45b519f7bfbc0fae2e8d6bd17e3993bfecd705f)), closes [#1515](https://github.com/Glad-Labs/poindexter/issues/1515)
+* **plugins:** repoint poindexter.stages entry-points to modules/content/stages ([#1512](https://github.com/Glad-Labs/poindexter/issues/1512)) ([dc57159](https://github.com/Glad-Labs/poindexter/commit/dc5715940ab89e29ecb26a9100b75dd919391b2e))
+* **settings:** retire vestigial findings.topic_gap.min_severity='info' ([#1473](https://github.com/Glad-Labs/poindexter/issues/1473)) ([45e0c6d](https://github.com/Glad-Labs/poindexter/commit/45e0c6d26ac197e742dbe5b1af4bd8ced2ff22f2))
+* **test:** make compose-drift probe tests hermetic re: docker pre-flight ([#1496](https://github.com/Glad-Labs/poindexter/issues/1496)) ([#1498](https://github.com/Glad-Labs/poindexter/issues/1498)) ([dce012e](https://github.com/Glad-Labs/poindexter/commit/dce012e3f1c938b70fcef638034c488827067c6d))
+* **topics:** auto-resolve internal-only batches + suppress empty-batch wedge ([#1521](https://github.com/Glad-Labs/poindexter/issues/1521)) ([be6a380](https://github.com/Glad-Labs/poindexter/commit/be6a380690d58a24058ead7ac5808d8701209853))
+* **topics:** guard resolve_batch against a missing niche ([#1524](https://github.com/Glad-Labs/poindexter/issues/1524)) ([35823d4](https://github.com/Glad-Labs/poindexter/commit/35823d41aba16017ddfdd3ee351318f8b4c82507))
+* **voice:** voice_join reads room/identity/wss_url DB-first from app_settings ([#717](https://github.com/Glad-Labs/poindexter/issues/717)) ([#1465](https://github.com/Glad-Labs/poindexter/issues/1465)) ([91e03db](https://github.com/Glad-Labs/poindexter/commit/91e03dbf6a96a610cb39034a6179e35920e9a3a1))
+
+## [0.77.0](https://github.com/Glad-Labs/poindexter/compare/v0.76.0...v0.77.0) (2026-06-12)
+
+
+### Features
+
+* **content:** deterministic citation reconciliation + advisory unlinked-attribution rail ([#765](https://github.com/Glad-Labs/poindexter/issues/765)) ([#1448](https://github.com/Glad-Labs/poindexter/issues/1448)) ([48faf04](https://github.com/Glad-Labs/poindexter/commit/48faf04abe50074100becacae54fa655ae975607))
+* **media:** Stage-3 podcast pipeline — fix the Spotify freeze ([#689](https://github.com/Glad-Labs/poindexter/issues/689)) ([#1458](https://github.com/Glad-Labs/poindexter/issues/1458)) ([78f0e46](https://github.com/Glad-Labs/poindexter/commit/78f0e46a5982d4e5903cf05dfff752b858ca6d41))
+* **ops:** validate *_model settings against installed Ollama models at boot ([#1430](https://github.com/Glad-Labs/poindexter/issues/1430)) ([82e88d7](https://github.com/Glad-Labs/poindexter/commit/82e88d75a4c1a8aab95db8aa61bc59acf973f0c1))
+* **ops:** validate *_model settings against installed Ollama models at boot ([#1441](https://github.com/Glad-Labs/poindexter/issues/1441)) ([ef2b394](https://github.com/Glad-Labs/poindexter/commit/ef2b3942d925e303c89edbe4b39adb8b7ac9b43f))
+* **security:** settings-driven rate limits on 5 expensive endpoints ([#748](https://github.com/Glad-Labs/poindexter/issues/748)) ([#1439](https://github.com/Glad-Labs/poindexter/issues/1439)) ([ecbc2ba](https://github.com/Glad-Labs/poindexter/commit/ecbc2bae7cf9bf997e1aa88a59cf1beea0284d7b))
+* **seo:** SEO Harvest Loop — Phase 1 (read-only opportunity analyzer) ([#1444](https://github.com/Glad-Labs/poindexter/issues/1444)) ([604816e](https://github.com/Glad-Labs/poindexter/commit/604816efbfec5d1e9cb95db52df53c22d1c9a62d))
+* **seo:** SEO Harvest Loop Phase 2A — seo_refresh graph (hand-triggerable, default-off) ([#1451](https://github.com/Glad-Labs/poindexter/issues/1451)) ([2e1eeb8](https://github.com/Glad-Labs/poindexter/commit/2e1eeb84b01cfd44791efc53e0e23ab85ec04d5d))
+* **site:** branded favicon — Glad Labs controller logo ([#1454](https://github.com/Glad-Labs/poindexter/issues/1454)) ([613d513](https://github.com/Glad-Labs/poindexter/commit/613d513c86b6590e4cff94c5cb5f4a87de4b5561))
+
+
+### Bug Fixes
+
+* **ai_generation:** update fallback prompt description to include stylistic or abstract options ([76ff656](https://github.com/Glad-Labs/poindexter/commit/76ff65658900b92f2f67e3a6ed58d0eda210284d))
+* **alerts+mcp:** WindowsExporterDown + absent() guards; set_setting fail-closed + REST delegation ([#1455](https://github.com/Glad-Labs/poindexter/issues/1455)) ([e60f083](https://github.com/Glad-Labs/poindexter/commit/e60f0830e0bcdf605795ae0cc8416cc2fb4435e7))
+* **alerts:** remove obsolete alert rules and clean up provisioning configuration ([b75a9e1](https://github.com/Glad-Labs/poindexter/commit/b75a9e1b3e468c1c3c125069e5f2f60524f2fa06))
+* **api:** /api/health returns 503 when unhealthy/degraded; /api/metrics adds auth + no-DB 503 ([#1412](https://github.com/Glad-Labs/poindexter/issues/1412)) ([a5638aa](https://github.com/Glad-Labs/poindexter/commit/a5638aa405a4d82e79cdee7b5b39724298da1fe0))
+* **api:** publish/approve state-confirming retries return 200 instead of 409 ([#1418](https://github.com/Glad-Labs/poindexter/issues/1418)) ([efcaa10](https://github.com/Glad-Labs/poindexter/commit/efcaa109f11dcdd7cd8da9af86a6b6e2d9e08b54))
+* **brain:** resolve relative bind-mounts in compose drift auto-recover via --project-directory ([#1443](https://github.com/Glad-Labs/poindexter/issues/1443)) ([4378859](https://github.com/Glad-Labs/poindexter/commit/4378859da043bca0a5e63a2ef0abb132b30852a1))
+* **content:** add junk-guard to title generator — reject instructional meta-text ([#1280](https://github.com/Glad-Labs/poindexter/issues/1280)) ([#1423](https://github.com/Glad-Labs/poindexter/issues/1423)) ([08200fa](https://github.com/Glad-Labs/poindexter/commit/08200faa6c65e1c61191b6e1972d47410c7dfd22))
+* **content:** hard-gate placeholder citations + tighten writer prompt ([#766](https://github.com/Glad-Labs/poindexter/issues/766)) ([#1453](https://github.com/Glad-Labs/poindexter/issues/1453)) ([3300d96](https://github.com/Glad-Labs/poindexter/commit/3300d96c92850175f48e3ebaaed526283038906b))
+* **content:** make pipeline_writer_model primary in all three writer resolvers ([#1281](https://github.com/Glad-Labs/poindexter/issues/1281)) ([#1426](https://github.com/Glad-Labs/poindexter/issues/1426)) ([9dde182](https://github.com/Glad-Labs/poindexter/commit/9dde182bdd4d5b8c7995884bbe59516e002f2665))
+* **css:** remove pre-E3 animations and align global p/a rules to tokens ([#1415](https://github.com/Glad-Labs/poindexter/issues/1415)) ([2073fbc](https://github.com/Glad-Labs/poindexter/commit/2073fbcb472c76f1043c9c8f3b8588cc2ea0d38d))
+* **css:** replace hardcoded cyan/slate values with brand tokens; add lint guard ([#1421](https://github.com/Glad-Labs/poindexter/issues/1421)) ([6015770](https://github.com/Glad-Labs/poindexter/commit/6015770144a2a0bf6c322916025d84f82f11ebbe))
+* **deps:** bump web/starter Next.js floor ^15.5.14 → ^15.5.18 (poindexter[#738](https://github.com/Glad-Labs/poindexter/issues/738)) ([#1438](https://github.com/Glad-Labs/poindexter/issues/1438)) ([b472ab3](https://github.com/Glad-Labs/poindexter/commit/b472ab3cad25c7c915a631655c794b6567b66ddc))
+* **deps:** correct glitchtip image tag v6.1.6 → 6.1.6 (no v-prefix) ([#1440](https://github.com/Glad-Labs/poindexter/issues/1440)) ([f0bfdfe](https://github.com/Glad-Labs/poindexter/commit/f0bfdfe1719b5fe2072bcf68d278475c4cbb8f6a))
+* **deps:** declare Mastodon.py in backend pyproject — fixes phantom dep in worker image ([#1413](https://github.com/Glad-Labs/poindexter/issues/1413)) ([43acd6e](https://github.com/Glad-Labs/poindexter/commit/43acd6ee5e977b9fa3985303c10be173bf3397cd))
+* **grafana:** add deleteRules for zombie brain-disk-space-low + fold api-provenance pdx-* rules ([#1429](https://github.com/Glad-Labs/poindexter/issues/1429)) ([3902c08](https://github.com/Glad-Labs/poindexter/commit/3902c083c55080dd0953031cd491f182e0d2a028))
+* **infra:** add host-gateway extra_hosts for Linux Docker + hardware spec in docs (poindexter[#759](https://github.com/Glad-Labs/poindexter/issues/759)) ([#1425](https://github.com/Glad-Labs/poindexter/issues/1425)) ([a67050f](https://github.com/Glad-Labs/poindexter/commit/a67050f9957d0b238ebd940dcd0bdf7faa554f64))
+* **llm:** remove hardcoded model-name fallbacks, route through cost-tier resolver ([#1407](https://github.com/Glad-Labs/poindexter/issues/1407)) ([16f6e08](https://github.com/Glad-Labs/poindexter/commit/16f6e081f058d2ff2f8b49b9001f1c9593fd1651))
+* **mcp:** pass site_config + UUID(batch_id) to TopicBatchService topic tools ([#1457](https://github.com/Glad-Labs/poindexter/issues/1457)) ([3cd6051](https://github.com/Glad-Labs/poindexter/commit/3cd6051b0286f5622fc5d43d6c94cefb91c4b814))
+* **media:** bake ffmpeg into worker image for Stage-2 media rendering ([#1449](https://github.com/Glad-Labs/poindexter/issues/1449)) ([63faf2c](https://github.com/Glad-Labs/poindexter/commit/63faf2c05ee9409ca597446d5eb5f29d614eac5c))
+* **media:** reconcile director shot lists so Stage-2 video actually renders ([#1445](https://github.com/Glad-Labs/poindexter/issues/1445)) ([f10f0a5](https://github.com/Glad-Labs/poindexter/commit/f10f0a58e62fabac99ef49286fce6e7e59eb1f5d))
+* **media:** tolerant SHORT: parse so Stage-2 short_summary_script populates ([#689](https://github.com/Glad-Labs/poindexter/issues/689)) ([#1450](https://github.com/Glad-Labs/poindexter/issues/1450)) ([d545cdc](https://github.com/Glad-Labs/poindexter/commit/d545cdca3a44bb93c08a9a7fd705f5ae79f87002))
+* **pipeline:** finalize atoms advance stage/percentage to terminal values ([#1282](https://github.com/Glad-Labs/poindexter/issues/1282)) ([#1422](https://github.com/Glad-Labs/poindexter/issues/1422)) ([747318d](https://github.com/Glad-Labs/poindexter/commit/747318d0238a7242523bee4c38a58d6c8b70fc64))
+* **qa:** add reasoning_token_leak programmatic validator rule ([#1283](https://github.com/Glad-Labs/poindexter/issues/1283)) ([#1427](https://github.com/Glad-Labs/poindexter/issues/1427)) ([82d756a](https://github.com/Glad-Labs/poindexter/commit/82d756ae227c7162001c84402f7cbb3656a3c89a))
+* **qa:** alias citation_verifier/topic_delivery/self_consistency so qa_gates counters bump ([#1446](https://github.com/Glad-Labs/poindexter/issues/1446)) ([50e62bf](https://github.com/Glad-Labs/poindexter/commit/50e62bffc2e55e91a496dd7d54d491e6939a738d))
+* **qa:** mark self_consistency review advisory so a failing run can't hard-veto ([#1447](https://github.com/Glad-Labs/poindexter/issues/1447)) ([2fc5609](https://github.com/Glad-Labs/poindexter/commit/2fc5609d3881fbaa55aa6b347c83c1975f9eff14))
+* **seo:** mark seo_refresh task terminal in content.republish_post ([#763](https://github.com/Glad-Labs/poindexter/issues/763)) ([#1461](https://github.com/Glad-Labs/poindexter/issues/1461)) ([0444fe4](https://github.com/Glad-Labs/poindexter/commit/0444fe4ef99091a116fe284a42becbfd2cbdb26b))
+* **seo:** sanitize optimizer titles + surface proposed meta at the gate ([#1456](https://github.com/Glad-Labs/poindexter/issues/1456)) ([b7d33a1](https://github.com/Glad-Labs/poindexter/commit/b7d33a1f2fd8ec28c27364c1c9b7eec8f8b84a9f))
+* **settings:** allow empty-string value writes via PUT /api/settings/{id} ([#1406](https://github.com/Glad-Labs/poindexter/issues/1406)) ([16767f2](https://github.com/Glad-Labs/poindexter/commit/16767f2c0461fa0df2b74c159414fc9ca26cc581))
+* **tasks:** surface swallowed exceptions in background task handlers ([#1408](https://github.com/Glad-Labs/poindexter/issues/1408)) ([a4975b1](https://github.com/Glad-Labs/poindexter/commit/a4975b1d4a5a9ceaf921fd3c16148555757a509d))
+* three alerting/reliability hardening fixes ([#705](https://github.com/Glad-Labs/poindexter/issues/705), [#750](https://github.com/Glad-Labs/poindexter/issues/750), [#697](https://github.com/Glad-Labs/poindexter/issues/697)) ([#1459](https://github.com/Glad-Labs/poindexter/issues/1459)) ([c2f45a0](https://github.com/Glad-Labs/poindexter/commit/c2f45a091c5cfbaece7f911f2e0dd664a7bc7fb2))
 
 
 ### Performance Improvements
 
-* **inline-images:** batch GPU locks — one Ollama + one SDXL lock for all placeholders ([#733](https://github.com/Glad-Labs/glad-labs-stack/issues/733)) ([#1435](https://github.com/Glad-Labs/glad-labs-stack/issues/1435)) ([098c035](https://github.com/Glad-Labs/glad-labs-stack/commit/098c03505a4a657d4372bce48a40135ec50c092d))
-* **seo:** collapse 3 serial SEO atoms into one structured call — saves ~2 min/post ([#1417](https://github.com/Glad-Labs/glad-labs-stack/issues/1417)) ([a75420d](https://github.com/Glad-Labs/glad-labs-stack/commit/a75420d620584d72176b10be7a84ee3d04d2a99c))
+* **inline-images:** batch GPU locks — one Ollama + one SDXL lock for all placeholders ([#733](https://github.com/Glad-Labs/poindexter/issues/733)) ([#1435](https://github.com/Glad-Labs/poindexter/issues/1435)) ([098c035](https://github.com/Glad-Labs/poindexter/commit/098c03505a4a657d4372bce48a40135ec50c092d))
+* **seo:** collapse 3 serial SEO atoms into one structured call — saves ~2 min/post ([#1417](https://github.com/Glad-Labs/poindexter/issues/1417)) ([a75420d](https://github.com/Glad-Labs/poindexter/commit/a75420d620584d72176b10be7a84ee3d04d2a99c))
 
-## [0.76.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.75.0...v0.76.0) (2026-06-11)
+## [0.76.0](https://github.com/Glad-Labs/poindexter/compare/v0.75.0...v0.76.0) (2026-06-11)
 
 
 ### Features
 
-* **alerting:** externalize all alert thresholds to app_settings ([#1370](https://github.com/Glad-Labs/glad-labs-stack/issues/1370)) ([ec4ab6a](https://github.com/Glad-Labs/glad-labs-stack/commit/ec4ab6a62c2fe4d3d0888d40cff3ad0e88be04db))
-* **db:** sensor_samples_unified view + Hardware & Power dashboard continuous history ([#1394](https://github.com/Glad-Labs/glad-labs-stack/issues/1394)) ([1df70ef](https://github.com/Glad-Labs/glad-labs-stack/commit/1df70ef1bec4bd017db8b5be08d379f58f4a2515))
-* **docs:** add Poindexter Pro deliverable implementation plan and structure ([c22875a](https://github.com/Glad-Labs/glad-labs-stack/commit/c22875a3beef900519f5cf449beade4af8e53778))
-* **frontend:** dev_diary feed section — /dev-diary route, exclude from main feed ([#1339](https://github.com/Glad-Labs/glad-labs-stack/issues/1339)) ([09cbd8a](https://github.com/Glad-Labs/glad-labs-stack/commit/09cbd8af7d99a3c6c6b83533724e53815dc119a1))
-* **retention:** downsample sensor_samples_hourly instead of hard-delete ([#1393](https://github.com/Glad-Labs/glad-labs-stack/issues/1393)) ([5f0939b](https://github.com/Glad-Labs/glad-labs-stack/commit/5f0939bd7937ae5bfdfa9b9304fb5df04e748f4b))
-* **site:** agent discovery — Link headers, API catalog, MCP card, markdown negotiation, WebMCP ([#1404](https://github.com/Glad-Labs/glad-labs-stack/issues/1404)) ([474e15d](https://github.com/Glad-Labs/glad-labs-stack/commit/474e15d8370490606b66ccf317de8bf4039a1de1))
-* **tts:** replace edge-tts (GPL-3.0) with Speaches/Kokoro across all TTS paths ([7dfe6db](https://github.com/Glad-Labs/glad-labs-stack/commit/7dfe6dbbf9c1223558726fcfc14d7c2df539b7f9))
+* **alerting:** externalize all alert thresholds to app_settings ([#1370](https://github.com/Glad-Labs/poindexter/issues/1370)) ([ec4ab6a](https://github.com/Glad-Labs/poindexter/commit/ec4ab6a62c2fe4d3d0888d40cff3ad0e88be04db))
+* **db:** sensor_samples_unified view + Hardware & Power dashboard continuous history ([#1394](https://github.com/Glad-Labs/poindexter/issues/1394)) ([1df70ef](https://github.com/Glad-Labs/poindexter/commit/1df70ef1bec4bd017db8b5be08d379f58f4a2515))
+* **docs:** add Poindexter Pro deliverable implementation plan and structure ([c22875a](https://github.com/Glad-Labs/poindexter/commit/c22875a3beef900519f5cf449beade4af8e53778))
+* **frontend:** dev_diary feed section — /dev-diary route, exclude from main feed ([#1339](https://github.com/Glad-Labs/poindexter/issues/1339)) ([09cbd8a](https://github.com/Glad-Labs/poindexter/commit/09cbd8af7d99a3c6c6b83533724e53815dc119a1))
+* **retention:** downsample sensor_samples_hourly instead of hard-delete ([#1393](https://github.com/Glad-Labs/poindexter/issues/1393)) ([5f0939b](https://github.com/Glad-Labs/poindexter/commit/5f0939bd7937ae5bfdfa9b9304fb5df04e748f4b))
+* **site:** agent discovery — Link headers, API catalog, MCP card, markdown negotiation, WebMCP ([#1404](https://github.com/Glad-Labs/poindexter/issues/1404)) ([474e15d](https://github.com/Glad-Labs/poindexter/commit/474e15d8370490606b66ccf317de8bf4039a1de1))
+* **tts:** replace edge-tts (GPL-3.0) with Speaches/Kokoro across all TTS paths ([7dfe6db](https://github.com/Glad-Labs/poindexter/commit/7dfe6dbbf9c1223558726fcfc14d7c2df539b7f9))
 
 
 ### Bug Fixes
 
-* **a11y:** card alt, footer targets, cookie links, aria-labels, search title ([#1332](https://github.com/Glad-Labs/glad-labs-stack/issues/1332)) ([e6f5edf](https://github.com/Glad-Labs/glad-labs-stack/commit/e6f5edf100c665b14e48c2ee011a6576fcc56688))
-* **a11y:** remove static opacity on text, fix ESLint TS coverage ([#1329](https://github.com/Glad-Labs/glad-labs-stack/issues/1329), [#1320](https://github.com/Glad-Labs/glad-labs-stack/issues/1320)) ([#1362](https://github.com/Glad-Labs/glad-labs-stack/issues/1362)) ([9feeebd](https://github.com/Glad-Labs/glad-labs-stack/commit/9feeebdb43ac7063e4244185b273e2362ea1df4f))
-* **a11y:** skip-link contrast, AdUnit aria-hidden, search focus, heading skips ([#1331](https://github.com/Glad-Labs/glad-labs-stack/issues/1331)) ([db39d32](https://github.com/Glad-Labs/glad-labs-stack/commit/db39d324f5b5556504aaa00893dde052bd896351))
-* **api:** standardize wrong-state responses on 409 Conflict ([#1398](https://github.com/Glad-Labs/glad-labs-stack/issues/1398)) ([a1b17c2](https://github.com/Glad-Labs/glad-labs-stack/commit/a1b17c2d8a043c7f60d5cfbf7e50a75971062813))
-* **api:** stop reporting false success/empty on failure paths ([#1363](https://github.com/Glad-Labs/glad-labs-stack/issues/1363)) ([0849efd](https://github.com/Glad-Labs/glad-labs-stack/commit/0849efdd15b921961153d084d68336161b5c5f64))
-* **atoms:** add qa_known_wrong_fact_only to qa.programmatic ATOM_META.produces ([#1390](https://github.com/Glad-Labs/glad-labs-stack/issues/1390)) ([8f5db99](https://github.com/Glad-Labs/glad-labs-stack/commit/8f5db99ce758ff8e001f0db9674719d28740ab81))
-* **brain:** probe_scheduled_tasks reports unwatched instead of fake-healthy ([#1357](https://github.com/Glad-Labs/glad-labs-stack/issues/1357)) ([42d484c](https://github.com/Glad-Labs/glad-labs-stack/commit/42d484c5a9ef39e0a7ad71f72e33be6f2794532e))
-* **brain:** stop restore-test probe leaking 1.3GB anon volumes (poindexter[#441](https://github.com/Glad-Labs/glad-labs-stack/issues/441)) ([#1352](https://github.com/Glad-Labs/glad-labs-stack/issues/1352)) ([f169c76](https://github.com/Glad-Labs/glad-labs-stack/commit/f169c76b7ab396cc8ec803889a8cc110b6394d3a))
-* **brain:** use --force-recreate in compose drift auto-recover ([#1371](https://github.com/Glad-Labs/glad-labs-stack/issues/1371)) ([f8f353e](https://github.com/Glad-Labs/glad-labs-stack/commit/f8f353e6d891817a6d23e4d37162955163bed4ff))
-* **ci:** include brain/ and scripts/ in test-backend change-detection ([#1377](https://github.com/Glad-Labs/glad-labs-stack/issues/1377)) ([646b73c](https://github.com/Glad-Labs/glad-labs-stack/commit/646b73c8f23bead8c74b5319f06efc8387245bd0))
-* **ci:** reduce Actions minutes ~45% — path-detect push, gate security scans, remove redundant integration-db push trigger ([#1386](https://github.com/Glad-Labs/glad-labs-stack/issues/1386)) ([625fca1](https://github.com/Glad-Labs/glad-labs-stack/commit/625fca1aebc6a27010f34333002ef4258c2f6c1a))
-* **content:** keep preview_token on graph_def finalize via task_metadata channel ([#693](https://github.com/Glad-Labs/glad-labs-stack/issues/693)) ([#1354](https://github.com/Glad-Labs/glad-labs-stack/issues/1354)) ([b927477](https://github.com/Glad-Labs/glad-labs-stack/commit/b9274773842bc2ee7c18c36904f2a8e0d7341596))
-* **dispatch:** gate dispatch_media_pipeline on podcast_script, not shot list ([#1402](https://github.com/Glad-Labs/glad-labs-stack/issues/1402)) ([6062e3f](https://github.com/Glad-Labs/glad-labs-stack/commit/6062e3f56cfae45d7f1168faff6f799e7d90c9ff))
-* **frontend:** consent loaders, aria-live, newsletter, FastAPI plumbing, global-error, JSON-LD, tag/author 404 ([#1361](https://github.com/Glad-Labs/glad-labs-stack/issues/1361)) ([4a6d809](https://github.com/Glad-Labs/glad-labs-stack/commit/4a6d809ce86960469653b02d78c941e2c0a4ab96))
-* **frontend:** throw on R2 5xx, fix posts pagination math ([#1360](https://github.com/Glad-Labs/glad-labs-stack/issues/1360)) ([3c36e23](https://github.com/Glad-Labs/glad-labs-stack/commit/3c36e23eaf58dc87e05ba7f0a73babd5741a13f3))
-* **gpu:** replace process-local mutex with PostgreSQL pg_advisory_lock ([#1373](https://github.com/Glad-Labs/glad-labs-stack/issues/1373)) ([bb01837](https://github.com/Glad-Labs/glad-labs-stack/commit/bb01837f1a12c66c9133c60a4665e3707b775828))
-* **grafana:** cloud-fallback panel false-positives — model-prefix gate for litellm ([#1401](https://github.com/Glad-Labs/glad-labs-stack/issues/1401)) ([c2140a5](https://github.com/Glad-Labs/glad-labs-stack/commit/c2140a51ba257c641b3eb33a4c8bfe3ffddef3e0))
-* **media:** dispatch_media_pipeline skips published tasks — status race with auto-publish ([#1372](https://github.com/Glad-Labs/glad-labs-stack/issues/1372)) ([6a6c3a5](https://github.com/Glad-Labs/glad-labs-stack/commit/6a6c3a5788eb505b62754af0d2e7d0e519ac9eef))
-* **monitoring:** reduce chronic alert noise — QaRailFullySkipped root cause + mcp probe debounce + Traffic Anomaly floor ([#1395](https://github.com/Glad-Labs/glad-labs-stack/issues/1395)) ([5a010e2](https://github.com/Glad-Labs/glad-labs-stack/commit/5a010e23c26d7f19ab79353b41a6f1484d188f30))
-* **observability:** restore Langfuse traces broken by SDK 4.x upgrade ([#1387](https://github.com/Glad-Labs/glad-labs-stack/issues/1387)) ([0e8d7c2](https://github.com/Glad-Labs/glad-labs-stack/commit/0e8d7c2090c9d2443db88400d4305a2aed303322))
-* **obs:** initialize Sentry in the Prefect pipeline subprocess ([#703](https://github.com/Glad-Labs/glad-labs-stack/issues/703)) ([#1378](https://github.com/Glad-Labs/glad-labs-stack/issues/1378)) ([fae6220](https://github.com/Glad-Labs/glad-labs-stack/commit/fae62201d57318c3f8b0ca207080c171313a9e8e))
-* **openapi:** strip misleading 422 from spec, document real 400 envelope ([#742](https://github.com/Glad-Labs/glad-labs-stack/issues/742)) ([#1397](https://github.com/Glad-Labs/glad-labs-stack/issues/1397)) ([3c09605](https://github.com/Glad-Labs/glad-labs-stack/commit/3c09605d3a9bb4888fd661e7f351b4302dedfc72))
-* **ops:** deploy-worker syncs deploy clone before restart; branch_drift_probe watches deploy tree ([#1392](https://github.com/Glad-Labs/glad-labs-stack/issues/1392)) ([abf7c69](https://github.com/Glad-Labs/glad-labs-stack/commit/abf7c6943094fe3d1e411164f30561042f5b8e3a))
-* **ops:** re-disable LANGFUSE_TRACING_ENABLED in compose for worker + prefect-worker ([#1405](https://github.com/Glad-Labs/glad-labs-stack/issues/1405)) ([a3e6c1d](https://github.com/Glad-Labs/glad-labs-stack/commit/a3e6c1dd92751fafe5b1186b80c23505a8726d62))
-* **pipeline:** validate atom produces/requires keys against PipelineState schema at compile time ([#1388](https://github.com/Glad-Labs/glad-labs-stack/issues/1388)) ([f20caed](https://github.com/Glad-Labs/glad-labs-stack/commit/f20caed0dd083bb214a7ef704512702bc1c57416))
-* **retention:** add ttl_prune policies for sensor_samples + cost_logs; bump DB size alert to 5 GB ([69ea145](https://github.com/Glad-Labs/glad-labs-stack/commit/69ea14591b263aaa88f4cb8d075a209628f894d8))
-* **retention:** create summary tables + fail loud on missing target (poindexter[#694](https://github.com/Glad-Labs/glad-labs-stack/issues/694)) ([#1356](https://github.com/Glad-Labs/glad-labs-stack/issues/1356)) ([29ae3fa](https://github.com/Glad-Labs/glad-labs-stack/commit/29ae3fa27dab6d1f36faefc6a6803bca035ab9ac))
-* **security:** route web_research fetches through url_scraper SSRF guard ([#1355](https://github.com/Glad-Labs/glad-labs-stack/issues/1355)) ([10d504e](https://github.com/Glad-Labs/glad-labs-stack/commit/10d504ea0693f2baacf7da330b3b905760e197df))
-* **settings:** repoint dangling gemma3 model defaults to installed successors ([#1358](https://github.com/Glad-Labs/glad-labs-stack/issues/1358)) ([3fa4b2c](https://github.com/Glad-Labs/glad-labs-stack/commit/3fa4b2ccc0f1454f98060fc3aa82d0768311fe30))
-* **tasks:** suppress console windows on all scheduled tasks ([#1383](https://github.com/Glad-Labs/glad-labs-stack/issues/1383)) ([6c337b1](https://github.com/Glad-Labs/glad-labs-stack/commit/6c337b115e091fb651142d27c0b0310a44b60003))
-* **tasks:** wire niche_slug through direct-create API path ([#729](https://github.com/Glad-Labs/glad-labs-stack/issues/729) followup) ([4542f44](https://github.com/Glad-Labs/glad-labs-stack/commit/4542f44be33463513afded56391c8b523753f179))
-* **tasks:** wire niche_slug through direct-create API path ([#729](https://github.com/Glad-Labs/glad-labs-stack/issues/729) followup) ([#1374](https://github.com/Glad-Labs/glad-labs-stack/issues/1374)) ([8020617](https://github.com/Glad-Labs/glad-labs-stack/commit/8020617e994aa46f93322f3170bf0a69e5ce801f))
-* **test:** loosen flaky parallel-timing threshold from 0.15s to 0.5s ([#1400](https://github.com/Glad-Labs/glad-labs-stack/issues/1400)) ([76824cc](https://github.com/Glad-Labs/glad-labs-stack/commit/76824ccd5a1f36f6d73a3ce7188d6fdc1c9ab5c2))
+* **a11y:** card alt, footer targets, cookie links, aria-labels, search title ([#1332](https://github.com/Glad-Labs/poindexter/issues/1332)) ([e6f5edf](https://github.com/Glad-Labs/poindexter/commit/e6f5edf100c665b14e48c2ee011a6576fcc56688))
+* **a11y:** remove static opacity on text, fix ESLint TS coverage ([#1329](https://github.com/Glad-Labs/poindexter/issues/1329), [#1320](https://github.com/Glad-Labs/poindexter/issues/1320)) ([#1362](https://github.com/Glad-Labs/poindexter/issues/1362)) ([9feeebd](https://github.com/Glad-Labs/poindexter/commit/9feeebdb43ac7063e4244185b273e2362ea1df4f))
+* **a11y:** skip-link contrast, AdUnit aria-hidden, search focus, heading skips ([#1331](https://github.com/Glad-Labs/poindexter/issues/1331)) ([db39d32](https://github.com/Glad-Labs/poindexter/commit/db39d324f5b5556504aaa00893dde052bd896351))
+* **api:** standardize wrong-state responses on 409 Conflict ([#1398](https://github.com/Glad-Labs/poindexter/issues/1398)) ([a1b17c2](https://github.com/Glad-Labs/poindexter/commit/a1b17c2d8a043c7f60d5cfbf7e50a75971062813))
+* **api:** stop reporting false success/empty on failure paths ([#1363](https://github.com/Glad-Labs/poindexter/issues/1363)) ([0849efd](https://github.com/Glad-Labs/poindexter/commit/0849efdd15b921961153d084d68336161b5c5f64))
+* **atoms:** add qa_known_wrong_fact_only to qa.programmatic ATOM_META.produces ([#1390](https://github.com/Glad-Labs/poindexter/issues/1390)) ([8f5db99](https://github.com/Glad-Labs/poindexter/commit/8f5db99ce758ff8e001f0db9674719d28740ab81))
+* **brain:** probe_scheduled_tasks reports unwatched instead of fake-healthy ([#1357](https://github.com/Glad-Labs/poindexter/issues/1357)) ([42d484c](https://github.com/Glad-Labs/poindexter/commit/42d484c5a9ef39e0a7ad71f72e33be6f2794532e))
+* **brain:** stop restore-test probe leaking 1.3GB anon volumes (poindexter[#441](https://github.com/Glad-Labs/poindexter/issues/441)) ([#1352](https://github.com/Glad-Labs/poindexter/issues/1352)) ([f169c76](https://github.com/Glad-Labs/poindexter/commit/f169c76b7ab396cc8ec803889a8cc110b6394d3a))
+* **brain:** use --force-recreate in compose drift auto-recover ([#1371](https://github.com/Glad-Labs/poindexter/issues/1371)) ([f8f353e](https://github.com/Glad-Labs/poindexter/commit/f8f353e6d891817a6d23e4d37162955163bed4ff))
+* **ci:** include brain/ and scripts/ in test-backend change-detection ([#1377](https://github.com/Glad-Labs/poindexter/issues/1377)) ([646b73c](https://github.com/Glad-Labs/poindexter/commit/646b73c8f23bead8c74b5319f06efc8387245bd0))
+* **ci:** reduce Actions minutes ~45% — path-detect push, gate security scans, remove redundant integration-db push trigger ([#1386](https://github.com/Glad-Labs/poindexter/issues/1386)) ([625fca1](https://github.com/Glad-Labs/poindexter/commit/625fca1aebc6a27010f34333002ef4258c2f6c1a))
+* **content:** keep preview_token on graph_def finalize via task_metadata channel ([#693](https://github.com/Glad-Labs/poindexter/issues/693)) ([#1354](https://github.com/Glad-Labs/poindexter/issues/1354)) ([b927477](https://github.com/Glad-Labs/poindexter/commit/b9274773842bc2ee7c18c36904f2a8e0d7341596))
+* **dispatch:** gate dispatch_media_pipeline on podcast_script, not shot list ([#1402](https://github.com/Glad-Labs/poindexter/issues/1402)) ([6062e3f](https://github.com/Glad-Labs/poindexter/commit/6062e3f56cfae45d7f1168faff6f799e7d90c9ff))
+* **frontend:** consent loaders, aria-live, newsletter, FastAPI plumbing, global-error, JSON-LD, tag/author 404 ([#1361](https://github.com/Glad-Labs/poindexter/issues/1361)) ([4a6d809](https://github.com/Glad-Labs/poindexter/commit/4a6d809ce86960469653b02d78c941e2c0a4ab96))
+* **frontend:** throw on R2 5xx, fix posts pagination math ([#1360](https://github.com/Glad-Labs/poindexter/issues/1360)) ([3c36e23](https://github.com/Glad-Labs/poindexter/commit/3c36e23eaf58dc87e05ba7f0a73babd5741a13f3))
+* **gpu:** replace process-local mutex with PostgreSQL pg_advisory_lock ([#1373](https://github.com/Glad-Labs/poindexter/issues/1373)) ([bb01837](https://github.com/Glad-Labs/poindexter/commit/bb01837f1a12c66c9133c60a4665e3707b775828))
+* **grafana:** cloud-fallback panel false-positives — model-prefix gate for litellm ([#1401](https://github.com/Glad-Labs/poindexter/issues/1401)) ([c2140a5](https://github.com/Glad-Labs/poindexter/commit/c2140a51ba257c641b3eb33a4c8bfe3ffddef3e0))
+* **media:** dispatch_media_pipeline skips published tasks — status race with auto-publish ([#1372](https://github.com/Glad-Labs/poindexter/issues/1372)) ([6a6c3a5](https://github.com/Glad-Labs/poindexter/commit/6a6c3a5788eb505b62754af0d2e7d0e519ac9eef))
+* **monitoring:** reduce chronic alert noise — QaRailFullySkipped root cause + mcp probe debounce + Traffic Anomaly floor ([#1395](https://github.com/Glad-Labs/poindexter/issues/1395)) ([5a010e2](https://github.com/Glad-Labs/poindexter/commit/5a010e23c26d7f19ab79353b41a6f1484d188f30))
+* **observability:** restore Langfuse traces broken by SDK 4.x upgrade ([#1387](https://github.com/Glad-Labs/poindexter/issues/1387)) ([0e8d7c2](https://github.com/Glad-Labs/poindexter/commit/0e8d7c2090c9d2443db88400d4305a2aed303322))
+* **obs:** initialize Sentry in the Prefect pipeline subprocess ([#703](https://github.com/Glad-Labs/poindexter/issues/703)) ([#1378](https://github.com/Glad-Labs/poindexter/issues/1378)) ([fae6220](https://github.com/Glad-Labs/poindexter/commit/fae62201d57318c3f8b0ca207080c171313a9e8e))
+* **openapi:** strip misleading 422 from spec, document real 400 envelope ([#742](https://github.com/Glad-Labs/poindexter/issues/742)) ([#1397](https://github.com/Glad-Labs/poindexter/issues/1397)) ([3c09605](https://github.com/Glad-Labs/poindexter/commit/3c09605d3a9bb4888fd661e7f351b4302dedfc72))
+* **ops:** deploy-worker syncs deploy clone before restart; branch_drift_probe watches deploy tree ([#1392](https://github.com/Glad-Labs/poindexter/issues/1392)) ([abf7c69](https://github.com/Glad-Labs/poindexter/commit/abf7c6943094fe3d1e411164f30561042f5b8e3a))
+* **ops:** re-disable LANGFUSE_TRACING_ENABLED in compose for worker + prefect-worker ([#1405](https://github.com/Glad-Labs/poindexter/issues/1405)) ([a3e6c1d](https://github.com/Glad-Labs/poindexter/commit/a3e6c1dd92751fafe5b1186b80c23505a8726d62))
+* **pipeline:** validate atom produces/requires keys against PipelineState schema at compile time ([#1388](https://github.com/Glad-Labs/poindexter/issues/1388)) ([f20caed](https://github.com/Glad-Labs/poindexter/commit/f20caed0dd083bb214a7ef704512702bc1c57416))
+* **retention:** add ttl_prune policies for sensor_samples + cost_logs; bump DB size alert to 5 GB ([69ea145](https://github.com/Glad-Labs/poindexter/commit/69ea14591b263aaa88f4cb8d075a209628f894d8))
+* **retention:** create summary tables + fail loud on missing target (poindexter[#694](https://github.com/Glad-Labs/poindexter/issues/694)) ([#1356](https://github.com/Glad-Labs/poindexter/issues/1356)) ([29ae3fa](https://github.com/Glad-Labs/poindexter/commit/29ae3fa27dab6d1f36faefc6a6803bca035ab9ac))
+* **security:** route web_research fetches through url_scraper SSRF guard ([#1355](https://github.com/Glad-Labs/poindexter/issues/1355)) ([10d504e](https://github.com/Glad-Labs/poindexter/commit/10d504ea0693f2baacf7da330b3b905760e197df))
+* **settings:** repoint dangling gemma3 model defaults to installed successors ([#1358](https://github.com/Glad-Labs/poindexter/issues/1358)) ([3fa4b2c](https://github.com/Glad-Labs/poindexter/commit/3fa4b2ccc0f1454f98060fc3aa82d0768311fe30))
+* **tasks:** suppress console windows on all scheduled tasks ([#1383](https://github.com/Glad-Labs/poindexter/issues/1383)) ([6c337b1](https://github.com/Glad-Labs/poindexter/commit/6c337b115e091fb651142d27c0b0310a44b60003))
+* **tasks:** wire niche_slug through direct-create API path ([#729](https://github.com/Glad-Labs/poindexter/issues/729) followup) ([4542f44](https://github.com/Glad-Labs/poindexter/commit/4542f44be33463513afded56391c8b523753f179))
+* **tasks:** wire niche_slug through direct-create API path ([#729](https://github.com/Glad-Labs/poindexter/issues/729) followup) ([#1374](https://github.com/Glad-Labs/poindexter/issues/1374)) ([8020617](https://github.com/Glad-Labs/poindexter/commit/8020617e994aa46f93322f3170bf0a69e5ce801f))
+* **test:** loosen flaky parallel-timing threshold from 0.15s to 0.5s ([#1400](https://github.com/Glad-Labs/poindexter/issues/1400)) ([76824cc](https://github.com/Glad-Labs/poindexter/commit/76824ccd5a1f36f6d73a3ce7188d6fdc1c9ab5c2))
 
 
 ### Performance Improvements
 
-* **images:** serve post images as WebP@80 with immutable Cache-Control ([#1379](https://github.com/Glad-Labs/glad-labs-stack/issues/1379)) ([dacb925](https://github.com/Glad-Labs/glad-labs-stack/commit/dacb9253c0e41385b0e2ba866f86ff8ad322dca8))
-* **qa:** parallelize DeepEval judges, drop dead qa.guardrails, skip advisory rails on retry ([#1375](https://github.com/Glad-Labs/glad-labs-stack/issues/1375)) ([2bf19b2](https://github.com/Glad-Labs/glad-labs-stack/commit/2bf19b2fa06376dcdec126a2f4e18927a384750b))
+* **images:** serve post images as WebP@80 with immutable Cache-Control ([#1379](https://github.com/Glad-Labs/poindexter/issues/1379)) ([dacb925](https://github.com/Glad-Labs/poindexter/commit/dacb9253c0e41385b0e2ba866f86ff8ad322dca8))
+* **qa:** parallelize DeepEval judges, drop dead qa.guardrails, skip advisory rails on retry ([#1375](https://github.com/Glad-Labs/poindexter/issues/1375)) ([2bf19b2](https://github.com/Glad-Labs/poindexter/commit/2bf19b2fa06376dcdec126a2f4e18927a384750b))
 
-## [0.75.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.74.0...v0.75.0) (2026-06-10)
-
-
-### Features
-
-* **atoms:** decompose generate_content/replace_inline_images/finalize_task (poindexter[#362](https://github.com/Glad-Labs/glad-labs-stack/issues/362)) ([#1210](https://github.com/Glad-Labs/glad-labs-stack/issues/1210)) ([a4aa169](https://github.com/Glad-Labs/glad-labs-stack/commit/a4aa169cce4248ac540c56217a03ecad4b877e69))
-* **auto-publish:** structural gate for dev_diary — body/excerpt/title checks ([#1334](https://github.com/Glad-Labs/glad-labs-stack/issues/1334)) ([8cbeaa5](https://github.com/Glad-Labs/glad-labs-stack/commit/8cbeaa5bb7da4dfa6172a6fa825298b58d54fae4))
-* **brain:** DataFabric cross-store query helpers (poindexter[#429](https://github.com/Glad-Labs/glad-labs-stack/issues/429)) ([#1204](https://github.com/Glad-Labs/glad-labs-stack/issues/1204)) ([0672cbe](https://github.com/Glad-Labs/glad-labs-stack/commit/0672cbedcb342489c19afe87a8755c42dc6cefe6))
-* **brain:** genuine migration-drift self-heal — sync deploy checkout + exp backoff ([#1218](https://github.com/Glad-Labs/glad-labs-stack/issues/1218)) ([a7ee0ff](https://github.com/Glad-Labs/glad-labs-stack/commit/a7ee0ff0de09092d3c0d219c07fc74df82682995))
-* **console:** add operator console SPA + static mount ([#1265](https://github.com/Glad-Labs/glad-labs-stack/issues/1265)) ([10c72e9](https://github.com/Glad-Labs/glad-labs-stack/commit/10c72e9c77adb3c094613ca421238dfd53e1f56e))
-* **content:** seed media-artifact channels during graph construction for proper version registration ([5e88d82](https://github.com/Glad-Labs/glad-labs-stack/commit/5e88d82524dbaa8ae0b36dfc146c18b01f18a352))
-* **deploy:** repoint stack code mounts at deploy clone for genuine self-heal ([#1222](https://github.com/Glad-Labs/glad-labs-stack/issues/1222)) ([6f064f0](https://github.com/Glad-Labs/glad-labs-stack/commit/6f064f07aede8660e56dbf29cfc5893680c78a7d))
-* **dispatcher:** enhance local model cost tracking with electricity estimation ([875ebac](https://github.com/Glad-Labs/glad-labs-stack/commit/875ebac1dd916cfd94e0e50bb61ccfc929e95005))
-* **eval:** cost/energy eval harness for tier routing validation (poindexter[#530](https://github.com/Glad-Labs/glad-labs-stack/issues/530)) ([#1212](https://github.com/Glad-Labs/glad-labs-stack/issues/1212)) ([a126120](https://github.com/Glad-Labs/glad-labs-stack/commit/a126120756d05730f6a5d93f8c0c5ee606ba4f34))
-* **flow:** reclaim stale in_progress tasks at start of content_generation_flow ([#1274](https://github.com/Glad-Labs/glad-labs-stack/issues/1274)) ([c7d3132](https://github.com/Glad-Labs/glad-labs-stack/commit/c7d313267cc3ec991f2cc333e7b35096c8b9b39f))
-* **grafana:** add Media Pipeline (Stage 2) row to Pipeline board ([#678](https://github.com/Glad-Labs/glad-labs-stack/issues/678) Plan 8c) ([fdcf2d7](https://github.com/Glad-Labs/glad-labs-stack/commit/fdcf2d7172990ba1fac06d02bac1517b95c1ffca))
-* MCP HTTP auto-recovery agent (container-safe) ([#1245](https://github.com/Glad-Labs/glad-labs-stack/issues/1245)) ([cccb8c7](https://github.com/Glad-Labs/glad-labs-stack/commit/cccb8c7b87701ed8c262dd89b01b1217cf2ed495))
-* **media:** director long + short shot-lists ([#517](https://github.com/Glad-Labs/glad-labs-stack/issues/517)) ([0a47bd0](https://github.com/Glad-Labs/glad-labs-stack/commit/0a47bd071fa75c9c34c645fe413eba408737f0e9))
-* **media:** earned-autonomy Gate-2 tiering for auto-approve ([#531](https://github.com/Glad-Labs/glad-labs-stack/issues/531)) ([226ca03](https://github.com/Glad-Labs/glad-labs-stack/commit/226ca031c5808d7d93aaed166c8ca17a632d564c))
-* **media:** media_distribute dispatch pass — approved long+Shorts → YouTube ([#689](https://github.com/Glad-Labs/glad-labs-stack/issues/689) Plan 8 / [#682](https://github.com/Glad-Labs/glad-labs-stack/issues/682)) ([#1252](https://github.com/Glad-Labs/glad-labs-stack/issues/1252)) ([b332801](https://github.com/Glad-Labs/glad-labs-stack/commit/b332801ac565b47dfcdc083cda976a7e55f48d38))
-* **media:** media_distribute job — link rendered assets to post + seed Gate 2 ([#689](https://github.com/Glad-Labs/glad-labs-stack/issues/689) Plan 8) ([#1251](https://github.com/Glad-Labs/glad-labs-stack/issues/1251)) ([04d86f8](https://github.com/Glad-Labs/glad-labs-stack/commit/04d86f8993075c8ac23c5a59458eafe5886987f2))
-* **media:** media_pipeline Stage-2 graph_def spine ([#689](https://github.com/Glad-Labs/glad-labs-stack/issues/689)) ([#1234](https://github.com/Glad-Labs/glad-labs-stack/issues/1234)) ([cfb1631](https://github.com/Glad-Labs/glad-labs-stack/commit/cfb1631530f962aeb9a7e6560c6c07809fb1aadf))
-* **media:** media.persist node — durable storage + task-keyed media_assets ([#689](https://github.com/Glad-Labs/glad-labs-stack/issues/689) Plan 8) ([#1250](https://github.com/Glad-Labs/glad-labs-stack/issues/1250)) ([91b4797](https://github.com/Glad-Labs/glad-labs-stack/commit/91b4797276606ce83fb88819d0d309f98b49b287))
-* **media:** media.qa atom — A/V sync, caption presence, frame human-detection ([#1193](https://github.com/Glad-Labs/glad-labs-stack/issues/1193)) ([#1240](https://github.com/Glad-Labs/glad-labs-stack/issues/1240)) ([0aa987d](https://github.com/Glad-Labs/glad-labs-stack/commit/0aa987dcf45f18100d4bc748964e6c6f1c63c2a0))
-* **media:** one-ASR-pass captions + fidelity check in media_pipeline ([#676](https://github.com/Glad-Labs/glad-labs-stack/issues/676)) ([ee0d110](https://github.com/Glad-Labs/glad-labs-stack/commit/ee0d110312a46e0f5beadcfeb179e6db4be6353d))
-* **media:** qa.audio atom — deterministic narration audio QA ([#1193](https://github.com/Glad-Labs/glad-labs-stack/issues/1193) Phase 2) ([cf9a070](https://github.com/Glad-Labs/glad-labs-stack/commit/cf9a070b3bb91cf63d75e2fef6a0d338ccbcd86f))
-* **media:** render long + short video atoms in media_pipeline ([#675](https://github.com/Glad-Labs/glad-labs-stack/issues/675)/[#679](https://github.com/Glad-Labs/glad-labs-stack/issues/679)) ([be8b7bc](https://github.com/Glad-Labs/glad-labs-stack/commit/be8b7bc85894b6d24601d3bbff42e12d3b52a49b))
-* **media:** Stage-2 trigger — dispatch_media_pipeline job ([#689](https://github.com/Glad-Labs/glad-labs-stack/issues/689) Plan 7, [#677](https://github.com/Glad-Labs/glad-labs-stack/issues/677)) ([#1247](https://github.com/Glad-Labs/glad-labs-stack/issues/1247)) ([54ce4f2](https://github.com/Glad-Labs/glad-labs-stack/commit/54ce4f29d2f66880b7eb34710503255f22fdebd1))
-* **media:** wire qa.audio atom, Gate-2 re-eval job, and pipeline Grafana panels ([#1193](https://github.com/Glad-Labs/glad-labs-stack/issues/1193)/[#531](https://github.com/Glad-Labs/glad-labs-stack/issues/531)/[#678](https://github.com/Glad-Labs/glad-labs-stack/issues/678)) ([#1260](https://github.com/Glad-Labs/glad-labs-stack/issues/1260)) ([3a1e89d](https://github.com/Glad-Labs/glad-labs-stack/commit/3a1e89d6d02219d1096bd5947260aa652b71ec60))
-* **obs:** add cAdvisor + postgres_exporter + wire gh auth for findings ([#1208](https://github.com/Glad-Labs/glad-labs-stack/issues/1208)) ([eda8ece](https://github.com/Glad-Labs/glad-labs-stack/commit/eda8ece79295cde10b99baa524da1b80adfe16f4))
-* **pipeline:** approval gates via LangGraph interrupt() + checkpoint resume (poindexter[#363](https://github.com/Glad-Labs/glad-labs-stack/issues/363)) ([#1211](https://github.com/Glad-Labs/glad-labs-stack/issues/1211)) ([6d5dfe0](https://github.com/Glad-Labs/glad-labs-stack/commit/6d5dfe0b237bc7455149d4b5861735fad5d9c153))
-* **pipeline:** progress streaming via on_event + opt-in Telegram edit-stream ([#361](https://github.com/Glad-Labs/glad-labs-stack/issues/361) part 2) ([#1214](https://github.com/Glad-Labs/glad-labs-stack/issues/1214)) ([124e1d3](https://github.com/Glad-Labs/glad-labs-stack/commit/124e1d32bfce9393a7939cf2fcae999abefa8cce))
-* **podcast:** make voice-rotation pool DB-configurable ([#689](https://github.com/Glad-Labs/glad-labs-stack/issues/689) Plan 7) ([#1246](https://github.com/Glad-Labs/glad-labs-stack/issues/1246)) ([d93740b](https://github.com/Glad-Labs/glad-labs-stack/commit/d93740b3580cc6552e389d5b007017efa5e7b9a2))
-* **qa:** graduate deepeval + ragas eval rails to required_to_pass ([#454](https://github.com/Glad-Labs/glad-labs-stack/issues/454)) ([#1205](https://github.com/Glad-Labs/glad-labs-stack/issues/1205)) ([2fecd0d](https://github.com/Glad-Labs/glad-labs-stack/commit/2fecd0d02b8d5647705519e25be238926b9ab651))
-* **router:** outcome→variant-weight feedback loop ([#361](https://github.com/Glad-Labs/glad-labs-stack/issues/361) part 1) ([#1213](https://github.com/Glad-Labs/glad-labs-stack/issues/1213)) ([869f4f4](https://github.com/Glad-Labs/glad-labs-stack/commit/869f4f4c61cd2bc4b7b0cf5bef528e123e64aa93))
-* **seam2:** kernel-purity guard CI lint + fix top-level modules import (poindexter[#666](https://github.com/Glad-Labs/glad-labs-stack/issues/666)) ([f115b05](https://github.com/Glad-Labs/glad-labs-stack/commit/f115b05ab1509b354455eb6b2ce81f4acafa3496))
-* **skills:** skill importer service + CLI (poindexter[#529](https://github.com/Glad-Labs/glad-labs-stack/issues/529)) ([#1209](https://github.com/Glad-Labs/glad-labs-stack/issues/1209)) ([8cf799f](https://github.com/Glad-Labs/glad-labs-stack/commit/8cf799f09f11922647313e610d682c64b5d99f47))
-* **taps/memory:** add scope_allowlist to dedupe the canonical/junction scopes ([f5cc21a](https://github.com/Glad-Labs/glad-labs-stack/commit/f5cc21aebf36a64ba74ec82b2cb42b8e3594e427))
-* **video:** media_pipeline Plan 1 — Stage-1 artifact persistence ([#674](https://github.com/Glad-Labs/glad-labs-stack/issues/674), [#517](https://github.com/Glad-Labs/glad-labs-stack/issues/517), [#679](https://github.com/Glad-Labs/glad-labs-stack/issues/679)) ([#1226](https://github.com/Glad-Labs/glad-labs-stack/issues/1226)) ([7670e6a](https://github.com/Glad-Labs/glad-labs-stack/commit/7670e6a5608a30c5166007fa626520b3e4856117))
-
-
-### Bug Fixes
-
-* **alerts:** use 7-day rolling avg for traffic anomaly; document settings_defaults seeder ([b249fff](https://github.com/Glad-Labs/glad-labs-stack/commit/b249fff6c84742ff32378b8ca4ad21d41bcdbc47))
-* **analytics:** filter bot traffic from page_views ingest ([#1248](https://github.com/Glad-Labs/glad-labs-stack/issues/1248)) ([59e3e48](https://github.com/Glad-Labs/glad-labs-stack/commit/59e3e485f27b95862461264b77f8087d74c2d056))
-* **brain:** defer migration-drift restart while content is generating + repair content_gen probe ([#1261](https://github.com/Glad-Labs/glad-labs-stack/issues/1261)) ([f8c9182](https://github.com/Glad-Labs/glad-labs-stack/commit/f8c918274e7005096660a2562bc0a5bd31349f10))
-* **brain:** kill operator-URL-probe false pages for Loki/Tempo + disabled podcast TTS ([#228](https://github.com/Glad-Labs/glad-labs-stack/issues/228)) ([#1216](https://github.com/Glad-Labs/glad-labs-stack/issues/1216)) ([80536d9](https://github.com/Glad-Labs/glad-labs-stack/commit/80536d98a3d01f12e66b77169926d6d5bb689dff))
-* **brain:** stop migration-drift auto-recover restart/page storm ([#228](https://github.com/Glad-Labs/glad-labs-stack/issues/228)) ([#1215](https://github.com/Glad-Labs/glad-labs-stack/issues/1215)) ([8ee3082](https://github.com/Glad-Labs/glad-labs-stack/commit/8ee3082f02b6e653524e8429c3a4becd28a30c4d))
-* **brand:** show real Poindexter version instead of stale "V3.1" ([#1346](https://github.com/Glad-Labs/glad-labs-stack/issues/1346)) ([192816c](https://github.com/Glad-Labs/glad-labs-stack/commit/192816c9d5515347c205a31d67881a8a643d3ca7))
-* **ci:** activate dormant frontend Jest gate + fix zero-data coverage ([#1290](https://github.com/Glad-Labs/glad-labs-stack/issues/1290) [#1292](https://github.com/Glad-Labs/glad-labs-stack/issues/1292)) ([#1349](https://github.com/Glad-Labs/glad-labs-stack/issues/1349)) ([032cca1](https://github.com/Glad-Labs/glad-labs-stack/commit/032cca1cf7a8f17f655d0098dd66452c5511ec6b))
-* **ci:** unbreak public-mirror unit-tests, triage-on-open, runner disk ([#1277](https://github.com/Glad-Labs/glad-labs-stack/issues/1277)) ([125a8a2](https://github.com/Glad-Labs/glad-labs-stack/commit/125a8a20201248ca30de571648f48ba361f5e914))
-* **config:** drop fabricated LiveKit creds + dev_diary env bypass ([#1266](https://github.com/Glad-Labs/glad-labs-stack/issues/1266)) ([183655d](https://github.com/Glad-Labs/glad-labs-stack/commit/183655d5789e9f40f75bea7187c82944ead0fd6a))
-* **content:** fail loud on empty/too-short writer draft instead of misleading reviewer_count:0 QA reject ([#691](https://github.com/Glad-Labs/glad-labs-stack/issues/691)) ([#1278](https://github.com/Glad-Labs/glad-labs-stack/issues/1278)) ([345fe78](https://github.com/Glad-Labs/glad-labs-stack/commit/345fe78d79f170d185e1f63b1beabe6f7c4fec29))
-* **content:** publish-boundary guards — title-label/slug/excerpt + niche gate (poindexter[#728](https://github.com/Glad-Labs/glad-labs-stack/issues/728) [#729](https://github.com/Glad-Labs/glad-labs-stack/issues/729)) ([#1338](https://github.com/Glad-Labs/glad-labs-stack/issues/1338)) ([5bbbf48](https://github.com/Glad-Labs/glad-labs-stack/commit/5bbbf4830dce9461165b3f3e4a738a11bda4b882))
-* **content:** strip leaked reasoning/control tokens from model output ([#1285](https://github.com/Glad-Labs/glad-labs-stack/issues/1285)) ([9350b4a](https://github.com/Glad-Labs/glad-labs-stack/commit/9350b4aa037c99bc728a153b3fde41ce42a4d196))
-* **content:** thread platform handle into get_content_generator ([#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667) regression) ([#1262](https://github.com/Glad-Labs/glad-labs-stack/issues/1262)) ([964cd58](https://github.com/Glad-Labs/glad-labs-stack/commit/964cd589d1d111a24ba28a4bdebb1e0508c12603))
-* **content:** unblock niche content — research grounding + distinct QA critic + validator whitelist ([#1271](https://github.com/Glad-Labs/glad-labs-stack/issues/1271)) ([c5db509](https://github.com/Glad-Labs/glad-labs-stack/commit/c5db50910291fb6408e421c5d26f164c45baaeb9))
-* **embeddings:** thread embedding_model setting into post-publish and CLI write paths ([#1264](https://github.com/Glad-Labs/glad-labs-stack/issues/1264)) ([78fb83f](https://github.com/Glad-Labs/glad-labs-stack/commit/78fb83f58453d465f4ae20050278c2963effe2e3))
-* **flows:** drop unused _app_container + narrow task_id type at post-pipeline call ([#1273](https://github.com/Glad-Labs/glad-labs-stack/issues/1273)) ([0f8b4d0](https://github.com/Glad-Labs/glad-labs-stack/commit/0f8b4d08d8240c9ec3a09329c6a1c74e633cc71a))
-* **frontend:** display-layer guards for sort, title, excerpt, loading (audit [#1](https://github.com/Glad-Labs/glad-labs-stack/issues/1) [#2](https://github.com/Glad-Labs/glad-labs-stack/issues/2) [#5](https://github.com/Glad-Labs/glad-labs-stack/issues/5) [#7](https://github.com/Glad-Labs/glad-labs-stack/issues/7)) ([#1317](https://github.com/Glad-Labs/glad-labs-stack/issues/1317)) ([552bf28](https://github.com/Glad-Labs/glad-labs-stack/commit/552bf28794f0b399415b339b182b5d333459d50f))
-* **media:** persist podcast TTS + intro-sting audio paths ([#690](https://github.com/Glad-Labs/glad-labs-stack/issues/690)) ([#1233](https://github.com/Glad-Labs/glad-labs-stack/issues/1233)) ([09eb66b](https://github.com/Glad-Labs/glad-labs-stack/commit/09eb66bffb5e5edf3d72fdb57f95066187487bb4))
-* **pipeline:** clear LangGraph checkpoint when stale-task sweeper resets a task ([#1263](https://github.com/Glad-Labs/glad-labs-stack/issues/1263)) ([3ca60a3](https://github.com/Glad-Labs/glad-labs-stack/commit/3ca60a38495c62898ac0e839d2b58d3aec550dda))
-* **pipeline:** enforce ATOM_META.retry in _wrap_atom ([#1254](https://github.com/Glad-Labs/glad-labs-stack/issues/1254)) ([6fe344c](https://github.com/Glad-Labs/glad-labs-stack/commit/6fe344ce4b165e032714dcd972e22f0a5c0f3a89))
-* **pipeline:** propagate resolved placeholders via context_updates ([#1207](https://github.com/Glad-Labs/glad-labs-stack/issues/1207)) ([1ec2c83](https://github.com/Glad-Labs/glad-labs-stack/commit/1ec2c835711a2521f84e0860117d443e3d73d3c9))
-* **plugins:** dedup Modules by manifest name to silence duplicate-module warnings ([#1336](https://github.com/Glad-Labs/glad-labs-stack/issues/1336)) ([d16449d](https://github.com/Glad-Labs/glad-labs-stack/commit/d16449d1eb9338ada5892070f03c5afe597c5e13))
-* **poetry:** correct version formatting for dependencies and metadata ([9b5d3cb](https://github.com/Glad-Labs/glad-labs-stack/commit/9b5d3cbed844fb4430019b0086b00e9297c22093))
-* **publish:** go-live route uses DEPLOYMENT_MODE for post-publish hooks ([#1253](https://github.com/Glad-Labs/glad-labs-stack/issues/1253)) ([4b5a6fa](https://github.com/Glad-Labs/glad-labs-stack/commit/4b5a6fa5c9daaed74abb5688e12f049448e7455c))
-* **qa:** alias-aware vacuous-pass guard so passing posts aren't rejected ([#1275](https://github.com/Glad-Labs/glad-labs-stack/issues/1275)) ([66daf08](https://github.com/Glad-Labs/glad-labs-stack/commit/66daf08e32127e661438494484eb00f2e76fd45a))
-* **qa:** fail closed when required rail emits no review (poindexter[#680](https://github.com/Glad-Labs/glad-labs-stack/issues/680)) ([#1255](https://github.com/Glad-Labs/glad-labs-stack/issues/1255)) ([aec0142](https://github.com/Glad-Labs/glad-labs-stack/commit/aec01427e629231a4b127e3f689553005d904fd0))
-* **qa:** stop validator false-positive criticals on internal files + rhetorical citations ([#1276](https://github.com/Glad-Labs/glad-labs-stack/issues/1276)) ([67958d2](https://github.com/Glad-Labs/glad-labs-stack/commit/67958d24d030ec1c1cbbc1b78296cdd2f84761d8))
-* **restore-probe:** exclude _-prefixed helpers from migration file glob + precise page title ([#1217](https://github.com/Glad-Labs/glad-labs-stack/issues/1217)) ([f714845](https://github.com/Glad-Labs/glad-labs-stack/commit/f7148452537f66a3da09811b974ae65d14ed6997))
-* **security:** remove hardcoded GlitchTip password + untrack audit script ([#1272](https://github.com/Glad-Labs/glad-labs-stack/issues/1272)) ([d007e02](https://github.com/Glad-Labs/glad-labs-stack/commit/d007e02a63b604f4fb52fc93151a4c8c831f68ee))
-* **security:** strip operator mirror-tooling from public mirror ([#1287](https://github.com/Glad-Labs/glad-labs-stack/issues/1287)) ([#1347](https://github.com/Glad-Labs/glad-labs-stack/issues/1347)) ([8f889da](https://github.com/Glad-Labs/glad-labs-stack/commit/8f889daa8b7b8c61ae69c64d166a99eeec7ba4b1))
-* **seeds:** restore dev_diary niche_goals dropped in the 2026-05-08 squash ([#1199](https://github.com/Glad-Labs/glad-labs-stack/issues/1199)) ([fcd0420](https://github.com/Glad-Labs/glad-labs-stack/commit/fcd0420929182db3efefad77c8c3c4b20962db8a))
-* **taps/memory:** strip NUL bytes before embeddings INSERT ([6a56f4c](https://github.com/Glad-Labs/glad-labs-stack/commit/6a56f4c917a150d233af33d6f0fe98fe0ffd8153))
-* **validator:** don't flag emphasis-wrapped final sentences as truncated ([#1206](https://github.com/Glad-Labs/glad-labs-stack/issues/1206)) ([44c03ae](https://github.com/Glad-Labs/glad-labs-stack/commit/44c03ae8c402d9754b02cc6669ddfed7c541b1c4))
-* **video:** replace hardcoded photorealistic prompts + wire video_negative_prompt (poindexter[#675](https://github.com/Glad-Labs/glad-labs-stack/issues/675)) ([#1256](https://github.com/Glad-Labs/glad-labs-stack/issues/1256)) ([b865639](https://github.com/Glad-Labs/glad-labs-stack/commit/b865639653b139ba13c3372a3a34160e0181ca91))
-* **voice:** guard VALID_VOICES — pipecat 1.1.0 removed it, agents crash-looped ([#1225](https://github.com/Glad-Labs/glad-labs-stack/issues/1225)) ([a2ed43f](https://github.com/Glad-Labs/glad-labs-stack/commit/a2ed43fe0eab41042caaa2eb356112f9c6660073))
-* **youtube:** map PublishResult fields + add #Shorts marker ([#682](https://github.com/Glad-Labs/glad-labs-stack/issues/682)) ([#1249](https://github.com/Glad-Labs/glad-labs-stack/issues/1249)) ([f437241](https://github.com/Glad-Labs/glad-labs-stack/commit/f437241a33f28955a5ed0f126622b02c519c6ba7))
-
-## [0.74.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.73.0...v0.74.0) (2026-06-07)
+## [0.75.0](https://github.com/Glad-Labs/poindexter/compare/v0.74.0...v0.75.0) (2026-06-10)
 
 
 ### Features
 
-* **analytics:** wire GA4 into rollup + post-performance probe ([#520](https://github.com/Glad-Labs/glad-labs-stack/issues/520)/[#672](https://github.com/Glad-Labs/glad-labs-stack/issues/672)) ([0ad8fd3](https://github.com/Glad-Labs/glad-labs-stack/commit/0ad8fd37698649ace190d013d21bfca399b34122))
-* **db:** add actor column to pipeline_gate_history (poindexter[#656](https://github.com/Glad-Labs/glad-labs-stack/issues/656)) ([#1192](https://github.com/Glad-Labs/glad-labs-stack/issues/1192)) ([ae3dcf6](https://github.com/Glad-Labs/glad-labs-stack/commit/ae3dcf66592f4720763a833e3c70a8cf41948fff))
-* **obs:** add cAdvisor + postgres_exporter + wire gh auth for findings ([#1189](https://github.com/Glad-Labs/glad-labs-stack/issues/1189)) ([8577f45](https://github.com/Glad-Labs/glad-labs-stack/commit/8577f457d9dd850f6c081864294091bcda0d4b3e))
-* **obs:** add cAdvisor + postgres_exporter Grafana panels ([#1191](https://github.com/Glad-Labs/glad-labs-stack/issues/1191)) ([27c00b6](https://github.com/Glad-Labs/glad-labs-stack/commit/27c00b6bb45bb89c7d8bb803097efe74adad39fa))
-* **platform:** wave 3d-ii — thread platform.dispatch.complete into image stages ([#1180](https://github.com/Glad-Labs/glad-labs-stack/issues/1180)) ([baf8c09](https://github.com/Glad-Labs/glad-labs-stack/commit/baf8c098abbaebe2e1690d5120fbf225292c96e3))
-* **seam-1:** wave 3e-4 — multi_model_qa config reads via platform.config ([#1178](https://github.com/Glad-Labs/glad-labs-stack/issues/1178)) ([491c649](https://github.com/Glad-Labs/glad-labs-stack/commit/491c649297b49aabaa9d0f941edfcad3032c795b))
-* **seam1:** Wave 3f + Wave 4 — clear module-purity violations + CI lint (poindexter[#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([1aa3d7b](https://github.com/Glad-Labs/glad-labs-stack/commit/1aa3d7bba28fe947773daa8a9d4812fdf1c415b8))
+* **atoms:** decompose generate_content/replace_inline_images/finalize_task (poindexter[#362](https://github.com/Glad-Labs/poindexter/issues/362)) ([#1210](https://github.com/Glad-Labs/poindexter/issues/1210)) ([a4aa169](https://github.com/Glad-Labs/poindexter/commit/a4aa169cce4248ac540c56217a03ecad4b877e69))
+* **auto-publish:** structural gate for dev_diary — body/excerpt/title checks ([#1334](https://github.com/Glad-Labs/poindexter/issues/1334)) ([8cbeaa5](https://github.com/Glad-Labs/poindexter/commit/8cbeaa5bb7da4dfa6172a6fa825298b58d54fae4))
+* **brain:** DataFabric cross-store query helpers (poindexter[#429](https://github.com/Glad-Labs/poindexter/issues/429)) ([#1204](https://github.com/Glad-Labs/poindexter/issues/1204)) ([0672cbe](https://github.com/Glad-Labs/poindexter/commit/0672cbedcb342489c19afe87a8755c42dc6cefe6))
+* **brain:** genuine migration-drift self-heal — sync deploy checkout + exp backoff ([#1218](https://github.com/Glad-Labs/poindexter/issues/1218)) ([a7ee0ff](https://github.com/Glad-Labs/poindexter/commit/a7ee0ff0de09092d3c0d219c07fc74df82682995))
+* **console:** add operator console SPA + static mount ([#1265](https://github.com/Glad-Labs/poindexter/issues/1265)) ([10c72e9](https://github.com/Glad-Labs/poindexter/commit/10c72e9c77adb3c094613ca421238dfd53e1f56e))
+* **content:** seed media-artifact channels during graph construction for proper version registration ([5e88d82](https://github.com/Glad-Labs/poindexter/commit/5e88d82524dbaa8ae0b36dfc146c18b01f18a352))
+* **deploy:** repoint stack code mounts at deploy clone for genuine self-heal ([#1222](https://github.com/Glad-Labs/poindexter/issues/1222)) ([6f064f0](https://github.com/Glad-Labs/poindexter/commit/6f064f07aede8660e56dbf29cfc5893680c78a7d))
+* **dispatcher:** enhance local model cost tracking with electricity estimation ([875ebac](https://github.com/Glad-Labs/poindexter/commit/875ebac1dd916cfd94e0e50bb61ccfc929e95005))
+* **eval:** cost/energy eval harness for tier routing validation (poindexter[#530](https://github.com/Glad-Labs/poindexter/issues/530)) ([#1212](https://github.com/Glad-Labs/poindexter/issues/1212)) ([a126120](https://github.com/Glad-Labs/poindexter/commit/a126120756d05730f6a5d93f8c0c5ee606ba4f34))
+* **flow:** reclaim stale in_progress tasks at start of content_generation_flow ([#1274](https://github.com/Glad-Labs/poindexter/issues/1274)) ([c7d3132](https://github.com/Glad-Labs/poindexter/commit/c7d313267cc3ec991f2cc333e7b35096c8b9b39f))
+* **grafana:** add Media Pipeline (Stage 2) row to Pipeline board ([#678](https://github.com/Glad-Labs/poindexter/issues/678) Plan 8c) ([fdcf2d7](https://github.com/Glad-Labs/poindexter/commit/fdcf2d7172990ba1fac06d02bac1517b95c1ffca))
+* MCP HTTP auto-recovery agent (container-safe) ([#1245](https://github.com/Glad-Labs/poindexter/issues/1245)) ([cccb8c7](https://github.com/Glad-Labs/poindexter/commit/cccb8c7b87701ed8c262dd89b01b1217cf2ed495))
+* **media:** director long + short shot-lists ([#517](https://github.com/Glad-Labs/poindexter/issues/517)) ([0a47bd0](https://github.com/Glad-Labs/poindexter/commit/0a47bd071fa75c9c34c645fe413eba408737f0e9))
+* **media:** earned-autonomy Gate-2 tiering for auto-approve ([#531](https://github.com/Glad-Labs/poindexter/issues/531)) ([226ca03](https://github.com/Glad-Labs/poindexter/commit/226ca031c5808d7d93aaed166c8ca17a632d564c))
+* **media:** media_distribute dispatch pass — approved long+Shorts → YouTube ([#689](https://github.com/Glad-Labs/poindexter/issues/689) Plan 8 / [#682](https://github.com/Glad-Labs/poindexter/issues/682)) ([#1252](https://github.com/Glad-Labs/poindexter/issues/1252)) ([b332801](https://github.com/Glad-Labs/poindexter/commit/b332801ac565b47dfcdc083cda976a7e55f48d38))
+* **media:** media_distribute job — link rendered assets to post + seed Gate 2 ([#689](https://github.com/Glad-Labs/poindexter/issues/689) Plan 8) ([#1251](https://github.com/Glad-Labs/poindexter/issues/1251)) ([04d86f8](https://github.com/Glad-Labs/poindexter/commit/04d86f8993075c8ac23c5a59458eafe5886987f2))
+* **media:** media_pipeline Stage-2 graph_def spine ([#689](https://github.com/Glad-Labs/poindexter/issues/689)) ([#1234](https://github.com/Glad-Labs/poindexter/issues/1234)) ([cfb1631](https://github.com/Glad-Labs/poindexter/commit/cfb1631530f962aeb9a7e6560c6c07809fb1aadf))
+* **media:** media.persist node — durable storage + task-keyed media_assets ([#689](https://github.com/Glad-Labs/poindexter/issues/689) Plan 8) ([#1250](https://github.com/Glad-Labs/poindexter/issues/1250)) ([91b4797](https://github.com/Glad-Labs/poindexter/commit/91b4797276606ce83fb88819d0d309f98b49b287))
+* **media:** media.qa atom — A/V sync, caption presence, frame human-detection ([#1193](https://github.com/Glad-Labs/poindexter/issues/1193)) ([#1240](https://github.com/Glad-Labs/poindexter/issues/1240)) ([0aa987d](https://github.com/Glad-Labs/poindexter/commit/0aa987dcf45f18100d4bc748964e6c6f1c63c2a0))
+* **media:** one-ASR-pass captions + fidelity check in media_pipeline ([#676](https://github.com/Glad-Labs/poindexter/issues/676)) ([ee0d110](https://github.com/Glad-Labs/poindexter/commit/ee0d110312a46e0f5beadcfeb179e6db4be6353d))
+* **media:** qa.audio atom — deterministic narration audio QA ([#1193](https://github.com/Glad-Labs/poindexter/issues/1193) Phase 2) ([cf9a070](https://github.com/Glad-Labs/poindexter/commit/cf9a070b3bb91cf63d75e2fef6a0d338ccbcd86f))
+* **media:** render long + short video atoms in media_pipeline ([#675](https://github.com/Glad-Labs/poindexter/issues/675)/[#679](https://github.com/Glad-Labs/poindexter/issues/679)) ([be8b7bc](https://github.com/Glad-Labs/poindexter/commit/be8b7bc85894b6d24601d3bbff42e12d3b52a49b))
+* **media:** Stage-2 trigger — dispatch_media_pipeline job ([#689](https://github.com/Glad-Labs/poindexter/issues/689) Plan 7, [#677](https://github.com/Glad-Labs/poindexter/issues/677)) ([#1247](https://github.com/Glad-Labs/poindexter/issues/1247)) ([54ce4f2](https://github.com/Glad-Labs/poindexter/commit/54ce4f29d2f66880b7eb34710503255f22fdebd1))
+* **media:** wire qa.audio atom, Gate-2 re-eval job, and pipeline Grafana panels ([#1193](https://github.com/Glad-Labs/poindexter/issues/1193)/[#531](https://github.com/Glad-Labs/poindexter/issues/531)/[#678](https://github.com/Glad-Labs/poindexter/issues/678)) ([#1260](https://github.com/Glad-Labs/poindexter/issues/1260)) ([3a1e89d](https://github.com/Glad-Labs/poindexter/commit/3a1e89d6d02219d1096bd5947260aa652b71ec60))
+* **obs:** add cAdvisor + postgres_exporter + wire gh auth for findings ([#1208](https://github.com/Glad-Labs/poindexter/issues/1208)) ([eda8ece](https://github.com/Glad-Labs/poindexter/commit/eda8ece79295cde10b99baa524da1b80adfe16f4))
+* **pipeline:** approval gates via LangGraph interrupt() + checkpoint resume (poindexter[#363](https://github.com/Glad-Labs/poindexter/issues/363)) ([#1211](https://github.com/Glad-Labs/poindexter/issues/1211)) ([6d5dfe0](https://github.com/Glad-Labs/poindexter/commit/6d5dfe0b237bc7455149d4b5861735fad5d9c153))
+* **pipeline:** progress streaming via on_event + opt-in Telegram edit-stream ([#361](https://github.com/Glad-Labs/poindexter/issues/361) part 2) ([#1214](https://github.com/Glad-Labs/poindexter/issues/1214)) ([124e1d3](https://github.com/Glad-Labs/poindexter/commit/124e1d32bfce9393a7939cf2fcae999abefa8cce))
+* **podcast:** make voice-rotation pool DB-configurable ([#689](https://github.com/Glad-Labs/poindexter/issues/689) Plan 7) ([#1246](https://github.com/Glad-Labs/poindexter/issues/1246)) ([d93740b](https://github.com/Glad-Labs/poindexter/commit/d93740b3580cc6552e389d5b007017efa5e7b9a2))
+* **qa:** graduate deepeval + ragas eval rails to required_to_pass ([#454](https://github.com/Glad-Labs/poindexter/issues/454)) ([#1205](https://github.com/Glad-Labs/poindexter/issues/1205)) ([2fecd0d](https://github.com/Glad-Labs/poindexter/commit/2fecd0d02b8d5647705519e25be238926b9ab651))
+* **router:** outcome→variant-weight feedback loop ([#361](https://github.com/Glad-Labs/poindexter/issues/361) part 1) ([#1213](https://github.com/Glad-Labs/poindexter/issues/1213)) ([869f4f4](https://github.com/Glad-Labs/poindexter/commit/869f4f4c61cd2bc4b7b0cf5bef528e123e64aa93))
+* **seam2:** kernel-purity guard CI lint + fix top-level modules import (poindexter[#666](https://github.com/Glad-Labs/poindexter/issues/666)) ([f115b05](https://github.com/Glad-Labs/poindexter/commit/f115b05ab1509b354455eb6b2ce81f4acafa3496))
+* **skills:** skill importer service + CLI (poindexter[#529](https://github.com/Glad-Labs/poindexter/issues/529)) ([#1209](https://github.com/Glad-Labs/poindexter/issues/1209)) ([8cf799f](https://github.com/Glad-Labs/poindexter/commit/8cf799f09f11922647313e610d682c64b5d99f47))
+* **taps/memory:** add scope_allowlist to dedupe the canonical/junction scopes ([f5cc21a](https://github.com/Glad-Labs/poindexter/commit/f5cc21aebf36a64ba74ec82b2cb42b8e3594e427))
+* **video:** media_pipeline Plan 1 — Stage-1 artifact persistence ([#674](https://github.com/Glad-Labs/poindexter/issues/674), [#517](https://github.com/Glad-Labs/poindexter/issues/517), [#679](https://github.com/Glad-Labs/poindexter/issues/679)) ([#1226](https://github.com/Glad-Labs/poindexter/issues/1226)) ([7670e6a](https://github.com/Glad-Labs/poindexter/commit/7670e6a5608a30c5166007fa626520b3e4856117))
 
 
 ### Bug Fixes
 
-* **alert_dispatcher:** cap concurrent triage tasks + enrich observability ([c9a4ac2](https://github.com/Glad-Labs/glad-labs-stack/commit/c9a4ac2eab8dca6c3b762e1aee6635936c623363))
-* **brain:** add post_performance_probe.py to Dockerfile COPY+cp ([463ad3e](https://github.com/Glad-Labs/glad-labs-stack/commit/463ad3e0fd3792c8befcfcbd80958465d8ac6919))
-* **brain:** fix compose drift auto-recover for containerized context ([caac48f](https://github.com/Glad-Labs/glad-labs-stack/commit/caac48f9ae4f6c63b2ec5f13a21f040a712d3daf))
-* **brain:** make compose project name configurable via app_settings ([d99ccab](https://github.com/Glad-Labs/glad-labs-stack/commit/d99ccabdd76c1d3d8f1ae77b677648802bf31317))
-* **brain:** pass LOCAL_POSTGRES_* vars to brain-daemon container ([fc94621](https://github.com/Glad-Labs/glad-labs-stack/commit/fc9462137e0c6b14f6755bec9c62d1206af4e3e2))
-* **brain:** remove deleted gate probes from Dockerfile COPY + cp list ([#1190](https://github.com/Glad-Labs/glad-labs-stack/issues/1190)) ([8341358](https://github.com/Glad-Labs/glad-labs-stack/commit/83413587a3d9962ee5bb5d36fae928102a86f152))
-* prefect queue-backlog probe fires on scheduling jitter (false positive) ([#1182](https://github.com/Glad-Labs/glad-labs-stack/issues/1182)) ([02437f2](https://github.com/Glad-Labs/glad-labs-stack/commit/02437f2fb16a6c3766966ce6b46ab506f061540f))
-* **startup:** syntax-check modules/ before boot to catch conflict markers ([54075fe](https://github.com/Glad-Labs/glad-labs-stack/commit/54075fe8b8c30696d3efaee85040fecd2a7e816d))
-* **startup:** use compile() not py_compile to avoid read-only __pycache__ error ([9086680](https://github.com/Glad-Labs/glad-labs-stack/commit/9086680afd072bc0309ab9b620d5692023757072))
-* structured skip_type taxonomy for QA-rail skip ratio (closes Glad-Labs/glad-labs-stack[#1181](https://github.com/Glad-Labs/glad-labs-stack/issues/1181)) ([#1187](https://github.com/Glad-Labs/glad-labs-stack/issues/1187)) ([fbdcadc](https://github.com/Glad-Labs/glad-labs-stack/commit/fbdcadc08fcd51e89edfae42744d60f801d8cd66))
+* **alerts:** use 7-day rolling avg for traffic anomaly; document settings_defaults seeder ([b249fff](https://github.com/Glad-Labs/poindexter/commit/b249fff6c84742ff32378b8ca4ad21d41bcdbc47))
+* **analytics:** filter bot traffic from page_views ingest ([#1248](https://github.com/Glad-Labs/poindexter/issues/1248)) ([59e3e48](https://github.com/Glad-Labs/poindexter/commit/59e3e485f27b95862461264b77f8087d74c2d056))
+* **brain:** defer migration-drift restart while content is generating + repair content_gen probe ([#1261](https://github.com/Glad-Labs/poindexter/issues/1261)) ([f8c9182](https://github.com/Glad-Labs/poindexter/commit/f8c918274e7005096660a2562bc0a5bd31349f10))
+* **brain:** kill operator-URL-probe false pages for Loki/Tempo + disabled podcast TTS ([#228](https://github.com/Glad-Labs/poindexter/issues/228)) ([#1216](https://github.com/Glad-Labs/poindexter/issues/1216)) ([80536d9](https://github.com/Glad-Labs/poindexter/commit/80536d98a3d01f12e66b77169926d6d5bb689dff))
+* **brain:** stop migration-drift auto-recover restart/page storm ([#228](https://github.com/Glad-Labs/poindexter/issues/228)) ([#1215](https://github.com/Glad-Labs/poindexter/issues/1215)) ([8ee3082](https://github.com/Glad-Labs/poindexter/commit/8ee3082f02b6e653524e8429c3a4becd28a30c4d))
+* **brand:** show real Poindexter version instead of stale "V3.1" ([#1346](https://github.com/Glad-Labs/poindexter/issues/1346)) ([192816c](https://github.com/Glad-Labs/poindexter/commit/192816c9d5515347c205a31d67881a8a643d3ca7))
+* **ci:** activate dormant frontend Jest gate + fix zero-data coverage ([#1290](https://github.com/Glad-Labs/poindexter/issues/1290) [#1292](https://github.com/Glad-Labs/poindexter/issues/1292)) ([#1349](https://github.com/Glad-Labs/poindexter/issues/1349)) ([032cca1](https://github.com/Glad-Labs/poindexter/commit/032cca1cf7a8f17f655d0098dd66452c5511ec6b))
+* **ci:** unbreak public-mirror unit-tests, triage-on-open, runner disk ([#1277](https://github.com/Glad-Labs/poindexter/issues/1277)) ([125a8a2](https://github.com/Glad-Labs/poindexter/commit/125a8a20201248ca30de571648f48ba361f5e914))
+* **config:** drop fabricated LiveKit creds + dev_diary env bypass ([#1266](https://github.com/Glad-Labs/poindexter/issues/1266)) ([183655d](https://github.com/Glad-Labs/poindexter/commit/183655d5789e9f40f75bea7187c82944ead0fd6a))
+* **content:** fail loud on empty/too-short writer draft instead of misleading reviewer_count:0 QA reject ([#691](https://github.com/Glad-Labs/poindexter/issues/691)) ([#1278](https://github.com/Glad-Labs/poindexter/issues/1278)) ([345fe78](https://github.com/Glad-Labs/poindexter/commit/345fe78d79f170d185e1f63b1beabe6f7c4fec29))
+* **content:** publish-boundary guards — title-label/slug/excerpt + niche gate (poindexter[#728](https://github.com/Glad-Labs/poindexter/issues/728) [#729](https://github.com/Glad-Labs/poindexter/issues/729)) ([#1338](https://github.com/Glad-Labs/poindexter/issues/1338)) ([5bbbf48](https://github.com/Glad-Labs/poindexter/commit/5bbbf4830dce9461165b3f3e4a738a11bda4b882))
+* **content:** strip leaked reasoning/control tokens from model output ([#1285](https://github.com/Glad-Labs/poindexter/issues/1285)) ([9350b4a](https://github.com/Glad-Labs/poindexter/commit/9350b4aa037c99bc728a153b3fde41ce42a4d196))
+* **content:** thread platform handle into get_content_generator ([#667](https://github.com/Glad-Labs/poindexter/issues/667) regression) ([#1262](https://github.com/Glad-Labs/poindexter/issues/1262)) ([964cd58](https://github.com/Glad-Labs/poindexter/commit/964cd589d1d111a24ba28a4bdebb1e0508c12603))
+* **content:** unblock niche content — research grounding + distinct QA critic + validator whitelist ([#1271](https://github.com/Glad-Labs/poindexter/issues/1271)) ([c5db509](https://github.com/Glad-Labs/poindexter/commit/c5db50910291fb6408e421c5d26f164c45baaeb9))
+* **embeddings:** thread embedding_model setting into post-publish and CLI write paths ([#1264](https://github.com/Glad-Labs/poindexter/issues/1264)) ([78fb83f](https://github.com/Glad-Labs/poindexter/commit/78fb83f58453d465f4ae20050278c2963effe2e3))
+* **flows:** drop unused _app_container + narrow task_id type at post-pipeline call ([#1273](https://github.com/Glad-Labs/poindexter/issues/1273)) ([0f8b4d0](https://github.com/Glad-Labs/poindexter/commit/0f8b4d08d8240c9ec3a09329c6a1c74e633cc71a))
+* **frontend:** display-layer guards for sort, title, excerpt, loading (audit [#1](https://github.com/Glad-Labs/poindexter/issues/1) [#2](https://github.com/Glad-Labs/poindexter/issues/2) [#5](https://github.com/Glad-Labs/poindexter/issues/5) [#7](https://github.com/Glad-Labs/poindexter/issues/7)) ([#1317](https://github.com/Glad-Labs/poindexter/issues/1317)) ([552bf28](https://github.com/Glad-Labs/poindexter/commit/552bf28794f0b399415b339b182b5d333459d50f))
+* **media:** persist podcast TTS + intro-sting audio paths ([#690](https://github.com/Glad-Labs/poindexter/issues/690)) ([#1233](https://github.com/Glad-Labs/poindexter/issues/1233)) ([09eb66b](https://github.com/Glad-Labs/poindexter/commit/09eb66bffb5e5edf3d72fdb57f95066187487bb4))
+* **pipeline:** clear LangGraph checkpoint when stale-task sweeper resets a task ([#1263](https://github.com/Glad-Labs/poindexter/issues/1263)) ([3ca60a3](https://github.com/Glad-Labs/poindexter/commit/3ca60a38495c62898ac0e839d2b58d3aec550dda))
+* **pipeline:** enforce ATOM_META.retry in _wrap_atom ([#1254](https://github.com/Glad-Labs/poindexter/issues/1254)) ([6fe344c](https://github.com/Glad-Labs/poindexter/commit/6fe344ce4b165e032714dcd972e22f0a5c0f3a89))
+* **pipeline:** propagate resolved placeholders via context_updates ([#1207](https://github.com/Glad-Labs/poindexter/issues/1207)) ([1ec2c83](https://github.com/Glad-Labs/poindexter/commit/1ec2c835711a2521f84e0860117d443e3d73d3c9))
+* **plugins:** dedup Modules by manifest name to silence duplicate-module warnings ([#1336](https://github.com/Glad-Labs/poindexter/issues/1336)) ([d16449d](https://github.com/Glad-Labs/poindexter/commit/d16449d1eb9338ada5892070f03c5afe597c5e13))
+* **poetry:** correct version formatting for dependencies and metadata ([9b5d3cb](https://github.com/Glad-Labs/poindexter/commit/9b5d3cbed844fb4430019b0086b00e9297c22093))
+* **publish:** go-live route uses DEPLOYMENT_MODE for post-publish hooks ([#1253](https://github.com/Glad-Labs/poindexter/issues/1253)) ([4b5a6fa](https://github.com/Glad-Labs/poindexter/commit/4b5a6fa5c9daaed74abb5688e12f049448e7455c))
+* **qa:** alias-aware vacuous-pass guard so passing posts aren't rejected ([#1275](https://github.com/Glad-Labs/poindexter/issues/1275)) ([66daf08](https://github.com/Glad-Labs/poindexter/commit/66daf08e32127e661438494484eb00f2e76fd45a))
+* **qa:** fail closed when required rail emits no review (poindexter[#680](https://github.com/Glad-Labs/poindexter/issues/680)) ([#1255](https://github.com/Glad-Labs/poindexter/issues/1255)) ([aec0142](https://github.com/Glad-Labs/poindexter/commit/aec01427e629231a4b127e3f689553005d904fd0))
+* **qa:** stop validator false-positive criticals on internal files + rhetorical citations ([#1276](https://github.com/Glad-Labs/poindexter/issues/1276)) ([67958d2](https://github.com/Glad-Labs/poindexter/commit/67958d24d030ec1c1cbbc1b78296cdd2f84761d8))
+* **restore-probe:** exclude _-prefixed helpers from migration file glob + precise page title ([#1217](https://github.com/Glad-Labs/poindexter/issues/1217)) ([f714845](https://github.com/Glad-Labs/poindexter/commit/f7148452537f66a3da09811b974ae65d14ed6997))
+* **security:** remove hardcoded GlitchTip password + untrack audit script ([#1272](https://github.com/Glad-Labs/poindexter/issues/1272)) ([d007e02](https://github.com/Glad-Labs/poindexter/commit/d007e02a63b604f4fb52fc93151a4c8c831f68ee))
+* **security:** strip operator mirror-tooling from public mirror ([#1287](https://github.com/Glad-Labs/poindexter/issues/1287)) ([#1347](https://github.com/Glad-Labs/poindexter/issues/1347)) ([8f889da](https://github.com/Glad-Labs/poindexter/commit/8f889daa8b7b8c61ae69c64d166a99eeec7ba4b1))
+* **seeds:** restore dev_diary niche_goals dropped in the 2026-05-08 squash ([#1199](https://github.com/Glad-Labs/poindexter/issues/1199)) ([fcd0420](https://github.com/Glad-Labs/poindexter/commit/fcd0420929182db3efefad77c8c3c4b20962db8a))
+* **taps/memory:** strip NUL bytes before embeddings INSERT ([6a56f4c](https://github.com/Glad-Labs/poindexter/commit/6a56f4c917a150d233af33d6f0fe98fe0ffd8153))
+* **validator:** don't flag emphasis-wrapped final sentences as truncated ([#1206](https://github.com/Glad-Labs/poindexter/issues/1206)) ([44c03ae](https://github.com/Glad-Labs/poindexter/commit/44c03ae8c402d9754b02cc6669ddfed7c541b1c4))
+* **video:** replace hardcoded photorealistic prompts + wire video_negative_prompt (poindexter[#675](https://github.com/Glad-Labs/poindexter/issues/675)) ([#1256](https://github.com/Glad-Labs/poindexter/issues/1256)) ([b865639](https://github.com/Glad-Labs/poindexter/commit/b865639653b139ba13c3372a3a34160e0181ca91))
+* **voice:** guard VALID_VOICES — pipecat 1.1.0 removed it, agents crash-looped ([#1225](https://github.com/Glad-Labs/poindexter/issues/1225)) ([a2ed43f](https://github.com/Glad-Labs/poindexter/commit/a2ed43fe0eab41042caaa2eb356112f9c6660073))
+* **youtube:** map PublishResult fields + add #Shorts marker ([#682](https://github.com/Glad-Labs/poindexter/issues/682)) ([#1249](https://github.com/Glad-Labs/poindexter/issues/1249)) ([f437241](https://github.com/Glad-Labs/poindexter/commit/f437241a33f28955a5ed0f126622b02c519c6ba7))
 
-## [0.73.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.72.0...v0.73.0) (2026-06-06)
+## [0.74.0](https://github.com/Glad-Labs/poindexter/compare/v0.73.0...v0.74.0) (2026-06-07)
 
 
 ### Features
 
-* **platform:** migrate auto_publish_gate + finalize_task config reads onto the handle (Wave 3e-3, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1167](https://github.com/Glad-Labs/glad-labs-stack/issues/1167)) ([d7429ff](https://github.com/Glad-Labs/glad-labs-stack/commit/d7429ff246985e41457997f5e8a1c7917bc82ce8))
+* **analytics:** wire GA4 into rollup + post-performance probe ([#520](https://github.com/Glad-Labs/poindexter/issues/520)/[#672](https://github.com/Glad-Labs/poindexter/issues/672)) ([0ad8fd3](https://github.com/Glad-Labs/poindexter/commit/0ad8fd37698649ace190d013d21bfca399b34122))
+* **db:** add actor column to pipeline_gate_history (poindexter[#656](https://github.com/Glad-Labs/poindexter/issues/656)) ([#1192](https://github.com/Glad-Labs/poindexter/issues/1192)) ([ae3dcf6](https://github.com/Glad-Labs/poindexter/commit/ae3dcf66592f4720763a833e3c70a8cf41948fff))
+* **obs:** add cAdvisor + postgres_exporter + wire gh auth for findings ([#1189](https://github.com/Glad-Labs/poindexter/issues/1189)) ([8577f45](https://github.com/Glad-Labs/poindexter/commit/8577f457d9dd850f6c081864294091bcda0d4b3e))
+* **obs:** add cAdvisor + postgres_exporter Grafana panels ([#1191](https://github.com/Glad-Labs/poindexter/issues/1191)) ([27c00b6](https://github.com/Glad-Labs/poindexter/commit/27c00b6bb45bb89c7d8bb803097efe74adad39fa))
+* **platform:** wave 3d-ii — thread platform.dispatch.complete into image stages ([#1180](https://github.com/Glad-Labs/poindexter/issues/1180)) ([baf8c09](https://github.com/Glad-Labs/poindexter/commit/baf8c098abbaebe2e1690d5120fbf225292c96e3))
+* **seam-1:** wave 3e-4 — multi_model_qa config reads via platform.config ([#1178](https://github.com/Glad-Labs/poindexter/issues/1178)) ([491c649](https://github.com/Glad-Labs/poindexter/commit/491c649297b49aabaa9d0f941edfcad3032c795b))
+* **seam1:** Wave 3f + Wave 4 — clear module-purity violations + CI lint (poindexter[#667](https://github.com/Glad-Labs/poindexter/issues/667)) ([1aa3d7b](https://github.com/Glad-Labs/poindexter/commit/1aa3d7bba28fe947773daa8a9d4812fdf1c415b8))
 
 
 ### Bug Fixes
 
-* **backfill_videos:** dispatch stranded approved videos (poindexter[#558](https://github.com/Glad-Labs/glad-labs-stack/issues/558)) ([#1169](https://github.com/Glad-Labs/glad-labs-stack/issues/1169)) ([d1a892a](https://github.com/Glad-Labs/glad-labs-stack/commit/d1a892ab4ea5e1b547bf7e053692a9ddf57390ac))
-* **backfill:** handle missing site_config gracefully in run method ([f8ec275](https://github.com/Glad-Labs/glad-labs-stack/commit/f8ec2754c86f9006af8e92858940e491765698f1))
-* **ci:** enable auto-merge on nightly docs PRs ([1c5f26d](https://github.com/Glad-Labs/glad-labs-stack/commit/1c5f26d0449296259bbf22ee5e64b5a8ae2fd3cc))
-* fetch R2 manifest via S3 API to resolve recurring drift alerts ([771c867](https://github.com/Glad-Labs/glad-labs-stack/commit/771c8677e9adb1c590c5a3bf2741abccc15ca180))
-* **gpu:** skip gaming detection when pipeline holds the lock (poindexter[#579](https://github.com/Glad-Labs/glad-labs-stack/issues/579)) ([ffbb204](https://github.com/Glad-Labs/glad-labs-stack/commit/ffbb204f77c71e931e746445dcfb4efc1d521a6e))
-* linter/type-checker correctness sweep ([0144c8a](https://github.com/Glad-Labs/glad-labs-stack/commit/0144c8a2ae1ea923c75b627b679036d2f1a2cacf))
-* **metrics:** emit NODE_DURATION_SECONDS for graph_def atom path (poindexter[#652](https://github.com/Glad-Labs/glad-labs-stack/issues/652)) ([cd3670c](https://github.com/Glad-Labs/glad-labs-stack/commit/cd3670c6c010331cb118dc1d93c58d375ea6b897))
-* **monitoring:** exclude master-flag-off skips from QaRailFullySkipped; add smartmontools to brain ([2a6e91c](https://github.com/Glad-Labs/glad-labs-stack/commit/2a6e91cc63dcbd35a88552497e033db4fe62fe80))
-* **pipeline:** propagate resolved [posts/] placeholders via context_updates ([102e0e4](https://github.com/Glad-Labs/glad-labs-stack/commit/102e0e42442a2d0afc5de8bf4e63ba6c591a8323))
-* **probe:** mcp_http_probe discovery path /healthz, re-enable (poindexter[#670](https://github.com/Glad-Labs/glad-labs-stack/issues/670)) ([9dd1987](https://github.com/Glad-Labs/glad-labs-stack/commit/9dd1987c1407b41d5d4c29edbe8cc700eddd16f1))
-* **prometheus:** add self-scrape + Alertmanager scrape jobs (poindexter[#649](https://github.com/Glad-Labs/glad-labs-stack/issues/649)) ([#1168](https://github.com/Glad-Labs/glad-labs-stack/issues/1168)) ([b37a805](https://github.com/Glad-Labs/glad-labs-stack/commit/b37a80587519b9401cb214f9a5d415509a35d0c8))
-* refuse log_only fallback for critical findings (closes Glad-Labs/poindexter[#548](https://github.com/Glad-Labs/glad-labs-stack/issues/548)) ([#1163](https://github.com/Glad-Labs/glad-labs-stack/issues/1163)) ([0788550](https://github.com/Glad-Labs/glad-labs-stack/commit/0788550ab3d88da5f03650a475a740fc91264f8b))
-* **image-gen-server:** preserve pipeline on transient Postgres restart (stack[#1152](https://github.com/Glad-Labs/glad-labs-stack/issues/1152)) ([#1170](https://github.com/Glad-Labs/glad-labs-stack/issues/1170)) ([e340514](https://github.com/Glad-Labs/glad-labs-stack/commit/e34051493e51709afadc828b0ee1f7555be60d06))
-* **taps:** parallelize CodebaseSource embed queries to avoid 60s timeout ([ec6ded3](https://github.com/Glad-Labs/glad-labs-stack/commit/ec6ded322fbc741498bddb9c8f8121cb660ddfa1))
-* **tests:** re-point phase1 Grafana panel tests at experiments-dryrun.json (stack[#1082](https://github.com/Glad-Labs/glad-labs-stack/issues/1082)) ([654e9c0](https://github.com/Glad-Labs/glad-labs-stack/commit/654e9c0740f2a995ccf5ebf0d63cdfa5a44cbfa2))
-* **validator:** don't flag emphasis-wrapped final sentences as truncated ([ed77a43](https://github.com/Glad-Labs/glad-labs-stack/commit/ed77a4349d1c69358e4fee6f8d5966c2b914dcd9))
-* **video:** video_slideshow_prompt_model now overrides cost_tier.standard ([0ab7c15](https://github.com/Glad-Labs/glad-labs-stack/commit/0ab7c15a9922b9ac2c18932de960136fb699eb71))
-* **youtube:** strip bare angle brackets from video descriptions (invalidDescription 400) ([a947e9c](https://github.com/Glad-Labs/glad-labs-stack/commit/a947e9c4f3d24902de358532dc4dae04feec2f78))
+* **alert_dispatcher:** cap concurrent triage tasks + enrich observability ([c9a4ac2](https://github.com/Glad-Labs/poindexter/commit/c9a4ac2eab8dca6c3b762e1aee6635936c623363))
+* **brain:** add post_performance_probe.py to Dockerfile COPY+cp ([463ad3e](https://github.com/Glad-Labs/poindexter/commit/463ad3e0fd3792c8befcfcbd80958465d8ac6919))
+* **brain:** fix compose drift auto-recover for containerized context ([caac48f](https://github.com/Glad-Labs/poindexter/commit/caac48f9ae4f6c63b2ec5f13a21f040a712d3daf))
+* **brain:** make compose project name configurable via app_settings ([d99ccab](https://github.com/Glad-Labs/poindexter/commit/d99ccabdd76c1d3d8f1ae77b677648802bf31317))
+* **brain:** pass LOCAL_POSTGRES_* vars to brain-daemon container ([fc94621](https://github.com/Glad-Labs/poindexter/commit/fc9462137e0c6b14f6755bec9c62d1206af4e3e2))
+* **brain:** remove deleted gate probes from Dockerfile COPY + cp list ([#1190](https://github.com/Glad-Labs/poindexter/issues/1190)) ([8341358](https://github.com/Glad-Labs/poindexter/commit/83413587a3d9962ee5bb5d36fae928102a86f152))
+* prefect queue-backlog probe fires on scheduling jitter (false positive) ([#1182](https://github.com/Glad-Labs/poindexter/issues/1182)) ([02437f2](https://github.com/Glad-Labs/poindexter/commit/02437f2fb16a6c3766966ce6b46ab506f061540f))
+* **startup:** syntax-check modules/ before boot to catch conflict markers ([54075fe](https://github.com/Glad-Labs/poindexter/commit/54075fe8b8c30696d3efaee85040fecd2a7e816d))
+* **startup:** use compile() not py_compile to avoid read-only __pycache__ error ([9086680](https://github.com/Glad-Labs/poindexter/commit/9086680afd072bc0309ab9b620d5692023757072))
+* structured skip_type taxonomy for QA-rail skip ratio (closes Glad-Labs/poindexter[#1181](https://github.com/Glad-Labs/poindexter/issues/1181)) ([#1187](https://github.com/Glad-Labs/poindexter/issues/1187)) ([fbdcadc](https://github.com/Glad-Labs/poindexter/commit/fbdcadc08fcd51e89edfae42744d60f801d8cd66))
 
-## [0.72.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.71.0...v0.72.0) (2026-06-05)
+## [0.73.0](https://github.com/Glad-Labs/poindexter/compare/v0.72.0...v0.73.0) (2026-06-06)
 
 
 ### Features
 
-* **#673:** add cross-signal page-view capture liveness alert ([#1145](https://github.com/Glad-Labs/glad-labs-stack/issues/1145)) ([2e89ad4](https://github.com/Glad-Labs/glad-labs-stack/commit/2e89ad4eeb1d840c48af7a1e89e116e4e3d5c9f0))
-* **platform:** construct + bind the Platform handle at boot (Wave 3b-i, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1134](https://github.com/Glad-Labs/glad-labs-stack/issues/1134)) ([eaece43](https://github.com/Glad-Labs/glad-labs-stack/commit/eaece4348975599922e539a58cbabebd65dbfb5d))
-* **platform:** expand ConfigCapability with typed getters (Wave 3e-0, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1141](https://github.com/Glad-Labs/glad-labs-stack/issues/1141)) ([b3e1187](https://github.com/Glad-Labs/glad-labs-stack/commit/b3e1187a2b8e95d0e5d6b1a154cc05c5ef286226))
-* **platform:** migrate clean stage dispatch onto the handle (Wave 3d-i, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1140](https://github.com/Glad-Labs/glad-labs-stack/issues/1140)) ([1b78d78](https://github.com/Glad-Labs/glad-labs-stack/commit/1b78d78e944e4cef74f9cd875f1652e29d1480c5))
-* **platform:** migrate clean-stage config reads onto the handle (Wave 3e-1, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1147](https://github.com/Glad-Labs/glad-labs-stack/issues/1147)) ([6417721](https://github.com/Glad-Labs/glad-labs-stack/commit/6417721b785757f1b266d009c31140bc57a6f5dd))
-* **platform:** migrate content's audit sites onto the handle (Wave 3c, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1135](https://github.com/Glad-Labs/glad-labs-stack/issues/1135)) ([98e4202](https://github.com/Glad-Labs/glad-labs-stack/commit/98e42023c63e45a463bd6ac17e3da22befd4e027))
-* **platform:** migrate multi_model_qa audit onto the handle (Wave 3c-ii, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1137](https://github.com/Glad-Labs/glad-labs-stack/issues/1137)) ([ad079f5](https://github.com/Glad-Labs/glad-labs-stack/commit/ad079f5555cdd039db5cb6794cfcd51dfe4bbb14))
-* **platform:** migrate qa.aggregate config reads onto the handle (Wave 3e-2, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1156](https://github.com/Glad-Labs/glad-labs-stack/issues/1156)) ([2505279](https://github.com/Glad-Labs/glad-labs-stack/commit/2505279f6d0511e3354306ff9bd4d8228c982ca1))
-* **platform:** module&lt;-&gt;platform binding contract (Wave 2 contract, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1132](https://github.com/Glad-Labs/glad-labs-stack/issues/1132)) ([68c9588](https://github.com/Glad-Labs/glad-labs-stack/commit/68c9588450a1c0e9f9f8b40b4c47d9b9a382bc57))
-* **platform:** Platform handle — contract + concrete impls (Seam 1, Waves 0–1, [#667](https://github.com/Glad-Labs/glad-labs-stack/issues/667)) ([#1130](https://github.com/Glad-Labs/glad-labs-stack/issues/1130)) ([8d281b8](https://github.com/Glad-Labs/glad-labs-stack/commit/8d281b82bb78ee899df88a9a711f6a49d7298f7d))
-* **voice:** host bridge resolves LiveKit creds DB-first ([#1000](https://github.com/Glad-Labs/glad-labs-stack/issues/1000)) ([#1148](https://github.com/Glad-Labs/glad-labs-stack/issues/1148)) ([f5047ab](https://github.com/Glad-Labs/glad-labs-stack/commit/f5047abdabb160289ffb217a554c2849c13e77df))
-* **voice:** warm Speaches STT/TTS sidecar — kill the ~12s cold-start ([#1088](https://github.com/Glad-Labs/glad-labs-stack/issues/1088)) ([#1138](https://github.com/Glad-Labs/glad-labs-stack/issues/1138)) ([584d777](https://github.com/Glad-Labs/glad-labs-stack/commit/584d777cfed16c12f8408dfe9b915dd07463e3db))
+* **platform:** migrate auto_publish_gate + finalize_task config reads onto the handle (Wave 3e-3, [#667](https://github.com/Glad-Labs/poindexter/issues/667)) ([#1167](https://github.com/Glad-Labs/poindexter/issues/1167)) ([d7429ff](https://github.com/Glad-Labs/poindexter/commit/d7429ff246985e41457997f5e8a1c7917bc82ce8))
 
 
 ### Bug Fixes
 
-* **#671:** add page-view beacon Worker origin to CSP connect-src ([#1142](https://github.com/Glad-Labs/glad-labs-stack/issues/1142)) ([6cc4bb9](https://github.com/Glad-Labs/glad-labs-stack/commit/6cc4bb9982a0212ffdb36e011d352efb7b39012e))
-* **#671:** send page-view beacon as text/plain to avoid CORS preflight ([#1143](https://github.com/Glad-Labs/glad-labs-stack/issues/1143)) ([f8c1c57](https://github.com/Glad-Labs/glad-labs-stack/commit/f8c1c574b44366874c7a5533f50fbc5c86f7d39f))
-* key branch-drift dedup on local HEAD only (closes Glad-Labs/glad-labs-stack[#1105](https://github.com/Glad-Labs/glad-labs-stack/issues/1105)) ([#1119](https://github.com/Glad-Labs/glad-labs-stack/issues/1119)) ([240787f](https://github.com/Glad-Labs/glad-labs-stack/commit/240787fe580cb9d0a01291811f05caa5e3212dba))
-* **seo:** retire de-published post exports so takedowns return a true 404 ([#1146](https://github.com/Glad-Labs/glad-labs-stack/issues/1146)) ([#1155](https://github.com/Glad-Labs/glad-labs-stack/issues/1155)) ([f6863ad](https://github.com/Glad-Labs/glad-labs-stack/commit/f6863ad49c914b908768223e0996c6bad0b215e2))
-* **seo:** stop robots.txt blocking /_next/ render assets; fix privacy redirects ([#1144](https://github.com/Glad-Labs/glad-labs-stack/issues/1144)) ([067c047](https://github.com/Glad-Labs/glad-labs-stack/commit/067c047759d2139d94f54c55f129a3ad1250fb37))
-* **sync:** rewrite pass now covers .ps1 — delegate to guard's _is_text_file ([0a196d7](https://github.com/Glad-Labs/glad-labs-stack/commit/0a196d73df964a99b5f6d7738ff2f70cb1b4dac7))
-* **voice:** access VALID_VOICES from class, not module ([#1153](https://github.com/Glad-Labs/glad-labs-stack/issues/1153)) ([#1157](https://github.com/Glad-Labs/glad-labs-stack/issues/1157)) ([f1d598f](https://github.com/Glad-Labs/glad-labs-stack/commit/f1d598f713de9ed60b67d7c678f5a27d35061f89))
-* **voice:** pass Kokoro voice through Speaches TTS, not OpenAI catalog ([#1088](https://github.com/Glad-Labs/glad-labs-stack/issues/1088)) ([#1153](https://github.com/Glad-Labs/glad-labs-stack/issues/1153)) ([5289fde](https://github.com/Glad-Labs/glad-labs-stack/commit/5289fdefc503f6352236d21d0c7f66ef314ddad6))
-* **voice:** spawn host-brain claude with CREATE_NO_WINDOW — no popup per turn ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1139](https://github.com/Glad-Labs/glad-labs-stack/issues/1139)) ([272d7cc](https://github.com/Glad-Labs/glad-labs-stack/commit/272d7cc380df08dbe8d27498f6c17295e435200a))
-* **voice:** unique LiveKit identity per device so phone + PC don't collide ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1125](https://github.com/Glad-Labs/glad-labs-stack/issues/1125)) ([1059604](https://github.com/Glad-Labs/glad-labs-stack/commit/105960413d18c70b0e0e8038e8882ebd7453a294))
+* **backfill_videos:** dispatch stranded approved videos (poindexter[#558](https://github.com/Glad-Labs/poindexter/issues/558)) ([#1169](https://github.com/Glad-Labs/poindexter/issues/1169)) ([d1a892a](https://github.com/Glad-Labs/poindexter/commit/d1a892ab4ea5e1b547bf7e053692a9ddf57390ac))
+* **backfill:** handle missing site_config gracefully in run method ([f8ec275](https://github.com/Glad-Labs/poindexter/commit/f8ec2754c86f9006af8e92858940e491765698f1))
+* **ci:** enable auto-merge on nightly docs PRs ([1c5f26d](https://github.com/Glad-Labs/poindexter/commit/1c5f26d0449296259bbf22ee5e64b5a8ae2fd3cc))
+* fetch R2 manifest via S3 API to resolve recurring drift alerts ([771c867](https://github.com/Glad-Labs/poindexter/commit/771c8677e9adb1c590c5a3bf2741abccc15ca180))
+* **gpu:** skip gaming detection when pipeline holds the lock (poindexter[#579](https://github.com/Glad-Labs/poindexter/issues/579)) ([ffbb204](https://github.com/Glad-Labs/poindexter/commit/ffbb204f77c71e931e746445dcfb4efc1d521a6e))
+* linter/type-checker correctness sweep ([0144c8a](https://github.com/Glad-Labs/poindexter/commit/0144c8a2ae1ea923c75b627b679036d2f1a2cacf))
+* **metrics:** emit NODE_DURATION_SECONDS for graph_def atom path (poindexter[#652](https://github.com/Glad-Labs/poindexter/issues/652)) ([cd3670c](https://github.com/Glad-Labs/poindexter/commit/cd3670c6c010331cb118dc1d93c58d375ea6b897))
+* **monitoring:** exclude master-flag-off skips from QaRailFullySkipped; add smartmontools to brain ([2a6e91c](https://github.com/Glad-Labs/poindexter/commit/2a6e91cc63dcbd35a88552497e033db4fe62fe80))
+* **pipeline:** propagate resolved [posts/] placeholders via context_updates ([102e0e4](https://github.com/Glad-Labs/poindexter/commit/102e0e42442a2d0afc5de8bf4e63ba6c591a8323))
+* **probe:** mcp_http_probe discovery path /healthz, re-enable (poindexter[#670](https://github.com/Glad-Labs/poindexter/issues/670)) ([9dd1987](https://github.com/Glad-Labs/poindexter/commit/9dd1987c1407b41d5d4c29edbe8cc700eddd16f1))
+* **prometheus:** add self-scrape + Alertmanager scrape jobs (poindexter[#649](https://github.com/Glad-Labs/poindexter/issues/649)) ([#1168](https://github.com/Glad-Labs/poindexter/issues/1168)) ([b37a805](https://github.com/Glad-Labs/poindexter/commit/b37a80587519b9401cb214f9a5d415509a35d0c8))
+* refuse log_only fallback for critical findings (closes Glad-Labs/poindexter[#548](https://github.com/Glad-Labs/poindexter/issues/548)) ([#1163](https://github.com/Glad-Labs/poindexter/issues/1163)) ([0788550](https://github.com/Glad-Labs/poindexter/commit/0788550ab3d88da5f03650a475a740fc91264f8b))
+* **image-gen-server:** preserve pipeline on transient Postgres restart (stack[#1152](https://github.com/Glad-Labs/poindexter/issues/1152)) ([#1170](https://github.com/Glad-Labs/poindexter/issues/1170)) ([e340514](https://github.com/Glad-Labs/poindexter/commit/e34051493e51709afadc828b0ee1f7555be60d06))
+* **taps:** parallelize CodebaseSource embed queries to avoid 60s timeout ([ec6ded3](https://github.com/Glad-Labs/poindexter/commit/ec6ded322fbc741498bddb9c8f8121cb660ddfa1))
+* **tests:** re-point phase1 Grafana panel tests at experiments-dryrun.json (stack[#1082](https://github.com/Glad-Labs/poindexter/issues/1082)) ([654e9c0](https://github.com/Glad-Labs/poindexter/commit/654e9c0740f2a995ccf5ebf0d63cdfa5a44cbfa2))
+* **validator:** don't flag emphasis-wrapped final sentences as truncated ([ed77a43](https://github.com/Glad-Labs/poindexter/commit/ed77a4349d1c69358e4fee6f8d5966c2b914dcd9))
+* **video:** video_slideshow_prompt_model now overrides cost_tier.standard ([0ab7c15](https://github.com/Glad-Labs/poindexter/commit/0ab7c15a9922b9ac2c18932de960136fb699eb71))
+* **youtube:** strip bare angle brackets from video descriptions (invalidDescription 400) ([a947e9c](https://github.com/Glad-Labs/poindexter/commit/a947e9c4f3d24902de358532dc4dae04feec2f78))
 
-## [0.71.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.8...v0.71.0) (2026-06-04)
+## [0.72.0](https://github.com/Glad-Labs/poindexter/compare/v0.71.0...v0.72.0) (2026-06-05)
 
 
 ### Features
 
-* **brain:** fall back to iCUE PSU tap when HWiNFO drops + graduated watchdog ([48f0906](https://github.com/Glad-Labs/glad-labs-stack/commit/48f0906e2e95289d1c9e64ad8ab55ae1293970ab))
-* **brain:** iCUE corsair_csv feed-freshness watchdog ([#868](https://github.com/Glad-Labs/glad-labs-stack/issues/868)) + fix brain Dockerfile to ship psu_power/corsair_feed_probe (latent crashloop) ([1e38558](https://github.com/Glad-Labs/glad-labs-stack/commit/1e385586679f098eef01f3ed2d2dd2cb03f73e5f))
-* **edge:** shared CDN bot-challenge guard across verify / check_links / revalidation ([#1096](https://github.com/Glad-Labs/glad-labs-stack/issues/1096)) ([95d825b](https://github.com/Glad-Labs/glad-labs-stack/commit/95d825b08b124ebb151fa9d239f3d54655d8d693))
-* **grafana:** add HWiNFO/AIDA64 sensor panels (temps/fans/per-core power/PSU/voltages) to Hardware & Power board ([d32a832](https://github.com/Glad-Labs/glad-labs-stack/commit/d32a832efda3aaf8eb44c590e333763a78378bfa))
-* **modules:** Module v1 Phase 5 — presence-based visibility sync ([#1109](https://github.com/Glad-Labs/glad-labs-stack/issues/1109)) ([0eed6dc](https://github.com/Glad-Labs/glad-labs-stack/commit/0eed6dc7dd9f9639d831c569613f87d3fc5c3610))
-* **qa:** reimplement guardrails rails natively, drop guardrails-ai dep ([#996](https://github.com/Glad-Labs/glad-labs-stack/issues/996)) ([#1079](https://github.com/Glad-Labs/glad-labs-stack/issues/1079)) ([c1b7db3](https://github.com/Glad-Labs/glad-labs-stack/commit/c1b7db3cf6940d06a12083a2167197dd52faafbf))
-* **voice:** /voice/join?room= routing for the two-room split ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1097](https://github.com/Glad-Labs/glad-labs-stack/issues/1097)) ([81debaf](https://github.com/Glad-Labs/glad-labs-stack/commit/81debaf9c938ec227b0b50f1caef31e1dbedf63f))
-* **voice:** claude-code room container + DB-driven service profiles ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1098](https://github.com/Glad-Labs/glad-labs-stack/issues/1098)) ([9c27bec](https://github.com/Glad-Labs/glad-labs-stack/commit/9c27bec81bc0e60e048c8ccdb4e8bf13e7c06157))
-* **voice:** DB-driven pinned + auto-resetting claude-code voice session ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1085](https://github.com/Glad-Labs/glad-labs-stack/issues/1085)) ([26eca42](https://github.com/Glad-Labs/glad-labs-stack/commit/26eca42d57834b84a2d387a05d235ef1b2e14035))
-* **voice:** deprecate in-container claude-code mode; host-brain is the path ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1102](https://github.com/Glad-Labs/glad-labs-stack/issues/1102)) ([d19e42d](https://github.com/Glad-Labs/glad-labs-stack/commit/d19e42da85afe9d0dda2b623c7deb20cbde679ae))
-* **voice:** durable host-brain daemon — hidden self-restarting task ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1101](https://github.com/Glad-Labs/glad-labs-stack/issues/1101)) ([3a6026c](https://github.com/Glad-Labs/glad-labs-stack/commit/3a6026cb4c83fcfa5400fe04adba80ac82319981))
-* **voice:** host-side brain — full dev-on-the-go for the voice room ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1093](https://github.com/Glad-Labs/glad-labs-stack/issues/1093)) ([080333b](https://github.com/Glad-Labs/glad-labs-stack/commit/080333be1ada398419c75dab3892297b96f594ba))
-* **voice:** move the claude-code voice transcript from Telegram to Discord ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1108](https://github.com/Glad-Labs/glad-labs-stack/issues/1108)) ([88a2b13](https://github.com/Glad-Labs/glad-labs-stack/commit/88a2b13c20c3b9af97ae9bedce3ad681d97aeb90))
-* **voice:** per-room TTS voice override for the claude-code room ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1107](https://github.com/Glad-Labs/glad-labs-stack/issues/1107)) ([2781420](https://github.com/Glad-Labs/glad-labs-stack/commit/27814201fbd2b63bb45eb9af1625ec515ae9c4e1))
-* **voice:** read LiveKit key/secret from app_settings, env fallback ([#1000](https://github.com/Glad-Labs/glad-labs-stack/issues/1000)) ([#1103](https://github.com/Glad-Labs/glad-labs-stack/issues/1103)) ([38670ca](https://github.com/Glad-Labs/glad-labs-stack/commit/38670ca3475ca0d623ffd76cd433dae46e9bc7ce))
-* **web:** time-based ISR backstop (1h) on canonical index routes ([#1100](https://github.com/Glad-Labs/glad-labs-stack/issues/1100)) ([f3b4c7e](https://github.com/Glad-Labs/glad-labs-stack/commit/f3b4c7e7011ae6d155345322d73cdbb4d057e737))
+* **#673:** add cross-signal page-view capture liveness alert ([#1145](https://github.com/Glad-Labs/poindexter/issues/1145)) ([2e89ad4](https://github.com/Glad-Labs/poindexter/commit/2e89ad4eeb1d840c48af7a1e89e116e4e3d5c9f0))
+* **platform:** construct + bind the Platform handle at boot (Wave 3b-i, [#667](https://github.com/Glad-Labs/poindexter/issues/667)) ([#1134](https://github.com/Glad-Labs/poindexter/issues/1134)) ([eaece43](https://github.com/Glad-Labs/poindexter/commit/eaece4348975599922e539a58cbabebd65dbfb5d))
+* **platform:** expand ConfigCapability with typed getters (Wave 3e-0, [#667](https://github.com/Glad-Labs/poindexter/issues/667)) ([#1141](https://github.com/Glad-Labs/poindexter/issues/1141)) ([b3e1187](https://github.com/Glad-Labs/poindexter/commit/b3e1187a2b8e95d0e5d6b1a154cc05c5ef286226))
+* **platform:** migrate clean stage dispatch onto the handle (Wave 3d-i, [#667](https://github.com/Glad-Labs/poindexter/issues/667)) ([#1140](https://github.com/Glad-Labs/poindexter/issues/1140)) ([1b78d78](https://github.com/Glad-Labs/poindexter/commit/1b78d78e944e4cef74f9cd875f1652e29d1480c5))
+* **platform:** migrate clean-stage config reads onto the handle (Wave 3e-1, [#667](https://github.com/Glad-Labs/poindexter/issues/667)) ([#1147](https://github.com/Glad-Labs/poindexter/issues/1147)) ([6417721](https://github.com/Glad-Labs/poindexter/commit/6417721b785757f1b266d009c31140bc57a6f5dd))
+* **platform:** migrate content's audit sites onto the handle (Wave 3c, [#667](https://github.com/Glad-Labs/poindexter/issues/667)) ([#1135](https://github.com/Glad-Labs/poindexter/issues/1135)) ([98e4202](https://github.com/Glad-Labs/poindexter/commit/98e42023c63e45a463bd6ac17e3da22befd4e027))
+* **platform:** migrate multi_model_qa audit onto the handle (Wave 3c-ii, [#667](https://github.com/Glad-Labs/poindexter/issues/667)) ([#1137](https://github.com/Glad-Labs/poindexter/issues/1137)) ([ad079f5](https://github.com/Glad-Labs/poindexter/commit/ad079f5555cdd039db5cb6794cfcd51dfe4bbb14))
+* **platform:** migrate qa.aggregate config reads onto the handle (Wave 3e-2, [#667](https://github.com/Glad-Labs/poindexter/issues/667)) ([#1156](https://github.com/Glad-Labs/poindexter/issues/1156)) ([2505279](https://github.com/Glad-Labs/poindexter/commit/2505279f6d0511e3354306ff9bd4d8228c982ca1))
+* **platform:** module&lt;-&gt;platform binding contract (Wave 2 contract, [#667](https://github.com/Glad-Labs/poindexter/issues/667)) ([#1132](https://github.com/Glad-Labs/poindexter/issues/1132)) ([68c9588](https://github.com/Glad-Labs/poindexter/commit/68c9588450a1c0e9f9f8b40b4c47d9b9a382bc57))
+* **platform:** Platform handle — contract + concrete impls (Seam 1, Waves 0–1, [#667](https://github.com/Glad-Labs/poindexter/issues/667)) ([#1130](https://github.com/Glad-Labs/poindexter/issues/1130)) ([8d281b8](https://github.com/Glad-Labs/poindexter/commit/8d281b82bb78ee899df88a9a711f6a49d7298f7d))
+* **voice:** host bridge resolves LiveKit creds DB-first ([#1000](https://github.com/Glad-Labs/poindexter/issues/1000)) ([#1148](https://github.com/Glad-Labs/poindexter/issues/1148)) ([f5047ab](https://github.com/Glad-Labs/poindexter/commit/f5047abdabb160289ffb217a554c2849c13e77df))
+* **voice:** warm Speaches STT/TTS sidecar — kill the ~12s cold-start ([#1088](https://github.com/Glad-Labs/poindexter/issues/1088)) ([#1138](https://github.com/Glad-Labs/poindexter/issues/1138)) ([584d777](https://github.com/Glad-Labs/poindexter/commit/584d777cfed16c12f8408dfe9b915dd07463e3db))
 
 
 ### Bug Fixes
 
-* **analytics:** CF AE query must ORDER BY the alias, not the raw timestamp col ([#1074](https://github.com/Glad-Labs/glad-labs-stack/issues/1074)) ([8d44a9a](https://github.com/Glad-Labs/glad-labs-stack/commit/8d44a9a1753951c5828736d0d8bcbc25c757ab58))
-* **analytics:** point the page-views beacon + sync at the analytics_events AE dataset ([366473e](https://github.com/Glad-Labs/glad-labs-stack/commit/366473e7b55957b19c853b6ea8617cee9e1679e5))
-* **analytics:** reset page_views.id sequence past max(id) (poindexter[#555](https://github.com/Glad-Labs/glad-labs-stack/issues/555)) ([#1076](https://github.com/Glad-Labs/glad-labs-stack/issues/1076)) ([f105861](https://github.com/Glad-Labs/glad-labs-stack/commit/f105861534399e38c7f8e4f23cd49993cde467ee))
-* **brain:** widen iCUE PSU fallback window to 90m to match hourly tap cadence ([1bcdbbf](https://github.com/Glad-Labs/glad-labs-stack/commit/1bcdbbf1877e64e4353dd8ebe442e196a5a9b87b))
-* **ci:** green the public mirror — strip playwright-e2e, make repo-scrub substitution-proof ([#1084](https://github.com/Glad-Labs/glad-labs-stack/issues/1084)) ([711ecd0](https://github.com/Glad-Labs/glad-labs-stack/commit/711ecd08505ff99926d74a42164ef4bbae5b4cc0))
-* **ci:** tolerate pytest exit-5 on the modules step (empty on the public mirror) ([#1086](https://github.com/Glad-Labs/glad-labs-stack/issues/1086)) ([e297d39](https://github.com/Glad-Labs/glad-labs-stack/commit/e297d39e5491cc29a888dd08a42cbe12b1111074))
-* **deps:** bump aiohttp to 3.14.0 (untrusted-data deserialization CVE) ([#1091](https://github.com/Glad-Labs/glad-labs-stack/issues/1091)) ([e7ce9f8](https://github.com/Glad-Labs/glad-labs-stack/commit/e7ce9f84889c3e1463048b292af9cf258eb7bde6))
-* **exporter:** stop :9835 port stacking + capture full HWiNFO/AIDA sensors ([e796fd7](https://github.com/Glad-Labs/glad-labs-stack/commit/e796fd7e05190481e155d4874c2fcf03b4d1873a))
-* **publish:** ISR-revalidate on the promote-existing-approved path ([#1099](https://github.com/Glad-Labs/glad-labs-stack/issues/1099)) ([0eab834](https://github.com/Glad-Labs/glad-labs-stack/commit/0eab8344a4d4b086e46c0e7b3da0cbd1cb89c9c8))
-* **sdxl:** self-heal degraded state so a Postgres boot race can't latch forever ([#1110](https://github.com/Glad-Labs/glad-labs-stack/issues/1110)) ([33e2173](https://github.com/Glad-Labs/glad-labs-stack/commit/33e217388d11bd2f9034458f9ea0d3f9b5c0c884))
-* **tests:** set torch stub __spec__ to prevent find_spec ValueError cascade ([#1116](https://github.com/Glad-Labs/glad-labs-stack/issues/1116)) ([2382ad5](https://github.com/Glad-Labs/glad-labs-stack/commit/2382ad5acee395c4ea3d348edd6415d4bc51bbc2))
-* **verify:** don't page critical on a Cloudflare bot-challenge (edge ≠ outage) ([#1094](https://github.com/Glad-Labs/glad-labs-stack/issues/1094)) ([bb4051e](https://github.com/Glad-Labs/glad-labs-stack/commit/bb4051e4ef884d5ef964c2b357a57d7a31171599))
-* **voice:** create pinned session on --resume "no conversation found" ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1090](https://github.com/Glad-Labs/glad-labs-stack/issues/1090)) ([89e704f](https://github.com/Glad-Labs/glad-labs-stack/commit/89e704fa1327f86f0e27c682a8168afcba645b96))
-* **voice:** resilient brain-mode + secrets in lean image; drop legacy key ([#1006](https://github.com/Glad-Labs/glad-labs-stack/issues/1006)) ([#1095](https://github.com/Glad-Labs/glad-labs-stack/issues/1095)) ([01546b3](https://github.com/Glad-Labs/glad-labs-stack/commit/01546b3a888fa01a5301fabec0d19f35211fa154))
+* **#671:** add page-view beacon Worker origin to CSP connect-src ([#1142](https://github.com/Glad-Labs/poindexter/issues/1142)) ([6cc4bb9](https://github.com/Glad-Labs/poindexter/commit/6cc4bb9982a0212ffdb36e011d352efb7b39012e))
+* **#671:** send page-view beacon as text/plain to avoid CORS preflight ([#1143](https://github.com/Glad-Labs/poindexter/issues/1143)) ([f8c1c57](https://github.com/Glad-Labs/poindexter/commit/f8c1c574b44366874c7a5533f50fbc5c86f7d39f))
+* key branch-drift dedup on local HEAD only (closes Glad-Labs/poindexter[#1105](https://github.com/Glad-Labs/poindexter/issues/1105)) ([#1119](https://github.com/Glad-Labs/poindexter/issues/1119)) ([240787f](https://github.com/Glad-Labs/poindexter/commit/240787fe580cb9d0a01291811f05caa5e3212dba))
+* **seo:** retire de-published post exports so takedowns return a true 404 ([#1146](https://github.com/Glad-Labs/poindexter/issues/1146)) ([#1155](https://github.com/Glad-Labs/poindexter/issues/1155)) ([f6863ad](https://github.com/Glad-Labs/poindexter/commit/f6863ad49c914b908768223e0996c6bad0b215e2))
+* **seo:** stop robots.txt blocking /_next/ render assets; fix privacy redirects ([#1144](https://github.com/Glad-Labs/poindexter/issues/1144)) ([067c047](https://github.com/Glad-Labs/poindexter/commit/067c047759d2139d94f54c55f129a3ad1250fb37))
+* **sync:** rewrite pass now covers .ps1 — delegate to guard's _is_text_file ([0a196d7](https://github.com/Glad-Labs/poindexter/commit/0a196d73df964a99b5f6d7738ff2f70cb1b4dac7))
+* **voice:** access VALID_VOICES from class, not module ([#1153](https://github.com/Glad-Labs/poindexter/issues/1153)) ([#1157](https://github.com/Glad-Labs/poindexter/issues/1157)) ([f1d598f](https://github.com/Glad-Labs/poindexter/commit/f1d598f713de9ed60b67d7c678f5a27d35061f89))
+* **voice:** pass Kokoro voice through Speaches TTS, not OpenAI catalog ([#1088](https://github.com/Glad-Labs/poindexter/issues/1088)) ([#1153](https://github.com/Glad-Labs/poindexter/issues/1153)) ([5289fde](https://github.com/Glad-Labs/poindexter/commit/5289fdefc503f6352236d21d0c7f66ef314ddad6))
+* **voice:** spawn host-brain claude with CREATE_NO_WINDOW — no popup per turn ([#1006](https://github.com/Glad-Labs/poindexter/issues/1006)) ([#1139](https://github.com/Glad-Labs/poindexter/issues/1139)) ([272d7cc](https://github.com/Glad-Labs/poindexter/commit/272d7cc380df08dbe8d27498f6c17295e435200a))
+* **voice:** unique LiveKit identity per device so phone + PC don't collide ([#1006](https://github.com/Glad-Labs/poindexter/issues/1006)) ([#1125](https://github.com/Glad-Labs/poindexter/issues/1125)) ([1059604](https://github.com/Glad-Labs/poindexter/commit/105960413d18c70b0e0e8038e8882ebd7453a294))
 
-## [0.70.8](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.7...v0.70.8) (2026-06-03)
-
-
-### Bug Fixes
-
-* **analytics:** stop sync_cloudflare_analytics masking a dead page_views ingest ([2590c69](https://github.com/Glad-Labs/glad-labs-stack/commit/2590c696c7ff2e1eba28f2ab40563779e4d5b8b0))
-
-## [0.70.7](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.6...v0.70.7) (2026-06-03)
-
-
-### Bug Fixes
-
-* **voice:** subprocess-spawn the bridge so MCP staleness can't make voice go deaf ([#1010](https://github.com/Glad-Labs/glad-labs-stack/issues/1010)) ([#1065](https://github.com/Glad-Labs/glad-labs-stack/issues/1065)) ([757a554](https://github.com/Glad-Labs/glad-labs-stack/commit/757a5548fdec7bd86e2b12bb8dea053d612c1ca0))
-
-## [0.70.6](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.5...v0.70.6) (2026-06-03)
-
-
-### Bug Fixes
-
-* raise MCP export read timeout to stop false-failure on slow rebuild (closes Glad-Labs/poindexter[#657](https://github.com/Glad-Labs/glad-labs-stack/issues/657)) ([#1061](https://github.com/Glad-Labs/glad-labs-stack/issues/1061)) ([f222c64](https://github.com/Glad-Labs/glad-labs-stack/commit/f222c641e0c5a9de25dc07d32bfed1fceb64191c))
-
-## [0.70.5](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.4...v0.70.5) (2026-06-03)
-
-
-### Bug Fixes
-
-* **qa:** restore qa_gates counters + qa_pass_completed on graph_def path; add rail-skip-rate alert (poindexter[#553](https://github.com/Glad-Labs/glad-labs-stack/issues/553)) ([#1039](https://github.com/Glad-Labs/glad-labs-stack/issues/1039)) ([6394d1a](https://github.com/Glad-Labs/glad-labs-stack/commit/6394d1ac7eabc1458b5cb6e4b577ea2d71e4c0f4))
-* **qa:** thread preview_url to a qa.vision rail on the graph_def path (poindexter[#563](https://github.com/Glad-Labs/glad-labs-stack/issues/563)) ([#1049](https://github.com/Glad-Labs/glad-labs-stack/issues/1049)) ([74dcb57](https://github.com/Glad-Labs/glad-labs-stack/commit/74dcb57558e98d14bb564a69a4256d4c20ea4b83))
-
-## [0.70.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.3...v0.70.4) (2026-06-03)
-
-
-### Bug Fixes
-
-* **prefect:** cap content-flow concurrency to protect 5090 VRAM (poindexter[#578](https://github.com/Glad-Labs/glad-labs-stack/issues/578)) ([#1047](https://github.com/Glad-Labs/glad-labs-stack/issues/1047)) ([29921e7](https://github.com/Glad-Labs/glad-labs-stack/commit/29921e7ad7ea47b05a17903f77066096f0f827a2))
-
-## [0.70.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.2...v0.70.3) (2026-06-03)
-
-
-### Bug Fixes
-
-* **lab:** variant writer_model override falls back to default writer (poindexter[#574](https://github.com/Glad-Labs/glad-labs-stack/issues/574)) ([#1046](https://github.com/Glad-Labs/glad-labs-stack/issues/1046)) ([ff99cb5](https://github.com/Glad-Labs/glad-labs-stack/commit/ff99cb5fc3703f079510f3481e37c13eb7435986))
-
-## [0.70.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.1...v0.70.2) (2026-06-03)
-
-
-### Bug Fixes
-
-* **newsletter:** genericize name field placeholders (drop founder's name) ([#1044](https://github.com/Glad-Labs/glad-labs-stack/issues/1044)) ([e292c7c](https://github.com/Glad-Labs/glad-labs-stack/commit/e292c7c0c798b0cedb784234470e0f35107e4ff2))
-
-## [0.70.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.70.0...v0.70.1) (2026-06-03)
-
-
-### Bug Fixes
-
-* **jobs:** media_reconciliation stamps file-present-row-absent asset rows (poindexter[#560](https://github.com/Glad-Labs/glad-labs-stack/issues/560)) ([#1036](https://github.com/Glad-Labs/glad-labs-stack/issues/1036)) ([b178b60](https://github.com/Glad-Labs/glad-labs-stack/commit/b178b603f2030efbd3d6591307a9e0700fe4c9f5))
-
-## [0.70.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.4...v0.70.0) (2026-06-03)
+## [0.71.0](https://github.com/Glad-Labs/poindexter/compare/v0.70.8...v0.71.0) (2026-06-04)
 
 
 ### Features
 
-* **newsletter:** mirror subscribers into the Resend audience from the backend ([#1034](https://github.com/Glad-Labs/glad-labs-stack/issues/1034)) ([7dc87fe](https://github.com/Glad-Labs/glad-labs-stack/commit/7dc87fe07c87b3aaa0b04a4dd4597dd58b9b7022))
-
-## [0.69.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.3...v0.69.4) (2026-06-03)
-
-
-### Bug Fixes
-
-* **metrics:** unambiguous published-post gauge — dashboard read archived (23) not published (91) (poindexter[#576](https://github.com/Glad-Labs/glad-labs-stack/issues/576)) ([#1033](https://github.com/Glad-Labs/glad-labs-stack/issues/1033)) ([2df1b5d](https://github.com/Glad-Labs/glad-labs-stack/commit/2df1b5d4b9b22afee626e80c7d34cf779e838e84))
-
-## [0.69.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.2...v0.69.3) (2026-06-03)
-
-
-### Bug Fixes
-
-* **grafana-alert:** surface page-worthy DB rules on no-data instead of resolving OK ([#1026](https://github.com/Glad-Labs/glad-labs-stack/issues/1026)) ([b3bcabe](https://github.com/Glad-Labs/glad-labs-stack/commit/b3bcabe58476b5db6ab5708e09efd22a9f5844df))
-* **qa:** thread research_context to grounding rails on graph_def path (poindexter[#553](https://github.com/Glad-Labs/glad-labs-stack/issues/553)) ([#1025](https://github.com/Glad-Labs/glad-labs-stack/issues/1025)) ([c37b82e](https://github.com/Glad-Labs/glad-labs-stack/commit/c37b82ef1947aff3337d1c8afe4cc6a4e464bde7))
-
-## [0.69.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.1...v0.69.2) (2026-06-03)
+* **brain:** fall back to iCUE PSU tap when HWiNFO drops + graduated watchdog ([48f0906](https://github.com/Glad-Labs/poindexter/commit/48f0906e2e95289d1c9e64ad8ab55ae1293970ab))
+* **brain:** iCUE corsair_csv feed-freshness watchdog ([#868](https://github.com/Glad-Labs/poindexter/issues/868)) + fix brain Dockerfile to ship psu_power/corsair_feed_probe (latent crashloop) ([1e38558](https://github.com/Glad-Labs/poindexter/commit/1e385586679f098eef01f3ed2d2dd2cb03f73e5f))
+* **edge:** shared CDN bot-challenge guard across verify / check_links / revalidation ([#1096](https://github.com/Glad-Labs/poindexter/issues/1096)) ([95d825b](https://github.com/Glad-Labs/poindexter/commit/95d825b08b124ebb151fa9d239f3d54655d8d693))
+* **grafana:** add HWiNFO/AIDA64 sensor panels (temps/fans/per-core power/PSU/voltages) to Hardware & Power board ([d32a832](https://github.com/Glad-Labs/poindexter/commit/d32a832efda3aaf8eb44c590e333763a78378bfa))
+* **modules:** Module v1 Phase 5 — presence-based visibility sync ([#1109](https://github.com/Glad-Labs/poindexter/issues/1109)) ([0eed6dc](https://github.com/Glad-Labs/poindexter/commit/0eed6dc7dd9f9639d831c569613f87d3fc5c3610))
+* **qa:** reimplement guardrails rails natively, drop guardrails-ai dep ([#996](https://github.com/Glad-Labs/poindexter/issues/996)) ([#1079](https://github.com/Glad-Labs/poindexter/issues/1079)) ([c1b7db3](https://github.com/Glad-Labs/poindexter/commit/c1b7db3cf6940d06a12083a2167197dd52faafbf))
+* **voice:** /voice/join?room= routing for the two-room split ([#1006](https://github.com/Glad-Labs/poindexter/issues/1006)) ([#1097](https://github.com/Glad-Labs/poindexter/issues/1097)) ([81debaf](https://github.com/Glad-Labs/poindexter/commit/81debaf9c938ec227b0b50f1caef31e1dbedf63f))
+* **voice:** claude-code room container + DB-driven service profiles ([#1006](https://github.com/Glad-Labs/poindexter/issues/1006)) ([#1098](https://github.com/Glad-Labs/poindexter/issues/1098)) ([9c27bec](https://github.com/Glad-Labs/poindexter/commit/9c27bec81bc0e60e048c8ccdb4e8bf13e7c06157))
+* **voice:** DB-driven pinned + auto-resetting claude-code voice session ([#1006](https://github.com/Glad-Labs/poindexter/issues/1006)) ([#1085](https://github.com/Glad-Labs/poindexter/issues/1085)) ([26eca42](https://github.com/Glad-Labs/poindexter/commit/26eca42d57834b84a2d387a05d235ef1b2e14035))
+* **voice:** deprecate in-container claude-code mode; host-brain is the path ([#1006](https://github.com/Glad-Labs/poindexter/issues/1006)) ([#1102](https://github.com/Glad-Labs/poindexter/issues/1102)) ([d19e42d](https://github.com/Glad-Labs/poindexter/commit/d19e42da85afe9d0dda2b623c7deb20cbde679ae))
+* **voice:** durable host-brain daemon — hidden self-restarting task ([#1006](https://github.com/Glad-Labs/poindexter/issues/1006)) ([#1101](https://github.com/Glad-Labs/poindexter/issues/1101)) ([3a6026c](https://github.com/Glad-Labs/poindexter/commit/3a6026cb4c83fcfa5400fe04adba80ac82319981))
+* **voice:** host-side brain — full dev-on-the-go for the voice room ([#1006](https://github.com/Glad-Labs/poindexter/issues/1006)) ([#1093](https://github.com/Glad-Labs/poindexter/issues/1093)) ([080333b](https://github.com/Glad-Labs/poindexter/commit/080333be1ada398419c75dab3892297b96f594ba))
+* **voice:** move the claude-code voice transcript from Telegram to Discord ([#1006](https://github.com/Glad-Labs/poindexter/issues/1006)) ([#1108](https://github.com/Glad-Labs/poindexter/issues/1108)) ([88a2b13](https://github.com/Glad-Labs/poindexter/commit/88a2b13c20c3b9af97ae9bedce3ad681d97aeb90))
+* **voice:** per-room TTS voice override for the claude-code room ([#1006](https://github.com/Glad-Labs/poindexter/issues/1006)) ([#1107](https://github.com/Glad-Labs/poindexter/issues/1107)) ([2781420](https://github.com/Glad-Labs/poindexter/commit/27814201fbd2b63bb45eb9af1625ec515ae9c4e1))
+* **voice:** read LiveKit key/secret from app_settings, env fallback ([#1000](https://github.com/Glad-Labs/poindexter/issues/1000)) ([#1103](https://github.com/Glad-Labs/poindexter/issues/1103)) ([38670ca](https://github.com/Glad-Labs/poindexter/commit/38670ca3475ca0d623ffd76cd433dae46e9bc7ce))
+* **web:** time-based ISR backstop (1h) on canonical index routes ([#1100](https://github.com/Glad-Labs/poindexter/issues/1100)) ([f3b4c7e](https://github.com/Glad-Labs/poindexter/commit/f3b4c7e7011ae6d155345322d73cdbb4d057e737))
 
 
 ### Bug Fixes
 
-* **reliability:** close silent-failure & bypassed-safety gaps from alerting audit (13 findings) ([#1014](https://github.com/Glad-Labs/glad-labs-stack/issues/1014)) ([fd890d4](https://github.com/Glad-Labs/glad-labs-stack/commit/fd890d48c9a2b26af44f8e1e240a5952594d6606))
+* **analytics:** CF AE query must ORDER BY the alias, not the raw timestamp col ([#1074](https://github.com/Glad-Labs/poindexter/issues/1074)) ([8d44a9a](https://github.com/Glad-Labs/poindexter/commit/8d44a9a1753951c5828736d0d8bcbc25c757ab58))
+* **analytics:** point the page-views beacon + sync at the analytics_events AE dataset ([366473e](https://github.com/Glad-Labs/poindexter/commit/366473e7b55957b19c853b6ea8617cee9e1679e5))
+* **analytics:** reset page_views.id sequence past max(id) (poindexter[#555](https://github.com/Glad-Labs/poindexter/issues/555)) ([#1076](https://github.com/Glad-Labs/poindexter/issues/1076)) ([f105861](https://github.com/Glad-Labs/poindexter/commit/f105861534399e38c7f8e4f23cd49993cde467ee))
+* **brain:** widen iCUE PSU fallback window to 90m to match hourly tap cadence ([1bcdbbf](https://github.com/Glad-Labs/poindexter/commit/1bcdbbf1877e64e4353dd8ebe442e196a5a9b87b))
+* **ci:** green the public mirror — strip playwright-e2e, make repo-scrub substitution-proof ([#1084](https://github.com/Glad-Labs/poindexter/issues/1084)) ([711ecd0](https://github.com/Glad-Labs/poindexter/commit/711ecd08505ff99926d74a42164ef4bbae5b4cc0))
+* **ci:** tolerate pytest exit-5 on the modules step (empty on the public mirror) ([#1086](https://github.com/Glad-Labs/poindexter/issues/1086)) ([e297d39](https://github.com/Glad-Labs/poindexter/commit/e297d39e5491cc29a888dd08a42cbe12b1111074))
+* **deps:** bump aiohttp to 3.14.0 (untrusted-data deserialization CVE) ([#1091](https://github.com/Glad-Labs/poindexter/issues/1091)) ([e7ce9f8](https://github.com/Glad-Labs/poindexter/commit/e7ce9f84889c3e1463048b292af9cf258eb7bde6))
+* **exporter:** stop :9835 port stacking + capture full HWiNFO/AIDA sensors ([e796fd7](https://github.com/Glad-Labs/poindexter/commit/e796fd7e05190481e155d4874c2fcf03b4d1873a))
+* **publish:** ISR-revalidate on the promote-existing-approved path ([#1099](https://github.com/Glad-Labs/poindexter/issues/1099)) ([0eab834](https://github.com/Glad-Labs/poindexter/commit/0eab8344a4d4b086e46c0e7b3da0cbd1cb89c9c8))
+* **sdxl:** self-heal degraded state so a Postgres boot race can't latch forever ([#1110](https://github.com/Glad-Labs/poindexter/issues/1110)) ([33e2173](https://github.com/Glad-Labs/poindexter/commit/33e217388d11bd2f9034458f9ea0d3f9b5c0c884))
+* **tests:** set torch stub __spec__ to prevent find_spec ValueError cascade ([#1116](https://github.com/Glad-Labs/poindexter/issues/1116)) ([2382ad5](https://github.com/Glad-Labs/poindexter/commit/2382ad5acee395c4ea3d348edd6415d4bc51bbc2))
+* **verify:** don't page critical on a Cloudflare bot-challenge (edge ≠ outage) ([#1094](https://github.com/Glad-Labs/poindexter/issues/1094)) ([bb4051e](https://github.com/Glad-Labs/poindexter/commit/bb4051e4ef884d5ef964c2b357a57d7a31171599))
+* **voice:** create pinned session on --resume "no conversation found" ([#1006](https://github.com/Glad-Labs/poindexter/issues/1006)) ([#1090](https://github.com/Glad-Labs/poindexter/issues/1090)) ([89e704f](https://github.com/Glad-Labs/poindexter/commit/89e704fa1327f86f0e27c682a8168afcba645b96))
+* **voice:** resilient brain-mode + secrets in lean image; drop legacy key ([#1006](https://github.com/Glad-Labs/poindexter/issues/1006)) ([#1095](https://github.com/Glad-Labs/poindexter/issues/1095)) ([01546b3](https://github.com/Glad-Labs/poindexter/commit/01546b3a888fa01a5301fabec0d19f35211fa154))
 
-## [0.69.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.69.0...v0.69.1) (2026-06-03)
+## [0.70.8](https://github.com/Glad-Labs/poindexter/compare/v0.70.7...v0.70.8) (2026-06-03)
 
 
 ### Bug Fixes
 
-* **public-site:** inject consent-gated AdSense loader + pass real ad slot ([#943](https://github.com/Glad-Labs/glad-labs-stack/issues/943)) ([#1024](https://github.com/Glad-Labs/glad-labs-stack/issues/1024)) ([695f48f](https://github.com/Glad-Labs/glad-labs-stack/commit/695f48f3ae7f47b64a28b67e21706f94d8f248e4))
+* **analytics:** stop sync_cloudflare_analytics masking a dead page_views ingest ([2590c69](https://github.com/Glad-Labs/poindexter/commit/2590c696c7ff2e1eba28f2ab40563779e4d5b8b0))
 
-## [0.69.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.68.0...v0.69.0) (2026-06-03)
+## [0.70.7](https://github.com/Glad-Labs/poindexter/compare/v0.70.6...v0.70.7) (2026-06-03)
+
+
+### Bug Fixes
+
+* **voice:** subprocess-spawn the bridge so MCP staleness can't make voice go deaf ([#1010](https://github.com/Glad-Labs/poindexter/issues/1010)) ([#1065](https://github.com/Glad-Labs/poindexter/issues/1065)) ([757a554](https://github.com/Glad-Labs/poindexter/commit/757a5548fdec7bd86e2b12bb8dea053d612c1ca0))
+
+## [0.70.6](https://github.com/Glad-Labs/poindexter/compare/v0.70.5...v0.70.6) (2026-06-03)
+
+
+### Bug Fixes
+
+* raise MCP export read timeout to stop false-failure on slow rebuild (closes Glad-Labs/poindexter[#657](https://github.com/Glad-Labs/poindexter/issues/657)) ([#1061](https://github.com/Glad-Labs/poindexter/issues/1061)) ([f222c64](https://github.com/Glad-Labs/poindexter/commit/f222c641e0c5a9de25dc07d32bfed1fceb64191c))
+
+## [0.70.5](https://github.com/Glad-Labs/poindexter/compare/v0.70.4...v0.70.5) (2026-06-03)
+
+
+### Bug Fixes
+
+* **qa:** restore qa_gates counters + qa_pass_completed on graph_def path; add rail-skip-rate alert (poindexter[#553](https://github.com/Glad-Labs/poindexter/issues/553)) ([#1039](https://github.com/Glad-Labs/poindexter/issues/1039)) ([6394d1a](https://github.com/Glad-Labs/poindexter/commit/6394d1ac7eabc1458b5cb6e4b577ea2d71e4c0f4))
+* **qa:** thread preview_url to a qa.vision rail on the graph_def path (poindexter[#563](https://github.com/Glad-Labs/poindexter/issues/563)) ([#1049](https://github.com/Glad-Labs/poindexter/issues/1049)) ([74dcb57](https://github.com/Glad-Labs/poindexter/commit/74dcb57558e98d14bb564a69a4256d4c20ea4b83))
+
+## [0.70.4](https://github.com/Glad-Labs/poindexter/compare/v0.70.3...v0.70.4) (2026-06-03)
+
+
+### Bug Fixes
+
+* **prefect:** cap content-flow concurrency to protect 5090 VRAM (poindexter[#578](https://github.com/Glad-Labs/poindexter/issues/578)) ([#1047](https://github.com/Glad-Labs/poindexter/issues/1047)) ([29921e7](https://github.com/Glad-Labs/poindexter/commit/29921e7ad7ea47b05a17903f77066096f0f827a2))
+
+## [0.70.3](https://github.com/Glad-Labs/poindexter/compare/v0.70.2...v0.70.3) (2026-06-03)
+
+
+### Bug Fixes
+
+* **lab:** variant writer_model override falls back to default writer (poindexter[#574](https://github.com/Glad-Labs/poindexter/issues/574)) ([#1046](https://github.com/Glad-Labs/poindexter/issues/1046)) ([ff99cb5](https://github.com/Glad-Labs/poindexter/commit/ff99cb5fc3703f079510f3481e37c13eb7435986))
+
+## [0.70.2](https://github.com/Glad-Labs/poindexter/compare/v0.70.1...v0.70.2) (2026-06-03)
+
+
+### Bug Fixes
+
+* **newsletter:** genericize name field placeholders (drop founder's name) ([#1044](https://github.com/Glad-Labs/poindexter/issues/1044)) ([e292c7c](https://github.com/Glad-Labs/poindexter/commit/e292c7c0c798b0cedb784234470e0f35107e4ff2))
+
+## [0.70.1](https://github.com/Glad-Labs/poindexter/compare/v0.70.0...v0.70.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **jobs:** media_reconciliation stamps file-present-row-absent asset rows (poindexter[#560](https://github.com/Glad-Labs/poindexter/issues/560)) ([#1036](https://github.com/Glad-Labs/poindexter/issues/1036)) ([b178b60](https://github.com/Glad-Labs/poindexter/commit/b178b603f2030efbd3d6591307a9e0700fe4c9f5))
+
+## [0.70.0](https://github.com/Glad-Labs/poindexter/compare/v0.69.4...v0.70.0) (2026-06-03)
 
 
 ### Features
 
-* **deps:** add atproto so Bluesky can post (poindexter[#557](https://github.com/Glad-Labs/glad-labs-stack/issues/557)) ([#1021](https://github.com/Glad-Labs/glad-labs-stack/issues/1021)) ([608be26](https://github.com/Glad-Labs/glad-labs-stack/commit/608be263e239b443692cc1a6151f61a37f236c3e))
+* **newsletter:** mirror subscribers into the Resend audience from the backend ([#1034](https://github.com/Glad-Labs/poindexter/issues/1034)) ([7dc87fe](https://github.com/Glad-Labs/poindexter/commit/7dc87fe07c87b3aaa0b04a4dd4597dd58b9b7022))
 
-## [0.68.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.67.0...v0.68.0) (2026-06-03)
+## [0.69.4](https://github.com/Glad-Labs/poindexter/compare/v0.69.3...v0.69.4) (2026-06-03)
+
+
+### Bug Fixes
+
+* **metrics:** unambiguous published-post gauge — dashboard read archived (23) not published (91) (poindexter[#576](https://github.com/Glad-Labs/poindexter/issues/576)) ([#1033](https://github.com/Glad-Labs/poindexter/issues/1033)) ([2df1b5d](https://github.com/Glad-Labs/poindexter/commit/2df1b5d4b9b22afee626e80c7d34cf779e838e84))
+
+## [0.69.3](https://github.com/Glad-Labs/poindexter/compare/v0.69.2...v0.69.3) (2026-06-03)
+
+
+### Bug Fixes
+
+* **grafana-alert:** surface page-worthy DB rules on no-data instead of resolving OK ([#1026](https://github.com/Glad-Labs/poindexter/issues/1026)) ([b3bcabe](https://github.com/Glad-Labs/poindexter/commit/b3bcabe58476b5db6ab5708e09efd22a9f5844df))
+* **qa:** thread research_context to grounding rails on graph_def path (poindexter[#553](https://github.com/Glad-Labs/poindexter/issues/553)) ([#1025](https://github.com/Glad-Labs/poindexter/issues/1025)) ([c37b82e](https://github.com/Glad-Labs/poindexter/commit/c37b82ef1947aff3337d1c8afe4cc6a4e464bde7))
+
+## [0.69.2](https://github.com/Glad-Labs/poindexter/compare/v0.69.1...v0.69.2) (2026-06-03)
+
+
+### Bug Fixes
+
+* **reliability:** close silent-failure & bypassed-safety gaps from alerting audit (13 findings) ([#1014](https://github.com/Glad-Labs/poindexter/issues/1014)) ([fd890d4](https://github.com/Glad-Labs/poindexter/commit/fd890d48c9a2b26af44f8e1e240a5952594d6606))
+
+## [0.69.1](https://github.com/Glad-Labs/poindexter/compare/v0.69.0...v0.69.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **public-site:** inject consent-gated AdSense loader + pass real ad slot ([#943](https://github.com/Glad-Labs/poindexter/issues/943)) ([#1024](https://github.com/Glad-Labs/poindexter/issues/1024)) ([695f48f](https://github.com/Glad-Labs/poindexter/commit/695f48f3ae7f47b64a28b67e21706f94d8f248e4))
+
+## [0.69.0](https://github.com/Glad-Labs/poindexter/compare/v0.68.0...v0.69.0) (2026-06-03)
 
 
 ### Features
 
-* **obs:** HTTP RED metrics + fix broken disk-space alert (audit follow-up) ([#1018](https://github.com/Glad-Labs/glad-labs-stack/issues/1018)) ([951ec81](https://github.com/Glad-Labs/glad-labs-stack/commit/951ec816fd9413b1acc8bee2b77c14468d4133a3))
+* **deps:** add atproto so Bluesky can post (poindexter[#557](https://github.com/Glad-Labs/poindexter/issues/557)) ([#1021](https://github.com/Glad-Labs/poindexter/issues/1021)) ([608be26](https://github.com/Glad-Labs/poindexter/commit/608be263e239b443692cc1a6151f61a37f236c3e))
 
-## [0.67.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.4...v0.67.0) (2026-06-03)
-
-
-### Features
-
-* **voice-bridge:** DB-configurable turn-detection; raise defaults to stop sentence-chopping ([#1013](https://github.com/Glad-Labs/glad-labs-stack/issues/1013)) ([177594a](https://github.com/Glad-Labs/glad-labs-stack/commit/177594ab5a6f7e762aa7fa2e6f4f6f426de7fa3d))
-
-## [0.66.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.3...v0.66.4) (2026-06-03)
-
-
-### Bug Fixes
-
-* **jobs:** surface regenerate_stock_images silent stall (poindexter[#562](https://github.com/Glad-Labs/glad-labs-stack/issues/562)) ([#1011](https://github.com/Glad-Labs/glad-labs-stack/issues/1011)) ([4234112](https://github.com/Glad-Labs/glad-labs-stack/commit/42341129cf0da1a0d397340b469eaa4b3b582819))
-* **newsletter:** persist signups to DB + Resend audience, fail loud (stop silent subscriber loss) ([#1009](https://github.com/Glad-Labs/glad-labs-stack/issues/1009)) ([ad5ea90](https://github.com/Glad-Labs/glad-labs-stack/commit/ad5ea90b0210c16de48ed75d2e4702007ebb497a))
-
-## [0.66.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.2...v0.66.3) (2026-06-03)
-
-
-### Bug Fixes
-
-* **rag:** coerce string JSONB metadata so hybrid retriever stops crashing (poindexter[#554](https://github.com/Glad-Labs/glad-labs-stack/issues/554)) ([#1005](https://github.com/Glad-Labs/glad-labs-stack/issues/1005)) ([99b0093](https://github.com/Glad-Labs/glad-labs-stack/commit/99b009301d60c9635c62dac42d54628c32c6b7d5))
-* **social:** thread pool into social auto-post dispatch (poindexter[#556](https://github.com/Glad-Labs/glad-labs-stack/issues/556)) ([#1008](https://github.com/Glad-Labs/glad-labs-stack/issues/1008)) ([50e1110](https://github.com/Glad-Labs/glad-labs-stack/commit/50e11101d8dbc9954536a8212733af7ae8743453))
-
-## [0.66.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.1...v0.66.2) (2026-06-03)
-
-
-### Bug Fixes
-
-* **voice-bridge:** migrate host audio plane to Pipecat 1.2 + CPU Whisper ([#1007](https://github.com/Glad-Labs/glad-labs-stack/issues/1007)) ([9ab6781](https://github.com/Glad-Labs/glad-labs-stack/commit/9ab6781ba99c98576a9633a8c020a215281e8eca))
-
-## [0.66.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.66.0...v0.66.1) (2026-06-03)
-
-
-### Bug Fixes
-
-* **brain:** restore-test probe false-positives + every-cycle runs (poindexter[#441](https://github.com/Glad-Labs/glad-labs-stack/issues/441)) ([#1003](https://github.com/Glad-Labs/glad-labs-stack/issues/1003)) ([d728fa1](https://github.com/Glad-Labs/glad-labs-stack/commit/d728fa1816324b9014b3697945c2a65d2c9e55d8))
-
-## [0.66.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.65.0...v0.66.0) (2026-06-03)
+## [0.68.0](https://github.com/Glad-Labs/poindexter/compare/v0.67.0...v0.68.0) (2026-06-03)
 
 
 ### Features
 
-* **brain:** branch-drift deploy canary (glad-labs-stack[#942](https://github.com/Glad-Labs/glad-labs-stack/issues/942)) ([#999](https://github.com/Glad-Labs/glad-labs-stack/issues/999)) ([24c37fe](https://github.com/Glad-Labs/glad-labs-stack/commit/24c37fe0fe506233210ea08695b1992ed856adbd))
-* **docs:** hybrid CLAUDE.md drift automation — DB-count sync + migration narrative (closes [#988](https://github.com/Glad-Labs/glad-labs-stack/issues/988)) ([#1001](https://github.com/Glad-Labs/glad-labs-stack/issues/1001)) ([8138544](https://github.com/Glad-Labs/glad-labs-stack/commit/8138544edaa6bd88f4e1cf203e796c3e5cf10c3b))
+* **obs:** HTTP RED metrics + fix broken disk-space alert (audit follow-up) ([#1018](https://github.com/Glad-Labs/poindexter/issues/1018)) ([951ec81](https://github.com/Glad-Labs/poindexter/commit/951ec816fd9413b1acc8bee2b77c14468d4133a3))
 
-## [0.65.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.4...v0.65.0) (2026-06-03)
-
-
-### Features
-
-* **brain:** restore-test probe - verify backups actually restore (poindexter[#441](https://github.com/Glad-Labs/glad-labs-stack/issues/441)) ([#987](https://github.com/Glad-Labs/glad-labs-stack/issues/987)) ([26b00a3](https://github.com/Glad-Labs/glad-labs-stack/commit/26b00a326bc6374806c47e32e3ff3d73fde9fbc7))
-
-## [0.64.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.3...v0.64.4) (2026-06-03)
-
-
-### Bug Fixes
-
-* **voice:** refresh LiveKit JWT so the always-on bot survives past its token TTL ([#989](https://github.com/Glad-Labs/glad-labs-stack/issues/989)) ([27c29cd](https://github.com/Glad-Labs/glad-labs-stack/commit/27c29cd1ae18bea6d8fbd4721e93018d5484b910))
-
-## [0.64.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.2...v0.64.3) (2026-06-02)
-
-
-### Bug Fixes
-
-* **voice:** gate /voice/join on tailnet (Serve), not machine OAuth ([#985](https://github.com/Glad-Labs/glad-labs-stack/issues/985)) ([15dbb03](https://github.com/Glad-Labs/glad-labs-stack/commit/15dbb03f9f9db72491f8d10b7dfc6fe077e35cbe))
-
-## [0.64.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.1...v0.64.2) (2026-06-02)
-
-
-### Bug Fixes
-
-* **security:** block dev-token via DB environment, not just ENVIRONMENT env ([#986](https://github.com/Glad-Labs/glad-labs-stack/issues/986)) ([f98c556](https://github.com/Glad-Labs/glad-labs-stack/commit/f98c556d7822533d73846240a1053b71b3f772ec))
-
-## [0.64.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.64.0...v0.64.1) (2026-06-02)
-
-
-### Bug Fixes
-
-* **brand:** hoist Google Fonts [@import](https://github.com/import) to tokens/index.css top (glad-labs-stack[#977](https://github.com/Glad-Labs/glad-labs-stack/issues/977) CI) ([bd5c922](https://github.com/Glad-Labs/glad-labs-stack/commit/bd5c922e8c76a83b60bae72fdf543b44b7833f88))
-* **ci:** restore poetry.lock consistency + resilient Playwright install ([70df2e5](https://github.com/Glad-Labs/glad-labs-stack/commit/70df2e515348c28ac25bfd9ae4193c962e81ac44))
-* **ci:** set NEXT_PUBLIC_API_BASE_URL for the Playwright build (glad-labs-stack[#977](https://github.com/Glad-Labs/glad-labs-stack/issues/977)) ([d4eb8bb](https://github.com/Glad-Labs/glad-labs-stack/commit/d4eb8bb2a4abd9d4ad4607fddad44101801eda9c))
-* **db:** embeddings chunk_index + deterministic fetch + create_post txn + index hygiene (audit batch 2) ([b2e8eb2](https://github.com/Glad-Labs/glad-labs-stack/commit/b2e8eb298f7ff013d87747d2aa456e10be641f1a))
-* **observability:** fail loud instead of silently degrading (audit batch 4) ([7d50955](https://github.com/Glad-Labs/glad-labs-stack/commit/7d50955607151cacc7b0f418fa0a55e4fe9eb27f))
-* **web:** cache-tag invalidation + dead FastAPI client removal + a11y landmarks/contrast/headings (audit batch 7+8) ([f427d25](https://github.com/Glad-Labs/glad-labs-stack/commit/f427d25b1efb9622d9006fe0d0d0144b55c8bca8))
-
-## [0.64.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.63.0...v0.64.0) (2026-06-02)
+## [0.67.0](https://github.com/Glad-Labs/poindexter/compare/v0.66.4...v0.67.0) (2026-06-03)
 
 
 ### Features
 
-* **scripts:** add seo-audit crawler as a permanent verification tool ([#980](https://github.com/Glad-Labs/glad-labs-stack/issues/980)) ([5eb0cf7](https://github.com/Glad-Labs/glad-labs-stack/commit/5eb0cf70e63717d8dbc6bf8abd3bedda7e7686cc))
+* **voice-bridge:** DB-configurable turn-detection; raise defaults to stop sentence-chopping ([#1013](https://github.com/Glad-Labs/poindexter/issues/1013)) ([177594a](https://github.com/Glad-Labs/poindexter/commit/177594ab5a6f7e762aa7fa2e6f4f6f426de7fa3d))
 
-## [0.63.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.62.0...v0.63.0) (2026-06-02)
+## [0.66.4](https://github.com/Glad-Labs/poindexter/compare/v0.66.3...v0.66.4) (2026-06-03)
+
+
+### Bug Fixes
+
+* **jobs:** surface regenerate_stock_images silent stall (poindexter[#562](https://github.com/Glad-Labs/poindexter/issues/562)) ([#1011](https://github.com/Glad-Labs/poindexter/issues/1011)) ([4234112](https://github.com/Glad-Labs/poindexter/commit/42341129cf0da1a0d397340b469eaa4b3b582819))
+* **newsletter:** persist signups to DB + Resend audience, fail loud (stop silent subscriber loss) ([#1009](https://github.com/Glad-Labs/poindexter/issues/1009)) ([ad5ea90](https://github.com/Glad-Labs/poindexter/commit/ad5ea90b0210c16de48ed75d2e4702007ebb497a))
+
+## [0.66.3](https://github.com/Glad-Labs/poindexter/compare/v0.66.2...v0.66.3) (2026-06-03)
+
+
+### Bug Fixes
+
+* **rag:** coerce string JSONB metadata so hybrid retriever stops crashing (poindexter[#554](https://github.com/Glad-Labs/poindexter/issues/554)) ([#1005](https://github.com/Glad-Labs/poindexter/issues/1005)) ([99b0093](https://github.com/Glad-Labs/poindexter/commit/99b009301d60c9635c62dac42d54628c32c6b7d5))
+* **social:** thread pool into social auto-post dispatch (poindexter[#556](https://github.com/Glad-Labs/poindexter/issues/556)) ([#1008](https://github.com/Glad-Labs/poindexter/issues/1008)) ([50e1110](https://github.com/Glad-Labs/poindexter/commit/50e11101d8dbc9954536a8212733af7ae8743453))
+
+## [0.66.2](https://github.com/Glad-Labs/poindexter/compare/v0.66.1...v0.66.2) (2026-06-03)
+
+
+### Bug Fixes
+
+* **voice-bridge:** migrate host audio plane to Pipecat 1.2 + CPU Whisper ([#1007](https://github.com/Glad-Labs/poindexter/issues/1007)) ([9ab6781](https://github.com/Glad-Labs/poindexter/commit/9ab6781ba99c98576a9633a8c020a215281e8eca))
+
+## [0.66.1](https://github.com/Glad-Labs/poindexter/compare/v0.66.0...v0.66.1) (2026-06-03)
+
+
+### Bug Fixes
+
+* **brain:** restore-test probe false-positives + every-cycle runs (poindexter[#441](https://github.com/Glad-Labs/poindexter/issues/441)) ([#1003](https://github.com/Glad-Labs/poindexter/issues/1003)) ([d728fa1](https://github.com/Glad-Labs/poindexter/commit/d728fa1816324b9014b3697945c2a65d2c9e55d8))
+
+## [0.66.0](https://github.com/Glad-Labs/poindexter/compare/v0.65.0...v0.66.0) (2026-06-03)
 
 
 ### Features
 
-* **atom_runs:** wire capture into runner + approval path ([#552](https://github.com/Glad-Labs/glad-labs-stack/issues/552)) ([#965](https://github.com/Glad-Labs/glad-labs-stack/issues/965)) ([9fdafe3](https://github.com/Glad-Labs/glad-labs-stack/commit/9fdafe3d0672f6834f5fe33f26d4597637051874))
+* **brain:** branch-drift deploy canary (glad-labs-stack[#942](https://github.com/Glad-Labs/poindexter/issues/942)) ([#999](https://github.com/Glad-Labs/poindexter/issues/999)) ([24c37fe](https://github.com/Glad-Labs/poindexter/commit/24c37fe0fe506233210ea08695b1992ed856adbd))
+* **docs:** hybrid CLAUDE.md drift automation — DB-count sync + migration narrative (closes [#988](https://github.com/Glad-Labs/poindexter/issues/988)) ([#1001](https://github.com/Glad-Labs/poindexter/issues/1001)) ([8138544](https://github.com/Glad-Labs/poindexter/commit/8138544edaa6bd88f4e1cf203e796c3e5cf10c3b))
 
-## [0.62.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.61.1...v0.62.0) (2026-06-02)
-
-
-### Features
-
-* **pipeline:** run dev_diary through the atom graph_def — both templates on atoms now ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([#960](https://github.com/Glad-Labs/glad-labs-stack/issues/960)) ([587665a](https://github.com/Glad-Labs/glad-labs-stack/commit/587665a2c7f7c9f513ace0a00ccb44280ed9a81e))
-
-## [0.61.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.61.0...v0.61.1) (2026-06-02)
-
-
-### Bug Fixes
-
-* **scheduler:** seed first-fire for never-run interval jobs (closes Glad-Labs/poindexter[#561](https://github.com/Glad-Labs/glad-labs-stack/issues/561)) ([#948](https://github.com/Glad-Labs/glad-labs-stack/issues/948)) ([7340af3](https://github.com/Glad-Labs/glad-labs-stack/commit/7340af32d64ef3d76123187bd158279d1b2c095c))
-
-## [0.61.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.60.2...v0.61.0) (2026-06-02)
+## [0.65.0](https://github.com/Glad-Labs/poindexter/compare/v0.64.4...v0.65.0) (2026-06-03)
 
 
 ### Features
 
-* **ops:** guarded one-command worker deploy script ([#937](https://github.com/Glad-Labs/glad-labs-stack/issues/937)) ([#952](https://github.com/Glad-Labs/glad-labs-stack/issues/952)) ([c15645a](https://github.com/Glad-Labs/glad-labs-stack/commit/c15645a00f96f69f27fb4eff571a417b1a44c57e))
+* **brain:** restore-test probe - verify backups actually restore (poindexter[#441](https://github.com/Glad-Labs/poindexter/issues/441)) ([#987](https://github.com/Glad-Labs/poindexter/issues/987)) ([26b00a3](https://github.com/Glad-Labs/poindexter/commit/26b00a326bc6374806c47e32e3ff3d73fde9fbc7))
 
-## [0.60.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.60.1...v0.60.2) (2026-06-02)
-
-
-### Bug Fixes
-
-* **writer:** draft path must use plain-text helper, not JSON-forcing _ollama_chat_json ([#572](https://github.com/Glad-Labs/glad-labs-stack/issues/572)) ([#950](https://github.com/Glad-Labs/glad-labs-stack/issues/950)) ([e85ffb0](https://github.com/Glad-Labs/glad-labs-stack/commit/e85ffb0633cc2fd61b14d7fefa86cbd0e5470cda))
-
-## [0.60.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.60.0...v0.60.1) (2026-06-02)
+## [0.64.4](https://github.com/Glad-Labs/poindexter/compare/v0.64.3...v0.64.4) (2026-06-03)
 
 
 ### Bug Fixes
 
-* **pipeline:** retry RAG embedding + DDG research under concurrent load ([#876](https://github.com/Glad-Labs/glad-labs-stack/issues/876), [#877](https://github.com/Glad-Labs/glad-labs-stack/issues/877)) ([#935](https://github.com/Glad-Labs/glad-labs-stack/issues/935)) ([07cfc10](https://github.com/Glad-Labs/glad-labs-stack/commit/07cfc105174776e12a8aca0d7157a7391610675b))
+* **voice:** refresh LiveKit JWT so the always-on bot survives past its token TTL ([#989](https://github.com/Glad-Labs/poindexter/issues/989)) ([27c29cd](https://github.com/Glad-Labs/poindexter/commit/27c29cd1ae18bea6d8fbd4721e93018d5484b910))
 
-## [0.60.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.59.0...v0.60.0) (2026-06-02)
+## [0.64.3](https://github.com/Glad-Labs/poindexter/compare/v0.64.2...v0.64.3) (2026-06-02)
+
+
+### Bug Fixes
+
+* **voice:** gate /voice/join on tailnet (Serve), not machine OAuth ([#985](https://github.com/Glad-Labs/poindexter/issues/985)) ([15dbb03](https://github.com/Glad-Labs/poindexter/commit/15dbb03f9f9db72491f8d10b7dfc6fe077e35cbe))
+
+## [0.64.2](https://github.com/Glad-Labs/poindexter/compare/v0.64.1...v0.64.2) (2026-06-02)
+
+
+### Bug Fixes
+
+* **security:** block dev-token via DB environment, not just ENVIRONMENT env ([#986](https://github.com/Glad-Labs/poindexter/issues/986)) ([f98c556](https://github.com/Glad-Labs/poindexter/commit/f98c556d7822533d73846240a1053b71b3f772ec))
+
+## [0.64.1](https://github.com/Glad-Labs/poindexter/compare/v0.64.0...v0.64.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* **brand:** hoist Google Fonts [@import](https://github.com/import) to tokens/index.css top (glad-labs-stack[#977](https://github.com/Glad-Labs/poindexter/issues/977) CI) ([bd5c922](https://github.com/Glad-Labs/poindexter/commit/bd5c922e8c76a83b60bae72fdf543b44b7833f88))
+* **ci:** restore poetry.lock consistency + resilient Playwright install ([70df2e5](https://github.com/Glad-Labs/poindexter/commit/70df2e515348c28ac25bfd9ae4193c962e81ac44))
+* **ci:** set NEXT_PUBLIC_API_BASE_URL for the Playwright build (glad-labs-stack[#977](https://github.com/Glad-Labs/poindexter/issues/977)) ([d4eb8bb](https://github.com/Glad-Labs/poindexter/commit/d4eb8bb2a4abd9d4ad4607fddad44101801eda9c))
+* **db:** embeddings chunk_index + deterministic fetch + create_post txn + index hygiene (audit batch 2) ([b2e8eb2](https://github.com/Glad-Labs/poindexter/commit/b2e8eb298f7ff013d87747d2aa456e10be641f1a))
+* **observability:** fail loud instead of silently degrading (audit batch 4) ([7d50955](https://github.com/Glad-Labs/poindexter/commit/7d50955607151cacc7b0f418fa0a55e4fe9eb27f))
+* **web:** cache-tag invalidation + dead FastAPI client removal + a11y landmarks/contrast/headings (audit batch 7+8) ([f427d25](https://github.com/Glad-Labs/poindexter/commit/f427d25b1efb9622d9006fe0d0d0144b55c8bca8))
+
+## [0.64.0](https://github.com/Glad-Labs/poindexter/compare/v0.63.0...v0.64.0) (2026-06-02)
 
 
 ### Features
 
-* **grafana:** dashboard audit — close gaps, surface unused metrics, add Revenue dashboard ([#933](https://github.com/Glad-Labs/glad-labs-stack/issues/933)) ([b000ec6](https://github.com/Glad-Labs/glad-labs-stack/commit/b000ec60e2a75045911d4947c6fd1c68514142f5))
+* **scripts:** add seo-audit crawler as a permanent verification tool ([#980](https://github.com/Glad-Labs/poindexter/issues/980)) ([5eb0cf7](https://github.com/Glad-Labs/poindexter/commit/5eb0cf70e63717d8dbc6bf8abd3bedda7e7686cc))
 
-
-### Bug Fixes
-
-* **metrics:** register social-adapter counters at import (poindexter[#455](https://github.com/Glad-Labs/glad-labs-stack/issues/455)) ([#932](https://github.com/Glad-Labs/glad-labs-stack/issues/932)) ([4fe424d](https://github.com/Glad-Labs/glad-labs-stack/commit/4fe424d237f283bb5df337fab3896b39887c26a0))
-
-## [0.59.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.58.0...v0.59.0) (2026-06-02)
+## [0.63.0](https://github.com/Glad-Labs/poindexter/compare/v0.62.0...v0.63.0) (2026-06-02)
 
 
 ### Features
 
-* **seo:** decompose generate_seo_metadata into LLM atoms ([#362](https://github.com/Glad-Labs/glad-labs-stack/issues/362)) ([#928](https://github.com/Glad-Labs/glad-labs-stack/issues/928)) ([94aeb71](https://github.com/Glad-Labs/glad-labs-stack/commit/94aeb7148b0dd460f80ccfc0806f64e8ddad86bf))
+* **atom_runs:** wire capture into runner + approval path ([#552](https://github.com/Glad-Labs/poindexter/issues/552)) ([#965](https://github.com/Glad-Labs/poindexter/issues/965)) ([9fdafe3](https://github.com/Glad-Labs/poindexter/commit/9fdafe3d0672f6834f5fe33f26d4597637051874))
 
-## [0.58.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.57.0...v0.58.0) (2026-06-02)
-
-
-### Features
-
-* **findings:** honor per-kind telegram/discord delivery + Phase 4 triage surfaces ([#461](https://github.com/Glad-Labs/glad-labs-stack/issues/461)) ([#927](https://github.com/Glad-Labs/glad-labs-stack/issues/927)) ([5156abe](https://github.com/Glad-Labs/glad-labs-stack/commit/5156abe67741f87dea0b2f03ade8b7cbd4668695))
-
-## [0.57.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.56.0...v0.57.0) (2026-06-02)
+## [0.62.0](https://github.com/Glad-Labs/poindexter/compare/v0.61.1...v0.62.0) (2026-06-02)
 
 
 ### Features
 
-* **triage:** auto-triage issues across both repos (cite-or-surface) ([#925](https://github.com/Glad-Labs/glad-labs-stack/issues/925)) ([963a9fe](https://github.com/Glad-Labs/glad-labs-stack/commit/963a9febe649a522d1d8140ca91da10da7cd6b4e))
+* **pipeline:** run dev_diary through the atom graph_def — both templates on atoms now ([#355](https://github.com/Glad-Labs/poindexter/issues/355)) ([#960](https://github.com/Glad-Labs/poindexter/issues/960)) ([587665a](https://github.com/Glad-Labs/poindexter/commit/587665a2c7f7c9f513ace0a00ccb44280ed9a81e))
 
-## [0.56.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.55.0...v0.56.0) (2026-06-02)
+## [0.61.1](https://github.com/Glad-Labs/poindexter/compare/v0.61.0...v0.61.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* **scheduler:** seed first-fire for never-run interval jobs (closes Glad-Labs/poindexter[#561](https://github.com/Glad-Labs/poindexter/issues/561)) ([#948](https://github.com/Glad-Labs/poindexter/issues/948)) ([7340af3](https://github.com/Glad-Labs/poindexter/commit/7340af32d64ef3d76123187bd158279d1b2c095c))
+
+## [0.61.0](https://github.com/Glad-Labs/poindexter/compare/v0.60.2...v0.61.0) (2026-06-02)
 
 
 ### Features
 
-* **qa:** make rail-atom advisory DB-driven via qa_gates.required_to_pass ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355), refs poindexter[#454](https://github.com/Glad-Labs/glad-labs-stack/issues/454)) ([#923](https://github.com/Glad-Labs/glad-labs-stack/issues/923)) ([16b52fb](https://github.com/Glad-Labs/glad-labs-stack/commit/16b52fb03448bb765ad135e08ff9e513afba0923))
+* **ops:** guarded one-command worker deploy script ([#937](https://github.com/Glad-Labs/poindexter/issues/937)) ([#952](https://github.com/Glad-Labs/poindexter/issues/952)) ([c15645a](https://github.com/Glad-Labs/poindexter/commit/c15645a00f96f69f27fb4eff571a417b1a44c57e))
 
-## [0.55.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.54.0...v0.55.0) (2026-06-02)
+## [0.60.2](https://github.com/Glad-Labs/poindexter/compare/v0.60.1...v0.60.2) (2026-06-02)
+
+
+### Bug Fixes
+
+* **writer:** draft path must use plain-text helper, not JSON-forcing _ollama_chat_json ([#572](https://github.com/Glad-Labs/poindexter/issues/572)) ([#950](https://github.com/Glad-Labs/poindexter/issues/950)) ([e85ffb0](https://github.com/Glad-Labs/poindexter/commit/e85ffb0633cc2fd61b14d7fefa86cbd0e5470cda))
+
+## [0.60.1](https://github.com/Glad-Labs/poindexter/compare/v0.60.0...v0.60.1) (2026-06-02)
+
+
+### Bug Fixes
+
+* **pipeline:** retry RAG embedding + DDG research under concurrent load ([#876](https://github.com/Glad-Labs/poindexter/issues/876), [#877](https://github.com/Glad-Labs/poindexter/issues/877)) ([#935](https://github.com/Glad-Labs/poindexter/issues/935)) ([07cfc10](https://github.com/Glad-Labs/poindexter/commit/07cfc105174776e12a8aca0d7157a7391610675b))
+
+## [0.60.0](https://github.com/Glad-Labs/poindexter/compare/v0.59.0...v0.60.0) (2026-06-02)
 
 
 ### Features
 
-* **pipeline:** atom-cutover 5/5 — big-bang cutover + parity ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([#921](https://github.com/Glad-Labs/glad-labs-stack/issues/921)) ([0855d2e](https://github.com/Glad-Labs/glad-labs-stack/commit/0855d2e7f848197b6e677650c3e4035ce4b89f2d))
+* **grafana:** dashboard audit — close gaps, surface unused metrics, add Revenue dashboard ([#933](https://github.com/Glad-Labs/poindexter/issues/933)) ([b000ec6](https://github.com/Glad-Labs/poindexter/commit/b000ec60e2a75045911d4947c6fd1c68514142f5))
 
-## [0.54.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.53.0...v0.54.0) (2026-06-02)
+
+### Bug Fixes
+
+* **metrics:** register social-adapter counters at import (poindexter[#455](https://github.com/Glad-Labs/poindexter/issues/455)) ([#932](https://github.com/Glad-Labs/poindexter/issues/932)) ([4fe424d](https://github.com/Glad-Labs/poindexter/commit/4fe424d237f283bb5df337fab3896b39887c26a0))
+
+## [0.59.0](https://github.com/Glad-Labs/poindexter/compare/v0.58.0...v0.59.0) (2026-06-02)
 
 
 ### Features
 
-* **findings:** wire per-kind policies into findings_alert_router — auto_fix + github_issue + min_severity ([#919](https://github.com/Glad-Labs/glad-labs-stack/issues/919)) ([ba8abe6](https://github.com/Glad-Labs/glad-labs-stack/commit/ba8abe6d6b481984adb501f090494ee8cab2885e))
+* **seo:** decompose generate_seo_metadata into LLM atoms ([#362](https://github.com/Glad-Labs/poindexter/issues/362)) ([#928](https://github.com/Glad-Labs/poindexter/issues/928)) ([94aeb71](https://github.com/Glad-Labs/poindexter/commit/94aeb7148b0dd460f80ccfc0806f64e8ddad86bf))
 
-## [0.53.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.52.0...v0.53.0) (2026-06-02)
-
-
-### Features
-
-* **pipeline:** atom-cutover 4/5 — graph_def cutover seam ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([#917](https://github.com/Glad-Labs/glad-labs-stack/issues/917)) ([1191f84](https://github.com/Glad-Labs/glad-labs-stack/commit/1191f84f077cc8166e487b1458d468dc974678f9))
-
-## [0.52.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.51.0...v0.52.0) (2026-06-02)
+## [0.58.0](https://github.com/Glad-Labs/poindexter/compare/v0.57.0...v0.58.0) (2026-06-02)
 
 
 ### Features
 
-* **pipeline:** atom-cutover 3/5 — qa.* rail atoms ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([#915](https://github.com/Glad-Labs/glad-labs-stack/issues/915)) ([b2bde47](https://github.com/Glad-Labs/glad-labs-stack/commit/b2bde4780d8aece1e05a2d718a39539dd68f6210))
+* **findings:** honor per-kind telegram/discord delivery + Phase 4 triage surfaces ([#461](https://github.com/Glad-Labs/poindexter/issues/461)) ([#927](https://github.com/Glad-Labs/poindexter/issues/927)) ([5156abe](https://github.com/Glad-Labs/poindexter/commit/5156abe67741f87dea0b2f03ade8b7cbd4668695))
 
-## [0.51.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.50.0...v0.51.0) (2026-06-02)
-
-
-### Features
-
-* **pipeline:** atom-cutover 2/5 — atom_runs run+outcome capture ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([#912](https://github.com/Glad-Labs/glad-labs-stack/issues/912)) ([a133e08](https://github.com/Glad-Labs/glad-labs-stack/commit/a133e0834ef106058e44087b94c3cef78fee498c))
-
-## [0.50.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.49.1...v0.50.0) (2026-06-02)
+## [0.57.0](https://github.com/Glad-Labs/poindexter/compare/v0.56.0...v0.57.0) (2026-06-02)
 
 
 ### Features
 
-* **pipeline:** atom-cutover 1/5 — requires/produces build-time validation ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([#909](https://github.com/Glad-Labs/glad-labs-stack/issues/909)) ([0131392](https://github.com/Glad-Labs/glad-labs-stack/commit/01313921d97879ea28b4dc4eefca8c54f7e9de12))
+* **triage:** auto-triage issues across both repos (cite-or-surface) ([#925](https://github.com/Glad-Labs/poindexter/issues/925)) ([963a9fe](https://github.com/Glad-Labs/poindexter/commit/963a9febe649a522d1d8140ca91da10da7cd6b4e))
 
-## [0.49.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.49.0...v0.49.1) (2026-06-01)
-
-
-### Bug Fixes
-
-* **social:** disable model thinking so drafts aren't QA traces ([#907](https://github.com/Glad-Labs/glad-labs-stack/issues/907)) ([f4b270b](https://github.com/Glad-Labs/glad-labs-stack/commit/f4b270b7e4f31940b95762d101e61601623dc841))
-
-## [0.49.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.5...v0.49.0) (2026-06-01)
+## [0.56.0](https://github.com/Glad-Labs/poindexter/compare/v0.55.0...v0.56.0) (2026-06-02)
 
 
 ### Features
 
-* media-gated publish — wire the dormant per-medium gate engine ([#893](https://github.com/Glad-Labs/glad-labs-stack/issues/893)) ([ce92f53](https://github.com/Glad-Labs/glad-labs-stack/commit/ce92f5326d25486da689bef007ea90cbd821d7dc))
+* **qa:** make rail-atom advisory DB-driven via qa_gates.required_to_pass ([#355](https://github.com/Glad-Labs/poindexter/issues/355), refs poindexter[#454](https://github.com/Glad-Labs/poindexter/issues/454)) ([#923](https://github.com/Glad-Labs/poindexter/issues/923)) ([16b52fb](https://github.com/Glad-Labs/poindexter/commit/16b52fb03448bb765ad135e08ff9e513afba0923))
 
-## [0.48.5](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.4...v0.48.5) (2026-06-01)
-
-
-### Bug Fixes
-
-* **validator:** orphaned-attribution + internal-path-leak rules (closes Glad-Labs/poindexter[#532](https://github.com/Glad-Labs/glad-labs-stack/issues/532)) ([#851](https://github.com/Glad-Labs/glad-labs-stack/issues/851)) ([926f297](https://github.com/Glad-Labs/glad-labs-stack/commit/926f29749ac2e77b027cffaceab6f67db8981158))
-
-## [0.48.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.3...v0.48.4) (2026-06-01)
-
-
-### Bug Fixes
-
-* **cli:** let `tasks list --status` filter on approved + other live statuses ([dfa3b3f](https://github.com/Glad-Labs/glad-labs-stack/commit/dfa3b3f3fe5d1014b6b9f6a7ad5223cb41d2e9d9))
-
-## [0.48.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.2...v0.48.3) (2026-06-01)
-
-
-### Bug Fixes
-
-* **mcp:** self-heal MCP/brain OAuth when POINDEXTER_SECRET_KEY is late/missing ([e7c147e](https://github.com/Glad-Labs/glad-labs-stack/commit/e7c147ef8cb2c16ce8412e6cbb3c7c101e890794))
-
-## [0.48.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.1...v0.48.2) (2026-06-01)
-
-
-### Bug Fixes
-
-* **brain:** repair gpu_temperature probe tests for freshness gate ([#536](https://github.com/Glad-Labs/glad-labs-stack/issues/536)) ([4d79179](https://github.com/Glad-Labs/glad-labs-stack/commit/4d791793cdfd8e6394d302e801670d86fe485564))
-
-## [0.48.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.48.0...v0.48.1) (2026-06-01)
-
-
-### Bug Fixes
-
-* **cost:** suppress month-start projection false-positive (CI flake) ([fbddf8a](https://github.com/Glad-Labs/glad-labs-stack/commit/fbddf8a78c6084963e3f6bb4785a06125bf91efc))
-
-## [0.48.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.47.0...v0.48.0) (2026-06-01)
+## [0.55.0](https://github.com/Glad-Labs/poindexter/compare/v0.54.0...v0.55.0) (2026-06-02)
 
 
 ### Features
 
-* **media:** thread SEO into niche-aware backfill generate calls ([#539](https://github.com/Glad-Labs/glad-labs-stack/issues/539)) ([2af92f7](https://github.com/Glad-Labs/glad-labs-stack/commit/2af92f742cff9bfe66e8b8553200b2fed241b85f))
+* **pipeline:** atom-cutover 5/5 — big-bang cutover + parity ([#355](https://github.com/Glad-Labs/poindexter/issues/355)) ([#921](https://github.com/Glad-Labs/poindexter/issues/921)) ([0855d2e](https://github.com/Glad-Labs/poindexter/commit/0855d2e7f848197b6e677650c3e4035ce4b89f2d))
 
-## [0.47.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.46.0...v0.47.0) (2026-06-01)
-
-
-### Features
-
-* **media:** thread SEO into niche-aware backfill generate calls ([#539](https://github.com/Glad-Labs/glad-labs-stack/issues/539) completion) ([08c9e84](https://github.com/Glad-Labs/glad-labs-stack/commit/08c9e849a16b652df6ba8782bff0a0b936a215f6))
-
-## [0.46.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.19...v0.46.0) (2026-06-01)
+## [0.54.0](https://github.com/Glad-Labs/poindexter/compare/v0.53.0...v0.54.0) (2026-06-02)
 
 
 ### Features
 
-* **jobs:** per-niche enable/disable for backfill scheduler jobs ([2fc2374](https://github.com/Glad-Labs/glad-labs-stack/commit/2fc2374401f8de2be1c850241e1e863a6ee9dd06))
-* **media:** thread post SEO metadata into video+podcast publish path ([#539](https://github.com/Glad-Labs/glad-labs-stack/issues/539) core) ([f067ca5](https://github.com/Glad-Labs/glad-labs-stack/commit/f067ca5c7c33189d5fe9dfbec2205ca745ad20d2))
+* **findings:** wire per-kind policies into findings_alert_router — auto_fix + github_issue + min_severity ([#919](https://github.com/Glad-Labs/poindexter/issues/919)) ([ba8abe6](https://github.com/Glad-Labs/poindexter/commit/ba8abe6d6b481984adb501f090494ee8cab2885e))
 
-## [0.45.19](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.18...v0.45.19) (2026-05-31)
-
-
-### Bug Fixes
-
-* **media:** preserve podcast_script + bind site_config so video director fires ([0844582](https://github.com/Glad-Labs/glad-labs-stack/commit/08445828044c41add6b9762ac16c5105dbf11098))
-
-## [0.45.18](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.17...v0.45.18) (2026-05-31)
+## [0.53.0](https://github.com/Glad-Labs/poindexter/compare/v0.52.0...v0.53.0) (2026-06-02)
 
 
-### Bug Fixes
+### Features
 
-* **seo:** strip unbalanced/trailing ** markdown from generated titles ([1fef6b7](https://github.com/Glad-Labs/glad-labs-stack/commit/1fef6b7822c6fed343d62a53fc4c46251b5ce034))
+* **pipeline:** atom-cutover 4/5 — graph_def cutover seam ([#355](https://github.com/Glad-Labs/poindexter/issues/355)) ([#917](https://github.com/Glad-Labs/poindexter/issues/917)) ([1191f84](https://github.com/Glad-Labs/poindexter/commit/1191f84f077cc8166e487b1458d468dc974678f9))
 
-## [0.45.17](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.16...v0.45.17) (2026-05-31)
-
-
-### Bug Fixes
-
-* **pipeline:** store QualityAssessment as dict in graph state so checkpointer stops zeroing scores ([871c47d](https://github.com/Glad-Labs/glad-labs-stack/commit/871c47d1cc234aee2d6c6b30e49f93a9f00f70a9))
-
-## [0.45.16](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.15...v0.45.16) (2026-05-31)
+## [0.52.0](https://github.com/Glad-Labs/poindexter/compare/v0.51.0...v0.52.0) (2026-06-02)
 
 
-### Bug Fixes
+### Features
 
-* **seo:** pass topic to seo.generate_title so LLM title-gen stops failing ([c21968b](https://github.com/Glad-Labs/glad-labs-stack/commit/c21968b306252897ffd2a17dcd1e527490f39cb8))
+* **pipeline:** atom-cutover 3/5 — qa.* rail atoms ([#355](https://github.com/Glad-Labs/poindexter/issues/355)) ([#915](https://github.com/Glad-Labs/poindexter/issues/915)) ([b2bde47](https://github.com/Glad-Labs/poindexter/commit/b2bde4780d8aece1e05a2d718a39539dd68f6210))
 
-## [0.45.15](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.14...v0.45.15) (2026-05-31)
+## [0.51.0](https://github.com/Glad-Labs/poindexter/compare/v0.50.0...v0.51.0) (2026-06-02)
 
 
-### Bug Fixes
+### Features
 
-* **pipeline:** dispatcher claims rejected_retry so reject --retry regenerates ([29ef7a7](https://github.com/Glad-Labs/glad-labs-stack/commit/29ef7a7a8c5eecd1623fdb4f4e8a769f8df3d221))
+* **pipeline:** atom-cutover 2/5 — atom_runs run+outcome capture ([#355](https://github.com/Glad-Labs/poindexter/issues/355)) ([#912](https://github.com/Glad-Labs/poindexter/issues/912)) ([a133e08](https://github.com/Glad-Labs/poindexter/commit/a133e0834ef106058e44087b94c3cef78fee498c))
 
-## [0.45.14](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.13...v0.45.14) (2026-05-31)
+## [0.50.0](https://github.com/Glad-Labs/poindexter/compare/v0.49.1...v0.50.0) (2026-06-02)
+
+
+### Features
+
+* **pipeline:** atom-cutover 1/5 — requires/produces build-time validation ([#355](https://github.com/Glad-Labs/poindexter/issues/355)) ([#909](https://github.com/Glad-Labs/poindexter/issues/909)) ([0131392](https://github.com/Glad-Labs/poindexter/commit/01313921d97879ea28b4dc4eefca8c54f7e9de12))
+
+## [0.49.1](https://github.com/Glad-Labs/poindexter/compare/v0.49.0...v0.49.1) (2026-06-01)
 
 
 ### Bug Fixes
 
-* **preview:** forward resolved SiteConfig into preview_post_html ([#540](https://github.com/Glad-Labs/glad-labs-stack/issues/540)) ([898bf6f](https://github.com/Glad-Labs/glad-labs-stack/commit/898bf6f504224b38db5597e3903f34a249d61604))
+* **social:** disable model thinking so drafts aren't QA traces ([#907](https://github.com/Glad-Labs/poindexter/issues/907)) ([f4b270b](https://github.com/Glad-Labs/poindexter/commit/f4b270b7e4f31940b95762d101e61601623dc841))
 
-## [0.45.13](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.12...v0.45.13) (2026-05-31)
-
-
-### Bug Fixes
-
-* **preview:** render posts-path content like the task path so preview matches published ([e2252d3](https://github.com/Glad-Labs/glad-labs-stack/commit/e2252d3125864fe5a3a811d0772e542f3121da9e))
-
-## [0.45.12](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.11...v0.45.12) (2026-05-31)
+## [0.49.0](https://github.com/Glad-Labs/poindexter/compare/v0.48.5...v0.49.0) (2026-06-01)
 
 
-### Bug Fixes
+### Features
 
-* **image:** stop the SDXL prompt-builder emitting anthropomorphic/hand prompts ([7ec1bce](https://github.com/Glad-Labs/glad-labs-stack/commit/7ec1bcef77dfbbd6c42b44dc80dc65c09c967a76))
-* **observability:** GPU-metrics-stale gate — distinguish exporter-alive from writing-fresh-data ([ab0f460](https://github.com/Glad-Labs/glad-labs-stack/commit/ab0f460af59e67f0d76e29ed60823e8a68397c9f))
-* **validator:** flag citation artifacts + leaked internal path tokens ([d85047b](https://github.com/Glad-Labs/glad-labs-stack/commit/d85047b351deabdaf66911489b4a2674f93b3593))
+* media-gated publish — wire the dormant per-medium gate engine ([#893](https://github.com/Glad-Labs/poindexter/issues/893)) ([ce92f53](https://github.com/Glad-Labs/poindexter/commit/ce92f5326d25486da689bef007ea90cbd821d7dc))
 
-## [0.45.11](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.10...v0.45.11) (2026-05-31)
+## [0.48.5](https://github.com/Glad-Labs/poindexter/compare/v0.48.4...v0.48.5) (2026-06-01)
 
 
 ### Bug Fixes
 
-* **findings:** honor per-kind log_only policy in the alert router ([#300](https://github.com/Glad-Labs/glad-labs-stack/issues/300)) ([dae124f](https://github.com/Glad-Labs/glad-labs-stack/commit/dae124f81f0aa878ea868f88d4628be61a1c7cc7))
+* **validator:** orphaned-attribution + internal-path-leak rules (closes Glad-Labs/poindexter[#532](https://github.com/Glad-Labs/poindexter/issues/532)) ([#851](https://github.com/Glad-Labs/poindexter/issues/851)) ([926f297](https://github.com/Glad-Labs/poindexter/commit/926f29749ac2e77b027cffaceab6f67db8981158))
 
-## [0.45.10](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.9...v0.45.10) (2026-05-31)
-
-
-### Bug Fixes
-
-* **triage:** dedupe the unbounded-resolve-rule warning to once per process ([#304](https://github.com/Glad-Labs/glad-labs-stack/issues/304) follow-up) ([2b210b4](https://github.com/Glad-Labs/glad-labs-stack/commit/2b210b4bafce3fa2b02629a9d1a0fa1c7ea497d0))
-
-## [0.45.9](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.8...v0.45.9) (2026-05-31)
+## [0.48.4](https://github.com/Glad-Labs/poindexter/compare/v0.48.3...v0.48.4) (2026-06-01)
 
 
 ### Bug Fixes
 
-* **alerting:** close 5 monitoring blind-spots in the auto-triage/probe layer ([#304](https://github.com/Glad-Labs/glad-labs-stack/issues/304)) ([dd3d8bb](https://github.com/Glad-Labs/glad-labs-stack/commit/dd3d8bb60a90dc9f3556e1be4e51e1b8e309aad4))
+* **cli:** let `tasks list --status` filter on approved + other live statuses ([dfa3b3f](https://github.com/Glad-Labs/poindexter/commit/dfa3b3f3fe5d1014b6b9f6a7ad5223cb41d2e9d9))
 
-## [0.45.8](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.7...v0.45.8) (2026-05-31)
-
-
-### Bug Fixes
-
-* **audit:** never silently drop warn/critical findings on DB blip ([#303](https://github.com/Glad-Labs/glad-labs-stack/issues/303)) ([7f792e9](https://github.com/Glad-Labs/glad-labs-stack/commit/7f792e9fc5c7bba63db279be5a7ab9f466e815f5))
-
-## [0.45.7](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.6...v0.45.7) (2026-05-31)
+## [0.48.3](https://github.com/Glad-Labs/poindexter/compare/v0.48.2...v0.48.3) (2026-06-01)
 
 
 ### Bug Fixes
 
-* **auth:** create missing jwt_blocklist table + escalate structural failure ([#305](https://github.com/Glad-Labs/glad-labs-stack/issues/305)) ([8ca5c4c](https://github.com/Glad-Labs/glad-labs-stack/commit/8ca5c4ca08e9bf8cb16c6621ad2d9ae742d39f5c))
+* **mcp:** self-heal MCP/brain OAuth when POINDEXTER_SECRET_KEY is late/missing ([e7c147e](https://github.com/Glad-Labs/poindexter/commit/e7c147ef8cb2c16ce8412e6cbb3c7c101e890794))
 
-## [0.45.6](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.5...v0.45.6) (2026-05-31)
+## [0.48.2](https://github.com/Glad-Labs/poindexter/compare/v0.48.1...v0.48.2) (2026-06-01)
 
 
 ### Bug Fixes
 
-* **scheduler:** make job failures LOUD instead of log+counter ([#302](https://github.com/Glad-Labs/glad-labs-stack/issues/302), alert audit) ([c9f34c2](https://github.com/Glad-Labs/glad-labs-stack/commit/c9f34c2d7646f848fc8a6317296d4506d8428864))
+* **brain:** repair gpu_temperature probe tests for freshness gate ([#536](https://github.com/Glad-Labs/poindexter/issues/536)) ([4d79179](https://github.com/Glad-Labs/poindexter/commit/4d791793cdfd8e6394d302e801670d86fe485564))
 
-## [0.45.5](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.4...v0.45.5) (2026-05-31)
+## [0.48.1](https://github.com/Glad-Labs/poindexter/compare/v0.48.0...v0.48.1) (2026-06-01)
+
+
+### Bug Fixes
+
+* **cost:** suppress month-start projection false-positive (CI flake) ([fbddf8a](https://github.com/Glad-Labs/poindexter/commit/fbddf8a78c6084963e3f6bb4785a06125bf91efc))
+
+## [0.48.0](https://github.com/Glad-Labs/poindexter/compare/v0.47.0...v0.48.0) (2026-06-01)
+
+
+### Features
+
+* **media:** thread SEO into niche-aware backfill generate calls ([#539](https://github.com/Glad-Labs/poindexter/issues/539)) ([2af92f7](https://github.com/Glad-Labs/poindexter/commit/2af92f742cff9bfe66e8b8553200b2fed241b85f))
+
+## [0.47.0](https://github.com/Glad-Labs/poindexter/compare/v0.46.0...v0.47.0) (2026-06-01)
+
+
+### Features
+
+* **media:** thread SEO into niche-aware backfill generate calls ([#539](https://github.com/Glad-Labs/poindexter/issues/539) completion) ([08c9e84](https://github.com/Glad-Labs/poindexter/commit/08c9e849a16b652df6ba8782bff0a0b936a215f6))
+
+## [0.46.0](https://github.com/Glad-Labs/poindexter/compare/v0.45.19...v0.46.0) (2026-06-01)
+
+
+### Features
+
+* **jobs:** per-niche enable/disable for backfill scheduler jobs ([2fc2374](https://github.com/Glad-Labs/poindexter/commit/2fc2374401f8de2be1c850241e1e863a6ee9dd06))
+* **media:** thread post SEO metadata into video+podcast publish path ([#539](https://github.com/Glad-Labs/poindexter/issues/539) core) ([f067ca5](https://github.com/Glad-Labs/poindexter/commit/f067ca5c7c33189d5fe9dfbec2205ca745ad20d2))
+
+## [0.45.19](https://github.com/Glad-Labs/poindexter/compare/v0.45.18...v0.45.19) (2026-05-31)
+
+
+### Bug Fixes
+
+* **media:** preserve podcast_script + bind site_config so video director fires ([0844582](https://github.com/Glad-Labs/poindexter/commit/08445828044c41add6b9762ac16c5105dbf11098))
+
+## [0.45.18](https://github.com/Glad-Labs/poindexter/compare/v0.45.17...v0.45.18) (2026-05-31)
+
+
+### Bug Fixes
+
+* **seo:** strip unbalanced/trailing ** markdown from generated titles ([1fef6b7](https://github.com/Glad-Labs/poindexter/commit/1fef6b7822c6fed343d62a53fc4c46251b5ce034))
+
+## [0.45.17](https://github.com/Glad-Labs/poindexter/compare/v0.45.16...v0.45.17) (2026-05-31)
+
+
+### Bug Fixes
+
+* **pipeline:** store QualityAssessment as dict in graph state so checkpointer stops zeroing scores ([871c47d](https://github.com/Glad-Labs/poindexter/commit/871c47d1cc234aee2d6c6b30e49f93a9f00f70a9))
+
+## [0.45.16](https://github.com/Glad-Labs/poindexter/compare/v0.45.15...v0.45.16) (2026-05-31)
+
+
+### Bug Fixes
+
+* **seo:** pass topic to seo.generate_title so LLM title-gen stops failing ([c21968b](https://github.com/Glad-Labs/poindexter/commit/c21968b306252897ffd2a17dcd1e527490f39cb8))
+
+## [0.45.15](https://github.com/Glad-Labs/poindexter/compare/v0.45.14...v0.45.15) (2026-05-31)
+
+
+### Bug Fixes
+
+* **pipeline:** dispatcher claims rejected_retry so reject --retry regenerates ([29ef7a7](https://github.com/Glad-Labs/poindexter/commit/29ef7a7a8c5eecd1623fdb4f4e8a769f8df3d221))
+
+## [0.45.14](https://github.com/Glad-Labs/poindexter/compare/v0.45.13...v0.45.14) (2026-05-31)
+
+
+### Bug Fixes
+
+* **preview:** forward resolved SiteConfig into preview_post_html ([#540](https://github.com/Glad-Labs/poindexter/issues/540)) ([898bf6f](https://github.com/Glad-Labs/poindexter/commit/898bf6f504224b38db5597e3903f34a249d61604))
+
+## [0.45.13](https://github.com/Glad-Labs/poindexter/compare/v0.45.12...v0.45.13) (2026-05-31)
+
+
+### Bug Fixes
+
+* **preview:** render posts-path content like the task path so preview matches published ([e2252d3](https://github.com/Glad-Labs/poindexter/commit/e2252d3125864fe5a3a811d0772e542f3121da9e))
+
+## [0.45.12](https://github.com/Glad-Labs/poindexter/compare/v0.45.11...v0.45.12) (2026-05-31)
+
+
+### Bug Fixes
+
+* **image:** stop the SDXL prompt-builder emitting anthropomorphic/hand prompts ([7ec1bce](https://github.com/Glad-Labs/poindexter/commit/7ec1bcef77dfbbd6c42b44dc80dc65c09c967a76))
+* **observability:** GPU-metrics-stale gate — distinguish exporter-alive from writing-fresh-data ([ab0f460](https://github.com/Glad-Labs/poindexter/commit/ab0f460af59e67f0d76e29ed60823e8a68397c9f))
+* **validator:** flag citation artifacts + leaked internal path tokens ([d85047b](https://github.com/Glad-Labs/poindexter/commit/d85047b351deabdaf66911489b4a2674f93b3593))
+
+## [0.45.11](https://github.com/Glad-Labs/poindexter/compare/v0.45.10...v0.45.11) (2026-05-31)
+
+
+### Bug Fixes
+
+* **findings:** honor per-kind log_only policy in the alert router ([#300](https://github.com/Glad-Labs/poindexter/issues/300)) ([dae124f](https://github.com/Glad-Labs/poindexter/commit/dae124f81f0aa878ea868f88d4628be61a1c7cc7))
+
+## [0.45.10](https://github.com/Glad-Labs/poindexter/compare/v0.45.9...v0.45.10) (2026-05-31)
+
+
+### Bug Fixes
+
+* **triage:** dedupe the unbounded-resolve-rule warning to once per process ([#304](https://github.com/Glad-Labs/poindexter/issues/304) follow-up) ([2b210b4](https://github.com/Glad-Labs/poindexter/commit/2b210b4bafce3fa2b02629a9d1a0fa1c7ea497d0))
+
+## [0.45.9](https://github.com/Glad-Labs/poindexter/compare/v0.45.8...v0.45.9) (2026-05-31)
+
+
+### Bug Fixes
+
+* **alerting:** close 5 monitoring blind-spots in the auto-triage/probe layer ([#304](https://github.com/Glad-Labs/poindexter/issues/304)) ([dd3d8bb](https://github.com/Glad-Labs/poindexter/commit/dd3d8bb60a90dc9f3556e1be4e51e1b8e309aad4))
+
+## [0.45.8](https://github.com/Glad-Labs/poindexter/compare/v0.45.7...v0.45.8) (2026-05-31)
+
+
+### Bug Fixes
+
+* **audit:** never silently drop warn/critical findings on DB blip ([#303](https://github.com/Glad-Labs/poindexter/issues/303)) ([7f792e9](https://github.com/Glad-Labs/poindexter/commit/7f792e9fc5c7bba63db279be5a7ab9f466e815f5))
+
+## [0.45.7](https://github.com/Glad-Labs/poindexter/compare/v0.45.6...v0.45.7) (2026-05-31)
+
+
+### Bug Fixes
+
+* **auth:** create missing jwt_blocklist table + escalate structural failure ([#305](https://github.com/Glad-Labs/poindexter/issues/305)) ([8ca5c4c](https://github.com/Glad-Labs/poindexter/commit/8ca5c4ca08e9bf8cb16c6621ad2d9ae742d39f5c))
+
+## [0.45.6](https://github.com/Glad-Labs/poindexter/compare/v0.45.5...v0.45.6) (2026-05-31)
+
+
+### Bug Fixes
+
+* **scheduler:** make job failures LOUD instead of log+counter ([#302](https://github.com/Glad-Labs/poindexter/issues/302), alert audit) ([c9f34c2](https://github.com/Glad-Labs/poindexter/commit/c9f34c2d7646f848fc8a6317296d4506d8428864))
+
+## [0.45.5](https://github.com/Glad-Labs/poindexter/compare/v0.45.4...v0.45.5) (2026-05-31)
 
 
 ### Reverts
 
-* **brain:** remove duplicate probe_anomaly; detect_anomalies is canonical ([#440](https://github.com/Glad-Labs/glad-labs-stack/issues/440)) ([9fa6667](https://github.com/Glad-Labs/glad-labs-stack/commit/9fa666742ae22b9ad9f78d375cd05befafc3915e))
+* **brain:** remove duplicate probe_anomaly; detect_anomalies is canonical ([#440](https://github.com/Glad-Labs/poindexter/issues/440)) ([9fa6667](https://github.com/Glad-Labs/poindexter/commit/9fa666742ae22b9ad9f78d375cd05befafc3915e))
 
-## [0.45.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.3...v0.45.4) (2026-05-31)
+## [0.45.4](https://github.com/Glad-Labs/poindexter/compare/v0.45.3...v0.45.4) (2026-05-31)
 
 
 ### Reverts
 
-* **brain:** remove duplicate findings_dispatcher; keep existing router ([#461](https://github.com/Glad-Labs/glad-labs-stack/issues/461)) ([5f61118](https://github.com/Glad-Labs/glad-labs-stack/commit/5f611182cdd1033d6dda37f0b6e020994a641045))
+* **brain:** remove duplicate findings_dispatcher; keep existing router ([#461](https://github.com/Glad-Labs/poindexter/issues/461)) ([5f61118](https://github.com/Glad-Labs/poindexter/commit/5f611182cdd1033d6dda37f0b6e020994a641045))
 
-## [0.45.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.2...v0.45.3) (2026-05-31)
-
-
-### Bug Fixes
-
-* **brain:** repair glitchtip auto-resolve patterns (invalid JSON) + alertmanager 0644 ([#298](https://github.com/Glad-Labs/glad-labs-stack/issues/298)) ([7b0d38b](https://github.com/Glad-Labs/glad-labs-stack/commit/7b0d38b7bc1bbb062417fbaad52a534a64671abd))
-
-## [0.45.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.1...v0.45.2) (2026-05-31)
+## [0.45.3](https://github.com/Glad-Labs/poindexter/compare/v0.45.2...v0.45.3) (2026-05-31)
 
 
 ### Bug Fixes
 
-* **content:** unwrap {title,post_body} writer envelope in preview + publish ([6102d8e](https://github.com/Glad-Labs/glad-labs-stack/commit/6102d8e3a54132c66903ed6768e9238975c203b9))
+* **brain:** repair glitchtip auto-resolve patterns (invalid JSON) + alertmanager 0644 ([#298](https://github.com/Glad-Labs/poindexter/issues/298)) ([7b0d38b](https://github.com/Glad-Labs/poindexter/commit/7b0d38b7bc1bbb062417fbaad52a534a64671abd))
 
-## [0.45.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.45.0...v0.45.1) (2026-05-31)
-
-
-### Bug Fixes
-
-* **grafana:** Cloud-fallback-fires panel miscounted local litellm calls as cloud ([#299](https://github.com/Glad-Labs/glad-labs-stack/issues/299)) ([cff370f](https://github.com/Glad-Labs/glad-labs-stack/commit/cff370fb1d000602587a0d3a1e9332d3837ac206))
-
-## [0.45.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.44.1...v0.45.0) (2026-05-31)
-
-
-### Features
-
-* **brain:** findings dispatcher Phase 1 — route audit_log findings ([#461](https://github.com/Glad-Labs/glad-labs-stack/issues/461)) ([30ee0c2](https://github.com/Glad-Labs/glad-labs-stack/commit/30ee0c210fce62c6f92776451e05b4a3f3dfcd29))
-
-## [0.44.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.44.0...v0.44.1) (2026-05-31)
+## [0.45.2](https://github.com/Glad-Labs/poindexter/compare/v0.45.1...v0.45.2) (2026-05-31)
 
 
 ### Bug Fixes
 
-* **brain:** bake anomaly_probe.py into the brain image ([#440](https://github.com/Glad-Labs/glad-labs-stack/issues/440)) ([9de7d76](https://github.com/Glad-Labs/glad-labs-stack/commit/9de7d76d66fd86e0339af943606345c86c97f0e6))
+* **content:** unwrap {title,post_body} writer envelope in preview + publish ([6102d8e](https://github.com/Glad-Labs/poindexter/commit/6102d8e3a54132c66903ed6768e9238975c203b9))
 
-## [0.44.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.43.0...v0.44.0) (2026-05-31)
-
-
-### Features
-
-* **brain:** rolling-baseline anomaly probe ([#440](https://github.com/Glad-Labs/glad-labs-stack/issues/440)) ([10f17c9](https://github.com/Glad-Labs/glad-labs-stack/commit/10f17c990e961187b2c390e9a3dd7f5fdc0c156c))
-
-## [0.43.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.42.2...v0.43.0) (2026-05-31)
-
-
-### Features
-
-* **doctor:** add `poindexter doctor` health check-graph v1 ([#527](https://github.com/Glad-Labs/glad-labs-stack/issues/527)) ([7d7b82b](https://github.com/Glad-Labs/glad-labs-stack/commit/7d7b82b5edaa4a42a3cd0c9fe0c90dbe6e791b3d))
-
-## [0.42.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.42.1...v0.42.2) (2026-05-31)
+## [0.45.1](https://github.com/Glad-Labs/poindexter/compare/v0.45.0...v0.45.1) (2026-05-31)
 
 
 ### Bug Fixes
 
-* **ci:** always run unit-tests on push to main ([#534](https://github.com/Glad-Labs/glad-labs-stack/issues/534)) ([98bcc48](https://github.com/Glad-Labs/glad-labs-stack/commit/98bcc487b25fc15898e72e991554ddd3454b5dc5))
+* **grafana:** Cloud-fallback-fires panel miscounted local litellm calls as cloud ([#299](https://github.com/Glad-Labs/poindexter/issues/299)) ([cff370f](https://github.com/Glad-Labs/poindexter/commit/cff370fb1d000602587a0d3a1e9332d3837ac206))
 
-## [0.42.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.42.0...v0.42.1) (2026-05-31)
+## [0.45.0](https://github.com/Glad-Labs/poindexter/compare/v0.44.1...v0.45.0) (2026-05-31)
+
+
+### Features
+
+* **brain:** findings dispatcher Phase 1 — route audit_log findings ([#461](https://github.com/Glad-Labs/poindexter/issues/461)) ([30ee0c2](https://github.com/Glad-Labs/poindexter/commit/30ee0c210fce62c6f92776451e05b4a3f3dfcd29))
+
+## [0.44.1](https://github.com/Glad-Labs/poindexter/compare/v0.44.0...v0.44.1) (2026-05-31)
 
 
 ### Bug Fixes
 
-* **brain:** create missing alert_actions table (auto-triage threw every service-down) ([0812fa9](https://github.com/Glad-Labs/glad-labs-stack/commit/0812fa925cec361a4542708510c249451e280b3c))
+* **brain:** bake anomaly_probe.py into the brain image ([#440](https://github.com/Glad-Labs/poindexter/issues/440)) ([9de7d76](https://github.com/Glad-Labs/poindexter/commit/9de7d76d66fd86e0339af943606345c86c97f0e6))
 
-## [0.42.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.41.3...v0.42.0) (2026-05-31)
+## [0.44.0](https://github.com/Glad-Labs/poindexter/compare/v0.43.0...v0.44.0) (2026-05-31)
 
 
 ### Features
 
-* **brain:** default-on stuck-flow auto-crash + queue-backlog detection ([#526](https://github.com/Glad-Labs/glad-labs-stack/issues/526)) ([ba290fc](https://github.com/Glad-Labs/glad-labs-stack/commit/ba290fc25266da8b06ce85cfa73138b92f947428))
+* **brain:** rolling-baseline anomaly probe ([#440](https://github.com/Glad-Labs/poindexter/issues/440)) ([10f17c9](https://github.com/Glad-Labs/poindexter/commit/10f17c990e961187b2c390e9a3dd7f5fdc0c156c))
 
-## [0.41.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.41.2...v0.41.3) (2026-05-31)
+## [0.43.0](https://github.com/Glad-Labs/poindexter/compare/v0.42.2...v0.43.0) (2026-05-31)
+
+
+### Features
+
+* **doctor:** add `poindexter doctor` health check-graph v1 ([#527](https://github.com/Glad-Labs/poindexter/issues/527)) ([7d7b82b](https://github.com/Glad-Labs/poindexter/commit/7d7b82b5edaa4a42a3cd0c9fe0c90dbe6e791b3d))
+
+## [0.42.2](https://github.com/Glad-Labs/poindexter/compare/v0.42.1...v0.42.2) (2026-05-31)
 
 
 ### Bug Fixes
 
-* **observability:** atomic write for rendered alertmanager config (EACCES) ([035c9c1](https://github.com/Glad-Labs/glad-labs-stack/commit/035c9c1e8ec39977784650a1ee3eab841ebc61b2))
+* **ci:** always run unit-tests on push to main ([#534](https://github.com/Glad-Labs/poindexter/issues/534)) ([98bcc48](https://github.com/Glad-Labs/poindexter/commit/98bcc487b25fc15898e72e991554ddd3454b5dc5))
 
-## [0.41.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.41.1...v0.41.2) (2026-05-30)
-
-
-### Bug Fixes
-
-* **observability:** drop invalid --web.enable-lifecycle from alertmanager entrypoint ([60b02cf](https://github.com/Glad-Labs/glad-labs-stack/commit/60b02cf2a1441378bbc77541bef72dad55f79b56))
-
-## [0.41.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.41.0...v0.41.1) (2026-05-30)
+## [0.42.1](https://github.com/Glad-Labs/poindexter/compare/v0.42.0...v0.42.1) (2026-05-31)
 
 
 ### Bug Fixes
 
-* **observability:** dead-man heartbeat query used nonexistent audit_log.created_at ([b114ac0](https://github.com/Glad-Labs/glad-labs-stack/commit/b114ac01d67d90778c046305f3302cbece597f13))
+* **brain:** create missing alert_actions table (auto-triage threw every service-down) ([0812fa9](https://github.com/Glad-Labs/poindexter/commit/0812fa925cec361a4542708510c249451e280b3c))
 
-## [0.41.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.40.0...v0.41.0) (2026-05-30)
+## [0.42.0](https://github.com/Glad-Labs/poindexter/compare/v0.41.3...v0.42.0) (2026-05-31)
 
 
 ### Features
 
-* **observability:** delivery-plane dead-man's switch ([#524](https://github.com/Glad-Labs/glad-labs-stack/issues/524)) ([f905003](https://github.com/Glad-Labs/glad-labs-stack/commit/f9050036ceaa121528c2f42adcf37297d0a28df8))
+* **brain:** default-on stuck-flow auto-crash + queue-backlog detection ([#526](https://github.com/Glad-Labs/poindexter/issues/526)) ([ba290fc](https://github.com/Glad-Labs/poindexter/commit/ba290fc25266da8b06ce85cfa73138b92f947428))
+
+## [0.41.3](https://github.com/Glad-Labs/poindexter/compare/v0.41.2...v0.41.3) (2026-05-31)
 
 
 ### Bug Fixes
 
-* **skills:** apply the package-relative loader path (was left uncommitted) ([63d601a](https://github.com/Glad-Labs/glad-labs-stack/commit/63d601a6123a5e0823e3bf320ee5d93272fd0661))
+* **observability:** atomic write for rendered alertmanager config (EACCES) ([035c9c1](https://github.com/Glad-Labs/poindexter/commit/035c9c1e8ec39977784650a1ee3eab841ebc61b2))
 
-## [0.40.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.39.0...v0.40.0) (2026-05-30)
-
-
-### Features
-
-* **skills:** migrate video_director pack to skill catalog with {site_name} (closes [#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#837](https://github.com/Glad-Labs/glad-labs-stack/issues/837)) ([0e38d0d](https://github.com/Glad-Labs/glad-labs-stack/commit/0e38d0d6f188f6438f1274a79a3496d70d20e481))
+## [0.41.2](https://github.com/Glad-Labs/poindexter/compare/v0.41.1...v0.41.2) (2026-05-30)
 
 
 ### Bug Fixes
 
-* **skills:** move pipeline skill packs into package so the worker can load them ([8a8c4c7](https://github.com/Glad-Labs/glad-labs-stack/commit/8a8c4c744dc1076185a0015a753aa45d2eac9fdc))
+* **observability:** drop invalid --web.enable-lifecycle from alertmanager entrypoint ([60b02cf](https://github.com/Glad-Labs/poindexter/commit/60b02cf2a1441378bbc77541bef72dad55f79b56))
 
-## [0.40.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.39.0...v0.40.0) (2026-05-30)
-
-
-### Features
-
-* **skills:** migrate video_director pack to skill catalog with {site_name} (closes [#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#837](https://github.com/Glad-Labs/glad-labs-stack/issues/837)) ([0e38d0d](https://github.com/Glad-Labs/glad-labs-stack/commit/0e38d0d6f188f6438f1274a79a3496d70d20e481))
-
-## [0.39.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.38.1...v0.39.0) (2026-05-30)
-
-
-### Features
-
-* **skills:** split system+tasks prompts into content + ops skill packs ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#831](https://github.com/Glad-Labs/glad-labs-stack/issues/831)) ([05eedcf](https://github.com/Glad-Labs/glad-labs-stack/commit/05eedcfb8ea0a753c8c64468b1eae2a916769113))
-
-## [0.38.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.38.0...v0.38.1) (2026-05-30)
+## [0.41.1](https://github.com/Glad-Labs/poindexter/compare/v0.41.0...v0.41.1) (2026-05-30)
 
 
 ### Bug Fixes
 
-* **skills:** restore video CTA via {site_name} placeholder + wire video_service ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#828](https://github.com/Glad-Labs/glad-labs-stack/issues/828)) ([3f44415](https://github.com/Glad-Labs/glad-labs-stack/commit/3f444159725053b0b10ac27f9621c0a20669c479))
+* **observability:** dead-man heartbeat query used nonexistent audit_log.created_at ([b114ac0](https://github.com/Glad-Labs/poindexter/commit/b114ac01d67d90778c046305f3302cbece597f13))
 
-## [0.38.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.37.0...v0.38.0) (2026-05-30)
-
-
-### Features
-
-* **skills:** migrate blog_generation prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#826](https://github.com/Glad-Labs/glad-labs-stack/issues/826)) ([7c5ffad](https://github.com/Glad-Labs/glad-labs-stack/commit/7c5ffadc63785f66b09a62d0f96b5e8850bc626c))
-* **skills:** migrate content_qa prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#825](https://github.com/Glad-Labs/glad-labs-stack/issues/825)) ([345f553](https://github.com/Glad-Labs/glad-labs-stack/commit/345f5539f1638c23fb6b4180df20fd1718309ac6))
-
-## [0.37.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.36.0...v0.37.0) (2026-05-30)
+## [0.41.0](https://github.com/Glad-Labs/poindexter/compare/v0.40.0...v0.41.0) (2026-05-30)
 
 
 ### Features
 
-* **skills:** migrate two_pass_writer prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#823](https://github.com/Glad-Labs/glad-labs-stack/issues/823)) ([89a9f90](https://github.com/Glad-Labs/glad-labs-stack/commit/89a9f909fb296ba6b3cf6f3d0483528cf0a3e4d0))
-
-## [0.36.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.35.0...v0.36.0) (2026-05-30)
-
-
-### Features
-
-* **skills:** migrate image_generation prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#821](https://github.com/Glad-Labs/glad-labs-stack/issues/821)) ([eecc24c](https://github.com/Glad-Labs/glad-labs-stack/commit/eecc24ca078d20bd3bba950750767bc39d2e8ca2))
-* **skills:** migrate social_media prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#822](https://github.com/Glad-Labs/glad-labs-stack/issues/822)) ([d8bb5c1](https://github.com/Glad-Labs/glad-labs-stack/commit/d8bb5c1707aa9f245f70d2639aa4424fea50aaae))
-
-## [0.35.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.34.0...v0.35.0) (2026-05-30)
-
-
-### Features
-
-* **skills:** migrate podcast prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#819](https://github.com/Glad-Labs/glad-labs-stack/issues/819)) ([b7837a0](https://github.com/Glad-Labs/glad-labs-stack/commit/b7837a0953a944ef97f2258f12c5a672296ce258))
-* **skills:** migrate seo_metadata prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#820](https://github.com/Glad-Labs/glad-labs-stack/issues/820)) ([23d3bbc](https://github.com/Glad-Labs/glad-labs-stack/commit/23d3bbc4534a4aa3b5de5537f58c3fe93f6a5b36))
-* **skills:** migrate video prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([#818](https://github.com/Glad-Labs/glad-labs-stack/issues/818)) ([e753442](https://github.com/Glad-Labs/glad-labs-stack/commit/e753442aa00ae04a39deeed366146a7613d9fc2c))
-
-## [0.34.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.33.0...v0.34.0) (2026-05-30)
-
-
-### Features
-
-* **brain:** cadence-SLO probe — page on actual-vs-configured throughput shortfall (closes [#525](https://github.com/Glad-Labs/glad-labs-stack/issues/525)) ([#817](https://github.com/Glad-Labs/glad-labs-stack/issues/817)) ([9d51813](https://github.com/Glad-Labs/glad-labs-stack/commit/9d51813377a5c2afbbb9b6083ac169fc44072a6b))
-
-## [0.33.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.7...v0.33.0) (2026-05-30)
-
-
-### Features
-
-* **skills:** endgame architecture doc + research-skill catalog brick ([#813](https://github.com/Glad-Labs/glad-labs-stack/issues/813)) ([2cf84bf](https://github.com/Glad-Labs/glad-labs-stack/commit/2cf84bf46fe2d6fc71aade47b63b9c509dd9d9c1))
-
-## [0.32.7](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.6...v0.32.7) (2026-05-30)
+* **observability:** delivery-plane dead-man's switch ([#524](https://github.com/Glad-Labs/poindexter/issues/524)) ([f905003](https://github.com/Glad-Labs/poindexter/commit/f9050036ceaa121528c2f42adcf37297d0a28df8))
 
 
 ### Bug Fixes
 
-* **skills:** correct stale/broken operator skills (reject 422, settings list, approve default, pipeline prose, vercel ID scrub) ([#814](https://github.com/Glad-Labs/glad-labs-stack/issues/814)) ([723fb3d](https://github.com/Glad-Labs/glad-labs-stack/commit/723fb3d8ee58d0f2db281f4d45e936b93af25c7b))
+* **skills:** apply the package-relative loader path (was left uncommitted) ([63d601a](https://github.com/Glad-Labs/poindexter/commit/63d601a6123a5e0823e3bf320ee5d93272fd0661))
 
-## [0.32.6](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.5...v0.32.6) (2026-05-30)
+## [0.40.0](https://github.com/Glad-Labs/poindexter/compare/v0.39.0...v0.40.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** migrate video_director pack to skill catalog with {site_name} (closes [#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([#837](https://github.com/Glad-Labs/poindexter/issues/837)) ([0e38d0d](https://github.com/Glad-Labs/poindexter/commit/0e38d0d6f188f6438f1274a79a3496d70d20e481))
 
 
 ### Bug Fixes
 
-* **media:** niche via pipeline_task_id seam + writable RSS path (silent media-approval crash) ([#807](https://github.com/Glad-Labs/glad-labs-stack/issues/807)) ([5cd6be9](https://github.com/Glad-Labs/glad-labs-stack/commit/5cd6be98a2831511dfdab74a2706abf9f2cb15ec))
+* **skills:** move pipeline skill packs into package so the worker can load them ([8a8c4c7](https://github.com/Glad-Labs/poindexter/commit/8a8c4c744dc1076185a0015a753aa45d2eac9fdc))
 
-## [0.32.5](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.4...v0.32.5) (2026-05-30)
+## [0.40.0](https://github.com/Glad-Labs/poindexter/compare/v0.39.0...v0.40.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** migrate video_director pack to skill catalog with {site_name} (closes [#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([#837](https://github.com/Glad-Labs/poindexter/issues/837)) ([0e38d0d](https://github.com/Glad-Labs/poindexter/commit/0e38d0d6f188f6438f1274a79a3496d70d20e481))
+
+## [0.39.0](https://github.com/Glad-Labs/poindexter/compare/v0.38.1...v0.39.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** split system+tasks prompts into content + ops skill packs ([#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([#831](https://github.com/Glad-Labs/poindexter/issues/831)) ([05eedcf](https://github.com/Glad-Labs/poindexter/commit/05eedcfb8ea0a753c8c64468b1eae2a916769113))
+
+## [0.38.1](https://github.com/Glad-Labs/poindexter/compare/v0.38.0...v0.38.1) (2026-05-30)
 
 
 ### Bug Fixes
 
-* **infra:** prettierignore generated docs + node_modules in session worktrees ([#803](https://github.com/Glad-Labs/glad-labs-stack/issues/803)) ([dea0f03](https://github.com/Glad-Labs/glad-labs-stack/commit/dea0f0310e0273e9db5faebcb44a27dc7dcaa91e))
+* **skills:** restore video CTA via {site_name} placeholder + wire video_service ([#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([#828](https://github.com/Glad-Labs/poindexter/issues/828)) ([3f44415](https://github.com/Glad-Labs/poindexter/commit/3f444159725053b0b10ac27f9621c0a20669c479))
 
-## [0.32.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.3...v0.32.4) (2026-05-30)
+## [0.38.0](https://github.com/Glad-Labs/poindexter/compare/v0.37.0...v0.38.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** migrate blog_generation prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([#826](https://github.com/Glad-Labs/poindexter/issues/826)) ([7c5ffad](https://github.com/Glad-Labs/poindexter/commit/7c5ffadc63785f66b09a62d0f96b5e8850bc626c))
+* **skills:** migrate content_qa prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([#825](https://github.com/Glad-Labs/poindexter/issues/825)) ([345f553](https://github.com/Glad-Labs/poindexter/commit/345f5539f1638c23fb6b4180df20fd1718309ac6))
+
+## [0.37.0](https://github.com/Glad-Labs/poindexter/compare/v0.36.0...v0.37.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** migrate two_pass_writer prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([#823](https://github.com/Glad-Labs/poindexter/issues/823)) ([89a9f90](https://github.com/Glad-Labs/poindexter/commit/89a9f909fb296ba6b3cf6f3d0483528cf0a3e4d0))
+
+## [0.36.0](https://github.com/Glad-Labs/poindexter/compare/v0.35.0...v0.36.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** migrate image_generation prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([#821](https://github.com/Glad-Labs/poindexter/issues/821)) ([eecc24c](https://github.com/Glad-Labs/poindexter/commit/eecc24ca078d20bd3bba950750767bc39d2e8ca2))
+* **skills:** migrate social_media prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([#822](https://github.com/Glad-Labs/poindexter/issues/822)) ([d8bb5c1](https://github.com/Glad-Labs/poindexter/commit/d8bb5c1707aa9f245f70d2639aa4424fea50aaae))
+
+## [0.35.0](https://github.com/Glad-Labs/poindexter/compare/v0.34.0...v0.35.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** migrate podcast prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([#819](https://github.com/Glad-Labs/poindexter/issues/819)) ([b7837a0](https://github.com/Glad-Labs/poindexter/commit/b7837a0953a944ef97f2258f12c5a672296ce258))
+* **skills:** migrate seo_metadata prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([#820](https://github.com/Glad-Labs/poindexter/issues/820)) ([23d3bbc](https://github.com/Glad-Labs/poindexter/commit/23d3bbc4534a4aa3b5de5537f58c3fe93f6a5b36))
+* **skills:** migrate video prompt pack to skill catalog ([#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([#818](https://github.com/Glad-Labs/poindexter/issues/818)) ([e753442](https://github.com/Glad-Labs/poindexter/commit/e753442aa00ae04a39deeed366146a7613d9fc2c))
+
+## [0.34.0](https://github.com/Glad-Labs/poindexter/compare/v0.33.0...v0.34.0) (2026-05-30)
+
+
+### Features
+
+* **brain:** cadence-SLO probe — page on actual-vs-configured throughput shortfall (closes [#525](https://github.com/Glad-Labs/poindexter/issues/525)) ([#817](https://github.com/Glad-Labs/poindexter/issues/817)) ([9d51813](https://github.com/Glad-Labs/poindexter/commit/9d51813377a5c2afbbb9b6083ac169fc44072a6b))
+
+## [0.33.0](https://github.com/Glad-Labs/poindexter/compare/v0.32.7...v0.33.0) (2026-05-30)
+
+
+### Features
+
+* **skills:** endgame architecture doc + research-skill catalog brick ([#813](https://github.com/Glad-Labs/poindexter/issues/813)) ([2cf84bf](https://github.com/Glad-Labs/poindexter/commit/2cf84bf46fe2d6fc71aade47b63b9c509dd9d9c1))
+
+## [0.32.7](https://github.com/Glad-Labs/poindexter/compare/v0.32.6...v0.32.7) (2026-05-30)
 
 
 ### Bug Fixes
 
-* normalize + validate `post create --media` flavors (closes Glad-Labs/glad-labs-stack[#795](https://github.com/Glad-Labs/glad-labs-stack/issues/795)) ([#801](https://github.com/Glad-Labs/glad-labs-stack/issues/801)) ([09100d0](https://github.com/Glad-Labs/glad-labs-stack/commit/09100d01bcc6fdf0ae9f1791de5ef48f761ff0e5))
+* **skills:** correct stale/broken operator skills (reject 422, settings list, approve default, pipeline prose, vercel ID scrub) ([#814](https://github.com/Glad-Labs/poindexter/issues/814)) ([723fb3d](https://github.com/Glad-Labs/poindexter/commit/723fb3d8ee58d0f2db281f4d45e936b93af25c7b))
 
-## [0.32.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.2...v0.32.3) (2026-05-30)
-
-
-### Bug Fixes
-
-* **sessions:** isolate each overnight Claude session in its own worktree ([#799](https://github.com/Glad-Labs/glad-labs-stack/issues/799)) ([88f620c](https://github.com/Glad-Labs/glad-labs-stack/commit/88f620c0632bcee291d98c7f002d62cb1008ec55))
-
-## [0.32.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.1...v0.32.2) (2026-05-30)
+## [0.32.6](https://github.com/Glad-Labs/poindexter/compare/v0.32.5...v0.32.6) (2026-05-30)
 
 
 ### Bug Fixes
 
-* **scheduler:** interval jobs never fire under frequent restarts + DB-tunable cadence ([#797](https://github.com/Glad-Labs/glad-labs-stack/issues/797)) ([d811d66](https://github.com/Glad-Labs/glad-labs-stack/commit/d811d66fdf56d3c0e250292f3c21b6832d5a5146))
+* **media:** niche via pipeline_task_id seam + writable RSS path (silent media-approval crash) ([#807](https://github.com/Glad-Labs/poindexter/issues/807)) ([5cd6be9](https://github.com/Glad-Labs/poindexter/commit/5cd6be98a2831511dfdab74a2706abf9f2cb15ec))
 
-## [0.32.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.32.0...v0.32.1) (2026-05-30)
-
-
-### Bug Fixes
-
-* **discovery:** reasoning model returns empty JSON → content-gen stall ([#789](https://github.com/Glad-Labs/glad-labs-stack/issues/789)) ([53d96cc](https://github.com/Glad-Labs/glad-labs-stack/commit/53d96cc3b981ba075ed2b7587e60b22504285bd9))
-
-## [0.32.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.31.0...v0.32.0) (2026-05-29)
-
-
-### Features
-
-* **di:** migrate web_research + citation_verifier + seed_url_fetcher + title_originality_external ([#272](https://github.com/Glad-Labs/glad-labs-stack/issues/272) leaf batch 2) ([#748](https://github.com/Glad-Labs/glad-labs-stack/issues/748)) ([92f445e](https://github.com/Glad-Labs/glad-labs-stack/commit/92f445eb4a5aec8c6f40ee57a44a7c1c4ac68fd6))
-
-## [0.31.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.30.0...v0.31.0) (2026-05-29)
-
-
-### Features
-
-* **di:** migrate revalidation_service + retention_janitor to constructor DI ([#272](https://github.com/Glad-Labs/glad-labs-stack/issues/272) leaf batch 3) ([#747](https://github.com/Glad-Labs/glad-labs-stack/issues/747)) ([398910c](https://github.com/Glad-Labs/glad-labs-stack/commit/398910ca39268e8c0c127417f791edc9d242817f))
-
-## [0.30.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.29.0...v0.30.0) (2026-05-29)
-
-
-### Features
-
-* **podcast:** emit itunes:keywords + itunes:summary per episode from SEO metadata ([#736](https://github.com/Glad-Labs/glad-labs-stack/issues/736)) ([da8a821](https://github.com/Glad-Labs/glad-labs-stack/commit/da8a82185a0f1dca89dd02f6926590851283b8b8))
-
-## [0.29.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.28.1...v0.29.0) (2026-05-29)
-
-
-### Features
-
-* **di:** migrate url_validator + url_scraper to constructor DI ([#272](https://github.com/Glad-Labs/glad-labs-stack/issues/272) leaf batch 1) ([#734](https://github.com/Glad-Labs/glad-labs-stack/issues/734)) ([f2e6693](https://github.com/Glad-Labs/glad-labs-stack/commit/f2e6693d83335ff9b0586ca682622918de1217b7))
-
-## [0.28.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.28.0...v0.28.1) (2026-05-29)
+## [0.32.5](https://github.com/Glad-Labs/poindexter/compare/v0.32.4...v0.32.5) (2026-05-30)
 
 
 ### Bug Fixes
 
-* **storage:** finish storage_* cutover, retire r2 public_url + delay key reads ([#731](https://github.com/Glad-Labs/glad-labs-stack/issues/731)) ([#733](https://github.com/Glad-Labs/glad-labs-stack/issues/733)) ([3ce9362](https://github.com/Glad-Labs/glad-labs-stack/commit/3ce93622d7297311ff9b1a171916633f8140e5d7))
+* **infra:** prettierignore generated docs + node_modules in session worktrees ([#803](https://github.com/Glad-Labs/poindexter/issues/803)) ([dea0f03](https://github.com/Glad-Labs/poindexter/commit/dea0f0310e0273e9db5faebcb44a27dc7dcaa91e))
 
-## [0.28.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.27.0...v0.28.0) (2026-05-29)
-
-
-### Features
-
-* **di:** migrate r2_upload_service to constructor DI (DI migration PR 4) ([#723](https://github.com/Glad-Labs/glad-labs-stack/issues/723)) ([7bdd4b1](https://github.com/Glad-Labs/glad-labs-stack/commit/7bdd4b1be7da069046131b02ba7201e16032da53))
+## [0.32.4](https://github.com/Glad-Labs/poindexter/compare/v0.32.3...v0.32.4) (2026-05-30)
 
 
 ### Bug Fixes
 
-* **youtube:** publish videos with SEO description + tags + back-link ([#275](https://github.com/Glad-Labs/glad-labs-stack/issues/275)) ([#728](https://github.com/Glad-Labs/glad-labs-stack/issues/728)) ([0d6bcb0](https://github.com/Glad-Labs/glad-labs-stack/commit/0d6bcb066caa4b452b8aa22b495f3c63d5baf2b7))
+* normalize + validate `post create --media` flavors (closes Glad-Labs/poindexter[#795](https://github.com/Glad-Labs/poindexter/issues/795)) ([#801](https://github.com/Glad-Labs/poindexter/issues/801)) ([09100d0](https://github.com/Glad-Labs/poindexter/commit/09100d01bcc6fdf0ae9f1791de5ef48f761ff0e5))
 
-## [0.27.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.26.1...v0.27.0) (2026-05-29)
-
-
-### Features
-
-* **di:** migrate telegram_config to constructor DI (DI migration PR 3) ([#722](https://github.com/Glad-Labs/glad-labs-stack/issues/722)) ([131391a](https://github.com/Glad-Labs/glad-labs-stack/commit/131391a0ca22c9fce3ef569b4d78f95933173102))
-
-## [0.26.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.26.0...v0.26.1) (2026-05-29)
+## [0.32.3](https://github.com/Glad-Labs/poindexter/compare/v0.32.2...v0.32.3) (2026-05-30)
 
 
 ### Bug Fixes
 
-* **youtube:** make channel read-back best-effort in setup ([86e2841](https://github.com/Glad-Labs/glad-labs-stack/commit/86e2841fc711efef4dccb1cf009cd1d2afaeac46))
+* **sessions:** isolate each overnight Claude session in its own worktree ([#799](https://github.com/Glad-Labs/poindexter/issues/799)) ([88f620c](https://github.com/Glad-Labs/poindexter/commit/88f620c0632bcee291d98c7f002d62cb1008ec55))
 
-## [0.26.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.25.0...v0.26.0) (2026-05-29)
-
-
-### Features
-
-* **di:** migrate redis_cache to constructor DI (DI migration PR 5) ([#721](https://github.com/Glad-Labs/glad-labs-stack/issues/721)) ([d4b3d59](https://github.com/Glad-Labs/glad-labs-stack/commit/d4b3d591596020c483ffad72437e1eb915bdd6fa))
-
-## [0.25.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.24.0...v0.25.0) (2026-05-29)
-
-
-### Features
-
-* **di:** migrate decorators to constructor DI (DI migration PR 6) ([#720](https://github.com/Glad-Labs/glad-labs-stack/issues/720)) ([09a0722](https://github.com/Glad-Labs/glad-labs-stack/commit/09a0722ec3efa2ed2e2f5387308b775270aa38af))
-
-## [0.24.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.23.0...v0.24.0) (2026-05-29)
-
-
-### Features
-
-* **di:** wire AppContainer at every entry point (DI migration PR 2) ([#715](https://github.com/Glad-Labs/glad-labs-stack/issues/715)) ([5c40c7e](https://github.com/Glad-Labs/glad-labs-stack/commit/5c40c7eae19c402b5c430d6c6b423e7882320a8b))
-
-## [0.23.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.22.0...v0.23.0) (2026-05-29)
-
-
-### Features
-
-* **lab:** Grafana variant-experiment scorecard panels (Phase 1 PR 4) ([#716](https://github.com/Glad-Labs/glad-labs-stack/issues/716)) ([63c173b](https://github.com/Glad-Labs/glad-labs-stack/commit/63c173bfc37ecb606300e0e30aecabdf4322214a))
-
-## [0.22.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.21.2...v0.22.0) (2026-05-29)
-
-
-### Features
-
-* **youtube:** finish E2E publishing path — deps + OAuth setup CLI + smoke test ([#713](https://github.com/Glad-Labs/glad-labs-stack/issues/713)) ([dc7b0ca](https://github.com/Glad-Labs/glad-labs-stack/commit/dc7b0cac17590932b0aec80d5cee538949c49d58))
-
-## [0.21.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.21.1...v0.21.2) (2026-05-29)
+## [0.32.2](https://github.com/Glad-Labs/poindexter/compare/v0.32.1...v0.32.2) (2026-05-30)
 
 
 ### Bug Fixes
 
-* **settings-cli:** auto-strip category/ prefix, reshape list output, retire phantom-key guard ([#711](https://github.com/Glad-Labs/glad-labs-stack/issues/711)) ([1b344f7](https://github.com/Glad-Labs/glad-labs-stack/commit/1b344f70bb4abca5021a56a462af0aa00a654305))
+* **scheduler:** interval jobs never fire under frequent restarts + DB-tunable cadence ([#797](https://github.com/Glad-Labs/poindexter/issues/797)) ([d811d66](https://github.com/Glad-Labs/poindexter/commit/d811d66fdf56d3c0e250292f3c21b6832d5a5146))
 
-## [0.21.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.21.0...v0.21.1) (2026-05-29)
-
-
-### Bug Fixes
-
-* **ci:** use HEAD^1 instead of stale base.sha in detect-changes ([#707](https://github.com/Glad-Labs/glad-labs-stack/issues/707)) ([c5c7de9](https://github.com/Glad-Labs/glad-labs-stack/commit/c5c7de9c0a2c1a7b8775e02fd8f043a3e46ed569))
-
-## [0.21.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.20.0...v0.21.0) (2026-05-29)
-
-
-### Features
-
-* **lab:** poindexter experiments CLI (Phase 1 PR 3) ([#706](https://github.com/Glad-Labs/glad-labs-stack/issues/706)) ([f9f53d8](https://github.com/Glad-Labs/glad-labs-stack/commit/f9f53d8075f1c8b481fc144ca4b260966233a0ac))
-
-## [0.20.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.19.0...v0.20.0) (2026-05-29)
-
-
-### Features
-
-* **di:** AppContainer scaffold + bootstrap.build_container (PR 1) ([#705](https://github.com/Glad-Labs/glad-labs-stack/issues/705)) ([45ff471](https://github.com/Glad-Labs/glad-labs-stack/commit/45ff471ad36fb124d4100c63847c58b6fa424fe5))
-
-## [0.19.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.18.0...v0.19.0) (2026-05-29)
-
-
-### Features
-
-* **lab:** Phase 1 PR 2 — variant runner + writer-atom hook ([#702](https://github.com/Glad-Labs/glad-labs-stack/issues/702)) ([8646259](https://github.com/Glad-Labs/glad-labs-stack/commit/86462593c83a211b9fcf30db537b30d836585264))
-
-## [0.18.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.17.0...v0.18.0) (2026-05-29)
-
-
-### Features
-
-* **lab:** Phase 1 PR 1 — experiments harness foundation (tables + scorecard view) ([#699](https://github.com/Glad-Labs/glad-labs-stack/issues/699)) ([1b52c2e](https://github.com/Glad-Labs/glad-labs-stack/commit/1b52c2e2c5aebf0457969df90b0456c118b44832))
-
-## [0.17.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.16.0...v0.17.0) (2026-05-29)
-
-
-### Features
-
-* **analytics:** Cloudflare Analytics Engine beacon (closes [#269](https://github.com/Glad-Labs/glad-labs-stack/issues/269)) ([#697](https://github.com/Glad-Labs/glad-labs-stack/issues/697)) ([30b8332](https://github.com/Glad-Labs/glad-labs-stack/commit/30b83324e243d054f903b137370a2f30b761ef06))
-
-## [0.16.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.15.0...v0.16.0) (2026-05-28)
-
-
-### Features
-
-* **lab:** Phase 0 — instrument outcomes tables + lab_outcomes_v1 view ([#695](https://github.com/Glad-Labs/glad-labs-stack/issues/695)) ([4c1ab4a](https://github.com/Glad-Labs/glad-labs-stack/commit/4c1ab4a9b1bf9c40b0693151c935e8813025ae05))
-
-## [0.15.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.4...v0.15.0) (2026-05-28)
-
-
-### Features
-
-* **media:** operator review surface — cli open + discord ping + grafana panels ([#693](https://github.com/Glad-Labs/glad-labs-stack/issues/693)) ([ca37752](https://github.com/Glad-Labs/glad-labs-stack/commit/ca37752196e46d2fd877812210148136c017c89e))
-
-## [0.14.4](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.3...v0.14.4) (2026-05-28)
+## [0.32.1](https://github.com/Glad-Labs/poindexter/compare/v0.32.0...v0.32.1) (2026-05-30)
 
 
 ### Bug Fixes
 
-* **security:** patch CVE-2026-48710 (Starlette BadHost auth bypass) ([#690](https://github.com/Glad-Labs/glad-labs-stack/issues/690)) ([e577055](https://github.com/Glad-Labs/glad-labs-stack/commit/e5770555a326c1dad843d1f30e1fb363544b6af5))
+* **discovery:** reasoning model returns empty JSON → content-gen stall ([#789](https://github.com/Glad-Labs/poindexter/issues/789)) ([53d96cc](https://github.com/Glad-Labs/poindexter/commit/53d96cc3b981ba075ed2b7587e60b22504285bd9))
 
-## [0.14.3](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.2...v0.14.3) (2026-05-28)
+## [0.32.0](https://github.com/Glad-Labs/poindexter/compare/v0.31.0...v0.32.0) (2026-05-29)
 
-
-### Bug Fixes
-
-* **dev_diary:** carry over public-repo footer from PR [#631](https://github.com/Glad-Labs/glad-labs-stack/issues/631) to narrate_bundle ([#683](https://github.com/Glad-Labs/glad-labs-stack/issues/683)) ([a61f40e](https://github.com/Glad-Labs/glad-labs-stack/commit/a61f40eca0ca2569b6e3f7bf4e29d9d11fd30fbd))
-
-## [0.14.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.1...v0.14.2) (2026-05-28)
-
-### Bug Fixes
-
-- **cost:** auto-log cost_logs row on every dispatch_complete call ([#681](https://github.com/Glad-Labs/glad-labs-stack/issues/681)) ([775168d](https://github.com/Glad-Labs/glad-labs-stack/commit/775168d50d85581f2630343488aa4c7a5fb4a170))
-- **dev_diary:** stop leaking private-repo URLs into published posts ([#680](https://github.com/Glad-Labs/glad-labs-stack/issues/680)) ([59f046d](https://github.com/Glad-Labs/glad-labs-stack/commit/59f046df71e230e25782629d60778079c7d545e8))
-
-## [0.14.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.14.0...v0.14.1) (2026-05-28)
-
-### Bug Fixes
-
-- **brain:** detect stranded PENDING/Submitting Prefect flows (closes Glad-Labs/poindexter[#518](https://github.com/Glad-Labs/glad-labs-stack/issues/518)) ([#676](https://github.com/Glad-Labs/glad-labs-stack/issues/676)) ([a867f29](https://github.com/Glad-Labs/glad-labs-stack/commit/a867f29d425605a8bb1a107369b223ce33f29587))
-
-## [0.14.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.13.1...v0.14.0) (2026-05-28)
 
 ### Features
 
-- **grafana:** add 8 missing Mission Control panels (media_approvals, shot list, quality eval, drift, cloud spend, GlitchTip, Langfuse, style mix) ([#661](https://github.com/Glad-Labs/glad-labs-stack/issues/661)) ([048ea64](https://github.com/Glad-Labs/glad-labs-stack/commit/048ea6454ad3c4232acda4e043add71ebac3b7cb))
-- **media:** Layer 1 quality eval — deterministic signals + auto-reject ([#648](https://github.com/Glad-Labs/glad-labs-stack/issues/648)) ([05ebac8](https://github.com/Glad-Labs/glad-labs-stack/commit/05ebac8c8869314ec672583d0feafd2ae59b2791))
-- **media:** per-medium operator approval gate before distribution ([#647](https://github.com/Glad-Labs/glad-labs-stack/issues/647)) ([8b204f4](https://github.com/Glad-Labs/glad-labs-stack/commit/8b204f441dfa1ec365417c56d6fe1ebf03ec020e))
-- **observability:** emit image_style_picked audit_log on every pick ([#662](https://github.com/Glad-Labs/glad-labs-stack/issues/662)) ([a21962d](https://github.com/Glad-Labs/glad-labs-stack/commit/a21962d8e1114ed20350a3dac22a091ab2bb4e76))
-- **prompts:** migrate 2 vision QA prompts to UnifiedPromptManager ([#669](https://github.com/Glad-Labs/glad-labs-stack/issues/669)) ([fc76ce6](https://github.com/Glad-Labs/glad-labs-stack/commit/fc76ce6148b04fb9bc9d298bcb40a43c0f2dd4b6))
-- **publishing:** wire YouTube adapter to the video backfill pipeline ([#643](https://github.com/Glad-Labs/glad-labs-stack/issues/643)) ([4f2dbc2](https://github.com/Glad-Labs/glad-labs-stack/commit/4f2dbc2821a413114d86c49d457453054d5590d1))
-- **release:** mirror release-please Releases from glad-labs-stack to public Poindexter ([#671](https://github.com/Glad-Labs/glad-labs-stack/issues/671)) ([b27daf3](https://github.com/Glad-Labs/glad-labs-stack/commit/b27daf3a8aa89ac36d02cad02b3fc40c412f807d))
-- **site:** surface Glad Labs Podcast on Spotify in footer + About CTA ([#640](https://github.com/Glad-Labs/glad-labs-stack/issues/640)) ([68925c7](https://github.com/Glad-Labs/glad-labs-stack/commit/68925c72a24c3eeac622e1b5eda9025f9bb9c41c))
-- **topic_sources:** per-source timeout in runner (closes [#254](https://github.com/Glad-Labs/glad-labs-stack/issues/254)) ([#637](https://github.com/Glad-Labs/glad-labs-stack/issues/637)) ([323b449](https://github.com/Glad-Labs/glad-labs-stack/commit/323b449729b6f36cde813e0d28b07b3408051e7d))
-- **video:** shot list schema + director stage (PR 1 of [#649](https://github.com/Glad-Labs/glad-labs-stack/issues/649)) ([#650](https://github.com/Glad-Labs/glad-labs-stack/issues/650)) ([af25d40](https://github.com/Glad-Labs/glad-labs-stack/commit/af25d40853544829f28d3eddd7dbe6752dff713a))
-- **video:** shot-list renderer + Wan2.1 schema fix + narration sibling (PR 2 of [#649](https://github.com/Glad-Labs/glad-labs-stack/issues/649)) ([#664](https://github.com/Glad-Labs/glad-labs-stack/issues/664)) ([37e84c1](https://github.com/Glad-Labs/glad-labs-stack/commit/37e84c1aae6dc12ec1bde57c8f41b99aef79f5a7))
+* **di:** migrate web_research + citation_verifier + seed_url_fetcher + title_originality_external ([#272](https://github.com/Glad-Labs/poindexter/issues/272) leaf batch 2) ([#748](https://github.com/Glad-Labs/poindexter/issues/748)) ([92f445e](https://github.com/Glad-Labs/poindexter/commit/92f445eb4a5aec8c6f40ee57a44a7c1c4ac68fd6))
 
-### Bug Fixes
+## [0.31.0](https://github.com/Glad-Labs/poindexter/compare/v0.30.0...v0.31.0) (2026-05-29)
 
-- **analytics:** restore page-views beacon (silent since 2026-04-09) ([#658](https://github.com/Glad-Labs/glad-labs-stack/issues/658)) ([f69c935](https://github.com/Glad-Labs/glad-labs-stack/commit/f69c9357b2c0acaa128281da94e36148e289b06e))
-- APScheduler misfire_grace + edge_tts type:ignore ([#660](https://github.com/Glad-Labs/glad-labs-stack/issues/660)) ([5cc1204](https://github.com/Glad-Labs/glad-labs-stack/commit/5cc12048c20fb1492f78f9d53ac5efabbbeb90d2))
-- **backup:** mount ~/.poindexter/backups so DbBackupJob mkdir succeeds ([#654](https://github.com/Glad-Labs/glad-labs-stack/issues/654)) ([a9aec83](https://github.com/Glad-Labs/glad-labs-stack/commit/a9aec83ebdf38fbacbae0a797eac5780da443b30))
-- **brief:** correct cost partition + brain probe pattern ([#673](https://github.com/Glad-Labs/glad-labs-stack/issues/673)) ([acc00fe](https://github.com/Glad-Labs/glad-labs-stack/commit/acc00feedf3d2f7ef5046c8f6a1311f84769a93e))
-- **grafana:** mission control — readable titles + global time + dedup alerts + single-value pie → stat ([#657](https://github.com/Glad-Labs/glad-labs-stack/issues/657)) ([4769f2e](https://github.com/Glad-Labs/glad-labs-stack/commit/4769f2e18b7d899f2ac3efc9042d71913c9c9a3a))
-- **grafana:** remove retired Pipecat button + fix LiveKit URL ([#663](https://github.com/Glad-Labs/glad-labs-stack/issues/663)) ([0c3687e](https://github.com/Glad-Labs/glad-labs-stack/commit/0c3687e2bebef9bd14749fa0e18ffd81cba9b8e6))
-- **grafana:** repair 3 dashboard bugs (broken datasource UID, panel overlaps, dead Ragas panels) ([#655](https://github.com/Glad-Labs/glad-labs-stack/issues/655)) ([4873603](https://github.com/Glad-Labs/glad-labs-stack/commit/4873603d0df5d3ae309feb50bf43b28e52408b2d))
-- **grafana:** title overflow at 960px + red/green -&gt; orange/blue for deuteranomaly ([#665](https://github.com/Glad-Labs/glad-labs-stack/issues/665)) ([8ab89f3](https://github.com/Glad-Labs/glad-labs-stack/commit/8ab89f3646f3fabae0443bf34bb0e12276111c2d))
-- **mirror:** strip mission-control.json from public Poindexter mirror ([#668](https://github.com/Glad-Labs/glad-labs-stack/issues/668)) ([00bd85c](https://github.com/Glad-Labs/glad-labs-stack/commit/00bd85c1b86f212a591076b77e73ef5a1dfb10f8))
-- **operator:** guard against phantom settings keys + install compose plugin in brain ([#639](https://github.com/Glad-Labs/glad-labs-stack/issues/639)) ([846747d](https://github.com/Glad-Labs/glad-labs-stack/commit/846747d8185985bb3e04c171954e6fd21a7a3ffe))
-- **podcast:** exclude dev_diary from RSS feed via media_to_generate ([#646](https://github.com/Glad-Labs/glad-labs-stack/issues/646)) ([e5df2c8](https://github.com/Glad-Labs/glad-labs-stack/commit/e5df2c8a7d5e0e651a95633244d818ef718dbcb4))
-- **prefect:** use real 3.6.29-python3.12 tag (3.6.29 was phantom) ([#636](https://github.com/Glad-Labs/glad-labs-stack/issues/636)) ([8ad509b](https://github.com/Glad-Labs/glad-labs-stack/commit/8ad509bb6fcd3ccb164c662bf6fe5b6fd1e8df16))
-- **publish:** also push to R2 from promote-on-publish path ([#641](https://github.com/Glad-Labs/glad-labs-stack/issues/641)) ([f824066](https://github.com/Glad-Labs/glad-labs-stack/commit/f8240669ca67100735adffcb30b5fb8ef5994d54))
-- **publish:** sync pipeline_tasks.status when scheduled_publisher promotes posts ([#653](https://github.com/Glad-Labs/glad-labs-stack/issues/653)) ([03d68cc](https://github.com/Glad-Labs/glad-labs-stack/commit/03d68cc3458f5ac5b4bc8ff9b23def2b3f232ff6))
-- **qa:** revive five silent OSS QA rails + LlamaIndex hybrid+rerank ([#659](https://github.com/Glad-Labs/glad-labs-stack/issues/659)) ([f409190](https://github.com/Glad-Labs/glad-labs-stack/commit/f409190767161d35dd43afcda2614cbebb1c2aec))
-- **release-mirror:** split into two scoped tokens to surface install errors ([#672](https://github.com/Glad-Labs/glad-labs-stack/issues/672)) ([dddcb31](https://github.com/Glad-Labs/glad-labs-stack/commit/dddcb31a27b4c851a2322dd9a3ba846dc82abddb))
-- **schemas:** add niche_slug to TaskResponse — restores media generation ([#642](https://github.com/Glad-Labs/glad-labs-stack/issues/642)) ([07bbf3f](https://github.com/Glad-Labs/glad-labs-stack/commit/07bbf3f0b1c64782569d185d609db622c0295512))
-- **scripts:** silence ffmpeg/ffprobe/nvidia-smi popups on Windows ([#666](https://github.com/Glad-Labs/glad-labs-stack/issues/666)) ([268a8b9](https://github.com/Glad-Labs/glad-labs-stack/commit/268a8b9736c4f9115044e670a92ff85c534dcbff))
-
-## [0.13.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.13.0...v0.13.1) (2026-05-27)
-
-### Bug Fixes
-
-- **dev_diary:** strip private-repo URLs from compositor output ([#631](https://github.com/Glad-Labs/glad-labs-stack/issues/631)) ([2a16776](https://github.com/Glad-Labs/glad-labs-stack/commit/2a167766654abde6e1ad05bdc9c32f1049aff24d))
-- **writer:** unwrap markdown-fenced JSON envelopes + recognize "body" key ([#632](https://github.com/Glad-Labs/glad-labs-stack/issues/632)) ([ab80b19](https://github.com/Glad-Labs/glad-labs-stack/commit/ab80b1993dcf24273b414e165adf859bab66590e))
-
-## [0.13.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.12.0...v0.13.0) (2026-05-27)
 
 ### Features
 
-- **brain:** operator_url_probe writes audit_log row on success ([#245](https://github.com/Glad-Labs/glad-labs-stack/issues/245)) ([#620](https://github.com/Glad-Labs/glad-labs-stack/issues/620)) ([b626002](https://github.com/Glad-Labs/glad-labs-stack/commit/b62600276289a514e5ab0e66415c19e508780205))
-- **brain:** per-cycle heartbeat audit_log row ([#605](https://github.com/Glad-Labs/glad-labs-stack/issues/605)) ([d7a2946](https://github.com/Glad-Labs/glad-labs-stack/commit/d7a294664ff0cb5b386c21e18aaffe1983f82850))
-- **brain:** probe for stuck Prefect content_generation flow runs ([#580](https://github.com/Glad-Labs/glad-labs-stack/issues/580)) ([71bef83](https://github.com/Glad-Labs/glad-labs-stack/commit/71bef83ce98f74aa1feb7b2a7d2dbb4a76bac414))
-- **brain:** success-path audit_log rows in 3 remaining silent probes ([#250](https://github.com/Glad-Labs/glad-labs-stack/issues/250)) ([#621](https://github.com/Glad-Labs/glad-labs-stack/issues/621)) ([8027eb9](https://github.com/Glad-Labs/glad-labs-stack/commit/8027eb983a5409fc0ed624182ef2dd7e65108a34))
-- **brain:** wire gpu_temperature_high_threshold_c app_setting to probe ([#236](https://github.com/Glad-Labs/glad-labs-stack/issues/236)) ([#614](https://github.com/Glad-Labs/glad-labs-stack/issues/614)) ([2f906c5](https://github.com/Glad-Labs/glad-labs-stack/commit/2f906c5407554a66a85d79f59719bf32c6605caa))
-- **modules:** wire register_probes via BrainProbeRegistry (closes [#239](https://github.com/Glad-Labs/glad-labs-stack/issues/239)) ([#611](https://github.com/Glad-Labs/glad-labs-stack/issues/611)) ([7855d72](https://github.com/Glad-Labs/glad-labs-stack/commit/7855d72917b8c2b766e2ac14bbf0c2d9954eb2ec))
-- **observability:** scheduled-publish queue panels + wire publish-at CLI ([#574](https://github.com/Glad-Labs/glad-labs-stack/issues/574)) ([c7966f0](https://github.com/Glad-Labs/glad-labs-stack/commit/c7966f0b6fffdce62e4add01ba7f67431bc00674))
+* **di:** migrate revalidation_service + retention_janitor to constructor DI ([#272](https://github.com/Glad-Labs/poindexter/issues/272) leaf batch 3) ([#747](https://github.com/Glad-Labs/poindexter/issues/747)) ([398910c](https://github.com/Glad-Labs/poindexter/commit/398910ca39268e8c0c127417f791edc9d242817f))
 
-### Bug Fixes
+## [0.30.0](https://github.com/Glad-Labs/poindexter/compare/v0.29.0...v0.30.0) (2026-05-29)
 
-- **brain:** COPY new prefect_stuck_flow_probe.py into the brain image ([#581](https://github.com/Glad-Labs/glad-labs-stack/issues/581)) ([3e25b27](https://github.com/Glad-Labs/glad-labs-stack/commit/3e25b27004d260828dc47b6445e7bc8f523c9dab))
-- **brain:** silence openclaw_gateway_url probe pending upstream fix ([#594](https://github.com/Glad-Labs/glad-labs-stack/issues/594)) ([#600](https://github.com/Glad-Labs/glad-labs-stack/issues/600)) ([b07f7de](https://github.com/Glad-Labs/glad-labs-stack/commit/b07f7de8a64afe8c69339bd3b273b0f97f3365dd))
-- **ci:** leak guard catches multi-line VALUES tuples + 2 stragglers ([#243](https://github.com/Glad-Labs/glad-labs-stack/issues/243)) ([#619](https://github.com/Glad-Labs/glad-labs-stack/issues/619)) ([08c04e3](https://github.com/Glad-Labs/glad-labs-stack/commit/08c04e36c2805d7645e1245abaf41fc60ea88ef9))
-- **cli:** LATERAL-join pipeline_versions so approve-batch --filter quality_score works ([#592](https://github.com/Glad-Labs/glad-labs-stack/issues/592)) ([01396f6](https://github.com/Glad-Labs/glad-labs-stack/commit/01396f6e2310319d66767f4e4ce269a90df9f18b))
-- **cost-guard:** AnthropicProvider warns when db_service missing ([#244](https://github.com/Glad-Labs/glad-labs-stack/issues/244)) ([#618](https://github.com/Glad-Labs/glad-labs-stack/issues/618)) ([82aa1dc](https://github.com/Glad-Labs/glad-labs-stack/commit/82aa1dc9c8676e0dad1ac35cba064f8fbfe36b07))
-- **cost-guard:** refuse paid base_url in OpenAICompatProvider by default ([#615](https://github.com/Glad-Labs/glad-labs-stack/issues/615)) ([2a33aa6](https://github.com/Glad-Labs/glad-labs-stack/commit/2a33aa6e149001e16c3972a08ad6db41e82e8d38))
-- **db-backup:** re-checkout backup script with LF + lint shell scripts for CRLF ([#590](https://github.com/Glad-Labs/glad-labs-stack/issues/590)) ([4d1d86b](https://github.com/Glad-Labs/glad-labs-stack/commit/4d1d86b46e4dc5b559fdbd9d8c89b6f38a8f1846))
-- **grafana-alert:** Ollama Unresponsive should query inference rows, not local_compute ([#578](https://github.com/Glad-Labs/glad-labs-stack/issues/578)) ([bcf4b72](https://github.com/Glad-Labs/glad-labs-stack/commit/bcf4b72adcfcf00a44a635eeb78faefc2dac1926))
-- **images:** recognise bold-text pseudo-headings as section anchors ([#599](https://github.com/Glad-Labs/glad-labs-stack/issues/599)) ([849feb2](https://github.com/Glad-Labs/glad-labs-stack/commit/849feb254c65bc0be4dfc56d23b02c270aab2179))
-- **integrations:** restore set_site_config/get_site_config in shared_context ([#591](https://github.com/Glad-Labs/glad-labs-stack/issues/591)) ([322303b](https://github.com/Glad-Labs/glad-labs-stack/commit/322303be81de489b32bb5247728111289f35f032))
-- **mcp:** console logging goes to stderr so MCP stdio JSON-RPC stays clean ([#627](https://github.com/Glad-Labs/glad-labs-stack/issues/627)) ([3a5b44f](https://github.com/Glad-Labs/glad-labs-stack/commit/3a5b44fec611c6d5a0ccfea9fab5a1a666923a26))
-- Prefect flow crash strands pipeline_tasks + sweep targets defunct view ([#253](https://github.com/Glad-Labs/glad-labs-stack/issues/253)) ([#626](https://github.com/Glad-Labs/glad-labs-stack/issues/626)) ([ba95148](https://github.com/Glad-Labs/glad-labs-stack/commit/ba9514863df5051dd1de8977daa1ec7fb47d8d74))
-- **prefect:** pin server + client to 3.6.29 (kills 2-day silent outage) ([#628](https://github.com/Glad-Labs/glad-labs-stack/issues/628)) ([b044561](https://github.com/Glad-Labs/glad-labs-stack/commit/b04456166285461ad4221ad371eead2165c2926b))
-- **prompts:** demand real ## H2 markdown headings in writer output ([#602](https://github.com/Glad-Labs/glad-labs-stack/issues/602)) ([95f049c](https://github.com/Glad-Labs/glad-labs-stack/commit/95f049c0a333a1cb4ad82cd3ac44613ac5825cc4))
-- **prompts:** migrate 3 inline prompts to UnifiedPromptManager ([#237](https://github.com/Glad-Labs/glad-labs-stack/issues/237)) ([#612](https://github.com/Glad-Labs/glad-labs-stack/issues/612)) ([7bec668](https://github.com/Glad-Labs/glad-labs-stack/commit/7bec668dcf9fe145c370eadd69d181cfc82bf6cc))
-- **prompts:** migrate 4 more inline prompts to UnifiedPromptManager (cycle-4) ([#617](https://github.com/Glad-Labs/glad-labs-stack/issues/617)) ([2495dac](https://github.com/Glad-Labs/glad-labs-stack/commit/2495dac0de9be3c4b9ece7178d553450d1726230))
-- **public-mirror:** strip 43 dead gitea# refs + add LEAK_GUARD pattern ([#586](https://github.com/Glad-Labs/glad-labs-stack/issues/586)) ([9cf2b5b](https://github.com/Glad-Labs/glad-labs-stack/commit/9cf2b5b15f1a02f4dfde85681a297468b6b950ff))
-- **public-site:** defend lib/logger.js from Next.js 16 bundler trace ([#582](https://github.com/Glad-Labs/glad-labs-stack/issues/582)) ([e26f409](https://github.com/Glad-Labs/glad-labs-stack/commit/e26f409a1234cc6ee4b648636e4d8cd64c5a4cae))
-- **public-site:** migrate globals.css to Tailwind v4 [@import](https://github.com/import) + [@config](https://github.com/config) ([#585](https://github.com/Glad-Labs/glad-labs-stack/issues/585)) ([a2908c9](https://github.com/Glad-Labs/glad-labs-stack/commit/a2908c9b105bda05fa142a816bc8ba9cf4c1a0d5))
-- **public-site:** migrate PostCSS to Tailwind v4 (@tailwindcss/postcss) ([#584](https://github.com/Glad-Labs/glad-labs-stack/issues/584)) ([d15576a](https://github.com/Glad-Labs/glad-labs-stack/commit/d15576a7942f3eff8747db0895ec9ee9e3094492))
-- **publish:** auto_publish gate niche-leak + cost_guard key rename ([#598](https://github.com/Glad-Labs/glad-labs-stack/issues/598)) ([e5e2ae1](https://github.com/Glad-Labs/glad-labs-stack/commit/e5e2ae1af2abb9e666298547ff76acb90ae8c7f9))
-- **publish:** wire approve→posts.status='approved' bridge for schedule batch ([#595](https://github.com/Glad-Labs/glad-labs-stack/issues/595)) ([d4a9926](https://github.com/Glad-Labs/glad-labs-stack/commit/d4a9926e4f0868c68d91071559ddc90e2db2c56a))
-- **qa:** wire DeepEval g_eval + faithfulness to OllamaModel judge ([#601](https://github.com/Glad-Labs/glad-labs-stack/issues/601)) ([2380ce7](https://github.com/Glad-Labs/glad-labs-stack/commit/2380ce743f8ff60cf3104966cd6e1d2def79df85))
-- **schemas:** widen PostResponse.status Literal to full lifecycle ([#596](https://github.com/Glad-Labs/glad-labs-stack/issues/596)) ([1925062](https://github.com/Glad-Labs/glad-labs-stack/commit/19250629c66bb23d5a5c19c2adb5f717326372f4))
-- **security:** close public-mirror operator-name leaks — 2026-05-27 audit ([921bcb5](https://github.com/Glad-Labs/glad-labs-stack/commit/921bcb5199d396441301bbd840a86bbb8dbb44d8))
-- **security:** gate paid LiteLLM endpoints behind allow_paid_base_url (cycle-5 [#251](https://github.com/Glad-Labs/glad-labs-stack/issues/251)) ([#623](https://github.com/Glad-Labs/glad-labs-stack/issues/623)) ([0866def](https://github.com/Glad-Labs/glad-labs-stack/commit/0866deff06fb99dc52baa5d8317f7dc5afb78719))
-- **seeds:** repoint video_server_url at wan-server (:9840), not retired :9837 ([#593](https://github.com/Glad-Labs/glad-labs-stack/issues/593)) ([f5bf276](https://github.com/Glad-Labs/glad-labs-stack/commit/f5bf276ace1786c8eb7264e12ba73405889172d5))
-- **seeds:** zero plugin*job_last_run*\* baseline epochs (fresh-install footgun) ([#587](https://github.com/Glad-Labs/glad-labs-stack/issues/587)) ([9fafd7c](https://github.com/Glad-Labs/glad-labs-stack/commit/9fafd7cb62061d38fadf8aadb03cf95eb329ee96))
-- **smart_monitor:** downgrade smartctl-missing to info, drop operator page ([#588](https://github.com/Glad-Labs/glad-labs-stack/issues/588)) ([efe683e](https://github.com/Glad-Labs/glad-labs-stack/commit/efe683e7b4a567df782b7ff202bef079614d77d9))
-- **stages:** pool reuse + seed sdxl_enabled / daily_spend_limit_usd ([#606](https://github.com/Glad-Labs/glad-labs-stack/issues/606)) ([cd32e37](https://github.com/Glad-Labs/glad-labs-stack/commit/cd32e371a7fe9c3e3a8d0996fd7443819d0c43a4))
-- **stages:** SDXL gate ignores stale local-diffusers flag ([#603](https://github.com/Glad-Labs/glad-labs-stack/issues/603)) ([fad8c2c](https://github.com/Glad-Labs/glad-labs-stack/commit/fad8c2cc9abaa1b11da180298fe0c6e07e053aae))
-- **tempo:** enable local-blocks processor for TraceQL metric queries ([#630](https://github.com/Glad-Labs/glad-labs-stack/issues/630)) ([52d7515](https://github.com/Glad-Labs/glad-labs-stack/commit/52d75157bacf09c2f84089b89c8365dc1b0c80a1))
-- **triage:** swap brain triage off thinking-mode model + strip &lt;think&gt; ([#583](https://github.com/Glad-Labs/glad-labs-stack/issues/583)) ([cb04ee6](https://github.com/Glad-Labs/glad-labs-stack/commit/cb04ee6e5550e99b72499e34280b4ed75699efba))
-
-## [0.12.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.11.0...v0.12.0) (2026-05-25)
 
 ### Features
 
-- **config:** make crawler User-Agent + gate-alert site URL configurable (poindexter[#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485) follow-up) ([#542](https://github.com/Glad-Labs/glad-labs-stack/issues/542)) ([713afcc](https://github.com/Glad-Labs/glad-labs-stack/commit/713afccc1f96e07c5afbe2f3259ba61c47e5ceb6))
-- **docs:** nightly auto-sync of source-truth stats in CLAUDE.md ([#555](https://github.com/Glad-Labs/glad-labs-stack/issues/555)) ([75bff44](https://github.com/Glad-Labs/glad-labs-stack/commit/75bff44930a77238af3c91a9c2d78f47d6dc44d5))
-- **observability:** surface GlitchTip backlog on System Health + lower alert threshold ([#548](https://github.com/Glad-Labs/glad-labs-stack/issues/548)) ([afb39ff](https://github.com/Glad-Labs/glad-labs-stack/commit/afb39ffc7b6dcc176cd40fb334688f9c12a9a01b))
-- **voice-agent:** lift voice_agent_pr_repos into app_settings (poindexter[#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485) follow-up) ([#541](https://github.com/Glad-Labs/glad-labs-stack/issues/541)) ([afe21cf](https://github.com/Glad-Labs/glad-labs-stack/commit/afe21cf5d1b028e9be2a3a2ac49071c1e9784bb9))
+* **podcast:** emit itunes:keywords + itunes:summary per episode from SEO metadata ([#736](https://github.com/Glad-Labs/poindexter/issues/736)) ([da8a821](https://github.com/Glad-Labs/poindexter/commit/da8a82185a0f1dca89dd02f6926590851283b8b8))
 
-### Bug Fixes
+## [0.29.0](https://github.com/Glad-Labs/poindexter/compare/v0.28.1...v0.29.0) (2026-05-29)
 
-- **brain:** silent_alerter probe ignores warning-severity probes (false-alarm fix) ([#553](https://github.com/Glad-Labs/glad-labs-stack/issues/553)) ([6a57c24](https://github.com/Glad-Labs/glad-labs-stack/commit/6a57c243958c92f7bc8fafedc984c571833204af))
-- **brain:** skip openclaw auto-restart when running in Docker ([#562](https://github.com/Glad-Labs/glad-labs-stack/issues/562)) ([3adcfe4](https://github.com/Glad-Labs/glad-labs-stack/commit/3adcfe4a9a009ec0da103b917b07b6c0f5c23010))
-- **deepeval:** align \_resolve_judge_model with ragas loud-failure shape (Glad-Labs/poindexter[#455](https://github.com/Glad-Labs/glad-labs-stack/issues/455)) ([#552](https://github.com/Glad-Labs/glad-labs-stack/issues/552)) ([d89d525](https://github.com/Glad-Labs/glad-labs-stack/commit/d89d5255130be177ba23f4abcf00ae8994d843b1))
-- **deps:** bump langchain-openai to 1.2 (closes CVE-2026-41488) + triage 5 stuck deps ([#554](https://github.com/Glad-Labs/glad-labs-stack/issues/554)) ([5bdea3e](https://github.com/Glad-Labs/glad-labs-stack/commit/5bdea3eb4c30b06e482cdd67539f8fb83f658143))
-- **public-mirror:** genericise operator-specific seeds + extend leak guard ([#559](https://github.com/Glad-Labs/glad-labs-stack/issues/559)) ([70bd047](https://github.com/Glad-Labs/glad-labs-stack/commit/70bd04730b2858281fe3797907bc51163830cb5f))
-- **qa:** make multi_model_qa threshold reads loud on bad DB values (closes Glad-Labs/poindexter[#455](https://github.com/Glad-Labs/glad-labs-stack/issues/455) Phase 1) ([#561](https://github.com/Glad-Labs/glad-labs-stack/issues/561)) ([9326283](https://github.com/Glad-Labs/glad-labs-stack/commit/9326283b0e1e81c2de0500d10adfd073d04d44e9))
-- **qa:** scrub re-introduced placeholders from QA-rewriter output ([#563](https://github.com/Glad-Labs/glad-labs-stack/issues/563)) ([35c1ab8](https://github.com/Glad-Labs/glad-labs-stack/commit/35c1ab86c96e83c638d71148f3bfca0751afd243))
-- **security:** close 4 real CodeQL findings (ReDoS / tag-strip / URL substring) ([#547](https://github.com/Glad-Labs/glad-labs-stack/issues/547)) ([e15441e](https://github.com/Glad-Labs/glad-labs-stack/commit/e15441e47491b2a50d9bcbe65fe4c1a42d97c43e))
-- **security:** strict &lt;script&gt;/&lt;iframe&gt; end-tag match (CodeQL py/bad-tag-filter [#152](https://github.com/Glad-Labs/glad-labs-stack/issues/152)) ([#549](https://github.com/Glad-Labs/glad-labs-stack/issues/549)) ([ff22471](https://github.com/Glad-Labs/glad-labs-stack/commit/ff224719b51f023c8d0a4888899d75bcdf4c7ced))
-- **sync:** allowlist skip-list files in the leak guard (poindexter sync was failing) ([#539](https://github.com/Glad-Labs/glad-labs-stack/issues/539)) ([37601f4](https://github.com/Glad-Labs/glad-labs-stack/commit/37601f429cb05d4f52fdf3656f44c91567cfe769))
-- **sync:** skip-list for files with literal Glad-Labs/glad-labs-stack references ([#538](https://github.com/Glad-Labs/glad-labs-stack/issues/538)) ([7767b3c](https://github.com/Glad-Labs/glad-labs-stack/commit/7767b3cbcc2c3d1433b806d32c6b895d1ae24819))
-- **sync:** strip .github/dependabot.yml from the public mirror ([#536](https://github.com/Glad-Labs/glad-labs-stack/issues/536)) ([128168e](https://github.com/Glad-Labs/glad-labs-stack/commit/128168ec5a20c7f23da3fc50b6a56ea55ccd3278))
-- **test:** skip finance-route test when private FinanceModule is stripped ([#540](https://github.com/Glad-Labs/glad-labs-stack/issues/540)) ([bb36c23](https://github.com/Glad-Labs/glad-labs-stack/commit/bb36c23cea85058690dbe9ad07686328ab19fe84))
-- **topic-sources:** re-wire analyze_topic_gaps → brain_knowledge so KnowledgeSource has input ([#543](https://github.com/Glad-Labs/glad-labs-stack/issues/543)) ([a1c3218](https://github.com/Glad-Labs/glad-labs-stack/commit/a1c32185df2deedfcd48ae4acd41f6dc9c8990eb))
-
-## [0.11.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.10.1...v0.11.0) (2026-05-22)
 
 ### Features
 
-- **schemas:** add typed-Record layer for top SQL helpers ([#201](https://github.com/Glad-Labs/glad-labs-stack/issues/201)) ([#527](https://github.com/Glad-Labs/glad-labs-stack/issues/527)) ([7d060aa](https://github.com/Glad-Labs/glad-labs-stack/commit/7d060aaca228d3c6f23b79a5a1b04610dfc45ea0))
+* **di:** migrate url_validator + url_scraper to constructor DI ([#272](https://github.com/Glad-Labs/poindexter/issues/272) leaf batch 1) ([#734](https://github.com/Glad-Labs/poindexter/issues/734)) ([f2e6693](https://github.com/Glad-Labs/poindexter/commit/f2e6693d83335ff9b0586ca682622918de1217b7))
+
+## [0.28.1](https://github.com/Glad-Labs/poindexter/compare/v0.28.0...v0.28.1) (2026-05-29)
+
 
 ### Bug Fixes
 
-- **dev_diary:** corrective pass — strip autolink-style &lt;url&gt; private refs ([#520](https://github.com/Glad-Labs/glad-labs-stack/issues/520)) ([83fa9ba](https://github.com/Glad-Labs/glad-labs-stack/commit/83fa9bac298e9f363d54e8e99f8936339030605a))
-- **dev_diary:** final corrective — strip inline-markdown-link refs ([#521](https://github.com/Glad-Labs/glad-labs-stack/issues/521)) ([1831cc0](https://github.com/Glad-Labs/glad-labs-stack/commit/1831cc06162a5fb4689bb38c3e43a7a4f83339c3))
-- **dev_diary:** replace private glad-labs-stack URLs with public poindexter pointer ([#192](https://github.com/Glad-Labs/glad-labs-stack/issues/192)) ([#519](https://github.com/Glad-Labs/glad-labs-stack/issues/519)) ([0aa393f](https://github.com/Glad-Labs/glad-labs-stack/commit/0aa393fade809860591b08dcdd3907b5bf97786a))
-- **discord_ops:** resolve webhook URL via secret_key_ref so app_settings rotation propagates ([#515](https://github.com/Glad-Labs/glad-labs-stack/issues/515)) ([ca061cd](https://github.com/Glad-Labs/glad-labs-stack/commit/ca061cd1e742d99d73d4c0696a62c57674233517))
-- **grafana-alert:** Content Quality Drop should measure published-only avg ([#523](https://github.com/Glad-Labs/glad-labs-stack/issues/523)) ([49e3d9f](https://github.com/Glad-Labs/glad-labs-stack/commit/49e3d9fc5513f283c54b00f1bdc31620e581bafd))
-- **health:** expose migrations block in /api/health (closes brain misdiagnosis pattern) ([#526](https://github.com/Glad-Labs/glad-labs-stack/issues/526)) ([9bcc473](https://github.com/Glad-Labs/glad-labs-stack/commit/9bcc473386f4df7266f2df2cc4021de04c27824f))
-- **media_assets:** persist task_id at insert + back-stamp post_id after publish ([#517](https://github.com/Glad-Labs/glad-labs-stack/issues/517)) ([7215659](https://github.com/Glad-Labs/glad-labs-stack/commit/721565919f47f8cc68bd920f77bf0f964146d8e2))
-- **migration 20260520_140806:** relax outbound-URL constraint to allow secret_key_ref ([#516](https://github.com/Glad-Labs/glad-labs-stack/issues/516)) ([a18c1f8](https://github.com/Glad-Labs/glad-labs-stack/commit/a18c1f81fd17bf43b67895a7c19f1a937056e288))
-- **notify_operator:** fall back to lifespan SiteConfig when caller passes None ([#514](https://github.com/Glad-Labs/glad-labs-stack/issues/514)) ([a992e8d](https://github.com/Glad-Labs/glad-labs-stack/commit/a992e8dec4dfa42a4041a67c92ec347741fed3a3))
-- **observability:** gate sentry-sdk debug logging on explicit setting (~290k false-positive errors/24h) ([#512](https://github.com/Glad-Labs/glad-labs-stack/issues/512)) ([50a8f5b](https://github.com/Glad-Labs/glad-labs-stack/commit/50a8f5bc428f131f2d5edfa824e681cd3a14d8bb))
-- **prompts:** migrate firefighter ops triage prompt to UnifiedPromptManager (poindexter[#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485)) ([#531](https://github.com/Glad-Labs/glad-labs-stack/issues/531)) ([c5ad1f2](https://github.com/Glad-Labs/glad-labs-stack/commit/c5ad1f2dcb2327d6f2f7dbb45986c3f39855ea53))
-- **prompts:** migrate script_for_video.py LLM prompts to UnifiedPromptManager (poindexter[#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485) Batch 5) ([#530](https://github.com/Glad-Labs/glad-labs-stack/issues/530)) ([b63ca54](https://github.com/Glad-Labs/glad-labs-stack/commit/b63ca54d889f5bb8ee7edce8477049e5ec616056))
-- **silent-defaults:** gpu_scheduler config-fetch helpers emit findings on SiteConfig failure (poindexter[#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485)) ([#529](https://github.com/Glad-Labs/glad-labs-stack/issues/529)) ([56e730e](https://github.com/Glad-Labs/glad-labs-stack/commit/56e730eb765b87c07bab9d438c393a9c605986bc))
-- **silent-defaults:** remove hardcoded glm-4.7-5090:latest model fallbacks (poindexter[#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485)) ([#528](https://github.com/Glad-Labs/glad-labs-stack/issues/528)) ([1bbbf03](https://github.com/Glad-Labs/glad-labs-stack/commit/1bbbf03a4b54bc6b746d78130ac38afb705cca79))
-- **video_service:** derive container path prefix dynamically (closes [#198](https://github.com/Glad-Labs/glad-labs-stack/issues/198) — actual root cause) ([#518](https://github.com/Glad-Labs/glad-labs-stack/issues/518)) ([b79f3c8](https://github.com/Glad-Labs/glad-labs-stack/commit/b79f3c8cfa58fe83e6a944ff3e967c31d51ff2c6))
-- **video_service:** handle SDXL JSON response in slideshow path ([#522](https://github.com/Glad-Labs/glad-labs-stack/issues/522)) ([a85619a](https://github.com/Glad-Labs/glad-labs-stack/commit/a85619a746db2e93f32748c91d153d82c582097e))
+* **storage:** finish storage_* cutover, retire r2 public_url + delay key reads ([#731](https://github.com/Glad-Labs/poindexter/issues/731)) ([#733](https://github.com/Glad-Labs/poindexter/issues/733)) ([3ce9362](https://github.com/Glad-Labs/poindexter/commit/3ce93622d7297311ff9b1a171916633f8140e5d7))
 
-## [0.10.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.10.0...v0.10.1) (2026-05-20)
+## [0.28.0](https://github.com/Glad-Labs/poindexter/compare/v0.27.0...v0.28.0) (2026-05-29)
 
-### Bug Fixes
-
-- **content_db:** cast post_tags.tag_id to uuid[], not text[] (finding [#197](https://github.com/Glad-Labs/glad-labs-stack/issues/197)) ([#509](https://github.com/Glad-Labs/glad-labs-stack/issues/509)) ([e74d642](https://github.com/Glad-Labs/glad-labs-stack/commit/e74d64210ce52f7d87dc6ff887e0fbc454608933))
-- **jobs:** media_reconciliation filters on media_to_generate, not slug prefix ([#195](https://github.com/Glad-Labs/glad-labs-stack/issues/195)) ([#508](https://github.com/Glad-Labs/glad-labs-stack/issues/508)) ([4d251f0](https://github.com/Glad-Labs/glad-labs-stack/commit/4d251f0c11b3ac452f4138ed09c96c16a5f6a249))
-- **publish:** gate sections 11b/c/d on media_to_generate (finding [#196](https://github.com/Glad-Labs/glad-labs-stack/issues/196)) ([#510](https://github.com/Glad-Labs/glad-labs-stack/issues/510)) ([4a08d6c](https://github.com/Glad-Labs/glad-labs-stack/commit/4a08d6ca539f59a67517d4fb257c1d3bb15c3c9b))
-- **sync:** redact private-key CHANGELOG.md lines so release-please doesn't wedge mirror ([#506](https://github.com/Glad-Labs/glad-labs-stack/issues/506)) ([f506d59](https://github.com/Glad-Labs/glad-labs-stack/commit/f506d59a603a0299e524d040ec299c479e84acf4))
-
-## [0.10.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.9.0...v0.10.0) (2026-05-20)
 
 ### Features
 
-- **boot:** wire per-module migrations into startup ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 2) ([939fada](https://github.com/Glad-Labs/glad-labs-stack/commit/939fada3e289ddf4cfa653be522b05a0b9441041))
-- **brain:** re-add Anthropic to external-services watcher ([cf8b280](https://github.com/Glad-Labs/glad-labs-stack/commit/cf8b2808f5887032c37a91186d008d202dda864b))
-- **db:** module_schema_migrations table ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 2) ([8bbdd75](https://github.com/Glad-Labs/glad-labs-stack/commit/8bbdd75053ab4a4205b38a9ac1750f050eb35b15))
-- **finance:** F2 — DB schema + hourly Mercury polling job ([723acc1](https://github.com/Glad-Labs/glad-labs-stack/commit/723acc14316c64d918661f493e450298511feddc))
-- **langgraph:** default template_runner_use_postgres_checkpointer=true ([ee00da0](https://github.com/Glad-Labs/glad-labs-stack/commit/ee00da06aeec1161eabaa6dc1934d5d6c9fe5cc9))
-- **modules:** ContentModule skeleton — first concrete Module v1 ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 3-lite) ([a361382](https://github.com/Glad-Labs/glad-labs-stack/commit/a36138216223eeb85fa15d63d13b12845daa9aa8))
-- **modules:** FinanceModule F1 — Mercury read-only bank integration ([314547f](https://github.com/Glad-Labs/glad-labs-stack/commit/314547f2613b89e20374edf00375383c247afa56))
-- **observability:** default enable_tracing=true ([#409](https://github.com/Glad-Labs/glad-labs-stack/issues/409)) ([9b03285](https://github.com/Glad-Labs/glad-labs-stack/commit/9b032852ac06086a7f0316d0695ec3c90f137a9b))
-- **observability:** route writer pipeline through dispatcher for Langfuse traces ([#407](https://github.com/Glad-Labs/glad-labs-stack/issues/407)) ([#433](https://github.com/Glad-Labs/glad-labs-stack/issues/433)) ([5264dfa](https://github.com/Glad-Labs/glad-labs-stack/commit/5264dfab9eed861d635f1fc136df42f704d3f087))
-- **plugins:** add Module Protocol + ModuleManifest dataclass ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 1) ([c28352c](https://github.com/Glad-Labs/glad-labs-stack/commit/c28352c9d0f03531893fd116085b9485fd5853b8))
-- **plugins:** get_modules() registry accessor + manifest validation ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 1) ([9e12894](https://github.com/Glad-Labs/glad-labs-stack/commit/9e12894b52b3bb9e041a6a1800fc6e77eb8b2823))
-- **plugins:** per-module migration runner ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 2) ([36b1a8f](https://github.com/Glad-Labs/glad-labs-stack/commit/36b1a8fca5c1c85a95709b7c8810d8750dd7712e))
-- **podcast/video:** make RSS feeds Spotify-submittable ([#475](https://github.com/Glad-Labs/glad-labs-stack/issues/475)) ([d48018e](https://github.com/Glad-Labs/glad-labs-stack/commit/d48018ea423936e46ab7bba34987a71b31a14be0))
-- **qa-rails:** wire Ragas score → audit_log + Grafana panels ([5f2b490](https://github.com/Glad-Labs/glad-labs-stack/commit/5f2b490703cb6cd3433c05bef048e8d35f0a8e29))
-- **routes:** Module v1 route auto-discovery in register_all_routes ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490) phase 4-lite) ([6eb5481](https://github.com/Glad-Labs/glad-labs-stack/commit/6eb5481afc9dcff7a287b2068281794de03b2bf4))
+* **di:** migrate r2_upload_service to constructor DI (DI migration PR 4) ([#723](https://github.com/Glad-Labs/poindexter/issues/723)) ([7bdd4b1](https://github.com/Glad-Labs/poindexter/commit/7bdd4b1be7da069046131b02ba7201e16032da53))
+
 
 ### Bug Fixes
 
-- **alertmanager:** coerce ISO timestamps + escalate insert failures ([9d1744f](https://github.com/Glad-Labs/glad-labs-stack/commit/9d1744f61b7215bdbf65fe099968e57c2c08a923))
-- **backfill:** exclude dev_diary from podcast + video backfill sweeps ([#481](https://github.com/Glad-Labs/glad-labs-stack/issues/481)) ([a2d0d4b](https://github.com/Glad-Labs/glad-labs-stack/commit/a2d0d4beed30638922480ce494992324a285fbad))
-- backup-visibility bind mount + Grafana folder UID setting ([b9af4a3](https://github.com/Glad-Labs/glad-labs-stack/commit/b9af4a3ae18ec86809202019de3753881f1ecf1d))
-- **brain:** bump alert dedup window 30→120m for Grafana 1h repeat_interval (closes [#499](https://github.com/Glad-Labs/glad-labs-stack/issues/499)) ([#503](https://github.com/Glad-Labs/glad-labs-stack/issues/503)) ([a9f0d9d](https://github.com/Glad-Labs/glad-labs-stack/commit/a9f0d9d06b8939e7a04ce0f26991b086ac4caf13))
-- **brain:** decrypt discord_ops_webhook_url in alert_dispatcher ([d1a4cc6](https://github.com/Glad-Labs/glad-labs-stack/commit/d1a4cc6045ecf32ffffb2d9ed791e48a247b7d65))
-- **brain:** decrypt grafana_api_token via secret_reader in alert_sync ([3b087aa](https://github.com/Glad-Labs/glad-labs-stack/commit/3b087aadf5df392336458a72bca2132c2c50f644))
-- **brain:** hydrate operator_notifier env vars from app_settings at startup ([#485](https://github.com/Glad-Labs/glad-labs-stack/issues/485)) ([2089177](https://github.com/Glad-Labs/glad-labs-stack/commit/2089177d5d4b40d2dfb38640f091455239960cf1))
-- **brain:** mcp_http_probe kill-switch fails closed on uncertain read (closes Glad-Labs/glad-labs-stack[#468](https://github.com/Glad-Labs/glad-labs-stack/issues/468)) ([#478](https://github.com/Glad-Labs/glad-labs-stack/issues/478)) ([b7433e5](https://github.com/Glad-Labs/glad-labs-stack/commit/b7433e5035314b571ab80ed23c102e37a7c97d17))
-- **brain:** pre-check container existence before docker restart ([17d8bb3](https://github.com/Glad-Labs/glad-labs-stack/commit/17d8bb31f5d38642119b7e53b33c67c6da1cb99c))
-- **brain:** skip mcp_http + voice_join in operator_url_probe (finding [#188](https://github.com/Glad-Labs/glad-labs-stack/issues/188)) ([#498](https://github.com/Glad-Labs/glad-labs-stack/issues/498)) ([70a6835](https://github.com/Glad-Labs/glad-labs-stack/commit/70a6835928c7de27477c3d24f88806c13caaae5d))
-- business_probes Grafana token + Mercury upsert new-vs-update counter ([da967fc](https://github.com/Glad-Labs/glad-labs-stack/commit/da967fc1e39a0daea7a927df3684ea0641c38ccf))
-- **cli:** decrypt is_secret=true rows in experiments + setup --check ([175c5df](https://github.com/Glad-Labs/glad-labs-stack/commit/175c5df7dee78c7e3c3582f2461606b7d86253e3))
-- **cli:** dev-diary trigger — load POINDEXTER_SECRET_KEY + drop dead singleton ([2db4c22](https://github.com/Glad-Labs/glad-labs-stack/commit/2db4c22f6270c4bb9056eccc9a57a457ae3da47d))
-- **dependabot:** use 'development' (not 'dev') for dependency-type ([ab14c0b](https://github.com/Glad-Labs/glad-labs-stack/commit/ab14c0bf0f0a76d3f1417fd836acd6bac53c19c9))
-- **finance:** correct setting key name — mercury_api_token (not \_api_key) ([306df87](https://github.com/Glad-Labs/glad-labs-stack/commit/306df8769bfcef4303b68e742f689c11cadaa953))
-- **finance:** decrypt mercury_api_token via plugins.secrets ([3acae53](https://github.com/Glad-Labs/glad-labs-stack/commit/3acae53063300d6d7ee3cde723e76b963aa4b406))
-- four schema/dependency bugs surfaced by the post-audit health check ([3952816](https://github.com/Glad-Labs/glad-labs-stack/commit/3952816fd77f1076f2ae89c8cb43edbc3cedf6ad))
-- **grafana:** use OAuth JWT for webhook auth ([#2](https://github.com/Glad-Labs/glad-labs-stack/issues/2) re-attempt) ([#497](https://github.com/Glad-Labs/glad-labs-stack/issues/497)) ([541e90b](https://github.com/Glad-Labs/glad-labs-stack/commit/541e90b0b18224027a83b96b20017e510362852e))
-- **jobs:** decrypt discord_ops_webhook_url in morning_brief ([a77ab42](https://github.com/Glad-Labs/glad-labs-stack/commit/a77ab428b577b163f5ed2f1831cc4fdd4374742b))
-- **media:** per-niche media policy via niches.default_media_to_generate ([#482](https://github.com/Glad-Labs/glad-labs-stack/issues/482)) ([a68590e](https://github.com/Glad-Labs/glad-labs-stack/commit/a68590e129e7f33357c89f6fa7a067aae66fff4a))
-- **notifier:** gate Telegram routing on severity to stop warning-level spam ([#496](https://github.com/Glad-Labs/glad-labs-stack/issues/496)) ([9bd4f32](https://github.com/Glad-Labs/glad-labs-stack/commit/9bd4f3291f06d959365474d4fd40ba6525838263))
-- **observability:** correct OTLP endpoint + tighten boot audit ([#505](https://github.com/Glad-Labs/glad-labs-stack/issues/505)) ([2b736e8](https://github.com/Glad-Labs/glad-labs-stack/commit/2b736e8acf4fb2bab891c7e8b95229000166ee2b))
-- **observability:** wire OTel + Langfuse in prefect-worker process ([#486](https://github.com/Glad-Labs/glad-labs-stack/issues/486)) ([43be8e7](https://github.com/Glad-Labs/glad-labs-stack/commit/43be8e7d8a2b1217db2117529e799b9bf2a5ba4f))
-- **pipeline:** explicit writer-model unload before SDXL phase to avoid 24GB-card OOM ([#488](https://github.com/Glad-Labs/glad-labs-stack/issues/488)) ([2646ce0](https://github.com/Glad-Labs/glad-labs-stack/commit/2646ce0f4d08bf28c9e75cc66e91a2de81c14287))
-- **pipeline:** populate posts.featured_image_data dead seam ([#495](https://github.com/Glad-Labs/glad-labs-stack/issues/495)) ([db0dadf](https://github.com/Glad-Labs/glad-labs-stack/commit/db0dadfd810e160542ffd96e75876f10aa927e69))
-- **pipeline:** resolve template_slug via niches -&gt; app_settings on task create (finding [#3](https://github.com/Glad-Labs/glad-labs-stack/issues/3)) ([#489](https://github.com/Glad-Labs/glad-labs-stack/issues/489)) ([097acf3](https://github.com/Glad-Labs/glad-labs-stack/commit/097acf3dd1d264d43810eaa8fb1ae683c6e6d9ce))
-- **plugins:** register 5 never-loaded plugins in core_samples ([#502](https://github.com/Glad-Labs/glad-labs-stack/issues/502)) ([e6b7e33](https://github.com/Glad-Labs/glad-labs-stack/commit/e6b7e331a5f85f9716c4380cbbb3a768035e2249))
-- **prompts:** migrate 5 inline LLM prompts to UnifiedPromptManager ([#483](https://github.com/Glad-Labs/glad-labs-stack/issues/483)) ([7a4ccc5](https://github.com/Glad-Labs/glad-labs-stack/commit/7a4ccc5b30af3b05e071e314e1ccf3439328f965))
-- **public-mirror:** allowlist regen-script in leak guard ([1eac493](https://github.com/Glad-Labs/glad-labs-stack/commit/1eac4936977044bc0bea357e406fd2107fa4b610))
-- **public-mirror:** de-Matt test fixtures + extend leak guard ([8e8260b](https://github.com/Glad-Labs/glad-labs-stack/commit/8e8260bba8dde7c3577e26b36b75f341233db62c))
-- **public-mirror:** strip mercury_balance row + broaden leak guard ([b7505f1](https://github.com/Glad-Labs/glad-labs-stack/commit/b7505f1fdf0b37706d1d706acb92e6dca99c7473))
-- **public-mirror:** video_service host_home loud-fail + sync filter polish ([32f23fa](https://github.com/Glad-Labs/glad-labs-stack/commit/32f23fa16f9b60d107c587e22a50630cb79210c4))
-- **public-site:** canonical featured-image fallback across list + detail ([508f627](https://github.com/Glad-Labs/glad-labs-stack/commit/508f6279431b790a83a6bac43ac3b4eed3527b8f))
-- **qa:** add buzzword_density validator rule for LLM-tell vocabulary ([#494](https://github.com/Glad-Labs/glad-labs-stack/issues/494)) ([c89637f](https://github.com/Glad-Labs/glad-labs-stack/commit/c89637fe776c87c59037420aca3d154af31033c0))
-- **sync:** allowlist the CI lint script in the sync-time leak guard ([fab873e](https://github.com/Glad-Labs/glad-labs-stack/commit/fab873ef23284bf46f7850080dfeaaf4ff20ff1a))
-- **sync:** strip FinanceModule from public Glad-Labs/poindexter mirror ([e7dfbc0](https://github.com/Glad-Labs/glad-labs-stack/commit/e7dfbc0a659534959351b473d4a0709662e7e1cf))
-- **telemetry:** finish [#505](https://github.com/Glad-Labs/glad-labs-stack/issues/505) + route automated writes to glad-labs-stack ([#462](https://github.com/Glad-Labs/glad-labs-stack/issues/462)) ([65bd2fc](https://github.com/Glad-Labs/glad-labs-stack/commit/65bd2fc675bbda8ebf8e59910cc7b11145376288))
-- **tests:** unstale prompt_manager + metrics_exporter assertions ([2deff7a](https://github.com/Glad-Labs/glad-labs-stack/commit/2deff7a4c2a5351e421e9fe2a387b9b18e93e1f7))
-- **voice-agent:** retry first turn with --resume on session collision (closes Glad-Labs/poindexter[#431](https://github.com/Glad-Labs/glad-labs-stack/issues/431)) ([#436](https://github.com/Glad-Labs/glad-labs-stack/issues/436)) ([02dee74](https://github.com/Glad-Labs/glad-labs-stack/commit/02dee74f258bc936af6c0fec3f9fa17d1c14c2dd))
-- **worker:** cast $3::text in heartbeat UPDATE to fix IndeterminateDatatypeError ([#490](https://github.com/Glad-Labs/glad-labs-stack/issues/490)) ([efb0586](https://github.com/Glad-Labs/glad-labs-stack/commit/efb0586d4b0afb08a7ea0bb3070edc5a04b2a022))
-- **worker:** log heartbeat failures at WARNING + diagnose silent loop death ([#487](https://github.com/Glad-Labs/glad-labs-stack/issues/487)) ([75865e5](https://github.com/Glad-Labs/glad-labs-stack/commit/75865e5f53735035528595e5a70b33a440ed9bd4))
-- **writer:** strip stray empty []s + harden prompt against LLM tells ([#493](https://github.com/Glad-Labs/glad-labs-stack/issues/493)) ([4c633d1](https://github.com/Glad-Labs/glad-labs-stack/commit/4c633d13b4499e0fbd1ccfebf6177f6ea24dee73))
+* **youtube:** publish videos with SEO description + tags + back-link ([#275](https://github.com/Glad-Labs/poindexter/issues/275)) ([#728](https://github.com/Glad-Labs/poindexter/issues/728)) ([0d6bcb0](https://github.com/Glad-Labs/poindexter/commit/0d6bcb066caa4b452b8aa22b495f3c63d5baf2b7))
+
+## [0.27.0](https://github.com/Glad-Labs/poindexter/compare/v0.26.1...v0.27.0) (2026-05-29)
+
+
+### Features
+
+* **di:** migrate telegram_config to constructor DI (DI migration PR 3) ([#722](https://github.com/Glad-Labs/poindexter/issues/722)) ([131391a](https://github.com/Glad-Labs/poindexter/commit/131391a0ca22c9fce3ef569b4d78f95933173102))
+
+## [0.26.1](https://github.com/Glad-Labs/poindexter/compare/v0.26.0...v0.26.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **youtube:** make channel read-back best-effort in setup ([86e2841](https://github.com/Glad-Labs/poindexter/commit/86e2841fc711efef4dccb1cf009cd1d2afaeac46))
+
+## [0.26.0](https://github.com/Glad-Labs/poindexter/compare/v0.25.0...v0.26.0) (2026-05-29)
+
+
+### Features
+
+* **di:** migrate redis_cache to constructor DI (DI migration PR 5) ([#721](https://github.com/Glad-Labs/poindexter/issues/721)) ([d4b3d59](https://github.com/Glad-Labs/poindexter/commit/d4b3d591596020c483ffad72437e1eb915bdd6fa))
+
+## [0.25.0](https://github.com/Glad-Labs/poindexter/compare/v0.24.0...v0.25.0) (2026-05-29)
+
+
+### Features
+
+* **di:** migrate decorators to constructor DI (DI migration PR 6) ([#720](https://github.com/Glad-Labs/poindexter/issues/720)) ([09a0722](https://github.com/Glad-Labs/poindexter/commit/09a0722ec3efa2ed2e2f5387308b775270aa38af))
+
+## [0.24.0](https://github.com/Glad-Labs/poindexter/compare/v0.23.0...v0.24.0) (2026-05-29)
+
+
+### Features
+
+* **di:** wire AppContainer at every entry point (DI migration PR 2) ([#715](https://github.com/Glad-Labs/poindexter/issues/715)) ([5c40c7e](https://github.com/Glad-Labs/poindexter/commit/5c40c7eae19c402b5c430d6c6b423e7882320a8b))
+
+## [0.23.0](https://github.com/Glad-Labs/poindexter/compare/v0.22.0...v0.23.0) (2026-05-29)
+
+
+### Features
+
+* **lab:** Grafana variant-experiment scorecard panels (Phase 1 PR 4) ([#716](https://github.com/Glad-Labs/poindexter/issues/716)) ([63c173b](https://github.com/Glad-Labs/poindexter/commit/63c173bfc37ecb606300e0e30aecabdf4322214a))
+
+## [0.22.0](https://github.com/Glad-Labs/poindexter/compare/v0.21.2...v0.22.0) (2026-05-29)
+
+
+### Features
+
+* **youtube:** finish E2E publishing path — deps + OAuth setup CLI + smoke test ([#713](https://github.com/Glad-Labs/poindexter/issues/713)) ([dc7b0ca](https://github.com/Glad-Labs/poindexter/commit/dc7b0cac17590932b0aec80d5cee538949c49d58))
+
+## [0.21.2](https://github.com/Glad-Labs/poindexter/compare/v0.21.1...v0.21.2) (2026-05-29)
+
+
+### Bug Fixes
+
+* **settings-cli:** auto-strip category/ prefix, reshape list output, retire phantom-key guard ([#711](https://github.com/Glad-Labs/poindexter/issues/711)) ([1b344f7](https://github.com/Glad-Labs/poindexter/commit/1b344f70bb4abca5021a56a462af0aa00a654305))
+
+## [0.21.1](https://github.com/Glad-Labs/poindexter/compare/v0.21.0...v0.21.1) (2026-05-29)
+
+
+### Bug Fixes
+
+* **ci:** use HEAD^1 instead of stale base.sha in detect-changes ([#707](https://github.com/Glad-Labs/poindexter/issues/707)) ([c5c7de9](https://github.com/Glad-Labs/poindexter/commit/c5c7de9c0a2c1a7b8775e02fd8f043a3e46ed569))
+
+## [0.21.0](https://github.com/Glad-Labs/poindexter/compare/v0.20.0...v0.21.0) (2026-05-29)
+
+
+### Features
+
+* **lab:** poindexter experiments CLI (Phase 1 PR 3) ([#706](https://github.com/Glad-Labs/poindexter/issues/706)) ([f9f53d8](https://github.com/Glad-Labs/poindexter/commit/f9f53d8075f1c8b481fc144ca4b260966233a0ac))
+
+## [0.20.0](https://github.com/Glad-Labs/poindexter/compare/v0.19.0...v0.20.0) (2026-05-29)
+
+
+### Features
+
+* **di:** AppContainer scaffold + bootstrap.build_container (PR 1) ([#705](https://github.com/Glad-Labs/poindexter/issues/705)) ([45ff471](https://github.com/Glad-Labs/poindexter/commit/45ff471ad36fb124d4100c63847c58b6fa424fe5))
+
+## [0.19.0](https://github.com/Glad-Labs/poindexter/compare/v0.18.0...v0.19.0) (2026-05-29)
+
+
+### Features
+
+* **lab:** Phase 1 PR 2 — variant runner + writer-atom hook ([#702](https://github.com/Glad-Labs/poindexter/issues/702)) ([8646259](https://github.com/Glad-Labs/poindexter/commit/86462593c83a211b9fcf30db537b30d836585264))
+
+## [0.18.0](https://github.com/Glad-Labs/poindexter/compare/v0.17.0...v0.18.0) (2026-05-29)
+
+
+### Features
+
+* **lab:** Phase 1 PR 1 — experiments harness foundation (tables + scorecard view) ([#699](https://github.com/Glad-Labs/poindexter/issues/699)) ([1b52c2e](https://github.com/Glad-Labs/poindexter/commit/1b52c2e2c5aebf0457969df90b0456c118b44832))
+
+## [0.17.0](https://github.com/Glad-Labs/poindexter/compare/v0.16.0...v0.17.0) (2026-05-29)
+
+
+### Features
+
+* **analytics:** Cloudflare Analytics Engine beacon (closes [#269](https://github.com/Glad-Labs/poindexter/issues/269)) ([#697](https://github.com/Glad-Labs/poindexter/issues/697)) ([30b8332](https://github.com/Glad-Labs/poindexter/commit/30b83324e243d054f903b137370a2f30b761ef06))
+
+## [0.16.0](https://github.com/Glad-Labs/poindexter/compare/v0.15.0...v0.16.0) (2026-05-28)
+
+
+### Features
+
+* **lab:** Phase 0 — instrument outcomes tables + lab_outcomes_v1 view ([#695](https://github.com/Glad-Labs/poindexter/issues/695)) ([4c1ab4a](https://github.com/Glad-Labs/poindexter/commit/4c1ab4a9b1bf9c40b0693151c935e8813025ae05))
+
+## [0.15.0](https://github.com/Glad-Labs/poindexter/compare/v0.14.4...v0.15.0) (2026-05-28)
+
+
+### Features
+
+* **media:** operator review surface — cli open + discord ping + grafana panels ([#693](https://github.com/Glad-Labs/poindexter/issues/693)) ([ca37752](https://github.com/Glad-Labs/poindexter/commit/ca37752196e46d2fd877812210148136c017c89e))
+
+## [0.14.4](https://github.com/Glad-Labs/poindexter/compare/v0.14.3...v0.14.4) (2026-05-28)
+
+
+### Bug Fixes
+
+* **security:** patch CVE-2026-48710 (Starlette BadHost auth bypass) ([#690](https://github.com/Glad-Labs/poindexter/issues/690)) ([e577055](https://github.com/Glad-Labs/poindexter/commit/e5770555a326c1dad843d1f30e1fb363544b6af5))
+
+## [0.14.3](https://github.com/Glad-Labs/poindexter/compare/v0.14.2...v0.14.3) (2026-05-28)
+
+
+### Bug Fixes
+
+* **dev_diary:** carry over public-repo footer from PR [#631](https://github.com/Glad-Labs/poindexter/issues/631) to narrate_bundle ([#683](https://github.com/Glad-Labs/poindexter/issues/683)) ([a61f40e](https://github.com/Glad-Labs/poindexter/commit/a61f40eca0ca2569b6e3f7bf4e29d9d11fd30fbd))
+
+## [0.14.2](https://github.com/Glad-Labs/poindexter/compare/v0.14.1...v0.14.2) (2026-05-28)
+
+### Bug Fixes
+
+- **cost:** auto-log cost_logs row on every dispatch_complete call ([#681](https://github.com/Glad-Labs/poindexter/issues/681)) ([775168d](https://github.com/Glad-Labs/poindexter/commit/775168d50d85581f2630343488aa4c7a5fb4a170))
+- **dev_diary:** stop leaking private-repo URLs into published posts ([#680](https://github.com/Glad-Labs/poindexter/issues/680)) ([59f046d](https://github.com/Glad-Labs/poindexter/commit/59f046df71e230e25782629d60778079c7d545e8))
+
+## [0.14.1](https://github.com/Glad-Labs/poindexter/compare/v0.14.0...v0.14.1) (2026-05-28)
+
+### Bug Fixes
+
+- **brain:** detect stranded PENDING/Submitting Prefect flows (closes Glad-Labs/poindexter[#518](https://github.com/Glad-Labs/poindexter/issues/518)) ([#676](https://github.com/Glad-Labs/poindexter/issues/676)) ([a867f29](https://github.com/Glad-Labs/poindexter/commit/a867f29d425605a8bb1a107369b223ce33f29587))
+
+## [0.14.0](https://github.com/Glad-Labs/poindexter/compare/v0.13.1...v0.14.0) (2026-05-28)
+
+### Features
+
+- **grafana:** add 8 missing Mission Control panels (media_approvals, shot list, quality eval, drift, cloud spend, GlitchTip, Langfuse, style mix) ([#661](https://github.com/Glad-Labs/poindexter/issues/661)) ([048ea64](https://github.com/Glad-Labs/poindexter/commit/048ea6454ad3c4232acda4e043add71ebac3b7cb))
+- **media:** Layer 1 quality eval — deterministic signals + auto-reject ([#648](https://github.com/Glad-Labs/poindexter/issues/648)) ([05ebac8](https://github.com/Glad-Labs/poindexter/commit/05ebac8c8869314ec672583d0feafd2ae59b2791))
+- **media:** per-medium operator approval gate before distribution ([#647](https://github.com/Glad-Labs/poindexter/issues/647)) ([8b204f4](https://github.com/Glad-Labs/poindexter/commit/8b204f441dfa1ec365417c56d6fe1ebf03ec020e))
+- **observability:** emit image_style_picked audit_log on every pick ([#662](https://github.com/Glad-Labs/poindexter/issues/662)) ([a21962d](https://github.com/Glad-Labs/poindexter/commit/a21962d8e1114ed20350a3dac22a091ab2bb4e76))
+- **prompts:** migrate 2 vision QA prompts to UnifiedPromptManager ([#669](https://github.com/Glad-Labs/poindexter/issues/669)) ([fc76ce6](https://github.com/Glad-Labs/poindexter/commit/fc76ce6148b04fb9bc9d298bcb40a43c0f2dd4b6))
+- **publishing:** wire YouTube adapter to the video backfill pipeline ([#643](https://github.com/Glad-Labs/poindexter/issues/643)) ([4f2dbc2](https://github.com/Glad-Labs/poindexter/commit/4f2dbc2821a413114d86c49d457453054d5590d1))
+- **release:** mirror release-please Releases from glad-labs-stack to public Poindexter ([#671](https://github.com/Glad-Labs/poindexter/issues/671)) ([b27daf3](https://github.com/Glad-Labs/poindexter/commit/b27daf3a8aa89ac36d02cad02b3fc40c412f807d))
+- **site:** surface Glad Labs Podcast on Spotify in footer + About CTA ([#640](https://github.com/Glad-Labs/poindexter/issues/640)) ([68925c7](https://github.com/Glad-Labs/poindexter/commit/68925c72a24c3eeac622e1b5eda9025f9bb9c41c))
+- **topic_sources:** per-source timeout in runner (closes [#254](https://github.com/Glad-Labs/poindexter/issues/254)) ([#637](https://github.com/Glad-Labs/poindexter/issues/637)) ([323b449](https://github.com/Glad-Labs/poindexter/commit/323b449729b6f36cde813e0d28b07b3408051e7d))
+- **video:** shot list schema + director stage (PR 1 of [#649](https://github.com/Glad-Labs/poindexter/issues/649)) ([#650](https://github.com/Glad-Labs/poindexter/issues/650)) ([af25d40](https://github.com/Glad-Labs/poindexter/commit/af25d40853544829f28d3eddd7dbe6752dff713a))
+- **video:** shot-list renderer + Wan2.1 schema fix + narration sibling (PR 2 of [#649](https://github.com/Glad-Labs/poindexter/issues/649)) ([#664](https://github.com/Glad-Labs/poindexter/issues/664)) ([37e84c1](https://github.com/Glad-Labs/poindexter/commit/37e84c1aae6dc12ec1bde57c8f41b99aef79f5a7))
+
+### Bug Fixes
+
+- **analytics:** restore page-views beacon (silent since 2026-04-09) ([#658](https://github.com/Glad-Labs/poindexter/issues/658)) ([f69c935](https://github.com/Glad-Labs/poindexter/commit/f69c9357b2c0acaa128281da94e36148e289b06e))
+- APScheduler misfire_grace + edge_tts type:ignore ([#660](https://github.com/Glad-Labs/poindexter/issues/660)) ([5cc1204](https://github.com/Glad-Labs/poindexter/commit/5cc12048c20fb1492f78f9d53ac5efabbbeb90d2))
+- **backup:** mount ~/.poindexter/backups so DbBackupJob mkdir succeeds ([#654](https://github.com/Glad-Labs/poindexter/issues/654)) ([a9aec83](https://github.com/Glad-Labs/poindexter/commit/a9aec83ebdf38fbacbae0a797eac5780da443b30))
+- **brief:** correct cost partition + brain probe pattern ([#673](https://github.com/Glad-Labs/poindexter/issues/673)) ([acc00fe](https://github.com/Glad-Labs/poindexter/commit/acc00feedf3d2f7ef5046c8f6a1311f84769a93e))
+- **grafana:** mission control — readable titles + global time + dedup alerts + single-value pie → stat ([#657](https://github.com/Glad-Labs/poindexter/issues/657)) ([4769f2e](https://github.com/Glad-Labs/poindexter/commit/4769f2e18b7d899f2ac3efc9042d71913c9c9a3a))
+- **grafana:** remove retired Pipecat button + fix LiveKit URL ([#663](https://github.com/Glad-Labs/poindexter/issues/663)) ([0c3687e](https://github.com/Glad-Labs/poindexter/commit/0c3687e2bebef9bd14749fa0e18ffd81cba9b8e6))
+- **grafana:** repair 3 dashboard bugs (broken datasource UID, panel overlaps, dead Ragas panels) ([#655](https://github.com/Glad-Labs/poindexter/issues/655)) ([4873603](https://github.com/Glad-Labs/poindexter/commit/4873603d0df5d3ae309feb50bf43b28e52408b2d))
+- **grafana:** title overflow at 960px + red/green -&gt; orange/blue for deuteranomaly ([#665](https://github.com/Glad-Labs/poindexter/issues/665)) ([8ab89f3](https://github.com/Glad-Labs/poindexter/commit/8ab89f3646f3fabae0443bf34bb0e12276111c2d))
+- **mirror:** strip mission-control.json from public Poindexter mirror ([#668](https://github.com/Glad-Labs/poindexter/issues/668)) ([00bd85c](https://github.com/Glad-Labs/poindexter/commit/00bd85c1b86f212a591076b77e73ef5a1dfb10f8))
+- **operator:** guard against phantom settings keys + install compose plugin in brain ([#639](https://github.com/Glad-Labs/poindexter/issues/639)) ([846747d](https://github.com/Glad-Labs/poindexter/commit/846747d8185985bb3e04c171954e6fd21a7a3ffe))
+- **podcast:** exclude dev_diary from RSS feed via media_to_generate ([#646](https://github.com/Glad-Labs/poindexter/issues/646)) ([e5df2c8](https://github.com/Glad-Labs/poindexter/commit/e5df2c8a7d5e0e651a95633244d818ef718dbcb4))
+- **prefect:** use real 3.6.29-python3.12 tag (3.6.29 was phantom) ([#636](https://github.com/Glad-Labs/poindexter/issues/636)) ([8ad509b](https://github.com/Glad-Labs/poindexter/commit/8ad509bb6fcd3ccb164c662bf6fe5b6fd1e8df16))
+- **publish:** also push to R2 from promote-on-publish path ([#641](https://github.com/Glad-Labs/poindexter/issues/641)) ([f824066](https://github.com/Glad-Labs/poindexter/commit/f8240669ca67100735adffcb30b5fb8ef5994d54))
+- **publish:** sync pipeline_tasks.status when scheduled_publisher promotes posts ([#653](https://github.com/Glad-Labs/poindexter/issues/653)) ([03d68cc](https://github.com/Glad-Labs/poindexter/commit/03d68cc3458f5ac5b4bc8ff9b23def2b3f232ff6))
+- **qa:** revive five silent OSS QA rails + LlamaIndex hybrid+rerank ([#659](https://github.com/Glad-Labs/poindexter/issues/659)) ([f409190](https://github.com/Glad-Labs/poindexter/commit/f409190767161d35dd43afcda2614cbebb1c2aec))
+- **release-mirror:** split into two scoped tokens to surface install errors ([#672](https://github.com/Glad-Labs/poindexter/issues/672)) ([dddcb31](https://github.com/Glad-Labs/poindexter/commit/dddcb31a27b4c851a2322dd9a3ba846dc82abddb))
+- **schemas:** add niche_slug to TaskResponse — restores media generation ([#642](https://github.com/Glad-Labs/poindexter/issues/642)) ([07bbf3f](https://github.com/Glad-Labs/poindexter/commit/07bbf3f0b1c64782569d185d609db622c0295512))
+- **scripts:** silence ffmpeg/ffprobe/nvidia-smi popups on Windows ([#666](https://github.com/Glad-Labs/poindexter/issues/666)) ([268a8b9](https://github.com/Glad-Labs/poindexter/commit/268a8b9736c4f9115044e670a92ff85c534dcbff))
+
+## [0.13.1](https://github.com/Glad-Labs/poindexter/compare/v0.13.0...v0.13.1) (2026-05-27)
+
+### Bug Fixes
+
+- **dev_diary:** strip private-repo URLs from compositor output ([#631](https://github.com/Glad-Labs/poindexter/issues/631)) ([2a16776](https://github.com/Glad-Labs/poindexter/commit/2a167766654abde6e1ad05bdc9c32f1049aff24d))
+- **writer:** unwrap markdown-fenced JSON envelopes + recognize "body" key ([#632](https://github.com/Glad-Labs/poindexter/issues/632)) ([ab80b19](https://github.com/Glad-Labs/poindexter/commit/ab80b1993dcf24273b414e165adf859bab66590e))
+
+## [0.13.0](https://github.com/Glad-Labs/poindexter/compare/v0.12.0...v0.13.0) (2026-05-27)
+
+### Features
+
+- **brain:** operator_url_probe writes audit_log row on success ([#245](https://github.com/Glad-Labs/poindexter/issues/245)) ([#620](https://github.com/Glad-Labs/poindexter/issues/620)) ([b626002](https://github.com/Glad-Labs/poindexter/commit/b62600276289a514e5ab0e66415c19e508780205))
+- **brain:** per-cycle heartbeat audit_log row ([#605](https://github.com/Glad-Labs/poindexter/issues/605)) ([d7a2946](https://github.com/Glad-Labs/poindexter/commit/d7a294664ff0cb5b386c21e18aaffe1983f82850))
+- **brain:** probe for stuck Prefect content_generation flow runs ([#580](https://github.com/Glad-Labs/poindexter/issues/580)) ([71bef83](https://github.com/Glad-Labs/poindexter/commit/71bef83ce98f74aa1feb7b2a7d2dbb4a76bac414))
+- **brain:** success-path audit_log rows in 3 remaining silent probes ([#250](https://github.com/Glad-Labs/poindexter/issues/250)) ([#621](https://github.com/Glad-Labs/poindexter/issues/621)) ([8027eb9](https://github.com/Glad-Labs/poindexter/commit/8027eb983a5409fc0ed624182ef2dd7e65108a34))
+- **brain:** wire gpu_temperature_high_threshold_c app_setting to probe ([#236](https://github.com/Glad-Labs/poindexter/issues/236)) ([#614](https://github.com/Glad-Labs/poindexter/issues/614)) ([2f906c5](https://github.com/Glad-Labs/poindexter/commit/2f906c5407554a66a85d79f59719bf32c6605caa))
+- **modules:** wire register_probes via BrainProbeRegistry (closes [#239](https://github.com/Glad-Labs/poindexter/issues/239)) ([#611](https://github.com/Glad-Labs/poindexter/issues/611)) ([7855d72](https://github.com/Glad-Labs/poindexter/commit/7855d72917b8c2b766e2ac14bbf0c2d9954eb2ec))
+- **observability:** scheduled-publish queue panels + wire publish-at CLI ([#574](https://github.com/Glad-Labs/poindexter/issues/574)) ([c7966f0](https://github.com/Glad-Labs/poindexter/commit/c7966f0b6fffdce62e4add01ba7f67431bc00674))
+
+### Bug Fixes
+
+- **brain:** COPY new prefect_stuck_flow_probe.py into the brain image ([#581](https://github.com/Glad-Labs/poindexter/issues/581)) ([3e25b27](https://github.com/Glad-Labs/poindexter/commit/3e25b27004d260828dc47b6445e7bc8f523c9dab))
+- **brain:** silence openclaw_gateway_url probe pending upstream fix ([#594](https://github.com/Glad-Labs/poindexter/issues/594)) ([#600](https://github.com/Glad-Labs/poindexter/issues/600)) ([b07f7de](https://github.com/Glad-Labs/poindexter/commit/b07f7de8a64afe8c69339bd3b273b0f97f3365dd))
+- **ci:** leak guard catches multi-line VALUES tuples + 2 stragglers ([#243](https://github.com/Glad-Labs/poindexter/issues/243)) ([#619](https://github.com/Glad-Labs/poindexter/issues/619)) ([08c04e3](https://github.com/Glad-Labs/poindexter/commit/08c04e36c2805d7645e1245abaf41fc60ea88ef9))
+- **cli:** LATERAL-join pipeline_versions so approve-batch --filter quality_score works ([#592](https://github.com/Glad-Labs/poindexter/issues/592)) ([01396f6](https://github.com/Glad-Labs/poindexter/commit/01396f6e2310319d66767f4e4ce269a90df9f18b))
+- **cost-guard:** AnthropicProvider warns when db_service missing ([#244](https://github.com/Glad-Labs/poindexter/issues/244)) ([#618](https://github.com/Glad-Labs/poindexter/issues/618)) ([82aa1dc](https://github.com/Glad-Labs/poindexter/commit/82aa1dc9c8676e0dad1ac35cba064f8fbfe36b07))
+- **cost-guard:** refuse paid base_url in OpenAICompatProvider by default ([#615](https://github.com/Glad-Labs/poindexter/issues/615)) ([2a33aa6](https://github.com/Glad-Labs/poindexter/commit/2a33aa6e149001e16c3972a08ad6db41e82e8d38))
+- **db-backup:** re-checkout backup script with LF + lint shell scripts for CRLF ([#590](https://github.com/Glad-Labs/poindexter/issues/590)) ([4d1d86b](https://github.com/Glad-Labs/poindexter/commit/4d1d86b46e4dc5b559fdbd9d8c89b6f38a8f1846))
+- **grafana-alert:** Ollama Unresponsive should query inference rows, not local_compute ([#578](https://github.com/Glad-Labs/poindexter/issues/578)) ([bcf4b72](https://github.com/Glad-Labs/poindexter/commit/bcf4b72adcfcf00a44a635eeb78faefc2dac1926))
+- **images:** recognise bold-text pseudo-headings as section anchors ([#599](https://github.com/Glad-Labs/poindexter/issues/599)) ([849feb2](https://github.com/Glad-Labs/poindexter/commit/849feb254c65bc0be4dfc56d23b02c270aab2179))
+- **integrations:** restore set_site_config/get_site_config in shared_context ([#591](https://github.com/Glad-Labs/poindexter/issues/591)) ([322303b](https://github.com/Glad-Labs/poindexter/commit/322303be81de489b32bb5247728111289f35f032))
+- **mcp:** console logging goes to stderr so MCP stdio JSON-RPC stays clean ([#627](https://github.com/Glad-Labs/poindexter/issues/627)) ([3a5b44f](https://github.com/Glad-Labs/poindexter/commit/3a5b44fec611c6d5a0ccfea9fab5a1a666923a26))
+- Prefect flow crash strands pipeline_tasks + sweep targets defunct view ([#253](https://github.com/Glad-Labs/poindexter/issues/253)) ([#626](https://github.com/Glad-Labs/poindexter/issues/626)) ([ba95148](https://github.com/Glad-Labs/poindexter/commit/ba9514863df5051dd1de8977daa1ec7fb47d8d74))
+- **prefect:** pin server + client to 3.6.29 (kills 2-day silent outage) ([#628](https://github.com/Glad-Labs/poindexter/issues/628)) ([b044561](https://github.com/Glad-Labs/poindexter/commit/b04456166285461ad4221ad371eead2165c2926b))
+- **prompts:** demand real ## H2 markdown headings in writer output ([#602](https://github.com/Glad-Labs/poindexter/issues/602)) ([95f049c](https://github.com/Glad-Labs/poindexter/commit/95f049c0a333a1cb4ad82cd3ac44613ac5825cc4))
+- **prompts:** migrate 3 inline prompts to UnifiedPromptManager ([#237](https://github.com/Glad-Labs/poindexter/issues/237)) ([#612](https://github.com/Glad-Labs/poindexter/issues/612)) ([7bec668](https://github.com/Glad-Labs/poindexter/commit/7bec668dcf9fe145c370eadd69d181cfc82bf6cc))
+- **prompts:** migrate 4 more inline prompts to UnifiedPromptManager (cycle-4) ([#617](https://github.com/Glad-Labs/poindexter/issues/617)) ([2495dac](https://github.com/Glad-Labs/poindexter/commit/2495dac0de9be3c4b9ece7178d553450d1726230))
+- **public-mirror:** strip 43 dead gitea# refs + add LEAK_GUARD pattern ([#586](https://github.com/Glad-Labs/poindexter/issues/586)) ([9cf2b5b](https://github.com/Glad-Labs/poindexter/commit/9cf2b5b15f1a02f4dfde85681a297468b6b950ff))
+- **public-site:** defend lib/logger.js from Next.js 16 bundler trace ([#582](https://github.com/Glad-Labs/poindexter/issues/582)) ([e26f409](https://github.com/Glad-Labs/poindexter/commit/e26f409a1234cc6ee4b648636e4d8cd64c5a4cae))
+- **public-site:** migrate globals.css to Tailwind v4 [@import](https://github.com/import) + [@config](https://github.com/config) ([#585](https://github.com/Glad-Labs/poindexter/issues/585)) ([a2908c9](https://github.com/Glad-Labs/poindexter/commit/a2908c9b105bda05fa142a816bc8ba9cf4c1a0d5))
+- **public-site:** migrate PostCSS to Tailwind v4 (@tailwindcss/postcss) ([#584](https://github.com/Glad-Labs/poindexter/issues/584)) ([d15576a](https://github.com/Glad-Labs/poindexter/commit/d15576a7942f3eff8747db0895ec9ee9e3094492))
+- **publish:** auto_publish gate niche-leak + cost_guard key rename ([#598](https://github.com/Glad-Labs/poindexter/issues/598)) ([e5e2ae1](https://github.com/Glad-Labs/poindexter/commit/e5e2ae1af2abb9e666298547ff76acb90ae8c7f9))
+- **publish:** wire approve→posts.status='approved' bridge for schedule batch ([#595](https://github.com/Glad-Labs/poindexter/issues/595)) ([d4a9926](https://github.com/Glad-Labs/poindexter/commit/d4a9926e4f0868c68d91071559ddc90e2db2c56a))
+- **qa:** wire DeepEval g_eval + faithfulness to OllamaModel judge ([#601](https://github.com/Glad-Labs/poindexter/issues/601)) ([2380ce7](https://github.com/Glad-Labs/poindexter/commit/2380ce743f8ff60cf3104966cd6e1d2def79df85))
+- **schemas:** widen PostResponse.status Literal to full lifecycle ([#596](https://github.com/Glad-Labs/poindexter/issues/596)) ([1925062](https://github.com/Glad-Labs/poindexter/commit/19250629c66bb23d5a5c19c2adb5f717326372f4))
+- **security:** close public-mirror operator-name leaks — 2026-05-27 audit ([921bcb5](https://github.com/Glad-Labs/poindexter/commit/921bcb5199d396441301bbd840a86bbb8dbb44d8))
+- **security:** gate paid LiteLLM endpoints behind allow_paid_base_url (cycle-5 [#251](https://github.com/Glad-Labs/poindexter/issues/251)) ([#623](https://github.com/Glad-Labs/poindexter/issues/623)) ([0866def](https://github.com/Glad-Labs/poindexter/commit/0866deff06fb99dc52baa5d8317f7dc5afb78719))
+- **seeds:** repoint video_server_url at wan-server (:9840), not retired :9837 ([#593](https://github.com/Glad-Labs/poindexter/issues/593)) ([f5bf276](https://github.com/Glad-Labs/poindexter/commit/f5bf276ace1786c8eb7264e12ba73405889172d5))
+- **seeds:** zero plugin*job_last_run*\* baseline epochs (fresh-install footgun) ([#587](https://github.com/Glad-Labs/poindexter/issues/587)) ([9fafd7c](https://github.com/Glad-Labs/poindexter/commit/9fafd7cb62061d38fadf8aadb03cf95eb329ee96))
+- **smart_monitor:** downgrade smartctl-missing to info, drop operator page ([#588](https://github.com/Glad-Labs/poindexter/issues/588)) ([efe683e](https://github.com/Glad-Labs/poindexter/commit/efe683e7b4a567df782b7ff202bef079614d77d9))
+- **stages:** pool reuse + seed sdxl_enabled / daily_spend_limit_usd ([#606](https://github.com/Glad-Labs/poindexter/issues/606)) ([cd32e37](https://github.com/Glad-Labs/poindexter/commit/cd32e371a7fe9c3e3a8d0996fd7443819d0c43a4))
+- **stages:** SDXL gate ignores stale local-diffusers flag ([#603](https://github.com/Glad-Labs/poindexter/issues/603)) ([fad8c2c](https://github.com/Glad-Labs/poindexter/commit/fad8c2cc9abaa1b11da180298fe0c6e07e053aae))
+- **tempo:** enable local-blocks processor for TraceQL metric queries ([#630](https://github.com/Glad-Labs/poindexter/issues/630)) ([52d7515](https://github.com/Glad-Labs/poindexter/commit/52d75157bacf09c2f84089b89c8365dc1b0c80a1))
+- **triage:** swap brain triage off thinking-mode model + strip &lt;think&gt; ([#583](https://github.com/Glad-Labs/poindexter/issues/583)) ([cb04ee6](https://github.com/Glad-Labs/poindexter/commit/cb04ee6e5550e99b72499e34280b4ed75699efba))
+
+## [0.12.0](https://github.com/Glad-Labs/poindexter/compare/v0.11.0...v0.12.0) (2026-05-25)
+
+### Features
+
+- **config:** make crawler User-Agent + gate-alert site URL configurable (poindexter[#485](https://github.com/Glad-Labs/poindexter/issues/485) follow-up) ([#542](https://github.com/Glad-Labs/poindexter/issues/542)) ([713afcc](https://github.com/Glad-Labs/poindexter/commit/713afccc1f96e07c5afbe2f3259ba61c47e5ceb6))
+- **docs:** nightly auto-sync of source-truth stats in CLAUDE.md ([#555](https://github.com/Glad-Labs/poindexter/issues/555)) ([75bff44](https://github.com/Glad-Labs/poindexter/commit/75bff44930a77238af3c91a9c2d78f47d6dc44d5))
+- **observability:** surface GlitchTip backlog on System Health + lower alert threshold ([#548](https://github.com/Glad-Labs/poindexter/issues/548)) ([afb39ff](https://github.com/Glad-Labs/poindexter/commit/afb39ffc7b6dcc176cd40fb334688f9c12a9a01b))
+- **voice-agent:** lift voice_agent_pr_repos into app_settings (poindexter[#485](https://github.com/Glad-Labs/poindexter/issues/485) follow-up) ([#541](https://github.com/Glad-Labs/poindexter/issues/541)) ([afe21cf](https://github.com/Glad-Labs/poindexter/commit/afe21cf5d1b028e9be2a3a2ac49071c1e9784bb9))
+
+### Bug Fixes
+
+- **brain:** silent_alerter probe ignores warning-severity probes (false-alarm fix) ([#553](https://github.com/Glad-Labs/poindexter/issues/553)) ([6a57c24](https://github.com/Glad-Labs/poindexter/commit/6a57c243958c92f7bc8fafedc984c571833204af))
+- **brain:** skip openclaw auto-restart when running in Docker ([#562](https://github.com/Glad-Labs/poindexter/issues/562)) ([3adcfe4](https://github.com/Glad-Labs/poindexter/commit/3adcfe4a9a009ec0da103b917b07b6c0f5c23010))
+- **deepeval:** align \_resolve_judge_model with ragas loud-failure shape (Glad-Labs/poindexter[#455](https://github.com/Glad-Labs/poindexter/issues/455)) ([#552](https://github.com/Glad-Labs/poindexter/issues/552)) ([d89d525](https://github.com/Glad-Labs/poindexter/commit/d89d5255130be177ba23f4abcf00ae8994d843b1))
+- **deps:** bump langchain-openai to 1.2 (closes CVE-2026-41488) + triage 5 stuck deps ([#554](https://github.com/Glad-Labs/poindexter/issues/554)) ([5bdea3e](https://github.com/Glad-Labs/poindexter/commit/5bdea3eb4c30b06e482cdd67539f8fb83f658143))
+- **public-mirror:** genericise operator-specific seeds + extend leak guard ([#559](https://github.com/Glad-Labs/poindexter/issues/559)) ([70bd047](https://github.com/Glad-Labs/poindexter/commit/70bd04730b2858281fe3797907bc51163830cb5f))
+- **qa:** make multi_model_qa threshold reads loud on bad DB values (closes Glad-Labs/poindexter[#455](https://github.com/Glad-Labs/poindexter/issues/455) Phase 1) ([#561](https://github.com/Glad-Labs/poindexter/issues/561)) ([9326283](https://github.com/Glad-Labs/poindexter/commit/9326283b0e1e81c2de0500d10adfd073d04d44e9))
+- **qa:** scrub re-introduced placeholders from QA-rewriter output ([#563](https://github.com/Glad-Labs/poindexter/issues/563)) ([35c1ab8](https://github.com/Glad-Labs/poindexter/commit/35c1ab86c96e83c638d71148f3bfca0751afd243))
+- **security:** close 4 real CodeQL findings (ReDoS / tag-strip / URL substring) ([#547](https://github.com/Glad-Labs/poindexter/issues/547)) ([e15441e](https://github.com/Glad-Labs/poindexter/commit/e15441e47491b2a50d9bcbe65fe4c1a42d97c43e))
+- **security:** strict &lt;script&gt;/&lt;iframe&gt; end-tag match (CodeQL py/bad-tag-filter [#152](https://github.com/Glad-Labs/poindexter/issues/152)) ([#549](https://github.com/Glad-Labs/poindexter/issues/549)) ([ff22471](https://github.com/Glad-Labs/poindexter/commit/ff224719b51f023c8d0a4888899d75bcdf4c7ced))
+- **sync:** allowlist skip-list files in the leak guard (poindexter sync was failing) ([#539](https://github.com/Glad-Labs/poindexter/issues/539)) ([37601f4](https://github.com/Glad-Labs/poindexter/commit/37601f429cb05d4f52fdf3656f44c91567cfe769))
+- **sync:** skip-list for files with literal Glad-Labs/poindexter references ([#538](https://github.com/Glad-Labs/poindexter/issues/538)) ([7767b3c](https://github.com/Glad-Labs/poindexter/commit/7767b3cbcc2c3d1433b806d32c6b895d1ae24819))
+- **sync:** strip .github/dependabot.yml from the public mirror ([#536](https://github.com/Glad-Labs/poindexter/issues/536)) ([128168e](https://github.com/Glad-Labs/poindexter/commit/128168ec5a20c7f23da3fc50b6a56ea55ccd3278))
+- **test:** skip finance-route test when private FinanceModule is stripped ([#540](https://github.com/Glad-Labs/poindexter/issues/540)) ([bb36c23](https://github.com/Glad-Labs/poindexter/commit/bb36c23cea85058690dbe9ad07686328ab19fe84))
+- **topic-sources:** re-wire analyze_topic_gaps → brain_knowledge so KnowledgeSource has input ([#543](https://github.com/Glad-Labs/poindexter/issues/543)) ([a1c3218](https://github.com/Glad-Labs/poindexter/commit/a1c32185df2deedfcd48ae4acd41f6dc9c8990eb))
+
+## [0.11.0](https://github.com/Glad-Labs/poindexter/compare/v0.10.1...v0.11.0) (2026-05-22)
+
+### Features
+
+- **schemas:** add typed-Record layer for top SQL helpers ([#201](https://github.com/Glad-Labs/poindexter/issues/201)) ([#527](https://github.com/Glad-Labs/poindexter/issues/527)) ([7d060aa](https://github.com/Glad-Labs/poindexter/commit/7d060aaca228d3c6f23b79a5a1b04610dfc45ea0))
+
+### Bug Fixes
+
+- **dev_diary:** corrective pass — strip autolink-style &lt;url&gt; private refs ([#520](https://github.com/Glad-Labs/poindexter/issues/520)) ([83fa9ba](https://github.com/Glad-Labs/poindexter/commit/83fa9bac298e9f363d54e8e99f8936339030605a))
+- **dev_diary:** final corrective — strip inline-markdown-link refs ([#521](https://github.com/Glad-Labs/poindexter/issues/521)) ([1831cc0](https://github.com/Glad-Labs/poindexter/commit/1831cc06162a5fb4689bb38c3e43a7a4f83339c3))
+- **dev_diary:** replace private glad-labs-stack URLs with public poindexter pointer ([#192](https://github.com/Glad-Labs/poindexter/issues/192)) ([#519](https://github.com/Glad-Labs/poindexter/issues/519)) ([0aa393f](https://github.com/Glad-Labs/poindexter/commit/0aa393fade809860591b08dcdd3907b5bf97786a))
+- **discord_ops:** resolve webhook URL via secret_key_ref so app_settings rotation propagates ([#515](https://github.com/Glad-Labs/poindexter/issues/515)) ([ca061cd](https://github.com/Glad-Labs/poindexter/commit/ca061cd1e742d99d73d4c0696a62c57674233517))
+- **grafana-alert:** Content Quality Drop should measure published-only avg ([#523](https://github.com/Glad-Labs/poindexter/issues/523)) ([49e3d9f](https://github.com/Glad-Labs/poindexter/commit/49e3d9fc5513f283c54b00f1bdc31620e581bafd))
+- **health:** expose migrations block in /api/health (closes brain misdiagnosis pattern) ([#526](https://github.com/Glad-Labs/poindexter/issues/526)) ([9bcc473](https://github.com/Glad-Labs/poindexter/commit/9bcc473386f4df7266f2df2cc4021de04c27824f))
+- **media_assets:** persist task_id at insert + back-stamp post_id after publish ([#517](https://github.com/Glad-Labs/poindexter/issues/517)) ([7215659](https://github.com/Glad-Labs/poindexter/commit/721565919f47f8cc68bd920f77bf0f964146d8e2))
+- **migration 20260520_140806:** relax outbound-URL constraint to allow secret_key_ref ([#516](https://github.com/Glad-Labs/poindexter/issues/516)) ([a18c1f8](https://github.com/Glad-Labs/poindexter/commit/a18c1f81fd17bf43b67895a7c19f1a937056e288))
+- **notify_operator:** fall back to lifespan SiteConfig when caller passes None ([#514](https://github.com/Glad-Labs/poindexter/issues/514)) ([a992e8d](https://github.com/Glad-Labs/poindexter/commit/a992e8dec4dfa42a4041a67c92ec347741fed3a3))
+- **observability:** gate sentry-sdk debug logging on explicit setting (~290k false-positive errors/24h) ([#512](https://github.com/Glad-Labs/poindexter/issues/512)) ([50a8f5b](https://github.com/Glad-Labs/poindexter/commit/50a8f5bc428f131f2d5edfa824e681cd3a14d8bb))
+- **prompts:** migrate firefighter ops triage prompt to UnifiedPromptManager (poindexter[#485](https://github.com/Glad-Labs/poindexter/issues/485)) ([#531](https://github.com/Glad-Labs/poindexter/issues/531)) ([c5ad1f2](https://github.com/Glad-Labs/poindexter/commit/c5ad1f2dcb2327d6f2f7dbb45986c3f39855ea53))
+- **prompts:** migrate script_for_video.py LLM prompts to UnifiedPromptManager (poindexter[#485](https://github.com/Glad-Labs/poindexter/issues/485) Batch 5) ([#530](https://github.com/Glad-Labs/poindexter/issues/530)) ([b63ca54](https://github.com/Glad-Labs/poindexter/commit/b63ca54d889f5bb8ee7edce8477049e5ec616056))
+- **silent-defaults:** gpu_scheduler config-fetch helpers emit findings on SiteConfig failure (poindexter[#485](https://github.com/Glad-Labs/poindexter/issues/485)) ([#529](https://github.com/Glad-Labs/poindexter/issues/529)) ([56e730e](https://github.com/Glad-Labs/poindexter/commit/56e730eb765b87c07bab9d438c393a9c605986bc))
+- **silent-defaults:** remove hardcoded glm-4.7-5090:latest model fallbacks (poindexter[#485](https://github.com/Glad-Labs/poindexter/issues/485)) ([#528](https://github.com/Glad-Labs/poindexter/issues/528)) ([1bbbf03](https://github.com/Glad-Labs/poindexter/commit/1bbbf03a4b54bc6b746d78130ac38afb705cca79))
+- **video_service:** derive container path prefix dynamically (closes [#198](https://github.com/Glad-Labs/poindexter/issues/198) — actual root cause) ([#518](https://github.com/Glad-Labs/poindexter/issues/518)) ([b79f3c8](https://github.com/Glad-Labs/poindexter/commit/b79f3c8cfa58fe83e6a944ff3e967c31d51ff2c6))
+- **video_service:** handle SDXL JSON response in slideshow path ([#522](https://github.com/Glad-Labs/poindexter/issues/522)) ([a85619a](https://github.com/Glad-Labs/poindexter/commit/a85619a746db2e93f32748c91d153d82c582097e))
+
+## [0.10.1](https://github.com/Glad-Labs/poindexter/compare/v0.10.0...v0.10.1) (2026-05-20)
+
+### Bug Fixes
+
+- **content_db:** cast post_tags.tag_id to uuid[], not text[] (finding [#197](https://github.com/Glad-Labs/poindexter/issues/197)) ([#509](https://github.com/Glad-Labs/poindexter/issues/509)) ([e74d642](https://github.com/Glad-Labs/poindexter/commit/e74d64210ce52f7d87dc6ff887e0fbc454608933))
+- **jobs:** media_reconciliation filters on media_to_generate, not slug prefix ([#195](https://github.com/Glad-Labs/poindexter/issues/195)) ([#508](https://github.com/Glad-Labs/poindexter/issues/508)) ([4d251f0](https://github.com/Glad-Labs/poindexter/commit/4d251f0c11b3ac452f4138ed09c96c16a5f6a249))
+- **publish:** gate sections 11b/c/d on media_to_generate (finding [#196](https://github.com/Glad-Labs/poindexter/issues/196)) ([#510](https://github.com/Glad-Labs/poindexter/issues/510)) ([4a08d6c](https://github.com/Glad-Labs/poindexter/commit/4a08d6ca539f59a67517d4fb257c1d3bb15c3c9b))
+- **sync:** redact private-key CHANGELOG.md lines so release-please doesn't wedge mirror ([#506](https://github.com/Glad-Labs/poindexter/issues/506)) ([f506d59](https://github.com/Glad-Labs/poindexter/commit/f506d59a603a0299e524d040ec299c479e84acf4))
+
+## [0.10.0](https://github.com/Glad-Labs/poindexter/compare/v0.9.0...v0.10.0) (2026-05-20)
+
+### Features
+
+- **boot:** wire per-module migrations into startup ([#490](https://github.com/Glad-Labs/poindexter/issues/490) phase 2) ([939fada](https://github.com/Glad-Labs/poindexter/commit/939fada3e289ddf4cfa653be522b05a0b9441041))
+- **brain:** re-add Anthropic to external-services watcher ([cf8b280](https://github.com/Glad-Labs/poindexter/commit/cf8b2808f5887032c37a91186d008d202dda864b))
+- **db:** module_schema_migrations table ([#490](https://github.com/Glad-Labs/poindexter/issues/490) phase 2) ([8bbdd75](https://github.com/Glad-Labs/poindexter/commit/8bbdd75053ab4a4205b38a9ac1750f050eb35b15))
+- **finance:** F2 — DB schema + hourly Mercury polling job ([723acc1](https://github.com/Glad-Labs/poindexter/commit/723acc14316c64d918661f493e450298511feddc))
+- **langgraph:** default template_runner_use_postgres_checkpointer=true ([ee00da0](https://github.com/Glad-Labs/poindexter/commit/ee00da06aeec1161eabaa6dc1934d5d6c9fe5cc9))
+- **modules:** ContentModule skeleton — first concrete Module v1 ([#490](https://github.com/Glad-Labs/poindexter/issues/490) phase 3-lite) ([a361382](https://github.com/Glad-Labs/poindexter/commit/a36138216223eeb85fa15d63d13b12845daa9aa8))
+- **modules:** FinanceModule F1 — Mercury read-only bank integration ([314547f](https://github.com/Glad-Labs/poindexter/commit/314547f2613b89e20374edf00375383c247afa56))
+- **observability:** default enable_tracing=true ([#409](https://github.com/Glad-Labs/poindexter/issues/409)) ([9b03285](https://github.com/Glad-Labs/poindexter/commit/9b032852ac06086a7f0316d0695ec3c90f137a9b))
+- **observability:** route writer pipeline through dispatcher for Langfuse traces ([#407](https://github.com/Glad-Labs/poindexter/issues/407)) ([#433](https://github.com/Glad-Labs/poindexter/issues/433)) ([5264dfa](https://github.com/Glad-Labs/poindexter/commit/5264dfab9eed861d635f1fc136df42f704d3f087))
+- **plugins:** add Module Protocol + ModuleManifest dataclass ([#490](https://github.com/Glad-Labs/poindexter/issues/490) phase 1) ([c28352c](https://github.com/Glad-Labs/poindexter/commit/c28352c9d0f03531893fd116085b9485fd5853b8))
+- **plugins:** get_modules() registry accessor + manifest validation ([#490](https://github.com/Glad-Labs/poindexter/issues/490) phase 1) ([9e12894](https://github.com/Glad-Labs/poindexter/commit/9e12894b52b3bb9e041a6a1800fc6e77eb8b2823))
+- **plugins:** per-module migration runner ([#490](https://github.com/Glad-Labs/poindexter/issues/490) phase 2) ([36b1a8f](https://github.com/Glad-Labs/poindexter/commit/36b1a8fca5c1c85a95709b7c8810d8750dd7712e))
+- **podcast/video:** make RSS feeds Spotify-submittable ([#475](https://github.com/Glad-Labs/poindexter/issues/475)) ([d48018e](https://github.com/Glad-Labs/poindexter/commit/d48018ea423936e46ab7bba34987a71b31a14be0))
+- **qa-rails:** wire Ragas score → audit_log + Grafana panels ([5f2b490](https://github.com/Glad-Labs/poindexter/commit/5f2b490703cb6cd3433c05bef048e8d35f0a8e29))
+- **routes:** Module v1 route auto-discovery in register_all_routes ([#490](https://github.com/Glad-Labs/poindexter/issues/490) phase 4-lite) ([6eb5481](https://github.com/Glad-Labs/poindexter/commit/6eb5481afc9dcff7a287b2068281794de03b2bf4))
+
+### Bug Fixes
+
+- **alertmanager:** coerce ISO timestamps + escalate insert failures ([9d1744f](https://github.com/Glad-Labs/poindexter/commit/9d1744f61b7215bdbf65fe099968e57c2c08a923))
+- **backfill:** exclude dev_diary from podcast + video backfill sweeps ([#481](https://github.com/Glad-Labs/poindexter/issues/481)) ([a2d0d4b](https://github.com/Glad-Labs/poindexter/commit/a2d0d4beed30638922480ce494992324a285fbad))
+- backup-visibility bind mount + Grafana folder UID setting ([b9af4a3](https://github.com/Glad-Labs/poindexter/commit/b9af4a3ae18ec86809202019de3753881f1ecf1d))
+- **brain:** bump alert dedup window 30→120m for Grafana 1h repeat_interval (closes [#499](https://github.com/Glad-Labs/poindexter/issues/499)) ([#503](https://github.com/Glad-Labs/poindexter/issues/503)) ([a9f0d9d](https://github.com/Glad-Labs/poindexter/commit/a9f0d9d06b8939e7a04ce0f26991b086ac4caf13))
+- **brain:** decrypt discord_ops_webhook_url in alert_dispatcher ([d1a4cc6](https://github.com/Glad-Labs/poindexter/commit/d1a4cc6045ecf32ffffb2d9ed791e48a247b7d65))
+- **brain:** decrypt grafana_api_token via secret_reader in alert_sync ([3b087aa](https://github.com/Glad-Labs/poindexter/commit/3b087aadf5df392336458a72bca2132c2c50f644))
+- **brain:** hydrate operator_notifier env vars from app_settings at startup ([#485](https://github.com/Glad-Labs/poindexter/issues/485)) ([2089177](https://github.com/Glad-Labs/poindexter/commit/2089177d5d4b40d2dfb38640f091455239960cf1))
+- **brain:** mcp_http_probe kill-switch fails closed on uncertain read (closes Glad-Labs/poindexter[#468](https://github.com/Glad-Labs/poindexter/issues/468)) ([#478](https://github.com/Glad-Labs/poindexter/issues/478)) ([b7433e5](https://github.com/Glad-Labs/poindexter/commit/b7433e5035314b571ab80ed23c102e37a7c97d17))
+- **brain:** pre-check container existence before docker restart ([17d8bb3](https://github.com/Glad-Labs/poindexter/commit/17d8bb31f5d38642119b7e53b33c67c6da1cb99c))
+- **brain:** skip mcp_http + voice_join in operator_url_probe (finding [#188](https://github.com/Glad-Labs/poindexter/issues/188)) ([#498](https://github.com/Glad-Labs/poindexter/issues/498)) ([70a6835](https://github.com/Glad-Labs/poindexter/commit/70a6835928c7de27477c3d24f88806c13caaae5d))
+- business_probes Grafana token + Mercury upsert new-vs-update counter ([da967fc](https://github.com/Glad-Labs/poindexter/commit/da967fc1e39a0daea7a927df3684ea0641c38ccf))
+- **cli:** decrypt is_secret=true rows in experiments + setup --check ([175c5df](https://github.com/Glad-Labs/poindexter/commit/175c5df7dee78c7e3c3582f2461606b7d86253e3))
+- **cli:** dev-diary trigger — load POINDEXTER_SECRET_KEY + drop dead singleton ([2db4c22](https://github.com/Glad-Labs/poindexter/commit/2db4c22f6270c4bb9056eccc9a57a457ae3da47d))
+- **dependabot:** use 'development' (not 'dev') for dependency-type ([ab14c0b](https://github.com/Glad-Labs/poindexter/commit/ab14c0bf0f0a76d3f1417fd836acd6bac53c19c9))
+- four schema/dependency bugs surfaced by the post-audit health check ([3952816](https://github.com/Glad-Labs/poindexter/commit/3952816fd77f1076f2ae89c8cb43edbc3cedf6ad))
+- **grafana:** use OAuth JWT for webhook auth ([#2](https://github.com/Glad-Labs/poindexter/issues/2) re-attempt) ([#497](https://github.com/Glad-Labs/poindexter/issues/497)) ([541e90b](https://github.com/Glad-Labs/poindexter/commit/541e90b0b18224027a83b96b20017e510362852e))
+- **jobs:** decrypt discord_ops_webhook_url in morning_brief ([a77ab42](https://github.com/Glad-Labs/poindexter/commit/a77ab428b577b163f5ed2f1831cc4fdd4374742b))
+- **media:** per-niche media policy via niches.default_media_to_generate ([#482](https://github.com/Glad-Labs/poindexter/issues/482)) ([a68590e](https://github.com/Glad-Labs/poindexter/commit/a68590e129e7f33357c89f6fa7a067aae66fff4a))
+- **notifier:** gate Telegram routing on severity to stop warning-level spam ([#496](https://github.com/Glad-Labs/poindexter/issues/496)) ([9bd4f32](https://github.com/Glad-Labs/poindexter/commit/9bd4f3291f06d959365474d4fd40ba6525838263))
+- **observability:** correct OTLP endpoint + tighten boot audit ([#505](https://github.com/Glad-Labs/poindexter/issues/505)) ([2b736e8](https://github.com/Glad-Labs/poindexter/commit/2b736e8acf4fb2bab891c7e8b95229000166ee2b))
+- **observability:** wire OTel + Langfuse in prefect-worker process ([#486](https://github.com/Glad-Labs/poindexter/issues/486)) ([43be8e7](https://github.com/Glad-Labs/poindexter/commit/43be8e7d8a2b1217db2117529e799b9bf2a5ba4f))
+- **pipeline:** explicit writer-model unload before SDXL phase to avoid 24GB-card OOM ([#488](https://github.com/Glad-Labs/poindexter/issues/488)) ([2646ce0](https://github.com/Glad-Labs/poindexter/commit/2646ce0f4d08bf28c9e75cc66e91a2de81c14287))
+- **pipeline:** populate posts.featured_image_data dead seam ([#495](https://github.com/Glad-Labs/poindexter/issues/495)) ([db0dadf](https://github.com/Glad-Labs/poindexter/commit/db0dadfd810e160542ffd96e75876f10aa927e69))
+- **pipeline:** resolve template_slug via niches -&gt; app_settings on task create (finding [#3](https://github.com/Glad-Labs/poindexter/issues/3)) ([#489](https://github.com/Glad-Labs/poindexter/issues/489)) ([097acf3](https://github.com/Glad-Labs/poindexter/commit/097acf3dd1d264d43810eaa8fb1ae683c6e6d9ce))
+- **plugins:** register 5 never-loaded plugins in core_samples ([#502](https://github.com/Glad-Labs/poindexter/issues/502)) ([e6b7e33](https://github.com/Glad-Labs/poindexter/commit/e6b7e331a5f85f9716c4380cbbb3a768035e2249))
+- **prompts:** migrate 5 inline LLM prompts to UnifiedPromptManager ([#483](https://github.com/Glad-Labs/poindexter/issues/483)) ([7a4ccc5](https://github.com/Glad-Labs/poindexter/commit/7a4ccc5b30af3b05e071e314e1ccf3439328f965))
+- **public-mirror:** allowlist regen-script in leak guard ([1eac493](https://github.com/Glad-Labs/poindexter/commit/1eac4936977044bc0bea357e406fd2107fa4b610))
+- **public-mirror:** de-Matt test fixtures + extend leak guard ([8e8260b](https://github.com/Glad-Labs/poindexter/commit/8e8260bba8dde7c3577e26b36b75f341233db62c))
+- **public-mirror:** video_service host_home loud-fail + sync filter polish ([32f23fa](https://github.com/Glad-Labs/poindexter/commit/32f23fa16f9b60d107c587e22a50630cb79210c4))
+- **public-site:** canonical featured-image fallback across list + detail ([508f627](https://github.com/Glad-Labs/poindexter/commit/508f6279431b790a83a6bac43ac3b4eed3527b8f))
+- **qa:** add buzzword_density validator rule for LLM-tell vocabulary ([#494](https://github.com/Glad-Labs/poindexter/issues/494)) ([c89637f](https://github.com/Glad-Labs/poindexter/commit/c89637fe776c87c59037420aca3d154af31033c0))
+- **sync:** allowlist the CI lint script in the sync-time leak guard ([fab873e](https://github.com/Glad-Labs/poindexter/commit/fab873ef23284bf46f7850080dfeaaf4ff20ff1a))
+- **sync:** strip FinanceModule from public Glad-Labs/poindexter mirror ([e7dfbc0](https://github.com/Glad-Labs/poindexter/commit/e7dfbc0a659534959351b473d4a0709662e7e1cf))
+- **telemetry:** finish [#505](https://github.com/Glad-Labs/poindexter/issues/505) + route automated writes to glad-labs-stack ([#462](https://github.com/Glad-Labs/poindexter/issues/462)) ([65bd2fc](https://github.com/Glad-Labs/poindexter/commit/65bd2fc675bbda8ebf8e59910cc7b11145376288))
+- **tests:** unstale prompt_manager + metrics_exporter assertions ([2deff7a](https://github.com/Glad-Labs/poindexter/commit/2deff7a4c2a5351e421e9fe2a387b9b18e93e1f7))
+- **voice-agent:** retry first turn with --resume on session collision (closes Glad-Labs/poindexter[#431](https://github.com/Glad-Labs/poindexter/issues/431)) ([#436](https://github.com/Glad-Labs/poindexter/issues/436)) ([02dee74](https://github.com/Glad-Labs/poindexter/commit/02dee74f258bc936af6c0fec3f9fa17d1c14c2dd))
+- **worker:** cast $3::text in heartbeat UPDATE to fix IndeterminateDatatypeError ([#490](https://github.com/Glad-Labs/poindexter/issues/490)) ([efb0586](https://github.com/Glad-Labs/poindexter/commit/efb0586d4b0afb08a7ea0bb3070edc5a04b2a022))
+- **worker:** log heartbeat failures at WARNING + diagnose silent loop death ([#487](https://github.com/Glad-Labs/poindexter/issues/487)) ([75865e5](https://github.com/Glad-Labs/poindexter/commit/75865e5f53735035528595e5a70b33a440ed9bd4))
+- **writer:** strip stray empty []s + harden prompt against LLM tells ([#493](https://github.com/Glad-Labs/poindexter/issues/493)) ([4c633d1](https://github.com/Glad-Labs/poindexter/commit/4c633d13b4499e0fbd1ccfebf6177f6ea24dee73))
 
 ### Performance Improvements
 
-- **scene_visuals:** bounded concurrency for SDXL fan-out (closes Glad-Labs/poindexter[#164](https://github.com/Glad-Labs/glad-labs-stack/issues/164)) ([#456](https://github.com/Glad-Labs/glad-labs-stack/issues/456)) ([7323fdb](https://github.com/Glad-Labs/glad-labs-stack/commit/7323fdb379d28abf81a2723c925dfd3b0869ef37))
+- **scene_visuals:** bounded concurrency for SDXL fan-out (closes Glad-Labs/poindexter[#164](https://github.com/Glad-Labs/poindexter/issues/164)) ([#456](https://github.com/Glad-Labs/poindexter/issues/456)) ([7323fdb](https://github.com/Glad-Labs/poindexter/commit/7323fdb379d28abf81a2723c925dfd3b0869ef37))
 
-## [0.9.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.8.0...v0.9.0) (2026-05-13)
+## [0.9.0](https://github.com/Glad-Labs/poindexter/compare/v0.8.0...v0.9.0) (2026-05-13)
 
 ### Features
 
-- **brain:** Discord bot reachability probe (poindexter[#435](https://github.com/Glad-Labs/glad-labs-stack/issues/435)) ([#409](https://github.com/Glad-Labs/glad-labs-stack/issues/409)) ([31c160a](https://github.com/Glad-Labs/glad-labs-stack/commit/31c160af20680d0cc1f03e4fd69c9828fdc93f79))
-- **brain:** MCP HTTP server (:8004) liveness probe (poindexter[#434](https://github.com/Glad-Labs/glad-labs-stack/issues/434)) ([#410](https://github.com/Glad-Labs/glad-labs-stack/issues/410)) ([b435eba](https://github.com/Glad-Labs/glad-labs-stack/commit/b435eba6f8e00f85a91ab75291e3c6233a8f78c6))
-- **cli:** tasks reject-batch / approve-batch (bulk operations) ([#367](https://github.com/Glad-Labs/glad-labs-stack/issues/367)) ([a09d7ac](https://github.com/Glad-Labs/glad-labs-stack/commit/a09d7ac9a6a5504c9b971f9e13b7a771093efcef))
-- **content_validator:** catch unresolved [posts/...] link placeholders ([#406](https://github.com/Glad-Labs/glad-labs-stack/issues/406)) ([16afeca](https://github.com/Glad-Labs/glad-labs-stack/commit/16afecafd7cb807c8a5f969ba193ecae1157abfd))
-- **observability:** expand Langfuse [@observe](https://github.com/observe) to all major Ollama paths ([#401](https://github.com/Glad-Labs/glad-labs-stack/issues/401)) ([101656d](https://github.com/Glad-Labs/glad-labs-stack/commit/101656d59655e2ab5e5b19ed921b24660c41ac44))
-- **observability:** instrument ollama_chat_text with Langfuse [@observe](https://github.com/observe) ([#385](https://github.com/Glad-Labs/glad-labs-stack/issues/385)) ([8ef9dc6](https://github.com/Glad-Labs/glad-labs-stack/commit/8ef9dc610fe26263821b4998858b279d1f2570f7))
-- **observability:** wrap OllamaClient hot path with [@traced](https://github.com/traced)\_method spans ([#412](https://github.com/Glad-Labs/glad-labs-stack/issues/412)) ([3388fd5](https://github.com/Glad-Labs/glad-labs-stack/commit/3388fd5969c4add0903e15283d270757f0e051ca))
-- **prefect:** Stage 3 — default use_prefect_orchestration to 'true' for fresh installs ([#410](https://github.com/Glad-Labs/glad-labs-stack/issues/410)) ([6d8c80a](https://github.com/Glad-Labs/glad-labs-stack/commit/6d8c80ad995ab09cb85a9467d22786e08525f1b5))
-- **prompts:** migrate writer_rag_modes inline f-strings to UnifiedPromptManager ([#400](https://github.com/Glad-Labs/glad-labs-stack/issues/400)) ([ab5f70a](https://github.com/Glad-Labs/glad-labs-stack/commit/ab5f70a385eba435464f52973e219e60fa216b43))
-- **tap.corsair_csv:** auto-derive operator TZ from CSV file mtime ([#413](https://github.com/Glad-Labs/glad-labs-stack/issues/413)) ([70f9cc6](https://github.com/Glad-Labs/glad-labs-stack/commit/70f9cc650b8dc24a8f7bd8b34e4762af58b73a8a))
-- **taps:** tap.corsair_csv — ingest Corsair iCUE LINK sensor CSVs ([#46](https://github.com/Glad-Labs/glad-labs-stack/issues/46)) ([#384](https://github.com/Glad-Labs/glad-labs-stack/issues/384)) ([eeca3d0](https://github.com/Glad-Labs/glad-labs-stack/commit/eeca3d0ec61616939e9c1873ad28f0f61a5ab7d7))
-- **topic_sources:** IGDB indie-games source ([#399](https://github.com/Glad-Labs/glad-labs-stack/issues/399)) ([34925e8](https://github.com/Glad-Labs/glad-labs-stack/commit/34925e891fe4e9bb96eb6c9af8b4c59a9bf9d426))
+- **brain:** Discord bot reachability probe (poindexter[#435](https://github.com/Glad-Labs/poindexter/issues/435)) ([#409](https://github.com/Glad-Labs/poindexter/issues/409)) ([31c160a](https://github.com/Glad-Labs/poindexter/commit/31c160af20680d0cc1f03e4fd69c9828fdc93f79))
+- **brain:** MCP HTTP server (:8004) liveness probe (poindexter[#434](https://github.com/Glad-Labs/poindexter/issues/434)) ([#410](https://github.com/Glad-Labs/poindexter/issues/410)) ([b435eba](https://github.com/Glad-Labs/poindexter/commit/b435eba6f8e00f85a91ab75291e3c6233a8f78c6))
+- **cli:** tasks reject-batch / approve-batch (bulk operations) ([#367](https://github.com/Glad-Labs/poindexter/issues/367)) ([a09d7ac](https://github.com/Glad-Labs/poindexter/commit/a09d7ac9a6a5504c9b971f9e13b7a771093efcef))
+- **content_validator:** catch unresolved [posts/...] link placeholders ([#406](https://github.com/Glad-Labs/poindexter/issues/406)) ([16afeca](https://github.com/Glad-Labs/poindexter/commit/16afecafd7cb807c8a5f969ba193ecae1157abfd))
+- **observability:** expand Langfuse [@observe](https://github.com/observe) to all major Ollama paths ([#401](https://github.com/Glad-Labs/poindexter/issues/401)) ([101656d](https://github.com/Glad-Labs/poindexter/commit/101656d59655e2ab5e5b19ed921b24660c41ac44))
+- **observability:** instrument ollama_chat_text with Langfuse [@observe](https://github.com/observe) ([#385](https://github.com/Glad-Labs/poindexter/issues/385)) ([8ef9dc6](https://github.com/Glad-Labs/poindexter/commit/8ef9dc610fe26263821b4998858b279d1f2570f7))
+- **observability:** wrap OllamaClient hot path with [@traced](https://github.com/traced)\_method spans ([#412](https://github.com/Glad-Labs/poindexter/issues/412)) ([3388fd5](https://github.com/Glad-Labs/poindexter/commit/3388fd5969c4add0903e15283d270757f0e051ca))
+- **prefect:** Stage 3 — default use_prefect_orchestration to 'true' for fresh installs ([#410](https://github.com/Glad-Labs/poindexter/issues/410)) ([6d8c80a](https://github.com/Glad-Labs/poindexter/commit/6d8c80ad995ab09cb85a9467d22786e08525f1b5))
+- **prompts:** migrate writer_rag_modes inline f-strings to UnifiedPromptManager ([#400](https://github.com/Glad-Labs/poindexter/issues/400)) ([ab5f70a](https://github.com/Glad-Labs/poindexter/commit/ab5f70a385eba435464f52973e219e60fa216b43))
+- **tap.corsair_csv:** auto-derive operator TZ from CSV file mtime ([#413](https://github.com/Glad-Labs/poindexter/issues/413)) ([70f9cc6](https://github.com/Glad-Labs/poindexter/commit/70f9cc650b8dc24a8f7bd8b34e4762af58b73a8a))
+- **taps:** tap.corsair_csv — ingest Corsair iCUE LINK sensor CSVs ([#46](https://github.com/Glad-Labs/poindexter/issues/46)) ([#384](https://github.com/Glad-Labs/poindexter/issues/384)) ([eeca3d0](https://github.com/Glad-Labs/poindexter/commit/eeca3d0ec61616939e9c1873ad28f0f61a5ab7d7))
+- **topic_sources:** IGDB indie-games source ([#399](https://github.com/Glad-Labs/poindexter/issues/399)) ([34925e8](https://github.com/Glad-Labs/poindexter/commit/34925e891fe4e9bb96eb6c9af8b4c59a9bf9d426))
 
 ### Bug Fixes
 
-- add banned-transition opener content_validator rule (refs Glad-Labs/poindexter[#232](https://github.com/Glad-Labs/glad-labs-stack/issues/232)) ([#431](https://github.com/Glad-Labs/glad-labs-stack/issues/431)) ([392ae6c](https://github.com/Glad-Labs/glad-labs-stack/commit/392ae6c04c7c0d9a472782e295dfcc73b9ee16cb))
-- **brain-daemon:** remove decorative /brain bind-mount ([#411](https://github.com/Glad-Labs/glad-labs-stack/issues/411)) ([148c940](https://github.com/Glad-Labs/glad-labs-stack/commit/148c940f1ca289c7ba9f89c6d46a57c9bb981ed1))
-- **cli:** prefix-resolve task_id + redirect to tasks approve when no gate (closes poindexter[#480](https://github.com/Glad-Labs/glad-labs-stack/issues/480)) ([#372](https://github.com/Glad-Labs/glad-labs-stack/issues/372)) ([40ed834](https://github.com/Glad-Labs/glad-labs-stack/commit/40ed8344f7d0f3860e67a54a78e4ce6811a608e5))
-- **di_wiring:** wire SiteConfig in Prefect subprocesses (closes poindexter[#477](https://github.com/Glad-Labs/glad-labs-stack/issues/477)) ([#365](https://github.com/Glad-Labs/glad-labs-stack/issues/365)) ([19aef60](https://github.com/Glad-Labs/glad-labs-stack/commit/19aef60089ac271562112694bd54ef2e04da437c))
-- emit finding on devto_publish_immediately read failure ([#389](https://github.com/Glad-Labs/glad-labs-stack/issues/389)) ([306c5e1](https://github.com/Glad-Labs/glad-labs-stack/commit/306c5e190ea6a0c65add56a92907fe16e62ffee4))
-- emit finding when guardrails competitor-list read fails ([#390](https://github.com/Glad-Labs/glad-labs-stack/issues/390)) ([d38d7fe](https://github.com/Glad-Labs/glad-labs-stack/commit/d38d7feadcdbb01d521cbc40297104bca4187976))
-- emit findings on publish-service silent failures + category-resolver bare except ([#388](https://github.com/Glad-Labs/glad-labs-stack/issues/388)) ([8d7e462](https://github.com/Glad-Labs/glad-labs-stack/commit/8d7e462fb3755aa7cadf27552702470a9fb4cd87))
-- **experiment_hook:** three P3 cleanups (closes Glad-Labs/poindexter[#479](https://github.com/Glad-Labs/glad-labs-stack/issues/479)) ([#383](https://github.com/Glad-Labs/glad-labs-stack/issues/383)) ([2662d66](https://github.com/Glad-Labs/glad-labs-stack/commit/2662d66928b8ed7ad44ca6c7dea51da2734458fc))
-- **finalize_task:** generate preview_token in stage so Grafana title-links survive Prefect ([#368](https://github.com/Glad-Labs/glad-labs-stack/issues/368)) ([8cae473](https://github.com/Glad-Labs/glad-labs-stack/commit/8cae473330a76364b7560a321efd0495b6739a22))
-- **prefect:** extract post-pipeline actions for both orchestrators (closes poindexter[#478](https://github.com/Glad-Labs/glad-labs-stack/issues/478)) ([#371](https://github.com/Glad-Labs/glad-labs-stack/issues/371)) ([b2859c9](https://github.com/Glad-Labs/glad-labs-stack/commit/b2859c9af32115f873f7bc9ae2a72b490b76748c))
-- **publish:** make R2 static export synchronous + reconciliation watchdog ([#374](https://github.com/Glad-Labs/glad-labs-stack/issues/374)) ([057d74d](https://github.com/Glad-Labs/glad-labs-stack/commit/057d74d5b73d1fdddf9271afee6e8f522beaff8f))
-- remove hardcoded glm-4.7-5090 writer fallback from llm_text ([#392](https://github.com/Glad-Labs/glad-labs-stack/issues/392)) ([6530c7f](https://github.com/Glad-Labs/glad-labs-stack/commit/6530c7f57bd6ec7b09d707e29786b50a35b7614a))
-- remove hardcoded R2 bucket URLs from reconciliation jobs ([#393](https://github.com/Glad-Labs/glad-labs-stack/issues/393)) ([dee0b19](https://github.com/Glad-Labs/glad-labs-stack/commit/dee0b19b9ebef46453a0069217f25344f3e44a9e))
-- replace glm-4.7-5090 hardcodes in atoms + generate_content ([#396](https://github.com/Glad-Labs/glad-labs-stack/issues/396)) ([027b9b2](https://github.com/Glad-Labs/glad-labs-stack/commit/027b9b268996ee0a190023c142e725ed2e453011))
-- replace glm-4.7-5090 hardcodes in writer_rag_modes ([#397](https://github.com/Glad-Labs/glad-labs-stack/issues/397)) ([e41af81](https://github.com/Glad-Labs/glad-labs-stack/commit/e41af8178e040b3c5f59e44f31ef78859b5b9bb2))
-- **revalidate-cache:** surface upstream failure cause in route response ([#408](https://github.com/Glad-Labs/glad-labs-stack/issues/408)) ([cbd4cca](https://github.com/Glad-Labs/glad-labs-stack/commit/cbd4cca073f25212f193278eafb7cb91ba60eb88))
-- scrub glm-4.7-5090 from deepeval kwarg defaults ([#394](https://github.com/Glad-Labs/glad-labs-stack/issues/394)) ([f22f351](https://github.com/Glad-Labs/glad-labs-stack/commit/f22f3513d9c2ba6405e18977f5124c41a006e337))
-- scrub hardcoded R2 bucket URL from public-facing routes + seed ([#395](https://github.com/Glad-Labs/glad-labs-stack/issues/395)) ([1e701d4](https://github.com/Glad-Labs/glad-labs-stack/commit/1e701d427906b280dbdb6cef14aa19c984d3b28f))
-- **silent-alerter:** close blind spot + re-page persistent compose drift ([#386](https://github.com/Glad-Labs/glad-labs-stack/issues/386)) ([85eb809](https://github.com/Glad-Labs/glad-labs-stack/commit/85eb809dc9c584fc8557bb3c06608e0dd5719cd1))
-- **silent-failures:** batch 1 — fail-loud on image_service imports + deepeval judge model ([#387](https://github.com/Glad-Labs/glad-labs-stack/issues/387)) ([ddf5c07](https://github.com/Glad-Labs/glad-labs-stack/commit/ddf5c07fbe1e2c20a714bfab944978744ad40361))
-- surface SiteConfig read failures in writer-model resolution ([#391](https://github.com/Glad-Labs/glad-labs-stack/issues/391)) ([73f6e0d](https://github.com/Glad-Labs/glad-labs-stack/commit/73f6e0d8d35be9538730f0f68e76ced1496dfddd))
+- add banned-transition opener content_validator rule (refs Glad-Labs/poindexter[#232](https://github.com/Glad-Labs/poindexter/issues/232)) ([#431](https://github.com/Glad-Labs/poindexter/issues/431)) ([392ae6c](https://github.com/Glad-Labs/poindexter/commit/392ae6c04c7c0d9a472782e295dfcc73b9ee16cb))
+- **brain-daemon:** remove decorative /brain bind-mount ([#411](https://github.com/Glad-Labs/poindexter/issues/411)) ([148c940](https://github.com/Glad-Labs/poindexter/commit/148c940f1ca289c7ba9f89c6d46a57c9bb981ed1))
+- **cli:** prefix-resolve task_id + redirect to tasks approve when no gate (closes poindexter[#480](https://github.com/Glad-Labs/poindexter/issues/480)) ([#372](https://github.com/Glad-Labs/poindexter/issues/372)) ([40ed834](https://github.com/Glad-Labs/poindexter/commit/40ed8344f7d0f3860e67a54a78e4ce6811a608e5))
+- **di_wiring:** wire SiteConfig in Prefect subprocesses (closes poindexter[#477](https://github.com/Glad-Labs/poindexter/issues/477)) ([#365](https://github.com/Glad-Labs/poindexter/issues/365)) ([19aef60](https://github.com/Glad-Labs/poindexter/commit/19aef60089ac271562112694bd54ef2e04da437c))
+- emit finding on devto_publish_immediately read failure ([#389](https://github.com/Glad-Labs/poindexter/issues/389)) ([306c5e1](https://github.com/Glad-Labs/poindexter/commit/306c5e190ea6a0c65add56a92907fe16e62ffee4))
+- emit finding when guardrails competitor-list read fails ([#390](https://github.com/Glad-Labs/poindexter/issues/390)) ([d38d7fe](https://github.com/Glad-Labs/poindexter/commit/d38d7feadcdbb01d521cbc40297104bca4187976))
+- emit findings on publish-service silent failures + category-resolver bare except ([#388](https://github.com/Glad-Labs/poindexter/issues/388)) ([8d7e462](https://github.com/Glad-Labs/poindexter/commit/8d7e462fb3755aa7cadf27552702470a9fb4cd87))
+- **experiment_hook:** three P3 cleanups (closes Glad-Labs/poindexter[#479](https://github.com/Glad-Labs/poindexter/issues/479)) ([#383](https://github.com/Glad-Labs/poindexter/issues/383)) ([2662d66](https://github.com/Glad-Labs/poindexter/commit/2662d66928b8ed7ad44ca6c7dea51da2734458fc))
+- **finalize_task:** generate preview_token in stage so Grafana title-links survive Prefect ([#368](https://github.com/Glad-Labs/poindexter/issues/368)) ([8cae473](https://github.com/Glad-Labs/poindexter/commit/8cae473330a76364b7560a321efd0495b6739a22))
+- **prefect:** extract post-pipeline actions for both orchestrators (closes poindexter[#478](https://github.com/Glad-Labs/poindexter/issues/478)) ([#371](https://github.com/Glad-Labs/poindexter/issues/371)) ([b2859c9](https://github.com/Glad-Labs/poindexter/commit/b2859c9af32115f873f7bc9ae2a72b490b76748c))
+- **publish:** make R2 static export synchronous + reconciliation watchdog ([#374](https://github.com/Glad-Labs/poindexter/issues/374)) ([057d74d](https://github.com/Glad-Labs/poindexter/commit/057d74d5b73d1fdddf9271afee6e8f522beaff8f))
+- remove hardcoded glm-4.7-5090 writer fallback from llm_text ([#392](https://github.com/Glad-Labs/poindexter/issues/392)) ([6530c7f](https://github.com/Glad-Labs/poindexter/commit/6530c7f57bd6ec7b09d707e29786b50a35b7614a))
+- remove hardcoded R2 bucket URLs from reconciliation jobs ([#393](https://github.com/Glad-Labs/poindexter/issues/393)) ([dee0b19](https://github.com/Glad-Labs/poindexter/commit/dee0b19b9ebef46453a0069217f25344f3e44a9e))
+- replace glm-4.7-5090 hardcodes in atoms + generate_content ([#396](https://github.com/Glad-Labs/poindexter/issues/396)) ([027b9b2](https://github.com/Glad-Labs/poindexter/commit/027b9b268996ee0a190023c142e725ed2e453011))
+- replace glm-4.7-5090 hardcodes in writer_rag_modes ([#397](https://github.com/Glad-Labs/poindexter/issues/397)) ([e41af81](https://github.com/Glad-Labs/poindexter/commit/e41af8178e040b3c5f59e44f31ef78859b5b9bb2))
+- **revalidate-cache:** surface upstream failure cause in route response ([#408](https://github.com/Glad-Labs/poindexter/issues/408)) ([cbd4cca](https://github.com/Glad-Labs/poindexter/commit/cbd4cca073f25212f193278eafb7cb91ba60eb88))
+- scrub glm-4.7-5090 from deepeval kwarg defaults ([#394](https://github.com/Glad-Labs/poindexter/issues/394)) ([f22f351](https://github.com/Glad-Labs/poindexter/commit/f22f3513d9c2ba6405e18977f5124c41a006e337))
+- scrub hardcoded R2 bucket URL from public-facing routes + seed ([#395](https://github.com/Glad-Labs/poindexter/issues/395)) ([1e701d4](https://github.com/Glad-Labs/poindexter/commit/1e701d427906b280dbdb6cef14aa19c984d3b28f))
+- **silent-alerter:** close blind spot + re-page persistent compose drift ([#386](https://github.com/Glad-Labs/poindexter/issues/386)) ([85eb809](https://github.com/Glad-Labs/poindexter/commit/85eb809dc9c584fc8557bb3c06608e0dd5719cd1))
+- **silent-failures:** batch 1 — fail-loud on image_service imports + deepeval judge model ([#387](https://github.com/Glad-Labs/poindexter/issues/387)) ([ddf5c07](https://github.com/Glad-Labs/poindexter/commit/ddf5c07fbe1e2c20a714bfab944978744ad40361))
+- surface SiteConfig read failures in writer-model resolution ([#391](https://github.com/Glad-Labs/poindexter/issues/391)) ([73f6e0d](https://github.com/Glad-Labs/poindexter/commit/73f6e0d8d35be9538730f0f68e76ced1496dfddd))
 
 ### Performance Improvements
 
-- **gpu_scheduler:** share one httpx.AsyncClient across all hot-path calls ([#417](https://github.com/Glad-Labs/glad-labs-stack/issues/417)) ([adadbca](https://github.com/Glad-Labs/glad-labs-stack/commit/adadbcafa09d933632b6066424956256550b550f))
-- **revalidation:** share one httpx.AsyncClient across publish bursts ([#419](https://github.com/Glad-Labs/glad-labs-stack/issues/419)) ([9c6b2c4](https://github.com/Glad-Labs/glad-labs-stack/commit/9c6b2c4221ae05e19af4729e88b032854fea900c))
-- **url_validator:** share one httpx.AsyncClient across batch validations ([#424](https://github.com/Glad-Labs/glad-labs-stack/issues/424)) ([9994b63](https://github.com/Glad-Labs/glad-labs-stack/commit/9994b6394e20c37858f102377833bcbc226d85a9))
+- **gpu_scheduler:** share one httpx.AsyncClient across all hot-path calls ([#417](https://github.com/Glad-Labs/poindexter/issues/417)) ([adadbca](https://github.com/Glad-Labs/poindexter/commit/adadbcafa09d933632b6066424956256550b550f))
+- **revalidation:** share one httpx.AsyncClient across publish bursts ([#419](https://github.com/Glad-Labs/poindexter/issues/419)) ([9c6b2c4](https://github.com/Glad-Labs/poindexter/commit/9c6b2c4221ae05e19af4729e88b032854fea900c))
+- **url_validator:** share one httpx.AsyncClient across batch validations ([#424](https://github.com/Glad-Labs/poindexter/issues/424)) ([9994b63](https://github.com/Glad-Labs/poindexter/commit/9994b6394e20c37858f102377833bcbc226d85a9))
 
-## [0.8.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.7.0...v0.8.0) (2026-05-11)
-
-### Features
-
-- **prompts:** ban first-person authorial fakery + tighten sourcing rules ([#354](https://github.com/Glad-Labs/glad-labs-stack/issues/354)) ([e776afb](https://github.com/Glad-Labs/glad-labs-stack/commit/e776afbf8944ddaecfd6ec35d0c844e8b8c6c36c))
-
-### Bug Fixes
-
-- **alt_text:** drop SDXL-prompt-shaped strings from alt (closes [#469](https://github.com/Glad-Labs/glad-labs-stack/issues/469)) ([#356](https://github.com/Glad-Labs/glad-labs-stack/issues/356)) ([6d5cc70](https://github.com/Glad-Labs/glad-labs-stack/commit/6d5cc7071e0e0bd90470bfa856cf43b19a3cb5c0))
-- **brain:** pin host_port -&gt; external_url contract + warn on parse failure (closes Glad-Labs/poindexter[#472](https://github.com/Glad-Labs/glad-labs-stack/issues/472)) ([#360](https://github.com/Glad-Labs/glad-labs-stack/issues/360)) ([7408fdd](https://github.com/Glad-Labs/glad-labs-stack/commit/7408fdd2d720b99ddd8c91fa335b0270e5e5a0eb))
-- **internal_link_coherence:** only link to published posts (closes [#470](https://github.com/Glad-Labs/glad-labs-stack/issues/470)) ([#357](https://github.com/Glad-Labs/glad-labs-stack/issues/357)) ([467292d](https://github.com/Glad-Labs/glad-labs-stack/commit/467292da81f05019a214784095fecbde14a8ae46))
-- **stages:** persist drafts to pipeline_versions (closes poindexter[#473](https://github.com/Glad-Labs/glad-labs-stack/issues/473)) ([#361](https://github.com/Glad-Labs/glad-labs-stack/issues/361)) ([ee24949](https://github.com/Glad-Labs/glad-labs-stack/commit/ee24949240646ae917bbe5f28167e8cae4ffd416))
-- **title_generation:** strip QA batch suffix + prefer writer H1 (closes [#471](https://github.com/Glad-Labs/glad-labs-stack/issues/471)) ([#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355)) ([74e4beb](https://github.com/Glad-Labs/glad-labs-stack/commit/74e4beb660ffff34f26bda77fe9fde897ac6bcc8))
-
-## [0.7.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.6.0...v0.7.0) (2026-05-11)
+## [0.8.0](https://github.com/Glad-Labs/poindexter/compare/v0.7.0...v0.8.0) (2026-05-11)
 
 ### Features
 
-- **brain:** backup_watcher surfaces dr-backup sentinel files (closes Glad-Labs/poindexter[#444](https://github.com/Glad-Labs/glad-labs-stack/issues/444)) ([#346](https://github.com/Glad-Labs/glad-labs-stack/issues/346)) ([c530a16](https://github.com/Glad-Labs/glad-labs-stack/commit/c530a1602081eedd4fc919bea56ec85807ed9bee))
+- **prompts:** ban first-person authorial fakery + tighten sourcing rules ([#354](https://github.com/Glad-Labs/poindexter/issues/354)) ([e776afb](https://github.com/Glad-Labs/poindexter/commit/e776afbf8944ddaecfd6ec35d0c844e8b8c6c36c))
 
 ### Bug Fixes
 
-- **stages:** SDXL → worker via HTTP download, drop fs coupling ([#459](https://github.com/Glad-Labs/glad-labs-stack/issues/459)) ([#349](https://github.com/Glad-Labs/glad-labs-stack/issues/349)) ([ebd649e](https://github.com/Glad-Labs/glad-labs-stack/commit/ebd649e0f5e7a3c1e4474ae072fd8b8b48de1266))
-- **tests:** bracket flows tests in prefect_test_harness — unblock CI ([#352](https://github.com/Glad-Labs/glad-labs-stack/issues/352)) ([5a9ff15](https://github.com/Glad-Labs/glad-labs-stack/commit/5a9ff15a9995385d3862a7c871a2a5fdb2f1922f))
+- **alt_text:** drop SDXL-prompt-shaped strings from alt (closes [#469](https://github.com/Glad-Labs/poindexter/issues/469)) ([#356](https://github.com/Glad-Labs/poindexter/issues/356)) ([6d5cc70](https://github.com/Glad-Labs/poindexter/commit/6d5cc7071e0e0bd90470bfa856cf43b19a3cb5c0))
+- **brain:** pin host_port -&gt; external_url contract + warn on parse failure (closes Glad-Labs/poindexter[#472](https://github.com/Glad-Labs/poindexter/issues/472)) ([#360](https://github.com/Glad-Labs/poindexter/issues/360)) ([7408fdd](https://github.com/Glad-Labs/poindexter/commit/7408fdd2d720b99ddd8c91fa335b0270e5e5a0eb))
+- **internal_link_coherence:** only link to published posts (closes [#470](https://github.com/Glad-Labs/poindexter/issues/470)) ([#357](https://github.com/Glad-Labs/poindexter/issues/357)) ([467292d](https://github.com/Glad-Labs/poindexter/commit/467292da81f05019a214784095fecbde14a8ae46))
+- **stages:** persist drafts to pipeline_versions (closes poindexter[#473](https://github.com/Glad-Labs/poindexter/issues/473)) ([#361](https://github.com/Glad-Labs/poindexter/issues/361)) ([ee24949](https://github.com/Glad-Labs/poindexter/commit/ee24949240646ae917bbe5f28167e8cae4ffd416))
+- **title_generation:** strip QA batch suffix + prefer writer H1 (closes [#471](https://github.com/Glad-Labs/poindexter/issues/471)) ([#355](https://github.com/Glad-Labs/poindexter/issues/355)) ([74e4beb](https://github.com/Glad-Labs/poindexter/commit/74e4beb660ffff34f26bda77fe9fde897ac6bcc8))
 
-## [0.6.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.5.0...v0.6.0) (2026-05-11)
+## [0.7.0](https://github.com/Glad-Labs/poindexter/compare/v0.6.0...v0.7.0) (2026-05-11)
 
 ### Features
 
-- **approval:** rewrite content_tasks view to source approval_status from pipeline_gate_history ([9dd07ba](https://github.com/Glad-Labs/glad-labs-stack/commit/9dd07ba0b6fc8cc926059e9d1aba683bec842c64))
-- **approval:** route the API approval/rejection writers through pipeline_gate_history (closes part of [#366](https://github.com/Glad-Labs/glad-labs-stack/issues/366)) ([ae279ee](https://github.com/Glad-Labs/glad-labs-stack/commit/ae279ee63ee40d78a708703a5c56c7e43ad8b941))
-- **cli:** add poindexter publishers command group (poindexter[#112](https://github.com/Glad-Labs/glad-labs-stack/issues/112)) ([90ebcf7](https://github.com/Glad-Labs/glad-labs-stack/commit/90ebcf78ec2c0f2189860714d298417ad9332801))
-- **cli:** add poindexter publishers command group (poindexter[#112](https://github.com/Glad-Labs/glad-labs-stack/issues/112)) ([407bb07](https://github.com/Glad-Labs/glad-labs-stack/commit/407bb070fc6c630a2165876f2fc9aad3ceb954a4))
-- **llm_providers:** add resolve_tier_model + seed cost_tier mappings (Lane B prereq) ([8b507bc](https://github.com/Glad-Labs/glad-labs-stack/commit/8b507bc9eb954a4420551eb4c14dcccf11c5e597))
-- **observability:** QA Rails Grafana dashboard + audit emission per QA pass ([edbf066](https://github.com/Glad-Labs/glad-labs-stack/commit/edbf0664ab487cf3dd70764e580fb79df03100ad))
-- **pipeline:** Lane C cutover seam — default_template_slug routes new tasks through canonical_blog ([f33c475](https://github.com/Glad-Labs/glad-labs-stack/commit/f33c475adff7b15e3848208e92301e41b30ca329))
-- **prefect:** Phase 0 — content_generation_flow + cutover seam ([#410](https://github.com/Glad-Labs/glad-labs-stack/issues/410)) ([fcf6493](https://github.com/Glad-Labs/glad-labs-stack/commit/fcf6493169a2d7171ff5a81affa56cedb1368c21))
-- **prefect:** Phase 1+2 — prefect-worker compose service + deploy fixes ([#410](https://github.com/Glad-Labs/glad-labs-stack/issues/410)) ([669bf1e](https://github.com/Glad-Labs/glad-labs-stack/commit/669bf1ef630f5ff0de16b66c58ec48bf6a0d671d))
-- **prompts:** move image.decision prompt to YAML (Lane A batch 3) ([4271b53](https://github.com/Glad-Labs/glad-labs-stack/commit/4271b53b34edcccaca4f408ff9ce212080ae1477))
-- **prompts:** move narrative.system prompt to YAML (Lane A batch 5) ([8e29c3e](https://github.com/Glad-Labs/glad-labs-stack/commit/8e29c3ef3f03b0c0f4c9cf7eac64f2ddcfccd7c6))
-- **prompts:** move qa.aggregate_rewrite prompt to YAML (Lane A batch 2) ([55c3bb6](https://github.com/Glad-Labs/glad-labs-stack/commit/55c3bb6fd11081e4b3cd16b673ed3d28c07d40e2))
-- **prompts:** move qa.aggregate_rewrite prompt to YAML (Lane A batch 2) ([3ea9931](https://github.com/Glad-Labs/glad-labs-stack/commit/3ea9931fa5f87b29ffdaee9ba3f2b973fe2b75eb))
-- **prompts:** move topic_delivery / consistency / qa-review prompts to YAML ([626005c](https://github.com/Glad-Labs/glad-labs-stack/commit/626005c38a7602fc875f900c87ccea7877517f7f))
-- **prompts:** move topic_delivery / consistency / qa-review prompts to YAML ([f594e09](https://github.com/Glad-Labs/glad-labs-stack/commit/f594e09828d2f108cd70a6144660453059a81bfe))
-- **prompts:** move topic.ranking prompt to YAML (Lane A) ([2a3430f](https://github.com/Glad-Labs/glad-labs-stack/commit/2a3430f7d99a15956584e3dd703cb233402789d2))
-- **publishing:** add publishing_adapters table + bluesky/mastodon handlers (poindexter[#112](https://github.com/Glad-Labs/glad-labs-stack/issues/112)) ([1efabf3](https://github.com/Glad-Labs/glad-labs-stack/commit/1efabf30af5d08836aeb4900438f414908d5d7ee))
-- **publishing:** add publishing_adapters table + bluesky/mastodon handlers (poindexter[#112](https://github.com/Glad-Labs/glad-labs-stack/issues/112)) ([094ce39](https://github.com/Glad-Labs/glad-labs-stack/commit/094ce399bb8876792385494370b36724f24f98ac))
-- **publishing:** add publishing_adapters_db read loader (poindexter[#112](https://github.com/Glad-Labs/glad-labs-stack/issues/112)) ([3a117a1](https://github.com/Glad-Labs/glad-labs-stack/commit/3a117a174b5aa0b36bd380d4b459bb4064ae0002))
-- **publishing:** add publishing_adapters_db read loader (poindexter[#112](https://github.com/Glad-Labs/glad-labs-stack/issues/112)) ([a7c31b2](https://github.com/Glad-Labs/glad-labs-stack/commit/a7c31b22fdf38ec5358eba836081ceb84a4b1950))
-- **qa:** wire DeepEval G-Eval + Faithfulness reviewers (Lane D [#329](https://github.com/Glad-Labs/glad-labs-stack/issues/329) sub-issue 1) ([d33b5d7](https://github.com/Glad-Labs/glad-labs-stack/commit/d33b5d7717d1994f98d644df9478ebc467e02359))
-- **qa:** wire guardrails-ai brand + competitor reviewers (Lane D [#329](https://github.com/Glad-Labs/glad-labs-stack/issues/329) sub-issue 3) ([d2d6d7b](https://github.com/Glad-Labs/glad-labs-stack/commit/d2d6d7b4de5848a58c4d6875b86d7f742dd83ec7))
-- **qa:** wire Ragas RAG-quality reviewer (Lane D [#329](https://github.com/Glad-Labs/glad-labs-stack/issues/329) sub-issue 2) ([3a29580](https://github.com/Glad-Labs/glad-labs-stack/commit/3a295801f045f64f7b095bad7b942d5fb7580873))
-- **rag:** wire LlamaIndex BaseRetriever as opt-in path (Lane D [#329](https://github.com/Glad-Labs/glad-labs-stack/issues/329) sub-issue 4) ([e2a6300](https://github.com/Glad-Labs/glad-labs-stack/commit/e2a630076e93bf530921af3dc3f6b23ff4ff9f7f))
-- **settings:** seed lane B misc fallback keys (social/video/retry) ([2b10e5c](https://github.com/Glad-Labs/glad-labs-stack/commit/2b10e5ce1eb1ac0b91328952d5a851106d93753c))
+- **brain:** backup_watcher surfaces dr-backup sentinel files (closes Glad-Labs/poindexter[#444](https://github.com/Glad-Labs/poindexter/issues/444)) ([#346](https://github.com/Glad-Labs/poindexter/issues/346)) ([c530a16](https://github.com/Glad-Labs/poindexter/commit/c530a1602081eedd4fc919bea56ec85807ed9bee))
 
 ### Bug Fixes
 
-- 31 services-suite test failures (lost migration + DI seam test bugs) ([5b25c68](https://github.com/Glad-Labs/glad-labs-stack/commit/5b25c68796347e0d25f9cc0ed0424ce5b3da4396))
-- **audit:** off-brand task rejection emits audit_log row ([#460](https://github.com/Glad-Labs/glad-labs-stack/issues/460)) ([e31c22e](https://github.com/Glad-Labs/glad-labs-stack/commit/e31c22e1efe66c2e4c2247a84589957585500963))
-- **cli:** re-register 9 orphan operator CLI modules ([af0d9b0](https://github.com/Glad-Labs/glad-labs-stack/commit/af0d9b0cc3745608391590f6e9dca86caa6f85ce))
-- **deps:** bump litellm to 1.83.7+ to patch proxy CVEs (cap python &lt;3.14) ([cc8e4c5](https://github.com/Glad-Labs/glad-labs-stack/commit/cc8e4c5b4c9bfc9068f2b34cdfb353872bcb0c28))
-- **deps:** patch 10 Dependabot vulnerabilities + doc drift ([a2a2851](https://github.com/Glad-Labs/glad-labs-stack/commit/a2a2851055f59703783c9bf4beab235aec5e54a4))
-- **dev-diary:** drop PR titles from topic to stop writer hallucination ([f0d9fdf](https://github.com/Glad-Labs/glad-labs-stack/commit/f0d9fdf4c47df196fc360a9bc47dff6104acb6cf))
-- **docker:** bump worker image base from python:3.12-slim to 3.13-slim ([be89ab1](https://github.com/Glad-Labs/glad-labs-stack/commit/be89ab13877c4ff3873f4a311a405fb68710d2bc))
-- **image:** make SDXL→Pexels fallback loud ([#343](https://github.com/Glad-Labs/glad-labs-stack/issues/343)) ([7f2b502](https://github.com/Glad-Labs/glad-labs-stack/commit/7f2b5027c11adfcc5b685ef6b96f229d27ed7abf))
-- **integrations:** wire taps + retention into scheduler, repair gpu_metrics downsample, add qa_gates writer ([91761a5](https://github.com/Glad-Labs/glad-labs-stack/commit/91761a56715b355bead0bb2266d8ce5cb24985ff))
-- **integrations:** wire taps + retention into scheduler, repair gpu_metrics downsample, add qa_gates writer ([101fce4](https://github.com/Glad-Labs/glad-labs-stack/commit/101fce46e567e3c8098b313f31097948d9f39f0b))
-- **memory:** make rag_engine fallback loud per feedback_no_silent_defaults ([ad70088](https://github.com/Glad-Labs/glad-labs-stack/commit/ad70088794d3b2b6a2e031e408de7cfa48dd17a1))
-- **migration:** drop nonexistent value_type column from deepeval seed ([50cfb2c](https://github.com/Glad-Labs/glad-labs-stack/commit/50cfb2c4fed4657f1f477e7cd06897b0c295cb0e))
-- **migrations:** reconcile embeddings column drift on stripped DB ([#121](https://github.com/Glad-Labs/glad-labs-stack/issues/121)) ([4330e59](https://github.com/Glad-Labs/glad-labs-stack/commit/4330e59f7695905f36ab7b6bf705bed1134ba509))
-- **migrations:** rename run() -&gt; run_migration() for runner pickup ([a1c5c4c](https://github.com/Glad-Labs/glad-labs-stack/commit/a1c5c4c2b2295441c31f4da0d9c8b976bf313d37))
-- **plugins:** schedule 4 unscheduled jobs (PluginScheduler 28 → 32) ([88d6815](https://github.com/Glad-Labs/glad-labs-stack/commit/88d6815fe9a8f3a5ce907f157cdf33bcf7428b9d))
-- **plugins:** schedule detect*anomalies + close out backfill*\* deletion candidates ([49d40fa](https://github.com/Glad-Labs/glad-labs-stack/commit/49d40fa3e58f74a26dbd224f6cc940addc8ab3cf))
-- **prefect:** claim SQL column list + NO_CACHE + integration test ([#410](https://github.com/Glad-Labs/glad-labs-stack/issues/410)) ([53951cf](https://github.com/Glad-Labs/glad-labs-stack/commit/53951cf88f863f400bf8cd48a77bdedab95753d9))
-- **probe:** add host_port overrides for langfuse-web + pgadmin ([7288a2a](https://github.com/Glad-Labs/glad-labs-stack/commit/7288a2a32cc4f5c7aeb38c36814c4cd3b7a3887f))
-- **probe:** correct internal ports for langfuse-web (3000) + pgadmin (80) ([6c73bc8](https://github.com/Glad-Labs/glad-labs-stack/commit/6c73bc8f98b6c35583a484d09e46ae2890118653))
-- **probe:** per-URL alive_codes override instead of skip-list ([#347](https://github.com/Glad-Labs/glad-labs-stack/issues/347)) ([59f49cb](https://github.com/Glad-Labs/glad-labs-stack/commit/59f49cbe3810675be9eeccb822cfb44a9179a931))
-- **probe:** silence false-positive operator URL alerts (3 outbound-only URLs) ([b31fe2f](https://github.com/Glad-Labs/glad-labs-stack/commit/b31fe2f120cef65ee4d31b7b97cb3b425ea35848))
-- **qa:** make 5 QA reviewer fallbacks loud (no silent defaults sweep) ([a0ab98f](https://github.com/Glad-Labs/glad-labs-stack/commit/a0ab98fe3fab7bd87699c3718aa6c5cfe64010e0))
-- **rag_engine:** json-decode metadata column when asyncpg returns string ([65499e7](https://github.com/Glad-Labs/glad-labs-stack/commit/65499e773d96e98428d347a5282d08c269e6cd2a))
-- **reject:** canonicalize task_id from get_task before downstream writes ([b87dc38](https://github.com/Glad-Labs/glad-labs-stack/commit/b87dc38dba6649de2b305f0c3dbc2a651108a4fa))
-- **site_config:** repair admin.py syntax + UnifiedQualityService instance wiring ([428e4dd](https://github.com/Glad-Labs/glad-labs-stack/commit/428e4dd0b99aaf2353548b042a8e683b55d0185f))
-- **site_config:** repair script-introduced self-assigns + wire test fixture (GH[#330](https://github.com/Glad-Labs/glad-labs-stack/issues/330)) ([14ddeb7](https://github.com/Glad-Labs/glad-labs-stack/commit/14ddeb7da373909db9cbee0e5a7b8a53fd594580))
-- **sync:** persist-credentials=false so PAT actually wins over GITHUB_TOKEN ([1e6042d](https://github.com/Glad-Labs/glad-labs-stack/commit/1e6042d9890bdd38b1881785c130054e8706ade9))
-- **throttle:** inject SiteConfig everywhere + 0-disable sentinel ([#457](https://github.com/Glad-Labs/glad-labs-stack/issues/457)) ([77a2b38](https://github.com/Glad-Labs/glad-labs-stack/commit/77a2b38c7dc32616ee8538019df5ae25f142f9f0))
-- **throttle:** pipeline_throttle reads app_settings.max_approval_queue ([#345](https://github.com/Glad-Labs/glad-labs-stack/issues/345)) ([afa844f](https://github.com/Glad-Labs/glad-labs-stack/commit/afa844ffed6ea768d9c029b629bc8935e38cc3e4))
-- **typing:** clean up Pyright errors after Lane B sweep ([2c4c214](https://github.com/Glad-Labs/glad-labs-stack/commit/2c4c2144e9ca0e4bd34dc0f2fa8472b2f8b5c34f))
-- voice bridge fails loud when audio extras absent (closes Glad-Labs/poindexter[#426](https://github.com/Glad-Labs/glad-labs-stack/issues/426)) ([cd6d30f](https://github.com/Glad-Labs/glad-labs-stack/commit/cd6d30fa5cdaa22e533cab29814fe44478ab97fc))
+- **stages:** SDXL → worker via HTTP download, drop fs coupling ([#459](https://github.com/Glad-Labs/poindexter/issues/459)) ([#349](https://github.com/Glad-Labs/poindexter/issues/349)) ([ebd649e](https://github.com/Glad-Labs/poindexter/commit/ebd649e0f5e7a3c1e4474ae072fd8b8b48de1266))
+- **tests:** bracket flows tests in prefect_test_harness — unblock CI ([#352](https://github.com/Glad-Labs/poindexter/issues/352)) ([5a9ff15](https://github.com/Glad-Labs/poindexter/commit/5a9ff15a9995385d3862a7c871a2a5fdb2f1922f))
+
+## [0.6.0](https://github.com/Glad-Labs/poindexter/compare/v0.5.0...v0.6.0) (2026-05-11)
+
+### Features
+
+- **approval:** rewrite content_tasks view to source approval_status from pipeline_gate_history ([9dd07ba](https://github.com/Glad-Labs/poindexter/commit/9dd07ba0b6fc8cc926059e9d1aba683bec842c64))
+- **approval:** route the API approval/rejection writers through pipeline_gate_history (closes part of [#366](https://github.com/Glad-Labs/poindexter/issues/366)) ([ae279ee](https://github.com/Glad-Labs/poindexter/commit/ae279ee63ee40d78a708703a5c56c7e43ad8b941))
+- **cli:** add poindexter publishers command group (poindexter[#112](https://github.com/Glad-Labs/poindexter/issues/112)) ([90ebcf7](https://github.com/Glad-Labs/poindexter/commit/90ebcf78ec2c0f2189860714d298417ad9332801))
+- **cli:** add poindexter publishers command group (poindexter[#112](https://github.com/Glad-Labs/poindexter/issues/112)) ([407bb07](https://github.com/Glad-Labs/poindexter/commit/407bb070fc6c630a2165876f2fc9aad3ceb954a4))
+- **llm_providers:** add resolve_tier_model + seed cost_tier mappings (Lane B prereq) ([8b507bc](https://github.com/Glad-Labs/poindexter/commit/8b507bc9eb954a4420551eb4c14dcccf11c5e597))
+- **observability:** QA Rails Grafana dashboard + audit emission per QA pass ([edbf066](https://github.com/Glad-Labs/poindexter/commit/edbf0664ab487cf3dd70764e580fb79df03100ad))
+- **pipeline:** Lane C cutover seam — default_template_slug routes new tasks through canonical_blog ([f33c475](https://github.com/Glad-Labs/poindexter/commit/f33c475adff7b15e3848208e92301e41b30ca329))
+- **prefect:** Phase 0 — content_generation_flow + cutover seam ([#410](https://github.com/Glad-Labs/poindexter/issues/410)) ([fcf6493](https://github.com/Glad-Labs/poindexter/commit/fcf6493169a2d7171ff5a81affa56cedb1368c21))
+- **prefect:** Phase 1+2 — prefect-worker compose service + deploy fixes ([#410](https://github.com/Glad-Labs/poindexter/issues/410)) ([669bf1e](https://github.com/Glad-Labs/poindexter/commit/669bf1ef630f5ff0de16b66c58ec48bf6a0d671d))
+- **prompts:** move image.decision prompt to YAML (Lane A batch 3) ([4271b53](https://github.com/Glad-Labs/poindexter/commit/4271b53b34edcccaca4f408ff9ce212080ae1477))
+- **prompts:** move narrative.system prompt to YAML (Lane A batch 5) ([8e29c3e](https://github.com/Glad-Labs/poindexter/commit/8e29c3ef3f03b0c0f4c9cf7eac64f2ddcfccd7c6))
+- **prompts:** move qa.aggregate_rewrite prompt to YAML (Lane A batch 2) ([55c3bb6](https://github.com/Glad-Labs/poindexter/commit/55c3bb6fd11081e4b3cd16b673ed3d28c07d40e2))
+- **prompts:** move qa.aggregate_rewrite prompt to YAML (Lane A batch 2) ([3ea9931](https://github.com/Glad-Labs/poindexter/commit/3ea9931fa5f87b29ffdaee9ba3f2b973fe2b75eb))
+- **prompts:** move topic_delivery / consistency / qa-review prompts to YAML ([626005c](https://github.com/Glad-Labs/poindexter/commit/626005c38a7602fc875f900c87ccea7877517f7f))
+- **prompts:** move topic_delivery / consistency / qa-review prompts to YAML ([f594e09](https://github.com/Glad-Labs/poindexter/commit/f594e09828d2f108cd70a6144660453059a81bfe))
+- **prompts:** move topic.ranking prompt to YAML (Lane A) ([2a3430f](https://github.com/Glad-Labs/poindexter/commit/2a3430f7d99a15956584e3dd703cb233402789d2))
+- **publishing:** add publishing_adapters table + bluesky/mastodon handlers (poindexter[#112](https://github.com/Glad-Labs/poindexter/issues/112)) ([1efabf3](https://github.com/Glad-Labs/poindexter/commit/1efabf30af5d08836aeb4900438f414908d5d7ee))
+- **publishing:** add publishing_adapters table + bluesky/mastodon handlers (poindexter[#112](https://github.com/Glad-Labs/poindexter/issues/112)) ([094ce39](https://github.com/Glad-Labs/poindexter/commit/094ce399bb8876792385494370b36724f24f98ac))
+- **publishing:** add publishing_adapters_db read loader (poindexter[#112](https://github.com/Glad-Labs/poindexter/issues/112)) ([3a117a1](https://github.com/Glad-Labs/poindexter/commit/3a117a174b5aa0b36bd380d4b459bb4064ae0002))
+- **publishing:** add publishing_adapters_db read loader (poindexter[#112](https://github.com/Glad-Labs/poindexter/issues/112)) ([a7c31b2](https://github.com/Glad-Labs/poindexter/commit/a7c31b22fdf38ec5358eba836081ceb84a4b1950))
+- **qa:** wire DeepEval G-Eval + Faithfulness reviewers (Lane D [#329](https://github.com/Glad-Labs/poindexter/issues/329) sub-issue 1) ([d33b5d7](https://github.com/Glad-Labs/poindexter/commit/d33b5d7717d1994f98d644df9478ebc467e02359))
+- **qa:** wire guardrails-ai brand + competitor reviewers (Lane D [#329](https://github.com/Glad-Labs/poindexter/issues/329) sub-issue 3) ([d2d6d7b](https://github.com/Glad-Labs/poindexter/commit/d2d6d7b4de5848a58c4d6875b86d7f742dd83ec7))
+- **qa:** wire Ragas RAG-quality reviewer (Lane D [#329](https://github.com/Glad-Labs/poindexter/issues/329) sub-issue 2) ([3a29580](https://github.com/Glad-Labs/poindexter/commit/3a295801f045f64f7b095bad7b942d5fb7580873))
+- **rag:** wire LlamaIndex BaseRetriever as opt-in path (Lane D [#329](https://github.com/Glad-Labs/poindexter/issues/329) sub-issue 4) ([e2a6300](https://github.com/Glad-Labs/poindexter/commit/e2a630076e93bf530921af3dc3f6b23ff4ff9f7f))
+- **settings:** seed lane B misc fallback keys (social/video/retry) ([2b10e5c](https://github.com/Glad-Labs/poindexter/commit/2b10e5ce1eb1ac0b91328952d5a851106d93753c))
+
+### Bug Fixes
+
+- 31 services-suite test failures (lost migration + DI seam test bugs) ([5b25c68](https://github.com/Glad-Labs/poindexter/commit/5b25c68796347e0d25f9cc0ed0424ce5b3da4396))
+- **audit:** off-brand task rejection emits audit_log row ([#460](https://github.com/Glad-Labs/poindexter/issues/460)) ([e31c22e](https://github.com/Glad-Labs/poindexter/commit/e31c22e1efe66c2e4c2247a84589957585500963))
+- **cli:** re-register 9 orphan operator CLI modules ([af0d9b0](https://github.com/Glad-Labs/poindexter/commit/af0d9b0cc3745608391590f6e9dca86caa6f85ce))
+- **deps:** bump litellm to 1.83.7+ to patch proxy CVEs (cap python &lt;3.14) ([cc8e4c5](https://github.com/Glad-Labs/poindexter/commit/cc8e4c5b4c9bfc9068f2b34cdfb353872bcb0c28))
+- **deps:** patch 10 Dependabot vulnerabilities + doc drift ([a2a2851](https://github.com/Glad-Labs/poindexter/commit/a2a2851055f59703783c9bf4beab235aec5e54a4))
+- **dev-diary:** drop PR titles from topic to stop writer hallucination ([f0d9fdf](https://github.com/Glad-Labs/poindexter/commit/f0d9fdf4c47df196fc360a9bc47dff6104acb6cf))
+- **docker:** bump worker image base from python:3.12-slim to 3.13-slim ([be89ab1](https://github.com/Glad-Labs/poindexter/commit/be89ab13877c4ff3873f4a311a405fb68710d2bc))
+- **image:** make SDXL→Pexels fallback loud ([#343](https://github.com/Glad-Labs/poindexter/issues/343)) ([7f2b502](https://github.com/Glad-Labs/poindexter/commit/7f2b5027c11adfcc5b685ef6b96f229d27ed7abf))
+- **integrations:** wire taps + retention into scheduler, repair gpu_metrics downsample, add qa_gates writer ([91761a5](https://github.com/Glad-Labs/poindexter/commit/91761a56715b355bead0bb2266d8ce5cb24985ff))
+- **integrations:** wire taps + retention into scheduler, repair gpu_metrics downsample, add qa_gates writer ([101fce4](https://github.com/Glad-Labs/poindexter/commit/101fce46e567e3c8098b313f31097948d9f39f0b))
+- **memory:** make rag_engine fallback loud per feedback_no_silent_defaults ([ad70088](https://github.com/Glad-Labs/poindexter/commit/ad70088794d3b2b6a2e031e408de7cfa48dd17a1))
+- **migration:** drop nonexistent value_type column from deepeval seed ([50cfb2c](https://github.com/Glad-Labs/poindexter/commit/50cfb2c4fed4657f1f477e7cd06897b0c295cb0e))
+- **migrations:** reconcile embeddings column drift on stripped DB ([#121](https://github.com/Glad-Labs/poindexter/issues/121)) ([4330e59](https://github.com/Glad-Labs/poindexter/commit/4330e59f7695905f36ab7b6bf705bed1134ba509))
+- **migrations:** rename run() -&gt; run_migration() for runner pickup ([a1c5c4c](https://github.com/Glad-Labs/poindexter/commit/a1c5c4c2b2295441c31f4da0d9c8b976bf313d37))
+- **plugins:** schedule 4 unscheduled jobs (PluginScheduler 28 → 32) ([88d6815](https://github.com/Glad-Labs/poindexter/commit/88d6815fe9a8f3a5ce907f157cdf33bcf7428b9d))
+- **plugins:** schedule detect*anomalies + close out backfill*\* deletion candidates ([49d40fa](https://github.com/Glad-Labs/poindexter/commit/49d40fa3e58f74a26dbd224f6cc940addc8ab3cf))
+- **prefect:** claim SQL column list + NO_CACHE + integration test ([#410](https://github.com/Glad-Labs/poindexter/issues/410)) ([53951cf](https://github.com/Glad-Labs/poindexter/commit/53951cf88f863f400bf8cd48a77bdedab95753d9))
+- **probe:** add host_port overrides for langfuse-web + pgadmin ([7288a2a](https://github.com/Glad-Labs/poindexter/commit/7288a2a32cc4f5c7aeb38c36814c4cd3b7a3887f))
+- **probe:** correct internal ports for langfuse-web (3000) + pgadmin (80) ([6c73bc8](https://github.com/Glad-Labs/poindexter/commit/6c73bc8f98b6c35583a484d09e46ae2890118653))
+- **probe:** per-URL alive_codes override instead of skip-list ([#347](https://github.com/Glad-Labs/poindexter/issues/347)) ([59f49cb](https://github.com/Glad-Labs/poindexter/commit/59f49cbe3810675be9eeccb822cfb44a9179a931))
+- **probe:** silence false-positive operator URL alerts (3 outbound-only URLs) ([b31fe2f](https://github.com/Glad-Labs/poindexter/commit/b31fe2f120cef65ee4d31b7b97cb3b425ea35848))
+- **qa:** make 5 QA reviewer fallbacks loud (no silent defaults sweep) ([a0ab98f](https://github.com/Glad-Labs/poindexter/commit/a0ab98fe3fab7bd87699c3718aa6c5cfe64010e0))
+- **rag_engine:** json-decode metadata column when asyncpg returns string ([65499e7](https://github.com/Glad-Labs/poindexter/commit/65499e773d96e98428d347a5282d08c269e6cd2a))
+- **reject:** canonicalize task_id from get_task before downstream writes ([b87dc38](https://github.com/Glad-Labs/poindexter/commit/b87dc38dba6649de2b305f0c3dbc2a651108a4fa))
+- **site_config:** repair admin.py syntax + UnifiedQualityService instance wiring ([428e4dd](https://github.com/Glad-Labs/poindexter/commit/428e4dd0b99aaf2353548b042a8e683b55d0185f))
+- **site_config:** repair script-introduced self-assigns + wire test fixture (GH[#330](https://github.com/Glad-Labs/poindexter/issues/330)) ([14ddeb7](https://github.com/Glad-Labs/poindexter/commit/14ddeb7da373909db9cbee0e5a7b8a53fd594580))
+- **sync:** persist-credentials=false so PAT actually wins over GITHUB_TOKEN ([1e6042d](https://github.com/Glad-Labs/poindexter/commit/1e6042d9890bdd38b1881785c130054e8706ade9))
+- **throttle:** inject SiteConfig everywhere + 0-disable sentinel ([#457](https://github.com/Glad-Labs/poindexter/issues/457)) ([77a2b38](https://github.com/Glad-Labs/poindexter/commit/77a2b38c7dc32616ee8538019df5ae25f142f9f0))
+- **throttle:** pipeline_throttle reads app_settings.max_approval_queue ([#345](https://github.com/Glad-Labs/poindexter/issues/345)) ([afa844f](https://github.com/Glad-Labs/poindexter/commit/afa844ffed6ea768d9c029b629bc8935e38cc3e4))
+- **typing:** clean up Pyright errors after Lane B sweep ([2c4c214](https://github.com/Glad-Labs/poindexter/commit/2c4c2144e9ca0e4bd34dc0f2fa8472b2f8b5c34f))
+- voice bridge fails loud when audio extras absent (closes Glad-Labs/poindexter[#426](https://github.com/Glad-Labs/poindexter/issues/426)) ([cd6d30f](https://github.com/Glad-Labs/poindexter/commit/cd6d30fa5cdaa22e533cab29814fe44478ab97fc))
 
 ### 2026-04-29 — Relicense to Apache 2.0; doc-paywall removal
 
