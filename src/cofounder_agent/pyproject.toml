@@ -565,9 +565,6 @@ ignore = [
 "agents/content_agent/services/llm_client.py" = ["E402"]
 "agents/content_agent/services/pexels_client.py" = ["E402"]
 "agents/content_agent/config.py" = ["E402"]
-# Social adapters share a Protocol signature — not every adapter needs
-# every kwarg.
-"services/social_adapters/*" = ["ARG001", "ARG002"]
 # Quality scorers all share a (content, context, cfg) signature for
 # uniform dispatch, even when individual scorers don't read all three.
 "services/quality_scorers.py" = ["ARG001"]

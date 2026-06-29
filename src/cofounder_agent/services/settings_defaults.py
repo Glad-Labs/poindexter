@@ -843,7 +843,8 @@ DEFAULTS: dict[str, str] = {
 
     # ----- Devto / external publishing -----
     'devto_api_base': 'https://dev.to/api',
-    'mastodon_instance_url': '',
+    # (mastodon_instance_url removed 2026-06-29 — the legacy direct Mastodon
+    #  adapter is retired; Mastodon-via-Postiz uses postiz_integration_id_mastodon.)
 
     # ----- Newsletter / email -----
     'newsletter_batch_delay_seconds': '2',

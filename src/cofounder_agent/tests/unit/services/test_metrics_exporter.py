@@ -880,30 +880,6 @@ def test_render_exposition_returns_text_format():
     assert "text/plain" in content_type
 
 
-@pytest.mark.unit
-def test_exporter_registers_social_adapter_counters_at_import():
-    """poindexter#455 follow-up: ``social_poster`` is otherwise imported lazily
-    (only from ``publish_service`` at publish time), so its adapter counters
-    were ABSENT from ``/metrics`` after every worker restart until the first
-    social post — gapping any ``rate()`` / ``increase()`` panel on them across
-    each restart boundary.
-
-    ``metrics_exporter`` imports the singletons so they register on the default
-    REGISTRY the moment ``/metrics`` is first served. This pins that wiring:
-    the identity check fails loud if an unused-import cleanup removes it, and
-    the exposition check proves the families render without any post happening.
-    """
-    from services import metrics_exporter as mx
-    from services import social_poster as sp
-
-    # Same singleton objects — proves the exporter imported them, not a copy.
-    assert mx.SOCIAL_ADAPTER_POSTS_TOTAL is sp.SOCIAL_ADAPTER_POSTS_TOTAL
-    assert mx.SOCIAL_ADAPTER_ERRORS_TOTAL is sp.SOCIAL_ADAPTER_ERRORS_TOTAL
-
-    # Both families render on /metrics with no _bump_metric / post call.
-    text = mx.render_exposition()[0].decode("utf-8")
-    assert "poindexter_social_adapter_posts_total" in text
-    assert "poindexter_social_adapter_errors_total" in text
 
 
 # ---------------------------------------------------------------------------

@@ -8,7 +8,7 @@ a thin shim that adapts the registry's
 keyword-only ``publish(*, media_path, title, description, ...)``
 signature.
 
-Same shape as :mod:`publishing_mastodon`.
+Same shape as the sibling ``publishing.*`` handlers.
 
 Payload shape::
 
@@ -34,9 +34,8 @@ shared builders in ``services/jobs/youtube_payload.py`` (used by
 ``media_distribute``). The handler forwards both verbatim; the adapter
 re-clamps to YouTube's hard caps as a backstop.
 
-Returns the adapter's ``PublishResult`` flattened to a dict so
-:func:`services.social_poster._distribute_to_adapters` and
-``media_distribute`` see a consistent shape.
+Returns the adapter's ``PublishResult`` flattened to a dict so the
+publishing-surface dispatch and ``media_distribute`` see a consistent shape.
 """
 
 from __future__ import annotations

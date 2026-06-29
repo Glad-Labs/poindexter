@@ -38,7 +38,10 @@ def load_all() -> None:
     #   (outbound_telegram retains Bot API helpers for pipeline_streaming but
     #    no longer registers a handler; outbound_discord was deleted — both
     #    superseded by the generic apprise_notify handler.)
-    # publishing.* surface: publishing_mastodon, publishing_youtube
+    # publishing.* surface: publishing_youtube
+    #   (publishing_mastodon was deleted 2026-06-29 — the legacy direct
+    #    social_adapters distribution path is retired; social distribution
+    #    now flows through Postiz via the social.generate_drafts atom.)
     # retention.* surface: retention_checkpoint_prune, retention_downsample,
     #                      retention_embeddings_collapse, retention_embeddings_orphan_prune,
     #                      retention_summarize_to_table, retention_ttl_prune
@@ -47,7 +50,6 @@ def load_all() -> None:
     from services.integrations.handlers import (  # noqa: F401
         outbound_apprise,
         outbound_vercel_isr,
-        publishing_mastodon,
         publishing_youtube,
         retention_checkpoint_prune,
         retention_downsample,
@@ -69,7 +71,7 @@ def load_all() -> None:
     _ = (
         webhook_alertmanager, webhook_revenue, webhook_subscriber,
         outbound_apprise, outbound_vercel_isr,
-        publishing_mastodon, publishing_youtube,
+        publishing_youtube,
         retention_checkpoint_prune, retention_downsample,
         retention_embeddings_collapse, retention_embeddings_orphan_prune,
         retention_summarize_to_table, retention_ttl_prune,

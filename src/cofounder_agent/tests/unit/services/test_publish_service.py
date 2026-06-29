@@ -144,9 +144,9 @@ def _stub_lazy_imports():
     webhook_mod = MagicMock()
     webhook_mod.emit_webhook_event = AsyncMock()
 
-    # services.social_poster
+    # services.social_poster (no longer imported on the publish path — kept as a
+    # harmless sys.modules stub so the patch.dict shape stays uniform)
     social_mod = MagicMock()
-    social_mod.generate_and_distribute_social_posts = AsyncMock()
 
     # services.devto_service
     devto_svc_instance = AsyncMock()
@@ -1267,7 +1267,7 @@ class TestFirePostDistributionHooks:
 
     @pytest.mark.asyncio
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
-    async def test_happy_path_flips_status_and_fires_social_devto(self, _hooks):
+    async def test_happy_path_flips_status_and_fires_devto(self, _hooks):
         from services.publish_service import fire_post_distribution_hooks
         post_row = _make_post_row()
         pool, _conn = _make_pool_for_fire(post_row, pending_gates=False, status_flip=True)
@@ -1277,7 +1277,6 @@ class TestFirePostDistributionHooks:
 
         # All the lazy imports
         social_mod = MagicMock()
-        social_mod.generate_and_distribute_social_posts = AsyncMock()
         devto_instance = AsyncMock()
         devto_instance.cross_post_by_post_id = AsyncMock()
         devto_mod = MagicMock()
@@ -1297,7 +1296,9 @@ class TestFirePostDistributionHooks:
 
         assert result["fired"] is True
         assert result["status_flipped"] is True
-        assert "social" in result["hooks"]
+        # social distribution moved to the social.generate_drafts atom (Postiz);
+        # gate-clear no longer re-fires it (legacy path removed 2026-06-29).
+        assert "social" not in result["hooks"]
         assert "devto" in result["hooks"]
         assert "static_export" in result["hooks"]
         assert "isr_revalidate" in result["hooks"]
@@ -1318,7 +1319,6 @@ class TestFirePostDistributionHooks:
         db.cloud_pool = None
 
         social_mod = MagicMock()
-        social_mod.generate_and_distribute_social_posts = AsyncMock()
         devto_mod = MagicMock()
         devto_mod.DevToCrossPostService = MagicMock(return_value=AsyncMock(
             cross_post_by_post_id=AsyncMock(),
@@ -1334,8 +1334,9 @@ class TestFirePostDistributionHooks:
         assert "status_flipped" not in result
         assert "static_export" not in result["hooks"]
         assert "isr_revalidate" not in result["hooks"]
-        # social + devto still fire — they're outside the UPDATE-1 branch
-        assert "social" in result["hooks"]
+        # devto still fires — it's outside the UPDATE-1 branch. social moved to
+        # the social.generate_drafts atom (Postiz) — no longer a gate-clear hook.
+        assert "social" not in result["hooks"]
         assert "devto" in result["hooks"]
 
     @pytest.mark.asyncio
@@ -1353,7 +1354,6 @@ class TestFirePostDistributionHooks:
         db.cloud_pool = None
 
         social_mod = MagicMock()
-        social_mod.generate_and_distribute_social_posts = AsyncMock()
         devto_mod = MagicMock()
         devto_mod.DevToCrossPostService = MagicMock(return_value=AsyncMock(
             cross_post_by_post_id=AsyncMock(),
@@ -1369,8 +1369,9 @@ class TestFirePostDistributionHooks:
         assert "podcast" not in result["hooks"]
         assert "video" not in result["hooks"]
         assert "short" not in result["hooks"]
-        # Distribution still fires (only media-gen was removed).
-        assert "social" in result["hooks"]
+        # Distribution still fires (only media-gen was removed). social moved to
+        # the social.generate_drafts atom (Postiz) — no longer a gate-clear hook.
+        assert "social" not in result["hooks"]
         assert "devto" in result["hooks"]
 
     @pytest.mark.asyncio
@@ -1384,26 +1385,23 @@ class TestFirePostDistributionHooks:
         db.pool = pool
         db.cloud_pool = None
 
-        # Social raises, devto succeeds — overall result still fired=True,
-        # devto still in hooks, social NOT in hooks.
-        social_mod = MagicMock()
-        social_mod.generate_and_distribute_social_posts = MagicMock(
-            side_effect=RuntimeError("social import busted"),
-        )
+        # devto raises, the search-engine ping succeeds — overall result still
+        # fired=True, devto NOT in hooks, the sibling hook still fires. Proves
+        # one hook's failure is isolated from the rest. (social used to be the
+        # failing hook here; it moved to the social.generate_drafts atom.)
         devto_mod = MagicMock()
-        devto_mod.DevToCrossPostService = MagicMock(return_value=AsyncMock(
-            cross_post_by_post_id=AsyncMock(),
-        ))
+        devto_mod.DevToCrossPostService = MagicMock(
+            side_effect=RuntimeError("devto busted"),
+        )
 
         with patch.dict(sys.modules, {
-            "services.social_poster": social_mod,
             "services.devto_service": devto_mod,
         }):
             result = await fire_post_distribution_hooks(db, "post-1", site_config=_TEST_SC)
 
         assert result["fired"] is True
-        assert "social" not in result["hooks"]
-        assert "devto" in result["hooks"]
+        assert "devto" not in result["hooks"]
+        assert "search_engines" in result["hooks"]
 
     @pytest.mark.asyncio
     @patch("services.publish_service._should_run_post_publish_hooks", return_value=False)
@@ -1422,7 +1420,6 @@ class TestFirePostDistributionHooks:
         db.cloud_pool = cloud_pool
 
         social_mod = MagicMock()
-        social_mod.generate_and_distribute_social_posts = AsyncMock()
         devto_mod = MagicMock()
         devto_mod.DevToCrossPostService = MagicMock(return_value=AsyncMock(
             cross_post_by_post_id=AsyncMock(),

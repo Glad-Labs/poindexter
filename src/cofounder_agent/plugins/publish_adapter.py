@@ -50,10 +50,9 @@ from typing import Any, Protocol, runtime_checkable
 class PublishResult:
     """Outcome of a single upload to one platform.
 
-    Mirrors the field shape adapters in
-    ``services/social_adapters/`` already return for blog
-    cross-posting, so the consolidated dashboard view doesn't need
-    special-casing per asset family.
+    Mirrors the field shape the ``publishing.*`` handlers already
+    return for blog cross-posting, so the consolidated dashboard view
+    doesn't need special-casing per asset family.
 
     Attributes:
         platform: Adapter name (``"youtube"``, ``"tiktok"``,

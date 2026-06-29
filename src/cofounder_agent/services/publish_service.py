@@ -1202,59 +1202,12 @@ def _queue_sync_and_embed(
     logger.info("[publish_service] Queued sync + embed for post %s", post_id)
 
 
-def _queue_social_distribution(
-    background_tasks,
-    *,
-    task: dict[str, Any],
-    slug: str,
-    seo_description: str,
-    seo_keywords: Any,
-    post_title: str,
-    site_config: SiteConfig,
-    pool=None,
-) -> None:
-    """Phase 9 — queue social-media post generation + distribution (best-effort).
-
-    ``pool`` is threaded through to ``generate_and_distribute_social_posts`` so
-    the row-driven ``publishing_adapters`` dispatch actually runs (#556 — every
-    call site previously dropped it, leaving the dispatch loop permanently inert).
-    """
-    # When Postiz draft flow is enabled, the social.generate_drafts atom
-    # already created drafts in social_post_drafts; skip the old
-    # Telegram/Discord distribute path so we don't double-post.
-    if site_config.get("social_drafts_enabled", "false").lower() in ("true", "1", "yes"):
-        logger.debug("[SOCIAL] social_drafts_enabled — skipping legacy distribute path")
-        return
-
-    try:
-        from services.social_poster import generate_and_distribute_social_posts
-
-        _title = task.get("title") or task.get("topic") or post_title
-        _seo_kw = seo_keywords
-        if isinstance(_seo_kw, str):
-            _seo_kw = [k.strip() for k in _seo_kw.split(",") if k.strip()]
-        if _title and slug:
-            if background_tasks:
-                background_tasks.add_task(
-                    generate_and_distribute_social_posts,
-                    title=_title, slug=slug,
-                    excerpt=seo_description, keywords=_seo_kw,
-                    site_config=site_config,
-                    pool=pool,
-                )
-            else:
-                _spawn_background(
-                    generate_and_distribute_social_posts(
-                        title=_title, slug=slug,
-                        excerpt=seo_description, keywords=_seo_kw,
-                        site_config=site_config,
-                        pool=pool,
-                    ),
-                    name=f"social_posts({slug})",
-                )
-            logger.info("[SOCIAL] Queued social post generation for %s", slug)
-    except Exception as e:
-        logger.warning("[SOCIAL] Social posting failed (non-fatal): %s", e)
+# NOTE: ``_queue_social_distribution`` was removed 2026-06-29 along with the
+# legacy ``generate_and_distribute_social_posts`` direct-adapter path. Social
+# distribution is now owned by the ``social.generate_drafts`` pipeline atom
+# (Postiz drafts → per-post approval), so publish_service no longer triggers
+# social posting on publish. The ``queue_social`` param on
+# ``publish_post_from_task`` is retained as a deprecated no-op for backcompat.
 
 
 def _queue_devto_crosspost(
@@ -1358,7 +1311,10 @@ async def publish_post_from_task(
         task_id: Task UUID string
         publisher: Who triggered the publish (for audit trail)
         trigger_revalidation: Whether to trigger ISR revalidation
-        queue_social: Whether to queue social media post generation
+        queue_social: Deprecated no-op (kept for backcompat). Social
+            distribution is now owned by the ``social.generate_drafts``
+            pipeline atom (Postiz drafts → per-post approval), not triggered
+            on publish.
         draft_mode: Create the posts row at ``status='draft'``. Mutually
             exclusive with ``stage_only``.
         stage_only: Create the posts row at ``status='approved'`` with
@@ -1634,19 +1590,11 @@ async def publish_post_from_task(
     )
 
     # ---------------------------------------------------------------
-    # 9. Queue social media post generation — phase 9
+    # 9. Social media — handled by the social.generate_drafts pipeline atom
+    #    (Postiz drafts → per-post approval), not on publish. The legacy
+    #    on-publish distribute path was removed 2026-06-29; ``queue_social``
+    #    is retained as a deprecated no-op.
     # ---------------------------------------------------------------
-    if queue_social:
-        _queue_social_distribution(
-            background_tasks,
-            task=task,
-            slug=slug,
-            seo_description=seo_description,
-            seo_keywords=seo_keywords,
-            post_title=post_title,
-            site_config=_sc,
-            pool=getattr(db_service, "pool", None),
-        )
 
     # ---------------------------------------------------------------
     # 9b. Queue Dev.to cross-posting (fire-and-forget) — phase 9b
@@ -1802,13 +1750,11 @@ async def fire_post_distribution_hooks(
         )
         return {"fired": False, "reason": "post_not_found"}
 
-    post_title = post_row["title"]
     slug = post_row["slug"]
-    seo_description = post_row["excerpt"] or ""
-    seo_keywords_str = post_row["seo_keywords"] or ""
-    seo_keywords = [k.strip() for k in seo_keywords_str.split(",") if k.strip()]
     # ``post_content`` / ``media_to_generate`` are no longer read here —
-    # media generation moved to the gate driver (poindexter#24).
+    # media generation moved to the gate driver (poindexter#24). ``post_title`` /
+    # ``seo_*`` are no longer read either — the on-publish social distribute path
+    # was removed 2026-06-29 (Postiz drafts own social now).
 
     fired: dict[str, Any] = {"fired": True, "post_id": post_id, "hooks": []}
 
@@ -1890,21 +1836,9 @@ async def fire_post_distribution_hooks(
                 "(non-fatal): %s", e,
             )
 
-    # 1. Social media
-    try:
-        from services.social_poster import generate_and_distribute_social_posts
-        _spawn_background(
-            generate_and_distribute_social_posts(
-                title=post_title, slug=slug,
-                excerpt=seo_description, keywords=seo_keywords,
-                site_config=_sc,
-                pool=pool,
-            ),
-            name=f"social_posts({slug})",
-        )
-        fired["hooks"].append("social")
-    except Exception as e:
-        logger.warning("[SOCIAL] Failed in re-trigger (non-fatal): %s", e)
+    # 1. Social media — owned by the social.generate_drafts pipeline atom
+    #    (Postiz drafts → per-post approval). The legacy on-publish distribute
+    #    path was removed 2026-06-29; nothing to re-fire here on gate-clear.
 
     # 2. Dev.to
     try:
@@ -1957,7 +1891,8 @@ async def publish_now(
     Flips ``status`` ``approved``/``awaiting_gates`` → ``published`` (+
     ``published_at`` / ``distributed_at`` / ``pipeline_tasks`` status sync,
     one transaction), then re-fires distribution (static export / ISR /
-    social / dev.to / search-engine ping).
+    dev.to / search-engine ping). Social distribution is owned by the
+    ``social.generate_drafts`` atom (Postiz), not re-fired here.
 
     Refuses (idempotent no-op) when the post isn't in a publishable state
     (already published / wrong status). ``site_config`` is resolved from
@@ -1987,10 +1922,7 @@ async def publish_now(
         fired["reason"] = "post_not_found"
         return fired
 
-    post_title = post_row["title"]
     slug = post_row["slug"]
-    seo_description = post_row["excerpt"] or ""
-    seo_keywords = [k.strip() for k in (post_row["seo_keywords"] or "").split(",") if k.strip()]
 
     # Flip approved/awaiting_gates → published + sync the linked task, in one
     # transaction. The seam (metadata->>'pipeline_task_id') keeps
@@ -2047,20 +1979,9 @@ async def publish_now(
     except Exception as e:
         logger.warning("[publish_service] publish_now ISR revalidate failed (non-fatal): %s", e)
 
-    try:
-        from services.social_poster import generate_and_distribute_social_posts
-        _spawn_background(
-            generate_and_distribute_social_posts(
-                title=post_title, slug=slug,
-                excerpt=seo_description, keywords=seo_keywords,
-                site_config=_sc,
-                pool=pool,
-            ),
-            name=f"social_posts({slug})",
-        )
-        fired["hooks"].append("social")
-    except Exception as e:
-        logger.warning("[SOCIAL] publish_now social failed (non-fatal): %s", e)
+    # Social media — owned by the social.generate_drafts pipeline atom
+    # (Postiz drafts → per-post approval); not triggered on publish_now.
+    # Legacy on-publish distribute path removed 2026-06-29.
 
     try:
         from services.devto_service import DevToCrossPostService

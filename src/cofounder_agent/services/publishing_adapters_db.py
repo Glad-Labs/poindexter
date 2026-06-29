@@ -2,8 +2,8 @@
 
 Runtime side of migration ``20260509_175447_add_publishing_adapters``:
 this module loads enabled publisher rows from PostgreSQL and exposes
-them as frozen :class:`PublishingAdapterRow` records that
-:func:`services.social_poster._distribute_to_adapters` walks.
+them as frozen :class:`PublishingAdapterRow` records that the
+publishing-surface dispatch (``registry.dispatch("publishing", ...)``) walks.
 
 Design notes
 ------------

@@ -96,18 +96,11 @@ from prometheus_client import (
     generate_latest,
 )
 
-# Imported for its side effect: ``social_poster`` builds its adapter Counter
-# singletons (``poindexter_social_adapter_{posts,errors}_total``) at module
-# import. Pulling them in here guarantees they register on the default
-# prometheus REGISTRY as soon as ``/metrics`` is first served — not only after
-# the first social post. ``social_poster`` is otherwise imported lazily (only
-# from ``publish_service`` at publish time), so without this the series were
-# absent from ``/metrics`` across every worker restart and ``rate()`` /
-# ``increase()`` panels on them gapped (poindexter#455 follow-up).
-from services.social_poster import (  # noqa: F401 — imported for metric registration
-    SOCIAL_ADAPTER_ERRORS_TOTAL,
-    SOCIAL_ADAPTER_POSTS_TOTAL,
-)
+# Imported for its side effect: ``social_drafts`` builds its draft Counter
+# singletons at module import, so pulling them in here registers the series on
+# the default prometheus REGISTRY as soon as ``/metrics`` is first served — not
+# only after the first Postiz draft. (The legacy ``social_poster`` adapter
+# counters were removed 2026-06-29 with the direct social_adapters path.)
 from services.social_drafts import (  # noqa: F401 — imported for metric registration
     SOCIAL_DRAFT_CREATED_TOTAL,
     SOCIAL_DRAFT_FAILED_TOTAL,
