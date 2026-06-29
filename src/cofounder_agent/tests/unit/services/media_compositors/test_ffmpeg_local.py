@@ -717,11 +717,12 @@ class TestBuildBurnCaptionsCmd:
         assert "/videos/captions.srt" in vf
 
     def test_force_style_includes_alignment_for_position(self):
-        # caption_position="top" → libass numpad alignment 8.
+        # force_style uses the OLD SSA alignment convention (not ASS v4+ numpad).
+        # In old SSA: 2=bottom-center, 6=top-center, 10=middle-center.
         cmd = _build_burn_captions_cmd(**self._kwargs(caption_position="top"))
         vf = cmd[cmd.index("-vf") + 1]
         assert "force_style='" in vf
-        assert "Alignment=8" in vf
+        assert "Alignment=6" in vf
 
         cmd = _build_burn_captions_cmd(**self._kwargs(caption_position="bottom"))
         vf = cmd[cmd.index("-vf") + 1]
@@ -729,13 +730,13 @@ class TestBuildBurnCaptionsCmd:
 
         cmd = _build_burn_captions_cmd(**self._kwargs(caption_position="middle"))
         vf = cmd[cmd.index("-vf") + 1]
-        assert "Alignment=5" in vf
+        assert "Alignment=10" in vf
 
     def test_unknown_position_falls_back_to_middle(self):
         cmd = _build_burn_captions_cmd(**self._kwargs(caption_position="diagonal"))
         vf = cmd[cmd.index("-vf") + 1]
-        # Any value not in the {top, middle, bottom} map → middle (5).
-        assert "Alignment=5" in vf
+        # Any value not in the {top, middle, bottom} map → middle (10 in old SSA).
+        assert "Alignment=10" in vf
 
     def test_force_style_includes_font_size(self):
         cmd = _build_burn_captions_cmd(**self._kwargs(caption_font_size=42))

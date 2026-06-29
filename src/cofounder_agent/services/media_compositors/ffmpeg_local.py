@@ -89,13 +89,20 @@ _DEFAULT_NARRATION_TAIL_PAD_S = 0.5
 # scrolling distance on mobile.
 _DEFAULT_CAPTION_POSITION = "middle"  # "top" | "middle" | "bottom"
 _DEFAULT_CAPTION_FONT_SIZE = 28
-# libass alignment numpad: 1=bottom-left, 2=bottom-center, 3=bottom-right,
-# 4=middle-left, 5=middle-center, 6=middle-right,
-# 7=top-left, 8=top-center, 9=top-right
+# force_style uses the OLD SSA alignment convention (not the ASS v4+ numpad layout).
+# When ffmpeg's ``subtitles`` filter converts SRT → ASS it keeps the old-SSA
+# style header, so libass interprets ``Alignment`` as:
+#   1=bottom-left, 2=bottom-center, 3=bottom-right
+#   (4 unused)
+#   5=top-left,    6=top-center,    7=top-right
+#   (8 unused)
+#   9=middle-left, 10=middle-center, 11=middle-right
+# Do NOT use the numpad values (e.g. 5 for "middle-center") — in this context
+# 5 is top-left, which is the bug that made captions appear in the wrong corner.
 _CAPTION_ALIGNMENT: dict[str, int] = {
-    "top": 8,
-    "middle": 5,
-    "bottom": 2,
+    "top":    6,   # old-SSA top-center
+    "middle": 10,  # old-SSA middle-center (NOT 5, which is top-left here)
+    "bottom": 2,   # bottom-center (same in old-SSA and ASS v4+)
 }
 
 # Per-scene Ken Burns motion presets — rotated by scene_idx so adjacent
@@ -509,6 +516,8 @@ def _build_burn_captions_cmd(
         f"Outline=2,"
         f"Shadow=1,"
         f"BorderStyle=1,"              # 1=outline+shadow, 3=opaque box
+        f"MarginL=20,"                 # keep text off the left edge
+        f"MarginR=20,"                 # keep text off the right edge
         f"MarginV=40"
     )
     cmd: list[str] = [binary, "-loglevel", loglevel, "-y"]
