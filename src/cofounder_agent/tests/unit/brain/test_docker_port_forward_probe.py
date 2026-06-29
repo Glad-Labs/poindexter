@@ -413,6 +413,14 @@ class TestUnwatchedContainerSkipsCleanly:
 class TestRestartCapEnforced:
     @pytest.mark.asyncio
     async def test_cap_reached_emits_alert_and_skips_restart(self):
+        """The rolling restart cap still bounds a *flapping* forward — one a
+        restart genuinely recovers each cycle but which keeps re-wedging. (A
+        forward a restart CAN'T recover now trips the adaptive alert-only
+        backoff after the first failed recovery instead — see
+        ``TestAdaptiveGiveUp``.) Here every cycle the external probe is wedged
+        pre-restart and healthy post-restart, so the failure counter resets
+        each cycle and the cap is what eventually limits the churn.
+        """
         # Cap of 2 so we can blow through it in two cycles.
         pool = _make_pool(setting_values={
             pf.WATCH_LIST_KEY: json.dumps([
@@ -422,9 +430,15 @@ class TestRestartCapEnforced:
             pf.RESTART_CAP_WINDOW_MINUTES_KEY: "60",
         })
 
-        # Always stuck — external fails forever, internal ok forever.
+        # Flapping: internal always ok; external fails on the pre-restart probe
+        # and succeeds on the post-restart probe, every cycle.
+        external_calls = {"n": 0}
+
         def fake_http(url, _timeout):
-            return "host.docker.internal" not in url
+            if "host.docker.internal" not in url:
+                return True  # internal hostname always reachable
+            external_calls["n"] += 1
+            return external_calls["n"] % 2 == 0  # odd=pre=fail, even=post=ok
 
         restart_calls: list[str] = []
 
@@ -435,7 +449,7 @@ class TestRestartCapEnforced:
         # All within the same minute so the rolling window holds.
         now = 1_000_000.0
 
-        # Cycle 1 — restart attempt 1 (cap not yet reached).
+        # Cycle 1 — restart attempt 1, recovers (counter resets).
         await pf.run_docker_port_forward_probe(
             pool,
             http_probe_fn=fake_http,
@@ -445,7 +459,7 @@ class TestRestartCapEnforced:
             notify_fn=lambda **k: None,
             now_fn=lambda: now,
         )
-        # Cycle 2 — restart attempt 2 (now at cap).
+        # Cycle 2 — restart attempt 2, recovers (now at cap).
         await pf.run_docker_port_forward_probe(
             pool,
             http_probe_fn=fake_http,
@@ -702,6 +716,7 @@ class TestWatchListParsing:
             "path": "/",
             "internal_hostname": "pyroscope",
             "probe_type": "http",
+            "recovery_action": "restart",
         }]
 
     def test_explicit_internal_hostname_overrides_heuristic(self):
@@ -784,12 +799,74 @@ class TestWatchListParsing:
         ]))
         assert out[0]["probe_type"] == "postgres"
         assert out[0]["host_port"] == 5433
+        # A DB entry defaults to alert-only recovery (2026-06-29 follow-up).
+        assert out[0]["recovery_action"] == "alert_only"
 
     def test_unknown_probe_type_falls_back_to_http(self):
         out = pf._parse_watch_list(json.dumps([
             {"container": "poindexter-x", "port": 1, "probe_type": "carrier-pigeon"},
         ]))
         assert out[0]["probe_type"] == "http"
+
+    # --- recovery_action resolution (2026-06-29 DB-wedge follow-up) ---
+    # A `docker restart` re-establishes a stuck *per-container* wslrelay
+    # forward (the HTTP case), but it CANNOT fix a wedge in Docker Desktop's
+    # *host-side* port proxy and is destructive for a DB (it severs every
+    # consumer's live connection). So the recovery action is a property of the
+    # entry: HTTP → restart, DB → alert-only, with a per-entry override.
+
+    def test_http_entry_defaults_recovery_action_restart(self):
+        out = pf._parse_watch_list(json.dumps([
+            {"container": "poindexter-grafana", "port": 3000, "path": "/"},
+        ]))
+        assert out[0]["recovery_action"] == "restart"
+
+    def test_postgres_entry_defaults_recovery_action_alert_only(self):
+        out = pf._parse_watch_list(json.dumps([
+            {
+                "container": "poindexter-postgres-local",
+                "internal_hostname": "postgres-local",
+                "port": 5432,
+                "host_port": 5433,
+                "probe_type": "postgres",
+            },
+        ]))
+        assert out[0]["recovery_action"] == "alert_only"
+
+    def test_explicit_recovery_action_override(self):
+        # The action is a watch_list field, so it's app_settings-tunable: a DB
+        # entry can opt back into restart; an HTTP entry can opt into alert-only.
+        out = pf._parse_watch_list(json.dumps([
+            {
+                "container": "poindexter-postgres-local",
+                "port": 5432,
+                "host_port": 5433,
+                "probe_type": "postgres",
+                "recovery_action": "restart",
+            },
+            {
+                "container": "poindexter-grafana",
+                "port": 3000,
+                "recovery_action": "alert_only",
+            },
+        ]))
+        assert out[0]["recovery_action"] == "restart"
+        assert out[1]["recovery_action"] == "alert_only"
+
+    def test_unknown_recovery_action_falls_back_to_probe_default(self):
+        # Unknown value → fall back to the probe_type default; never crash,
+        # never silently pick the destructive action.
+        out = pf._parse_watch_list(json.dumps([
+            {"container": "poindexter-x", "port": 1, "recovery_action": "self-destruct"},
+            {
+                "container": "poindexter-postgres-local",
+                "port": 5432,
+                "probe_type": "postgres",
+                "recovery_action": "nonsense",
+            },
+        ]))
+        assert out[0]["recovery_action"] == "restart"      # http default
+        assert out[1]["recovery_action"] == "alert_only"   # postgres default
 
 
 # ---------------------------------------------------------------------------
@@ -1107,8 +1184,66 @@ _PG_ENTRY = {
 @pytest.mark.unit
 class TestPostgresWatchEntry:
     @pytest.mark.asyncio
-    async def test_pg_wedge_internal_ok_external_fail_restarts(self):
+    async def test_pg_wedge_defaults_to_alert_only_no_restart(self):
+        """2026-06-29 follow-up: a postgres entry's host-port wedge must NOT
+        trigger ``docker restart`` by default. Restarting the DB cannot fix a
+        host-side Docker Desktop / WSL2 NAT port-proxy wedge and severs every
+        internal consumer's live connection (the 2026-06-29 incident that hung
+        the brain and took the alert plane down ~45 min). Instead the probe
+        escalates via ``alert_events`` + ``notify_operator`` with guidance that
+        only the host operator can clear the proxy.
+        """
         pool = _make_pool(setting_values={pf.WATCH_LIST_KEY: json.dumps([_PG_ENTRY])})
+
+        def fake_pg(host, _port, _timeout):
+            # internal ok, external wedged — the stuck-port-forward signature.
+            return host != "host.docker.internal"
+
+        def fake_http(_url, _timeout):
+            raise AssertionError("http probe must not run for postgres entry")
+
+        restart_calls: list[str] = []
+        notify_calls: list[dict] = []
+
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            http_probe_fn=fake_http,
+            pg_probe_fn=fake_pg,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            sleep_fn=lambda s: None,
+            notify_fn=lambda **k: notify_calls.append(k),
+            now_fn=lambda: 1_000_000.0,
+        )
+
+        svc = summary["services"]["poindexter-postgres-local"]
+        assert svc["status"] == "alert_only", summary
+        assert svc["reason"] == "db_recovery_policy"
+        assert summary["ok"] is False
+        # The DB was NOT restarted — the entire point of the change.
+        assert restart_calls == []
+        # alert_events row written so the dispatcher pages the operator.
+        assert "docker_port_forward_restart_skipped" in _executed_alertnames(pool)
+        # audit row carries the reason for the Grafana/timeline view.
+        skip_payloads = [
+            p for p in _executed_audit_payloads(pool)
+            if p["event"] == "docker_port_forward_restart_skipped"
+        ]
+        assert skip_payloads, _executed_audit_events(pool)
+        assert skip_payloads[0]["payload"]["reason"] == "db_recovery_policy"
+        # operator paged with actionable host-side guidance.
+        assert notify_calls, "expected a notify_operator page"
+        guidance = (notify_calls[0].get("detail") or "").lower()
+        assert "docker desktop" in guidance or "wsl" in guidance, notify_calls
+
+    @pytest.mark.asyncio
+    async def test_pg_wedge_restart_override_still_restarts(self):
+        """An operator who explicitly sets ``recovery_action="restart"`` on a
+        DB entry gets the old restart-and-recover path back — the per-entry
+        override is honored, so the policy stays tunable.
+        """
+        entry = {**_PG_ENTRY, "recovery_action": "restart"}
+        pool = _make_pool(setting_values={pf.WATCH_LIST_KEY: json.dumps([entry])})
         external = iter([False, True])  # fail, then recover post-restart
 
         def fake_pg(host, _port, _timeout):
@@ -1116,14 +1251,10 @@ class TestPostgresWatchEntry:
                 return next(external)
             return True  # internal always ok
 
-        def fake_http(_url, _timeout):
-            raise AssertionError("http probe must not run for postgres entry")
-
         restart_calls: list[str] = []
 
         summary = await pf.run_docker_port_forward_probe(
             pool,
-            http_probe_fn=fake_http,
             pg_probe_fn=fake_pg,
             container_exists_fn=lambda c: True,
             restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
@@ -1174,3 +1305,180 @@ class TestPostgresWatchEntry:
         assert svc["status"] == "ok"
         assert svc["external_url"] == "postgres://host.docker.internal:5433"
         assert restart_calls == []
+
+
+# ---------------------------------------------------------------------------
+# Adaptive give-up — a restart that does NOT recover the forward switches the
+# container to alert-only with a backoff, instead of burning the full restart
+# cap on a remedy already proven ineffective (2026-06-29 DB-wedge follow-up).
+# Protects HTTP entries too: on 2026-06-29 the host port-publish subsystem was
+# broadly degrading (:8002 / :3000 wedged the same host-side way), so a restart
+# couldn't fix those either.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAdaptiveGiveUp:
+    @pytest.mark.asyncio
+    async def test_failed_recovery_switches_to_alert_only_next_cycle(self):
+        """HTTP entry whose external forward never recovers: cycle 1 restarts
+        once (``recovery_failed``); the container is then in alert-only backoff
+        so cycle 2 does NOT restart again. This is the core fix — we no longer
+        burn the full restart cap on a wedge a restart can't clear.
+        """
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([
+                {"container": "poindexter-grafana", "port": 3000, "path": "/"},
+            ]),
+            pf.MAX_FAILED_RECOVERIES_KEY: "1",
+            pf.ALERT_ONLY_BACKOFF_MINUTES_KEY: "60",
+        })
+
+        def fake_http(url, _t):
+            # internal always ok; external never recovers.
+            return "host.docker.internal" not in url
+
+        restart_calls: list[str] = []
+        now = 1_000_000.0
+
+        # Cycle 1 — stuck → one restart → recovery fails → backoff armed.
+        s1 = await pf.run_docker_port_forward_probe(
+            pool,
+            http_probe_fn=fake_http,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            sleep_fn=lambda s: None,
+            notify_fn=lambda **k: None,
+            now_fn=lambda: now,
+        )
+        assert s1["services"]["poindexter-grafana"]["status"] == "recovery_failed"
+        assert restart_calls == ["poindexter-grafana"]
+
+        # Cycle 2 — backoff active → alert-only, NO second restart.
+        s2 = await pf.run_docker_port_forward_probe(
+            pool,
+            http_probe_fn=fake_http,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            sleep_fn=lambda s: None,
+            notify_fn=lambda **k: None,
+            now_fn=lambda: now + 60.0,  # 1 min later — within the 60-min backoff
+        )
+        svc = s2["services"]["poindexter-grafana"]
+        assert svc["status"] == "alert_only", s2
+        assert svc["reason"] == "restart_ineffective_backoff"
+        # The cap was NOT consumed — still just the one restart.
+        assert restart_calls == ["poindexter-grafana"]
+        assert "docker_port_forward_restart_skipped" in _executed_alertnames(pool)
+
+    @pytest.mark.asyncio
+    async def test_alert_only_does_not_consume_restart_cap(self):
+        """A container in alert-only (here a postgres DB) never records a
+        restart, so the rolling restart cap stays untouched no matter how many
+        cycles the wedge persists.
+        """
+        pool = _make_pool(setting_values={pf.WATCH_LIST_KEY: json.dumps([_PG_ENTRY])})
+
+        def fake_pg(host, _p, _t):
+            return host != "host.docker.internal"  # internal ok, external wedged
+
+        for i in range(5):
+            await pf.run_docker_port_forward_probe(
+                pool,
+                pg_probe_fn=fake_pg,
+                container_exists_fn=lambda c: True,
+                restart_fn=lambda c: (True, "ok"),
+                sleep_fn=lambda s: None,
+                notify_fn=lambda **k: None,
+                now_fn=lambda: 1_000_000.0 + i,
+            )
+        # No restart timestamps recorded for the DB container.
+        assert pf._restart_state.get("poindexter-postgres-local") in (None, [])
+
+    @pytest.mark.asyncio
+    async def test_backoff_expires_allows_restart_again(self):
+        """After the alert-only backoff window elapses the probe is willing to
+        try one more restart (in case the wedge became the recoverable
+        per-container kind). The backoff bounds churn; it doesn't disable
+        recovery forever.
+        """
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([
+                {"container": "poindexter-grafana", "port": 3000, "path": "/"},
+            ]),
+            pf.MAX_FAILED_RECOVERIES_KEY: "1",
+            pf.ALERT_ONLY_BACKOFF_MINUTES_KEY: "60",
+        })
+
+        def fake_http(url, _t):
+            return "host.docker.internal" not in url  # never recovers
+
+        restart_calls: list[str] = []
+
+        def run_at(t):
+            return pf.run_docker_port_forward_probe(
+                pool,
+                http_probe_fn=fake_http,
+                container_exists_fn=lambda c: True,
+                restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+                sleep_fn=lambda s: None,
+                notify_fn=lambda **k: None,
+                now_fn=lambda: t,
+            )
+
+        base = 1_000_000.0
+        await run_at(base)            # restart #1, backoff until base+3600
+        await run_at(base + 60.0)     # within backoff → alert_only
+        assert restart_calls == ["poindexter-grafana"]
+
+        s3 = await run_at(base + 3601.0)  # backoff expired → restart allowed
+        assert restart_calls == ["poindexter-grafana", "poindexter-grafana"]
+        assert s3["services"]["poindexter-grafana"]["status"] == "recovery_failed"
+
+    @pytest.mark.asyncio
+    async def test_healthy_cycle_clears_backoff(self):
+        """Once the operator clears the host proxy and the external probe passes
+        again, the failure/backoff bookkeeping resets so a future wedge earns a
+        fresh restart attempt rather than going straight to alert-only.
+        """
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([
+                {"container": "poindexter-grafana", "port": 3000, "path": "/"},
+            ]),
+            pf.MAX_FAILED_RECOVERIES_KEY: "1",
+        })
+
+        external_ok = {"val": False}
+
+        def fake_http(url, _t):
+            if "host.docker.internal" not in url:
+                return True  # internal always ok
+            return external_ok["val"]
+
+        restart_calls: list[str] = []
+
+        def run_at(t):
+            return pf.run_docker_port_forward_probe(
+                pool,
+                http_probe_fn=fake_http,
+                container_exists_fn=lambda c: True,
+                restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+                sleep_fn=lambda s: None,
+                notify_fn=lambda **k: None,
+                now_fn=lambda: t,
+            )
+
+        # Cycle 1: wedged → restart #1 fails → backoff armed.
+        await run_at(1_000_000.0)
+        assert restart_calls == ["poindexter-grafana"]
+        # Cycle 2: backoff → alert_only, no restart.
+        await run_at(1_000_060.0)
+        assert restart_calls == ["poindexter-grafana"]
+        # Cycle 3: operator cleared the proxy — external healthy again → reset.
+        external_ok["val"] = True
+        s3 = await run_at(1_000_120.0)
+        assert s3["services"]["poindexter-grafana"]["status"] == "ok"
+        # Cycle 4: a fresh wedge → backoff was cleared, so we restart again.
+        external_ok["val"] = False
+        await run_at(1_000_180.0)
+        assert restart_calls == ["poindexter-grafana", "poindexter-grafana"]

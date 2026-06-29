@@ -12,28 +12,54 @@ Windows wslrelay → ``com.docker.backend`` forwarding chain is broken:
 - BUT the same service is reachable normally via the container's DNS
   hostname from inside the Docker network (200 OK).
 
-Restarting the affected container re-establishes the port forward. The
-operator-side pattern was stumbled into 2026-04-29 across four
-containers simultaneously (Pyroscope, GlitchTip, Alertmanager,
-pgAdmin) — every container we checked was reachable from inside the
-network but unreachable from the host. ``docker restart`` on each
-recovered them in seconds.
+Restarting the affected container re-establishes the port forward **when the
+wedge is the per-container kind**. The operator-side pattern was stumbled into
+2026-04-29 across four containers simultaneously (Pyroscope, GlitchTip,
+Alertmanager, pgAdmin) — every container we checked was reachable from inside
+the network but unreachable from the host. ``docker restart`` on each recovered
+them in seconds.
+
+**But ``docker restart`` is NOT a universal remedy.** It re-spawns a stuck
+*per-container* wslrelay forward; it cannot fix a wedge that lives in Docker
+Desktop's *host-side* port proxy, and for a database container it is actively
+harmful — restarting severs every internal consumer's live connection. On
+2026-06-29 the host port-publish subsystem broadly degraded (``:5433``,
+``:8002``, ``:3000`` all wedged); the probe restarted ``poindexter-postgres-local``
+4+ times and EVERY post-restart re-probe still failed, while the connection
+churn hung the brain daemon and took the alert plane down ~45 min. So the
+recovery action is now a property of the situation, not a constant.
 
 This probe encodes the detect-and-recover loop:
 
 1. For each watched service, probe ``http://<internal_hostname>:<port><path>``
    AND ``http://host.docker.internal:<port><path>`` with short timeouts
-   (default 3s).
-2. If the internal probe returns 2xx AND the external probe fails →
-   stuck port forward → ``docker restart <container>``.
-3. After the configured recovery wait (default 5s), re-probe the
-   external endpoint to confirm recovery.
-4. Write an ``audit_log`` row tagged with ``event_type='docker_port_forward_recovered'``
-   either way so the operator can track frequency in Grafana.
+   (default 3s). ``probe_type="postgres"`` entries use a credential-free libpq
+   ``SSLRequest`` reachability check instead of HTTP.
+2. If the internal probe succeeds AND the external probe fails → stuck port
+   forward. The remedy depends on the entry's ``recovery_action``:
+   - ``"restart"`` (HTTP sidecars, the default) → ``docker restart <container>``
+     then re-probe after the recovery wait to confirm. Fixes the per-container
+     forward (the 2026-04-29 case).
+   - ``"alert_only"`` (database containers, the default) → do NOT restart;
+     escalate via ``alert_events`` + ``notify_operator`` with guidance that the
+     host operator must clear the Docker Desktop / WSL2 NAT proxy (restart
+     Docker Desktop, or ``wsl --shutdown``). A restart can't help and only
+     churns consumers.
+3. Adaptive give-up: even for ``"restart"`` entries, if a restart is accepted
+   but the external re-probe still fails, the failure is counted; after
+   ``max_failed_recoveries_before_alert_only`` (default 1) consecutive failed
+   recoveries the container switches to alert-only for
+   ``alert_only_backoff_minutes`` (default 60) instead of burning the restart
+   cap on a remedy already proven ineffective. (A healthy/recovered cycle
+   resets the counter.)
+4. Write an ``audit_log`` row each cycle (``docker_port_forward_recovered`` /
+   ``docker_port_forward_restart_skipped`` / etc.) so the operator can track
+   frequency in Grafana.
 5. Cap restarts per container at N within an M-minute rolling window
-   (defaults: 3 per 60 min). When the cap fires, suppress further
-   restarts and write an ``alert_events`` row + a Telegram-routed
-   notify so the operator hears about the persistent failure.
+   (defaults: 3 per 60 min) for the flapping case a restart DOES recover but
+   which keeps re-wedging. When the cap fires (or a restart is deliberately
+   skipped) write an ``alert_events`` row + a routed notify so the operator
+   hears about the persistent failure.
 
 Design parity with ``brain/backup_watcher.py`` and
 ``brain/smart_monitor.py``:
@@ -81,6 +107,14 @@ PROBE_TIMEOUT_SECONDS_KEY = "docker_port_forward_probe_timeout_seconds"
 RECOVERY_WAIT_SECONDS_KEY = "docker_port_forward_recovery_wait_seconds"
 RESTART_CAP_PER_WINDOW_KEY = "docker_port_forward_restart_cap_per_window"
 RESTART_CAP_WINDOW_MINUTES_KEY = "docker_port_forward_restart_cap_window_minutes"
+# 2026-06-29 follow-up — adaptive give-up. After this many CONSECUTIVE failed
+# recoveries for a container (restart accepted but the external re-probe still
+# failed), stop restarting and switch to alert-only for the backoff window
+# below. A restart that didn't recover the forward is proven ineffective (the
+# wedge is host-side, in Docker Desktop's port proxy), so hammering the
+# container again only churns its consumers.
+MAX_FAILED_RECOVERIES_KEY = "docker_port_forward_max_failed_recoveries_before_alert_only"
+ALERT_ONLY_BACKOFF_MINUTES_KEY = "docker_port_forward_alert_only_backoff_minutes"
 
 DEFAULT_ENABLED = True
 DEFAULT_POLL_INTERVAL_MINUTES = 5
@@ -88,6 +122,8 @@ DEFAULT_PROBE_TIMEOUT_SECONDS = 3
 DEFAULT_RECOVERY_WAIT_SECONDS = 5
 DEFAULT_RESTART_CAP_PER_WINDOW = 3
 DEFAULT_RESTART_CAP_WINDOW_MINUTES = 60
+DEFAULT_MAX_FAILED_RECOVERIES = 1
+DEFAULT_ALERT_ONLY_BACKOFF_MINUTES = 60
 
 # Container-name prefix the brain expects for its docker stack. The
 # internal-DNS hostname is derived by stripping this prefix (per the
@@ -122,11 +158,30 @@ _restart_state: dict[str, list[float]] = {}
 # remains in effect.
 _cap_alert_emitted: dict[str, bool] = {}
 
+# Per-container count of CONSECUTIVE failed recoveries (restart accepted but
+# the external re-probe still failed). Reset to 0 on a healthy/recovered cycle.
+# Drives the adaptive give-up (2026-06-29 follow-up).
+_consecutive_recovery_failures: dict[str, int] = {}
+
+# Per-container epoch (time.time()) after which the probe is willing to try
+# restarting again. Set when consecutive failed recoveries reach the configured
+# max; while ``now < _alert_only_until[container]`` the container escalates
+# (alert-only) instead of restarting. Cleared on a healthy/recovered cycle.
+_alert_only_until: dict[str, float] = {}
+
+# Per-container dedup flag: True once a direct operator notify has fired for the
+# current alert-only episode, so a persistent wedge pages once rather than every
+# cycle. Cleared on a healthy/recovered cycle (mirrors _cap_alert_emitted).
+_alert_only_notified: dict[str, bool] = {}
+
 
 def _reset_state() -> None:
     """Test helper — wipe the restart bookkeeping."""
     _restart_state.clear()
     _cap_alert_emitted.clear()
+    _consecutive_recovery_failures.clear()
+    _alert_only_until.clear()
+    _alert_only_notified.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -237,6 +292,22 @@ def _parse_watch_list(raw: Any) -> list[dict[str, Any]]:
                 "defaulting to 'http'", container, entry.get("probe_type"),
             )
             probe_type = "http"
+        # Recovery action: a `docker restart` re-establishes a stuck
+        # per-container HTTP forward, but it CANNOT fix a host-side Docker
+        # Desktop / WSL2 NAT port-proxy wedge and is destructive for a DB (it
+        # severs every consumer's live connection — the 2026-06-29 incident).
+        # So HTTP entries default to restart, every non-HTTP (DB) probe_type to
+        # alert-only. An explicit per-entry value overrides the default, keeping
+        # the policy app_settings-tunable.
+        recovery_action = str(entry.get("recovery_action") or "").strip().lower()
+        if recovery_action not in ("restart", "alert_only"):
+            if recovery_action:
+                logger.warning(
+                    "[PORT_FORWARD] %s entry has unknown recovery_action=%r — "
+                    "defaulting by probe_type (%s)",
+                    container, entry.get("recovery_action"), probe_type,
+                )
+            recovery_action = "restart" if probe_type == "http" else "alert_only"
         out.append({
             "container": str(container),
             "port": port_int,
@@ -244,6 +315,7 @@ def _parse_watch_list(raw: Any) -> list[dict[str, Any]]:
             "path": str(path),
             "internal_hostname": str(internal_hostname),
             "probe_type": probe_type,
+            "recovery_action": recovery_action,
         })
     return out
 
@@ -280,6 +352,14 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         await _read_setting(pool, RESTART_CAP_WINDOW_MINUTES_KEY, DEFAULT_RESTART_CAP_WINDOW_MINUTES),
         DEFAULT_RESTART_CAP_WINDOW_MINUTES,
     )
+    max_failed_recoveries = _coerce_int(
+        await _read_setting(pool, MAX_FAILED_RECOVERIES_KEY, DEFAULT_MAX_FAILED_RECOVERIES),
+        DEFAULT_MAX_FAILED_RECOVERIES,
+    )
+    alert_only_backoff_minutes = _coerce_int(
+        await _read_setting(pool, ALERT_ONLY_BACKOFF_MINUTES_KEY, DEFAULT_ALERT_ONLY_BACKOFF_MINUTES),
+        DEFAULT_ALERT_ONLY_BACKOFF_MINUTES,
+    )
 
     return {
         "enabled": enabled,
@@ -289,6 +369,8 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         "recovery_wait_seconds": recovery_wait_seconds,
         "restart_cap_per_window": restart_cap_per_window,
         "restart_cap_window_minutes": restart_cap_window_minutes,
+        "max_failed_recoveries_before_alert_only": max_failed_recoveries,
+        "alert_only_backoff_minutes": alert_only_backoff_minutes,
     }
 
 
@@ -609,22 +691,173 @@ async def _emit_recovery_failed_alert(
         return False
 
 
+async def _emit_restart_skipped_alert(
+    pool: Any,
+    *,
+    container: str,
+    reason: str,
+    detail: str,
+) -> bool:
+    """Insert a firing ``alert_events`` row when a stuck forward was detected
+    but the probe DELIBERATELY did not restart the container — either because
+    it's a DB whose wedge a restart can't fix (``reason='db_recovery_policy'``)
+    or because a prior restart already failed to recover it
+    (``reason='restart_ineffective_backoff'``). Distinct alertname from the cap
+    / recovery-failed paths so the operator sees "the probe chose not to
+    restart" as its own failure mode. ``reason`` rides in the labels for
+    routing / dashboards.
+    """
+    alertname = "docker_port_forward_restart_skipped"
+    labels = {
+        "source": "brain.docker_port_forward_probe",
+        "container": container,
+        "category": "docker",
+        "reason": reason,
+    }
+    annotations = {
+        "summary": (
+            f"Port-forward wedged for {container}; restart skipped ({reason})"
+        ),
+        "description": detail,
+    }
+    # Stable per (alertname, container) so downstream dedup collapses the
+    # every-cycle repeats (Glad-Labs/poindexter#428).
+    fingerprint = f"docker-port-forward-restart-skipped-{container}"
+    try:
+        await pool.execute(
+            """
+            INSERT INTO alert_events (
+                alertname, severity, status, labels, annotations,
+                starts_at, fingerprint
+            ) VALUES (
+                $1, 'warning', 'firing', $2::jsonb, $3::jsonb, NOW(), $4
+            )
+            """,
+            alertname,
+            json.dumps(labels),
+            json.dumps(annotations),
+            fingerprint,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[PORT_FORWARD] Failed to write restart_skipped alert for %s: %s",
+            container, exc,
+        )
+        return False
+
+
+async def _escalate_alert_only(
+    pool: Any,
+    *,
+    container: str,
+    internal_url: str,
+    external_url: str,
+    reason: str,
+    config: dict[str, Any],
+    notify_fn: Callable[..., None],
+) -> dict[str, Any]:
+    """Detected a stuck forward but deliberately did NOT restart. Write the
+    ``alert_events`` + ``audit_log`` rows and page the operator once per
+    episode, then return an ``alert_only`` summary. Never restarts the
+    container and never touches the restart cap.
+    """
+    failures = _consecutive_recovery_failures.get(container, 0)
+    backoff_minutes = int(config["alert_only_backoff_minutes"])
+    if reason == "db_recovery_policy":
+        title = (
+            f"Docker port-forward wedged for {container} — DB restart skipped, "
+            f"operator action needed"
+        )
+        detail = (
+            f"Stuck port forward detected on {container} (internal "
+            f"{internal_url} reachable, external {external_url} failing), but "
+            f"{container} is a database container. A `docker restart` cannot "
+            f"fix a host-side Docker Desktop / WSL2 NAT port-proxy wedge and "
+            f"would sever every internal consumer's live connection for zero "
+            f"recovery benefit — so no restart was attempted. The host operator "
+            f"must clear the proxy: restart Docker Desktop, or `wsl --shutdown` "
+            f"then relaunch."
+        )
+    else:  # restart_ineffective_backoff
+        title = (
+            f"Docker port-forward wedged for {container} — restart proven "
+            f"ineffective, backing off"
+        )
+        detail = (
+            f"Stuck port forward detected on {container} (internal "
+            f"{internal_url} reachable, external {external_url} failing). A "
+            f"prior `docker restart` did not recover the forward ({failures} "
+            f"consecutive failed recoveries), so the probe switched to "
+            f"alert-only for {backoff_minutes} min rather than churning the "
+            f"container again. The wedge is likely host-side (Docker Desktop "
+            f"port proxy) — restart Docker Desktop / `wsl --shutdown`. A restart "
+            f"will be retried after the backoff window elapses."
+        )
+
+    await _emit_restart_skipped_alert(
+        pool, container=container, reason=reason, detail=detail,
+    )
+    await _emit_audit_event(
+        pool,
+        "docker_port_forward_restart_skipped",
+        detail,
+        extra={
+            "container": container,
+            "internal_url": internal_url,
+            "external_url": external_url,
+            "reason": reason,
+            "consecutive_recovery_failures": failures,
+        },
+    )
+    # Page once per episode. The alert_events row above is the every-cycle
+    # record (stable fingerprint → dispatcher dedups); this direct notify is the
+    # immediate heads-up, deduped via _alert_only_notified so a persistent wedge
+    # doesn't re-page every 5-min cycle. Cleared on a healthy/recovered cycle.
+    if not _alert_only_notified.get(container, False):
+        try:
+            notify_fn(
+                title=title,
+                detail=detail,
+                source="brain.docker_port_forward_probe",
+                severity="warning",
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("[PORT_FORWARD] notify_fn failed: %s", exc)
+        _alert_only_notified[container] = True
+
+    return {
+        "ok": False,
+        "status": "alert_only",
+        "reason": reason,
+        "container": container,
+        "internal_url": internal_url,
+        "external_url": external_url,
+    }
+
+
 async def _emit_audit_event(
     pool: Any,
     event: str,
     detail: str,
     *,
     extra: dict[str, Any] | None = None,
+    severity: str | None = None,
 ) -> None:
     """Same shape as backup_watcher's audit emitter so the timeline
     shows port-forward activity beside the rest of the brain's probes.
+
+    ``severity`` defaults to a keyword heuristic over the event name; pass it
+    explicitly to override (e.g. a skip event that needs ``warning``).
     """
     payload: dict[str, Any] = {"detail": detail}
     if extra:
         payload.update(extra)
-    severity = "warning" if (
-        "capped" in event or "failed" in event or "stuck" in event
-    ) else "info"
+    if severity is None:
+        severity = "warning" if (
+            "capped" in event or "failed" in event or "stuck" in event
+            or "skipped" in event
+        ) else "info"
     try:
         await pool.execute(
             """
@@ -719,8 +952,14 @@ async def _check_one_service(
 
     ok_external = _probe_external()
 
-    # 1) Both ok → happy path.
+    # 1) Both ok → happy path. Clear any recovery bookkeeping: a healthy cycle
+    # means the wedge cleared (operator fixed the host proxy, or it was
+    # transient), so a future wedge earns a fresh restart attempt + a fresh
+    # page rather than inheriting a stale backoff.
     if ok_internal and ok_external:
+        _consecutive_recovery_failures.pop(container, None)
+        _alert_only_until.pop(container, None)
+        _alert_only_notified.pop(container, None)
         return {
             "ok": True,
             "status": "ok",
@@ -773,8 +1012,40 @@ async def _check_one_service(
         }
 
     # 4) Internal ok, external fails → THIS is the stuck-port-forward
-    # signature. Check the restart cap before kicking the container.
+    # signature.
     now = now_fn()
+
+    # 4a) Decide whether a `docker restart` is even the right remedy. Two
+    # signals say it isn't — both escalate (alert-only) instead of churning the
+    # container, and neither touches the restart cap:
+    #   - recovery_action == "alert_only" (DB entries, by default): a restart
+    #     can't fix a host-side Docker Desktop / WSL2 NAT port-proxy wedge and
+    #     severs every consumer's live connection (the 2026-06-29 incident).
+    #   - the container is in alert-only backoff because a prior restart already
+    #     failed to recover the forward — proven ineffective, so don't burn the
+    #     restart cap on it (also covers HTTP entries when the host port subsystem
+    #     broadly degrades, as :8002 / :3000 did on 2026-06-29).
+    recovery_action = service.get(
+        "recovery_action", "restart" if probe_type == "http" else "alert_only"
+    )
+    in_backoff = now < _alert_only_until.get(container, 0.0)
+    skip_reason: str | None = None
+    if recovery_action == "alert_only":
+        skip_reason = "db_recovery_policy"
+    elif in_backoff:
+        skip_reason = "restart_ineffective_backoff"
+    if skip_reason is not None:
+        return await _escalate_alert_only(
+            pool,
+            container=container,
+            internal_url=internal_url,
+            external_url=external_url,
+            reason=skip_reason,
+            config=config,
+            notify_fn=notify_fn,
+        )
+
+    # 4b) Restart is the configured remedy — check the rolling cap first.
     restarts_done = _restarts_in_window(container, now=now, window_seconds=window_seconds)
     if restarts_done >= cap:
         # Only emit the cap alert once per active window — the flag is
@@ -909,6 +1180,12 @@ async def _check_one_service(
     )
 
     if recovered:
+        # The restart worked — clear the give-up bookkeeping so the cap (not the
+        # backoff) governs any future flapping, and a future failed recovery
+        # starts its count fresh.
+        _consecutive_recovery_failures.pop(container, None)
+        _alert_only_until.pop(container, None)
+        _alert_only_notified.pop(container, None)
         return {
             "ok": True,
             "status": "recovered",
@@ -919,14 +1196,34 @@ async def _check_one_service(
             "retried_n": retried_n,
         }
 
-    # 7) Restart accepted but external probe still failing. Page the
-    # operator via alert_events so they know the auto-recovery isn't
-    # working for this container.
+    # 7) Restart accepted but external probe still failing. Count the failed
+    # recovery; once consecutive failures reach the configured max, arm the
+    # alert-only backoff so the NEXT cycle escalates instead of restarting again
+    # (the 2026-06-29 lesson: a restart that doesn't recover the forward is
+    # proven ineffective — the wedge is host-side). Page via alert_events either
+    # way so the operator knows auto-recovery isn't working.
+    failures = _consecutive_recovery_failures.get(container, 0) + 1
+    _consecutive_recovery_failures[container] = failures
+    max_failed = int(config["max_failed_recoveries_before_alert_only"])
+    backoff_minutes = int(config["alert_only_backoff_minutes"])
+    backed_off = failures >= max_failed
+    if backed_off:
+        _alert_only_until[container] = now + backoff_minutes * 60.0
     detail = (
         f"Restarted {container} but {external_url} still not reachable "
         f"after {recovery_wait:.0f}s recovery wait. The stuck-port-forward "
-        f"recovery did not work — investigate the container manually."
+        f"recovery did not work"
     )
+    if backed_off:
+        detail += (
+            f" ({failures} consecutive failed recoveries) — switching to "
+            f"alert-only for {backoff_minutes} min. The wedge is likely "
+            f"host-side (Docker Desktop port proxy), which a container restart "
+            f"can't fix; clear it with a Docker Desktop restart / `wsl "
+            f"--shutdown`."
+        )
+    else:
+        detail += " — investigate the container manually."
     logger.warning("[PORT_FORWARD] %s", detail)
     await _emit_recovery_failed_alert(
         pool,
@@ -941,6 +1238,7 @@ async def _check_one_service(
         "external_url": external_url,
         "recovery_ms": recovery_ms,
         "retried_n": retried_n,
+        "consecutive_recovery_failures": failures,
     }
 
 
@@ -1070,9 +1368,12 @@ class DockerPortForwardProbe:
 
     name: str = "docker_port_forward"
     description: str = (
-        "Detects stuck Docker Desktop port forwards (TCP up, HTTP "
-        "broken via host.docker.internal but reachable via container "
-        "hostname) and auto-recovers via `docker restart`."
+        "Detects stuck Docker Desktop port forwards (TCP up, but "
+        "host.docker.internal unreachable while the container hostname "
+        "works). HTTP sidecars auto-recover via `docker restart`; database "
+        "containers (and any container a restart fails to recover) escalate "
+        "to the operator instead, since a restart can't fix a host-side proxy "
+        "wedge and churns consumers."
     )
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 

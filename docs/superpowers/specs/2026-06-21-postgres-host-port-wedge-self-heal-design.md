@@ -1,9 +1,24 @@
 # Design: Self-heal the Postgres host-port-proxy wedge
 
 - **Date:** 2026-06-21
-- **Status:** Approved design (pending written-spec review)
+- **Status:** Implemented, then **corrected 2026-06-29** — see banner below
 - **Author:** Claude (with Matt)
 - **Area:** `brain/` self-healing watchdog
+
+> **⚠️ Corrected 2026-06-29.** This design's core premise — that
+> `docker restart`ing the shared Postgres container is harmless (see the
+> "Restart policy" and "Risks & rollback" sections below, which call it
+> "verified harmless") — was **falsified in production**. On 2026-06-29 the
+> Docker Desktop / WSL2 host-port subsystem broadly wedged (`:5433`, `:8002`,
+> `:3000` all failed at once); the probe restarted `poindexter-postgres-local`
+> 4+ times and EVERY post-restart re-probe still failed — because the wedge
+> lives in Docker Desktop's host-side port proxy, which a container restart
+> cannot fix — while the connection churn hung the brain daemon and took the
+> alert plane down ~45 min. The probe was changed so DB entries (and any entry
+> a restart fails to recover) escalate **alert-only** instead of restarting.
+> See [`docs/operations/self-healing.md`](../../operations/self-healing.md) §
+> "Docker port-forward recovery — restart vs alert-only" for the current
+> behavior.
 
 ## Problem
 

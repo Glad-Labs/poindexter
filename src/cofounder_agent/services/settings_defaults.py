@@ -1243,6 +1243,27 @@ DEFAULTS: dict[str, str] = {
     # "Poindexter Recovery Agent,Poindexter MCP HTTP,Poindexter-DeployCheckoutSync".
     'scheduled_tasks_probe_watch_tasks': '',
 
+    # ----- Docker port-forward adaptive recovery (brain/docker_port_forward_probe.py) -----
+    # The probe detects a stuck Docker Desktop / WSL2 NAT host-port forward
+    # (internal-OK + external-FAIL) and recovers it. A `docker restart` fixes a
+    # stuck PER-CONTAINER forward (the 2026-04-29 HTTP case) but CANNOT fix a
+    # wedge in Docker Desktop's HOST-SIDE port proxy, and restarting a DB severs
+    # every consumer's live connection (the 2026-06-29 incident that hung the
+    # brain + took the alert plane down ~45 min). So the recovery action is now
+    # per-situation:
+    #   - DB watch entries (probe_type=postgres) default to alert-only — set via
+    #     the `recovery_action` field on docker_port_forward_watch_list entries
+    #     ("restart" | "alert_only"; HTTP defaults restart, DB defaults alert_only).
+    #   - For ANY entry, after this many CONSECUTIVE failed recoveries the probe
+    #     stops restarting and switches to alert-only for the backoff window
+    #     below, rather than burning the restart cap on a proven-ineffective
+    #     remedy. Default 1 = give up after the very first failed recovery.
+    'docker_port_forward_max_failed_recoveries_before_alert_only': '1',
+    # How long (minutes) a container stays alert-only after the give-up trips,
+    # before the probe is willing to try one more restart. Bounds the churn
+    # without disabling recovery forever.
+    'docker_port_forward_alert_only_backoff_minutes': '60',
+
     # ----- API rate limits (slowapi — poindexter#748) -----
     # slowapi limit strings: "<count>/<period>" e.g. "5/minute", "100/hour".
     # Limits are read at request time so operators can tune via app_settings

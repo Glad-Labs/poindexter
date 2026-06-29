@@ -94,12 +94,12 @@ The brain runs these every 5-minute cycle. Two patterns:
 
 **HTTP/inspect probes** — actively check a surface, recover, cap, page:
 
-| Probe                                        | Watches                                                                                       | Detect                                                                                                             | Recover                                              | Escalate            |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------- | ------------------- |
-| `brain/mcp_http_probe.py`                    | MCP HTTP server (`:8004`)                                                                     | `GET` discovery endpoint                                                                                           | launcher (host process) or host-recover (`mcp-http`) | page after cap      |
-| `brain/compose_drift_probe.py`               | container vs compose spec                                                                     | `docker inspect` vs YAML                                                                                           | host-recover (`compose-reapply`) — see below         | page after cap      |
-| `brain/health_probes.py` (`scheduled_tasks`) | host self-heal Scheduled Tasks                                                                | `GET /tasks` on the host agent                                                                                     | — (detect-only) — see below                          | page after 3 cycles |
-| `brain/docker_port_forward_probe.py`         | published host ports — 12 HTTP sidecars + Postgres `:5433` (`docker_port_forward_watch_list`) | internal-OK + external-FAIL: HTTP `GET`, or a credential-free libpq `SSLRequest` for `probe_type=postgres` entries | `docker restart <container>` → re-probe              | page after cap      |
+| Probe                                        | Watches                                                                                       | Detect                                                                                                             | Recover                                                                                                                       | Escalate            |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `brain/mcp_http_probe.py`                    | MCP HTTP server (`:8004`)                                                                     | `GET` discovery endpoint                                                                                           | launcher (host process) or host-recover (`mcp-http`)                                                                          | page after cap      |
+| `brain/compose_drift_probe.py`               | container vs compose spec                                                                     | `docker inspect` vs YAML                                                                                           | host-recover (`compose-reapply`) — see below                                                                                  | page after cap      |
+| `brain/health_probes.py` (`scheduled_tasks`) | host self-heal Scheduled Tasks                                                                | `GET /tasks` on the host agent                                                                                     | — (detect-only) — see below                                                                                                   | page after 3 cycles |
+| `brain/docker_port_forward_probe.py`         | published host ports — 12 HTTP sidecars + Postgres `:5433` (`docker_port_forward_watch_list`) | internal-OK + external-FAIL: HTTP `GET`, or a credential-free libpq `SSLRequest` for `probe_type=postgres` entries | HTTP entry: `docker restart` → re-probe. DB entry, or any restart proven ineffective: **alert-only** (no restart) — see below | page after cap      |
 
 **Heartbeat/freshness probes** — read the newest success row a service stamps in
 `audit_log`; if it's too old, the service is wedged:
@@ -113,6 +113,47 @@ Minimal sidecar images (promtail, pyroscope) ship no shell or HTTP client, so an
 in-container Docker `HEALTHCHECK` is impossible. Their liveness is an **external**
 Prometheus rule instead (`up{job="..."} == 0` in
 `infrastructure/prometheus/alerts/observability-sidecars.yml`).
+
+## Docker port-forward recovery — restart vs alert-only
+
+`docker_port_forward_probe` detects the Windows Docker Desktop / WSL2 NAT
+host-port wedge — `host.docker.internal:<port>` is dead while the container is
+healthy on the internal bridge — and recovers it. **The recovery action is not
+a constant.** A `docker restart` re-spawns a stuck _per-container_ wslrelay
+forward (the 2026-04-29 HTTP-sidecar incident), but it **cannot** fix a wedge
+that lives in Docker Desktop's _host-side_ port proxy, and restarting a database
+container severs every internal consumer's live connection.
+
+That distinction was learned the hard way on **2026-06-29**: the host
+port-publish subsystem broadly degraded (`:5433`, `:8002`, `:3000` all wedged);
+the probe restarted `poindexter-postgres-local` 4+ times, every post-restart
+re-probe still failed, and the connection churn hung the brain daemon and took
+the alert plane down for ~45 min. (This falsified the 2026-06-21 design's
+"restarting the shared DB is harmless" assumption.) So the probe now picks its
+remedy per situation:
+
+- **`recovery_action` per watch entry** (`"restart"` | `"alert_only"`). HTTP
+  entries default to `restart`; database entries (`probe_type=postgres`) default
+  to `alert_only` — the wedge is **detected but never restarted**. Instead the
+  probe writes a `docker_port_forward_restart_skipped` `alert_events` row
+  (`reason=db_recovery_policy`) and pages the operator with the only fix that
+  works: clear the host proxy (restart Docker Desktop, or `wsl --shutdown` then
+  relaunch). The default follows the structured `probe_type` field, not a
+  container name, and an operator can override it per entry in
+  `docker_port_forward_watch_list`.
+- **Adaptive give-up** for `restart` entries. If a restart is accepted but the
+  external re-probe still fails, the failure is counted; after
+  `docker_port_forward_max_failed_recoveries_before_alert_only` (default **1**)
+  consecutive failed recoveries the container switches to alert-only for
+  `docker_port_forward_alert_only_backoff_minutes` (default **60**) instead of
+  burning the restart cap on a remedy already proven ineffective. This is what
+  protects HTTP entries (`:8002`, `:3000`) from the same host-side wedge. A
+  healthy or successfully-recovered cycle resets the counter and clears the
+  backoff (`reason=restart_ineffective_backoff` while it holds).
+
+The rolling restart cap (3 per 60 min) still applies to the case it was built
+for: a **flapping** forward that a restart genuinely recovers each cycle but
+which keeps re-wedging.
 
 ## Compose-drift host-recover
 
@@ -190,19 +231,21 @@ Example watch list:
 
 ## Settings reference
 
-| Setting                                     | Default                       | Meaning                                                                                                                   |
-| ------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `compose_drift_host_recover_enabled`        | `true`                        | Auto-heal compose drift via the host agent.                                                                               |
-| `compose_drift_host_recover_cap_per_window` | `3`                           | Max reapplies before escalating to a page.                                                                                |
-| `compose_drift_host_recover_window_minutes` | `60`                          | The rolling window for the cap.                                                                                           |
-| `compose_drift_on_demand_services`          | `wan-server,image-gen-server` | CSV of services started on demand — exempt from the missing-container check.                                              |
-| `compose_drift_active_profiles`             | (empty)                       | CSV of active compose `profiles:`. Services gated behind an unlisted profile are exempt from the missing-container check. |
-| `compose_drift_auto_recover_enabled`        | `false`                       | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                               |
-| `mcp_http_probe_recovery_url`               | (empty)                       | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.              |
-| `mcp_http_probe_recovery_token`             | secret                        | Bearer token matching the agent's `poindexter_recovery_token`.                                                            |
-| `scheduled_tasks_probe_watch_tasks`         | (empty)                       | CSV of host Scheduled Task names the `scheduled_tasks` probe checks via `GET /tasks`. Empty = advisory no-op.             |
-| `offsite_backup_watch_enabled`              | `true`                        | Backup-freshness probe.                                                                                                   |
-| `auto_embed_watch_enabled`                  | `true`                        | Embedder-freshness probe.                                                                                                 |
+| Setting                                                       | Default                       | Meaning                                                                                                                   |
+| ------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `compose_drift_host_recover_enabled`                          | `true`                        | Auto-heal compose drift via the host agent.                                                                               |
+| `compose_drift_host_recover_cap_per_window`                   | `3`                           | Max reapplies before escalating to a page.                                                                                |
+| `compose_drift_host_recover_window_minutes`                   | `60`                          | The rolling window for the cap.                                                                                           |
+| `compose_drift_on_demand_services`                            | `wan-server,image-gen-server` | CSV of services started on demand — exempt from the missing-container check.                                              |
+| `compose_drift_active_profiles`                               | (empty)                       | CSV of active compose `profiles:`. Services gated behind an unlisted profile are exempt from the missing-container check. |
+| `compose_drift_auto_recover_enabled`                          | `false`                       | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                               |
+| `mcp_http_probe_recovery_url`                                 | (empty)                       | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.              |
+| `mcp_http_probe_recovery_token`                               | secret                        | Bearer token matching the agent's `poindexter_recovery_token`.                                                            |
+| `scheduled_tasks_probe_watch_tasks`                           | (empty)                       | CSV of host Scheduled Task names the `scheduled_tasks` probe checks via `GET /tasks`. Empty = advisory no-op.             |
+| `offsite_backup_watch_enabled`                                | `true`                        | Backup-freshness probe.                                                                                                   |
+| `auto_embed_watch_enabled`                                    | `true`                        | Embedder-freshness probe.                                                                                                 |
+| `docker_port_forward_max_failed_recoveries_before_alert_only` | `1`                           | Consecutive failed recoveries before a `restart` entry switches to alert-only (adaptive give-up).                         |
+| `docker_port_forward_alert_only_backoff_minutes`              | `60`                          | Minutes a container stays alert-only after the give-up trips, before one more restart is allowed.                         |
 
 ## Deploying the Recovery Agent
 
