@@ -32,6 +32,7 @@ import httpx
 
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
+from utils.crawler_ua import build_crawler_ua
 
 logger = get_logger(__name__)
 
@@ -154,7 +155,12 @@ class URLValidator:
 
         is_valid = False
         status_code = None
-        ua = f"{self._site_config.get('site_name', 'ContentPipeline')}-LinkChecker/1.0"
+        # Shared crawler UA (folds in crawler_contact_url with the OSS leak
+        # guard). The Mozilla-compatible framing maximizes WAF pass-through
+        # vs. the old bare `{site_name}-LinkChecker/1.0`. Distinct product
+        # token from content_validator's `PoindexterLinkChecker` so the two
+        # URL-checking components stay attributable on the wire.
+        ua = build_crawler_ua(self._site_config, product="PoindexterUrlValidator")
 
         try:
             client = self._get_http_client()

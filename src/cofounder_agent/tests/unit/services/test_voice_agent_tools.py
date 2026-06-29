@@ -354,7 +354,11 @@ def stub_pr_env(monkeypatch):
     monkeypatch.setitem(sys.modules, "brain", fake_brain)
     monkeypatch.setitem(sys.modules, "brain.bootstrap", fake_bootstrap)
 
-    responses: dict[str, Any] = {"__repos__": ""}
+    # ``__captured_headers__`` collects the headers dict passed to each
+    # outbound GitHub request so tests can assert the crawler User-Agent on
+    # the wire. It never matches a URL needle, so the response-dispatch loop
+    # skips it (same as ``__repos__``).
+    responses: dict[str, Any] = {"__repos__": "", "__captured_headers__": []}
 
     # Fake asyncpg.create_pool returning a pool whose acquire() yields a
     # dummy connection. ``_Conn.fetchrow`` serves the
@@ -412,6 +416,7 @@ def stub_pr_env(monkeypatch):
             return None
 
         async def get(self, url, headers=None):
+            responses["__captured_headers__"].append(headers)
             for needle, response in responses.items():
                 if needle in url:
                     return _FakeResp(200, response)
@@ -482,6 +487,30 @@ async def test_get_recent_pull_requests_text_no_repos_configured(stub_pr_env):
     out = await voice_agent_livekit._get_recent_pull_requests_text()
     assert "voice_agent_pr_repos" in out
     assert "app_settings" in out
+
+
+@pytest.mark.asyncio
+async def test_get_recent_pull_requests_sends_crawler_user_agent(stub_pr_env):
+    """The GitHub PR tool identifies with the shared crawler UA
+    (``utils.crawler_ua.build_crawler_ua``) rather than the bare
+    ``poindexter-voice-agent`` token. This standalone tool has no reachable
+    ``SiteConfig`` (the caller passes only Pipecat params and the DB conn
+    closes before the UA is built) and the contact URL is moot for a
+    GitHub-API client, so it sends the contact-less form — the OSS leak
+    guard. Asserted on the wire via the fixture's header capture; mirrors
+    the ``TestUserAgent`` pattern in ``test_check_published_links_job``.
+    """
+    stub_pr_env["__repos__"] = "test-org/repo-a"
+    stub_pr_env["test-org/repo-a/pulls"] = [
+        {"number": 1, "title": "feat: x", "merged_at": "2026-05-06T18:00:00Z"},
+    ]
+
+    await voice_agent_livekit._get_recent_pull_requests_text()
+
+    captured = stub_pr_env["__captured_headers__"]
+    assert captured  # at least one GitHub request was issued
+    ua = captured[0]["User-Agent"]
+    assert ua == "Mozilla/5.0 (compatible; PoindexterVoiceAgent/1.0)"
 
 
 # ---------------------------------------------------------------------------

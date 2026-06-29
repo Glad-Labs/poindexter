@@ -197,6 +197,61 @@ class TestValidateUrl:
         assert result is True
 
 
+@pytest.mark.unit
+class TestUserAgent:
+    """``validate_url`` identifies with the shared crawler UA
+    (``utils.crawler_ua.build_crawler_ua``) instead of the old
+    ``{site_name}-LinkChecker/1.0`` spelling. Contactless by default (the
+    OSS contact-URL leak guard); ``+contact`` when ``crawler_contact_url``
+    is set. The ``Mozilla/5.0 (compatible; …)`` framing is what WAFs accept.
+    Mirrors the ``TestUserAgent`` pattern in
+    ``test_check_published_links_job``.
+    """
+
+    def _run(self, coro):
+        return asyncio.run(coro)
+
+    def _mock_client(self):
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_client = MagicMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.head = AsyncMock(return_value=mock_resp)
+        return mock_client
+
+    def test_sends_crawler_ua_contactless_by_default(self):
+        validator = URLValidator(
+            site_config=SiteConfig(initial_config={"site_domain": "localhost:3000"}),
+            timeout=2.0,
+        )
+        mock_client = self._mock_client()
+        with patch("services.url_validator.httpx.AsyncClient", return_value=mock_client):
+            self._run(validator.validate_url("https://ok.example"))
+
+        ua = mock_client.head.call_args.kwargs["headers"]["User-Agent"]
+        # No crawler_contact_url → contact-less form (OSS leak guard).
+        assert ua == "Mozilla/5.0 (compatible; PoindexterUrlValidator/1.0)"
+
+    def test_user_agent_includes_contact_when_configured(self):
+        validator = URLValidator(
+            site_config=SiteConfig(initial_config={
+                "site_domain": "localhost:3000",
+                "crawler_contact_url": "https://gladlabs.io/bot",
+            }),
+            timeout=2.0,
+        )
+        mock_client = self._mock_client()
+        with patch("services.url_validator.httpx.AsyncClient", return_value=mock_client):
+            self._run(validator.validate_url("https://ok.example"))
+
+        ua = mock_client.head.call_args.kwargs["headers"]["User-Agent"]
+        assert ua == (
+            "Mozilla/5.0 (compatible; PoindexterUrlValidator/1.0; "
+            "+https://gladlabs.io/bot)"
+        )
+
+
 # ---------------------------------------------------------------------------
 # validate_urls (batch)
 # ---------------------------------------------------------------------------

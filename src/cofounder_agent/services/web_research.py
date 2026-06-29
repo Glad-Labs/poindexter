@@ -35,6 +35,7 @@ from bs4 import BeautifulSoup
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 from services.url_scraper import URLScrapeError, _safe_get
+from utils.crawler_ua import build_crawler_ua
 
 logger = get_logger(__name__)
 
@@ -205,7 +206,10 @@ class WebResearcher:
                     url,
                     self._site_config,
                     extra_headers={
-                        "User-Agent": "Mozilla/5.0 (compatible; ContentResearcher/1.0)",
+                        "User-Agent": build_crawler_ua(
+                            self._site_config,
+                            product="PoindexterContentResearcher",
+                        ),
                     },
                 )
                 if resp.status_code != 200:

@@ -88,6 +88,7 @@ from services.voice_pipecat import (
     resolve_livekit_creds_async as _shared_resolve_livekit_creds_async,
 )
 from services.voice_prompts import CLAUDE_BRIDGE_TTS_KEY, resolve_voice_prompt
+from utils.crawler_ua import build_crawler_ua
 
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger("voice_agent_livekit")
@@ -561,7 +562,11 @@ async def _get_recent_pull_requests_text() -> str:
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "poindexter-voice-agent",
+        # Shared crawler UA (single source of truth). This standalone tool has
+        # no reachable SiteConfig and the contact URL is moot for a GitHub-API
+        # client, so it sends the contact-less form (the OSS leak guard).
+        # Collapses the old bare `poindexter-voice-agent` token.
+        "User-Agent": build_crawler_ua(None, product="PoindexterVoiceAgent"),
     }
     if gh_token:
         headers["Authorization"] = f"Bearer {gh_token}"

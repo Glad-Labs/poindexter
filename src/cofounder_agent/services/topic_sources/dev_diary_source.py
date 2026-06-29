@@ -38,6 +38,7 @@ from typing import Any
 import httpx
 
 from plugins.topic_source import DiscoveredTopic
+from utils.crawler_ua import build_crawler_ua
 
 logger = logging.getLogger(__name__)
 
@@ -164,18 +165,27 @@ class DevDiaryContext:
 # ---------------------------------------------------------------------------
 
 
-def _build_gh_headers(gh_token: str | None) -> dict[str, str]:
+def _build_gh_headers(
+    gh_token: str | None, site_config: Any = None,
+) -> dict[str, str]:
     """Build request headers for the GitHub REST API.
 
     Always sets ``Accept`` and ``X-GitHub-Api-Version``. Includes
     ``Authorization: Bearer <token>`` when a non-empty token is
     available; otherwise emits a debug log and lets the request fly
     unauthenticated (works for public repos at the lower rate limit).
+
+    ``site_config``: optional ``SiteConfig`` threaded from
+    ``gather_context`` so the ``User-Agent`` carries ``crawler_contact_url``
+    when an operator sets it. The UA is built by the shared
+    ``utils.crawler_ua.build_crawler_ua`` helper (single source of truth;
+    contact-less by default — the OSS leak guard). GitHub requires a UA and
+    accepts the ``Mozilla/5.0 (compatible; …)`` form.
     """
     headers = {
         "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28",
-        "User-Agent": "poindexter-dev-diary",
+        "User-Agent": build_crawler_ua(site_config, product="PoindexterDevDiary"),
     }
     if gh_token:
         headers["Authorization"] = f"Bearer {gh_token}"
@@ -248,6 +258,7 @@ async def _collect_merged_prs(
     repo: str,
     gh_token: str | None = None,
     client: httpx.AsyncClient | None = None,
+    site_config: Any = None,
 ) -> list[dict[str, Any]]:
     """Use the GitHub REST API to collect PRs merged in the last ``hours``.
 
@@ -277,7 +288,7 @@ async def _collect_merged_prs(
         f"{_GITHUB_API_BASE}/repos/{repo}/pulls"
         "?state=closed&sort=updated&direction=desc&per_page=30"
     )
-    headers = _build_gh_headers(gh_token)
+    headers = _build_gh_headers(gh_token, site_config)
 
     if client is None:
         async with httpx.AsyncClient(
@@ -323,6 +334,7 @@ async def _collect_notable_commits(
     repo: str,
     gh_token: str | None = None,
     client: httpx.AsyncClient | None = None,
+    site_config: Any = None,
 ) -> list[dict[str, Any]]:
     """Use the GitHub REST API to collect commits in the last ``hours``,
     filtered to ``feat:/fix:/refactor:/perf:/security:`` prefixes.
@@ -338,7 +350,7 @@ async def _collect_notable_commits(
         f"{_GITHUB_API_BASE}/repos/{repo}/commits"
         f"?since={since_iso}&per_page=100"
     )
-    headers = _build_gh_headers(gh_token)
+    headers = _build_gh_headers(gh_token, site_config)
 
     if client is None:
         async with httpx.AsyncClient(
@@ -734,8 +746,12 @@ class DevDiarySource:
         if gh_token is None:
             gh_token = await _fetch_gh_token(pool)
 
-        prs_task = _collect_merged_prs(hours_lookback, repo, gh_token)
-        commits_task = _collect_notable_commits(hours_lookback, repo, gh_token)
+        prs_task = _collect_merged_prs(
+            hours_lookback, repo, gh_token, site_config=site_config,
+        )
+        commits_task = _collect_notable_commits(
+            hours_lookback, repo, gh_token, site_config=site_config,
+        )
         decisions_task = _collect_brain_decisions(pool, hours_lookback, confidence_floor)
         audit_task = _collect_audit_resolved(pool, hours_lookback)
         posts_task = _collect_recent_posts(pool, hours_lookback)

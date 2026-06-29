@@ -151,6 +151,65 @@ class TestExtractContentSSRF:
         assert content == ""
 
 
+class TestExtractContentUserAgent:
+    """``_extract_content`` identifies with the shared crawler UA via
+    ``_safe_get``'s ``extra_headers`` — the on-the-wire seam, since
+    ``_safe_get`` passes ``extra_headers`` straight to ``client.get``.
+    Consolidation of the old hardcoded ``ContentResearcher/1.0`` spelling
+    onto ``utils.crawler_ua.build_crawler_ua`` (contactless by default —
+    the OSS leak guard — and ``+contact`` when ``crawler_contact_url`` is
+    set). Mirrors the ``TestUserAgent`` pattern in
+    ``test_check_published_links_job``.
+    """
+
+    _ARTICLE_HTML = (
+        "<html><body><article><p>Some article content with enough "
+        "words to extract.</p></article></body></html>"
+    )
+
+    def _fake_safe_get(self, captured: dict):
+        async def _safe_get(client, url, site_config, *, extra_headers=None):
+            captured["extra_headers"] = extra_headers
+            resp = MagicMock()
+            resp.status_code = 200
+            resp.text = self._ARTICLE_HTML
+            return resp
+
+        return _safe_get
+
+    @pytest.mark.asyncio
+    async def test_sends_crawler_ua_contactless_by_default(self):
+        researcher = WebResearcher(site_config=SiteConfig())
+        captured: dict = {}
+        with patch(
+            "services.web_research._safe_get",
+            new=self._fake_safe_get(captured),
+        ):
+            await researcher._extract_content("https://example.com/article")
+
+        ua = captured["extra_headers"]["User-Agent"]
+        # No crawler_contact_url → contact-less form (OSS leak guard).
+        assert ua == "Mozilla/5.0 (compatible; PoindexterContentResearcher/1.0)"
+
+    @pytest.mark.asyncio
+    async def test_user_agent_includes_contact_when_configured(self):
+        researcher = WebResearcher(site_config=SiteConfig(initial_config={
+            "crawler_contact_url": "https://gladlabs.io/bot",
+        }))
+        captured: dict = {}
+        with patch(
+            "services.web_research._safe_get",
+            new=self._fake_safe_get(captured),
+        ):
+            await researcher._extract_content("https://example.com/article")
+
+        ua = captured["extra_headers"]["User-Agent"]
+        assert ua == (
+            "Mozilla/5.0 (compatible; PoindexterContentResearcher/1.0; "
+            "+https://gladlabs.io/bot)"
+        )
+
+
 class TestFormatForPrompt:
     def test_formats_results(self):
         researcher = WebResearcher(site_config=SiteConfig())

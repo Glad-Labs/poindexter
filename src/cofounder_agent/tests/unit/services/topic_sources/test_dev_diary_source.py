@@ -28,6 +28,7 @@ import pytest
 import pytest_asyncio
 
 from plugins.topic_source import TopicSource
+from services.site_config import SiteConfig
 from services.topic_sources.dev_diary_source import (
     _CC_RE,
     _NOTABLE_COMMIT_PREFIXES,
@@ -298,6 +299,66 @@ def _gh_commit_payload(
 # ---------------------------------------------------------------------------
 # _collect_merged_prs — async, talks to GitHub REST via httpx
 # ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestCrawlerUserAgent:
+    """The GitHub REST collectors identify with the shared crawler UA
+    (``utils.crawler_ua.build_crawler_ua``) instead of the bare
+    ``poindexter-dev-diary`` token. Contactless by default (the OSS
+    contact-URL leak guard); ``+contact`` when ``crawler_contact_url`` is
+    set. ``site_config`` is threaded from ``gather_context`` through the
+    collectors to ``_build_gh_headers``. Asserted on the wire via
+    ``MockTransport`` request capture — mirrors the ``TestUserAgent``
+    pattern in ``test_check_published_links_job``.
+    """
+
+    async def test_merged_prs_contactless_by_default(self):
+        captured: list[httpx.Request] = []
+        transport = _mock_transport({"/pulls": httpx.Response(200, json=[])}, captured)
+        async with httpx.AsyncClient(transport=transport) as client:
+            await _collect_merged_prs(
+                hours=24, repo="Test-Org/test-repo", client=client,
+            )
+        assert captured
+        ua = captured[0].headers["User-Agent"]
+        # No site_config → contact-less form (OSS leak guard).
+        assert ua == "Mozilla/5.0 (compatible; PoindexterDevDiary/1.0)"
+
+    async def test_merged_prs_includes_contact_when_configured(self):
+        captured: list[httpx.Request] = []
+        transport = _mock_transport({"/pulls": httpx.Response(200, json=[])}, captured)
+        sc = SiteConfig(initial_config={
+            "crawler_contact_url": "https://gladlabs.io/bot",
+        })
+        async with httpx.AsyncClient(transport=transport) as client:
+            await _collect_merged_prs(
+                hours=24, repo="Test-Org/test-repo", client=client, site_config=sc,
+            )
+        assert captured
+        ua = captured[0].headers["User-Agent"]
+        assert ua == (
+            "Mozilla/5.0 (compatible; PoindexterDevDiary/1.0; "
+            "+https://gladlabs.io/bot)"
+        )
+
+    async def test_notable_commits_threads_site_config(self):
+        captured: list[httpx.Request] = []
+        transport = _mock_transport({"/commits": httpx.Response(200, json=[])}, captured)
+        sc = SiteConfig(initial_config={
+            "crawler_contact_url": "https://gladlabs.io/bot",
+        })
+        async with httpx.AsyncClient(transport=transport) as client:
+            await _collect_notable_commits(
+                hours=24, repo="Test-Org/test-repo", client=client, site_config=sc,
+            )
+        assert captured
+        ua = captured[0].headers["User-Agent"]
+        assert ua == (
+            "Mozilla/5.0 (compatible; PoindexterDevDiary/1.0; "
+            "+https://gladlabs.io/bot)"
+        )
 
 
 @pytest.mark.unit
@@ -895,13 +956,13 @@ class TestGatherContextWiring:
     async def test_explicit_token_passed_through_to_collector(self):
         captured: dict = {}
 
-        async def fake_collect_prs(hours, repo, gh_token=None, client=None):
+        async def fake_collect_prs(hours, repo, gh_token=None, client=None, site_config=None):
             captured["hours"] = hours
             captured["repo"] = repo
             captured["gh_token"] = gh_token
             return []
 
-        async def fake_collect_commits(hours, repo, gh_token=None, client=None):
+        async def fake_collect_commits(hours, repo, gh_token=None, client=None, site_config=None):
             return []
 
         with (
@@ -931,12 +992,12 @@ class TestGatherContextWiring:
         crash trying to fetch the secret — it falls back to empty."""
         captured: dict = {}
 
-        async def fake_collect_prs(hours, repo, gh_token=None, client=None):
+        async def fake_collect_prs(hours, repo, gh_token=None, client=None, site_config=None):
             captured["gh_token"] = gh_token
             captured["repo"] = repo
             return []
 
-        async def fake_collect_commits(hours, repo, gh_token=None, client=None):
+        async def fake_collect_commits(hours, repo, gh_token=None, client=None, site_config=None):
             return []
 
         with (
@@ -961,11 +1022,16 @@ class TestGatherContextWiring:
     async def test_site_config_supplies_gh_repo(self):
         captured: dict = {}
 
-        async def fake_collect_prs(hours, repo, gh_token=None, client=None):
+        async def fake_collect_prs(
+            hours, repo, gh_token=None, client=None, site_config=None,
+        ):
             captured["repo"] = repo
+            captured["site_config"] = site_config
             return []
 
-        async def fake_collect_commits(hours, repo, gh_token=None, client=None):
+        async def fake_collect_commits(
+            hours, repo, gh_token=None, client=None, site_config=None,
+        ):
             return []
 
         class _FakeSiteConfig:
@@ -974,6 +1040,7 @@ class TestGatherContextWiring:
                     return "operator-fork/example"
                 return default
 
+        fake_sc = _FakeSiteConfig()
         with (
             patch(
                 "services.topic_sources.dev_diary_source._collect_merged_prs",
@@ -985,19 +1052,22 @@ class TestGatherContextWiring:
             ),
         ):
             await DevDiarySource().gather_context(
-                pool=None, site_config=_FakeSiteConfig(),
+                pool=None, site_config=fake_sc,
             )
 
         assert captured["repo"] == "operator-fork/example"
+        # gather_context threads its SiteConfig down to the GitHub collectors
+        # so _build_gh_headers can fold crawler_contact_url into the crawler UA.
+        assert captured["site_config"] is fake_sc
 
     async def test_constructor_gh_repo_used_when_no_other_source(self):
         captured: dict = {}
 
-        async def fake_collect_prs(hours, repo, gh_token=None, client=None):
+        async def fake_collect_prs(hours, repo, gh_token=None, client=None, site_config=None):
             captured["repo"] = repo
             return []
 
-        async def fake_collect_commits(hours, repo, gh_token=None, client=None):
+        async def fake_collect_commits(hours, repo, gh_token=None, client=None, site_config=None):
             return []
 
         with (
