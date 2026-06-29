@@ -954,6 +954,19 @@ DEFAULTS: dict[str, str] = {
     # command_timeout is a sibling guard set via the BRAIN_DB_COMMAND_TIMEOUT_SECONDS
     # env var, NOT here — the pool is built before settings load.)
     'brain_cycle_timeout_seconds': '240',
+    # Independent liveness-heartbeat cadence (seconds). A dedicated brain task
+    # refreshes the brain.cycle_heartbeat audit_log row (the Prometheus
+    # dead-man's-switch source) on this cadence, so a hung/cancelled cycle can't
+    # starve the switch while the loop is alive and recovering. Comfortably under
+    # the switch's 900s stale threshold. Read once at daemon startup. (2026-06-29)
+    'brain_heartbeat_interval_seconds': '60',
+    # Seconds the brain's event loop may stall before faulthandler dumps every
+    # thread's traceback to stderr (0 disables). Deepest hang backstop: a sync
+    # C-level freeze parks the single thread so the asyncio cycle-watchdog can't
+    # fire — only faulthandler's own thread can then dump the stuck frame.
+    # Re-armed each heartbeat tick, so only a genuine freeze trips it; set above
+    # brain_cycle_timeout_seconds. Mirrors worker_hang_dump_seconds. (2026-06-29)
+    'brain_hang_dump_seconds': '300',
 
     # ----- Migration-drift in-flight guard (brain/migration_drift_probe.py, #228) -----
     # When true, the migration-drift auto-recover path defers the worker
@@ -1495,6 +1508,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- Brain / migration drift -----
     'migration_drift_auto_sync_enabled': {'owner': 'brain_migration_drift_probe', 'value_type': 'boolean'},
     'migration_drift_defer_while_inflight': {'owner': 'brain_migration_drift_probe', 'value_type': 'boolean'},
+
+    # ----- Brain / cycle watchdog (2026-06-29 hang hardening) -----
+    'brain_cycle_timeout_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
+    'brain_heartbeat_interval_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
+    'brain_hang_dump_seconds': {'owner': 'brain_daemon', 'value_type': 'integer'},
 
     # ----- Deprecated keys — emit warning on read (add new ones here) -----
     # nvidia_exporter_url went dead when PR #1827 moved gpu_scheduler onto

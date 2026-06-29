@@ -54,12 +54,19 @@ COPY pyproject.toml poetry.lock /app/
 # vanished, brain crashloop with `ModuleNotFoundError: No module named
 # 'asyncpg'`. Direct pip after poetry sidesteps the lock-consistency
 # requirement and stays simple. Glad-Labs/poindexter#406.
+# py-spy is a standalone Rust profiler CLI (manylinux wheel ships the binary on
+# PATH — never imported by brain code). It enables a LIVE post-mortem on a hung
+# daemon: `docker exec poindexter-brain-daemon py-spy dump --pid 1` prints the
+# stuck native stack even when the event loop is frozen and faulthandler's own
+# dump hasn't fired yet. Attaching to PID 1 needs CAP_SYS_PTRACE — granted to
+# the brain service in docker-compose*.yml (2026-06-29 hang-diagnosis hardening).
 RUN pip install --no-cache-dir 'poetry==2.2.1' && \
     poetry config virtualenvs.create false && \
     poetry install --no-root --no-interaction --no-ansi && \
-    pip install --no-cache-dir 'pyroscope-io>=0.8.5' 'sentry-sdk>=2.0' && \
+    pip install --no-cache-dir 'pyroscope-io>=0.8.5' 'sentry-sdk>=2.0' 'py-spy>=0.4.0' && \
     python -c "import pyroscope; assert hasattr(pyroscope, 'configure'), 'pyroscope wheel missing configure()'; print('[BUILD] pyroscope-io OK — configure available')" && \
     python -c "import sentry_sdk; print('[BUILD] sentry-sdk OK —', sentry_sdk.VERSION)" && \
+    py-spy --version && \
     pip uninstall -y poetry poetry-core poetry-plugin-export 2>/dev/null || true && \
     rm -rf /root/.cache/pip /root/.cache/pypoetry
 

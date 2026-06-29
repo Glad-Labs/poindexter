@@ -67,6 +67,35 @@ def test_vram_budget_defaults_present():
     assert METADATA["vram_budget_guard_enabled"]["value_type"] == "boolean"
 
 
+def test_brain_cycle_watchdog_defaults_present():
+    """2026-06-29 hang hardening: the brain's independent liveness-heartbeat
+    cadence and faulthandler hang-dump ceiling are DB-tunable, alongside the
+    merged cycle-watchdog ceiling. The cross-key invariants matter — the
+    heartbeat must beat the dead-man's-switch stale threshold, and the hang-dump
+    must sit above the cycle ceiling so only a genuine freeze trips it."""
+    from services.settings_defaults import DEFAULTS, METADATA
+
+    assert DEFAULTS["brain_cycle_timeout_seconds"] == "240"
+    assert DEFAULTS["brain_heartbeat_interval_seconds"] == "60"
+    assert DEFAULTS["brain_hang_dump_seconds"] == "300"
+    # Heartbeat cadence must stay well under the 900s dead-man's-switch stale
+    # threshold or the switch fires between ticks.
+    assert int(DEFAULTS["brain_heartbeat_interval_seconds"]) < 900
+    # Hang-dump fires only AFTER the cycle-watchdog ceiling, so a normal
+    # recoverable hang (cancelled at the ceiling, then disarmed) never triggers
+    # a spurious traceback dump — only a genuine frozen loop reaches it.
+    assert int(DEFAULTS["brain_hang_dump_seconds"]) > int(
+        DEFAULTS["brain_cycle_timeout_seconds"]
+    )
+    for key in (
+        "brain_cycle_timeout_seconds",
+        "brain_heartbeat_interval_seconds",
+        "brain_hang_dump_seconds",
+    ):
+        assert METADATA[key]["value_type"] == "integer"
+        assert METADATA[key]["owner"] == "brain_daemon"
+
+
 def test_piece4_video_hero_defaults_present():
     """Video-quality Piece 4: the swappable generative-video model seam and the
     per-video hero-shot budget cap (spec §3.3)."""

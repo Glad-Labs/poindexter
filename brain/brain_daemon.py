@@ -21,6 +21,7 @@ Usage:
 """
 
 import asyncio
+import faulthandler
 import json
 import logging
 import os
@@ -576,14 +577,18 @@ async def _create_brain_pool(db_url: str):
     (a Docker host-port proxy that drops the socket mid-query — the 2026-06-29
     incident) raises ``asyncio.TimeoutError`` after
     ``BRAIN_DB_COMMAND_TIMEOUT_SECONDS`` instead of parking the daemon's only
-    thread in ``epoll_wait`` forever. The timeout is an env/constant, not an
-    app_settings row, because the pool must exist before settings can be read.
+    thread in ``epoll_wait`` forever. ``server_settings.statement_timeout`` adds
+    the complementary SERVER-side bound: a query that *does* reach Postgres but
+    runs long is cancelled by the server too, freeing the backend instead of
+    just abandoning the client wait. Both are env/constants, not app_settings
+    rows, because the pool must exist before settings can be read.
     """
     return await asyncpg.create_pool(
         db_url,
         min_size=1,
         max_size=3,
         command_timeout=BRAIN_DB_COMMAND_TIMEOUT_SECONDS,
+        server_settings={"statement_timeout": str(BRAIN_DB_STATEMENT_TIMEOUT_MS)},
     )
 
 
@@ -602,6 +607,38 @@ async def _run_cycle_with_watchdog(
     """
     fn = run_cycle_fn or run_cycle
     await asyncio.wait_for(fn(pool), timeout=cycle_timeout)
+
+
+def _arm_hang_watchdog(seconds: float) -> None:
+    """(Re)arm the faulthandler hang watchdog.
+
+    ``dump_traceback_later`` schedules a one-shot all-thread traceback dump from
+    a separate watchdog thread that fires EVEN WHEN the event loop is blocked —
+    the one diagnostic that survives a sync C-level freeze where the asyncio
+    cycle-watchdog's cancellation can never be delivered (the deepest 2026-06-29
+    failure tier). Re-armed each liveness-heartbeat tick, so it only dumps if a
+    tick stalls past ``seconds``; a normal recoverable hang keeps the heartbeat
+    ticking and re-arms (resets) the timer before it fires. ``seconds <= 0``
+    disables it. Best-effort — a faulthandler failure (e.g. no stderr fileno
+    under captured output) must never break the daemon. Mirrors
+    ``worker_service._arm_hang_watchdog``.
+    """
+    if seconds <= 0:
+        return
+    try:
+        if not faulthandler.is_enabled():
+            faulthandler.enable()
+        faulthandler.dump_traceback_later(seconds, repeat=False)
+    except Exception:  # noqa: BLE001  # silent-ok: diagnostics must never break the daemon
+        logger.debug("[BRAIN] hang watchdog arm failed", exc_info=True)
+
+
+def _disarm_hang_watchdog() -> None:
+    """Cancel any pending hang-watchdog dump (loop exit / shutdown)."""
+    try:
+        faulthandler.cancel_dump_traceback_later()
+    except Exception:  # noqa: BLE001  # silent-ok: best-effort teardown, never blocks shutdown
+        pass
 
 
 async def _init_sentry(pool) -> bool:
@@ -756,6 +793,27 @@ async def _setting_int(pool, key: str, default: int) -> int:
         return int(val)
     except (ValueError, TypeError, Exception):
         return default
+
+
+async def _hang_dump_seconds(pool) -> int:
+    """Seconds the event loop may stall before faulthandler dumps all thread
+    tracebacks (0 disables). DB-tunable via ``app_settings.brain_hang_dump_seconds``.
+    Read once at daemon startup — re-reading it on the liveness path would add a
+    DB round-trip to the one loop that must survive a wedged DB."""
+    return await _setting_int(
+        pool, "brain_hang_dump_seconds", BRAIN_HANG_DUMP_DEFAULT_SECONDS
+    )
+
+
+async def _heartbeat_interval_seconds(pool) -> int:
+    """Cadence (seconds) of the independent liveness heartbeat that keeps the
+    Prometheus dead-man's switch fresh while a cycle is hung. DB-tunable via
+    ``app_settings.brain_heartbeat_interval_seconds``; read once at startup."""
+    return await _setting_int(
+        pool,
+        "brain_heartbeat_interval_seconds",
+        BRAIN_HEARTBEAT_INTERVAL_DEFAULT_SECONDS,
+    )
 
 
 async def _hydrate_notify_env_from_settings(pool) -> None:
@@ -965,6 +1023,36 @@ BRAIN_DB_COMMAND_TIMEOUT_SECONDS = float(
 #    cycle so it only fires on a genuine hang, and below CYCLE_SECONDS so a
 #    hung cycle is abandoned before the next one is due.
 BRAIN_CYCLE_TIMEOUT_DEFAULT_SECONDS = 240
+# 3) Server-side ``statement_timeout`` on every brain DB connection. The
+#    ``command_timeout`` above is asyncpg's CLIENT-side timer — it covers the
+#    2026-06-29 wedged-proxy case (the query never reaches Postgres, so only a
+#    client timer can wake the loop). statement_timeout is the complementary
+#    SERVER-side bound: a query that DOES reach Postgres but runs long (a lock
+#    wait, a seq scan) is cancelled by the server too, freeing the backend
+#    rather than just abandoning the client wait. Same bootstrap tier as
+#    command_timeout (the pool predates settings), so it's an env/constant.
+#    Postgres expects MILLISECONDS; default 60s to match command_timeout.
+BRAIN_DB_STATEMENT_TIMEOUT_MS = int(
+    os.getenv("BRAIN_DB_STATEMENT_TIMEOUT_MS", "60000")
+)
+# 4) faulthandler hang-dump ceiling (seconds). Deepest backstop: if a sync
+#    C-level hang freezes the daemon's single thread, the asyncio cycle-watchdog
+#    can't fire (its TimeoutError can never be delivered to a parked loop). A
+#    separate faulthandler thread still dumps every thread's traceback to stderr
+#    after this many seconds — the smoking gun for an otherwise-silent freeze
+#    (mirrors the worker's worker_hang_dump_seconds guard). Re-armed each
+#    liveness-heartbeat tick, so a normal recoverable hang (which keeps the
+#    heartbeat ticking) never trips it; only a frozen loop does. Set ABOVE the
+#    cycle-watchdog ceiling. DB-tunable via app_settings.brain_hang_dump_seconds.
+BRAIN_HANG_DUMP_DEFAULT_SECONDS = 300
+# 5) Independent liveness-heartbeat cadence (seconds). The brain.cycle_heartbeat
+#    audit_log row (the Prometheus dead-man's-switch source) was written only at
+#    cycle END, so a hung or repeatedly-cancelled cycle starved it and the
+#    switch fired even though the loop was alive and recovering. A dedicated
+#    heartbeat task now refreshes that row on this cadence, decoupling "the loop
+#    is alive" from "the last cycle finished." Comfortably under the switch's
+#    900s stale threshold. DB-tunable via app_settings.brain_heartbeat_interval_seconds.
+BRAIN_HEARTBEAT_INTERVAL_DEFAULT_SECONDS = 60
 
 # Alert dispatch poll cadence — Grafana → webhook → alert_events rows are
 # time-sensitive (operator-facing pages), so we poll faster than the main
@@ -2386,6 +2474,105 @@ async def _record_operator_paged(pool, payload: dict, detail: str) -> None:
         )
 
 
+async def write_cycle_heartbeat(
+    pool,
+    *,
+    probes_run: int = 0,
+    probes_failed: int = 0,
+    internal_issues: int = 0,
+    external_issues: int = 0,
+    probe_status: dict | None = None,
+    kind: str = "liveness",
+) -> None:
+    """Write a ``brain.cycle_heartbeat`` audit_log row — the freshness source
+    for the Prometheus ``BrainDeliveryDeadMansSwitch``.
+
+    Defaults to ``kind="liveness"`` because a bare call carries no probe stats —
+    ``run_cycle`` passes ``kind="cycle"`` with the real counts.
+
+    Two callers keep that row fresh:
+      * ``run_cycle`` at cycle end, with full probe stats (``kind="cycle"``).
+      * ``heartbeat_loop`` on its own short cadence (``kind="liveness"``), so a
+        hung or repeatedly-cancelled cycle can't starve the switch while the
+        loop is alive and recovering. A genuine total freeze stops BOTH writers,
+        so the switch still fires correctly.
+
+    Best-effort: a failed write is logged and swallowed — the caller may be the
+    very loop responsible for keeping the switch fresh, so it must keep ticking.
+    """
+    try:
+        await pool.execute(
+            """
+            INSERT INTO audit_log (event_type, source, details, severity)
+            VALUES ($1, $2, $3::jsonb, $4)
+            """,
+            "brain.cycle_heartbeat",
+            "brain.brain_daemon",
+            json.dumps({
+                "probes_run": probes_run,
+                "probes_failed": probes_failed,
+                "internal_issues": internal_issues,
+                "external_issues": external_issues,
+                "probe_status": probe_status or {},
+                "heartbeat_kind": kind,
+                "cycle_completed_at": datetime.now(UTC).isoformat(),
+            }),
+            "info",
+        )
+    except Exception as heartbeat_exc:  # noqa: BLE001 — defensive
+        logger.warning(
+            "[BRAIN] cycle heartbeat audit_log write failed: %s -- "
+            "dead-probe detection relies on this row's freshness",
+            heartbeat_exc,
+        )
+
+
+async def heartbeat_loop(
+    pool,
+    shutdown_event,
+    *,
+    interval: float,
+    hang_dump_seconds: float,
+    touch_file=None,
+) -> None:
+    """Independent liveness heartbeat — the resilience half of the 2026-06-29
+    fix.
+
+    Writes a ``brain.cycle_heartbeat`` row (and touches the file heartbeat) every
+    ``interval`` seconds REGARDLESS of cycle progress, so a hung or repeatedly-
+    cancelled monitoring cycle can no longer starve the Prometheus dead-man's
+    switch (or the Docker healthcheck) into a false "brain is down." The switch
+    now measures the right thing — "is the daemon's event loop alive?" — not
+    "did the last full cycle finish?" A genuine total freeze stops this loop too,
+    so both signals still fire on a real outage.
+
+    Re-arms the faulthandler hang watchdog each tick BEFORE the DB write (so a
+    wedged-DB write is itself covered); a tick that stalls past
+    ``hang_dump_seconds`` means the loop itself froze, and faulthandler's
+    separate thread dumps the stuck frame.
+    """
+    logger.info(
+        "[BRAIN] Liveness heartbeat loop started (interval=%ds, hang_dump=%ds)",
+        interval, hang_dump_seconds,
+    )
+    while not shutdown_event.is_set():
+        # Arm FIRST — before the DB write — so even a wedged write is covered.
+        _arm_hang_watchdog(hang_dump_seconds)
+        if touch_file is not None:
+            try:
+                touch_file()
+            except Exception:  # noqa: BLE001  # silent-ok: file heartbeat is best-effort; the audit-log write below is the real liveness signal
+                logger.debug("[BRAIN] heartbeat file touch failed", exc_info=True)
+        await write_cycle_heartbeat(pool, kind="liveness")
+        try:
+            await asyncio.wait_for(shutdown_event.wait(), timeout=interval)
+        except TimeoutError:
+            # silent-ok: normal interval tick — loop round and refresh again.
+            pass
+    _disarm_hang_watchdog()
+    logger.info("[BRAIN] Liveness heartbeat loop stopping")
+
+
 async def alert_dispatch_loop(pool, shutdown_event):
     """Background task: poll alert_events for undispatched rows.
 
@@ -2783,35 +2970,23 @@ async def run_cycle(pool):
     # discord_bot, mcp_http, docker_port_forward, business_probes,
     # backup_watcher) only wrote audit_log rows on issue — 8 days
     # without a row looked identical to "all clean" and "probe dead."
-    # Now every cycle leaves a trace.
-    try:
-        probe_status_map = {
-            name: ("ok" if r.get("ok") else "issue")
-            for name, r in probe_results.items()
-        }
-        await pool.execute(
-            """
-            INSERT INTO audit_log (event_type, source, details, severity)
-            VALUES ($1, $2, $3::jsonb, $4)
-            """,
-            "brain.cycle_heartbeat",
-            "brain.brain_daemon",
-            json.dumps({
-                "probes_run": len(probe_results),
-                "probes_failed": len(probe_failures),
-                "internal_issues": len(issues),
-                "external_issues": len(ext_issues),
-                "probe_status": probe_status_map,
-                "cycle_completed_at": datetime.now(UTC).isoformat(),
-            }),
-            "info",
-        )
-    except Exception as heartbeat_exc:  # noqa: BLE001 — defensive
-        logger.warning(
-            "[BRAIN] cycle heartbeat audit_log write failed: %s -- "
-            "dead-probe detection relies on this row's freshness",
-            heartbeat_exc,
-        )
+    # Now every cycle leaves a trace. The independent heartbeat_loop also
+    # refreshes this row on its own cadence (kind="liveness") so a hung cycle
+    # — which never reaches this point — can't starve the dead-man's switch;
+    # this end-of-cycle write carries the full probe stats (kind="cycle").
+    probe_status_map = {
+        name: ("ok" if r.get("ok") else "issue")
+        for name, r in probe_results.items()
+    }
+    await write_cycle_heartbeat(
+        pool,
+        probes_run=len(probe_results),
+        probes_failed=len(probe_failures),
+        internal_issues=len(issues),
+        external_issues=len(ext_issues),
+        probe_status=probe_status_map,
+        kind="cycle",
+    )
 
     # Log cycle result
     await pool.execute("""
@@ -3095,6 +3270,27 @@ async def main():
             name="alert_dispatch_loop",
         )
 
+    # Independent liveness heartbeat (2026-06-29). Refreshes the
+    # brain.cycle_heartbeat row + file heartbeat on its own cadence so a hung or
+    # repeatedly-cancelled cycle can't starve the Prometheus dead-man's switch
+    # or the Docker healthcheck while the loop is alive and recovering. Also
+    # owns the faulthandler hang watchdog (re-armed each tick). Config is read
+    # ONCE here — re-reading on the liveness path would add a DB round-trip to
+    # the one loop that must survive a wedged DB. Skipped in --once mode.
+    heartbeat_task = None
+    if not one_shot:
+        heartbeat_interval = await _heartbeat_interval_seconds(pool)
+        hang_dump_seconds = await _hang_dump_seconds(pool)
+        heartbeat_task = asyncio.create_task(
+            heartbeat_loop(
+                pool, shutdown,
+                interval=heartbeat_interval,
+                hang_dump_seconds=hang_dump_seconds,
+                touch_file=_touch_heartbeat,
+            ),
+            name="heartbeat_loop",
+        )
+
     consecutive_cycle_failures = 0
     while not shutdown.is_set():
         # DB-tunable per-cycle ceiling (falls back to the constant if the read
@@ -3192,6 +3388,41 @@ async def main():
                     name="alert_dispatch_loop",
                 )
 
+        # The liveness heartbeat must run until shutdown. If it died, the
+        # dead-man's switch (and Docker healthcheck) lose their freshness source
+        # and would fire a false "brain is down" even though the loop is fine.
+        # (_alert_dispatch_died is generic done-and-raised detection.)
+        if not one_shot:
+            hb_died, hb_exc = _alert_dispatch_died(heartbeat_task)
+            if hb_died:
+                logger.error(
+                    "[BRAIN] heartbeat_loop died (exc=%r) — restarting",
+                    hb_exc, exc_info=hb_exc,
+                )
+                _page_operator_failsafe(
+                    title="Brain liveness-heartbeat loop died",
+                    detail=(
+                        "The brain's heartbeat_loop task exited while the daemon "
+                        "is still running. The brain.cycle_heartbeat row will go "
+                        "stale and the Prometheus dead-man's switch will fire a "
+                        "FALSE 'brain down'. Restarting it now. "
+                        f"Last error: {hb_exc!r}"
+                    ),
+                    source="brain:heartbeat-watchdog",
+                    severity="critical",
+                )
+                heartbeat_interval = await _heartbeat_interval_seconds(pool)
+                hang_dump_seconds = await _hang_dump_seconds(pool)
+                heartbeat_task = asyncio.create_task(
+                    heartbeat_loop(
+                        pool, shutdown,
+                        interval=heartbeat_interval,
+                        hang_dump_seconds=hang_dump_seconds,
+                        touch_file=_touch_heartbeat,
+                    ),
+                    name="heartbeat_loop",
+                )
+
         if one_shot:
             break
 
@@ -3212,6 +3443,17 @@ async def main():
             # silent-ok: best-effort cleanup during shutdown; the daemon is
             # exiting regardless of this task's close outcome.
             logger.debug("[BRAIN] alert_dispatch_task close failed: %s", e)
+    if heartbeat_task is not None:
+        try:
+            await asyncio.wait_for(heartbeat_task, timeout=5)
+        except (TimeoutError, asyncio.CancelledError):
+            heartbeat_task.cancel()
+        except Exception as e:  # noqa: BLE001
+            # silent-ok: best-effort cleanup during shutdown.
+            logger.debug("[BRAIN] heartbeat_task close failed: %s", e)
+    # Belt-and-suspenders: heartbeat_loop disarms on its own clean exit, but a
+    # cancelled task skips that, so clear any pending faulthandler dump here too.
+    _disarm_hang_watchdog()
     if _OAUTH_CLIENT is not None:
         try:
             await _OAUTH_CLIENT.aclose()

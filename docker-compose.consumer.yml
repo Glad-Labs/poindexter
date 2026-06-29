@@ -226,6 +226,12 @@ services:
     # Root so the brain can read the host docker.sock (root-owned on
     # Docker Desktop). See docker-compose.local.yml for the full rationale.
     user: "0:0"
+    # CAP_SYS_PTRACE lets `docker exec poindexter-brain-daemon py-spy dump
+    # --pid 1` attach to a frozen daemon and print the stuck native stack — the
+    # live half of the 2026-06-29 hang-diagnosis hardening (faulthandler is the
+    # in-process half). See docker-compose.local.yml for the full rationale.
+    cap_add:
+      - SYS_PTRACE
     environment:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
       # Compose vars — needed so compose_drift_probe can run

@@ -177,6 +177,14 @@ failure:
   `BRAIN_DB_COMMAND_TIMEOUT_SECONDS` env var (default **60s**). It is an
   env/constant, **not** an `app_settings` row, because the pool is created
   before settings can be read — same bootstrap tier as the database URL itself.
+- **Server-side `statement_timeout` on every connection** (`_create_brain_pool`,
+  `BRAIN_DB_STATEMENT_TIMEOUT_MS`, default **60000 ms**). The complement to
+  `command_timeout`: it does **not** help the 2026-06-29 wedged-proxy case (the
+  statement never reaches Postgres, exactly as noted above), but it bounds the
+  _orthogonal_ failure — a query that **does** reach Postgres and then runs long
+  (a lock wait, a runaway seq scan). Postgres cancels it server-side, freeing
+  the backend rather than leaving `command_timeout` to merely abandon the
+  client's wait. Same bootstrap tier (env/constant), set before settings load.
 - **Whole-cycle ceiling** (`_run_cycle_with_watchdog`). `run_cycle` is wrapped
   in `asyncio.wait_for(..., timeout=cycle_timeout)`; a cycle that blows past the
   ceiling is **cancelled** (freeing the thread) and raises `TimeoutError`. This
@@ -199,6 +207,60 @@ based) rather than the DB-backed `notify()` path — because a wedged DB is
 exactly when that path can reach no one. The dead-man's switch remains the
 ultimate backstop, but it should now never be the **only** thing that fires:
 the brain notices its own stuck cycle first.
+
+### The `brain.cycle_heartbeat` is independent of the cycle
+
+The cycle watchdog stops a hang from lasting forever, but a window remained:
+`brain.cycle_heartbeat` — the row whose freshness drives the
+`BrainDeliveryDeadMansSwitch` — was written only at the **end** of `run_cycle`. A
+cycle cancelled by the watchdog never reached that write, so a _repeatedly_
+hanging cycle could still let the row go stale and trip the switch even though
+the daemon's loop was alive and recovering each time.
+
+A dedicated **`heartbeat_loop`** task now refreshes that row (and the file
+heartbeat the Docker healthcheck reads) on its own cadence —
+`app_settings.brain_heartbeat_interval_seconds`, default **60s**, comfortably
+under the switch's 900s stale threshold — regardless of cycle progress. This
+re-points both the dead-man's switch and the container healthcheck at the right
+question: _is the daemon's event loop alive?_ rather than _did the last full
+cycle finish?_ A genuine total freeze stops `heartbeat_loop` too, so both
+signals still fire on a real outage; a recoverable cycle hang no longer
+masquerades as a dead brain. The loop runs alongside `alert_dispatch_loop` and
+is restarted by the same death-watch (`_alert_dispatch_died`) if it ever exits.
+Its cadence + hang-dump config are read **once at startup** — re-reading them on
+the one loop that must survive a wedged DB would re-introduce a DB dependency on
+the liveness path. The end-of-cycle write still happens too, carrying the full
+probe stats (`kind="cycle"` vs the loop's `kind="liveness"`).
+
+### Diagnosing a total freeze — faulthandler + py-spy
+
+The cycle watchdog can only fire while the event loop still runs:
+`asyncio.wait_for` delivers its `TimeoutError` _through_ the loop. A **sync
+C-level hang** (a blocking call in a C extension that ignores cancellation)
+freezes the single thread outright, so neither the watchdog nor `command_timeout`
+can fire. Two out-of-loop diagnostics cover that last tier:
+
+- **`faulthandler` (in-process).** `heartbeat_loop` re-arms
+  `faulthandler.dump_traceback_later(...)` each tick from a separate C thread
+  that fires even when the event loop is frozen. A normal tick re-arms (resets)
+  the timer before it expires; only a tick that stalls past
+  `app_settings.brain_hang_dump_seconds` (default **300s**, set _above_ the 240s
+  cycle ceiling so recoverable hangs never trip it) lets it fire — dumping every
+  thread's traceback to stderr → Loki, so the post-mortem shows the exact stuck
+  frame instead of a silent ~37-min gap. Mirrors the worker's
+  `worker_hang_dump_seconds` guard; `0` disables it.
+- **`py-spy` (live, external).** The brain image bakes the `py-spy` CLI and the
+  brain service is granted `CAP_SYS_PTRACE`, so a frozen-but-alive daemon can be
+  sampled on demand without restarting it:
+
+  ```bash
+  docker exec poindexter-brain-daemon py-spy dump --pid 1
+  ```
+
+  This prints the native + Python stack of the wedged thread immediately —
+  useful when the freeze is ongoing and you'd rather not wait for the
+  faulthandler ceiling. (Host `kernel.yama.ptrace_scope` can still gate
+  attachment; the capability is the in-container prerequisite.)
 
 ## Compose-drift host-recover
 

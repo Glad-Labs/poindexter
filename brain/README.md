@@ -1,6 +1,6 @@
 # Brain Daemon
 
-**Last Updated:** 2026-04-29
+**Last Updated:** 2026-06-29
 
 The brain daemon is the always-on supervisor for a Poindexter install.
 It runs alongside the worker (`poindexter-brain-daemon` container)
@@ -23,6 +23,45 @@ probes against the local stack:
 Failures are routed through `operator_notifier.notify_operator()`
 (Telegram by default, Discord webhook optional) and persisted to
 `brain_decisions` so you can grep them after the fact.
+
+## Hang resilience — the watchdog watching itself
+
+A supervisor that can silently stop supervising is the worst thing it can do. On
+**2026-06-29** the daemon issued a DB query against a wedged Docker host-port
+proxy; the `await` never returned and the single asyncio thread parked in
+`epoll_wait` for ~37 min. A hang raises nothing, so the cycle's `try/except`
+never tripped, the `brain.cycle_heartbeat` row went stale, and only the
+out-of-band `BrainDeliveryDeadMansSwitch` noticed. Four layered guards now keep
+the daemon honest (full write-up in
+[`docs/operations/self-healing.md`](../docs/operations/self-healing.md)):
+
+| Guard                          | Where (knob, default)                                            | Covers                                                                                                                                   |
+| ------------------------------ | ---------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| Client `command_timeout`       | `_create_brain_pool` (`BRAIN_DB_COMMAND_TIMEOUT_SECONDS`, 60s)   | A query whose socket wedges so Postgres never sees it — the literal 2026-06-29 mechanism.                                                |
+| Server `statement_timeout`     | `_create_brain_pool` (`BRAIN_DB_STATEMENT_TIMEOUT_MS`, 60000)    | The orthogonal case — a query that reaches Postgres but runs long (lock / seq-scan).                                                     |
+| Whole-cycle ceiling            | `_run_cycle_with_watchdog` (`brain_cycle_timeout_seconds`, 240s) | Any non-DB stuck `await`; cancels the cycle and retries next loop.                                                                       |
+| Independent liveness heartbeat | `heartbeat_loop` (`brain_heartbeat_interval_seconds`, 60s)       | Keeps the heartbeat fresh while a cycle is hung, so the dead-man's switch measures "is the loop alive?" not "did the last cycle finish?" |
+
+The first three convert a hang into a fast, accounted failure (cancel + retry,
+escalating to a stdlib failsafe page after 3 in a row); the heartbeat decouples
+the freshness signal from cycle completion so a recoverable hang no longer looks
+like a dead brain.
+
+### When even the loop is frozen
+
+A sync C-level hang can freeze the single thread so completely that none of the
+asyncio guards fire (their cancellation is delivered _through_ the loop). Two
+out-of-loop diagnostics cover that:
+
+- **`faulthandler`** — `heartbeat_loop` re-arms `dump_traceback_later` each tick
+  from a separate C thread; a tick that stalls past `brain_hang_dump_seconds`
+  (300s, above the cycle ceiling so recoverable hangs never trip it) dumps every
+  thread's stack to stderr → Loki.
+- **`py-spy`** — baked into the image; the service has `CAP_SYS_PTRACE`, so you
+  can sample a frozen-but-alive daemon live:
+  ```bash
+  docker exec poindexter-brain-daemon py-spy dump --pid 1
+  ```
 
 ## Operator URL probe
 
