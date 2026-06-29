@@ -18,6 +18,17 @@ logger = logging.getLogger(__name__)
 _TIMEOUT = 30.0
 _UPLOAD_TIMEOUT = 90.0
 
+# Postiz validates each post's `settings` against the platform's DTO and
+# rejects (HTTP 400) any post missing a required field — even on the
+# self-hosted public API. These are the per-platform-type required-setting
+# defaults, merged UNDER caller-supplied platform_settings so a caller can
+# always override them. Extend this map as new platforms are connected
+# (each platform's `*.dto` lists its non-IsOptional fields).
+#   x: who_can_reply_post is the sole required field (XDto, no @IsOptional).
+_PLATFORM_SETTING_DEFAULTS: dict[str, dict[str, Any]] = {
+    "x": {"who_can_reply_post": "everyone"},
+}
+
 
 class PostizClient:
     def __init__(self, base_url: str, api_key: str = "") -> None:
@@ -40,7 +51,12 @@ class PostizClient:
         Never raises — all errors become failure dicts.
         """
         now_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
-        settings: dict[str, Any] = {"__type": platform_type, **platform_settings}
+        platform_defaults = _PLATFORM_SETTING_DEFAULTS.get(platform_type, {})
+        settings: dict[str, Any] = {
+            "__type": platform_type,
+            **platform_defaults,
+            **platform_settings,
+        }
         images = [{"id": uid} for uid in upload_ids]
         payload = {
             "type": "now",

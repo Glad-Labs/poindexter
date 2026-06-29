@@ -1,0 +1,84 @@
+"""Unit tests for PostizClient payload construction (offline, httpx mocked)."""
+from __future__ import annotations
+
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
+
+from services.integrations.postiz_client import PostizClient
+
+
+def _mock_http(captured: dict):
+    """Build a mock httpx.AsyncClient whose .post() captures the JSON body."""
+    resp = MagicMock()
+    resp.status_code = 200
+    resp.json.return_value = {"id": "pz-1"}
+    resp.raise_for_status = MagicMock()
+
+    async def _post(url, json, headers, timeout):
+        captured["url"] = url
+        captured["json"] = json
+        captured["headers"] = headers
+        return resp
+
+    http = AsyncMock()
+    http.__aenter__ = AsyncMock(return_value=http)
+    http.__aexit__ = AsyncMock(return_value=None)
+    http.post = _post
+    return http
+
+
+@pytest.mark.asyncio
+async def test_create_post_injects_required_x_settings():
+    """X posts must carry who_can_reply_post — Postiz 400s without it."""
+    captured: dict = {}
+    client = PostizClient(base_url="http://postiz:3000", api_key="k")
+    with patch("httpx.AsyncClient", return_value=_mock_http(captured)):
+        result = await client.create_post(
+            integration_id="uuid-x",
+            content="hello",
+            platform_type="x",
+            platform_settings={},
+            upload_ids=[],
+        )
+
+    assert result["success"] is True
+    settings = captured["json"]["posts"][0]["settings"]
+    assert settings["__type"] == "x"
+    assert settings["who_can_reply_post"] == "everyone"
+
+
+@pytest.mark.asyncio
+async def test_caller_platform_settings_override_defaults():
+    """Caller-supplied platform_settings win over the per-platform defaults."""
+    captured: dict = {}
+    client = PostizClient(base_url="http://postiz:3000", api_key="k")
+    with patch("httpx.AsyncClient", return_value=_mock_http(captured)):
+        await client.create_post(
+            integration_id="uuid-x",
+            content="hello",
+            platform_type="x",
+            platform_settings={"who_can_reply_post": "verified"},
+            upload_ids=[],
+        )
+
+    settings = captured["json"]["posts"][0]["settings"]
+    assert settings["who_can_reply_post"] == "verified"
+
+
+@pytest.mark.asyncio
+async def test_create_post_no_defaults_for_unknown_platform():
+    """A platform with no required-setting defaults gets only __type + caller."""
+    captured: dict = {}
+    client = PostizClient(base_url="http://postiz:3000", api_key="k")
+    with patch("httpx.AsyncClient", return_value=_mock_http(captured)):
+        await client.create_post(
+            integration_id="uuid-li",
+            content="hello",
+            platform_type="linkedin",
+            platform_settings={},
+            upload_ids=[],
+        )
+
+    settings = captured["json"]["posts"][0]["settings"]
+    assert settings == {"__type": "linkedin"}
