@@ -16,6 +16,7 @@ class _Cfg:
         *,
         fmt: str = "wav",
         remux: bool = False,
+        loudnorm: bool = False,
     ):
         self._enabled = enabled
         self._base_url = base_url
@@ -23,6 +24,10 @@ class _Cfg:
         # Default False so legacy tests never spawn a real ffmpeg; the remux
         # tests opt in explicitly with remux=True.
         self._remux = remux
+        # Default False so legacy tests never invoke the loudnorm render path;
+        # the EBU R128 tests opt in explicitly with loudnorm=True. Production
+        # default is true (settings_defaults.podcast_tts_loudnorm_enabled).
+        self._loudnorm = loudnorm
 
     def get(self, key, default=None):
         if key == "podcast_tts_enabled":
@@ -42,6 +47,8 @@ class _Cfg:
             return self._enabled
         if key == "podcast_tts_remux_enabled":
             return self._remux
+        if key == "podcast_tts_loudnorm_enabled":
+            return self._loudnorm
         return default
 
 
@@ -213,10 +220,13 @@ class TestTtsService:
 
         called = {}
 
-        async def _fake_remux(audio_bytes, fmt, *, mode="reencode", bitrate="96k"):
+        async def _fake_remux(
+            audio_bytes, fmt, *, mode="reencode", bitrate="96k", **_extra
+        ):
             called["args"] = (audio_bytes, fmt)
             called["mode"] = mode
             called["bitrate"] = bitrate
+            called["extra"] = _extra
             return b"REMUXED"
 
         monkeypatch.setattr(mod, "_remux_concatenated_audio", _fake_remux)
@@ -403,3 +413,216 @@ class TestTtsService:
         )
         # ~4s total (both 2s segments), NOT truncated to the first segment's 2s.
         assert float(r.stdout.strip()) > 3.5
+
+    # ---- EBU R128 loudness normalization (audio_clipping fix) ----
+
+    def test_loudnorm_defaults(self):
+        """Loudness target defaults to the podcast standard (-16 LUFS) with
+        true-peak headroom (-1.5 dBTP) — so Kokoro's full-scale output is pulled
+        below the qa.audio -0.1 dBFS clip gate instead of pinning at 0.0 dBFS."""
+        from services.tts_service import (
+            _DEFAULT_LOUDNORM_I,
+            _DEFAULT_LOUDNORM_TP,
+        )
+        assert _DEFAULT_LOUDNORM_I == "-16"
+        assert _DEFAULT_LOUDNORM_TP == "-1.5"
+
+    async def test_remux_applies_loudnorm_filter(self, monkeypatch):
+        """loudnorm=True injects `-af loudnorm=I=..:TP=..:LRA=..` so the rendered
+        narration is normalized to the loudness target with true-peak headroom
+        (the root-cause fix for the 0.0 dBFS audio_clipping finding)."""
+        import services.tts_service as mod
+        monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+        captured = {}
+
+        async def _fake_exec(*args, **_k):
+            captured["argv"] = list(args)
+            mod._write_bytes(args[-1], b"LOUDNORMED")
+
+            class _Proc:
+                returncode = 0
+
+                async def communicate(self):
+                    return (b"", b"")
+
+            return _Proc()
+
+        monkeypatch.setattr(mod.asyncio, "create_subprocess_exec", _fake_exec)
+        out = await mod._remux_concatenated_audio(
+            b"raw", "mp3", loudnorm=True,
+            loudnorm_i="-16", loudnorm_tp="-1.5", loudnorm_lra="11",
+            loudnorm_ar="44100",
+        )
+        assert out == b"LOUDNORMED"
+        argv = captured["argv"]
+        assert "-af" in argv
+        af = argv[argv.index("-af") + 1]
+        assert "loudnorm=I=-16:TP=-1.5:LRA=11" in af
+        # loudnorm internally upsamples to 192 kHz — resample back to a sane rate.
+        assert "aresample=44100" in af
+
+    async def test_remux_loudnorm_forces_reencode_over_copy(self, monkeypatch):
+        """A filter graph cannot ride on `-c copy`, so loudnorm=True forces a
+        re-encode even when mode='copy' is requested."""
+        import services.tts_service as mod
+        monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+        captured = {}
+
+        async def _fake_exec(*args, **_k):
+            captured["argv"] = list(args)
+            mod._write_bytes(args[-1], b"OUT")
+
+            class _Proc:
+                returncode = 0
+
+                async def communicate(self):
+                    return (b"", b"")
+
+            return _Proc()
+
+        monkeypatch.setattr(mod.asyncio, "create_subprocess_exec", _fake_exec)
+        await mod._remux_concatenated_audio(
+            b"raw", "mp3", mode="copy", loudnorm=True
+        )
+        argv = captured["argv"]
+        assert "copy" not in argv       # a filter graph can't carry -c copy
+        assert "libmp3lame" in argv     # forced re-encode
+        assert "-af" in argv
+
+    async def test_remux_without_loudnorm_has_no_af(self, monkeypatch):
+        """Default (loudnorm=False) keeps the plain header-repair re-encode with
+        NO audio filter — guards against always-on processing."""
+        import services.tts_service as mod
+        monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+        captured = {}
+
+        async def _fake_exec(*args, **_k):
+            captured["argv"] = list(args)
+            mod._write_bytes(args[-1], b"OUT")
+
+            class _Proc:
+                returncode = 0
+
+                async def communicate(self):
+                    return (b"", b"")
+
+            return _Proc()
+
+        monkeypatch.setattr(mod.asyncio, "create_subprocess_exec", _fake_exec)
+        await mod._remux_concatenated_audio(b"raw", "mp3", mode="reencode")
+        assert "-af" not in captured["argv"]
+
+    async def test_synthesize_applies_loudnorm_for_mp3(self, monkeypatch):
+        """synthesize_speech resolves the loudnorm config and threads it to the
+        render boundary so podcast + both video lanes inherit the headroom."""
+        import services.tts_service as mod
+        from services.tts_service import synthesize_speech
+
+        called: dict = {}
+
+        async def _fake_remux(audio_bytes, fmt, **kwargs):
+            called.update(kwargs)
+            called["fmt"] = fmt
+            return b"OUT"
+
+        monkeypatch.setattr(mod, "_remux_concatenated_audio", _fake_remux)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"RAW"
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+            await synthesize_speech(
+                "Hi", site_config=_Cfg(fmt="mp3", remux=True, loudnorm=True)
+            )
+
+        assert called["loudnorm"] is True
+        assert called["loudnorm_i"] == "-16"
+        assert called["loudnorm_tp"] == "-1.5"
+        assert called["loudnorm_lra"] == "11"
+
+    async def test_synthesize_loudnorm_runs_even_when_remux_disabled(
+        self, monkeypatch
+    ):
+        """Loudness normalization is its own concern: it must run even when the
+        header-repair remux is disabled — otherwise disabling remux silently
+        re-introduces the clipping the fix removes."""
+        import services.tts_service as mod
+        from services.tts_service import synthesize_speech
+
+        called: dict = {}
+
+        async def _fake_remux(audio_bytes, fmt, **kwargs):
+            called["ran"] = True
+            called.update(kwargs)
+            return b"OUT"
+
+        monkeypatch.setattr(mod, "_remux_concatenated_audio", _fake_remux)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"RAW"
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+            await synthesize_speech(
+                "Hi", site_config=_Cfg(fmt="mp3", remux=False, loudnorm=True)
+            )
+
+        assert called.get("ran") is True
+        assert called.get("loudnorm") is True
+
+    @pytest.mark.skipif(
+        not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
+        reason="needs ffmpeg + ffprobe on PATH",
+    )
+    async def test_loudnorm_brings_full_scale_audio_below_clip_gate(self, tmp_path):
+        """End-to-end proof against the reported finding: a full-scale (0.0 dBFS)
+        source — exactly what Kokoro hands the probe — run through the loudnorm
+        render lands BELOW the qa.audio -0.1 dBFS clip gate. This is the literal
+        condition the audio_clipping finding flags."""
+        import re
+        import subprocess
+
+        from modules.content.atoms.qa_audio import _DEFAULT_MAX_VOLUME_CLIP_DB
+        from services.tts_service import _remux_concatenated_audio
+
+        def _max_volume_db(path) -> float:
+            r = subprocess.run(
+                ["ffmpeg", "-hide_banner", "-nostats", "-i", str(path),
+                 "-af", "volumedetect", "-f", "null", "-"],
+                capture_output=True, text=True,
+            )
+            m = re.search(r"max_volume:\s*([-\d.]+)\s*dB", r.stderr)
+            assert m, f"no max_volume in ffmpeg output: {r.stderr[-300:]}"
+            return float(m.group(1))
+
+        # Overdrive a sine so samples clamp to ±full-scale — a guaranteed
+        # 0.0 dBFS source, the hot-as-Kokoro input the finding reports.
+        src = tmp_path / "hot.mp3"
+        subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
+             "-i", "sine=frequency=300:duration=2", "-af", "volume=30dB",
+             "-c:a", "libmp3lame", str(src)],
+            check=True,
+        )
+        # Precondition: the source really is at/above the clip gate.
+        assert _max_volume_db(src) >= _DEFAULT_MAX_VOLUME_CLIP_DB
+
+        out = await _remux_concatenated_audio(
+            src.read_bytes(), "mp3", loudnorm=True,
+            loudnorm_i="-16", loudnorm_tp="-1.5", loudnorm_lra="11",
+            loudnorm_ar="44100",
+        )
+        dst = tmp_path / "norm.mp3"
+        dst.write_bytes(out)
+
+        # The fix: peak is now comfortably under the qa.audio clip threshold.
+        assert _max_volume_db(dst) < _DEFAULT_MAX_VOLUME_CLIP_DB

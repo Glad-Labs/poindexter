@@ -34,6 +34,19 @@ Configuration (all in app_settings, default-off):
   headers (the robust fix); 'copy' is the legacy lossless `-c copy`
   that only rewrites the duration header.
 - podcast_tts_remux_bitrate 96k — output bitrate for re-encode mode.
+- podcast_tts_loudnorm_enabled true — EBU R128 loudness normalization
+  (the audio_clipping fix). Kokoro emits full-scale audio (peak ~0.0
+  dBFS) that trips the qa.audio -0.1 dBFS clip gate and risks true-peak
+  distortion after MP3 encode. ffmpeg ``loudnorm`` caps the true peak
+  (headroom) and hits the loudness target. Rides the remux re-encode
+  (one pass) and ALSO runs when remux is off. Fail-soft; needs ffmpeg.
+- podcast_tts_loudnorm_i   -16   — integrated loudness LUFS target
+  (the Apple/Spotify podcast standard).
+- podcast_tts_loudnorm_tp  -1.5  — max true peak dBTP (the headroom
+  that pulls max_volume below the clip gate).
+- podcast_tts_loudnorm_lra 11    — EBU R128 loudness range.
+- podcast_tts_loudnorm_ar  44100 — resample target (loudnorm upsamples
+  to 192 kHz internally; resample back to a distribution rate).
 
 Never raises — callers in generate_media_scripts treat audio as
 best-effort; a missing Speaches container is logged, not fatal. The
@@ -81,6 +94,15 @@ _DEFAULT_REMUX_MODE = "reencode"
 _DEFAULT_REMUX_BITRATE = "96k"
 # Per-format encoder used in re-encode mode (libmp3lame is universally built in).
 _REENCODE_CODEC = {"mp3": "libmp3lame", "aac": "aac", "opus": "libopus"}
+
+# EBU R128 loudness normalization (audio_clipping fix). Kokoro outputs full-scale
+# audio (peak ~0.0 dBFS); ffmpeg loudnorm pulls integrated loudness to the podcast
+# target AND caps the true peak so max_volume drops below the qa.audio -0.1 dBFS
+# clip gate. DB-tunable via podcast_tts_loudnorm_*.
+_DEFAULT_LOUDNORM_I = "-16"      # integrated loudness LUFS (Apple/Spotify target)
+_DEFAULT_LOUDNORM_TP = "-1.5"    # max true peak dBTP (the headroom)
+_DEFAULT_LOUDNORM_LRA = "11"     # loudness range
+_DEFAULT_LOUDNORM_AR = "44100"   # resample target (loudnorm upsamples to 192 kHz)
 
 
 def is_tts_enabled(site_config: Any) -> bool:
@@ -130,6 +152,28 @@ def _resolve_bool(site_config: Any, key: str, default: bool) -> bool:
         logger.warning(
             "[tts_service] failed to read bool setting %s (%s) — using default %s",
             key, exc, default,
+        )
+        return default
+
+
+def _resolve_numeric_str(site_config: Any, key: str, default: str) -> str:
+    """Read a numeric setting as a string, validating it parses as a float.
+
+    The loudnorm filter values (LUFS / dBTP / sample rate) are interpolated
+    straight into the ffmpeg ``-af`` argument, so a non-numeric operator value
+    would otherwise make ffmpeg fail and fall back to raw (clipping) audio with
+    no clear cause. We validate here and fall back to the known-good default with
+    a warning, keeping the string form ('-16' not '-16.0') so the filter reads
+    cleanly.
+    """
+    raw = _resolve(site_config, key, default)
+    try:
+        float(raw)
+        return raw
+    except (TypeError, ValueError):
+        logger.warning(
+            "[tts_service] %s=%r is not numeric — using default %s",
+            key, raw, default,
         )
         return default
 
@@ -200,18 +244,39 @@ async def synthesize_speech(
         logger.warning("[tts_service] Speaches returned empty body")
         return None
 
-    # Speaches byte-concatenates its internal segments, leaving N embedded
-    # per-segment headers and only the first segment's duration in the stream
-    # header. Normalize to a single clean stream (re-encode by default) so
-    # players don't cut off mid-episode AND transcoders don't mishandle the
-    # multi-header structure. Single TTS boundary → podcast AND video covered.
-    if _resolve_bool(site_config, "podcast_tts_remux_enabled", True):
+    # Two post-processing concerns share a single ffmpeg pass at this one TTS
+    # boundary (→ podcast AND both video lanes covered):
+    #   1. Remux — Speaches byte-concatenates its internal segments, leaving N
+    #      embedded per-segment headers and only segment 1's duration in the
+    #      stream header; re-encode collapses them into one clean stream so
+    #      players don't cut off mid-episode.
+    #   2. loudnorm — Kokoro emits full-scale audio (peak ~0.0 dBFS); EBU R128
+    #      normalization caps the true peak (headroom) and hits the podcast
+    #      loudness target, fixing the qa.audio audio_clipping finding.
+    # Loudness normalization runs even when remux is off — disabling the header
+    # repair must not silently re-introduce clipping.
+    remux_enabled = _resolve_bool(site_config, "podcast_tts_remux_enabled", True)
+    loudnorm_enabled = _resolve_bool(site_config, "podcast_tts_loudnorm_enabled", True)
+    if remux_enabled or loudnorm_enabled:
         mode = _resolve(site_config, "podcast_tts_remux_mode", _DEFAULT_REMUX_MODE)
         bitrate = _resolve(
             site_config, "podcast_tts_remux_bitrate", _DEFAULT_REMUX_BITRATE
         )
         audio_bytes = await _remux_concatenated_audio(
-            audio_bytes, fmt, mode=mode, bitrate=bitrate
+            audio_bytes, fmt, mode=mode, bitrate=bitrate,
+            loudnorm=loudnorm_enabled,
+            loudnorm_i=_resolve_numeric_str(
+                site_config, "podcast_tts_loudnorm_i", _DEFAULT_LOUDNORM_I
+            ),
+            loudnorm_tp=_resolve_numeric_str(
+                site_config, "podcast_tts_loudnorm_tp", _DEFAULT_LOUDNORM_TP
+            ),
+            loudnorm_lra=_resolve_numeric_str(
+                site_config, "podcast_tts_loudnorm_lra", _DEFAULT_LOUDNORM_LRA
+            ),
+            loudnorm_ar=_resolve_numeric_str(
+                site_config, "podcast_tts_loudnorm_ar", _DEFAULT_LOUDNORM_AR
+            ),
         )
 
     logger.info(
@@ -247,6 +312,11 @@ async def _remux_concatenated_audio(
     *,
     mode: str = _DEFAULT_REMUX_MODE,
     bitrate: str = _DEFAULT_REMUX_BITRATE,
+    loudnorm: bool = False,
+    loudnorm_i: str = _DEFAULT_LOUDNORM_I,
+    loudnorm_tp: str = _DEFAULT_LOUDNORM_TP,
+    loudnorm_lra: str = _DEFAULT_LOUDNORM_LRA,
+    loudnorm_ar: str = _DEFAULT_LOUDNORM_AR,
 ) -> bytes:
     """Normalize Speaches' byte-concatenated multi-segment audio to one stream.
 
@@ -265,6 +335,14 @@ async def _remux_concatenated_audio(
       correct duration header, but LEAVES the embedded per-segment headers in
       place. Kept for back-compat / operators who want zero re-encode.
 
+    When ``loudnorm`` is set, an EBU R128 ``loudnorm=I=..:TP=..:LRA=..`` filter
+    (plus an ``aresample`` back off loudnorm's internal 192 kHz) is applied — the
+    audio_clipping fix: Kokoro emits full-scale audio (peak ~0.0 dBFS), and
+    capping the true peak to ``loudnorm_tp`` restores the headroom that keeps
+    ``max_volume`` below the qa.audio clip gate while hitting the ``loudnorm_i``
+    loudness target. A filter graph cannot ride on ``-c copy``, so ``loudnorm``
+    forces a re-encode regardless of ``mode``.
+
     Fail-soft: returns the original bytes on any error, and is a no-op for non-
     self-synchronizing formats (a concatenated WAV would truncate to segment 1).
     """
@@ -278,6 +356,19 @@ async def _remux_concatenated_audio(
             "ffmpeg or set podcast_tts_remux_enabled=false to silence this."
         )
         return audio_bytes
+
+    # EBU R128 loudness normalization (audio_clipping fix). loudnorm caps the
+    # true peak (headroom below the qa.audio clip gate) and hits the integrated
+    # loudness target. It MUST decode + filter + encode, so it forces a
+    # re-encode — a filter graph cannot ride on `-c copy`. loudnorm internally
+    # upsamples to 192 kHz, so we resample back to a distribution rate.
+    filter_args: list[str] = []
+    if loudnorm:
+        chain = f"loudnorm=I={loudnorm_i}:TP={loudnorm_tp}:LRA={loudnorm_lra}"
+        if loudnorm_ar:
+            chain += f",aresample={loudnorm_ar}"
+        filter_args = ["-af", chain]
+        mode = "reencode"
 
     # Re-encode collapses the multi-segment headers; copy is the lossless
     # header-only repair. libmp3lame is always built into ffmpeg.
@@ -293,7 +384,7 @@ async def _remux_concatenated_audio(
         await asyncio.to_thread(_write_bytes, src, audio_bytes)
         proc = await asyncio.create_subprocess_exec(
             ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
-            "-i", src, *codec_args, dst,
+            "-i", src, *filter_args, *codec_args, dst,
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.PIPE,
         )

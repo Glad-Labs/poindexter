@@ -749,6 +749,22 @@ DEFAULTS: dict[str, str] = {
     'podcast_tts_remux_mode': 'reencode',
     # Output bitrate for re-encode mode (mono spoken-word; 96k is ample).
     'podcast_tts_remux_bitrate': '96k',
+    # EBU R128 loudness normalization (audio_clipping fix). Kokoro hands the
+    # render full-scale audio (peak ~0.0 dBFS), which trips the qa.audio
+    # -0.1 dBFS clip gate and risks true-peak distortion after MP3 encode.
+    # ffmpeg loudnorm pulls the integrated loudness to the podcast target AND
+    # caps the true peak, restoring headroom. Rides the remux re-encode (one
+    # ffmpeg pass) and also runs when remux is disabled. Fail-soft; needs ffmpeg.
+    'podcast_tts_loudnorm_enabled': 'true',
+    # Integrated loudness target in LUFS — the Apple/Spotify podcast standard.
+    'podcast_tts_loudnorm_i': '-16',
+    # Max true peak in dBTP — the headroom that keeps max_volume under the gate.
+    'podcast_tts_loudnorm_tp': '-1.5',
+    # Loudness range (LRA) — EBU R128 dynamics target for spoken word.
+    'podcast_tts_loudnorm_lra': '11',
+    # Output sample rate — loudnorm upsamples to 192 kHz internally, so resample
+    # back to a distribution-standard rate (44.1 kHz).
+    'podcast_tts_loudnorm_ar': '44100',
     'scheduled_publisher_poll_seconds': '60',
     # TTS pronunciation defaults — JSON objects operators can tune via
     # `poindexter settings set`. The code merges DB values on top of the
