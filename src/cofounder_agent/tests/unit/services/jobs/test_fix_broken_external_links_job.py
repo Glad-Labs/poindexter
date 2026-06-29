@@ -302,3 +302,50 @@ class TestRun:
         # Both updates failed, so changes_made=0, but the job still completes.
         assert result.ok is True
         assert result.metrics["urls_checked"] == 2
+
+
+class TestUserAgent:
+    """Outbound 404-probes send the shared crawler UA (the contact-less
+    form by default, the OSS leak guard) instead of the bare
+    ``Mozilla/5.0`` — set on the AsyncClient so every probe carries it.
+    #1969 follow-up; mirrors check_published_links' TestUserAgent."""
+
+    @pytest.mark.asyncio
+    async def test_sends_crawler_user_agent_contactless_by_default(self):
+        pool, _ = _make_pool([
+            {"id": "p1", "title": "t", "content": "[ok](https://other.com/live)"},
+        ])
+        client = _patched_client({"https://other.com/live": 200})
+        mock_cls = MagicMock(return_value=client)
+        with patch(
+            "services.jobs.fix_broken_external_links.httpx.AsyncClient", mock_cls,
+        ):
+            job = FixBrokenExternalLinksJob()
+            await job.run(pool, {"file_gitea_issue": False})
+
+        ua = mock_cls.call_args.kwargs["headers"]["User-Agent"]
+        # No _site_config → contact-less form (OSS leak guard).
+        assert ua == "Mozilla/5.0 (compatible; PoindexterLinkFix/1.0)"
+
+    @pytest.mark.asyncio
+    async def test_user_agent_includes_contact_when_configured(self):
+        pool, _ = _make_pool([
+            {"id": "p1", "title": "t", "content": "[ok](https://other.com/live)"},
+        ])
+        client = _patched_client({"https://other.com/live": 200})
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d=None: (
+            "https://gladlabs.io/bot" if k == "crawler_contact_url" else d
+        )
+        mock_cls = MagicMock(return_value=client)
+        with patch(
+            "services.jobs.fix_broken_external_links.httpx.AsyncClient", mock_cls,
+        ):
+            job = FixBrokenExternalLinksJob()
+            await job.run(pool, {"file_gitea_issue": False, "_site_config": sc})
+
+        ua = mock_cls.call_args.kwargs["headers"]["User-Agent"]
+        assert ua == (
+            "Mozilla/5.0 (compatible; PoindexterLinkFix/1.0; "
+            "+https://gladlabs.io/bot)"
+        )

@@ -207,6 +207,53 @@ class TestVerifyContentUrls:
 
 
 # ---------------------------------------------------------------------------
+# verify_content_urls — outbound crawler User-Agent (#1969 follow-up)
+# ---------------------------------------------------------------------------
+#
+# The link-checker probes route through the shared
+# ``utils.crawler_ua.build_crawler_ua`` helper instead of a hardcoded UA,
+# so the OSS contact-URL leak guard (omit ``+<url>`` when
+# ``crawler_contact_url`` is unset) applies here too. ``site_config`` is
+# already a required kwarg of ``verify_content_urls`` — the helper reads
+# ``crawler_contact_url`` off it.
+
+
+class TestVerifyContentUrlsUserAgent:
+    @pytest.mark.asyncio
+    async def test_sends_crawler_user_agent_contactless_by_default(self):
+        """Unset crawler_contact_url → contact-less crawler UA (no +url leak)."""
+        ctx, client = _make_httpx_client({
+            "https://example.com/x": _make_response(200),
+        })
+        sc = SiteConfig(initial_config={})
+        with patch("httpx.AsyncClient", return_value=ctx):
+            await verify_content_urls(
+                "See [docs](https://example.com/x).", site_config=sc,
+            )
+        ua = client.head.call_args.kwargs["headers"]["User-Agent"]
+        assert ua == "Mozilla/5.0 (compatible; PoindexterLinkChecker/1.0)"
+        assert "+" not in ua  # no contact leaked
+
+    @pytest.mark.asyncio
+    async def test_user_agent_includes_contact_when_configured(self):
+        ctx, client = _make_httpx_client({
+            "https://example.com/x": _make_response(200),
+        })
+        sc = SiteConfig(initial_config={
+            "crawler_contact_url": "https://gladlabs.io/bot",
+        })
+        with patch("httpx.AsyncClient", return_value=ctx):
+            await verify_content_urls(
+                "See [docs](https://example.com/x).", site_config=sc,
+            )
+        ua = client.head.call_args.kwargs["headers"]["User-Agent"]
+        assert ua == (
+            "Mozilla/5.0 (compatible; PoindexterLinkChecker/1.0; "
+            "+https://gladlabs.io/bot)"
+        )
+
+
+# ---------------------------------------------------------------------------
 # _is_known_reference — Ollama-suffix strip path (lines 596-598)
 # ---------------------------------------------------------------------------
 

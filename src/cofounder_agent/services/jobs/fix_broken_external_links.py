@@ -30,6 +30,7 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
+from utils.crawler_ua import build_crawler_ua
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -112,6 +113,10 @@ class FixBrokenExternalLinksJob:
         # DI seam (glad-labs-stack#330)
         sc = config.get("_site_config")
         site_domain = sc.get("site_domain", "localhost") if sc is not None else "localhost"
+        # Send the shared crawler UA (folds in crawler_contact_url with the
+        # OSS contact-URL leak guard) rather than the bare httpx UA, which
+        # many WAFs 403 into a false "broken link". #1969.
+        user_agent = build_crawler_ua(sc, product="PoindexterLinkFix")
         broken_total = 0
         posts_fixed = 0
         urls_checked = 0
@@ -119,6 +124,7 @@ class FixBrokenExternalLinksJob:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(8.0, connect=3.0),
             follow_redirects=True,
+            headers={"User-Agent": user_agent},
         ) as client:
             for row in rows:
                 content = row["content"] or ""
@@ -127,11 +133,7 @@ class FixBrokenExternalLinksJob:
                 for url in list(urls)[:urls_per_post]:
                     urls_checked += 1
                     try:
-                        resp = await client.get(
-                            url,
-                            headers={"User-Agent": "Mozilla/5.0"},
-                            timeout=8,
-                        )
+                        resp = await client.get(url, timeout=8)
                         if resp.status_code == 404:
                             broken.add(url)
                     except Exception:

@@ -270,3 +270,82 @@ class TestEdgeChallenge:
         assert result.metrics["posts_edge_blocked"] == 0
         kinds = [c.kwargs.get("kind") for c in finds.call_args_list]
         assert "post_verification_failure" in kinds
+
+
+class TestUserAgent:
+    """The monitor identifies with the shared crawler UA (PoindexterMonitor)
+    so the edge can allowlist it by UA, and the OSS contact-URL leak guard
+    applies. The UA swap alone does NOT bypass the IP+UA-based CF challenge
+    (see the job docstring) — but it makes the allowlist-by-UA remediation
+    in the finding body real. #1969 follow-up."""
+
+    @pytest.mark.asyncio
+    async def test_sends_crawler_user_agent_contactless_by_default(self):
+        pool, _ = _make_pool([{"id": "p1", "title": "T", "slug": "t1"}])
+        client = _patched_client({"https://gladlabs.io/posts/t1": 200})
+        mock_cls = MagicMock(return_value=client)
+        with patch(
+            "services.jobs.verify_published_posts.httpx.AsyncClient", mock_cls,
+        ):
+            job = VerifyPublishedPostsJob()
+            await job.run(
+                pool, {"file_gitea_issue": False, "_site_config": _sc()},
+            )
+
+        ua = mock_cls.call_args.kwargs["headers"]["User-Agent"]
+        # _sc() returns the default for crawler_contact_url → contact-less.
+        assert ua == "Mozilla/5.0 (compatible; PoindexterMonitor/1.0)"
+
+    @pytest.mark.asyncio
+    async def test_user_agent_includes_contact_when_configured(self):
+        pool, _ = _make_pool([{"id": "p1", "title": "T", "slug": "t1"}])
+        client = _patched_client({"https://gladlabs.io/posts/t1": 200})
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d=None: {
+            "site_url": "https://gladlabs.io",
+            "crawler_contact_url": "https://gladlabs.io/bot",
+        }.get(k, d)
+        mock_cls = MagicMock(return_value=client)
+        with patch(
+            "services.jobs.verify_published_posts.httpx.AsyncClient", mock_cls,
+        ):
+            job = VerifyPublishedPostsJob()
+            await job.run(
+                pool, {"file_gitea_issue": False, "_site_config": sc},
+            )
+
+        ua = mock_cls.call_args.kwargs["headers"]["User-Agent"]
+        assert ua == (
+            "Mozilla/5.0 (compatible; PoindexterMonitor/1.0; "
+            "+https://gladlabs.io/bot)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_edge_finding_prose_is_accurate(self):
+        """The edge-challenge remediation prose names the real UA the monitor
+        sends (PoindexterMonitor) and no longer cites the stale
+        ``verify_published_posts_user_agent`` setting that no code reads."""
+        pool, _ = _make_pool([{"id": "p1", "title": "T", "slug": "t1"}])
+        client = _patched_client({
+            "https://gladlabs.io/posts/t1": _FakeResp(
+                403, {"cf-mitigated": "challenge", "server": "cloudflare"},
+            ),
+        })
+        finds = MagicMock()
+        with patch(
+            "services.jobs.verify_published_posts.httpx.AsyncClient",
+            return_value=client,
+        ), patch(
+            "services.jobs.verify_published_posts.emit_finding", new=finds,
+        ):
+            job = VerifyPublishedPostsJob()
+            await job.run(pool, {"_site_config": _sc()})
+
+        edge_call = next(
+            c for c in finds.call_args_list
+            if c.kwargs.get("kind") == "verify_blocked_by_edge"
+        )
+        body = edge_call.kwargs["body"]
+        assert "PoindexterMonitor" in body
+        assert "verify_published_posts_user_agent" not in body
+        assert "GladLabsMonitor" not in body

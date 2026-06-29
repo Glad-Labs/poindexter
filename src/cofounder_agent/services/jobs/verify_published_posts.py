@@ -49,6 +49,7 @@ from typing import Any
 import httpx
 
 from plugins.job import JobResult
+from utils.crawler_ua import build_crawler_ua
 from utils.edge_challenge import is_edge_challenge
 from utils.findings import emit_finding
 
@@ -75,6 +76,12 @@ class VerifyPublishedPostsJob:
                 detail="site_url not configured in app_settings",
                 changes_made=0,
             )
+
+        # Identify with the shared crawler UA so the edge can allowlist this
+        # monitor by UA (folds in crawler_contact_url with the OSS leak guard).
+        # NB: a UA swap alone does NOT bypass the IP+UA-based CF challenge —
+        # see the module docstring; the real fix is at the edge. #1969.
+        user_agent = build_crawler_ua(sc, product="PoindexterMonitor")
 
         try:
             async with pool.acquire() as conn:
@@ -103,6 +110,7 @@ class VerifyPublishedPostsJob:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(10.0, connect=3.0),
             follow_redirects=True,
+            headers={"User-Agent": user_agent},
         ) as client:
             for row in rows:
                 url = f"{site_url}/posts/{row['slug']}"
@@ -208,11 +216,12 @@ class VerifyPublishedPostsJob:
                     + "\n".join(edge_lines)
                     + "\n\n## Remediation\n"
                     "1. Allowlist this monitor at Cloudflare (skip Bot Fight Mode / "
-                    "managed challenge for UA `GladLabsMonitor`), **or**\n"
+                    "managed challenge for UA `PoindexterMonitor`), **or**\n"
                     "2. **Security → Bots → Verified bots: Allow** if a bot rule was "
                     "recently enabled, **or**\n"
-                    "3. Override the UA via "
-                    "`app_settings.verify_published_posts_user_agent`.\n\n"
+                    "3. Set `app_settings.crawler_contact_url` so this monitor's UA "
+                    "carries a contact URL the edge/operator can recognise and "
+                    "allowlist.\n\n"
                     "⚠️ If real crawlers (Googlebot/Bingbot) hit the same UA-based "
                     "challenge, search indexing is at risk — check Cloudflare "
                     "**Security → Events** for verified-bot challenges."

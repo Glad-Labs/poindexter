@@ -21,6 +21,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from services.logger_config import get_logger
+from utils.crawler_ua import build_crawler_ua
 
 if TYPE_CHECKING:
     import httpx
@@ -2262,10 +2263,11 @@ async def verify_content_urls(
     skip_domains.add("localhost")
 
     # Per-request headers (the lifespan client doesn't carry these as
-    # defaults — every caller passes its own UA/Accept). Inline-defined
-    # to keep this helper self-contained.
+    # defaults — every caller passes its own UA/Accept). The User-Agent
+    # routes through the shared crawler-UA helper, which folds in
+    # ``crawler_contact_url`` with the OSS contact-URL leak guard (#1969).
     link_check_headers = {
-        "User-Agent": "Mozilla/5.0 (compatible; Poindexter-LinkChecker/1.0)",
+        "User-Agent": build_crawler_ua(_sc, product="PoindexterLinkChecker"),
     }
 
     from urllib.parse import urlparse
