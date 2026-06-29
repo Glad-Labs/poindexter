@@ -210,7 +210,7 @@ deepeval = "^4.0.7"
 # guardrails-ai.
 ragas = ">=0.2,<0.5"
 langchain-ollama = "^1.1.0"
-llama-index-core = "^0.14.21"
+llama-index-core = "^0.14.23"
 llama-index-embeddings-ollama = "^0.9.0"
 # Cross-encoder reranker for the LlamaIndex rag_engine Phase C wrapper
 # (services/rag_engine.py::_build_rerank_retriever_class). The warmup
