@@ -331,10 +331,15 @@ bind-mounted from the deploy clone, so a sync + restart is the deploy
 **Routine Python merges now auto-deploy.** The 10-min `deploy-checkout-sync.ps1`
 scheduled task (above) bounces `poindexter-worker` + `poindexter-pipeline-bot`
 whenever it advances the deploy clone, so a merged code change reaches the
-running worker within ~10 min on its own. `deploy-worker.ps1` remains the tool
-for an _immediate_ deploy (skip the wait) and is still required for dependency /
-base-image changes (which need `docker compose build`) and for
-`poindexter-prefect-worker` / `poindexter-brain-daemon` bootstrap-level changes.
+running worker within ~10 min on its own. `poindexter-brain-daemon` is
+image-baked rather than bind-mounted (poindexter#456), so a restart can't reload
+it — instead the same task **rebuilds the brain image** whenever the synced diff
+touches `brain/` (`start-stack.sh build brain-daemon`), and the compose-apply
+step recreates the container onto the fresh image, so brain code edits
+auto-deploy too. `deploy-worker.ps1` remains the tool for an _immediate_ deploy
+(skip the wait) and is still required for dependency / base-image changes
+elsewhere (which need `docker compose build`) and for `poindexter-prefect-worker`
+bootstrap-level changes.
 
 **Confirming the sync task actually ran.** The task runs hidden/non-interactive
 and the Windows TaskScheduler/Operational history log is disabled by default, so

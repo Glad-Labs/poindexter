@@ -22,18 +22,28 @@
   containers (poindexter-worker + poindexter-pipeline-bot by default) so the
   freshly-synced code is actually re-imported. App code is bind-mounted
   read-only into /app, so a restart - NOT a rebuild - is the deploy; only
-  dependency / Dockerfile changes need `docker compose build`. Syncing the
-  files alone never reloads a long-lived process that already imported the
-  old modules, which is why a pure-Python merge used to sit dormant on disk
-  until the next manual deploy-worker.ps1 or a migration-drift restart.
+  dependency / Dockerfile changes need `docker compose build`. The one
+  image-baked app container, poindexter-brain-daemon, is the exception: when
+  the synced diff touches brain/ this script rebuilds its image so the
+  compose-apply recreates it onto fresh code (a restart can't reload it -
+  see the NOT-restarted note below). Syncing the files alone never reloads a
+  long-lived process that already imported the old modules, which is why a
+  pure-Python merge used to sit dormant on disk until the next manual
+  deploy-worker.ps1 or a migration-drift restart.
 
-  Intentionally NOT restarted:
+  Intentionally NOT restarted (a `docker restart` would reload nothing):
     - poindexter-prefect-worker: runs each flow as a fresh subprocess that
       re-imports /app per run, so new pipeline code lands on the next run
       without a bounce - and bouncing it would interrupt an in-flight post.
     - poindexter-brain-daemon: brain code is image-baked (its /app is the
-      image, not a bind-mount), so a restart can't reload it - brain code
-      changes need `docker compose build brain-daemon`.
+      image, not a bind-mount - poindexter#456), so a restart can't reload
+      it. Instead, when the synced diff touches brain/ this script REBUILDS
+      the brain image (`start-stack.sh build brain-daemon`) BEFORE the
+      compose-apply below, which then recreates the container onto the fresh
+      image - so brain code edits deploy on merge without a manual build.
+      Only the rebuild, never a restart, ships brain code; the rebuild is
+      layer-cache-fast for a code-only edit and retries next cycle (warm
+      cache) if a heavier dep change overruns the task's 5-min limit.
 
   The in-brain-container migration-drift probe still does its own reset +
   `docker restart poindexter-worker` ONLY on migration drift; it stays as a
@@ -272,6 +282,20 @@ function Invoke-SelfTest {
         Test-Case 'apply uses git bash (not WSL)'      (($applyArgv[0] -eq 'bash') -or ($applyArgv[0] -match 'bash\.exe$'))
         Test-Case 'apply targets clone start-stack'    ($applyArgv[1] -eq 'C:\fake\clone/scripts/start-stack.sh')
         Test-Case 'apply passes up -d --no-build'      (($applyArgv[2..4] -join ' ') -eq 'up -d --no-build')
+
+        # 5) Brain-change detection: only brain/ paths trigger an image rebuild.
+        Test-Case 'brain/ path triggers rebuild'       (Test-PathListTouchesBrain @('brain/brain_daemon.py'))
+        Test-Case 'brain/ subdir triggers rebuild'     (Test-PathListTouchesBrain @('src/x.py', 'brain/sub/y.py'))
+        Test-Case 'backslash brain path triggers'      (Test-PathListTouchesBrain @('brain\health_probes.py'))
+        Test-Case 'non-brain change does not trigger'  (-not (Test-PathListTouchesBrain @('src/cofounder_agent/main.py', 'docs/x.md')))
+        Test-Case 'brainlike prefix does not trigger'  (-not (Test-PathListTouchesBrain @('brainstem/notes.md')))
+        Test-Case 'empty diff does not trigger'        (-not (Test-PathListTouchesBrain @()))
+
+        # 6) Brain rebuild command is host-side git bash + clone start-stack build.
+        $brainArgv = Get-BrainBuildCommand -DeployDir 'C:\fake\clone'
+        Test-Case 'brain build uses git bash'          (($brainArgv[0] -eq 'bash') -or ($brainArgv[0] -match 'bash\.exe$'))
+        Test-Case 'brain build targets clone start-stack' ($brainArgv[1] -eq 'C:\fake\clone/scripts/start-stack.sh')
+        Test-Case 'brain build passes build brain-daemon' (($brainArgv[2..3] -join ' ') -eq 'build brain-daemon')
     } finally {
         Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -338,6 +362,34 @@ function Resolve-GitBash {
 function Get-ComposeApplyCommand {
     param([Parameter(Mandatory)][string]$DeployDir)
     return @((Resolve-GitBash), "$DeployDir/scripts/start-stack.sh", 'up', '-d', '--no-build')
+}
+
+# Build the host-side "rebuild the brain image" command. brain-daemon is the
+# one app container whose code is image-baked, NOT bind-mounted like the worker
+# (poindexter#456 - the brain's bare-name + `brain.`-package import duality plus
+# a build-time /app/brain mirror make a :ro /app bind-mount crashloop it, and it
+# already has a child mount under /app that overlayfs rejects under :ro, the #348
+# failure). So a plain `docker restart` reloads NOTHING for brain. When brain/
+# source changed in the synced diff we rebuild its image here; the compose-apply
+# (`up -d --no-build`) that follows then recreates the container onto the fresh
+# image. Routed through the CLONE's start-stack.sh so bootstrap.toml secrets are
+# exported - a bare `docker compose build` would abort on the compose file's
+# `${LOCAL_POSTGRES_*:?}` sentinels. start-stack.sh forwards `build brain-daemon`
+# straight to `docker compose` (its ACTION/"$@" passthrough).
+function Get-BrainBuildCommand {
+    param([Parameter(Mandatory)][string]$DeployDir)
+    return @((Resolve-GitBash), "$DeployDir/scripts/start-stack.sh", 'build', 'brain-daemon')
+}
+
+# True if any synced path is under brain/ (forward- or back-slashed). Drives the
+# brain image rebuild: brain is image-baked, so only a rebuild - never a restart
+# - ships its code. Pure function of the diff list so -SelfTest can exercise it.
+function Test-PathListTouchesBrain {
+    param([string[]]$Paths)
+    foreach ($p in $Paths) {
+        if ($p -and (($p -replace '\\', '/') -match '^brain/')) { return $true }
+    }
+    return $false
 }
 
 # ---- Read-only / test modes (no rotation, no sync, no restart) ------------
@@ -495,6 +547,38 @@ try {
     $lastShort = if ($lastDeployed.Length -ge 9) { $lastDeployed.Substring(0, 9) } else { $lastDeployed }
     Write-Log "Code advanced $lastShort -> $shortHead; restarting: $($RestartContainers -join ', ')"
 
+    # ---- Brain image rebuild (image-baked container, poindexter#456) ------
+    # brain-daemon's code is baked into its image (NOT bind-mounted like the
+    # worker), so the restart loop below can't reload it - only a rebuild ships
+    # brain code. When brain/ source changed between the last deploy and now,
+    # rebuild its image here; the compose-apply step that follows then recreates
+    # the container onto the fresh image. If the diff can't be computed (e.g. a
+    # pruned marker SHA), rebuild defensively rather than silently ship stale
+    # brain code. The build is fail-loud: on non-zero we DON'T record the marker,
+    # so it retries next cycle (with a warm layer cache).
+    $brainRebuilt = $false
+    $brainChanged = $false
+    try {
+        $diffOut = & git -C $DeployDir diff --name-only $lastDeployed $head 2>$null
+        if ($LASTEXITCODE -ne 0) { throw "git diff exited $LASTEXITCODE" }
+        $brainChanged = Test-PathListTouchesBrain @($diffOut)
+    } catch {
+        Write-Log "Could not diff ${lastShort}..${shortHead} ($($_.Exception.Message)); rebuilding brain-daemon defensively." 'WARN'
+        $brainChanged = $true
+    }
+    if ($brainChanged) {
+        Write-Log "brain/ changed in ${lastShort}..${shortHead}; rebuilding brain-daemon image (image-baked)..."
+        $brainArgv = Get-BrainBuildCommand -DeployDir $DeployDir
+        $brainRc = Invoke-Logged $brainArgv[0] $brainArgv[1..($brainArgv.Length - 1)] 'brain-build'
+        if ($brainRc -ne 0) {
+            Write-Log "brain-daemon rebuild failed (exit $brainRc); NOT recording marker - will retry next cycle." 'ERROR'
+            Write-DeployStatus -Result 'error' -Head $head -PreviousHead $lastDeployed -Detail "brain-daemon rebuild failed (exit $brainRc)"
+            exit 1
+        }
+        $brainRebuilt = $true
+        Write-Log "brain-daemon image rebuilt; compose-apply will recreate it onto the fresh image."
+    }
+
     # Apply compose/infra changes FIRST: recreate the services whose compose stanza
     # changed (mounts/env/ports/image) by running the clone's compose up. Compose
     # only touches changed services, so this is a no-op for code-only merges. The
@@ -532,8 +616,10 @@ try {
 
     # Record only after a clean restart so a transient failure retries next cycle.
     Set-Content -Path $markerFile -Value $head -NoNewline
-    Write-Log "Pipeline now running $shortHead."
-    Write-DeployStatus -Result 'deployed' -Head $head -PreviousHead $lastDeployed -Restarted $restarted
+    $brainNote = if ($brainRebuilt) { ' brain-daemon rebuilt + recreated.' } else { '' }
+    Write-Log "Pipeline now running $shortHead.$brainNote"
+    $deployDetail = if ($brainRebuilt) { 'rebuilt brain-daemon image (brain/ changed)' } else { '' }
+    Write-DeployStatus -Result 'deployed' -Head $head -PreviousHead $lastDeployed -Restarted $restarted -Detail $deployDetail
 } catch {
     # Any unexpected throw (cmdlet error under -ErrorActionPreference Stop, etc.)
     # used to leave the hidden task non-zero with no on-disk trace. Capture it.

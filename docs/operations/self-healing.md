@@ -219,8 +219,12 @@ The agent is host-local. After changing `scripts/recovery-agent.py` / `.cmd`:
    Confirm with an authenticated `GET http://localhost:9841/tasks?name=Poindexter+MCP+HTTP`
    → per-task JSON status.
 
-The brain probes are image-baked, so after changing a probe rebuild and recreate
-the brain: `docker compose build brain-daemon && docker compose up -d brain-daemon`.
+The brain probes are image-baked, so a probe code change needs an image rebuild,
+not just a restart. The 10-min `deploy-checkout-sync.ps1` task does this
+automatically — it rebuilds `brain-daemon` whenever a synced merge touches
+`brain/`, then recreates the container onto the fresh image (see
+`docs/operations/ci-deploy-chain.md`). For an immediate manual deploy:
+`docker compose build brain-daemon && docker compose up -d brain-daemon`.
 
 ## Audit notes & known limitations
 
