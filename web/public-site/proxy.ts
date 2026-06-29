@@ -22,6 +22,13 @@ const SITE_URL =
   process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io';
 
 const POST_PATH = /^\/posts\/([^/]+)\/?$/;
+// Distinct, edge-cacheable markdown URL: /posts/<slug>.md . Cloudflare's cache
+// key ignores `Vary: Accept` (only Accept-Encoding is honored), so the markdown
+// variant gets its OWN URL instead of content-negotiating on the HTML URL —
+// otherwise an agent's `Accept: text/markdown` request poisons the shared cache
+// and browsers get served raw markdown too (the 2026-06-29 incident).
+const POST_MD_PATH = /^\/posts\/([^/]+)\.md$/;
+const MD_CACHE = 'public, max-age=3600, stale-while-revalidate=86400';
 // Header used to prevent infinite recursion when the proxy fetches /robots.txt.
 const PROXY_BYPASS_HEADER = 'x-proxy-bypass';
 
@@ -62,35 +69,41 @@ export async function proxy(request: NextRequest) {
     }
   }
 
-  // ── Markdown negotiation for blog posts ────────────────────────────────
-  if (POST_PATH.test(pathname) && accept.includes('text/markdown')) {
-    const slug = pathname.replace(/^\/posts\//, '').replace(/\/$/, '');
-    try {
-      const upstream = await fetch(`${STATIC_URL}/posts/${slug}.json`, {
-        headers: { Accept: 'application/json' },
-        signal: AbortSignal.timeout(5000),
-      });
-      if (upstream.ok) {
-        const post = (await upstream.json()) as Record<string, unknown>;
-        const md = postToMarkdown(post, slug);
-        return new NextResponse(md, {
-          status: 200,
-          headers: {
-            'Content-Type': 'text/markdown; charset=utf-8',
-            'Vary': 'Accept',
-            'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
-            'x-markdown-tokens': String(md.length),
-          },
-        });
-      }
-    } catch {
-      // Fall through — serve normal HTML page.
+  // ── Distinct cacheable markdown URL: /posts/<slug>.md ──────────────────
+  const mdMatch = POST_MD_PATH.exec(pathname);
+  if (mdMatch) {
+    const slug = mdMatch[1];
+    const post = await fetchPostJson(slug);
+    if (post) {
+      // Own cache key → safe to cache at the edge.
+      return markdownResponse(postToMarkdown(post, slug), MD_CACHE);
     }
+    // Unknown slug — fall through to normal 404 handling.
   }
 
-  // ── Pass through; inject Vary so CDN knows this route is content-negotiated.
+  // ── Same-URL markdown negotiation (legacy clients) — NON-cacheable ─────
+  // Back-compat for agents that send `Accept: text/markdown` to the HTML URL.
+  // Served `no-store` so Cloudflare never caches it under the HTML key (CF
+  // can't vary on Accept); agents wanting a cacheable copy use the
+  // `/posts/<slug>.md` alternate advertised in the Link header.
+  if (POST_PATH.test(pathname) && accept.includes('text/markdown')) {
+    const slug = pathname.replace(/^\/posts\//, '').replace(/\/$/, '');
+    const post = await fetchPostJson(slug);
+    if (post) {
+      const res = markdownResponse(postToMarkdown(post, slug), 'no-store');
+      res.headers.set('Link', mdAlternateLink(slug));
+      return res;
+    }
+    // Fall through — serve normal HTML page.
+  }
+
+  // ── Pass through; inject Vary + advertise the markdown alternate ───────
   const response = NextResponse.next();
   response.headers.set('Vary', 'Accept');
+  const postMatch = POST_PATH.exec(pathname);
+  if (postMatch) {
+    response.headers.set('Link', mdAlternateLink(postMatch[1]));
+  }
   return response;
 }
 
@@ -150,4 +163,45 @@ function postToMarkdown(post: Record<string, unknown>, slug: string): string {
   ]
     .filter((line) => line !== undefined)
     .join('\n');
+}
+
+// `Link` header value advertising the cacheable markdown alternate so agents
+// can discover the poison-safe `/posts/<slug>.md` URL.
+function mdAlternateLink(slug: string): string {
+  const siteUrl = SITE_URL.replace(/\/$/, '');
+  return `<${siteUrl}/posts/${slug}.md>; rel="alternate"; type="text/markdown"`;
+}
+
+// Fetch a post's static JSON from R2. Returns null (caller falls through to the
+// normal HTML page / 404) on any non-OK status, timeout, or network error.
+async function fetchPostJson(
+  slug: string,
+): Promise<Record<string, unknown> | null> {
+  try {
+    const upstream = await fetch(`${STATIC_URL}/posts/${slug}.json`, {
+      headers: { Accept: 'application/json' },
+      signal: AbortSignal.timeout(5000),
+    });
+    if (upstream.ok) {
+      return (await upstream.json()) as Record<string, unknown>;
+    }
+  } catch {
+    // Swallow — caller serves the normal HTML page instead.
+  }
+  return null;
+}
+
+// Build a `text/markdown` response with the given Cache-Control. The distinct
+// `/posts/<slug>.md` URL passes a cacheable value; the same-URL Accept
+// negotiation passes `no-store` so it can never poison the HTML cache key.
+function markdownResponse(md: string, cacheControl: string): NextResponse {
+  return new NextResponse(md, {
+    status: 200,
+    headers: {
+      'Content-Type': 'text/markdown; charset=utf-8',
+      Vary: 'Accept',
+      'Cache-Control': cacheControl,
+      'x-markdown-tokens': String(md.length),
+    },
+  });
 }
