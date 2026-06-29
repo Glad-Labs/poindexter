@@ -607,6 +607,14 @@ DEFAULTS: dict[str, str] = {
     # so a single missing link nudges the weighted QA mean without sinking a post.
     'unlinked_attribution_penalty_per': '8',
     'unlinked_attribution_score_floor': '60',
+    # check_published_links job: HTTP codes meaning "host is up but refuses our
+    # automated/anonymous probe" (bot-block / auth-gate / rate-limit) — counted
+    # as access-restricted, NOT broken (the link works for a human reader). CSV;
+    # empty falls back to the built-in {401,403,429}. Genuinely-dead links still
+    # surface as 404/410/5xx/unreachable. The job also sends the shared crawler
+    # User-Agent (utils.crawler_ua, +crawler_contact_url) so WAFs like Wikipedia
+    # don't 403 the default httpx UA into a false positive.
+    'link_check_skip_status_codes': '401,403,429',
 
     # ----- Image generation -----
     'image_gen_enabled': 'true',

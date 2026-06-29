@@ -2,7 +2,9 @@
 
 DB pool and httpx client are mocked; no real HTTP or DB calls happen.
 Focus: URL extraction, status-code → broken classification, internal
-link skip, and Gitea-issue opt-out.
+link skip, Gitea-issue opt-out, the crawler User-Agent (root-cause fix
+for WAF 403 false positives), the access-restricted (401/403/429) skip,
+and the 405-HEAD → GET fallback.
 """
 
 from __future__ import annotations
@@ -238,3 +240,164 @@ class TestRun:
         result = await job.run(pool, {})
         assert result.ok is False
         assert "connection lost" in result.detail
+
+
+class TestAccessRestricted:
+    """401/403/429 = the host is up but refusing our automated/anonymous
+    probe (bot-block, auth-gate, rate-limit). The link works for a human
+    reader, so it must NOT be filed as broken."""
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("code", [401, 403, 429])
+    async def test_access_restricted_codes_not_broken(self, code):
+        pool = _make_pool([
+            {"id": "p1", "title": "Post", "content": "ref: https://gated.example"},
+        ])
+        client = _patched_httpx_client({"https://gated.example": code})
+        finds = MagicMock()
+        with patch(
+            "services.jobs.check_published_links.httpx.AsyncClient",
+            return_value=client,
+        ), patch(
+            "services.jobs.check_published_links.emit_finding", new=finds,
+        ):
+            job = CheckPublishedLinksJob()
+            result = await job.run(pool, {})
+
+        assert result.metrics["urls_broken"] == 0
+        assert result.metrics["urls_access_restricted"] == 1
+        assert result.changes_made == 0
+        finds.assert_not_called()  # no broken-link finding for an access-gate
+
+    @pytest.mark.asyncio
+    async def test_skip_codes_are_operator_configurable(self):
+        """Tightening the policy: an operator who drops 403 from the skip set
+        gets 403 counted as broken again (only 429 stays access-restricted)."""
+        pool = _make_pool([
+            {"id": "p1", "title": "Post", "content": "ref: https://403.example"},
+        ])
+        client = _patched_httpx_client({"https://403.example": 403})
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d=None: (
+            "429" if k == "link_check_skip_status_codes" else d
+        )
+        with patch(
+            "services.jobs.check_published_links.httpx.AsyncClient",
+            return_value=client,
+        ), patch(
+            "services.jobs.check_published_links.emit_finding", new=MagicMock(),
+        ):
+            job = CheckPublishedLinksJob()
+            result = await job.run(pool, {"_site_config": sc})
+
+        assert result.metrics["urls_broken"] == 1
+        assert result.metrics["urls_access_restricted"] == 0
+
+    @pytest.mark.asyncio
+    async def test_500_still_counts_as_broken(self):
+        """Genuine server errors are NOT access-restricted — still broken."""
+        pool = _make_pool([
+            {"id": "p1", "title": "Post", "content": "ref: https://err.example"},
+        ])
+        client = _patched_httpx_client({"https://err.example": 500})
+        with patch(
+            "services.jobs.check_published_links.httpx.AsyncClient",
+            return_value=client,
+        ), patch(
+            "services.jobs.check_published_links.emit_finding", new=MagicMock(),
+        ):
+            job = CheckPublishedLinksJob()
+            result = await job.run(pool, {})
+
+        assert result.metrics["urls_broken"] == 1
+        assert result.metrics["urls_access_restricted"] == 0
+
+
+class TestUserAgent:
+    """The root-cause fix: send a real crawler UA, not the default httpx one
+    that WAFs (Wikipedia) 403 into a false positive."""
+
+    @pytest.mark.asyncio
+    async def test_sends_browser_ish_user_agent(self):
+        pool = _make_pool([
+            {"id": "p1", "title": "Post", "content": "ext: https://ok.example"},
+        ])
+        client = _patched_httpx_client({"https://ok.example": 200})
+        mock_cls = MagicMock(return_value=client)
+        with patch(
+            "services.jobs.check_published_links.httpx.AsyncClient", mock_cls,
+        ):
+            job = CheckPublishedLinksJob()
+            await job.run(pool, {"file_gitea_issue": False})
+
+        ua = mock_cls.call_args.kwargs["headers"]["User-Agent"]
+        # No _site_config → contact-less form (OSS leak guard).
+        assert ua == "Mozilla/5.0 (compatible; PoindexterLinkCheck/1.0)"
+
+    @pytest.mark.asyncio
+    async def test_user_agent_includes_contact_when_configured(self):
+        pool = _make_pool([
+            {"id": "p1", "title": "Post", "content": "ext: https://ok.example"},
+        ])
+        client = _patched_httpx_client({"https://ok.example": 200})
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d=None: (
+            "https://gladlabs.io/bot" if k == "crawler_contact_url" else d
+        )
+        mock_cls = MagicMock(return_value=client)
+        with patch(
+            "services.jobs.check_published_links.httpx.AsyncClient", mock_cls,
+        ):
+            job = CheckPublishedLinksJob()
+            await job.run(pool, {"file_gitea_issue": False, "_site_config": sc})
+
+        ua = mock_cls.call_args.kwargs["headers"]["User-Agent"]
+        assert ua == (
+            "Mozilla/5.0 (compatible; PoindexterLinkCheck/1.0; "
+            "+https://gladlabs.io/bot)"
+        )
+
+
+class TestHeadToGetFallback:
+    """Some servers 405 a HEAD but serve GET fine — retry once before judging."""
+
+    @pytest.mark.asyncio
+    async def test_405_head_retries_with_get_and_is_not_broken(self):
+        pool = _make_pool([
+            {"id": "p1", "title": "Post", "content": "ext: https://head405.example"},
+        ])
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+        client.head = AsyncMock(return_value=_FakeHeadResponse(405))
+        client.get = AsyncMock(return_value=_FakeHeadResponse(200))
+        with patch(
+            "services.jobs.check_published_links.httpx.AsyncClient",
+            return_value=client,
+        ):
+            job = CheckPublishedLinksJob()
+            result = await job.run(pool, {"file_gitea_issue": False})
+
+        client.get.assert_awaited_once()  # GET fallback fired
+        assert result.metrics["urls_broken"] == 0
+
+    @pytest.mark.asyncio
+    async def test_405_then_get_404_counts_as_broken(self):
+        pool = _make_pool([
+            {"id": "p1", "title": "Post", "content": "ext: https://gone.example"},
+        ])
+        client = MagicMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=None)
+        client.head = AsyncMock(return_value=_FakeHeadResponse(405))
+        client.get = AsyncMock(return_value=_FakeHeadResponse(404))
+        with patch(
+            "services.jobs.check_published_links.httpx.AsyncClient",
+            return_value=client,
+        ), patch(
+            "services.jobs.check_published_links.emit_finding", new=MagicMock(),
+        ):
+            job = CheckPublishedLinksJob()
+            result = await job.run(pool, {})
+
+        assert result.metrics["urls_broken"] == 1

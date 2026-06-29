@@ -31,6 +31,7 @@ from dataclasses import dataclass, field
 import httpx
 
 from services.site_config import SiteConfig
+from utils.crawler_ua import build_crawler_ua
 
 logger = logging.getLogger(__name__)
 
@@ -150,30 +151,18 @@ def extract_urls(content: str, site_url: str | None = None) -> list[str]:
 def _build_citation_headers(site_config: SiteConfig) -> dict[str, str]:
     """Build the User-Agent + Accept headers for HEAD probes.
 
-    The User-Agent follows the standard crawler-UA convention:
-    ``Mozilla/5.0 (compatible; PoindexterCitationVerifier/1.0; +<url>)``
-    where ``<url>`` is the operator's contact URL — pulled from
-    ``app_settings.crawler_contact_url``. When the setting is unset
-    or empty the ``+url`` portion is omitted entirely so OSS forks
-    don't ship Matt's ``gladlabs.io`` as a default contact (the leak
-    this helper closes).
+    The User-Agent follows the standard crawler-UA convention
+    (``Mozilla/5.0 (compatible; PoindexterCitationVerifier/1.0; +<url>)``)
+    built by the shared ``utils.crawler_ua.build_crawler_ua`` helper, which
+    owns the ``app_settings.crawler_contact_url`` lookup + the OSS contact-URL
+    leak guard (the ``+url`` portion is omitted when the setting is unset, so
+    forks don't ship the source operator's ``gladlabs.io`` as a default).
 
-    Some servers block the default httpx UA, so the UA string keeps
-    the "browser-ish + compatible" framing to maximize reachability
-    signal accuracy.
+    Some servers block the default httpx UA, so the UA keeps the
+    "browser-ish + compatible" framing to maximize reachability-signal
+    accuracy.
     """
-    contact = ""
-    try:
-        contact = (site_config.get("crawler_contact_url", "") or "").strip()
-    except Exception:  # noqa: BLE001 — observability, not a contract
-        contact = ""
-    if contact:
-        ua = (
-            f"Mozilla/5.0 (compatible; PoindexterCitationVerifier/1.0; "
-            f"+{contact})"
-        )
-    else:
-        ua = "Mozilla/5.0 (compatible; PoindexterCitationVerifier/1.0)"
+    ua = build_crawler_ua(site_config, product="PoindexterCitationVerifier")
     return {"User-Agent": ua, "Accept": "*/*"}
 
 
