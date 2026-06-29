@@ -197,7 +197,7 @@ litellm = ">=1.83.7,<2.0"
 # ``services/langfuse_shim.py`` via ``_install_cycle_safe_serializer_patch``.
 # Remove that patch once upstream merges a fix.
 langfuse = "^4.6"
-deepeval = "^4.0.0"
+deepeval = "^4.0.7"
 # guardrails-ai dropped 2026-05-12 — PyPI quarantined the package after
 # a suspect 0.10.1 release published that day (CVE-2026-45758, malware /
 # supply-chain compromise). It is NOT installable. The two QA rails it

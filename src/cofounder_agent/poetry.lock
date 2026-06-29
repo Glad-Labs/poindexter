@@ -1561,14 +1561,14 @@ files = [
 
 [[package]]
 name = "deepeval"
-version = "4.0.6"
+version = "4.0.7"
 description = "The LLM Evaluation Framework"
 optional = false
 python-versions = "<4.0,>=3.9"
 groups = ["main"]
 files = [
-    {file = "deepeval-4.0.6-py3-none-any.whl", hash = "sha256:c32c3882f6396e570b351eeb423a40864e8e84dc7b8d07248ed38f8d7c1f14bc"},
-    {file = "deepeval-4.0.6.tar.gz", hash = "sha256:e35f86e9e911ed4468b8c43dfb07ef89825d5cca50f2ec612d6e7792470f14a2"},
+    {file = "deepeval-4.0.7-py3-none-any.whl", hash = "sha256:f45aee57e7743b8b9e7746753881220ac7d938e4f1afc66a4a9dabbdf09177d0"},
+    {file = "deepeval-4.0.7.tar.gz", hash = "sha256:b776b78138675a445eba8c07af781150206f83f534c25e7aec4df58525e82e39"},
 ]
 
 [package.dependencies]
@@ -9949,4 +9949,4 @@ youtube = ["google-api-python-client", "google-auth", "google-auth-oauthlib", "p
 [metadata]
 lock-version = "2.1"
 python-versions = ">=3.13,<3.14"
-content-hash = "fc2a95b89d97f4b415c6e72b022559a7651bdc789698e8f1055155f679a66404"
+content-hash = "10477e68c524389456b5bcb52aefc6658bee51eb798e2903974b161b8e665fae"
