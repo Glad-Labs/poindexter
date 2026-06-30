@@ -19,7 +19,20 @@ dynamic = ["dependencies", "classifiers"]
 [tool.poetry]
 packages = [
     { include = "cofounder_agent", from = ".." },
-    { include = "poindexter", from = "." }
+    { include = "poindexter", from = "." },
+    # brain/ lives at the repo root (a sibling of src/cofounder_agent), not under
+    # the package tree poetry auto-discovers. Declaring it here makes the editable
+    # install add the repo root to its .pth so the host `poindexter` CLI can
+    # `import brain.bootstrap` — reached via config.get_config() from
+    # DatabaseService.initialize() on the `pipeline resume` / `regen` paths.
+    # Without it those commands die with `ModuleNotFoundError: No module named
+    # 'brain'` when run from outside the repo root (the worker container is
+    # unaffected — it mounts the tree flat at /app, and both backend images
+    # install with --no-root so this entry is never evaluated at image-build
+    # time). `from = "../.."` resolves to the repo root, mirroring the existing
+    # `from = ".."` pattern one level up. Don't remove — guarded by
+    # tests/unit/poindexter/test_package_metadata.py::test_umbrella_pyproject_packages_include_brain.
+    { include = "brain", from = "../.." },
 ]
 
 [tool.poetry.dependencies]
