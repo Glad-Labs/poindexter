@@ -189,6 +189,42 @@ def extract_trace_context(carrier: Any) -> Any | None:
         return None
 
 
+def stamp_langfuse_trace_url(span: Any, langfuse_host: str | None) -> str | None:
+    """Stamp a Langfuse deep-link onto ``span`` so a Tempo viewer can click
+    straight through to the matching Langfuse trace.
+
+    The link is ``{langfuse_host}/trace/{trace_id}``, keyed on the span's own
+    OTel trace_id. It resolves because LiteLLM's OTEL integration parents every
+    LLM span under the active span (auto-detected from the global context, see
+    ``litellm.integrations.opentelemetry._get_span_context`` Priority 3), and
+    Langfuse keys its trace on the ingested OTLP trace_id — so the run's
+    generations land under this same id. This is the Tempo -> Langfuse
+    by-product of coherent W3C propagation (Glad-Labs/glad-labs-stack#1997
+    Tier 1c): cheap precisely because Tier 1a/1b already made the trace_id shared.
+
+    Returns the URL (handy for tests / a debug log) or ``None`` — stamping
+    nothing — when there is no host, no ``get_span_context`` (the SDK-absent
+    noop span), or an invalid/sampled-out context (``trace_id == 0``). Pure
+    string work on a real span, so no broad except is needed; the two guards
+    below cover every degrade path without one.
+    """
+    if not langfuse_host:
+        return None
+    get_ctx = getattr(span, "get_span_context", None)
+    if get_ctx is None:
+        # Noop span (opentelemetry SDK not installed) — nothing to link.
+        return None
+    trace_id = getattr(get_ctx(), "trace_id", 0)
+    if not trace_id:
+        # INVALID_SPAN_CONTEXT — tracing disabled or this span was sampled out.
+        return None
+    trace_hex = format(trace_id, "032x")
+    url = f"{langfuse_host.rstrip('/')}/trace/{trace_hex}"
+    span.set_attribute("langfuse.trace_url", url)
+    span.set_attribute("langfuse.trace_id", trace_hex)
+    return url
+
+
 # ---------------------------------------------------------------------------
 # traced_span — context manager (the inline case)
 # ---------------------------------------------------------------------------
@@ -350,6 +386,7 @@ __all__ = [
     "extract_trace_context",
     "get_tracer",
     "inject_trace_context",
+    "stamp_langfuse_trace_url",
     "traced_method",
     "traced_span",
 ]

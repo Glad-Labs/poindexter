@@ -49,6 +49,22 @@ All of it degrades gracefully: if an OpenTelemetry distribution isn't installed,
 the corresponding symbol is `None` and that instrumentation is skipped without
 error.
 
+## Cross-linking to Langfuse (optional)
+
+If you run [Langfuse](https://langfuse.com/) for LLM observability alongside your
+OTLP trace backend, the content-pipeline root span carries a `langfuse.trace_url`
+(and `langfuse.trace_id`) attribute — a clickable deep-link from the Tempo/Jaeger
+span straight to the matching Langfuse trace.
+
+This works because the two systems already share a trace id. LiteLLM's Langfuse
+integration emits each LLM call as an OTel span parented under the **active**
+span (it auto-detects the current context), and Langfuse keys its trace on the
+ingested OTLP `trace_id`. So once W3C propagation is coherent (above), the run's
+generations land in Langfuse under the **same** `trace_id` the root span already
+has — the deep-link is just `{langfuse_host}/trace/{trace_id}`, built by
+`plugins.tracing.stamp_langfuse_trace_url`. No Langfuse host configured → the
+attribute is simply absent.
+
 ## Coverage
 
 Trace context survives every **HTTP** hop (FastAPI inbound + httpx egress) **and

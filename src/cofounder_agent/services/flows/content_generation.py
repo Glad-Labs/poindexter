@@ -32,7 +32,12 @@ from prefect.cache_policies import NO_CACHE
 from prefect.context import get_run_context
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
-from plugins.tracing import extract_trace_context, get_tracer, traced_span
+from plugins.tracing import (
+    extract_trace_context,
+    get_tracer,
+    stamp_langfuse_trace_url,
+    traced_span,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -533,7 +538,19 @@ async def _run_content_generation_flow(
             task_id=str(task_id or ""),
             topic=str(topic or "")[:200],
             prefect_run_id=prefect_run_id or "",
-        ):
+        ) as span:
+            # Tier 1c (#1997): stamp a Langfuse deep-link on the root span so an
+            # operator viewing this run in Tempo can click straight to the
+            # matching Langfuse trace. LiteLLM parents its LLM spans under this
+            # active span and Langfuse keys on the OTLP trace_id, so the run's
+            # generations live under this span's trace_id. No-op when Langfuse
+            # is unconfigured or tracing is off.
+            stamp_langfuse_trace_url(
+                span,
+                _wired_site_config.get("langfuse_host", "")
+                if _wired_site_config
+                else "",
+            )
             result = await process_content_generation_task(
                 topic=topic,
                 style=style,
