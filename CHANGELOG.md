@@ -2,6 +2,32 @@
 
 ## Unreleased
 
+## [0.91.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.90.0...v0.91.0) (2026-06-30)
+
+
+### Features
+
+* **model-eval:** champion–challenger eval loop — Plan 1 (reranker vertical slice) ([#2002](https://github.com/Glad-Labs/glad-labs-stack/issues/2002)) ([ce6e802](https://github.com/Glad-Labs/glad-labs-stack/commit/ce6e80299d6ab51a47384080a03e775e02ebae15))
+* **observability:** cross-link Tempo spans to Langfuse via shared trace_id ([#1997](https://github.com/Glad-Labs/glad-labs-stack/issues/1997) Tier 1c) ([#2006](https://github.com/Glad-Labs/glad-labs-stack/issues/2006)) ([33632af](https://github.com/Glad-Labs/glad-labs-stack/commit/33632aff56eecbcfe2de04b0baacc8d4dd20e108))
+* **observability:** instrument httpx egress + pin W3C trace propagator ([#1997](https://github.com/Glad-Labs/glad-labs-stack/issues/1997)) ([#2000](https://github.com/Glad-Labs/glad-labs-stack/issues/2000)) ([3aa17a4](https://github.com/Glad-Labs/glad-labs-stack/commit/3aa17a4429ac90dee642cf5f73d4c72a835bdfd1))
+* **observability:** propagate W3C trace context across the pipeline_tasks DB queue ([#2005](https://github.com/Glad-Labs/glad-labs-stack/issues/2005)) ([619e891](https://github.com/Glad-Labs/glad-labs-stack/commit/619e891b81802e5938354005f073c2bd8f14fe8b))
+* **settings:** read-telemetry + zero-reader orphan probe (poindexter[#756](https://github.com/Glad-Labs/glad-labs-stack/issues/756) items 2-3) ([d24a161](https://github.com/Glad-Labs/glad-labs-stack/commit/d24a16119d9c2771031649717506ee3f69934c55))
+* **social:** add Bluesky as an auto-draft platform ([#1994](https://github.com/Glad-Labs/glad-labs-stack/issues/1994)) ([5f4aac5](https://github.com/Glad-Labs/glad-labs-stack/commit/5f4aac5917c88d73bae2d3e26d5eb0a8b1b63427))
+
+
+### Bug Fixes
+
+* **brain:** cycle watchdog + asyncpg command_timeout so a stuck await can't flatline the daemon ([#1991](https://github.com/Glad-Labs/glad-labs-stack/issues/1991)) ([f3ff336](https://github.com/Glad-Labs/glad-labs-stack/commit/f3ff336a0566ba41b8d60d1cf892909c6eafb476))
+* **brain:** don't docker-restart DB containers on a host-proxy port wedge ([#1990](https://github.com/Glad-Labs/glad-labs-stack/issues/1990)) ([b0776a1](https://github.com/Glad-Labs/glad-labs-stack/commit/b0776a18622c2101715bcce33590b4586a5aa3ed))
+* **brain:** harden cycle watchdog — independent heartbeat, faulthandler/py-spy, server statement_timeout ([#1993](https://github.com/Glad-Labs/glad-labs-stack/issues/1993)) ([bb97991](https://github.com/Glad-Labs/glad-labs-stack/commit/bb97991b41c71867ecd8268f75c5f3b3a0a69689))
+* **content-qa:** gate prompt-scaffolding leaks on the canonical pipeline ([#2007](https://github.com/Glad-Labs/glad-labs-stack/issues/2007)) ([dc15aca](https://github.com/Glad-Labs/glad-labs-stack/commit/dc15aca6fdb886a42b4ab070ae60cbdc32cc7921))
+* **content:** restore per-post length variety in the niche writer ([#2009](https://github.com/Glad-Labs/glad-labs-stack/issues/2009)) ([ef46e03](https://github.com/Glad-Labs/glad-labs-stack/commit/ef46e0392bf61e82ba74e93daa7c829e7c23a0a2))
+* **dev_diary:** strip reasoning scratchpad leaked before the TITLE: marker ([#1998](https://github.com/Glad-Labs/glad-labs-stack/issues/1998)) ([215fb12](https://github.com/Glad-Labs/glad-labs-stack/commit/215fb12e3761895ae7809d707bfab903b45f8e5e))
+* **docs-gen:** harden app-settings.md redaction (drop private finance surface + operator value patterns) ([#2010](https://github.com/Glad-Labs/glad-labs-stack/issues/2010)) ([cac38fa](https://github.com/Glad-Labs/glad-labs-stack/commit/cac38fab77dc149fefea751b64aa31ef8a72e0fe))
+* **langfuse:** bump SDK to 4.12.0 + re-enable [@observe](https://github.com/observe) tracing ([#1996](https://github.com/Glad-Labs/glad-labs-stack/issues/1996)) ([f49a8a4](https://github.com/Glad-Labs/glad-labs-stack/commit/f49a8a49f4b92d2c216e03a528e60bfea883b873))
+* **observability:** stop two false-down monitoring signals ([#1992](https://github.com/Glad-Labs/glad-labs-stack/issues/1992)) ([812d08d](https://github.com/Glad-Labs/glad-labs-stack/commit/812d08d8d57d46cd6f660287e6900a2ec965969a))
+* **public-site:** serve markdown on a distinct URL so Cloudflare can't poison the HTML cache ([#1999](https://github.com/Glad-Labs/glad-labs-stack/issues/1999)) ([a95545b](https://github.com/Glad-Labs/glad-labs-stack/commit/a95545b3108b53cbfdf3a82d56e3fdd00aa7ca4e))
+
 ## [0.90.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.89.0...v0.90.0) (2026-06-29)
 
 
