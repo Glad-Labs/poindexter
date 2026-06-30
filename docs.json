@@ -143,10 +143,6 @@
             ]
           },
           {
-            "group": "Publishing",
-            "pages": ["docs/integrations/publishing_mastodon"]
-          },
-          {
             "group": "Taps",
             "pages": [
               "docs/integrations/tap_builtin_topic_source",

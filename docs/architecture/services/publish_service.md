@@ -63,8 +63,6 @@ All from `app_settings` via `site_config`:
   uploading media to the object-store CDN so generators have time to
   finish. (Storage-agnostic rename of the deprecated
   `media_r2_upload_delay_seconds`, #731.)
-- `social_distribution_platforms` (string, e.g. `"x,linkedin,youtube"`) —
-  controls whether YouTube upload runs.
 - `max_posts_per_day` (default `3`, only when `honor_pacing=True`).
 - `publish_spacing_hours` (default `4`, only when `honor_pacing=True`).
 
@@ -97,7 +95,7 @@ Bootstrap-only env var:
   - Cloudflare R2 / S3 (`upload_to_r2`, `upload_podcast_episode`,
     `upload_video_episode`)
   - Dev.to (`DevToCrossPostService`)
-  - YouTube upload (`services.social_adapters.youtube`)
+  - Media distribution — YouTube / Postiz via the `publishing_adapters` surface (`services/jobs/media_distribute.py`)
   - Internal worker API (`internal_api_base_url`) for RSS regen
   - Newsletter delivery (`send_post_newsletter`)
   - Telegram/Discord via `_notify_openclaw`

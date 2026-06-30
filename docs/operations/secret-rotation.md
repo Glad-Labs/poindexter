@@ -89,7 +89,6 @@ Pulled from `app_settings WHERE is_secret = TRUE` plus the two bootstrap secrets
 | `cloudinary_api_key` + `cloudinary_api_secret` | `app_settings` (encrypted)                          | Image CDN                             | [§ cloudinary keys](#cloudinary-keys)                           |
 | `storage_secret_key` + `storage_token`         | `app_settings` (encrypted)                          | S3-compatible object storage (R2)     | [§ storage keys](#storage-keys)                                 |
 | `redis_url`                                    | `app_settings` (encrypted)                          | Redis connection (with AUTH password) | [§ redis_url](#redis_url)                                       |
-| `mastodon_access_token`                        | `app_settings` (encrypted)                          | Mastodon cross-post                   | [§ mastodon_access_token](#mastodon_access_token)               |
 | `devto_api_key`                                | `app_settings` (encrypted)                          | Dev.to cross-post                     | [§ devto_api_key](#devto_api_key)                               |
 | `notion_api_key`                               | `app_settings` (encrypted)                          | Notion integration                    | [§ notion_api_key](#notion_api_key)                             |
 | `grafana_api_key` + `grafana_api_token`        | `app_settings` (encrypted)                          | Self-hosted Grafana HTTP API          | [§ grafana keys](#grafana-keys)                                 |
@@ -672,12 +671,6 @@ docker exec poindexter-prefect-redis redis-cli CONFIG SET requirepass "<new-pass
 
 ---
 
-### `mastodon_access_token`
-
-**Procedure.** New token from your Mastodon instance: Settings → Development → New Application (or revoke + recreate). Generic flow afterwards.
-
----
-
 ### `devto_api_key`
 
 **Procedure.** https://dev.to/settings/extensions → API Keys → Generate new. Generic flow.
@@ -741,7 +734,7 @@ After a CONFIG-2 disaster recovery (lost encryption key), you have an empty `app
 [ ] cloudinary_api_key + secret     (image CDN)
 [ ] storage_secret_key + token      (R2/S3 — required for static export)
 [ ] redis_url                       (if Redis is wired)
-[ ] mastodon / devto                (cross-post adapters)
+[ ] devto                           (cross-post adapter)
 [ ] grafana_api_key + token         (if calling Grafana API from worker)
 ```
 
@@ -774,7 +767,7 @@ docker logs poindexter-worker --since=2m 2>&1 | grep -i "SecretsError\|<KEY>"
 - Bot tokens (Telegram, Discord) — only on suspected compromise (rotation invalidates active sessions)
 - Paid API keys (OpenAI, Anthropic, Gemini, Resend, Cloudinary) — every 90 days, or on bill anomaly
 - Webhook secrets (Lemon Squeezy, Resend) — only when the provider rotates them or on suspected compromise
-- Cross-post adapter tokens (Mastodon, Dev.to) — yearly
+- Cross-post adapter tokens (Dev.to) — yearly
 
 A scheduled agent should be set up to remind on this cadence (see `/schedule` skill).
 

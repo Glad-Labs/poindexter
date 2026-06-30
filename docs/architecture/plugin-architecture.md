@@ -111,7 +111,7 @@ apscheduler is the runner. Each Job registers via entry_points. `idle_worker.py`
 Promotes the existing `services/phases/base_phase.py` contract. Stage specializations already partly shipped:
 
 - **`Reviewer(Stage)`** — scores content (programmatic_validator, llm_critic, seo_checker, url_verifier)
-- **`Adapter(Stage)`** — publishes to a platform (`social_adapters/` already clean)
+- **`Adapter(Stage)`** — publishes to a platform (the legacy `social_adapters/` impls were retired 2026-06-29; distribution is now `publishing.<name>` handlers + Postiz)
 - **`Provider(Stage)`** — generates media (Pexels, image-gen, AI-generation, future Midjourney/Flux)
 
 No workflow-engine adoption in this refactor. Pipeline stays hand-rolled. Temporal/Dagster revisit when managing multiple customer pipelines.
@@ -248,7 +248,7 @@ One pane of glass (Grafana). No new vendor UIs.
 | Resend                                                                                        | 💰 Kept (free tier 3K/mo)                                | Email                                        |
 | Google Analytics                                                                              | ⚠️ Consider Plausible / Matomo for pure-OSS theme        | Only remaining non-OSS piece                 |
 
-Removed in prior sessions: Anthropic, OpenAI, Google Gemini, Railway, Woodpecker. dlvr.it was retired for Mastodon (direct adapter now, GH-36; Bluesky/atproto was also a direct adapter until it was dropped 2026-06-17 to unblock a cryptography CVE fix); the subscription isn't active today, so no network currently routes through it. It's the intended RSS bridge for X/Twitter if/when Matt reactivates the subscription (the X API itself is $100/mo — not worth it). Sentry is NOT removed — it's still active in the public-site and worker as the error-tracking layer.
+Removed in prior sessions: Anthropic, OpenAI, Google Gemini, Railway, Woodpecker. dlvr.it was retired for Mastodon (which used a direct adapter until distribution moved to Postiz 2026-06-29, GH-36; Bluesky/atproto was also a direct adapter until it was dropped 2026-06-17 to unblock a cryptography CVE fix). The dlvr.it free tier still bridges the RSS feed to LinkedIn today; it remains the intended bridge for X/Twitter if/when the paid subscription is reactivated (the X API itself is $100/mo — not worth it). Sentry is NOT removed — it's still active in the public-site and worker as the error-tracking layer.
 
 ## Known gaps (tracked, not blocking)
 

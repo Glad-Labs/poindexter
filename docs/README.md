@@ -131,7 +131,6 @@ publishing adapters, webhooks, retention.
   framework overview (handler registry + declarative tables)
 - [integrations/outbound_apprise.md](integrations/outbound_apprise.md)
 - [integrations/outbound_vercel_isr.md](integrations/outbound_vercel_isr.md)
-- [integrations/publishing_mastodon.md](integrations/publishing_mastodon.md)
 - [integrations/tap_builtin_topic_source.md](integrations/tap_builtin_topic_source.md)
 - [integrations/tap_external_metrics_writer.md](integrations/tap_external_metrics_writer.md)
 - [integrations/tap_singer_subprocess.md](integrations/tap_singer_subprocess.md)

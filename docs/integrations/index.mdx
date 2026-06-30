@@ -24,7 +24,7 @@ name can be reused across surfaces. Five surfaces are in flight today.
 | `outbound` | `webhook_endpoints` (direction=`outbound`) | `services/integrations/outbound_dispatcher.py` | We send an event out (Discord, Telegram, Vercel ISR purge). |
 | `tap` | `external_taps` | `services/integrations/tap_runner.py` | Pull external data on a schedule (HackerNews, Dev.to, GA4, GSC, Singer subprocesses). |
 | `retention` | `retention_policies` | `services/integrations/retention_runner.py` | Sweep aging data — TTL-prune, downsample, summarize-to-table. |
-| `publishing` | `publishing_adapters` | `services/social_poster.py:_distribute_to_adapters` | Push generated content to social platforms (Mastodon). |
+| `publishing` | `publishing_adapters` | `services/jobs/media_distribute.py` | Distribute rendered media (podcast / video) to platforms (YouTube, Postiz). |
 
 ## Handler catalog
 
@@ -67,11 +67,18 @@ name can be reused across surfaces. Five surfaces are in flight today.
   </Accordion>
 
   <Accordion title="publishing surface">
-    Push generated content to social platforms. Adapters are rows in
-    `publishing_adapters`; adding a new platform is an insert plus a
-    handler registration.
+    Distribute rendered media to platforms. Adapters are rows in
+    `publishing_adapters` dispatched by `services/jobs/media_distribute.py`;
+    adding a new platform is an insert plus a `publishing.<name>` handler
+    registration.
 
-    - [`publishing.mastodon`](/docs/integrations/publishing_mastodon) — post to a Mastodon (or any Fediverse) instance
+    - `publishing.youtube` — upload rendered video to YouTube (per-handler doc pending)
+    - `publishing.postiz_video` — push rendered video to platforms via Postiz (per-handler doc pending)
+
+    Text social copy (X, Bluesky, Mastodon, LinkedIn) is a *separate* path: the
+    `social.generate_drafts` atom writes `social_post_drafts` rows that are
+    approved (`poindexter social approve`) and posted through Postiz — not the
+    publishing surface.
   </Accordion>
 
   <Accordion title="Setup guides">
@@ -108,9 +115,8 @@ the dispatcher.
 
   <Step title="Seed the adapter row">
     Add a migration that inserts the `publishing_adapters` row — copy the
-    `INSERT INTO publishing_adapters` shape from
-    [`publishing_mastodon`](/docs/integrations/publishing_mastodon) or the rows
-    seeded in `services/migrations/0000_baseline.py`.
+    `INSERT INTO publishing_adapters` shape from the rows seeded in
+    `services/migrations/0000_baseline.py`.
   </Step>
 
   <Step title="Document the handler">
