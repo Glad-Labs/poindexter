@@ -816,3 +816,240 @@ async def test_expansion_disabled_via_setting(monkeypatch):
     assert called == []
     assert result["draft"].strip() == "tiny"
     assert result["length_expanded"] is False
+
+
+# ---------------------------------------------------------------------------
+# RAG snippet source scoping (corpus-pollution guard).
+#
+# _embed_and_fetch_snippets used to query the WHOLE embeddings table — 67% of
+# which is claude_sessions / brain / audit ops-logs — with no source filter,
+# so a session transcript ranking near the topic vector could be reproduced
+# wholesale into a draft. It now honours the ``rag_source_filter`` app_setting
+# (default 'posts') and NEVER queries unfiltered: an empty/unset value falls
+# back to the content allowlist rather than "all tables".
+# memory: project_rag_corpus_pollution.
+# ---------------------------------------------------------------------------
+
+
+def _recording_pool():
+    """Fake pool whose conn.fetch records its (sql, *params) call args."""
+    pool = MagicMock()
+    conn_mock = AsyncMock()
+    conn_mock.fetch = AsyncMock(return_value=[])
+    acquire_ctx = AsyncMock()
+    acquire_ctx.__aenter__ = AsyncMock(return_value=conn_mock)
+    acquire_ctx.__aexit__ = AsyncMock(return_value=False)
+    pool.acquire = MagicMock(return_value=acquire_ctx)
+    return pool, conn_mock
+
+
+def test_resolve_snippet_source_filter_defaults_to_posts_when_empty():
+    sc = MagicMock()
+    sc.get = MagicMock(return_value="")  # rag_source_filter unset/empty
+    assert two_pass._resolve_snippet_source_filter(sc) == ["posts"]
+
+
+def test_resolve_snippet_source_filter_none_site_config():
+    assert two_pass._resolve_snippet_source_filter(None) == ["posts"]
+
+
+def test_resolve_snippet_source_filter_honors_csv():
+    sc = MagicMock()
+    sc.get = MagicMock(return_value=" posts , samples ")
+    assert two_pass._resolve_snippet_source_filter(sc) == ["posts", "samples"]
+
+
+async def test_embed_and_fetch_applies_source_filter(monkeypatch):
+    """The snippet query must constrain source_table to the resolved content
+    allowlist — never scan the whole embeddings table."""
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        return "Clean draft, no markers."
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    pool, conn_mock = _recording_pool()
+    await two_pass.run(
+        topic="Some Topic", angle="technical | professional",
+        niche_id="n", pool=pool, site_config=_fake_site_config(),
+    )
+
+    assert conn_mock.fetch.await_count == 1
+    sql, *params = conn_mock.fetch.await_args.args
+    assert "source_table = ANY(" in sql
+    # The resolved content allowlist is passed as a query param (default ['posts']).
+    assert ["posts"] in params
+
+
+# ---------------------------------------------------------------------------
+# Prompt-echo guard — gemma-4-31B-it-qat preamble regurgitation.
+#
+# The 4-bit QAT writer intermittently dumps the prompt preamble (topic line,
+# angle, niche writer_prompt_override, the revise/expand instructions, the
+# citation rules, and its own planning notes) as the OPENING of the article
+# instead of executing it. Captured 2026-06-29: stored canonical_blog drafts
+# opened with the topic, then "Technical/Professional.", then the niche
+# descriptor, then "Expand from ~57 words to closer to 1500 words. Add genuine
+# substance...". The real body sat underneath. _strip_echoed_preamble removes a
+# contiguous echoed preamble (no LLM call), gated on a high-precision identity
+# echo so it is a no-op on clean drafts, and never zeroes a draft.
+# ---------------------------------------------------------------------------
+
+_ECHO_TOPIC = "Knowledge Distillation of Black-Box Large Language Models (2024)"
+_ECHO_ANGLE = "technical | professional"
+_ECHO_OVERRIDE = (
+    "You are writing a blog post for Glad Labs — an AI-operated content "
+    "business covering AI/ML, gaming, and PC hardware for indie developers "
+    "and tinkerers."
+)
+
+_REAL_BODY = (
+    "## Why distillation matters\n\n"
+    "Black-box distillation lets a smaller local model inherit the behaviour of "
+    "a frontier API model without ever touching its weights. We walk through the "
+    "trade-offs below, with worked examples that run on a single consumer GPU and "
+    "never leave the machine.\n\n"
+    "## The Proxy-KD approach\n\n"
+    "The core idea is to train a proxy that mimics the teacher's outputs, then "
+    "distil from the proxy. This sidesteps the rate limits and per-token cost of "
+    "querying the teacher directly for every training example, which matters a "
+    "great deal when you are running on your own silicon."
+)
+
+# Mirrors the real ba4d627a contamination: topic / angle / brand echo, the
+# expand instruction, citation-rule bullets, Title:/Context: labels, and the
+# model's own planning prose.
+_ECHO_PREAMBLE = (
+    "Knowledge Distillation of Black-Box Large Language Models (2024).\n"
+    "Technical/Professional.\n"
+    "Glad Labs (AI/ML, gaming, PC hardware for indie devs/tinkerer).\n"
+    "Expand from ~57 words to closer to 1500 words.\n"
+    "Add genuine substance, concrete details, worked examples, and reasoning. No "
+    'padding, filler, or repetition. Return complete Markdown. First person ("we").\n'
+    "\n"
+    "    *   Full markdown links for citations.\n"
+    "    *   No fake URLs/placeholders.\n"
+    "    *   Internal consistency.\n"
+    "\n"
+    "    *   Title: Knowledge Distillation of Black-Box Large Language Models (2024).\n"
+    "    *   Context: Glad Labs.\n"
+    "    *   Current content is essentially just the metadata and title. I need to "
+    "create the substance based on this topic.\n"
+)
+
+
+def test_strip_echoed_preamble_removes_scaffolding_keeps_body():
+    contaminated = _ECHO_PREAMBLE + "\n" + _REAL_BODY
+    clean, n = two_pass._strip_echoed_preamble(
+        contaminated, topic=_ECHO_TOPIC, angle=_ECHO_ANGLE,
+        writer_prompt_override=_ECHO_OVERRIDE,
+    )
+    assert n >= 5
+    assert clean.startswith("## Why distillation matters")
+    assert "Expand from ~57 words" not in clean
+    assert "Current content is essentially" not in clean
+    assert "Glad Labs (AI/ML, gaming" not in clean
+    assert "Technical/Professional" not in clean
+    # The real body survives intact.
+    assert "Proxy-KD approach" in clean
+    assert "single consumer GPU" in clean
+
+
+def test_strip_echoed_preamble_noop_on_clean_draft():
+    clean, n = two_pass._strip_echoed_preamble(
+        _REAL_BODY, topic=_ECHO_TOPIC, angle=_ECHO_ANGLE,
+        writer_prompt_override=_ECHO_OVERRIDE,
+    )
+    assert n == 0
+    assert clean == _REAL_BODY
+
+
+def test_strip_echoed_preamble_preserves_real_heading_that_mentions_topic():
+    """A genuine section heading that references the topic must NOT be stripped
+    (only an exact topic restatement is). Guards against eating real content."""
+    draft = (
+        "## Knowledge distillation explained\n\n"
+        "Here is the substantive body that actually delivers on the topic with "
+        "concrete detail and a worked example on local hardware, well over the "
+        "fifty word floor the guard requires before it will ever truncate."
+    )
+    clean, n = two_pass._strip_echoed_preamble(
+        draft, topic=_ECHO_TOPIC, angle=_ECHO_ANGLE,
+        writer_prompt_override=_ECHO_OVERRIDE,
+    )
+    assert n == 0
+    assert clean == draft
+
+
+def test_strip_echoed_preamble_never_zeroes_all_echo_draft():
+    """A draft that is ENTIRELY echo (no real body underneath) is returned
+    unchanged — the guard never truncates a draft to nothing; the contamination
+    becomes a human-review signal (the finding) instead of a silent empty post."""
+    clean, n = two_pass._strip_echoed_preamble(
+        _ECHO_PREAMBLE, topic=_ECHO_TOPIC, angle=_ECHO_ANGLE,
+        writer_prompt_override=_ECHO_OVERRIDE,
+    )
+    assert clean == _ECHO_PREAMBLE
+    assert n == 0
+
+
+async def test_run_strips_prompt_echo_from_final_draft(monkeypatch):
+    """End-to-end: a draft that opens by echoing topic/angle/brand is cleaned in
+    run()'s returned draft, and the stripped-line count is surfaced for metrics."""
+    contaminated = _ECHO_PREAMBLE + "\n" + _REAL_BODY
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        return contaminated
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    findings: list[dict] = []
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+
+    result = await two_pass.run(
+        topic=_ECHO_TOPIC, angle=_ECHO_ANGLE, niche_id="glad-labs",
+        pool=_fake_pool_with_no_snippets(), site_config=_fake_site_config(),
+        writer_prompt_override=_ECHO_OVERRIDE,
+    )
+    assert result["draft"].startswith("## Why distillation matters")
+    assert "Expand from ~57 words" not in result["draft"]
+    assert result["prompt_echo_stripped"] >= 5
+    # Self-heal is not silent: a visibility finding fires (feedback_self_heal_not_suppress).
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "writer_prompt_echo_stripped"
+    assert findings[0]["severity"] == "warn"
+
+
+async def test_run_no_echo_leaves_clean_draft_untouched(monkeypatch):
+    """A clean draft passes through run() unchanged and fires no echo finding."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        return _REAL_BODY
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    findings: list[dict] = []
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+
+    result = await two_pass.run(
+        topic=_ECHO_TOPIC, angle=_ECHO_ANGLE, niche_id="glad-labs",
+        pool=_fake_pool_with_no_snippets(), site_config=_fake_site_config(),
+        writer_prompt_override=_ECHO_OVERRIDE,
+    )
+    assert result["draft"] == _REAL_BODY
+    assert result["prompt_echo_stripped"] == 0
+    assert findings == []

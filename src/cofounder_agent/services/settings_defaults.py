@@ -376,12 +376,18 @@ DEFAULTS: dict[str, str] = {
     'rag_rerank_model': 'cross-encoder/ms-marco-MiniLM-L-6-v2',
     'rag_rerank_device': 'cpu',
     'rag_rrf_k': '60',
-    # CSV of embeddings.source_table values the writer's research RAG may draw
-    # from. MUST default to content-only ('posts'): an empty value means "all
-    # tables", which pulls claude_sessions / brain / audit ops-logs into the
-    # writer's grounding context and leaks meta-commentary + agent instructions
-    # into drafts (2026-06 contamination incident). Operators add more content-
-    # bearing tables (e.g. 'posts,samples') as their corpus grows.
+    # CSV of embeddings.source_table values RAG retrieval may draw from. MUST
+    # default to content-only ('posts'): the corpus is ~⅔ claude_sessions /
+    # brain / audit ops-logs, and grounding a draft in those leaks
+    # meta-commentary + agent instructions into the post (2026-06 contamination
+    # incident; memory: project_rag_corpus_pollution). Operators add more
+    # content-bearing tables (e.g. 'posts,samples') as their corpus grows.
+    # NOTE two consumers, two empty-value semantics: the general rag_engine
+    # retriever treats an empty value as "all tables", but the two_pass writer
+    # (modules/content/atoms/two_pass_writer._resolve_snippet_source_filter)
+    # NEVER queries unfiltered — an empty value falls back to the 'posts'
+    # content allowlist there, because generated content must not be grounded
+    # in operational telemetry.
     'rag_source_filter': 'posts',
     # Minimum acceptable writer-draft length; below this the draft is treated
     # as a generation failure (empty/too-short → status='failed' + finding,

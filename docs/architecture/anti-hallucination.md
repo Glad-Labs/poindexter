@@ -561,6 +561,40 @@ talk the model out of inventing people, stats, citations, or company
 claims — that work is done downstream where regex and a second LLM can
 enforce it deterministically.
 
+### Layer 1.5 — prompt-echo guard (writer-output sanitizer)
+
+File: `src/cofounder_agent/modules/content/atoms/two_pass_writer.py`
+(`_strip_echoed_preamble`).
+
+A weak/quantized writer model can _regurgitate its own prompt_ instead
+of executing it — dumping the topic line, the angle, the niche
+`writer_prompt_override`, the revise/expand instructions, the citation
+rules, and its own planning notes as the OPENING of the "article".
+Captured 2026-06-29 (task `ba4d627a`, `gemma-4-31B-it-qat`): the stored
+draft opened with the topic, then `Technical/Professional.`, then the
+niche descriptor, then `Expand from ~57 words to closer to 1500 words.
+Add genuine substance...`, with the real body underneath. The #2009
+keep-best expansion pass _compounded_ it — an echoed expansion is
+"longer" than a thin original, so keep-best adopted the contaminated
+version.
+
+The guard deterministically strips a contiguous echoed/scaffolding
+preamble off the front of the draft (no LLM call), both on the graph
+draft and on the expansion output before the keep-best comparison. It is
+**gated on a high-precision identity-echo signature** — the first lines
+restating ≥2 of {topic, angle, niche-override} — so it is a no-op on
+clean drafts (a real article body never opens by listing its own topic,
+angle, and niche as separate short lines), and it **never zeroes a
+draft** (if no substantial body survives the strip it keeps the original
+and the contamination becomes a human-review signal). Every strip emits a
+`writer_prompt_echo_stripped` finding (`severity=warn` → Discord) so a
+recurring echo surfaces the real fix: a writer model that can't follow
+instructions on long prompts (memory: `feedback_writer_model_canary`,
+`feedback_self_heal_not_suppress`). This is distinct from the off-topic
+_research_ that can co-occur (free DuckDuckGo occasionally returns
+unrelated results); the echo guard cleans the model's self-dump, not the
+research corpus.
+
 ## Layer 2 — Programmatic validator
 
 File: `src/cofounder_agent/modules/content/content_validator.py`

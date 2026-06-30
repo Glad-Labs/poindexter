@@ -90,6 +90,25 @@ tool). Routing there once benefits everything; wiring at
 `embeddings_db.search_similar` would only catch the small subset
 that goes through the database service directly.
 
+### The writer's snippet retrieval is a separate, source-scoped path
+
+The `canonical_blog` writer atom
+(`modules/content/atoms/two_pass_writer._embed_and_fetch_snippets`)
+does **not** go through Path B / `MemoryClient` — it runs its own
+direct pgvector nearest-neighbour query for the "internal snippets"
+it grounds the draft in. That query is **independently source-scoped**
+via `_resolve_snippet_source_filter`, which reads the same
+`rag_source_filter` setting but with a stricter empty-value rule: the
+writer **never queries the embeddings table unfiltered**. An empty/unset
+value falls back to the `posts` content allowlist rather than "all
+tables", because the corpus is ~⅔ `claude_sessions` / `brain` / `audit`
+ops-logs and grounding a published draft in operational telemetry
+reproduces session transcripts / agent instructions into the post (the
+2026-06 contamination incident; memory: `project_rag_corpus_pollution`).
+A complementary deterministic **prompt-echo guard** in the same atom
+strips any prompt preamble the writer model regurgitates as content —
+see `docs/architecture/anti-hallucination.md` (Layer 1).
+
 ## Activation runbook
 
 1. **Verify llama-index is in the venv** — already pinned in

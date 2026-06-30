@@ -318,6 +318,39 @@ class _State(TypedDict, total=False):
     target_length: int
 
 
+# Content-bearing source_tables the writer may ground a draft in when the
+# operator hasn't set ``rag_source_filter``. The writer NEVER queries the
+# embeddings table unfiltered (see ``_resolve_snippet_source_filter``).
+_DEFAULT_SNIPPET_SOURCE_FILTER = ("posts",)
+
+
+def _resolve_snippet_source_filter(site_config: Any = None) -> list[str]:
+    """Resolve the ``source_table`` allowlist the writer may draw snippets from.
+
+    Reads the CSV ``rag_source_filter`` app_setting (default ``'posts'``).
+    Unlike the general ``rag_engine`` retriever — where an empty value means
+    "all source_tables" — the writer NEVER queries the embeddings table
+    unfiltered: an empty/unset value falls back to the built-in content
+    allowlist (``posts``).
+
+    The corpus is ~⅔ ``claude_sessions`` / ``brain`` / ``audit`` ops-logs, none
+    of which are publishable content. An off-topic session transcript ranking
+    near the topic vector would otherwise be handed to the writer as an
+    "internal snippet" and reproduced wholesale into a draft (2026-06
+    contamination incident; memory: ``project_rag_corpus_pollution``). Operators
+    broaden the corpus by adding content-bearing tables to ``rag_source_filter``
+    (e.g. ``'posts,samples'``).
+    """
+    if site_config is None:
+        return list(_DEFAULT_SNIPPET_SOURCE_FILTER)
+    try:
+        csv = (site_config.get("rag_source_filter", "") or "").strip()
+    except Exception:  # noqa: BLE001 — defensive against stubbed site_config
+        return list(_DEFAULT_SNIPPET_SOURCE_FILTER)
+    parsed = [s.strip() for s in csv.split(",") if s.strip()]
+    return parsed or list(_DEFAULT_SNIPPET_SOURCE_FILTER)
+
+
 # -- nodes --
 
 async def _embed_and_fetch_snippets(state: _State) -> _State:
@@ -328,6 +361,7 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
         site_config.get_int("writer_rag_two_pass_snippet_limit", 20)
         if site_config is not None else 20
     )
+    source_filter = _resolve_snippet_source_filter(site_config)
     qvec = await embed_text(
         f"{state['topic']} — {state['angle']}", site_config=site_config,  # type: ignore[arg-type]
     )
@@ -339,15 +373,20 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
     qvec_str = "[" + ",".join(str(v) for v in qvec) + "]"
     pool = _POOL_REGISTRY[state["pool_thread"]]
     async with pool.acquire() as conn:
+        # source_table filter (corpus-pollution guard): only ground drafts in
+        # content-bearing tables, never the claude_sessions / brain / audit
+        # ops-log bulk of the corpus. See _resolve_snippet_source_filter.
         rows = await conn.fetch(
             """
             SELECT source_table, source_id, text_preview
               FROM embeddings
+             WHERE source_table = ANY($3::text[])
              ORDER BY embedding <=> $1::vector
              LIMIT $2
             """,
             qvec_str,
             snippet_limit,
+            source_filter,
         )
     snippets = [{"source": r["source_table"], "ref": str(r["source_id"]),
                  "snippet": r["text_preview"]} for r in rows]
@@ -838,6 +877,238 @@ def _expansion_enabled(site_config: Any = None) -> bool:
         return True
 
 
+# ---------------------------------------------------------------------------
+# Prompt-echo guard (poindexter#2009 follow-up).
+#
+# gemma-4-31B-it-qat (the 4-bit QAT ``pipeline_writer_model``) intermittently
+# regurgitates the prompt preamble — the topic line, the angle, the niche
+# ``writer_prompt_override``, the revise/expand instructions, the citation
+# rules, and its own planning notes — as the OPENING of the article instead of
+# executing them. Captured 2026-06-29 (task ba4d627a): the stored canonical_blog
+# content opened with the topic, then "Technical/Professional.", then the niche
+# descriptor, then "Expand from ~57 words to closer to 1500 words. Add genuine
+# substance...". The real article body sat underneath. The #2009 keep-best
+# expansion compounded it — an echoed expansion is longer than a thin original,
+# so keep-best adopted the echo-contaminated version.
+#
+# This guard deterministically strips a contiguous echoed/scaffolding preamble
+# off the FRONT of a draft (no LLM call). It is GATED on a high-precision
+# identity-echo signature — the draft's first lines restating the known topic /
+# angle / niche override — so it is a no-op on clean drafts (a real article body
+# never opens by listing its own topic, angle, and niche as separate short
+# lines). When it can't recover a substantial body it keeps the original
+# untouched (never zeroes a draft) and the caller emits a finding so the
+# model-quality signal stays visible (feedback_self_heal_not_suppress).
+
+_ECHO_SCAFFOLD_PATTERNS = [
+    re.compile(p, re.IGNORECASE) for p in (
+        r"expand (this|the|from|it)\b",
+        r"revise (the|a|this)\b",
+        r"input:\s",
+        r"goal:\s",
+        r"constraints?:?\s*$",
+        r"context:\s",
+        r"title:\s",
+        r"add genuine (added )?substance\b",
+        r"return (the )?complete\b",
+        r"no padding\b",
+        r"preserve (every|existing|all)\b",
+        r"end on a complete sentence\b",
+        r"do not (repeat|pad|restate|invent|make up|add)\b",
+        r"first[- ]person\b",
+        r"full markdown links\b",
+        r"no fake url",
+        r"every (name|fact|stat|claim)\b",
+        r"internal consistency\b",
+        # the model narrating the task / metadata to itself
+        r"the original draft\b",
+        r"current content\b",
+        r"the .?draft.? (provided|is|below|consists)\b",
+        r"i (need to|will|should|'?ll|am going to)\b",
+        r"let me\b",
+        r"okay[,.]",
+        r"here(’s| is| are) (the|my)\b",
+    )
+]
+
+
+def _norm_echo(line: str) -> str:
+    """Normalize a line for echo comparison: drop leading markdown/list markers,
+    lowercase, strip surrounding punctuation/quotes."""
+    s = re.sub(r"^[\s>#*\-•\d.)]+", "", line.strip())
+    return s.strip(" \t.:*_`\"'()").lower()
+
+
+def _sep_norm(s: str) -> str:
+    """Collapse separator punctuation (| / ,) + whitespace so the angle echo
+    'Technical/Professional' matches the angle input 'technical | professional'."""
+    return re.sub(r"\s+", " ", re.sub(r"[|/,]", " ", s)).strip()
+
+
+def _echo_tokens(s: str) -> list[str]:
+    return [t for t in re.findall(r"[a-z0-9]+", s.lower()) if len(t) > 1]
+
+
+def _token_overlap(line_norm: str, target_text: str) -> float:
+    """Fraction of the LINE's tokens that appear in ``target_text``. Used to
+    catch paraphrased echoes (e.g. a brand line condensed from the override)."""
+    lt = _echo_tokens(line_norm)
+    if not lt:
+        return 0.0
+    tt = set(_echo_tokens(target_text))
+    if not tt:
+        return 0.0
+    return sum(1 for t in lt if t in tt) / len(lt)
+
+
+def _is_preamble_line(
+    raw: str, norm: str, *,
+    topic_norm: str, angle_norm: str, override_norms: set[str], override_fulltext: str,
+) -> bool:
+    """Classify a single LEADING line as echoed prompt scaffolding."""
+    if not norm:
+        return False
+    # Scaffold / instruction / planning echoes (specific, anchored phrases).
+    if any(p.match(norm) for p in _ECHO_SCAFFOLD_PATTERNS):
+        return True
+    # A markdown heading is real content UNLESS it's an exact topic restatement
+    # (a redundant H1 — the canonical title is generated separately).
+    if raw.lstrip().startswith("#"):
+        return bool(topic_norm) and norm == topic_norm
+    if angle_norm and _sep_norm(norm) == angle_norm:
+        return True
+    if norm in override_norms:
+        return True
+    # Short identity echoes (topic restatement / paraphrased brand line). The
+    # <15-word gate keeps real prose intros (which are longer) out of scope.
+    if 0 < len(_echo_tokens(norm)) < 15:
+        if topic_norm and _token_overlap(norm, topic_norm) >= 0.75:
+            return True
+        if override_fulltext and _token_overlap(norm, override_fulltext) >= 0.7:
+            return True
+    return False
+
+
+def _has_echo_signature(
+    lines: list[str], *,
+    topic_norm: str, angle_norm: str, override_norms: set[str], override_fulltext: str,
+) -> bool:
+    """High-precision trigger: do the first few non-blank lines restate at least
+    two of {topic, angle, niche-override}? A clean article body never does."""
+    seen = 0
+    cats: set[str] = set()
+    for raw in lines:
+        norm = _norm_echo(raw)
+        if not norm:
+            continue
+        seen += 1
+        short = 0 < len(_echo_tokens(norm)) < 15
+        if topic_norm and (norm == topic_norm or (short and _token_overlap(norm, topic_norm) >= 0.75)):
+            cats.add("topic")
+        elif angle_norm and _sep_norm(norm) == angle_norm:
+            cats.add("angle")
+        elif (norm in override_norms) or (
+            override_fulltext and short and _token_overlap(norm, override_fulltext) >= 0.7
+        ):
+            cats.add("brand")
+        if seen >= 4:
+            break
+    return len(cats) >= 2
+
+
+def _strip_echoed_preamble(
+    draft: str, *, topic: str, angle: str,
+    writer_prompt_override: str = "", max_scan_lines: int = 40,
+) -> tuple[str, int]:
+    """Strip a contiguous prompt-echo/scaffolding preamble off the front of a
+    draft. Returns ``(clean_draft, lines_stripped)``.
+
+    No-op (returns the input + 0) unless a strong identity-echo signature is
+    present AND a substantial body (≥50 words) survives the strip — the guard
+    never truncates a draft to nothing.
+    """
+    if not draft or not draft.strip():
+        return draft, 0
+    topic_norm = _norm_echo(topic or "")
+    angle_norm = _sep_norm(_norm_echo(angle or ""))
+    override_norms = {
+        _norm_echo(ln) for ln in (writer_prompt_override or "").splitlines()
+        if _norm_echo(ln)
+    }
+    override_fulltext = _norm_echo(re.sub(r"\s+", " ", writer_prompt_override or ""))
+    lines = draft.splitlines()
+    if not _has_echo_signature(
+        lines[:max_scan_lines], topic_norm=topic_norm, angle_norm=angle_norm,
+        override_norms=override_norms, override_fulltext=override_fulltext,
+    ):
+        return draft, 0
+
+    last_pre = -1
+    i = 0
+    while i < len(lines) and i < max_scan_lines:
+        norm = _norm_echo(lines[i])
+        if not norm:  # blank/separator line inside the preamble — skip
+            i += 1
+            continue
+        if _is_preamble_line(
+            lines[i], norm, topic_norm=topic_norm, angle_norm=angle_norm,
+            override_norms=override_norms, override_fulltext=override_fulltext,
+        ):
+            last_pre = i
+            i += 1
+            continue
+        break  # first real body line
+    if last_pre < 0:
+        return draft, 0
+
+    remainder = "\n".join(lines[last_pre + 1:]).lstrip("\n")
+    stripped = sum(1 for ln in lines[: last_pre + 1] if _norm_echo(ln))
+    # Never zero/gut a draft: if the strip doesn't leave a substantial body the
+    # contamination is a human-review problem (surfaced via the finding), not
+    # something to silently truncate to nothing.
+    if len(remainder.split()) < 50:
+        return draft, 0
+    return remainder, stripped
+
+
+def _emit_prompt_echo_finding(*, stripped_lines: int, task_id: str | None) -> None:
+    """Loud-but-recovered canary: the writer regurgitated prompt scaffolding as
+    article content and the guard stripped it. Self-heal is not silent
+    (feedback_self_heal_not_suppress) — the pipeline keeps the recovered body
+    while the model-quality signal stays visible on the Findings dashboard.
+    ``severity='warn'`` → Discord per the dispatcher policy."""
+    logger.warning(
+        "[two_pass_writer] writer echoed %d prompt/scaffolding line(s) at the top "
+        "of the draft; stripped them and kept the body. Recurring echoes indicate "
+        "the writer model is not following instructions on long prompts.",
+        stripped_lines,
+    )
+    try:
+        from utils.findings import emit_finding
+    except Exception:  # noqa: BLE001  # silent-ok: emit is best-effort; the WARNING log above already surfaced the echo
+        return
+    try:
+        emit_finding(
+            source="modules.content.atoms.two_pass_writer",
+            kind="writer_prompt_echo_stripped",
+            title=f"Writer echoed {stripped_lines} prompt line(s) — stripped preamble",
+            body=(
+                f"The two_pass writer reproduced {stripped_lines} line(s) of prompt "
+                f"preamble/scaffolding (topic / angle / niche override / "
+                f"instructions) at the top of the draft instead of executing them. "
+                f"The deterministic echo guard stripped the preamble and kept the "
+                f"article body. If this recurs, the writer model "
+                f"(pipeline_writer_model) is failing to follow instructions on long "
+                f"prompts — consider a stronger writer."
+            ),
+            severity="warn",
+            dedup_key="writer_prompt_echo_stripped",
+            extra={"stripped_lines": stripped_lines, "task_id": task_id},
+        )
+    except Exception:  # noqa: BLE001  # silent-ok: finding emission must never raise; the WARNING log above is the durable signal
+        pass
+
+
 async def _maybe_expand_to_target(
     draft: str,
     *,
@@ -845,6 +1116,9 @@ async def _maybe_expand_to_target(
     site_config: Any,
     pool: Any,
     task_id: str | None,
+    topic: str = "",
+    angle: str = "",
+    writer_prompt_override: str = "",
 ) -> tuple[str, dict[str, Any]]:
     """Keep-best soft expansion: when a draft lands under
     ``target_length * writer_min_length_ratio``, run ONE expansion pass and
@@ -863,6 +1137,7 @@ async def _maybe_expand_to_target(
         "expanded": False,
         "words_before": words_before,
         "words_after": words_before,
+        "echo_stripped": 0,
     }
     if not (draft or "").strip() or target_length <= 0:
         return draft, meta
@@ -895,6 +1170,16 @@ async def _maybe_expand_to_target(
         return draft, meta
 
     expanded = (expanded or "").strip()
+    # Strip any prompt-echo the expansion model prepended BEFORE the keep-best
+    # comparison — otherwise an echoed expansion (which is "longer" only because
+    # it dumped the expand prompt at the top) would win keep-best and bake the
+    # scaffolding into the post. This is exactly the #2009 compounding observed
+    # on task ba4d627a ("Expand from ~57 words to closer to 1500 words...").
+    expanded, exp_echo = _strip_echoed_preamble(
+        expanded, topic=topic, angle=angle,
+        writer_prompt_override=writer_prompt_override,
+    )
+    meta["echo_stripped"] = exp_echo
     words_after = len(expanded.split())
     # Keep-best: only adopt the expansion when it genuinely lengthened the
     # draft. An empty / shorter response keeps the original (never zero/shrink).
@@ -963,6 +1248,18 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
         }
         config = {"configurable": {"thread_id": thread_id}}
         final = await _GRAPH.ainvoke(initial, config=config)
+        writer_prompt_override = str(kw.get("writer_prompt_override") or "")
+        # Prompt-echo guard: gemma-4-31B-it-qat intermittently dumps the prompt
+        # preamble (topic / angle / niche override / instructions / planning
+        # notes) at the top of the draft instead of executing it. Strip a
+        # contiguous echoed preamble off the graph draft BEFORE the expansion
+        # pass so (a) the persisted body is clean and (b) the keep-best length
+        # comparison runs on the real word count, not an echo-inflated one.
+        # No-op on clean drafts (gated on a strong identity-echo signature).
+        base_draft, echo_pre = _strip_echoed_preamble(
+            final.get("draft") or "", topic=topic, angle=angle,
+            writer_prompt_override=writer_prompt_override,
+        )
         # Keep-best expansion guard: local writers under-deliver on long
         # targets even when the draft prompt asks for ~N words. If the final
         # draft is under ``target_length * writer_min_length_ratio``, run ONE
@@ -971,18 +1268,27 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
         # uniformity bug (every niche post used to land at the model's natural
         # ~600-word default regardless of the requested length).
         draft_out, expand_meta = await _maybe_expand_to_target(
-            final.get("draft") or "",
+            base_draft,
             target_length=int(kw.get("target_length") or 1200),
             site_config=kw.get("site_config"),
             pool=pool,
             task_id=task_id,
+            topic=topic,
+            angle=angle,
+            writer_prompt_override=writer_prompt_override,
         )
+        echo_stripped = echo_pre + int(expand_meta.get("echo_stripped", 0))
+        if echo_stripped:
+            _emit_prompt_echo_finding(stripped_lines=echo_stripped, task_id=task_id)
         return {
             "draft": _scrub_private_repo_refs(draft_out),
             "snippets_used": final.get("snippets", []),
             "external_lookups": final.get("external_lookups", []),
             "revision_loops": final.get("revision_loops", 0),
             "loop_capped": final.get("loop_capped", False),
+            # Prompt-echo guard observability — how many scaffolding/preamble
+            # lines the writer regurgitated and the guard stripped (0 = clean).
+            "prompt_echo_stripped": echo_stripped,
             # Length-enforcement observability — did the expansion pass fire,
             # and the word counts before/after. Surfaced so the caller stage
             # can record it (capability_outcomes / metrics).
