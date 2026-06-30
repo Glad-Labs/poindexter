@@ -276,6 +276,13 @@ DEFAULTS: dict[str, str] = {
     # Interval (seconds) between confirm-poll /api/ps checks. Smaller =
     # tighter handoff (less wasted wait once the model frees), more polls.
     'pipeline_writer_unload_poll_interval_seconds': '0.5',
+    # ----- Model-eval loop (champion–challenger; Plan 1 reranker slice) -----
+    # Relative improvement a challenger must beat the champion by to be a
+    # promotion candidate (0.02 = 2%), plus golden-set bootstrap sizing for
+    # the reranker scorer. See docs/architecture/2026-06-29-model-eval-loop-design.md.
+    'model_eval_promotion_margin': '0.02',
+    'model_eval_reranker_golden_size': '50',
+    'model_eval_reranker_candidates_per_case': '20',
     'qa_fallback_critic_model': 'ollama/qwen2.5:32b',
     'qa_fallback_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
     # Cross-model rescue reviser for qa.rewrite. EMPTY = reuse the resident
@@ -1449,6 +1456,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'vision_alt_model': {'owner': 'image_service', 'value_type': 'model'},
     'rag_rerank_model': {'owner': 'rag_engine', 'value_type': 'model'},
     'rag_rerank_device': {'owner': 'rag_engine', 'value_type': 'string'},
+    'model_eval_promotion_margin': {'owner': 'model_eval', 'value_type': 'float'},
+    'model_eval_reranker_golden_size': {'owner': 'model_eval', 'value_type': 'integer'},
+    'model_eval_reranker_candidates_per_case': {'owner': 'model_eval', 'value_type': 'integer'},
     'gpu_vram_total_gb': {'owner': 'gpu_scheduler', 'value_type': 'string'},
     'gpu_desktop_reserve_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},
     'gpu_vram_autodetect_fallback_gb': {'owner': 'gpu_scheduler', 'value_type': 'float'},

@@ -19,6 +19,7 @@ from .integrations import integrations_group
 from .media import media_group
 from .memory import memory_group
 from .migrate import migrate_group
+from .model_eval import model_eval_group
 from .pipeline import pipeline_group
 from .posts import post_group, posts_group
 from .premium import premium_group
@@ -95,6 +96,7 @@ main.add_command(premium_group, name="premium")
 main.add_command(skills_group, name="skills")
 main.add_command(topics_group, name="topics")
 main.add_command(experiments_group, name="experiments")
+main.add_command(model_eval_group, name="model-eval")
 main.add_command(integrations_group, name="integrations")
 main.add_command(validators_group, name="validators")
 main.add_command(auto_publish_group, name="auto-publish")
