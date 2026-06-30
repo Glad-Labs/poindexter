@@ -1346,6 +1346,7 @@ async def generate_with_context(
     site_config: Any,
     pool: Any = None,
     task_id: str | None = None,
+    target_length: int = 1200,
 ) -> str:
     """Build a prompt using the snippets as background context, generate the
     draft. Wraps the existing generation path; tests can monkeypatch here.
@@ -1373,6 +1374,7 @@ async def generate_with_context(
         angle=angle,
         instructions=instructions,
         snippet_block=snippet_block,
+        target_length=target_length,
     )
     # 2026-06-02 (poindexter#572): switched from ``_ollama_chat_json``
     # (which forces ``format=json`` on Ollama) to the plain-text

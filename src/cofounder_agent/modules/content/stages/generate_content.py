@@ -173,6 +173,7 @@ class GenerateContentStage:
                 site_config=context.get("site_config"),
                 research_context=research_context,
                 regen_steering=regen_steering,
+                target_length=target_length,
             )
         else:
             # Generate content (GPU-locked to ollama mode).
@@ -745,6 +746,7 @@ class GenerateContentStage:
         site_config: Any = None,
         research_context: str = "",
         regen_steering: str = "",
+        target_length: int = 1200,
     ) -> tuple[str, str, dict[str, Any]]:
         """Run ``atoms.two_pass_writer`` and shape the result into the
         (content_text, model_used, metrics) tuple the rest of this stage
@@ -880,6 +882,7 @@ class GenerateContentStage:
                 niche_id=None,
                 pool=pool,
                 task_id=str(task_id) if task_id else None,
+                target_length=target_length,
                 writer_prompt_override=writer_prompt_override,
                 context_bundle=context_bundle,
                 # Pre-collected external research corpus — threaded so the

@@ -35,6 +35,7 @@ from uuid import UUID
 from services.logger_config import get_logger
 from services.niche_service import Niche, NicheService
 from services.site_config import SiteConfig
+from services.topic_length import pick_target_length
 from services.topic_ranking import (
     ScoredCandidate,
     apply_decay,
@@ -1161,18 +1162,27 @@ class TopicBatchService:
         template_slug = await resolve_template_slug(
             self._pool, niche_slug=niche.slug,
         )
+        # Vary post length via the shared weighted picker (#542) instead of
+        # letting the row fall to the ``target_length`` column default
+        # (1500). The auto-queue used to omit this column entirely, so every
+        # niche post landed on 1500 and the DB-configurable
+        # ``topic_discovery_length_distribution`` had no effect — the
+        # length-uniformity bug. An explicit picked value flows on to the
+        # writer via ``flows/content_generation`` → ``two_pass_writer``.
+        target_length = pick_target_length(self._site_config)
         async with self._pool.acquire() as conn:
             async with conn.transaction():
                 await conn.execute(
                     """
                     INSERT INTO pipeline_tasks
                       (task_id, task_type, topic, status, stage,
-                       niche_slug, topic_batch_id, template_slug)
+                       niche_slug, topic_batch_id, template_slug,
+                       target_length)
                     VALUES ($1, 'blog_post', $2, 'pending', 'pending',
-                            $3, $4, $5)
+                            $3, $4, $5, $6)
                     """,
                     task_id, topic, niche.slug,
-                    batch_id, template_slug,
+                    batch_id, template_slug, target_length,
                 )
                 await conn.execute(
                     """

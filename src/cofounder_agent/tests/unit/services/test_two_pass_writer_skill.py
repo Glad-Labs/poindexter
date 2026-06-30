@@ -47,6 +47,9 @@ def test_two_pass_templates_have_placeholders() -> None:
     assert "{angle}" in generate
     assert "{instructions}" in generate
     assert "{snippet_block}" in generate
+    # Soft length target — the draft prompt tells the model the requested
+    # word budget so output length tracks the picked target.
+    assert "{target_length}" in generate
 
 
 def test_two_pass_templates_end_with_single_newline() -> None:
@@ -69,6 +72,7 @@ def test_two_pass_templates_render_without_stray_braces() -> None:
         angle="real benchmarks",
         instructions="SOURCES: ...",
         snippet_block="[posts/1] we ran it on a 32GB card",
+        target_length=1500,
     )
     assert "RTX 5090 local LLM inference" in generate
     revise = pm.get_prompt(

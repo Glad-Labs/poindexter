@@ -64,3 +64,63 @@ class TestTwoPassRevisePrompt:
         # knows what to substitute.
         assert "[EXTERNAL_NEEDED:" in rendered
         assert rendered.count("[EXTERNAL_NEEDED:") >= 2
+
+
+@pytest.mark.unit
+class TestTwoPassGenerateWithContextPrompt:
+    """Pins the draft prompt's length-target placeholder.
+
+    The niche writer used to receive no length signal at all, so every post
+    came out ~600 words regardless of the requested target. The draft prompt
+    now carries a soft ``{target_length}`` instruction; this pins that the
+    placeholder renders the requested word budget.
+    """
+
+    def test_key_present_in_registry(self, pm: UnifiedPromptManager):
+        assert "atoms.two_pass_writer.generate_with_context" in pm.prompts
+
+    def test_renders_target_length(self, pm: UnifiedPromptManager):
+        rendered = pm.get_prompt(
+            "atoms.two_pass_writer.generate_with_context",
+            topic="T", angle="A", instructions="I", snippet_block="S",
+            target_length=2500,
+        )
+        # The requested word budget must appear in the rendered prompt so
+        # the model is actually told how long to write.
+        assert "2500" in rendered
+
+
+@pytest.mark.unit
+class TestTwoPassExpandPrompt:
+    """Pins atoms.two_pass_writer.expand_prompt — the keep-best expansion
+    pass that lengthens a thin draft toward its target word budget.
+    """
+
+    def test_key_present_in_registry(self, pm: UnifiedPromptManager):
+        assert "atoms.two_pass_writer.expand_prompt" in pm.prompts
+
+    def test_render_matches_inline_fallback(self, pm: UnifiedPromptManager):
+        from modules.content.atoms.two_pass_writer import _EXPAND_PROMPT_FALLBACK
+
+        kwargs = dict(
+            draft="A thin first draft.",
+            target_length=2500,
+            word_count=420,
+        )
+        rendered_yaml = pm.get_prompt(
+            "atoms.two_pass_writer.expand_prompt", **kwargs,
+        )
+        rendered_inline = _EXPAND_PROMPT_FALLBACK.format(**kwargs)
+        assert rendered_yaml == rendered_inline
+
+    def test_renders_target_and_current_length(self, pm: UnifiedPromptManager):
+        rendered = pm.get_prompt(
+            "atoms.two_pass_writer.expand_prompt",
+            draft="A thin first draft.",
+            target_length=2500,
+            word_count=420,
+        )
+        # Both the current and target word counts must reach the model so it
+        # knows how much to expand.
+        assert "2500" in rendered
+        assert "420" in rendered

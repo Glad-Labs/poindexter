@@ -389,6 +389,11 @@ DEFAULTS: dict[str, str] = {
     # is never this short — a sub-threshold draft means the reasoning writer
     # model returned (near-)empty content. poindexter#691.
     'writer_min_draft_chars': '200',
+    # Keep-best soft expansion (length enforcement): when a niche draft lands
+    # under target_length * writer_min_length_ratio, two_pass runs ONE expansion
+    # pass and keeps the longer of (original, expanded). Disable via the _enabled key.
+    'writer_length_expansion_enabled': 'true',
+    'writer_min_length_ratio': '0.7',
     'writer_rag_context_snippet_max_chars': '500',
     'writer_rag_research_topic_max_sources': '2',
     'writer_rag_two_pass_research_max_sources': '2',

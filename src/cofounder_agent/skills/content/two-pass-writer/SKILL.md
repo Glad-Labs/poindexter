@@ -15,6 +15,9 @@ metadata:
     - key: atoms.two_pass_writer.generate_with_context
       output_format: markdown
       description: 'Generic RAG-writer prompt — builds a blog draft from topic, angle, optional extra instructions, and background-snippet context. Used by ai_content_generator.generate_with_context (the draft-stage call inside atoms.two_pass_writer).'
+    - key: atoms.two_pass_writer.expand_prompt
+      output_format: markdown
+      description: 'Keep-best expansion prompt — lengthens a thin draft toward its target word budget by adding genuine substance (detail, examples, reasoning), never padding. Fires when the draft lands under target_length * writer_min_length_ratio.'
 ---
 
 # Two-pass writer skill
@@ -120,6 +123,14 @@ STRUCTURE
   conclusion instead.
 - Finish with a complete concluding paragraph. Never stop mid-sentence.
 
+LENGTH
+- Aim for roughly {target_length} words. Treat this as a depth target, not a
+  quota: reach it by covering the topic thoroughly — concrete detail, worked
+  examples, and reasoning — never by padding, repeating, or stretching a thin
+  point. If the topic is genuinely covered in fewer words, stop there; if it
+  needs more to be complete, write more. A focused post that is shorter beats a
+  padded one that hits the number.
+
 STYLE
 - Vary sentence and paragraph length. Avoid "delve", "testament", "tapestry",
   "navigating the landscape", "multifaceted", "at its core", "at the heart of",
@@ -127,4 +138,21 @@ STYLE
 
 Return the full post body once, in Markdown — no preamble, no image
 descriptions, and no placeholder tokens other than [EXTERNAL_NEEDED: ...].
+```
+
+## atoms.two_pass_writer.expand_prompt
+
+```text
+The draft below is about {word_count} words, but this post should be closer to
+{target_length} words. Expand it with genuine added substance — more concrete
+detail, worked examples, and reasoning grounded in the existing content. Do NOT
+pad, repeat, restate points already made, or add filler to reach a number; if a
+section is already complete, leave it untouched.
+
+Preserve every existing fact, link, heading, and the original voice. Return the
+COMPLETE expanded post once, in Markdown, ending on a complete sentence — no
+preamble and no notes about what you changed.
+
+Draft:
+{draft}
 ```

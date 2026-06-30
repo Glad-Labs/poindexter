@@ -438,9 +438,11 @@ class TestGroupingMakesSense:
         # exist: the qa_*_model config keys that live with the other model keys
         # (qa_fallback_writer_model / qa_rewrite_model / qa_*_vision_*), and the
         # qa scoring + gate-behavior cluster (qa_accuracy_* … qa_rewrite_max_attempts
-        # / qa_flag_instead_of_reject). The slack accommodates that ~210-line gap;
-        # a genuinely new far-flung qa_ section would still overshoot it.
-        assert span < 230, (
+        # / qa_flag_instead_of_reject). The slack accommodates that ~210-line gap
+        # plus the non-qa keys that legitimately live in it (e.g. the writer_*
+        # block — writer_length_expansion_enabled / writer_min_length_ratio); a
+        # genuinely new far-flung qa_ section would still overshoot it.
+        assert span < 240, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

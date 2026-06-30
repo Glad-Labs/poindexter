@@ -1235,3 +1235,83 @@ class TestHandoffTemplateSlugResolution:
         # No INSERT into pipeline_tasks happened — we failed before
         # the write.
         assert not any("INSERT INTO pipeline_tasks" in s for s in captured)
+
+
+# ===========================================================================
+# _handoff_to_pipeline — target_length variety (length-uniformity bug)
+# ===========================================================================
+
+
+@pytest.mark.unit
+class TestHandoffTargetLength:
+    """The niche auto-queue handoff must vary post length via the shared
+    weighted picker (``services.topic_length.pick_target_length``) rather
+    than omitting ``target_length`` and falling to the
+    ``pipeline_tasks.target_length`` column default (1500).
+
+    Pins the length-uniformity bug: every ``glad-labs`` post requested
+    exactly 1500 words because this INSERT never set ``target_length`` —
+    so the variance picker (and the DB-configurable
+    ``topic_discovery_length_distribution``) had no effect on auto-queued
+    content.
+    """
+
+    async def test_pipeline_insert_includes_picked_target_length(self, monkeypatch):
+        """The INSERT must name the ``target_length`` column and carry the
+        value the weighted picker returned (not the hardcoded 1500 default).
+        """
+        captured: list[tuple[str, tuple]] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured.append((sql, args))
+            return "INSERT 0 1"
+
+        # Pin the picker to a sentinel so the assertion is deterministic
+        # (the real picker draws a random length from the weighted buckets).
+        monkeypatch.setattr(
+            "services.topic_batch_service.pick_target_length",
+            lambda site_config: 2345,
+            raising=False,
+        )
+
+        pool, _ = _make_mock_pool(execute_side_effect=_capture)
+        svc = TopicBatchService(pool, site_config=SiteConfig())
+
+        await svc._handoff_to_pipeline(
+            winner=_make_candidate(),
+            niche=_make_niche("glad-labs"),
+            batch_id=uuid4(),
+        )
+
+        pipeline_sql, pipeline_args = next(
+            (sql, args) for sql, args in captured if "pipeline_tasks" in sql
+        )
+        assert "target_length" in pipeline_sql
+        assert 2345 in pipeline_args
+
+    async def test_handoff_calls_picker_with_di_site_config(self, monkeypatch):
+        """The picker must receive the service's DI ``site_config`` so the
+        DB-configurable distribution applies — not a ``None`` fallback to
+        the hardcoded default buckets.
+        """
+        seen: dict = {}
+
+        def _fake_pick(site_config):
+            seen["site_config"] = site_config
+            return 1234
+
+        monkeypatch.setattr(
+            "services.topic_batch_service.pick_target_length",
+            _fake_pick,
+            raising=False,
+        )
+
+        pool, _ = _make_mock_pool()
+        sc = SiteConfig()
+        svc = TopicBatchService(pool, site_config=sc)
+
+        await svc._handoff_to_pipeline(
+            winner=_make_candidate(), niche=_make_niche(), batch_id=uuid4(),
+        )
+
+        assert seen["site_config"] is sc

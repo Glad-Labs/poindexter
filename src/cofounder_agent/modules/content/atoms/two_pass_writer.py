@@ -188,6 +188,56 @@ External facts:
 """
 
 
+# Prompt key + inline fallback for the keep-best expansion pass (length
+# enforcement). Same resolution chain as the revise prompt: Langfuse > YAML
+# (SKILL.md) > inline fallback. Canonical default lives in
+# skills/content/two-pass-writer/SKILL.md. Keep this text byte-identical to
+# that section — the snapshot test pins registry == inline.
+_EXPAND_PROMPT_KEY = "atoms.two_pass_writer.expand_prompt"
+
+_EXPAND_PROMPT_FALLBACK = """\
+The draft below is about {word_count} words, but this post should be closer to
+{target_length} words. Expand it with genuine added substance — more concrete
+detail, worked examples, and reasoning grounded in the existing content. Do NOT
+pad, repeat, restate points already made, or add filler to reach a number; if a
+section is already complete, leave it untouched.
+
+Preserve every existing fact, link, heading, and the original voice. Return the
+COMPLETE expanded post once, in Markdown, ending on a complete sentence — no
+preamble and no notes about what you changed.
+
+Draft:
+{draft}
+"""
+
+
+def _resolve_expand_prompt(
+    *, draft: str, target_length: int, word_count: int,
+) -> str:
+    """Resolve the expansion prompt (Langfuse > SKILL.md > inline fallback).
+
+    Mirrors :func:`_resolve_revise_prompt`. The inline fallback only fires when
+    the prompt registry is unreachable (bootstrap / test paths); production
+    reads from the SKILL.md default at minimum.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+        return get_prompt_manager().get_prompt(
+            _EXPAND_PROMPT_KEY,
+            draft=draft,
+            target_length=target_length,
+            word_count=word_count,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[two_pass_writer] prompt_manager lookup for %r failed (%s) — "
+            "using inline fallback", _EXPAND_PROMPT_KEY, exc,
+        )
+        return _EXPAND_PROMPT_FALLBACK.format(
+            draft=draft, target_length=target_length, word_count=word_count,
+        )
+
+
 _NEED_PATTERN = re.compile(r"\[EXTERNAL_NEEDED:\s*([^\]]+)\]")
 
 # Hard fallback used when ``writer_rag_two_pass_max_revision_loops`` is
@@ -258,6 +308,14 @@ class _State(TypedDict, total=False):
     # every ollama_chat_text call inside this graph can tag cost_logs rows
     # with the originating task. None when called outside a pipeline context.
     task_id: str | None
+    # Requested word budget for the post, threaded from
+    # generate_content.py (which reads pipeline_tasks.target_length, itself
+    # set by the weighted picker). Passed to the draft prompt as a soft
+    # length target and used by run()'s expansion guard. Defaults to 1200
+    # when the caller doesn't supply one. Pins the length-uniformity bug:
+    # before this, the niche writer got no length signal and every post
+    # came out ~600 words regardless of the requested length.
+    target_length: int
 
 
 # -- nodes --
@@ -362,6 +420,7 @@ async def _draft_node(state: _State) -> _State:
         snippets=state["snippets"], extra_instructions=instruction,
         site_config=site_config, pool=pool,
         task_id=state.get("task_id"),
+        target_length=state.get("target_length", 1200),
     )
     return {**state, "draft": draft}
 
@@ -750,6 +809,110 @@ def _build_graph():
 _GRAPH = _build_graph()
 
 
+def _resolve_min_length_ratio(site_config: Any = None) -> float:
+    """Fraction of ``target_length`` below which the keep-best expansion pass
+    fires. DB-configurable via ``writer_min_length_ratio`` (default 0.7)."""
+    if site_config is None:
+        return 0.7
+    try:
+        return float(site_config.get_float("writer_min_length_ratio", 0.7))
+    except Exception:  # noqa: BLE001 — defensive against test stubs
+        # silent-ok: optional tuning knob — fall back to the documented
+        # default when a stubbed site_config raises (matches
+        # _resolve_max_revision_loops above).
+        return 0.7
+
+
+def _expansion_enabled(site_config: Any = None) -> bool:
+    """Master switch for the expansion pass (``writer_length_expansion_enabled``,
+    default true). Off → the writer returns the graph's draft unchanged."""
+    if site_config is None:
+        return True
+    try:
+        raw = site_config.get("writer_length_expansion_enabled", "true")
+        return str(raw).lower() in ("true", "1", "yes")
+    except Exception:  # noqa: BLE001 — defensive against test stubs
+        # silent-ok: optional feature flag — fall back to the default-on
+        # value when a stubbed site_config raises (matches
+        # _resolve_max_revision_loops above).
+        return True
+
+
+async def _maybe_expand_to_target(
+    draft: str,
+    *,
+    target_length: int,
+    site_config: Any,
+    pool: Any,
+    task_id: str | None,
+) -> tuple[str, dict[str, Any]]:
+    """Keep-best soft expansion: when a draft lands under
+    ``target_length * writer_min_length_ratio``, run ONE expansion pass and
+    return whichever of (original, expanded) has more words.
+
+    A thin or empty model response can never shrink or zero the post — the
+    original is kept whenever the expansion fails to actually lengthen it. The
+    whole pass is gated by ``writer_length_expansion_enabled`` and is fully
+    fail-safe (any error keeps the original draft). Pins the length-uniformity
+    bug: local writer models under-deliver on long targets even when the draft
+    prompt asks for ~N words, so a single bounded expansion nudges thin drafts
+    toward the requested budget without padding.
+    """
+    words_before = len((draft or "").split())
+    meta: dict[str, Any] = {
+        "expanded": False,
+        "words_before": words_before,
+        "words_after": words_before,
+    }
+    if not (draft or "").strip() or target_length <= 0:
+        return draft, meta
+    if not _expansion_enabled(site_config):
+        return draft, meta
+    threshold = int(target_length * _resolve_min_length_ratio(site_config))
+    if words_before >= threshold:
+        return draft, meta
+
+    from services.llm_text import ollama_chat_text, resolve_local_model
+    model = resolve_local_model(model=None, site_config=site_config)
+    prompt = _resolve_expand_prompt(
+        draft=draft, target_length=target_length, word_count=words_before,
+    )
+    try:
+        expanded = await ollama_chat_text(
+            prompt,
+            model=model,
+            site_config=site_config,
+            pool=pool,
+            timeout_setting="niche_ollama_chat_timeout_seconds",
+            task_id=task_id,
+            phase="two_pass_expand",
+        )
+    except Exception as exc:  # noqa: BLE001 — expansion is best-effort
+        logger.warning(
+            "[two_pass_writer] expansion pass failed (%s) — keeping the "
+            "original %d-word draft", exc, words_before,
+        )
+        return draft, meta
+
+    expanded = (expanded or "").strip()
+    words_after = len(expanded.split())
+    # Keep-best: only adopt the expansion when it genuinely lengthened the
+    # draft. An empty / shorter response keeps the original (never zero/shrink).
+    if words_after > words_before:
+        logger.info(
+            "[two_pass_writer] expanded draft %d → %d words (target %d)",
+            words_before, words_after, target_length,
+        )
+        meta["expanded"] = True
+        meta["words_after"] = words_after
+        return expanded, meta
+    logger.info(
+        "[two_pass_writer] expansion did not lengthen the draft "
+        "(%d → %d words) — keeping the original", words_before, words_after,
+    )
+    return draft, meta
+
+
 async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task_id: str | None = None, **kw: Any) -> dict[str, Any]:
     """Run the two-pass writer graph and return the final draft + metadata.
 
@@ -796,15 +959,36 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
             "context_bundle": cb_kw if isinstance(cb_kw, dict) else {},
             "research_context": str(kw.get("research_context") or ""),
             "task_id": task_id,
+            "target_length": int(kw.get("target_length") or 1200),
         }
         config = {"configurable": {"thread_id": thread_id}}
         final = await _GRAPH.ainvoke(initial, config=config)
+        # Keep-best expansion guard: local writers under-deliver on long
+        # targets even when the draft prompt asks for ~N words. If the final
+        # draft is under ``target_length * writer_min_length_ratio``, run ONE
+        # expansion pass and keep whichever of (original, expanded) is longer —
+        # expansion can never shrink or zero the post. Pins the length-
+        # uniformity bug (every niche post used to land at the model's natural
+        # ~600-word default regardless of the requested length).
+        draft_out, expand_meta = await _maybe_expand_to_target(
+            final.get("draft") or "",
+            target_length=int(kw.get("target_length") or 1200),
+            site_config=kw.get("site_config"),
+            pool=pool,
+            task_id=task_id,
+        )
         return {
-            "draft": _scrub_private_repo_refs(final["draft"]),
+            "draft": _scrub_private_repo_refs(draft_out),
             "snippets_used": final.get("snippets", []),
             "external_lookups": final.get("external_lookups", []),
             "revision_loops": final.get("revision_loops", 0),
             "loop_capped": final.get("loop_capped", False),
+            # Length-enforcement observability — did the expansion pass fire,
+            # and the word counts before/after. Surfaced so the caller stage
+            # can record it (capability_outcomes / metrics).
+            "length_expanded": expand_meta["expanded"],
+            "words_before_expand": expand_meta["words_before"],
+            "words_after_expand": expand_meta["words_after"],
             # Phase 0 lab observability (2026-05-28). When the writer
             # never reached _revise_node (no [EXTERNAL_NEEDED] markers
             # in the draft) these stay None — that's accurate: the

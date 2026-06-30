@@ -37,6 +37,12 @@ def _fake_site_config():
     sc.get = MagicMock(side_effect=lambda key, default="": {
         "pipeline_writer_model": "glm-4.7-5090:latest",
         "cost_tier.standard.model": "",
+        # The keep-best expansion pass is orthogonal to the draft / revise /
+        # variant-fallback machinery these tests exercise (and would add an
+        # extra ollama_chat_text call to their exact call-count assertions).
+        # It has its own fixture (_short_draft_site_config) + dedicated tests,
+        # so keep it OFF in the shared stub.
+        "writer_length_expansion_enabled": "false",
     }.get(key, default))
     sc.get_int = MagicMock(side_effect=lambda key, default=0: default)
     sc.get_float = MagicMock(side_effect=lambda key, default=0.0: default)
@@ -574,3 +580,239 @@ async def test_empty_revise_keeps_prior_draft_when_retry_also_empty(monkeypatch)
     assert len(findings) == 1
     assert findings[0]["kind"] == "writer_empty_draft_kept_prior"
     assert findings[0]["severity"] == "warn"
+
+
+# ---------------------------------------------------------------------------
+# Length target threading (length-uniformity bug).
+#
+# The niche writer never received the task's ``target_length``: the picked
+# value dead-ended at GenerateContentStage, so every glad-labs post came out
+# at the model's natural ~600-word default regardless of whether the task
+# asked for 600 or 2500. These pin that ``target_length`` reaches the draft
+# call (and the prompt) so the writer can actually honour the requested
+# length.
+# ---------------------------------------------------------------------------
+
+
+async def test_target_length_threaded_into_draft_call(monkeypatch):
+    """``target_length`` passed to run() must reach the draft call
+    (``generate_with_context``) so the writer is told the requested length."""
+    captured: dict = {}
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                         site_config=None, **kw):
+        captured["target_length"] = kw.get("target_length")
+        return "A clean first draft with no markers."
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+        target_length=2500,
+    )
+    assert captured["target_length"] == 2500
+
+
+async def test_generate_with_context_forwards_target_length_to_prompt(monkeypatch):
+    """``generate_with_context`` must forward ``target_length`` into the
+    prompt render so the SKILL.md ``{target_length}`` placeholder receives
+    the requested word budget."""
+    import modules.content.ai_content_generator as acg
+
+    seen: dict = {}
+
+    def fake_get_prompt(key, **kwargs):
+        seen.update(kwargs)
+        return "PROMPT"
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.get_prompt_manager",
+        lambda: MagicMock(get_prompt=MagicMock(side_effect=fake_get_prompt)),
+    )
+
+    async def fake_resolve(*, site_config=None):
+        return "glm-4.7-5090:latest"
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator._resolve_rag_writer_model",
+        fake_resolve,
+    )
+
+    async def fake_text(prompt, **kwargs):
+        return "draft body"
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_text)
+
+    await acg.generate_with_context(
+        topic="t", angle="a", snippets=[],
+        extra_instructions="write it", site_config=_fake_site_config(),
+        pool=_fake_pool_with_no_snippets(), target_length=2500,
+    )
+    assert seen.get("target_length") == 2500
+
+
+# ---------------------------------------------------------------------------
+# Keep-best soft expansion pass (Cause B enforcement).
+#
+# Local writer models under-deliver on long targets even when the prompt asks
+# for ~N words. After the graph completes, run()'s expansion guard does ONE
+# expansion pass when the draft lands under target_length * writer_min_length_ratio
+# (default 0.7), keeping whichever of (original, expanded) is longer — a thin
+# expansion or an empty model response can never shrink or zero the post.
+# ---------------------------------------------------------------------------
+
+
+def _short_draft_site_config(**overrides):
+    """SiteConfig stub with the writer model pinned + expansion defaults,
+    overridable per-test (e.g. to flip ``writer_length_expansion_enabled``)."""
+    settings = {
+        "pipeline_writer_model": "glm-4.7-5090:latest",
+        "cost_tier.standard.model": "",
+        "writer_length_expansion_enabled": "true",
+    }
+    settings.update(overrides)
+    sc = MagicMock()
+    sc.get = MagicMock(side_effect=lambda key, default="": settings.get(key, default))
+    sc.get_int = MagicMock(side_effect=lambda key, default=0: default)
+    sc.get_float = MagicMock(side_effect=lambda key, default=0.0: default)
+    return sc
+
+
+async def test_short_draft_triggers_expansion_pass(monkeypatch):
+    """A draft well below target_length * ratio gets one expansion pass, and
+    the longer expanded text replaces the thin first draft."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                         site_config=None, **kw):
+        return "Tiny draft."  # 2 words — far below 0.7 * 2500 = 1750
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    expand_calls: list[str] = []
+
+    async def fake_expand(prompt, **kwargs):
+        expand_calls.append(kwargs.get("phase"))
+        return "word " * 2000  # a long, expanded draft
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_short_draft_site_config(),
+        target_length=2500,
+    )
+    assert "two_pass_expand" in expand_calls
+    assert len(result["draft"].split()) > 1000
+    assert result["length_expanded"] is True
+
+
+async def test_expansion_shorter_keeps_original_draft(monkeypatch):
+    """Keep-best: when the expansion pass returns something SHORTER than the
+    original, the original draft is kept — expansion can never shrink the post.
+    """
+    original = "word " * 200  # 200 words, below threshold so expansion fires
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                         site_config=None, **kw):
+        return original
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    async def fake_expand(prompt, **kwargs):
+        return "too short"  # 2 words — must NOT replace the 200-word draft
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_short_draft_site_config(),
+        target_length=2500,
+    )
+    assert result["draft"].strip() == original.strip()
+    assert result["length_expanded"] is False
+
+
+async def test_no_expansion_when_draft_meets_target(monkeypatch):
+    """A draft already at/above target_length * ratio is returned unchanged —
+    the expansion model is never called."""
+    draft = "word " * 1800  # 1800 >= 0.7 * 2500 = 1750 → no expansion
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                         site_config=None, **kw):
+        return draft
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    called: list[int] = []
+
+    async def fake_expand(prompt, **kwargs):
+        called.append(1)
+        return "x"
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_short_draft_site_config(),
+        target_length=2500,
+    )
+    assert called == []
+    assert result["draft"].strip() == draft.strip()
+    assert result["length_expanded"] is False
+
+
+async def test_expansion_disabled_via_setting(monkeypatch):
+    """``writer_length_expansion_enabled=false`` skips the expansion pass even
+    when the draft is short (DB-configurable master switch)."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                         site_config=None, **kw):
+        return "tiny"  # 1 word
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    called: list[int] = []
+
+    async def fake_expand(prompt, **kwargs):
+        called.append(1)
+        return "word " * 2000
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_short_draft_site_config(
+            writer_length_expansion_enabled="false",
+        ),
+        target_length=2500,
+    )
+    assert called == []
+    assert result["draft"].strip() == "tiny"
+    assert result["length_expanded"] is False
