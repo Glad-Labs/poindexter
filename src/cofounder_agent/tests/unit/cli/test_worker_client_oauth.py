@@ -12,10 +12,11 @@ Covers the OAuth-only HTTP transport that ships post-Phase 3.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import time
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import httpx
 import pytest
@@ -179,3 +180,158 @@ class TestExports:
         assert CLI_CLIENT_SECRET_KEY == "cli_oauth_client_secret"
         assert "api:read" in CLI_DEFAULT_SCOPES
         assert "api:write" in CLI_DEFAULT_SCOPES
+
+
+# ---------------------------------------------------------------------------
+# Credential-store reachability — a connection reset/timeout while reading
+# the OAuth client from app_settings must surface as a DB-connectivity error,
+# NOT the misleading "No CLI OAuth credentials configured / run migrate-cli".
+#
+# Regression for the Windows + Docker-Desktop ``WinError 64`` wedged-host-
+# port-proxy bug: the old ``except Exception -> ("", "")`` swallow turned a
+# database that was momentarily unreachable into a fake "missing credentials"
+# error, sending operators to re-run ``migrate-cli`` in circles.
+# ---------------------------------------------------------------------------
+
+
+class TestCredentialStoreReachability:
+    @pytest.fixture
+    def _fake_dsn(self, monkeypatch):
+        """Pretend a DSN is configured and the secret key is loaded, so the
+        code reaches the asyncpg connect (which the test then controls)."""
+        monkeypatch.setattr(
+            "poindexter.cli._api_client._dsn_or_none",
+            lambda: "postgresql://pdx:supersecret@localhost:5433/poindexter_brain",
+        )
+        monkeypatch.setattr(
+            "poindexter.cli._bootstrap.ensure_secret_key", lambda: None
+        )
+
+    @pytest.fixture
+    def _no_backoff(self, monkeypatch):
+        """Collapse the retry backoff so the failure tests don't actually wait."""
+        monkeypatch.setattr(
+            "poindexter.cli._api_client._CRED_READ_BACKOFF_S", 0.0
+        )
+
+    @pytest.mark.asyncio
+    async def test_connection_reset_raises_unreachable_with_db_remediation(
+        self, _fake_dsn, _no_backoff, monkeypatch
+    ):
+        import asyncpg
+
+        from poindexter.cli._api_client import (
+            CredentialStoreUnreachable,
+            _resolve_credentials,
+        )
+
+        connect = AsyncMock(side_effect=ConnectionResetError(64, "wedged proxy"))
+        monkeypatch.setattr(asyncpg, "connect", connect)
+
+        with pytest.raises(CredentialStoreUnreachable) as excinfo:
+            await _resolve_credentials("http://test-worker")
+
+        msg = str(excinfo.value)
+        assert "DATABASE CONNECTIVITY" in msg
+        assert "do NOT re-run" in msg
+        # never leak the password into the operator-facing error
+        assert "supersecret" not in msg
+        assert "localhost:5433" in msg
+        # retried the configured number of attempts before giving up
+        from poindexter.cli._api_client import _CRED_READ_ATTEMPTS
+
+        assert connect.await_count == _CRED_READ_ATTEMPTS
+
+    @pytest.mark.asyncio
+    async def test_timeout_raises_unreachable(
+        self, _fake_dsn, _no_backoff, monkeypatch
+    ):
+        import asyncpg
+
+        from poindexter.cli._api_client import (
+            CredentialStoreUnreachable,
+            _resolve_credentials,
+        )
+
+        monkeypatch.setattr(
+            asyncpg, "connect", AsyncMock(side_effect=asyncio.TimeoutError())
+        )
+        with pytest.raises(CredentialStoreUnreachable):
+            await _resolve_credentials("http://test-worker")
+
+    @pytest.mark.asyncio
+    async def test_transient_reset_then_success(
+        self, _fake_dsn, _no_backoff, monkeypatch
+    ):
+        """A sub-second reset on the first attempt is ridden over by the
+        retry — the second attempt connects and the creds resolve."""
+        import asyncpg
+
+        from poindexter.cli._api_client import _resolve_credentials
+
+        fake_conn = AsyncMock()  # .close() is awaitable
+        monkeypatch.setattr(
+            asyncpg,
+            "connect",
+            AsyncMock(side_effect=[ConnectionResetError(64, "blip"), fake_conn]),
+        )
+        monkeypatch.setattr(
+            "plugins.secrets.get_secret",
+            AsyncMock(side_effect=["pdx_client_abc", "shh-secret"]),
+        )
+
+        client_id, client_secret = await _resolve_credentials("http://test-worker")
+        assert (client_id, client_secret) == ("pdx_client_abc", "shh-secret")
+        fake_conn.close.assert_awaited()  # connection cleaned up
+
+    @pytest.mark.asyncio
+    async def test_empty_read_returns_blank_not_unreachable(
+        self, _fake_dsn, monkeypatch
+    ):
+        """DB reachable but the rows are absent → ("", "") so the caller
+        raises the *genuine* migrate-cli pointer, not the connectivity one."""
+        import asyncpg
+
+        from poindexter.cli._api_client import _resolve_credentials
+
+        monkeypatch.setattr(asyncpg, "connect", AsyncMock(return_value=AsyncMock()))
+        monkeypatch.setattr(
+            "plugins.secrets.get_secret", AsyncMock(return_value=None)
+        )
+
+        assert await _resolve_credentials("http://test-worker") == ("", "")
+
+    @pytest.mark.asyncio
+    async def test_worker_client_surfaces_connectivity_not_migrate_cli(
+        self, _fake_dsn, _no_backoff, monkeypatch
+    ):
+        """End-to-end through ``WorkerClient.__aenter__``: a wedged proxy
+        raises ``CredentialStoreUnreachable``, never the migrate-cli text."""
+        import asyncpg
+
+        from poindexter.cli._api_client import (
+            CredentialStoreUnreachable,
+            WorkerClient,
+        )
+
+        monkeypatch.setattr(
+            asyncpg, "connect", AsyncMock(side_effect=ConnectionResetError(64, "x"))
+        )
+
+        with pytest.raises(CredentialStoreUnreachable) as excinfo:
+            async with WorkerClient() as _c:
+                pass
+
+        assert "No CLI OAuth credentials configured" not in str(excinfo.value)
+        assert "DATABASE CONNECTIVITY" in str(excinfo.value)
+
+    def test_safe_dsn_hint_never_leaks_password(self):
+        from poindexter.cli._api_client import _safe_dsn_hint
+
+        hint = _safe_dsn_hint(
+            "postgresql://user:topsecret@localhost:5433/poindexter_brain"
+        )
+        assert "topsecret" not in hint
+        assert "user" not in hint
+        assert "localhost:5433" in hint
+        assert "poindexter_brain" in hint

@@ -29,6 +29,7 @@ Same as before:
 
 from __future__ import annotations
 
+import asyncio
 import os
 from contextlib import suppress
 from typing import Any
@@ -40,6 +41,20 @@ import httpx
 CLI_CLIENT_ID_KEY = "cli_oauth_client_id"
 CLI_CLIENT_SECRET_KEY = "cli_oauth_client_secret"
 CLI_DEFAULT_SCOPES = "api:read api:write"
+
+# Credential-store read resilience. The CLI reads its OAuth client from
+# app_settings on *every* invocation. On Windows + Docker Desktop the
+# host->container port-proxy for Postgres intermittently resets the
+# connection mid-handshake (``WinError 64``) or wedges entirely. These
+# bound the read so a flaky proxy surfaces as a fast, truthful
+# "database unreachable" error instead of an indefinite hang that the
+# old broad ``except`` mislabelled as "missing credentials". They live
+# in code (not app_settings) because this runs at CLI bootstrap, before
+# the settings DB is reachable — the same exemption as the other
+# bootstrap-direct paths (``setup`` / ``migrate`` / ``auth``).
+_CRED_READ_TIMEOUT_S = 5.0
+_CRED_READ_ATTEMPTS = 3
+_CRED_READ_BACKOFF_S = 0.5
 
 
 def _resolve_base_url(base_url: str | None) -> str:
@@ -58,21 +73,58 @@ def _resolve_base_url(base_url: str | None) -> str:
     return resolved.rstrip("/")
 
 
+class CredentialStoreUnreachable(RuntimeError):
+    """The CLI could not reach the credential store (the app_settings DB)
+    to read its OAuth client — distinct from the credentials being *absent*.
+
+    A connection reset / timeout against the local Postgres (commonly a
+    wedged Docker-Desktop host port-proxy on Windows, ``WinError 64``)
+    lands here, NOT in the "run migrate-cli" path: re-provisioning a client
+    can't fix a database you can't connect to. The caller surfaces this
+    verbatim so the operator gets a connectivity remediation instead of a
+    misleading credentials one.
+    """
+
+
+def _safe_dsn_hint(dsn: str) -> str:
+    """``host:port/dbname`` for error messages — never the password."""
+    try:
+        from urllib.parse import urlparse
+
+        parsed = urlparse(dsn)
+        netloc = parsed.hostname or "?"
+        if parsed.port:
+            netloc = f"{netloc}:{parsed.port}"
+        return f"{netloc}{parsed.path}"
+    except Exception:  # noqa: BLE001  # silent-ok: hint-only formatting; fall back to a generic label
+        return "the configured Postgres host"
+
+
 async def _resolve_credentials(
-    base_url: str,
+    base_url: str,  # noqa: ARG001 — kept for signature stability / callers
 ) -> tuple[str, str]:
     """Pull (client_id, client_secret) from app_settings.
 
     DSN resolution mirrors ``cli/auth.py`` and ``cli/migrate.py`` —
-    bootstrap-toml first, then the env-var triplet. We open a tiny
-    pool, read two rows, close the pool. This adds one DB round
-    trip per CLI invocation; the alternative is a long-lived pool
-    that races CLI shutdown.
+    bootstrap-toml first, then the env-var triplet. We open a single
+    short-lived connection with an explicit ``timeout``, read two rows,
+    and close it. A pool is overkill for two reads, and (critically)
+    ``asyncpg.create_pool`` takes no connect timeout — so a wedged host
+    port-proxy made the CLI hang *indefinitely*; a bounded ``connect``
+    fails fast instead.
+
+    Connection-level failures (reset / timeout) are retried a few times
+    to ride over the sub-second ``WinError 64`` resets seen on Docker
+    Desktop. A *persistent* failure raises :class:`CredentialStoreUnreachable`
+    so the caller reports a DB-connectivity problem rather than a
+    misleading "no credentials" pointer. An empty read (DB reachable,
+    rows absent) returns ``("", "")`` — that genuinely means "run
+    migrate-cli".
     """
     dsn = _dsn_or_none()
     if not dsn:
-        # No DSN reachable — return empty creds so the OAuthClient
-        # raises loudly with the migrate-cli pointer.
+        # No DSN reachable — return empty creds so the caller raises the
+        # migrate-cli pointer (env-var-only setups have no creds to read).
         return "", ""
 
     # Make sure the secrets key is loaded from bootstrap.toml so the
@@ -83,22 +135,46 @@ async def _resolve_credentials(
 
     import asyncpg
 
-    pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
-    try:
-        # Local import — we already pull plugins.secrets in main app
-        # paths, but the CLI runs in a thinner subset and importing
-        # it lazily keeps cold-start fast.
-        from plugins.secrets import get_secret as _plugin_get_secret
+    # Local import — we already pull plugins.secrets in main app paths,
+    # but the CLI runs in a thinner subset and importing it lazily keeps
+    # cold-start fast.
+    from plugins.secrets import get_secret as _plugin_get_secret
 
-        async with pool.acquire() as conn:
+    last_err: BaseException | None = None
+    for attempt in range(_CRED_READ_ATTEMPTS):
+        conn = None
+        try:
+            conn = await asyncpg.connect(dsn, timeout=_CRED_READ_TIMEOUT_S)
             client_id = await _plugin_get_secret(conn, CLI_CLIENT_ID_KEY) or ""
             client_secret = (
                 await _plugin_get_secret(conn, CLI_CLIENT_SECRET_KEY) or ""
             )
-    finally:
-        await pool.close()
+            return client_id, client_secret
+        except (OSError, asyncio.TimeoutError) as exc:
+            # Connection-level failure (reset / timeout / wedged proxy).
+            # ``TimeoutError`` is itself an ``OSError`` subclass; both are
+            # listed for clarity. A ``PostgresError`` (DB reachable but
+            # rejected the query) is deliberately NOT caught here — that's
+            # a real error and should propagate raw, not look "unreachable".
+            last_err = exc
+            if attempt + 1 < _CRED_READ_ATTEMPTS:
+                await asyncio.sleep(_CRED_READ_BACKOFF_S * (attempt + 1))
+        finally:
+            if conn is not None:
+                with suppress(Exception):  # silent-ok: best-effort close; a raise here would mask the read result/error
+                    await conn.close()
 
-    return client_id, client_secret
+    raise CredentialStoreUnreachable(
+        f"Could not reach the credential store (Postgres at "
+        f"{_safe_dsn_hint(dsn)}) to read the CLI's OAuth client after "
+        f"{_CRED_READ_ATTEMPTS} attempts: "
+        f"{type(last_err).__name__ if last_err else 'unknown error'}: {last_err}. "
+        f"This is a DATABASE CONNECTIVITY problem, not missing credentials — "
+        f"do NOT re-run `poindexter auth migrate-cli`. Check that the Postgres "
+        f"container is up (`docker ps`); on Docker Desktop / WSL2 the host "
+        f"port-proxy can wedge under connection churn — retry in a moment, or "
+        f"restart the Postgres container."
+    )
 
 
 def _dsn_or_none() -> str:
@@ -160,12 +236,15 @@ class WorkerClient:
             client_id = self._explicit_client_id or ""
             client_secret = self._explicit_client_secret or ""
         else:
-            try:
-                client_id, client_secret = await _resolve_credentials(self.base_url)
-            except Exception:  # noqa: BLE001
-                # DB-unreachable still gives the OAuthClient a chance
-                # to raise its own canonical "run migrate-cli" error.
-                client_id, client_secret = "", ""
+            # Do NOT swallow here. ``_resolve_credentials`` raises
+            # ``CredentialStoreUnreachable`` (with an actionable DB-connectivity
+            # message) when it cannot reach the settings DB; only a genuinely
+            # empty read returns ("", "") and falls through to the migrate-cli
+            # pointer below. The pre-fix code collapsed *both* into ("", ""),
+            # which mislabelled a wedged Docker host port-proxy (``WinError 64``)
+            # as "no credentials configured" and sent operators re-running
+            # ``migrate-cli`` in circles.
+            client_id, client_secret = await _resolve_credentials(self.base_url)
 
         if not (client_id and client_secret):
             raise RuntimeError(
@@ -266,6 +345,7 @@ class WorkerClient:
 
 __all__ = [
     "WorkerClient",
+    "CredentialStoreUnreachable",
     "CLI_CLIENT_ID_KEY",
     "CLI_CLIENT_SECRET_KEY",
     "CLI_DEFAULT_SCOPES",

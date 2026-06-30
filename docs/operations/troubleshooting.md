@@ -38,6 +38,31 @@ The output should end in `\n`, not `\r \n`. After the next 12h tick (or a manual
 
 ---
 
+## `poindexter <cmd>` fails with "No CLI OAuth credentials configured" right after `migrate-cli` succeeded
+
+**Symptom.** A `poindexter` subcommand (`tasks reject`, `settings get`, …) fails with:
+
+> No CLI OAuth credentials configured. Run `poindexter auth migrate-cli` …
+
+— yet `poindexter auth migrate-cli` _just_ reported success, and another command moments earlier worked. Re-running `migrate-cli` "fixes" it for one or two invocations, then it breaks again. On a host shell the CLI may also **hang** for a while before failing, and (with the swallow removed) you'll now see a `CredentialStoreUnreachable` error mentioning `ConnectionResetError: [WinError 64] The specified network name is no longer available` from inside `asyncpg … _create_ssl_connection`.
+
+**Root cause.** The credentials are fine. Every `poindexter` invocation reads its OAuth client (`cli_oauth_client_id` / `cli_oauth_client_secret`) from `app_settings` over a fresh host→Postgres connection (`localhost:5433`). On Windows + Docker Desktop the WSL2 host port-proxy intermittently resets that connection mid-SSL-handshake (`WinError 64`) or wedges entirely under connection churn — notably right after any `docker restart` of a container that publishes a port, which rebuilds the proxy for ~10-30 s. The database and the creds are healthy; only the host port-forward is flaky. A plain TCP probe to `:5433` can pass while the multi-round-trip SSL handshake the CLI actually uses still gets reset.
+
+**Fix.** `poindexter/cli/_api_client.py` now bounds the credential read: a single `asyncpg.connect(timeout=…)` (not an un-timed `create_pool`, which hung), a short retry that rides over the sub-second reset, and — critically — a typed `CredentialStoreUnreachable` error when the DB is genuinely unreachable, so a connectivity failure is no longer mislabelled as "missing credentials." Operationally:
+
+1. It's transient — **retry** the command; a sub-second reset is ridden over automatically.
+2. If it persists, the host port-proxy is wedged. Confirm the DB itself is healthy (`docker ps` shows `poindexter-postgres-local` as `healthy`), then wait for the proxy to recover or restart the Postgres container to rebuild the port-forward.
+3. To run a command immediately regardless of host-proxy state, route it through the Docker bridge net instead of the host — the worker container reaches Postgres internally:
+
+   ```bash
+   docker exec -e POINDEXTER_API_URL=http://localhost:8002 poindexter-worker \
+     poindexter tasks reject <id> --feedback "…" --final
+   ```
+
+**Do NOT** re-run `poindexter auth migrate-cli` to clear this — it re-provisions a brand-new OAuth client over the _same_ flaky connection and doesn't touch the port-proxy. The new `CredentialStoreUnreachable` "DATABASE CONNECTIVITY" wording is the tell: it's a connectivity problem, not a credentials one.
+
+---
+
 ## PowerShell script dies with `Unexpected token '}'` (and the brace looks fine)
 
 **Symptom.** Running a repo `.ps1` under Windows PowerShell 5.1 (`powershell.exe`) -- e.g. `./scripts/deploy-worker.ps1` -- aborts at parse time before a single line executes:
