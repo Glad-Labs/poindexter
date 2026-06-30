@@ -2085,3 +2085,107 @@ class TestReasoningTokenLeak:
         result = validate_content("GPU Hardware", content, "hardware", site_config=_SC)
         token_issues = [i for i in result.issues if i.category == "reasoning_token_leak"]
         assert token_issues, "mid-body control token must be detected"
+
+
+class TestDetectPromptLeak:
+    """Unit tests for the shared prompt-leak detector."""
+
+    def test_returns_marker_for_reviser_echo(self):
+        from modules.content.content_validator import detect_prompt_leak
+        hits = detect_prompt_leak(
+            "Please revise a draft article based on the listed fixes."
+        )
+        assert "revise a draft article based on" in hits
+
+    def test_returns_marker_for_writer_instruction(self):
+        from modules.content.content_validator import detect_prompt_leak
+        hits = detect_prompt_leak(
+            "Grounding: use only provided snippets and never invent facts."
+        )
+        assert "use only provided snippets" in hits
+
+    def test_case_insensitive(self):
+        from modules.content.content_validator import detect_prompt_leak
+        assert detect_prompt_leak("LEAD WITH STAKES, then explain.")
+
+    def test_clean_prose_returns_empty(self):
+        from modules.content.content_validator import detect_prompt_leak
+        assert detect_prompt_leak(
+            "Docker containers isolate application dependencies."
+        ) == []
+
+    def test_empty_returns_empty(self):
+        from modules.content.content_validator import detect_prompt_leak
+        assert detect_prompt_leak("") == []
+
+
+class TestPromptLeakRule:
+    """validate_content flags writer/reviser prompt scaffolding leaked into the
+    body as a CRITICAL prompt_leak issue (2026-06-29 canonical incident: the
+    operator console previews the raw draft, so leaked instructions/persona/
+    outline reach the approval queue). Sibling to json_envelope_leak — same
+    "producer emitted non-prose" failure class."""
+
+    def test_reviser_prompt_echo_is_critical(self):
+        # Shape of task ba4d627a: the qa.rewrite reviser echoed its prompt.
+        content = (
+            "Revise a draft article based on specific fixes.\n"
+            '"Knowledge Distillation of Black-Box LLMs (2024) Guide."\n'
+            "Return complete Markdown body only.\n\n"
+            "Knowledge distillation transfers a large teacher model's behavior "
+            "into a smaller student model to cut latency and cost."
+        )
+        result = validate_content("KD Guide", content, "AI", site_config=_SC)
+        leak = [i for i in result.issues if i.category == "prompt_leak"]
+        assert leak, "expected a prompt_leak issue"
+        assert all(i.severity == "critical" for i in leak)
+        assert result.passed is False
+
+    def test_writer_persona_and_instruction_leak_is_critical(self):
+        # Shape of task 06715fb0: the canonical writer leaked persona + bullets.
+        content = (
+            "Avoiding Common Pitfalls in AI Video Workflows.\n"
+            "Technical | Professional.\n"
+            "    *   Grounding: Use only provided snippets and web sources.\n"
+            "    *   Verify links; no placeholders like [INTERNAL SNIPPET].\n\n"
+            "AI video generation has moved past surrealist fever dreams into "
+            "genuinely cinematic output."
+        )
+        result = validate_content("AI Video", content, "AI", site_config=_SC)
+        assert any(i.category == "prompt_leak" for i in result.issues)
+        assert result.passed is False
+
+    def test_dev_diary_scaffolding_leak_detected(self):
+        # Shape of task 07217583: narrate_bundle persona/outline scaffolding.
+        content = (
+            "Lead with stakes/surprising thing/broken thing.\n"
+            "Thread bundle facts through the narrative.\n"
+            "Close with reflection.\n\n"
+            "We shipped a real fix to the pipeline today."
+        )
+        result = validate_content("Dev Diary", content, "AI", site_config=_SC)
+        assert any(i.category == "prompt_leak" for i in result.issues)
+
+    def test_clean_article_has_no_prompt_leak(self):
+        content = (
+            "Knowledge distillation is a machine learning technique where a "
+            "smaller student model learns to reproduce the behavior of a larger "
+            "teacher model. It reduces latency and hardware needs for local use."
+        )
+        result = validate_content("KD", content, "AI", site_config=_SC)
+        assert not any(i.category == "prompt_leak" for i in result.issues)
+        assert result.passed is True
+
+    def test_prompt_text_inside_code_fence_not_flagged(self):
+        # A prompt-engineering article may quote instructions in a code block;
+        # the rule strips code spans first, so this is not a false positive.
+        content = (
+            "Here is the reviser prompt we ship:\n\n"
+            "```\n"
+            "Revise a draft article based on specific fixes.\n"
+            "Return complete Markdown body only.\n"
+            "```\n\n"
+            "The model then emits the finished article, nothing else."
+        )
+        result = validate_content("Prompt Design", content, "AI", site_config=_SC)
+        assert not any(i.category == "prompt_leak" for i in result.issues)

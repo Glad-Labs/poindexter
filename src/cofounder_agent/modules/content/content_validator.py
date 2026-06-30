@@ -669,6 +669,56 @@ def _strip_code_spans(text: str) -> str:
     return _CODE_SPAN_RE_FOR_VALIDATOR.sub(_blank, text)
 
 
+# Distinctive prompt-scaffolding / instruction-echo phrases that never occur in
+# finished prose. Their presence means an LLM producer — the canonical writer
+# (content.generate_draft), the qa.rewrite reviser, or narrate_bundle — leaked
+# its instructions / persona / planning outline into the body instead of the
+# article. The 2026-06-29 canonical incident: the operator console previews the
+# raw pipeline_versions draft, so the scaffolding surfaced in the approval queue
+# even though the published site was clean (tasks 06715fb0 writer, ba4d627a
+# reviser). Mirrors narrate_bundle._PROMPT_LEAK_MARKERS (the dev_diary path,
+# which has no QA rails) and extends it with the canonical writer/reviser shapes.
+# Lowercased for case-insensitive substring matching.
+_PROMPT_LEAK_MARKERS: tuple[str, ...] = (
+    # dev_diary narrate_bundle scaffolding
+    "lead with stakes",
+    "thread bundle facts",
+    "thread the bundle facts",
+    "close with reflection",
+    "drafting paragraph",
+    "first-person plural?",
+    "grounding check",
+    "operator_notes",
+    "voice textures",
+    "no surrounding json",
+    # canonical writer + qa.rewrite reviser instruction / planning echoes
+    "revise a draft article based on",
+    "return complete markdown body only",
+    "return the complete revised article",
+    "no placeholders like [",
+    "[internal snippet",
+    "use only provided snippets",
+)
+
+
+def detect_prompt_leak(text: str) -> list[str]:
+    """Return prompt-scaffolding / instruction-echo markers present in ``text``.
+
+    A non-empty result means an LLM producer leaked its instructions, persona,
+    or planning outline into the body instead of emitting finished prose. The
+    markers are internal prompt-template vocabulary that does not appear in real
+    articles, so false positives are unlikely. Lowercased substring match.
+
+    Pair with ``_strip_code_spans`` at the call site so a prompt-engineering
+    article that legitimately *quotes* an instruction inside a code fence is not
+    flagged.
+    """
+    if not text:
+        return []
+    low = text.lower()
+    return [m for m in _PROMPT_LEAK_MARKERS if m in low]
+
+
 def _check_patterns(
     text: str,
     patterns: list,
@@ -2037,6 +2087,31 @@ def validate_content(
                         ),
                         matched_text=stripped_content[-100:],
                     ))
+
+    # 10b. Prompt-scaffolding leak — the writer or qa.rewrite reviser echoed its
+    # instructions / persona / planning outline into the body instead of prose
+    # (2026-06-29 canonical incident). Sibling to json_envelope_leak: the same
+    # "producer emitted non-prose" failure, so it is CRITICAL. Strip code spans
+    # first so a prompt-engineering article that quotes an instruction inside a
+    # fence is not a false positive. Runs on the canonical path via
+    # qa.programmatic (after both the writer and the qa.rewrite loop), so it
+    # gates a leaked draft before it can reach awaiting_approval; dev_diary (no
+    # QA rails) is guarded at the source in narrate_bundle.
+    if _enabled("prompt_leak"):
+        leaked_markers = detect_prompt_leak(_strip_code_spans(content))
+        if leaked_markers:
+            issues.append(ValidationIssue(
+                severity="critical",
+                category="prompt_leak",
+                description=(
+                    "Body contains prompt scaffolding / instruction-echo "
+                    "(markers: " + ", ".join(leaked_markers[:5]) + ") — an LLM "
+                    "producer leaked its instructions, persona, or planning "
+                    "outline instead of emitting finished prose. Fix the "
+                    "producer (canonical writer or qa.rewrite reviser)."
+                ),
+                matched_text=content.strip()[:160],
+            ))
 
     # 11. Title diversity — detect repetitive opener patterns
     if _enabled("title_diversity"):
