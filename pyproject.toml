@@ -43,12 +43,6 @@ opentelemetry-sdk = "^1.41.0"
 mcp-server-fetch = "^2025.4.7"
 structlog = "^25.5.0"
 
-# Direct social-media API (GH-36 — retires dlvr.it). MIT-licensed,
-# free/public endpoints, no paid tier. (atproto/Bluesky dropped 2026-06-17 —
-# its cryptography<47 cap blocked the cryptography>=48.0.1 fix for the
-# GHSA-537c-gmf6-5ccf Trivy HIGH; Bluesky cross-posting retired with it.)
-"Mastodon.py" = ">=1.8.1"     # Mastodon API client (Fediverse)
-
 [tool.poetry.extras]
 ml = ["torch", "diffusers", "transformers", "accelerate"]
 

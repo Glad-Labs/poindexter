@@ -277,11 +277,6 @@ pyasn1 = { version = ">=0.6.3", optional = true }
 # atproto/Bluesky removed 2026-06-17 — its cryptography<47 cap blocked the
 # cryptography>=48.0.1 fix for GHSA-537c-gmf6-5ccf (Trivy HIGH). Bluesky
 # cross-posting (adapter + publishing.bluesky handler) was retired with it.
-# Mastodon/Fediverse cross-posting (poindexter#737). Mastodon.py was
-# present in the root-level dev-harness pyproject but missing here,
-# so the worker Docker image could not import it and every Mastodon
-# post silently failed with 'Mastodon.py package not installed'.
-"Mastodon.py" = ">=1.8.1"
 
 [project.optional-dependencies]
 ml = ["torch", "transformers", "diffusers"]
