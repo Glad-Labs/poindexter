@@ -88,6 +88,13 @@ _PRIVATE_VALUE_KEYS: frozenset[str] = frozenset({
     "social_linkedin_url",       # operator's LinkedIn URL
     "social_x_url",              # operator's X/Twitter URL
     "social_x_handle",           # operator's X/Twitter handle
+    # === Operator infrastructure identifiers (2026-06-30) — DB values were
+    # empty at the last regen and have since been populated; not caught by the
+    # value patterns below, so key-listed explicitly ===
+    "cloudflare_account_id",     # real Cloudflare account UUID
+    "sentry_dsn",                # GlitchTip/Sentry ingestion DSN (credential-shaped)
+    "podcast_spotify_url",       # operator's Spotify show URL
+    "offsite_backup_repository", # Backblaze B2 endpoint + bucket name
 })
 
 # Regex over VALUES that captures any operator-specific infrastructure
@@ -97,6 +104,15 @@ _PRIVATE_VALUE_KEYS: frozenset[str] = frozenset({
 _PRIVATE_VALUE_PATTERNS = [
     re.compile(r"\b100\.81\.93\.12\b"),          # operator Tailnet IP
     re.compile(r"\b\w+\.taild4f626\.ts\.net\b"),  # operator Tailscale Funnel
+    # Operator brand / identity in values (site URLs, @gladlabs.io emails,
+    # storage bucket, company_products, caption-bias prompt). "Glad Labs"
+    # (with a space — the human-readable brand) is intentionally NOT matched
+    # so company_name still ships as the example value.
+    re.compile(r"gladlabs", re.IGNORECASE),
+    re.compile(r"\bmattg\b", re.IGNORECASE),      # operator handle (CF Workers subdomain, GitHub)
+    re.compile(r"\bmattm\b", re.IGNORECASE),      # operator Windows username (file-path values)
+    re.compile(r"\.r2\.dev\b", re.IGNORECASE),    # operator R2 public bucket (pub-<hash>.r2.dev)
+    re.compile(r"\.r2\.cloudflarestorage\.com\b", re.IGNORECASE),  # operator R2 S3 endpoint (account-id host)
 ]
 
 
@@ -120,6 +136,12 @@ def is_private_value(key: str, value: str) -> bool:
 _PRIVATE_KEY_PATTERNS = [
     re.compile(r"^mercury_"),                            # operator-overlay banking integration
     re.compile(r"^plugin_job_(last_run|last_status)_poll_mercury$"),
+    # FinanceModule (visibility="private") surface — the key NAMES (and their
+    # "Mercury" descriptions) leak the private banking overlay. Catches
+    # finance_*, plugin.job.poll_mercury, and prometheus.{rule,threshold}.*
+    # for the Mercury poll. "finance"/"mercury" appear in no generic key
+    # (verified 2026-06-30), so this drops the whole overlay surface.
+    re.compile(r"[Ff]inance|[Mm]ercury"),
 ]
 
 
