@@ -793,15 +793,6 @@
       "receiver": "site_config"
     },
     {
-      "key": "mastodon_instance_url",
-      "value": "",
-      "value_type": "str",
-      "getter": "get",
-      "file": "src\\cofounder_agent\\services\\social_adapters\\mastodon.py",
-      "line": 54,
-      "receiver": "site_config"
-    },
-    {
       "key": "max_approval_queue",
       "value": "3",
       "value_type": "int",
@@ -3474,15 +3465,6 @@
       "getter": "get",
       "file": "src\\cofounder_agent\\agents\\content_agent\\config.py",
       "line": 134,
-      "receiver": "site_config"
-    },
-    "mastodon_instance_url": {
-      "key": "mastodon_instance_url",
-      "value": "",
-      "value_type": "str",
-      "getter": "get",
-      "file": "src\\cofounder_agent\\services\\social_adapters\\mastodon.py",
-      "line": 54,
       "receiver": "site_config"
     },
     "max_approval_queue": {
