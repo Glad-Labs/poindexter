@@ -86,6 +86,14 @@ class SiteConfig:
         self._deprecated_keys: dict[str, str | None] = {}
         # Guards against re-emitting the same warning on every get() call.
         self._deprecation_warned: set[str] = set()
+        # Read-telemetry (poindexter#756 item 2): every key passed to get()
+        # is recorded here. ``FlushSettingsReadTelemetryJob`` drains this set
+        # once a minute and stamps ``app_settings.last_read_at``, so a key that
+        # never appears here is an orphan candidate. Per-instance + in-memory —
+        # the hot get() path only pays an O(1) set.add(). load()/reload()
+        # deliberately do NOT touch it (repopulating the value cache is not a
+        # "read").
+        self._read_keys: set[str] = set()
 
     async def load(self, pool) -> int:
         """Load all non-secret settings from app_settings.
@@ -245,6 +253,11 @@ class SiteConfig:
         Emits a one-time WARNING per boot when the key is deprecated
         (poindexter#756).
         """
+        # Read-telemetry: record the access regardless of where it resolves
+        # (DB / env / default). The flush job's UPDATE filters down to real
+        # app_settings rows, so recording a key with no row is harmless.
+        self._read_keys.add(key)
+
         # One-time deprecation warning — fires at most once per key per reload
         # cycle so Loki doesn't get spammed on hot paths.
         if key in self._deprecated_keys and key not in self._deprecation_warned:
@@ -305,6 +318,19 @@ class SiteConfig:
     def all(self) -> dict[str, str]:
         """Get all loaded config values (for debugging)."""
         return dict(self._config)
+
+    def drain_read_keys(self) -> list[str]:
+        """Return the keys read via get() since the last drain, then clear.
+
+        Read-telemetry sink (poindexter#756 item 2). ``FlushSettingsReadTelemetryJob``
+        calls this once a minute and stamps ``app_settings.last_read_at`` for the
+        returned keys. The snapshot-then-clear is a single synchronous step with
+        no ``await`` between, so it's atomic under asyncio — a get() racing the
+        drain either lands in this batch or the next, never lost-and-uncounted.
+        """
+        keys = list(self._read_keys)
+        self._read_keys.clear()
+        return keys
 
 
 # Module-level singleton DELETED 2026-05-09 (Glad-Labs/glad-labs-stack#330).

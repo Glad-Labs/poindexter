@@ -1721,6 +1721,68 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 37,
+      "type": "row",
+      "collapsed": false,
+      "title": "Settings Lifecycle \u2014 Orphan Candidates (#756)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 105
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "app_settings keys with a NULL last_read_at older than the default 30-day grace window \u2014 nothing reads them via SiteConfig.get. ADVISORY: a key read ONLY via direct SQL or SettingsService.get also appears here, so verify before retiring. Mirrors ProbeZeroReaderSettingsJob (poindexter#756); the footer shows the candidate count.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "auto"
+            }
+          }
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 106
+      },
+      "id": 38,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": true,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": true
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT key AS \"Key\", category AS \"Category\", created_at AS \"Created\", date_trunc('day', NOW() - created_at) AS \"Age\" FROM app_settings WHERE last_read_at IS NULL AND is_secret = false AND COALESCE(deprecated, false) = false AND created_at < NOW() - INTERVAL '30 days' ORDER BY created_at ASC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Orphan candidates \u2014 never read via SiteConfig (>=30d old)",
+      "type": "table"
     }
   ],
   "refresh": "30s",

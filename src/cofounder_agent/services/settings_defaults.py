@@ -1111,6 +1111,34 @@ DEFAULTS: dict[str, str] = {
     'findings.seo_refresh_outcome.fallback': 'log_only',
     'findings.seo_refresh_outcome.cooldown_minutes': '1440',
     'findings.seo_refresh_outcome.min_severity': 'warn',
+    # Settings-lifecycle orphan candidates (#756). ProbeZeroReaderSettingsJob
+    # emits settings_zero_reader_keys at severity='warn' with a stable dedup_key;
+    # delivery='discord' pins the routine ops channel (feedback_telegram_vs_discord).
+    # NOTE: the kind MUST stay dot-free — findings_alert_router parses
+    # findings.<kind>.<field> as exactly 3 dot-segments, so a dotted kind would
+    # make the policy a 4-segment key the loader silently skips.
+    'findings.settings_zero_reader_keys.delivery': 'discord',
+    'findings.settings_zero_reader_keys.fallback': 'log_only',
+    'findings.settings_zero_reader_keys.cooldown_minutes': '1440',
+    'findings.settings_zero_reader_keys.min_severity': 'warn',
+
+    # ----- Settings read-telemetry + orphan probe (#756 items 2-3) -----
+    # SiteConfig.get records read keys in-memory; FlushSettingsReadTelemetryJob
+    # stamps app_settings.last_read_at each minute; ProbeZeroReaderSettingsJob
+    # surfaces keys never read past the grace window as orphan candidates.
+    'settings_read_telemetry_enabled': 'true',
+    # Re-stamp a hot key at most once per this many seconds (write-amp guard):
+    # the per-minute UPDATE only touches rows whose last_read_at is NULL or older
+    # than this, so a constantly-read key is written ~1×/hour, not 60×.
+    'settings_read_telemetry_min_restamp_seconds': '3600',
+    'settings_zero_reader_probe_enabled': 'true',
+    # A key is an orphan candidate only after it has existed (created_at) this
+    # many days with last_read_at still NULL — gives newly-seeded keys time to be
+    # read before they can be flagged, and self-suppresses on fresh installs.
+    'settings_zero_reader_grace_days': '30',
+    # Cap the per-finding key list so a big backlog doesn't blow up the Discord
+    # embed / audit_log row.
+    'settings_zero_reader_max_report': '50',
 
     # ----- Findings issue labels (content-derived from kind; cite-or-surface) -----
     # Comma-separated labels stamped on the GitHub issue a github_issue-delivery

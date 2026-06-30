@@ -225,7 +225,7 @@ The legacy 6-stage chunked StageRunner flow (`content_router_service.process_con
 - `pipeline_versions` — generated content + qa_feedback per task version
 - `atom_runs` — per-atom run + outcome capture on the graph_def path (run_id, atom, node_id, tier/model, latency, status, io-key digests + outcome join); gated by `app_settings.atom_runs_capture_enabled`. Complementary to `capability_outcomes` (per-(atom,tier,model) router scoring). Added 2026-06-02 (#355).
 - `posts` — published blog posts. `metadata->>'pipeline_task_id'` is the canonical seam to the source `pipeline_tasks.task_id` — populated by `publish_service.publish_post_from_task` at insert and backfilled for historical rows by migration `20260528_021920`.
-- `app_settings` — all config (replaces env vars)
+- `app_settings` — all config (replaces env vars). `last_read_at` (#756) records when `SiteConfig.get` last consulted each key: `FlushSettingsReadTelemetryJob` stamps it every minute (throttled ~1 write/key/hour), `ProbeZeroReaderSettingsJob` surfaces never-read keys past a 30-day grace as an advisory `settings_zero_reader_keys` finding → Discord + the "Settings Lifecycle — Orphan Candidates" panel on the Integrations & Admin board. Advisory only: keys read solely via direct SQL / `SettingsService.get` aren't stamped. See [`docs/architecture/services/site_config.md`](docs/architecture/services/site_config.md).
 - `page_views` — own analytics tracking
 - `brain_knowledge` — knowledge graph (entity/attribute/value)
 - `brain_queue` — reasoning queue for the brain

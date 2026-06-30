@@ -383,3 +383,77 @@ class TestGetFloatException:
     def test_get_float_missing_returns_default(self):
         cfg = SiteConfig()
         assert cfg.get_float("missing_key", 1.5) == 1.5
+
+
+class TestReadTracking:
+    """Read-telemetry: get() marks keys read in-memory; drain returns + clears.
+
+    Powers poindexter#756 item 2 — FlushSettingsReadTelemetryJob drains this
+    set every minute and stamps app_settings.last_read_at. reload()/load()
+    repopulate the value cache but must NOT mark keys as read (else every key
+    looks consumed the instant the cache refreshes).
+    """
+
+    def test_fresh_instance_drains_empty(self):
+        cfg = SiteConfig()
+        assert cfg.drain_read_keys() == []
+
+    def test_get_records_the_key(self):
+        cfg = SiteConfig(initial_config={"site_name": "X"})
+        cfg.get("site_name")
+        assert "site_name" in cfg.drain_read_keys()
+
+    def test_get_records_even_when_key_absent(self):
+        # A read of a key with no DB row still records intent; the flush
+        # UPDATE's WHERE-clause filters down to real app_settings rows.
+        cfg = SiteConfig()
+        cfg.get("never_seen_key", "default")
+        assert "never_seen_key" in cfg.drain_read_keys()
+
+    def test_typed_accessors_record_through_get(self):
+        cfg = SiteConfig(initial_config={"n": "3", "flag": "true", "csv": "a,b"})
+        cfg.get_int("n")
+        cfg.get_bool("flag")
+        cfg.get_list("csv")
+        drained = set(cfg.drain_read_keys())
+        assert {"n", "flag", "csv"} <= drained
+
+    def test_drain_clears_the_set(self):
+        cfg = SiteConfig(initial_config={"a": "1"})
+        cfg.get("a")
+        assert cfg.drain_read_keys() == ["a"]
+        # Second drain is empty — the set was cleared.
+        assert cfg.drain_read_keys() == []
+
+    def test_drain_dedups_repeated_reads(self):
+        cfg = SiteConfig(initial_config={"a": "1"})
+        cfg.get("a")
+        cfg.get("a")
+        cfg.get("a")
+        assert cfg.drain_read_keys() == ["a"]
+
+    async def test_reload_does_not_mark_keys_read(self):
+        cfg = SiteConfig()
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"key": "site_name", "value": "Test", "deprecated": False,
+             "superseded_by": None},
+            {"key": "site_url", "value": "http://x", "deprecated": False,
+             "superseded_by": None},
+        ])
+        await cfg.reload(pool)
+        # The values are loaded...
+        assert cfg.all() == {"site_name": "Test", "site_url": "http://x"}
+        # ...but reload itself recorded no reads. (cfg.all() doesn't go through
+        # get(), so the drained set reflects only the absence of get() calls.)
+        assert cfg.drain_read_keys() == []
+
+    async def test_load_does_not_mark_keys_read(self):
+        cfg = SiteConfig()
+        pool = AsyncMock()
+        pool.fetch = AsyncMock(return_value=[
+            {"key": "site_name", "value": "Test", "deprecated": False,
+             "superseded_by": None},
+        ])
+        await cfg.load(pool)
+        assert cfg.drain_read_keys() == []

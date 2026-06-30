@@ -2,7 +2,7 @@
 
 **File:** `src/cofounder_agent/services/site_config.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_site_config.py`
-**Last reviewed:** 2026-05-23
+**Last reviewed:** 2026-06-30
 
 ## What it does
 
@@ -67,6 +67,10 @@ a seeded `SiteConfig` on an `AppContainer` so container-accessor modules
 - `cfg.is_loaded -> bool` — property.
 - `cfg.all() -> dict[str, str]` — copy of the cache (debug only;
   excludes secrets by construction).
+- `cfg.drain_read_keys() -> list[str]` — returns the keys read via
+  `get()` since the last drain, then clears the set. The read-telemetry
+  sink, called by `FlushSettingsReadTelemetryJob` (see "Read telemetry
+  & orphan detection" below).
 
 ## Configuration
 
@@ -90,9 +94,12 @@ The only env vars `SiteConfig` itself touches:
 
 - **Reads from:** `app_settings` table (one query at startup, one per
   `get_secret()` call).
-- **Writes to:** nothing. Read-only by design — settings are mutated
-  via `services.settings_service.SettingsService` or the
-  `/api/settings` route.
+- **Writes to:** no DB writes — read-only by design; settings are
+  mutated via `services.settings_service.SettingsService` or the
+  `/api/settings` route. (`get()` does record each read key in an
+  in-memory set for telemetry; the separate
+  `FlushSettingsReadTelemetryJob` performs the `last_read_at` UPDATE.
+  See "Read telemetry & orphan detection" below.)
 - **External APIs:** none.
 
 ## Failure modes
@@ -137,6 +144,43 @@ WHERE key = '<key>';` — then update callers to use `get_secret()`
   fan-out are retired; do not add new `set_site_config` calls.
 - **Find the env var equivalent:** any `cfg.get("foo_bar")` falls
   back to `FOO_BAR`. Use sparingly — DB-first is the policy.
+
+## Read telemetry & orphan detection (#756)
+
+`get()` records every key it is asked for into a per-instance in-memory
+set — an O(1) `set.add` on the hot path. It writes nothing itself, and
+`load()`/`reload()` deliberately do NOT mark keys read, so a 60s cache
+refresh never makes every key look consumed.
+
+Two scheduled jobs close the loop (both reach the lifespan-bound
+`SiteConfig` via `config["_site_config"]`, seeded into every job by the
+plugin scheduler):
+
+- **`FlushSettingsReadTelemetryJob`** (`services/jobs/flush_settings_read_telemetry.py`,
+  every minute) drains the set via `drain_read_keys()` and batch-stamps
+  `app_settings.last_read_at = NOW()` for those keys. The UPDATE only
+  touches rows whose `last_read_at` is NULL or older than
+  `settings_read_telemetry_min_restamp_seconds` (default 3600), so a
+  hot key is written ~once/hour rather than 60×. Gated by
+  `settings_read_telemetry_enabled` (default true).
+- **`ProbeZeroReaderSettingsJob`** (`services/jobs/probe_zero_reader_settings.py`,
+  every 6h) is the inverse query: non-secret, non-deprecated keys whose
+  `last_read_at` is still NULL more than `settings_zero_reader_grace_days`
+  (default 30) days after `created_at` are emitted as one advisory
+  `settings_zero_reader_keys` finding (severity `warn`, stable
+  `dedup_key`) routed to Discord ops via
+  `findings.settings_zero_reader_keys.delivery`. The grace window self-
+  suppresses on fresh installs and gives newly-seeded keys time to be
+  read. The live list also renders on the **Integrations & Admin**
+  Grafana board ("Settings Lifecycle — Orphan Candidates").
+
+**Advisory, not authoritative.** `last_read_at` is only stamped on the
+`SiteConfig.get` path. A key read EXCLUSIVELY via a non-SiteConfig path
+— direct SQL (e.g. `findings_alert_router` reading `findings.*`
+policies) or `SettingsService.get` — also surfaces as an orphan
+candidate. Verify each key before retiring it. (If the signal proves
+noisy, the next step is to instrument `SettingsService.get` the same
+way.)
 
 ## See also
 

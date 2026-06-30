@@ -678,6 +678,16 @@ def get_core_samples() -> dict[str, list[Any]]:
         # site_config cache so SQL/UI edits to app_settings take effect
         # without a container restart (internal tracker).
         ("jobs", "services.jobs.reload_site_config", "ReloadSiteConfigJob"),
+        # FlushSettingsReadTelemetryJob — drains SiteConfig.drain_read_keys()
+        # every minute and stamps app_settings.last_read_at, so an
+        # never-read key keeps a NULL stamp (orphan candidate). Pairs with
+        # ProbeZeroReaderSettingsJob below (poindexter#756 item 2).
+        ("jobs", "services.jobs.flush_settings_read_telemetry", "FlushSettingsReadTelemetryJob"),
+        # ProbeZeroReaderSettingsJob — 6-hourly inverse of the flush job:
+        # app_settings keys whose last_read_at is still NULL past the grace
+        # window are emitted as an advisory settings_zero_reader_keys finding
+        # (orphan candidates -> Discord ops). poindexter#756 item 3.
+        ("jobs", "services.jobs.probe_zero_reader_settings", "ProbeZeroReaderSettingsJob"),
         ("jobs", "services.jobs.analyze_topic_gaps", "AnalyzeTopicGapsJob"),
         # SEO Harvest Loop Phase 1 — read-only analyzer that classifies
         # published posts into opportunity tiers from the latest GSC snapshot.
