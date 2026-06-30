@@ -24,6 +24,7 @@ Cutover history (Glad-Labs/poindexter#410):
 from __future__ import annotations
 
 import logging
+from contextlib import contextmanager
 from typing import Any
 
 from prefect import flow, task
@@ -31,7 +32,7 @@ from prefect.cache_policies import NO_CACHE
 from prefect.context import get_run_context
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
-from plugins.tracing import get_tracer, traced_span
+from plugins.tracing import extract_trace_context, get_tracer, traced_span
 
 logger = logging.getLogger(__name__)
 
@@ -42,6 +43,39 @@ logger = logging.getLogger(__name__)
 # "poindexter.pipeline" scope as the node tracer so the whole pipeline reads as
 # one instrumentation scope.
 _FLOW_TRACER = get_tracer("poindexter.pipeline")
+
+
+def _parent_context_from_claimed(claimed: dict[str, Any] | None) -> Any | None:
+    """Re-hydrate the enqueuer's OTel parent context from a claimed task row.
+
+    Tier 1b (Glad-Labs/glad-labs-stack#1997): ``tasks_db.add_task`` stamped the
+    creator's W3C carrier into ``pipeline_tasks.trace_context``; this turns it
+    back into a parent context so the flow's root span links to that trace.
+    Returns None when the row carried nothing (or opentelemetry isn't installed).
+    """
+    if not claimed:
+        return None
+    return extract_trace_context(claimed.get("trace_context"))
+
+
+@contextmanager
+def _attached_parent_context(parent_ctx: Any):
+    """Attach an extracted parent OTel context for the block, so the flow's root
+    span nests under the enqueuer's trace. No-op when the row carried no usable
+    context (or opentelemetry isn't installed)."""
+    if parent_ctx is None:
+        yield
+        return
+    try:
+        from opentelemetry import context as otel_context
+    except ImportError:
+        yield
+        return
+    token = otel_context.attach(parent_ctx)
+    try:
+        yield
+    finally:
+        otel_context.detach(token)
 
 
 @task(
@@ -98,7 +132,8 @@ async def claim_pending_task(database_service: Any) -> dict[str, Any] | None:
                 """
                 SELECT task_id, topic, style, tone, target_length,
                        target_audience, niche_slug,
-                       template_slug, primary_keyword, site_id
+                       template_slug, primary_keyword, site_id,
+                       trace_context
                 FROM pipeline_tasks
                 WHERE status IN ('pending', 'rejected_retry')
                 ORDER BY created_at ASC
@@ -414,6 +449,9 @@ async def _run_content_generation_flow(
     await reclaim_stale_inprogress_tasks(database_service, _wired_site_config)
 
     # Schedule-driven: no task_id → claim from queue.
+    # ``_parent_ctx`` carries the enqueuer's trace (Tier 1b, #1997) when the
+    # claimed row stored one; stays None for direct task_id invocations.
+    _parent_ctx: Any = None
     if task_id is None and topic is None:
         claimed = await claim_pending_task(database_service)
         if claimed is None:
@@ -427,6 +465,7 @@ async def _run_content_generation_flow(
         # ``category`` no longer claimed (column retired in the Phase F squash);
         # the flow param / "technology" default carries the content-category hint.
         target_audience = claimed.get("target_audience")
+        _parent_ctx = _parent_context_from_claimed(claimed)
 
     # Surface trace_id correlation. Prefect run_id is the canonical
     # identifier; pipeline tasks log their own task_id; stitching
@@ -488,7 +527,7 @@ async def _run_content_generation_flow(
         # Tempo trace, stitched to the Prefect run_id. Lives inside the try so
         # a pipeline crash is recorded on the span before the except marks the
         # task failed and re-raises.
-        with traced_span(
+        with _attached_parent_context(_parent_ctx), traced_span(
             _FLOW_TRACER,
             "pipeline.content_generation",
             task_id=str(task_id or ""),

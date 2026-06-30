@@ -37,22 +37,34 @@ backend, so this is opt-in there.
   / `chat` / `embed`), with long prompt attributes truncated to keep span size
   sane (full prompt bodies live in Langfuse via `@observe`).
 - **LLM auto-spans** — `OpenAIInstrumentor`, where the OpenAI SDK path is used.
+- **DB queue (enqueue → claim)** — `tasks_db.add_task` injects the enqueuer's
+  W3C carrier into the new row's `pipeline_tasks.trace_context` column; the
+  Prefect content-generation flow re-hydrates it at claim time and attaches it
+  around its root span. This carries `traceparent` across the one boundary an
+  HTTP propagator can't see — a database row — so a content run links back to
+  the API request or scheduled job that created it instead of starting a
+  disconnected trace.
 
 All of it degrades gracefully: if an OpenTelemetry distribution isn't installed,
 the corresponding symbol is `None` and that instrumentation is skipped without
 error.
 
-## Current coverage and a known seam
+## Coverage
 
-Trace context now survives every **HTTP** hop. Two **non-HTTP** boundaries do
-not yet propagate context, so a full content-generation run can still appear as
-more than one trace:
+Trace context survives every **HTTP** hop (FastAPI inbound + httpx egress) **and
+the `pipeline_tasks` DB queue** (enqueue → claim). When a task is created inside
+an active trace — an API request, an MCP call — `add_task` stamps the W3C carrier
+onto the row; the Prefect flow re-hydrates it at claim and parents its root span
+to that trace. The whole content-generation run, from the enqueuing request
+through every pipeline node and LLM call, renders as **one trace** in your
+backend.
 
-- the **Prefect worker subprocess** boundary (the flow runs in its own
-  process), and
-- the **`pipeline_tasks` DB-queue handoff** (enqueue → claim).
+Tasks created with no active trace (scheduled jobs, CLI invocations) store a
+NULL `trace_context` and the flow starts a fresh root span — exactly the
+pre-propagation behaviour, so the column is purely additive.
 
-Carrying `traceparent` across those two seams — so a single run renders as one
-unbroken trace from task-claim through every LLM call — is the next increment.
-Until then, point your collector at the endpoint above and you get coherent
-per-request and per-egress traces today.
+One seam remains by design: the carrier links a run to its **enqueuer's** trace,
+not across an in-flight `traceparent` propagated live through the Prefect worker
+subprocess at runtime. The flow already owns a root span per run (#711); the DB
+carrier parents it. Point your collector at the endpoint above and you get
+coherent end-to-end traces today.

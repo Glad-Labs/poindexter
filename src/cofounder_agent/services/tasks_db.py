@@ -16,6 +16,7 @@ from uuid import UUID, uuid4
 
 from asyncpg import Pool
 
+from plugins.tracing import inject_trace_context
 from schemas.database_response_models import TaskCountsResponse, TaskResponse
 from schemas.model_converter import ModelConverter
 from schemas.typed_records import PaginatedTasksResult, TaskRecord
@@ -334,6 +335,16 @@ class TasksDatabase(DatabaseServiceMixin):
                     # ``pipeline_tasks_view`` views project a NULL shim — so a
                     # value written here would never surface through them anyway.
                     # Do NOT re-add it; see TestAddTaskAgainstRealDb.
+                    # Tier 1b (Glad-Labs/glad-labs-stack#1997): stamp the
+                    # enqueuer's W3C trace context onto the row so the claiming
+                    # Prefect flow can link its root span to the trace of whatever
+                    # created this task (the DB queue is a non-HTTP boundary the
+                    # instrumentors don't cross). NULL when there's no active span
+                    # — the flow then starts a fresh root span exactly as before.
+                    trace_carrier = inject_trace_context()
+                    trace_context_json = (
+                        json.dumps(trace_carrier) if trace_carrier else None
+                    )
                     await conn.execute(
                         """
                         INSERT INTO pipeline_tasks (
@@ -342,14 +353,14 @@ class TasksDatabase(DatabaseServiceMixin):
                             primary_keyword, target_audience,
                             percentage, message, model_used,
                             error_message, template_slug, niche_slug,
-                            created_at, updated_at
+                            created_at, updated_at, trace_context
                         ) VALUES (
                             $1, $2, $3, $4, $5,
                             $6, $7, $8, $9,
                             $10, $11,
                             $12, $13, $14,
                             $15, $16, $17,
-                            $18, $18
+                            $18, $18, $19::jsonb
                         )
                         """,
                         task_id,
@@ -370,6 +381,7 @@ class TasksDatabase(DatabaseServiceMixin):
                         template_slug,
                         task_data.get("niche_slug") or None,
                         now,
+                        trace_context_json,
                     )
                     await conn.execute(
                         """

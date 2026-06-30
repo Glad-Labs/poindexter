@@ -90,6 +90,9 @@ async def test_claim_returns_pending_row_and_flips_status(test_pool) -> None:
             # longer SELECTs it; ``niche_slug`` (#796) is the live replacement.
             "target_audience", "niche_slug",
             "template_slug", "primary_keyword", "site_id",
+            # Tier 1b (#1997): the enqueuer's W3C trace carrier, attached around
+            # the flow root span so a run links to the request/job that made it.
+            "trace_context",
         ):
             assert required_col in claimed, (
                 f"claim_pending_task row missing column {required_col!r} "

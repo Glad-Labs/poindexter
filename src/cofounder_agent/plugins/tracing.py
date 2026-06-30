@@ -60,6 +60,7 @@ from __future__ import annotations
 
 import functools
 import inspect
+import json
 from collections.abc import Awaitable, Callable, Iterator, Sequence
 from contextlib import contextmanager
 from typing import Any, TypeVar
@@ -124,6 +125,68 @@ def get_tracer(instrumenting_module_name: str) -> Any:
         return _otel_trace.get_tracer(instrumenting_module_name)
     except ImportError:  # pragma: no cover — exercised in minimal dev envs
         return _NoopTracer()
+
+
+# ---------------------------------------------------------------------------
+# inject_trace_context / extract_trace_context — carry W3C trace context
+# across a NON-HTTP boundary (the ``pipeline_tasks`` enqueue -> claim handoff).
+# HTTP hops are covered by the FastAPI / httpx instrumentors; the DB queue is
+# not, so without these two helpers a content run starts a fresh root trace
+# disconnected from whatever created the task (Glad-Labs/glad-labs-stack#1997
+# Tier 1b).
+# ---------------------------------------------------------------------------
+
+
+def inject_trace_context(context: Any = None) -> dict[str, str] | None:
+    """Serialize the current (or given) OTel context to a W3C carrier dict.
+
+    Returns ``None`` when opentelemetry isn't installed or there is no active
+    span context — so an enqueuer with no live trace stores NULL and the
+    consumer just starts a fresh root span (the pre-Tier-1b behavior). Used at
+    task-enqueue time (``tasks_db.add_task``) to stash the creator's trace on
+    the ``pipeline_tasks`` row; the claiming flow re-hydrates it via
+    :func:`extract_trace_context`.
+    """
+    try:
+        from opentelemetry.propagate import inject
+    except ImportError:
+        return None
+    carrier: dict[str, str] = {}
+    # The default (W3C) propagator only writes ``traceparent`` when the context
+    # carries a VALID span; an empty / sampled-out context leaves the carrier
+    # empty, which we normalize to None.
+    inject(carrier, context=context)
+    return carrier or None
+
+
+def extract_trace_context(carrier: Any) -> Any | None:
+    """Re-hydrate an OTel parent context from a stored W3C carrier.
+
+    Accepts the carrier as a dict (in-process) OR a JSON string (asyncpg returns
+    ``jsonb`` as text unless a codec decodes it). Returns ``None`` for empty /
+    malformed input or when opentelemetry isn't installed, so the consumer
+    falls back to a fresh root span. Never raises.
+    """
+    if not carrier:
+        return None
+    if isinstance(carrier, str):
+        try:
+            carrier = json.loads(carrier)
+        except (ValueError, TypeError):
+            return None
+    if not isinstance(carrier, dict):
+        return None
+    try:
+        from opentelemetry.propagate import extract
+    except ImportError:
+        return None
+    try:
+        return extract(carrier)
+    except Exception:
+        # silent-ok: a corrupt/incompatible carrier must degrade to "no parent
+        # context" (fresh root span) — telemetry re-hydration never breaks the
+        # pipeline. Identical outcome to the row having stored NULL.
+        return None
 
 
 # ---------------------------------------------------------------------------
@@ -284,7 +347,9 @@ def traced_method(
 
 
 __all__ = [
+    "extract_trace_context",
     "get_tracer",
+    "inject_trace_context",
     "traced_method",
     "traced_span",
 ]

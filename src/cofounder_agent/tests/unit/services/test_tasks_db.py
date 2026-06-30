@@ -518,6 +518,77 @@ class TestAddTaskTemplateSlug:
 
 
 # ---------------------------------------------------------------------------
+# add_task — W3C trace_context stamping (Tier 1b, glad-labs-stack#1997)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAddTaskTraceContext:
+    """``add_task`` stamps the enqueuer's W3C trace context onto the row so the
+    claiming flow can link its root span to the creator's trace. ``trace_context``
+    is appended as the LAST positional arg of the pipeline_tasks INSERT (idx 18)."""
+
+    @staticmethod
+    def _pipeline_tasks_call(captured):
+        return next(
+            (sql, args) for sql, args in captured
+            if "INSERT INTO pipeline_tasks" in sql
+        )
+
+    @pytest.mark.asyncio
+    async def test_stores_carrier_when_active_trace(self, monkeypatch):
+        import json as _json
+
+        captured: list[tuple] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured.append((sql, args))
+            return "INSERT 0 1"
+
+        carrier = {
+            "traceparent": "00-0af7651916cd43dd8448eb211c80319c-00f067aa0ba902b7-01"
+        }
+        monkeypatch.setattr(
+            "services.tasks_db.inject_trace_context", lambda *a, **k: carrier
+        )
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+            conn.fetchrow = AsyncMock(return_value={"value": ""})
+        db = _make_db(pool)
+
+        await db.add_task({"id": "t-1", "topic": "AI"})
+
+        sql, args = self._pipeline_tasks_call(captured)
+        assert "trace_context" in sql
+        assert args[18] == _json.dumps(carrier)
+
+    @pytest.mark.asyncio
+    async def test_stores_null_when_no_active_trace(self, monkeypatch):
+        captured: list[tuple] = []
+
+        async def _capture(sql, *args, **kwargs):
+            captured.append((sql, args))
+            return "INSERT 0 1"
+
+        monkeypatch.setattr(
+            "services.tasks_db.inject_trace_context", lambda *a, **k: None
+        )
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.execute = AsyncMock(side_effect=_capture)
+            conn.fetchrow = AsyncMock(return_value={"value": ""})
+        db = _make_db(pool)
+
+        await db.add_task({"id": "t-1", "topic": "AI"})
+
+        _sql, args = self._pipeline_tasks_call(captured)
+        assert args[18] is None
+
+
+# ---------------------------------------------------------------------------
 # get_task
 # ---------------------------------------------------------------------------
 
