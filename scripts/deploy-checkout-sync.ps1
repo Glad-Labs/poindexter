@@ -55,7 +55,7 @@
   silently leaving stale code running. On first run (no marker) it records
   the current SHA WITHOUT restarting, to avoid a surprise bounce on install.
 
-  OBSERVABILITY (Glad-Labs/glad-labs-stack). When this task runs under the
+  OBSERVABILITY (Glad-Labs/poindexter). When this task runs under the
   Scheduler it runs hidden + non-interactive, so its `Write-Host` narration
   goes nowhere and the Windows TaskScheduler/Operational history log is
   disabled by default - leaving a green-looking 0x0 task with no on-disk
