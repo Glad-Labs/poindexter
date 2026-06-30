@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-29.**  
+> **Auto-generated from live `app_settings` table on 2026-06-30.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 736 active rows across 60 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 10 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 729 active rows across 59 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 17 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -40,7 +40,6 @@ The worker re-reads on every poll; no restart needed.
 - [cost](#cost) (8 keys)
 - [experiments](#experiments) (4 keys)
 - [features](#features) (7 keys)
-- [finance](#finance) (4 keys)
 - [firefighter](#firefighter) (7 keys)
 - [gates](#gates) (3 keys)
 - [general](#general) (321 keys)
@@ -66,7 +65,7 @@ The worker re-reads on every poll; no restart needed.
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
 - [pipeline](#pipeline) (34 keys)
-- [plugins](#plugins) (39 keys)
+- [plugins](#plugins) (38 keys)
 - [plugin_telemetry](#plugin-telemetry) (1 key)
 - [podcast](#podcast) (2 keys)
 - [prometheus](#prometheus) (5 keys)
@@ -79,7 +78,7 @@ The worker re-reads on every poll; no restart needed.
 - [security](#security) (1 key)
 - [site](#site) (2 keys)
 - [skills](#skills) (1 key)
-- [social](#social) (5 keys)
+- [social](#social) (3 keys)
 - [system](#system) (2 keys)
 - [tokens](#tokens) (5 keys)
 - [topic_discovery](#topic-discovery) (1 key)
@@ -102,7 +101,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `sentry_dsn` | `http://31fbc77a-4ad1-4b9a-8bf9-a13548...` |  | Sentry DSN for error tracking |
+| `sentry_dsn` | `*(per-operator)*` | per-operator | Sentry DSN for error tracking |
 
 ## backup
 
@@ -129,7 +128,7 @@ The worker re-reads on every poll; no restart needed.
 | `offsite_backup_keep_weekly` | `4` |  | restic forget --keep-weekly (only consulted when offsite_backup_prune_enabled=true). |
 | `offsite_backup_max_age_hours` | `26` |  | Staleness threshold for the brain offsite_backup_watch probe (daily cadence + 2h slack). |
 | `offsite_backup_prune_enabled` | `false` |  | When false (default) the runner never forget/prunes — keeps an append-only S3 key safe. Enable ONLY with a privileged... |
-| `offsite_backup_repository` | `` |  | restic repository URL, e.g. s3:https://s3.us-west-002.backblazeb2.com/<bucket>/<path>. Empty = Tier 2 inert. Set by `... |
+| `offsite_backup_repository` | `*(per-operator)*` | per-operator | restic repository URL, e.g. s3:https://s3.us-west-002.backblazeb2.com/<bucket>/<path>. Empty = Tier 2 inert. Set by `... |
 | `offsite_backup_restic_image` | `restic/restic:0.16.4` |  | Pinned restic image the wizard + brain verify use via `docker run`. Matches the alpine restic baked into the backup i... |
 | `offsite_backup_s3_region` | `` |  | SigV4 signing region for the S3 endpoint (e.g. B2 us-east-005). restic signs with us-east-1 by default, which a non-u... |
 | `offsite_backup_source_tier` | `daily` |  | Which Tier 1 dump subdir under /backups to ship off-machine. |
@@ -260,15 +259,6 @@ The worker re-reads on every poll; no restart needed.
 | `topic_auto_resolve_max_per_cycle` | `1` |  | Max number of topic_batches the auto-resolver promotes per cycle (every 2h). Default 1 — one new pipeline task every ... |
 | `topic_auto_resolve_niche_cooldown_hours` | `12` |  | Minimum hours between auto-resolutions for the same niche. Prevents one niche from monopolizing the pipeline if its b... |
 
-## finance
-
-| Key | Default | Classification | Description |
-| --- | --- | --- | --- |
-| `finance_poll_interval_seconds` | `3600` |  | Expected Mercury poll cadence in seconds (matches PollMercuryJob hourly schedule). Staleness window = this × finance_... |
-| `finance_poll_stale_multiplier` | `3` |  | How many missed poll intervals to tolerate before the finance brain probe pages. Window = finance_poll_interval_secon... |
-| `prometheus.rule.FinanceMercuryPollStale` | `{"enabled": true, "group": "poindexte...` |  | DB-sourced Prometheus alert rule for a stalled Mercury poll (Glad-Labs/poindexter#565). Rendered into rules/*.yml by ... |
-| `prometheus.threshold.finance_poll_stale_seconds` | `10800` |  | Prometheus staleness threshold (seconds) for the FinanceMercuryPollStale alert. Default 10800 = 3h. Referenced as {th... |
-
 ## firefighter
 
 | Key | Default | Classification | Description |
@@ -306,7 +296,7 @@ The worker re-reads on every poll; no restart needed.
 | `cadence_slo_expected_posts_per_day` | `1` |  |  |
 | `cadence_slo_shortfall_ratio` | `0.5` |  |  |
 | `cadence_slo_window_hours` | `24` |  |  |
-| `cloudflare_account_id` | `` |  |  |
+| `cloudflare_account_id` | `*(per-operator)*` | per-operator |  |
 | `compose_drift_auto_recover_enabled` | `true` |  |  |
 | `content_flow_max_concurrency` | `3` |  |  |
 | `content_router_contradiction_review_max_tokens` | `1500` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -572,9 +562,9 @@ The worker re-reads on every poll; no restart needed.
 | `stable_audio_open_server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `stage_timeout_draft` | `1700` |  |  |
 | `storage_access_key` | `*(redacted — looks secret-shaped but not classified `is_secret=true` in DB)*` | look-secret |  |
-| `storage_bucket` | `gladlabs-media` |  |  |
+| `storage_bucket` | `*(per-operator)*` | per-operator |  |
 | `storage_endpoint` | `` |  |  |
-| `storage_public_url` | `https://pub-1432fdefa18e47ad98f213a8a...` |  |  |
+| `storage_public_url` | `*(per-operator)*` | per-operator |  |
 | `structured_extraction_model` | `ollama/gemma-4-31B-it-qat:latest` |  |  |
 | `topic_dedup_engine` | `word_overlap` |  |  |
 | `topic_discovery_ideation_lookback_days` | `30` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -698,7 +688,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `podcast_cover_url` | `https://pub-1432fdefa18e47ad98f213a8a...` |  | Square podcast cover art URL for itunes:image element (Apple/Spotify require 1400-3000px) |
+| `podcast_cover_url` | `*(per-operator)*` | per-operator | Square podcast cover art URL for itunes:image element (Apple/Spotify require 1400-3000px) |
 | `podcast_tts_base_url` | `http://speaches:8000/v1` |  | Speaches OpenAI-compatible base URL for podcast TTS. Compose-internal URL by default. Use http://host.docker.internal... |
 | `podcast_tts_enabled` | `true` |  | Enable TTS narration for podcast scripts via Speaches. Converts the LLM-generated podcast script to a .wav file using... |
 | `podcast_tts_format` | `wav` |  | Output audio format for podcast narration files. Options: wav, mp3, opus, flac. wav is lossless and universally playa... |
@@ -920,7 +910,6 @@ The worker re-reads on every poll; no restart needed.
 | `plugin.job.fix_uncategorized_posts` | `{"enabled": true, "interval_seconds":...` |  | Config for job fix_uncategorized_posts — tune cadence via config.schedule |
 | `plugin.job.flag_missing_seo` | `{"enabled": true, "interval_seconds":...` |  | Config for job flag_missing_seo — tune cadence via config.schedule |
 | `plugin.job.morning_brief` | `{"enabled": true, "interval_seconds":...` |  | Config for job morning_brief — tune cadence via config.schedule |
-| `plugin.job.poll_mercury` | `{"enabled": true, "interval_seconds":...` |  | Config for job poll_mercury — tune cadence via config.schedule |
 | `plugin.job.postgres_vacuum` | `{"enabled": true, "interval_seconds":...` |  | Config for job postgres_vacuum — tune cadence via config.schedule |
 | `plugin.job.reload_site_config` | `{"enabled": true, "interval_seconds":...` |  | Config for job reload_site_config — tune cadence via config.schedule |
 | `plugin.job.render_alertmanager_config` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderAlertmanagerConfigJob (#524) — renders alertmanager.yml.tmpl with telegram_chat_id and reloads Alert... |
@@ -955,7 +944,7 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `podcast_spotify_show_id` | `033obxyUXdxhXyQ6erC07G` |  | Spotify show ID for the Glad Labs Podcast (the bit after /show/ in the public URL). |
-| `podcast_spotify_url` | `https://open.spotify.com/show/033obxy...` |  | Public Spotify URL for the Glad Labs Podcast. Surface this on the About page and at the bottom of dev_diary posts + i... |
+| `podcast_spotify_url` | `*(per-operator)*` | per-operator | Public Spotify URL for the Glad Labs Podcast. Surface this on the About page and at the bottom of dev_diary posts + i... |
 
 ## prometheus
 
@@ -1045,8 +1034,6 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `mastodon_instance_url` | `` |  | GH-36: Full Mastodon instance URL, e.g. 'https://mastodon.social'. Empty = Mastodon distribution skipped. |
-| `social_distribution_platforms` | `` |  | GH-36: Comma-separated list of platforms social_poster should push to after a successful publish. Valid values: 'mast... |
 | `social_linkedin_url` | `*(per-operator)*` | per-operator | LinkedIn profile URL |
 | `social_x_handle` | `*(per-operator)*` | per-operator | X/Twitter handle |
 | `social_x_url` | `*(per-operator)*` | per-operator | X/Twitter profile URL |
