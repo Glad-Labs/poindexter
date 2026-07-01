@@ -452,15 +452,16 @@ class TestGroupingMakesSense:
 # No dangling (uninstalled) model defaults
 # ---------------------------------------------------------------------------
 
-# Uninstalled local Ollama models that must not back any seeded ``*_model``
-# default. ``gemma3`` family (gemma3:27b / gemma3:27b-it-qat): upgraded to gemma4
-# and uninstalled around 2026-06-08/09. ``gemma4:31b``: deleted 2026-06-28 — it
-# was redundant with the QAT writer tag ``gemma-4-31B-it-qat:latest`` (both
-# 18-19GB, so keeping both just thrashed VRAM on swaps). A default pointing at
-# either would fail or silently CPU-offload budget / fallback / writer /
-# structured-extraction calls on a FRESH install or a settings reset.
+# A deleted local model that must never back a seeded ``*_model`` default:
+# ``gemma4:31b`` was removed 2026-06-28 (redundant with the custom QAT writer —
+# both 18-19GB, so keeping both just thrashed VRAM on swaps). ``gemma3`` was
+# forbidden here too (uninstalled on the operator rig in a 2026-06 upgrade), but
+# it's since back as the public OSS writer default AND present on the rig, so
+# it's allowed again. The opposite concern — operator-PRIVATE custom tags
+# (gemma-4-31B-it-qat / glm-4.7-5090) must NOT leak into the OSS seeds — is
+# guarded by tests/unit/services/test_oss_seed_model_hygiene.py.
 # See the ops memory note ``ollama-model-settings-dangle-after-upgrade``.
-_UNINSTALLED_MODEL_SUBSTRS = ("gemma3", "gemma4:31b")
+_UNINSTALLED_MODEL_SUBSTRS = ("gemma4:31b",)
 
 
 class TestNoDanglingModelDefaults:
@@ -479,9 +480,9 @@ class TestNoDanglingModelDefaults:
             if any(s in v for s in _UNINSTALLED_MODEL_SUBSTRS)
         }
         assert offenders == {}, (
-            "settings_defaults.DEFAULTS still seed an uninstalled model "
-            f"{_UNINSTALLED_MODEL_SUBSTRS}: {offenders}. Repoint to an installed "
-            "successor (gemma-4-31B-it-qat:latest / glm-4.7-5090:latest / qwen2.5:32b)."
+            "settings_defaults.DEFAULTS still seed a deleted model "
+            f"{_UNINSTALLED_MODEL_SUBSTRS}: {offenders}. Repoint to a public "
+            "successor (gemma3:27b / qwen3:8b / phi4:14b)."
         )
 
     def test_baseline_seed_values_have_no_uninstalled_model(self):

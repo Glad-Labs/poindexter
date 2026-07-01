@@ -121,8 +121,23 @@ DEFAULTS: dict[str, str] = {
     'electricity_source_gap_minutes': '15',
 
     # ----- LLM model selection -----
+    # OSS defaults pin only publicly-pullable Ollama tags so a fresh
+    # `poindexter setup` install runs (enforced by
+    # tests/unit/services/test_oss_seed_model_hygiene.py). The README quick-start
+    # pulls gemma3:27b / qwen3:8b / nomic-embed-text — the core blog pipeline runs
+    # on those; a few feature roles (vision QA, podcast/video, voice) name other
+    # public tags you pull on demand. Glad Labs production overrides several of
+    # these in the DB with custom local fine-tunes (gemma-4-31B-it-qat,
+    # glm-4.7-5090) that aren't on the public registry; the rationale comments
+    # below describe that prod tuning, not the OSS default.
     'default_ollama_model': 'auto',
     'embed_model': 'nomic-embed-text',
+    # Public OSS defaults for roles the Glad Labs operator overlay re-pins to
+    # custom local models (see services/operator_overrides.py). Listed here so
+    # the overlay's "only overwrite the OSS default" guard has a value to match.
+    'pipeline_architect_model': 'ollama/gemma3:27b',
+    'podcast_script_model': 'ollama/gemma3:27b',
+    'preferred_ollama_model': 'gemma3:27b',
     'inline_image_prompt_model': 'llama3:latest',
     'local_llm_api_url': 'http://localhost:11434',
     'model_role_image_decision': 'qwen3:8b',
@@ -132,13 +147,13 @@ DEFAULTS: dict[str, str] = {
     # operators on 80+GB hardware can flip to 'false' to skip the
     # ~3-5s reload tax (see services/llm_providers/ollama_unload.py).
     'pipeline_writer_unload_before_image_gen': 'true',
-    'pipeline_fallback_model': 'ollama/gemma-4-31B-it-qat:latest',
+    'pipeline_fallback_model': 'ollama/gemma3:27b',
     # Daily-driver content writer. gemma-4-31B won the 2026-06-18 writer bakeoff
     # (98/100): it names grounded specifics without the glm writer's [placeholder]
     # hedging or qwen2.5's stat fabrication, and rarely needs the rescue. The
     # rescue reviser (qa_rewrite_model) also defaults to this writer as of
     # 2026-06-28 (was glm — reverted for VRAM thrash; see that key). Tune live.
-    'pipeline_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
+    'pipeline_writer_model': 'ollama/gemma3:27b',
     # Adversarial critic — must be a DIFFERENT model family from the writer and
     # reviser so biases don't cancel (cross-model QA principle). phi4:14b is fast,
     # reliable at JSON output, and distinct from Gemma (writer) and GLM (reviser).
@@ -158,7 +173,7 @@ DEFAULTS: dict[str, str] = {
     # both the generate_video_shot_list draft pass and the review_video_shot_list
     # critique; kept equal to pipeline_writer_model (asserted in tests). Was unset
     # before, falling through to default_ollama_model=auto → weak standard tier.
-    'video_director_model': 'ollama/gemma-4-31B-it-qat:latest',
+    'video_director_model': 'ollama/gemma3:27b',
     # Per-call ceiling (seconds) for the director LLM dispatch — long + short
     # shot lists. Writer-grade director models (gemma-4-31B) emit a full
     # structured shot list (max_tokens 6144) and need well over the old
@@ -284,7 +299,7 @@ DEFAULTS: dict[str, str] = {
     'model_eval_reranker_golden_size': '50',
     'model_eval_reranker_candidates_per_case': '20',
     'qa_fallback_critic_model': 'ollama/qwen2.5:32b',
-    'qa_fallback_writer_model': 'ollama/gemma-4-31B-it-qat:latest',
+    'qa_fallback_writer_model': 'ollama/gemma3:27b',
     # Cross-model rescue reviser for qa.rewrite. EMPTY = reuse the resident
     # gemma writer (pipeline_writer_model) — the current default. The #1692
     # bakeoff (2026-06-18) picked glm-4.7-5090 here, but on the 5090+3090 rig glm
@@ -305,7 +320,7 @@ DEFAULTS: dict[str, str] = {
     # whole topic-discovery sweep (2026-05-28 content-gen stall). Kept
     # separate + DB-configurable so operators can pin a writing model
     # without breaking structured extraction.
-    'structured_extraction_model': 'ollama/gemma-4-31B-it-qat:latest',
+    'structured_extraction_model': 'ollama/gemma3:27b',
     # poindexter#716: vision alt-text + media-qa human-detect model key.
     # The baseline seeds this as 'qwen3-vl:30b'; seeded here too so fresh
     # installs without the baseline seeds can still get a sensible default.
@@ -315,9 +330,9 @@ DEFAULTS: dict[str, str] = {
     # loud when empty — no tier indirection. Seeded to the model the step used
     # under the old standard/budget tiers so behaviour is unchanged; tune each
     # step freely.
-    'image_search_query_model': 'ollama/gemma-4-31B-it-qat:latest',  # image_service Pexels query-gen (was gemma4:31b)
-    'image_prompt_model': 'ollama/gemma-4-31B-it-qat:latest',  # image_providers/ai_generation image-gen prompt-gen (was gemma4:31b)
-    'writer_self_review_model': 'ollama/gemma-4-31B-it-qat:latest',  # services/self_review writer self-review (was gemma4:31b)
+    'image_search_query_model': 'ollama/gemma3:27b',  # image_service Pexels query-gen (was gemma4:31b)
+    'image_prompt_model': 'ollama/gemma3:27b',  # image_providers/ai_generation image-gen prompt-gen (was gemma4:31b)
+    'writer_self_review_model': 'ollama/gemma3:27b',  # services/self_review writer self-review (was gemma4:31b)
     # NOTE: retention/collapse cold-data summaries keep their existing per-step
     # keys (memory_compression_summary_model / embedding_collapse_summary_model,
     # both seeded ollama/phi4:14b in 0000_baseline.seeds.sql) — no new key here.
@@ -843,7 +858,7 @@ DEFAULTS: dict[str, str] = {
     'voice_agent_identity': 'poindexter-bot',
     'voice_agent_livekit_enabled': 'true',
     'voice_agent_livekit_url': '',
-    'voice_agent_llm_model': 'glm-4.7-5090:latest',
+    'voice_agent_llm_model': 'gemma3:27b',
     'voice_agent_ollama_url': 'http://localhost:11434/v1',
     'voice_agent_public_join_url': '',
     'voice_agent_public_livekit_url': '',
@@ -1662,6 +1677,62 @@ async def seed_all_defaults(pool: Any) -> int:
             pass
 
     return inserted
+
+
+_OPERATOR_OVERLAY_DESC = (
+    "Operator overlay pin (services.operator_overrides) — custom local model, "
+    "re-applied over the OSS default on a fresh install or settings reset."
+)
+
+
+async def apply_operator_model_overrides(pool: Any) -> int:
+    """Re-apply Glad Labs operator model pins over the public OSS defaults.
+
+    OSS installs have no ``services.operator_overrides`` module, so this is a
+    no-op and the public ``DEFAULTS`` stand. The Glad Labs operator install
+    ships that module (stripped from the public mirror) with custom local model
+    tags that aren't on the public Ollama registry.
+
+    For each pinned key the row is overwritten ONLY when it still holds the OSS
+    public default — i.e. a freshly-seeded or post-reset row — never a value
+    tuned at runtime. So an operator settings reset reliably restores the
+    operator's models, while live ``poindexter settings set`` tuning survives a
+    reboot. A key whose OSS default we can't see (absent from ``DEFAULTS``) is
+    skipped rather than clobbered unconditionally.
+
+    Returns the number of pins actually applied (0 on OSS installs).
+    """
+    if pool is None:
+        return 0
+    try:
+        from services.operator_overrides import OPERATOR_MODEL_PINS
+    except ImportError:
+        return 0  # OSS install — no operator overlay present.
+
+    applied = 0
+    async with pool.acquire() as conn:
+        for key, operator_value in OPERATOR_MODEL_PINS.items():
+            oss_default = DEFAULTS.get(key)
+            if oss_default is None:
+                continue
+            applied_key = await conn.fetchval(
+                """
+                INSERT INTO app_settings
+                    (key, value, category, description, is_secret, is_active, updated_at)
+                VALUES ($1, $2, 'model_roles', $3, FALSE, TRUE, NOW())
+                ON CONFLICT (key) DO UPDATE
+                    SET value = EXCLUDED.value, updated_at = NOW()
+                    WHERE app_settings.value = $4
+                RETURNING key
+                """,
+                key,
+                operator_value,
+                _OPERATOR_OVERLAY_DESC,
+                oss_default,
+            )
+            if applied_key is not None:
+                applied += 1
+    return applied
 
 
 def keys() -> list[str]:

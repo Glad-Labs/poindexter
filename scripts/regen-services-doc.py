@@ -34,6 +34,12 @@ _REPO = Path(__file__).resolve().parent.parent
 _PREFIX = "src/cofounder_agent/"
 _TREES = ("src/cofounder_agent/services/", "src/cofounder_agent/modules/content/")
 _EXCLUDE_DIRS = ("services/migrations/", "modules/content/migrations/")
+# Files tracked here but stripped from the public mirror. Excluded so the
+# shipped services catalog never lists a file that won't exist in the public
+# tree. The operator-overlay *mechanism* is public
+# (services/settings_defaults.apply_operator_model_overrides); only the model
+# pins in this file are private.
+_EXCLUDE_FILES = ("services/operator_overrides.py",)
 _SPEC_PATH = _REPO / "src" / "cofounder_agent" / "services" / "canonical_blog_spec.py"
 
 EM_DASH = "—"
@@ -96,6 +102,8 @@ def discover_service_files() -> list[str]:
             continue
         after = rel[len(_PREFIX):] if rel.startswith(_PREFIX) else rel
         if after.startswith(_EXCLUDE_DIRS):
+            continue
+        if after in _EXCLUDE_FILES:
             continue
         files.append(rel)
     if not files:

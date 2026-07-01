@@ -18,6 +18,7 @@ the canary tests so Matt notices before the publish pipeline does.
 from __future__ import annotations
 
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -186,4 +187,61 @@ def test_release_please_tracks_package_pyproject() -> None:
     assert "src/cofounder_agent/poindexter/pyproject.toml" in paths, (
         "release-please-config.json must list the poindexter pyproject in "
         "extra-files so version bumps stay in lockstep with the umbrella repo."
+    )
+
+
+# ---------------------------------------------------------------------------
+# README quick-start command drift (cold-clone onboarding guard)
+# ---------------------------------------------------------------------------
+#
+# The public README's Quick start tells a brand-new operator the exact
+# `poindexter` commands to run from a fresh clone. If a command group or
+# subcommand is renamed in the CLI but the README isn't updated, the very
+# first command a stranger runs errors out — the worst possible onboarding
+# moment. This guard parses every `poindexter <group> <sub>` invocation out
+# of the README's fenced code blocks and asserts it resolves against the live
+# Click app, so doc/CLI drift fails CI instead of failing a new user.
+
+_POINDEXTER_INVOCATION = re.compile(r"poindexter\s+([a-z][\w-]*)(?:\s+([a-z][\w-]*))?")
+
+
+def _readme_documented_commands() -> list[tuple[str, str, str]]:
+    """Return (raw, group, subcommand) for each poindexter command in README fences."""
+    readme_text = (REPO_ROOT / "README.md").read_text(encoding="utf-8")
+    fenced_blocks = re.findall(r"```[^\n]*\n(.*?)```", readme_text, flags=re.DOTALL)
+    found: list[tuple[str, str, str]] = []
+    for block in fenced_blocks:
+        for match in _POINDEXTER_INVOCATION.finditer(block):
+            found.append((match.group(0), match.group(1), match.group(2) or ""))
+    return found
+
+
+def test_readme_quickstart_commands_resolve() -> None:
+    """Every ``poindexter …`` command in the README must resolve in the CLI.
+
+    Catches doc drift like ``poindexter content create`` (there is no
+    ``content`` group — the real command is ``poindexter tasks create``),
+    which would error on the first command a fresh-clone user runs.
+    """
+    pkg_parent = PKG_DIR.parent
+    if str(pkg_parent) not in sys.path:
+        sys.path.insert(0, str(pkg_parent))
+    from poindexter.cli.app import main
+
+    documented = _readme_documented_commands()
+    assert documented, "expected to find poindexter commands in the README code fences"
+
+    valid_groups = set(main.commands)
+    failures: list[str] = []
+    for raw, group, sub in documented:
+        if group not in valid_groups:
+            failures.append(f"`{raw}` -> no such command group '{group}'")
+            continue
+        subcommands = getattr(main.commands[group], "commands", None)
+        if sub and subcommands is not None and sub not in subcommands:
+            failures.append(f"`{raw}` -> '{group}' has no subcommand '{sub}'")
+
+    assert not failures, (
+        "README documents poindexter commands that don't resolve against the CLI:\n  "
+        + "\n  ".join(failures)
     )

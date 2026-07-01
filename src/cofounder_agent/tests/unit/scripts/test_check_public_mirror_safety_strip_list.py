@@ -262,3 +262,32 @@ def test_sync_script_strips_voice_host_brain() -> None:
         "won't actually strip it — a silent leak. Add a `git rm --cached` line "
         "in the strip block."
     )
+
+
+_OPERATOR_OVERRIDES = "src/cofounder_agent/services/operator_overrides.py"
+
+
+def test_operator_overrides_is_stripped() -> None:
+    """The private operator model overlay must be stripped from the mirror.
+
+    It pins the operator's custom local models (not on the public Ollama
+    registry); the public apply hook no-ops without it, so OSS installs keep the
+    public defaults.
+    """
+    assert _OPERATOR_OVERRIDES in CHECK._STRIP_FILES, (
+        f"{_OPERATOR_OVERRIDES} is not in _STRIP_FILES. It carries the operator's "
+        "custom local model tags and must not ship to the public mirror."
+    )
+
+
+def test_sync_script_strips_operator_overrides() -> None:
+    """sync-to-github.sh must git-rm the overlay too (guard/sync lock-step)."""
+    repo_root = next(
+        p for p in Path(__file__).resolve().parents
+        if (p / "pyproject.toml").exists() and (p / "src").exists()
+    )
+    text = (repo_root / "scripts" / "sync-to-github.sh").read_text(encoding="utf-8")
+    assert _OPERATOR_OVERRIDES in text, (
+        f"scripts/sync-to-github.sh has no reference to {_OPERATOR_OVERRIDES}. "
+        "It's in _STRIP_FILES but the sync won't strip it — a silent leak."
+    )

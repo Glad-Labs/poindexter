@@ -468,6 +468,27 @@ class StartupManager:
                 exc_info=True,
             )
 
+        # Operator overlay — re-apply Glad Labs custom model pins over the
+        # public OSS defaults (no-op on OSS installs, where the private
+        # services.operator_overrides module is stripped from the mirror).
+        try:
+            from services.settings_defaults import apply_operator_model_overrides
+
+            if self.database_service and self.database_service.pool:
+                overridden = await apply_operator_model_overrides(
+                    self.database_service.pool
+                )
+                if overridden:
+                    logger.info(
+                        "   [OK] operator overlay re-applied %d model pin(s)",
+                        overridden,
+                    )
+        except Exception as e:
+            logger.warning(
+                f"   [WARNING] operator overlay apply failed: {e!s}",
+                exc_info=True,
+            )
+
         # Module v1 Phase 2 — per-module migrations. Substrate migrations
         # (including the module_schema_migrations table itself) have
         # already run above; now walk every registered Module and apply

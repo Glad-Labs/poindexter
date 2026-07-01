@@ -51,14 +51,14 @@ cd poindexter
 pip install -e src/cofounder_agent
 poindexter setup --auto    # spins up local Postgres automatically
 
-# 3. Pull AI models
-ollama pull gemma3:27b && ollama pull qwen3:8b && ollama pull nomic-embed-text
+# 3. Pull AI models (writer, QA critic, fast tasks, embeddings)
+ollama pull gemma3:27b && ollama pull phi4:14b && ollama pull qwen3:8b && ollama pull nomic-embed-text
 
 # 4. Start the full stack
 bash scripts/start-stack.sh
 
 # 5. Generate your first post
-poindexter content create "Why Docker changed everything" --category technology
+poindexter tasks create "Why Docker changed everything" --category technology
 ```
 
 The pipeline runs automatically. Watch progress at `http://localhost:3000` (Grafana).
@@ -72,13 +72,16 @@ The pipeline runs automatically. Watch progress at `http://localhost:3000` (Graf
 
 ### Required models
 
-`poindexter setup --auto` doesn't pull these — Ollama does, but you trigger it. With these three, the full pipeline runs end-to-end on any 8 GB+ GPU:
+`poindexter setup --auto` doesn't pull these — Ollama does, but you trigger it. With these four, the core blog pipeline runs end-to-end on any 8 GB+ GPU:
 
 | Model              | Size   | Role                                                  |
 | ------------------ | ------ | ----------------------------------------------------- |
 | `qwen3:8b`         | 5 GB   | Fast tasks — SEO, image decisions, summaries, routing |
-| `gemma3:27b`       | 16 GB  | QA critic + writer fallback                           |
+| `gemma3:27b`       | 16 GB  | Writer, fallback, structured + media-script tasks     |
+| `phi4:14b`         | 9 GB   | Adversarial QA critic — the hard quality gate         |
 | `nomic-embed-text` | 274 MB | Embeddings for semantic search + memory retrieval     |
+
+> These four cover the **core blog pipeline** (research → write → QA → publish). The critic (`phi4:14b`) is a different model family from the writer on purpose — cross-model QA means their biases don't cancel. Feature roles pull additional public models on demand: image QA + captioning use `qwen3-vl:30b` (~20 GB — needs headroom past the 8 GB minimum), the inline-image-prompt and ops-triage helpers use small `llama3` / `llama3.2` tags, and the optional voice agent loads its own STT/TTS models. The core pipeline runs without them.
 
 ### Writer model — configurable
 
@@ -165,7 +168,7 @@ poindexter settings set auto_publish_threshold 80
 
 # Rotate via REST (with OAuth-issued JWT)
 curl -X PUT http://localhost:8002/api/settings/auto_publish_threshold \
-  -H "Authorization: Bearer $(poindexter auth token)" \
+  -H "Authorization: Bearer $(poindexter auth mint-token --client-id <id> --client-secret <secret>)" \
   -d '{"value": "80"}'
 ```
 
