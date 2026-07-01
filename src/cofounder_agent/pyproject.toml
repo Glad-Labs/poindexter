@@ -95,7 +95,7 @@ opentelemetry-instrumentation-fastapi = "^0.62b0"
 # httpx egress instrumentation — client spans + W3C `traceparent` injection on
 # outbound calls (Ollama / LiteLLM / web research) so trace context survives
 # every HTTP hop and an adopter's own OTLP backend stitches the run into one
-# trace (Glad-Labs/glad-labs-stack#1997 Tier 1a).
+# trace (Glad-Labs/poindexter#1997 Tier 1a).
 opentelemetry-instrumentation-httpx = "^0.62b0"
 
 # Storage & Files

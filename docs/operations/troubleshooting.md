@@ -1,6 +1,6 @@
 # Troubleshooting
 
-Runbook for issues that have bitten us in production. Each entry has a symptom, a root cause, a fix, and a link to the GitHub issue or commit where it was addressed. When you hit something new, add it here instead of just fixing it — the next person (or next-you) will thank you. Use the public `Glad-Labs/poindexter` tracker for product bugs and the private `Glad-Labs/glad-labs-stack` tracker for operator-specific items.
+Runbook for issues that have bitten us in production. Each entry has a symptom, a root cause, a fix, and a link to the GitHub issue or commit where it was addressed. When you hit something new, add it here instead of just fixing it — the next person (or next-you) will thank you. Use the public `Glad-Labs/poindexter` tracker for product bugs and the private `Glad-Labs/poindexter` tracker for operator-specific items.
 
 Entries are ordered by frequency of occurrence, not severity.
 
@@ -122,7 +122,7 @@ $enc=New-Object System.Text.UTF8Encoding($false)  # UTF-8, no BOM (file is now p
 
 **Symptom.** Discord notification fires "CI failed" or "Vercel deploy failed." Matt checks Vercel dashboard — the deploy job is red. But running `npm run test:ci` and `pytest` locally shows everything passing.
 
-**Root cause.** Vercel builds independently of the GitHub Actions test workflows — it watches `Glad-Labs/glad-labs-stack` and builds on every push to `main` (see [ci-deploy-chain.md](./ci-deploy-chain)); there is no single `ci.yml` that gates deploy on a `test` job. A red Vercel deploy while local tests pass is therefore a genuine **Vercel-side build failure** — a step that only fails in Vercel's build environment, a missing env var, or a Next.js build error — not a deploy skipped by a failing Python test.
+**Root cause.** Vercel builds independently of the GitHub Actions test workflows — it watches `Glad-Labs/poindexter` and builds on every push to `main` (see [ci-deploy-chain.md](./ci-deploy-chain)); there is no single `ci.yml` that gates deploy on a `test` job. A red Vercel deploy while local tests pass is therefore a genuine **Vercel-side build failure** — a step that only fails in Vercel's build environment, a missing env var, or a Next.js build error — not a deploy skipped by a failing Python test.
 
 **Fix.** Open the failing deployment in the Vercel dashboard and read its build logs; that's where the real error is. Reproduce the frontend build locally with `cd web/public-site && npm run build`. A red GitHub Actions check (e.g. `unit-tests.yml`) is a separate signal — fix it on its own, but it neither blocks nor unblocks the Vercel deploy.
 

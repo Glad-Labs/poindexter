@@ -5,7 +5,7 @@ Adds a nullable ``jsonb`` column carrying the W3C trace-context carrier
 ``tasks_db.add_task`` stamps it at creation, ``claim_pending_task`` SELECTs it,
 and the content-generation flow attaches it around its root span — so a run
 links to the trace of the API request / job that created it instead of starting
-a disconnected root trace (Glad-Labs/glad-labs-stack#1997 Tier 1b).
+a disconnected root trace (Glad-Labs/poindexter#1997 Tier 1b).
 
 Nullable with no default: NULL means "no upstream trace" and the flow starts a
 fresh root span exactly as before, so the column is purely additive — rows
