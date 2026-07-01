@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## [0.91.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.91.0...v0.91.1) (2026-07-01)
+
+
+### Bug Fixes
+
+* **cli:** expose brain to the editable install so pipeline resume/regen run outside the repo root ([#2011](https://github.com/Glad-Labs/glad-labs-stack/issues/2011)) ([30837c2](https://github.com/Glad-Labs/glad-labs-stack/commit/30837c2aa3b5506a8e5f68f985973d5843b0145f))
+* **cli:** report DB-unreachable distinctly from missing OAuth creds ([#2017](https://github.com/Glad-Labs/glad-labs-stack/issues/2017)) ([17175a1](https://github.com/Glad-Labs/glad-labs-stack/commit/17175a13e02ae720528cd2284bd4558d16a92862))
+* **infra:** cap cadvisor memory so it can't starve the WSL2 VM ([#2019](https://github.com/Glad-Labs/glad-labs-stack/issues/2019)) ([8f2e30e](https://github.com/Glad-Labs/glad-labs-stack/commit/8f2e30ef3e270ed7253fb39e47808763727e68be))
+* **infra:** raise cadvisor cap 512m -&gt; 1g (512m too tight, live-measured) ([#2021](https://github.com/Glad-Labs/glad-labs-stack/issues/2021)) ([6dd2c67](https://github.com/Glad-Labs/glad-labs-stack/commit/6dd2c67c7cec1fb219b84aa53f3ff2e86fe6581b))
+* repair README quick-start drift + ship pullable OSS model defaults ([#2018](https://github.com/Glad-Labs/glad-labs-stack/issues/2018)) ([3027f5e](https://github.com/Glad-Labs/glad-labs-stack/commit/3027f5ea73ae68ec5e7b2b5b944e492753aa56fe))
+* **topics:** degrade to embedding pre-rank on unparseable ranking-LLM JSON ([#2020](https://github.com/Glad-Labs/glad-labs-stack/issues/2020)) ([d1509e7](https://github.com/Glad-Labs/glad-labs-stack/commit/d1509e7a484b8f58203895bcd6cc086793f11da4))
+* **writer:** scope two_pass snippets to content sources + strip prompt-echo preamble ([#2016](https://github.com/Glad-Labs/glad-labs-stack/issues/2016)) ([db281f5](https://github.com/Glad-Labs/glad-labs-stack/commit/db281f53887932d1eb63b74f3282d9664c43c50c))
+
 ## [0.91.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.90.0...v0.91.0) (2026-06-30)
 
 
