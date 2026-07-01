@@ -427,7 +427,7 @@ The worker re-reads on every poll; no restart needed.
 | `pipeline_explicit_writer_unload_before_image_gen` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
 | `pipeline_gate_final_publish_approval` | `off` |  | HITL approval gate 'final_publish_approval': on/off (auto-managed by approval_service) |
 | `pipeline_use_graph_def` | `true` |  |  |
-| `pipeline_writer_model` | `ollama/gemma-4-31B-it-qat:latest` |  |  |
+| `pipeline_writer_model` | `ollama/gemma3:27b` |  |  |
 | `pipeline_writer_unload_grace_seconds` | `2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.audio_gen_provider.stable-audio-open-1.0.default_duration_s` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.audio_gen_provider.stable-audio-open-1.0.output_format` | `` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -445,7 +445,7 @@ The worker re-reads on every poll; no restart needed.
 | `podcast_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `prefect_content_flow_concurrency` | `3` |  |  |
 | `prefect_stuck_flow_queue_overdue_min_minutes` | `5` |  | Minimum minutes a SCHEDULED Prefect run must be overdue before it counts toward the queue-depth backlog threshold. Pr... |
-| `preferred_ollama_model` | `gemma-4-31B-it-qat:latest` |  |  |
+| `preferred_ollama_model` | `gemma3:27b` |  |  |
 | `publish_quiet_hours` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_accuracy_bad_link_max_penalty` | `2.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_accuracy_bad_link_penalty` | `0.5` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -476,7 +476,7 @@ The worker re-reads on every poll; no restart needed.
 | `qa_consistency_veto_threshold` | `30` |  |  |
 | `qa_critical_floor` | `50.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_engagement_baseline` | `6.0` |  | Auto-seeded by services.settings_defaults (#379) |
-| `qa_fallback_writer_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Auto-seeded by services.settings_defaults (#379) |
+| `qa_fallback_writer_model` | `ollama/gemma3:27b` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_fk_target_max` | `12.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_fk_target_min` | `8.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_gate_weight` | `0` |  |  |
@@ -524,7 +524,7 @@ The worker re-reads on every poll; no restart needed.
 | `qa_topic_dedup_hours` | `48` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_vision_check_enabled` | `true` |  |  |
 | `ragas_enabled` | `true` |  |  |
-| `ragas_judge_model` | `ollama/glm-4.7-5090:latest` |  | Auto-seeded by services.settings_defaults (#379) |
+| `ragas_judge_model` | `ollama/phi4:14b` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_default_top_k` | `5` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_embed_retry_attempts` | `3` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_embed_retry_base_delay_seconds` | `0.25` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -565,7 +565,7 @@ The worker re-reads on every poll; no restart needed.
 | `storage_bucket` | `*(per-operator)*` | per-operator |  |
 | `storage_endpoint` | `` |  |  |
 | `storage_public_url` | `*(per-operator)*` | per-operator |  |
-| `structured_extraction_model` | `ollama/gemma-4-31B-it-qat:latest` |  |  |
+| `structured_extraction_model` | `ollama/gemma3:27b` |  |  |
 | `topic_dedup_engine` | `word_overlap` |  |  |
 | `topic_discovery_ideation_lookback_days` | `30` |  | Auto-seeded by services.settings_defaults (#379) |
 | `topic_discovery_length_distribution` | `` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -593,7 +593,7 @@ The worker re-reads on every poll; no restart needed.
 | `voice_agent_identity` | `poindexter-bot` |  | Bot identity inside the LiveKit room. Multiple bots in one room need distinct identities. Defaults to 'poindexter-bot... |
 | `voice_agent_livekit_enabled` | `true` |  | Toggle for the always-on voice-agent-livekit container. 'true' (default) keeps the bot joined to the configured room.... |
 | `voice_agent_livekit_url` | `ws://livekit:7880` |  | WebSocket URL the in-network voice bot uses to reach the LiveKit SFU. 'livekit' is the docker-compose service name; o... |
-| `voice_agent_llm_model` | `glm-4.7-5090:latest` |  | Ollama model tag the voice agent uses for its LLM step. Same daily-driver as pipeline_writer_model by default. |
+| `voice_agent_llm_model` | `gemma3:27b` |  | Ollama model tag the voice agent uses for its LLM step. Same daily-driver as pipeline_writer_model by default. |
 | `voice_agent_ollama_url` | `http://host.docker.internal:11434/v1` |  | Ollama base URL. Default targets the host's Ollama from inside Docker; running voice_agent.py directly on the host ca... |
 | `voice_agent_recall_k` | `3` |  | Top-K most-similar prior voice_messages turns to inject into the qwen3:8b system prompt as 'recalled context' on each... |
 | `voice_agent_recall_min_similarity` | `0.5` |  | Cosine-similarity floor for voice_messages recall. Hits below this threshold are filtered out before the top-K cut, s... |
@@ -719,7 +719,7 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `inline_image_prompt_model` | `llama3:latest` |  | Ollama model used to craft AI image prompts for inline images in blog posts |
-| `podcast_script_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Ollama model used to generate podcast scripts from article content |
+| `podcast_script_model` | `ollama/gemma3:27b` |  | Ollama model used to generate podcast scripts from article content |
 | `qa_fallback_critic_model` | `ollama/qwen2.5:32b` |  | Fallback critic used when pipeline_critic_model (phi4) returns empty or errors. Must be a DIFFERENT family from the g... |
 | `video_scene_model` | `llama3:latest` |  | Ollama model used to generate video scene descriptions from article text |
 
@@ -729,8 +729,8 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `cloud_api_daily_limit` | `5` |  | Max cloud API calls per day in emergency mode (hard cap) |
 | `cloud_api_mode` | `emergency_only` |  | Cloud API usage mode: disabled, emergency_only, fallback, always |
-| `pipeline_critic_model` | `ollama/glm-4.7-5090:latest` |  | Model for QA/content review |
-| `pipeline_fallback_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Fallback model when primary is unavailable |
+| `pipeline_critic_model` | `ollama/phi4:14b` |  | Model for QA/content review |
+| `pipeline_fallback_model` | `ollama/gemma3:27b` |  | Fallback model when primary is unavailable |
 
 ## monitoring
 
@@ -834,7 +834,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `ops_triage_writer_model` | `ollama/gemma-4-31B-it-qat:latest` |  | Local Ollama model used for brain alert triage (the /api/triage endpoint). Defaults to gemma-4-31B-it-qat:latest beca... |
+| `ops_triage_writer_model` | `ollama/llama3.2:3b` |  | Local Ollama model used for brain alert triage (the /api/triage endpoint). Defaults to llama3.2:3b (a small, non-thin... |
 
 ## orchestration
 
@@ -870,7 +870,7 @@ The worker re-reads on every poll; no restart needed.
 | `max_tokens_per_request` | `4000` |  | Maximum output tokens per LLM request |
 | `max_tokens_per_task` | `16000` |  | Maximum total tokens (input+output) per content task |
 | `min_curation_score` | `75` |  | Minimum QA score to surface for human review (below this = auto-reject) |
-| `pipeline_architect_model` | `ollama/glm-4.7-5090:latest` |  | Local Ollama model the architect-LLM uses to compose pipelines from intent + atom catalog. Cloud models are opt-in on... |
+| `pipeline_architect_model` | `ollama/gemma3:27b` |  | Local Ollama model the architect-LLM uses to compose pipelines from intent + atom catalog. Cloud models are opt-in on... |
 | `pipeline_architect_timeout_seconds` | `120.0` |  | Max seconds to wait for the architect LLM to emit its JSON graph spec before timing out and falling back to a default... |
 | `pipeline_gate_draft_gate` | `off` |  | HITL approval gate 'draft_gate': on/off. When on, the canonical_blog pipeline pauses after the writer stage via LangG... |
 | `pipeline.stages.order` | `["verify_task", "generate_content", "...` |  | Ordered list of Stage names the content pipeline runs. Operators can disable (drop from list), reorder, or insert thi... |
@@ -971,7 +971,7 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `deepeval_g_eval_criterion` | `The output is well-grounded in the in...` |  | Criterion text the DeepEval g-eval judge model uses to grade the post. Operators can rewrite this to emphasize differ... |
-| `deepeval_judge_model` | `ollama/glm-4.7-5090:latest` |  | LLM model identifier used by the DeepEval g-eval and faithfulness reviewers. Default 'glm-4.7-5090' (Matt's local thi... |
+| `deepeval_judge_model` | `ollama/phi4:14b` |  | LLM model identifier used by the DeepEval g-eval and faithfulness reviewers. Default 'phi4:14b' is a fast, non-thinki... |
 | `deepeval_threshold_faithfulness` | `0.8` |  | Threshold (0–1) above which the DeepEval faithfulness reviewer marks the post as approved. Default 0.8 — at least 80%... |
 | `deepeval_threshold_g_eval` | `0.7` |  | Threshold (0–1) above which the DeepEval g-eval reviewer marks the post as approved. Default 0.7 — anything below mea... |
 | `guardrails_competitor_list` | `Jasper, Copy.ai, Writesonic, Article ...` |  | Comma-separated list of competitor brand names to flag if they appear in a post body (case-insensitive, word-boundary... |
