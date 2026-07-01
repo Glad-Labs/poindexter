@@ -206,6 +206,65 @@ async def test_llm_final_score_falls_back_when_llm_omits_candidate(monkeypatch):
 
 
 # ---------------------------------------------------------------------------
+# llm_final_score — resilient to unparseable LLM output (2026-06-30)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_llm_final_score_recovers_from_truncated_json(monkeypatch):
+    """A truncated / unterminated LLM response (the structured model hit a
+    length cap mid-object) must NOT sink the whole discovery sweep.
+
+    Before this guard, ``json.loads`` raised ``JSONDecodeError`` ('Unterminated
+    string') out of ``run_sweep`` and failed the ``run_niche_topic_sweep`` job
+    (the 2026-06-30 alert). Now the parse degrades to the embedding pre-rank so
+    the batch still forms — ranked, just without the LLM's re-score.
+    """
+    from services.topic_ranking import ScoredCandidate, llm_final_score
+
+    async def fake_ollama_chat(prompt: str, *, model: str, pool=None, site_config=None) -> str:
+        # Valid JSON prefix that stops mid-object — exactly the shape that
+        # raised "Unterminated string starting at ... char 758" in prod.
+        return '{"c1": {"score": 87.5, "breakdown": {"TRAFFIC": 0.5}}, "c2": {"score": 42.0, "breakd'
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake_ollama_chat)
+
+    candidates = [
+        ScoredCandidate(id="c1", title="A", summary="x", embedding_score=0.6),
+        ScoredCandidate(id="c2", title="B", summary="y", embedding_score=0.42),
+    ]
+    weights = [NicheGoal("TRAFFIC", 100)]
+    scored = await llm_final_score(candidates, weights, model="glm-4.7:latest", site_config=_SC)
+
+    # No exception; both candidates present, backfilled from embedding_score*100.
+    assert set(scored) == {"c1", "c2"}
+    assert scored["c1"].llm_score == pytest.approx(60.0)   # 0.6 * 100
+    assert scored["c2"].llm_score == pytest.approx(42.0)   # 0.42 * 100
+    assert scored["c1"].score_breakdown == {}
+    assert scored["c2"].score_breakdown == {}
+
+
+@pytest.mark.asyncio
+async def test_llm_final_score_recovers_from_non_object_json(monkeypatch):
+    """A syntactically-valid but wrong-shaped response (a JSON array/scalar
+    instead of the expected ``{id: {...}}`` object) must degrade the same way
+    as a parse error — otherwise ``parsed.get(...)`` raises ``AttributeError``
+    and sinks the sweep. Same embedding-pre-rank fallback."""
+    from services.topic_ranking import ScoredCandidate, llm_final_score
+
+    async def fake_ollama_chat(prompt: str, *, model: str, pool=None, site_config=None) -> str:
+        return '[{"score": 50.0}]'  # a JSON array — parses, but has no .get(id)
+    monkeypatch.setattr("services.topic_ranking._ollama_chat_json", fake_ollama_chat)
+
+    candidates = [ScoredCandidate(id="c1", title="A", summary="x", embedding_score=0.55)]
+    weights = [NicheGoal("TRAFFIC", 100)]
+    scored = await llm_final_score(candidates, weights, model="glm-4.7:latest", site_config=_SC)
+
+    assert set(scored) == {"c1"}
+    assert scored["c1"].llm_score == pytest.approx(55.0)  # 0.55 * 100
+    assert scored["c1"].score_breakdown == {}
+
+
+# ---------------------------------------------------------------------------
 # llm_final_score — fail-loud on missing model config (poindexter#485)
 # ---------------------------------------------------------------------------
 

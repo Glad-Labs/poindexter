@@ -354,7 +354,34 @@ async def llm_final_score(
             f"may be configured for structured extraction — set "
             f"``structured_extraction_model`` to a JSON-reliable instruct model."
         )
-    parsed = json.loads(raw)
+    try:
+        parsed = json.loads(raw)
+    except json.JSONDecodeError as exc:
+        # A truncated / malformed response (the structured model hit a length
+        # cap mid-object, or emitted a stray token) must NOT sink the whole
+        # discovery sweep. Before this guard, json.loads raised 'Unterminated
+        # string' out of run_sweep and failed the run_niche_topic_sweep job
+        # (2026-06-30). Degrade to the embedding pre-rank: an empty ``parsed``
+        # backfills every candidate from ``embedding_score`` in the loop below,
+        # so the batch still forms — ranked, just without the LLM's re-score.
+        logger.warning(
+            "topic_ranking.llm_final_score: unparseable JSON from model %r "
+            "(%s) — falling back to embedding pre-rank for all %d candidate(s); "
+            "raw_preview=%r",
+            model, exc, len(candidates), raw[:200],
+        )
+        parsed = {}
+    if not isinstance(parsed, dict):
+        # Valid JSON of the wrong shape (an array/scalar from a model that
+        # ignored response_format=json_object) is as useless here as a parse
+        # error — same degrade path, and it avoids an AttributeError on the
+        # ``parsed.get`` below.
+        logger.warning(
+            "topic_ranking.llm_final_score: expected a JSON object from model "
+            "%r, got %s — falling back to embedding pre-rank",
+            model, type(parsed).__name__,
+        )
+        parsed = {}
     result: dict[str, ScoredCandidate] = {}
     for c in candidates:
         score_blob = parsed.get(c.id)
