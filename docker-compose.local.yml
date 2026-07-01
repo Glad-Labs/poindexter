@@ -1394,10 +1394,12 @@ services:
     restart: unless-stopped
     # Hard memory cap. cadvisor ran unbounded and leaked to ~4GB over 19h,
     # eroding the WSL2 VM's headroom until a routine spike tipped the whole
-    # VM into ENOMEM (worker crash + tap failures, 2026-06-30). A metrics
-    # sidecar's steady-state working set is ~150-300MB; 512m leaves generous
-    # headroom while guaranteeing it can never starve the pipeline again.
-    mem_limit: 512m
+    # VM into ENOMEM (worker crash + tap failures, 2026-06-30). Live-measured
+    # working set with this ~42-container stack is ~370MB steady / ~490MB at
+    # boot (an initial 512m cap OOM-restarted it), so the cap must clear that.
+    # 1g gives ~2x headroom while still bounding cadvisor ~4x below the 4GB
+    # runaway that caused the incident.
+    mem_limit: 1g
     privileged: true
     devices:
       - /dev/kmsg
