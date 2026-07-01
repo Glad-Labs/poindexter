@@ -64,8 +64,15 @@ from typing import Any
 # `get_float()`, `get_bool()` etc.
 DEFAULTS: dict[str, str] = {
     # ----- Identity / branding -----
+    # Operator identity is generic on OSS (each install is its own company); the
+    # Glad Labs operator overlay (services.operator_overrides) restores Matt /
+    # Glad Labs. Keep these identical to the 0000_baseline.seeds.sql seeds so the
+    # overlay's "overwrite only the OSS default" match fires. company_founded_date
+    # keeps the content_validator fallback date (non-empty → date math is safe).
     'app_version': '3.0.1',
     'company_name': '',
+    'company_founder_name': '',
+    'company_founded_date': '2025-01-01',
     'development_mode': '',
     'disable_auth_for_dev': 'false',
     'environment': 'development',
@@ -237,6 +244,12 @@ DEFAULTS: dict[str, str] = {
     # host.docker.internal:9835 read flap with RemoteDisconnected (2026-06-21).
     # Read via services/gpu_scheduler.py::_prometheus_query_url.
     'gpu_metrics_prometheus_url': 'http://prometheus:9090',
+    # Operator hardware identity used for brain knowledge. Empty on OSS (each
+    # install has its own card; gpu_vram_total_gb='auto' handles VRAM sizing);
+    # the Glad Labs operator overlay (services.operator_overrides) restores Matt's
+    # exact GPU. Keep '' identical to the 0000_baseline.seeds.sql seed so the
+    # overlay's "overwrite only the OSS default" match fires.
+    'gpu_model': '',
     # GPU-serialize fix: hold gpu.lock("ollama") around every LOCAL LLM dispatch
     # (services/llm_providers/dispatcher.py::dispatch_complete) so scheduled
     # worker jobs (topic research, SEO, newsletter) can't load the ~19GB writer
@@ -865,7 +878,21 @@ DEFAULTS: dict[str, str] = {
     'voice_agent_recall_k': '3',
     'voice_agent_recall_min_similarity': '0.5',
     'voice_agent_room_name': 'poindexter',
-    'voice_agent_system_prompt': '',
+    # OSS-generic voice persona. The Glad Labs operator overlay
+    # (services.operator_overrides) restores Matt's personalised version on the
+    # operator rig; keep this text identical to the 0000_baseline.seeds.sql seed
+    # so the overlay's "overwrite only the OSS default" match fires.
+    'voice_agent_system_prompt': """You are Emma, a concise voice assistant for the operator. Speak naturally — your output goes through text-to-speech, so avoid markdown, bullet lists, and code blocks. Use short sentences. If the operator asks a factual question you don't know the answer to, say so plainly rather than guessing. Default to responses under 30 seconds of speech (~80 words) unless they explicitly ask for a longer one.
+
+You have access to these tools and you SHOULD call them whenever the operator asks something they answer:
+
+- check_pipeline_health: call this when the operator asks how the system is doing, whether anything is broken, system status, or health.
+- get_published_post_count: call this when the operator asks how many posts are live, the number of articles, or pipeline output volume.
+- get_ai_spending_status: call this when the operator asks about budget, costs, spend, or money burned.
+
+When you call a tool, do NOT also say "let me check" or "one moment" — just emit the tool call. After the tool returns, summarize the result in one or two short sentences fit for speech. Do not list raw numbers — say "the system is healthy, GPU is at 48 percent" rather than reading every metric.
+
+If the operator says something you cannot answer with a tool, answer plainly. Never claim you cannot hear or that you only process text — you are receiving live audio transcribed by Whisper.""",
     'voice_agent_tts_speed': '1.0',
     'voice_agent_tts_voice': 'bf_emma',
     'voice_agent_vad_stop_secs': '0.2',
@@ -894,6 +921,9 @@ DEFAULTS: dict[str, str] = {
     # key. Replaces the deprecated ``r2_public_url`` (storage_* cutover,
     # Glad-Labs/poindexter#731).
     'storage_public_url': '',
+    # S3-compatible bucket for media objects. Empty on OSS (operators configure
+    # their own bucket); the operator overlay restores Glad Labs' bucket.
+    'storage_bucket': '',
     # Custom vanity domain for image objects (e.g. ``https://images.gladlabs.io``).
     # When set, image URLs use this base instead of the rate-limited r2.dev
     # public bucket URL. Empty = fall back to storage_public_url (poindexter#732).
@@ -1444,6 +1474,9 @@ DEFAULTS: dict[str, str] = {
     # content is AI-authored, so this defaults true; a future operator can
     # set it false per their content policy or jurisdiction.
     'social_x_made_with_ai': 'true',
+    # Operator's own X account — empty on OSS; the operator overlay restores it.
+    'social_x_handle': '',
+    'social_x_url': '',
 
 }
 
@@ -1680,38 +1713,45 @@ async def seed_all_defaults(pool: Any) -> int:
 
 
 _OPERATOR_OVERLAY_DESC = (
-    "Operator overlay pin (services.operator_overrides) — custom local model, "
-    "re-applied over the OSS default on a fresh install or settings reset."
+    "Operator overlay value (services.operator_overrides) — re-applied over the "
+    "OSS default on a fresh install or settings reset."
 )
 
 
-async def apply_operator_model_overrides(pool: Any) -> int:
-    """Re-apply Glad Labs operator model pins over the public OSS defaults.
+async def apply_operator_overrides(pool: Any) -> int:
+    """Re-apply Glad Labs operator overrides over the public OSS defaults.
 
     OSS installs have no ``services.operator_overrides`` module, so this is a
-    no-op and the public ``DEFAULTS`` stand. The Glad Labs operator install
-    ships that module (stripped from the public mirror) with custom local model
-    tags that aren't on the public Ollama registry.
+    no-op and the public ``DEFAULTS`` stand. The Glad Labs operator install ships
+    that module (stripped from the public mirror) with two kinds of override:
+    custom local Ollama model tags that aren't on the public registry
+    (``OPERATOR_MODEL_PINS``) and operator-personal settings that carry identity
+    — the voice persona, the exact GPU (``OPERATOR_SETTING_OVERRIDES``).
 
-    For each pinned key the row is overwritten ONLY when it still holds the OSS
-    public default — i.e. a freshly-seeded or post-reset row — never a value
-    tuned at runtime. So an operator settings reset reliably restores the
-    operator's models, while live ``poindexter settings set`` tuning survives a
-    reboot. A key whose OSS default we can't see (absent from ``DEFAULTS``) is
-    skipped rather than clobbered unconditionally.
+    For each key the row is overwritten ONLY when it still holds the OSS public
+    default — i.e. a freshly-seeded or post-reset row — never a value tuned at
+    runtime. So an operator settings reset reliably restores the operator's
+    values, while live ``poindexter settings set`` tuning survives a reboot. A
+    key whose OSS default we can't see (absent from ``DEFAULTS``) is skipped
+    rather than clobbered unconditionally — which is why every overridden key
+    must also carry a generic public default in ``DEFAULTS``.
 
-    Returns the number of pins actually applied (0 on OSS installs).
+    Returns the number of overrides actually applied (0 on OSS installs).
     """
     if pool is None:
         return 0
     try:
-        from services.operator_overrides import OPERATOR_MODEL_PINS
+        from services.operator_overrides import (
+            OPERATOR_MODEL_PINS,
+            OPERATOR_SETTING_OVERRIDES,
+        )
     except ImportError:
         return 0  # OSS install — no operator overlay present.
 
+    overrides = {**OPERATOR_MODEL_PINS, **OPERATOR_SETTING_OVERRIDES}
     applied = 0
     async with pool.acquire() as conn:
-        for key, operator_value in OPERATOR_MODEL_PINS.items():
+        for key, operator_value in overrides.items():
             oss_default = DEFAULTS.get(key)
             if oss_default is None:
                 continue
@@ -1719,7 +1759,7 @@ async def apply_operator_model_overrides(pool: Any) -> int:
                 """
                 INSERT INTO app_settings
                     (key, value, category, description, is_secret, is_active, updated_at)
-                VALUES ($1, $2, 'model_roles', $3, FALSE, TRUE, NOW())
+                VALUES ($1, $2, 'general', $3, FALSE, TRUE, NOW())
                 ON CONFLICT (key) DO UPDATE
                     SET value = EXCLUDED.value, updated_at = NOW()
                     WHERE app_settings.value = $4

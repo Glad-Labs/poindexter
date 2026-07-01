@@ -101,7 +101,7 @@ git rm -r --cached --quiet mcp-server-gladlabs/ 2>/dev/null || true          # p
 # - FinanceModule: Mercury banking (read-only). No credentials live in the
 #   tree (they're encrypted in app_settings.value), but the module structure,
 #   CLI, and DB schema are operator-scoped and don't ship to public OSS.
-git rm --cached --quiet src/cofounder_agent/services/operator_overrides.py 2>/dev/null || true  # private operator model overlay — custom local Ollama tags (gemma-4-31B-it-qat / glm-4.7-5090 / gemma-4-E2B-Q2). The PUBLIC apply hook (settings_defaults.apply_operator_model_overrides) no-ops when this module is absent, so OSS installs use the public defaults.
+git rm --cached --quiet src/cofounder_agent/services/operator_overrides.py 2>/dev/null || true  # private operator overlay — custom local Ollama tags (gemma-4-31B-it-qat / glm-4.7-5090 / gemma-4-E2B-Q2) + personal settings (voice persona, exact GPU). The PUBLIC apply hook (settings_defaults.apply_operator_overrides) no-ops when this module is absent, so OSS installs use the public defaults.
 git rm -r --cached --quiet src/cofounder_agent/modules/finance/ 2>/dev/null || true
 git rm -r --cached --quiet src/cofounder_agent/tests/unit/modules/finance/ 2>/dev/null || true
 git rm --cached --quiet docs/operations/finance-module-operator.md 2>/dev/null || true   # private operator-overlay setup doc (Mercury banking)

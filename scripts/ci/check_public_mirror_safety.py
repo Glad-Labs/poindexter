@@ -136,11 +136,12 @@ _STRIP_FILES = (
     # operator per-turn cost figures + a Windows-host setup. Operator-overlay;
     # strip like the sibling runbooks. Not referenced in docs.json nav.
     "docs/operations/voice-host-brain.md",
-    # Private operator model overlay — pins the operator's custom local Ollama
-    # tags (gemma-4-31B-it-qat / glm-4.7-5090 / gemma-4-E2B-Q2). The PUBLIC apply
-    # hook (settings_defaults.apply_operator_model_overrides) no-ops when this
-    # module is absent, so OSS installs keep the public defaults. Strip
-    # lock-step with the git-rm line in sync-to-github.sh.
+    # Private operator overlay — the operator's custom local Ollama tags
+    # (gemma-4-31B-it-qat / glm-4.7-5090 / gemma-4-E2B-Q2) plus personal settings
+    # (voice persona, exact GPU). The PUBLIC apply hook
+    # (settings_defaults.apply_operator_overrides) no-ops when this module is
+    # absent, so OSS installs keep the public defaults. Strip lock-step with the
+    # git-rm line in sync-to-github.sh.
     "src/cofounder_agent/services/operator_overrides.py",
     ".woodpecker.yml",
     "scripts/migrate-poindexter-rename.sh",

@@ -38,20 +38,20 @@ CLAUDE_BRIDGE_TTS_KEY = "voice.claude_bridge_tts"
 # _extract_skill_section() appends exactly one trailing newline, so these end
 # in "\n" to stay byte-identical on the fallback path (test_voice_prompts.py).
 _EMMA_SYSTEM_FALLBACK = (
-    "You are Emma, a concise voice assistant for Matt at Glad Labs. "
+    "You are Emma, a concise voice assistant for the operator. "
     "Speak naturally — your output goes through text-to-speech, so "
     "avoid markdown, bullet lists, and code blocks. Use short "
-    "sentences. If Matt asks a factual question you don't know the "
+    "sentences. If the operator asks a factual question you don't know the "
     "answer to, say so plainly rather than guessing. Default to "
-    "responses under 30 seconds of speech (~80 words) unless he "
-    "explicitly asks for a longer one.\n"
+    "responses under 30 seconds of speech (~80 words) unless they "
+    "explicitly ask for a longer one.\n"
 )
 
 # One templated prompt for both bridge surfaces — ``{surface}`` is the only
 # thing that differed between the old local-mic and phone copies.
 _CLAUDE_BRIDGE_TTS_FALLBACK = (
-    "You are speaking out loud to Matt over a {surface}. Keep replies "
-    "short and natural — under 20 seconds of speech unless he asks for "
+    "You are speaking out loud to the operator over a {surface}. Keep replies "
+    "short and natural — under 20 seconds of speech unless they ask for "
     "more. No markdown, no bullet lists, no code blocks; this goes "
     "through TTS. When you take an action (edit a file, run a command, "
     "push a PR), summarise the outcome in one sentence rather than "

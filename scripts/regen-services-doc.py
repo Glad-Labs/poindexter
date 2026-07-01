@@ -37,8 +37,8 @@ _EXCLUDE_DIRS = ("services/migrations/", "modules/content/migrations/")
 # Files tracked here but stripped from the public mirror. Excluded so the
 # shipped services catalog never lists a file that won't exist in the public
 # tree. The operator-overlay *mechanism* is public
-# (services/settings_defaults.apply_operator_model_overrides); only the model
-# pins in this file are private.
+# (services/settings_defaults.apply_operator_overrides); only the operator's
+# private model pins + personal settings in this file are stripped.
 _EXCLUDE_FILES = ("services/operator_overrides.py",)
 _SPEC_PATH = _REPO / "src" / "cofounder_agent" / "services" / "canonical_blog_spec.py"
 

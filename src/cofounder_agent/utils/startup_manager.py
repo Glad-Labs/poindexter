@@ -468,19 +468,19 @@ class StartupManager:
                 exc_info=True,
             )
 
-        # Operator overlay — re-apply Glad Labs custom model pins over the
-        # public OSS defaults (no-op on OSS installs, where the private
-        # services.operator_overrides module is stripped from the mirror).
+        # Operator overlay — re-apply Glad Labs custom model pins + personal
+        # settings over the public OSS defaults (no-op on OSS installs, where the
+        # private services.operator_overrides module is stripped from the mirror).
         try:
-            from services.settings_defaults import apply_operator_model_overrides
+            from services.settings_defaults import apply_operator_overrides
 
             if self.database_service and self.database_service.pool:
-                overridden = await apply_operator_model_overrides(
+                overridden = await apply_operator_overrides(
                     self.database_service.pool
                 )
                 if overridden:
                     logger.info(
-                        "   [OK] operator overlay re-applied %d model pin(s)",
+                        "   [OK] operator overlay re-applied %d override(s)",
                         overridden,
                     )
         except Exception as e:
