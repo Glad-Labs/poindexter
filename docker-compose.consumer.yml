@@ -549,6 +549,11 @@ services:
     image: gcr.io/cadvisor/cadvisor@sha256:3de2bd5203120b866d74a9b283b2ffb8ec382fbf9dc321814700c6ea6f44ec57
     container_name: poindexter-cadvisor
     restart: unless-stopped
+    # Hard memory cap — see docker-compose.local.yml for the incident that
+    # motivated this. Even more important on consumer hardware (8-16GB VRAM
+    # / 32GB RAM), where an unbounded metrics sidecar leak has far less
+    # headroom to hide in. Steady-state is ~150-300MB; 512m is generous.
+    mem_limit: 512m
     privileged: true
     devices:
       - /dev/kmsg
