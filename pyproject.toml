@@ -22,7 +22,7 @@ python-dotenv = "^1.1.1"
 # Glad-Labs/poindexter#334 and the CPU-trim follow-up spec
 # docs/superpowers/specs/2026-06-23-worker-cpu-torch-design.md. <2.12
 # bounds the pin against a silent CUDA-major bump on re-lock.
-torch = { version = ">=2.7,<2.12", source = "pytorch-cpu", optional = true }
+torch = { version = ">=2.7,<2.13", source = "pytorch-cpu", optional = true }
 diffusers = { version = ">=0.30.0", optional = true }
 transformers = { version = ">=4.40.0", optional = true }
 accelerate = { version = ">=0.24.0", optional = true }
