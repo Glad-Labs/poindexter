@@ -70,7 +70,9 @@
       previousHead, restarted[], detail, timestamp) - the substrate a Grafana
       panel / phone check can read. `result` is one of: deployed |
       synced-no-change | synced-norestart | baseline-recorded | flow-gap-skip
-      | error.
+      | error. (flow-gap-skip is retained for back-compat but no longer emitted:
+      the flow guard now FORCES the reset after a bounded wait instead of
+      skipping forever - see the guard block below.)
   Run `-Status` for a one-shot operator health view (task state + last status
   + log tail); run `-SelfTest` to exercise the logging/rotation/status
   plumbing against a temp dir (no git/docker) and exit 0/1.
@@ -296,6 +298,24 @@ function Invoke-SelfTest {
         Test-Case 'brain build uses git bash'          (($brainArgv[0] -eq 'bash') -or ($brainArgv[0] -match 'bash\.exe$'))
         Test-Case 'brain build targets clone start-stack' ($brainArgv[1] -eq 'C:\fake\clone/scripts/start-stack.sh')
         Test-Case 'brain build passes build brain-daemon' (($brainArgv[2..3] -join ' ') -eq 'build brain-daemon')
+
+        # 7) Reset-action decision: prefer a flow gap, but FORCE the reset once
+        # the bounded wait is exhausted rather than skipping forever (the
+        # starvation bug: a busy content queue keeps a flow RUNNING across every
+        # 90s wait, so the old "skip if still running" starved the deploy).
+        Test-Case 'no flow -> reset in the gap'        ((Get-ResetAction -FlowRunning $false -WaitedSec 0  -MaxWaitSec 90) -eq 'reset-in-gap')
+        Test-Case 'no flow after waiting -> reset'      ((Get-ResetAction -FlowRunning $false -WaitedSec 40 -MaxWaitSec 90) -eq 'reset-in-gap')
+        Test-Case 'flow running, under cap -> wait'     ((Get-ResetAction -FlowRunning $true  -WaitedSec 0  -MaxWaitSec 90) -eq 'wait')
+        Test-Case 'flow running, near cap -> wait'      ((Get-ResetAction -FlowRunning $true  -WaitedSec 85 -MaxWaitSec 90) -eq 'wait')
+        Test-Case 'flow running, at cap -> reset forced' ((Get-ResetAction -FlowRunning $true -WaitedSec 90 -MaxWaitSec 90) -eq 'reset-forced')
+        Test-Case 'flow running, past cap -> reset forced' ((Get-ResetAction -FlowRunning $true -WaitedSec 95 -MaxWaitSec 90) -eq 'reset-forced')
+        Test-Case 'zero cap -> reset forced immediately'  ((Get-ResetAction -FlowRunning $true -WaitedSec 0 -MaxWaitSec 0) -eq 'reset-forced')
+
+        # 8) Behind-count parser: only a positive integer means "reset needed".
+        Test-Case 'behind parse: 0 -> not behind'      (-not (Test-CloneBehind '0'))
+        Test-Case 'behind parse: 3 -> behind'          (Test-CloneBehind '3')
+        Test-Case 'behind parse: whitespace -> behind (fail safe)' (Test-CloneBehind '')
+        Test-Case 'behind parse: junk -> behind (fail safe)'       (Test-CloneBehind 'oops')
     } finally {
         Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -392,6 +412,42 @@ function Test-PathListTouchesBrain {
     return $false
 }
 
+# Decide what to do about the working-tree reset given the Prefect flow state.
+# Returns 'reset-in-gap' | 'wait' | 'reset-forced'. Pure so -SelfTest drives it.
+#
+# WHY force after a bounded wait instead of skipping (the starvation fix): the
+# reset only needs a gap to avoid a *freshly-starting* flow subprocess importing
+# /app mid-reset. A long-running (~15-min) content flow already imported its
+# modules at startup, so a reset during it is safe for THAT run - it executes on
+# its in-memory code. The old "skip if any flow still RUNNING after the wait"
+# therefore starved the deploy whenever the content queue was busy (back-to-back
+# ~15-min generations => no 90s gap for many cycles => prod stuck on stale code,
+# green 0x0). So: prefer a gap (wait up to the cap), but once the cap is hit,
+# FORCE the reset rather than defer forever. Worst case a heartbeat run starting
+# in the sub-second reset window reads an inconsistent tree, fails once, and is
+# reclaimed + retried - strictly better than indefinite staleness.
+function Get-ResetAction {
+    param(
+        [Parameter(Mandatory)][bool]$FlowRunning,
+        [Parameter(Mandatory)][int]$WaitedSec,
+        [Parameter(Mandatory)][int]$MaxWaitSec
+    )
+    if (-not $FlowRunning) { return 'reset-in-gap' }
+    if ($WaitedSec -ge $MaxWaitSec) { return 'reset-forced' }
+    return 'wait'
+}
+
+# True if the clone needs a reset, given `git rev-list --count HEAD..origin/main`
+# output. Only a clean '0' means up-to-date; anything else (a positive count, or
+# unparseable output from a transient git hiccup) fails safe to "behind" so a
+# real pending deploy is never skipped on a parse edge. Pure for -SelfTest.
+function Test-CloneBehind {
+    param([string]$BehindCount)
+    $n = 0
+    if ([int]::TryParse(($BehindCount).Trim(), [ref]$n)) { return ($n -gt 0) }
+    return $true
+}
+
 # ---- Read-only / test modes (no rotation, no sync, no restart) ------------
 if ($SelfTest) { exit (Invoke-SelfTest) }
 if ($Status) { Show-DeployStatus; return }
@@ -463,52 +519,72 @@ try {
 
     Write-Log "Syncing $DeployDir to $SourceRemote/$SyncBranch ..."
 
-    # ---- Prefect flow-run guard (bounded wait-for-gap) --------------------
-    # git reset --hard rewrites working-tree files non-atomically. A Prefect flow
-    # spawns a fresh subprocess that re-imports /app on each run; if that import
-    # starts during the reset window the subprocess can read a torn file. So only
-    # reset in a gap between flow runs.
-    #
-    # The original guard SKIPPED the whole cycle on any RUNNING flow ("retry next
-    # cycle"). That silently failed once content_generation_flow moved to a ~2-min
-    # cadence on even-minute marks: the 10-min sync fired on even minutes too, so
-    # every sync landed inside a ~14s flow and skipped *every* time, leaving the
-    # deploy clone (and prod) arbitrarily stale behind a green-looking, 0x0 task.
-    # content flows are short (~14s) with ~100s gaps, so instead of skipping we
-    # WAIT briefly for the in-flight flow to clear, then reset in the gap. We only
-    # skip if still blocked after the cap (a genuinely stuck/long flow), where
-    # deferring to the next cycle is correct. Cap is tunable via
-    # SYNC_FLOW_WAIT_MAX_SEC (default 90s; fits the task's 5-min execution limit).
-    # -NoFlowCheck bypasses the wait entirely for explicit manual deploys.
-    if (-not $NoFlowCheck) {
-        $maxWaitSec = if ($env:SYNC_FLOW_WAIT_MAX_SEC) { [int]$env:SYNC_FLOW_WAIT_MAX_SEC } else { 90 }
-        $waited = 0
-        while ((Test-PrefectFlowRunning) -and ($waited -lt $maxWaitSec)) {
-            Write-Log "Active Prefect flow run; waiting for a gap before reset (${waited}/${maxWaitSec}s)..."
-            Start-Sleep -Seconds 5
-            $waited += 5
-        }
-        if (Test-PrefectFlowRunning) {
-            Write-Log "Flow still RUNNING after ${maxWaitSec}s (stuck/long run?); skipping reset this cycle, will retry next." 'WARN'
-            Write-DeployStatus -Result 'flow-gap-skip' -Detail "flow still RUNNING after ${maxWaitSec}s; deferred to next cycle"
-            exit 0
-        }
-        if ($waited -gt 0) { Write-Log "Flow gap reached after ${waited}s; proceeding with sync." }
-    }
-
+    # ---- Fetch FIRST (always safe during a flow) --------------------------
+    # git fetch only writes .git/ - it never touches the working tree - so it is
+    # safe to run while a Prefect flow subprocess is importing /app. Fetching
+    # before the flow guard keeps origin/main current every cycle (so `-Status`
+    # and the behind-count below reflect reality) and means the guard gates ONLY
+    # the working-tree reset, which is the sole step that can race a flow import.
     $rc = Invoke-Logged 'git' @('-C', $DeployDir, 'fetch', $SourceRemote, $SyncBranch, '--prune') 'git fetch'
     if ($rc -ne 0) {
         Write-Log "fetch failed (exit $rc)" 'ERROR'
         Write-DeployStatus -Result 'error' -Detail "git fetch failed (exit $rc)"
         exit $rc
     }
-    $rc = Invoke-Logged 'git' @('-C', $DeployDir, 'reset', '--hard', "$SourceRemote/$SyncBranch") 'git reset'
-    if ($rc -ne 0) {
-        Write-Log "reset failed (exit $rc)" 'ERROR'
-        Write-DeployStatus -Result 'error' -Detail "git reset --hard failed (exit $rc)"
-        exit $rc
+
+    # Only reset when the working tree is actually behind origin/main. Most
+    # cycles nothing merged, so this skips the reset (and the flow guard) as a
+    # no-op - the guard only ever runs when there is genuinely code to deploy.
+    $behindRaw = (& git -C $DeployDir rev-list --count HEAD.."$SourceRemote/$SyncBranch" 2>$null)
+    $needReset = Test-CloneBehind $behindRaw
+
+    if ($needReset) {
+        # ---- Prefect flow-run guard (bounded wait, then FORCE) ------------
+        # git reset --hard rewrites working-tree files. A Prefect flow spawns a
+        # fresh subprocess that re-imports /app at startup; if that import races
+        # the reset it can read an inconsistent tree. So prefer to reset in a gap
+        # between flow runs - but NEVER skip forever.
+        #
+        # History: the original guard SKIPPED the whole cycle on any RUNNING flow.
+        # That starved the deploy once the content pipeline got busy: a real
+        # canonical_blog generation now runs ~15 min (vision captioning + 12 QA
+        # atoms x ~27s Ollama calls + media/video), and back-to-back generations
+        # leave no 90s gap for many consecutive cycles - so prod sat on stale code
+        # behind a green-looking 0x0 task (this exact fix shipped that way).
+        #
+        # Fix: wait up to the cap for a gap; if none opens, FORCE the reset. A
+        # reset during a long run is safe for THAT run (it already imported and
+        # executes on in-memory code); the only residual risk is a heartbeat run
+        # starting in the sub-second reset window, which fails once and is
+        # reclaimed + retried - strictly better than indefinite staleness. Cap is
+        # tunable via SYNC_FLOW_WAIT_MAX_SEC (default 90s; fits the 5-min task
+        # limit). -NoFlowCheck bypasses the wait for explicit manual deploys.
+        if (-not $NoFlowCheck) {
+            $maxWaitSec = if ($env:SYNC_FLOW_WAIT_MAX_SEC) { [int]$env:SYNC_FLOW_WAIT_MAX_SEC } else { 90 }
+            $waited = 0
+            while ((Get-ResetAction -FlowRunning (Test-PrefectFlowRunning) -WaitedSec $waited -MaxWaitSec $maxWaitSec) -eq 'wait') {
+                Write-Log "Active Prefect flow run; waiting for a gap before reset (${waited}/${maxWaitSec}s)..."
+                Start-Sleep -Seconds 5
+                $waited += 5
+            }
+            $action = Get-ResetAction -FlowRunning (Test-PrefectFlowRunning) -WaitedSec $waited -MaxWaitSec $maxWaitSec
+            if ($action -eq 'reset-forced') {
+                Write-Log "No flow gap after ${maxWaitSec}s; forcing reset ($behindRaw commit(s) behind) to avoid deploy starvation. Safe for the in-flight run (already imported); a run starting mid-reset fails once and is reclaimed." 'WARN'
+            } elseif ($waited -gt 0) {
+                Write-Log "Flow gap reached after ${waited}s; proceeding with reset."
+            }
+        }
+
+        $rc = Invoke-Logged 'git' @('-C', $DeployDir, 'reset', '--hard', "$SourceRemote/$SyncBranch") 'git reset'
+        if ($rc -ne 0) {
+            Write-Log "reset failed (exit $rc)" 'ERROR'
+            Write-DeployStatus -Result 'error' -Detail "git reset --hard failed (exit $rc)"
+            exit $rc
+        }
+        $null = Invoke-Logged 'git' @('-C', $DeployDir, 'clean', '-fd') 'git clean'
+    } else {
+        Write-Log "Already at $SourceRemote/$SyncBranch (0 commits behind); no reset needed."
     }
-    $null = Invoke-Logged 'git' @('-C', $DeployDir, 'clean', '-fd') 'git clean'
 
     $head = (& git -C $DeployDir rev-parse HEAD).Trim()
     $shortHead = $head.Substring(0, 9)
