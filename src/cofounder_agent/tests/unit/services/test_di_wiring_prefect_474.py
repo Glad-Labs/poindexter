@@ -299,3 +299,61 @@ class TestProductionCallsiteGuards:
             "accessor source for gpu_scheduler / ollama_client / "
             "prompt_manager / utils.route_utils)."
         )
+
+
+class TestSubprocessPromptManagerPreload:
+    """poindexter#815 — the Prefect subprocess never ran main.py's lifespan,
+    so the prompt manager's async Langfuse-secret preload (load_from_db)
+    never happened: every flow run logged "Langfuse not configured
+    (secret_key=False)" and served YAML defaults, silently ignoring
+    Langfuse `production` prompt versions. The subprocess bootstrap must
+    preload the prompt manager exactly like the worker lifespan does.
+    """
+
+    @pytest.mark.asyncio
+    async def test_container_bootstrap_preloads_prompt_manager(self):
+        from unittest.mock import AsyncMock
+
+        from services.di_wiring import build_and_wire_subprocess_with_container
+
+        fake_sc = MagicMock()
+        fake_sc._config = {}
+        fake_container = SimpleNamespace(site_config=fake_sc)
+        fake_pm = MagicMock()
+        fake_pm.load_from_db = AsyncMock(return_value=0)
+
+        with patch(
+            "services.bootstrap.build_container",
+            AsyncMock(return_value=fake_container),
+        ), patch(
+            "services.prompt_manager.get_prompt_manager",
+            return_value=fake_pm,
+        ):
+            pool = MagicMock()
+            site_cfg, container = await build_and_wire_subprocess_with_container(pool)
+
+        assert site_cfg is fake_sc
+        fake_pm.load_from_db.assert_awaited_once_with(pool, site_config=fake_sc)
+
+    @pytest.mark.asyncio
+    async def test_preload_failure_never_breaks_bootstrap(self):
+        from unittest.mock import AsyncMock
+
+        from services.di_wiring import build_and_wire_subprocess_with_container
+
+        fake_sc = MagicMock()
+        fake_sc._config = {}
+        fake_container = SimpleNamespace(site_config=fake_sc)
+        fake_pm = MagicMock()
+        fake_pm.load_from_db = AsyncMock(side_effect=RuntimeError("db down"))
+
+        with patch(
+            "services.bootstrap.build_container",
+            AsyncMock(return_value=fake_container),
+        ), patch(
+            "services.prompt_manager.get_prompt_manager",
+            return_value=fake_pm,
+        ):
+            site_cfg, _ = await build_and_wire_subprocess_with_container(MagicMock())
+
+        assert site_cfg is fake_sc  # bootstrap survived; YAML fallback applies

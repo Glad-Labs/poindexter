@@ -193,6 +193,26 @@ async def build_and_wire_subprocess_with_container(
     site_cfg = container.site_config
 
     wired = wire_site_config_modules(site_cfg)
+
+    # poindexter#815: this subprocess never runs main.py's lifespan, so the
+    # prompt manager's async Langfuse-secret preload (``load_from_db``) never
+    # happened — every flow run logged "Langfuse not configured
+    # (secret_key=False)" and served YAML defaults, silently ignoring the
+    # Langfuse ``production`` prompt versions the operator edits. Preload
+    # here exactly like the lifespan does. Best-effort: a failed preload
+    # falls through to YAML (the documented OSS path) and the prompt
+    # manager's own configured-but-unusable finding stays loud.
+    try:
+        from services.prompt_manager import get_prompt_manager
+
+        await get_prompt_manager().load_from_db(pool, site_config=site_cfg)
+    except Exception:  # noqa: BLE001 — prompt preload must never block work
+        logger.warning(
+            "[di_wiring] prompt-manager Langfuse preload failed — "
+            "this run will serve YAML default prompts",
+            exc_info=True,
+        )
+
     logger.info(
         "[di_wiring] subprocess AppContainer wired: %d settings from DB, "
         "%d modules rebound (container service count: 0 — services "

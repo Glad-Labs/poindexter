@@ -1241,6 +1241,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.gpu_lock_timeout.fallback': 'log_only',
     'findings.gpu_lock_timeout.cooldown_minutes': '60',
     'findings.gpu_lock_timeout.min_severity': 'warn',
+    # Langfuse configured-but-unusable (poindexter#815) — the prompt surface
+    # silently downgraded to YAML for weeks; once-a-day Discord ping until
+    # the operator fixes the preload/credentials. (Not-configured stays a
+    # quiet info log — the OSS default path never pages.)
+    'findings.langfuse_prompts_unavailable.delivery': 'discord',
+    'findings.langfuse_prompts_unavailable.fallback': 'log_only',
+    'findings.langfuse_prompts_unavailable.cooldown_minutes': '1440',
+    'findings.langfuse_prompts_unavailable.min_severity': 'warn',
 
     # ----- Settings read-telemetry + orphan probe (#756 items 2-3) -----
     # SiteConfig.get records read keys in-memory; FlushSettingsReadTelemetryJob

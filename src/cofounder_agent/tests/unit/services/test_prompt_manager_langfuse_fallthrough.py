@@ -17,7 +17,7 @@ tests catch the regression where the fall-through chain stops working.
 from __future__ import annotations
 
 import sys
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -310,3 +310,70 @@ def test_get_prompt_uses_langfuse_override_when_present(monkeypatch):
 
     result = pm.get_prompt("seo.generate_title", topic="hardware")
     assert result == "Custom Langfuse-edited prompt about hardware"
+
+
+# --------------------------------------------------------------------------- #
+# poindexter#815 — configured-but-unusable must be LOUD, not-configured quiet
+# --------------------------------------------------------------------------- #
+
+
+def _sc_with(host="", public_key=""):
+    sc = MagicMock()
+    sc.get.side_effect = lambda key, default="": {
+        "langfuse_host": host,
+        "langfuse_public_key": public_key,
+    }.get(key, default)
+    return sc
+
+
+def test_partial_langfuse_config_emits_warn_finding(monkeypatch):
+    """host+public_key present but secret missing = configured-but-unusable.
+
+    This is the poindexter#815 failure shape: every Prefect flow run fell
+    back to YAML because the async secret preload never ran, and the only
+    signal was a per-run INFO log. A misconfig that silently downgrades
+    the prompt surface must emit a warn finding.
+    """
+    monkeypatch.setitem(sys.modules, "langfuse", MagicMock(name="langfuse"))
+    pm = UnifiedPromptManager()
+    pm._site_config = _sc_with(host="http://lf:3000", public_key="pk-test")
+    pm._langfuse_secret_key = ""
+
+    with patch("utils.findings.emit_finding") as emit:
+        assert pm._init_langfuse_client() is None
+
+    assert emit.call_count == 1
+    kwargs = emit.call_args.kwargs
+    assert kwargs["kind"] == "langfuse_prompts_unavailable"
+    assert kwargs["severity"] == "warn"
+
+
+def test_partial_langfuse_config_finding_emitted_once_per_instance(monkeypatch):
+    """~47 prompts resolve per pipeline run; the lazy init runs on every
+    get_prompt while the client is None. The finding must fire once per
+    manager instance, not once per prompt."""
+    monkeypatch.setitem(sys.modules, "langfuse", MagicMock(name="langfuse"))
+    pm = UnifiedPromptManager()
+    pm._site_config = _sc_with(host="http://lf:3000", public_key="pk-test")
+    pm._langfuse_secret_key = ""
+
+    with patch("utils.findings.emit_finding") as emit:
+        pm._init_langfuse_client()
+        pm._init_langfuse_client()
+
+    assert emit.call_count == 1
+
+
+def test_unconfigured_langfuse_emits_no_finding(monkeypatch):
+    """Nothing configured = the documented OSS default path. It must stay
+    quiet (info log only) — a fresh install without Langfuse is not a
+    misconfiguration and must never page."""
+    monkeypatch.setitem(sys.modules, "langfuse", MagicMock(name="langfuse"))
+    pm = UnifiedPromptManager()
+    pm._site_config = _sc_with()
+    pm._langfuse_secret_key = ""
+
+    with patch("utils.findings.emit_finding") as emit:
+        assert pm._init_langfuse_client() is None
+
+    emit.assert_not_called()

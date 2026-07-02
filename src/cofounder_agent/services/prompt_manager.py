@@ -184,6 +184,10 @@ class UnifiedPromptManager:
         # editing/observability surface above the DB+YAML stack.
         self._langfuse_client: Any = None
         self._langfuse_enabled: bool | None = None  # None = unevaluated
+        # poindexter#815 — "configured but unusable" finding fires once per
+        # manager instance (the lazy init re-runs on every get_prompt while
+        # the client is None; ~47 prompts resolve per pipeline run).
+        self._langfuse_unavailable_reported = False
         self._initialize_prompts()
         # Skills load AFTER YAML so a migrated SKILL.md transparently takes
         # precedence over any leftover YAML entry for the same key — lets us
@@ -623,13 +627,37 @@ class UnifiedPromptManager:
         public_key = (public_key or "").strip()
         secret_key = (secret_key or "").strip()
         if not (host and public_key and secret_key):
-            logger.info(
-                "[prompt_manager] Langfuse not configured "
-                "(host=%s public_key=%s secret_key=%s) — using DB+YAML fallback. "
-                "Set langfuse_host / langfuse_public_key / langfuse_secret_key "
-                "in app_settings to enable.",
-                bool(host), bool(public_key), bool(secret_key),
-            )
+            if host or public_key:
+                # Partially configured — the operator INTENDED Langfuse but
+                # the client can't come up. The classic shape is
+                # secret_key=False: the async secret preload
+                # (``load_from_db``) never ran in this process, so the
+                # prompt surface silently downgrades to YAML and Langfuse
+                # ``production`` versions are ignored (poindexter#815).
+                # That's a misconfiguration, not the OSS default — be loud.
+                logger.warning(
+                    "[prompt_manager] Langfuse PARTIALLY configured "
+                    "(host=%s public_key=%s secret_key=%s) — falling back to "
+                    "DB+YAML; Langfuse `production` prompt versions will NOT "
+                    "apply in this process. If secret_key=False, the async "
+                    "preload (load_from_db) did not run before first "
+                    "get_prompt.",
+                    bool(host), bool(public_key), bool(secret_key),
+                )
+                self._emit_unavailable_finding(
+                    host=bool(host),
+                    public_key=bool(public_key),
+                    secret_key=bool(secret_key),
+                )
+            else:
+                # Nothing configured — the documented OSS default; stay quiet.
+                logger.info(
+                    "[prompt_manager] Langfuse not configured "
+                    "(host=%s public_key=%s secret_key=%s) — using DB+YAML fallback. "
+                    "Set langfuse_host / langfuse_public_key / langfuse_secret_key "
+                    "in app_settings to enable.",
+                    bool(host), bool(public_key), bool(secret_key),
+                )
             return None
 
         try:
@@ -652,6 +680,49 @@ class UnifiedPromptManager:
             )
             self._langfuse_enabled = False
             return None
+
+    def _emit_unavailable_finding(
+        self, *, host: bool, public_key: bool, secret_key: bool
+    ) -> None:
+        """Emit a warn ``langfuse_prompts_unavailable`` finding, once per
+        instance. Never raises (a broken emitter must not break prompt
+        resolution — the YAML fallback still has to serve)."""
+        if self._langfuse_unavailable_reported:
+            return
+        self._langfuse_unavailable_reported = True
+        try:
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="prompt_manager",
+                kind="langfuse_prompts_unavailable",
+                title="Langfuse configured but unusable — serving YAML default prompts",
+                body=(
+                    "Langfuse prompt management is partially configured "
+                    f"(host={host} public_key={public_key} "
+                    f"secret_key={secret_key}) so the client could not "
+                    "initialise. This process is serving the baked-in YAML "
+                    "defaults; Langfuse `production` prompt versions do NOT "
+                    "apply. If secret_key=False, the async preload "
+                    "(load_from_db) did not run before the first get_prompt "
+                    "in this process (poindexter#815)."
+                ),
+                severity="warn",
+                dedup_key="langfuse-prompts-unavailable",
+                extra={
+                    "host": host,
+                    "public_key": public_key,
+                    "secret_key": secret_key,
+                },
+            )
+        except Exception as exc:  # noqa: BLE001
+            # silent-ok: best-effort telemetry — the WARNING log two frames up
+            # already surfaced the misconfig; a broken finding emitter must
+            # not break prompt resolution (YAML fallback still has to serve).
+            logger.debug(
+                "[prompt_manager] emit langfuse_prompts_unavailable failed: %s",
+                exc,
+            )
 
     def get_metadata(self, key: str) -> PromptMetadata:
         """Get metadata for a prompt"""
