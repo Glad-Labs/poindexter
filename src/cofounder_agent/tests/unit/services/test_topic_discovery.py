@@ -280,7 +280,7 @@ class TestQueueTopics:
     async def test_handles_db_error(self):
         pool, conn = _make_qt_pool(execute_side_effect=Exception("unique violation"))
         d = TopicDiscovery(pool)
-        topics = [DiscoveredTopic(title="Dup", category="tech", source="hn", source_url="")]
+        topics = [DiscoveredTopic(title="Duplicate topic headline", category="tech", source="hn", source_url="")]
         queued = await d.queue_topics(topics)
         assert queued == 0
 
@@ -289,7 +289,7 @@ class TestQueueTopics:
         pool, conn = _make_qt_pool()
         d = TopicDiscovery(pool)
         topics = [
-            DiscoveredTopic(title=f"Topic {i}", category="technology",
+            DiscoveredTopic(title=f"Topic number {i}", category="technology",
                            source="hn", source_url="")
             for i in range(5)
         ]
@@ -317,7 +317,7 @@ class TestQueueTopics:
         pool, conn = _make_qt_pool(execute_side_effect=_side_effect)
         d = TopicDiscovery(pool)
         topics = [
-            DiscoveredTopic(title=f"Topic {i}", category="tech", source="hn", source_url="")
+            DiscoveredTopic(title=f"Topic number {i}", category="tech", source="hn", source_url="")
             for i in range(3)
         ]
         queued = await d.queue_topics(topics)
@@ -335,7 +335,7 @@ class TestQueueTopics:
 
         pool, conn = _make_qt_pool(execute_side_effect=_capture)
         d = TopicDiscovery(pool)
-        topics = [DiscoveredTopic(title="X", category="tech", source="hn", source_url="")]
+        topics = [DiscoveredTopic(title="Pipeline table check", category="tech", source="hn", source_url="")]
         await d.queue_topics(topics)
 
         joined = "\n".join(seen)

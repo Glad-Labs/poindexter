@@ -574,6 +574,14 @@ DEFAULTS: dict[str, str] = {
     'topic_discovery_news_patterns': '',
     'topic_discovery_streak_window_hours': '6',
     'topic_discovery_style_distribution': '',
+    # Topic-sanity gate (services/topic_sanity.py, 2026-06-30 dots-topic
+    # incident): minimum count of alphabetic words (letter-runs of >=2
+    # chars) for a topic to pass the task-creation seams. Prod history:
+    # every topic under 2 alpha words across 1,867 tasks ended
+    # rejected/cancelled — none published. 0 relaxes the word-count rule
+    # (empty / zero-letter topics are still always rejected). Sites in
+    # non-spaced scripts (CJK) should set 1.
+    'topic_sanity_min_alpha_words': '2',
     # Stale-batch reaper (services/jobs/reap_stale_topic_batches.py). A
     # topic_batch stuck status='open' wedges its niche content-dark via the
     # one-open-batch-per-niche index. The reaper alerts on any batch open
@@ -1147,6 +1155,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.topic_batch_stuck.fallback': 'log_only',
     'findings.topic_batch_stuck.cooldown_minutes': '720',
     'findings.topic_batch_stuck.min_severity': 'warn',
+    # Topic-sanity gate (2026-06-30 dots-topic incident) — a tap/RAG source
+    # emitting contentless titles is a source bug worth seeing on the routine
+    # ops channel, not a page; 6h cooldown keeps a persistently garbage
+    # source to a few notes a day. All gate seams emit at severity='warn' so
+    # the router severity floor keeps them routable.
+    'findings.topic_sanity_rejected.delivery': 'discord',
+    'findings.topic_sanity_rejected.fallback': 'log_only',
+    'findings.topic_sanity_rejected.cooldown_minutes': '360',
+    'findings.topic_sanity_rejected.min_severity': 'warn',
     'findings.media_drift.delivery': 'log_only',
     'findings.r2_static_drift.delivery': 'discord',
     'findings.r2_static_drift.fallback': 'log_only',

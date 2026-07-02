@@ -65,8 +65,10 @@ KERNEL_PURITY_BASELINE = {
     # import was the Direction-B violation that warranted the immediate fix;
     # the remaining lazy usage here is baselined pending a gate-artifact
     # public seam on the content module).
-    # Line shifted 405 -> 404 by the poindexter#796 category-column drop.
-    "services/topic_proposal_service.py:404",
+    # Line shifted 405 -> 404 by the poindexter#796 category-column drop;
+    # shifted 404 -> 420 by the topic-sanity gate (import block + gate in
+    # propose_topic, 2026-06-30 dots-topic incident fix).
+    "services/topic_proposal_service.py:420",
 }
 
 

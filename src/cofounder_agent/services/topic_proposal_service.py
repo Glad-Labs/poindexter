@@ -49,6 +49,11 @@ from services.approval_service import (
 )
 from services.audit_log import audit_log_bg
 from services.logger_config import get_logger
+from services.topic_sanity import (
+    TopicSanityError,
+    evaluate_topic_sanity,
+    resolve_min_alpha_words,
+)
 
 logger = get_logger(__name__)
 
@@ -216,6 +221,17 @@ async def propose_topic(
     """
     if not topic or not topic.strip():
         raise ValueError("propose_topic: topic must be a non-empty string")
+
+    # Deterministic topic-sanity gate (2026-06-30 dots-topic incident).
+    # Raises TopicSanityError — a ValueError, so the CLI prints it as a
+    # friendly error and the HTTP adapter maps it to a 400 — before any
+    # DB write. Threshold is operator-tunable via
+    # ``topic_sanity_min_alpha_words``.
+    verdict = evaluate_topic_sanity(
+        topic, min_alpha_words=resolve_min_alpha_words(site_config),
+    )
+    if not verdict.ok:
+        raise TopicSanityError(topic, verdict)
 
     if pool is None:
         raise RuntimeError("propose_topic: asyncpg pool is required")

@@ -216,12 +216,14 @@ class TopicAutoResolveJob:
         # pulls in plenty of pipeline machinery; jobs/__init__ stays
         # light).
         from services.topic_batch_service import TopicBatchService
+        from services.topic_sanity import TopicSanityError
 
         # #272 Phase-2d: TopicBatchService requires an explicit site_config.
         # The scheduler seeds the run-bound instance into
         # ``config["_site_config"]`` before invoking the job.
         svc = TopicBatchService(pool, site_config=config["_site_config"])
         resolved_count = 0
+        expired_count = 0
         errors: list[str] = []
 
         for batch in eligible:
@@ -283,6 +285,48 @@ class TopicAutoResolveJob:
                     "[topic_auto_resolve] resolved batch=%s niche=%s (candidate_count=%d)",
                     batch_id, batch["niche_slug"], batch["candidate_count"],
                 )
+            except TopicSanityError as exc:
+                # Self-heal (feedback_self_heal_not_suppress): a contentless
+                # winner (2026-06-30: a dots-only headline the LLM ranked
+                # top of its batch) fails identically every retry cycle
+                # while its open batch blocks new sweeps — the recurring
+                # "content dark" niche wedge. Expire the batch so the next
+                # sweep starts fresh; the sweep-intake filter keeps new
+                # batches clean. The topic_sanity_rejected finding was
+                # already emitted at the handoff gate.
+                logger.warning(
+                    "[topic_auto_resolve] batch=%s niche=%s winner failed "
+                    "topic sanity — expiring batch instead of retrying: %s",
+                    batch_id, batch["niche_slug"], exc,
+                )
+                try:
+                    await svc.reject_batch(
+                        batch_id=UUID(str(batch_id)),
+                        reason=f"auto-expired: {exc}",
+                    )
+                    await pool.execute(
+                        """
+                        INSERT INTO audit_log (event_type, source, details)
+                        VALUES (
+                            'topic_batch_auto_expired',
+                            'topic_auto_resolve_job',
+                            $1::jsonb
+                        )
+                        """,
+                        _expiry_details(batch, exc),
+                    )
+                    expired_count += 1
+                except Exception as heal_exc:
+                    errors.append(
+                        f"batch={batch_id} niche={batch['niche_slug']}: "
+                        f"sanity-expiry failed: "
+                        f"{type(heal_exc).__name__}: {heal_exc}"
+                    )
+                    logger.error(
+                        "[topic_auto_resolve] failed to expire batch=%s "
+                        "after topic-sanity reject: %s",
+                        batch_id, heal_exc, exc_info=True,
+                    )
             except Exception as exc:
                 errors.append(
                     f"batch={batch_id} niche={batch['niche_slug']}: "
@@ -293,7 +337,7 @@ class TopicAutoResolveJob:
                     batch_id, exc, exc_info=True,
                 )
 
-        if errors and resolved_count == 0:
+        if errors and resolved_count == 0 and expired_count == 0:
             return JobResult(
                 ok=False,
                 detail="all resolves failed: " + "; ".join(errors),
@@ -303,9 +347,13 @@ class TopicAutoResolveJob:
             ok=True,
             detail=(
                 f"resolved {resolved_count}/{len(eligible)} batch(es)"
+                + (
+                    f"; expired {expired_count} for topic sanity"
+                    if expired_count else ""
+                )
                 + (f"; {len(errors)} error(s)" if errors else "")
             ),
-            changes_made=resolved_count,
+            changes_made=resolved_count + expired_count,
         )
 
 
@@ -317,6 +365,19 @@ def _audit_details(batch: dict[str, Any]) -> str:
         "niche_id": str(batch["niche_id"]),
         "niche_slug": batch["niche_slug"],
         "candidate_count": batch["candidate_count"],
+        "triggered_by": "topic_auto_resolve_job",
+    })
+
+
+def _expiry_details(batch: dict[str, Any], exc: Exception) -> str:
+    """JSON details for a ``topic_batch_auto_expired`` audit_log row."""
+    import json
+    return json.dumps({
+        "batch_id": str(batch["batch_id"]),
+        "niche_id": str(batch["niche_id"]),
+        "niche_slug": batch["niche_slug"],
+        "reason": "topic_sanity",
+        "error": str(exc)[:300],
         "triggered_by": "topic_auto_resolve_job",
     })
 

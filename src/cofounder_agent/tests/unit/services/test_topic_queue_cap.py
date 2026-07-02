@@ -31,7 +31,7 @@ def _make_site_config(values: dict[str, str] | None = None) -> SiteConfig:
     return SiteConfig(initial_config=dict(values or {}))
 
 
-def _make_topic(title: str = "Sample") -> DiscoveredTopic:
+def _make_topic(title: str = "Sample topic headline") -> DiscoveredTopic:
     return DiscoveredTopic(
         title=title,
         category="technology",
@@ -109,7 +109,7 @@ class TestQueueCap:
         })
         pool = _make_pool()
         discovery = TopicDiscovery(pool, site_config=site_cfg)
-        topics = [_make_topic(f"Topic {i}") for i in range(3)]
+        topics = [_make_topic(f"Topic number {i}") for i in range(3)]
 
         async def _fake_at_cap(**kwargs):
             return True
@@ -165,7 +165,12 @@ class TestQueueCap:
         })
         pool = _make_pool()
         discovery = TopicDiscovery(pool, site_config=site_cfg)
-        topics = [_make_topic("First"), _make_topic("Second")]
+        # Multi-word titles so the topic-sanity intake filter (which runs
+        # before the cap gate) keeps them — this test is about the cap.
+        topics = [
+            _make_topic("First real headline"),
+            _make_topic("Second real headline"),
+        ]
 
         # queue_at_capacity returns False when the gate is off (via the
         # is_gate_enabled short-circuit). Patch it explicitly so the
@@ -190,7 +195,7 @@ class TestQueueCap:
         site_cfg = _make_site_config({"pipeline_gate_topic_decision": "on"})
         pool = _make_pool()
         discovery = TopicDiscovery(pool, site_config=site_cfg)
-        topics = [_make_topic("Resilient")]
+        topics = [_make_topic("Resilient queue path")]
 
         with patch(
             "services.topic_proposal_service.queue_at_capacity",
@@ -200,6 +205,65 @@ class TestQueueCap:
         # Insert ran despite the helper crashing.
         assert int(result) == 1
         assert result.skipped is False
+
+
+class TestQueueTopicsSanityGate:
+    """2026-06-30 dots-incident guard for the auto-discovery path:
+    contentless titles are skipped with ONE aggregated
+    ``topic_sanity_rejected`` finding — never silently, never inserted."""
+
+    # The real topic from pipeline_tasks 9921678f-9b5b-4d24-9f07-c9d0398cf793.
+    DOTS_TOPIC = ". .. . ... . .... . .... . ... ."
+
+    @pytest.mark.asyncio
+    async def test_contentless_topics_skipped_with_finding(self):
+        site_cfg = _make_site_config({})
+        pool = _make_pool()
+        discovery = TopicDiscovery(pool, site_config=site_cfg)
+        topics = [
+            _make_topic(self.DOTS_TOPIC),
+            _make_topic("A perfectly fine headline about GPUs"),
+        ]
+
+        async def _fake_at_cap(**kwargs):
+            return False
+
+        with patch(
+            "services.topic_proposal_service.queue_at_capacity",
+            AsyncMock(side_effect=_fake_at_cap),
+        ), patch("services.topic_discovery.emit_finding") as emit:
+            result = await discovery.queue_topics(topics)
+
+        # Only the sane topic queued (2 INSERTs: tasks + versions).
+        assert int(result) == 1
+        assert pool._conn.execute.await_count == 2
+        emit.assert_called_once()
+        kwargs = emit.call_args.kwargs
+        assert kwargs["kind"] == "topic_sanity_rejected"
+        assert kwargs["severity"] == "warn"
+
+    @pytest.mark.asyncio
+    async def test_all_garbage_returns_skipped_with_reason(self):
+        site_cfg = _make_site_config({})
+        pool = _make_pool()
+        discovery = TopicDiscovery(pool, site_config=site_cfg)
+        topics = [_make_topic(self.DOTS_TOPIC), _make_topic("---")]
+
+        async def _fake_at_cap(**kwargs):
+            return False
+
+        with patch(
+            "services.topic_proposal_service.queue_at_capacity",
+            AsyncMock(side_effect=_fake_at_cap),
+        ), patch("services.topic_discovery.emit_finding") as emit:
+            result = await discovery.queue_topics(topics)
+
+        assert int(result) == 0
+        assert isinstance(result, QueueTopicsResult)
+        assert result.skipped is True
+        assert result.reason == "topic_sanity"
+        assert pool._conn.execute.await_count == 0
+        emit.assert_called_once()
 
 
 class TestPendingTopicCount:

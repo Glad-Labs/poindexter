@@ -28,7 +28,9 @@ from plugins.topic_source import DiscoveredTopic
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 from services.topic_length import pick_target_length
+from services.topic_sanity import evaluate_topic_sanity, resolve_min_alpha_words
 from services.topic_sources._filters import CATEGORY_SEARCHES
+from utils.findings import emit_finding
 
 logger = get_logger(__name__)
 
@@ -275,6 +277,52 @@ class TopicDiscovery:
         """
         import json as _json
         import random
+
+        # ------------------------------------------------------------------
+        # Deterministic topic-sanity gate (2026-06-30 dots-topic incident)
+        # — contentless titles never become tasks. Runs BEFORE the cap
+        # gate so separator junk from a tap can't eat queue capacity, and
+        # so the finding fires even while the queue is full (the tap-bug
+        # signal shouldn't be masked by queue state). Loud, not silent:
+        # one aggregated topic_sanity_rejected finding per call.
+        # ------------------------------------------------------------------
+        min_words = resolve_min_alpha_words(self._site_config)
+        rejected: list[tuple[str, str]] = []  # (reason, title)
+        sane_topics: list[DiscoveredTopic] = []
+        for topic in topics:
+            title = str(getattr(topic, "title", "") or "")
+            verdict = evaluate_topic_sanity(title, min_alpha_words=min_words)
+            if verdict.ok:
+                sane_topics.append(topic)
+            else:
+                rejected.append((verdict.reason or "", title))
+        if rejected:
+            logger.warning(
+                "[TOPIC_DISCOVERY] skipped %d contentless topic(s) at the "
+                "sanity gate: %s",
+                len(rejected),
+                "; ".join(f"[{r}] {t!r:.60}" for r, t in rejected),
+            )
+            emit_finding(
+                source="topic_discovery",
+                kind="topic_sanity_rejected",
+                title=(
+                    f"Skipped {len(rejected)} contentless discovered "
+                    f"topic(s) before task creation"
+                ),
+                body="\n".join(f"- {r}: {t!r}" for r, t in rejected),
+                severity="warn",
+                dedup_key="topic-sanity-discovery",
+                extra={
+                    "stage": "topic_discovery_queue",
+                    "rejected": [
+                        {"reason": r, "title": t[:200]} for r, t in rejected
+                    ],
+                },
+            )
+        if not sane_topics:
+            return QueueTopicsResult(0, skipped=True, reason="topic_sanity")
+        topics = sane_topics
 
         # ------------------------------------------------------------------
         # Cap gate (gh#400). Imported lazily to avoid a hard module-load

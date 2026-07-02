@@ -2,7 +2,7 @@
 
 **File:** `src/cofounder_agent/services/topic_batch_service.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_topic_batch_service.py`
-**Last reviewed:** 2026-04-30
+**Last reviewed:** 2026-07-01
 
 ## What it does
 
@@ -23,11 +23,20 @@ ideas drift down naturally.
 `resolve_batch` hands the rank-1 candidate to the content pipeline by
 inserting a `pipeline_tasks` row with `topic_batch_id` provenance.
 
+Two deterministic **topic-sanity** checkpoints guard the flow
+(`services/topic_sanity.py`, added 2026-07-01 after a dots-only dev.to
+headline was LLM-ranked top of its batch and burned a full generation
+run): `run_sweep` drops contentless candidate titles at intake (before
+embedding, with one aggregated `topic_sanity_rejected` finding per
+sweep), and `_handoff_to_pipeline` raises `TopicSanityError` before any
+DB write if the shipping topic (operator edit wins) is contentless.
+
 This service replaces the older `topic_proposal_service`. Shipped 2026-04-30.
 
 ## Public API
 
-- `TopicBatchService(pool)` — constructor.
+- `TopicBatchService(pool, *, site_config)` — constructor
+  (`site_config` is required DI since the #272 Phase-2d migration).
 - `await svc.run_sweep(niche_id) -> BatchSnapshot | None` — full
   discover → rank → write → gate flow. Returns `None` when the
   cadence floor hasn't elapsed or an open batch already exists for
@@ -59,6 +68,9 @@ All from `app_settings` via `site_config` (seeded in the baseline schema; origin
 - `niche_internal_rag_per_kind_limit` (default `4`) — per-kind cap on
   the internal RAG fetch (claude_session, brain_knowledge, etc).
 - `niche_batch_expires_days` (default `7`) — `topic_batches.expires_at`.
+- `topic_sanity_min_alpha_words` (default `2`) — minimum alphabetic
+  words (letter-runs of ≥2 chars) for a topic to pass the sanity
+  checkpoints; empty / zero-letter topics are always rejected.
 
 Per-niche settings come from the `niches` table (set via NicheService),
 not `app_settings`:
@@ -93,11 +105,17 @@ not `app_settings`:
 
 ## Failure modes
 
-- **External discovery is a TODO** — `_discover_external` currently
-  warns and returns `[]` if a niche has external sources configured.
-  Wiring to `services.topic_discovery.TopicDiscovery` is a follow-up
-  task. Look for the `external source(s) configured but
-topic_discovery wiring is not yet implemented` warning in logs.
+- **Contentless winner on resolve** — `_handoff_to_pipeline` emits a
+  `topic_sanity_rejected` finding (severity `warn`) and raises
+  `TopicSanityError` (a `ValueError`, so the HTTP route answers 400 and
+  the CLI prints it). Operator paths: `edit_winner` to a real topic,
+  then re-resolve. The `topic_auto_resolve` job catches this error and
+  **expires the batch** instead of retry-failing every cycle — an open
+  batch would otherwise block new sweeps for the niche.
+- **Unregistered / failing external source** — `_discover_external`
+  dispatches every enabled non-`internal_rag` TopicSource plugin for
+  the niche; an unregistered source name or a per-source extract error
+  is logged and skipped so one bad source can't starve the sweep.
 - **Cadence floor blocks sweep** — `_floor_elapsed` returns `False`,
   `run_sweep` logs "Sweep skipped — discovery cadence floor not
   elapsed" and returns `None`. Even errored runs count toward the

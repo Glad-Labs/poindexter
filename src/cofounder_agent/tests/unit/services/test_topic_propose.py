@@ -119,6 +119,47 @@ class TestValidation:
             )
 
 
+class TestTopicSanityGate:
+    """2026-06-30 dots-incident guard for the manual path: contentless
+    topics raise ``TopicSanityError`` (a ``ValueError``, so the CLI/HTTP
+    adapters surface it as a friendly error) before any DB write."""
+
+    # The real topic from pipeline_tasks 9921678f-9b5b-4d24-9f07-c9d0398cf793.
+    DOTS_TOPIC = ". .. . ... . .... . .... . ... ."
+
+    @pytest.mark.asyncio
+    async def test_dots_topic_raises_before_insert(self):
+        from services.topic_sanity import TopicSanityError
+
+        pool = _make_pool()
+        with pytest.raises(TopicSanityError):
+            await propose_topic(
+                topic=self.DOTS_TOPIC,
+                site_config=_make_site_config(),
+                pool=pool,
+            )
+        pool._conn.execute.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_single_word_topic_raises_at_default_min(self):
+        with pytest.raises(ValueError, match="sanity"):
+            await propose_topic(
+                topic="Cybersecurity",
+                site_config=_make_site_config(),
+                pool=_make_pool(),
+            )
+
+    @pytest.mark.asyncio
+    async def test_operator_tuned_min_allows_single_word(self):
+        site_cfg = _make_site_config({"topic_sanity_min_alpha_words": "1"})
+        result = await propose_topic(
+            topic="Cybersecurity",
+            site_config=site_cfg,
+            pool=_make_pool(),
+        )
+        assert result["ok"] is True
+
+
 # ---------------------------------------------------------------------------
 # Gate disabled — row lands at status=pending, no gate columns set
 # ---------------------------------------------------------------------------
@@ -159,11 +200,11 @@ class TestGateDisabled:
             AsyncMock(),
         ):
             result = await propose_topic(
-                topic="   trimmed   ",
+                topic="   trimmed headline   ",
                 site_config=site_cfg,
                 pool=pool,
             )
-        assert result["topic"] == "trimmed"
+        assert result["topic"] == "trimmed headline"
 
 
 # ---------------------------------------------------------------------------
@@ -218,7 +259,7 @@ class TestGateEnabled:
             AsyncMock(return_value={"ok": True, "paused_at": "x", "notify": {}}),
         ):
             result = await propose_topic(
-                topic="Sample",
+                topic="Sample topic",
                 site_config=site_cfg,
                 pool=pool,
                 notify=False,

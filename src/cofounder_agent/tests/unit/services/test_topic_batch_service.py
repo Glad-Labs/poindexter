@@ -7,7 +7,7 @@ Postgres DSN is reachable.
 
 from contextlib import asynccontextmanager
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -51,13 +51,23 @@ async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch
         NicheSource("internal_rag", enabled=True, weight_pct=100),
     ])
 
-    # Mock the internal source generator → 5 fake candidates.
+    # Mock the internal source generator → 5 fake candidates. Titles are
+    # multi-word (so the topic-sanity intake filter keeps them) AND
+    # mutually word-disjoint (so the intra-batch dedup pass keeps them —
+    # fuzzy matching only skips single-content-word titles).
     async def fake_internal_generate(self, **kwargs):
+        titles = [
+            "Async worker pools explained",
+            "Grafana dashboard provisioning",
+            "Postgres vacuum tuning",
+            "LangGraph checkpoint recovery",
+            "Docker compose profiles",
+        ]
         return [
             InternalCandidate(
                 source_kind="claude_session",
                 primary_ref=f"sess-{i}",
-                distilled_topic=f"Topic {i}",
+                distilled_topic=titles[i],
                 distilled_angle=f"Angle {i}",
             )
             for i in range(5)
@@ -337,11 +347,18 @@ async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
     ])
 
     async def fake_internal_generate(self, **kwargs):
+        # Multi-word, word-disjoint titles: survive the topic-sanity
+        # intake filter and the intra-batch dedup pass.
+        titles = [
+            "Vector embedding drift",
+            "Telegram alert routing",
+            "Cuda memory fragmentation",
+        ]
         return [
             InternalCandidate(
                 source_kind="claude_session",
                 primary_ref=f"solo-{i}",
-                distilled_topic=f"T{i}",
+                distilled_topic=titles[i],
                 distilled_angle=f"A{i}",
             )
             for i in range(3)
@@ -412,12 +429,21 @@ async def test_run_sweep_suppresses_empty_batch_when_nothing_ranks(
     ])
 
     async def fake_internal_generate(self, **kwargs):
-        # Discovery DOES find candidates this sweep …
+        # Discovery DOES find candidates this sweep … (multi-word,
+        # word-disjoint titles so they survive the sanity filter + dedup
+        # and genuinely reach the LLM scorer — the guard under test is
+        # about SCORER emptiness, not upstream filtering).
+        titles = [
+            "Async worker pools explained",
+            "Grafana dashboard provisioning",
+            "Postgres vacuum tuning",
+            "LangGraph checkpoint recovery",
+        ]
         return [
             InternalCandidate(
                 source_kind="claude_session",
                 primary_ref=f"sess-{i}",
-                distilled_topic=f"Topic {i}",
+                distilled_topic=titles[i],
                 distilled_angle=f"Angle {i}",
             )
             for i in range(4)
@@ -1235,6 +1261,224 @@ class TestHandoffTemplateSlugResolution:
         # No INSERT into pipeline_tasks happened — we failed before
         # the write.
         assert not any("INSERT INTO pipeline_tasks" in s for s in captured)
+
+
+# ===========================================================================
+# Topic-sanity gate — 2026-06-30 dots-topic incident regression guards
+# ===========================================================================
+
+# The real topic from pipeline_tasks 9921678f-9b5b-4d24-9f07-c9d0398cf793,
+# verbatim: a dots-only dev.to headline that the LLM final-scorer ranked
+# TOP of its batch (65) and auto-resolve promoted into a full GPU run.
+DOTS_TOPIC = ". .. . ... . .... . .... . ... ."
+
+
+@pytest.mark.unit
+class TestHandoffTopicSanityGate:
+    """``_handoff_to_pipeline`` is the last seam before a batch winner
+    becomes a ``pipeline_tasks`` row — a contentless topic must be blocked
+    HERE, before any DB write, with a loud ``topic_sanity_rejected``
+    finding (per ``feedback_no_silent_defaults``)."""
+
+    async def test_dots_topic_blocked_before_any_insert(self):
+        from services.topic_sanity import TopicSanityError
+
+        pool, conn = _make_mock_pool()
+        svc = TopicBatchService(pool, site_config=SiteConfig())
+
+        with patch("services.topic_batch_service.emit_finding") as emit:
+            with pytest.raises(TopicSanityError):
+                await svc._handoff_to_pipeline(
+                    winner=_make_candidate(title=DOTS_TOPIC),
+                    niche=_make_niche(),
+                    batch_id=uuid4(),
+                )
+
+        # Gate fired before the task/version INSERTs (and before the
+        # template-slug resolver ever touched the pool).
+        assert conn.execute.await_count == 0
+        emit.assert_called_once()
+        kwargs = emit.call_args.kwargs
+        assert kwargs["kind"] == "topic_sanity_rejected"
+        assert kwargs["severity"] == "warn"
+
+    async def test_operator_edit_is_what_gets_gated(self):
+        """The gate judges the topic that actually ships — a garbage
+        candidate title rescued by a sane operator edit passes."""
+        winner = _make_candidate(title=DOTS_TOPIC)
+        winner.operator_edited_topic = "Why local LLM routers beat cloud defaults"
+
+        pool, conn = _make_mock_pool()
+        svc = TopicBatchService(pool, site_config=SiteConfig())
+
+        await svc._handoff_to_pipeline(
+            winner=winner, niche=_make_niche(), batch_id=uuid4(),
+        )
+
+        assert conn.execute.await_count == 2  # pipeline_tasks + pipeline_versions
+
+    async def test_min_alpha_words_read_from_site_config(self):
+        """Operator-tuned threshold flows through: min=1 lets a
+        single-word topic hand off."""
+        pool, conn = _make_mock_pool()
+        svc = TopicBatchService(
+            pool,
+            site_config=SiteConfig(
+                initial_config={"topic_sanity_min_alpha_words": "1"}
+            ),
+        )
+
+        await svc._handoff_to_pipeline(
+            winner=_make_candidate(title="Cybersecurity"),
+            niche=_make_niche(),
+            batch_id=uuid4(),
+        )
+
+        assert conn.execute.await_count == 2
+
+
+@pytest.mark.unit
+class TestDropContentlessCandidates:
+    """Sweep-intake filter — garbage candidate titles must never occupy a
+    batch slot (they'd otherwise reach the auto-resolver and, pre-gate,
+    a GPU run). One aggregated finding per sweep, not silence."""
+
+    def _svc(self) -> TopicBatchService:
+        pool, _conn = _make_mock_pool()
+        return TopicBatchService(pool, site_config=SiteConfig())
+
+    async def test_dots_candidate_dropped_and_finding_emitted(self):
+        svc = self._svc()
+        external = [
+            {"kind": "external", "data": {"title": DOTS_TOPIC, "summary": ""}},
+            {"kind": "external", "data": {"title": "Why RTX 5090 thermals matter", "summary": "s"}},
+        ]
+        internal = [
+            {"kind": "internal", "data": {"distilled_topic": "Pipeline design lessons", "distilled_angle": "a"}},
+        ]
+
+        with patch("services.topic_batch_service.emit_finding") as emit:
+            kept_ext, kept_int = svc._drop_contentless_candidates(
+                _make_niche(), external, internal,
+            )
+
+        assert len(kept_ext) == 1
+        assert kept_ext[0]["data"]["title"].startswith("Why RTX")
+        assert len(kept_int) == 1
+        emit.assert_called_once()
+        kwargs = emit.call_args.kwargs
+        assert kwargs["kind"] == "topic_sanity_rejected"
+        assert kwargs["severity"] == "warn"
+
+    async def test_carry_forward_row_shape_filtered(self):
+        svc = self._svc()
+        external = [
+            {"row": {"title": DOTS_TOPIC}, "decay_factor": 0.7},
+            {"row": {"title": "A perfectly good headline"}, "decay_factor": 0.7},
+        ]
+
+        with patch("services.topic_batch_service.emit_finding"):
+            kept_ext, kept_int = svc._drop_contentless_candidates(
+                _make_niche(), external, [],
+            )
+
+        assert len(kept_ext) == 1
+        assert kept_ext[0]["row"]["title"] == "A perfectly good headline"
+        assert kept_int == []
+
+    async def test_all_sane_pools_pass_through_without_finding(self):
+        svc = self._svc()
+        external = [
+            {"kind": "external", "data": {"title": "Local model routing in practice"}},
+        ]
+        internal = [
+            {"kind": "internal", "data": {"distilled_topic": "QA rails as hard gates"}},
+        ]
+
+        with patch("services.topic_batch_service.emit_finding") as emit:
+            kept_ext, kept_int = svc._drop_contentless_candidates(
+                _make_niche(), external, internal,
+            )
+
+        assert kept_ext == external
+        assert kept_int == internal
+        emit.assert_not_called()
+
+
+async def test_run_sweep_drops_contentless_candidates_at_intake(db_pool, monkeypatch):
+    """End-to-end intake guard: a source surfacing the incident's dots
+    topic (and an empty distillation) must produce a batch containing
+    only the sane candidates."""
+    nsvc = NicheService(db_pool)
+    n = await nsvc.create(
+        slug=f"test-niche-sanity-{uuid4().hex[:8]}", name="Test", batch_size=5,
+    )
+    await nsvc.set_goals(n.id, [
+        NicheGoal("TRAFFIC", 50),
+        NicheGoal("EDUCATION", 50),
+    ])
+    await nsvc.set_sources(n.id, [
+        NicheSource("internal_rag", enabled=True, weight_pct=100),
+    ])
+
+    async def fake_internal_generate(self, **kwargs):
+        topics = [
+            DOTS_TOPIC,  # the incident topic, verbatim
+            "",          # empty distillation
+            "How local QA rails catch fabricated citations",
+            "Why single-GPU VRAM budgets shape model routing",
+            "Postgres as the spinal cord of an AI business",
+        ]
+        return [
+            InternalCandidate(
+                source_kind="claude_session",
+                primary_ref=f"sess-{i}",
+                distilled_topic=t,
+                distilled_angle="angle",
+            )
+            for i, t in enumerate(topics)
+        ]
+
+    monkeypatch.setattr(
+        "services.internal_rag_source.InternalRagSource.generate",
+        fake_internal_generate,
+    )
+
+    async def fake_embed_text(text, *, site_config=None):
+        return [0.1] * 768
+
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed_text)
+    monkeypatch.setattr(
+        "services.topic_ranking._embed_text_cached", fake_embed_text,
+    )
+
+    async def fake_llm_score(candidates, weights, *, model=None, site_config=None):
+        result = {}
+        for idx, c in enumerate(candidates):
+            c.llm_score = 80 - idx * 5
+            c.score_breakdown = {}
+            result[c.id] = c
+        return result
+
+    monkeypatch.setattr("services.topic_ranking.llm_final_score", fake_llm_score)
+
+    svc = TopicBatchService(db_pool, site_config=SiteConfig())
+    batch = await svc.run_sweep(niche_id=n.id)
+
+    assert batch is not None
+    # 5 generated − 2 contentless = 3 slots used.
+    assert batch.candidate_count == 3
+
+    async with db_pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT distilled_topic FROM internal_topic_candidates "
+            "WHERE batch_id = $1",
+            batch.id,
+        )
+    titles = [r["distilled_topic"] for r in rows]
+    assert DOTS_TOPIC not in titles
+    assert "" not in titles
+    assert len(titles) == 3
 
 
 # ===========================================================================

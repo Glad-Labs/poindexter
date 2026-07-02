@@ -42,6 +42,12 @@ from services.topic_ranking import (
     goal_vector_for,
     weighted_cosine_score,
 )
+from services.topic_sanity import (
+    TopicSanityError,
+    evaluate_topic_sanity,
+    resolve_min_alpha_words,
+)
+from utils.findings import emit_finding
 
 # #272 Phase-2d: the module-level ``site_config`` global + ``set_site_config``
 # setter were removed. ``TopicBatchService`` now REQUIRES a keyword-only
@@ -195,6 +201,18 @@ class TopicBatchService:
             combined_external, combined_internal = await self._dedupe_candidates(
                 external + carried["external"],
                 internal + carried["internal"],
+            )
+
+            # Deterministic topic-sanity filter BEFORE embed/rank, so a
+            # contentless title (2026-06-30: a dots-only dev.to headline
+            # the LLM scorer then ranked TOP of its batch) never occupies
+            # a batch slot, is never embedded, and is never carried
+            # forward. Loud, not silent — emits one aggregated
+            # topic_sanity_rejected finding per sweep.
+            combined_external, combined_internal = (
+                self._drop_contentless_candidates(
+                    niche, combined_external, combined_internal,
+                )
             )
 
             pool_external, pool_internal = await self._embed_and_pre_rank(
@@ -656,6 +674,80 @@ class TopicBatchService:
         if topic is None and isinstance(data, dict):
             topic = data.get("distilled_topic") or data.get("title")
         return (topic or "").strip()
+
+    def _drop_contentless_candidates(
+        self,
+        niche: Niche,
+        external: list,
+        internal: list,
+    ) -> tuple[list, list]:
+        """Drop candidates whose title fails the deterministic topic-sanity
+        gate before they can occupy a batch slot.
+
+        2026-06-30 incident: the dev.to tap surfaced a post titled
+        ``". .. . ... . .... . .... . ... ."`` — the embedding pre-rank
+        didn't sink it and the LLM final-scorer ranked it TOP of its batch
+        (65 vs 40-48 for real headlines), so it auto-resolved into a full
+        GPU run. Sanity must be calculated, not LLM-judged
+        (``feedback_calculated_vs_generated``); this filter runs after
+        dedup and before embedding so garbage is never embedded, ranked,
+        or carried forward.
+
+        Loud, not silent (``feedback_no_silent_defaults``): emits ONE
+        aggregated ``topic_sanity_rejected`` finding per sweep with every
+        dropped title, so a tap emitting separator junk is visible on the
+        Findings board instead of quietly shrinking batches.
+        """
+        min_words = resolve_min_alpha_words(self._site_config)
+        kept_external: list = []
+        kept_internal: list = []
+        dropped: list[tuple[str, str, str]] = []  # (pool, reason, title)
+
+        for item in external:
+            title = self._external_title(item)
+            verdict = evaluate_topic_sanity(title, min_alpha_words=min_words)
+            if verdict.ok:
+                kept_external.append(item)
+            else:
+                dropped.append(("external", verdict.reason or "", title))
+        for item in internal:
+            title = self._internal_title(item)
+            verdict = evaluate_topic_sanity(title, min_alpha_words=min_words)
+            if verdict.ok:
+                kept_internal.append(item)
+            else:
+                dropped.append(("internal", verdict.reason or "", title))
+
+        if dropped:
+            logger.warning(
+                "Niche %s: dropped %d contentless candidate(s) at sweep "
+                "intake: %s",
+                niche.slug, len(dropped),
+                "; ".join(f"[{p}/{r}] {t!r:.60}" for p, r, t in dropped),
+            )
+            emit_finding(
+                source="topic_batch_service",
+                kind="topic_sanity_rejected",
+                title=(
+                    f"Dropped {len(dropped)} contentless topic candidate(s) "
+                    f"at sweep intake (niche {niche.slug})"
+                ),
+                body="\n".join(
+                    f"- [{pool}] {reason}: {title!r}"
+                    for pool, reason, title in dropped
+                ),
+                severity="warn",
+                dedup_key=f"topic-sanity-intake:{niche.slug}",
+                extra={
+                    "stage": "sweep_intake",
+                    "niche_slug": niche.slug,
+                    "dropped": [
+                        {"pool": pool, "reason": reason, "title": title[:200]}
+                        for pool, reason, title in dropped
+                    ],
+                },
+            )
+        return kept_external, kept_internal
 
     async def _embed_and_pre_rank(
         self,
@@ -1128,6 +1220,45 @@ class TopicBatchService:
 
         topic = winner.operator_edited_topic or winner.title
         angle = winner.operator_edited_angle or winner.summary or ""
+
+        # Deterministic topic-sanity gate — the LAST seam before a batch
+        # winner becomes a pipeline_tasks row (2026-06-30 incident: a
+        # dots-only headline reached here and burned a full GPU run).
+        # Judges the topic that actually ships (operator edit wins), and
+        # raises BEFORE any DB write. topic_auto_resolve catches the typed
+        # error and expires the batch; the operator resolve paths surface
+        # it as a 400 / CLI error (edit the winner, then re-resolve).
+        verdict = evaluate_topic_sanity(
+            topic, min_alpha_words=resolve_min_alpha_words(self._site_config),
+        )
+        if not verdict.ok:
+            emit_finding(
+                source="topic_batch_service",
+                kind="topic_sanity_rejected",
+                title=(
+                    f"Blocked contentless topic at batch handoff "
+                    f"({verdict.reason})"
+                ),
+                body=(
+                    f"Batch {batch_id} (niche {niche.slug}) winner candidate "
+                    f"{winner.id} ({winner.kind}) failed the topic-sanity "
+                    f"gate: {verdict.detail}\n\nTopic: {topic!r}"
+                ),
+                severity="warn",
+                dedup_key=f"topic-sanity-handoff:{batch_id}",
+                extra={
+                    "stage": "batch_handoff",
+                    "batch_id": str(batch_id),
+                    "niche_slug": niche.slug,
+                    "candidate_id": str(winner.id),
+                    "candidate_kind": winner.kind,
+                    "reason": verdict.reason,
+                    "alpha_word_count": verdict.alpha_word_count,
+                    "topic": (topic or "")[:200],
+                },
+            )
+            raise TopicSanityError(topic, verdict)
+
         task_id = str(uuid4())
 
         # task_id and task_type are NOT NULL on pipeline_tasks. The

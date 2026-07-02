@@ -43,11 +43,14 @@ async def _enable_auto_resolve(db_pool) -> None:
 
 async def _seed_open_batch(
     db_pool, niche_id, *, internal: int, external: int, expires_days: int = 7,
+    external_title: str | None = None,
 ):
     """Insert one ``open`` batch with ``external`` external + ``internal``
     internal candidates. ``rank_in_batch`` descends from 1 across both
     pools combined (external first), mirroring how ``_write_batch`` lays
-    them out. Returns the batch id.
+    them out. ``external_title`` overrides the default per-candidate
+    title (used by the topic-sanity tests to seed a garbage winner).
+    Returns the batch id.
     """
     expires = datetime.now(timezone.utc) + timedelta(days=expires_days)
     async with db_pool.acquire() as conn:
@@ -67,7 +70,9 @@ async def _seed_open_batch(
                 VALUES ($1, $2, 'external', $3, $4, $5, $6, '{}'::jsonb, $7, 1.0)
                 """,
                 batch_id, niche_id, f"ext-ref-{i}",
-                f"External Topic {i}", f"External summary {i}",
+                external_title if external_title is not None
+                else f"External Topic {i}",
+                f"External summary {i}",
                 90 - rank, rank,
             )
         for i in range(internal):
@@ -212,3 +217,58 @@ async def test_skips_expired_batch(db_pool, _no_queue_throttle, _fake_handoff):
         )
     # Untouched — neither resolved nor mutated by the job.
     assert status == "open"
+
+
+async def test_contentless_winner_expires_batch_instead_of_wedging(
+    db_pool, _no_queue_throttle,
+):
+    """2026-06-30 dots-topic incident, auto-resolve seam.
+
+    A batch whose rank-1 winner fails the topic-sanity gate raises
+    ``TopicSanityError`` inside ``_handoff_to_pipeline``. If the job
+    treated that as a generic error, the batch would stay ``open`` and
+    retry-fail every cycle while blocking new sweeps — the recurring
+    "content dark" niche wedge. Instead the job must self-heal (per
+    ``feedback_self_heal_not_suppress``): expire the batch, write a
+    ``topic_batch_auto_expired`` audit row, create NO pipeline task.
+
+    Deliberately does NOT use ``_fake_handoff`` — the gate under test
+    lives inside the real ``_handoff_to_pipeline`` (and fires before
+    any template/DB dependency it has).
+    """
+    await _enable_auto_resolve(db_pool)
+    nsvc = NicheService(db_pool)
+    n = await nsvc.create(
+        slug="auto-resolve-topic-sanity", name="Sanity Heal", batch_size=5,
+    )
+    # The real topic from pipeline_tasks 9921678f-9b5b-4d24-9f07-c9d0398cf793.
+    batch_id = await _seed_open_batch(
+        db_pool, n.id, internal=0, external=1,
+        external_title=". .. . ... . .... . .... . ... .",
+    )
+
+    result = await TopicAutoResolveJob().run(
+        db_pool, {"_site_config": SiteConfig()},
+    )
+
+    # The expiry counts as the cycle's change; it is not an error.
+    assert result.ok is True, result.detail
+    assert result.changes_made == 1, result.detail
+
+    async with db_pool.acquire() as conn:
+        status = await conn.fetchval(
+            "SELECT status FROM topic_batches WHERE id = $1", batch_id,
+        )
+        task_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM pipeline_tasks WHERE topic_batch_id = $1",
+            batch_id,
+        )
+        audit_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM audit_log "
+            "WHERE event_type = 'topic_batch_auto_expired' "
+            "  AND details::jsonb ->> 'batch_id' = $1",
+            str(batch_id),
+        )
+    assert status == "expired"
+    assert task_count == 0
+    assert audit_count == 1
