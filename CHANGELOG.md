@@ -2,6 +2,39 @@
 
 ## Unreleased
 
+## [0.92.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.91.1...v0.92.0) (2026-07-02)
+
+
+### Features
+
+* **brain:** data-freshness dead-man's switch for data feeds ([#2043](https://github.com/Glad-Labs/glad-labs-stack/issues/2043)) ([179b018](https://github.com/Glad-Labs/glad-labs-stack/commit/179b0183335e79ea59233359286eb30e21a45eba))
+* **cli:** persist minted JWT across invocations to dodge the host-port-proxy wedge ([#2026](https://github.com/Glad-Labs/glad-labs-stack/issues/2026)) ([e4902ba](https://github.com/Glad-Labs/glad-labs-stack/commit/e4902ba27704a8e8ec14f2eb7656380a8bafe013))
+* **console:** live avg-quality + failed-24h KPIs (close the honest-empty gaps) ([#2044](https://github.com/Glad-Labs/glad-labs-stack/issues/2044)) ([0a23e30](https://github.com/Glad-Labs/glad-labs-stack/commit/0a23e30e8d77151e1d7295c8057adf3db5681724))
+* **grafana:** gap fill — dispatch liveness, rework burn, paging noise meta, restore-test status ([#2053](https://github.com/Glad-Labs/glad-labs-stack/issues/2053)) ([5f1ca34](https://github.com/Glad-Labs/glad-labs-stack/commit/5f1ca341f06d61b877ac06663b7e153e63a51d4e))
+
+
+### Bug Fixes
+
+* **alerting:** page-cooldown gate + change-gated media_drift finding ([#2042](https://github.com/Glad-Labs/glad-labs-stack/issues/2042)) ([4ab9fa7](https://github.com/Glad-Labs/glad-labs-stack/commit/4ab9fa7d0225627f25e130530e62652e4e031e66))
+* **brain:** add data_freshness_probe.py to the Dockerfile COPY list ([#2047](https://github.com/Glad-Labs/glad-labs-stack/issues/2047)) ([175cc82](https://github.com/Glad-Labs/glad-labs-stack/commit/175cc82447e0f47cbdaef0e7fb8805a047554494))
+* **content:** add assignment-spec planning-dump vocab family (gemma brief-receipt dialect) ([#2058](https://github.com/Glad-Labs/glad-labs-stack/issues/2058)) ([79c20c0](https://github.com/Glad-Labs/glad-labs-stack/commit/79c20c07f5d4f01cb4c2667269238f532cf804c8))
+* **deploy:** stop deploy-sync starving while the content pipeline is busy ([#2041](https://github.com/Glad-Labs/glad-labs-stack/issues/2041)) ([13d5973](https://github.com/Glad-Labs/glad-labs-stack/commit/13d5973cf63982d17cb151ff5c3588d415f073f3))
+* **gpu:** bounded gpu.lock acquire/release + stale-sweep findings (poindexter[#807](https://github.com/Glad-Labs/glad-labs-stack/issues/807)) ([#2054](https://github.com/Glad-Labs/glad-labs-stack/issues/2054)) ([72cccc3](https://github.com/Glad-Labs/glad-labs-stack/commit/72cccc358abd44366b53640f2242f497333ea84a))
+* **grafana:** repair 6 dead panels pointing at nonexistent datasource UIDs ([#2039](https://github.com/Glad-Labs/glad-labs-stack/issues/2039)) ([9bb04a8](https://github.com/Glad-Labs/glad-labs-stack/commit/9bb04a897252cd9f33ee4b59e731a24d0047624d))
+* **grafana:** truth pass — lying panels, dead-metric panels, mojibake, units ([#2049](https://github.com/Glad-Labs/glad-labs-stack/issues/2049)) ([34b2663](https://github.com/Glad-Labs/glad-labs-stack/commit/34b26631e08915cab8f306becbb3f40bac583d60))
+* **mirror:** genericize the last operator-flavored identifiers (company_claim rename + infra-slug overlay) ([#2038](https://github.com/Glad-Labs/glad-labs-stack/issues/2038)) ([3cb26c8](https://github.com/Glad-Labs/glad-labs-stack/commit/3cb26c8d957fd06c7817937e266413a2966d8cbf))
+* **mirror:** genericize the seeded niches + shipped dashboards; overlay-restore the brand ([#2030](https://github.com/Glad-Labs/glad-labs-stack/issues/2030)) ([595752e](https://github.com/Glad-Labs/glad-labs-stack/commit/595752e45d0e0b74e021de4e333b33d3b0d11812))
+* **mirror:** scrub operator identity from public seeds into the operator overlay ([#2022](https://github.com/Glad-Labs/glad-labs-stack/issues/2022)) ([8500ae5](https://github.com/Glad-Labs/glad-labs-stack/commit/8500ae58133d9d060a692683b278fa548ae91dcc))
+* **mirror:** scrub operator R2/podcast credentials + assets from public seeds ([#2027](https://github.com/Glad-Labs/glad-labs-stack/issues/2027)) ([37173c2](https://github.com/Glad-Labs/glad-labs-stack/commit/37173c2c8b9a6346b2695bf625da80455403ad38))
+* **prompts:** preload Langfuse secret in Prefect subprocess bootstrap (poindexter[#815](https://github.com/Glad-Labs/glad-labs-stack/issues/815)) ([#2056](https://github.com/Glad-Labs/glad-labs-stack/issues/2056)) ([e23d7f5](https://github.com/Glad-Labs/glad-labs-stack/commit/e23d7f556e5c4bde22c347f7610cd00977a2d6da))
+* **qa:** catch planning/outline dumps — validator planning_dump rule + critic finished-prose veto ([#2036](https://github.com/Glad-Labs/glad-labs-stack/issues/2036)) ([3a20d08](https://github.com/Glad-Labs/glad-labs-stack/commit/3a20d081b8398f5f3905277d8cdb158ce396fd6d))
+* **security:** bump transformers&gt;=5.3.0 (+ sentence-transformers&gt;=5.6) to close CVE-2026-4372/1839 ([#2033](https://github.com/Glad-Labs/glad-labs-stack/issues/2033)) ([f529d90](https://github.com/Glad-Labs/glad-labs-stack/commit/f529d9084b375afd725fe088c5054af1589099b7))
+* **security:** resolve CodeQL code-scanning alerts across worker/brain/scripts ([#2029](https://github.com/Glad-Labs/glad-labs-stack/issues/2029)) ([f5dd597](https://github.com/Glad-Labs/glad-labs-stack/commit/f5dd597c1127a99ae0a4df5cc96c67213abe2ef7))
+* **topics:** deterministic topic-sanity gate before task creation ([#2037](https://github.com/Glad-Labs/glad-labs-stack/issues/2037)) ([122c667](https://github.com/Glad-Labs/glad-labs-stack/commit/122c6673510479253c39b0854304827f38222c9d))
+* **topics:** reject distiller failure sentinels + truncated titles at the sanity gate ([#2059](https://github.com/Glad-Labs/glad-labs-stack/issues/2059)) ([f794134](https://github.com/Glad-Labs/glad-labs-stack/commit/f79413495183fa18fd3f1cce27ff6286752fde0f))
+* **writer:** catch PARAPHRASED instruction echo — gate + validator shapes ([#2028](https://github.com/Glad-Labs/glad-labs-stack/issues/2028)) ([40996ef](https://github.com/Glad-Labs/glad-labs-stack/commit/40996ef9064551a919b270c09a4d6a8dc9b88582))
+* **writer:** self-heal planning-bullet dumps at the writer — structural strip gated on the validator detector ([#2045](https://github.com/Glad-Labs/glad-labs-stack/issues/2045)) ([db54d8f](https://github.com/Glad-Labs/glad-labs-stack/commit/db54d8fa6404d5304d5d9ee6e50e3ba5463821a4))
+
 ## [0.91.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.91.0...v0.91.1) (2026-07-01)
 
 
