@@ -4250,55 +4250,25 @@
       },
       "id": 106,
       "panels": [],
-      "title": "Publishing funnel — drafted → indexed (fixed 30d window)",
+      "title": "Publishing Funnel — 30d task cohort",
       "type": "row"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Distinct pipeline tasks that produced at least one draft version in the last 30 days (pipeline_versions).",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        }
-      },
+      "id": 112,
+      "type": "bargauge",
+      "title": "Content funnel (task cohort, fixed 30d)",
+      "description": "Cohort-based: follows blog/dev-diary tasks CREATED in the last 30 days (panel-pinned window, ignores the dashboard picker) through their outcomes via the pipeline_task_id seams — late stages credit the cohort that produced them, not whatever landed in the window. Stages 1-2 are window-based context (topic discovery precedes tasks). Stages 7-9 are parallel post-publish outcomes, not sequential. Social counts start 2026-06-29 (Postiz go-live); Google indexing lags publish by days, so recent cohorts read low on stage 9 by nature.",
       "gridPos": {
-        "h": 4,
-        "w": 5,
+        "h": 10,
+        "w": 14,
         "x": 0,
         "y": 246
       },
-      "id": 107,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
+      "timeFrom": "30d",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
-      "pluginVersion": "11.0.0",
       "targets": [
         {
           "datasource": {
@@ -4307,26 +4277,17 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(DISTINCT task_id) AS \"Drafted\" FROM pipeline_versions WHERE created_at > NOW() - INTERVAL '30 days';",
+          "rawSql": "WITH cohort AS (\n  SELECT pt.task_id, pt.status,\n    EXISTS (SELECT 1 FROM posts p WHERE p.metadata->>'pipeline_task_id' = pt.task_id\n            AND p.status = 'published') AS is_published,\n    EXISTS (SELECT 1 FROM social_post_drafts sd WHERE sd.pipeline_task_id = pt.task_id\n            AND sd.status = 'posted') AS is_distributed,\n    EXISTS (SELECT 1 FROM posts p JOIN page_views pv ON pv.slug = p.slug\n            WHERE p.metadata->>'pipeline_task_id' = pt.task_id) AS is_viewed,\n    EXISTS (SELECT 1 FROM posts p JOIN post_performance pp ON pp.post_id = p.id\n            AND pp.google_impressions > 0\n            WHERE p.metadata->>'pipeline_task_id' = pt.task_id) AS is_indexed\n  FROM pipeline_tasks pt\n  WHERE pt.template_slug IN ('canonical_blog','dev_diary')\n    AND $__timeFilter(pt.created_at)\n)\nSELECT '1. Topic candidates ranked' AS metric,\n       (SELECT COUNT(*) FROM topic_candidates tc JOIN topic_batches tb ON tb.id = tc.batch_id\n        WHERE $__timeFilter(tb.created_at))::int AS value\nUNION ALL SELECT '2. Batches resolved',\n       (SELECT COUNT(*) FROM topic_batches WHERE $__timeFilter(created_at)\n        AND status != 'open')::int\nUNION ALL SELECT '3. Tasks created (cohort)', COUNT(*)::int FROM cohort\nUNION ALL SELECT '4. Draft generated', COUNT(*)::int FROM cohort\n       WHERE status IN ('awaiting_approval','approved','published','rejected','rejected_final','awaiting_gate')\nUNION ALL SELECT '5. Survived QA', COUNT(*)::int FROM cohort\n       WHERE status IN ('awaiting_approval','approved','published') OR is_published\nUNION ALL SELECT '6. Published', COUNT(*)::int FROM cohort WHERE is_published\nUNION ALL SELECT '7. Socially distributed', COUNT(*)::int FROM cohort WHERE is_distributed\nUNION ALL SELECT '8. Viewed at least once', COUNT(*)::int FROM cohort WHERE is_viewed\nUNION ALL SELECT '9. Indexed by Google', COUNT(*)::int FROM cohort WHERE is_indexed\nORDER BY 1",
           "refId": "A"
         }
       ],
-      "title": "Drafted (30d)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Distinct tasks whose multi-model QA pass APPROVED in the last 30 days (audit_log qa_pass_completed with approved=true). Rewrites/rejects don't count.",
       "fieldConfig": {
         "defaults": {
+          "unit": "short",
+          "min": 0,
           "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
+            "mode": "continuous-BlPu"
           },
-          "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -4335,92 +4296,38 @@
                 "value": null
               }
             ]
-          },
-          "unit": "none"
-        }
+          }
+        },
+        "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 5,
-        "y": 246
-      },
-      "id": 108,
       "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "showUnfilled": true,
+        "valueMode": "color",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(DISTINCT task_id) AS \"QA-passed\" FROM audit_log WHERE event_type = 'qa_pass_completed' AND (details->>'approved')::boolean AND \"timestamp\" > NOW() - INTERVAL '30 days';",
-          "refId": "A"
+          "fields": "/^value$/",
+          "values": true
         }
-      ],
-      "title": "QA-passed (30d)",
-      "type": "stat"
+      }
     },
     {
+      "id": 113,
+      "type": "table",
+      "title": "Funnel conversion (30d cohort)",
+      "description": "Per-stage conversion for the same 30d task cohort. '% of previous' is blank for the parallel post-publish stages (distributed / viewed / indexed aren't downstream of each other). The big historical drop is Survived-QA — cross-reference the rejection panels above when it moves.",
+      "gridPos": {
+        "h": 10,
+        "w": 10,
+        "x": 14,
+        "y": 246
+      },
+      "timeFrom": "30d",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Tasks currently approved / scheduled / published whose last update falls in the window. Approximation — status transitions aren't historied, so a task re-touched later slides windows.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 10,
-        "y": 246
-      },
-      "id": 109,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
       "targets": [
         {
           "datasource": {
@@ -4429,134 +4336,19 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Approved\" FROM pipeline_tasks WHERE status IN ('approved', 'scheduled', 'published') AND updated_at > NOW() - INTERVAL '30 days';",
+          "rawSql": "WITH cohort AS (\n  SELECT pt.task_id, pt.status,\n    EXISTS (SELECT 1 FROM posts p WHERE p.metadata->>'pipeline_task_id' = pt.task_id\n            AND p.status = 'published') AS is_published,\n    EXISTS (SELECT 1 FROM social_post_drafts sd WHERE sd.pipeline_task_id = pt.task_id\n            AND sd.status = 'posted') AS is_distributed,\n    EXISTS (SELECT 1 FROM posts p JOIN page_views pv ON pv.slug = p.slug\n            WHERE p.metadata->>'pipeline_task_id' = pt.task_id) AS is_viewed,\n    EXISTS (SELECT 1 FROM posts p JOIN post_performance pp ON pp.post_id = p.id\n            AND pp.google_impressions > 0\n            WHERE p.metadata->>'pipeline_task_id' = pt.task_id) AS is_indexed\n  FROM pipeline_tasks pt\n  WHERE pt.template_slug IN ('canonical_blog','dev_diary')\n    AND $__timeFilter(pt.created_at)\n)\n, stages AS (\n  SELECT 3 AS ord, 'Tasks created' AS stage, COUNT(*)::float AS n FROM cohort\n  UNION ALL SELECT 4, 'Draft generated', COUNT(*) FROM cohort\n    WHERE status IN ('awaiting_approval','approved','published','rejected','rejected_final','awaiting_gate')\n  UNION ALL SELECT 5, 'Survived QA', COUNT(*) FROM cohort\n    WHERE status IN ('awaiting_approval','approved','published') OR is_published\n  UNION ALL SELECT 6, 'Published', COUNT(*) FROM cohort WHERE is_published\n  UNION ALL SELECT 7, 'Socially distributed', COUNT(*) FROM cohort WHERE is_distributed\n  UNION ALL SELECT 8, 'Viewed at least once', COUNT(*) FROM cohort WHERE is_viewed\n  UNION ALL SELECT 9, 'Indexed by Google', COUNT(*) FROM cohort WHERE is_indexed\n)\nSELECT stage AS \"Stage\", n::int AS \"Count\",\n  ROUND((100 * n / NULLIF(FIRST_VALUE(n) OVER (ORDER BY ord), 0))::numeric, 1) AS \"% of cohort\",\n  CASE WHEN ord <= 6 THEN ROUND((100 * n / NULLIF(LAG(n) OVER (ORDER BY ord), 0))::numeric, 1) END AS \"% of previous\"\nFROM stages ORDER BY ord",
           "refId": "A"
         }
       ],
-      "title": "Approved (30d)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Posts that went live in the last 30 days (posts.published_at, status=published).",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 5,
-        "x": 15,
-        "y": 246
-      },
-      "id": 110,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
+          "custom": {
+            "filterable": false
+          }
         },
-        "textMode": "value_and_name",
-        "wideLayout": true
+        "overrides": []
       },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Published\" FROM posts WHERE status = 'published' AND published_at > NOW() - INTERVAL '30 days';",
-          "refId": "A"
-        }
-      ],
-      "title": "Published (30d)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Of the posts published in the window, how many Google Search Console has ever shown (any impressions in post_performance). Lags publish by days — fed by the GSC backfill job.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "blue"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 246
-      },
-      "id": 111,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(DISTINCT p.id) AS \"Indexed\" FROM posts p JOIN post_performance pp ON pp.post_id = p.id AND pp.google_impressions > 0 WHERE p.status = 'published' AND p.published_at > NOW() - INTERVAL '30 days';",
-          "refId": "A"
-        }
-      ],
-      "title": "Indexed by Google (30d)",
-      "type": "stat"
+      "options": {}
     }
   ],
   "refresh": "30s",
