@@ -55,6 +55,15 @@
   silently leaving stale code running. On first run (no marker) it records
   the current SHA WITHOUT restarting, to avoid a surprise bounce on install.
 
+  Step independence: the brain rebuild, the compose-apply, and the container
+  restarts ALL run every deploy pass - a failure in one is logged and fails
+  the pass (marker withheld, so it retries next cycle) but never
+  short-circuits the others. In particular the bind-mount container restarts
+  always happen once the tree has advanced: skipping them on a compose-apply
+  failure (e.g. a transient `--wait` healthcheck flap on a freshly-recreated
+  brain-daemon) left the worker importing STALE code against a NEW tree
+  (2026-07-02, twice). See Get-DeployOutcome.
+
   OBSERVABILITY (Glad-Labs/glad-labs-stack). When this task runs under the
   Scheduler it runs hidden + non-interactive, so its `Write-Host` narration
   goes nowhere and the Windows TaskScheduler/Operational history log is
@@ -316,6 +325,24 @@ function Invoke-SelfTest {
         Test-Case 'behind parse: 3 -> behind'          (Test-CloneBehind '3')
         Test-Case 'behind parse: whitespace -> behind (fail safe)' (Test-CloneBehind '')
         Test-Case 'behind parse: junk -> behind (fail safe)'       (Test-CloneBehind 'oops')
+
+        # 9) Outcome decision: the bind-mount restarts are independent of the
+        # brain-rebuild / compose-apply steps - a pre-step failure must yield
+        # error + no marker (so it retries) but NEVER short-circuit the
+        # restarts (the 2026-07-02 stale-worker bug, twice).
+        $o = Get-DeployOutcome -BrainBuildFailed $false -ApplyFailed $false -RestartFailed $false
+        Test-Case 'clean pass -> deployed'             ($o.Result -eq 'deployed')
+        Test-Case 'clean pass -> marker recorded'      ($o.RecordMarker)
+        Test-Case 'clean pass -> exit 0'               ($o.ExitCode -eq 0)
+        $o = Get-DeployOutcome -BrainBuildFailed $false -ApplyFailed $true -RestartFailed $false
+        Test-Case 'apply fail -> error, no marker'     (($o.Result -eq 'error') -and (-not $o.RecordMarker) -and ($o.ExitCode -eq 1))
+        Test-Case 'apply fail names the step'          (@($o.FailedSteps) -contains 'compose-apply')
+        $o = Get-DeployOutcome -BrainBuildFailed $true -ApplyFailed $false -RestartFailed $false
+        Test-Case 'brain-build fail -> error, no marker' (($o.Result -eq 'error') -and (-not $o.RecordMarker))
+        $o = Get-DeployOutcome -BrainBuildFailed $false -ApplyFailed $false -RestartFailed $true
+        Test-Case 'restart fail -> error, no marker'   (($o.Result -eq 'error') -and (-not $o.RecordMarker))
+        $o = Get-DeployOutcome -BrainBuildFailed $true -ApplyFailed $true -RestartFailed $true
+        Test-Case 'all fail -> all steps named'        (@($o.FailedSteps).Count -eq 3)
     } finally {
         Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -446,6 +473,37 @@ function Test-CloneBehind {
     $n = 0
     if ([int]::TryParse(($BehindCount).Trim(), [ref]$n)) { return ($n -gt 0) }
     return $true
+}
+
+# Decide the end-of-pass outcome from which deploy steps failed. Pure for
+# -SelfTest.
+#
+# WHY the restarts must not be skipped on a pre-step failure: the bind-mount
+# container restarts are INDEPENDENT of the brain rebuild and the
+# compose-apply - the checkout has already been reset to origin/main by the
+# time any of them runs, so the worker's /app is new code either way and only
+# the bounce re-imports it. The old flow `exit 1`-ed on a brain-build or
+# compose-apply failure BEFORE the restart loop, so e.g. a transient
+# compose `--wait` flap (brain-daemon reads "unhealthy" during its 60s
+# healthcheck interval right after a recreate) left the worker running STALE
+# code against a NEW on-disk tree until the next cycle or a manual bounce
+# (bit twice on 2026-07-02). Now every step runs; any failure still returns
+# result=error with RecordMarker=$false so the failed step retries next
+# cycle (a re-restart of an already-current container is a harmless no-op).
+function Get-DeployOutcome {
+    param(
+        [Parameter(Mandatory)][bool]$BrainBuildFailed,
+        [Parameter(Mandatory)][bool]$ApplyFailed,
+        [Parameter(Mandatory)][bool]$RestartFailed
+    )
+    $failedSteps = @()
+    if ($BrainBuildFailed) { $failedSteps += 'brain-build' }
+    if ($ApplyFailed) { $failedSteps += 'compose-apply' }
+    if ($RestartFailed) { $failedSteps += 'container-restart' }
+    if ($failedSteps.Count -eq 0) {
+        return [pscustomobject]@{ Result = 'deployed'; RecordMarker = $true; ExitCode = 0; FailedSteps = @() }
+    }
+    return [pscustomobject]@{ Result = 'error'; RecordMarker = $false; ExitCode = 1; FailedSteps = $failedSteps }
 }
 
 # ---- Read-only / test modes (no rotation, no sync, no restart) ------------
@@ -634,6 +692,7 @@ try {
     # so it retries next cycle (with a warm layer cache).
     $brainRebuilt = $false
     $brainChanged = $false
+    $brainBuildFailed = $false
     try {
         $diffOut = & git -C $DeployDir diff --name-only $lastDeployed $head 2>$null
         if ($LASTEXITCODE -ne 0) { throw "git diff exited $LASTEXITCODE" }
@@ -647,12 +706,16 @@ try {
         $brainArgv = Get-BrainBuildCommand -DeployDir $DeployDir
         $brainRc = Invoke-Logged $brainArgv[0] $brainArgv[1..($brainArgv.Length - 1)] 'brain-build'
         if ($brainRc -ne 0) {
-            Write-Log "brain-daemon rebuild failed (exit $brainRc); NOT recording marker - will retry next cycle." 'ERROR'
-            Write-DeployStatus -Result 'error' -Head $head -PreviousHead $lastDeployed -Detail "brain-daemon rebuild failed (exit $brainRc)"
-            exit 1
+            # Don't abort: the bind-mount restarts below are independent of the
+            # brain image (see Get-DeployOutcome). The marker stays unrecorded
+            # so the rebuild retries next cycle on a warm layer cache; compose
+            # -apply meanwhile no-ops brain (its image is unchanged).
+            Write-Log "brain-daemon rebuild failed (exit $brainRc); continuing to container restarts - NOT recording marker, rebuild retries next cycle." 'ERROR'
+            $brainBuildFailed = $true
+        } else {
+            $brainRebuilt = $true
+            Write-Log "brain-daemon image rebuilt; compose-apply will recreate it onto the fresh image."
         }
-        $brainRebuilt = $true
-        Write-Log "brain-daemon image rebuilt; compose-apply will recreate it onto the fresh image."
     }
 
     # Apply compose/infra changes FIRST: recreate the services whose compose stanza
@@ -662,14 +725,18 @@ try {
     # whose stanza is unchanged by a pure-Python edit (the source path is identical,
     # only the file content differs). Without this step a compose-only merge (e.g.
     # the GPU /root->/home/appuser mount fixes) lands on disk but never reaches the
-    # running stack. Failure aborts before recording the marker so it retries.
+    # running stack. Failure does NOT abort - the container restarts below are
+    # independent (the on-disk tree is already new code) and skipping them left
+    # the worker stale behind a compose `--wait` healthcheck flap (2026-07-02,
+    # twice: a freshly-recreated brain-daemon reads "unhealthy" during its 60s
+    # healthcheck interval and fails the whole apply). The marker stays
+    # unrecorded so the apply retries next cycle.
     $applyArgv = Get-ComposeApplyCommand -DeployDir $DeployDir
     Write-Log "Applying compose from clone: $($applyArgv -join ' ')"
     $applyRc = Invoke-Logged $applyArgv[0] $applyArgv[1..($applyArgv.Length - 1)] 'compose-apply'
-    if ($applyRc -ne 0) {
-        Write-Log "compose-apply failed (exit $applyRc); NOT recording marker - will retry next cycle." 'ERROR'
-        Write-DeployStatus -Result 'error' -Head $head -PreviousHead $lastDeployed -Detail "compose-apply failed (exit $applyRc)"
-        exit 1
+    $applyFailed = ($applyRc -ne 0)
+    if ($applyFailed) {
+        Write-Log "compose-apply failed (exit $applyRc); continuing to container restarts - NOT recording marker, apply retries next cycle." 'ERROR'
     }
 
     $failed = @()
@@ -685,17 +752,30 @@ try {
     }
 
     if ($failed.Count -gt 0) {
-        Write-Log "WARNING: $($failed.Count) container(s) failed to restart ($($failed -join ', ')); NOT recording marker - will retry next cycle." 'ERROR'
-        Write-DeployStatus -Result 'error' -Head $head -PreviousHead $lastDeployed -Restarted $restarted -Detail "failed to restart: $($failed -join ', ')"
-        exit 1
+        Write-Log "WARNING: $($failed.Count) container(s) failed to restart ($($failed -join ', '))." 'ERROR'
     }
 
-    # Record only after a clean restart so a transient failure retries next cycle.
-    Set-Content -Path $markerFile -Value $head -NoNewline
-    $brainNote = if ($brainRebuilt) { ' brain-daemon rebuilt + recreated.' } else { '' }
-    Write-Log "Pipeline now running $shortHead.$brainNote"
-    $deployDetail = if ($brainRebuilt) { 'rebuilt brain-daemon image (brain/ changed)' } else { '' }
-    Write-DeployStatus -Result 'deployed' -Head $head -PreviousHead $lastDeployed -Restarted $restarted -Detail $deployDetail
+    # ---- End-of-pass outcome ----------------------------------------------
+    # Every step above ran regardless of earlier failures (restart
+    # independence - see Get-DeployOutcome). Record the marker only on a
+    # fully-clean pass so any failed step retries next cycle; a re-restart of
+    # an already-current container on that retry is a harmless no-op.
+    $outcome = Get-DeployOutcome -BrainBuildFailed $brainBuildFailed `
+        -ApplyFailed $applyFailed -RestartFailed ($failed.Count -gt 0)
+
+    if ($outcome.RecordMarker) {
+        Set-Content -Path $markerFile -Value $head -NoNewline
+        $brainNote = if ($brainRebuilt) { ' brain-daemon rebuilt + recreated.' } else { '' }
+        Write-Log "Pipeline now running $shortHead.$brainNote"
+        $deployDetail = if ($brainRebuilt) { 'rebuilt brain-daemon image (brain/ changed)' } else { '' }
+        Write-DeployStatus -Result $outcome.Result -Head $head -PreviousHead $lastDeployed -Restarted $restarted -Detail $deployDetail
+    } else {
+        $failDetail = "failed steps: $($outcome.FailedSteps -join ', ')"
+        if ($failed.Count -gt 0) { $failDetail += " (unrestarted: $($failed -join ', '))" }
+        Write-Log "Deploy pass incomplete ($failDetail); restarted [$($restarted -join ', ')] onto $shortHead but NOT recording marker - failed step(s) retry next cycle." 'ERROR'
+        Write-DeployStatus -Result $outcome.Result -Head $head -PreviousHead $lastDeployed -Restarted $restarted -Detail $failDetail
+        exit $outcome.ExitCode
+    }
 } catch {
     # Any unexpected throw (cmdlet error under -ErrorActionPreference Stop, etc.)
     # used to leave the hidden task non-zero with no on-disk trace. Capture it.
