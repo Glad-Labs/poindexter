@@ -21,6 +21,8 @@ from services.integrations.registry import register_handler
 from services.niche_service import NicheService
 from services.topic_dedup_semantic import get_deduplicator
 from services.topic_pool import insert_pooled_topics
+from services.topic_sanity import evaluate_topic_sanity, resolve_min_alpha_words
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -104,6 +106,54 @@ async def builtin_topic_source(
             )
     fresh = [t for t in (topics or []) if not getattr(t, "is_duplicate", False)]
 
+    # Deterministic topic-sanity gate at the ingest seam, so contentless
+    # titles never enter topic_pool at all. The sweep-intake / batch-handoff
+    # gates (#2037) already stop this class from becoming pipeline_tasks
+    # rows, but without an ingest gate the junk still accumulates as
+    # 'pooled' rows that every sweep re-reads and re-filters. Same rules,
+    # same operator knob (topic_sanity_min_alpha_words); one aggregated
+    # topic_sanity_rejected finding per tap run keeps a junk-emitting
+    # source visible on the Findings board (feedback_no_silent_defaults).
+    min_words = resolve_min_alpha_words(site_config)
+    sane: list[Any] = []
+    dropped: list[tuple[str, str]] = []  # (reason, title)
+    for t in fresh:
+        verdict = evaluate_topic_sanity(
+            getattr(t, "title", "") or "", min_alpha_words=min_words,
+        )
+        if verdict.ok:
+            sane.append(t)
+        else:
+            dropped.append((verdict.reason or "", getattr(t, "title", "") or ""))
+    if dropped:
+        logger.warning(
+            "[tap.builtin_topic_source] %s/%s: dropped %d contentless "
+            "topic(s) at ingest: %s",
+            niche.slug, source_name, len(dropped),
+            "; ".join(f"[{r}] {t!r:.60}" for r, t in dropped),
+        )
+        emit_finding(
+            source="tap_builtin_topic_source",
+            kind="topic_sanity_rejected",
+            title=(
+                f"Dropped {len(dropped)} contentless topic(s) at tap ingest "
+                f"({niche.slug}/{source_name})"
+            ),
+            body="\n".join(f"- {reason}: {title!r}" for reason, title in dropped),
+            severity="warn",
+            dedup_key=f"topic-sanity-ingest:{niche.slug}:{source_name}",
+            extra={
+                "stage": "tap_ingest",
+                "niche_slug": niche.slug,
+                "source": source_name,
+                "dropped": [
+                    {"reason": reason, "title": title[:200]}
+                    for reason, title in dropped
+                ],
+            },
+        )
+    fresh = sane
+
     target_table = row.get("target_table") or "topic_pool"
     async with pool.acquire() as conn:
         inserted = await insert_pooled_topics(
@@ -115,7 +165,8 @@ async def builtin_topic_source(
         )
 
     logger.info(
-        "[tap.builtin_topic_source] %s/%s: %d pooled (%d fetched, %d after dedup)",
+        "[tap.builtin_topic_source] %s/%s: %d pooled (%d fetched, %d after "
+        "dedup + sanity)",
         niche.slug, source_name, inserted, len(topics or []), len(fresh),
     )
     return {"records": inserted, "source": source_name}
