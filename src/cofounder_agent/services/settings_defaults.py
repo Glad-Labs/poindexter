@@ -633,6 +633,11 @@ DEFAULTS: dict[str, str] = {
     # out and the rescue (#1674) was silently skipped on salvageable drafts.
     'content_router_qa_rewrite_timeout_seconds': '600',
     'content_router_seo_title_max_tokens': '4000',
+    # Extra title-generation attempts when the LLM answers with
+    # meta-commentary about the draft instead of a headline ("Focuses on
+    # specific metrics…"). 0 disables the retry — junk falls straight
+    # through to the H1/topic fallback in choose_canonical_title.
+    'title_junk_regen_max_retries': '1',
     # Content-validator per-category promotion thresholds. 0 = never promote
     # this warning category to a hard critical (Glad-Labs/poindexter#692):
     # both rules are pattern heuristics that can't tell a fabricated external

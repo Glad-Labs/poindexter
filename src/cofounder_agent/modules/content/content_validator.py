@@ -887,6 +887,36 @@ _PLANNING_DUMP_VOCAB: tuple[tuple[str, re.Pattern[str]], ...] = (
         r"(?:provided\s+)?sources?)\b",
         re.IGNORECASE | re.MULTILINE,
     )),
+    # Draft meta-commentary labels — the writer critiquing/justifying its own
+    # draft choices instead of writing the article ("SEO Value: They target
+    # high-intent keywords…", "Neutral Tone: They are helpful and
+    # instructional…", "Clarity: They immediately signal…"). The June 2026
+    # pipeline_versions.title leak lineage (#1280/#1821/#1822) is this dialect
+    # surfacing at the title seam; this family catches it opening a BODY.
+    # Line-anchored with an optional bullet/blockquote marker, so prose that
+    # merely discusses tone or SEO mid-paragraph never matches. Kept SEPARATE
+    # from draft-meta-narration below on the assignment-spec precedent: a
+    # pure self-review dump contains both shapes, and the two co-occurring is
+    # what crosses the >=2-family bar.
+    ("draft-meta-commentary", re.compile(
+        r"^[ \t]*(?:[*+\->][ \t]+)?\*{0,2}(?:seo\s+value|seo\s+keywords"
+        r"|neutral\s+tone|no\s+provocative\s+tone|clarity|intent-based"
+        r"|framing)\b[ \t]*:",
+        re.IGNORECASE | re.MULTILINE,
+    )),
+    # Draft meta-narration — elided-subject narration verb + preposition
+    # opening a line ('Shifted from a "Guide" format to…', "Focuses on
+    # specific metrics (TPS) rather than…"). Finished prose starts a line
+    # with a subject; only the writer narrating its own revision choices
+    # opens with the inflected -s/-ed verb. Mirrors the title junk guard's
+    # _META_LEADING_VERB_PREP_RE (services/title_generation.py) — one
+    # dialect, two seams.
+    ("draft-meta-narration", re.compile(
+        r"^[ \t]*(?:[*+\->][ \t]+)?(?:focus(?:es|ed)|shift(?:s|ed)"
+        r"|pivot(?:s|ed)|mov(?:es|ed))\s+(?:on|from|to|toward|towards"
+        r"|away|beyond)\b",
+        re.IGNORECASE | re.MULTILINE,
+    )),
 )
 
 _PLANNING_DUMP_MIN_BULLETS = 6

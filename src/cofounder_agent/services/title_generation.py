@@ -198,6 +198,22 @@ _META_LEADING_VERB_RE = re.compile(
     re.IGNORECASE,
 )
 
+# Leading narration verb + preposition (2026-06-18 pipeline_versions
+# captures). Same species as ``_META_LEADING_VERB_RE`` — the model narrates
+# what the draft/title DOES with an elided subject — but the verb takes a
+# preposition rather than an article:
+#   "Focuses on specific metrics (TPS) rather than high-level conceptual changes."
+#   'Shifted from a "Guide" format to "Case/Perspective/Architecture" formats.'
+# A real headline opens with the imperative ("Focus on …", "Shift to …"), a
+# gerund ("Shifting from …"), or a noun — never the inflected -s/-ed
+# narration form, so verb inflection + preposition is the tell.
+_META_LEADING_VERB_PREP_RE = re.compile(
+    r"^(?:Focus(?:es|ed)|Shift(?:s|ed)|Pivot(?:s|ed)|Mov(?:es|ed)"
+    r"|Switch(?:es|ed)|Lean(?:s|ed))\s+"
+    r"(?:on|from|to|toward|towards|away|beyond)\b",
+    re.IGNORECASE,
+)
+
 # Characters that represent a cleanly terminated title.
 _CLEAN_END_CHARS: frozenset[str] = frozenset(
     string.ascii_letters + string.digits + '"' + "'" + "!" + "?" + "."
@@ -208,34 +224,105 @@ _CLEAN_END_CHARS: frozenset[str] = frozenset(
 _DEFAULT_TITLE_MAX_LENGTH: int = 90
 
 
+def _is_meta_commentary_title(title: str) -> bool:
+    """Return True when ``title`` reads as commentary ABOUT the draft/title
+    rather than a headline.
+
+    These are the content-shape rules of :func:`_is_junk_title` (its checks
+    3-8), split out so the H1/topic fallback candidates in
+    :func:`choose_canonical_title` can be screened for the meta-commentary
+    dialect WITHOUT the truncation/length checks — a legitimate long H1 or a
+    ``)``-terminated topic must stay eligible as a fallback title.
+
+    Rules (structural, case-sensitivity per rule):
+
+    1. **Markdown blockquote prefix** — a ``>``-prefixed candidate is a line
+       quoted out of the writer's planning notes, never a finished headline
+       (2026-06-20 published capture: ``> Eliminating Micro-Stutter: …``).
+       :func:`sanitize_generated_title` strips the marker on the LLM path;
+       this check covers candidates arriving via other seams (H1 / topic).
+    2. **Prefix patterns** — starts with a known instructional prefix
+       (e.g. ``Intent-Based:``, ``SEO Keywords:``, ``Heading:``).
+    3. **Substring patterns** — contains a known instructional substring
+       (e.g. `` they signal to the reader``).
+    4. **Rubric / reasoning leak** — matches ``_RUBRIC_REASONING_RE``: an
+       optional short label then ``They``/``These`` followed by a lowercase
+       prose verb (e.g. ``Tone: They move away…`` / ``These avoid…``). This
+       generalises checks 2-3 to the shared *structural* shape so novel
+       labels and sub-cap-length rubric bullets are still caught.
+    5. **Singular meta-clause** — matches ``_RUBRIC_META_CLAUSE_RE``: a
+       ``<label>:`` subtitle then ``It``/``This`` (or ``They``/``These``)
+       followed by a lowercase prose verb (e.g. ``…style: It is framed…``).
+       Extends #4 to the singular pronoun the writer also reaches for.
+    6. **Leading descriptive verb + article** — matches
+       ``_META_LEADING_VERB_RE``: a 3rd-person-singular ``-s`` verb + article
+       opening (e.g. ``Avoids the…``, ``Frames the…``) where the model
+       narrates the article with an elided subject instead of naming it.
+    7. **Leading narration verb + preposition** — matches
+       ``_META_LEADING_VERB_PREP_RE``: an inflected -s/-ed verb + preposition
+       opening (e.g. ``Focuses on…``, ``Shifted from…``) — the 2026-06-18
+       dialect the article-required rule above misses.
+
+    Pure function — no LLM calls, no I/O.
+    """
+    if not title or not title.strip():
+        return False
+
+    stripped = title.strip()
+
+    # 1. Markdown blockquote prefix.
+    if stripped.startswith(">"):
+        return True
+
+    lower = stripped.lower()
+
+    # 2. Instructional prefix patterns.
+    for prefix in _JUNK_TITLE_PREFIX_PATTERNS:
+        if lower.startswith(prefix):
+            return True
+
+    # 3. Instructional substring patterns.
+    for substr in _JUNK_TITLE_SUBSTRING_PATTERNS:
+        if substr in lower:
+            return True
+
+    # 4. Rubric / reasoning leak. Operates on the case-preserved ``stripped``
+    #    form (not ``lower``) because the lowercase prose-verb after the
+    #    pronoun is the discriminator vs a title-cased subtitle.
+    if _RUBRIC_REASONING_RE.match(stripped):
+        return True
+
+    # 5. Singular meta-clause after a subtitle label ("<label>: It is …").
+    #    Same lowercase-continuation discriminator as #4; case-preserved form.
+    if _RUBRIC_META_CLAUSE_RE.match(stripped):
+        return True
+
+    # 6. Leading descriptive verb narrating the article ("Avoids the …").
+    #    Case-insensitive via the compiled flag, so ``stripped`` is fine.
+    if _META_LEADING_VERB_RE.match(stripped):
+        return True
+
+    # 7. Leading narration verb + preposition ("Focuses on …", "Shifted from …").
+    if _META_LEADING_VERB_PREP_RE.match(stripped):
+        return True
+
+    return False
+
+
 def _is_junk_title(title: str, max_length: int = _DEFAULT_TITLE_MAX_LENGTH) -> bool:
     """Return True when ``title`` looks like LLM meta-text rather than a real title.
 
-    Checks (all case-insensitive):
+    Checks:
 
     1. **Truncated ending** — last non-whitespace char is not a clean terminal
        character (letter, digit, ``"``, ``'``, ``!``, ``?``, ``.``).
        Covers tails like ``, o...`` or ``-style truncation``.
     2. **Length cap** — exceeds ``max_length`` characters (default 90, but
        callers pass the DB-configured ``title_max_length`` value).
-    3. **Prefix patterns** — starts with any of the known instructional
-       prefixes (e.g. ``Intent-Based:``, ``SEO Keywords:``, ``Heading:``).
-    4. **Substring patterns** — contains any of the known instructional
-       substrings (e.g. `` they signal to the reader``).
-    5. **Rubric / reasoning leak** — matches ``_RUBRIC_REASONING_RE``: an
-       optional short label then ``They``/``These`` followed by a lowercase
-       prose verb (e.g. ``Tone: They move away…`` / ``These avoid…``). This
-       generalises checks 3-4 to the shared *structural* shape so novel
-       labels and sub-cap-length rubric bullets are still caught.
-    6. **Singular meta-clause** — matches ``_RUBRIC_META_CLAUSE_RE``: a
-       ``<label>:`` subtitle then ``It``/``This`` (or ``They``/``These``)
-       followed by a lowercase prose verb (e.g. ``…style: It is framed…``).
-       Extends #5 to the singular pronoun the writer also reaches for.
-    7. **Leading descriptive verb** — matches ``_META_LEADING_VERB_RE``: a
-       3rd-person-singular ``-s`` verb + article opening (e.g. ``Avoids the…``,
-       ``Frames the…``) where the model narrates the article with an elided
-       subject instead of naming it.
-    8. **Topic verbatim** — intentionally NOT handled here; that case is
+    3. **Meta-commentary shapes** — delegates to
+       :func:`_is_meta_commentary_title` (blockquote prefix, instructional
+       prefixes/substrings, rubric/reasoning leaks, narration-verb openings).
+    4. **Topic verbatim** — intentionally NOT handled here; that case is
        already covered by the ``choose_canonical_title`` fallback logic.
 
     Pure function — no LLM calls, no I/O.
@@ -254,35 +341,8 @@ def _is_junk_title(title: str, max_length: int = _DEFAULT_TITLE_MAX_LENGTH) -> b
     if len(stripped) > max_length:
         return True
 
-    lower = stripped.lower()
-
-    # 3. Instructional prefix patterns.
-    for prefix in _JUNK_TITLE_PREFIX_PATTERNS:
-        if lower.startswith(prefix):
-            return True
-
-    # 4. Instructional substring patterns.
-    for substr in _JUNK_TITLE_SUBSTRING_PATTERNS:
-        if substr in lower:
-            return True
-
-    # 5. Rubric / reasoning leak. Operates on the case-preserved ``stripped``
-    #    form (not ``lower``) because the lowercase prose-verb after the
-    #    pronoun is the discriminator vs a title-cased subtitle.
-    if _RUBRIC_REASONING_RE.match(stripped):
-        return True
-
-    # 6. Singular meta-clause after a subtitle label ("<label>: It is …").
-    #    Same lowercase-continuation discriminator as #5; case-preserved form.
-    if _RUBRIC_META_CLAUSE_RE.match(stripped):
-        return True
-
-    # 7. Leading descriptive verb narrating the article ("Avoids the …").
-    #    Case-insensitive via the compiled flag, so ``stripped`` is fine.
-    if _META_LEADING_VERB_RE.match(stripped):
-        return True
-
-    return False
+    # 3. Meta-commentary shapes (shared with the fallback-candidate screen).
+    return _is_meta_commentary_title(stripped)
 
 
 def choose_canonical_title(
@@ -356,12 +416,35 @@ def choose_canonical_title(
 
     if not (llm_title and llm_title.strip()):
         h1 = extract_h1_title(content or "")
+        # Screen the H1 for the meta-commentary dialect (2026-06 leak
+        # lineage: a planning-dump body can surface a narration line as its
+        # first heading). Content-shape rules only — a legitimately long or
+        # ")"-terminated H1 must stay eligible, so the truncation/length
+        # checks of the full junk guard do NOT apply here.
+        if h1 and _is_meta_commentary_title(h1):
+            logger.warning(
+                "[TITLE] H1 fallback is meta-commentary, not a headline — "
+                "skipping to topic: %r",
+                h1[:120],
+            )
+            h1 = None
         if h1 and h1 != cleaned_topic:
             chosen = h1
             source = "h1"
         else:
             chosen = cleaned_topic
             source = "topic"
+            # Last-resort candidate: there is nothing left to fall back to,
+            # so a polluted topic (topic-pool junk) is returned as-is — but
+            # loudly, so the approval gate reviewer knows the title needs a
+            # rewrite before this post can ship.
+            if _is_meta_commentary_title(cleaned_topic):
+                logger.warning(
+                    "[TITLE] Topic fallback is itself meta-commentary — no "
+                    "clean title candidate exists for this task; operator "
+                    "must rewrite the title before approval: %r",
+                    cleaned_topic[:120],
+                )
 
     if cleaned_topic and chosen and chosen != cleaned_topic:
         distance = 1.0 - SequenceMatcher(
@@ -413,7 +496,11 @@ def sanitize_generated_title(raw: str) -> str | None:
     lines = [ln.strip() for ln in text.splitlines() if ln.strip()]
     candidate: str | None = None
     for line in reversed(lines):
-        stripped = re.sub(r"^[\s\*\-\+\u2022]+|^\d+[\.\)]\s*", "", line).strip()
+        # Leading markers stripped include ``>`` \u2014 the writer occasionally
+        # quotes the title line out of its planning notes ("> Eliminating
+        # Micro-Stutter: \u2026", published 2026-06-20 with the marker intact).
+        # The headline underneath is real; only the blockquote marker is junk.
+        stripped = re.sub(r"^[\s\*\-\+\u2022>]+|^\d+[\.\)]\s*", "", line).strip()
         stripped = re.sub(r"^#+\s+", "", stripped)
         stripped = stripped.strip('"').strip("'").strip()
         stripped = re.sub(r"\*\*([^*]+)\*\*", r"\1", stripped)
@@ -540,25 +627,40 @@ async def generate_canonical_title(
                 site_config=_sc,
             )
             return None
-        result = await provider.complete(
-            messages=[{"role": "user", "content": prompt}],
-            model=model,
-            temperature=0.7,
-            max_tokens=_sc.get_int(
-                "content_router_seo_title_max_tokens", 4000,
-            ),
-            # A title is short copy. pipeline_writer_model may be a reasoning
-            # model that would otherwise deliberate inside the 4000-token
-            # budget and leak its rationale as the "title" (task bb878d6b:
-            # 'Avoids the "Dev Diary/PR" style: It is framed as an evergreen
-            # resource rather than a log.'). think=False makes it emit
-            # the title directly. If the resolved model can't disable thinking
-            # the call errors and we fall through to None → H1/topic fallback,
-            # which is the same safe headline the junk guard would pick anyway.
-            think=False,
+        # Junk reject/retry loop. When the model answers with meta-commentary
+        # ABOUT the draft instead of a headline ("Focuses on specific metrics
+        # (TPS) rather than high-level conceptual changes.") the candidate is
+        # rejected and the call retried with an explicit corrective
+        # instruction, up to ``title_junk_regen_max_retries`` extra attempts
+        # (default 1; 0 disables the retry so junk falls straight through to
+        # the H1/topic fallback in ``choose_canonical_title``).
+        max_junk_retries = max(0, _sc.get_int("title_junk_regen_max_retries", 1))
+        max_title_length = _sc.get_int(
+            "title_max_length", _DEFAULT_TITLE_MAX_LENGTH,
         )
+        attempt_prompt = prompt
+        for attempt in range(1 + max_junk_retries):
+            result = await provider.complete(
+                messages=[{"role": "user", "content": attempt_prompt}],
+                model=model,
+                temperature=0.7,
+                max_tokens=_sc.get_int(
+                    "content_router_seo_title_max_tokens", 4000,
+                ),
+                # A title is short copy. pipeline_writer_model may be a reasoning
+                # model that would otherwise deliberate inside the 4000-token
+                # budget and leak its rationale as the "title" (task bb878d6b:
+                # 'Avoids the "Dev Diary/PR" style: It is framed as an evergreen
+                # resource rather than a log.'). think=False makes it emit
+                # the title directly. If the resolved model can't disable thinking
+                # the call errors and we fall through to None → H1/topic fallback,
+                # which is the same safe headline the junk guard would pick anyway.
+                think=False,
+            )
 
-        if result and result.text:
+            if not (result and result.text):
+                return None
+
             # Structured-JSON extraction (#1280/#1821). The seo.generate_title
             # prompt asks for a ``{"title": "..."}`` object; we parse it and read
             # the ``title`` field, DISCARDING any deliberation the reasoning
@@ -567,25 +669,48 @@ async def generate_canonical_title(
             # rationale bullets (and even the raw JSON envelope) as the "title".
             # ``seo_generate_all_metadata.py`` has never leaked for this reason.
             parsed = _extract_json(result.text)
-            if parsed is not None:
-                raw_title = str(parsed.get("title") or "").strip()
-                if raw_title:
-                    # ``sanitize_generated_title`` now runs on the single trusted
-                    # title string (markdown/quote/label/QA-suffix hygiene +
-                    # length cap), not on free-form LLM output. ``_is_junk_title``
-                    # in ``choose_canonical_title`` stays the final backstop.
-                    title = sanitize_generated_title(raw_title)
-                    if title:
-                        logger.debug("Generated title: %s", title)
-                        return title
-            # No parseable object, or no usable ``title`` field: return None and
-            # let ``choose_canonical_title`` fall back to the body H1 / topic.
-            # We do NOT scan the raw text for a title — that is exactly the leak
-            # this change removes.
+            if parsed is None:
+                # No parseable object: return None and let
+                # ``choose_canonical_title`` fall back to the body H1 / topic.
+                # We do NOT scan the raw text for a title — that is exactly the
+                # leak the #1821 change removed.
+                logger.warning(
+                    "[TITLE_GEN] No usable title in JSON response — falling "
+                    "back to H1/topic (raw=%r)",
+                    result.text[:100],
+                )
+                return None
+
+            raw_title = str(parsed.get("title") or "").strip()
+            # ``sanitize_generated_title`` runs on the single trusted title
+            # string (markdown/quote/label/QA-suffix hygiene + length cap),
+            # not on free-form LLM output. ``_is_junk_title`` in
+            # ``choose_canonical_title`` stays the final backstop.
+            title = sanitize_generated_title(raw_title) if raw_title else None
+            if not title:
+                logger.warning(
+                    "[TITLE_GEN] No usable title in JSON response — falling "
+                    "back to H1/topic (raw=%r)",
+                    result.text[:100],
+                )
+                return None
+
+            if not _is_junk_title(title, max_length=max_title_length):
+                logger.debug("Generated title: %s", title)
+                return title
+
             logger.warning(
-                "[TITLE_GEN] No usable title in JSON response — falling back to "
-                "H1/topic (raw=%r)",
-                result.text[:100],
+                "[TITLE_GEN] Junk/meta-commentary title on attempt %d/%d — "
+                "rejected: %r",
+                attempt + 1,
+                1 + max_junk_retries,
+                title[:120],
+            )
+            attempt_prompt = prompt + (
+                "\n\n⚠️ Your previous response DESCRIBED the title instead of "
+                "stating it. Do not write commentary about tone, format, SEO "
+                "value, or what the title avoids. Respond with ONLY the JSON "
+                'object {"title": "..."} where the value is the headline itself.'
             )
         return None
 

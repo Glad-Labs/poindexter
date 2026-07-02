@@ -20,7 +20,9 @@ import pytest
 from services.title_generation import (
     _DEFAULT_TITLE_MAX_LENGTH,
     _is_junk_title,
+    _is_meta_commentary_title,
     choose_canonical_title,
+    sanitize_generated_title,
 )
 
 # ---------------------------------------------------------------------------
@@ -502,6 +504,147 @@ def test_choose_handles_site_config_get_int_error_gracefully():
 # ---------------------------------------------------------------------------
 # Edge cases
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Planning-note dialect — June 2026 pipeline_versions captures (2026-06-13 →
+# 06-20, pre-dating the #1821 structured-JSON extraction). The narration
+# verb + preposition shape ("Focuses on…", "Shifted from…") and the markdown
+# blockquote prefix both slipped past every prior rule; they are backstop
+# coverage now that the JSON path is primary.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "junk",
+    [
+        # Task 3a0330b3 (2026-06-18): elided-subject narration verb + "on".
+        "Focuses on specific metrics (TPS) rather than high-level conceptual "
+        "changes.",
+        # Task 51bf6244 (2026-06-18): past-tense narration verb + "from".
+        'Shifted from a "Guide" format to "Case/Perspective/Architecture" '
+        "formats.",
+        # Task 99bd5f15 (2026-06-18): rubric label + "They <lowercase verb>".
+        'SEO Value: They target high-intent keywords like "eliminating '
+        'downtime," "architecting systems,"...',
+        # Task 856d9c6c (2026-06-13): rubric label, under the 90-char cap.
+        "Neutral Tone: They are helpful and instructional rather than "
+        "provocative or opinionated.",
+        # Defensive variants of the narration shape.
+        "Pivots to a comparison framing for the second half.",
+        "Moved away from the listicle structure entirely.",
+    ],
+)
+def test_planning_note_dialect_captures_are_junk(junk: str):
+    """Each June-2026 pipeline_versions capture (and defensive variants of the
+    narration shape) must be flagged as junk."""
+    assert _is_junk_title(junk) is True, f"Expected junk for {junk!r}"
+
+
+@pytest.mark.parametrize(
+    "legit",
+    [
+        # Imperative ('Focus', not 'Focuses') is a normal headline verb.
+        "Focus on Speed: Tuning Local LLM Inference",
+        "Shift to Rust Without Rewriting Everything",
+        # Gerunds are normal headline openers.
+        "Shifting From Monolith to Microservices",
+        "Moving to Rust: Our Migration Story",
+        # Inflected verb WITHOUT a following preposition (hyphen compound).
+        "Switched-Mode Power Supplies Explained",
+    ],
+)
+def test_narration_verb_rule_does_not_flag_legit_titles(legit: str):
+    """Imperative/gerund/compound openers that share a verb stem with the
+    narration rule must NOT be flagged."""
+    assert _is_junk_title(legit) is False, f"False positive on {legit!r}"
+
+
+def test_blockquote_prefixed_candidate_is_junk():
+    """Task 4e865b10 (2026-06-20, PUBLISHED with the marker intact): a
+    '>'-prefixed candidate is a line quoted out of planning notes — the raw
+    form must be flagged wherever it arrives unsanitized."""
+    junk = (
+        "> Eliminating Micro-Stutter: The Importance of Consistent Frame "
+        "Delivery"
+    )
+    assert _is_junk_title(junk) is True
+    assert _is_meta_commentary_title(junk) is True
+
+
+def test_sanitize_strips_blockquote_prefix():
+    """On the LLM path the headline under the '>' marker is real — the
+    sanitizer strips the marker and keeps the title (strip-and-keep, vs the
+    reject-and-fallback treatment of true meta-commentary)."""
+    out = sanitize_generated_title(
+        "> Eliminating Micro-Stutter: The Importance of Consistent Frame "
+        "Delivery"
+    )
+    assert out == (
+        "Eliminating Micro-Stutter: The Importance of Consistent Frame "
+        "Delivery"
+    )
+
+
+# ---------------------------------------------------------------------------
+# _is_meta_commentary_title — the content-shape screen used on the H1/topic
+# fallback candidates. It must NOT inherit the truncation/length checks: a
+# long or ")"-terminated candidate stays eligible as a fallback title.
+# ---------------------------------------------------------------------------
+
+
+def test_meta_commentary_screen_allows_long_titles():
+    """A 120-char legitimate H1 fails _is_junk_title's length cap but must
+    pass the meta-commentary screen (fallback eligibility)."""
+    long_h1 = (
+        "The Complete Guide to Quantizing Large Language Models for "
+        "Consumer GPUs Without Sacrificing Output Quality in Production"
+    )
+    assert len(long_h1) > _DEFAULT_TITLE_MAX_LENGTH
+    assert _is_junk_title(long_h1) is True  # length cap
+    assert _is_meta_commentary_title(long_h1) is False  # still a headline
+
+
+def test_meta_commentary_screen_allows_paren_terminated_titles():
+    """A ')'-terminated candidate fails the truncation check but must pass
+    the meta-commentary screen."""
+    title = "Why Frame Time Matters (And FPS Lies)"
+    assert _is_junk_title(title) is True  # ')' not a clean end char
+    assert _is_meta_commentary_title(title) is False
+
+
+def test_choose_skips_meta_commentary_h1():
+    """A planning-dump body can surface a narration line as its first
+    heading — the H1 fallback must be screened and skipped to topic."""
+    content = (
+        "# Focuses on specific metrics (TPS) rather than high-level "
+        "conceptual changes.\n\nBody text about GPU benchmarks."
+    )
+    out = choose_canonical_title(
+        "RTX 5090 vs RTX 4090 for local LLM inference", content, llm_title=None
+    )
+    assert out == "RTX 5090 vs RTX 4090 for local LLM inference"
+
+
+def test_choose_meta_commentary_topic_last_resort_warns(caplog):
+    """When the topic itself is meta-commentary (topic-pool pollution) and no
+    clean H1 exists, the topic is still returned — there is nothing left —
+    but a loud WARNING flags it for the approval reviewer."""
+    import logging
+
+    topic = (
+        "Neutral Tone: They are helpful and instructional rather than "
+        "provocative or opinionated."
+    )
+    content = "Body paragraph with no markdown heading."
+
+    with caplog.at_level(logging.WARNING, logger="services.title_generation"):
+        out = choose_canonical_title(topic, content, llm_title=None)
+
+    assert out == topic
+    assert any(
+        "meta-commentary" in rec.message.lower() for rec in caplog.records
+    ), "Expected a WARNING about the meta-commentary topic fallback"
 
 
 def test_is_junk_title_empty_string():

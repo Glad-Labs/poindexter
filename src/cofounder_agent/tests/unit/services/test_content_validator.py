@@ -2547,6 +2547,69 @@ class TestDetectPlanningDumpPreamble:
         )
         assert detect_planning_dump_preamble(content) == []
 
+    def test_draft_meta_commentary_dump_detected(self):
+        # The June 2026 pipeline_versions.title leak dialect (tasks 3a0330b3 /
+        # 51bf6244 / 99bd5f15 / 856d9c6c, 2026-06-13..06-18) as a BODY
+        # opening: the writer reviewing its own draft choices — self-review
+        # label bullets ("SEO Value:", "Neutral Tone:") plus elided-subject
+        # narration verbs ("Shifted from…", "Focuses on…"). Neither prior
+        # family matches any of these lines; the two new families
+        # (draft-meta-commentary + draft-meta-narration) co-occurring is what
+        # crosses the >=2-family bar, per the assignment-spec precedent.
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            '*   SEO Value: They target high-intent keywords like "eliminating '
+            'downtime," "architecting systems," and "zero-issue stability."\n'
+            "*   Neutral Tone: They are helpful and instructional rather than "
+            "provocative or opinionated.\n"
+            "*   Clarity: They immediately signal that this is a technical "
+            "solution piece rather than a diary entry.\n"
+            '*   Shifted from a "Guide" format to "Case/Perspective/'
+            'Architecture" formats.\n'
+            "*   Focuses on specific metrics (TPS) rather than high-level "
+            "conceptual changes.\n"
+            '*   No Provocative Tone: These avoid the "X is Y" opinionated '
+            "style.\n\n"
+            "## Why Frame Time Matters More Than FPS\n\n"
+            "Smooth gaming is about consistency, not peaks.\n"
+        )
+        evidence = detect_planning_dump_preamble(content)
+        assert evidence, "draft meta-commentary dump must be detected"
+        assert "vocab:draft-meta-commentary" in evidence
+        assert "vocab:draft-meta-narration" in evidence
+
+    def test_feature_comparison_bullets_not_flagged(self):
+        # FP guard for the draft-meta-narration family: a legitimate
+        # comparison list can open bullets with "Focuses on…" — that matches
+        # narration alone, ONE family, and stays below the >=2-family bar.
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            "*   Focuses on raster performance over ray tracing.\n"
+            "*   Ships with 16 GB of VRAM on a 256-bit bus.\n"
+            "*   Draws 220 W under sustained load.\n"
+            "*   Runs whisper-quiet below 60% fan speed.\n"
+            "*   Undercuts the 5070 Ti by $120 at MSRP.\n"
+            "*   Fits two-slot small-form-factor builds.\n\n"
+            "## The verdict\n\n"
+            "For pure raster value nothing else comes close this year.\n"
+        )
+        assert detect_planning_dump_preamble(content) == []
+
+    def test_participial_prose_opening_not_flagged(self):
+        # FP guard: a participial phrase can legitimately START a prose line
+        # ("Focused on performance, the RTX 5090 …") — vocabulary never fires
+        # without the bullet-dominated opening structure.
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            "Focused on performance, the RTX 5090 rewrites what a consumer "
+            "card can do for local inference. Shifted from the compute-bound "
+            "regime of earlier generations, today's bottleneck is memory "
+            "bandwidth, and the 5090 attacks exactly that.\n\n"
+            "## The numbers\n\n"
+            "Tokens per second tell the story better than TFLOPS.\n"
+        )
+        assert detect_planning_dump_preamble(content) == []
+
     def test_empty_returns_empty(self):
         from modules.content.content_validator import detect_planning_dump_preamble
         assert detect_planning_dump_preamble("") == []

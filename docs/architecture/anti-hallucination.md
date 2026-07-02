@@ -690,6 +690,26 @@ review legitimately opening with a spec-sheet list (`*   Length:
 304 mm`) hits `assignment-spec` alone and stays silent. Posts replay
 re-run at introduction: 0 fires across all 301 `posts` bodies.
 
+2026-07-02 dialect addition #2 (from the June 2026 `pipeline_versions`
+**title**-leak captures, 2026-06-13..06-20): the `draft-meta-commentary`
+family — the writer reviewing its own draft as label-colon lines
+(`SEO Value: They target high-intent keywords…`, `Neutral Tone: They
+are helpful and instructional…`, `Clarity: They immediately signal…`) —
+plus the `draft-meta-narration` family — elided-subject narration verb +
+preposition opening a line (`Shifted from a "Guide" format to…`,
+`Focuses on specific metrics (TPS) rather than…`). This is the same
+dialect the title junk guard hardens against at the title seam
+(`services/title_generation.py`, `_is_meta_commentary_title` — one
+dialect, two seams); these families catch it opening a BODY. Kept as
+two families on the `assignment-spec` precedent: a pure self-review
+dump contains both shapes, and the two co-occurring is what crosses
+the ≥2-family bar, while a comparison list legitimately opening
+bullets with `Focuses on raster performance…` hits narration alone and
+stays silent. Posts replay re-run at introduction: 0 fires across all
+302 `posts` bodies; the extended title screen flagged 21/1664
+`pipeline_versions` titles — every one a genuine planning-note or
+blockquote-prefix leak, zero FPs.
+
 ## Layer 2 — Programmatic validator
 
 File: `src/cofounder_agent/modules/content/content_validator.py`
