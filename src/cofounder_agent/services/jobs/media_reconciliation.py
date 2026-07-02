@@ -853,10 +853,11 @@ class MediaReconciliationJob:
         # behind podcast_pipeline_trigger_enabled), so reconciliation-made
         # podcasts never entered the approval queue and the gated feed
         # silently excluded them.
-        await self._seed_approval_gate(pool, post_id, asset_type)
+        await self._seed_approval_gate(pool, post_id, asset_type, file_path=url)
 
     async def _seed_approval_gate(
         self, pool: Any, post_id: str, asset_type: str,
+        *, file_path: str | None = None,
     ) -> None:
         """Seed the per-medium approval gate for a freshly-stamped asset.
 
@@ -874,11 +875,17 @@ class MediaReconciliationJob:
         identical), so no translation table is needed here. In the live
         reconciliation flow only ``podcast`` is stamped now — video is
         re-dispatched through Stage-2 rather than stamped here.
+
+        ``file_path`` here is the freshly-stamped R2 URL — reconciliation
+        never holds a local render path. ffprobe reads http(s) sources, so
+        the Layer-1 eval (poindexter#816) still gets duration/silence
+        signals; the file-size check degrades to "unavailable" (None) and
+        is simply skipped by the evaluator.
         """
         try:
             from services.media_approval_service import record_pending
 
-            await record_pending(pool, post_id, asset_type)
+            await record_pending(pool, post_id, asset_type, file_path=file_path)
         except Exception as e:  # noqa: BLE001 — gate seed is additive, never fatal
             logger.warning(
                 "media_reconciliation: approval-gate seed failed for "

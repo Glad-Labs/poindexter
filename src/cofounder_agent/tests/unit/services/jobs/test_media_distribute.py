@@ -149,6 +149,32 @@ def test_type_to_medium_is_identity():
 
 
 @pytest.mark.asyncio
+async def test_seed_threads_storage_path_to_quality_eval():
+    """The unlinked-asset row's storage_path reaches record_pending as
+    file_path so the Layer-1 quality eval can probe it (poindexter#816);
+    a missing path degrades to None, never ''."""
+    job = MediaDistributeJob()
+    pool = _FakePool(
+        [
+            {"id": "a1", "task_id": "abc", "type": "video",
+             "storage_path": "/data/media/clip.mp4"},
+            {"id": "a2", "task_id": "def", "type": "video_short",
+             "storage_path": ""},
+        ],
+        post_id="post-1",
+    )
+    pending = AsyncMock(return_value="pending")
+    with patch.object(md, "record_pending", pending):
+        await job.run(
+            pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")}
+        )
+    paths = [c.kwargs.get("file_path") for c in pending.await_args_list]
+    assert paths == ["/data/media/clip.mp4", None]
+    # The SQL must actually select the column the row shape relies on.
+    assert "storage_path" in md._UNLINKED_SQL
+
+
+@pytest.mark.asyncio
 async def test_link_skips_when_post_already_has_video_asset():
     """A second task-keyed render for a post that already has a video asset must
     NOT be linked — it should be self-pruned (DELETE) and a finding emitted so

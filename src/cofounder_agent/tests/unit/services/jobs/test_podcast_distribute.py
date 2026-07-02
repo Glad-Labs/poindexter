@@ -93,6 +93,27 @@ async def test_links_unlinked_asset_to_resolved_post() -> None:
 
 
 @pytest.mark.asyncio
+async def test_seed_threads_storage_path_to_quality_eval() -> None:
+    """Both seed passes thread the asset's storage_path to record_pending
+    as file_path so the Layer-1 quality eval can probe it (poindexter#816);
+    a missing/empty path degrades to None."""
+    pool = _FakePool(
+        unlinked=[{"id": "a1", "task_id": "t1", "type": "podcast",
+                   "storage_path": "/data/media/ep1.mp3"}],
+        unapproved=[{"post_id": "p2", "storage_path": ""}],
+        resolve="p1",
+    )
+    with patch.object(podcast_distribute, "record_pending", new=AsyncMock()) as rp:
+        await PodcastDistributeJob().run(pool, _cfg(True))
+
+    by_post = {c.args[1]: c.kwargs.get("file_path") for c in rp.await_args_list}
+    assert by_post == {"p1": "/data/media/ep1.mp3", "p2": None}
+    # Both queries must actually select the column the row shape relies on.
+    assert "storage_path" in podcast_distribute._UNLINKED_PODCAST_SQL
+    assert "storage_path" in podcast_distribute._UNAPPROVED_LINKED_SQL
+
+
+@pytest.mark.asyncio
 async def test_unlinked_asset_left_when_post_unresolved() -> None:
     pool = _FakePool(
         unlinked=[{"id": "a1", "task_id": "t1", "type": "podcast"}],

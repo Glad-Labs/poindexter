@@ -777,7 +777,12 @@ class TestRecordMediaAssetSeedsApprovalGate:
                 asset_type="podcast",
                 url="https://r2.test/podcast/v2/post-1.mp3",
             )
-        rp.assert_awaited_once_with(pool, "post-1", "podcast")
+        # file_path carries the freshly-stamped R2 URL so the Layer-1 eval
+        # (poindexter#816) has a probe-able source at seed time.
+        rp.assert_awaited_once_with(
+            pool, "post-1", "podcast",
+            file_path="https://r2.test/podcast/v2/post-1.mp3",
+        )
 
     async def test_stamp_seeds_pending_approval_for_video(self):
         """A stamped video asset seeds medium='video' (media_assets type
@@ -793,7 +798,10 @@ class TestRecordMediaAssetSeedsApprovalGate:
                 asset_type="video",
                 url="https://r2.test/video/post-2.mp4",
             )
-        rp.assert_awaited_once_with(pool, "post-2", "video")
+        rp.assert_awaited_once_with(
+            pool, "post-2", "video",
+            file_path="https://r2.test/video/post-2.mp4",
+        )
 
     async def test_seed_failure_is_non_fatal(self):
         """record_pending raising must NOT bubble out of

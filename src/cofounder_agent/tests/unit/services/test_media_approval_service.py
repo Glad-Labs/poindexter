@@ -136,6 +136,7 @@ async def test_record_pending_stays_pending_when_niche_setting_disabled(
         {"niche_slug": "glad-labs"},
         {"value": "false"},  # Tier-1 manual opt-in: off
         {"value": "false"},  # Tier-2 earned_autonomy_enabled: off
+        None,  # _evaluate_and_notify row re-read (insert raced → skip)
     ]
 
     result = await media_approval_service.record_pending(
@@ -155,6 +156,7 @@ async def test_record_pending_stays_pending_when_setting_missing(
         {"niche_slug": "glad-labs"},
         None,  # Tier-1 manual opt-in: no row
         None,  # Tier-2 earned_autonomy_enabled: no row
+        None,  # _evaluate_and_notify row re-read (insert raced → skip)
     ]
 
     result = await media_approval_service.record_pending(
@@ -582,6 +584,7 @@ async def test_earned_autonomy_stays_pending_when_insufficient_history(
         {"value": "true"},    # earned_autonomy_enabled
         None,                 # no per-niche override
         {"value": "5"},       # min_dispatches = 5
+        None,                 # _evaluate_and_notify row re-read → skip
     ]
     mock_db.fetch.return_value = [
         {"dispatch_success": True},
@@ -606,6 +609,7 @@ async def test_earned_autonomy_stays_pending_when_any_failure_in_history(
         {"value": "true"},
         None,
         {"value": "3"},  # threshold = 3
+        None,  # _evaluate_and_notify row re-read → skip
     ]
     mock_db.fetch.return_value = [
         {"dispatch_success": True},
@@ -628,6 +632,7 @@ async def test_earned_autonomy_disabled_by_master_switch(
         {"niche_slug": "glad-labs"},
         {"value": "false"},   # Tier-1 off
         {"value": "false"},   # earned_autonomy_enabled = false
+        None,                 # _evaluate_and_notify row re-read → skip
     ]
     mock_db.fetch.return_value = []  # should never be called
 
@@ -648,8 +653,9 @@ async def test_earned_autonomy_skipped_when_no_niche(mock_db: MagicMock) -> None
     )
 
     assert result == "pending"
-    # Only the niche-lookup fetchrow should have been called.
-    assert mock_db.fetchrow.call_count == 1
+    # Niche-lookup fetchrow + the _evaluate_and_notify row re-read (#816);
+    # crucially NO Tier-2 settings queries in between.
+    assert mock_db.fetchrow.call_count == 2
     mock_db.fetch.assert_not_called()
 
 
@@ -876,3 +882,141 @@ async def test_record_pending_then_quality_eval_path_does_not_notify_when_auto_a
 
     assert result is False
     mock_notify.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# record_pending → Layer-1 eval reattachment (poindexter#816)
+#
+# The #648 eval chain died when its only callers (the backfill jobs) were
+# retired in #1460 — media_approvals.quality_score sat NULL on every row and
+# pending media seeded silently. record_pending now owns the eval at the
+# seeding choke point so no future seeder can forget it again.
+# ---------------------------------------------------------------------------
+
+_POST = "12345678-1234-1234-1234-123456789012"
+
+
+def _pending_row_side_effects(*, evaluated_at=None, status="pending") -> list:
+    """fetchrow sequence for the no-niche Tier-3 path + the eval re-read."""
+    return [
+        None,  # niche lookup: no row → Tier 3
+        {"status": status, "quality_evaluated_at": evaluated_at},
+    ]
+
+
+async def test_record_pending_with_file_path_runs_podcast_eval(
+    mock_db: MagicMock,
+) -> None:
+    """Pending + file_path → evaluate_podcast runs on the asset (#816)."""
+    mock_db.fetchrow.side_effect = _pending_row_side_effects()
+
+    eval_podcast = AsyncMock()
+    with patch(
+        "services.media_quality_service.evaluate_podcast", eval_podcast,
+    ):
+        status = await media_approval_service.record_pending(
+            mock_db, _POST, "podcast", file_path="/data/media/pod.mp3",
+        )
+
+    assert status == "pending"
+    eval_podcast.assert_awaited_once_with(mock_db, _POST, "/data/media/pod.mp3")
+
+
+@pytest.mark.parametrize("medium", ["video", "video_short"])
+async def test_record_pending_with_file_path_runs_video_eval(
+    mock_db: MagicMock, medium: str,
+) -> None:
+    """Video flavors route to evaluate_video with the medium threaded."""
+    mock_db.fetchrow.side_effect = _pending_row_side_effects()
+
+    eval_video = AsyncMock()
+    with patch(
+        "services.media_quality_service.evaluate_video", eval_video,
+    ):
+        await media_approval_service.record_pending(
+            mock_db, _POST, medium, file_path="/data/media/clip.mp4",
+        )
+
+    eval_video.assert_awaited_once_with(
+        mock_db, _POST, "/data/media/clip.mp4", medium=medium,
+    )
+
+
+async def test_record_pending_without_file_path_still_pings_operator(
+    mock_db: MagicMock,
+) -> None:
+    """No asset path (e.g. reconciliation R2-only stamp) → the review ping
+    still fires so a pending medium is never seeded silently (the 6.4-day
+    unnoticed-pending failure mode)."""
+    mock_db.fetchrow.side_effect = _pending_row_side_effects()
+
+    notify = AsyncMock(return_value=True)
+    with patch.object(
+        media_approval_service, "notify_pending_for_review", notify,
+    ):
+        status = await media_approval_service.record_pending(
+            mock_db, _POST, "podcast",
+        )
+
+    assert status == "pending"
+    notify.assert_awaited_once_with(mock_db, _POST, "podcast")
+
+
+async def test_record_pending_skips_eval_when_already_evaluated(
+    mock_db: MagicMock,
+) -> None:
+    """quality_evaluated_at set → idempotent re-seed must not re-run
+    ffprobe or re-ping Discord (scheduled jobs re-seed every cycle)."""
+    mock_db.fetchrow.side_effect = _pending_row_side_effects(
+        evaluated_at="2026-07-02T00:00:00Z",
+    )
+
+    eval_podcast = AsyncMock()
+    notify = AsyncMock()
+    with patch(
+        "services.media_quality_service.evaluate_podcast", eval_podcast,
+    ), patch.object(
+        media_approval_service, "notify_pending_for_review", notify,
+    ):
+        await media_approval_service.record_pending(
+            mock_db, _POST, "podcast", file_path="/data/media/pod.mp3",
+        )
+
+    eval_podcast.assert_not_awaited()
+    notify.assert_not_awaited()
+
+
+async def test_record_pending_skips_eval_when_prior_decision_holds(
+    mock_db: MagicMock,
+) -> None:
+    """ON CONFLICT DO NOTHING kept an operator-approved row → the eval must
+    NOT run (its auto-reject path would clobber the human decision)."""
+    mock_db.fetchrow.side_effect = _pending_row_side_effects(status="approved")
+
+    eval_podcast = AsyncMock()
+    with patch(
+        "services.media_quality_service.evaluate_podcast", eval_podcast,
+    ):
+        await media_approval_service.record_pending(
+            mock_db, _POST, "podcast", file_path="/data/media/pod.mp3",
+        )
+
+    eval_podcast.assert_not_awaited()
+
+
+async def test_record_pending_eval_failure_never_fails_the_seed(
+    mock_db: MagicMock,
+) -> None:
+    """The eval is additive — an ffprobe/DB explosion inside it must not
+    bubble out of record_pending (the gate row is already inserted)."""
+    mock_db.fetchrow.side_effect = _pending_row_side_effects()
+
+    with patch(
+        "services.media_quality_service.evaluate_podcast",
+        AsyncMock(side_effect=RuntimeError("ffprobe exploded")),
+    ):
+        status = await media_approval_service.record_pending(
+            mock_db, _POST, "podcast", file_path="/data/media/pod.mp3",
+        )
+
+    assert status == "pending"

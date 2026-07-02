@@ -30,8 +30,9 @@ from services.media_approval_service import record_dispatched, record_pending
 logger = logging.getLogger(__name__)
 
 # Unlinked task-keyed podcast assets: rendered but not yet tied to a post.
+# storage_path feeds the Layer-1 quality eval at seed time (poindexter#816).
 _UNLINKED_PODCAST_SQL = """
-    SELECT id::text AS id, task_id
+    SELECT id::text AS id, task_id, storage_path
       FROM media_assets
      WHERE post_id IS NULL
        AND task_id IS NOT NULL
@@ -52,8 +53,11 @@ _RESOLVE_POST_SQL = """
 _LINK_SQL = "UPDATE media_assets SET post_id = $1::uuid, updated_at = NOW() WHERE id = $2::uuid"
 
 # Backlog heal: podcast assets with a resolved post but NO approval row yet.
+# DISTINCT ON keeps one row per post (newest render) so its storage_path can
+# feed the Layer-1 quality eval at seed time (poindexter#816).
 _UNAPPROVED_LINKED_SQL = """
-    SELECT DISTINCT ma.post_id::text AS post_id
+    SELECT DISTINCT ON (ma.post_id)
+           ma.post_id::text AS post_id, ma.storage_path
       FROM media_assets ma
      WHERE ma.type = 'podcast'
        AND ma.post_id IS NOT NULL
@@ -61,6 +65,7 @@ _UNAPPROVED_LINKED_SQL = """
            SELECT 1 FROM media_approvals mv
             WHERE mv.post_id = ma.post_id AND mv.medium = 'podcast'
        )
+     ORDER BY ma.post_id, ma.created_at DESC
      LIMIT $1
 """
 
@@ -170,7 +175,10 @@ class PodcastDistributeJob:
                 if not post_id:
                     continue  # not published yet — link on a later cycle
                 await pool.execute(_LINK_SQL, post_id, row["id"])
-                await record_pending(pool, post_id, "podcast")
+                await record_pending(
+                    pool, post_id, "podcast",
+                    file_path=row.get("storage_path") or None,
+                )
                 seeded += 1
                 logger.info("[PODCAST_DISTRIBUTE] linked asset %s → post %s + seeded", row["id"], post_id)
             except Exception as exc:  # noqa: BLE001 — one asset must not halt the pass
@@ -184,7 +192,10 @@ class PodcastDistributeJob:
             unapproved = []
         for row in unapproved or []:
             try:
-                await record_pending(pool, row["post_id"], "podcast")
+                await record_pending(
+                    pool, row["post_id"], "podcast",
+                    file_path=row.get("storage_path") or None,
+                )
                 seeded += 1
                 logger.info("[PODCAST_DISTRIBUTE] backlog-seeded podcast approval for post %s", row["post_id"])
             except Exception as exc:  # noqa: BLE001

@@ -196,7 +196,7 @@ async def _earned_autonomy_check(
 
 
 async def record_pending(
-    db: Any, post_id: str, medium: str,
+    db: Any, post_id: str, medium: str, *, file_path: str | None = None,
 ) -> str:
     """Insert a row for a freshly generated medium.
 
@@ -207,6 +207,19 @@ async def record_pending(
 
     Call this from the generation path (backfill jobs + inline
     post-publish hooks) as soon as the media file is on disk.
+
+    ``file_path`` (poindexter#816): the on-disk asset path (or an R2
+    URL — ffprobe reads both). When the row lands ``pending`` and has
+    never been quality-evaluated, the Layer-1 eval
+    (``media_quality_service.evaluate_*``) runs on it — populating
+    ``quality_score`` / ``quality_signals``, auto-rejecting obvious
+    garbage (``decided_by='auto:layer1'``), and firing the
+    ``notify_pending_for_review`` Discord ping on pass. Without a
+    path the eval is skipped but the ping still fires, so a pending
+    medium is never seeded silently. Seeding this at the choke point
+    (rather than each caller) is deliberate: the original #648 chain
+    died because its callers were retired (#1460) and the replacement
+    seeders never re-attached the eval.
 
     ``db`` accepts either an asyncpg Pool or Connection.
     """
@@ -287,7 +300,66 @@ async def record_pending(
         "[media_approval] pending: %s for post %s (awaiting operator)",
         medium, post_id,
     )
+    await _evaluate_and_notify(db, post_id, medium, file_path)
     return "pending"
+
+
+async def _evaluate_and_notify(
+    db: Any, post_id: str, medium: str, file_path: str | None,
+) -> None:
+    """Layer-1 eval + operator ping for a freshly seeded pending row (#816).
+
+    Additive observability on the Tier-3 path — a failure here MUST NOT
+    fail the seed (the gate row is already inserted), so everything is
+    wrapped and swallowed.
+
+    Skips when the row is missing (insert raced/failed), isn't
+    ``pending`` (a prior operator/auto decision holds — never re-judge
+    or clobber it), or was already evaluated (``quality_evaluated_at``
+    set — re-seed events don't re-run ffprobe or re-ping Discord).
+
+    With a ``file_path`` the eval owns the ping (it fires
+    ``notify_pending_for_review`` on pass and stays silent on
+    auto-reject). Without one — e.g. a reconciliation stamp that only
+    knows the R2 URL failed to resolve a local render — the ping fires
+    directly so the pending row still surfaces in Discord; the quality
+    columns stay NULL rather than fabricating signals
+    (``feedback_no_dummy_data``).
+    """
+    try:
+        row = await db.fetchrow(
+            """
+            SELECT status, quality_evaluated_at FROM media_approvals
+            WHERE post_id = $1::uuid AND medium = $2
+            """,
+            post_id, medium,
+        )
+        if row is None or row["status"] != "pending":
+            return
+        if row["quality_evaluated_at"] is not None:
+            return
+
+        if file_path:
+            # Lazy import — media_quality_service lazy-imports this module
+            # for its notify hook; a top-level import here would close the
+            # cycle eagerly.
+            from services import media_quality_service
+
+            if medium == "podcast":
+                await media_quality_service.evaluate_podcast(
+                    db, post_id, file_path,
+                )
+            else:
+                await media_quality_service.evaluate_video(
+                    db, post_id, file_path, medium=medium,
+                )
+        else:
+            await notify_pending_for_review(db, post_id, medium)
+    except Exception as e:  # noqa: BLE001 — additive; the seed must stand
+        logger.warning(
+            "[media_approval] quality eval/notify failed for %s/%s: %s",
+            medium, post_id[:8], e,
+        )
 
 
 async def notify_pending_for_review(

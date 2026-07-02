@@ -77,7 +77,7 @@ _TYPE_TO_MEDIUM: dict[str, str] = {
 # media_pipeline assets awaiting a post link: a rendered video with a task id
 # but no post yet. Newest task first so a freshly-published piece links promptly.
 _UNLINKED_SQL = """
-    SELECT id::text AS id, task_id, type
+    SELECT id::text AS id, task_id, type, storage_path
       FROM media_assets
      WHERE post_id IS NULL
        AND task_id IS NOT NULL
@@ -411,7 +411,10 @@ class MediaDistributeJob:
 
             try:
                 await pool.execute(_LINK_SQL, post_id, asset_id)
-                await record_pending(pool, post_id, medium)
+                await record_pending(
+                    pool, post_id, medium,
+                    file_path=row.get("storage_path") or None,
+                )
                 linked += 1
                 logger.info(
                     "[MEDIA_DISTRIBUTE] linked asset %s (%s) → post %s + seeded "
