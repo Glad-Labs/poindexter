@@ -12,5 +12,8 @@
     "esbuild": "^0.28.1",
     "vitest": "^3.2.6",
     "wrangler": "^4.102.0"
+  },
+  "overrides": {
+    "esbuild": "$esbuild"
   }
 }
