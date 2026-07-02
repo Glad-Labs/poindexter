@@ -581,12 +581,20 @@ version.
 The guard deterministically strips a contiguous echoed/scaffolding
 preamble off the front of the draft (no LLM call), both on the graph
 draft and on the expansion output before the keep-best comparison. It is
-**gated on a high-precision identity-echo signature** — the first lines
-restating ≥2 of {topic, angle, niche-override} — so it is a no-op on
-clean drafts (a real article body never opens by listing its own topic,
-angle, and niche as separate short lines), and it **never zeroes a
-draft** (if no substantial body survives the strip it keeps the original
-and the contamination becomes a human-review signal). Every strip emits a
+**gated on a high-precision echo signature** with two independent
+triggers: an _identity echo_ — the first lines restating ≥2 of {topic,
+angle, niche-override} — or an _instruction echo_ — ≥2 of the first six
+non-blank lines matching the instruction-imperative patterns (`Expand a
+draft...`, `Do NOT pad...`, `Preserve all facts...`), or one of each.
+The instruction trigger was added 2026-07-01 after tasks `e46b449c` /
+`9921678f` / `ecaf0c01` leaked a **paraphrased** expand prompt (`Expand
+a draft from ~416 words ... to closer to 651 words. Genuine added
+substance...`) with zero identity lines, which the identity-only gate
+could not see. One instruction-shaped line alone never triggers — a real
+article can legitimately open with a single imperative. The guard is a
+no-op on clean drafts and **never zeroes a draft** (if no substantial
+body survives the strip it keeps the original and the contamination
+becomes a human-review signal). Every strip emits a
 `writer_prompt_echo_stripped` finding (`severity=warn` → Discord) so a
 recurring echo surfaces the real fix: a writer model that can't follow
 instructions on long prompts (memory: `feedback_writer_model_canary`,
@@ -594,6 +602,17 @@ instructions on long prompts (memory: `feedback_writer_model_canary`,
 _research_ that can co-occur (free DuckDuckGo occasionally returns
 unrelated results); the echo guard cleans the model's self-dump, not the
 research corpus.
+
+Downstream backstop: the Layer 2 validator's `prompt_leak` rule (10b)
+pairs its exact-marker list with `detect_prompt_echo_paraphrase` —
+regexes matching the _structure_ of the expand/revise instructions
+("expand a … draft", "to approximately N words", "no padding", "no
+preamble", "preserve all facts", …). ≥2 distinct shapes in the
+code-span-stripped body is a CRITICAL `prompt_leak` issue, so a novel
+echo shape the writer-side guard misses is still rejected at
+`qa.programmatic` instead of reaching the approval queue (an FP scan
+over all 302 published posts at introduction time found zero posts with
+even one shape hit).
 
 ## Layer 2 — Programmatic validator
 

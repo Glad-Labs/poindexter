@@ -1053,3 +1053,139 @@ async def test_run_no_echo_leaves_clean_draft_untouched(monkeypatch):
     assert result["draft"] == _REAL_BODY
     assert result["prompt_echo_stripped"] == 0
     assert findings == []
+
+
+# ---------------------------------------------------------------------------
+# Prompt-echo guard — paraphrased INSTRUCTION echo (2026-07-01 regression).
+#
+# Tasks e46b449c + 9921678f leaked the expand-pass instructions as the article
+# opening even with the #2016 guard live: the model PARAPHRASED the prompt
+# ("Expand a draft from ~416 words ... to closer to 651 words") and echoed no
+# topic/angle/brand lines at all, so the identity-only signature gate never
+# opened. These fixtures are the verbatim openings from pipeline_versions.
+# ---------------------------------------------------------------------------
+
+# Task e46b449c (glad-labs canonical_blog, 2026-07-01): pure instruction
+# paraphrase — zero identity lines, then the model's planning bullets.
+_E46_INSTRUCTION_ECHO = (
+    'Expand a draft from ~416 words (actually the provided "Draft" is more '
+    "like 250-300 words of content, though the prompt says it's about 416) "
+    "to closer to 651 words.\n"
+    "Genuine added substance, concrete details, worked examples, and "
+    "reasoning grounded in existing content.\n"
+    "Do NOT pad, repeat, restate points, or add filler. If a section is "
+    "complete, leave it alone. Preserve all facts, links, headings, and "
+    "original voice. No preamble/notes. Markdown format.\n"
+    "\n"
+    "    *   *Intro:* Definition, etymology (*élleipsis*), purpose "
+    "(omission/pause). Links: Wikipedia.\n"
+    "    *   *Usage:* Omitting words from quotes to save space, increase "
+    "relevance, avoid distraction. Link: GrammarBook.com.\n"
+    "\n"
+    "An **ellipsis** (plural: ellipses) is a punctuation mark consisting of "
+    "three dots. Derived from the Ancient Greek word *élleipsis*, meaning "
+    '"leave out," it is primarily used to indicate the omission of text or a '
+    "pause in speech. While often used interchangeably with three consecutive "
+    "periods, a formal ellipsis is frequently treated as a single typographic "
+    "character to ensure consistent spacing and kerning across renderers.\n"
+)
+
+# Task 9921678f (2026-06-30): instruction paraphrase + ONE brand echo line +
+# instruction bullets. The old gate saw only one identity category.
+_9921_INSTRUCTION_ECHO = (
+    "Expand a draft (which was provided as a set of dots/ellipses, but the "
+    '*actual* content is found in the "Background Context" and "Internal '
+    'Snippets") to approximately 1954 words.\n'
+    "System alerts regarding `operator_paged [warning]`, specifically "
+    "`Operator surface unreachable` errors.\n"
+    "Glad Labs (AI-operated content business for AI/ML, gaming, PC hardware). "
+    "Technical/Professional voice.\n"
+    "\n"
+    "        *   Preserve existing facts, links, headings, and original voice.\n"
+    "        *   Expand with genuine substance, concrete detail, worked "
+    "examples, and reasoning.\n"
+    "        *   NO padding, repeating, or filler.\n"
+    "        *   No preamble/notes in the output.\n"
+    "        *   Markdown format.\n"
+    "        *   End on a complete sentence.\n"
+    "\n"
+    "When a monitoring surface goes quiet, the silence itself is the signal. "
+    "Our alerting stack pages the operator the moment a telemetry endpoint "
+    "stops answering, and the diagnosis usually comes down to a handful of "
+    "failure classes that are worth walking through in detail here.\n"
+)
+
+
+def test_strip_pure_instruction_echo_without_identity_lines():
+    """e46b449c regression: instruction-paraphrase opening with NO topic/angle/
+    brand echo must still open the gate (>=2 instruction lines) and strip."""
+    clean, n = two_pass._strip_echoed_preamble(
+        _E46_INSTRUCTION_ECHO,
+        topic="Automating Content Automation",
+        angle="technical | professional",
+        writer_prompt_override="",
+    )
+    assert n >= 3, f"expected the 3 instruction lines stripped, got {n}"
+    assert "Expand a draft" not in clean
+    assert "Genuine added substance" not in clean
+    assert "Do NOT pad" not in clean
+    # The body underneath survives.
+    assert "An **ellipsis**" in clean
+
+
+def test_strip_instruction_echo_with_single_brand_line():
+    """9921678f regression: one instruction line + one brand line is enough
+    signature (instruction + identity) — the leading instruction is stripped."""
+    clean, n = two_pass._strip_echoed_preamble(
+        _9921_INSTRUCTION_ECHO,
+        topic=". .. . ... . .... . .... . ... .",
+        angle="technical | professional",
+        writer_prompt_override=(
+            "Glad Labs — AI-operated content business for AI/ML, gaming, and "
+            "PC hardware. Technical/Professional voice."
+        ),
+    )
+    assert n >= 1
+    assert not clean.startswith("Expand a draft")
+    assert "to approximately 1954 words" not in clean.splitlines()[0]
+
+
+def test_single_instruction_like_line_in_clean_article_is_noop():
+    """False-positive guard: ONE instruction-shaped line in real prose (an
+    article can open with an imperative) must NOT trip the gate."""
+    draft = (
+        "Do not pad your Docker images with build tools you never ship.\n"
+        "\n"
+        "Slim images pull faster, cold-start faster, and expose less attack "
+        "surface. The route there is a multi-stage build: compile in one "
+        "stage, copy only the artifacts into a distroless runtime stage, and "
+        "let the builder cache absorb the heavy dependency layers so CI stays "
+        "fast while production images stay lean and reproducible."
+    )
+    clean, n = two_pass._strip_echoed_preamble(
+        draft, topic="Slim Docker images", angle="technical | professional",
+        writer_prompt_override="",
+    )
+    assert n == 0
+    assert clean == draft
+
+
+def test_one_instruction_plus_topic_restatement_triggers():
+    """Mixed signature: an instruction line + an exact topic restatement is
+    two independent echo signals — the gate opens and both lines strip."""
+    draft = (
+        "Expand the draft to roughly 1200 words with concrete examples.\n"
+        "Quantizing LLMs for consumer GPUs\n"
+        "\n"
+        "Quantization trades a little accuracy for a lot of memory headroom. "
+        "On a 16 GB card the difference between FP16 and 4-bit weights is the "
+        "difference between refusing to load and running with room to spare, "
+        "and the calibration choices you make decide how much quality you "
+        "give back in exchange for that fit."
+    )
+    clean, n = two_pass._strip_echoed_preamble(
+        draft, topic="Quantizing LLMs for consumer GPUs",
+        angle="technical | professional", writer_prompt_override="",
+    )
+    assert n == 2
+    assert clean.startswith("Quantization trades")

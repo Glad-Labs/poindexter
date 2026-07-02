@@ -893,28 +893,52 @@ def _expansion_enabled(site_config: Any = None) -> bool:
 #
 # This guard deterministically strips a contiguous echoed/scaffolding preamble
 # off the FRONT of a draft (no LLM call). It is GATED on a high-precision
-# identity-echo signature — the draft's first lines restating the known topic /
-# angle / niche override — so it is a no-op on clean drafts (a real article body
-# never opens by listing its own topic, angle, and niche as separate short
-# lines). When it can't recover a substantial body it keeps the original
-# untouched (never zeroes a draft) and the caller emits a finding so the
-# model-quality signal stays visible (feedback_self_heal_not_suppress).
+# echo signature — either the draft's first lines restating the known topic /
+# angle / niche override (identity echo), or two+ of them matching the
+# instruction-imperative patterns (instruction echo; added 2026-07-01 after
+# tasks e46b449c / 9921678f leaked a PARAPHRASED expand prompt with zero
+# identity lines) — so it is a no-op on clean drafts (a real article body
+# never opens by listing its own topic/angle/niche as separate short lines,
+# nor with two prompt imperatives in its first few lines). When it can't
+# recover a substantial body it keeps the original untouched (never zeroes a
+# draft) and the caller emits a finding so the model-quality signal stays
+# visible (feedback_self_heal_not_suppress).
 
-_ECHO_SCAFFOLD_PATTERNS = [
+# Instruction-IMPERATIVE echoes — phrases from the writer/revise/expand
+# prompts that finished prose essentially never opens a line with. This
+# subset is precise enough to serve as a signature TRIGGER on its own (see
+# ``_has_echo_signature``): the 2026-07-01 regression (tasks e46b449c +
+# 9921678f) opened with a PARAPHRASE of the expand prompt ("Expand a draft
+# from ~416 words ... to closer to 651 words. Genuine added substance ...")
+# and echoed no topic/angle/brand lines at all, so the identity-only gate
+# never opened and the leak reached the approval queue.
+_ECHO_INSTRUCTION_PATTERNS = [
     re.compile(p, re.IGNORECASE) for p in (
-        r"expand (this|the|from|it)\b",
+        r"expand (with|a|an|this|the|from|it)\b",
         r"revise (the|a|this)\b",
+        r"add genuine (added )?substance\b",
+        r"genuine (added )?substance\b",
+        r"return (the )?complete\b",
+        r"no padding\b",
+        r"no preamble\b",
+        r"preserve (every|existing|all)\b",
+        r"end on a complete sentence\b",
+        r"do not (repeat|pad|restate|invent|make up|add)\b",
+    )
+]
+
+# Task-narration / metadata echoes — the model talking to itself. These
+# classify lines during the STRIP but are too false-positive-prone to open
+# the gate alone (a legit founder-voice intro can start "Let me show you" or
+# "I'll be honest"), so they are excluded from the trigger subset above.
+_ECHO_NARRATION_PATTERNS = [
+    re.compile(p, re.IGNORECASE) for p in (
         r"input:\s",
         r"goal:\s",
         r"constraints?:?\s*$",
         r"context:\s",
         r"title:\s",
-        r"add genuine (added )?substance\b",
-        r"return (the )?complete\b",
-        r"no padding\b",
-        r"preserve (every|existing|all)\b",
-        r"end on a complete sentence\b",
-        r"do not (repeat|pad|restate|invent|make up|add)\b",
+        r"markdown format\b",
         r"first[- ]person\b",
         r"full markdown links\b",
         r"no fake url",
@@ -930,6 +954,8 @@ _ECHO_SCAFFOLD_PATTERNS = [
         r"here(’s| is| are) (the|my)\b",
     )
 ]
+
+_ECHO_SCAFFOLD_PATTERNS = [*_ECHO_INSTRUCTION_PATTERNS, *_ECHO_NARRATION_PATTERNS]
 
 
 def _norm_echo(line: str) -> str:
@@ -993,15 +1019,28 @@ def _has_echo_signature(
     lines: list[str], *,
     topic_norm: str, angle_norm: str, override_norms: set[str], override_fulltext: str,
 ) -> bool:
-    """High-precision trigger: do the first few non-blank lines restate at least
-    two of {topic, angle, niche-override}? A clean article body never does."""
+    """High-precision trigger for the preamble strip. Opens on either:
+
+    * **identity echo** — the first few non-blank lines restate at least two
+      of {topic, angle, niche-override}. A clean article body never does.
+    * **instruction echo** — at least two of those lines match the
+      instruction-imperative patterns ("Expand a draft...", "Do NOT pad...",
+      "Preserve all facts..."), or one does alongside one identity echo. The
+      2026-07-01 regression (e46b449c / 9921678f) paraphrased the expand
+      prompt with ZERO identity lines, so identity alone is not enough. One
+      instruction-shaped line alone never triggers — a real article can open
+      with a single imperative ("Do not pad your Docker images...").
+    """
     seen = 0
     cats: set[str] = set()
+    instruction_lines = 0
     for raw in lines:
         norm = _norm_echo(raw)
         if not norm:
             continue
         seen += 1
+        if any(p.match(norm) for p in _ECHO_INSTRUCTION_PATTERNS):
+            instruction_lines += 1
         short = 0 < len(_echo_tokens(norm)) < 15
         if topic_norm and (norm == topic_norm or (short and _token_overlap(norm, topic_norm) >= 0.75)):
             cats.add("topic")
@@ -1011,9 +1050,16 @@ def _has_echo_signature(
             override_fulltext and short and _token_overlap(norm, override_fulltext) >= 0.7
         ):
             cats.add("brand")
-        if seen >= 4:
+        # Window: 6 non-blank lines (was 4 pre-2026-07). Instruction blocks
+        # run longer than identity blocks — e46b449c's third instruction line
+        # and 9921678f's first bullet both sit past the old window.
+        if seen >= 6:
             break
-    return len(cats) >= 2
+    return (
+        len(cats) >= 2
+        or instruction_lines >= 2
+        or (len(cats) >= 1 and instruction_lines >= 1)
+    )
 
 
 def _strip_echoed_preamble(

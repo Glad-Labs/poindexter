@@ -719,6 +719,62 @@ def detect_prompt_leak(text: str) -> list[str]:
     return [m for m in _PROMPT_LEAK_MARKERS if m in low]
 
 
+# Instruction SHAPES for paraphrased echo. The exact-marker list above misses
+# a producer that restates its instructions in its own words — the 2026-07-01
+# regression (tasks e46b449c / 9921678f): gemma opened the article with
+# "Expand a draft from ~416 words (actually the provided \"Draft\" is more
+# like 250-300 words...) to closer to 651 words. Genuine added substance...",
+# no exact marker matched, and the drafts sailed through qa.programmatic to
+# the approval queue at 82-85. These regexes match the STRUCTURE of the
+# expand/revise instructions rather than their wording. Each alone is weaker
+# than an exact marker (an AI-writing article could use one incidentally), so
+# the rule requires >=2 DISTINCT shapes before flagging — two prompt
+# imperatives co-occurring in finished prose is not a thing.
+_PROMPT_ECHO_PARAPHRASE_PATTERNS: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # {0,3} adjective tolerance: task ecaf0c01 opened "Expand a 323-word
+    # draft to approximately 1057 words."
+    ("expand-draft", re.compile(
+        r"\bexpand (?:a|an|the|this) (?:[\w~-]+ ){0,3}draft\b", re.IGNORECASE,
+    )),
+    ("word-target", re.compile(
+        r"\bto (?:approximately|closer to|about|around) ~?\d[\d,]* words\b",
+        re.IGNORECASE,
+    )),
+    ("no-padding", re.compile(
+        r"\b(?:do not|don'?t) pad\b|\bno padding\b", re.IGNORECASE,
+    )),
+    ("no-preamble", re.compile(r"\bno preamble\b", re.IGNORECASE)),
+    ("preserve-facts", re.compile(
+        r"\bpreserve (?:all|every|existing) (?:facts|headings|links)\b",
+        re.IGNORECASE,
+    )),
+    ("genuine-substance", re.compile(
+        r"\bgenuine (?:added )?substance\b", re.IGNORECASE,
+    )),
+    ("end-complete-sentence", re.compile(
+        r"\bend(?:ing)? on a complete sentence\b", re.IGNORECASE,
+    )),
+    ("prompt-meta", re.compile(
+        r"\bthe prompt (?:asks|says|provided)\b", re.IGNORECASE,
+    )),
+    ("word-count-check", re.compile(r"\bcheck word count\b", re.IGNORECASE)),
+)
+
+
+def detect_prompt_echo_paraphrase(text: str) -> list[str]:
+    """Return the names of paraphrased instruction SHAPES present in ``text``.
+
+    Complements :func:`detect_prompt_leak` (exact phrases) with structural
+    matches that survive the model rewording its instructions. The caller
+    flags only at >=2 distinct shapes — a single hit can occur incidentally
+    in real prose about AI writing, two co-occurring cannot. Pair with
+    ``_strip_code_spans`` for the same code-fence exemption.
+    """
+    if not text:
+        return []
+    return [name for name, rx in _PROMPT_ECHO_PARAPHRASE_PATTERNS if rx.search(text)]
+
+
 def _check_patterns(
     text: str,
     patterns: list,
@@ -2091,24 +2147,31 @@ def validate_content(
     # 10b. Prompt-scaffolding leak — the writer or qa.rewrite reviser echoed its
     # instructions / persona / planning outline into the body instead of prose
     # (2026-06-29 canonical incident). Sibling to json_envelope_leak: the same
-    # "producer emitted non-prose" failure, so it is CRITICAL. Strip code spans
-    # first so a prompt-engineering article that quotes an instruction inside a
-    # fence is not a false positive. Runs on the canonical path via
+    # "producer emitted non-prose" failure, so it is CRITICAL. Two detectors:
+    # exact markers (verbatim template vocabulary; one hit flags) and
+    # paraphrased instruction SHAPES (2026-07-01 incident — gemma restated the
+    # expand prompt in its own words; >=2 distinct shapes flag). Strip code
+    # spans first so a prompt-engineering article that quotes an instruction
+    # inside a fence is not a false positive. Runs on the canonical path via
     # qa.programmatic (after both the writer and the qa.rewrite loop), so it
     # gates a leaked draft before it can reach awaiting_approval; dev_diary (no
     # QA rails) is guarded at the source in narrate_bundle.
     if _enabled("prompt_leak"):
-        leaked_markers = detect_prompt_leak(_strip_code_spans(content))
-        if leaked_markers:
+        content_for_leak = _strip_code_spans(content)
+        leaked_markers = detect_prompt_leak(content_for_leak)
+        echo_shapes = detect_prompt_echo_paraphrase(content_for_leak)
+        if leaked_markers or len(echo_shapes) >= 2:
+            evidence = leaked_markers + [f"shape:{s}" for s in echo_shapes]
             issues.append(ValidationIssue(
                 severity="critical",
                 category="prompt_leak",
                 description=(
                     "Body contains prompt scaffolding / instruction-echo "
-                    "(markers: " + ", ".join(leaked_markers[:5]) + ") — an LLM "
-                    "producer leaked its instructions, persona, or planning "
-                    "outline instead of emitting finished prose. Fix the "
-                    "producer (canonical writer or qa.rewrite reviser)."
+                    "(" + ", ".join(evidence[:5]) + ") — an LLM producer "
+                    "leaked its instructions, persona, or planning outline "
+                    "instead of emitting finished prose (verbatim or "
+                    "paraphrased). Fix the producer (canonical writer, "
+                    "expand pass, or qa.rewrite reviser)."
                 ),
                 matched_text=content.strip()[:160],
             ))

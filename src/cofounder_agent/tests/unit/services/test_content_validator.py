@@ -2189,3 +2189,105 @@ class TestPromptLeakRule:
         )
         result = validate_content("Prompt Design", content, "AI", site_config=_SC)
         assert not any(i.category == "prompt_leak" for i in result.issues)
+
+
+class TestParaphrasedInstructionEchoRule:
+    """The exact-marker list misses PARAPHRASED instruction echo — the
+    2026-07-01 regression (tasks e46b449c + 9921678f): gemma restated the
+    expand-pass prompt in its own words ("Expand a draft from ~416 words ...
+    to closer to 651 words"), so no `_PROMPT_LEAK_MARKERS` substring hit and
+    the drafts sailed through qa.programmatic at 82-85. The paraphrase
+    detector matches instruction SHAPES (regex) and requires >=2 distinct
+    shapes before flagging, keeping single incidental matches in real prose
+    below the bar."""
+
+    def test_e46_paraphrased_expand_instructions_critical(self):
+        # Verbatim opening of task e46b449c (2026-07-01).
+        content = (
+            'Expand a draft from ~416 words (actually the provided "Draft" is '
+            "more like 250-300 words of content, though the prompt says it's "
+            "about 416) to closer to 651 words.\n"
+            "Genuine added substance, concrete details, worked examples, and "
+            "reasoning grounded in existing content.\n"
+            "Do NOT pad, repeat, restate points, or add filler. Preserve all "
+            "facts, links, headings, and original voice. No preamble/notes. "
+            "Markdown format.\n\n"
+            "An **ellipsis** (plural: ellipses) is a punctuation mark "
+            "consisting of three dots, used to indicate the omission of text "
+            "or a pause in speech across both formal and casual writing."
+        )
+        result = validate_content("Ellipsis", content, "AI", site_config=_SC)
+        leak = [i for i in result.issues if i.category == "prompt_leak"]
+        assert leak, "expected paraphrased instruction echo to be flagged"
+        assert all(i.severity == "critical" for i in leak)
+        assert result.passed is False
+
+    def test_9921_bullet_instruction_echo_critical(self):
+        # Verbatim shape of task 9921678f: instruction bullets mid-body
+        # (below a narration line the preamble-strip cannot cross).
+        content = (
+            "Expand a draft (the *actual* content is found in the "
+            '"Background Context") to approximately 1954 words.\n'
+            "System alerts regarding `operator_paged [warning]` errors.\n\n"
+            "    *   Preserve existing facts, links, headings, and voice.\n"
+            "    *   NO padding, repeating, or filler.\n"
+            "    *   No preamble/notes in the output.\n"
+            "    *   End on a complete sentence.\n\n"
+            "When a monitoring surface goes quiet, the silence itself is the "
+            "signal, and the diagnosis usually comes down to a handful of "
+            "failure classes worth walking through in detail."
+        )
+        result = validate_content("Alert Triage", content, "AI", site_config=_SC)
+        assert any(
+            i.category == "prompt_leak" and i.severity == "critical"
+            for i in result.issues
+        )
+        assert result.passed is False
+
+    def test_single_shape_in_real_prose_not_flagged(self):
+        # ONE incidental shape match must stay below the >=2 bar — articles
+        # on AI-writing topics can legitimately use one of these phrases.
+        content = (
+            "A common workflow is to ask the model to expand a draft into a "
+            "full post overnight. The trick is judging the output: length is "
+            "cheap, substance is not, and a reviewer who only counts words "
+            "will approve padding that says nothing new about the topic."
+        )
+        result = validate_content("AI Writing", content, "AI", site_config=_SC)
+        assert not any(i.category == "prompt_leak" for i in result.issues)
+
+    def test_two_shapes_inside_code_fence_not_flagged(self):
+        # Quoting the expansion prompt in a fenced block is legitimate
+        # prompt-engineering content; code spans are stripped first.
+        content = (
+            "Our expansion prompt looks like this:\n\n"
+            "```\n"
+            "Expand a draft from ~400 words to closer to 900 words.\n"
+            "Do NOT pad, repeat, or add filler. No preamble.\n"
+            "```\n\n"
+            "In practice the model honors the word budget more reliably when "
+            "the target appears in the first line of the instruction."
+        )
+        result = validate_content("Prompt Design", content, "AI", site_config=_SC)
+        assert not any(i.category == "prompt_leak" for i in result.issues)
+
+    def test_detector_reports_distinct_shape_names(self):
+        from modules.content.content_validator import (
+            detect_prompt_echo_paraphrase,
+        )
+        hits = detect_prompt_echo_paraphrase(
+            "Expand a draft to closer to 651 words. Do NOT pad. No preamble."
+        )
+        assert len(hits) >= 2
+        assert len(hits) == len(set(hits))  # names, deduped
+
+    def test_expand_shape_tolerates_adjectives(self):
+        # Task ecaf0c01 variant: adjective between article and "draft".
+        from modules.content.content_validator import (
+            detect_prompt_echo_paraphrase,
+        )
+        hits = detect_prompt_echo_paraphrase(
+            "Expand a 323-word draft to approximately 1057 words."
+        )
+        assert "expand-draft" in hits
+        assert "word-target" in hits
