@@ -53,6 +53,12 @@ $Services = @{
         Argument    = "$WorkDir\scripts\video-server.py"
         WorkDir     = $WorkDir
     }
+    "ollama-vision-gpu1" = @{
+        Description = "Second Ollama instance pinned to GPU 1 (RTX 3090), port 11435 - keeps eviction-prone QA-rail models (qwen3-vl vision) warm so writer reloads on GPU 0 cannot displace them (glad-labs-stack#2051)"
+        Execute     = "$env:SystemRoot\System32\WindowsPowerShell\v1.0\powershell.exe"
+        Argument    = "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$WorkDir\scripts\ollama-vision-gpu1.ps1`""
+        WorkDir     = $WorkDir
+    }
 }
 
 function Install-Services {
