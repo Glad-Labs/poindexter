@@ -600,7 +600,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Approval queue fill % vs max_approval_queue setting. When this hits 100, new generation throttles until you review.",
+      "description": "awaiting_approval count as % of app_settings.max_approval_queue (queue-fill, not an approval rate).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -659,7 +659,7 @@
           "refId": "A"
         }
       ],
-      "title": "Approval %",
+      "title": "Approval queue fill",
       "type": "gauge"
     },
     {
@@ -667,7 +667,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Distinct alerts firing in the dashboard time range. Deduped by fingerprint — a single alert that re-fires every 15 min counts once, not four times. Change the dashboard time range to widen/narrow the window.",
+      "description": "Distinct alerts that FIRED at any point in the dashboard time range (alert_events history) — NOT currently-firing. For live state see Alertmanager (:9093). Retitled 2026-07-02: the old 'Firing' label read as a live count and routinely showed 20+ while actual now-firing was 1.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -683,11 +683,11 @@
               },
               {
                 "color": "yellow",
-                "value": 1
+                "value": 10
               },
               {
                 "color": "orange",
-                "value": 10
+                "value": 50
               }
             ]
           },
@@ -725,7 +725,7 @@
           "refId": "A"
         }
       ],
-      "title": "Alerts (1h)",
+      "title": "Alerts fired (window)",
       "type": "stat"
     },
     {
@@ -858,7 +858,7 @@
     },
     {
       "id": 11,
-      "title": "Top category",
+      "title": "Top category (published posts)",
       "type": "stat",
       "description": "Most-published category (name + count). Was a pie chart, but the data is monotype right now — one category dominates, so the slice was always 100%. Stat is honest about that.",
       "datasource": {
@@ -916,7 +916,7 @@
     },
     {
       "id": 12,
-      "title": "Page-views 1h",
+      "title": "Page-views (window)",
       "type": "stat",
       "description": "Page-view beacon hits over the global dashboard time range. Sourced from the page_views table populated by the sync_cloudflare_analytics job (5-min cycle pulling from CF Analytics Engine, which the Worker beacon at infrastructure/cloudflare/page-views-beacon/ writes to). If this flatlines to 0 while CF AE shows traffic, the sync job has regressed. Red at 0, yellow at <10, green at 10+.",
       "datasource": {
@@ -1504,62 +1504,6 @@
           "format": "time_series",
           "rawQuery": true,
           "rawSql": "SELECT $__timeGroup(created_at, $__interval) AS time, SUM(cost_usd)::float AS \"USD\" FROM cost_logs WHERE $__timeFilter(created_at) GROUP BY 1 ORDER BY 1",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 21,
-      "title": "LLM spend by provider (window)",
-      "type": "piechart",
-      "description": "USD spend per provider in the dashboard time window. Local providers (ollama / electricity / local / system / compositor.ffmpeg_local) excluded so any wedge here represents real cloud spend.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 29
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "mappings": [],
-          "unit": "currencyUSD"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "right",
-          "showLegend": true,
-          "values": ["value"]
-        },
-        "pieType": "pie",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT provider AS metric, COALESCE(SUM(cost_usd),0)::float AS value FROM cost_logs WHERE provider NOT IN ('ollama','local','system','electricity','compositor.ffmpeg_local') AND $__timeFilter(created_at) GROUP BY provider ORDER BY value DESC;",
           "refId": "A"
         }
       ]

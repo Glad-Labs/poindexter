@@ -962,7 +962,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Averaged Ragas score (mean of non-sentinel faithfulness + answer_relevancy + context_precision) over the dashboard time range. Each point is one ragas_eval call emitted from services/ragas_eval.py::evaluate_sample. Trend down = retrieval quality regressing; correlate with rag_engine_enabled / rag_hybrid_enabled / rag_rerank_enabled toggles in app_settings.",
+      "description": "Panel-level 7d window (dashboard default is 24h): Ragas runs only on posts with retrieval context, so 24h is often legitimately empty.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1059,7 +1059,8 @@
         }
       ],
       "title": "Ragas Score Over Time",
-      "type": "timeseries"
+      "type": "timeseries",
+      "timeFrom": "7d"
     },
     {
       "datasource": {

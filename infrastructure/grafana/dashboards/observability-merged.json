@@ -558,29 +558,6 @@
       "id": 22
     },
     {
-      "type": "flamegraph",
-      "title": "CPU flamegraph — cofounder-agent",
-      "datasource": {
-        "type": "grafana-pyroscope-datasource",
-        "uid": "local-pyroscope"
-      },
-      "gridPos": {
-        "h": 20,
-        "w": 24,
-        "x": 0,
-        "y": 86
-      },
-      "id": 23,
-      "targets": [
-        {
-          "labelSelector": "{service=\"cofounder-agent\"}",
-          "profileTypeId": "process_cpu:cpu:nanoseconds:cpu:nanoseconds",
-          "groupBy": [],
-          "refId": "A"
-        }
-      ]
-    },
-    {
       "type": "timeseries",
       "title": "CPU time ingested by service",
       "datasource": {
@@ -718,7 +695,7 @@
         "type": "loki",
         "uid": "local-loki"
       },
-      "description": "Errors in the last 24h. Click through to the error feed panel below for details.",
+      "description": "Errors in the last 24h. Click through to the error feed panel below for details. Excludes the LGTM stack's own containers — Loki/Tempo internals were dominating the count (86.9K 'errors'/24h were mostly Loki querier self-logs).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -774,7 +751,7 @@
             "uid": "local-loki"
           },
           "editorMode": "code",
-          "expr": "sum(count_over_time({compose_project=~\".+\"} |~ \"(?i)error|exception|traceback|critical\" [24h]))",
+          "expr": "sum(count_over_time({compose_project=~\".+\", container!~\"poindexter-(loki|tempo|prometheus|promtail|pyroscope|alertmanager|cadvisor|grafana|uptime-kuma)\"} |~ \"(?i)error|exception|traceback|critical\" [24h]))",
           "queryType": "instant",
           "refId": "A"
         }
@@ -787,7 +764,7 @@
         "type": "loki",
         "uid": "local-loki"
       },
-      "description": "Warnings in the last 24h. Trending up means something's degrading.",
+      "description": "Warnings in the last 24h. Trending up means something's degrading. Excludes the LGTM stack's own containers — Loki/Tempo internals were dominating the count (86.9K 'errors'/24h were mostly Loki querier self-logs).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -843,7 +820,7 @@
             "uid": "local-loki"
           },
           "editorMode": "code",
-          "expr": "sum(count_over_time({compose_project=~\".+\"} |~ \"(?i)warning|warn\\b\" [24h]))",
+          "expr": "sum(count_over_time({compose_project=~\".+\", container!~\"poindexter-(loki|tempo|prometheus|promtail|pyroscope|alertmanager|cadvisor|grafana|uptime-kuma)\"} |~ \"(?i)warning|warn\\b\" [24h]))",
           "queryType": "instant",
           "refId": "A"
         }
@@ -917,7 +894,7 @@
         "type": "loki",
         "uid": "local-loki"
       },
-      "description": "Errors across the stack, grouped by container. Quick scan for which service is unhappy.",
+      "description": "Errors across the stack, grouped by container. Quick scan for which service is unhappy. Excludes the LGTM stack's own containers — Loki/Tempo internals were dominating the count (86.9K 'errors'/24h were mostly Loki querier self-logs).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -992,7 +969,7 @@
             "uid": "local-loki"
           },
           "editorMode": "code",
-          "expr": "sum by (container) (rate({compose_project=~\".+\"} |~ \"(?i)error|exception|traceback|critical\" [1m]))",
+          "expr": "sum by (container) (rate({compose_project=~\".+\", container!~\"poindexter-(loki|tempo|prometheus|promtail|pyroscope|alertmanager|cadvisor|grafana|uptime-kuma)\"} |~ \"(?i)error|exception|traceback|critical\" [1m]))",
           "legendFormat": "{{container}}",
           "queryType": "range",
           "refId": "A"

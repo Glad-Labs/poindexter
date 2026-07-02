@@ -243,7 +243,20 @@
           },
           "rawSql": "SELECT COUNT(*) AS value FROM seo_opportunities WHERE status = 'refreshed'"
         }
-      ]
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        }
+      }
     },
     {
       "id": 8,

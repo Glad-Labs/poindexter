@@ -698,7 +698,7 @@
         "justifyMode": "auto",
         "reduceOptions": {
           "calcs": ["lastNotNull"],
-          "fields": "",
+          "fields": "/.*/",
           "values": false
         }
       }

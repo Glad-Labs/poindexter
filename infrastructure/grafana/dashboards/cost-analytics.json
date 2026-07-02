@@ -323,7 +323,21 @@
         }
       ],
       "title": "Total Tokens",
-      "type": "stat"
+      "type": "stat",
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "text",
+                "value": null
+              }
+            ]
+          }
+        }
+      }
     },
     {
       "datasource": {
@@ -939,7 +953,7 @@
           "calcs": [
             "lastNotNull"
           ],
-          "fields": "",
+          "fields": "/.*/",
           "values": false
         },
         "textMode": "auto"

@@ -555,7 +555,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "short"
         }
       },
       "gridPos": {
@@ -1062,7 +1063,8 @@
                 "value": null
               }
             ]
-          }
+          },
+          "unit": "short"
         }
       },
       "gridPos": {

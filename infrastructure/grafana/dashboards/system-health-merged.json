@@ -1131,7 +1131,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Alerts firing (not resolved) in the last hour. Each row in alert_events with status='firing' is one Alertmanager fire event.",
+      "description": "alert_events rows received in the last hour with status='firing' — alert-volume, not a live now-firing count.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1189,71 +1189,7 @@
           "refId": "A"
         }
       ],
-      "title": "Firing (1h)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "description": "Rate of validator hallucination warnings per minute. High-rate spikes indicate a writer-model regression or a new edge-case class.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 0.1
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 20,
-        "y": 9
-      },
-      "id": 19,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "sum(rate(content_validator_warnings_total[15m]))",
-          "refId": "A"
-        }
-      ],
-      "title": "Validator 15m",
+      "title": "Alerts fired (1h)",
       "type": "stat"
     },
     {

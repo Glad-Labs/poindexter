@@ -26,7 +26,7 @@
       "tags": [],
       "targetBlank": true,
       "title": "Langfuse UI",
-      "tooltip": "Open Langfuse 3 â€” LLM traces, prompts, experiments (workstation tailscale IP, port 3010)",
+      "tooltip": "Open Langfuse 3 — LLM traces, prompts, experiments (workstation tailscale IP, port 3010)",
       "type": "link",
       "url": "http://localhost:3010"
     }
@@ -34,7 +34,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Approval Queue â€” Human Oversight",
+      "title": "Approval Queue — Human Oversight",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -928,7 +928,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Throughput â€” posts generated per hour",
+      "description": "Throughput — posts generated per hour",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1158,7 +1158,7 @@
     },
     {
       "type": "row",
-      "title": "Quality â€” scores & output",
+      "title": "Quality — scores & output",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1729,7 +1729,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Quality scores over time â€” are we improving?",
+      "description": "Quality scores over time — are we improving?",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1933,7 +1933,7 @@
     },
     {
       "type": "row",
-      "title": "QA â€” rejections & validation",
+      "title": "QA — rejections & validation",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1949,7 +1949,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Rejection rate over the selected time window. Lower is better â€” but a 0% rate with low throughput often means content isn't being generated.",
+      "description": "Rejection rate over the selected time window. Lower is better — but a 0% rate with low throughput often means content isn't being generated.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2182,7 +2182,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Approval vs rejection rates over time â€” track human oversight effectiveness",
+      "description": "Approval vs rejection rates over time — track human oversight effectiveness",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2379,7 +2379,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Per-writer-model approval rate â€” reads models_used_by_phase JSON for writer model. Helps compare writer performance across batches.",
+      "description": "Per-writer-model approval rate — reads models_used_by_phase JSON for writer model. Helps compare writer performance across batches.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2439,7 +2439,7 @@
     },
     {
       "type": "row",
-      "title": "Topic Discovery â€” Niche Pivot",
+      "title": "Topic Discovery — Niche Pivot",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -2614,7 +2614,7 @@
       "type": "stat",
       "id": 39,
       "title": "Active niches",
-      "description": "Niches with active=true â€” each has its own discovery sweep.",
+      "description": "Niches with active=true — each has its own discovery sweep.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2695,7 +2695,7 @@
       "type": "table",
       "id": 41,
       "title": "Recent batch decisions (7 days)",
-      "description": "Closed batches with the picked candidate â€” retroactive review of what got shipped to research/draft.",
+      "description": "Closed batches with the picked candidate — retroactive review of what got shipped to research/draft.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2812,7 +2812,7 @@
       "type": "stat",
       "id": 44,
       "title": "Oldest pending",
-      "description": "Age of the oldest pending media â€” surfaces stuck items (green <24h, yellow <7d, red â‰¥7d)",
+      "description": "Age of the oldest pending media — surfaces stuck items (green <24h, yellow <7d, red ≥7d)",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2880,7 +2880,7 @@
       "type": "stat",
       "id": 45,
       "title": "Page views (last 24h)",
-      "description": "Page views from CF Analytics Engine landed in page_views by sync_cloudflare_analytics. Red at 0 means the Worker beacon or the sync job is broken (silent-failure detector â€” the same regression mode that ran 2026-04-09 â†’ 2026-05-28).",
+      "description": "Page views from CF Analytics Engine landed in page_views by sync_cloudflare_analytics. Red at 0 means the Worker beacon or the sync job is broken (silent-failure detector — the same regression mode that ran 2026-04-09 → 2026-05-28).",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -2946,7 +2946,7 @@
     },
     {
       "id": 46,
-      "title": "media_approvals â€” approved (window)",
+      "title": "media_approvals — approved (window)",
       "type": "stat",
       "description": "Approved media_approvals in the dashboard time window, filtered on decided_at.",
       "datasource": {
@@ -3307,7 +3307,7 @@
     },
     {
       "id": 52,
-      "title": "media_approvals â€” rejected by medium",
+      "title": "media_approvals — rejected by medium",
       "type": "bargauge",
       "description": "Rejected media_approvals grouped by medium (podcast / video / video_short) in the dashboard time window. Filtered on decided_at.",
       "datasource": {
@@ -3365,74 +3365,6 @@
           "format": "table",
           "rawQuery": true,
           "rawSql": "SELECT medium AS metric, COUNT(*)::int AS value FROM media_approvals WHERE status='rejected' AND $__timeFilter(decided_at) GROUP BY medium ORDER BY value DESC;",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 53,
-      "title": "Quality eval score by medium",
-      "type": "timeseries",
-      "description": "Per-medium quality_score from media_approvals over time. quality_evaluated_at drives the x-axis; one series per medium (podcast / video / video_short). PR #648.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 154
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "points",
-            "fillOpacity": 30,
-            "lineWidth": 1,
-            "axisPlacement": "auto",
-            "pointSize": 5,
-            "showPoints": "always",
-            "spanNulls": false
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "calcs": [],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT quality_evaluated_at AS time, medium AS metric, quality_score::float AS value FROM media_approvals WHERE quality_score IS NOT NULL AND $__timeFilter(quality_evaluated_at) ORDER BY 1;",
           "refId": "A"
         }
       ]
@@ -4102,7 +4034,7 @@
     },
     {
       "type": "row",
-      "title": "Pipeline Throttle & Stale-Task Sweeper Â· Prometheus",
+      "title": "Pipeline Throttle & Stale-Task Sweeper · Prometheus",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -4118,7 +4050,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_pipeline_throttle_active â€” 1 when the approval queue is full and the pipeline has stopped advancing. Exported by services/metrics_exporter.py but previously charted nowhere, so a stalled pipeline was invisible on Grafana.",
+      "description": "poindexter_pipeline_throttle_active — 1 when the approval queue is full and the pipeline has stopped advancing. Exported by services/metrics_exporter.py but previously charted nowhere, so a stalled pipeline was invisible on Grafana.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4130,11 +4062,11 @@
               "options": {
                 "0": {
                   "color": "green",
-                  "text": "âœ“ flowing"
+                  "text": "✓ flowing"
                 },
                 "1": {
                   "color": "red",
-                  "text": "âš  THROTTLED"
+                  "text": "⚠ THROTTLED"
                 }
               }
             }
@@ -4195,7 +4127,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_pipeline_throttle_queue_size â€” current awaiting_approval depth as last observed by the throttle check. Compare against the limit in the timeseries below.",
+      "description": "poindexter_pipeline_throttle_queue_size — current awaiting_approval depth as last observed by the throttle check. Compare against the limit in the timeseries below.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4262,7 +4194,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_pipeline_throttle_seconds_total â€” cumulative seconds the pipeline has spent throttled by the approval queue. Defined as a Gauge (survives worker restarts) so it is shown as a raw cumulative value, NOT a rate.",
+      "description": "poindexter_pipeline_throttle_seconds_total — cumulative seconds the pipeline has spent throttled by the approval queue. Defined as a Gauge (survives worker restarts) so it is shown as a raw cumulative value, NOT a rate.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4325,7 +4257,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_pipeline_auto_cancelled_total â€” cumulative tasks auto-cancelled by the stale-task sweeper (read from pipeline_tasks.auto_cancelled_at). A climbing value means worker heartbeats are going missing or stale_task_timeout_minutes is too aggressive. Gauge-backed â†’ shown as a raw cumulative value.",
+      "description": "poindexter_pipeline_auto_cancelled_total — cumulative tasks auto-cancelled by the stale-task sweeper (read from pipeline_tasks.auto_cancelled_at). A climbing value means worker heartbeats are going missing or stale_task_timeout_minutes is too aggressive. Gauge-backed → shown as a raw cumulative value.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4388,7 +4320,7 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "Approval queue depth (poindexter_pipeline_throttle_queue_size) plotted against the configured limit (poindexter_pipeline_throttle_queue_limit). When the size line touches the limit line the pipeline throttles â€” correlate with the 'Throttle state' tile above.",
+      "description": "Approval queue depth (poindexter_pipeline_throttle_queue_size) plotted against the configured limit (poindexter_pipeline_throttle_queue_limit). When the size line touches the limit line the pipeline throttles — correlate with the 'Throttle state' tile above.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -4482,7 +4414,7 @@
     },
     {
       "type": "row",
-      "title": "Per-Stage Latency Â· Prometheus (populates during active pipeline runs)",
+      "title": "Shot Vision-QA Outcomes",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -4491,183 +4423,8 @@
         "y": 194
       },
       "panels": [],
-      "id": 60
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "description": "p95 execution latency per pipeline node, from the poindexter_pipeline_node_duration_seconds histogram (services/template_runner.py). Answers 'which of the canonical_blog stages is slow' â€” the writer/QA nodes should dominate. NOTE: this metric was added 2026-06-02 and only appears after the worker image is rebuilt/restarted and at least one pipeline run has executed; until then this reads 'No data'.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "s"
-        }
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 195
-      },
-      "id": 61,
-      "options": {
-        "legend": {
-          "calcs": ["max", "mean"],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "desc"
-        }
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "histogram_quantile(0.95, sum by (node, le) (rate(poindexter_pipeline_node_duration_seconds_bucket[$__rate_interval])))",
-          "legendFormat": "{{node}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Per-stage p95 latency",
-      "type": "timeseries"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "description": "Node completions per minute split by terminal outcome (ok / halted / timeout / error), from the _count series of the node-duration histogram. A rising 'timeout'/'error' line points at the failing stage; correlate with the p95 panel. Same worker-rebuild dependency as the p95 panel.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "axisCenteredZero": false,
-            "axisColorMode": "text",
-            "axisLabel": "",
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "drawStyle": "line",
-            "fillOpacity": 20,
-            "gradientMode": "none",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "smooth",
-            "lineWidth": 2,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "spanNulls": false,
-            "stacking": {
-              "group": "A",
-              "mode": "none"
-            },
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "cpm"
-        }
-      },
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 195
-      },
-      "id": 62,
-      "options": {
-        "legend": {
-          "calcs": ["lastNotNull"],
-          "displayMode": "list",
-          "placement": "bottom",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "multi",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "sum by (outcome) (rate(poindexter_pipeline_node_duration_seconds_count[$__rate_interval])) * 60",
-          "legendFormat": "{{outcome}}",
-          "refId": "A"
-        }
-      ],
-      "title": "Stage completions/min by outcome",
-      "type": "timeseries"
+      "id": 60,
+      "repeat": null
     },
     {
       "id": 74,
@@ -4737,7 +4494,7 @@
       "id": 75,
       "title": "Render outcomes by atom (success vs failure)",
       "type": "table",
-      "description": "Per-atom success and failure counts from atom_runs for media.* and qa.audio atoms. Distinguishes which render step is failing most.",
+      "description": "atom_runs statuses are 'ok' / 'halted'. Fixed 2026-07-02: the query counted status='success' (never emitted) so every atom showed 0% success.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
@@ -4827,7 +4584,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT\n  atom AS \"Atom\",\n  COUNT(*) FILTER (WHERE status = 'success') AS \"Success\",\n  COUNT(*) FILTER (WHERE status != 'success') AS \"Failures\",\n  COUNT(*) AS \"Total\",\n  ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'success') / NULLIF(COUNT(*),0), 1) AS \"Success %\"\nFROM atom_runs\nWHERE atom LIKE 'media.%'\n   OR atom = 'qa.audio'\nGROUP BY atom\nORDER BY atom",
+          "rawSql": "SELECT\n  atom AS \"Atom\",\n  COUNT(*) FILTER (WHERE status = 'ok') AS \"Success\",\n  COUNT(*) FILTER (WHERE status <> 'ok') AS \"Failures\",\n  COUNT(*) AS \"Total\",\n  ROUND(100.0 * COUNT(*) FILTER (WHERE status = 'ok') / NULLIF(COUNT(*),0), 1) AS \"Success %\"\nFROM atom_runs\nWHERE atom LIKE 'media.%'\n   OR atom = 'qa.audio'\nGROUP BY atom ORDER BY atom",
           "refId": "A"
         }
       ]
@@ -5109,114 +4866,6 @@
           "rawQuery": true,
           "rawSql": "SELECT COUNT(*) AS \"Failed\" FROM social_post_drafts WHERE status = 'failed';",
           "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 81,
-      "type": "timeseries",
-      "title": "Social draft activity (Prometheus)",
-      "description": "Draft created/posted/failed per 5m from Prometheus counters",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "custom": {
-            "drawStyle": "line",
-            "lineWidth": 1,
-            "fillOpacity": 10,
-            "gradientMode": "none",
-            "spanNulls": false,
-            "stacking": {
-              "mode": "none",
-              "group": "A"
-            },
-            "axisPlacement": "auto",
-            "barAlignment": 0,
-            "pointSize": 5,
-            "scaleDistribution": {
-              "type": "linear"
-            },
-            "showPoints": "auto",
-            "hideFrom": {
-              "legend": false,
-              "tooltip": false,
-              "viz": false
-            },
-            "lineInterpolation": "linear",
-            "thresholdsStyle": {
-              "mode": "off"
-            }
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              },
-              {
-                "color": "red",
-                "value": 80
-              }
-            ]
-          },
-          "unit": "ops"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 6,
-        "w": 24,
-        "x": 0,
-        "y": 215
-      },
-      "options": {
-        "legend": {
-          "calcs": ["last"],
-          "displayMode": "table",
-          "placement": "right",
-          "showLegend": true
-        },
-        "tooltip": {
-          "mode": "single",
-          "sort": "none"
-        }
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "increase(poindexter_social_draft_created_total[5m])",
-          "legendFormat": "created ({{platform}})",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "increase(poindexter_social_draft_posted_total[5m])",
-          "legendFormat": "posted ({{platform}})",
-          "refId": "B"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "increase(poindexter_social_draft_failed_total[5m])",
-          "legendFormat": "failed ({{platform}})",
-          "refId": "C"
         }
       ]
     },
