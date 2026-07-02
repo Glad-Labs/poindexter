@@ -29,12 +29,12 @@ Feeds are declarative JSON in ``app_settings.data_freshness_feeds``:
   per-kind ``findings.data_feed_stale.delivery`` policy can attach) and
   a stable per-feed ``dedup_key``.
 
-The ``corsair_csv`` sensor feed keeps its dedicated probe
-(``corsair_feed_probe``) — it predates this one and its threshold key
-(``corsair_feed_stale_threshold_minutes``) is already operator-tuned;
-the default feed list here deliberately excludes ``sensor_samples`` to
-avoid double findings. Folding it in is a follow-up once this probe has
-a track record.
+The ``corsair_csv`` sensor feed (iCUE PSU wall-power, #868) is a
+filtered feed in the default list — its dedicated ``corsair_feed_probe``
+was retired 2026-07-02 once this probe was live. The old probe's finding
+kind (``sensor_feed_stale``) is superseded by ``data_feed_stale``; no
+delivery-policy row or operator-tuned threshold existed for it, so the
+rename is clean.
 
 Standalone — stdlib only (asyncpg pool is injected by the daemon).
 """
@@ -62,7 +62,9 @@ _STATE_ENTITY_PREFIX = "data_freshness_watchdog"
 # cycle (electricity cost) so 3h = many missed cycles; gpu_metrics comes
 # from the always-on host gpu-scraper daemon; atom_runs goes quiet only
 # when the content pipeline is dark for half a day; page_views can be
-# legitimately quiet, so only a 2-day silence is worth a look.
+# legitimately quiet, so only a 2-day silence is worth a look; the
+# corsair_csv iCUE tap ingests hourly with up to ~60-90 min batch lag,
+# so 120m pages on a dead sampler, not on import lag.
 DEFAULT_FEEDS: list[dict[str, Any]] = [
     {"name": "cost_logs", "table": "cost_logs", "column": "created_at",
      "threshold_minutes": 180},
@@ -72,6 +74,9 @@ DEFAULT_FEEDS: list[dict[str, Any]] = [
      "threshold_minutes": 720},
     {"name": "page_views", "table": "page_views", "column": "created_at",
      "threshold_minutes": 2880},
+    {"name": "corsair_csv", "table": "sensor_samples", "column": "sampled_at",
+     "threshold_minutes": 120,
+     "filter_column": "source", "filter_value": "corsair_csv"},
 ]
 
 

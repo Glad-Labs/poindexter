@@ -278,25 +278,13 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_DOCKER_PORT_FORWARD_PROBE = False
 
 try:
-    # #868 — iCUE corsair_csv sensor-feed freshness watchdog. The tap that
-    # backs PSU wall-power (psu_power.py) ingests hourly via run_taps; this
-    # probe emits a `finding` when sensor_samples goes stale past the
-    # threshold so a stopped feed pages instead of going unnoticed.
-    from corsair_feed_probe import run_corsair_feed_probe
-    _HAS_CORSAIR_FEED_PROBE = True
-except ImportError:  # pragma: no cover — package-qualified path
-    try:
-        from brain.corsair_feed_probe import run_corsair_feed_probe
-        _HAS_CORSAIR_FEED_PROBE = True
-    except ImportError:
-        _HAS_CORSAIR_FEED_PROBE = False
-
-try:
     # 2026-07-01 audit — generalized data-feed dead-man's switch. Watches
     # app_settings.data_freshness_feeds (cost_logs / gpu_metrics /
-    # atom_runs / page_views by default) and emits an edge-triggered
-    # `finding` when a feed's newest row exceeds its threshold, so
-    # dashboards can't silently serve stale data.
+    # atom_runs / page_views / corsair_csv by default) and emits an
+    # edge-triggered `finding` when a feed's newest row exceeds its
+    # threshold, so dashboards can't silently serve stale data. The iCUE
+    # corsair_csv sensor feed (#868) rides this as a filtered feed since
+    # 2026-07-02; its dedicated corsair_feed_probe is retired.
     from data_freshness_probe import run_data_freshness_probe
     _HAS_DATA_FRESHNESS_PROBE = True
 except ImportError:  # pragma: no cover — package-qualified path
@@ -429,10 +417,9 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Auto-embed liveness offline — a wedged/dead embedder stops embedding silently, RAG + memory go stale"),
     ("_HAS_DOCKER_PORT_FORWARD_PROBE", "brain/docker_port_forward_probe.py",
      "Windows wslrelay stuck-state auto-recovery offline (#222)"),
-    ("_HAS_CORSAIR_FEED_PROBE", "brain/corsair_feed_probe.py",
-     "iCUE corsair_csv sensor feed staleness goes unalerted (#868)"),
     ("_HAS_DATA_FRESHNESS_PROBE", "brain/data_freshness_probe.py",
-     "Data-feed dead-man's switch offline — dashboards can serve stale data silently"),
+     "Data-feed dead-man's switch offline — dashboards can serve stale data "
+     "silently (incl. the iCUE corsair_csv sensor feed, #868)"),
     ("_HAS_PR_STALENESS_PROBE", "brain/pr_staleness_probe.py",
      "Stale PR detection offline — agent PRs sit unmerged forever"),
     ("_HAS_DISCORD_BOT_PROBE", "brain/discord_bot_probe.py",
@@ -2845,27 +2832,14 @@ async def run_cycle(pool):
         except Exception as e:
             logger.warning("[BRAIN] docker_port_forward probe failed: %s", e)
 
-    # iCUE corsair_csv sensor-feed freshness watchdog (#868). Emits a
-    # `finding` when the feed goes stale past the threshold so the
-    # findings_alert_router pages the operator (a stopped feed used to go
-    # unnoticed). Transition-only emit; brain_knowledge tracks state.
-    if _HAS_CORSAIR_FEED_PROBE:
-        try:
-            cf_summary = await run_corsair_feed_probe(pool)
-            probe_results["corsair_feed"] = {
-                "ok": bool(cf_summary.get("ok", False)),
-                "detail": cf_summary.get("detail", ""),
-                "summary": cf_summary,
-            }
-        except Exception as e:
-            logger.warning("[BRAIN] corsair_feed probe failed: %s", e)
-
-    # Generalized data-feed freshness watchdog (2026-07-01 audit). Same
-    # transition-only-finding pattern as corsair_feed above, but the feed
-    # list is declarative JSON in app_settings.data_freshness_feeds
-    # (cost_logs / gpu_metrics / atom_runs / page_views by default) — a
-    # dead-man's switch for DATA, so a producer dying no longer leaves
-    # dashboards silently serving stale numbers.
+    # Generalized data-feed freshness watchdog (2026-07-01 audit).
+    # Transition-only findings; the feed list is declarative JSON in
+    # app_settings.data_freshness_feeds (cost_logs / gpu_metrics /
+    # atom_runs / page_views / corsair_csv by default) — a dead-man's
+    # switch for DATA, so a producer dying no longer leaves dashboards
+    # silently serving stale numbers. The iCUE corsair_csv sensor feed
+    # (#868) rides this as a filtered feed since 2026-07-02; its
+    # dedicated corsair_feed_probe is retired.
     if _HAS_DATA_FRESHNESS_PROBE:
         try:
             df_summary = await run_data_freshness_probe(pool)

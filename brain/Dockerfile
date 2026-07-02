@@ -70,7 +70,7 @@ RUN pip install --no-cache-dir 'poetry==2.2.1' && \
     pip uninstall -y poetry poetry-core poetry-plugin-export 2>/dev/null || true && \
     rm -rf /root/.cache/pip /root/.cache/pypoetry
 
-COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py compose_drift_probe.py prometheus_secret_writer.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py alert_dispatcher.py secret_reader.py oauth_client.py glitchtip_triage_probe.py prefect_stuck_flow_probe.py backup_watcher.py restore_test_probe.py offsite_backup_watch.py auto_embed_watch.py smart_monitor.py docker_port_forward_probe.py pr_staleness_probe.py discord_bot_probe.py mcp_http_probe.py branch_drift_probe.py psu_power.py corsair_feed_probe.py post_performance_probe.py data_freshness_probe.py ./
+COPY brain_daemon.py health_probes.py business_probes.py bootstrap.py operator_notifier.py operator_url_probe.py migration_drift_probe.py compose_drift_probe.py prometheus_secret_writer.py probe_interface.py seed_loader.py docker_utils.py alert_sync.py alert_dispatcher.py secret_reader.py oauth_client.py glitchtip_triage_probe.py prefect_stuck_flow_probe.py backup_watcher.py restore_test_probe.py offsite_backup_watch.py auto_embed_watch.py smart_monitor.py docker_port_forward_probe.py pr_staleness_probe.py discord_bot_probe.py mcp_http_probe.py branch_drift_probe.py psu_power.py post_performance_probe.py data_freshness_probe.py ./
 COPY seed_app_settings.json /app/seed_app_settings.json
 
 # brain_daemon.py imports `from brain.bootstrap import ...` so the files
@@ -103,7 +103,6 @@ RUN mkdir -p /app/brain && \
     cp /app/mcp_http_probe.py /app/brain/mcp_http_probe.py && \
     cp /app/branch_drift_probe.py /app/brain/branch_drift_probe.py && \
     cp /app/psu_power.py /app/brain/psu_power.py && \
-    cp /app/corsair_feed_probe.py /app/brain/corsair_feed_probe.py && \
     cp /app/post_performance_probe.py /app/brain/post_performance_probe.py && \
     touch /app/brain/__init__.py
 

@@ -164,6 +164,22 @@ async def test_filtered_feed_binds_value_as_parameter():
     assert feed_query_call.args[1] == "corsair_csv"
 
 
+def test_corsair_feed_rides_the_default_list():
+    """corsair_feed_probe was retired 2026-07-02 — the iCUE sensor-feed
+    watchdog (#868) now rides this probe as a filtered feed. If corsair
+    drops out of DEFAULT_FEEDS, PSU wall-power staleness goes unalerted
+    again; re-add it or resurrect the dedicated probe."""
+    feeds = {f["name"]: f for f in _parse_feeds("")}
+    corsair = feeds["corsair_csv"]
+    assert corsair["table"] == "sensor_samples"
+    assert corsair["column"] == "sampled_at"
+    assert corsair["filter_column"] == "source"
+    assert corsair["filter_value"] == "corsair_csv"
+    # Hourly ingest with up to ~60-90m batch lag — 120m pages on a dead
+    # sampler, not on import lag.
+    assert corsair["threshold_minutes"] == 120
+
+
 def test_seeded_default_matches_in_code_fallback():
     """The settings_defaults.py seed and DEFAULT_FEEDS must describe the
     same feeds — otherwise a fresh install (seed) and a broken-settings

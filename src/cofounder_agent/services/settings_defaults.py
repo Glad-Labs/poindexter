@@ -1267,7 +1267,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # findings router) when it exceeds threshold_minutes — so a dead producer
     # can't leave dashboards silently serving stale data. table/column are
     # validated as SQL identifiers; a feed with zero rows is not assessed.
-    # The corsair_csv sensor feed keeps its dedicated corsair_feed_probe.
+    # The corsair_csv sensor feed (iCUE PSU wall-power, #868) is a filtered
+    # feed here — its dedicated corsair_feed_probe was retired 2026-07-02.
+    # 120m threshold: the tap ingests hourly with up to ~60-90 min batch
+    # lag, so anything under ~2h is import lag, not a dead sampler.
     'data_freshness_probe_enabled': 'true',
     'data_freshness_feeds': (
         '[{"name": "cost_logs", "table": "cost_logs", "column": "created_at",'
@@ -1277,7 +1280,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
         ' {"name": "atom_runs", "table": "atom_runs", "column": "created_at",'
         ' "threshold_minutes": 720},'
         ' {"name": "page_views", "table": "page_views", "column": "created_at",'
-        ' "threshold_minutes": 2880}]'
+        ' "threshold_minutes": 2880},'
+        ' {"name": "corsair_csv", "table": "sensor_samples",'
+        ' "column": "sampled_at", "threshold_minutes": 120,'
+        ' "filter_column": "source", "filter_value": "corsair_csv"}]'
     ),
 
     # ----- Content-flow concurrency cap (Glad-Labs/poindexter#578) -----

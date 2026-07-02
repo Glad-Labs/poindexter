@@ -5,7 +5,6 @@
   "brain/brain_daemon.py": 1,
   "brain/branch_drift_probe.py": 1,
   "brain/compose_drift_probe.py": 2,
-  "brain/corsair_feed_probe.py": 1,
   "brain/docker_port_forward_probe.py": 1,
   "brain/glitchtip_triage_probe.py": 2,
   "brain/health_probes.py": 4,
