@@ -19,7 +19,7 @@
 - **Fail loud + notify** on missing required config; **self-heal** (skip cycle, log, no crash) on transient infra errors. No silent fallbacks.
 - **Storage seam:** the `Scorer` computes; the `EvalHarness` stores. The Langfuse adapter must sit behind the `EvalHarness` Protocol so a Postgres impl is a drop-in (do NOT let Langfuse types leak into the runner/scorer/CLI).
 - **Adapter-purity:** CLI/routes hold no business logic or raw SQL — they delegate to `services/model_eval/*`.
-- **All changes via PR** against `origin` (Glad-Labs/glad-labs-stack), branch off `origin/main`, never push `main`. CI-green is the merge gate. Linear history (squash/rebase).
+- **All changes via PR** against `origin` (Glad-Labs/poindexter), branch off `origin/main`, never push `main`. CI-green is the merge gate. Linear history (squash/rebase).
 - **Docs + tests ship with every task.**
 
 ---
