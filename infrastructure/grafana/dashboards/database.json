@@ -25,7 +25,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "Database \u2014 Postgres internals",
+      "title": "Database — Postgres internals",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -48,7 +48,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "## Postgres \u2014 poindexter_brain"
+        "content": "## Postgres — poindexter_brain"
       }
     },
     {
@@ -891,7 +891,7 @@
       "id": 16,
       "title": "DB Cache Hit %",
       "type": "gauge",
-      "description": "Buffer cache hit ratio for poindexter_brain. Goal >= 99% \u2014 a drop indicates too many disk reads.",
+      "description": "Buffer cache hit ratio for poindexter_brain. Goal >= 99% — a drop indicates too many disk reads.",
       "gridPos": {
         "h": 6,
         "w": 6,
@@ -1224,5 +1224,6 @@
         }
       ]
     }
-  ]
+  ],
+  "description": "CHARTER: Postgres internals + data-feed freshness — connection pressure, table growth, index health, and the feed dead-man's switch. Answers 'is the spinal cord healthy and is its data current?'."
 }

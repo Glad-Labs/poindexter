@@ -34,7 +34,12 @@
     {
       "type": "row",
       "title": "Findings Overview",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 0
+      },
       "panels": [],
       "id": 1
     },
@@ -46,20 +51,36 @@
       "description": "Total findings emitted in the selected time window. Findings are written to audit_log by the brain's quality probes / jobs via utils.findings.emit_finding.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "yellow", "value": 100 },
-              { "color": "orange", "value": 500 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "orange",
+                "value": 500
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 1 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 1
+      },
       "id": 2,
       "options": {
         "colorMode": "background",
@@ -98,25 +119,46 @@
       "description": "Routable findings (warn/critical) above the route watermark — i.e. emitted but NOT yet forwarded to a delivery channel by findings_alert_router. This is the 'unprocessed findings' backlog from #461. Steady-state should be ~0 (the router runs every 60s); a non-zero value that persists means the router is stalled. Not time-windowed — it's a live backlog count.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
-              "options": { "0": { "color": "blue", "text": "✓ 0" } }
+              "options": {
+                "0": {
+                  "color": "blue",
+                  "text": "✓ 0"
+                }
+              }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "yellow", "value": 1 },
-              { "color": "orange", "value": 25 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1
+              },
+              {
+                "color": "orange",
+                "value": 25
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 1 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 1
+      },
       "id": 3,
       "options": {
         "colorMode": "background",
@@ -155,24 +197,42 @@
       "description": "Critical findings in the window. Critical always pages Telegram (the per-kind delivery policy can never suppress a critical via log_only — the router/dispatcher refuse).",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [
             {
               "type": "value",
-              "options": { "0": { "color": "blue", "text": "✓ 0" } }
+              "options": {
+                "0": {
+                  "color": "blue",
+                  "text": "✓ 0"
+                }
+              }
             }
           ],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "orange", "value": 1 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              }
             ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 1 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 1
+      },
       "id": 4,
       "options": {
         "colorMode": "background",
@@ -211,16 +271,28 @@
       "description": "Distinct finding kinds emitted in the window. A sudden jump usually means a new probe started firing — check the By Kind table below.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           },
           "unit": "none"
         }
       },
-      "gridPos": { "h": 5, "w": 6, "x": 18, "y": 1 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 18,
+        "y": 1
+      },
       "id": 5,
       "options": {
         "colorMode": "background",
@@ -254,7 +326,12 @@
     {
       "type": "row",
       "title": "By Kind & Severity",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 6 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 6
+      },
       "panels": [],
       "id": 6
     },
@@ -266,7 +343,9 @@
       "description": "Findings per hour, stacked by severity. Spot bursts (a probe firing in a loop) and severity mix at a glance.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "palette-classic" },
+          "color": {
+            "mode": "palette-classic"
+          },
           "custom": {
             "axisCenteredZero": false,
             "axisColorMode": "text",
@@ -276,24 +355,45 @@
             "drawStyle": "bars",
             "fillOpacity": 80,
             "gradientMode": "none",
-            "hideFrom": { "legend": false, "tooltip": false, "viz": false },
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
             "lineWidth": 1,
             "pointSize": 5,
-            "scaleDistribution": { "type": "linear" },
+            "scaleDistribution": {
+              "type": "linear"
+            },
             "showPoints": "auto",
             "spanNulls": false,
-            "stacking": { "group": "A", "mode": "normal" },
-            "thresholdsStyle": { "mode": "off" }
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           },
           "unit": "short"
         }
       },
-      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 7 },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 0,
+        "y": 7
+      },
       "id": 7,
       "options": {
         "legend": {
@@ -302,7 +402,10 @@
           "placement": "bottom",
           "showLegend": true
         },
-        "tooltip": { "mode": "multi", "sort": "none" }
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
       },
       "pluginVersion": "11.0.0",
       "targets": [
@@ -328,34 +431,55 @@
       "description": "Finding volume by kind in the window, with the most recent timestamp. The noisiest kinds are the candidates for a log_only or higher-cooldown policy.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "custom": {
             "align": "auto",
-            "cellOptions": { "type": "auto" },
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "yellow", "value": 50 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 50
+              }
             ]
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Count" },
+            "matcher": {
+              "id": "byName",
+              "options": "Count"
+            },
             "properties": [
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-background", "mode": "gradient" }
+                "value": {
+                  "type": "color-background",
+                  "mode": "gradient"
+                }
               }
             ]
           }
         ]
       },
-      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 7 },
+      "gridPos": {
+        "h": 9,
+        "w": 12,
+        "x": 12,
+        "y": 7
+      },
       "id": 8,
       "options": {
         "cellHeight": "sm",
@@ -386,7 +510,12 @@
     {
       "type": "row",
       "title": "Routing & Triage",
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 16 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 16
+      },
       "panels": [],
       "id": 9
     },
@@ -398,20 +527,34 @@
       "description": "What each emitted kind routes to, joining the live findings.<kind>.delivery app_settings policy. Kinds with no explicit policy show 'route (unconfigured)' — the router deliberately keeps them loud rather than applying findings.default. Edit a policy live with: poindexter (or MCP set_setting) findings.<kind>.delivery = log_only|discord|telegram|auto_fix|github_issue.",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "custom": {
             "align": "auto",
-            "cellOptions": { "type": "auto" },
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           }
         }
       },
-      "gridPos": { "h": 10, "w": 12, "x": 0, "y": 17 },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 0,
+        "y": 17
+      },
       "id": 10,
       "options": {
         "cellHeight": "sm",
@@ -447,25 +590,40 @@
       "description": "The 25 most recent findings with severity, kind, title and source. Findings above the route watermark are still pending delivery (see the Pending stat above).",
       "fieldConfig": {
         "defaults": {
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "custom": {
             "align": "auto",
-            "cellOptions": { "type": "auto" },
+            "cellOptions": {
+              "type": "auto"
+            },
             "inspect": false
           },
           "mappings": [],
           "thresholds": {
             "mode": "absolute",
-            "steps": [{ "color": "blue", "value": null }]
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
           }
         },
         "overrides": [
           {
-            "matcher": { "id": "byName", "options": "Severity" },
+            "matcher": {
+              "id": "byName",
+              "options": "Severity"
+            },
             "properties": [
               {
                 "id": "custom.cellOptions",
-                "value": { "type": "color-text", "mode": "basic" }
+                "value": {
+                  "type": "color-text",
+                  "mode": "basic"
+                }
               },
               {
                 "id": "mappings",
@@ -473,10 +631,22 @@
                   {
                     "type": "value",
                     "options": {
-                      "critical": { "color": "red", "text": "critical" },
-                      "warn": { "color": "orange", "text": "warn" },
-                      "warning": { "color": "orange", "text": "warning" },
-                      "info": { "color": "blue", "text": "info" }
+                      "critical": {
+                        "color": "red",
+                        "text": "critical"
+                      },
+                      "warn": {
+                        "color": "orange",
+                        "text": "warn"
+                      },
+                      "warning": {
+                        "color": "orange",
+                        "text": "warning"
+                      },
+                      "info": {
+                        "color": "blue",
+                        "text": "info"
+                      }
                     }
                   }
                 ]
@@ -485,7 +655,12 @@
           }
         ]
       },
-      "gridPos": { "h": 10, "w": 12, "x": 12, "y": 17 },
+      "gridPos": {
+        "h": 10,
+        "w": 12,
+        "x": 12,
+        "y": 17
+      },
       "id": 11,
       "options": {
         "cellHeight": "sm",
@@ -513,5 +688,6 @@
       "title": "Latest 25 Findings",
       "type": "table"
     }
-  ]
+  ],
+  "description": "CHARTER: probe-finding routing — what the probes found, at what severity, and whether delivery policy moved it to the operator. Answers 'is anything detected but undelivered?'."
 }

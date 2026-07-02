@@ -331,9 +331,18 @@
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "dark-orange", "value": null },
-              { "color": "orange", "value": 0 },
-              { "color": "blue", "value": 4294967296 }
+              {
+                "color": "dark-orange",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 0
+              },
+              {
+                "color": "blue",
+                "value": 4294967296
+              }
             ]
           }
         },
@@ -969,14 +978,27 @@
       "type": "row",
       "title": "Sensors — HWiNFO / AIDA64 (Prometheus)",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 61 }
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 61
+      }
     },
     {
       "id": 51,
       "type": "timeseries",
       "title": "Temperatures (HWiNFO)",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 62 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 62
+      },
       "targets": [
         {
           "expr": "hwinfo_temperature_celsius{label=~\"CPU Package|CPU .Tctl/Tdie.|GPU Temperature|GPU Memory Junction Temperature|PSU Temperature|Drive Temperature\"}",
@@ -984,14 +1006,27 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "celsius" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "celsius"
+        },
+        "overrides": []
+      }
     },
     {
       "id": 52,
       "type": "timeseries",
       "title": "Fans (HWiNFO)",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 62 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 62
+      },
       "targets": [
         {
           "expr": "hwinfo_fan_rpm{label=~\"PSU Fan|GPU Fan1|GPU Fan2|Fan 2|Fan 3|Fan 4|Fan 5|Fan 6|Fan 7\"}",
@@ -999,14 +1034,27 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "rotrpm" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "rotrpm"
+        },
+        "overrides": []
+      }
     },
     {
       "id": 53,
       "type": "timeseries",
       "title": "Per-Core CPU Power (RAPL)",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 70 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 70
+      },
       "targets": [
         {
           "expr": "system_cpu_core_power_watts",
@@ -1014,14 +1062,27 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "watt" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt"
+        },
+        "overrides": []
+      }
     },
     {
       "id": 54,
       "type": "timeseries",
       "title": "PSU Power — live (HWiNFO)",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 70 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 70
+      },
       "targets": [
         {
           "expr": "hwinfo_power_watts{label=\"PSU Power In (est)\"}",
@@ -1039,14 +1100,27 @@
           "refId": "C"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "watt" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "watt"
+        },
+        "overrides": []
+      }
     },
     {
       "id": 55,
       "type": "timeseries",
       "title": "Voltages (HWiNFO)",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 78 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 78
+      },
       "targets": [
         {
           "expr": "hwinfo_voltage_volts{label=~\"Vcore|.12V|.5V|.3.3V\"}",
@@ -1054,7 +1128,13 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "volt" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "volt"
+        },
+        "overrides": []
+      }
     }
-  ]
+  ],
+  "description": "CHARTER: GPU/PSU/wall power — thermal and electrical headroom and electricity cost. GPU live is single-sourced from Prometheus nvidia_gpu_* (#653); the gpu_metrics SQL tables here are history only."
 }

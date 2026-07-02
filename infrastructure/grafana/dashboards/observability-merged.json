@@ -1217,7 +1217,12 @@
       "type": "row",
       "title": "API — HTTP RED (request rate / errors / latency)",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 220 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 220
+      },
       "panels": [],
       "id": 231
     },
@@ -1225,8 +1230,16 @@
       "type": "timeseries",
       "title": "API request rate by route",
       "description": "Per-route request rate from poindexter_http_requests_total (recorded by the Prometheus HTTP RED middleware). 'No data' until the worker is restarted with the middleware deployed.",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 0, "y": 221 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 0,
+        "y": 221
+      },
       "id": 232,
       "targets": [
         {
@@ -1235,14 +1248,27 @@
           "refId": "A"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "reqps" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "reqps"
+        },
+        "overrides": []
+      }
     },
     {
       "type": "timeseries",
       "title": "API error rate (4xx / 5xx %)",
       "description": "Share of responses that are 4xx (client) and 5xx (server). 5xx is the RED 'Errors' signal; clamp_min avoids divide-by-zero when idle.",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 8, "y": 221 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 8,
+        "y": 221
+      },
       "id": 233,
       "targets": [
         {
@@ -1256,14 +1282,27 @@
           "refId": "B"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "percent" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent"
+        },
+        "overrides": []
+      }
     },
     {
       "type": "timeseries",
       "title": "API latency p95 by route / p99 overall",
       "description": "histogram_quantile over poindexter_http_request_duration_seconds_bucket. p95 split by route, p99 across all routes.",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 8, "w": 8, "x": 16, "y": 221 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 8,
+        "x": 16,
+        "y": 221
+      },
       "id": 234,
       "targets": [
         {
@@ -1277,7 +1316,12 @@
           "refId": "B"
         }
       ],
-      "fieldConfig": { "defaults": { "unit": "s" }, "overrides": [] }
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s"
+        },
+        "overrides": []
+      }
     }
   ],
   "refresh": "30s",
@@ -1328,7 +1372,10 @@
         "label": "Log container",
         "description": "Loki container filter for the 'Error + warning feed' and 'Raw log stream' panels. Defaults to All (.+) so both panels show every container until you narrow it.",
         "type": "query",
-        "datasource": { "type": "loki", "uid": "local-loki" },
+        "datasource": {
+          "type": "loki",
+          "uid": "local-loki"
+        },
         "definition": "label_values(container)",
         "query": {
           "label": "container",
@@ -1342,7 +1389,11 @@
         "includeAll": true,
         "allValue": ".+",
         "multi": false,
-        "current": { "selected": false, "text": "All", "value": "$__all" },
+        "current": {
+          "selected": false,
+          "text": "All",
+          "value": "$__all"
+        },
         "options": [],
         "hide": 0,
         "skipUrlSync": false
@@ -1359,5 +1410,5 @@
   "uid": "observability-merged",
   "version": 1,
   "weekStart": "",
-  "description": "Merged observability stack — overview at the top, then per-tool sections (Tempo, Pyroscope, Loki, Kuma). Each section is collapsable so the page stays scannable."
+  "description": "CHARTER: golden signals + deep-dive entry points (Tempo traces, Pyroscope flame graphs, Loki logs) for debugging a slow or erroring service. Answers 'where is the latency/error coming from?'. Merged observability stack — overview at the top, then per-tool sections (Tempo, Pyroscope, Loki, Kuma). Each section is collapsable so the page stays scannable."
 }

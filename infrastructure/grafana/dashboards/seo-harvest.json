@@ -6,19 +6,29 @@
   "schemaVersion": 39,
   "version": 1,
   "refresh": "1h",
-  "time": { "from": "now-30d", "to": "now" },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
   "panels": [
     {
       "id": 1,
       "title": "Page-1-Push Candidates",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 0 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "colorMode": "background"
       },
       "targets": [
@@ -38,13 +48,20 @@
       "id": 2,
       "title": "Striking Distance",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 0 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "colorMode": "background"
       },
       "targets": [
@@ -64,13 +81,20 @@
       "id": 3,
       "title": "Low-CTR Posts",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 12, "y": 0 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 12,
+        "y": 0
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "colorMode": "background"
       },
       "targets": [
@@ -90,14 +114,24 @@
       "id": 4,
       "title": "Top Opportunities — fix these first",
       "type": "table",
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 5 },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 5
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "gap_score", "desc": true }]
+        "sortBy": [
+          {
+            "displayName": "gap_score",
+            "desc": true
+          }
+        ]
       },
       "targets": [
         {
@@ -116,12 +150,22 @@
       "id": 5,
       "title": "Sitewide CTR Trend",
       "type": "timeseries",
-      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 17 },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 17
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "fieldConfig": { "defaults": { "unit": "percentunit" }, "overrides": [] },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit"
+        },
+        "overrides": []
+      },
       "targets": [
         {
           "refId": "A",
@@ -139,13 +183,20 @@
       "id": 6,
       "title": "Refresh Queue",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 0, "y": 25 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 0,
+        "y": 25
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "colorMode": "background"
       },
       "targets": [
@@ -165,13 +216,20 @@
       "id": 7,
       "title": "Refreshed (lifetime)",
       "type": "stat",
-      "gridPos": { "h": 5, "w": 6, "x": 6, "y": 25 },
+      "gridPos": {
+        "h": 5,
+        "w": 6,
+        "x": 6,
+        "y": 25
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "options": {
-        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "reduceOptions": {
+          "calcs": ["lastNotNull"]
+        },
         "colorMode": "background"
       },
       "targets": [
@@ -191,14 +249,24 @@
       "id": 8,
       "title": "Refresh Outcomes — position/CTR delta (proves the loop)",
       "type": "table",
-      "gridPos": { "h": 12, "w": 24, "x": 0, "y": 30 },
+      "gridPos": {
+        "h": 12,
+        "w": 24,
+        "x": 0,
+        "y": 30
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "outcome_measured_at", "desc": true }]
+        "sortBy": [
+          {
+            "displayName": "outcome_measured_at",
+            "desc": true
+          }
+        ]
       },
       "targets": [
         {
@@ -217,14 +285,24 @@
       "id": 9,
       "title": "Awaiting sign-off — seo_refresh gate (proposed title + meta)",
       "type": "table",
-      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 42 },
+      "gridPos": {
+        "h": 10,
+        "w": 24,
+        "x": 0,
+        "y": 42
+      },
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
       "options": {
         "showHeader": true,
-        "sortBy": [{ "displayName": "gate_paused_at", "desc": false }]
+        "sortBy": [
+          {
+            "displayName": "gate_paused_at",
+            "desc": false
+          }
+        ]
       },
       "targets": [
         {
@@ -239,5 +317,6 @@
         }
       ]
     }
-  ]
+  ],
+  "description": "CHARTER: the SEO opportunity queue and refresh outcomes. Answers 'what should we refresh next and did the last refreshes pay off?'."
 }

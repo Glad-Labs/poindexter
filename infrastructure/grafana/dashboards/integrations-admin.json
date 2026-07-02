@@ -88,7 +88,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Inbound rows \u2014 endpoints that receive webhooks from third-party services (Lemon Squeezy, Resend, Alertmanager, ...).",
+      "description": "Inbound rows — endpoints that receive webhooks from third-party services (Lemon Squeezy, Resend, Alertmanager, ...).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -141,7 +141,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Outbound rows \u2014 destinations Poindexter pushes events to (Discord, Telegram, Vercel ISR, ...).",
+      "description": "Outbound rows — destinations Poindexter pushes events to (Discord, Telegram, Vercel ISR, ...).",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -422,7 +422,7 @@
                     "type": "value",
                     "options": {
                       "0": {
-                        "text": "\u2014",
+                        "text": "—",
                         "color": "text"
                       },
                       "1": {
@@ -594,7 +594,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Policies whose most recent run recorded a non-null last_error. Orange/red here means a retention policy is failing \u2014 check `last_error`.",
+      "description": "Policies whose most recent run recorded a non-null last_error. Orange/red here means a retention policy is failing — check `last_error`.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1048,7 +1048,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Sum of total_records across taps \u2014 lifetime count of records ingested.",
+      "description": "Sum of total_records across taps — lifetime count of records ingested.",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1726,7 +1726,7 @@
       "id": 37,
       "type": "row",
       "collapsed": false,
-      "title": "Settings Lifecycle \u2014 Orphan Candidates (#756)",
+      "title": "Settings Lifecycle — Orphan Candidates (#756)",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -1740,7 +1740,7 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "app_settings keys with a NULL last_read_at older than the default 30-day grace window \u2014 nothing reads them via SiteConfig.get. ADVISORY: a key read ONLY via direct SQL or SettingsService.get also appears here, so verify before retiring. Mirrors ProbeZeroReaderSettingsJob (poindexter#756); the footer shows the candidate count.",
+      "description": "app_settings keys with a NULL last_read_at older than the default 30-day grace window — nothing reads them via SiteConfig.get. ADVISORY: a key read ONLY via direct SQL or SettingsService.get also appears here, so verify before retiring. Mirrors ProbeZeroReaderSettingsJob (poindexter#756); the footer shows the candidate count.",
       "fieldConfig": {
         "defaults": {
           "custom": {
@@ -1781,7 +1781,7 @@
           "refId": "A"
         }
       ],
-      "title": "Orphan candidates \u2014 never read via SiteConfig (>=30d old)",
+      "title": "Orphan candidates — never read via SiteConfig (>=30d old)",
       "type": "table"
     }
   ],
@@ -1801,5 +1801,5 @@
   "uid": "integrations-admin",
   "version": 2,
   "weekStart": "",
-  "description": "Webhook framework health + admin reference (link registry). Replaces integration-health / link-registry as separate dashboards."
+  "description": "CHARTER: state of the declarative data plane — taps, retention, webhooks, publishing adapters, settings lifecycle. Answers 'what is wired up and is any of it drifting?'. Webhook framework health + admin reference (link registry). Replaces integration-health / link-registry as separate dashboards."
 }

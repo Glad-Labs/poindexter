@@ -1064,5 +1064,6 @@
         }
       ]
     }
-  ]
+  ],
+  "description": "CHARTER: experiment variants + auto-publish gate dry-run evidence (edit distance, clean runs). Answers 'is the gate earning the right to auto-publish?'."
 }

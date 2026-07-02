@@ -2,7 +2,7 @@
   "annotations": {
     "list": []
   },
-  "description": "Single-screen operator landing. Status of every component plus current pipeline + alert stats. Drill-down links at the bottom.",
+  "description": "CHARTER: the 60-second operator glance — is the business producing, earning, and healthy right now? Depth lives on the specialist boards; if a panel here needs explaining, it belongs elsewhere. Single-screen operator landing. Status of every component plus current pipeline + alert stats. Drill-down links at the bottom.",
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,

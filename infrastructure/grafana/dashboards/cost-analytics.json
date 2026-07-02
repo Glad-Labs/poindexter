@@ -2,7 +2,7 @@
   "annotations": {
     "list": []
   },
-  "description": "Cost tracking, model performance, and LLM analytics",
+  "description": "CHARTER: what's running the meter — LLM spend, energy, and cost per post over time. Answers 'is the pipeline still cheap?'. Cost tracking, model performance, and LLM analytics",
   "editable": true,
   "graphTooltip": 1,
   "panels": [
@@ -961,7 +961,7 @@
     {
       "type": "row",
       "id": 60,
-      "title": "Cost vs Electricity \u2014 local Ollama vs cloud APIs",
+      "title": "Cost vs Electricity — local Ollama vs cloud APIs",
       "gridPos": {
         "h": 1,
         "w": 24,
@@ -974,7 +974,7 @@
     {
       "type": "table",
       "id": 61,
-      "title": "Provider economics \u2014 $ vs kWh per call (last 30d)",
+      "title": "Provider economics — $ vs kWh per call (last 30d)",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
