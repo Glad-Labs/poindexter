@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-06-30.**  
+> **Auto-generated from live `app_settings` table on 2026-07-02.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 729 active rows across 59 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 1 additional values redacted as secret-shaped (defense-in-depth); 17 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 720 active rows across 58 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 14 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -34,7 +34,7 @@ The worker re-reads on every poll; no restart needed.
 - [brain-probes](#brain-probes) (7 keys)
 - [cli](#cli) (5 keys)
 - [cloudflare](#cloudflare) (2 keys)
-- [content](#content) (19 keys)
+- [content](#content) (17 keys)
 - [content_qa](#content-qa) (4 keys)
 - [cors](#cors) (1 key)
 - [cost](#cost) (8 keys)
@@ -42,7 +42,7 @@ The worker re-reads on every poll; no restart needed.
 - [features](#features) (7 keys)
 - [firefighter](#firefighter) (7 keys)
 - [gates](#gates) (3 keys)
-- [general](#general) (321 keys)
+- [general](#general) (315 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (5 keys)
@@ -81,7 +81,6 @@ The worker re-reads on every poll; no restart needed.
 - [social](#social) (3 keys)
 - [system](#system) (2 keys)
 - [tokens](#tokens) (5 keys)
-- [topic_discovery](#topic-discovery) (1 key)
 - [voice](#voice) (22 keys)
 - [voice_agent](#voice-agent) (2 keys)
 - [webhooks](#webhooks) (1 key)
@@ -205,8 +204,6 @@ The worker re-reads on every poll; no restart needed.
 | `title_originality_cache_ttl_hours` | `24` |  | GH-87: TTL (hours) for the in-process cache that dedupes repeated DuckDuckGo queries for the same title. DDG rate-lim... |
 | `title_originality_external_check_enabled` | `true` |  | GH-87: enable DuckDuckGo HTML search for the exact post title at approval time. Verbatim external matches subtract ti... |
 | `title_originality_external_penalty` | `-50` |  | GH-87: points subtracted from the QA score when the post title appears verbatim in external search results. Stored as... |
-| `topic_discovery_category_searches` | `{}` |  | JSON object mapping category name -> list of keyword search strings. Used by TopicDiscovery._classify_category to buc... |
-| `topic_discovery_news_patterns` | `[]` |  | JSON array of regex strings (case-insensitive). When non-empty, TopicDiscovery uses these patterns to reject titles a... |
 | `writing_style_reference` | `*(per-operator)*` | per-operator | Operator-specific writing style traits injected into content-generation prompts. Set via `poindexter settings set wri... |
 | `writing_styles` | `[{"name": "technical", "voice": "prec...` |  | Configurable writing styles for content generation. Same pattern as image_styles. |
 
@@ -232,7 +229,7 @@ The worker re-reads on every poll; no restart needed.
 | `cost_alert_threshold_pct` | `80` |  | Alert when spend exceeds this % of limit |
 | `daily_spend_limit` | `1.00` |  | Hard cap on daily AI spend in USD |
 | `daily_spend_limit_usd` | `2.0` |  | Maximum daily AI spend in USD (read by services/cost_guard.py) |
-| `electricity_rate_kwh` | `0.2579` |  | RI Energy Last Resort Service rate $0.14770/kWh (verified by Matt) |
+| `electricity_rate_kwh` | `0.2579` |  | Electricity rate in $/kWh for energy-cost estimates. Tune to your utility rate. |
 | `gpu_inference_watts` | `400` |  | GPU average inference power draw in watts |
 | `monthly_spend_limit` | `20.00` |  | Hard cap on monthly AI spend in USD |
 | `monthly_spend_limit_usd` | `10.0` |  | Maximum monthly AI spend in USD (read by services/cost_guard.py) |
@@ -291,7 +288,6 @@ The worker re-reads on every poll; no restart needed.
 | `audio_gen_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `brain_anomaly_baseline_window_days` | `30` |  | Auto-seeded by services.settings_defaults (#379) |
 | `brain_anomaly_current_window_hours` | `24` |  | Auto-seeded by services.settings_defaults (#379) |
-| `brand_keywords` | `` |  | Comma-separated brand-relevance keywords used by topic_discovery to filter discovered topics to the site's niche. Emp... |
 | `cadence_slo_enabled` | `true` |  |  |
 | `cadence_slo_expected_posts_per_day` | `1` |  |  |
 | `cadence_slo_shortfall_ratio` | `0.5` |  |  |
@@ -440,8 +436,8 @@ The worker re-reads on every poll; no restart needed.
 | `plugin.llm_provider.litellm.allow_paid_base_url` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.llm_provider.openai_compat.allow_paid_base_url` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
 | `plugin.video_provider.wan2.1-1.3b.server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
-| `podcast_description` | `AI-development audio essays from Glad...` |  | Podcast RSS description |
-| `podcast_name` | `Glad Labs Podcast` |  | Podcast title for RSS feeds |
+| `podcast_description` | `` |  | Podcast RSS description |
+| `podcast_name` | `` |  | Podcast title for RSS feeds |
 | `podcast_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `prefect_content_flow_concurrency` | `3` |  |  |
 | `prefect_stuck_flow_queue_overdue_min_minutes` | `5` |  | Minimum minutes a SCHEDULED Prefect run must be overdue before it counts toward the queue-depth backlog threshold. Pr... |
@@ -517,7 +513,7 @@ The worker re-reads on every poll; no restart needed.
 | `qa_relevance_stuffing_hard_density` | `5.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_relevance_stuffing_soft_density` | `3.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_rewrite_max_attempts` | `2` |  | QA rescue cycle: max bounded rewrite passes before a salvageable reject is hard-rejected (write->qa->revise->qa->revi... |
-| `qa_rewrite_model` | `` |  | Cross-model rescue reviser (qa.rewrite); empty = use the writer model (gemma, resident). Was glm-4.7-5090 (#1692 bake... |
+| `qa_rewrite_model` | `` |  | Cross-model rescue reviser (qa.rewrite); empty = use the writer model (gemma, resident). Was a larger cross-model rev... |
 | `qa_seo_baseline` | `6.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_title_originality_enabled` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
 | `qa_title_similarity_threshold` | `0.6` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -561,27 +557,22 @@ The worker re-reads on every poll; no restart needed.
 | `smtp_use_tls` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
 | `stable_audio_open_server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `stage_timeout_draft` | `1700` |  |  |
-| `storage_access_key` | `*(redacted — looks secret-shaped but not classified `is_secret=true` in DB)*` | look-secret |  |
-| `storage_bucket` | `*(per-operator)*` | per-operator |  |
+| `storage_access_key` | `` |  | S3/R2 access key ID (paired with the storage_secret_key secret). is_secret=false by design — it can't authenticate al... |
+| `storage_bucket` | `` |  |  |
 | `storage_endpoint` | `` |  |  |
-| `storage_public_url` | `*(per-operator)*` | per-operator |  |
+| `storage_public_url` | `` |  | Public base URL for the S3/R2 media bucket (e.g. https://<id>.r2.dev or a CDN domain). Configure via: poindexter sett... |
 | `structured_extraction_model` | `ollama/gemma3:27b` |  |  |
 | `topic_dedup_engine` | `word_overlap` |  |  |
-| `topic_discovery_ideation_lookback_days` | `30` |  | Auto-seeded by services.settings_defaults (#379) |
 | `topic_discovery_length_distribution` | `` |  | Auto-seeded by services.settings_defaults (#379) |
-| `topic_discovery_manual_trigger` | `false` |  |  |
-| `topic_discovery_min_cooldown_seconds` | `1800` |  |  |
 | `topic_discovery_queue_low_threshold` | `999` |  |  |
 | `topic_discovery_rejection_streak` | `999` |  |  |
 | `topic_discovery_stale_hours` | `8760` |  |  |
-| `topic_discovery_streak_window_hours` | `6` |  | Auto-seeded by services.settings_defaults (#379) |
-| `topic_discovery_style_distribution` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `trusted_source_domains` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `tts_acronym_replacements` | `{"SOC":"security operations","CRM":"c...` |  |  |
 | `tts_pronunciations` | `{"I/O": "I O", "CI/CD": "CI CD", "Dev...` |  |  |
 | `use_ollama` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
 | `video_compositor` | `` |  | Auto-seeded by services.settings_defaults (#379) |
-| `video_feed_name` | `Glad Labs Video` |  | Video RSS feed title |
+| `video_feed_name` | `` |  | Video RSS feed title |
 | `video_negative_prompt` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `video_server_url` | `http://host.docker.internal:9837` |  | Video generation server |
 | `video_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -617,18 +608,18 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `api_base_url` | `http://worker:8002` |  | Backend API base URL |
 | `company_age_months` | `6` |  | Company age in months (update periodically) |
-| `company_founded_date` | `2025-09-25` |  | Company founding date |
+| `company_founded_date` | `2025-01-01` |  | Company founding date. Generic placeholder on OSS; the operator overlay sets the real date. |
 | `company_founded_year` | `2025` |  | Company founding year |
-| `company_founder_name` | `*(per-operator)*` | per-operator | Founder name |
-| `company_name` | `Glad Labs` |  | Legal company name |
+| `company_founder_name` | `*(per-operator)*` | per-operator | Founder name. Empty on OSS; the operator overlay sets the operator's name. |
+| `company_name` | `` |  | Legal company name. Empty on OSS; the operator overlay sets it. |
 | `company_products` | `` |  | Known real products (for hallucination checks) |
 | `company_team_size` | `1` |  | Team size for content validation |
 | `discord_ops_channel_id` | `` |  | Discord channel for ops notifications |
-| `gpu_model` | `NVIDIA RTX 5090 (32GB VRAM)` |  | GPU model for brain knowledge |
+| `gpu_model` | `` |  | GPU model for brain knowledge. Empty on OSS (each install has its own card); the operator overlay sets the operator's... |
 | `newsletter_from_email` | `` |  | Newsletter sender address |
 | `privacy_email` | `` |  | Privacy/GDPR contact email |
 | `site_domain` | `` |  | Production domain (no protocol) |
-| `site_name` | `Glad Labs` |  | Brand/site name used across all services |
+| `site_name` | `` |  | Brand/site name used across all services. Empty on OSS; the operator overlay sets it. |
 | `site_url` | `` |  | Full production URL with protocol |
 | `support_email` | `` |  | Support contact email |
 
@@ -688,13 +679,13 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `podcast_cover_url` | `*(per-operator)*` | per-operator | Square podcast cover art URL for itunes:image element (Apple/Spotify require 1400-3000px) |
+| `podcast_cover_url` | `` |  | Square podcast cover art URL for itunes:image element (Apple/Spotify require 1400-3000px). Configure via: poindexter ... |
 | `podcast_tts_base_url` | `http://speaches:8000/v1` |  | Speaches OpenAI-compatible base URL for podcast TTS. Compose-internal URL by default. Use http://host.docker.internal... |
 | `podcast_tts_enabled` | `true` |  | Enable TTS narration for podcast scripts via Speaches. Converts the LLM-generated podcast script to a .wav file using... |
 | `podcast_tts_format` | `wav` |  | Output audio format for podcast narration files. Options: wav, mp3, opus, flac. wav is lossless and universally playa... |
 | `podcast_tts_model` | `speaches-ai/Kokoro-82M-v1.0-ONNX` |  | Kokoro model id passed to Speaches for podcast TTS. Keep in sync with voice_agent_tts_model unless a different model ... |
 | `podcast_tts_voice` | `bf_emma` |  | Kokoro voice id for podcast narration. Options: bf_emma, bf_isabella, am_michael, etc. (matches voice_agent_tts_voice... |
-| `preferred_ai_video_style` | `flat_vector,isometric,isometric_voxel...` |  | Comma-list of stylized AI-video shot styles (drawn from image_styles pool). Director rotates per-shot. Matt 2026-05-2... |
+| `preferred_ai_video_style` | `flat_vector,isometric,isometric_voxel...` |  | Comma-list of stylized AI-video shot styles (drawn from image_styles pool). Director rotates per-shot. Operator note ... |
 | `stable_audio_open_default_duration_s` | `5.0` |  | Default audio clip duration in seconds for Stable Audio Open. Capped at 47s (model maximum). 5s is typical for intro ... |
 | `stable_audio_open_output_format` | `wav` |  | Output format for Stable Audio Open clips: wav, mp3, ogg, flac. wav is lossless and preferred for video muxing. |
 
@@ -754,7 +745,7 @@ The worker re-reads on every poll; no restart needed.
 | `glitchtip_triage_auto_resolve_patterns` | `[{"title_pattern": "Error while fetch...` |  | JSONB array of triage rules for the brain GlitchTip probe. Each entry: {title_pattern: <regex>, action: 'resolve' or ... |
 | `glitchtip_triage_enabled` | `true` |  | Master enable for the brain GlitchTip triage probe. When 'true' (default), the probe runs every cycle (5-min), pulls ... |
 | `glitchtip_triage_org_slug` | `poindexter` |  | GlitchTip organization slug the brain triage probe queries. Set this to the org slug you created in the GlitchTip fir... |
-| `gpu_temperature_high_threshold_c` | `85` |  | GPU core temperature (C) above which the brain `gpu_temperature` probe alerts. RTX 5090 hard-throttles around 90C; 85... |
+| `gpu_temperature_high_threshold_c` | `85` |  | GPU core temperature (C) above which the brain `gpu_temperature` probe alerts. many GPUs hard-throttle around 90C; 85... |
 | `grafana_alert_folder_uid` | `cfl5ofidejh8ge` |  | Grafana folder UID under which brain alert_sync pushes alert rules. Per-install — get yours from the folder URL in Gr... |
 | `grafana_alert_sync_enabled` | `true` |  | Master switch for the brain daemon's Grafana alert sync loop. Set to 'false' to disable the loop entirely without rem... |
 | `grafana_api_base_url` | `http://poindexter-grafana:3000` |  | Grafana base URL the brain daemon uses to push alert rules and contact points. Defaults to the docker-compose service... |
@@ -787,7 +778,7 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `newsletter_enabled` | `true` |  | Enable newsletter sending on publish |
-| `newsletter_from_name` | `Glad Labs` |  | Newsletter sender display name |
+| `newsletter_from_name` | `` |  | Newsletter sender display name |
 | `newsletter_provider` | `resend` |  | Email provider: resend or smtp |
 
 ## niche_pivot
@@ -943,8 +934,8 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `podcast_spotify_show_id` | `033obxyUXdxhXyQ6erC07G` |  | Spotify show ID for the Glad Labs Podcast (the bit after /show/ in the public URL). |
-| `podcast_spotify_url` | `*(per-operator)*` | per-operator | Public Spotify URL for the Glad Labs Podcast. Surface this on the About page and at the bottom of dev_diary posts + i... |
+| `podcast_spotify_show_id` | `` |  | Spotify show ID for the podcast (the bit after /show/ in the public URL). Configure via: poindexter settings set podc... |
+| `podcast_spotify_url` | `*(per-operator)*` | per-operator | Public Spotify URL for the podcast. Surface this on the About page and at the bottom of dev_diary posts + in social-p... |
 
 ## prometheus
 
@@ -992,7 +983,7 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `content_validator_warning_qa_penalty` | `3` |  | Points subtracted from final QA score per validator warning (GH-91) |
-| `qa_allow_first_person_niches` | `dev_diary,glad-labs` |  | Comma-separated list of niche slugs that bypass the first_person_claims validator in quality_scorers.py. Per Matt's v... |
+| `qa_allow_first_person_niches` | `dev_diary,starter-blog` |  | Comma-separated list of niche slugs that bypass the first_person_claims validator in quality_scorers.py. Per the oper... |
 | `qa_critical_dimension_floor` | `50` |  | Minimum score on any single quality dimension |
 | `qa_critic_weight` | `0.6` |  | Weight for LLM critic in final score |
 | `qa_final_score_threshold` | `80` |  | Multi-model QA final approval score threshold |
@@ -1055,12 +1046,6 @@ The worker re-reads on every poll; no restart needed.
 | `qa_temperature` | `0.3` |  | Temperature for QA review generation |
 | `qa_thinking_model_max_tokens` | `8000` |  | Max tokens for thinking models (qwen3.5, glm-4.7) in QA |
 
-## topic_discovery
-
-| Key | Default | Classification | Description |
-| --- | --- | --- | --- |
-| `topic_discovery_auto_enabled` | `true` |  | Master kill-switch for the LEGACY auto-firing topic discovery loop in services/idle_worker.py. When 'true' (default, ... |
-
 ## voice
 
 | Key | Default | Classification | Description |
@@ -1092,8 +1077,8 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `voice_agent_system_prompt` | `You are Emma, a concise voice assista...` |  | System prompt for the voice agent. Mentions tools so glm-4.7-5090 actually invokes them. |
-| `voice_agent_whisper_model` | `medium` |  | faster-whisper model size. tiny/base/small/medium/large-v3. medium is the sweet spot for real voice accuracy on a 5090. |
+| `voice_agent_system_prompt` | `You are Emma, a concise voice assista...` |  | System prompt for the voice agent. Mentions the tools so the voice model actually invokes them. |
+| `voice_agent_whisper_model` | `medium` |  | faster-whisper model size. tiny/base/small/medium/large-v3. medium is the sweet spot for real voice accuracy on a mid... |
 
 ## webhooks
 
