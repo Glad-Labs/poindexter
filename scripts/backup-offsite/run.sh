@@ -103,18 +103,24 @@ emit_alert() {
 }
 
 run_backup() {
-    local repo="$1" source_tier="$2" src="${BACKUP_DIR}/${source_tier}"
+    local repo="$1" source_tier="$2"
+    # Separate statement: expansions in a `local` happen before its
+    # assignments land, so ${source_tier} above isn't visible yet.
+    local src="${BACKUP_DIR}/${source_tier}"
     if [[ ! -d "${src}" ]]; then
         log "source dir ${src} missing — nothing to back up yet"
         return 0
     fi
     log "restic backup ${src} → ${repo}"
-    if restic -r "${repo}" backup "${src}" --tag poindexter --tag "${source_tier}"; then
+    # Capture rc on the same statement: a fall-through `if` resets $? to 0,
+    # which made the 2026-06-23 failure alert claim "rc=0" and return success.
+    local rc=0
+    restic -r "${repo}" backup "${src}" --tag poindexter --tag "${source_tier}" || rc=$?
+    if [[ "${rc}" -eq 0 ]]; then
         log "offsite backup OK"
         emit_heartbeat "offsite_backup_succeeded" "restic backup of ${src} complete"
         return 0
     fi
-    local rc=$?
     log "offsite backup FAILED rc=${rc}"
     emit_alert "critical" \
         "Offsite restic backup failed (rc=${rc})" \
@@ -186,6 +192,12 @@ tick() {
         maybe_verify "${repo}"
     fi
 }
+
+# When sourced (unit tests), expose the functions above without starting
+# the service loop.
+if [[ "${BASH_SOURCE[0]}" != "$0" ]]; then
+    return 0
+fi
 
 log "offsite backup service starting (dir=${BACKUP_DIR})"
 until PGPASSWORD="${PGPASSWORD}" psql -h "${PG_HOST}" -p "${PG_PORT}" \
