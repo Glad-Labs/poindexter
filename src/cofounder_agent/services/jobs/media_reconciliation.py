@@ -86,10 +86,9 @@ gated feed silently excluded them (``feedback_approval_gate_all_media``).
   on the 5090 (~5-10 min), so the cap bounds GPU pile-up downstream.
 - ``config.alert_on_drift`` (default true) — emit a finding when drift
   is detected, in addition to re-dispatching.
-- ``config.r2_public_base`` (default
-  ``https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev``) — the base
-  URL we HEAD against to verify R2 has the file. Falls back to the
-  ``storage_public_url`` app_setting when not provided.
+- ``config.r2_public_base`` (default: resolved from the
+  ``storage_public_url`` app_setting) — the base URL we HEAD against to
+  verify R2 has the file. None when neither config nor app_setting is set.
 - ``config.podcast_cdn_version`` (default ``v2``) — path prefix on R2.
   Mirrors the podcast delivery R2 key (``podcast/{ver}/{post_id}.mp3``).
 """

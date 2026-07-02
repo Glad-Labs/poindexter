@@ -780,6 +780,13 @@ DEFAULTS: dict[str, str] = {
     'media.gate2.earned_autonomy_min_dispatches': '5',
     'podcast_description': '',
     'podcast_name': '',
+    # Podcast distribution assets — empty on OSS; the operator overlay
+    # (operator_overrides.OPERATOR_SETTING_OVERRIDES) restores the operator's
+    # real Spotify show + R2 cover art. Blanked in seeds because they
+    # correlate back to the operator tenant (see test_baseline_seeds_no_operator_leaks).
+    'podcast_spotify_show_id': '',
+    'podcast_spotify_url': '',
+    'podcast_cover_url': '',
     'podcast_tts_engine': '',
     'podcast_tts_enabled': 'false',
     'podcast_tts_base_url': 'http://speaches:8000/v1',
@@ -924,6 +931,12 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # S3-compatible bucket for media objects. Empty on OSS (operators configure
     # their own bucket); the operator overlay restores Glad Labs' bucket.
     'storage_bucket': '',
+    # S3/R2 access key ID (paired with the storage_secret_key secret).
+    # is_secret=false by design — it can't authenticate alone, so it's cached.
+    # Empty on OSS; the operator overlay restores the operator's key. Blanked
+    # in seeds because it's live operator credential material (see
+    # test_baseline_seeds_no_operator_leaks).
+    'storage_access_key': '',
     # Custom vanity domain for image objects (e.g. ``https://images.gladlabs.io``).
     # When set, image URLs use this base instead of the rate-limited r2.dev
     # public bucket URL. Empty = fall back to storage_public_url (poindexter#732).

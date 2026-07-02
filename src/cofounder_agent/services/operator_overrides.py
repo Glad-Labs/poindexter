@@ -80,4 +80,15 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     "social_x_handle": "@_gladlabs",
     "social_x_url": "https://x.com/_gladlabs",
     "storage_bucket": "gladlabs-media",
+    "storage_public_url": "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev",
+    # R2 access key ID (is_secret=false half of the keypair; the secret half
+    # is storage_secret_key, kept encrypted in the DB / bootstrap, never here).
+    # Restored on the operator rig so R2 uploads work after a fresh reseed.
+    "storage_access_key": "98ada7d8c1590c0d90591948da6690a7",
+    # Podcast distribution assets — the operator's actual Spotify show and
+    # R2-hosted cover art. Blanked in the public seeds (they correlate back to
+    # the Glad Labs tenant); restored here on the operator rig.
+    "podcast_spotify_show_id": "033obxyUXdxhXyQ6erC07G",
+    "podcast_spotify_url": "https://open.spotify.com/show/033obxyUXdxhXyQ6erC07G",
+    "podcast_cover_url": "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/podcast/cover.jpg",
 }

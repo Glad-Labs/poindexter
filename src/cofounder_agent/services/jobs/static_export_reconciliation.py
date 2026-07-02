@@ -26,7 +26,8 @@ Two failure modes are caught:
 
 - ``config.stale_minutes`` (default 30) — manifest must be no older
   than this when compared to the latest DB published_at
-- ``config.r2_manifest_url`` (default ``https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static/manifest.json``)
+- ``config.r2_manifest_url`` (default: resolved from the ``storage_public_url``
+  app_setting + ``/static/manifest.json``; the job skips when neither is set)
 - ``config.alert_on_drift`` (default true) — emit a finding when drift
   is detected (in addition to running the rebuild)
 """

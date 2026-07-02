@@ -10,11 +10,17 @@ Fix: the values were blanked (replaced with empty string) so fresh installs
 start unconfigured and run ``poindexter setup`` to fill them in. Matt's
 local DB is unaffected because all inserts use ``ON CONFLICT DO NOTHING``.
 
+2026-07-01 (follow-up to #2022) extended the gate to the podcast distribution
+assets — the operator's Spotify show ID/URL and R2-hosted cover art — which
+correlate back to the Glad Labs tenant the same way. Those three are also
+restored on the operator rig via
+``services.operator_overrides.OPERATOR_SETTING_OVERRIDES``.
+
 This test:
-1. Verifies none of the six leaked literals are present in the seed file.
-2. Verifies the six rows themselves still exist (so fresh installs seed
+1. Verifies none of the leaked literals are present in the seed file.
+2. Verifies the rows themselves still exist (so fresh installs seed
    the keys at all, even if the value is blank).
-3. Verifies all six inserts use ON CONFLICT DO NOTHING (idempotent).
+3. Verifies all those inserts use ON CONFLICT DO NOTHING (idempotent).
 """
 
 from __future__ import annotations
@@ -101,6 +107,41 @@ _BANNED_PATTERNS = [
         "tgram:// apprise URL with a literal chat_id",
         re.compile(r"tgram://[^/'\"]+/[0-9]{6,}"),
     ),
+    # ------------------------------------------------------------------
+    # Podcast distribution assets (2026-07-01 follow-up to #2022). The
+    # operator's real Spotify show and R2-hosted cover art correlate back
+    # to the Glad Labs tenant. Blanked in the seeds; restored on the
+    # operator rig via services.operator_overrides.OPERATOR_SETTING_OVERRIDES.
+    # ------------------------------------------------------------------
+    # Spotify show ID (base62 slug after /show/ — operator's actual show)
+    (
+        "podcast_spotify_show_id operator value",
+        re.compile(r"'podcast_spotify_show_id',\s*'[A-Za-z0-9]{12,}'"),
+    ),
+    # Public Spotify URL for the operator's show
+    (
+        "podcast_spotify_url operator value",
+        re.compile(r"'podcast_spotify_url',\s*'https?://open\.spotify\.com/show/"),
+    ),
+    # Cover art hosted on the operator's R2 bucket (pub-<hash>.r2.dev)
+    (
+        "podcast_cover_url operator R2 value",
+        re.compile(r"'podcast_cover_url',\s*'https?://[A-Za-z0-9-]+\.r2\.dev"),
+    ),
+    # Public R2 base URL (sibling of storage_bucket, which #2022 overlaid;
+    # this key was missed). Same pub-<hash>.r2.dev bucket as the cover art.
+    (
+        "storage_public_url operator R2 value",
+        re.compile(r"'storage_public_url',\s*'https?://[A-Za-z0-9-]+\.r2\.dev"),
+    ),
+    # R2/S3 access key ID (the operator's actual credential — the "public"
+    # half of the keypair, is_secret=false by design because it can't
+    # authenticate without storage_secret_key, but it's still live operator
+    # credential material and must not ship to the public mirror). 32-hex.
+    (
+        "storage_access_key operator credential",
+        re.compile(r"'storage_access_key',\s*'[0-9a-f]{20,}'"),
+    ),
 ]
 
 
@@ -133,6 +174,13 @@ _REQUIRED_KEYS = [
     "discord_ops_channel_id",
     "sentry_dsn",
     "storage_endpoint",
+    # Podcast distribution assets (2026-07-01) — blanked but must still seed
+    # the key so fresh installs have it in app_settings to configure.
+    "podcast_spotify_show_id",
+    "podcast_spotify_url",
+    "podcast_cover_url",
+    "storage_public_url",
+    "storage_access_key",
 ]
 
 
