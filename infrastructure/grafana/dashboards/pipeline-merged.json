@@ -914,67 +914,6 @@
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
       },
-      "description": "Total published posts on your site",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "fixed",
-            "fixedColor": "purple"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 49
-      },
-      "id": 22,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Published\" FROM posts WHERE status = 'published' AND $__timeFilter(published_at);",
-          "refId": "A"
-        }
-      ],
-      "title": "Published",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
       "description": "quality_score distribution split by approved vs rejected. Wide spread = high generation variance.",
       "fieldConfig": {
         "defaults": {
@@ -1979,51 +1918,6 @@
       }
     },
     {
-      "type": "stat",
-      "id": 39,
-      "title": "Active niches",
-      "description": "Niches with active=true — each has its own discovery sweep.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 118
-      },
-      "targets": [
-        {
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Active niches\" FROM niches WHERE active = true",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        }
-      },
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "value"
-      }
-    },
-    {
       "type": "table",
       "id": 40,
       "title": "Open batches awaiting your decision",
@@ -2298,64 +2192,6 @@
           "format": "table",
           "rawQuery": true,
           "rawSql": "SELECT COUNT(*) AS \"Approved\" FROM media_approvals WHERE status='approved' AND $__timeFilter(decided_at);",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 47,
-      "title": "Posts with shot list (window)",
-      "type": "stat",
-      "description": "Posts where the video director produced a non-null video_shot_list, filtered on posts.updated_at within the dashboard time window. PR #650.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 145
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"With shot list\" FROM posts WHERE video_shot_list IS NOT NULL AND $__timeFilter(updated_at);",
           "refId": "A"
         }
       ]
@@ -2824,66 +2660,6 @@
       ]
     },
     {
-      "id": 66,
-      "title": "Videos persisted (total)",
-      "type": "stat",
-      "description": "Total durable task-keyed video assets on disk (all time). Written by the media.persist atom. Includes both long and short form.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 8,
-        "y": 163
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short",
-          "mappings": []
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Assets\"\nFROM media_assets\nWHERE type IN ('video_long', 'video_short')\n  AND COALESCE(storage_path, '') != ''",
-          "refId": "A"
-        }
-      ]
-    },
-    {
       "id": 67,
       "title": "Gate-2 pending",
       "type": "stat",
@@ -2947,66 +2723,6 @@
           "format": "table",
           "rawQuery": true,
           "rawSql": "SELECT COUNT(*) AS \"Pending\"\nFROM media_approvals\nWHERE medium IN ('video', 'video_short')\n  AND status = 'pending'",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 68,
-      "title": "Gate-2 dispatched (total)",
-      "type": "stat",
-      "description": "Total video approval rows that have been dispatched to YouTube (all time). Covers both long form (shorts=False) and Shorts (shorts=True).",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 4,
-        "x": 16,
-        "y": 163
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short",
-          "mappings": []
-        },
-        "overrides": []
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "auto",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "auto"
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Dispatched\"\nFROM media_approvals\nWHERE medium IN ('video', 'video_short')\n  AND dispatched_at IS NOT NULL",
           "refId": "A"
         }
       ]
@@ -3494,69 +3210,6 @@
         "type": "prometheus",
         "uid": "local-prometheus"
       },
-      "description": "poindexter_pipeline_throttle_seconds_total — cumulative seconds the pipeline has spent throttled by the approval queue. Defined as a Gauge (survives worker restarts) so it is shown as a raw cumulative value, NOT a rate.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "s"
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 182
-      },
-      "id": 57,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "poindexter_pipeline_throttle_seconds_total",
-          "legendFormat": "throttled",
-          "refId": "A"
-        }
-      ],
-      "title": "Throttled time (cumulative)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
       "description": "poindexter_pipeline_auto_cancelled_total — cumulative tasks auto-cancelled by the stale-task sweeper (read from pipeline_tasks.auto_cancelled_at). A climbing value means worker heartbeats are going missing or stale_task_timeout_minutes is too aggressive. Gauge-backed → shown as a raw cumulative value.",
       "fieldConfig": {
         "defaults": {
@@ -4035,67 +3688,6 @@
           "format": "table",
           "rawQuery": true,
           "rawSql": "SELECT COUNT(*) AS \"Pending\" FROM social_post_drafts WHERE status = 'pending';",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 79,
-      "type": "stat",
-      "title": "Drafts posted (total)",
-      "description": "Social post drafts successfully sent via Postiz",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "green",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        },
-        "overrides": []
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 8,
-        "x": 8,
-        "y": 211
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Posted\" FROM social_post_drafts WHERE status = 'posted';",
           "refId": "A"
         }
       ]

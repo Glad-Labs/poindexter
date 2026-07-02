@@ -526,56 +526,6 @@
     },
     {
       "type": "stat",
-      "id": 11,
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 29
-      },
-      "title": "Dry-Run all",
-      "datasource": {
-        "type": "postgres",
-        "uid": "local-brain-db"
-      },
-      "targets": [
-        {
-          "rawSql": "SELECT COUNT(*)::int AS value FROM pipeline_tasks WHERE status = 'dry_run'",
-          "format": "table",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "purple",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "textMode": "auto",
-        "justifyMode": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        }
-      }
-    },
-    {
-      "type": "stat",
       "id": 12,
       "gridPos": {
         "h": 5,

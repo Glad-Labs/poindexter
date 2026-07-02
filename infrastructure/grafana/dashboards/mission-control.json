@@ -352,64 +352,6 @@
       "type": "stat"
     },
     {
-      "id": 11,
-      "title": "Top category (published posts)",
-      "type": "stat",
-      "description": "Most-published category (name + count). Was a pie chart, but the data is monotype right now — one category dominates, so the slice was always 100%. Stat is honest about that.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 8
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "options": {
-        "colorMode": "value",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COALESCE(c.name, 'uncategorized') AS metric, COUNT(*)::int AS value FROM posts p LEFT JOIN categories c ON c.id = p.category_id WHERE p.status='published' GROUP BY 1 ORDER BY 2 DESC LIMIT 1",
-          "refId": "A"
-        }
-      ]
-    },
-    {
       "id": 12,
       "title": "Page-views (window)",
       "type": "stat",

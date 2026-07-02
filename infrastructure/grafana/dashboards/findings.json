@@ -264,66 +264,6 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Distinct finding kinds emitted in the window. A sudden jump usually means a new probe started firing — check the By Kind table below.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "none"
-        }
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 18,
-        "y": 1
-      },
-      "id": 5,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name",
-        "wideLayout": true
-      },
-      "pluginVersion": "11.0.0",
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(DISTINCT details->>'kind') AS \"Distinct Kinds\" FROM audit_log WHERE event_type = 'finding' AND $__timeFilter(timestamp);",
-          "refId": "A"
-        }
-      ],
-      "title": "Distinct kinds",
-      "type": "stat"
-    },
-    {
       "type": "row",
       "title": "By Kind & Severity",
       "gridPos": {

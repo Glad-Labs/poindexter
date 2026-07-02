@@ -213,52 +213,6 @@
       ]
     },
     {
-      "id": 7,
-      "title": "Refreshed (lifetime)",
-      "type": "stat",
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 6,
-        "y": 25
-      },
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "options": {
-        "reduceOptions": {
-          "calcs": ["lastNotNull"]
-        },
-        "colorMode": "background"
-      },
-      "targets": [
-        {
-          "refId": "A",
-          "format": "table",
-          "editorMode": "code",
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "rawSql": "SELECT COUNT(*) AS value FROM seo_opportunities WHERE status = 'refreshed'"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          }
-        }
-      }
-    },
-    {
       "id": 8,
       "title": "Refresh Outcomes — position/CTR delta (proves the loop)",
       "type": "table",

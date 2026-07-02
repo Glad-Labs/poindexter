@@ -360,34 +360,6 @@
     },
     {
       "type": "stat",
-      "title": "Spans in (5m)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 6,
-        "x": 12,
-        "y": 55
-      },
-      "id": 17,
-      "targets": [
-        {
-          "expr": "sum(rate(tempo_distributor_spans_received_total[5m]))",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "ops",
-          "decimals": 1
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "stat",
       "title": "Spans drop 5m",
       "datasource": {
         "type": "prometheus",
