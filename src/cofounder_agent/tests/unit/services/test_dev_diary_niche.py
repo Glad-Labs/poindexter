@@ -6,7 +6,9 @@ real Postgres test DB:
 - The ``dev_diary`` row exists with a non-null ``writer_prompt_override``.
 - The prompt is first-person and mentions PRs/commits/decisions.
 - The prompt carries the bot-attribution footer.
-- The prompt forbids claiming external work as Glad Labs'.
+- The prompt fences external references (closed-world bundle rule) and ships
+  brand-free — the operator's branded prompt restores via
+  ``operator_overrides.OPERATOR_NICHE_OVERRIDES``.
 - The matching ``qa_allow_first_person_niches`` app_setting is seeded.
 
 Pre-2026-05-08 these tests had their own ``seeded_db_pool`` fixture that
@@ -72,10 +74,13 @@ class TestDevDiaryNicheSeed:
         prompt = await db_pool.fetchval(
             "SELECT writer_prompt_override FROM niches WHERE slug = 'dev_diary'"
         )
-        # Soft guard: prompt must explicitly tell the model not to claim
-        # external projects as Glad Labs' own.
+        # Soft guard: prompt must explicitly fence external references (the
+        # bundle is a closed world) so the model can't claim outside work.
         assert "external" in prompt.lower()
-        assert "Glad Labs" in prompt
+        assert "closed world" in prompt.lower()
+        # The seed ships brand-free; the operator's branded prompt restores
+        # via operator_overrides.OPERATOR_NICHE_OVERRIDES.
+        assert "glad labs" not in prompt.lower()
 
     async def test_niche_goals_sum_to_100(self, db_pool):
         async with db_pool.acquire() as conn:

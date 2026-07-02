@@ -455,7 +455,8 @@ DEFAULTS: dict[str, str] = {
     'qa_accuracy_good_link_max_bonus': '1.0',
     'qa_accuracy_meta_commentary_max_penalty': '2.0',
     'qa_accuracy_meta_commentary_penalty': '0.5',
-    'qa_allow_first_person_niches': 'dev_diary,glad-labs',
+    # First-person QA bypass slugs — lockstep with baseline seed; overlay restores brand.
+    'qa_allow_first_person_niches': 'dev_diary,starter-blog',
     'qa_artifact_penalty_max': '20.0',
     'qa_artifact_penalty_per': '5.0',
     'qa_clarity_good_max_wps': '25',
@@ -1731,23 +1732,33 @@ _OPERATOR_OVERLAY_DESC = (
 )
 
 
+# Columns a niche override may rewrite. The column names are interpolated into
+# the UPDATE statement (values always travel as bind params), so this allowlist
+# is load-bearing — extend it deliberately, never dynamically.
+NICHE_OVERRIDE_COLUMNS: tuple[str, ...] = ("slug", "name", "writer_prompt_override")
+
+
 async def apply_operator_overrides(pool: Any) -> int:
     """Re-apply Glad Labs operator overrides over the public OSS defaults.
 
     OSS installs have no ``services.operator_overrides`` module, so this is a
     no-op and the public ``DEFAULTS`` stand. The Glad Labs operator install ships
-    that module (stripped from the public mirror) with two kinds of override:
+    that module (stripped from the public mirror) with three kinds of override:
     custom local Ollama model tags that aren't on the public registry
-    (``OPERATOR_MODEL_PINS``) and operator-personal settings that carry identity
-    — the voice persona, the exact GPU (``OPERATOR_SETTING_OVERRIDES``).
+    (``OPERATOR_MODEL_PINS``), operator-personal settings that carry identity —
+    the voice persona, the exact GPU (``OPERATOR_SETTING_OVERRIDES``) — and the
+    operator's branded niches (``OPERATOR_NICHE_OVERRIDES``), whose public seeds
+    ship generic slug/name/prompt text.
 
-    For each key the row is overwritten ONLY when it still holds the OSS public
-    default — i.e. a freshly-seeded or post-reset row — never a value tuned at
-    runtime. So an operator settings reset reliably restores the operator's
-    values, while live ``poindexter settings set`` tuning survives a reboot. A
-    key whose OSS default we can't see (absent from ``DEFAULTS``) is skipped
-    rather than clobbered unconditionally — which is why every overridden key
-    must also carry a generic public default in ``DEFAULTS``.
+    A row is overwritten ONLY while it still holds the OSS public default —
+    i.e. a freshly-seeded or post-reset row — never a value tuned at runtime.
+    For settings the guard is ``app_settings.value = DEFAULTS[key]`` (so a key
+    absent from ``DEFAULTS`` is skipped rather than clobbered); for niches it is
+    ``writer_prompt_override = <the baseline-seeded prompt>`` (pinned to the
+    seeds by ``test_operator_overlay.test_niche_override_expect_matches_baseline_seed``).
+    So an operator reset reliably restores the operator's values, while live
+    ``poindexter settings set`` tuning and hand-edited niche prompts survive a
+    reboot.
 
     Returns the number of overrides actually applied (0 on OSS installs).
     """
@@ -1760,6 +1771,10 @@ async def apply_operator_overrides(pool: Any) -> int:
         )
     except ImportError:
         return 0  # OSS install — no operator overlay present.
+    try:
+        from services.operator_overrides import OPERATOR_NICHE_OVERRIDES
+    except ImportError:  # overlay predates niche overrides
+        OPERATOR_NICHE_OVERRIDES = ()
 
     overrides = {**OPERATOR_MODEL_PINS, **OPERATOR_SETTING_OVERRIDES}
     applied = 0
@@ -1784,6 +1799,30 @@ async def apply_operator_overrides(pool: Any) -> int:
                 oss_default,
             )
             if applied_key is not None:
+                applied += 1
+
+        for entry in OPERATOR_NICHE_OVERRIDES:
+            set_map = entry["set"]
+            unknown = set(set_map) - set(NICHE_OVERRIDE_COLUMNS)
+            if unknown:
+                raise ValueError(
+                    f"operator niche override for {entry['match_slug']!r} sets "
+                    f"non-allowlisted columns {sorted(unknown)} — extend "
+                    "NICHE_OVERRIDE_COLUMNS deliberately or drop them"
+                )
+            assignments = ", ".join(
+                f"{col} = ${i}" for i, col in enumerate(set_map, start=1)
+            )
+            n = len(set_map)
+            row_id = await conn.fetchval(
+                f"UPDATE niches SET {assignments} "
+                f"WHERE slug = ${n + 1} AND writer_prompt_override = ${n + 2} "
+                "RETURNING id",
+                *set_map.values(),
+                entry["match_slug"],
+                entry["expect_writer_prompt_override"],
+            )
+            if row_id is not None:
                 applied += 1
     return applied
 

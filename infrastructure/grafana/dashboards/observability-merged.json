@@ -217,7 +217,7 @@
       "id": 10,
       "options": {
         "mode": "markdown",
-        "content": "GlitchTip is the Sentry-compatible error sink. Events ship from the worker via the DSN stored in `app_settings.sentry_dsn`.\n\n- **UI**: [http://localhost:8080](http://localhost:8080)\n- **Org**: Glad Labs → **Project**: cofounder-agent\n- **DSN**: `http://<public_key>@glitchtip-web:8000/1` (container-network form; browser-origin events should use `http://localhost:8080/1`)\n\nTrace → log → error correlation works when `sentry-trace` is propagated into OTEL spans. Click any error → **Open Trace** to jump into Tempo."
+        "content": "GlitchTip is the Sentry-compatible error sink. Events ship from the worker via the DSN stored in `app_settings.sentry_dsn`.\n\n- **UI**: [http://localhost:8080](http://localhost:8080)\n- **Org**: your GlitchTip org (mirrors `app_settings.glitchtip_triage_org_slug`) → **Project**: your project\n- **DSN**: `http://<public_key>@glitchtip-web:8000/1` (container-network form; browser-origin events should use `http://localhost:8080/1`)\n\nTrace → log → error correlation works when `sentry-trace` is propagated into OTEL spans. Click any error → **Open Trace** to jump into Tempo."
       }
     },
     {

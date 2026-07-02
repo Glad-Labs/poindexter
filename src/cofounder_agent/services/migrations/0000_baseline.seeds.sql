@@ -493,7 +493,7 @@ INSERT INTO app_settings (key, value, category, description, is_secret, is_activ
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('qa_accuracy_good_link_max_bonus', '1.0', 'general', 'Auto-seeded by services.settings_defaults (#379)', false, true) ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('qa_accuracy_meta_commentary_max_penalty', '2.0', 'general', 'Auto-seeded by services.settings_defaults (#379)', false, true) ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('qa_accuracy_meta_commentary_penalty', '0.5', 'general', 'Auto-seeded by services.settings_defaults (#379)', false, true) ON CONFLICT (key) DO NOTHING;
-INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('qa_allow_first_person_niches', 'dev_diary,glad-labs', 'quality', 'Comma-separated list of niche slugs that bypass the first_person_claims validator in quality_scorers.py. Per the operator''s voice-policy update on 2026-05-02, the validator should not penalise legitimate first-person content in the right niche. glad-labs added 2026-06-18 — the canonical_blog writer now uses grounded first-person ("we ran this on a 32GB card"). Default: ''dev_diary,glad-labs''.', false, true) ON CONFLICT (key) DO NOTHING;
+INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('qa_allow_first_person_niches', 'dev_diary,starter-blog', 'quality', 'Comma-separated list of niche slugs that bypass the first_person_claims validator in quality_scorers.py. Per the operator''s voice-policy update on 2026-05-02, the validator should not penalise legitimate first-person content in the right niche. The blog niche was added 2026-06-18 — the canonical_blog writer now uses grounded first-person ("we ran this on a 32GB card"). Default: ''dev_diary,starter-blog''.', false, true) ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('qa_artifact_penalty_max', '20.0', 'general', 'Auto-seeded by services.settings_defaults (#379)', false, true) ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('qa_artifact_penalty_per', '5.0', 'general', 'Auto-seeded by services.settings_defaults (#379)', false, true) ON CONFLICT (key) DO NOTHING;
 INSERT INTO app_settings (key, value, category, description, is_secret, is_active) VALUES ('qa_citation_max_dead_ratio', '0.30', 'content_qa', 'Max proportion of dead citations before verifier rejects', false, true) ON CONFLICT (key) DO NOTHING;
@@ -814,14 +814,14 @@ INSERT INTO content_validator_rules (id, name, enabled, severity, threshold, app
 
 -- niches — 2 row(s)
 INSERT INTO niches (id, slug, name, active, target_audience_tags, writer_prompt_override, batch_size, discovery_cadence_minute_floor, default_media_to_generate, default_template_slug) VALUES ('fd5e2eda-d4e0-4224-b9ed-7fe26f20d918', 'dev_diary', 'Dev Diary', true, '{indie-devs,ai-curious,future-self,build-in-public}'::text[], 'You are summarizing today''s GROUND TRUTH bundle into a factual daily
-status report for Glad Labs. You are a TECHNICAL REPORTER, not a personal
+status report for this project. You are a TECHNICAL REPORTER, not a personal
 essayist. Your job is RAG SUMMARIZATION: read the bundle, restate what
 happened in clear prose, link to the sources. Nothing more.
 
 VOICE: third-person plural ("we shipped", "we landed", "the team merged").
 Do NOT use first-person singular ("I", "my"). Do NOT claim personal
 experiences, anecdotes, or following any external person/blog. The
-"author" of this post is the Glad Labs system, not a human persona.
+"author" of this post is the publishing pipeline itself, not a human persona.
 
 ABSOLUTELY FORBIDDEN — failure to follow these is a hard reject:
 
@@ -895,7 +895,7 @@ add a final section:
 End with this exact footer:
 
 ```
-_Auto-compiled by Poindexter from today''s commits and PRs. [See the work: github.com/Glad-Labs/poindexter](https://github.com/Glad-Labs/poindexter)._
+_Auto-compiled by Poindexter from today''s commits and PRs._
 ```
 
 If the bundle has zero PRs and zero commits and zero decisions, output
@@ -903,13 +903,13 @@ exactly:
 
 > Quiet day — no shipped work to report.
 >
-> _Auto-compiled by Poindexter from today''s commits and PRs. [See the work: github.com/Glad-Labs/poindexter](https://github.com/Glad-Labs/poindexter)._
+> _Auto-compiled by Poindexter from today''s commits and PRs._
 
 Style: short paragraphs. Plain language. No marketing voice. No
 opening hook. No closing CTA. Issue, Fix, Why — three sentences each
 where possible. Nothing more.', 1, 1440, '{}'::text[], 'dev_diary') ON CONFLICT (id) DO NOTHING;
-INSERT INTO niches (id, slug, name, active, target_audience_tags, writer_prompt_override, batch_size, discovery_cadence_minute_floor, default_media_to_generate, default_template_slug) VALUES ('919124f3-22de-4133-812c-88bde6975318', 'glad-labs', 'Glad Labs', true, '{indie-devs,ai-curious,prospects,future-self}'::text[], 'You are writing a blog post for Glad Labs — an AI-operated content
-business covering AI/ML, gaming, and PC hardware for indie developers
+INSERT INTO niches (id, slug, name, active, target_audience_tags, writer_prompt_override, batch_size, discovery_cadence_minute_floor, default_media_to_generate, default_template_slug) VALUES ('919124f3-22de-4133-812c-88bde6975318', 'starter-blog', 'Starter Blog', true, '{indie-devs,ai-curious,prospects,future-self}'::text[], 'You are writing a blog post for an AI-operated technology
+publication covering software, AI, and hardware topics for developers
 and tinkerers.
 
 CITATIONS: when you reference a study, source, expert, library, or
@@ -939,7 +939,7 @@ INTERNAL CONSISTENCY: every claim aligns across sections. When the
 piece argues for approach A in section 1, sections 2-N either build
 on A or explicitly explain a switch with the reasoning visible.
 
-SCOPE: describe Glad Labs''s own work in first person ("we", "our
+SCOPE: describe the publication''s own work in first person ("we", "our
 system", "we adopted"). Cover external projects and tools in third
 person ("Project X published", "the Y library does Z"). The reader
 can tell at a glance which work is yours.
@@ -947,9 +947,9 @@ can tell at a glance which work is yours.
 STYLE: short paragraphs, plain language, peer-to-peer register —
 write for a fellow developer who knows the territory.
 
-This is the OSS default prompt. Glad Labs Premium Prompts (Pro tier,
-delivered via Lemon Squeezy) unlock a tuned version with brand voice,
-structural scaffolding, and citation-density targets.', 5, 30, '{podcast,video,video_short}'::text[], 'canonical_blog') ON CONFLICT (id) DO NOTHING;
+This is the OSS default prompt. Premium prompt packs unlock a tuned
+version with brand voice, structural scaffolding, and citation-density
+targets.', 5, 30, '{podcast,video,video_short}'::text[], 'canonical_blog') ON CONFLICT (id) DO NOTHING;
 
 -- niche_goals — 5 row(s)
 INSERT INTO niche_goals (niche_id, goal_type, weight_pct) VALUES ('fd5e2eda-d4e0-4224-b9ed-7fe26f20d918', 'AUTHORITY', 40) ON CONFLICT DO NOTHING;

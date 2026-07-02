@@ -113,7 +113,7 @@ class UnifiedTaskRequest(BaseModel):
     )
     niche_slug: str | None = Field(
         None,
-        description="Niche this task belongs to (e.g. 'glad-labs', 'dev_diary'). "
+        description="Niche this task belongs to (e.g. 'starter-blog', 'dev_diary'). "
         "Required for publish — tasks with no niche are blocked by the #729 allowlist gate.",
         max_length=50,
     )

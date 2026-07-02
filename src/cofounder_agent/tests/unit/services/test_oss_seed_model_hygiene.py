@@ -52,6 +52,21 @@ _BASELINE_SEEDS = (
 #   VALUES ('key', 'value', 'category', ...)
 _SEED_KEY_VALUE_RE = re.compile(r"VALUES\s*\(\s*'((?:[^']|'')*)'\s*,\s*'((?:[^']|'')*)'")
 
+# Capture the identity fields of every niches seed row:
+#   VALUES ('id', 'slug', 'name', active, '{tags}'::text[], 'writer_prompt', ...)
+_NICHES_SEED_RE = re.compile(
+    r"INSERT INTO niches \([^)]*\) VALUES \('(?P<id>[^']*)', '(?P<slug>[^']*)', "
+    r"'(?P<name>[^']*)', (?P<active>\w+), '(?P<tags>[^']*)'::text\[\], "
+    r"'(?P<prompt>(?:[^']|'')*)',",
+    re.DOTALL,
+)
+
+# In niches fields the brand also hides behind a hyphen (the old 'glad-labs'
+# slug). _BRAND_VALUE_RE is deliberately space-only because app_settings values
+# legitimately carry the public 'Glad-Labs/...' GitHub org (gh_repo); niche
+# slug/name/prompt have no such exemption, so the hyphenated form is banned too.
+_NICHE_BRAND_RE = re.compile(r"glad[\s-]*labs", re.IGNORECASE)
+
 
 def _has_private_tag(value: str) -> bool:
     return any(tag in value for tag in _OPERATOR_PRIVATE_MODEL_TAGS)
@@ -107,4 +122,31 @@ def test_baseline_seeds_have_no_brand_value_defaults() -> None:
         "0000_baseline.seeds.sql seeds the operator brand as a default value: "
         f"{offenders}. Seed '' / a generic default and put the brand in "
         "services.operator_overrides."
+    )
+
+
+def test_niches_seed_rows_carry_no_operator_brand() -> None:
+    """The seeded niches are the product's example content — slug, name, and
+    writer prompt must ship brand-free. The operator's branded niches
+    (``glad-labs`` slug, Glad Labs prompt text) restore on the operator rig via
+    ``operator_overrides.OPERATOR_NICHE_OVERRIDES``."""
+    text = _BASELINE_SEEDS.read_text(encoding="utf-8")
+    rows = list(_NICHES_SEED_RE.finditer(text))
+    assert rows, (
+        "expected INSERT INTO niches rows in 0000_baseline.seeds.sql — if the "
+        "seed shape changed, update _NICHES_SEED_RE to match it"
+    )
+    offenders: dict[str, list[str]] = {}
+    for m in rows:
+        hits = [
+            f"{field}: …{m[field][max(0, hit.start() - 30):hit.end() + 30]!r}…"
+            for field in ("slug", "name", "prompt")
+            for hit in _NICHE_BRAND_RE.finditer(m[field])
+        ]
+        if hits:
+            offenders[m["slug"]] = hits
+    assert not offenders, (
+        "0000_baseline.seeds.sql seeds operator-branded niches to the public "
+        f"mirror: {offenders}. Ship a generic niche and restore the branded one "
+        "via operator_overrides.OPERATOR_NICHE_OVERRIDES."
     )

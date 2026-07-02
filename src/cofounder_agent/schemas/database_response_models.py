@@ -123,7 +123,7 @@ class TaskResponse(BaseModel):
     # 2026-05-27. Adding this field as an explicit pass-through closes
     # the gap. Mirrors the column on pipeline_tasks + content_tasks view.
     niche_slug: str | None = Field(
-        None, description="Niche slug (e.g. 'glad-labs', 'dev_diary') — drives per-niche media policy"
+        None, description="Niche slug (e.g. 'starter-blog', 'dev_diary') — drives per-niche media policy"
     )
 
     task_metadata: dict[str, Any] | None = Field(
