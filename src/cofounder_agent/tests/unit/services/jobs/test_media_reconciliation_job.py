@@ -1141,3 +1141,82 @@ class TestNeverAuthorsPodcast:
         assert result.metrics["redelivered_podcast"] == 1   # p-gone
         gen.assert_not_awaited()
         r2.upload_podcast_episode.assert_not_awaited()
+
+
+@pytest.mark.unit
+class TestDriftFingerprintGating:
+    """Change-gated media_drift emission (2026-07-01 audit).
+
+    The job runs every 15 min; an UNCHANGED drift set must emit exactly
+    one finding, not one per cycle (captured: the identical "0 missing
+    podcast, 6 missing video" finding 191 times in 48h). A changed,
+    cleared, or recurring drift set re-fires.
+    """
+
+    def _stateful_pool(self, rows, settings_store, existing_assets=None):
+        """_make_pool variant whose app_settings reads/writes for the
+        drift fingerprint hit a real dict, so state survives across runs."""
+        pool, conn = _make_pool(rows, existing_assets=existing_assets)
+        from services.jobs.media_reconciliation import _DRIFT_FINGERPRINT_KEY
+
+        async def _fetchrow(query, *args, **kwargs):  # noqa: ANN001, ARG001
+            if args and args[0] == _DRIFT_FINGERPRINT_KEY:
+                val = settings_store.get(_DRIFT_FINGERPRINT_KEY)
+                return {"value": val} if val else None
+            return {"value": "https://r2.test"}
+
+        async def _execute(query, *args, **kwargs):  # noqa: ANN001, ARG001
+            if args and args[0] == _DRIFT_FINGERPRINT_KEY:
+                settings_store[_DRIFT_FINGERPRINT_KEY] = args[1]
+            return None
+
+        conn.fetchrow = AsyncMock(side_effect=_fetchrow)
+        conn.execute = AsyncMock(side_effect=_execute)
+        return pool, conn
+
+    async def _run_once(self, settings_store, *, video_status):
+        sc = MagicMock()
+        sc.get.side_effect = lambda k, d="": d
+        # Healthy = media_assets row present + R2 HEAD 200; drift = no row
+        # + HEAD 404 (row presence is the primary signal per #1904).
+        assets = (
+            [{"post_id": "p1", "type": "video"}] if video_status == 200 else []
+        )
+        pool, _ = self._stateful_pool(
+            [_post(id_="p1", media_to_generate=["video"])], settings_store,
+            existing_assets=assets,
+        )
+        with _patch_head(podcast_status=200, video_status=video_status), \
+             patch(
+                 "services.jobs.media_reconciliation.emit_finding"
+             ) as emit_mock:
+            result = await MediaReconciliationJob().run(
+                pool, config={"_site_config": sc},
+            )
+        return result, emit_mock
+
+    @pytest.mark.asyncio
+    async def test_unchanged_drift_emits_once(self):
+        store: dict[str, str] = {}
+        _, first = await self._run_once(store, video_status=404)
+        first.assert_called_once()
+        _, second = await self._run_once(store, video_status=404)
+        second.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cleared_then_recurring_drift_refires(self):
+        store: dict[str, str] = {}
+        _, first = await self._run_once(store, video_status=404)
+        first.assert_called_once()
+        # Drift clears (video now present) → no finding, fingerprint resets.
+        _, cleared = await self._run_once(store, video_status=200)
+        cleared.assert_not_called()
+        # Same drift recurs → this is NEWS again, re-fire.
+        _, recurred = await self._run_once(store, video_status=404)
+        recurred.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_no_drift_never_emits(self):
+        store: dict[str, str] = {}
+        _, emit = await self._run_once(store, video_status=200)
+        emit.assert_not_called()

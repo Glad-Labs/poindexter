@@ -697,6 +697,10 @@ async def run_prefect_stuck_flow_probe(
                     detail=detail,
                     source="brain.prefect_stuck_flow_probe",
                     severity="warning",
+                    # Stable per-run key — the title embeds the age, so
+                    # without this every 5-min re-detection of the SAME
+                    # stuck run looks novel to the page-cooldown gate.
+                    dedup_key=f"prefect_stuck_flow:{run_id}",
                 )
 
                 if auto_crash:
@@ -787,6 +791,10 @@ async def run_prefect_stuck_flow_probe(
                         detail=backlog_detail,
                         source="brain.prefect_stuck_flow_probe",
                         severity="warning",
+                        # One key for the backlog CONDITION (count varies
+                        # cycle to cycle) — this was the single loudest
+                        # pager in the 2026-07-01 audit (254 fires/week).
+                        dedup_key="prefect_queue_backlog",
                     )
             except Exception as exc:  # noqa: BLE001 — never abort the cycle
                 logger.warning(

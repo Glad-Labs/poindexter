@@ -238,3 +238,111 @@ class TestCredentialRedaction:
     def test_redact_helper_handles_url_without_password(self):
         text = "see https://example.com/docs for the fix"
         assert operator_notifier._redact_credentials(text) == text
+
+
+class TestPageCooldown:
+    """Repeat-suppression gate (2026-07-01 alert-noise audit).
+
+    Repeats of the same dedup key inside the cooldown window skip the
+    external Telegram/Discord sends; critical always bypasses; a failed
+    send never starts the window (the next cycle retries).
+    """
+
+    @pytest.fixture
+    def cooled_notifier(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(operator_notifier, "_ALERTS_LOG", tmp_path / "alerts.log")
+        monkeypatch.setattr(operator_notifier, "_PAGE_COOLDOWN_SECONDS", 3600)
+        monkeypatch.setattr(operator_notifier, "_LAST_PAGED_AT", {})
+        for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+            monkeypatch.delenv(var, raising=False)
+        sends: list[str] = []
+
+        def _spy_discord(text):
+            sends.append(text)
+            return True, "discord"
+
+        monkeypatch.setattr(operator_notifier, "_try_discord", _spy_discord)
+        return sends, tmp_path
+
+    def _page(self, severity="warning", dedup_key=None, title="probe fired"):
+        return operator_notifier.notify_operator(
+            title=title,
+            detail="detail",
+            source="unit-test",
+            severity=severity,
+            dedup_key=dedup_key,
+        )
+
+    def test_repeat_same_key_suppressed(self, cooled_notifier):
+        sends, _ = cooled_notifier
+        first = self._page(dedup_key="cond-a")
+        second = self._page(dedup_key="cond-a")
+        assert len(sends) == 1
+        assert first["discord"] == "discord"
+        assert second["discord"] == "suppressed (page cooldown)"
+        assert second["telegram"] == "suppressed (page cooldown)"
+
+    def test_default_key_is_source_and_title(self, cooled_notifier):
+        sends, _ = cooled_notifier
+        self._page(title="same title")
+        self._page(title="same title")
+        self._page(title="different title")
+        assert len(sends) == 2
+
+    def test_distinct_keys_not_suppressed(self, cooled_notifier):
+        sends, _ = cooled_notifier
+        self._page(dedup_key="cond-a")
+        self._page(dedup_key="cond-b")
+        assert len(sends) == 2
+
+    def test_critical_always_bypasses(self, cooled_notifier):
+        sends, _ = cooled_notifier
+        self._page(severity="critical", dedup_key="cond-a")
+        self._page(severity="critical", dedup_key="cond-a")
+        assert len(sends) == 2
+
+    def test_failed_send_does_not_start_window(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(operator_notifier, "_ALERTS_LOG", tmp_path / "alerts.log")
+        monkeypatch.setattr(operator_notifier, "_PAGE_COOLDOWN_SECONDS", 3600)
+        monkeypatch.setattr(operator_notifier, "_LAST_PAGED_AT", {})
+        for var in ("TELEGRAM_BOT_TOKEN", "TELEGRAM_CHAT_ID"):
+            monkeypatch.delenv(var, raising=False)
+        attempts: list[str] = []
+
+        def _failing_discord(text):
+            attempts.append(text)
+            return False, "discord send failed: boom"
+
+        monkeypatch.setattr(operator_notifier, "_try_discord", _failing_discord)
+        operator_notifier.notify_operator(
+            title="t", detail="d", source="s", severity="warning",
+            dedup_key="cond-a",
+        )
+        operator_notifier.notify_operator(
+            title="t", detail="d", source="s", severity="warning",
+            dedup_key="cond-a",
+        )
+        assert len(attempts) == 2, "failed send must not swallow the retry"
+
+    def test_disabled_gate_never_suppresses(self, cooled_notifier, monkeypatch):
+        sends, _ = cooled_notifier
+        monkeypatch.setattr(operator_notifier, "_PAGE_COOLDOWN_SECONDS", 0)
+        self._page(dedup_key="cond-a")
+        self._page(dedup_key="cond-a")
+        assert len(sends) == 2
+
+    def test_suppressed_repeat_still_lands_in_alerts_log(self, cooled_notifier):
+        sends, tmp_path = cooled_notifier
+        self._page(dedup_key="cond-a")
+        self._page(dedup_key="cond-a")
+        log_text = (tmp_path / "alerts.log").read_text(encoding="utf-8")
+        assert log_text.count("probe fired") == 2
+        assert "suppressed repeat" in log_text
+
+    def test_set_page_cooldown_seconds_clamps_negative(self, monkeypatch):
+        monkeypatch.setattr(operator_notifier, "_PAGE_COOLDOWN_SECONDS", 0)
+        operator_notifier.set_page_cooldown_seconds(-5)
+        assert operator_notifier._PAGE_COOLDOWN_SECONDS == 0
+        operator_notifier.set_page_cooldown_seconds(1800)
+        assert operator_notifier._PAGE_COOLDOWN_SECONDS == 1800
+        operator_notifier.set_page_cooldown_seconds(0)

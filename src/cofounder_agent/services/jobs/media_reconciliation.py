@@ -185,6 +185,90 @@ async def _resolve_exclude_slug_prefixes(
     return [p for p in parts if p]
 
 
+# Fingerprint of the last drift state we emitted a ``media_drift`` finding
+# for. The job runs every 15 min and — captured in the 2026-07-01 audit —
+# re-emitted the byte-identical "0 missing podcast, 6 missing video"
+# finding 191 times in 48h while six unresolvable videos sat outside the
+# regen window. Delivery is deduped downstream (alert_dedup_state), but the
+# emission spam still drowned the Findings dashboard (77% of all findings).
+# Emit only when the drift SET changes; a cleared-then-recurring drift
+# re-fires because clearing also updates the stored fingerprint.
+_DRIFT_FINGERPRINT_KEY = "media_reconciliation_last_drift_fingerprint"
+
+
+def _drift_fingerprint(
+    missing_podcast: list[dict[str, Any]],
+    missing_video: list[dict[str, Any]],
+    redeliver_podcast: list[dict[str, Any]],
+) -> str:
+    """Stable hash of WHICH posts are drifted (not the per-cycle heal stats).
+
+    Empty drift is the empty string (the "unset" sentinel per
+    ``feedback_app_settings_value_not_null``), so a fully-healed state
+    reads the same as never-drifted.
+    """
+    import hashlib
+
+    if not (missing_podcast or missing_video or redeliver_podcast):
+        return ""
+    payload = "|".join(
+        ",".join(sorted(str(r["id"]) for r in rows))
+        for rows in (missing_podcast, missing_video, redeliver_podcast)
+    )
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
+
+
+def _looks_like_fingerprint(value: str) -> bool:
+    """A stored fingerprint is a 64-char sha256 hexdigest; anything else
+    (blank, or a value from a key collision/manual edit) reads as unset."""
+    return len(value) == 64 and all(c in "0123456789abcdef" for c in value)
+
+
+async def _read_last_drift_fingerprint(pool: Any) -> str:
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT value FROM app_settings WHERE key = $1",
+                _DRIFT_FINGERPRINT_KEY,
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "media_reconciliation: drift-fingerprint read failed: %s — "
+            "treating as changed (emit)", e,
+        )
+        return ""
+    value = str(row["value"]) if row and row["value"] else ""
+    return value if _looks_like_fingerprint(value) else ""
+
+
+async def _write_last_drift_fingerprint(pool: Any, fingerprint: str) -> None:
+    """UPSERT the fingerprint (same state-in-app_settings pattern as the
+    findings_alert_route_watermark). Best-effort — a failed write just
+    means one duplicate finding next cycle."""
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                """
+                INSERT INTO app_settings (key, value, category, description, updated_at)
+                VALUES ($1, $2, 'plugin_telemetry', $3, NOW())
+                ON CONFLICT (key) DO UPDATE
+                  SET value = EXCLUDED.value, updated_at = NOW()
+                """,
+                _DRIFT_FINGERPRINT_KEY,
+                fingerprint,
+                (
+                    "Hash of the drifted-post set last reported by the "
+                    "media_drift finding. MediaReconciliationJob emits only "
+                    "when this changes. Operators can blank it to force a "
+                    "re-emit next cycle."
+                ),
+            )
+    except Exception as e:  # noqa: BLE001
+        logger.warning(
+            "media_reconciliation: drift-fingerprint write failed: %s", e,
+        )
+
+
 class MediaReconciliationJob:
     name = "media_reconciliation"
     description = (
@@ -420,6 +504,10 @@ class MediaReconciliationJob:
             )
 
         if not missing_podcast and not missing_video and not redeliver_podcast:
+            # Drift fully cleared: reset the change-gate fingerprint so a
+            # RECURRENCE of the same drift set re-emits (it's news again).
+            if await _read_last_drift_fingerprint(pool):
+                await _write_last_drift_fingerprint(pool, "")
             return JobResult(
                 ok=True,
                 detail=(
@@ -513,7 +601,20 @@ class MediaReconciliationJob:
         # Neither lane authors media, so nothing here marks the job failed —
         # drift that can't be re-dispatched (no task seam / capped) is surfaced
         # in the finding for the operator, mirroring the video lane.
-        if alert_on_drift:
+        #
+        # Change-gated (2026-07-01 audit): emit only when the drifted-post
+        # SET differs from what the last finding reported. A chronic
+        # unchanged drift (e.g. videos outside the regen window with no
+        # task seam) gets ONE finding, not one per 15-min cycle; drift
+        # that grows, shrinks, clears, or recurs re-fires because every
+        # state change (including → empty) updates the fingerprint.
+        drift_fp = _drift_fingerprint(
+            missing_podcast, missing_video, redeliver_podcast,
+        )
+        drift_changed = drift_fp != await _read_last_drift_fingerprint(pool)
+        if drift_changed:
+            await _write_last_drift_fingerprint(pool, drift_fp)
+        if alert_on_drift and drift_changed:
             preview_podcast = "\n".join(
                 f"- {r['id']} — {r['title'][:60]}"
                 for r in missing_podcast[:5]

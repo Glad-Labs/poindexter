@@ -806,6 +806,10 @@ async def run_operator_url_probe(
                 detail=_format_url_failure_detail(failure),
                 source="brain.operator_url_probe",
                 severity="warning",
+                # Per-surface key so a chronically-down or flapping surface
+                # pages once per cooldown window, not once per probe run
+                # (121 pages/week in the 2026-07-01 audit).
+                dedup_key=f"operator_url:{failure['surface']}",
             )
         except Exception as exc:  # notify must never crash the cycle
             logger.warning(
@@ -823,6 +827,7 @@ async def run_operator_url_probe(
                 detail=_format_drift_detail(d),
                 source="brain.operator_url_probe",
                 severity="warning",
+                dedup_key=f"tailscale_drift:{d['surface']}",
             )
         except Exception as exc:
             logger.warning(

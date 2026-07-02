@@ -38,6 +38,7 @@ import logging
 import os
 import re
 import sys
+import time
 import urllib.error
 import urllib.request
 from datetime import UTC, datetime
@@ -153,6 +154,62 @@ def _append_alerts_log(text: str) -> tuple[bool, str]:
         return False, f"alerts.log write failed: {e!r}"
 
 
+# ---------------------------------------------------------------------------
+# Page cooldown — cross-cycle repeat suppression (audit 2026-07-01).
+#
+# Captured: 504 operator_paged events in one week, 92% from three brain
+# probes re-paging the SAME chronic condition every 5-minute cycle
+# (prefect_stuck_flow 266, operator_url 121, glitchtip_triage 78). The
+# alert_dispatcher's alert_dedup_state table already collapses repeats on
+# the alert_events path, but probes call notify_operator() directly and
+# had no equivalent — so a condition that stayed bad re-paged forever.
+#
+# This gate suppresses the EXTERNAL sends (Telegram/Discord) for repeats
+# of the same dedup key inside a cooldown window. First page always goes
+# out; the condition clearing and re-firing after the window re-pages.
+# ``critical`` severity always bypasses the gate — phone-ping pages are
+# rare and must never be swallowed. stderr/logger/alerts.log still record
+# every suppressed repeat (marked as such) so the local history stays
+# complete, and the audit sink still fires so the silent-alerter watchdog
+# and the operator_paged dashboards can count suppressions distinctly.
+#
+# State is in-memory (module-level) because this module must stay
+# stdlib-only and importable before any DB exists. The brain daemon is a
+# long-lived process, so the window survives across cycles; a daemon
+# restart resets it, which costs at most one extra page per key.
+# Cooldown is DISABLED (0) by default so bootstrap/CLI one-shot callers
+# keep today's behaviour; the brain daemon opts in each cycle from
+# ``app_settings.operator_page_cooldown_minutes``.
+# ---------------------------------------------------------------------------
+
+_PAGE_COOLDOWN_SECONDS: int = 0
+_LAST_PAGED_AT: dict[str, float] = {}
+
+
+def set_page_cooldown_seconds(seconds: int) -> None:
+    """Set the repeat-suppression window (0 disables the gate).
+
+    Called by the brain daemon each cycle with the current
+    ``operator_page_cooldown_minutes`` app_setting so the window stays
+    operator-tunable without a redeploy.
+    """
+    global _PAGE_COOLDOWN_SECONDS
+    _PAGE_COOLDOWN_SECONDS = max(0, int(seconds))
+
+
+def reset_page_cooldown_state() -> None:
+    """Clear the last-paged ledger (tests)."""
+    _LAST_PAGED_AT.clear()
+
+
+def _cooldown_suppresses(key: str, severity: _Severity, now: float) -> bool:
+    """True when this page is a repeat inside the cooldown window."""
+    if _PAGE_COOLDOWN_SECONDS <= 0 or severity == "critical":
+        return False
+    last = _LAST_PAGED_AT.get(key)
+    return last is not None and (now - last) < _PAGE_COOLDOWN_SECONDS
+
+
 # Optional sink for "I just paged the operator" events. Set by
 # brain_daemon at startup (see brain.brain_daemon.set_notify_audit_sink)
 # so calls from probes / business logic land in audit_log with
@@ -194,6 +251,7 @@ def notify_operator(
     detail: str,
     source: str,
     severity: _Severity = "error",
+    dedup_key: str | None = None,
 ) -> dict[str, str]:
     """Send an operator-visible alert to every available channel.
 
@@ -206,9 +264,23 @@ def notify_operator(
         source: Which subsystem is raising this ("brain_daemon", "worker",
                 "mcp_server", "cli:setup").
         severity: info|warning|error|critical.
+        dedup_key: Stable identity for the CONDITION being paged (e.g.
+            ``"prefect_queue_backlog"``, ``"operator_url:grafana"``).
+            Repeats of the same key inside the page-cooldown window skip
+            the external Telegram/Discord sends (see
+            :func:`set_page_cooldown_seconds`). Defaults to
+            ``"{source}|{title}"`` — callers whose titles embed variable
+            text (ages, counts) should pass an explicit key or every
+            repeat looks novel.
     """
     text = _fmt_message(title, detail, source, severity)
     results: dict[str, str] = {}
+
+    cooldown_key = dedup_key or f"{source}|{title}"
+    now = time.monotonic()
+    suppressed = _cooldown_suppresses(cooldown_key, severity, now)
+    if suppressed:
+        text = f"{text}\n(suppressed repeat — page cooldown, key={cooldown_key})"
 
     # stderr always — visible to anyone watching a terminal or tail -f
     sys.stderr.write(f"\n{text}\n\n")
@@ -250,15 +322,31 @@ def notify_operator(
     # signal-grade noise (recurring probe failures, drift detections),
     # errors are anomalies that need eyes.
     _TELEGRAM_SEVERITIES = {"error", "critical"}
-    if severity in _TELEGRAM_SEVERITIES:
-        tg_ok, tg_reason = _try_telegram(text)
+    if suppressed:
+        # Repeat of a condition we paged recently — skip BOTH external
+        # channels. alerts.log below still records the (marked) repeat so
+        # the local history stays complete, and the audit sink still runs
+        # so suppressions are countable on the dashboards.
+        tg_ok, tg_reason = False, "suppressed (page cooldown)"
         results["telegram"] = tg_reason
+        dc_ok, dc_reason = False, "suppressed (page cooldown)"
+        results["discord"] = dc_reason
     else:
-        tg_ok, tg_reason = False, "skipped (severity below error)"
-        results["telegram"] = tg_reason
+        if severity in _TELEGRAM_SEVERITIES:
+            tg_ok, tg_reason = _try_telegram(text)
+            results["telegram"] = tg_reason
+        else:
+            tg_ok, tg_reason = False, "skipped (severity below error)"
+            results["telegram"] = tg_reason
 
-    dc_ok, dc_reason = _try_discord(text)
-    results["discord"] = dc_reason
+        dc_ok, dc_reason = _try_discord(text)
+        results["discord"] = dc_reason
+
+        # Start (or restart) the cooldown window only on a page that
+        # actually went out to an external channel — a failed send should
+        # not swallow the retry on the next cycle.
+        if tg_ok or dc_ok:
+            _LAST_PAGED_AT[cooldown_key] = now
 
     # Persistent local record — written even if Telegram/Discord succeed,
     # so you have a complete history even when external channels drop.

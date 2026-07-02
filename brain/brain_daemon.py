@@ -2621,6 +2621,19 @@ async def run_cycle(pool):
     """One full brain cycle: monitor → process → maintain → update."""
     logger.info("[BRAIN] === Cycle start ===")
 
+    # Refresh the operator-page cooldown window from app_settings so the
+    # notifier's repeat-suppression gate (brain/operator_notifier.py) stays
+    # operator-tunable without a redeploy. 0 disables the gate.
+    try:
+        try:
+            from operator_notifier import set_page_cooldown_seconds
+        except ImportError:  # pragma: no cover — package-qualified path
+            from brain.operator_notifier import set_page_cooldown_seconds
+        raw = await _read_app_setting(pool, "operator_page_cooldown_minutes", "30")
+        set_page_cooldown_seconds(int(float(raw)) * 60)
+    except Exception as exc:  # noqa: BLE001 — cooldown refresh must never kill the cycle
+        logger.warning("[BRAIN] page-cooldown refresh failed: %s", exc)
+
     # GUARDED (audit C2): a wholesale failure in either monitor must not abort
     # the rest of the cycle (probes, heartbeat, self-maintain). Each already
     # alerts internally; here we keep the cycle alive so one monitor's bad day

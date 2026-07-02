@@ -718,6 +718,12 @@ async def run_glitchtip_triage_probe(
                             detail=detail_msg,
                             source="brain.glitchtip_triage_probe",
                             severity="warning" if level != "fatal" else "critical",
+                            # Per-issue key. The in-memory _alerted_ids set
+                            # already dedupes within one daemon lifetime; the
+                            # page-cooldown gate adds restart-safety so a
+                            # brain bounce doesn't re-page every open issue
+                            # (78 pages/week in the 2026-07-01 audit).
+                            dedup_key=f"glitchtip:{issue_id}",
                         )
                         _alerted_ids.add(issue_id)
                         alerted.append({

@@ -1252,6 +1252,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # / write never landed) falls back to prefect_stuck_flow_threshold_minutes.
     'prefect_stuck_flow_progress_stall_minutes': '20',
 
+    # ----- Operator-page cooldown (2026-07-01 alert-noise audit) -----
+    # Repeat-suppression window for the brain's direct notify_operator()
+    # pages: repeats of the same dedup key inside the window skip the
+    # external Telegram/Discord sends (critical severity always bypasses;
+    # alerts.log keeps the full history). Before this gate three probes
+    # re-paged the SAME chronic condition every 5-min cycle — 465 of the
+    # 504 operator_paged events in one week. 0 disables the gate.
+    'operator_page_cooldown_minutes': '30',
+
     # ----- Content-flow concurrency cap (Glad-Labs/poindexter#578) -----
     # The native Prefect work-pool concurrency limit caps how many
     # content_generation_flow runs execute simultaneously. Each run loads
