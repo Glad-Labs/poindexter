@@ -812,10 +812,27 @@ _FIRST_HEADING_RE_FOR_VALIDATOR = re.compile(
 # Each family counts once; the detector needs >=2 distinct families so a
 # single incidental phrase can never fire the rule on its own.
 _PLANNING_DUMP_VOCAB: tuple[tuple[str, re.Pattern[str]], ...] = (
-    # "*   Topic: ..." / "* Outline:" — planning bullet labels.
+    # "*   Topic: ..." / "* Outline:" — planning bullet labels. "Key
+    # concept:" joined 2026-07-02 (bare-prompt gemma-4-31B capture: concept
+    # notes bulleted under the assignment-spec block).
     ("planning-bullet-label", re.compile(
         r"^[ \t]*[*+\-][ \t]+\*{0,2}(?:topic|outline|audience|tone|voice"
-        r"|angle|structure)\b[ \t]*:",
+        r"|angle|structure|key\s+concepts?)\b[ \t]*:",
+        re.IGNORECASE | re.MULTILINE,
+    )),
+    # Assignment-spec receipt — the model restating the BRIEF as bullet
+    # labels ("*   Format: Blog post section.", "*   Length: Approximately
+    # 400 words.", "*   Requirements: Specific numbers, model examples.").
+    # Two same-dialect bare-prompt gemma-4-31B captures 2026-07-02, both
+    # opening a mangled-Harmony <|channel>thought block with this shape and
+    # only "Topic:" matching the families above — one family, silent. A
+    # SEPARATE family from planning-bullet-label on purpose: the two label
+    # blocks co-occurring is what crosses the >=2-family bar. Hardware
+    # spec-sheet openings ("*   Length: 304 mm") hit this family alone and
+    # stay below the bar (see test_hardware_spec_list_not_flagged).
+    ("assignment-spec", re.compile(
+        r"^[ \t]*[*+\-][ \t]+\*{0,2}(?:format|length|requirements?"
+        r"|constraints?|deliverables?)\b[ \t]*:",
         re.IGNORECASE | re.MULTILINE,
     )),
     # "*   *Introduction:* ..." — section-by-section plan labels (the

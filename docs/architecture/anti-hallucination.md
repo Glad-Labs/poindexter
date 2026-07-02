@@ -674,6 +674,22 @@ dialects per incident, so expect this vocabulary table to grow; each
 family is bullet-anchored or phrase-anchored precisely so additions
 don't move the FP floor (re-run the posts replay when adding one).
 
+2026-07-02 dialect addition (proactive, from a bare-prompt gemma-4-31B
+benchmark capture rather than a prod incident): the `assignment-spec`
+family — the model restating the BRIEF as bullet labels (`*   Format:
+Blog post section.`, `*   Length: Approximately 400 words.`,
+`*   Requirements: …`) — plus `key concept` joining
+`planning-bullet-label`. Two same-prompt captures both opened a
+mangled-Harmony `<|channel>thought` block (the wrapper itself is
+already stripped by `strip_reasoning_artifacts`; these families catch
+the surviving bullets) whose planning block matched only `Topic:` —
+one family, detector silent. `assignment-spec` is a separate family
+from `planning-bullet-label` on purpose: the two label blocks
+co-occurring is what crosses the ≥2-family bar, while a hardware
+review legitimately opening with a spec-sheet list (`*   Length:
+304 mm`) hits `assignment-spec` alone and stays silent. Posts replay
+re-run at introduction: 0 fires across all 301 `posts` bodies.
+
 ## Layer 2 — Programmatic validator
 
 File: `src/cofounder_agent/modules/content/content_validator.py`

@@ -2407,6 +2407,60 @@ class TestDetectPlanningDumpPreamble:
         assert evidence, "task-receipt inventory dump must be detected"
         assert sum(1 for e in evidence if e.startswith("vocab:")) >= 2
 
+    def test_assignment_spec_dump_detected(self):
+        # Verbatim-trimmed opening of a 2026-07-02 bare-prompt gemma-4-31B
+        # capture (two runs, same dialect): a mangled-Harmony thought channel
+        # whose planning block restates the ASSIGNMENT as bullet labels
+        # ("Format:", "Length:", "Requirements:") plus concept notes ("Key
+        # concept:"), with none of the section-plan / instruction-echo
+        # vocabulary — only "Topic:" matched, ONE family, so the rule stayed
+        # silent. The assignment-spec family + the key-concept label widening
+        # close that dialect. (The <|channel>thought wrapper itself is
+        # stripped upstream by strip_reasoning_artifacts; this is the
+        # post-strip body the validator actually sees.)
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            "*   Topic: Why VRAM capacity > Raw Compute (TFLOPS/CUDA cores) "
+            "for local LLMs.\n"
+            "    *   Format: Blog post section.\n"
+            "    *   Length: Approximately 400 words.\n"
+            "    *   Requirements: Specific numbers, model examples.\n\n"
+            "    *   Compute = Speed of processing (how fast tokens are "
+            "generated).\n"
+            "    *   VRAM = Storage space for the model's weights and KV "
+            "cache (whether the model can even load/run).\n"
+            "    *   Key concept: Memory bandwidth vs. Compute throughput. "
+            "LLM inference is memory-bound.\n"
+            "    *   ~400 words? Yes.\n"
+            "    *   Specific numbers? (8B, 70B, 16GB, 40GB). Yes."
+            '### The "Hard Wall": Why VRAM Capacity Trumps Raw Compute\n\n'
+            "When shopping for a GPU to run Large Language Models (LLMs), "
+            "it's easy to get distracted by raw compute.\n"
+        )
+        evidence = detect_planning_dump_preamble(content)
+        assert evidence, "assignment-spec planning dump must be detected"
+        assert "vocab:assignment-spec" in evidence
+        assert sum(1 for e in evidence if e.startswith("vocab:")) >= 2
+
+    def test_hardware_spec_list_not_flagged(self):
+        # FP guard for the assignment-spec family: a hardware review can
+        # legitimately OPEN with a spec-sheet bullet list whose labels
+        # include "Length:" / "Format:". That matches assignment-spec — but
+        # only that one family, so the >=2-family bar holds it silent.
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            "*   Length: 304 mm (blocks the bottom drive cage in most "
+            "mid-towers).\n"
+            "*   Format: Triple-slot, 2.9 kg — bring a support bracket.\n"
+            "*   Memory: 24 GB GDDR6X on a 384-bit bus.\n"
+            "*   TDP: 350 W stock, 400 W with the OC BIOS.\n"
+            "*   Power connectors: 3x 8-pin.\n"
+            "*   Ports: 3x DisplayPort 1.4a, 1x HDMI 2.1.\n\n"
+            "## How it actually performs\n\n"
+            "On paper the card looks unbeatable for the price.\n"
+        )
+        assert detect_planning_dump_preamble(content) == []
+
     def test_prose_about_irrelevant_snippets_not_flagged(self):
         # FP guard for the source-triage widening: an article ABOUT RAG can
         # discuss irrelevant snippets in prose — vocabulary never fires
