@@ -360,7 +360,7 @@ class TestSetupTelemetryOtlpCaptureEnvVar:
 
 # ---------------------------------------------------------------------------
 # httpx egress instrumentation + explicit global W3C propagator
-# (Tier 1a — Glad-Labs/glad-labs-stack#1997). Outbound HTTP must inject the
+# (Tier 1a — Glad-Labs/poindexter#1997). Outbound HTTP must inject the
 # W3C `traceparent` header so trace context survives every egress hop and an
 # adopter's own OTLP collector can stitch the run into a single trace.
 # ---------------------------------------------------------------------------
