@@ -21,6 +21,24 @@ Thanks for your interest in contributing. Poindexter is built by Glad Labs LLC a
 7. Commit with a clear message describing what and why
 8. Open a pull request against `main`
 
+## How your PR lands
+
+The public `Glad-Labs/poindexter` repository is a build artifact: it is
+force-rebuilt from a private source-of-truth monorepo on every upstream push,
+so pull requests opened against it are **reviewed but never merged directly**
+(you'll notice Dependabot's PRs close unmerged the same way). The happy path
+for an accepted PR is:
+
+1. A maintainer reviews your PR here.
+2. Accepted changes are ported into the source-of-truth repo with credit to
+   you (`Co-authored-by` on the ported commit).
+3. The change appears in this repository on the next mirror sync (usually
+   within a minute of the upstream merge).
+4. Your PR is closed with a pointer to the landed commit.
+
+A closed-unmerged PR whose changes are live on `main` is the success case
+here, not a rejection.
+
 ## Signed commits
 
 Commits on `main` and all release tags are expected to be GPG-signed so they

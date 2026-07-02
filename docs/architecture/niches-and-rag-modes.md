@@ -28,7 +28,7 @@ The new flow gates earlier and grounds deeper:
   files, post history) instead of paraphrasing what someone else
   already published.
 
-Existing installs are seeded with a `glad-labs` niche so the new flow is
+Fresh installs are seeded with a `starter-blog` niche so the new flow is
 the default; you can configure additional niches per install to run the
 same engine on different editorial voices.
 
@@ -177,10 +177,10 @@ The new operator surface lives under `poindexter topics` and a new
 
 ```bash
 # Trigger a sweep manually (subject to the niche's cadence floor):
-poindexter topics discover --niche glad-labs
+poindexter topics discover --niche starter-blog
 
 # Inspect the current open batch for a niche:
-poindexter topics show-batch --niche glad-labs
+poindexter topics show-batch --niche starter-blog
 
 # Rank the batch 1..N (operator's call, doesn't have to match system rank):
 poindexter topics rank-batch <batch_id> --order id1,id2,id3,id4,id5
@@ -268,8 +268,8 @@ weights drive your accept rate.
 
 ## Compatibility notes
 
-- Existing installs are seeded with a `glad-labs` niche pre-configured
-  to `TWO_PASS`, so the new flow is the default after upgrade.
+- Installs are seeded with a `starter-blog` niche pre-configured
+  to `TWO_PASS`, so the new flow is the default out of the box.
 - Tasks created without a `writer_rag_mode` (e.g. via direct
   `POST /api/tasks` calls that bypass the niche layer) fall back to
   the legacy generator. Pre-niche pipelines keep working unchanged.

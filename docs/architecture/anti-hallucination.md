@@ -205,9 +205,10 @@ H2 headings (not bold-text fakes), "cover each point once — no duplication or
 padding, finish on a complete sentence", positive citation ("use the numbers,
 link each inline to its source URL"), and **grounded first person** — "we"/"our"
 is welcome for work that appears in a source, never for invented work. The voice
-change ships with its scorer: `qa_allow_first_person_niches` gains `glad-labs`
-so `quality_scorers`' `first_person_claims` rail stops penalising the
-publisher's real first-hand voice. The `revise_prompt` carries the same
+change ships with its scorer: `qa_allow_first_person_niches` names the blog
+niche (`starter-blog` in the OSS seed) so `quality_scorers`'
+`first_person_claims` rail stops penalising the publisher's real first-hand
+voice. The `revise_prompt` carries the same
 "return the post exactly once, do not duplicate" guard, and its inline
 `_REVISE_PROMPT_FALLBACK` is pinned byte-for-byte to the skill default by
 `test_two_pass_writer_prompts.py`.
