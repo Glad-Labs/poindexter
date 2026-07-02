@@ -5207,7 +5207,7 @@
       "description": "Draft created/posted/failed per 5m from Prometheus counters",
       "datasource": {
         "type": "prometheus",
-        "uid": "prometheus"
+        "uid": "local-prometheus"
       },
       "fieldConfig": {
         "defaults": {
@@ -5282,7 +5282,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "local-prometheus"
           },
           "expr": "increase(poindexter_social_draft_created_total[5m])",
           "legendFormat": "created ({{platform}})",
@@ -5291,7 +5291,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "local-prometheus"
           },
           "expr": "increase(poindexter_social_draft_posted_total[5m])",
           "legendFormat": "posted ({{platform}})",
@@ -5300,7 +5300,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "prometheus"
+            "uid": "local-prometheus"
           },
           "expr": "increase(poindexter_social_draft_failed_total[5m])",
           "legendFormat": "failed ({{platform}})",

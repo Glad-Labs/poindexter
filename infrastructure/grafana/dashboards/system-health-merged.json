@@ -3392,7 +3392,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "${DS_POSTGRESQL}"
+        "uid": "local-brain-db"
       },
       "options": {
         "reduceOptions": {
@@ -3431,7 +3431,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "${DS_POSTGRESQL}"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT COUNT(*) AS value FROM brain_decisions WHERE created_at \u003e NOW() - INTERVAL \u00271 day\u0027",
           "format": "table",
@@ -3452,7 +3452,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "${DS_POSTGRESQL}"
+        "uid": "local-brain-db"
       },
       "options": {
         "reduceOptions": {
@@ -3491,7 +3491,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "${DS_POSTGRESQL}"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT COUNT(*) AS value FROM brain_decisions WHERE created_at \u003e NOW() - INTERVAL \u00277 days\u0027",
           "format": "table",
@@ -3512,7 +3512,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "${DS_POSTGRESQL}"
+        "uid": "local-brain-db"
       },
       "options": {
         "reduceOptions": {
@@ -3556,7 +3556,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "${DS_POSTGRESQL}"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT AVG(confidence) AS value FROM brain_decisions WHERE created_at \u003e NOW() - INTERVAL \u00277 days\u0027",
           "format": "table",
@@ -3577,7 +3577,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "${DS_POSTGRESQL}"
+        "uid": "local-brain-db"
       },
       "options": {
         "reduceOptions": {
@@ -3616,7 +3616,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "${DS_POSTGRESQL}"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT COUNT(*) AS value FROM brain_knowledge",
           "format": "table",
@@ -3637,7 +3637,7 @@
       },
       "datasource": {
         "type": "grafana-postgresql-datasource",
-        "uid": "${DS_POSTGRESQL}"
+        "uid": "local-brain-db"
       },
       "options": {
         "footer": {
@@ -3697,7 +3697,7 @@
         {
           "datasource": {
             "type": "grafana-postgresql-datasource",
-            "uid": "${DS_POSTGRESQL}"
+            "uid": "local-brain-db"
           },
           "rawSql": "SELECT\n  created_at,\n  outcome,\n  ROUND(confidence::numeric, 2) AS confidence,\n  LEFT(decision, 100)           AS decision\nFROM brain_decisions\nORDER BY created_at DESC\nLIMIT 10",
           "format": "table",
