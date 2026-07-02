@@ -440,6 +440,12 @@
       "description": "GPU VRAM utilization % that fires GpuVramHigh \u2014 95% signals OOM-imminent before Ollama/image-gen starts failing"
     },
     {
+      "key": "prometheus.threshold.container_memory_warning_gb",
+      "value": "8",
+      "category": "prometheus",
+      "description": "Per-container RSS (GB) sustained 30m that fires PoindexterContainerMemoryHigh — model-serving containers (image-gen/wan) are excluded in the rule expr"
+    },
+    {
       "key": "prometheus.threshold.disk_free_warning_gb",
       "value": "20",
       "category": "prometheus",

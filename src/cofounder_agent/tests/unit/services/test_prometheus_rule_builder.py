@@ -161,6 +161,40 @@ class TestBrainDbSizeRule:
         assert "absent(" not in rule["expr"]
 
 
+class TestContainerMemoryRule:
+    """Per-container RSS ceiling (2026-07-02 observability review): the
+    langfuse-clickhouse 15 GB spikes and the cadvisor VM-OOM cascade
+    (glad-labs-stack#2019/#2021) had cAdvisor panels but no alert anywhere."""
+
+    def test_rule_and_threshold_are_registered(self):
+        assert "PoindexterContainerMemoryHigh" in rb.DEFAULT_RULES
+        assert rb.DEFAULT_THRESHOLDS["container_memory_warning_gb"] == "8"
+
+    def test_rule_renders_with_model_server_exclusion(self):
+        rule = rb.DEFAULT_RULES["PoindexterContainerMemoryHigh"]
+        out = rb.render_yaml(
+            dict(rb.DEFAULT_THRESHOLDS), {"PoindexterContainerMemoryHigh": rule}
+        )
+        assert "- alert: PoindexterContainerMemoryHigh" in out
+        assert "container_memory_usage_bytes" in out
+        # Model-serving containers legitimately hold weights in RAM — they
+        # must be excluded by name, not by raising the shared threshold.
+        assert "image-gen-server" in out
+        assert "wan-server" in out
+        # Threshold token substituted to its default; no leftover placeholder.
+        assert "{threshold.container_memory_warning_gb}" not in out
+        assert "> 8" in out
+        assert "severity: warning" in out
+        # Sustained, not spike — model loads / build bursts must not page.
+        assert "for: 30m" in out
+
+    def test_absent_metric_does_not_alert(self):
+        """#581: capacity warning, not a liveness page — a bare ``> N`` expr
+        yields no series when cAdvisor is down (CadvisorDown covers that)."""
+        rule = rb.DEFAULT_RULES["PoindexterContainerMemoryHigh"]
+        assert "absent(" not in rule["expr"]
+
+
 # ---------------------------------------------------------------------------
 # load_thresholds / load_rules
 # ---------------------------------------------------------------------------

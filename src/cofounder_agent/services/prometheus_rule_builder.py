@@ -93,6 +93,13 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # SQL pg_database_size() poll). Non-page-worthy: the bare `> N` expr yields
     # no series when the exporter is down, so it never fires on no-data (#581).
     "brain_db_size_warning_gb": "5",
+    # Per-container RSS ceiling (2026-07-02 observability review). Calibrated
+    # against 24h maxima: everything except the model servers sits under
+    # ~5 GB; langfuse-clickhouse has spiked to 15 GB and unbounded cadvisor
+    # growth caused a VM-OOM cascade (#2019/#2021). The model servers
+    # (image-gen / wan) legitimately hold weights in RAM and are excluded in
+    # the rule expr, not via this threshold.
+    "container_memory_warning_gb": "8",
     # Postgres connection-pool saturation. Ratios so they scale with any
     # max_connections value (currently 300 in docker-compose.local.yml).
     "postgres_connection_warning_ratio": "0.80",
@@ -377,6 +384,39 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "(warning threshold: prometheus.threshold.brain_db_size_warning_gb, "
             "default 5 GB). Consider archiving old data or pruning "
             "retention_policies rows (sensor_samples, cost_logs, embeddings)."
+        ),
+    },
+    # Per-container memory ceiling (2026-07-02 observability review — the
+    # langfuse-clickhouse 15 GB spikes and the cadvisor VM-OOM cascade
+    # (#2019/#2021) had cAdvisor *panels* but no alert anywhere). Sustained
+    # 30m so model loads / build bursts don't page. The model-serving
+    # containers (image-gen-server holds ~19 GB of diffusion weights, wan
+    # holds the i2v model) are excluded by name — their large RSS is the
+    # workload, not a leak. No absent() guard: capacity warning, not a
+    # liveness page (#581 no-data rule).
+    "PoindexterContainerMemoryHigh": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "1m",
+        "expr": (
+            'container_memory_usage_bytes{job="cadvisor",image!="",'
+            'name=~"poindexter-.*",'
+            'name!~"poindexter-(image-gen-server|wan-server)"}'
+            " / (1024*1024*1024) > {threshold.container_memory_warning_gb}"
+        ),
+        "for": "30m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Container {{ $labels.name }} memory high for 30m",
+        "description": (
+            "{{ $labels.name }} has held {{ $value | humanize }} GB RSS for "
+            "30 minutes (warning threshold: "
+            "prometheus.threshold.container_memory_warning_gb, default 8 GB). "
+            "Known offenders: langfuse-clickhouse merge spikes, cadvisor "
+            "unbounded growth (VM-OOM cascade, glad-labs-stack#2019). "
+            "Check the System Health 'Memory Usage by Container' panel for "
+            "the growth shape, then `docker restart {{ $labels.name }}` and "
+            "consider a compose mem_limit if it recurs."
         ),
     },
     # Postgres connection-pool saturation. Previously static in
