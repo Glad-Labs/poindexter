@@ -93,6 +93,35 @@ class TestDecodeJWTExp:
         assert _decode_jwt_exp("aaa.not-base64.zzz") is None
 
 
+class TestTokenIsFresh:
+    """``token_is_fresh`` is the shared freshness predicate used by both
+    the in-memory cache and the CLI's cross-process disk cache — "fresh"
+    must mean the same thing in both places: an ``exp`` more than the
+    refresh skew into the future. Undecodable tokens are never fresh (we
+    can't prove they're usable, so we force a re-mint)."""
+
+    def test_future_exp_is_fresh(self):
+        from services.auth.oauth_client import token_is_fresh
+
+        assert token_is_fresh(_make_jwt(exp_offset=3600)) is True
+
+    def test_expired_is_not_fresh(self):
+        from services.auth.oauth_client import token_is_fresh
+
+        assert token_is_fresh(_make_jwt(exp_offset=-10)) is False
+
+    def test_within_skew_window_is_not_fresh(self):
+        from services.auth.oauth_client import EXPIRY_SKEW_SECONDS, token_is_fresh
+
+        # exp is in the future but inside the skew window → treat as stale.
+        assert token_is_fresh(_make_jwt(exp_offset=EXPIRY_SKEW_SECONDS - 5)) is False
+
+    def test_undecodable_is_not_fresh(self):
+        from services.auth.oauth_client import token_is_fresh
+
+        assert token_is_fresh("plaintext-not-a-jwt") is False
+
+
 class TestOAuthClientCaching:
     """mint+cache behaviour."""
 
@@ -253,6 +282,223 @@ class TestOAuthClientFailLoud:
         )
         with pytest.raises(RuntimeError, match="client_id/client_secret are required"):
             await client.get_token()
+
+
+class _FakeStore:
+    """In-memory ``TokenStore`` for exercising the cross-process seam."""
+
+    def __init__(self, initial: str | None = None) -> None:
+        self.value = initial
+        self.saved: list[str] = []
+        self.cleared = 0
+        self.load_error: Exception | None = None
+
+    async def load(self) -> str | None:
+        if self.load_error is not None:
+            raise self.load_error
+        return self.value
+
+    async def save(self, token: str) -> None:
+        self.value = token
+        self.saved.append(token)
+
+    async def clear(self) -> None:
+        self.value = None
+        self.cleared += 1
+
+
+def _mint_transport(mint_holder: dict) -> httpx.MockTransport:
+    """A transport whose ``/token`` returns a fresh JWT and counts mints."""
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.url.path == "/token"
+        mint_holder["count"] += 1
+        return httpx.Response(
+            200,
+            json={"access_token": _make_jwt(exp_offset=3600), "expires_in": 3600},
+        )
+
+    return httpx.MockTransport(handler)
+
+
+class TestOAuthClientCredentialProvider:
+    """A lazy ``credential_provider`` lets the CLI skip the DB credential
+    read on the hot path: creds are resolved only when a mint is actually
+    needed, not eagerly at construction."""
+
+    @pytest.mark.asyncio
+    async def test_provider_resolves_creds_lazily_on_mint(self):
+        calls = {"n": 0}
+
+        async def provider() -> tuple[str, str]:
+            calls["n"] += 1
+            return "pdx_lazy", "lazy-secret"
+
+        mint = {"count": 0}
+        client = OAuthClient(base_url="http://test", credential_provider=provider)
+        client._http = httpx.AsyncClient(  # noqa: SLF001
+            transport=_mint_transport(mint), base_url="http://test",
+        )
+
+        token = await client.get_token()
+        assert token  # minted successfully via lazily-resolved creds
+        assert calls["n"] == 1
+        assert mint["count"] == 1
+        await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_using_oauth_true_with_only_provider(self):
+        async def provider() -> tuple[str, str]:
+            return "pdx", "sec"
+
+        client = OAuthClient(base_url="http://test", credential_provider=provider)
+        assert client.using_oauth is True
+
+    @pytest.mark.asyncio
+    async def test_provider_returning_empty_creds_fails_loud(self):
+        async def provider() -> tuple[str, str]:
+            return "", ""
+
+        client = OAuthClient(base_url="http://test", credential_provider=provider)
+        client._http = httpx.AsyncClient(  # noqa: SLF001
+            transport=_mint_transport({"count": 0}), base_url="http://test",
+        )
+        with pytest.raises(RuntimeError, match="client_id/client_secret are required"):
+            await client.get_token()
+        await client.aclose()
+
+
+class TestOAuthClientTokenStore:
+    """A ``token_store`` is consulted before minting and written after —
+    the cross-process cache seam. A fresh stored token means no mint (and,
+    with a lazy provider, no credential read either)."""
+
+    @pytest.mark.asyncio
+    async def test_fresh_stored_token_skips_mint_and_provider(self):
+        calls = {"n": 0}
+
+        async def provider() -> tuple[str, str]:
+            calls["n"] += 1
+            return "pdx", "sec"
+
+        stored = _make_jwt(exp_offset=3600)
+        store = _FakeStore(initial=stored)
+        mint = {"count": 0}
+        client = OAuthClient(
+            base_url="http://test",
+            credential_provider=provider,
+            token_store=store,
+        )
+        client._http = httpx.AsyncClient(  # noqa: SLF001
+            transport=_mint_transport(mint), base_url="http://test",
+        )
+
+        token = await client.get_token()
+        assert token == stored
+        assert mint["count"] == 0  # no mint
+        assert calls["n"] == 0  # no credential read
+        await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_minted_token_is_saved_to_store(self):
+        store = _FakeStore(initial=None)
+        mint = {"count": 0}
+        client = OAuthClient(
+            base_url="http://test",
+            client_id="pdx",
+            client_secret="sec",
+            token_store=store,
+        )
+        client._http = httpx.AsyncClient(  # noqa: SLF001
+            transport=_mint_transport(mint), base_url="http://test",
+        )
+
+        token = await client.get_token()
+        assert mint["count"] == 1
+        assert store.saved == [token]  # persisted for the next process
+        await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_stale_stored_token_is_ignored_and_reminted(self):
+        store = _FakeStore(initial=_make_jwt(exp_offset=-10))  # expired
+        mint = {"count": 0}
+        client = OAuthClient(
+            base_url="http://test",
+            client_id="pdx",
+            client_secret="sec",
+            token_store=store,
+        )
+        client._http = httpx.AsyncClient(  # noqa: SLF001
+            transport=_mint_transport(mint), base_url="http://test",
+        )
+
+        token = await client.get_token()
+        assert mint["count"] == 1  # stale disk token re-minted
+        assert store.saved == [token]
+        await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_store_read_failure_falls_through_to_mint(self):
+        store = _FakeStore(initial=None)
+        store.load_error = OSError("wedged")
+        mint = {"count": 0}
+        client = OAuthClient(
+            base_url="http://test",
+            client_id="pdx",
+            client_secret="sec",
+            token_store=store,
+        )
+        client._http = httpx.AsyncClient(  # noqa: SLF001
+            transport=_mint_transport(mint), base_url="http://test",
+        )
+
+        token = await client.get_token()  # store blew up → mint anyway
+        assert token
+        assert mint["count"] == 1
+        await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_401_clears_store_and_remints_and_persists(self):
+        stored = _make_jwt(exp_offset=3600, sub="pdx_stored")
+        store = _FakeStore(initial=stored)
+        mint = {"count": 0}
+        request_count = {"n": 0}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/token":
+                mint["count"] += 1
+                return httpx.Response(
+                    200,
+                    json={
+                        # distinct sub so the re-minted token is provably not
+                        # the rejected one (payloads are otherwise identical
+                        # within the same wall-clock second).
+                        "access_token": _make_jwt(exp_offset=3600, sub="pdx_reminted"),
+                        "expires_in": 3600,
+                    },
+                )
+            request_count["n"] += 1
+            if request_count["n"] == 1:
+                return httpx.Response(401, json={"error": "invalid_token"})
+            return httpx.Response(200, json={"ok": True})
+
+        client = OAuthClient(
+            base_url="http://test",
+            client_id="pdx",
+            client_secret="sec",
+            token_store=store,
+        )
+        client._http = httpx.AsyncClient(  # noqa: SLF001
+            transport=httpx.MockTransport(handler), base_url="http://test",
+        )
+
+        resp = await client.get("/api/posts")
+        assert resp.status_code == 200
+        assert store.cleared >= 1  # rejected token dropped from disk
+        assert mint["count"] == 1  # one fresh mint after the 401
+        assert store.value is not None  # fresh token persisted for next process
+        assert store.value != stored  # and it's not the rejected one
+        await client.aclose()
 
 
 class TestSecretReaderConstructor:

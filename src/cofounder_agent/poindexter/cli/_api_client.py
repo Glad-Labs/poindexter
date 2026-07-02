@@ -13,6 +13,16 @@ are present, the CLI mints a JWT via ``POST /token`` and caches it
 in-memory until ~30 s before expiry. 401 from a downstream call
 invalidates the cache and retries once with a fresh token.
 
+Because each ``poindexter`` invocation is a fresh process, that in-memory
+cache never survives — so the minted JWT is *also* persisted to
+``~/.poindexter/cli_token_cache.json`` (see ``_token_cache``). When a
+still-fresh token is on disk, ``__aenter__`` skips **both** the app_settings
+credential read **and** the mint: credentials are resolved lazily, only when
+a mint is actually required (cache miss or a 401). This cuts the per-command
+host-port-proxy round-trips that intermittently wedge on Windows + Docker
+Desktop (``WinError 64`` and friends). Disable with
+``POINDEXTER_CLI_TOKEN_CACHE=0``.
+
 If the OAuth credentials aren't configured, the client raises loudly —
 run ``poindexter auth migrate-cli`` to register a new OAuth client and
 persist the credentials. The legacy static-Bearer fallback (and the
@@ -230,45 +240,62 @@ class WorkerClient:
         self.token: str = ""
 
     async def __aenter__(self) -> WorkerClient:
-        # Resolve credentials. Explicit args (for tests) win over
-        # app_settings.
-        if self._explicit_client_id is not None or self._explicit_client_secret is not None:
-            client_id = self._explicit_client_id or ""
-            client_secret = self._explicit_client_secret or ""
-        else:
-            # Do NOT swallow here. ``_resolve_credentials`` raises
-            # ``CredentialStoreUnreachable`` (with an actionable DB-connectivity
-            # message) when it cannot reach the settings DB; only a genuinely
-            # empty read returns ("", "") and falls through to the migrate-cli
-            # pointer below. The pre-fix code collapsed *both* into ("", ""),
-            # which mislabelled a wedged Docker host port-proxy (``WinError 64``)
-            # as "no credentials configured" and sent operators re-running
-            # ``migrate-cli`` in circles.
-            client_id, client_secret = await _resolve_credentials(self.base_url)
-
-        if not (client_id and client_secret):
-            raise RuntimeError(
-                "No CLI OAuth credentials configured. Run `poindexter auth "
-                "migrate-cli` to register an OAuth client. The legacy "
-                "static-Bearer fallback (POINDEXTER_KEY / GLADLABS_KEY env "
-                "vars, app_settings.api_token) was removed in #249."
-            )
-
-        # Lazy import so the CLI doesn't hard-depend on the worker
-        # module graph at parse time. (services.auth.oauth_client only
-        # imports ``services.logger_config`` + httpx — both safe.)
+        # Lazy import so the CLI doesn't hard-depend on the worker module
+        # graph at parse time. (services.auth.oauth_client only imports
+        # ``services.logger_config`` + httpx — both safe.)
         from services.auth.oauth_client import OAuthClient
 
-        self._oauth = OAuthClient(
-            base_url=self.base_url,
-            client_id=client_id,
-            client_secret=client_secret,
-            scopes=self._scopes,
-            timeout=self._timeout,
-        )
-        # Backwards-compat introspection: callers that read
-        # ``client.token`` (none in the codebase, but third-party
-        # scripts might) continue to see a string.
+        if (
+            self._explicit_client_id is not None
+            or self._explicit_client_secret is not None
+        ):
+            # Explicit creds (tests / embedding) win over app_settings and
+            # deliberately bypass the disk cache — keep them deterministic and
+            # preserve the fail-loud-on-enter contract for empty creds.
+            client_id = self._explicit_client_id or ""
+            client_secret = self._explicit_client_secret or ""
+            if not (client_id and client_secret):
+                raise RuntimeError(
+                    "No CLI OAuth credentials configured. Run `poindexter auth "
+                    "migrate-cli` to register an OAuth client. The legacy "
+                    "static-Bearer fallback (POINDEXTER_KEY / GLADLABS_KEY env "
+                    "vars, app_settings.api_token) was removed in #249."
+                )
+            self._oauth = OAuthClient(
+                base_url=self.base_url,
+                client_id=client_id,
+                client_secret=client_secret,
+                scopes=self._scopes,
+                timeout=self._timeout,
+            )
+        else:
+            # Normal CLI path. A cross-process disk cache holds the last minted
+            # JWT; when it's still fresh, ``get_token()`` returns it without
+            # reading the app_settings DB (the WinError-64-prone host->5433 hop)
+            # or minting. Credentials are resolved *lazily* — only when a mint
+            # actually becomes necessary (cache miss or a 401) — via a provider
+            # wrapping ``_resolve_credentials``. That resolver still raises
+            # ``CredentialStoreUnreachable`` on a wedged proxy and returns
+            # ("", "") only on a genuinely empty read, so the DB-connectivity
+            # and missing-credentials errors stay distinct (never conflated).
+            from poindexter.cli._token_cache import CliTokenStore
+
+            async def _provider() -> tuple[str, str]:
+                return await _resolve_credentials(self.base_url)
+
+            self._oauth = OAuthClient(
+                base_url=self.base_url,
+                credential_provider=_provider,
+                token_store=CliTokenStore(self.base_url),
+                scopes=self._scopes,
+                timeout=self._timeout,
+            )
+
+        # Resolve a usable token now (cached, or minted on a miss). This is the
+        # point a genuinely unprovisioned install fails loud, and where a
+        # wedged proxy surfaces as ``CredentialStoreUnreachable``.
+        # Backwards-compat introspection: callers that read ``client.token``
+        # continue to see a string.
         self.token = await self._oauth.get_token()
 
         # Mirror the pre-migration httpx client setup so subcommand

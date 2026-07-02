@@ -53,7 +53,7 @@ import json
 import time
 from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 
@@ -116,6 +116,66 @@ def _decode_jwt_exp(token: str) -> int | None:
     return int(exp)
 
 
+def _refresh_deadline(token: str, *, now: float | None = None) -> float:
+    """Wall-clock second at which a freshly minted ``token`` should refresh.
+
+    Its ``exp`` minus the skew, or — when ``exp`` can't be read — ``now``
+    plus the issuer's default TTL minus the skew. Used at mint time, where
+    the token is known-new, so an unreadable ``exp`` still earns the default
+    window rather than an immediate re-mint.
+    """
+    now = time.time() if now is None else now
+    exp = _decode_jwt_exp(token)
+    if exp is not None:
+        return max(now, exp - EXPIRY_SKEW_SECONDS)
+    return now + DEFAULT_TTL_SECONDS - EXPIRY_SKEW_SECONDS
+
+
+def token_is_fresh(token: str, *, now: float | None = None) -> bool:
+    """True when ``token`` is safe to reuse — ``exp`` more than
+    ``EXPIRY_SKEW_SECONDS`` in the future.
+
+    Unlike :func:`_refresh_deadline`, an **undecodable** token is reported
+    as *not* fresh. This predicate guards a *persisted* token (the CLI's
+    cross-process disk cache) whose mint time is unknown, so a token we
+    can't read an ``exp`` from can't be proven usable and must be re-minted.
+    Shared with ``poindexter.cli._token_cache`` so "fresh" means exactly the
+    same thing in the in-memory and on-disk caches.
+    """
+    exp = _decode_jwt_exp(token)
+    if exp is None:
+        return False
+    now = time.time() if now is None else now
+    return now < (exp - EXPIRY_SKEW_SECONDS)
+
+
+# ---------------------------------------------------------------------------
+# Optional seams: lazy credential resolution + cross-process token storage
+# ---------------------------------------------------------------------------
+
+
+CredentialProvider = Callable[[], Awaitable[tuple[str, str]]]
+"""Async callable returning ``(client_id, client_secret)``. Lets a caller
+defer the credential lookup until a mint is actually required — e.g. the CLI
+skips its app_settings DB read on every invocation when a still-fresh token
+is already cached on disk."""
+
+
+class TokenStore(Protocol):
+    """Cross-process persistence for a minted JWT (optional).
+
+    When supplied, ``OAuthClient`` consults ``load()`` on a cache miss before
+    minting and calls ``save()`` after a mint, so a short-lived process (the
+    CLI) reuses a token across invocations. ``clear()`` is called when a token
+    is rejected (401). Implementations are best-effort: a raise is caught and
+    treated as a cache miss, never propagated.
+    """
+
+    async def load(self) -> str | None: ...
+    async def save(self, token: str) -> None: ...
+    async def clear(self) -> None: ...
+
+
 # ---------------------------------------------------------------------------
 # OAuthClient — the public surface
 # ---------------------------------------------------------------------------
@@ -150,12 +210,16 @@ class OAuthClient:
         *,
         client_id: str = "",
         client_secret: str = "",
+        credential_provider: CredentialProvider | None = None,
+        token_store: TokenStore | None = None,
         scopes: str | None = None,
         timeout: float = 30.0,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._client_id = client_id
         self._client_secret = client_secret
+        self._credential_provider = credential_provider
+        self._token_store = token_store
         self._scopes = scopes
         self._timeout = timeout
 
@@ -198,13 +262,16 @@ class OAuthClient:
 
     @property
     def using_oauth(self) -> bool:
-        """``True`` when OAuth client credentials are configured.
+        """``True`` when credentials are available — either eagerly
+        (``client_id`` + ``client_secret``) or lazily via a
+        ``credential_provider`` that resolves them at mint time.
 
-        Always ``True`` for a properly constructed client post-#249;
-        retained for backwards compatibility with callers that
-        introspect this flag (mostly tests).
+        Retained for backwards compatibility with callers that introspect
+        this flag (mostly tests).
         """
-        return bool(self._client_id and self._client_secret)
+        return bool(
+            (self._client_id and self._client_secret) or self._credential_provider
+        )
 
     def invalidate_cache(self) -> None:
         """Drop the cached JWT. Next ``get_token()`` re-mints.
@@ -242,11 +309,75 @@ class OAuthClient:
             cached = self._cached
             if cached is not None and time.time() < cached.refresh_at:
                 return cached.token
+            # Cross-process store (optional): a token persisted by a prior
+            # process lets us skip the mint — and, with a lazy
+            # credential_provider, the credential read too.
+            stored = await self._load_from_store()
+            if stored is not None:
+                self._cached = stored
+                return stored.token
             self._cached = await self._mint()
             return self._cached.token
 
+    async def _ensure_credentials(self) -> None:
+        """Resolve credentials lazily via ``credential_provider`` when eager
+        creds aren't set. Called just before a mint, so a caller holding a
+        fresh cached token never triggers the lookup (the CLI's DB read)."""
+        if self._client_id and self._client_secret:
+            return
+        if self._credential_provider is not None:
+            client_id, client_secret = await self._credential_provider()
+            self._client_id = client_id or ""
+            self._client_secret = client_secret or ""
+
+    async def _load_from_store(self) -> _CachedToken | None:
+        """Return a fresh token from the cross-process store, else ``None``.
+
+        Owns the freshness decision (``token_is_fresh``) so any ``TokenStore``
+        impl is safe, and swallows store errors — a broken cache must never
+        block token resolution, only fall through to a mint."""
+        if self._token_store is None:
+            return None
+        try:
+            token = await self._token_store.load()
+        except Exception:  # noqa: BLE001  # silent-ok: a cache read failure is a miss; fall through to minting
+            return None
+        if not token or not token_is_fresh(token):
+            return None
+        return _CachedToken(token=token, refresh_at=_refresh_deadline(token))
+
+    async def _save_to_store(self, token: str) -> None:
+        """Persist a freshly minted token for the next process. Best-effort."""
+        if self._token_store is None:
+            return
+        try:
+            await self._token_store.save(token)
+        except Exception:  # noqa: BLE001  # silent-ok: a cache write must never break minting
+            pass
+
+    async def _clear_store(self) -> None:
+        """Drop the persisted token (on a 401). Best-effort."""
+        if self._token_store is None:
+            return
+        try:
+            await self._token_store.clear()
+        except Exception:  # noqa: BLE001  # silent-ok: best-effort cache invalidation on 401
+            pass
+
     async def _mint(self) -> _CachedToken:
-        """Hit ``/token`` with grant_type=client_credentials."""
+        """Hit ``/token`` with grant_type=client_credentials.
+
+        Resolves credentials lazily first (via ``credential_provider``) so
+        the hot path — a fresh token already in the store — never reads
+        them. Fails loud if, after resolution, creds are still missing."""
+        await self._ensure_credentials()
+        if not (self._client_id and self._client_secret):
+            raise RuntimeError(
+                "OAuthClient: client_id/client_secret are required. Run "
+                "`poindexter auth migrate-cli` (or migrate-brain / "
+                "migrate-mcp / migrate-scripts) to provision an OAuth "
+                "client. Static-Bearer fallback was removed in #249."
+            )
         http = self._ensure_http()
         data = {
             "grant_type": "client_credentials",
@@ -270,17 +401,13 @@ class OAuthClient:
         if not token:
             raise RuntimeError(f"OAuth token mint returned no access_token: {payload}")
 
-        exp = _decode_jwt_exp(token)
-        if exp is not None:
-            refresh_at = max(time.time(), exp - EXPIRY_SKEW_SECONDS)
-        else:
-            # Fall back to the issuer's documented default TTL.
-            refresh_at = time.time() + DEFAULT_TTL_SECONDS - EXPIRY_SKEW_SECONDS
+        refresh_at = _refresh_deadline(token)
 
         logger.debug(
             "OAuthClient minted token client_id=%s scopes=%s expires_in=%ds",
             self._client_id, payload.get("scope"), payload.get("expires_in"),
         )
+        await self._save_to_store(token)
         return _CachedToken(token=token, refresh_at=refresh_at)
 
     # ------------------------------------------------------------------
@@ -314,6 +441,7 @@ class OAuthClient:
                 method, url,
             )
             self.invalidate_cache()
+            await self._clear_store()
             token = await self.get_token()
             headers["Authorization"] = f"Bearer {token}"
             resp = await http.request(method, url, headers=headers, **kwargs)

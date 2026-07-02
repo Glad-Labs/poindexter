@@ -335,3 +335,131 @@ class TestCredentialStoreReachability:
         assert "user" not in hint
         assert "localhost:5433" in hint
         assert "poindexter_brain" in hint
+
+
+# ---------------------------------------------------------------------------
+# Cross-process token cache — the wedge mitigation.
+#
+# A JWT persisted by a previous ``poindexter`` invocation lets the next one
+# skip BOTH the app_settings credential read (host->5433, the WinError-64-prone
+# hop) and the token mint (host->8002). Credentials are resolved lazily — only
+# when a mint actually becomes necessary (cache miss or a 401). The cache dir
+# is isolated per-test by ``conftest._isolate_cli_token_cache``.
+# ---------------------------------------------------------------------------
+
+
+def _patched_httpx(handler):
+    """Return ``(factory, oauth_module)`` — a drop-in ``httpx.AsyncClient``
+    factory that routes every request through ``handler`` (a MockTransport),
+    plus the oauth_client module to patch alongside the CLI module."""
+    from services.auth import oauth_client as oac_module
+
+    original = httpx.AsyncClient
+
+    def factory(*args, **kwargs):
+        kwargs.pop("transport", None)
+        return original(*args, transport=httpx.MockTransport(handler), **kwargs)
+
+    return factory, oac_module
+
+
+class TestWorkerClientTokenCache:
+    @pytest.mark.asyncio
+    async def test_cached_token_skips_db_read_and_mint(self, monkeypatch):
+        """The hot path: a fresh cached token is used directly — no
+        credential read, no mint."""
+        from poindexter.cli._api_client import WorkerClient
+        from poindexter.cli._token_cache import save_token
+
+        base = "http://test-worker"
+        cached = _make_jwt(3600)
+        save_token(base, cached)
+
+        # Any credential read on the hot path is a bug — blow up loudly.
+        resolve = AsyncMock(side_effect=AssertionError("DB read on hot path"))
+        monkeypatch.setattr(
+            "poindexter.cli._api_client._resolve_credentials", resolve
+        )
+
+        seen = {"mint": 0, "auth": None}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/token":
+                seen["mint"] += 1
+                return httpx.Response(
+                    200,
+                    json={"access_token": _make_jwt(3600), "expires_in": 3600},
+                )
+            seen["auth"] = request.headers.get("Authorization")
+            return httpx.Response(200, json={"ok": True})
+
+        factory, oac = _patched_httpx(handler)
+        with patch.object(oac.httpx, "AsyncClient", factory), patch(
+            "poindexter.cli._api_client.httpx.AsyncClient", factory
+        ):
+            async with WorkerClient() as c:
+                resp = await c.get("/api/tasks")
+                assert resp.status_code == 200
+
+        assert seen["mint"] == 0  # no token mint
+        assert seen["auth"] == f"Bearer {cached}"  # used the cached JWT
+        resolve.assert_not_awaited()  # no credential DB read
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_reads_creds_mints_and_persists(self, monkeypatch):
+        """Cache miss: resolve creds (one DB read), mint, and persist the
+        fresh token so the *next* process hits the hot path."""
+        from poindexter.cli._api_client import WorkerClient
+        from poindexter.cli._token_cache import load_token
+
+        base = "http://test-worker"
+        resolve = AsyncMock(return_value=("pdx_cli", "cli-secret"))
+        monkeypatch.setattr(
+            "poindexter.cli._api_client._resolve_credentials", resolve
+        )
+
+        minted = _make_jwt(3600)
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            if request.url.path == "/token":
+                return httpx.Response(
+                    200, json={"access_token": minted, "expires_in": 3600}
+                )
+            return httpx.Response(200, json={"ok": True})
+
+        factory, oac = _patched_httpx(handler)
+        with patch.object(oac.httpx, "AsyncClient", factory), patch(
+            "poindexter.cli._api_client.httpx.AsyncClient", factory
+        ):
+            async with WorkerClient() as c:
+                resp = await c.get("/api/tasks")
+                assert resp.status_code == 200
+
+        resolve.assert_awaited()  # miss → one credential read
+        assert load_token(base) == minted  # persisted for the next invocation
+
+    @pytest.mark.asyncio
+    async def test_missing_creds_with_empty_cache_fails_loud(self, monkeypatch):
+        """Empty cache + unprovisioned client → fail loud on enter with the
+        migrate-cli pointer (surfaced through the lazy mint)."""
+        from poindexter.cli._api_client import WorkerClient
+
+        resolve = AsyncMock(return_value=("", ""))
+        monkeypatch.setattr(
+            "poindexter.cli._api_client._resolve_credentials", resolve
+        )
+
+        def handler(request: httpx.Request) -> httpx.Response:  # pragma: no cover
+            return httpx.Response(
+                200, json={"access_token": _make_jwt(3600), "expires_in": 3600}
+            )
+
+        factory, oac = _patched_httpx(handler)
+        with patch.object(oac.httpx, "AsyncClient", factory), patch(
+            "poindexter.cli._api_client.httpx.AsyncClient", factory
+        ):
+            with pytest.raises(
+                RuntimeError, match="client_id/client_secret are required"
+            ):
+                async with WorkerClient() as _c:
+                    pass

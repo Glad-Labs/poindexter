@@ -61,6 +61,8 @@ The output should end in `\n`, not `\r \n`. After the next 12h tick (or a manual
 
 **Do NOT** re-run `poindexter auth migrate-cli` to clear this — it re-provisions a brand-new OAuth client over the _same_ flaky connection and doesn't touch the port-proxy. The new `CredentialStoreUnreachable` "DATABASE CONNECTIVITY" wording is the tell: it's a connectivity problem, not a credentials one.
 
+**Prevention — the cross-process token cache.** A successfully minted JWT is now persisted to `~/.poindexter/cli_token_cache.json` and reused across invocations until ~30 s before it expires (see `poindexter/cli/_token_cache.py`). While a cached token is fresh, the CLI skips **both** the `localhost:5433` credential read **and** the `localhost:8002` token mint — so most commands no longer touch the flaky host port-proxy at all. The credential read only happens on a cache miss (roughly once an hour, when the token ages out) or after a 401, and credentials are resolved lazily at that point. This shrinks the window in which the wedge can bite; it does **not** fix the proxy itself (that's the native-`docker-ce`-in-WSL2 migration). If the cache ever misbehaves, disable it with `POINDEXTER_CLI_TOKEN_CACHE=0` to force the old read-every-time behaviour.
+
 ---
 
 ## PowerShell script dies with `Unexpected token '}'` (and the brace looks fine)
