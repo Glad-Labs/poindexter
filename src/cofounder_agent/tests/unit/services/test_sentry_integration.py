@@ -283,6 +283,36 @@ class TestBeforeSend:
         result = SentryIntegration._before_send(event, {})
         assert result == event
 
+    def test_drops_graph_interrupt_control_flow_events(self):
+        """LangGraph ``interrupt()`` pauses (approval gates) are control
+        flow, not errors — Sentry's asyncio integration reports them from
+        LangGraph's internal node tasks anyway (GlitchTip triage
+        2026-07-02: 7 open issues were seo_refresh_gate pauses). The
+        filter matches by class name across the MRO so it needs no
+        langgraph import and catches subclasses."""
+        from services.sentry_integration import SentryIntegration
+
+        class GraphInterrupt(Exception):  # noqa: N818 — mirrors langgraph's name
+            pass
+
+        class ChildInterrupt(GraphInterrupt):
+            pass
+
+        for exc_cls in (GraphInterrupt, ChildInterrupt):
+            exc = exc_cls("gate pause")
+            hint = {"exc_info": (exc_cls, exc, None)}
+            event = {"level": "error", "message": "boom"}
+            assert SentryIntegration._before_send(event, hint) is None
+
+    def test_keeps_real_exceptions_with_tuple_exc_info(self):
+        """The GraphInterrupt drop must not swallow genuine errors."""
+        from services.sentry_integration import SentryIntegration
+
+        exc = RuntimeError("real failure")
+        hint = {"exc_info": (RuntimeError, exc, None)}
+        event = {"level": "error", "message": "boom"}
+        assert SentryIntegration._before_send(event, hint) == event
+
     def test_redacts_multiple_sensitive_headers(self):
         from services.sentry_integration import SentryIntegration
 

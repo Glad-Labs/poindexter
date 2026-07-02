@@ -247,6 +247,21 @@ class SentryIntegration:
         Returns:
             Modified event dict, or None to drop the event
         """
+        # Drop LangGraph control-flow interrupts. ``interrupt()`` raises
+        # GraphInterrupt to suspend a graph for operator approval (e.g.
+        # the seo_refresh_gate) — the runner re-raises it correctly, but
+        # Sentry's asyncio integration still reports it from LangGraph's
+        # internal node tasks as an unhandled error. It is a pause, not a
+        # failure; one GlitchTip issue per gate pause is pure noise
+        # (GlitchTip triage 2026-07-02: 7 of 73 open issues were this).
+        exc_info = hint.get("exc_info") if hint else None
+        if isinstance(exc_info, (tuple, list)) and exc_info:
+            exc_type = exc_info[0]
+            if any(
+                t.__name__ == "GraphInterrupt" for t in getattr(exc_type, "__mro__", [])
+            ):
+                return None
+
         # Check if this is an error event we should capture
         if event.get("level") == "error" or (hint and "exc_info" in hint):
             # Redact sensitive headers

@@ -1271,9 +1271,15 @@ async def _routed_notify(
         )
         return await notify_fn(message, critical=False)
     if not dc_id:
+        # Falsy dc_id means send_discord itself failed — a missing URL is
+        # only one cause (the webhook POST 400s on oversized/malformed
+        # content too). The old text asserted "no discord_ops_webhook_url"
+        # unconditionally, which sent the 06-30 zero-reader triage down a
+        # config rabbit hole when the real fault was message length.
         raise NotifyFailed(
-            "discord-only routing rejected: no discord_ops_webhook_url "
-            "(check app_settings)"
+            "discord-only routing failed: send_discord did not accept the "
+            "message (webhook missing/invalid or POST rejected — see brain "
+            "logs; discord_ops_webhook_url in app_settings)"
         )
     return {
         "telegram_message_id": None,

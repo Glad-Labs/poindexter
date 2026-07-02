@@ -1295,9 +1295,17 @@ async def send_telegram(
         logger.warning("[BRAIN] No Telegram chat ID — can't send alert")
         return None
     try:
+        # Telegram hard-rejects sendMessage bodies over 4096 chars with
+        # HTTP 400 — the settings_zero_reader_keys finding (~3.9K chars)
+        # silently killed every page on this channel from 06-30 to 07-02
+        # (GlitchTip #561). Clamp with a marker; the full payload is
+        # always in alert_events / the Findings board.
+        text = f"🧠 Brain: {message}"
+        if len(text) > 4096:
+            text = text[:4076] + "\n… [truncated]"
         body: dict[str, object] = {
             "chat_id": chat_id,
-            "text": f"🧠 Brain: {message}",
+            "text": text,
         }
         if reply_to_message_id is not None:
             # Telegram Bot API: ``reply_to_message_id`` threads the new
@@ -1399,6 +1407,12 @@ async def send_discord(
         logger.debug("[BRAIN] No Discord webhook URL — skipping")
         return None
     try:
+        # Discord webhooks hard-reject content over 2000 chars with HTTP
+        # 400 — send_discord then returns None and the dispatcher blamed
+        # a missing webhook URL (GlitchTip #561 sibling failure). The
+        # docstring always promised a 1900-char soft cap; make it true.
+        if len(message) > 1900:
+            message = message[:1880] + "\n… [truncated]"
         body: dict[str, object] = {"content": message}
         post_url = webhook_url
         if message_reference_id is not None:

@@ -105,6 +105,9 @@ RUN mkdir -p /app/brain && \
     cp /app/branch_drift_probe.py /app/brain/branch_drift_probe.py && \
     cp /app/psu_power.py /app/brain/psu_power.py && \
     cp /app/post_performance_probe.py /app/brain/post_performance_probe.py && \
+    cp /app/prometheus_secret_writer.py /app/brain/prometheus_secret_writer.py && \
+    cp /app/prefect_stuck_flow_probe.py /app/brain/prefect_stuck_flow_probe.py && \
+    cp /app/data_freshness_probe.py /app/brain/data_freshness_probe.py && \
     touch /app/brain/__init__.py
 
 # Non-root user with docker group (needs socket access for container restarts)
