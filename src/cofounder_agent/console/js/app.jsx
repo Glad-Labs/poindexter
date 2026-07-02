@@ -43,10 +43,15 @@ function App() {
   const [logs, setLogs] = useS(PX.logs); // live: GET /api/logs (Loki proxy)
   const [traces, setTraces] = useS(PX.traces); // live: GET /api/traces (Langfuse)
   const [logFilter, setLogFilter] = useS({ service: '', level: '' });
-  // live: KPI-strip reads with no home panel — GET /api/posts (published 30d +
-  // a real per-day histogram) + GET /api/analytics/views (page views 24h). Mock
+  // live: KPI-strip reads with no home panel — GET /api/posts (published 30d
+  // histogram + avg quality 30d) + GET /api/analytics/views (page views 24h)
+  // + GET /api/tasks?status=failed (failed 24h, windowed in kpis.js). Mock
   // keeps PX.kpis untouched (the `kpis` memo below short-circuits in mock mode).
-  const [kpiReads, setKpiReads] = useS({ posts: null, views: null });
+  const [kpiReads, setKpiReads] = useS({
+    posts: null,
+    views: null,
+    failedTasks: null,
+  });
   const [feed, setFeed] = useS(() =>
     // Live starts empty — the real /api/pipeline/events poll fills it (never
     // show the mock seed on live, feedback_no_dummy_data). Mock seeds the demo.
@@ -539,24 +544,28 @@ function App() {
     };
   }, []);
 
-  // ── Live: KPI strip reads (GET /api/posts + /api/analytics/views) ──
+  // ── Live: KPI strip reads (GET /api/posts + /api/analytics/views +
+  // GET /api/tasks?status=failed) ──
   // The overview KPIs are mostly a projection of state other panels already
-  // load (cost → spend, inbox → awaiting-approval); these two reads cover the
-  // rest. posts → published-in-30d + a real per-day histogram from the same
-  // rows; analytics(days=1) → page views over the last 24h. quality/failed have
-  // no live read → honest '—' (mapped in kpis.js). On a read failure we store
-  // null so that KPI renders honest-empty, never the mock value
-  // (feedback_no_dummy_data). 5-min cadence — these move slowly.
+  // load (cost → spend, inbox → awaiting-approval); these reads cover the
+  // rest. posts → published-in-30d histogram AND avg-quality-30d (the
+  // quality_score field landed on /api/posts 2026-07 via the
+  // pipeline_versions seam); analytics(days=1) → page views over the last
+  // 24h; failed tasks → 24h count windowed client-side in kpis.js (same
+  // pattern as published-30d). On a read failure we store null so that KPI
+  // renders honest-empty, never the mock value (feedback_no_dummy_data).
+  // 5-min cadence — these move slowly.
   useE(() => {
     if (!PX.api.isLive()) return;
     let alive = true;
     const load = async () => {
-      const [posts, views] = await Promise.all([
+      const [posts, views, failedTasks] = await Promise.all([
         PX.api.posts('?limit=100&published_only=true').catch(() => null),
         PX.api.analyticsViews('?days=1').catch(() => null),
+        PX.api.listTasks('?status=failed&limit=100').catch(() => null),
       ]);
       if (!alive) return;
-      setKpiReads({ posts, views });
+      setKpiReads({ posts, views, failedTasks });
     };
     load();
     const timer = setInterval(load, 5 * 60 * 1000);
@@ -1285,14 +1294,21 @@ function App() {
   // Overview KPI strip. Mock: the static PX.kpis. Live: project the real reads
   // onto the strip via the pure mapper — spend from the SAME budget()-loaded
   // `cost` the Cost panel renders (so the two can't disagree), awaiting-approval
-  // from the live `inbox`, published/traffic from the kpiReads effect, and an
-  // honest '—' for anything with no live route (kpis.js / feedback_no_dummy_data).
+  // from the live `inbox`, published/quality/traffic/failed from the kpiReads
+  // effect, and an honest '—' for anything whose read failed
+  // (kpis.js / feedback_no_dummy_data).
   const kpis = useMemo(() => {
     if (!PX.api.isLive()) return PX.kpis;
     const pendingApproval = inbox.filter((i) => i.kind === 'approve').length;
     return PX.kpisFromLive(
       PX.kpis,
-      { cost, pendingApproval, posts: kpiReads.posts, views: kpiReads.views },
+      {
+        cost,
+        pendingApproval,
+        posts: kpiReads.posts,
+        views: kpiReads.views,
+        failedTasks: kpiReads.failedTasks,
+      },
       Date.now()
     );
   }, [cost, inbox, kpiReads]);

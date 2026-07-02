@@ -219,21 +219,101 @@ test('TRAFFIC sums the last-24h page-view buckets', () => {
   assert.equal(t.deltaLabel, 'last 24h');
 });
 
-test('QUALITY is always honest-empty in live (no quality_score on /api/posts)', () => {
-  const q = byId(
+test('QUALITY averages quality_score over the trailing-30d window only', () => {
+  const posts = {
+    posts: [
+      // in-window, scored → counted
+      {
+        id: 'a',
+        published_at: new Date(NOW - 1 * DAY).toISOString(),
+        quality_score: 90,
+      },
+      {
+        id: 'b',
+        published_at: new Date(NOW - 10 * DAY).toISOString(),
+        quality_score: 70,
+      },
+      // in-window, unscored (pre-seam post) → excluded, not treated as 0
+      {
+        id: 'c',
+        published_at: new Date(NOW - 2 * DAY).toISOString(),
+        quality_score: null,
+      },
+      // out-of-window, scored → excluded
+      {
+        id: 'd',
+        published_at: new Date(NOW - 40 * DAY).toISOString(),
+        quality_score: 10,
+      },
+    ],
+    total: 4,
+  };
+  const q = byId(kpisFromLive(BASE, { posts }, NOW), 'quality');
+  assert.equal(q.value, 80); // (90 + 70) / 2
+  assert.equal(q.label, 'Avg Quality (30d)'); // live window ≠ the mock's 7d
+  assert.equal(q.deltaLabel, '2 scored');
+  assert.equal(q.tone, 'mint'); // ≥ 80
+});
+
+test('QUALITY goes amber below 80 and honest-empty with zero scored posts', () => {
+  const low = {
+    posts: [
+      {
+        id: 'a',
+        published_at: new Date(NOW - 1 * DAY).toISOString(),
+        quality_score: 60,
+      },
+    ],
+    total: 1,
+  };
+  assert.equal(
+    byId(kpisFromLive(BASE, { posts: low }, NOW), 'quality').tone,
+    'amber'
+  );
+
+  const unscored = byId(
     kpisFromLive(BASE, { posts: postsAgo([0, 1, 2]) }, NOW),
     'quality'
   );
-  assert.equal(q.value, '—');
-  assert.deepEqual(q.spark, []);
-  assert.equal(q.deltaLabel, '');
-  assert.equal(q.tone, '');
+  assert.equal(unscored.value, '—'); // no quality_score anywhere → honest-empty
+  assert.deepEqual(unscored.spark, []);
 });
 
-test('FAILED is honest-empty (no live 24h-failed route)', () => {
-  const f = byId(kpisFromLive(BASE, {}, NOW), 'failed');
-  assert.equal(f.value, '—');
-  assert.deepEqual(f.spark, []);
+test('FAILED counts only failures with a timestamp in the trailing 24h', () => {
+  const failedTasks = {
+    items: [
+      // 2h ago ✓
+      { id: 't1', completed_at: new Date(NOW - 2 * 3600 * 1000).toISOString() },
+      // 20h ago ✓ (completed_at absent → falls back to updated_at)
+      { id: 't2', updated_at: new Date(NOW - 20 * 3600 * 1000).toISOString() },
+      // 30h ago ✗
+      {
+        id: 't3',
+        completed_at: new Date(NOW - 30 * 3600 * 1000).toISOString(),
+      },
+      // no timestamp at all ✗ (never guessed into the window)
+      { id: 't4' },
+    ],
+    total: 4,
+  };
+  const f = byId(kpisFromLive(BASE, { failedTasks }, NOW), 'failed');
+  assert.equal(f.value, 2);
+  assert.equal(f.tone, 'alert');
+  assert.equal(f.deltaLabel, 'investigate');
+});
+
+test('FAILED shows a real 0 (clean day) but honest-empty when the read failed', () => {
+  const clean = byId(
+    kpisFromLive(BASE, { failedTasks: { items: [], total: 0 } }, NOW),
+    'failed'
+  );
+  assert.equal(clean.value, 0); // a clean 24h is REAL data, not empty
+  assert.equal(clean.deltaLabel, 'clean 24h');
+  assert.equal(clean.tone, '');
+
+  const missing = byId(kpisFromLive(BASE, {}, NOW), 'failed');
+  assert.equal(missing.value, '—'); // read failed/absent → honest-empty
+  assert.deepEqual(missing.spark, []);
 });
 
 test('honest-empty when a read is missing — never the carried-over mock value', () => {

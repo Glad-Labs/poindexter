@@ -15,8 +15,11 @@
      published ← GET /api/posts: count within the trailing 30d + a real per-day
                  histogram derived from the same rows (no extra call, no mock).
      traffic   ← GET /api/analytics/views?days=1: sum of the 24h view buckets.
-     quality   ← honest-empty (quality_score is NOT exposed on /api/posts).
-     failed    ← honest-empty (no 24h-failed-tasks route).
+     quality   ← the SAME /api/posts read: avg quality_score over the 30d
+                 window (exposed on the payload 2026-07 via the
+                 pipeline_versions seam); honest-empty when nothing scored.
+     failed    ← GET /api/tasks?status=failed: count with a failure timestamp
+                 in the trailing 24h (client-side window, like published).
 
    PURE + dual-mode: `nowMs` is injected so the 30d / 24h windows are
    deterministic (unit-tested in __tests__/kpis.test.js — the console-unit
@@ -92,6 +95,60 @@
     };
   };
 
+  // Avg quality over the same trailing-30d window as `published`, from the
+  // same GET /api/posts read (quality_score landed on the payload 2026-07;
+  // COALESCE of the post's own metadata score and its source task's latest
+  // pipeline_versions score). Posts without a resolvable score (pre-seam)
+  // are excluded from the average; zero scored posts → honest-empty.
+  const qualityKpi = (base, posts, nowMs) => {
+    if (!posts || !Array.isArray(posts.posts)) return honestEmpty(base);
+    const scores = [];
+    posts.posts.forEach((p) => {
+      const t = p && p.published_at ? Date.parse(p.published_at) : NaN;
+      const daysAgo = Math.floor((nowMs - t) / DAY_MS);
+      const score =
+        p && p.quality_score != null ? Number(p.quality_score) : NaN;
+      if (daysAgo >= 0 && daysAgo < 30 && isFinite(score)) scores.push(score);
+    });
+    if (!scores.length) return honestEmpty(base);
+    const avg = scores.reduce((a, s) => a + s, 0) / scores.length;
+    return {
+      ...base,
+      label: 'Avg Quality (30d)', // live window is 30d, not the mock's 7d
+      value: Math.round(avg * 10) / 10,
+      unit: '',
+      spark: [],
+      delta: 0,
+      deltaLabel: `${scores.length} scored`,
+      tone: avg >= 80 ? 'mint' : 'amber',
+    };
+  };
+
+  // Failed tasks in the trailing 24h, from GET /api/tasks?status=failed
+  // (canonical {items,total,limit,offset} envelope, poindexter#745). The
+  // 24h window is client-side off the failure timestamp (completed_at,
+  // falling back to updated_at/created_at) — same pattern as published-30d.
+  const failedKpi = (base, failedTasks, nowMs) => {
+    if (!failedTasks || !Array.isArray(failedTasks.items)) {
+      return honestEmpty(base);
+    }
+    let n = 0;
+    failedTasks.items.forEach((t) => {
+      const ts = t && (t.completed_at || t.updated_at || t.created_at);
+      const at = ts ? Date.parse(ts) : NaN;
+      if (isFinite(at) && nowMs - at >= 0 && nowMs - at < DAY_MS) n += 1;
+    });
+    return {
+      ...base,
+      value: n,
+      unit: '',
+      spark: [],
+      delta: 0,
+      deltaLabel: n > 0 ? 'investigate' : 'clean 24h',
+      tone: n > 0 ? 'alert' : '',
+    };
+  };
+
   const trafficKpi = (base, views) => {
     if (!views || !Array.isArray(views.daily)) return honestEmpty(base);
     const sum = views.daily.reduce(
@@ -123,10 +180,10 @@
           return publishedKpi(base, l.posts, now);
         case 'traffic':
           return trafficKpi(base, l.views);
-        // quality_score isn't on /api/posts; there's no 24h-failed route. Wire
-        // these to honest values when a backing read lands.
         case 'quality':
+          return qualityKpi(base, l.posts, now);
         case 'failed':
+          return failedKpi(base, l.failedTasks, now);
         default:
           return honestEmpty(base);
       }

@@ -145,6 +145,32 @@ class TestListPosts:
         result = await svc.list_posts()
         assert result["posts"][0]["excerpt"]
 
+    async def test_quality_score_selected_and_passed_through(self):
+        """The console KPI strip reads quality_score off /api/posts
+        (2026-07 audit). The query must resolve it via the post's own
+        metadata OR the source task's latest pipeline_versions row (the
+        posts.metadata->>'pipeline_task_id' seam), and the value must
+        survive into the payload — NULL included (consumers render
+        honest-empty, never 0)."""
+        row = _post_row({"quality_score": 87.0})
+        pool, conn = _make_pool(fetch_return=[row])
+        svc = PostsService(pool=pool)
+        result = await svc.list_posts()
+        assert result["posts"][0]["quality_score"] == 87.0
+
+        query = conn.fetch.call_args.args[0]
+        assert "quality_score" in query
+        assert "pipeline_versions" in query
+        assert "pipeline_task_id" in query
+
+    async def test_quality_score_null_stays_null(self):
+        """Pre-seam posts with no resolvable score must expose NULL, not 0."""
+        row = _post_row({"quality_score": None})
+        pool, _ = _make_pool(fetch_return=[row])
+        svc = PostsService(pool=pool)
+        result = await svc.list_posts()
+        assert result["posts"][0]["quality_score"] is None
+
 
 # ---------------------------------------------------------------------------
 # search_posts

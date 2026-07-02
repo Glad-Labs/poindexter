@@ -88,14 +88,33 @@ class PostsService:
             params.append(limit)
             params.append(offset)
             # COUNT(*) OVER () avoids a separate COUNT round-trip.
+            #
+            # quality_score (2026-07-01 console-KPI audit): most published
+            # posts carry no metadata->>'quality_score' of their own — the
+            # score lives on the source task's latest pipeline_versions row,
+            # reached through the canonical posts.metadata->>'pipeline_task_id'
+            # seam. COALESCE prefers a post-local score, then the newest
+            # scored version; NULL when neither exists (pre-seam posts) —
+            # consumers render honest-empty, never 0.
             query = f"""
-                SELECT id, title, slug, excerpt, featured_image_url, cover_image_url,
-                       category_id, published_at, created_at, updated_at,
+                SELECT posts.id, title, slug, excerpt, featured_image_url, cover_image_url,
+                       category_id, published_at, posts.created_at, updated_at,
                        seo_title, seo_description, seo_keywords, status, content, author_id,
+                       COALESCE(
+                           (posts.metadata->>'quality_score')::float,
+                           v.quality_score::float
+                       ) AS quality_score,
                        COUNT(*) OVER () AS total_count
                 FROM posts
+                LEFT JOIN LATERAL (
+                    SELECT quality_score FROM pipeline_versions
+                    WHERE task_id::text = posts.metadata->>'pipeline_task_id'
+                      AND quality_score IS NOT NULL
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                ) v ON true
                 {where_sql}
-                ORDER BY COALESCE(published_at, created_at) DESC NULLS LAST
+                ORDER BY COALESCE(published_at, posts.created_at) DESC NULLS LAST
                 LIMIT ${len(params) - 1} OFFSET ${len(params)}
             """  # nosec B608 — where_sql is "" or " WHERE status = 'published'" (literal);
                  # LIMIT/OFFSET use $N placeholders

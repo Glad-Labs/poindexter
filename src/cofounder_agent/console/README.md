@@ -104,9 +104,14 @@ The headline KPI strip is live-wired through a pure mapper (`js/kpis.js` →
 `npm run test:console`): **spend** reuses the
 same `budget()` read the Cost panel renders (so the two can't disagree),
 **awaiting-approval** comes from the live inbox, **published (30d)** + **page
-views (24h)** from `GET /api/posts` + `GET /api/analytics/views`, and
-**avg-quality** / **failed** render an honest `—` (no backing read —
-`quality_score` isn't on `/api/posts` and there's no 24h-failed route). Mock
+views (24h)** from `GET /api/posts` + `GET /api/analytics/views`,
+**avg-quality (30d)** from the SAME `/api/posts` read (`quality_score` landed
+on the payload 2026-07 — the post's own metadata score, falling back to its
+source task's latest `pipeline_versions` score via the
+`posts.metadata->>'pipeline_task_id'` seam; unscored pre-seam posts are
+excluded, zero scored posts renders `—`), and **failed (24h)** from
+`GET /api/tasks?status=failed` windowed client-side off the failure timestamp
+(a clean day is a real `0`; a failed read is `—`). Mock
 mode keeps the static `PX.kpis`. The Revenue and QA panels are intentionally
 static (documented at their call sites in `app.jsx`): Revenue is
 pre-revenue/billing-gated with no `/api/revenue` read, and QA's rail list is the
