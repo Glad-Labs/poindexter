@@ -1513,11 +1513,96 @@ class TasksDatabase(DatabaseServiceMixin):
                         "Stale task sweep complete: %d reset, %d failed (threshold=%dm)",
                         len(reset_ids), len(fail_ids), stale_threshold_minutes,
                     )
-                    return {"reset": len(reset_ids), "failed": len(fail_ids)}
+
+            # poindexter#807 — the crash→sweep→requeue cycle was invisible
+            # (worker-log line only); the queue backlog was the first
+            # operator-visible symptom. Emit one warn finding per swept task
+            # (outside the transaction — the status writes are committed)
+            # with a per-task dedup key so a task looping through repeated
+            # sweeps re-surfaces after the routing cooldown.
+            self._emit_sweep_findings(
+                stale_rows=stale_rows,
+                reset_ids=reset_ids,
+                fail_ids=fail_ids,
+                stale_threshold_minutes=stale_threshold_minutes,
+                max_retries=max_retries,
+            )
+            return {"reset": len(reset_ids), "failed": len(fail_ids)}
 
         except Exception as e:
             logger.error("Failed to sweep stale tasks: %s", e, exc_info=True)
             return {"reset": 0, "failed": 0}
+
+    def _emit_sweep_findings(
+        self,
+        *,
+        stale_rows: list[Any],
+        reset_ids: list[str],
+        fail_ids: list[str],
+        stale_threshold_minutes: int,
+        max_retries: int,
+    ) -> None:
+        """Emit ``stale_task_reclaimed`` / ``task_retries_exhausted`` findings.
+
+        Observability garnish — never raises (a failing emitter must not fail
+        a sweep whose DB writes already committed).
+        """
+        try:
+            from utils.findings import emit_finding
+
+            retry_by_id = {
+                row["task_id"]: int(row["retry_count"] or 0) for row in stale_rows
+            }
+            for task_id in reset_ids:
+                prior = retry_by_id.get(task_id, 0)
+                emit_finding(
+                    source="sweep_stale_tasks",
+                    kind="stale_task_reclaimed",
+                    title=f"Stale in_progress task reclaimed → pending "
+                    f"(retry {prior + 1}/{max_retries})",
+                    body=(
+                        f"Task {task_id} sat in_progress for over "
+                        f"{stale_threshold_minutes}m with no progress — "
+                        "typically a flow run killed mid-graph (probe "
+                        "auto-crash, worker restart, or a wedged GPU wait). "
+                        f"Reset to pending with retry_count={prior + 1}; its "
+                        "LangGraph checkpoint was cleared so the retry runs "
+                        "a fresh graph. Repeated findings for the same task "
+                        "mean each retry is hitting the same wall."
+                    ),
+                    severity="warn",
+                    dedup_key=f"stale-task-reclaimed:{task_id}",
+                    extra={
+                        "task_id": task_id,
+                        "retry_count": prior + 1,
+                        "max_retries": max_retries,
+                    },
+                )
+            for task_id in fail_ids:
+                prior = retry_by_id.get(task_id, 0)
+                emit_finding(
+                    source="sweep_stale_tasks",
+                    kind="task_retries_exhausted",
+                    title="Task failed after exhausting stale-sweep retries",
+                    body=(
+                        f"Task {task_id} was reclaimed from a stale "
+                        f"in_progress state {prior} time(s) (max_retries="
+                        f"{max_retries}) and never completed — marked "
+                        "'failed'. Investigate what killed every attempt "
+                        "before manually re-queueing."
+                    ),
+                    severity="warn",
+                    dedup_key=f"task-retries-exhausted:{task_id}",
+                    extra={
+                        "task_id": task_id,
+                        "retry_count": prior,
+                        "max_retries": max_retries,
+                    },
+                )
+        except Exception:
+            logger.warning(
+                "sweep_stale_tasks: emitting sweep findings failed", exc_info=True
+            )
 
     async def _clear_checkpoints_for_threads(
         self,

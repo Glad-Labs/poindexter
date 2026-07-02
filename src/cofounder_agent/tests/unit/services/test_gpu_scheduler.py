@@ -884,10 +884,10 @@ class TestPgAdvisoryLock:
         scheduler._wait_for_gaming_clear = AsyncMock()
         scheduler._unload_ollama_models = AsyncMock()
 
-        async def _fake_acquire(self_inner=None):
+        async def _fake_acquire(*args, **kwargs):
             acquire_calls.append("pg_acquire")
 
-        async def _fake_release(self_inner=None):
+        async def _fake_release(*args, **kwargs):
             release_calls.append("pg_release")
 
         scheduler._acquire_pg_advisory_lock = _fake_acquire
@@ -944,3 +944,124 @@ class TestPgAdvisoryLock:
         # pg_advisory_lock accepts int8 (int64): -9223372036854775808 .. 9223372036854775807
         assert isinstance(GPU_ADVISORY_LOCK_KEY, int)
         assert -(2**63) <= GPU_ADVISORY_LOCK_KEY <= (2**63 - 1)
+
+
+def _cfg_int_map(**overrides):
+    """Build a _cfg_int replacement returning per-key overrides."""
+    def _fake(key, default):
+        return overrides.get(key, default)
+    return _fake
+
+
+class TestGpuLockAcquireTimeout:
+    """poindexter#807 — gpu.lock() acquisition must be bounded.
+
+    An unbounded ``await self._lock.acquire()`` / ``pg_advisory_lock`` let a
+    graph node block forever behind a wedged holder (e.g. a zombie process
+    from a force-crashed flow run still holding the advisory lock). The
+    stage-level asyncio.wait_for can't save us: its own timeout has to await
+    the cancelled task's ``finally``, which used to do another unbounded pg
+    call. Bounded acquisition raises GpuLockTimeoutError instead, which
+    GPU call sites (image_captioner, dispatch) already treat fail-soft.
+    """
+
+    @pytest.mark.asyncio
+    async def test_acquire_times_out_when_in_process_lock_held(self):
+        from services.gpu_scheduler import GpuLockTimeoutError
+
+        gpu = GPUScheduler()
+        gpu._emit_lock_timeout_finding = MagicMock()
+        await gpu._lock.acquire()  # simulate another holder
+        try:
+            with patch(
+                "services.gpu_scheduler._cfg_int",
+                _cfg_int_map(gpu_lock_acquire_timeout_seconds=1),
+            ):
+                with pytest.raises(GpuLockTimeoutError):
+                    async with gpu.lock("ollama", model="m"):
+                        pass  # pragma: no cover — must not enter
+            gpu._emit_lock_timeout_finding.assert_called_once()
+        finally:
+            gpu._lock.release()
+
+    @pytest.mark.asyncio
+    async def test_zero_timeout_means_unbounded_legacy_wait(self):
+        gpu = GPUScheduler()
+        await gpu._lock.acquire()
+        try:
+            with patch(
+                "services.gpu_scheduler._cfg_int",
+                _cfg_int_map(gpu_lock_acquire_timeout_seconds=0),
+            ):
+                async def _try_lock():
+                    async with gpu.lock("ollama"):
+                        pass
+
+                waiter = asyncio.ensure_future(_try_lock())
+                await asyncio.sleep(0.1)
+                # Still waiting — no timeout raised with the 0 sentinel.
+                assert not waiter.done()
+                waiter.cancel()
+                with pytest.raises(asyncio.CancelledError):
+                    await waiter
+        finally:
+            gpu._lock.release()
+
+    @pytest.mark.asyncio
+    async def test_in_process_lock_released_when_pg_acquire_times_out(self):
+        """If the pg advisory acquire times out AFTER the in-process lock was
+        taken, the in-process lock must be released before raising — else the
+        whole process wedges on the next acquire."""
+        from services.gpu_scheduler import GpuLockTimeoutError
+
+        gpu = GPUScheduler()
+        gpu._emit_lock_timeout_finding = MagicMock()
+        gpu._acquire_pg_advisory_lock = AsyncMock(
+            side_effect=GpuLockTimeoutError("pg advisory lock wait timed out")
+        )
+        with pytest.raises(GpuLockTimeoutError):
+            async with gpu.lock("ollama"):
+                pass  # pragma: no cover — must not enter
+        assert not gpu._lock.locked()
+        assert not gpu.is_busy
+
+    @pytest.mark.asyncio
+    async def test_pg_acquire_timeout_terminates_conn_and_raises(self):
+        from services.gpu_scheduler import GpuLockTimeoutError
+
+        async def _hang(*args, **kwargs):
+            await asyncio.sleep(30)
+
+        mock_conn = AsyncMock()
+        mock_conn.execute = AsyncMock(side_effect=_hang)
+        mock_conn.terminate = MagicMock()
+        ctx, _, _ = _patch_pg(conn=mock_conn)
+        with ctx:
+            gpu = GPUScheduler()
+            with pytest.raises(GpuLockTimeoutError):
+                await gpu._acquire_pg_advisory_lock(timeout_s=0.2)
+        mock_conn.terminate.assert_called_once()
+        assert gpu._pg_lock_conn is None
+
+    @pytest.mark.asyncio
+    async def test_release_terminates_conn_when_unlock_hangs(self):
+        """A hung pg_advisory_unlock must not hang the lock's finally block
+        (that is what turned a 600s stage timeout into an infinite wait).
+        Terminating the connection releases session advisory locks
+        server-side, so terminate-on-timeout is safe."""
+
+        async def _hang(*args, **kwargs):
+            await asyncio.sleep(30)
+
+        mock_conn = AsyncMock()
+        mock_conn.execute = AsyncMock(side_effect=_hang)
+        mock_conn.terminate = MagicMock()
+        gpu = GPUScheduler()
+        gpu._pg_lock_conn = mock_conn
+        with patch(
+            "services.gpu_scheduler._cfg_int",
+            _cfg_int_map(gpu_lock_release_timeout_seconds=1),
+        ):
+            await gpu._release_pg_advisory_lock()
+        mock_conn.terminate.assert_called_once()
+        assert gpu._pg_lock_conn is None

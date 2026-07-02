@@ -1537,6 +1537,81 @@ class TestSweepStaleTasks:
         select_sql = conn.fetch.await_args.args[0]
         assert "awaiting_gate IS NULL" in select_sql
 
+    @pytest.mark.asyncio
+    async def test_sweep_emits_findings_for_reset_and_exhausted(self):
+        """poindexter#807: the crash→sweep→requeue cycle was invisible —
+        the sweep only wrote a worker-log line. Every reclaim must emit a
+        warn finding (per task, stable dedup key) so a task looping through
+        repeated stale sweeps is operator-visible, and a task killed at
+        max_retries emits its own finding."""
+        stale_rows = [
+            {"task_id": "t-reclaim", "retry_count": 1},
+            {"task_id": "t-exhausted", "retry_count": 3},
+        ]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=stale_rows)
+        conn.execute = AsyncMock(return_value="DELETE 0")
+        conn.fetchval = AsyncMock(return_value=True)
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        with patch("utils.findings.emit_finding") as emit:
+            await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
+
+        kinds = {c.kwargs["kind"]: c.kwargs for c in emit.call_args_list}
+        assert "stale_task_reclaimed" in kinds
+        assert "task_retries_exhausted" in kinds
+        reclaimed = kinds["stale_task_reclaimed"]
+        assert reclaimed["severity"] == "warn"
+        assert reclaimed["dedup_key"] == "stale-task-reclaimed:t-reclaim"
+        assert "t-reclaim" in reclaimed["body"]
+        exhausted = kinds["task_retries_exhausted"]
+        assert exhausted["severity"] == "warn"
+        assert exhausted["dedup_key"] == "task-retries-exhausted:t-exhausted"
+        assert "t-exhausted" in exhausted["body"]
+
+    @pytest.mark.asyncio
+    async def test_sweep_finding_failure_never_breaks_sweep(self):
+        """The finding emit is observability garnish — a raising emitter
+        must not fail the sweep (the reset/fail writes already committed)."""
+        stale_rows = [{"task_id": "t-1", "retry_count": 0}]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=stale_rows)
+        conn.execute = AsyncMock(return_value="DELETE 0")
+        conn.fetchval = AsyncMock(return_value=True)
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+
+        db = TasksDatabase(pool=pool)
+        with patch(
+            "utils.findings.emit_finding", side_effect=RuntimeError("boom")
+        ):
+            result = await db.sweep_stale_tasks(
+                stale_threshold_minutes=60, max_retries=3
+            )
+        assert result == {"reset": 1, "failed": 0}
+
 
 # ---------------------------------------------------------------------------
 # bulk_update_task_statuses

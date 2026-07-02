@@ -106,6 +106,37 @@ PANEL_ID_SCORECARD_TABLE = 17
 PANEL_ID_APPROVAL_RATE_TIMESERIES = 18
 
 
+def _lab_section_parked() -> bool:
+    """True while the Lab Observability panels are parked (absent).
+
+    glad-labs-stack#2052 parked the structurally-empty Lab section (the
+    ``experiments`` table has held one stale row since 2026-05-29): the row
+    was retitled "… — parked" and panels 16-18 were removed from the board.
+    These tests guard the LIVE panels' SQL, so they go dormant with the
+    panels — unparking the section (restoring the panels) automatically
+    re-arms them. Without this guard the module hard-fails on KeyError and
+    blocks every PR that triggers integration-db.
+    """
+    try:
+        panels = _load_panels()
+    except FileNotFoundError:
+        # Dashboard file relocated/renamed — that's NOT parking; fall
+        # through so the tests fail loud instead of silently skipping.
+        return False
+    return PANEL_ID_ACTIVE_COUNT not in panels
+
+
+pytestmark.append(
+    pytest.mark.skipif(
+        _lab_section_parked(),
+        reason=(
+            "Lab Observability section is parked (#2052) — panels 16-18 "
+            "absent from experiments-dryrun.json; unpark to re-arm"
+        ),
+    )
+)
+
+
 # ---------------------------------------------------------------------------
 # Dashboard JSON shape — the row + 3 panels exist and have the right types.
 # Runs without a DB; cheap smoke test that the JSON didn't get corrupted.

@@ -126,6 +126,27 @@ _DEFAULT_GAMING_CHECK_INTERVAL = 15  # seconds between checks while waiting
 _DEFAULT_GAMING_CONFIRM_CHECKS = 2  # consecutive checks above threshold to confirm
 _DEFAULT_GAMING_CLEAR_CHECKS = 3  # consecutive checks below threshold to resume
 
+# poindexter#807 — lock acquisition/release must be bounded. 900s tolerates a
+# legitimate long holder (a video render holds gpu.lock("video") for its whole
+# duration, ~15-30 min worst case) while still guaranteeing a wedged holder
+# (zombie process from a force-crashed flow run still holding the pg advisory
+# lock) can't block a graph node forever. Operators tune via
+# app_settings.gpu_lock_acquire_timeout_seconds; 0 restores the legacy
+# unbounded wait.
+_DEFAULT_LOCK_ACQUIRE_TIMEOUT_S = 900
+_DEFAULT_LOCK_RELEASE_TIMEOUT_S = 15
+
+
+class GpuLockTimeoutError(TimeoutError):
+    """gpu.lock() acquisition exceeded gpu_lock_acquire_timeout_seconds.
+
+    Raised instead of waiting forever behind a wedged lock holder. GPU call
+    sites that are fail-soft (image_captioner, vision QA) catch this via
+    their existing ``except Exception`` and skip; hard callers (the writer)
+    fail the node loudly, which routes into the normal retry path instead of
+    an invisible stall that the brain probe has to force-crash.
+    """
+
 
 def _cfg_int(key: str, default: int) -> int:
     """Read an int from site_config (DB) with fallback.
@@ -282,7 +303,7 @@ class GPUScheduler:
     # Cross-process pg_advisory_lock helpers (poindexter#731)
     # ------------------------------------------------------------------
 
-    async def _acquire_pg_advisory_lock(self) -> None:
+    async def _acquire_pg_advisory_lock(self, timeout_s: float | None = None) -> None:
         """Open a dedicated asyncpg connection and acquire the session-level
         GPU advisory lock.
 
@@ -299,6 +320,13 @@ class GPUScheduler:
         logs a warning and falls back to the in-process asyncio.Lock only —
         the scheduler must remain functional in test environments and on
         first-boot before the DB is reachable.
+
+        ``timeout_s`` (poindexter#807) bounds the wait for the advisory lock.
+        A timeout means another SESSION HOLDS the lock (not that Postgres is
+        down), so falling back to the local lock would break cross-process
+        mutual exclusion — instead the connection is terminated and
+        :class:`GpuLockTimeoutError` is raised for the caller to handle.
+        ``None``/0 keeps the legacy unbounded wait.
         """
         try:
             import asyncpg
@@ -317,10 +345,32 @@ class GPUScheduler:
 
         conn = None
         try:
-            conn = await asyncpg.connect(dsn)
-            await conn.execute("SELECT pg_advisory_lock($1)", GPU_ADVISORY_LOCK_KEY)
+            if timeout_s and timeout_s > 0:
+                conn = await asyncio.wait_for(asyncpg.connect(dsn), timeout=timeout_s)
+                await asyncio.wait_for(
+                    conn.execute("SELECT pg_advisory_lock($1)", GPU_ADVISORY_LOCK_KEY),
+                    timeout=timeout_s,
+                )
+            else:
+                conn = await asyncpg.connect(dsn)
+                await conn.execute("SELECT pg_advisory_lock($1)", GPU_ADVISORY_LOCK_KEY)
             self._pg_lock_conn = conn
             logger.debug("[GPU] pg_advisory_lock acquired (key=%d)", GPU_ADVISORY_LOCK_KEY)
+        except (TimeoutError, asyncio.TimeoutError):
+            # terminate() (not close()) — the session is mid-`pg_advisory_lock`
+            # wait, so a graceful close would block behind the same wait.
+            # Dropping the socket makes Postgres abandon the lock request.
+            if conn is not None:
+                try:
+                    conn.terminate()
+                except Exception:
+                    logger.warning(
+                        "[GPU] terminate() after pg acquire timeout failed", exc_info=True
+                    )
+            raise GpuLockTimeoutError(
+                f"pg_advisory_lock wait exceeded {timeout_s}s — another "
+                "process holds the GPU lock (wedged holder or long render)"
+            ) from None
         except Exception as exc:
             logger.warning(
                 "[GPU] pg_advisory_lock acquire failed (%s: %s) — "
@@ -340,24 +390,99 @@ class GPUScheduler:
         connection.
 
         Idempotent — safe to call when no connection is held.
+
+        Bounded (poindexter#807): a hung ``pg_advisory_unlock`` here used to
+        hang the lock's ``finally`` block — which meant even a stage-level
+        ``asyncio.wait_for`` timeout could never complete its cancellation
+        and the node blocked forever. On timeout the connection is
+        terminated instead; Postgres releases session advisory locks when
+        the session disconnects, so terminate-on-timeout is safe.
         """
         conn = self._pg_lock_conn
         self._pg_lock_conn = None
         if conn is None:
             return
+        release_timeout = _cfg_int(
+            "gpu_lock_release_timeout_seconds", _DEFAULT_LOCK_RELEASE_TIMEOUT_S
+        )
         try:
-            await conn.execute("SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY)
+            if release_timeout > 0:
+                await asyncio.wait_for(
+                    conn.execute("SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY),
+                    timeout=release_timeout,
+                )
+            else:
+                await conn.execute(
+                    "SELECT pg_advisory_unlock($1)", GPU_ADVISORY_LOCK_KEY
+                )
             logger.debug("[GPU] pg_advisory_lock released (key=%d)", GPU_ADVISORY_LOCK_KEY)
+        except (TimeoutError, asyncio.TimeoutError):
+            logger.warning(
+                "[GPU] pg_advisory_unlock timed out after %ss — terminating "
+                "connection (server releases session advisory locks on "
+                "disconnect)",
+                release_timeout,
+            )
+            try:
+                conn.terminate()
+            except Exception:
+                logger.warning(
+                    "[GPU] terminate() after pg release timeout failed", exc_info=True
+                )
+            return
         except Exception as exc:
             logger.warning(
                 "[GPU] pg_advisory_unlock failed (%s: %s) — closing connection anyway",
                 type(exc).__name__, exc,
             )
-        finally:
+        try:
+            await asyncio.wait_for(
+                conn.close(), timeout=release_timeout if release_timeout > 0 else None
+            )
+        except Exception:
             try:
-                await conn.close()
+                conn.terminate()
             except Exception:
-                pass
+                logger.warning(
+                    "[GPU] terminate() after close failure failed", exc_info=True
+                )
+
+    def _emit_lock_timeout_finding(
+        self,
+        *,
+        owner: str,
+        stage: str,
+        timeout_s: float,
+        holder: str | None,
+    ) -> None:
+        """Emit a warn ``gpu_lock_timeout`` finding. Never raises.
+
+        Routed via the seeded ``findings.gpu_lock_timeout.delivery`` policy
+        so lock-wait exhaustion is operator-visible (poindexter#807 — the
+        stall→crash→requeue loop was previously silent).
+        """
+        try:
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="gpu_scheduler",
+                kind="gpu_lock_timeout",
+                title=f"GPU lock wait timed out ({owner}, {stage})",
+                body=(
+                    f"gpu.lock({owner!r}) gave up after {timeout_s}s at the "
+                    f"{stage} step"
+                    + (f" — in-process holder was {holder!r}" if holder else "")
+                    + ". A wedged cross-process holder (e.g. a zombie from a "
+                    "force-crashed flow run) or an unusually long render is "
+                    "monopolising the GPU. The caller received "
+                    "GpuLockTimeoutError instead of blocking forever."
+                ),
+                severity="warn",
+                dedup_key=f"gpu-lock-timeout:{owner}",
+                extra={"owner": owner, "stage": stage, "timeout_s": timeout_s},
+            )
+        except Exception:
+            logger.warning("[GPU] emit gpu_lock_timeout finding failed", exc_info=True)
 
     # ------------------------------------------------------------------
     # Public lock context manager
@@ -417,12 +542,57 @@ class GPUScheduler:
             )
             waited = True
 
+        # poindexter#807 — bounded acquisition. An unbounded wait here let a
+        # graph node block forever behind a wedged holder; the brain probe
+        # then force-crashed the whole flow run and the sweep requeued the
+        # task into the same wall (an invisible crash→requeue loop). Timing
+        # out raises a typed error the caller can handle instead.
+        acquire_timeout = _cfg_int(
+            "gpu_lock_acquire_timeout_seconds", _DEFAULT_LOCK_ACQUIRE_TIMEOUT_S
+        )
+        acquire_started = time.monotonic()
+
         # Acquire in-process lock first (fast path for same-process callers)
-        await self._lock.acquire()
+        if acquire_timeout > 0:
+            try:
+                await asyncio.wait_for(self._lock.acquire(), timeout=acquire_timeout)
+            except (TimeoutError, asyncio.TimeoutError):
+                self._emit_lock_timeout_finding(
+                    owner=owner,
+                    stage="in_process",
+                    timeout_s=acquire_timeout,
+                    holder=self._current_owner,
+                )
+                raise GpuLockTimeoutError(
+                    f"gpu.lock({owner!r}) timed out after {acquire_timeout}s "
+                    f"waiting for in-process holder "
+                    f"{self._current_owner!r} ({self._current_model!r})"
+                ) from None
+        else:
+            await self._lock.acquire()
 
         # Then acquire the cross-process pg advisory lock so a second
-        # container blocks here until we release.
-        await self._acquire_pg_advisory_lock()
+        # container blocks here until we release. Spend whatever remains of
+        # the acquire budget (floor 1s so a slow in-process wait can't turn
+        # the pg step into an instant failure).
+        pg_timeout: float | None = None
+        if acquire_timeout > 0:
+            pg_timeout = max(
+                acquire_timeout - (time.monotonic() - acquire_started), 1.0
+            )
+        try:
+            await self._acquire_pg_advisory_lock(timeout_s=pg_timeout)
+        except GpuLockTimeoutError:
+            # Never hold the in-process lock after a failed acquire — that
+            # would wedge every later caller in THIS process too.
+            self._lock.release()
+            self._emit_lock_timeout_finding(
+                owner=owner,
+                stage="pg_advisory",
+                timeout_s=acquire_timeout,
+                holder=None,
+            )
+            raise
 
         wait_msg = " (waited)" if waited else ""
         logger.info("GPU acquired%s", wait_msg, owner=owner, model=model)

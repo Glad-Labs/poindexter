@@ -250,6 +250,21 @@ DEFAULTS: dict[str, str] = {
     # exact GPU. Keep '' identical to the 0000_baseline.seeds.sql seed so the
     # overlay's "overwrite only the OSS default" match fires.
     'gpu_model': '',
+    # Bounded GPU-lock acquisition (poindexter#807). gpu.lock() used to wait
+    # FOREVER for the in-process asyncio.Lock + cross-process pg_advisory_lock;
+    # a wedged holder (zombie process from a force-crashed flow run) blocked a
+    # graph node indefinitely, the brain probe force-crashed the flow, and the
+    # stale sweep requeued the task into the same wall — an invisible
+    # crash→requeue loop. On timeout the caller gets GpuLockTimeoutError
+    # (fail-soft call sites skip; hard ones fail the node loudly) + a warn
+    # gpu_lock_timeout finding. 900s tolerates a legitimate long video render
+    # holding the lock; 0 restores the legacy unbounded wait. The release
+    # timeout bounds pg_advisory_unlock in the lock's finally block (a hung
+    # unlock used to make even stage-level timeouts hang); on timeout the
+    # dedicated connection is terminated, which releases session advisory
+    # locks server-side. Read via _cfg_int in services/gpu_scheduler.py.
+    'gpu_lock_acquire_timeout_seconds': '900',
+    'gpu_lock_release_timeout_seconds': '15',
     # GPU-serialize fix: hold gpu.lock("ollama") around every LOCAL LLM dispatch
     # (services/llm_providers/dispatcher.py::dispatch_complete) so scheduled
     # worker jobs (topic research, SEO, newsletter) can't load the ~19GB writer
@@ -1207,6 +1222,25 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.settings_zero_reader_keys.fallback': 'log_only',
     'findings.settings_zero_reader_keys.cooldown_minutes': '1440',
     'findings.settings_zero_reader_keys.min_severity': 'warn',
+    # Stale-sweep + GPU-lock visibility (poindexter#807). NOTE: kinds without
+    # a policy already route loud — findings_alert_router deliberately ignores
+    # findings.default.* ("a kind with NO policy => 'route'") — so these seeds
+    # are NOT needed for delivery. They exist to pin explicit COOLDOWNS:
+    # stale_task_reclaimed uses a short one so a task looping through repeated
+    # sweeps re-pings each cycle (the loop IS the signal); the other two are
+    # one-shot-per-task/owner events that shouldn't re-page for an hour/day.
+    'findings.stale_task_reclaimed.delivery': 'discord',
+    'findings.stale_task_reclaimed.fallback': 'log_only',
+    'findings.stale_task_reclaimed.cooldown_minutes': '60',
+    'findings.stale_task_reclaimed.min_severity': 'warn',
+    'findings.task_retries_exhausted.delivery': 'discord',
+    'findings.task_retries_exhausted.fallback': 'log_only',
+    'findings.task_retries_exhausted.cooldown_minutes': '1440',
+    'findings.task_retries_exhausted.min_severity': 'warn',
+    'findings.gpu_lock_timeout.delivery': 'discord',
+    'findings.gpu_lock_timeout.fallback': 'log_only',
+    'findings.gpu_lock_timeout.cooldown_minutes': '60',
+    'findings.gpu_lock_timeout.min_severity': 'warn',
 
     # ----- Settings read-telemetry + orphan probe (#756 items 2-3) -----
     # SiteConfig.get records read keys in-memory; FlushSettingsReadTelemetryJob
