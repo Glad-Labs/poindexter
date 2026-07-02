@@ -642,6 +642,38 @@ planning bullets — and landing at exactly 70, where the score-over-
 boolean parse (`approved = score >= 70 or approved`) discards the
 model's own `approved=false`.
 
+Writer-side self-heal for the same shape (2026-07-01 follow-up):
+`two_pass_writer._strip_planning_dump_preamble` gates on the validator's
+own `detect_planning_dump_preamble` — one detector, two consumers, so
+the strip fires exactly when the gate would reject and the two can never
+drift. Where the validator reject costs the whole run (the dump is only
+discovered at `qa.programmatic`, after images and every rail), the strip
+recovers the article at generation time for free: it removes the
+pre-heading opening through its **last bullet** only (a substantial
+intro paragraph between the last bullet and the first heading survives —
+a naive strip-to-first-heading would amputate it), splits an intro the
+writer FUSED onto the last bullet (`…crime novel).An **ellipsis**…`) at
+the glued sentence boundary, eats a short (<10-word) narration tail
+(`(Proceeding to generate based on these steps).`) while re-anchoring a
+glued heading, and keeps the original untouched whenever <50 words would
+survive. It runs on the graph draft AND on the expansion output _before_
+the keep-best word comparison — a dump-inflated expansion must not beat
+a clean original (the #2009 compounding, planning-dump flavour). Each
+strip emits a `writer_planning_dump_stripped` finding (warn → Discord)
+so the self-heal stays visible per `feedback_self_heal_not_suppress`.
+Replay over prod data at introduction time: fired on 5/300 recent
+`pipeline_versions` — every known dump incident, zero others — and
+0/302 published `posts` bodies. The same change added the
+`task-receipt` vocabulary family (bulleted `*   User wants…` /
+`*   I have several provided sources:` assignment narration) and
+widened `source-triage` to `irrelevant snippets/material`: the
+e46b449c REGENERATION (2026-07-01, hours after #2036 merged) switched
+to that dialect and matched only one family — detector silent, gate
+and strip both blind. Lesson recorded: gemma invents new planning
+dialects per incident, so expect this vocabulary table to grow; each
+family is bullet-anchored or phrase-anchored precisely so additions
+don't move the FP floor (re-run the posts replay when adding one).
+
 ## Layer 2 — Programmatic validator
 
 File: `src/cofounder_agent/modules/content/content_validator.py`

@@ -1117,6 +1117,186 @@ def _strip_echoed_preamble(
     return remainder, stripped
 
 
+# ---------------------------------------------------------------------------
+# Planning-dump strip (#2036 follow-up, 2026-07-01).
+#
+# The instruction/identity echo guard above cannot see a PURE planning dump:
+# task e46b449c opened with "*   Topic: Ellipses...", "*   Source Material
+# provided:" — outline bullets inventorying the prompt's inputs — with zero
+# instruction imperatives and only one identity-shaped line, so
+# _has_echo_signature stayed closed and the dump rode the draft all the way
+# to qa.programmatic, where the validator's planning_dump rule (#2036) now
+# hard-rejects it. That reject costs the whole run (draft, images, every QA
+# rail) even though the real article usually sits right under the dump,
+# fused onto the last bullet. This guard self-heals at the writer instead.
+#
+# Gate parity: the trigger IS the validator's detect_planning_dump_preamble
+# (>=6 bullets dominating >=60% of the pre-heading opening + >=2 planning-
+# vocabulary families, 0/301 false positives on the published-post audit) —
+# one detector, two consumers, so the strip fires exactly when the validator
+# would reject and the two can never drift apart. The strip itself removes
+# the opening only THROUGH ITS LAST BULLET line, which is what a naive
+# strip-to-first-heading gets wrong twice: an intro paragraph sitting
+# between the last bullet and the first heading survives, and an intro FUSED
+# onto the last bullet ("...crime novel).An **ellipsis**...") is split at
+# the glued sentence boundary and kept.
+
+# Mirrors of the validator's structural regexes (strip here, detect there —
+# the same duplication precedent as content_normalize_draft._FIRST_HEADING_RE
+# vs _FIRST_HEADING_RE_FOR_VALIDATOR).
+_PLANNING_BULLET_LINE_RE = re.compile(r"^[ \t]*(?:[*+\-]|\d+[.)])[ \t]+\S")
+_PLANNING_FIRST_HEADING_RE = re.compile(
+    r"(?:^|(?<=[^\n#]))(#{1,6}[ \t]+\S)", re.MULTILINE,
+)
+# Glued sentence boundary inside the last dump bullet: sentence-ending
+# punctuation immediately followed — no whitespace — by a capitalized (or
+# bold/quoted) article start. Ordinary prose always has a space there.
+_FUSED_ARTICLE_BOUNDARY_RE = re.compile(r"(?<=[.!?])(?=[A-Z\"“*])")
+# The fused tail must be a substantial sentence, not an acronym fragment
+# ("U.S.A. style" would otherwise split at every internal dot).
+_FUSED_TAIL_MIN_WORDS = 10
+# Never gut a draft: below this survivor size the original is kept and the
+# contamination stays a validator/finding problem (same floor as the echo
+# strip above).
+_PLANNING_STRIP_MIN_SURVIVING_WORDS = 50
+# Mirror of the detector's _PLANNING_DUMP_MAX_OPENING_LINES — bounds the
+# blast radius of a strip to the same window the detector reasons about.
+_PLANNING_STRIP_MAX_OPENING_LINES = 50
+
+
+def _strip_planning_dump_preamble(draft: str) -> tuple[str, int]:
+    """Strip an opening planning/outline bullet dump off the front of a draft.
+
+    Returns ``(clean_draft, non_blank_lines_stripped)`` — ``(draft, 0)``
+    whenever the validator's detector stays silent, when fewer than 50 words
+    would survive, or when the dump has no recoverable article under it.
+
+    Structural, unlike :func:`_strip_echoed_preamble`: no topic/angle/override
+    context is needed, because the signature is the bullet-dominated opening
+    itself. Code spans are masked before gating (offset-preserving, so slice
+    positions computed on the masked text apply to the raw draft) — a post
+    that QUOTES a planning dump in a fence is never touched.
+    """
+    if not draft or not draft.strip():
+        return draft, 0
+    from modules.content.content_validator import (
+        _strip_code_spans,
+        detect_planning_dump_preamble,
+    )
+    masked = _strip_code_spans(draft)
+    if not detect_planning_dump_preamble(masked):
+        return draft, 0
+
+    # Opening region, mirroring the detector: skip one leading heading line
+    # (the generated H1 title stays), then everything up to the first —
+    # possibly glued — heading is the opening.
+    opening_start = 0
+    lead_ws = len(masked) - len(masked.lstrip())
+    if masked[lead_ws:].startswith("#"):
+        first_line, sep, _ = masked[lead_ws:].partition("\n")
+        if re.match(r"#{1,6}[ \t]+\S", first_line):
+            opening_start = lead_ws + len(first_line) + len(sep)
+    heading = _PLANNING_FIRST_HEADING_RE.search(masked, opening_start)
+    opening_end = heading.start(1) if heading else len(masked)
+
+    # Find the LAST bullet line inside the opening (within the same
+    # non-blank-line window the detector counts).
+    last_bullet_span: tuple[int, int] | None = None
+    non_blank_seen = 0
+    pos = opening_start
+    while pos < opening_end:
+        nl = masked.find("\n", pos, opening_end)
+        line_end = nl if nl != -1 else opening_end
+        line = masked[pos:line_end]
+        if line.strip():
+            non_blank_seen += 1
+            if non_blank_seen > _PLANNING_STRIP_MAX_OPENING_LINES:
+                break
+            if _PLANNING_BULLET_LINE_RE.match(line):
+                last_bullet_span = (pos, line_end)
+        pos = line_end + 1 if nl != -1 else opening_end
+    if last_bullet_span is None:  # defensive — detector implies bullets exist
+        return draft, 0
+
+    lb_start, lb_end = last_bullet_span
+    strip_end = lb_end + 1 if draft[lb_end:lb_end + 1] == "\n" else lb_end
+    # Fused-article split: scan the masked line (so a boundary inside an
+    # inline code span can't match), slice the raw draft at the same offset.
+    for m in _FUSED_ARTICLE_BOUNDARY_RE.finditer(masked, lb_start, lb_end):
+        tail = draft[m.start():lb_end]
+        if len(tail.split()) >= _FUSED_TAIL_MIN_WORDS:
+            strip_end = m.start()
+            break
+
+    # Whatever sits between the strip point and the heading is either the
+    # article's intro (substantial — keep it) or leftover model narration
+    # ("(Proceeding to generate based on these steps).") glued ahead of the
+    # heading — junk. The same >= _FUSED_TAIL_MIN_WORDS floor discriminates;
+    # eating a junk tail also re-anchors a heading the writer glued mid-line
+    # (ba4d627a shape), same as content_normalize_draft's heading re-anchor.
+    if heading is not None and strip_end < opening_end:
+        if len(draft[strip_end:opening_end].split()) < _FUSED_TAIL_MIN_WORDS:
+            strip_end = opening_end
+
+    remainder = draft[strip_end:].lstrip("\n")
+    if len(remainder.split()) < _PLANNING_STRIP_MIN_SURVIVING_WORDS:
+        return draft, 0
+    stripped_lines = sum(
+        1 for ln in draft[opening_start:strip_end].splitlines() if ln.strip()
+    )
+    kept_prefix = draft[:opening_start]
+    if kept_prefix.strip():
+        return kept_prefix.rstrip("\n") + "\n\n" + remainder, stripped_lines
+    return remainder, stripped_lines
+
+
+def _emit_planning_dump_finding(*, stripped_lines: int, task_id: str | None) -> None:
+    """Loud-but-recovered canary: the writer opened the draft with a planning/
+    outline bullet dump and the structural guard stripped it. Self-heal is not
+    silent (feedback_self_heal_not_suppress) — the pipeline keeps the recovered
+    article while the model-quality signal stays visible on the Findings
+    dashboard, distinct from the instruction-echo kind so the two failure
+    flavours can be tracked separately. ``severity='warn'`` → Discord."""
+    logger.warning(
+        "[two_pass_writer] writer opened the draft with a planning/outline dump "
+        "(%d bullet/preamble line(s)); stripped it and kept the article. "
+        "Recurring dumps mean the writer model is emitting its plan instead of "
+        "executing it — the same shape the validator's planning_dump rule "
+        "(#2036) hard-rejects at qa.programmatic.",
+        stripped_lines,
+    )
+    try:
+        from utils.findings import emit_finding
+    except Exception:  # noqa: BLE001  # silent-ok: emit is best-effort; the WARNING log above already surfaced the dump
+        return
+    try:
+        emit_finding(
+            source="modules.content.atoms.two_pass_writer",
+            kind="writer_planning_dump_stripped",
+            title=(
+                f"Writer emitted a planning dump ({stripped_lines} line(s)) — "
+                f"stripped preamble"
+            ),
+            body=(
+                f"The two_pass writer opened the draft with {stripped_lines} "
+                f"line(s) of planning/outline bullets (topic/source inventory, "
+                f"section plans, notes-to-self) instead of the article. The "
+                f"structural guard — gated on the validator's "
+                f"detect_planning_dump_preamble (#2036) — stripped the dump and "
+                f"kept the article body, including an intro fused onto the last "
+                f"bullet. Without the strip this draft would hard-reject at "
+                f"qa.programmatic after the full pipeline run. If this recurs, "
+                f"the writer model (pipeline_writer_model) is dumping its plan "
+                f"on long prompts — consider a stronger writer."
+            ),
+            severity="warn",
+            dedup_key="writer_planning_dump_stripped",
+            extra={"stripped_lines": stripped_lines, "task_id": task_id},
+        )
+    except Exception:  # noqa: BLE001  # silent-ok: finding emission must never raise; the WARNING log above is the durable signal
+        pass
+
+
 def _emit_prompt_echo_finding(*, stripped_lines: int, task_id: str | None) -> None:
     """Loud-but-recovered canary: the writer regurgitated prompt scaffolding as
     article content and the guard stripped it. Self-heal is not silent
@@ -1184,6 +1364,7 @@ async def _maybe_expand_to_target(
         "words_before": words_before,
         "words_after": words_before,
         "echo_stripped": 0,
+        "planning_stripped": 0,
     }
     if not (draft or "").strip() or target_length <= 0:
         return draft, meta
@@ -1226,6 +1407,12 @@ async def _maybe_expand_to_target(
         writer_prompt_override=writer_prompt_override,
     )
     meta["echo_stripped"] = exp_echo
+    # Same compounding hazard, planning-dump flavour: an expansion that opens
+    # with an outline dump is "longer" only because of the dump, so it would
+    # win keep-best and bake a hard qa.programmatic reject (#2036) into the
+    # post. Strip structurally before the word-count comparison.
+    expanded, exp_planning = _strip_planning_dump_preamble(expanded)
+    meta["planning_stripped"] = exp_planning
     words_after = len(expanded.split())
     # Keep-best: only adopt the expansion when it genuinely lengthened the
     # draft. An empty / shorter response keeps the original (never zero/shrink).
@@ -1306,6 +1493,11 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
             final.get("draft") or "", topic=topic, angle=angle,
             writer_prompt_override=writer_prompt_override,
         )
+        # Planning-dump guard (#2036 follow-up): a pure outline dump carries
+        # zero instruction/identity lines, so the echo signature above stays
+        # closed on it — the structural gate (the validator's own detector)
+        # catches that shape and recovers the article fused under the dump.
+        base_draft, dump_pre = _strip_planning_dump_preamble(base_draft)
         # Keep-best expansion guard: local writers under-deliver on long
         # targets even when the draft prompt asks for ~N words. If the final
         # draft is under ``target_length * writer_min_length_ratio``, run ONE
@@ -1326,6 +1518,11 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
         echo_stripped = echo_pre + int(expand_meta.get("echo_stripped", 0))
         if echo_stripped:
             _emit_prompt_echo_finding(stripped_lines=echo_stripped, task_id=task_id)
+        planning_stripped = dump_pre + int(expand_meta.get("planning_stripped", 0))
+        if planning_stripped:
+            _emit_planning_dump_finding(
+                stripped_lines=planning_stripped, task_id=task_id,
+            )
         return {
             "draft": _scrub_private_repo_refs(draft_out),
             "snippets_used": final.get("snippets", []),
@@ -1335,6 +1532,11 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
             # Prompt-echo guard observability — how many scaffolding/preamble
             # lines the writer regurgitated and the guard stripped (0 = clean).
             "prompt_echo_stripped": echo_stripped,
+            # Planning-dump guard observability — bullet/preamble lines removed
+            # by the structural strip (0 = clean), counted separately from the
+            # instruction/identity echo so the two failure flavours stay
+            # distinguishable on the Findings dashboard.
+            "planning_dump_stripped": planning_stripped,
             # Length-enforcement observability — did the expansion pass fire,
             # and the word counts before/after. Surfaced so the caller stage
             # can record it (capability_outcomes / metrics).

@@ -1189,3 +1189,360 @@ def test_one_instruction_plus_topic_restatement_triggers():
     )
     assert n == 2
     assert clean.startswith("Quantization trades")
+
+
+# ---------------------------------------------------------------------------
+# Planning-dump strip — structural bullet-dump preamble (#2036 follow-up).
+#
+# A dump with ZERO instruction/identity lines (task e46b449c, 2026-07-01:
+# "*   Topic: Ellipses...", "*   Source Material provided:") slips past
+# _has_echo_signature entirely, reaches qa.programmatic, and dies on the
+# validator's planning_dump hard gate — a whole pipeline run (draft + images
+# + every QA rail) wasted when the real article sits right under the dump.
+# _strip_planning_dump_preamble self-heals at the writer instead: gated on
+# the validator's own detect_planning_dump_preamble (one source of truth —
+# the strip fires exactly when the validator would reject), it removes the
+# opening through the LAST bullet of the pre-heading opening, splits a fused
+# last bullet at the glued sentence boundary ("...crime novel).An
+# **ellipsis**..."), and keeps the original whenever <50 words would survive.
+# ---------------------------------------------------------------------------
+
+# Verbatim-trimmed dump bullets from task e46b449c (same incident content as
+# the validator fixture in test_content_validator.py). Ends mid-line: the
+# article's intro sentence is FUSED onto the last bullet with no whitespace.
+_E46_DUMP_BULLETS = """*   Topic: Ellipses and triple-dot punctuation marks.
+    *   Source Material provided:
+        *   Unicode categories ("Other Punctuation").
+        *   Wikipedia (Ellipsis).
+        *   Compart (Unicode characters).
+        *   Graphemica (Arabic triple dot).
+        *   (Irrelevant source: "Un doppio sospetto" book description).
+
+    *   Definition of an ellipsis.
+    *   Unicode characters associated with triple dots/ellipses.
+    *   Usage in writing (omissions, pauses, etc.).
+    *   Etymology and terminology.
+
+    *   Ensure inline links use `[Tool Name](url)`.
+    *   Attribute facts clearly (e.g., "According to...").
+    *   Discard irrelevant data (the crime novel)."""
+
+_E46_FUSED_INTRO = (
+    "An **ellipsis** (plural: ellipses) is a punctuation mark consisting of "
+    "three dots used primarily to indicate the omission of words, phrases, "
+    "or paragraphs from a quoted passage."
+)
+
+# Article continuation — extended past the incident trim so the surviving
+# body clears the 50-word survival floor (the real prod row carried a full
+# article; the validator fixture was trimmed for detection-only tests).
+_E46_ARTICLE_REST = (
+    "\n\n### Etymology and Terminology\n"
+    "The term originates from the Ancient Greek word *elleipsis*, which "
+    "literally means \"leave out.\" Writers reach for it when a quotation "
+    "needs trimming, when a sentence trails off deliberately, or when a "
+    "pause carries more weight than any word could. Unicode encodes the "
+    "horizontal ellipsis at U+2026, and typography guides still argue about "
+    "the spacing around it."
+)
+
+_E46_FUSED_DUMP = _E46_DUMP_BULLETS + _E46_FUSED_INTRO + _E46_ARTICLE_REST
+
+
+def test_strip_planning_dump_removes_bullets_keeps_fused_intro():
+    """The e46b449c incident shape: outline bullets, article intro fused onto
+    the last bullet, heading + body below. The dump goes; the fused intro
+    paragraph is split out of the last bullet and SURVIVES."""
+    clean, n = two_pass._strip_planning_dump_preamble(_E46_FUSED_DUMP)
+    assert clean.startswith("An **ellipsis**")
+    assert "*   Topic:" not in clean
+    assert "Source Material provided" not in clean
+    assert "Discard irrelevant data" not in clean
+    assert "### Etymology and Terminology" in clean
+    assert "Ancient Greek" in clean
+    assert n >= 10
+
+
+def test_strip_planning_dump_keeps_unfused_intro_between_bullets_and_heading():
+    """When the article's intro is its own paragraph between the last bullet
+    and the first heading, it survives — this is exactly the case a naive
+    strip-to-first-heading (the normalize-atom approach) would amputate."""
+    draft = (
+        _E46_DUMP_BULLETS + "\n\n" + _E46_FUSED_INTRO + _E46_ARTICLE_REST
+    )
+    clean, n = two_pass._strip_planning_dump_preamble(draft)
+    assert clean.startswith("An **ellipsis**")
+    assert "Discard irrelevant data" not in clean
+    assert "### Etymology and Terminology" in clean
+    assert n >= 10
+
+
+def test_strip_planning_dump_keeps_generated_h1_title():
+    """A dump sitting below the generated H1 title: the title is kept, the
+    dump under it goes (mirror of the detector's single-leading-heading skip)."""
+    draft = "# Decoding the Dots\n\n" + _E46_FUSED_DUMP
+    clean, n = two_pass._strip_planning_dump_preamble(draft)
+    assert clean.startswith("# Decoding the Dots")
+    assert "An **ellipsis**" in clean
+    assert "*   Topic:" not in clean
+    assert n >= 10
+
+
+def test_strip_planning_dump_ecaf_section_plan_outline():
+    """The ecaf0c01 shape: section-by-section plan labels + notes-to-self,
+    with the article opening on its own H1 right after the dump."""
+    draft = (
+        "*   *Introduction:* Define hallucination using Wikipedia/IBM.\n"
+        "    *   Connect to technical writing via the content problem.\n"
+        "    *   Establish the stakes: precision is non-negotiable.\n"
+        "*   *The Operational Bottleneck:* Discuss the current loop.\n"
+        "    *   I should provide specific before-and-after quote "
+        "examples to demonstrate the workflow.\n"
+        "*   *Conclusion:* Summarize the path to enterprise-readiness.\n"
+        "    *   Check word count (aiming for ~1057).\n"
+        "    *   Ensure all links are preserved.\n\n"
+        "# Addressing Hallucinations in Open-Source LLM Agents\n\n"
+        "An AI hallucination occurs when a large language model generates "
+        "fabricated information presented as fact. For technical writers "
+        "the stakes are concrete: a fabricated flag in a runbook or an "
+        "invented API parameter in a reference page erodes exactly the "
+        "trust the documentation exists to build, and the reader who "
+        "catches one invented detail stops believing the accurate ones "
+        "around it too.\n"
+    )
+    clean, n = two_pass._strip_planning_dump_preamble(draft)
+    assert clean.startswith("# Addressing Hallucinations")
+    assert "*Introduction:*" not in clean
+    assert "Check word count" not in clean
+    assert "fabricated information presented as fact" in clean
+    assert n >= 8
+
+
+def test_strip_planning_dump_task_receipt_dialect():
+    """The e46b449c REGENERATION (2026-07-01, post-#2036): gemma switched to a
+    task-receipt planning dialect ("User wants...", "I have several provided
+    sources", "irrelevant snippets") that left only one original vocabulary
+    family matched — detector silent, so validator AND strip both missed it.
+    With the task-receipt family + source-triage widening the strip heals it:
+    dump gone, fused intro kept, real section content intact."""
+    draft = (
+        '*   User wants a comprehensive explanation of an "ellipsis."\n'
+        "    *   I have several provided sources: Wikipedia (Ellipsis and "
+        "Full stop), GrammarBook.com, The Editor's Manual, and some "
+        "irrelevant snippets (about a crime novel, description logic, "
+        "Salton Sea, etc.).\n\n"
+        "    *   Definition: A punctuation mark consisting of three dots (...).\n"
+        '    *   Origin: Ancient Greek *élleipsis*, meaning "leave out" '
+        "[Ellipsis - Wikipedia](https://en.wikipedia.org/wiki/Ellipsis).\n"
+        "    *   Usage in Quotations: Used to omit words, phrases, lines, "
+        "or paragraphs from a quoted passage.\n"
+        "    *   Usage in Dialogue/Narrative: Indicates faltering speech, "
+        "a pause, or an incomplete thought.\n"
+        "    *   Formatting: May be separated by spaces (. . .) or not "
+        "(...), depending on the style guide (e.g., AP, Chicago).\n"
+        "    *   Distinction: Different from a full stop (period).\n\n"
+        "    *   Introduction (Definition and Origin).\n"
+        "    *   Primary Uses (Quotations vs. Dialogue/Narrative).\n"
+        "    *   Formatting Styles.\n"
+        "    *   Distinction from other marks.An **ellipsis** (plural: "
+        "**ellipses**) is a punctuation mark consisting of three dots (...). "
+        "The term originates from the Ancient Greek word *élleipsis*, which "
+        'literally means "leave out."\n\n'
+        "Depending on the context, an ellipsis serves different purposes:\n\n"
+        "### 1. Use in Quotations\n"
+        "In formal writing and quotations, an ellipsis is used to indicate "
+        "that words, phrases, lines, or entire paragraphs have been omitted "
+        "from the original text. This allows a writer to save space, remove "
+        "material that is less relevant, and get straight to the main idea "
+        "without distraction.\n"
+    )
+    clean, n = two_pass._strip_planning_dump_preamble(draft)
+    assert clean.startswith("An **ellipsis** (plural: **ellipses**)")
+    assert "User wants" not in clean
+    assert "provided sources" not in clean
+    assert "Depending on the context" in clean
+    assert "### 1. Use in Quotations" in clean
+    assert n >= 10
+
+
+def test_strip_planning_dump_eats_narration_tail_and_reanchors_glued_heading():
+    """ba4d627a residue (2026-06-29 audit): a SHORT model-narration line
+    between the last bullet and a heading the writer glued onto it is junk,
+    not an intro — it goes too, and the glued heading is re-anchored to line
+    start so it renders. A substantial (>=10 word) tail in the same position
+    is a real intro and survives (previous test)."""
+    draft = (
+        _E46_DUMP_BULLETS + "\n\n"
+        "(Proceeding to generate based on these steps).## Decoding the Dots\n\n"
+        "The three little dots at the end of a trailing thought carry more "
+        "typographic history than almost any other mark on the keyboard, and "
+        "they are abused in modern writing more than any other mark too. This "
+        "piece walks through where the ellipsis came from, what Unicode "
+        "actually encodes for it, and the small set of rules that keep it "
+        "meaningful instead of mumbling.\n"
+    )
+    clean, n = two_pass._strip_planning_dump_preamble(draft)
+    assert clean.startswith("## Decoding the Dots")
+    assert "Proceeding to generate" not in clean
+    assert "typographic history" in clean
+    assert n >= 10
+
+
+def test_strip_planning_dump_noop_on_clean_draft():
+    clean, n = two_pass._strip_planning_dump_preamble(_REAL_BODY)
+    assert n == 0
+    assert clean == _REAL_BODY
+
+
+def test_strip_planning_dump_noop_on_legit_opening_list():
+    """Structure without planning vocabulary — a legitimate opening list —
+    must not strip (mirrors the detector's vocabulary requirement)."""
+    draft = (
+        "*   Timeouts on cold model loads.\n"
+        "*   VRAM fragmentation after repeated swaps.\n"
+        "*   Silent fallbacks that mask misconfigured pins.\n"
+        "*   Retry storms when the queue backs up.\n"
+        "*   Checkpoint corruption on mid-run kills.\n"
+        "*   Disk pressure from orphaned model blobs.\n\n"
+        "## The common thread\n\n"
+        "Every one of these traces back to treating the GPU as free.\n"
+    )
+    clean, n = two_pass._strip_planning_dump_preamble(draft)
+    assert n == 0
+    assert clean == draft
+
+
+def test_strip_planning_dump_noop_when_dump_quoted_in_code_fence():
+    """An article that QUOTES a planning dump inside a fenced block (a post
+    about this very bug class) is legitimate — code spans are masked before
+    the gate, same as the validator call site."""
+    draft = (
+        "We caught our writer emitting its plan instead of the article. "
+        "The leaked scaffold looked like this:\n\n"
+        "```\n" + _E46_DUMP_BULLETS + "\n```\n\n"
+        "The fix was a structural detector on the opening bullet block, "
+        "wired into the programmatic validator as a hard gate.\n"
+    )
+    clean, n = two_pass._strip_planning_dump_preamble(draft)
+    assert n == 0
+    assert clean == draft
+
+
+def test_strip_planning_dump_never_guts_thin_article():
+    """Guardrail: when fewer than 50 words would survive the strip, the
+    original is kept — contamination becomes a QA/finding problem, never a
+    silent near-empty post."""
+    draft = _E46_DUMP_BULLETS + "\n\n### Heading\nEight words of article only, nothing more.\n"
+    clean, n = two_pass._strip_planning_dump_preamble(draft)
+    assert n == 0
+    assert clean == draft
+
+
+def test_strip_planning_dump_noop_on_pure_dump_without_article():
+    """An all-dump draft (no article underneath) is returned unchanged — the
+    strip never zeroes a draft; the validator rejects it downstream."""
+    clean, n = two_pass._strip_planning_dump_preamble(_E46_DUMP_BULLETS)
+    assert n == 0
+    assert clean == _E46_DUMP_BULLETS
+
+
+async def test_run_strips_planning_dump_from_final_draft(monkeypatch):
+    """End-to-end: a pure planning dump with ZERO instruction/identity echo
+    lines is cleaned in run()'s returned draft, counted separately from the
+    echo strip, and surfaced as its own finding kind."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                         site_config=None, **_kw):
+        return _E46_FUSED_DUMP
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    findings: list[dict] = []
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+
+    result = await two_pass.run(
+        topic="Ellipses and triple-dot punctuation marks",
+        angle="informative", niche_id="glad-labs",
+        pool=_fake_pool_with_no_snippets(), site_config=_fake_site_config(),
+    )
+    assert result["draft"].startswith("An **ellipsis**")
+    assert "*   Topic:" not in result["draft"]
+    assert result["planning_dump_stripped"] >= 10
+    # Accounted separately from the instruction/identity echo strip.
+    assert result["prompt_echo_stripped"] == 0
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "writer_planning_dump_stripped"
+    assert findings[0]["severity"] == "warn"
+
+
+async def test_run_clean_draft_fires_no_planning_dump_finding(monkeypatch):
+    """A clean draft reports planning_dump_stripped=0 and fires no finding."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                         site_config=None, **_kw):
+        return _REAL_BODY
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    findings: list[dict] = []
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+
+    result = await two_pass.run(
+        topic=_ECHO_TOPIC, angle=_ECHO_ANGLE, niche_id="glad-labs",
+        pool=_fake_pool_with_no_snippets(), site_config=_fake_site_config(),
+    )
+    assert result["draft"] == _REAL_BODY
+    assert result["planning_dump_stripped"] == 0
+    assert findings == []
+
+
+async def test_expansion_planning_dump_stripped_before_keep_best(monkeypatch):
+    """#2009 compounding, planning-dump flavour: an expansion that returns a
+    bullet dump + article is stripped BEFORE the keep-best word comparison,
+    so the adopted draft is the clean article — never dump-inflated text."""
+    original = "word " * 200  # below 0.7 * 2500 → expansion fires
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                         site_config=None, **_kw):
+        return original
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    # Expansion output: dump + article long enough that the CLEAN article
+    # (not the dump-inflated total) wins keep-best on its own merits.
+    long_article_tail = "\n\nSubstance sentence with real detail here. " * 60
+    async def fake_expand(prompt, **kwargs):
+        return _E46_FUSED_DUMP + long_article_tail
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+
+    findings: list[dict] = []
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+
+    result = await two_pass.run(
+        topic="Ellipses and triple-dot punctuation marks",
+        angle="informative", niche_id="glad-labs",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_short_draft_site_config(),
+        target_length=2500,
+    )
+    assert result["length_expanded"] is True
+    assert result["draft"].startswith("An **ellipsis**")
+    assert "*   Topic:" not in result["draft"]
+    assert result["planning_dump_stripped"] >= 10
+    assert any(f["kind"] == "writer_planning_dump_stripped" for f in findings)

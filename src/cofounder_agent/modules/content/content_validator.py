@@ -852,10 +852,23 @@ _PLANNING_DUMP_VOCAB: tuple[tuple[str, re.Pattern[str]], ...] = (
         r"|\blinks?\s+(?:are\s+)?preserved\b",
         re.IGNORECASE,
     )),
-    # Source-triage notes ("(Irrelevant source: ...)", "Discard irrelevant").
+    # Source-triage notes ("(Irrelevant source: ...)", "Discard irrelevant",
+    # "some irrelevant snippets" — the e46b449c regeneration's phrasing).
     ("source-triage", re.compile(
-        r"\bdiscard\s+irrelevant\b|\birrelevant\s+(?:source|data)\b",
+        r"\bdiscard\s+irrelevant\b"
+        r"|\birrelevant\s+(?:sources?|data|snippets?|material)\b",
         re.IGNORECASE,
+    )),
+    # Task-receipt narration — the model restating its assignment as bullets
+    # ("*   User wants a comprehensive explanation...", "*   I have several
+    # provided sources:"). Bullet-anchored: finished prose never opens a
+    # bullet this way, and the e46b449c regeneration (2026-07-01) used this
+    # dialect with none of the label/section vocabularies above.
+    ("task-receipt", re.compile(
+        r"^[ \t]*[*+\-][ \t]+\*{0,2}(?:(?:the\s+)?user\s+(?:wants|asked"
+        r"|is\s+asking)|i\s+have\s+(?:several\s+|multiple\s+)?"
+        r"(?:provided\s+)?sources?)\b",
+        re.IGNORECASE | re.MULTILINE,
     )),
 )
 

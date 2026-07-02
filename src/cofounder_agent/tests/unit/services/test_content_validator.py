@@ -2368,6 +2368,60 @@ class TestDetectPlanningDumpPreamble:
         content = "# Decoding the Dots\n\n" + _E46_PLANNING_DUMP
         assert detect_planning_dump_preamble(content)
 
+    def test_task_receipt_inventory_dump_detected(self):
+        # Verbatim-trimmed opening of the e46b449c REGENERATION (2026-07-01,
+        # post-#2036): gemma switched planning dialects — bulleted task-receipt
+        # narration ("User wants...", "I have several provided sources") and
+        # "irrelevant snippets" instead of "Topic:" labels — leaving only ONE
+        # of the original vocabulary families matched, so the rule stayed
+        # silent on a 13-bullet dump with the article fused onto the last
+        # bullet. The task-receipt family + the snippet/material widening of
+        # source-triage close that dialect.
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            '*   User wants a comprehensive explanation of an "ellipsis."\n'
+            "    *   I have several provided sources: Wikipedia (Ellipsis and "
+            "Full stop), GrammarBook.com, The Editor's Manual, and some "
+            "irrelevant snippets (about a crime novel, description logic, "
+            "Salton Sea, etc.).\n\n"
+            "    *   Definition: A punctuation mark consisting of three dots (...).\n"
+            '    *   Origin: Ancient Greek *élleipsis*, meaning "leave out" '
+            "[Ellipsis - Wikipedia](https://en.wikipedia.org/wiki/Ellipsis).\n"
+            "    *   Usage in Quotations: Used to omit words, phrases, lines, "
+            "or paragraphs from a quoted passage.\n"
+            "    *   Usage in Dialogue/Narrative: Indicates faltering speech, "
+            "a pause, or an incomplete thought.\n"
+            "    *   Formatting: May be separated by spaces (. . .) or not "
+            "(...), depending on the style guide (e.g., AP, Chicago).\n"
+            "    *   Distinction: Different from a full stop (period).\n\n"
+            "    *   Introduction (Definition and Origin).\n"
+            "    *   Primary Uses (Quotations vs. Dialogue/Narrative).\n"
+            "    *   Formatting Styles.\n"
+            "    *   Distinction from other marks.An **ellipsis** (plural: "
+            "**ellipses**) is a punctuation mark consisting of three dots "
+            "(...).\n\n"
+            "### 1. Use in Quotations\n"
+            "In formal writing, an ellipsis indicates omitted words.\n"
+        )
+        evidence = detect_planning_dump_preamble(content)
+        assert evidence, "task-receipt inventory dump must be detected"
+        assert sum(1 for e in evidence if e.startswith("vocab:")) >= 2
+
+    def test_prose_about_irrelevant_snippets_not_flagged(self):
+        # FP guard for the source-triage widening: an article ABOUT RAG can
+        # discuss irrelevant snippets in prose — vocabulary never fires
+        # without the bullet-dominated opening structure.
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            "Retrieval quality decides everything downstream. When the "
+            "retriever returns irrelevant snippets, the writer grounds its "
+            "draft in noise, and no amount of prompt engineering recovers "
+            "the post. The user wants an article, not a lottery.\n\n"
+            "## Filtering the corpus\n\n"
+            "Start with a source_table allowlist.\n"
+        )
+        assert detect_planning_dump_preamble(content) == []
+
     def test_clean_prose_intro_returns_empty(self):
         from modules.content.content_validator import detect_planning_dump_preamble
         content = (
