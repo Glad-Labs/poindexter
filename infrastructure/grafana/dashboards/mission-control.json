@@ -154,128 +154,57 @@
   ],
   "panels": [
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "description": "Worker FastAPI service responding to /metrics. If 0, the content pipeline is offline.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "orange",
-                  "text": "DOWN"
-                },
-                "1": {
-                  "color": "blue",
-                  "text": "UP"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "orange",
-                "value": null
-              },
-              {
-                "color": "blue",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "none"
-        }
-      },
+      "id": 90,
+      "type": "stat",
+      "title": "Core services up",
+      "description": "sum(up) across the six core scrape targets (worker, postgres-exporter, nvidia-smi, tempo, pyroscope, uptime-kuma). 6 = everything up. Replaces six individual UP tiles that duplicated System Health's service row — drill down there.",
       "gridPos": {
         "h": 4,
-        "w": 6,
+        "w": 8,
         "x": 0,
         "y": 0
       },
-      "id": 1,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
       },
-      "pluginVersion": "11.0.0",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
             "uid": "local-prometheus"
           },
-          "expr": "up{job=\"poindexter-worker\"}",
+          "expr": "sum(up{job=~\"poindexter-worker|postgres-exporter|nvidia-smi|tempo|pyroscope|uptime-kuma\"})",
+          "instant": true,
           "refId": "A"
         }
       ],
-      "title": "Worker",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Postgres reachable via the local-brain-db datasource. If 0 the dashboard itself would fail — this is a belt+suspenders sanity check.",
       "fieldConfig": {
         "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "orange",
-                  "text": "DOWN"
-                },
-                "1": {
-                  "color": "blue",
-                  "text": "UP"
-                }
-              },
-              "type": "value"
-            }
-          ],
+          "unit": "short",
+          "min": 0,
+          "max": 6,
           "thresholds": {
             "mode": "absolute",
             "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
               {
                 "color": "orange",
-                "value": null
+                "value": 5
               },
               {
-                "color": "blue",
-                "value": 1
+                "color": "green",
+                "value": 6
               }
             ]
-          }
-        }
+          },
+          "mappings": []
+        },
+        "overrides": []
       },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 0
-      },
-      "id": 2,
       "options": {
         "colorMode": "background",
         "graphMode": "none",
@@ -287,313 +216,7 @@
           "values": false
         },
         "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT 1 AS \"Postgres\";",
-          "refId": "A"
-        }
-      ],
-      "title": "Postgres",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "description": "nvidia-smi exporter. Missing = GPU not detected, degraded, or exporter down.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "orange",
-                  "text": "DOWN"
-                },
-                "1": {
-                  "color": "blue",
-                  "text": "UP"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "orange",
-                "value": null
-              },
-              {
-                "color": "blue",
-                "value": 1
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 0
-      },
-      "id": 3,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "up{job=\"nvidia-smi\"}",
-          "refId": "A"
-        }
-      ],
-      "title": "GPU",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "description": "Tempo traces backend.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "yellow",
-                  "text": "DOWN"
-                },
-                "1": {
-                  "color": "blue",
-                  "text": "UP"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "yellow",
-                "value": null
-              },
-              {
-                "color": "blue",
-                "value": 1
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 18,
-        "y": 0
-      },
-      "id": 4,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "up{job=\"tempo\"}",
-          "refId": "A"
-        }
-      ],
-      "title": "Tempo",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "description": "Pyroscope profiling server. Non-critical (profiling is best-effort).",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "yellow",
-                  "text": "DOWN"
-                },
-                "1": {
-                  "color": "blue",
-                  "text": "UP"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "yellow",
-                "value": null
-              },
-              {
-                "color": "blue",
-                "value": 1
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 4
-      },
-      "id": 5,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "up{job=\"pyroscope\"}",
-          "refId": "A"
-        }
-      ],
-      "title": "Pyroscope",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "description": "Uptime-kuma external health monitor.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [
-            {
-              "options": {
-                "0": {
-                  "color": "yellow",
-                  "text": "DOWN"
-                },
-                "1": {
-                  "color": "blue",
-                  "text": "UP"
-                }
-              },
-              "type": "value"
-            }
-          ],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "yellow",
-                "value": null
-              },
-              {
-                "color": "blue",
-                "value": 1
-              }
-            ]
-          }
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 4
-      },
-      "id": 6,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "local-prometheus"
-          },
-          "expr": "up{job=\"uptime-kuma\"}",
-          "refId": "A"
-        }
-      ],
-      "title": "Uptime",
-      "type": "stat"
+      }
     },
     {
       "datasource": {
@@ -726,134 +349,6 @@
         }
       ],
       "title": "Alerts fired (window)",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Count of is_secret=true app_settings rows that are stored as PLAINTEXT (not encrypted at rest). Should be 0 — any row with is_secret=true should be encrypted with pgcrypto via plugins/secrets. Non-zero means a secret is stored in the clear and should be re-encrypted.",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 0,
-        "y": 8
-      },
-      "id": 9,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Plaintext secrets\" FROM app_settings WHERE is_secret = true AND value != '' AND value NOT LIKE 'enc:v1:%';",
-          "refId": "A"
-        }
-      ],
-      "title": "Plain secrets",
-      "type": "stat"
-    },
-    {
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "description": "Tasks rejected in the last 24h by a hard veto (citation_verifier / programmatic_validator / topic_delivery). Thresholds are calibrated to the autonomous topic-discovery baseline — expect 5-20/day during normal operation. Red only if the number suggests a regression (a new false-positive class is in play).",
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 30
-              },
-              {
-                "color": "orange",
-                "value": 60
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 8
-      },
-      "id": 10,
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Hard rejects\" FROM content_tasks WHERE $__timeFilter(created_at) AND status = 'rejected' AND (error_message ILIKE '%veto: programmatic_validator%' OR error_message ILIKE '%veto: citation_verifier%' OR error_message ILIKE '%veto: topic_delivery%');",
-          "refId": "A"
-        }
-      ],
-      "title": "Hard rejects",
       "type": "stat"
     },
     {
@@ -1048,134 +543,6 @@
       ]
     },
     {
-      "id": 14,
-      "title": "Tasks approved-but-already-published (drift)",
-      "type": "stat",
-      "description": "Snapshot drift counter — pipeline_tasks rows whose linked post is published but whose own status hasn't been promoted to published. Should always be 0; nonzero means PR #653's lockstep sync regressed. Intentionally ignores the dashboard time picker.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 6,
-        "y": 12
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "orange",
-                "value": 1
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "none",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Drift\" FROM pipeline_tasks pt JOIN posts p ON p.metadata->>'pipeline_task_id' = pt.task_id::text WHERE p.status='published' AND pt.status != 'published';",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "id": 15,
-      "title": "Cloud fallback fires (window)",
-      "type": "stat",
-      "description": "PAID cloud inference calls in the window. Counts cost_logs rows where: (1) provider is not a known-local provider, AND (2) cost_usd > 0, AND (3) if provider=litellm, the model has a cloud-provider prefix (e.g. anthropic/..., openai/...) — bare names (gemma4:31b) and ollama/ prefix are local-Ollama estimates, not real cloud spend. LiteLLM assigns non-zero cost_usd to local models via its pricing table, so cost_usd>0 alone is insufficient; the model-prefix check is the real gate. Any nonzero count = real cloud spend to inspect.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "h": 4,
-        "w": 6,
-        "x": 12,
-        "y": 12
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "thresholds"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              },
-              {
-                "color": "yellow",
-                "value": 1
-              },
-              {
-                "color": "orange",
-                "value": 25
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "options": {
-        "colorMode": "background",
-        "graphMode": "area",
-        "justifyMode": "center",
-        "orientation": "auto",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": false
-        },
-        "textMode": "value_and_name"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"Cloud fires\" FROM cost_logs WHERE provider NOT IN ('ollama','local','system','electricity','compositor.ffmpeg_local') AND cost_usd > 0 AND NOT (provider = 'litellm' AND (model NOT LIKE '%/%' OR model LIKE 'ollama/%')) AND $__timeFilter(created_at);",
-          "refId": "A"
-        }
-      ]
-    },
-    {
       "id": 16,
       "title": "Spend vs daily limit",
       "type": "gauge",
@@ -1308,62 +675,6 @@
       ],
       "title": "Last pub (h)",
       "type": "bargauge"
-    },
-    {
-      "id": 18,
-      "title": "Image style mix (window)",
-      "type": "bargauge",
-      "description": "Featured image style mix grouped by audit_log details->>'style'. Emitted as event_type='image_style_picked' by services/stages/source_featured_image.py when a featured image is sourced.",
-      "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 8,
-        "x": 8,
-        "y": 16
-      },
-      "fieldConfig": {
-        "defaults": {
-          "color": {
-            "mode": "palette-classic"
-          },
-          "mappings": [],
-          "thresholds": {
-            "mode": "absolute",
-            "steps": [
-              {
-                "color": "blue",
-                "value": null
-              }
-            ]
-          },
-          "unit": "short"
-        }
-      },
-      "options": {
-        "displayMode": "gradient",
-        "orientation": "horizontal",
-        "reduceOptions": {
-          "calcs": ["lastNotNull"],
-          "fields": "",
-          "values": true
-        },
-        "showUnfilled": true
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "table",
-          "rawQuery": true,
-          "rawSql": "SELECT COALESCE(details->>'style', 'unknown') AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type='image_style_picked' AND $__timeFilter(timestamp) GROUP BY 1 ORDER BY value DESC;",
-          "refId": "A"
-        }
-      ]
     },
     {
       "datasource": {

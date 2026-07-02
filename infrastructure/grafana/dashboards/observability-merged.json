@@ -110,48 +110,6 @@
     },
     {
       "type": "stat",
-      "title": "Active services (last 1h)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 8,
-        "x": 8,
-        "y": 8
-      },
-      "id": 4,
-      "targets": [
-        {
-          "expr": "count(count by (service_name) (traces_spanmetrics_calls_total))",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "type": "stat",
-      "title": "Blocks flushed (1h)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 8,
-        "x": 16,
-        "y": 8
-      },
-      "id": 5,
-      "targets": [
-        {
-          "expr": "sum(increase(tempo_ingester_blocks_flushed_total[1h]))",
-          "refId": "A"
-        }
-      ]
-    },
-    {
-      "type": "stat",
       "title": "Profiles ingested / sec",
       "datasource": {
         "type": "prometheus",
@@ -465,33 +423,6 @@
               }
             ]
           }
-        },
-        "overrides": []
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Active series (metrics-generator)",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
-      },
-      "gridPos": {
-        "h": 5,
-        "w": 12,
-        "x": 12,
-        "y": 60
-      },
-      "id": 19,
-      "targets": [
-        {
-          "expr": "sum(tempo_metrics_generator_registry_active_series)",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
         },
         "overrides": []
       }
