@@ -35,8 +35,16 @@ foreach ($key in $userEnv.Keys) {
 }
 
 # Pin vars come AFTER the import so they always win.
+# A bare numeric CUDA_VISIBLE_DEVICES index is unreliable on recent Ollama
+# builds - observed loading onto GPU 0 despite =1 (Ollama 0.31.1). The GPU
+# UUID form confines correctly (and is what the Ollama FAQ recommends), so
+# resolve the UUID of nvidia-smi index 1 (the RTX 3090) at launch.
+$gpuUuid = (& nvidia-smi --query-gpu=uuid --format=csv,noheader -i 1).Trim()
+if (-not $gpuUuid -or $gpuUuid -notlike 'GPU-*') {
+    throw "ollama-vision-gpu1: could not resolve UUID for GPU index 1 (got '$gpuUuid') - refusing to start unpinned"
+}
 $env:CUDA_DEVICE_ORDER = "PCI_BUS_ID"    # deterministic index mapping across driver updates
-$env:CUDA_VISIBLE_DEVICES = "1"          # RTX 3090 only
+$env:CUDA_VISIBLE_DEVICES = $gpuUuid     # RTX 3090 only
 $env:OLLAMA_HOST = "127.0.0.1:11435"
 $env:OLLAMA_KEEP_ALIVE = "-1"            # never unload - the whole point of this instance
 $env:OLLAMA_MAX_LOADED_MODELS = "1"
