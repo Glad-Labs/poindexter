@@ -262,6 +262,21 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_AUTO_EMBED_WATCH = False
 
 try:
+    # Postiz queue-wedge watch. Queries the Postiz API for posts stuck in
+    # QUEUE/ERROR past their publishDate (the Temporal-restart wedge — DB
+    # rows read 'posted' so only Postiz can see it) and `docker restart`s
+    # poindexter-postiz before paging; emits postiz_queue_wedged on escalate.
+    # No-ops when postiz_api_key is unset (the stack is opt-in).
+    from postiz_queue_watch import run_postiz_queue_watch_probe
+    _HAS_POSTIZ_QUEUE_WATCH = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.postiz_queue_watch import run_postiz_queue_watch_probe
+        _HAS_POSTIZ_QUEUE_WATCH = True
+    except ImportError:
+        _HAS_POSTIZ_QUEUE_WATCH = False
+
+try:
     # GH#222 — Docker port-forward stuck-state probe. Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting
     # stuck (TCP up, HTTP empty-reply via host.docker.internal, fine
@@ -415,6 +430,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Off-machine backup auto-retry offline — a wedged offsite runner pages late, no self-heal (#386)"),
     ("_HAS_AUTO_EMBED_WATCH", "brain/auto_embed_watch.py",
      "Auto-embed liveness offline — a wedged/dead embedder stops embedding silently, RAG + memory go stale"),
+    ("_HAS_POSTIZ_QUEUE_WATCH", "brain/postiz_queue_watch.py",
+     "Postiz queue-wedge detection offline — Temporal wedge leaves 'posted' drafts unpublished silently"),
     ("_HAS_DOCKER_PORT_FORWARD_PROBE", "brain/docker_port_forward_probe.py",
      "Windows wslrelay stuck-state auto-recovery offline (#222)"),
     ("_HAS_DATA_FRESHNESS_PROBE", "brain/data_freshness_probe.py",
@@ -2814,6 +2831,21 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] auto_embed_watch probe failed: %s", e)
+
+    # Postiz queue-wedge watch. Queries the Postiz API for posts stuck in
+    # QUEUE/ERROR past publishDate (the Temporal-restart wedge) and `docker
+    # restart`s poindexter-postiz before paging. No-ops when postiz_api_key
+    # is unset. Disabled via app_settings.postiz_queue_watch_enabled=false.
+    if _HAS_POSTIZ_QUEUE_WATCH:
+        try:
+            pz_summary = await run_postiz_queue_watch_probe(pool)
+            probe_results["postiz_queue_watch"] = {
+                "ok": bool(pz_summary.get("ok", False)),
+                "detail": pz_summary.get("detail", ""),
+                "summary": pz_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] postiz_queue_watch probe failed: %s", e)
 
     # Docker port-forward stuck-state probe (#222). Detects the
     # Windows wslrelay → com.docker.backend forwarding chain getting

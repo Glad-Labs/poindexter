@@ -117,6 +117,18 @@ DEFAULTS: dict[str, str] = {
     'auto_embed_watch_max_retries': '2',
     'auto_embed_watch_retry_delay_seconds': '120',
 
+    # Postiz queue-wedge watch (brain/postiz_queue_watch.py) — detects posts
+    # stuck in QUEUE/ERROR past their publishDate via the Postiz API (the
+    # Temporal-restart wedge: our social_post_drafts rows read 'posted' but
+    # nothing publishes) and `docker restart`s poindexter-postiz before
+    # paging. No-ops entirely while postiz_api_key is unset, so these are
+    # inert on installs without the opt-in Postiz stack. Retry delay is
+    # generous because Postiz + its Temporal worker boot slowly.
+    'postiz_queue_watch_enabled': 'true',
+    'postiz_queue_overdue_minutes': '30',
+    'postiz_queue_watch_max_retries': '2',
+    'postiz_queue_watch_retry_delay_seconds': '180',
+
     # ----- Cost / billing -----
     'daily_spend_limit_usd': '2.0',
     'monthly_spend_limit_usd': '100.0',
