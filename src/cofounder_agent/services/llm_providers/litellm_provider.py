@@ -27,6 +27,12 @@ Config (``plugin.llm_provider.litellm`` in app_settings):
   overrides via the ``timeout_s`` kwarg still win.
 - ``drop_params`` (default true) — strip params the target backend
   doesn't recognize so a single call signature works across backends.
+- ``model_api_base_overrides`` (default empty) — JSON object mapping a
+  RESOLVED model name to an api_base, e.g.
+  ``{"ollama/qwen3-vl:30b": "http://host.docker.internal:11435"}``.
+  Routes specific models to a different endpoint (glad-labs-stack#2051:
+  a GPU-pinned second Ollama instance so vision QA never gets evicted
+  by the writer). Overrides still pass the paid-endpoint policy.
 
 Observability — Langfuse tracing (poindexter#373):
 
@@ -100,6 +106,41 @@ def _coerce_bool(value: Any) -> bool:
     if value is None:
         return False
     return str(value).strip().lower() in ("true", "1", "yes", "on")
+
+
+def _coerce_override_map(value: Any) -> dict[str, str]:
+    """Normalize ``model_api_base_overrides`` config into a str→str dict.
+
+    PluginConfig JSONB hands a dict through; a raw app_settings TEXT row
+    arrives as a JSON string. Anything unparseable is logged + ignored —
+    a typo in an override row must degrade to "no override" (the default
+    ``api_base`` keeps serving every model), never break dispatch.
+    """
+    if not value:
+        return {}
+    if isinstance(value, str):
+        import json
+
+        try:
+            value = json.loads(value)
+        except json.JSONDecodeError as exc:
+            logger.warning(
+                "[litellm_provider] model_api_base_overrides is not valid "
+                "JSON (%s) — ignoring the override map", exc,
+            )
+            return {}
+    if not isinstance(value, dict):
+        logger.warning(
+            "[litellm_provider] model_api_base_overrides must be a JSON "
+            "object of model→api_base, got %s — ignoring",
+            type(value).__name__,
+        )
+        return {}
+    return {
+        str(k): str(v).strip()
+        for k, v in value.items()
+        if str(v or "").strip()
+    }
 
 
 class LangfuseConfigError(RuntimeError):
@@ -359,6 +400,11 @@ class LiteLLMProvider:
         # DB-configurable via
         # ``plugin.llm_provider.litellm.config.reasoning_content_fallback``.
         self._reasoning_content_fallback = True
+        # Per-model api_base overrides (glad-labs-stack#2051) — resolved
+        # model name → endpoint, so eviction-prone models (qwen3-vl) can
+        # be served by a GPU-pinned second Ollama instance. Empty = every
+        # model uses ``self._api_base`` (the OSS default path).
+        self._model_api_base_overrides: dict[str, str] = {}
 
     def _configure_from(self, provider_config: dict[str, Any]) -> None:
         """Apply per-call provider config from PluginConfig (dispatcher
@@ -405,6 +451,9 @@ class LiteLLMProvider:
         self._allow_paid_base_url = _coerce_bool(
             provider_config.get("allow_paid_base_url"),
         )
+        self._model_api_base_overrides = _coerce_override_map(
+            provider_config.get("model_api_base_overrides"),
+        )
         if not self._configured:
             self._apply_global_litellm_config()
             self._configured = True
@@ -438,6 +487,20 @@ class LiteLLMProvider:
         if model.startswith("http"):
             return model
         return f"{self._default_prefix.rstrip('/')}/{model}"
+
+    def _api_base_for(self, resolved_model: str) -> str | None:
+        """Effective api_base for one call — per-model override wins.
+
+        Keyed on the RESOLVED model name (``ollama/qwen3-vl:30b``), the
+        same string operators put in ``qa_vision_model`` etc., so the
+        override map reads naturally next to the per-step model pins.
+        glad-labs-stack#2051: routes eviction-prone models to a
+        GPU-pinned second Ollama instance.
+        """
+        return (
+            self._model_api_base_overrides.get(resolved_model)
+            or self._api_base
+        )
 
     def _enforce_paid_endpoint_policy(self, resolved_model: str) -> None:
         """Refuse paid LiteLLM targets unless the operator opted in.
@@ -475,12 +538,14 @@ class LiteLLMProvider:
 
         # Axis 1 — explicit api_base. ``resolved_model`` starting with
         # http:// also flows through this branch since LiteLLM treats
-        # that as an inline base URL.
+        # that as an inline base URL. The EFFECTIVE base is checked, so a
+        # per-model override can't smuggle a cloud URL past the gate.
         candidate_url: str | None = None
+        effective_base = self._api_base_for(resolved_model)
         if resolved_model.startswith("http"):
             candidate_url = resolved_model
-        elif self._api_base:
-            candidate_url = self._api_base
+        elif effective_base:
+            candidate_url = effective_base
         if candidate_url and not is_local_base_url(candidate_url):
             raise RuntimeError(
                 f"LiteLLMProvider refuses non-local api_base "
@@ -533,8 +598,9 @@ class LiteLLMProvider:
             "timeout": timeout,
             "stream": False,
         }
-        if self._api_base and not resolved_model.startswith("http"):
-            completion_kwargs["api_base"] = self._api_base
+        effective_base = self._api_base_for(resolved_model)
+        if effective_base and not resolved_model.startswith("http"):
+            completion_kwargs["api_base"] = effective_base
         # ``response_format`` forwarding (2026-05-28): the topic_ranking +
         # writer-RAG JSON callers need to force structured-JSON output. The
         # OpenAI convention is ``response_format={"type": "json_object"}``;
@@ -659,8 +725,9 @@ class LiteLLMProvider:
             "timeout": timeout,
             "stream": True,
         }
-        if self._api_base and not resolved_model.startswith("http"):
-            completion_kwargs["api_base"] = self._api_base
+        effective_base = self._api_base_for(resolved_model)
+        if effective_base and not resolved_model.startswith("http"):
+            completion_kwargs["api_base"] = effective_base
         for key in ("temperature", "max_tokens", "top_p"):
             if key in kwargs:
                 completion_kwargs[key] = kwargs[key]
