@@ -38,6 +38,9 @@ from pydantic import BaseModel, Field
 
 OUTPUT_DIR = Path(os.path.expanduser("~")) / ".poindexter" / "generated-audio"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+# Output formats soundfile can write here; also guards the request-supplied
+# format from reaching the filesystem as anything but a known extension.
+_ALLOWED_FORMATS = frozenset({"wav", "flac", "ogg", "mp3"})
 
 def _resolve_db_url() -> str:
     """Resolve the brain DSN and force IPv4 (mirrors scripts/gpu-scraper.py, #1796).
@@ -286,6 +289,13 @@ async def generate(req: GenerateRequest):
     prompt = req.prompt.strip()
     duration_s = min(req.duration_s, MAX_DURATION_S)
     fmt = req.format.lower().lstrip(".")
+    # fmt is request-controlled and becomes a filename suffix — allowlist it
+    # so it can't smuggle path separators (CodeQL py/path-injection).
+    if fmt not in _ALLOWED_FORMATS:
+        raise HTTPException(
+            status_code=400,
+            detail=f"format must be one of {sorted(_ALLOWED_FORMATS)}",
+        )
 
     suffix = f".{fmt}"
     with tempfile.NamedTemporaryFile(

@@ -29,7 +29,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any
 
 import asyncpg
 import torch
@@ -113,7 +113,7 @@ class ModelConfig:
     notes: str = ""
 
 
-REGISTRY: Dict[str, ModelConfig] = {
+REGISTRY: dict[str, ModelConfig] = {
     "sdxl_lightning": ModelConfig(
         friendly_name="sdxl_lightning",
         display_name="Stable Diffusion XL Lightning (4-step LoRA)",
@@ -522,13 +522,15 @@ async def generate(req: GenerateRequest):
         pipe = ensure_pipeline_loaded()
     except Exception as e:
         state.mark_degraded(f"pipeline load failed: {e}")
-        raise HTTPException(status_code=503, detail=str(e))
+        raise HTTPException(status_code=503, detail=str(e)) from e
 
     config = state.config
-    steps = req.steps if req.steps is not None else config.default_steps
-    guidance_scale = (
+    # Explicit numeric coercion: these are request-controlled and get logged,
+    # so pin them to int/float before any log line (CodeQL py/log-injection).
+    steps = int(req.steps if req.steps is not None else config.default_steps)
+    guidance_scale = float(
         req.guidance_scale if req.guidance_scale is not None
-        else config.default_guidance_scale
+        else config.default_guidance_scale,
     )
 
     # Distilled models REQUIRE the model-recommended values. Clamp aggressively
@@ -562,12 +564,14 @@ async def generate(req: GenerateRequest):
 
     logger.info(
         "Generating: %s... (%dx%d, %d steps, cfg=%.1f, model=%s)",
-        req.prompt[:60], req.width, req.height, steps, guidance_scale,
+        # Scrub newlines so a request prompt can't forge extra log lines.
+        req.prompt[:60].replace("\r", " ").replace("\n", " "),
+        int(req.width), int(req.height), steps, guidance_scale,
         config.friendly_name,
     )
     start = time.time()
     try:
-        gen_kwargs: Dict[str, Any] = dict(
+        gen_kwargs: dict[str, Any] = dict(
             prompt=req.prompt,
             width=req.width,
             height=req.height,
@@ -581,12 +585,12 @@ async def generate(req: GenerateRequest):
             gen_kwargs["negative_prompt"] = req.negative_prompt
         result = pipe(**gen_kwargs)
         result.images[0].save(str(output_path))
-    except torch.cuda.OutOfMemoryError:
+    except torch.cuda.OutOfMemoryError as e:
         torch.cuda.empty_cache()
-        raise HTTPException(status_code=503, detail="GPU OOM")
+        raise HTTPException(status_code=503, detail="GPU OOM") from e
     except Exception as e:
         logger.error("Generation failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
     elapsed_ms = int((time.time() - start) * 1000)
     logger.info("Generated: %s (%d ms)", filename, elapsed_ms)
@@ -615,8 +619,10 @@ async def unload():
 
 @app.get("/images/{filename}")
 async def get_image(filename: str):
-    path = OUTPUT_DIR / filename
-    if not path.exists():
+    # filename is request-controlled: resolve it and require the result to
+    # stay inside OUTPUT_DIR so `../` can't walk out of the images dir.
+    path = (OUTPUT_DIR / filename).resolve()
+    if not path.is_relative_to(OUTPUT_DIR.resolve()) or not path.is_file():
         raise HTTPException(status_code=404)
     return FileResponse(str(path), media_type="image/png")
 

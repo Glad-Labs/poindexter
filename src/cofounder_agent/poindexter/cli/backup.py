@@ -185,7 +185,9 @@ def _derive_s3_region(endpoint: str) -> str:
     Anything else (MinIO, etc.)                       → ``us-east-1``
     """
     host = _strip_scheme(endpoint).lower()
-    if host.endswith("r2.cloudflarestorage.com"):
+    # Dot-anchored suffix check — a bare endswith("r2.cloudflarestorage.com")
+    # would also match unrelated hosts like "evilr2.cloudflarestorage.com".
+    if host == "r2.cloudflarestorage.com" or host.endswith(".r2.cloudflarestorage.com"):
         return "auto"
     parts = host.split(".")
     if len(parts) >= 3 and parts[0] == "s3" and parts[1] != "amazonaws":

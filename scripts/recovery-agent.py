@@ -275,6 +275,11 @@ def _compose_reapply() -> tuple[bool, str]:
     return True, f"compose reapply dispatched via {Path(start_stack).name}"
 
 
+def _scrub(value: object) -> str:
+    """Newline-scrub request-derived values before logging (log injection)."""
+    return str(value).replace("\r", " ").replace("\n", " ")
+
+
 def dispatch_recovery(
     service: str,
     *,
@@ -300,7 +305,10 @@ def dispatch_recovery(
     else:  # registry typo — fail loud, don't silently 200
         return 400, {"ok": False, "error": f"unknown action kind: {kind!r}"}
 
-    logger.info("Recovery %s service=%r → %s", "ok" if ok else "FAILED", service, detail)
+    logger.info(
+        "Recovery %s service=%r → %s",
+        "ok" if ok else "FAILED", _scrub(service), _scrub(detail),
+    )
     return (200 if ok else 500), {"ok": ok, "service": service, "detail": detail}
 
 
@@ -388,7 +396,10 @@ def query_task_statuses(
         return 200, {"ok": True, "tasks": []}
     ok, result = status_fn(task_names)
     if not ok:
-        logger.warning("Task-status query FAILED for %r → %s", task_names, result)
+        logger.warning(
+            "Task-status query FAILED for %r → %s",
+            _scrub(task_names), _scrub(result),
+        )
         return 500, {"ok": False, "error": result}
     return 200, {"ok": True, "tasks": result}
 

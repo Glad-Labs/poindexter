@@ -201,3 +201,40 @@ class TestDoesNotRaise:
             title="t", detail="d", source="s", severity="critical",
         )
         assert "failed" in result["alerts_log"]
+
+
+class TestCredentialRedaction:
+    """Credential-shaped substrings in detail never leave the notifier."""
+
+    def test_database_url_password_masked(self, isolated_notifier, capsys):
+        operator_notifier.notify_operator(
+            title="cannot start",
+            detail="Tried postgresql://poindexter:hunter2@localhost:5432/db and failed",
+            source="unit",
+            severity="error",
+        )
+        err = capsys.readouterr().err
+        assert "hunter2" not in err
+        assert "postgresql://poindexter:***@localhost:5432/db" in err
+
+    def test_key_value_secret_masked(self, isolated_notifier, capsys):
+        operator_notifier.notify_operator(
+            title="config problem",
+            detail="api_key=sk-live-abc123 rejected; also password: swordfish",
+            source="unit",
+            severity="error",
+        )
+        err = capsys.readouterr().err
+        assert "sk-live-abc123" not in err
+        assert "swordfish" not in err
+
+    def test_plain_prose_untouched(self, isolated_notifier, capsys):
+        detail = "Run `poindexter setup` to create bootstrap.toml interactively."
+        operator_notifier.notify_operator(
+            title="plain", detail=detail, source="unit", severity="info",
+        )
+        assert detail in capsys.readouterr().err
+
+    def test_redact_helper_handles_url_without_password(self):
+        text = "see https://example.com/docs for the fix"
+        assert operator_notifier._redact_credentials(text) == text

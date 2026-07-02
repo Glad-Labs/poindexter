@@ -137,7 +137,10 @@ export default {
     // Forward the raw envelope to GlitchTip's ingest endpoint over the Funnel.
     // The envelope carries its own DSN key, so GlitchTip authenticates it; the
     // relay only chooses the destination project from the (allowlisted) id.
-    const base = env.GLITCHTIP_INGEST_ORIGIN.replace(/\/+$/, '');
+    // Trim trailing slashes without a regex — an unanchored `/\/+$/` scan is
+    // polynomial on slash-heavy strings (CodeQL js/polynomial-redos).
+    let base = env.GLITCHTIP_INGEST_ORIGIN;
+    while (base.endsWith('/')) base = base.slice(0, -1);
     const upstream = `${base}/api/${parts.projectId}/envelope/`;
     try {
       const resp = await fetch(upstream, {

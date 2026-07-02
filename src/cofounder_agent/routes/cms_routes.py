@@ -31,12 +31,16 @@ async def serve_generated_image(filename: str):
 
     from fastapi.responses import FileResponse
 
-    # Sanitize filename to prevent directory traversal
+    # Sanitize filename to prevent directory traversal: basename strips
+    # separators, and the realpath containment check catches what basename
+    # can't (e.g. a bare ".." or symlink tricks).
     safe_name = os.path.basename(filename)
-    image_dir = os.path.join(os.path.expanduser("~"), "Downloads", "glad-labs-generated-images")
-    path = os.path.join(image_dir, safe_name)
+    image_dir = os.path.realpath(
+        os.path.join(os.path.expanduser("~"), "Downloads", "glad-labs-generated-images"),
+    )
+    path = os.path.realpath(os.path.join(image_dir, safe_name))
 
-    if not os.path.isfile(path):
+    if os.path.commonpath([path, image_dir]) != image_dir or not os.path.isfile(path):
         raise HTTPException(status_code=404, detail="Image not found")
     return FileResponse(path, media_type="image/png")
 

@@ -36,6 +36,7 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -61,12 +62,36 @@ def _severity_emoji(severity: _Severity) -> str:
     }.get(severity, "•")
 
 
+# Credential shapes that must never reach a log line or chat channel, even
+# when a caller pastes them into ``detail`` (e.g. a database URL in a
+# cannot-start alert). Applied to every outbound message by _fmt_message.
+_REDACT_PATTERNS = (
+    # URL userinfo password: scheme://user:PASSWORD@host
+    (re.compile(r"(\b[a-zA-Z][a-zA-Z0-9+.-]*://[^/@:\s]+:)[^@\s]+(?=@)"), r"\1***"),
+    # key=value / key: value where the key looks secret-bearing
+    (
+        re.compile(
+            r"(?i)\b((?:api[_-]?key|token|secret|password|passwd|pwd)"
+            r"[a-z0-9_-]*)\s*([=:])\s*\S+",
+        ),
+        r"\1\2***",
+    ),
+)
+
+
+def _redact_credentials(text: str) -> str:
+    """Mask password/token-shaped substrings before the text leaves us."""
+    for pattern, replacement in _REDACT_PATTERNS:
+        text = pattern.sub(replacement, text)
+    return text
+
+
 def _fmt_message(title: str, detail: str, source: str, severity: _Severity) -> str:
-    return (
+    return _redact_credentials(
         f"{_severity_emoji(severity)} {title}\n"
         f"Source: {source}\n"
         f"Severity: {severity}\n"
-        f"{detail}"
+        f"{detail}",
     )
 
 
@@ -189,13 +214,15 @@ def notify_operator(
     sys.stderr.write(f"\n{text}\n\n")
     sys.stderr.flush()
 
-    # logger too — lands in whatever log aggregator is wired up
+    # logger too — lands in whatever log aggregator is wired up. Log the
+    # redacted text (not raw title/detail) so credential-shaped substrings
+    # a caller pasted into detail never reach the aggregator either.
     {
         "info": logger.info,
         "warning": logger.warning,
         "error": logger.error,
         "critical": logger.critical,
-    }.get(severity, logger.error)("[operator_notifier] %s: %s", title, detail)
+    }.get(severity, logger.error)("[operator_notifier] %s", text)
 
     # Best-effort external channels.
     #

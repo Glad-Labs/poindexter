@@ -93,6 +93,39 @@ def test_build_argv_passes_list_extra_args(cfg):
     assert argv[-2:] == ["--allowedTools", "Read"]
 
 
+def test_build_argv_rejects_disallowed_extra_arg_flag(cfg):
+    with pytest.raises(ValueError, match="extra_args flag"):
+        vbh._build_argv(
+            {"session_id": _UUID, "extra_args": ["--dangerously-skip-permissions"]},
+        )
+
+
+def test_build_argv_rejects_flag_shaped_extra_arg_value(cfg):
+    with pytest.raises(ValueError, match="extra_args value"):
+        vbh._build_argv(
+            {"session_id": _UUID, "extra_args": ["--model", "--mcp-config"]},
+        )
+
+
+def test_build_argv_rejects_extra_arg_flag_missing_value(cfg):
+    with pytest.raises(ValueError, match="missing its value"):
+        vbh._build_argv({"session_id": _UUID, "extra_args": ["--allowedTools"]})
+
+
+def test_build_argv_accepts_equals_spelling_extra_arg(cfg):
+    argv = vbh._build_argv(
+        {"session_id": _UUID, "first_turn": True, "extra_args": ["--max-turns=5"]},
+    )
+    assert argv[-1] == "--max-turns=5"
+
+
+def test_build_argv_rejects_disallowed_equals_spelling_flag(cfg):
+    with pytest.raises(ValueError, match="extra_args flag"):
+        vbh._build_argv(
+            {"session_id": _UUID, "extra_args": ["--mcp-config=/tmp/evil.json"]},
+        )
+
+
 def test_run_turn_requires_text(cfg):
     with pytest.raises(ValueError, match="text"):
         vbh._run_turn({"session_id": _UUID, "first_turn": True})

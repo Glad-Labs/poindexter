@@ -18,7 +18,9 @@ returns.
 * **No shell.** ``subprocess`` is invoked with a list argv (``shell=False``);
   the user's prompt text is fed on **stdin**, never the command line.
 * **Validated args.** ``session_id`` must be a UUID; ``permission_mode`` is
-  all-listed; ``extra_args`` is accepted only as a list of strings.
+  all-listed; ``extra_args`` flags are allow-listed (``_EXTRA_ARG_FLAGS``) so
+  the network peer cannot smuggle e.g. ``--dangerously-skip-permissions`` or
+  ``--mcp-config`` onto the host argv, and flag values must be plain tokens.
 * The port is host-local + docker-network only (not forwarded externally);
   the real entry surface is the LiveKit room, which is Tailscale-gated.
 
@@ -84,6 +86,49 @@ _UUID_RE = re.compile(
     r"^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
     r"[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
 )
+# extra_args defense-in-depth: the container only relays operator-configured
+# flags (CLAUDE_BOT_EXTRA_ARGS), but this daemon must not trust the network
+# peer to be that container. Allow only flags a voice bridge has a reason to
+# pass; everything else (--dangerously-skip-permissions, --mcp-config,
+# --settings, ...) is rejected before it can reach the host argv.
+_EXTRA_ARG_FLAGS = frozenset(
+    {
+        "--allowedTools",
+        "--disallowedTools",
+        "--add-dir",
+        "--model",
+        "--fallback-model",
+        "--append-system-prompt",
+        "--max-turns",
+    },
+)
+# Flag values must be plain tokens (tool names, model ids, paths, prose) —
+# never something that itself parses as another flag.
+_EXTRA_ARG_VALUE_RE = re.compile(r"^(?!-)[^\r\n]{1,2000}$")
+
+
+def _validate_extra_args(extra: list[str]) -> None:
+    """Reject any extra_args flag outside the allowlist (fail-loud).
+
+    Supports both ``--flag value`` and ``--flag=value`` spellings.
+    """
+    expecting_value = False
+    for arg in extra:
+        if expecting_value:
+            if not _EXTRA_ARG_VALUE_RE.match(arg):
+                raise ValueError(f"extra_args value {arg!r} not allowed")
+            expecting_value = False
+            continue
+        flag, sep, value = arg.partition("=")
+        if flag not in _EXTRA_ARG_FLAGS:
+            raise ValueError(f"extra_args flag {flag!r} not allowed")
+        if sep:
+            if not _EXTRA_ARG_VALUE_RE.match(value):
+                raise ValueError(f"extra_args value {value!r} not allowed")
+        else:
+            expecting_value = True
+    if expecting_value:
+        raise ValueError("extra_args flag is missing its value")
 
 
 class _Config:
@@ -178,6 +223,7 @@ def _build_argv(body: dict) -> list[str]:
     extra = body.get("extra_args") or []
     if not isinstance(extra, list) or not all(isinstance(a, str) for a in extra):
         raise ValueError("extra_args must be a list of strings")
+    _validate_extra_args(extra)
     first_turn = bool(body.get("first_turn"))
 
     argv = CFG.exec_prefix() + [
@@ -197,16 +243,18 @@ def _run_turn(body: dict) -> dict:
     if not isinstance(text, str) or not text:
         raise ValueError("text is required")
     argv = _build_argv(body)
+    # session_id was UUID-validated by _build_argv above; scrub anyway so the
+    # log line can never carry attacker newlines (CodeQL py/log-injection).
+    session_id = str(body.get("session_id", "")).replace("\r", "").replace("\n", "")
     logger.info(
         "turn session=%s first=%s text_len=%d",
-        body.get("session_id"), bool(body.get("first_turn")), len(text),
+        session_id, bool(body.get("first_turn")), len(text),
     )
     try:
         proc = subprocess.run(
             argv,
             input=text.encode("utf-8"),
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
+            capture_output=True,
             cwd=CFG.cwd,
             timeout=CFG.timeout,
             shell=False,

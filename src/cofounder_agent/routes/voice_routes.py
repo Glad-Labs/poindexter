@@ -43,6 +43,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import hmac
+import html as html_mod
 import json
 import os
 import secrets
@@ -291,7 +292,7 @@ button:disabled {{ opacity: 0.4; cursor: not-allowed; }}
 </style>
 </head><body>
 <h1>Talk to Poindexter</h1>
-<div class="status">Room: <b>{room}</b> · Identity: <b>{identity}</b> · 7-day token</div>
+<div class="status">Room: <b>{html_mod.escape(room)}</b> · Identity: <b>{html_mod.escape(identity)}</b> · 7-day token</div>
 {secret_warn}
 <div class="row">
     <button id="connect">Connect</button>
