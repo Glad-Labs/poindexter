@@ -44,7 +44,12 @@ if (-not $gpuUuid -or $gpuUuid -notlike 'GPU-*') {
     throw "ollama-vision-gpu1: could not resolve UUID for GPU index 1 (got '$gpuUuid') - refusing to start unpinned"
 }
 $env:CUDA_DEVICE_ORDER = "PCI_BUS_ID"    # deterministic index mapping across driver updates
-$env:CUDA_VISIBLE_DEVICES = $gpuUuid     # RTX 3090 only
+$env:CUDA_VISIBLE_DEVICES = $gpuUuid     # RTX 3090 only (CUDA backend)
+# Ollama 0.31+ also ships a Vulkan backend, ON by default, that enumerates
+# GPUs independently - CUDA_VISIBLE_DEVICES does not apply to it, so the
+# scheduler still saw the 5090 as Vulkan0 and picked it (more free VRAM).
+# Disabling Vulkan leaves exactly one visible device: the pinned 3090.
+$env:OLLAMA_VULKAN = "false"
 $env:OLLAMA_HOST = "127.0.0.1:11435"
 $env:OLLAMA_KEEP_ALIVE = "-1"            # never unload - the whole point of this instance
 $env:OLLAMA_MAX_LOADED_MODELS = "1"
