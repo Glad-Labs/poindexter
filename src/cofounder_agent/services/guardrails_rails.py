@@ -21,7 +21,7 @@ What the rails do
 
 - ``run_brand_guard`` — runs ``content_validator._check_patterns``
   against the curated ``FAKE_*`` / ``HALLUCINATED_*`` /
-  ``GLAD_LABS_IMPOSSIBLE`` / ``BRAND_CONTRADICTION`` pattern sets and
+  ``COMPANY_IMPOSSIBLE`` / ``BRAND_CONTRADICTION`` pattern sets and
   reports any matches. A parallel signal to
   ``deepeval_brand_fabrication`` and the ``programmatic_validator``
   rail — the brand check now reports through three lenses, so
@@ -74,7 +74,7 @@ def run_brand_guard(content: str) -> tuple[bool, str | None]:
 
     Runs ``content_validator._check_patterns`` against the same pattern
     sets the old ``BrandFabricationValidator`` used (FAKE_NAME /
-    FAKE_STAT / GLAD_LABS_IMPOSSIBLE / FAKE_QUOTE /
+    FAKE_STAT / COMPANY_IMPOSSIBLE / FAKE_QUOTE /
     FABRICATED_EXPERIENCE / HALLUCINATED_LINK / BRAND_CONTRADICTION).
     The legacy ``content_validator`` is still authoritative; this rail
     is a parallel signal the operator can correlate with the legacy
@@ -95,7 +95,7 @@ def run_brand_guard(content: str) -> tuple[bool, str | None]:
         for pattern_set, label in [
             (cv.FAKE_NAME_PATTERNS, "fake_person"),
             (cv.FAKE_STAT_PATTERNS, "fake_stat"),
-            (cv.GLAD_LABS_IMPOSSIBLE, "glad_labs_claim"),
+            (cv.COMPANY_IMPOSSIBLE, "company_claim"),
             (cv.FAKE_QUOTE_PATTERNS, "fake_quote"),
             (cv.FABRICATED_EXPERIENCE_PATTERNS, "fabricated_experience"),
             (cv.HALLUCINATED_LINK_PATTERNS, "hallucinated_link"),

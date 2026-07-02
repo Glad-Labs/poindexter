@@ -234,7 +234,7 @@ async def test_full_cycle_resolve_ignore_pass_through_and_alert():
         settings={
             "glitchtip_triage_enabled": "true",
             "glitchtip_base_url": "http://gt:8000",
-            "glitchtip_triage_org_slug": "glad-labs",
+            "glitchtip_triage_org_slug": "my-org",
             "glitchtip_triage_alert_threshold_count": "100",
             "glitchtip_triage_auto_resolve_patterns": json.dumps(rules),
         },
@@ -411,11 +411,11 @@ async def test_pagination_follows_link_cursor():
     page1 = [_issue("1", "a", 1), _issue("2", "b", 2)]
     page2 = [_issue("3", "c", 3)]
     next_link = (
-        '<http://gt/api/0/organizations/glad-labs/issues/?cursor=NEXT&limit=100>; '
+        '<http://gt/api/0/organizations/my-org/issues/?cursor=NEXT&limit=100>; '
         'rel="next"; results="true"; cursor="NEXT"'
     )
     end_link = (
-        '<http://gt/api/0/organizations/glad-labs/issues/?cursor=END>; '
+        '<http://gt/api/0/organizations/my-org/issues/?cursor=END>; '
         'rel="next"; results="false"; cursor="END"'
     )
     client = _FakeClient(get_responses=[
@@ -769,7 +769,7 @@ async def test_stale_unresolved_issue_is_not_alerted():
         settings={
             "glitchtip_triage_enabled": "true",
             "glitchtip_base_url": "http://gt:8000",
-            "glitchtip_triage_org_slug": "glad-labs",
+            "glitchtip_triage_org_slug": "my-org",
             "glitchtip_triage_alert_threshold_count": "100",
             "glitchtip_triage_alert_freshness_hours": "24",
             "glitchtip_triage_auto_resolve_patterns": "[]",
@@ -815,7 +815,7 @@ async def test_fresh_issue_still_alerted_when_threshold_crossed():
         settings={
             "glitchtip_triage_enabled": "true",
             "glitchtip_base_url": "http://gt:8000",
-            "glitchtip_triage_org_slug": "glad-labs",
+            "glitchtip_triage_org_slug": "my-org",
             "glitchtip_triage_alert_threshold_count": "100",
             "glitchtip_triage_alert_freshness_hours": "24",
             "glitchtip_triage_auto_resolve_patterns": "[]",

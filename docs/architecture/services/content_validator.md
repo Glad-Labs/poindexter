@@ -53,7 +53,7 @@ so the sync path stays sync.
   `prometheus_client` isn't installed.
 - Module-level pattern lists (exposed but generally not callable from
   outside): `FAKE_NAME_PATTERNS`, `FAKE_STAT_PATTERNS`,
-  `GLAD_LABS_IMPOSSIBLE`, `FAKE_QUOTE_PATTERNS`,
+  `COMPANY_IMPOSSIBLE` (alias `GLAD_LABS_IMPOSSIBLE`), `FAKE_QUOTE_PATTERNS`,
   `FABRICATED_EXPERIENCE_PATTERNS`, `HALLUCINATED_LINK_PATTERNS`,
   `UNLINKED_CITATION_PATTERNS`, `BRAND_CONTRADICTION_PATTERNS`,
   `LEAKED_IMAGE_PROMPT_PATTERNS`, `IMAGE_PLACEHOLDER_PATTERNS`,
@@ -65,7 +65,7 @@ so the sync path stays sync.
 | ------------------------ | --------- | ------------------------------------------------------ |
 | `fake_person`            | critical  | Sarah/John-style names + role suffix                   |
 | `fake_stat`              | critical  | "%-reduction", McKinsey-style citations                |
-| `glad_labs_claim`        | critical  | Impossible claims about company size/age               |
+| `company_claim`          | critical  | Impossible claims about company size/age               |
 | `fake_quote`             | critical  | Quoted dialogue + attribution to invented person       |
 | `fabricated_experience`  | critical  | "I sat down with...", "at my company"                  |
 | `hallucinated_link`      | critical  | "our guide on X", "see our post"                       |

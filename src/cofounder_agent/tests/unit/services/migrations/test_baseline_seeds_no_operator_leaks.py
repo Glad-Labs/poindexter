@@ -16,6 +16,13 @@ correlate back to the Glad Labs tenant the same way. Those three are also
 restored on the operator rig via
 ``services.operator_overrides.OPERATOR_SETTING_OVERRIDES``.
 
+2026-07-02 extended the gate to the operator infra slugs that hid behind the
+brand's hyphenated spelling — ``compose_project_name`` ('glad-labs-website')
+and ``glitchtip_triage_org_slug`` ('glad-labs'), both now seeded 'poindexter'
+and overlay-restored — plus a regression ban on the ``glad_labs_claim``
+validator-rule name (renamed ``company_claim``; a seed-file re-extract from a
+pre-migration DB would resurrect the old name).
+
 This test:
 1. Verifies none of the leaked literals are present in the seed file.
 2. Verifies the rows themselves still exist (so fresh installs seed
@@ -142,6 +149,28 @@ _BANNED_PATTERNS = [
         "storage_access_key operator credential",
         re.compile(r"'storage_access_key',\s*'[0-9a-f]{20,}'"),
     ),
+    # ------------------------------------------------------------------
+    # Operator infra slugs (2026-07-02). Both carried the brand's
+    # hyphenated spelling, which the space-only brand-value guard missed
+    # until it was tightened alongside this. Seeded 'poindexter' now;
+    # the operator values restore via OPERATOR_SETTING_OVERRIDES.
+    # ------------------------------------------------------------------
+    # Compose project name = the operator's clone-directory basename.
+    (
+        "compose_project_name operator value",
+        re.compile(r"'compose_project_name',\s*'[^']*glad[\s_-]*labs", re.IGNORECASE),
+    ),
+    # GlitchTip org slug = the org on the operator's GlitchTip install.
+    (
+        "glitchtip_triage_org_slug operator value",
+        re.compile(r"'glitchtip_triage_org_slug',\s*'[^']*glad[\s_-]*labs", re.IGNORECASE),
+    ),
+    # The pre-rename content_validator_rules name (now 'company_claim').
+    # Nothing in the seed file may reference the old operator-flavored name.
+    (
+        "glad_labs_claim validator-rule name (renamed company_claim)",
+        re.compile(r"'glad_labs_claim'"),
+    ),
 ]
 
 
@@ -181,6 +210,10 @@ _REQUIRED_KEYS = [
     "podcast_cover_url",
     "storage_public_url",
     "storage_access_key",
+    # Operator infra slugs (2026-07-02) — genericised to 'poindexter', but the
+    # rows must still seed so the brain probes read a working default.
+    "compose_project_name",
+    "glitchtip_triage_org_slug",
 ]
 
 

@@ -646,7 +646,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `compose_project_name` | `glad-labs-website` |  | Docker Compose project name used by compose drift auto-recover |
+| `compose_project_name` | `poindexter` |  | Docker Compose project name used by compose drift auto-recover. Default 'poindexter' matches the documented clone dir... |
 
 ## integration
 
@@ -753,7 +753,7 @@ The worker re-reads on every poll; no restart needed.
 | `glitchtip_triage_alert_threshold_count` | `10` |  | Brain triage probe pages via notify_operator() when a GlitchTip issue has count >= this AND matches no entry in glitc... |
 | `glitchtip_triage_auto_resolve_patterns` | `[{"title_pattern": "Error while fetch...` |  | JSONB array of triage rules for the brain GlitchTip probe. Each entry: {title_pattern: <regex>, action: 'resolve' or ... |
 | `glitchtip_triage_enabled` | `true` |  | Master enable for the brain GlitchTip triage probe. When 'true' (default), the probe runs every cycle (5-min), pulls ... |
-| `glitchtip_triage_org_slug` | `glad-labs` |  | GlitchTip organization slug the brain triage probe queries. Default 'glad-labs' matches the org the bootstrap install... |
+| `glitchtip_triage_org_slug` | `poindexter` |  | GlitchTip organization slug the brain triage probe queries. Set this to the org slug you created in the GlitchTip fir... |
 | `gpu_temperature_high_threshold_c` | `85` |  | GPU core temperature (C) above which the brain `gpu_temperature` probe alerts. RTX 5090 hard-throttles around 90C; 85... |
 | `grafana_alert_folder_uid` | `cfl5ofidejh8ge` |  | Grafana folder UID under which brain alert_sync pushes alert rules. Per-install — get yours from the folder URL in Gr... |
 | `grafana_alert_sync_enabled` | `true` |  | Master switch for the brain daemon's Grafana alert sync loop. Set to 'false' to disable the loop entirely without rem... |

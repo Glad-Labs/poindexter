@@ -12,9 +12,9 @@ intentionally speaks the Sentry wire protocol; the "Sentry" naming in
 identifiers below is therefore the SDK's nomenclature, NOT a reference to
 sentry.io SaaS.
 
-Local GlitchTip URL: http://localhost:8080 (org ``glad-labs``, project
-``poindexter``). Dashboard at the local URL replaces the Sentry SaaS
-dashboard wherever the SDK docs reference it.
+Local GlitchTip URL: http://localhost:8080 (org per
+``app_settings.glitchtip_triage_org_slug``). Dashboard at the local URL
+replaces the Sentry SaaS dashboard wherever the SDK docs reference it.
 
 Features:
 - Automatic exception capturing and reporting

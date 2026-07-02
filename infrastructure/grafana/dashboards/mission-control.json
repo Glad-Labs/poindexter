@@ -1626,7 +1626,7 @@
       },
       "options": {
         "mode": "markdown",
-        "content": "### GlitchTip\n\n**Unresolved issues:** open the UI for live counts.\n\n- [Open GlitchTip dashboard](http://localhost:8080/glad-labs/poindexter/issues/)\n- Org: `glad-labs` · Project: `poindexter`\n\n_Live stat panel pending: Grafana Infinity plugin (or a glitchtip-postgres datasource provision) — neither is installed yet._"
+        "content": "### GlitchTip\n\n**Unresolved issues:** open the UI for live counts.\n\n- [Open GlitchTip](http://localhost:8080) → your org → project issues\n- Org: your GlitchTip org (mirrors `app_settings.glitchtip_triage_org_slug`) · Project: your project\n\n_Live stat panel pending: Grafana Infinity plugin (or a glitchtip-postgres datasource provision) — neither is installed yet._"
       }
     },
     {

@@ -995,6 +995,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'otel_exporter_otlp_endpoint': 'http://tempo:4318/v1/traces',
     'pyroscope_server_url': 'http://pyroscope:4040',
     'sentry_enabled': 'true',
+    # GlitchTip org slug the brain triage probe queries — operators set it to
+    # the org they created in the GlitchTip first-login setup. Lockstep with
+    # the baseline seed; the operator overlay restores the operator's own slug.
+    'glitchtip_triage_org_slug': 'poindexter',
     'template_runner_progress_streaming': 'true',
     # Defaulted true 2026-05-17 (Glad-Labs/poindexter#412) — the
     # AsyncPostgresSaver wiring has been live on prod since 2026-05-13
@@ -1336,6 +1340,13 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'mcp_http_probe_min_consecutive_failures': '3',
 
     # ----- Compose-drift host-routed recovery (brain/compose_drift_probe.py) -----
+    # Docker Compose project name the brain pins (COMPOSE_PROJECT_NAME) during
+    # compose-drift auto-recover, so the recreate joins the stack's real project
+    # instead of inferring one from the brain's /app cwd (orphan networks).
+    # 'poindexter' matches the documented clone dir; set it to the basename of
+    # the host directory that launched the stack if yours differs. Lockstep with
+    # the baseline seed; the operator overlay restores the operator's value.
+    'compose_project_name': 'poindexter',
     # On drift, a containerised brain can't `docker compose up` Windows binds
     # itself, so it POSTs {"service":"compose-reapply"} to the host Recovery
     # Agent (the same agent as mcp_http_probe_recovery_url above), which runs

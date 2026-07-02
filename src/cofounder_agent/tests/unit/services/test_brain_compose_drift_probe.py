@@ -1288,7 +1288,7 @@ class TestProjectDirectoryWiring:
         pool = _make_pool({
             "compose_drift_auto_recover_enabled": "true",
             "compose_project_directory": "/host/repo",
-            "compose_project_name": "glad-labs-website",
+            "compose_project_name": "my-stack",
         })
 
         captured: dict = {}
@@ -1321,4 +1321,4 @@ class TestProjectDirectoryWiring:
 
         assert summary["status"] == "recovered"
         assert captured["project_directory"] == "/host/repo"
-        assert captured["project_name"] == "glad-labs-website"
+        assert captured["project_name"] == "my-stack"

@@ -105,15 +105,15 @@
     },
     {
       "key": "compose_project_name",
-      "value": "",
+      "value": "poindexter",
       "category": "infrastructure",
-      "description": "Docker Compose project name used by the brain's compose drift auto-recover when calling docker compose up from inside the container. Set to the basename of the host directory that launched the stack (e.g. \"glad-labs-website\" if you cloned into ~/glad-labs-website/). Leave empty to let docker compose infer the name from the compose file path, which works when the brain container and host share the same working directory."
+      "description": "Docker Compose project name used by the brain's compose drift auto-recover when calling docker compose up from inside the container. Set to the basename of the host directory that launched the stack (e.g. \"my-stack\" if you cloned into ~/my-stack/); the default matches the documented poindexter clone dir. Leave empty to let docker compose infer the name from the compose file path, which works when the brain container and host share the same working directory."
     },
     {
       "key": "compose_project_directory",
       "value": "",
       "category": "infrastructure",
-      "description": "Host directory that owns docker-compose.local.yml, passed to `docker compose --project-directory` during the brain's compose drift auto-recover. The brain bind-mounts only the compose file (at /app/docker-compose.local.yml), so relative bind-mount sources like ./infrastructure/prometheus/prometheus.yml would otherwise resolve against /app and either fail the recreate or wipe the service's real config with an empty auto-created dir. Set to the absolute HOST path of the repo dir (e.g. \"/home/you/glad-labs-website\"). Leave empty to auto-derive it from the running container's com.docker.compose.project.working_dir label (zero-config); only set it explicitly if that label is missing or wrong."
+      "description": "Host directory that owns docker-compose.local.yml, passed to `docker compose --project-directory` during the brain's compose drift auto-recover. The brain bind-mounts only the compose file (at /app/docker-compose.local.yml), so relative bind-mount sources like ./infrastructure/prometheus/prometheus.yml would otherwise resolve against /app and either fail the recreate or wipe the service's real config with an empty auto-created dir. Set to the absolute HOST path of the repo dir (e.g. \"/home/you/poindexter\"). Leave empty to auto-derive it from the running container's com.docker.compose.project.working_dir label (zero-config); only set it explicitly if that label is missing or wrong."
     },
     {
       "key": "pipeline_writer_model",

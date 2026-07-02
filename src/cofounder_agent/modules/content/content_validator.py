@@ -30,7 +30,7 @@ if TYPE_CHECKING:
 # setter are DELETED. injection is now mandatory — the public entry points
 # (``validate_content`` / ``_check_code_block_density`` / ``verify_content_urls``)
 # all accept a ``site_config`` param and callers thread the run-bound instance.
-# Seam 1 Wave 3f (#667): the import-time ``GLAD_LABS_FACTS = _get_company_facts()``
+# Seam 1 Wave 3f (#667): the import-time ``COMPANY_FACTS = _get_company_facts()``
 # call below now returns ``{}`` when no site_config is available (instead of
 # building a bare SiteConfig()); the pipeline always threads a real instance.
 # ``content_validator`` is therefore removed from ``di_wiring.WIRED_MODULES``.
@@ -106,7 +106,7 @@ def _get_company_facts(site_config: Any = None) -> dict:
     """Load company facts from DB (site_config) with env fallback.
 
     Seam 1 Wave 3f (#667): SiteConfig() fallback removed. When called at
-    import time (``GLAD_LABS_FACTS = _get_company_facts()`` below) without
+    import time (``COMPANY_FACTS = _get_company_facts()`` below) without
     a site_config, returns an empty dict — the facts will be populated when
     the pipeline calls validate_content with the run-bound instance.
     """
@@ -128,8 +128,10 @@ def _get_company_facts(site_config: Any = None) -> dict:
 
 # Loaded at module import time — returns {} when no site_config available;
 # real values are populated per-call via validate_content(site_config=...).
-GLAD_LABS_FACTS = _get_company_facts()
-_COMPANY_NAME = GLAD_LABS_FACTS.get("company_name", "My Company")
+COMPANY_FACTS = _get_company_facts()
+_COMPANY_NAME = COMPANY_FACTS.get("company_name", "My Company")
+# Back-compat alias for the pre-2026-07 operator-flavored name.
+GLAD_LABS_FACTS = COMPANY_FACTS
 
 # People names that should NEVER appear (fabricated by LLMs)
 FAKE_NAME_PATTERNS = [
@@ -148,13 +150,15 @@ FAKE_STAT_PATTERNS = [
 
 # Impossible claims about the company (uses configurable company name)
 _CN = re.escape(_COMPANY_NAME)
-GLAD_LABS_IMPOSSIBLE = [
+COMPANY_IMPOSSIBLE = [
     rf"(?:{_CN}|our|we)\s+(?:has|have)\s+(?:been|spent)\s+(?:\w+\s+)*(?:years?|decade)",
     rf"(?:{_CN}|our)\s+(?:team|staff|employees|engineers|developers)\s+of\s+\d{{2,}}",
     rf"(?:{_CN}|our)\s+(?:clients?|customers?|users?)\s+(?:include|such as|like)\s+[A-Z]",
     rf"(?:{_CN}|we)\s+(?:processed|handled|served|generated)\s+(?:\d+\s*(?:million|billion|thousand))",
     rf"(?:{_CN}|our)\s+(?:revenue|profit|valuation|funding)",
 ]
+# Back-compat alias for the pre-2026-07 operator-flavored name.
+GLAD_LABS_IMPOSSIBLE = COMPANY_IMPOSSIBLE
 
 # Fabricated quote patterns
 FAKE_QUOTE_PATTERNS = [
@@ -607,7 +611,7 @@ _LLM_TELL_RE = re.compile(
 class ValidationIssue:
     """A single quality issue found in the content."""
     severity: str  # "critical", "warning"
-    category: str  # "fake_person", "fake_stat", "glad_labs_claim", "fake_quote"
+    category: str  # "fake_person", "fake_stat", "company_claim", "fake_quote"
     description: str
     matched_text: str
     line_number: int = 0
@@ -1803,7 +1807,7 @@ def validate_content(
 
     _sc = site_config
     # Per-call company facts — populated from the live site_config for this
-    # pipeline run (Wave 3f #667: module-level GLAD_LABS_FACTS is {} at import).
+    # pipeline run (Wave 3f #667: module-level COMPANY_FACTS is {} at import).
     _facts = _get_company_facts(_sc)
 
     def _enabled(rule_name: str) -> bool:
@@ -1835,10 +1839,13 @@ def validate_content(
             "Fabricated statistic: '{matched}'"
         ))
 
-    # 3. Check for impossible company claims
-    if _enabled("glad_labs_claim"):
+    # 3. Check for impossible company claims. The rule row was renamed
+    # glad_labs_claim -> company_claim (migration 20260702) — the rename
+    # is deploy-skew-safe because is_validator_enabled fails open on a
+    # missing row, so the rule keeps running until the migration lands.
+    if _enabled("company_claim"):
         issues.extend(_check_patterns(
-            full_text, GLAD_LABS_IMPOSSIBLE, "critical", "glad_labs_claim",
+            full_text, COMPANY_IMPOSSIBLE, "critical", "company_claim",
             f"Impossible claim about {_COMPANY_NAME}: " + "'{matched}'"
         ))
 
@@ -2078,7 +2085,7 @@ def validate_content(
         for word, num in WRITTEN_YEARS.items():
             if re.search(rf"\b{word}\s+years?\b", title, re.IGNORECASE) and num > 1:
                 issues.append(ValidationIssue(
-                    severity="critical", category="glad_labs_claim",
+                    severity="critical", category="company_claim",
                     description=f"Title claims {word} years -- {_facts.get('company_name', _COMPANY_NAME)} is {_facts.get('age_months', 12)} months old",
                     matched_text=title,
                 ))
@@ -2088,7 +2095,7 @@ def validate_content(
             if years > 1:
                 issues.append(ValidationIssue(
                     severity="critical",
-                    category="glad_labs_claim",
+                    category="company_claim",
                     description=f"Title claims {years} years -- {_facts.get('company_name', _COMPANY_NAME)} is {_facts.get('age_months', 12)} months old",
                     matched_text=title,
                 ))

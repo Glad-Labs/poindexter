@@ -122,7 +122,7 @@ class TestCompanyFactValidation:
     def test_facts_are_configurable(self):
         """Company facts come from the site_config passed at call time (Wave 3f #667).
 
-        The module-level GLAD_LABS_FACTS is intentionally {} at import (no
+        The module-level COMPANY_FACTS is intentionally {} at import (no
         SiteConfig() fallback); _get_company_facts(site_config) populates per-call.
         """
         facts = _get_company_facts(_SC)
@@ -606,7 +606,7 @@ class TestTitleYearClaims:
             "AI", site_config=_SC)
         # Critical because company is < 1 year old
         assert any(
-            i.category == "glad_labs_claim" and "year" in i.description.lower()
+            i.category == "company_claim" and "year" in i.description.lower()
             for i in result.issues
         )
 
@@ -616,7 +616,7 @@ class TestTitleYearClaims:
             "Some content here.",
             "tech", site_config=_SC)
         assert any(
-            i.category == "glad_labs_claim" and "year" in i.description.lower()
+            i.category == "company_claim" and "year" in i.description.lower()
             for i in result.issues
         )
 
@@ -625,7 +625,7 @@ class TestTitleYearClaims:
         # Singular year is valid since company is ~1 year old
         year_claims = [
             i for i in result.issues
-            if i.category == "glad_labs_claim" and "year" in i.description.lower()
+            if i.category == "company_claim" and "year" in i.description.lower()
         ]
         assert len(year_claims) == 0
 
@@ -633,7 +633,7 @@ class TestTitleYearClaims:
         result = validate_content("10 Years of Wisdom", "content", "tech", site_config=_SC)
         year_issues = [
             i for i in result.issues
-            if i.category == "glad_labs_claim" and "year" in i.description.lower()
+            if i.category == "company_claim" and "year" in i.description.lower()
         ]
         assert all(i.severity == "critical" for i in year_issues)
 

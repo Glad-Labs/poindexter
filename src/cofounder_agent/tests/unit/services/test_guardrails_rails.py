@@ -130,15 +130,15 @@ class TestRunBrandGuardFabrication:
         assert "rail flagged" in reason
         assert "brand_contradiction" in reason
 
-    def test_glad_labs_impossible_caught(self):
-        # GLAD_LABS_IMPOSSIBLE flags unsupportable company claims. The
+    def test_company_impossible_caught(self):
+        # COMPANY_IMPOSSIBLE flags unsupportable company claims. The
         # ``our revenue/profit/...`` branch is company-name-independent.
         ok, reason = run_brand_guard(
             "Our revenue grew steadily as the platform matured over time."
         )
         assert ok is False
         assert reason is not None
-        assert "glad_labs_claim" in reason
+        assert "company_claim" in reason
 
     def test_returns_bool_for_synthetic_quote(self):
         # FAKE_QUOTE_PATTERNS is tuning-sensitive; just confirm the rail

@@ -86,11 +86,13 @@ TOKEN_SETTING_KEY = "glitchtip_triage_api_token"
 BASE_URL_SETTING_KEY = "glitchtip_base_url"
 BASE_URL_DEFAULT = "http://glitchtip-web:8000"
 
-# Org slug to query. GlitchTip allows multi-org but the poindexter setup
-# only ever provisions one. Configurable so a tenant who renames the
-# org doesn't need a brain redeploy.
+# Org slug to query. GlitchTip allows multi-org but a poindexter install
+# only ever uses one. Configurable so a tenant who renames the
+# org doesn't need a brain redeploy. Default matches the baseline seed
+# ('poindexter'); operators set it to whatever org they created in the
+# GlitchTip first-login setup.
 ORG_SLUG_SETTING_KEY = "glitchtip_triage_org_slug"
-ORG_SLUG_DEFAULT = "glad-labs"
+ORG_SLUG_DEFAULT = "poindexter"
 
 # Issues with `count` above this get a notify_operator() alert when they
 # match no known-noise rule. Default 100 = "this happened a hundred

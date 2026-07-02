@@ -167,7 +167,7 @@ def _build_brand_fabrication_metric():
         """DeepEval metric: 1.0 = clean, 0.0 = fabrication detected.
 
         Wraps the curated ``FAKE_*`` / ``HALLUCINATED_*`` /
-        ``GLAD_LABS_IMPOSSIBLE`` / ``BRAND_CONTRADICTION`` pattern
+        ``COMPANY_IMPOSSIBLE`` / ``BRAND_CONTRADICTION`` pattern
         sets in content_validator. Score is binary (1.0 or 0.0)
         because brand fabrication is pass/fail, not graded —
         either a fake quote is in the text or it isn't.
@@ -190,7 +190,7 @@ def _build_brand_fabrication_metric():
             for pattern_set, label in [
                 (cv.FAKE_NAME_PATTERNS, "fake_person"),
                 (cv.FAKE_STAT_PATTERNS, "fake_stat"),
-                (cv.GLAD_LABS_IMPOSSIBLE, "glad_labs_claim"),
+                (cv.COMPANY_IMPOSSIBLE, "company_claim"),
                 (cv.FAKE_QUOTE_PATTERNS, "fake_quote"),
                 (cv.FABRICATED_EXPERIENCE_PATTERNS, "fabricated_experience"),
                 (cv.HALLUCINATED_LINK_PATTERNS, "hallucinated_link"),

@@ -39,8 +39,19 @@ _OPERATOR_IDENTITY_RE = re.compile(
 
 # The operator brand, forbidden as a seeded VALUE default (each OSS install is
 # its own brand). Bare brand mentions in prose/comments stay policy-acceptable,
-# so this is matched against the value field only.
-_BRAND_VALUE_RE = re.compile(r"glad\s*labs", re.IGNORECASE)
+# so this is matched against the value field only. Every spelling is banned —
+# space ("Glad Labs"), hyphen ("glad-labs-website" compose project /
+# "glad-labs" GlitchTip org, which slipped past the space-only regex until
+# 2026-07), and underscore ("glad_labs_claim", the pre-rename validator-rule
+# name) — EXCEPT a value that is exactly a ``Glad-Labs/<repo>`` GitHub
+# owner/name ref, the one legitimate carrier (gh_repo / branch_drift_repo /
+# pr_staleness_repo).
+_BRAND_VALUE_RE = re.compile(r"glad[\s_-]*labs", re.IGNORECASE)
+_GH_REPO_REF_RE = re.compile(r"^Glad-Labs/[A-Za-z0-9._-]+$")
+
+
+def _is_brand_value(value: str) -> bool:
+    return bool(_BRAND_VALUE_RE.search(value)) and not _GH_REPO_REF_RE.match(value)
 
 _BASELINE_SEEDS = (
     Path(settings_defaults.__file__).resolve().parent
@@ -61,11 +72,8 @@ _NICHES_SEED_RE = re.compile(
     re.DOTALL,
 )
 
-# In niches fields the brand also hides behind a hyphen (the old 'glad-labs'
-# slug). _BRAND_VALUE_RE is deliberately space-only because app_settings values
-# legitimately carry the public 'Glad-Labs/...' GitHub org (gh_repo); niche
-# slug/name/prompt have no such exemption, so the hyphenated form is banned too.
-_NICHE_BRAND_RE = re.compile(r"glad[\s-]*labs", re.IGNORECASE)
+# Niche slug/name/prompt fields reuse _BRAND_VALUE_RE without the gh-repo
+# exemption — a niche field has no legitimate reason to carry an owner/name ref.
 
 
 def _has_private_tag(value: str) -> bool:
@@ -110,17 +118,35 @@ def test_baseline_seeds_have_no_operator_identity() -> None:
 
 
 def test_baseline_seeds_have_no_brand_value_defaults() -> None:
-    """The Glad Labs brand must not be a seeded VALUE default. Bare mentions in
-    prose/comments are policy-acceptable, so only the value field is checked."""
+    """The Glad Labs brand must not be a seeded VALUE default (any spelling —
+    space, hyphen, or underscore — except a bare ``Glad-Labs/<repo>`` ref).
+    Bare mentions in prose/comments are policy-acceptable, so only the value
+    field is checked."""
     text = _BASELINE_SEEDS.read_text(encoding="utf-8")
     offenders = {
         key: value
         for key, value in _SEED_KEY_VALUE_RE.findall(text)
-        if _BRAND_VALUE_RE.search(value)
+        if _is_brand_value(value.replace("''", "'"))
     }
     assert not offenders, (
         "0000_baseline.seeds.sql seeds the operator brand as a default value: "
         f"{offenders}. Seed '' / a generic default and put the brand in "
+        "services.operator_overrides."
+    )
+
+
+def test_settings_defaults_have_no_brand_value_defaults() -> None:
+    """Same brand-value ban over ``settings_defaults.DEFAULTS`` — the seeder's
+    other public surface. Keys drift between the two files (only overlaid keys
+    are lockstep-checked), so a branded default could ship here alone."""
+    offenders = {
+        key: value
+        for key, value in settings_defaults.DEFAULTS.items()
+        if _is_brand_value(value)
+    }
+    assert not offenders, (
+        "settings_defaults.DEFAULTS ships the operator brand as a default "
+        f"value: {offenders}. Use a generic default and put the brand in "
         "services.operator_overrides."
     )
 
@@ -141,7 +167,7 @@ def test_niches_seed_rows_carry_no_operator_brand() -> None:
         hits = [
             f"{field}: …{m[field][max(0, hit.start() - 30):hit.end() + 30]!r}…"
             for field in ("slug", "name", "prompt")
-            for hit in _NICHE_BRAND_RE.finditer(m[field])
+            for hit in _BRAND_VALUE_RE.finditer(m[field])
         ]
         if hits:
             offenders[m["slug"]] = hits

@@ -182,7 +182,7 @@ _SHARED_TEST_MODULES = (
     # 2026-05-29 (#272 Phase-2g); the module global + ``set_site_config`` are
     # deleted. Tests pass ``site_config=`` to ``validate_content`` /
     # ``_check_code_block_density`` / ``verify_content_urls`` directly (and the
-    # import-time ``GLAD_LABS_FACTS`` derives from a fresh env-fallback
+    # import-time ``COMPANY_FACTS`` derives from a fresh env-fallback
     # SiteConfig, identical to before).
     # ``modules.content.multi_model_qa`` migrated to constructor DI 2026-05-29 (#272
     # Phase-2 bulk cleanup); no module-level site_config attr to wire — tests

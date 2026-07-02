@@ -178,7 +178,7 @@ SKIP_SERVICES_SETTING_KEY = "compose_drift_skip_services"
 # Docker Compose project name used when running ``docker compose up`` during
 # auto-recovery. When the brain container's working directory differs from the
 # host directory that owns the compose file (e.g. brain CWD=/app but the host
-# project lives in ~/glad-labs-website/), compose infers the wrong project name
+# project lives in ~/poindexter/), compose infers the wrong project name
 # and creates orphan networks instead of joining the real one. Set this to the
 # basename of the host directory that launched the stack (the value docker
 # compose would infer on the host, often the repo/folder name). Leave empty to
