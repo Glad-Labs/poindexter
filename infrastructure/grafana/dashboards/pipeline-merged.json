@@ -4341,6 +4341,312 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 100,
+      "type": "row",
+      "collapsed": false,
+      "panels": [],
+      "title": "Dispatch & Rework — is the queue draining?",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 231
+      }
+    },
+    {
+      "id": 101,
+      "type": "stat",
+      "title": "In-progress stall (min)",
+      "description": "Max minutes since ANY graph-node progress across in_progress tasks (pipeline_tasks.last_progress_at heartbeat). The stuck-flow probe auto-crashes the run at 20m stall — orange here means a kill is imminent. 0 = nothing in progress. This is the signal that made the 2026-07-02 stall-crash-requeue loop (poindexter#807) invisible.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 232
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(MAX(EXTRACT(EPOCH FROM (now() - last_progress_at)) / 60.0), 0)::float AS \"Stall min\" FROM pipeline_tasks WHERE status = 'in_progress'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 15
+              },
+              {
+                "color": "red",
+                "value": 20
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "id": 102,
+      "type": "stat",
+      "title": "Auto-crashed runs (24h)",
+      "description": "Flow runs force-CRASHED by brain.prefect_stuck_flow_probe in the last 24h. >0 repeatedly = something stalls mid-graph (GPU-contended vision call, wedged node); see poindexter#807.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 232
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Auto-crashed\" FROM audit_log WHERE event_type = 'probe.prefect_stuck_flow_auto_crashed' AND timestamp > NOW() - INTERVAL '24 hours'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "id": 103,
+      "type": "stat",
+      "title": "Queue-backlog detections (24h)",
+      "description": "probe.prefect_queue_backlog_detected events: >3 overdue SCHEDULED runs while the slot-holder is not progressing. Persistent non-zero = the queue is not draining.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 12,
+        "y": 232
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Backlog hits\" FROM audit_log WHERE event_type = 'probe.prefect_queue_backlog_detected' AND timestamp > NOW() - INTERVAL '24 hours'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "orange",
+                "value": 20
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "id": 104,
+      "type": "stat",
+      "title": "Tasks re-run >1x (24h)",
+      "description": "Tasks whose graph executed under more than one pipeline run in 24h — rework burn (rejected-task regens, crash-requeue loops). Each extra run is a full writer+images+QA pass of GPU time.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 18,
+        "y": 232
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Reworked tasks\" FROM (SELECT task_id FROM atom_runs WHERE created_at > NOW() - INTERVAL '24 hours' GROUP BY task_id HAVING COUNT(DISTINCT run_id) > 1) t",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 1
+              },
+              {
+                "color": "red",
+                "value": 3
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "id": 105,
+      "type": "table",
+      "title": "Rework — tasks with multiple pipeline runs (7d)",
+      "description": "Every extra run of the same task is a repeated full pipeline pass. Expected source: operator rejects that requeue for a QA-feedback regen (by design, bounded) — anything beyond 2-3 runs or without a reject is a crash-requeue loop (poindexter#807).",
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 236
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ar.task_id::text AS task_id, LEFT(pt.topic, 60) AS topic, pt.status, COUNT(DISTINCT ar.run_id)::int AS runs, MIN(ar.created_at) AS first_run, MAX(ar.created_at) AS last_run FROM atom_runs ar LEFT JOIN pipeline_tasks pt ON pt.task_id = ar.task_id WHERE ar.created_at > NOW() - INTERVAL '7 days' GROUP BY 1, 2, 3 HAVING COUNT(DISTINCT ar.run_id) > 1 ORDER BY runs DESC, last_run DESC LIMIT 25",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "filterable": true
+          }
+        },
+        "overrides": []
+      },
+      "options": {}
     }
   ],
   "refresh": "30s",

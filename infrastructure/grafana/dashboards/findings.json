@@ -687,6 +687,187 @@
       ],
       "title": "Latest 25 Findings",
       "type": "table"
+    },
+    {
+      "id": 40,
+      "type": "row",
+      "collapsed": false,
+      "panels": [],
+      "title": "Operator paging — noise meta",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 27
+      }
+    },
+    {
+      "id": 41,
+      "type": "stat",
+      "title": "Pages sent (24h)",
+      "description": "operator_paged events that actually went out to Telegram/Discord (cooldown-suppressed repeats excluded). The 2026-07-01 audit baseline was 504/week — sustained >70/day means a probe is crying wolf again.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 0,
+        "y": 28
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Pages\" FROM audit_log WHERE event_type = 'operator_paged' AND details::text NOT LIKE '%suppressed (page cooldown)%' AND timestamp > NOW() - INTERVAL '24 hours'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "orange",
+                "value": 70
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "id": 42,
+      "type": "stat",
+      "title": "Suppressed by cooldown (24h)",
+      "description": "Repeat pages the operator_page_cooldown_minutes gate swallowed (glad-labs-stack#2042). High suppressed + low sent = the gate is earning its keep; high both = a genuinely noisy day.",
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 6,
+        "y": 28
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COUNT(*)::int AS \"Suppressed\" FROM audit_log WHERE event_type = 'operator_paged' AND details::text LIKE '%suppressed (page cooldown)%' AND timestamp > NOW() - INTERVAL '24 hours'",
+          "refId": "A"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name"
+      }
+    },
+    {
+      "id": 43,
+      "type": "timeseries",
+      "title": "Pages per day by source (14d)",
+      "description": "Which probe/source is doing the paging. Sustained spikes from one source = tune that probe, not the channel.",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 28
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "refId": "A",
+          "rawSql": "SELECT date_trunc('day', timestamp) AS time, source AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'operator_paged' AND timestamp > NOW() - INTERVAL '14 days' GROUP BY 1, 2 ORDER BY 1"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "custom": {
+            "drawStyle": "bars",
+            "stacking": {
+              "mode": "normal"
+            },
+            "fillOpacity": 60
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "displayMode": "table",
+          "placement": "bottom",
+          "calcs": ["sum"]
+        }
+      }
     }
   ],
   "description": "CHARTER: probe-finding routing — what the probes found, at what severity, and whether delivery policy moved it to the operator. Answers 'is anything detected but undelivered?'."
