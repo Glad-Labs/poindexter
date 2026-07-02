@@ -86,6 +86,20 @@ def _ensure_brain_bootstrap_stub(monkeypatch) -> ModuleType:
 # ---------------------------------------------------------------------------
 
 
+@pytest.fixture(autouse=True)
+def _no_real_db_connections():
+    """Keep unit tests hermetic: ``initialize()`` pre-reads pool sizes via
+    ``asyncpg.connect`` (GlitchTip #560 fix) — fail that path by default so
+    no test ever opens a socket; the pre-read degrades to ``{}`` and the
+    site_config/default fallbacks apply. Tests that exercise the pre-read
+    itself re-patch ``asyncpg.connect`` locally."""
+    with patch(
+        "asyncpg.connect",
+        new=AsyncMock(side_effect=ConnectionError("unit tests are offline")),
+    ):
+        yield
+
+
 def make_service(
     database_url: str = "postgresql://user:pass@localhost:5432/test_db",
     site_config: SiteConfig | None = None,
@@ -281,6 +295,68 @@ class TestDatabaseServiceLifecycle:
             f"min_size={created_kwargs['min_size']} is too large — GH-92 "
             "requires pre-warmed connections stay small"
         )
+
+    @pytest.mark.asyncio
+    async def test_pool_sizes_preread_from_db_wins_over_defaults(self):
+        """GlitchTip #560 fix: SiteConfig can't have loaded when the pool is
+        sized (it loads via this very pool), so the seeded database_pool_*
+        keys were silently inert. initialize() now pre-reads them over a
+        throwaway direct connection — the DB value must reach create_pool."""
+        svc = make_service()  # plain SiteConfig: .get returns defaults
+        mock_pool = AsyncMock()
+        all_calls: list[dict] = []
+
+        async def _capture_create_pool(*args, **kwargs):
+            all_calls.append(kwargs)
+            return mock_pool
+
+        preread_conn = MagicMock()
+        preread_conn.fetch = AsyncMock(return_value=[
+            {"key": "database_pool_min_size", "value": "4"},
+            {"key": "database_pool_max_size", "value": "30"},
+        ])
+        preread_conn.close = AsyncMock()
+
+        with patch(
+            "asyncpg.connect", new=AsyncMock(return_value=preread_conn)
+        ), patch("asyncpg.create_pool", new=_capture_create_pool), patch(
+            "services.database_service.UsersDatabase"
+        ), patch(
+            "services.database_service.TasksDatabase"
+        ), patch("services.database_service.ContentDatabase"), patch(
+            "services.database_service.AdminDatabase"
+        ), patch("services.database_service.WritingStyleDatabase"):
+            await svc.initialize()
+
+        assert all_calls[0]["min_size"] == 4
+        assert all_calls[0]["max_size"] == 30
+        preread_conn.close.assert_awaited_once()  # throwaway conn released
+
+    @pytest.mark.asyncio
+    async def test_pool_sizes_preread_failure_falls_back_to_defaults(self):
+        """A failed pre-read (fresh install mid-migration, DB briefly down)
+        must not block boot — sizes fall back to site_config/defaults. The
+        file-wide autouse fixture already fails asyncpg.connect; this pins
+        the contract explicitly."""
+        svc = make_service()
+        mock_pool = AsyncMock()
+        created_kwargs: dict = {}
+
+        async def _capture_create_pool(*args, **kwargs):
+            created_kwargs.update(kwargs)
+            return mock_pool
+
+        with patch("asyncpg.create_pool", new=_capture_create_pool), patch(
+            "services.database_service.UsersDatabase"
+        ), patch(
+            "services.database_service.TasksDatabase"
+        ), patch("services.database_service.ContentDatabase"), patch(
+            "services.database_service.AdminDatabase"
+        ), patch("services.database_service.WritingStyleDatabase"):
+            await svc.initialize()
+
+        assert created_kwargs["min_size"] >= 1  # a sane literal default
+        assert created_kwargs["max_size"] >= created_kwargs["min_size"]
 
     @pytest.mark.asyncio
     async def test_close_calls_pool_close(self):

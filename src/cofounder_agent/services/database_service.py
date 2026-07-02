@@ -43,8 +43,11 @@ from .writing_style_db import WritingStyleDatabase
 # has loaded from the DB, which it does via this very pool), so the caller
 # passes the app's lifespan-bound SiteConfig instance — initially empty,
 # populated in-place by ``site_config.load(pool)`` AFTER construction. The
-# pool-size reads in ``initialize()`` therefore use literal defaults exactly
-# as before. ``database_service`` is removed from ``di_wiring.WIRED_MODULES``.
+# pool-size reads in ``initialize()`` therefore pre-read their app_settings
+# keys over a throwaway direct connection (see ``_preread_pool_size_settings``)
+# and only then fall back to the literal defaults — before that fix the four
+# seeded ``*_pool_*_size`` keys were silently inert (GlitchTip #560 triage).
+# ``database_service`` is removed from ``di_wiring.WIRED_MODULES``.
 
 
 logger = get_logger(__name__)
@@ -87,9 +90,10 @@ class DatabaseService:
                          ``site_config`` has loaded from the DB (it loads via this
                          very pool), so callers pass the app's lifespan-bound
                          SiteConfig instance — initially empty, populated in-place
-                         by ``site_config.load(pool)`` after construction. At
-                         pool-creation time in ``initialize()`` ``.get()`` returns
-                         literal defaults, which is the intended behaviour.
+                         by ``site_config.load(pool)`` after construction. Pool
+                         sizes are pre-read directly from app_settings in
+                         ``initialize()`` (see ``_preread_pool_size_settings``)
+                         since ``.get()`` can only return defaults that early.
         """
         # #272 Phase-2g: injection is mandatory; store the run-bound instance.
         self._site_config = site_config
@@ -125,8 +129,12 @@ class DatabaseService:
                         if str(_p) not in _sys.path:
                             _sys.path.insert(0, str(_p))
                         break
-                from brain.bootstrap import require_database_url as _require  # type: ignore[no-redef]
-                from brain.bootstrap import resolve_database_url as _resolve  # type: ignore[no-redef]
+                from brain.bootstrap import (
+                    require_database_url as _require,  # type: ignore[no-redef]
+                )
+                from brain.bootstrap import (
+                    resolve_database_url as _resolve,  # type: ignore[no-redef]
+                )
 
                 if _resolve is not None:
                     resolved = _resolve()
@@ -178,6 +186,47 @@ class DatabaseService:
         self.embeddings: EmbeddingsDatabase = None  # type: ignore[assignment]
         self.audit: AuditLogger = None  # type: ignore[assignment]
 
+    async def _preread_pool_size_settings(self) -> dict[str, str]:
+        """Read the pool-size app_settings keys via a throwaway connection.
+
+        Bootstrap chicken-and-egg: ``SiteConfig`` loads from the DB via the
+        very pool this method is sizing, so at pool-creation time
+        ``site_config.get`` can only return literal defaults — which left
+        the four seeded ``*_pool_*_size`` keys silently inert (GlitchTip
+        #560 triage 2026-07-02: bumping ``database_pool_max_size`` had no
+        effect). One direct connection at boot makes them real.
+
+        Reads from the local DB when configured (that's where app_settings
+        lives — the spinal cord), else the primary. Any failure (fresh
+        install mid-migration, DB briefly unavailable) returns ``{}`` and
+        the caller falls back to defaults — if the DB is truly down, pool
+        creation fails loud immediately after anyway.
+        """
+        keys = [
+            "database_pool_min_size",
+            "database_pool_max_size",
+            "local_database_pool_min_size",
+            "local_database_pool_max_size",
+        ]
+        dsn = self.local_database_url or self.database_url
+        try:
+            conn = await asyncpg.connect(dsn, timeout=10)
+            try:
+                rows = await conn.fetch(
+                    "SELECT key, value FROM app_settings "
+                    "WHERE key = ANY($1::text[]) AND is_active = true "
+                    "AND COALESCE(value, '') <> ''",
+                    keys,
+                )
+            finally:
+                await conn.close()
+            return {r["key"]: r["value"] for r in rows}
+        except Exception as e:  # noqa: BLE001 — pre-read is best-effort
+            logger.info(
+                "Pool-size pre-read unavailable (%s) — using defaults", e
+            )
+            return {}
+
     async def initialize(self) -> None:
         """Initialize connection pool(s) and all delegate modules."""
         try:
@@ -193,10 +242,18 @@ class DatabaseService:
             # even when the worker is idle — a direct contributor to the
             # TooManyConnectionsError stress test that motivated GH-92.
             # ``max_size`` stays higher so bursts can grow the pool on demand.
-            # Reads from app_settings (no silent env-var drift); defaults
-            # preserve backward compat for max_size.
-            min_size = int(self._site_config.get("database_pool_min_size", "2" if is_dev else "5"))
-            max_size = int(self._site_config.get("database_pool_max_size", "20" if is_dev else "50"))
+            # Resolution: direct pre-read from app_settings (SiteConfig hasn't
+            # loaded yet — see _preread_pool_size_settings) → site_config.get
+            # (tests inject initial_config) → literal default.
+            pre = await self._preread_pool_size_settings()
+            min_size = int(
+                pre.get("database_pool_min_size")
+                or self._site_config.get("database_pool_min_size", "2" if is_dev else "5")
+            )
+            max_size = int(
+                pre.get("database_pool_max_size")
+                or self._site_config.get("database_pool_max_size", "20" if is_dev else "50")
+            )
 
             self.pool = await asyncpg.create_pool(
                 self.database_url,
@@ -213,8 +270,14 @@ class DatabaseService:
             if self.local_database_url:
                 # GH-92: local pool min stays at 2 — rarely-called paths
                 # (tasks, writing_style, embeddings) shouldn't hoard.
-                local_min = int(self._site_config.get("local_database_pool_min_size", "2" if is_dev else "2"))
-                local_max = int(self._site_config.get("local_database_pool_max_size", "10" if is_dev else "20"))
+                local_min = int(
+                    pre.get("local_database_pool_min_size")
+                    or self._site_config.get("local_database_pool_min_size", "2" if is_dev else "2")
+                )
+                local_max = int(
+                    pre.get("local_database_pool_max_size")
+                    or self._site_config.get("local_database_pool_max_size", "10" if is_dev else "20")
+                )
                 self.local_pool = await asyncpg.create_pool(
                     self.local_database_url,
                     min_size=local_min,
