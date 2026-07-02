@@ -228,9 +228,16 @@ class InternalRagSource:
                 "%s — skipping candidate", model, e,
             )
             return None
-        # `dict.get(k, default)` returns the actual None/empty when the key
-        # exists with that value — the default never fires. The LLM
-        # occasionally returns `{"topic": ""}`, so fall back to truthy-or
-        # to make sure topic is never an empty string downstream (which
-        # otherwise crashes embed_text on empty input).
-        return parsed.get("topic") or "Untitled", parsed.get("angle") or ""
+        # The LLM occasionally returns `{"topic": ""}` (or omits the key).
+        # An empty topic means the model failed to distill — skip the
+        # candidate like the empty/unparseable cases above. Inventing a
+        # placeholder here ("Untitled") let junk flow all the way to a
+        # generated post (poindexter#808).
+        topic = str(parsed.get("topic") or "").strip()
+        if not topic:
+            logger.warning(
+                "[internal_rag] distill returned no topic (model=%s) — "
+                "skipping candidate", model,
+            )
+            return None
+        return topic, str(parsed.get("angle") or "").strip()

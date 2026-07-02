@@ -169,3 +169,71 @@ class TestResolveMinAlphaWords:
         # The app_settings key is public API (seeded in settings_defaults);
         # renaming it silently orphans operator-tuned values.
         assert MIN_ALPHA_WORDS_KEY == "topic_sanity_min_alpha_words"
+
+
+# ---------------------------------------------------------------------------
+# poindexter#808 — failure sentinels + truncated titles
+# ---------------------------------------------------------------------------
+
+
+class TestFailureSentinels:
+    """LLM distillers emit their failure state as the topic string
+    ("No topic found" reached awaiting_approval on 2026-07-02, task
+    4b470976). A failure sentinel is a bounded, deterministic class —
+    catch it at the sanity gate so every task-creation seam is covered."""
+
+    @pytest.mark.parametrize("topic", [
+        "No topic found",
+        "no topic found",
+        "  No Topic Found.  ",
+        "Untitled",
+        "N/A",
+        "None",
+        "Unknown",
+        "TBD",
+        "Not found",
+        "No clear topic",
+        "Insufficient information",
+        "Error",
+    ])
+    def test_failure_sentinels_rejected(self, topic):
+        verdict = evaluate_topic_sanity(topic)
+        assert verdict.ok is False
+        assert verdict.reason == "failure_sentinel"
+
+    def test_sentinel_embedded_in_real_topic_passes(self):
+        # Only the WHOLE topic being a sentinel is junk — a real headline
+        # that merely contains the words must pass.
+        verdict = evaluate_topic_sanity(
+            "Why 'No Topic Found' Errors Plague RAG Pipelines"
+        )
+        assert verdict.ok is True
+
+
+class TestTruncatedTitles:
+    """Distillation sometimes emits a clause cut mid-phrase — the real
+    task 115646d1 (2026-07-01) ran a full pipeline on the topic
+    'What to Learn to Be a'. A title ending in an article/preposition/
+    conjunction is deterministically incomplete."""
+
+    @pytest.mark.parametrize("topic", [
+        "What to Learn to Be a",
+        "The Future of AI in",
+        "How to Build Your First and",
+        "Machine Learning for the",
+    ])
+    def test_trailing_stopword_rejected(self, topic):
+        verdict = evaluate_topic_sanity(topic)
+        assert verdict.ok is False
+        assert verdict.reason == "truncated_title"
+
+    @pytest.mark.parametrize("topic", [
+        "What to Learn to Be a Machine Learning Engineer",
+        "The Rise of Local LLMs",
+        "Windows on ARM Finally Makes Sense",
+        "Automating Content Automation",  # vague but complete — QA's job
+        "GPU Undervolting Explained",
+    ])
+    def test_complete_titles_pass(self, topic):
+        verdict = evaluate_topic_sanity(topic)
+        assert verdict.ok is True, verdict.detail

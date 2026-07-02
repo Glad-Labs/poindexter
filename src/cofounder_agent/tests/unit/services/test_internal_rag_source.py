@@ -346,6 +346,35 @@ async def test_distill_parses_valid_json(monkeypatch):
     assert await src._distill_topic_angle(["snippet"]) == ("T", "A")
 
 
+@pytest.mark.parametrize(
+    "raw",
+    [
+        '{"topic": "", "angle": "some angle"}',
+        '{"topic": "   ", "angle": "some angle"}',
+        '{"angle": "some angle"}',
+        '{"topic": null, "angle": "some angle"}',
+    ],
+)
+async def test_distill_returns_none_on_empty_topic(monkeypatch, raw):
+    # poindexter#808: valid JSON with an empty/missing topic used to be
+    # turned into the invented sentinel ("Untitled", ...), which flowed
+    # all the way to a published junk task. An empty topic means the
+    # model failed to distill — skip the candidate, same as empty /
+    # unparseable responses.
+    import services.llm_text as llm_text
+    import services.prompt_manager as pm
+    import services.topic_ranking as tr
+
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
+    monkeypatch.setattr(tr, "_ollama_chat_json", AsyncMock(return_value=raw))
+    fake_pm = AsyncMock()
+    fake_pm.get_prompt = lambda *a, **k: "prompt"
+    monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
+
+    assert await src._distill_topic_angle(["snippet"]) is None
+
+
 async def test_valid_source_kinds_includes_all_supported_kinds():
     # Lock down the public list — adding a kind here is a contract change
     # callers (NicheService.set_sources, taps wiring) need to know about.

@@ -25,6 +25,15 @@ QA rails' job):
    (rules 1-2 still apply). Prod history backs the default: across 1,867
    pipeline_tasks, every topic under 2 alphabetic words ended
    rejected/cancelled — none ever published.
+4. Whole-topic failure sentinels ("No topic found", "Untitled", "N/A", …)
+   are never valid — LLM distillers emit their failure state as the topic
+   string, and "No topic found" reached awaiting_approval on 2026-07-02
+   (task 4b470976). Whole-topic match only: a real headline that merely
+   contains the words passes.
+5. Titles ending in an article/preposition/conjunction ("What to Learn to
+   Be a", task 115646d1) are deterministically incomplete — a truncated
+   distillation, not a topic. Skipped when the title ends with terminal
+   punctuation (an intentional "…For?" style title is complete).
 
 Call sites (every seam where a topic becomes a task):
 
@@ -68,6 +77,41 @@ _ALPHA_WORD_RE = re.compile(r"[^\W\d_]{2,}")
 REASON_EMPTY = "empty"
 REASON_NO_ALPHA = "no_alphabetic_content"
 REASON_TOO_FEW = "too_few_alpha_words"
+REASON_SENTINEL = "failure_sentinel"
+REASON_TRUNCATED = "truncated_title"
+
+# Whole-topic failure sentinels — the bounded set of strings LLM distillers
+# emit INSTEAD of a topic when they fail. Matched against the normalised
+# (lowercased, whitespace-collapsed, trailing-punctuation-stripped) full
+# topic only, never as a substring.
+_FAILURE_SENTINELS = frozenset({
+    "no topic found",
+    "no clear topic",
+    "not found",
+    "untitled",
+    "n/a",
+    "none",
+    "unknown",
+    "tbd",
+    "insufficient information",
+    "error",
+})
+
+# A title whose last word is one of these is a clause cut mid-phrase
+# ("What to Learn to Be a"). Articles, common prepositions, conjunctions,
+# and bare copulas — words that grammatically require a continuation.
+_TRAILING_STOPWORDS = frozenset({
+    "a", "an", "the",
+    "to", "of", "for", "in", "on", "at", "by", "with", "from",
+    "and", "or", "but",
+    "is", "are", "was", "were", "be",
+})
+
+# Titles ending with terminal punctuation are treated as intentionally
+# complete — "...For?" is a deliberate title shape, not a truncation.
+_TERMINAL_PUNCT = ".!?\"'’”)…"
+
+_TRAILING_NONWORD_RE = re.compile(r"[\W_]+$")
 
 
 @dataclass(frozen=True)
@@ -75,7 +119,9 @@ class TopicSanityResult:
     """Verdict of :func:`evaluate_topic_sanity` — machine-routable + human-readable."""
 
     ok: bool
-    reason: str | None  # None | REASON_EMPTY | REASON_NO_ALPHA | REASON_TOO_FEW
+    # None | REASON_EMPTY | REASON_NO_ALPHA | REASON_TOO_FEW |
+    # REASON_SENTINEL | REASON_TRUNCATED
+    reason: str | None
     alpha_word_count: int
     detail: str
 
@@ -126,6 +172,18 @@ def evaluate_topic_sanity(
             detail="topic is empty or whitespace-only",
         )
 
+    normalized = _TRAILING_NONWORD_RE.sub("", " ".join(stripped.lower().split()))
+    if normalized in _FAILURE_SENTINELS:
+        return TopicSanityResult(
+            ok=False,
+            reason=REASON_SENTINEL,
+            alpha_word_count=count_alpha_words(stripped),
+            detail=(
+                "topic is a distiller failure sentinel, not a topic "
+                f"(matched {normalized!r})"
+            ),
+        )
+
     words = count_alpha_words(stripped)
     if not any(ch.isalpha() for ch in stripped):
         return TopicSanityResult(
@@ -148,6 +206,19 @@ def evaluate_topic_sanity(
                 f"{min_alpha_words} required ({MIN_ALPHA_WORDS_KEY})"
             ),
         )
+
+    if stripped[-1] not in _TERMINAL_PUNCT:
+        last_token = _TRAILING_NONWORD_RE.sub("", stripped.split()[-1]).lower()
+        if last_token in _TRAILING_STOPWORDS:
+            return TopicSanityResult(
+                ok=False,
+                reason=REASON_TRUNCATED,
+                alpha_word_count=words,
+                detail=(
+                    f"topic ends mid-phrase on {last_token!r} — a truncated "
+                    "distillation, not a complete title"
+                ),
+            )
 
     return TopicSanityResult(
         ok=True, reason=None, alpha_word_count=words, detail="ok",
@@ -192,7 +263,9 @@ __all__ = [
     "MIN_ALPHA_WORDS_KEY",
     "REASON_EMPTY",
     "REASON_NO_ALPHA",
+    "REASON_SENTINEL",
     "REASON_TOO_FEW",
+    "REASON_TRUNCATED",
     "TopicSanityError",
     "TopicSanityResult",
     "count_alpha_words",
