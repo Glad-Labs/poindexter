@@ -167,6 +167,25 @@ Evaluate:
 2. Is the writing clear, engaging, and well-structured?
 3. Are there any hallucinated people, statistics, or quotes?
 4. Would this be valuable to the target audience (developers and founders)?
+5. Is this FINISHED ARTICLE PROSE from the first line to the last? Planning
+   notes, outlines, bullet-point drafting scaffolds, echoed writing
+   instructions, or notes-to-self ("I should add...", "Check word count")
+   are never publishable — whether they make up the whole text or only
+   open it before the article begins.
+
+UNFINISHED CONTENT IS AN AUTOMATIC REJECT:
+
+When any part of the CONTENT is a plan, outline, instruction echo, or
+drafting scaffold rather than finished prose, set approved=false and cap
+quality_score at 25. Score only the text actually on the page — never
+the article the plan describes or the title promises. A well-organized
+outline is still a reject: readers must never see it.
+
+GROUND YOUR REVIEW IN THE CONTENT:
+
+Quote a short phrase from the CONTENT for anything you praise or
+criticize. If you cannot point to text that supports a judgment, do not
+make that judgment.
 
 HANDLING CLAIMS YOU DO NOT RECOGNIZE:
 

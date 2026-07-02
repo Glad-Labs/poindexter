@@ -775,6 +775,136 @@ def detect_prompt_echo_paraphrase(text: str) -> list[str]:
     return [name for name, rx in _PROMPT_ECHO_PARAPHRASE_PATTERNS if rx.search(text)]
 
 
+# Planning-dump preamble detection. The residual gap after the exact markers
+# and the paraphrase shapes above: a draft that OPENS with the writer's
+# planning/outline dump but contains NO instruction lines at all. The
+# 2026-07-01 task e46b449c persisted exactly that — "*   Topic: Ellipses...",
+# "*   Source Material provided:", an inventory of source bullets, then the
+# article fused mid-line onto the last bullet — with 0 exact markers, 0
+# paraphrase shapes, and only 1 leaked_planning_scaffold tell (below its >=2
+# bar), so every leak rule stayed silent and it reached awaiting_approval at
+# quality 85 (the LLM critic anchored on the title and passed it too).
+#
+# Detection here is STRUCTURAL, not vocabulary-first: a finished article never
+# opens with a wall of outline bullets, so the signature is bullet dominance
+# of the pre-heading OPENING plus at least two planning-vocabulary families
+# inside that opening. Scoping the vocabulary to the opening bullet block is
+# what keeps prose mentions safe — an article ABOUT writing can discuss "word
+# count" mid-paragraph without ever matching, because vocabulary alone never
+# fires without the structure.
+_PLANNING_BULLET_LINE_RE = re.compile(r"^[ \t]*(?:[*+\-]|\d+[.)])[ \t]+\S")
+
+# First Markdown heading, whether line-anchored or glued mid-line onto the
+# preceding text ("...Plain language.# Addressing Hallucinations") — the
+# writer fuses the article start onto its last planning bullet. Mirror of
+# content_normalize_draft._FIRST_HEADING_RE (strip there, detect here — the
+# same duplication precedent as _CODE_SPAN_RE_FOR_VALIDATOR, because the
+# validator must stay light and not import from atoms).
+_FIRST_HEADING_RE_FOR_VALIDATOR = re.compile(
+    r"(?:^|(?<=[^\n#]))(#{1,6}[ \t]+\S)", re.MULTILINE,
+)
+
+# Vocabulary FAMILIES that mark an opening bullet block as writer planning.
+# Each family counts once; the detector needs >=2 distinct families so a
+# single incidental phrase can never fire the rule on its own.
+_PLANNING_DUMP_VOCAB: tuple[tuple[str, re.Pattern[str]], ...] = (
+    # "*   Topic: ..." / "* Outline:" — planning bullet labels.
+    ("planning-bullet-label", re.compile(
+        r"^[ \t]*[*+\-][ \t]+\*{0,2}(?:topic|outline|audience|tone|voice"
+        r"|angle|structure)\b[ \t]*:",
+        re.IGNORECASE | re.MULTILINE,
+    )),
+    # "*   *Introduction:* ..." — section-by-section plan labels (the
+    # emphasised-label bullet shape task ecaf0c01 used for its outline).
+    ("section-plan-label", re.compile(
+        r"^[ \t]*[*+\-][ \t]+\*(?:intro(?:duction)?|conclusion|opening"
+        r"|closing|transition[^:*\n]{0,40})\s*:?\*",
+        re.IGNORECASE | re.MULTILINE,
+    )),
+    # Research-material inventory vocabulary.
+    ("source-inventory", re.compile(
+        r"\bsource\s+material\b|\bsources?\s+provided\b"
+        r"|\bprovided\s+sources?\b|\binternal\s+snippets?\b"
+        r"|\bexternal\s+sources?\b|\bbackground\s+context\b",
+        re.IGNORECASE,
+    )),
+    # Notes-to-self drafting voice ("I should provide worked examples...").
+    ("self-instruction", re.compile(
+        r"\bI\s+(?:can|should|need\s+to|must|will)\s+(?:add|provide|explain"
+        r"|expand|ensure|mention|discuss|include|elaborate)\b",
+        re.IGNORECASE,
+    )),
+    # Format/meta constraints echoed as checklist items.
+    ("format-meta", re.compile(
+        r"\bmarkdown\s+format\b|\bword\s+count\b|\bfirst\s+person\b"
+        r"|\bthird\s+person\b|\bshort\s+paragraphs\b|\bplain\s+language\b"
+        r"|\bcomplete\s+sentence\b|\bno\s+(?:preamble|padding|filler|footnotes)\b",
+        re.IGNORECASE,
+    )),
+    # Citation-mechanics instructions.
+    ("citation-meta", re.compile(
+        r"\bensure\s+(?:all\s+|inline\s+)?links?\b|\battribute\s+facts\b"
+        r"|\binline\s+links?\s+use\b|\bcite\s+if\s+relevant\b"
+        r"|\blinks?\s+(?:are\s+)?preserved\b",
+        re.IGNORECASE,
+    )),
+    # Source-triage notes ("(Irrelevant source: ...)", "Discard irrelevant").
+    ("source-triage", re.compile(
+        r"\bdiscard\s+irrelevant\b|\birrelevant\s+(?:source|data)\b",
+        re.IGNORECASE,
+    )),
+)
+
+_PLANNING_DUMP_MIN_BULLETS = 6
+_PLANNING_DUMP_MIN_BULLET_SHARE = 0.6
+_PLANNING_DUMP_MAX_OPENING_LINES = 50
+_PLANNING_DUMP_MIN_VOCAB = 2
+
+
+def detect_planning_dump_preamble(text: str) -> list[str]:
+    """Return evidence that ``text`` OPENS with a planning/outline dump.
+
+    Empty list means clean. Evidence strings are ``opening_bullets:N/M``
+    (bullet lines over non-blank lines in the pre-heading opening) plus one
+    ``vocab:<family>`` per matched planning-vocabulary family. Fires only
+    when ALL of: >= 6 bullet lines, bullets >= 60% of the opening's non-blank
+    lines, and >= 2 distinct vocabulary families — structure without planning
+    vocabulary (a legitimate opening list) and vocabulary without structure
+    (an article about writing) both stay below the bar.
+
+    Pair with ``_strip_code_spans`` at the call site so a post that QUOTES a
+    planning dump inside a code fence is not flagged.
+    """
+    if not text or not text.strip():
+        return []
+    body = text
+    # Skip a single leading heading line (a generated H1 title) so a dump
+    # placed right below the title is still scanned. An article whose intro
+    # prose follows the title is untouched — prose fails the bullet bar.
+    stripped = body.lstrip()
+    if stripped.startswith("#"):
+        first_line, _, rest = stripped.partition("\n")
+        if re.match(r"#{1,6}[ \t]+\S", first_line):
+            body = rest
+    heading = _FIRST_HEADING_RE_FOR_VALIDATOR.search(body)
+    opening = body[: heading.start(1)] if heading else body
+    lines = [ln for ln in opening.split("\n") if ln.strip()]
+    if not lines:
+        return []
+    lines = lines[:_PLANNING_DUMP_MAX_OPENING_LINES]
+    bullets = sum(1 for ln in lines if _PLANNING_BULLET_LINE_RE.match(ln))
+    if bullets < _PLANNING_DUMP_MIN_BULLETS:
+        return []
+    if bullets / len(lines) < _PLANNING_DUMP_MIN_BULLET_SHARE:
+        return []
+    vocab = [name for name, rx in _PLANNING_DUMP_VOCAB if rx.search(opening)]
+    if len(vocab) < _PLANNING_DUMP_MIN_VOCAB:
+        return []
+    return [f"opening_bullets:{bullets}/{len(lines)}"] + [
+        f"vocab:{name}" for name in vocab
+    ]
+
+
 def _check_patterns(
     text: str,
     patterns: list,
@@ -2175,6 +2305,32 @@ def validate_content(
                 ),
                 matched_text=content.strip()[:160],
             ))
+
+    # 10c. Planning-dump preamble — the writer emitted its outline/planning
+    # bullets as the OPENING of the draft with NO instruction lines at all,
+    # so neither the exact markers nor the >=2 paraphrase shapes above fire
+    # (2026-07-01 task e46b449c: "*   Topic: Ellipses...", "*   Source
+    # Material provided:" — 0 markers, 0 shapes, 1 scaffold tell; reached
+    # awaiting_approval at quality 85). Structural rule: >=6 bullets
+    # dominating the pre-heading opening plus >=2 planning-vocabulary
+    # families. Same code-span strip as 10b so a post that quotes a dump in
+    # a fence is safe.
+    if _enabled("planning_dump"):
+        dump_evidence = detect_planning_dump_preamble(_strip_code_spans(content))
+        if dump_evidence:
+            issues.append(ValidationIssue(
+                severity="critical",
+                category="planning_dump",
+                description=(
+                    "Draft opens with a planning/outline dump ("
+                    + ", ".join(dump_evidence[:5]) + ") — the writer emitted "
+                    "its plan instead of (or before) the article. Fix the "
+                    "producer (canonical writer or expand pass); finished "
+                    "prose never opens with outline bullets."
+                ),
+                matched_text=content.strip()[:160],
+            ))
+            CONTENT_VALIDATOR_WARNINGS_TOTAL.labels(rule="planning_dump").inc()
 
     # 11. Title diversity — detect repetitive opener patterns
     if _enabled("title_diversity"):

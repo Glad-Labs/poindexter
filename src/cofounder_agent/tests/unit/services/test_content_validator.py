@@ -2291,3 +2291,207 @@ class TestParaphrasedInstructionEchoRule:
         )
         assert "expand-draft" in hits
         assert "word-target" in hits
+
+
+# Verbatim-trimmed opening of task e46b449c (2026-07-01): a pure planning
+# dump — outline bullets inventorying topic/sources/facts, then the article
+# fused mid-line onto the last bullet — with ZERO instruction-echo lines.
+# detect_prompt_leak (exact markers), detect_prompt_echo_paraphrase (0
+# shapes), and the >=2-tell leaked_planning_scaffold rule (1 tell) all
+# stayed silent on it, so it reached awaiting_approval at quality 85.
+_E46_PLANNING_DUMP = """*   Topic: Ellipses and triple-dot punctuation marks.
+    *   Source Material provided:
+        *   Unicode categories ("Other Punctuation").
+        *   Wikipedia (Ellipsis).
+        *   Compart (Unicode characters).
+        *   Graphemica (Arabic triple dot).
+        *   (Irrelevant source: "Un doppio sospetto" book description).
+
+    *   Definition of an ellipsis.
+    *   Unicode characters associated with triple dots/ellipses.
+    *   Usage in writing (omissions, pauses, etc.).
+    *   Etymology and terminology.
+
+    *   Ensure inline links use `[Tool Name](url)`.
+    *   Attribute facts clearly (e.g., "According to...").
+    *   Discard irrelevant data (the crime novel).An **ellipsis** (plural: ellipses) is a punctuation mark consisting of three dots used primarily to indicate the omission of words, phrases, or paragraphs from a quoted passage.
+
+### Etymology and Terminology
+The term originates from the Ancient Greek word *elleipsis*, which literally means "leave out."
+"""
+
+
+class TestDetectPlanningDumpPreamble:
+    """Unit tests for the structural planning-dump detector.
+
+    Unlike the vocabulary-keyed scaffold/echo rules, this detector is
+    STRUCTURAL: a finished article never OPENS with a wall of outline
+    bullets, so bullet dominance of the pre-heading opening plus >=2
+    planning-vocabulary families is the signature. Closes the residual gap
+    from tasks e46b449c / 9921678f / ecaf0c01 (2026-06-30..07-01): a
+    planning/thinking dump WITHOUT instruction lines passed every rail.
+    """
+
+    def test_e46_planning_dump_detected(self):
+        from modules.content.content_validator import detect_planning_dump_preamble
+        evidence = detect_planning_dump_preamble(_E46_PLANNING_DUMP)
+        assert evidence, "e46b449c-shape planning dump must be detected"
+        assert any(e.startswith("opening_bullets:") for e in evidence)
+        assert sum(1 for e in evidence if e.startswith("vocab:")) >= 2
+
+    def test_ecaf_style_section_plan_outline_detected(self):
+        # Shape of task ecaf0c01's outline block: section-by-section plan
+        # labels + notes-to-self + word-count checklist, no expand/word-target
+        # instruction lines at all.
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            "*   *Introduction:* Define hallucination using Wikipedia/IBM.\n"
+            "    *   Connect to technical writing via the content problem.\n"
+            "    *   Establish the stakes: precision is non-negotiable.\n"
+            "*   *The Operational Bottleneck:* Discuss the current loop.\n"
+            "    *   I should provide specific before-and-after quote "
+            "examples to demonstrate the workflow.\n"
+            "*   *Conclusion:* Summarize the path to enterprise-readiness.\n"
+            "    *   Check word count (aiming for ~1057).\n"
+            "    *   Ensure all links are preserved.\n\n"
+            "# Addressing Hallucinations in Open-Source LLM Agents\n\n"
+            "An AI hallucination occurs when a large language model generates "
+            "fabricated information presented as fact.\n"
+        )
+        evidence = detect_planning_dump_preamble(content)
+        assert evidence, "section-plan outline must be detected"
+
+    def test_dump_below_leading_h1_detected(self):
+        # A dump placed right below the generated H1 title is still a dump —
+        # the detector skips one leading heading line before scanning.
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = "# Decoding the Dots\n\n" + _E46_PLANNING_DUMP
+        assert detect_planning_dump_preamble(content)
+
+    def test_clean_prose_intro_returns_empty(self):
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            "Local model routing sounds simple until you meet the failure "
+            "modes. Here is what actually breaks in production, and what we "
+            "changed after each incident.\n\n"
+            "## Cold-load timeouts\n\n"
+            "The first symptom is a request that hangs for thirty seconds.\n"
+        )
+        assert detect_planning_dump_preamble(content) == []
+
+    def test_bullet_list_after_heading_not_flagged(self):
+        # An article that opens with a heading then a legitimate bullet list
+        # has an empty pre-heading opening — never flagged.
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            "## What You Will Need\n\n"
+            "*   A GPU with at least 12 GB of VRAM.\n"
+            "*   Ollama 0.5 or newer.\n"
+            "*   A Postgres instance for the task queue.\n"
+            "*   Roughly 40 GB of free disk for model weights.\n"
+            "*   Patience for the first cold load.\n"
+            "*   A terminal you are comfortable in.\n"
+            "*   An afternoon to burn.\n\n"
+            "Start by pulling the base model.\n"
+        )
+        assert detect_planning_dump_preamble(content) == []
+
+    def test_leading_bullets_without_planning_vocab_not_flagged(self):
+        # Structure alone is not enough: a (rare) legitimate opening list
+        # without planning vocabulary stays below the bar.
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            "*   Timeouts on cold model loads.\n"
+            "*   VRAM fragmentation after repeated swaps.\n"
+            "*   Silent fallbacks that mask misconfigured pins.\n"
+            "*   Retry storms when the queue backs up.\n"
+            "*   Checkpoint corruption on mid-run kills.\n"
+            "*   Disk pressure from orphaned model blobs.\n\n"
+            "## The common thread\n\n"
+            "Every one of these traces back to treating the GPU as free.\n"
+        )
+        assert detect_planning_dump_preamble(content) == []
+
+    def test_planning_vocab_in_prose_without_bullets_not_flagged(self):
+        # Vocabulary alone is not enough either: an article ABOUT writing
+        # can discuss word count and markdown format in prose.
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            "Our style guide bans filler. We track word count per section, "
+            "require markdown format for every draft, and reject anything "
+            "written in first person that is not a founder diary.\n\n"
+            "## Why the rules exist\n\n"
+            "Readers notice padding faster than writers do.\n"
+        )
+        assert detect_planning_dump_preamble(content) == []
+
+    def test_short_bullet_opening_not_flagged(self):
+        # Below the minimum-bullet floor (a TL;DR list) — never flagged,
+        # even with planning-adjacent vocabulary nearby.
+        from modules.content.content_validator import detect_planning_dump_preamble
+        content = (
+            "*   Word count matters less than substance.\n"
+            "*   Markdown format is table stakes.\n"
+            "*   First person belongs in diaries.\n\n"
+            "That is the short version. The long version follows.\n\n"
+            "## The long version\n\n"
+            "Substance is the only metric a reader feels.\n"
+        )
+        assert detect_planning_dump_preamble(content) == []
+
+    def test_empty_returns_empty(self):
+        from modules.content.content_validator import detect_planning_dump_preamble
+        assert detect_planning_dump_preamble("") == []
+        assert detect_planning_dump_preamble("   \n\n  ") == []
+
+
+class TestPlanningDumpRule:
+    """validate_content flags an opening planning/outline dump as a CRITICAL
+    planning_dump issue. Residual-gap closer for the 2026-06-30..07-01
+    incidents: prompt_leak needs instruction lines (exact or paraphrased)
+    and leaked_planning_scaffold needs >=2 known tells — a pure outline dump
+    (task e46b449c) had neither and reached awaiting_approval at 85."""
+
+    def test_e46_planning_dump_body_critical(self):
+        result = validate_content(
+            "The Meta-Loop: Building Systems That Automate Your Content "
+            "Automation",
+            _E46_PLANNING_DUMP,
+            "Automating Content Automation",
+            site_config=_SC,
+        )
+        dump = [i for i in result.issues if i.category == "planning_dump"]
+        assert dump, "expected a planning_dump issue"
+        assert all(i.severity == "critical" for i in dump)
+        assert result.passed is False
+
+    def test_dump_inside_code_fence_not_flagged(self):
+        # An article that QUOTES a planning dump in a fenced block (e.g. a
+        # post about this very bug class) is legitimate; code spans are
+        # stripped before scanning.
+        content = (
+            "We caught our writer emitting its plan instead of the article. "
+            "The leaked scaffold looked like this:\n\n"
+            "```\n" + _E46_PLANNING_DUMP + "```\n\n"
+            "The fix was a structural detector on the opening bullet block, "
+            "wired into the programmatic validator as a hard gate.\n"
+        )
+        result = validate_content("Catching Planning Dumps", content, "AI", site_config=_SC)
+        assert not any(i.category == "planning_dump" for i in result.issues)
+
+    def test_article_with_midbody_bullets_not_flagged(self):
+        content = (
+            "Quantization decides whether a 30B model fits your GPU at all. "
+            "The trade-offs are not subtle, and picking wrong costs you "
+            "either quality or VRAM you do not have.\n\n"
+            "## The formats that matter\n\n"
+            "*   GGUF for llama.cpp and Ollama deployments.\n"
+            "*   AWQ when you want activation-aware accuracy.\n"
+            "*   GPTQ for the widest tooling support.\n"
+            "*   QAT checkpoints when the vendor ships them.\n"
+            "*   FP8 on hardware new enough to run it natively.\n"
+            "*   INT4 when VRAM is the only constraint you have.\n\n"
+            "Every format above trades precision for memory differently.\n"
+        )
+        result = validate_content("Quantization Guide", content, "hardware", site_config=_SC)
+        assert not any(i.category == "planning_dump" for i in result.issues)

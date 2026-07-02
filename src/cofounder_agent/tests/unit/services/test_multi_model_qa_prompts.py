@@ -125,6 +125,25 @@ Evaluate:
 2. Is the writing clear, engaging, and well-structured?
 3. Are there any hallucinated people, statistics, or quotes?
 4. Would this be valuable to the target audience (developers and founders)?
+5. Is this FINISHED ARTICLE PROSE from the first line to the last? Planning
+   notes, outlines, bullet-point drafting scaffolds, echoed writing
+   instructions, or notes-to-self ("I should add...", "Check word count")
+   are never publishable — whether they make up the whole text or only
+   open it before the article begins.
+
+UNFINISHED CONTENT IS AN AUTOMATIC REJECT:
+
+When any part of the CONTENT is a plan, outline, instruction echo, or
+drafting scaffold rather than finished prose, set approved=false and cap
+quality_score at 25. Score only the text actually on the page — never
+the article the plan describes or the title promises. A well-organized
+outline is still a reject: readers must never see it.
+
+GROUND YOUR REVIEW IN THE CONTENT:
+
+Quote a short phrase from the CONTENT for anything you praise or
+criticize. If you cannot point to text that supports a judgment, do not
+make that judgment.
 
 HANDLING CLAIMS YOU DO NOT RECOGNIZE:
 
@@ -243,6 +262,29 @@ class TestMultiModelQaPromptSnapshots:
             current_date=today, sources_block="",
         )
         assert f"TODAY'S DATE: {today}" in rendered
+
+    def test_review_contains_unfinished_content_veto(
+        self, pm: UnifiedPromptManager,
+    ):
+        """The critic prompt must carry the finished-prose veto criterion.
+
+        2026-07-01 incident (tasks e46b449c / 9921678f / ecaf0c01): drafts
+        whose bodies were the writer's planning/outline dump scored 82-85
+        and reached awaiting_approval — the critic's four criteria all
+        addressed factual accuracy/clarity/audience, so a well-organized
+        outline failed none of them, and the judge anchored its review on
+        the TITLE instead of the text on the page. Guards the veto text
+        against a future prompt edit silently dropping it (the snapshot
+        test would flag the diff, but this states the intent).
+        """
+        rendered = pm.get_prompt(
+            "qa.review",
+            title="T", topic="X", content="C",
+            current_date="2026-01-01", sources_block="",
+        )
+        assert "UNFINISHED CONTENT IS AN AUTOMATIC REJECT" in rendered
+        assert "FINISHED ARTICLE PROSE" in rendered
+        assert "GROUND YOUR REVIEW IN THE CONTENT" in rendered
 
 
 # ---------------------------------------------------------------------------
