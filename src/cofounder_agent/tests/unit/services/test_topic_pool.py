@@ -201,3 +201,57 @@ async def test_mark_batched_flips_only_named_ids(db_pool):
     async with db_pool.acquire() as conn:
         assert await mark_batched(conn, [chosen_id]) == 0
         assert await mark_batched(conn, []) == 0
+
+
+# ---------------------------------------------------------------------------
+# b3 — claim_best_pooled_topic (the topic="auto" resolution seam)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_claim_best_pooled_topic_picks_sane_best_and_flips(db_pool):
+    from services.niche_service import NicheService
+    from services.topic_pool import claim_best_pooled_topic
+
+    n = await NicheService(db_pool).create(
+        slug="pool-claim-best", name="Claim",
+    )
+    # The top-scored row is a distiller failure sentinel — it must be
+    # skipped in favour of the best SANE candidate.
+    await _pool_insert(db_pool, n.id, "hackernews", [
+        _topic("No topic found", score=9.0),
+        _topic("Quantization Tradeoffs Explained", desc="an angle", score=3.0),
+        _topic("Cheaper Alternative Headline", score=1.0),
+    ])
+
+    claimed = await claim_best_pooled_topic(db_pool, niche_id=n.id)
+    assert claimed is not None
+    assert claimed["title"] == "Quantization Tradeoffs Explained"
+    assert claimed["summary"] == "an angle"
+    assert claimed["source"] == "hackernews"
+
+    async with db_pool.acquire() as conn:
+        status = await conn.fetchval(
+            "SELECT status FROM topic_pool WHERE id = $1::uuid", claimed["id"],
+        )
+    assert status == "batched"
+
+    # Second claim returns the next-best sane row, not the same one.
+    second = await claim_best_pooled_topic(db_pool, niche_id=n.id)
+    assert second is not None
+    assert second["title"] == "Cheaper Alternative Headline"
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_claim_best_pooled_topic_returns_none_when_pool_dry(db_pool):
+    from services.niche_service import NicheService
+    from services.topic_pool import claim_best_pooled_topic
+
+    n = await NicheService(db_pool).create(
+        slug="pool-claim-empty", name="Empty",
+    )
+    assert await claim_best_pooled_topic(db_pool, niche_id=n.id) is None
+
+    # A pool holding ONLY junk also yields None (never a junk title).
+    await _pool_insert(db_pool, n.id, "web_search", [_topic("Untitled", score=5.0)])
+    assert await claim_best_pooled_topic(db_pool, niche_id=n.id) is None

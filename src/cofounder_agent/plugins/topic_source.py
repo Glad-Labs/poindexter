@@ -1,15 +1,15 @@
 """TopicSource — data-ingestion Protocol for content-topic discovery.
 
 A TopicSource yields :class:`DiscoveredTopic` candidates that the
-content pipeline can turn into blog-post tasks. The runner (see
-``services/topic_sources/runner.py``) iterates every registered source
-on its configured interval and hands the results off to
-:meth:`TopicDiscovery.queue_topics` for dedup + ranking + insertion.
+content pipeline can turn into blog-post tasks. Each niche-bound
+``external_taps`` row dispatches one source via the
+``tap.builtin_topic_source`` handler, which dedups the results and
+deposits them into ``topic_pool`` for the batch orchestrator to rank.
 
-Replaces the god-file ``services/topic_discovery.py`` (952 lines, all
-``_scrape_*`` methods mushed together). After Phase F each source
-becomes its own file under ``services/topic_sources/`` — HackerNews,
-Dev.to, pgvector knowledge, web-search-by-category, codebase-scan, etc.
+Replaces the god-file ``services/topic_discovery.py`` (Gen 1, retired
+in poindexter#812 b3 — all ``_scrape_*`` methods mushed together).
+Each source is its own file under ``services/topic_sources/`` —
+HackerNews, Dev.to, pgvector knowledge, web-search, codebase-scan, etc.
 
 Register a TopicSource via ``pyproject.toml``:
 
@@ -32,9 +32,9 @@ from typing import Any, Protocol, runtime_checkable
 class DiscoveredTopic:
     """A topic candidate, as yielded by ``TopicSource.extract()``.
 
-    Fields match ``services.topic_discovery.DiscoveredTopic`` for
-    binary compatibility during the Phase F migration. The
-    ``TopicDiscovery`` dispatcher accepts either shape.
+    Fields match the retired Gen-1 ``TopicDiscovery`` dataclass for
+    drop-in compatibility (Phase F migration; Gen 1 deleted in
+    poindexter#812 b3).
     """
 
     title: str

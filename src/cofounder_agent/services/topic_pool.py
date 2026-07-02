@@ -142,6 +142,53 @@ async def read_pooled(
     return items
 
 
+async def claim_best_pooled_topic(
+    pool: Any,
+    *,
+    niche_id: Any,
+    site_config: Any = None,
+) -> dict[str, Any] | None:
+    """Claim the best sane pooled candidate for ``topic="auto"`` resolution.
+
+    b3 of poindexter#812 — the niche-gated replacement for the retired
+    ``TopicDiscovery.discover()`` inline call in the auto-topic path.
+    Walks the niche's ``pooled`` rows best-score-first, skips any title
+    the deterministic topic-sanity gate rejects, and flips the winner to
+    ``batched`` so repeated auto-calls don't hand out the same topic.
+    Returns ``{"id", "title", "summary", "source"}`` or ``None`` when the
+    pool holds nothing sane (caller fails loud — the taps haven't
+    deposited, which is an ingestion problem to surface, not paper over).
+    """
+    from services.topic_sanity import (
+        evaluate_topic_sanity,
+        resolve_min_alpha_words,
+    )
+
+    min_words = resolve_min_alpha_words(site_config)
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            "SELECT id, title, summary, source FROM topic_pool "
+            "WHERE niche_id = $1 AND status = 'pooled' "
+            "ORDER BY score DESC, ingested_at DESC",
+            niche_id,
+        )
+        for r in rows:
+            if not evaluate_topic_sanity(
+                r["title"], min_alpha_words=min_words,
+            ).ok:
+                continue
+            # mark_batched only flips still-'pooled' rows, so a concurrent
+            # claimer racing us simply makes this return 0 → try the next.
+            if await mark_batched(conn, [r["id"]]) == 1:
+                return {
+                    "id": str(r["id"]),
+                    "title": r["title"],
+                    "summary": r["summary"],
+                    "source": r["source"],
+                }
+    return None
+
+
 async def mark_batched(conn: Any, ids: list[Any]) -> int:
     """Flip the named pool rows to ``batched`` (stamping ``batched_at``).
 

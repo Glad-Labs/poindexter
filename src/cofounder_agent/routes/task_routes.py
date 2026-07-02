@@ -212,59 +212,91 @@ router = APIRouter(
 # ============================================================================
 
 
+async def _resolve_niche_for_topics(pool, niche_slug: str | None):
+    """Resolve which niche a topic operation targets — explicit slug wins,
+    a single active niche is unambiguous, anything else fails loud
+    (``feedback_no_silent_defaults``: never guess between niches)."""
+    from services.niche_service import NicheService
+
+    nsvc = NicheService(pool)
+    if niche_slug:
+        niche = await nsvc.get_by_slug(niche_slug)
+        if niche is None:
+            raise HTTPException(
+                status_code=404, detail=f"unknown niche_slug: {niche_slug!r}",
+            )
+        return niche
+    active = await nsvc.list_active()
+    if len(active) == 1:
+        return active[0]
+    if not active:
+        raise HTTPException(
+            status_code=422,
+            detail="no active niches configured — create one first "
+                   "(poindexter niches create)",
+        )
+    raise HTTPException(
+        status_code=422,
+        detail="multiple active niches — pass niche_slug (one of: "
+               + ", ".join(sorted(n.slug for n in active)) + ")",
+    )
+
+
 @router.post(
     "/discover-topics",
     response_model=dict[str, Any],
-    summary="Trigger topic discovery on demand and optionally queue the results",
+    summary="Trigger a niche topic sweep (operator-gated batch) on demand",
     status_code=200,
 )
 @limiter.limit("10/minute")
 async def discover_topics(
     request: Request,
-    max_topics: int = Query(5, ge=1, le=20),
-    queue: bool = Query(True, description="Queue fresh topics as content tasks"),
+    niche_slug: str | None = Query(
+        None,
+        description="Niche to sweep; may be omitted when exactly one niche is active",
+    ),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
+    site_config: SiteConfig = Depends(get_site_config_dependency),
 ):
-    """Run TopicDiscovery on demand instead of waiting for the 8-hour idle cycle.
+    """Run the niche topic sweep on demand (b3 of poindexter#812).
 
-    Returns the list of discovered topics with a duplicate flag for each.
-    When `queue=true` (default), fresh topics are immediately inserted as
-    pending content_tasks so the executor picks them up on its next poll.
+    The legacy fire-and-forget path (Gen-1 TopicDiscovery scraping +
+    ``queue_topics`` straight into the task queue) is retired. This now
+    triggers ``TopicBatchService.run_sweep`` for the resolved niche —
+    candidates come from the ``topic_pool`` the taps deposit into, and
+    the resulting batch goes through the operator gate (or
+    ``topic_auto_resolve``) before anything reaches the pipeline.
     """
     try:
-        from services.topic_discovery import TopicDiscovery
+        from services.topic_batch_service import TopicBatchService
 
         pool = db_service.pool
         if not pool:
             raise HTTPException(status_code=503, detail="Database pool unavailable")
-        discovery = TopicDiscovery(pool)
-        topics = await discovery.discover(max_topics=max_topics)
-        fresh = [t for t in topics if not getattr(t, "is_duplicate", False)]
-
-        queued_count = 0
-        if queue and fresh:
-            queued_count = await discovery.queue_topics(fresh)
-
+        niche = await _resolve_niche_for_topics(pool, niche_slug)
+        svc = TopicBatchService(pool, site_config=site_config)
+        batch = await svc.run_sweep(niche_id=niche.id)
+        if batch is None:
+            return {
+                "niche_slug": niche.slug,
+                "batch_id": None,
+                "detail": (
+                    "sweep skipped — cadence floor not elapsed, an open "
+                    "batch already exists, or nothing rankable in topic_pool"
+                ),
+            }
         return {
-            "discovered": len(topics),
-            "fresh": len(fresh),
-            "queued": queued_count,
-            "topics": [
-                {
-                    "title": t.title,
-                    "source": getattr(t, "source", None),
-                    "score": getattr(t, "score", None),
-                    "is_duplicate": getattr(t, "is_duplicate", False),
-                }
-                for t in topics
-            ],
+            "niche_slug": niche.slug,
+            "batch_id": str(batch.id),
+            "candidate_count": batch.candidate_count,
+            "status": batch.status,
         }
     except HTTPException:
         raise
     except Exception as e:
-        logger.error("Topic discovery failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Topic discovery failed") from e
+        logger.error("Topic sweep failed: %s", e, exc_info=True)
+        raise HTTPException(status_code=500, detail="Topic sweep failed") from e
 
 
 @router.post(
@@ -352,27 +384,42 @@ async def _handle_blog_post_creation(
     effective_tone = cc.get("tone") or request.tone or "professional"
     effective_length = cc.get("word_count") or request.target_length or 1500
 
-    # Resolve "auto" topic to a fresh discovered topic
+    # Resolve "auto" topic from the niche's topic_pool (b3 of
+    # poindexter#812 — the Gen-1 TopicDiscovery inline scrape is retired).
     resolved_topic = (request.topic or "").strip()
-    # Capture BEFORE resolution: an explicit "auto" topic is deduped by
-    # TopicDiscovery below, so the manual-injection dedup guard must skip it
-    # (the autonomous path has no human present to pass force=true).
+    # Capture BEFORE resolution: pool candidates were already deduped at
+    # tap ingest, so the manual-injection dedup guard must skip the auto
+    # path (no human is present to pass force=true).
     is_auto_topic = resolved_topic.lower() == "auto"
     if is_auto_topic:
-        try:
-            from services.topic_discovery import TopicDiscovery
-            pool = db_service.pool if db_service else None
-            discovery = TopicDiscovery(pool)
-            topics = await discovery.discover(max_topics=3)
-            fresh = [t for t in topics if not t.is_duplicate]
-            if fresh:
-                resolved_topic = fresh[0].title
-                logger.info("[create_task] Resolved 'auto' topic -> '%s'", resolved_topic)
-            else:
-                raise ValueError("No fresh topics found — all discovered topics are duplicates of recent content")
-        except Exception as e:
-            logger.warning("[create_task] Auto-topic resolution failed: %s", e)
-            raise HTTPException(status_code=422, detail="Could not resolve auto topic") from e
+        from services.topic_pool import claim_best_pooled_topic
+
+        pool = db_service.pool if db_service else None
+        if pool is None:
+            raise HTTPException(status_code=503, detail="Database pool unavailable")
+        niche = await _resolve_niche_for_topics(pool, request.niche_slug)
+        claimed = await claim_best_pooled_topic(
+            pool, niche_id=niche.id, site_config=site_config,
+        )
+        if claimed is None:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Could not resolve auto topic — topic_pool holds no "
+                    f"usable candidates for niche {niche.slug!r}. The topic "
+                    "taps haven't deposited fresh candidates (check "
+                    "external_taps rows + the Findings board)."
+                ),
+            )
+        resolved_topic = claimed["title"]
+        # Stamp the resolved niche so the task passes the #729
+        # niche-allowlist publish gate even when the caller omitted it.
+        if not request.niche_slug:
+            request.niche_slug = niche.slug
+        logger.info(
+            "[create_task] Resolved 'auto' topic -> %r (pool row %s, source %s)",
+            resolved_topic, claimed["id"], claimed["source"],
+        )
 
     # Pre-enqueue semantic dedup guard — closes the create_post / POST
     # /api/tasks near-duplicate gap. AUTO topics were already deduped by

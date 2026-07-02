@@ -58,11 +58,9 @@ _STOP_WORDS = frozenset(
 class _TopicLike(Protocol):
     """Minimal shape topic-deduplication needs.
 
-    Both ``services.topic_discovery.DiscoveredTopic`` and
-    ``plugins.topic_source.DiscoveredTopic`` satisfy this — we use a
-    Protocol instead of importing the concrete class to avoid the
-    circular-import that would result from
-    services.topic_discovery → services.topic_dedup → services.topic_discovery.
+    ``plugins.topic_source.DiscoveredTopic`` (and the batch sweep's
+    candidate wrappers) satisfy this — a Protocol instead of a concrete
+    import keeps the deduplicator decoupled from any one caller.
     """
 
     title: str

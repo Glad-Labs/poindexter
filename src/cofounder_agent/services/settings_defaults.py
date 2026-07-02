@@ -588,12 +588,7 @@ DEFAULTS: dict[str, str] = {
     'topic_dedup_engine': 'word_overlap',
     'topic_dedup_existing_threshold': '0.7',
     'topic_dedup_intra_batch_threshold': '0.65',
-    'topic_discovery_category_searches': '',
-    'topic_discovery_ideation_lookback_days': '30',
     'topic_discovery_length_distribution': '',
-    'topic_discovery_news_patterns': '',
-    'topic_discovery_streak_window_hours': '6',
-    'topic_discovery_style_distribution': '',
     # Topic-sanity gate (services/topic_sanity.py, 2026-06-30 dots-topic
     # incident): minimum count of alphabetic words (letter-runs of >=2
     # chars) for a topic to pass the task-creation seams. Prod history:

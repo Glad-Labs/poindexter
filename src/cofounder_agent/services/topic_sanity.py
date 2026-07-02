@@ -44,8 +44,6 @@ Call sites (every seam where a topic becomes a task):
   never occupies a batch slot in the first place.
 - ``topic_proposal_service.propose_topic`` — manual CLI path (raises; the
   operator is present to rephrase).
-- ``topic_discovery.queue_topics`` — legacy auto-discovery path (skips +
-  emits a finding).
 - ``services.jobs.topic_auto_resolve`` — catches :class:`TopicSanityError`
   and expires the batch so a garbage winner can't wedge the niche
   (per ``feedback_self_heal_not_suppress``).

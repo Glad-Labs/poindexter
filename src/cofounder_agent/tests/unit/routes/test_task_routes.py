@@ -614,33 +614,133 @@ class TestCreateTaskDedup:
         # The guard ran (and allowed it) — wiring is live, not skipped.
         assert calls.get("topic") == "A genuinely novel angle on edge caching"
 
-    def test_auto_topic_skips_dedup_guard(self, monkeypatch):
-        """An explicit ``topic='auto'`` is resolved by TopicDiscovery, which
-        already dedups — the create-post guard must NOT also run on it (no
-        human is present to pass force on the autonomous path)."""
-        from unittest.mock import patch
+    @staticmethod
+    def _patch_auto_resolution(monkeypatch, *, claimed):
+        """Stub the b3 auto-topic seam: niche resolution + pool claim."""
+        import routes.task_routes as tr
+        import services.topic_pool as tp
 
+        niche = MagicMock()
+        niche.slug = "test-niche"
+        monkeypatch.setattr(
+            tr, "_resolve_niche_for_topics", AsyncMock(return_value=niche),
+        )
+        monkeypatch.setattr(
+            tp, "claim_best_pooled_topic", AsyncMock(return_value=claimed),
+        )
+
+    def test_auto_topic_skips_dedup_guard(self, monkeypatch):
+        """An explicit ``topic='auto'`` is resolved from the topic_pool,
+        whose candidates were already deduped at tap ingest — the
+        create-post guard must NOT also run on it (no human is present to
+        pass force on the autonomous path)."""
         calls = self._patch_guard(monkeypatch, duplicate=True)
         mock_db = make_mock_db()
         mock_db.add_task = AsyncMock(return_value="auto-task-id")
+        _set_pool(mock_db, [])
+        self._patch_auto_resolution(monkeypatch, claimed={
+            "id": "pool-row-1", "title": "Fresh Pooled Topic",
+            "summary": "an angle", "source": "hackernews",
+        })
 
-        # Stub TopicDiscovery so 'auto' resolves to a fresh title.
-        fake_topic = MagicMock()
-        fake_topic.title = "Fresh Auto-Discovered Topic"
-        fake_topic.is_duplicate = False
-        discovery = MagicMock()
-        discovery.discover = AsyncMock(return_value=[fake_topic])
-
-        with patch("services.topic_discovery.TopicDiscovery", return_value=discovery):
-            client = TestClient(_build_app(mock_db))
-            resp = client.post(
-                "/api/tasks",
-                json={"topic": "auto", "task_type": "blog_post"},
-            )
+        client = TestClient(_build_app(mock_db))
+        resp = client.post(
+            "/api/tasks",
+            json={"topic": "auto", "task_type": "blog_post"},
+        )
         assert resp.status_code == 201
         assert mock_db.add_task.called
+        # The pooled title became the task topic + the resolved niche was
+        # stamped so the task passes the #729 publish allowlist gate.
+        task_data = mock_db.add_task.call_args.args[0]
+        assert task_data["topic"] == "Fresh Pooled Topic"
+        assert task_data["niche_slug"] == "test-niche"
         # Guard was skipped for the auto path.
         assert calls == {}
+
+    def test_auto_topic_dry_pool_fails_loud(self, monkeypatch):
+        """No usable pooled candidates → 422 naming the niche, never a
+        silent fallback to some other topic source."""
+        self._patch_guard(monkeypatch, duplicate=False)
+        mock_db = make_mock_db()
+        mock_db.add_task = AsyncMock(return_value="should-not-be-saved")
+        _set_pool(mock_db, [])
+        self._patch_auto_resolution(monkeypatch, claimed=None)
+
+        client = TestClient(_build_app(mock_db))
+        resp = client.post(
+            "/api/tasks",
+            json={"topic": "auto", "task_type": "blog_post"},
+        )
+        assert resp.status_code == 422
+        assert "topic_pool" in resp.json()["detail"]
+        assert not mock_db.add_task.called
+
+
+# ---------------------------------------------------------------------------
+# POST /api/tasks/discover-topics — b3 niche-sweep trigger (poindexter#812)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDiscoverTopicsEndpoint:
+    """The legacy fire-and-forget TopicDiscovery contract is retired —
+    the endpoint now triggers TopicBatchService.run_sweep for a resolved
+    niche and reports the operator-gated batch it produced."""
+
+    @staticmethod
+    def _patch_niche(monkeypatch, slug="test-niche"):
+        import routes.task_routes as tr
+
+        niche = MagicMock()
+        niche.slug = slug
+        niche.id = "11111111-1111-1111-1111-111111111111"
+        monkeypatch.setattr(
+            tr, "_resolve_niche_for_topics", AsyncMock(return_value=niche),
+        )
+        return niche
+
+    def test_triggers_sweep_and_returns_batch(self, monkeypatch):
+        import services.topic_batch_service as tbs
+
+        self._patch_niche(monkeypatch)
+        batch = MagicMock()
+        batch.id = "22222222-2222-2222-2222-222222222222"
+        batch.candidate_count = 5
+        batch.status = "open"
+        svc = MagicMock()
+        svc.run_sweep = AsyncMock(return_value=batch)
+        monkeypatch.setattr(tbs, "TopicBatchService", MagicMock(return_value=svc))
+
+        mock_db = make_mock_db()
+        _set_pool(mock_db, [])
+        client = TestClient(_build_app(mock_db))
+        resp = client.post("/api/tasks/discover-topics?niche_slug=test-niche")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["niche_slug"] == "test-niche"
+        assert body["batch_id"] == str(batch.id)
+        assert body["candidate_count"] == 5
+        assert body["status"] == "open"
+
+    def test_skipped_sweep_reports_detail(self, monkeypatch):
+        import services.topic_batch_service as tbs
+
+        self._patch_niche(monkeypatch)
+        svc = MagicMock()
+        svc.run_sweep = AsyncMock(return_value=None)  # floor / open batch
+        monkeypatch.setattr(tbs, "TopicBatchService", MagicMock(return_value=svc))
+
+        mock_db = make_mock_db()
+        _set_pool(mock_db, [])
+        client = TestClient(_build_app(mock_db))
+        resp = client.post("/api/tasks/discover-topics")
+
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["batch_id"] is None
+        assert "skipped" in body["detail"]
 
 
 # ---------------------------------------------------------------------------

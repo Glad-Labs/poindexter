@@ -6,10 +6,9 @@ the queue isn't dominated by a single length. Customers tune the mix via
 ``app_settings.topic_discovery_length_distribution`` as JSON, e.g.
 ``[[400, 800, 0.25], [800, 1200, 0.35], [1500, 2000, 0.25], [2500, 3500, 0.15]]``.
 
-Extracted verbatim out of ``services.topic_discovery`` so the picker no
-longer lives in the legacy discovery dispatcher (which is being retired —
-``project_topic_discovery_consolidation``). ``topic_discovery`` re-exports
-these names for backward compatibility until that module is deleted.
+Extracted verbatim out of the legacy ``services.topic_discovery``
+dispatcher (Gen 1 — deleted in poindexter#812 b3;
+``project_topic_discovery_consolidation``).
 """
 
 from __future__ import annotations
@@ -71,9 +70,9 @@ def resolve_length_weights(
 def pick_target_length(site_config: Any) -> int:
     """Pick a target word count via the weighted, DB-configurable picker.
 
-    Shared by ``topic_discovery`` and ``topic_proposal_service`` (#542)
-    so every task-creation path that doesn't get an explicit length still
-    varies output length the same way. Weights come from app_settings via
+    Shared by the batch-handoff and ``topic_proposal_service`` paths
+    (#542) so every task-creation path that doesn't get an explicit
+    length still varies output length the same way. Weights come from app_settings via
     :func:`resolve_length_weights`.
     """
     weights = resolve_length_weights(site_config)

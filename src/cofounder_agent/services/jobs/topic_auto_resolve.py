@@ -4,9 +4,9 @@ Closes the gap between topic discovery (which runs automatically via the
 niche sweep) and pipeline kickoff (which previously required the operator
 to manually run ``poindexter topics rank-batch`` + ``resolve-batch``).
 
-When ``topic_discovery_auto_enabled=false`` (the niche-aware operator
-flow), open topic_batches accumulate candidates but nothing promotes them
-into ``content_tasks``. As of 2026-05-12 the pipeline went dark for 2+
+In the niche-aware operator flow (the only flow since the Gen-1
+TopicDiscovery retirement, poindexter#812 b3), open topic_batches
+accumulate candidates but nothing promotes them into ``content_tasks``. As of 2026-05-12 the pipeline went dark for 2+
 days because the operator (Matt) didn't have time to run the CLI flow.
 
 This job runs on a schedule, scans for OPEN batches with candidates, and:

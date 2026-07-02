@@ -130,9 +130,8 @@ async def resolve_template_slug(
         explicit: Caller-supplied template_slug. Wins the chain when
             non-blank.
         niche_slug: ``pipeline_tasks.niche_slug`` value being written.
-            ``None`` / empty is acceptable for niche-less paths (e.g.
-            the legacy ``topic_discovery`` queue); resolution will
-            skip directly to the app_settings tier.
+            ``None`` / empty is acceptable for niche-less paths;
+            resolution will skip directly to the app_settings tier.
 
     Returns:
         The resolved, non-empty template_slug string.

@@ -250,9 +250,10 @@ def generate_content(count=3):
 
     The legacy hardcoded-template path that used to live here pulled in
     a ``lib.topic_dedup`` module that no longer exists; the worker's
-    own TopicDiscovery (HN / Dev.to / DuckDuckGo + semantic dedup) is a
-    superset of what this script used to do, so we just request N
-    auto-topic tasks and let the worker handle dedup + selection.
+    niche-gated auto-topic resolution (topic_pool candidates deposited by
+    the taps, deduped at ingest) is a superset of what this script used
+    to do, so we just request N auto-topic tasks and let the worker
+    handle selection.
     """
     created = 0
     for _ in range(count):
@@ -355,7 +356,7 @@ def run_opportunistic_task():
         if ready_count < 3:
             logger.info("[OPPORTUNISTIC] Content buffer low (%d), requesting topic via API", ready_count)
             # Use the API's auto-topic feature instead of hardcoded templates.
-            # This triggers TopicDiscovery which pulls from HN/Dev.to/DuckDuckGo.
+            # The worker resolves it from the niche's topic_pool (tap-fed).
             try:
                 _api_post(
                     "/api/tasks",

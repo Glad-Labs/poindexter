@@ -69,9 +69,9 @@ class _TopicLike(Protocol):
     """Minimal shape topic-deduplication needs.
 
     Mirrors the same Protocol as ``services.topic_dedup`` so the two
-    engines are drop-in interchangeable. Implementations exist on
-    both ``services.topic_discovery.DiscoveredTopic`` and
-    ``plugins.topic_source.DiscoveredTopic``.
+    engines are drop-in interchangeable.
+    ``plugins.topic_source.DiscoveredTopic`` (and the batch sweep's
+    candidate wrappers) implement it.
     """
 
     title: str
