@@ -139,6 +139,30 @@ async def test_override_cannot_smuggle_paid_endpoint():
 
 @pytest.mark.unit
 @pytest.mark.asyncio
+async def test_provider_never_sets_litellm_global_api_base():
+    # litellm's ollama branch resolves the endpoint as
+    #   litellm.api_base or api_base or env or default
+    # — the module GLOBAL beats the per-call kwarg — so setting the global
+    # silently defeats every per-model override. Prod regression caught
+    # 2026-07-02: qa.vision routed to :11434 (and cold-loaded the vision
+    # model there) despite a correct override map, because
+    # _apply_global_litellm_config had set litellm.api_base.
+    import litellm
+
+    saved = litellm.api_base
+    litellm.api_base = None
+    try:
+        await _complete(
+            LiteLLMProvider(), "ollama/qwen3-vl:30b",
+            {"ollama/qwen3-vl:30b": _VISION_BASE},
+        )
+        assert litellm.api_base is None
+    finally:
+        litellm.api_base = saved
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
 async def test_stream_honours_override():
     provider = LiteLLMProvider()
 

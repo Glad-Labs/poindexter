@@ -342,7 +342,10 @@ def test_configure_from_overrides_default_prefix_and_timeouts():
     # The global config stamp ran exactly once.
     assert provider._configured is True
     assert _litellm_stub.drop_params is False
-    assert _litellm_stub.api_base == "http://custom:9999"
+    # litellm.api_base must stay untouched: the global beats the per-call
+    # kwarg in litellm's ollama branch, which silently defeats
+    # model_api_base_overrides (glad-labs-stack#2051).
+    assert getattr(_litellm_stub, "api_base", None) != "http://custom:9999"
 
 
 @pytest.mark.asyncio

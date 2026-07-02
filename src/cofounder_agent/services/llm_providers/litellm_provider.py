@@ -463,15 +463,19 @@ class LiteLLMProvider:
 
         ``set_verbose=False`` keeps litellm out of our logs unless the
         operator opts in. ``drop_params`` lets one call signature work
-        against backends with different param vocabularies. The Ollama
-        default api_base is what every other Ollama caller uses.
+        against backends with different param vocabularies.
         """
+        # Deliberately does NOT set ``litellm.api_base``: litellm's ollama
+        # branch resolves the endpoint as ``litellm.api_base or api_base
+        # or env or default`` — the module global beats the per-call
+        # kwarg — so setting it here silently defeats
+        # ``model_api_base_overrides`` (glad-labs-stack#2051 prod
+        # regression, 2026-07-02). ``complete()`` / ``stream()`` always
+        # pass the effective base as a per-call kwarg.
         try:
             import litellm
             litellm.set_verbose = False  # type: ignore[attr-defined]  # noqa: SLF001
             litellm.drop_params = self._drop_params
-            if self._api_base:
-                litellm.api_base = self._api_base
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "[litellm_provider] global config apply failed: %s", exc,

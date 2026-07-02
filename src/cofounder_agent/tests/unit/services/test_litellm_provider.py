@@ -104,23 +104,28 @@ class TestLiteLLMProviderResolveModel:
 class TestLiteLLMProviderConfigure:
     def test_configure_from_applies_global_knobs_once(self, mock_litellm):
         p = _provider_instance()
+        mock_litellm.api_base = None
         p._configure_from(
             {"api_base": "http://localhost:11434", "drop_params": False}
         )
         assert p._configured is True
         assert mock_litellm.set_verbose is False
         assert mock_litellm.drop_params is False
-        assert mock_litellm.api_base == "http://localhost:11434"
+        # litellm.api_base must stay untouched: the global beats the
+        # per-call kwarg in litellm's ollama branch, which silently
+        # defeats model_api_base_overrides (glad-labs-stack#2051).
+        assert mock_litellm.api_base is None
+        assert p._api_base == "http://localhost:11434"
 
     def test_configure_from_idempotent_on_repeat(self, mock_litellm):
         p = _provider_instance()
-        p._configure_from({"api_base": "http://first/"})
+        p._configure_from({"api_base": "http://first/", "drop_params": True})
         # mutate the mock to detect a second apply
-        mock_litellm.api_base = "SHOULD_NOT_BE_OVERWRITTEN"
-        p._configure_from({"api_base": "http://second/"})
+        mock_litellm.drop_params = "SHOULD_NOT_BE_OVERWRITTEN"
+        p._configure_from({"api_base": "http://second/", "drop_params": False})
         # _apply_global_litellm_config only runs the first time —
         # second call updates instance state but doesn't touch the global
-        assert mock_litellm.api_base == "SHOULD_NOT_BE_OVERWRITTEN"
+        assert mock_litellm.drop_params == "SHOULD_NOT_BE_OVERWRITTEN"
         assert p._api_base == "http://second/"
 
     def test_configure_from_swallows_global_apply_errors(self, mock_litellm):
