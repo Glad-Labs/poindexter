@@ -51,3 +51,153 @@ async def test_insert_rejects_unknown_table():
         await insert_pooled_topics(
             conn, niche_id="x", source="web_search", topics=[], table="pipeline_tasks",
         )
+
+
+# ---------------------------------------------------------------------------
+# b2 — read_pooled + mark_batched (real-PG roundtrip via db_pool)
+# ---------------------------------------------------------------------------
+
+async def _pool_insert(db_pool, niche_id, source, topics):
+    async with db_pool.acquire() as conn:
+        return await insert_pooled_topics(
+            conn, niche_id=niche_id, source=source, topics=topics,
+        )
+
+
+def _topic(title, *, desc="", url="", cat="", score=0.0):
+    return DiscoveredTopic(
+        title=title, category=cat, source="x",
+        source_url=url, relevance_score=score, description=desc,
+    )
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_read_pooled_maps_external_and_internal_shapes(db_pool):
+    from services.niche_service import NicheService
+    from services.topic_pool import read_pooled
+
+    n = await NicheService(db_pool).create(
+        slug="pool-read-shapes", name="Pool Read Shapes",
+    )
+    await _pool_insert(db_pool, n.id, "web_search", [
+        _topic("External headline", desc="ext summary",
+               url="https://x/ext", cat="ai", score=2.5),
+    ])
+    await _pool_insert(db_pool, n.id, "internal_rag", [
+        _topic("Distilled internal theme", desc="the angle",
+               cat="claude_session"),
+    ])
+
+    items = await read_pooled(db_pool, niche_id=n.id, per_source_limit=10)
+    by_kind = {i["kind"]: i for i in items}
+    assert set(by_kind) == {"external", "internal"}
+
+    ext = by_kind["external"]["data"]
+    # Shape parity with the deleted _discover_external mapping.
+    assert ext["title"] == "External headline"
+    assert ext["summary"] == "ext summary"
+    assert ext["source_name"] == "web_search"
+    assert ext["source_url"] == "https://x/ext"
+    assert ext["source_ref"] == "https://x/ext"
+    assert ext["category"] == "ai"
+    assert ext["relevance_score"] == 2.5
+    # Pool row id rides along so run_sweep can mark_batched the winners.
+    assert ext["id"]
+
+    intl = by_kind["internal"]["data"]
+    # Shape parity with the internal-candidate dict _embed_and_pre_rank reads.
+    assert intl["distilled_topic"] == "Distilled internal theme"
+    assert intl["distilled_angle"] == "the angle"
+    assert intl["source_kind"] == "claude_session"
+    assert intl["primary_ref"]  # pool row id — the mark_batched handle
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_read_pooled_scopes_by_niche_and_status(db_pool):
+    from services.niche_service import NicheService
+    from services.topic_pool import mark_batched, read_pooled
+
+    nsvc = NicheService(db_pool)
+    n1 = await nsvc.create(slug="pool-scope-a", name="A")
+    n2 = await nsvc.create(slug="pool-scope-b", name="B")
+    await _pool_insert(db_pool, n1.id, "web_search", [_topic("Mine only")])
+    await _pool_insert(db_pool, n2.id, "web_search", [_topic("Other niche row")])
+    await _pool_insert(db_pool, n1.id, "web_search", [_topic("Already batched row")])
+
+    items = await read_pooled(db_pool, niche_id=n1.id, per_source_limit=10)
+    batched_id = next(
+        i["data"]["id"] for i in items
+        if i["data"]["title"] == "Already batched row"
+    )
+    async with db_pool.acquire() as conn:
+        flipped = await mark_batched(conn, [batched_id])
+    assert flipped == 1
+
+    items = await read_pooled(db_pool, niche_id=n1.id, per_source_limit=10)
+    titles = {i["data"]["title"] for i in items}
+    assert titles == {"Mine only"}
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_read_pooled_caps_per_source_by_score(db_pool):
+    from services.niche_service import NicheService
+    from services.topic_pool import read_pooled
+
+    n = await NicheService(db_pool).create(
+        slug="pool-per-source-cap", name="Cap",
+    )
+    await _pool_insert(db_pool, n.id, "hackernews", [
+        _topic("Low score", score=1.0),
+        _topic("Best score", score=3.0),
+        _topic("Mid score", score=2.0),
+    ])
+    await _pool_insert(db_pool, n.id, "internal_rag", [
+        _topic("Internal one", cat="brain_knowledge"),
+    ])
+
+    items = await read_pooled(db_pool, niche_id=n.id, per_source_limit=2)
+    hn_titles = {
+        i["data"]["title"] for i in items if i["kind"] == "external"
+    }
+    # Highest-scored 2 of the 3 hackernews rows + the internal row.
+    assert hn_titles == {"Best score", "Mid score"}
+    assert sum(1 for i in items if i["kind"] == "internal") == 1
+
+
+@pytest.mark.asyncio(loop_scope="session")
+async def test_mark_batched_flips_only_named_ids(db_pool):
+    from services.niche_service import NicheService
+    from services.topic_pool import mark_batched, read_pooled
+
+    n = await NicheService(db_pool).create(
+        slug="pool-mark-batched", name="Mark",
+    )
+    await _pool_insert(db_pool, n.id, "web_search", [
+        _topic("Chosen"), _topic("Left behind"),
+    ])
+    items = await read_pooled(db_pool, niche_id=n.id, per_source_limit=10)
+    chosen_id = next(
+        i["data"]["id"] for i in items if i["data"]["title"] == "Chosen"
+    )
+
+    async with db_pool.acquire() as conn:
+        flipped = await mark_batched(conn, [chosen_id])
+        assert flipped == 1
+        row = await conn.fetchrow(
+            "SELECT status, batched_at FROM topic_pool WHERE id = $1::uuid",
+            chosen_id,
+        )
+        other = await conn.fetchrow(
+            "SELECT status, batched_at FROM topic_pool "
+            "WHERE niche_id = $1 AND title = 'Left behind'",
+            n.id,
+        )
+    assert row["status"] == "batched"
+    assert row["batched_at"] is not None
+    assert other["status"] == "pooled"
+    assert other["batched_at"] is None
+
+    # Idempotent — a second call finds nothing pooled to flip.
+    async with db_pool.acquire() as conn:
+        assert await mark_batched(conn, [chosen_id]) == 0
+        assert await mark_batched(conn, []) == 0

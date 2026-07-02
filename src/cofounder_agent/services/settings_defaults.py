@@ -574,6 +574,11 @@ DEFAULTS: dict[str, str] = {
     'niche_goal_descriptions': '',
     'niche_ollama_chat_timeout_seconds': '300.0',
     'niche_top_n_per_pool': '5',
+    # b2 pool-reader (poindexter#812): per-source row cap when run_sweep
+    # reads topic_pool. The pool accumulates at wildly different rates per
+    # source (internal_rag deposits ~40x devto), so the read is balanced
+    # per source rather than a flat LIMIT. Higher = more embeds per sweep.
+    'niche_pool_read_per_source_limit': '20',
     # Manual-injection dedup (create_post MCP tool / POST /api/tasks): cosine
     # similarity at/above which a caller-supplied topic is refused (409) as a
     # near-duplicate of an already-published post. Auto-discovered topics use

@@ -1,8 +1,11 @@
 """topic_pool — data access for the niche-tagged candidate pool.
 
 The decoupling seam between ingestion (taps) and orchestration
-(TopicBatchService). Taps insert here via insert_pooled_topics(); b2's
-orchestrator reads pooled rows and flips them to 'batched'.
+(TopicBatchService). Taps insert here via insert_pooled_topics(); the
+orchestrator reads pooled rows via read_pooled() (b2 cutover) and flips
+the batch winners to 'batched' via mark_batched(). Unchosen rows stay
+'pooled' for future sweeps until the topic_pool retention policy prunes
+them.
 """
 
 from __future__ import annotations
@@ -68,3 +71,88 @@ async def insert_pooled_topics(
         if new_id is not None:
             inserted += 1
     return inserted
+
+
+# Best-scored rows per source, newest first on ties. PARTITION BY source is
+# the read-side balance guard: the pool accumulates at very different rates
+# per source (internal_rag deposits ~40x what devto does), so a plain
+# ORDER BY .. LIMIT would hand the orchestrator an all-internal window.
+_READ_POOLED_SQL = """
+SELECT id, source, title, summary, url, category, score
+  FROM (
+    SELECT *, row_number() OVER (
+        PARTITION BY source
+        ORDER BY score DESC, ingested_at DESC
+    ) AS rn
+      FROM topic_pool
+     WHERE niche_id = $1 AND status = 'pooled'
+  ) ranked
+ WHERE rn <= $2
+ ORDER BY source, rn
+"""
+
+
+async def read_pooled(
+    pool: Any,
+    *,
+    niche_id: Any,
+    per_source_limit: int,
+) -> list[dict[str, Any]]:
+    """Read pooled candidates for a niche in the orchestrator's wire shape.
+
+    Returns ``{"kind": "external"|"internal", "data": {...}}`` items —
+    the exact shapes the deleted ``_discover_external`` /
+    ``_discover_internal`` produced, so ``_embed_and_pre_rank`` consumes
+    them unchanged. Rows whose ``source`` is ``internal_rag`` map to the
+    internal-candidate dict (``distilled_topic`` / ``distilled_angle`` /
+    ``source_kind`` / ``primary_ref``); everything else maps to the
+    external dict. Both carry the pool row id (``data.id`` /
+    ``data.primary_ref``) so the sweep can ``mark_batched`` the winners.
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(_READ_POOLED_SQL, niche_id, per_source_limit)
+
+    items: list[dict[str, Any]] = []
+    for r in rows:
+        if r["source"] == "internal_rag":
+            items.append({
+                "kind": "internal",
+                "data": {
+                    "distilled_topic": r["title"],
+                    "distilled_angle": r["summary"],
+                    # b1's extract shim stores the source_kind in category.
+                    "source_kind": r["category"] or "claude_session",
+                    "primary_ref": str(r["id"]),
+                },
+            })
+        else:
+            items.append({
+                "kind": "external",
+                "data": {
+                    "id": str(r["id"]),
+                    "title": r["title"],
+                    "summary": r["summary"],
+                    "source_name": r["source"],
+                    "source_ref": r["url"] or r["title"][:80],
+                    "source_url": r["url"],
+                    "category": r["category"],
+                    "relevance_score": float(r["score"]),
+                },
+            })
+    return items
+
+
+async def mark_batched(conn: Any, ids: list[Any]) -> int:
+    """Flip the named pool rows to ``batched`` (stamping ``batched_at``).
+
+    Only ``pooled`` rows flip — already-batched ids are skipped, so the
+    call is idempotent. Returns the count actually flipped.
+    """
+    if not ids:
+        return 0
+    rows = await conn.fetch(
+        "UPDATE topic_pool SET status = 'batched', batched_at = NOW() "
+        "WHERE id = ANY($1::uuid[]) AND status = 'pooled' RETURNING id",
+        [str(i) for i in ids],
+    )
+    return len(rows)

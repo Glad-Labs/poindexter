@@ -172,23 +172,12 @@ class TopicBatchService:
         run_id = run["id"]
 
         try:
-            external = await self._discover_external(niche)
-            # Internal discovery is best-effort: a failure here (e.g. an
-            # LLM distill call returning empty/unparseable JSON) must NOT
-            # sink the whole sweep and discard the external candidates we
-            # already gathered. This was the 2026-05-28 content-gen stall —
-            # one empty json.loads in _discover_internal bubbled out of
-            # run_sweep, so no batch formed for ~2 days even though external
-            # taps were returning candidates fine.
-            try:
-                internal = await self._discover_internal(niche)
-            except Exception:
-                logger.warning(
-                    "Niche %s: internal RAG discovery failed — proceeding "
-                    "with external candidates only this sweep",
-                    niche.slug, exc_info=True,
-                )
-                internal = []
+            # b2 pool-reader cutover (poindexter#812): candidates come from
+            # the niche-tagged topic_pool the taps deposit into — the sweep
+            # no longer dispatches sources inline. Ingestion failures (LLM
+            # distill errors, dry sources) now happen in the tap runner and
+            # can't sink a sweep; the sweep itself is a bounded SELECT.
+            external, internal, pool_ids = await self._read_pool(niche)
             carried = await self._load_carry_forward(niche.id)
 
             # Dedup BEFORE embed/pre-rank so duplicates never reach a batch
@@ -287,6 +276,20 @@ class TopicBatchService:
                 niche, ranked, pool_external, pool_internal,
             )
 
+            # Flip the winners' pool rows to 'batched' so future sweeps
+            # don't re-read them. Unchosen rows stay 'pooled' (they may win
+            # a later sweep; the topic_pool retention policy prunes the
+            # stale ones). Carry-forward candidates aren't pool rows —
+            # their ids won't be in pool_ids, so they're naturally skipped.
+            chosen_pool_ids = [
+                str(c.id) for c in ranked if str(c.id) in pool_ids
+            ]
+            if chosen_pool_ids:
+                from services.topic_pool import mark_batched
+
+                async with self._pool.acquire() as conn:
+                    await mark_batched(conn, chosen_pool_ids)
+
             async with self._pool.acquire() as conn:
                 await conn.execute(
                     "UPDATE discovery_runs SET finished_at = NOW(), batch_id = $1, "
@@ -384,145 +387,45 @@ class TopicBatchService:
             )
         return (count or 0) > 0
 
-    async def _discover_external(self, niche: Niche) -> list[dict[str, Any]]:
-        """Dispatch every enabled non-internal_rag TopicSource plugin for
-        the niche and aggregate the resulting DiscoveredTopics into the
-        ``{"kind": "external", "data": {...}}`` shape consumed by
-        ``_embed_and_pre_rank``."""
-        sources = await self._niche_svc.get_sources(niche.id)
-        external_sources = [
-            s for s in sources if s.enabled and s.source_name != "internal_rag"
-        ]
-        if not external_sources:
-            return []
+    async def _read_pool(
+        self, niche: Niche,
+    ) -> tuple[list[dict[str, Any]], list[dict[str, Any]], set[str]]:
+        """Read this niche's pooled candidates (b2 pool-reader cutover).
 
-        # Lazy imports — keeps the registry import out of cold paths and
-        # matches the rest of this file's style.
-        from plugins.config import PluginConfig
-        from plugins.registry import get_topic_sources
-        # Index registry by name so we can match niche-source rows to
-        # plugin instances. A niche may legitimately reference a source
-        # name that's not registered (legacy config, plugin uninstalled,
-        # typo) — log + skip rather than blow up the whole sweep.
-        registry = {
-            getattr(p, "name", type(p).__name__): p for p in get_topic_sources()
+        The taps (``tap.builtin_topic_source`` rows in ``external_taps``)
+        deposit candidates into ``topic_pool``; the sweep reads the
+        best-scored ``per_source_limit`` rows per source and splits them
+        into the (external, internal) lists ``_embed_and_pre_rank``
+        consumes. Also returns the set of pool row ids read, so the sweep
+        can flip the batch winners to ``batched`` after ``_write_batch``.
+
+        Replaces the deleted ``_discover_external`` /
+        ``_discover_internal`` inline-dispatch pair — their per-source
+        loop body lives on verbatim in the tap handler
+        (``services/integrations/handlers/tap_builtin_topic_source.py``).
+        """
+        from services.topic_pool import read_pooled
+
+        per_source_limit = self._site_config.get_int(
+            "niche_pool_read_per_source_limit", 20,
+        )
+        items = await read_pooled(
+            self._pool, niche_id=niche.id, per_source_limit=per_source_limit,
+        )
+        external = [i for i in items if i["kind"] == "external"]
+        internal = [i for i in items if i["kind"] == "internal"]
+        pool_ids = {
+            i["data"]["id"] if i["kind"] == "external"
+            else i["data"]["primary_ref"]
+            for i in items
         }
-
-        candidates: list[dict[str, Any]] = []
-        for source in external_sources:
-            plugin = registry.get(source.source_name)
-            if plugin is None:
-                logger.warning(
-                    "Niche %s references TopicSource %r which is not "
-                    "registered — skipping. Check plugin install or rename.",
-                    niche.slug,
-                    source.source_name,
-                )
-                continue
-
-            # Per-source config — the same plugin.topic_source.<name> row
-            # the standalone runner reads. Layered with the niche-aware
-            # context the source needs to scope its output.
-            try:
-                plugin_cfg = await PluginConfig.load(
-                    self._pool, "topic_source", source.source_name,
-                )
-            except Exception as exc:
-                logger.warning(
-                    "Niche %s: failed to load PluginConfig for %s (%s) — "
-                    "using empty config",
-                    niche.slug, source.source_name, exc,
-                )
-                plugin_cfg = None
-
-            extract_config: dict[str, Any] = dict(
-                plugin_cfg.config if plugin_cfg else {}
-            )
-            extract_config.update({
-                "_site_config": self._site_config,
-                "niche_slug": niche.slug,
-                "niche_id": str(niche.id),
-                # Niche-aware sourcing (§2b): web_search derives queries from
-                # these when no explicit categories/seed_queries are configured.
-                # Harmless for sources that ignore them — keeps the orchestrator
-                # path consistent with the niche-bound tap handler.
-                "niche_name": niche.name,
-                "target_audience_tags": list(niche.target_audience_tags),
-            })
-
-            try:
-                topics = await plugin.extract(self._pool, extract_config)
-            except Exception as exc:
-                # Per-source isolation — one bad source must not starve
-                # the rest of the sweep.
-                logger.exception(
-                    "Niche %s: TopicSource %s extract failed: %s",
-                    niche.slug, source.source_name, exc,
-                )
-                continue
-
-            for t in topics or []:
-                # Convert DiscoveredTopic → dict shape that
-                # _embed_and_pre_rank reads. ``source_url`` doubles as
-                # source_ref so the (batch_id, source_name, source_ref)
-                # uniqueness constraint on topic_candidates holds even
-                # when two sources surface the same headline.
-                title = getattr(t, "title", "") or ""
-                desc = getattr(t, "description", "") or ""
-                src_url = getattr(t, "source_url", "") or ""
-                candidates.append({
-                    "kind": "external",
-                    "data": {
-                        "title": title,
-                        "summary": desc,
-                        "source_name": source.source_name,
-                        "source_ref": src_url or title[:80],
-                        "source_url": src_url,
-                        "category": getattr(t, "category", "") or "",
-                        "relevance_score": float(
-                            getattr(t, "relevance_score", 0.0) or 0.0
-                        ),
-                    },
-                })
-
         logger.info(
-            "Niche %s: discovered %d external candidate(s) across %d source(s)",
-            niche.slug, len(candidates), len(external_sources),
+            "Niche %s: read %d pooled candidate(s) (%d external, %d "
+            "internal, per-source cap %d)",
+            niche.slug, len(items), len(external), len(internal),
+            per_source_limit,
         )
-        return candidates
-
-    async def _discover_internal(self, niche: Niche) -> list[dict[str, Any]]:
-        sources = await self._niche_svc.get_sources(niche.id)
-        if not any(
-            s.source_name == "internal_rag" and s.enabled for s in sources
-        ):
-            return []
-        from services.internal_rag_source import InternalRagSource
-        # Pass the DI-injected ``self._site_config`` down to the migrated
-        # ``InternalRagSource`` (caller-bridge, #272 leaf batch 5 →
-        # Phase-2d: topic_batch_service is now required-DI, no module global).
-        rag = InternalRagSource(self._pool, site_config=self._site_config)
-        # Per spec: per-kind limit defaults to 4, all 6 valid kinds
-        # except git_commit (which still needs git-log plumbing).
-        # Operator-tunable via niche_internal_rag_per_kind_limit
-        # (migration 0119).
-        kinds = [
-            "claude_session",
-            "brain_knowledge",
-            "audit_event",
-            "decision_log",
-            "memory_file",
-            "post_history",
-        ]
-        per_kind_limit = self._site_config.get_int(
-            "niche_internal_rag_per_kind_limit", 4,
-        )
-        cands = await rag.generate(
-            niche_id=niche.id,
-            source_kinds=kinds,
-            per_kind_limit=per_kind_limit,
-        )
-        return [{"kind": "internal", "data": c} for c in cands]
+        return external, internal, pool_ids
 
     async def _load_carry_forward(self, niche_id: UUID) -> dict[str, list]:
         """Pull unpicked candidates from the most recent resolved batch and

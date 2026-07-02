@@ -12,7 +12,6 @@ from uuid import uuid4
 
 import pytest
 
-from services.internal_rag_source import InternalCandidate
 from services.niche_service import Niche, NicheGoal, NicheService, NicheSource
 from services.site_config import SiteConfig
 from services.topic_batch_service import CandidateView, TopicBatchService
@@ -34,12 +33,13 @@ def _clear_goal_vec_cache():
 
 
 async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch):
-    """End-to-end happy-path:
+    """End-to-end happy-path (b2 pool-reader):
 
-    Seed a niche with batch_size=3 and a single ``internal_rag`` source,
-    monkeypatch the source to yield 5 fake candidates, monkeypatch the
-    embedding + LLM scorer, expect an ``open`` batch with 3 ranked
-    candidates persisted across the candidate tables.
+    Seed a niche with batch_size=3, deposit 5 internal_rag candidates in
+    ``topic_pool`` (as the tap handler does), monkeypatch the embedding +
+    LLM scorer, expect an ``open`` batch with 3 ranked candidates
+    persisted across the candidate tables — and the 3 winners' pool rows
+    flipped to ``batched``.
     """
     nsvc = NicheService(db_pool)
     n = await nsvc.create(slug="test-niche-batch-svc", name="Test", batch_size=3)
@@ -47,36 +47,32 @@ async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch
         NicheGoal("TRAFFIC", 50),
         NicheGoal("EDUCATION", 50),
     ])
-    await nsvc.set_sources(n.id, [
-        NicheSource("internal_rag", enabled=True, weight_pct=100),
-    ])
 
-    # Mock the internal source generator → 5 fake candidates. Titles are
-    # multi-word (so the topic-sanity intake filter keeps them) AND
-    # mutually word-disjoint (so the intra-batch dedup pass keeps them —
+    # Deposit 5 pool candidates the way tap.builtin_topic_source does.
+    # Titles are multi-word (so the topic-sanity intake filter keeps them)
+    # AND mutually word-disjoint (so the intra-batch dedup pass keeps them —
     # fuzzy matching only skips single-content-word titles).
-    async def fake_internal_generate(self, **kwargs):
-        titles = [
-            "Async worker pools explained",
-            "Grafana dashboard provisioning",
-            "Postgres vacuum tuning",
-            "LangGraph checkpoint recovery",
-            "Docker compose profiles",
-        ]
-        return [
-            InternalCandidate(
-                source_kind="claude_session",
-                primary_ref=f"sess-{i}",
-                distilled_topic=titles[i],
-                distilled_angle=f"Angle {i}",
-            )
-            for i in range(5)
-        ]
+    from plugins.topic_source import DiscoveredTopic
+    from services.topic_pool import insert_pooled_topics
 
-    monkeypatch.setattr(
-        "services.internal_rag_source.InternalRagSource.generate",
-        fake_internal_generate,
-    )
+    titles = [
+        "Async worker pools explained",
+        "Grafana dashboard provisioning",
+        "Postgres vacuum tuning",
+        "LangGraph checkpoint recovery",
+        "Docker compose profiles",
+    ]
+    async with db_pool.acquire() as conn:
+        await insert_pooled_topics(
+            conn, niche_id=n.id, source="internal_rag",
+            topics=[
+                DiscoveredTopic(
+                    title=t, category="claude_session",
+                    source="internal_rag", description=f"Angle {i}",
+                )
+                for i, t in enumerate(titles)
+            ],
+        )
 
     # Mock the embedding step + LLM final scorer. Patch BOTH the public
     # ``embed_text`` (used for candidate texts via lazy import in
@@ -136,55 +132,60 @@ async def test_run_sweep_creates_open_batch_with_candidates(db_pool, monkeypatch
     assert run_row["finished_at"] is not None
     assert run_row["candidates_generated"] == 5
 
+    # The 3 batch winners' pool rows flipped to 'batched'; the 2 unpicked
+    # rows stay 'pooled' for future sweeps.
+    async with db_pool.acquire() as conn:
+        statuses = await conn.fetch(
+            "SELECT status, count(*) AS c FROM topic_pool "
+            "WHERE niche_id = $1 GROUP BY status",
+            n.id,
+        )
+    by_status = {r["status"]: r["c"] for r in statuses}
+    assert by_status == {"batched": 3, "pooled": 2}
 
-async def test_run_sweep_survives_internal_discovery_failure(db_pool, monkeypatch):
-    """2026-05-28 content-gen stall regression guard.
 
-    If internal-RAG discovery raises (e.g. a reasoning model returns
-    empty JSON and json.loads explodes), the sweep must NOT bail and
-    discard the external candidates it already gathered. A batch should
-    still form from the external pool.
+async def test_run_sweep_mixes_external_and_internal_pool_rows(db_pool, monkeypatch):
+    """b2 pool-reader: a sweep over a pool holding both external-source and
+    internal_rag rows routes each winner to the right candidate table
+    (topic_candidates vs internal_topic_candidates).
+
+    (Replaces the pre-b2 "survives internal discovery failure" regression
+    guard — ingestion failures now happen in the tap runner, outside the
+    sweep, so that failure mode is structurally impossible here.)
     """
+    from plugins.topic_source import DiscoveredTopic
+    from services.topic_pool import insert_pooled_topics
+
     nsvc = NicheService(db_pool)
     n = await nsvc.create(
         slug="resilient-sweep", name="Resilient", batch_size=2,
     )
     await nsvc.set_goals(n.id, [NicheGoal("TRAFFIC", 100)])
 
-    # External discovery yields 2 candidates; internal discovery blows up.
     # Titles must be genuinely distinct (no shared content words): run_sweep
-    # now runs the dedup pass, and the old "Ext topic 0"/"Ext topic 1" pair
-    # was 67% word-overlap → the intra-batch deduper would (correctly)
-    # collapse them and this resilience test would see only 1 candidate.
-    async def fake_external(self, niche):
-        titles = [
-            "Local LLM Inference Benchmarks",
-            "Postgres Replication Failover",
-        ]
-        return [
-            {"kind": "external", "data": {
-                "title": title,
-                "summary": f"summary {i}",
-                "source_name": "hacker_news",
-                "source_ref": f"hn-{i}",
-                "source_url": f"https://news.example/{i}",
-                "category": "ai",
-                "relevance_score": 0.9 - i * 0.1,
-            }}
-            for i, title in enumerate(titles)
-        ]
-
-    async def boom_internal(self, niche):
-        raise ValueError("Expecting value: line 1 column 1 (char 0)")
-
-    monkeypatch.setattr(
-        "services.topic_batch_service.TopicBatchService._discover_external",
-        fake_external,
-    )
-    monkeypatch.setattr(
-        "services.topic_batch_service.TopicBatchService._discover_internal",
-        boom_internal,
-    )
+    # runs the dedup pass, and a high-word-overlap pair would (correctly)
+    # collapse before ranking.
+    async with db_pool.acquire() as conn:
+        await insert_pooled_topics(
+            conn, niche_id=n.id, source="hackernews",
+            topics=[
+                DiscoveredTopic(
+                    title="Local LLM Inference Benchmarks", category="ai",
+                    source="hackernews", source_url="https://news.example/1",
+                    relevance_score=0.9, description="summary 1",
+                ),
+            ],
+        )
+        await insert_pooled_topics(
+            conn, niche_id=n.id, source="internal_rag",
+            topics=[
+                DiscoveredTopic(
+                    title="Postgres Replication Failover",
+                    category="claude_session", source="internal_rag",
+                    description="an internal angle",
+                ),
+            ],
+        )
 
     async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
@@ -207,7 +208,6 @@ async def test_run_sweep_survives_internal_discovery_failure(db_pool, monkeypatc
     svc = TopicBatchService(db_pool, site_config=SiteConfig())
     batch = await svc.run_sweep(niche_id=n.id)
 
-    # A batch formed despite the internal failure.
     assert batch is not None
     assert batch.status == "open"
     assert batch.candidate_count == 2
@@ -221,19 +221,15 @@ async def test_run_sweep_survives_internal_discovery_failure(db_pool, monkeypatc
             "SELECT count(*) FROM internal_topic_candidates WHERE batch_id = $1",
             batch.id,
         )
-        run_row = await conn.fetchrow(
-            "SELECT * FROM discovery_runs WHERE niche_id = $1 "
-            "ORDER BY started_at DESC LIMIT 1",
+        pool_batched = await conn.fetchval(
+            "SELECT count(*) FROM topic_pool "
+            "WHERE niche_id = $1 AND status = 'batched'",
             n.id,
         )
-    # External candidates survived; internal contributed nothing.
-    assert external_count == 2
-    assert internal_count == 0
-    # The run completed successfully (no error recorded) — internal failure
-    # was swallowed, not propagated.
-    assert run_row is not None
-    assert run_row["batch_id"] == batch.id
-    assert run_row["error"] is None
+    # One winner in each table, and both pool rows flipped.
+    assert external_count == 1
+    assert internal_count == 1
+    assert pool_batched == 2
 
 
 async def test_run_sweep_dedupes_duplicate_candidates(db_pool, monkeypatch):
@@ -252,46 +248,27 @@ async def test_run_sweep_dedupes_duplicate_candidates(db_pool, monkeypatch):
     nsvc = NicheService(db_pool)
     n = await nsvc.create(slug="dedup-sweep", name="Dedup", batch_size=5)
     await nsvc.set_goals(n.id, [NicheGoal("TRAFFIC", 100)])
-    await nsvc.set_sources(n.id, [
-        NicheSource("internal_rag", enabled=True, weight_pct=100),
-    ])
 
-    # Two candidates share distilled_topic but carry DISTINCT primary_refs
-    # (the prod shape) plus two genuinely distinct topics. Titles are
-    # chosen so word-overlap dedup flags ONLY the exact pair, never the
-    # distinct ones (no shared content words across the three topics).
-    async def fake_internal_generate(self, **kwargs):
-        return [
-            InternalCandidate(
-                source_kind="claude_session",
-                primary_ref="sess-A",
-                distilled_topic="Operator Surface Unreachability",
-                distilled_angle="why the gauge flatlines",
-            ),
-            InternalCandidate(
-                source_kind="claude_session",
-                primary_ref="sess-B",  # different ref, SAME topic
-                distilled_topic="Operator Surface Unreachability",
-                distilled_angle="duplicate distilled from a second session",
-            ),
-            InternalCandidate(
-                source_kind="brain_knowledge",
-                primary_ref="kb-1",
-                distilled_topic="Postgres Vacuum Tuning Guide",
-                distilled_angle="autovacuum thresholds",
-            ),
-            InternalCandidate(
-                source_kind="decision_log",
-                primary_ref="dec-1",
-                distilled_topic="Zero Trust Network Segmentation",
-                distilled_angle="east-west traffic controls",
-            ),
-        ]
-
-    monkeypatch.setattr(
-        "services.internal_rag_source.InternalRagSource.generate",
-        fake_internal_generate,
-    )
+    # Two pool rows share the SAME title but carry DISTINCT dedup_keys —
+    # raw SQL because insert_pooled_topics would (correctly) collapse them
+    # at ingest. The pair still reaches the sweep whenever near-dupes get
+    # distinct keys (title variants, rows ingested before a dedup fix), so
+    # the sweep-side mark_duplicates pass (#1561) stays load-bearing. Plus
+    # two genuinely distinct topics (no shared content words).
+    rows = [
+        ("Operator Surface Unreachability", "why the gauge flatlines", "manual-a"),
+        ("Operator Surface Unreachability", "duplicate from a second session", "manual-b"),
+        ("Postgres Vacuum Tuning Guide", "autovacuum thresholds", "manual-c"),
+        ("Zero Trust Network Segmentation", "east-west traffic controls", "manual-d"),
+    ]
+    async with db_pool.acquire() as conn:
+        for title, angle, key in rows:
+            await conn.execute(
+                "INSERT INTO topic_pool (niche_id, source, title, summary, "
+                "category, dedup_key, status) "
+                "VALUES ($1, 'internal_rag', $2, $3, 'claude_session', $4, 'pooled')",
+                n.id, title, angle, key,
+            )
 
     async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
@@ -342,32 +319,27 @@ async def test_only_one_open_batch_per_niche(db_pool, monkeypatch):
     await nsvc.set_goals(n.id, [
         NicheGoal("TRAFFIC", 100),
     ])
-    await nsvc.set_sources(n.id, [
-        NicheSource("internal_rag", enabled=True, weight_pct=100),
-    ])
 
-    async def fake_internal_generate(self, **kwargs):
-        # Multi-word, word-disjoint titles: survive the topic-sanity
-        # intake filter and the intra-batch dedup pass.
-        titles = [
-            "Vector embedding drift",
-            "Telegram alert routing",
-            "Cuda memory fragmentation",
-        ]
-        return [
-            InternalCandidate(
-                source_kind="claude_session",
-                primary_ref=f"solo-{i}",
-                distilled_topic=titles[i],
-                distilled_angle=f"A{i}",
-            )
-            for i in range(3)
-        ]
+    # Multi-word, word-disjoint titles: survive the topic-sanity intake
+    # filter and the intra-batch dedup pass.
+    from plugins.topic_source import DiscoveredTopic
+    from services.topic_pool import insert_pooled_topics
 
-    monkeypatch.setattr(
-        "services.internal_rag_source.InternalRagSource.generate",
-        fake_internal_generate,
-    )
+    async with db_pool.acquire() as conn:
+        await insert_pooled_topics(
+            conn, niche_id=n.id, source="internal_rag",
+            topics=[
+                DiscoveredTopic(
+                    title=t, category="claude_session",
+                    source="internal_rag", description=f"A{i}",
+                )
+                for i, t in enumerate([
+                    "Vector embedding drift",
+                    "Telegram alert routing",
+                    "Cuda memory fragmentation",
+                ])
+            ],
+        )
 
     async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
@@ -424,35 +396,30 @@ async def test_run_sweep_suppresses_empty_batch_when_nothing_ranks(
         slug="empty-batch-guard", name="EmptyGuard", batch_size=3,
     )
     await nsvc.set_goals(n.id, [NicheGoal("TRAFFIC", 100)])
-    await nsvc.set_sources(n.id, [
-        NicheSource("internal_rag", enabled=True, weight_pct=100),
-    ])
 
-    async def fake_internal_generate(self, **kwargs):
-        # Discovery DOES find candidates this sweep … (multi-word,
-        # word-disjoint titles so they survive the sanity filter + dedup
-        # and genuinely reach the LLM scorer — the guard under test is
-        # about SCORER emptiness, not upstream filtering).
-        titles = [
-            "Async worker pools explained",
-            "Grafana dashboard provisioning",
-            "Postgres vacuum tuning",
-            "LangGraph checkpoint recovery",
-        ]
-        return [
-            InternalCandidate(
-                source_kind="claude_session",
-                primary_ref=f"sess-{i}",
-                distilled_topic=titles[i],
-                distilled_angle=f"Angle {i}",
-            )
-            for i in range(4)
-        ]
+    # The pool DOES hold candidates this sweep … (multi-word, word-disjoint
+    # titles so they survive the sanity filter + dedup and genuinely reach
+    # the LLM scorer — the guard under test is about SCORER emptiness, not
+    # upstream filtering).
+    from plugins.topic_source import DiscoveredTopic
+    from services.topic_pool import insert_pooled_topics
 
-    monkeypatch.setattr(
-        "services.internal_rag_source.InternalRagSource.generate",
-        fake_internal_generate,
-    )
+    async with db_pool.acquire() as conn:
+        await insert_pooled_topics(
+            conn, niche_id=n.id, source="internal_rag",
+            topics=[
+                DiscoveredTopic(
+                    title=t, category="claude_session",
+                    source="internal_rag", description=f"Angle {i}",
+                )
+                for i, t in enumerate([
+                    "Async worker pools explained",
+                    "Grafana dashboard provisioning",
+                    "Postgres vacuum tuning",
+                    "LangGraph checkpoint recovery",
+                ])
+            ],
+        )
 
     async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
@@ -757,229 +724,6 @@ async def test_list_open_batches_returns_only_open_with_candidates_and_niche(db_
     assert ob_a.view.status == "open"
     assert len(ob_a.view.candidates) == 3
     assert {c.kind for c in ob_a.view.candidates} == {"external", "internal"}
-
-
-# ===========================================================================
-# _discover_external — TopicSource plugin dispatch (Task 6 follow-up)
-# ===========================================================================
-
-
-class _StubTopicSource:
-    """Stub implementing the ``plugins.topic_source.TopicSource`` Protocol.
-
-    Captures the ``(pool, config)`` it was called with so tests can assert
-    the niche context propagated correctly. Returns a deterministic list
-    of ``DiscoveredTopic`` (or raises if ``error`` is set).
-    """
-
-    def __init__(self, name, topics=None, error=None):
-        self.name = name
-        self._topics = topics or []
-        self._error = error
-        self.calls = []
-
-    async def extract(self, pool, config):
-        self.calls.append({"pool": pool, "config": config})
-        if self._error is not None:
-            raise self._error
-        return list(self._topics)
-
-
-async def test_discover_external_dispatches_registered_plugins(db_pool, monkeypatch):
-    """Each enabled non-internal_rag source matches a registered plugin
-    by name; results aggregate into the {kind, data} shape consumed by
-    _embed_and_pre_rank."""
-    from plugins.topic_source import DiscoveredTopic
-
-    nsvc = NicheService(db_pool)
-    n = await nsvc.create(slug="ext-niche-dispatch", name="ExtDispatch")
-    await nsvc.set_sources(n.id, [
-        NicheSource("hackernews", enabled=True, weight_pct=60),
-        NicheSource("devto", enabled=True, weight_pct=40),
-        # internal_rag must NOT be invoked by _discover_external.
-        NicheSource("internal_rag", enabled=True, weight_pct=0),
-    ])
-
-    hn = _StubTopicSource("hackernews", topics=[
-        DiscoveredTopic(
-            title="Rust 1.80 ships with stable async iterators",
-            category="technology",
-            source="hackernews",
-            source_url="https://news.ycombinator.com/item?id=1",
-            relevance_score=4.2,
-            description="HN top story",
-        ),
-    ])
-    devto = _StubTopicSource("devto", topics=[
-        DiscoveredTopic(
-            title="Why I switched from Webpack to Vite",
-            category="technology",
-            source="devto",
-            source_url="https://dev.to/x/y",
-            relevance_score=2.5,
-            description="Dev.to trending",
-        ),
-        DiscoveredTopic(
-            title="Postgres 17 query plans demystified",
-            category="technology",
-            source="devto",
-            source_url="https://dev.to/a/b",
-            relevance_score=3.0,
-            description="Dev.to trending",
-        ),
-    ])
-
-    monkeypatch.setattr(
-        "plugins.registry.get_topic_sources",
-        lambda: [hn, devto],
-    )
-
-    svc = TopicBatchService(db_pool, site_config=SiteConfig())
-    out = await svc._discover_external(n)
-
-    assert len(out) == 3
-    # All have the expected shape.
-    for item in out:
-        assert item["kind"] == "external"
-        data = item["data"]
-        assert {"title", "summary", "source_name", "source_ref"} <= data.keys()
-
-    # Aggregate from BOTH plugins.
-    assert {item["data"]["source_name"] for item in out} == {
-        "hackernews", "devto",
-    }
-    titles = {item["data"]["title"] for item in out}
-    assert "Rust 1.80 ships with stable async iterators" in titles
-    assert "Why I switched from Webpack to Vite" in titles
-
-    # Each plugin's extract() saw the niche context.
-    for stub in (hn, devto):
-        assert len(stub.calls) == 1
-        cfg = stub.calls[0]["config"]
-        assert cfg["niche_slug"] == n.slug
-        assert cfg["niche_id"] == str(n.id)
-        # Niche-aware sourcing (§2b): name + audience tags flow to the source
-        # so web_search can derive queries when no categories are configured.
-        assert cfg["niche_name"] == n.name
-        assert cfg["target_audience_tags"] == list(n.target_audience_tags)
-        assert "_site_config" in cfg
-
-    # internal_rag must not have been routed through here at all.
-    assert "internal_rag" not in {s.name for s in (hn, devto)}
-
-
-async def test_discover_external_skips_unknown_source_with_warning(
-    db_pool, monkeypatch, caplog,
-):
-    """A niche-source name not present in the registry must log a
-    warning and be skipped — never raise."""
-    from plugins.topic_source import DiscoveredTopic
-
-    nsvc = NicheService(db_pool)
-    n = await nsvc.create(slug="ext-niche-unknown", name="ExtUnknown")
-    await nsvc.set_sources(n.id, [
-        NicheSource("hackernews", enabled=True, weight_pct=50),
-        # Not registered — must be skipped, not crashed on.
-        NicheSource("legacy_rss", enabled=True, weight_pct=50),
-    ])
-
-    hn = _StubTopicSource("hackernews", topics=[
-        DiscoveredTopic(
-            title="The case for monorepos in 2026",
-            category="technology",
-            source="hackernews",
-            source_url="https://example/1",
-        ),
-    ])
-    monkeypatch.setattr("plugins.registry.get_topic_sources", lambda: [hn])
-
-    svc = TopicBatchService(db_pool, site_config=SiteConfig())
-    import logging
-    with caplog.at_level(logging.WARNING):
-        out = await svc._discover_external(n)
-
-    # Got hn's one topic; legacy_rss silently skipped (warned, not raised).
-    assert len(out) == 1
-    assert out[0]["data"]["source_name"] == "hackernews"
-
-    warned = [
-        r for r in caplog.records
-        if r.levelno >= logging.WARNING and "legacy_rss" in r.getMessage()
-    ]
-    assert warned, "expected a warning for the unregistered source"
-
-
-async def test_discover_external_isolates_per_source_failures(
-    db_pool, monkeypatch,
-):
-    """A plugin raising must not kill the sweep — other plugins still
-    contribute their topics."""
-    from plugins.topic_source import DiscoveredTopic
-
-    nsvc = NicheService(db_pool)
-    n = await nsvc.create(slug="ext-niche-isolate", name="ExtIsolate")
-    await nsvc.set_sources(n.id, [
-        NicheSource("hackernews", enabled=True, weight_pct=50),
-        NicheSource("devto", enabled=True, weight_pct=50),
-    ])
-
-    bad = _StubTopicSource("hackernews", error=RuntimeError("boom"))
-    good = _StubTopicSource("devto", topics=[
-        DiscoveredTopic(
-            title="Goroutines vs async/await",
-            category="technology",
-            source="devto",
-            source_url="https://dev.to/g",
-        ),
-    ])
-    monkeypatch.setattr(
-        "plugins.registry.get_topic_sources", lambda: [bad, good],
-    )
-
-    svc = TopicBatchService(db_pool, site_config=SiteConfig())
-    out = await svc._discover_external(n)
-
-    assert len(out) == 1
-    assert out[0]["data"]["source_name"] == "devto"
-
-
-async def test_discover_external_disabled_sources_skipped(
-    db_pool, monkeypatch,
-):
-    """Disabled niche-source rows must not invoke their plugin."""
-    from plugins.topic_source import DiscoveredTopic
-
-    nsvc = NicheService(db_pool)
-    n = await nsvc.create(slug="ext-niche-disabled", name="ExtDisabled")
-    await nsvc.set_sources(n.id, [
-        NicheSource("hackernews", enabled=False, weight_pct=50),
-        NicheSource("devto", enabled=True, weight_pct=50),
-    ])
-
-    hn = _StubTopicSource("hackernews", topics=[
-        DiscoveredTopic(
-            title="should not appear",
-            category="technology",
-            source="hackernews",
-        ),
-    ])
-    devto = _StubTopicSource("devto", topics=[
-        DiscoveredTopic(
-            title="appears",
-            category="technology",
-            source="devto",
-        ),
-    ])
-    monkeypatch.setattr(
-        "plugins.registry.get_topic_sources", lambda: [hn, devto],
-    )
-
-    svc = TopicBatchService(db_pool, site_config=SiteConfig())
-    out = await svc._discover_external(n)
-
-    assert len(out) == 1
-    assert out[0]["data"]["title"] == "appears"
-    assert hn.calls == [], "disabled source should never be invoked"
 
 
 # ===========================================================================
@@ -1417,32 +1161,24 @@ async def test_run_sweep_drops_contentless_candidates_at_intake(db_pool, monkeyp
         NicheGoal("TRAFFIC", 50),
         NicheGoal("EDUCATION", 50),
     ])
-    await nsvc.set_sources(n.id, [
-        NicheSource("internal_rag", enabled=True, weight_pct=100),
-    ])
-
-    async def fake_internal_generate(self, **kwargs):
-        topics = [
-            DOTS_TOPIC,  # the incident topic, verbatim
-            "",          # empty distillation
-            "How local QA rails catch fabricated citations",
-            "Why single-GPU VRAM budgets shape model routing",
-            "Postgres as the spinal cord of an AI business",
-        ]
-        return [
-            InternalCandidate(
-                source_kind="claude_session",
-                primary_ref=f"sess-{i}",
-                distilled_topic=t,
-                distilled_angle="angle",
+    # Raw SQL seeding (unique manual dedup_keys) so the contentless rows
+    # genuinely reach the sweep's intake filter — the pool-ingest path
+    # (insert_pooled_topics) would collide empty titles on dedup_key.
+    topics = [
+        DOTS_TOPIC,  # the incident topic, verbatim
+        "",          # empty distillation
+        "How local QA rails catch fabricated citations",
+        "Why single-GPU VRAM budgets shape model routing",
+        "Postgres as the spinal cord of an AI business",
+    ]
+    async with db_pool.acquire() as conn:
+        for i, t in enumerate(topics):
+            await conn.execute(
+                "INSERT INTO topic_pool (niche_id, source, title, summary, "
+                "category, dedup_key, status) "
+                "VALUES ($1, 'internal_rag', $2, 'angle', 'claude_session', $3, 'pooled')",
+                n.id, t, f"sanity-{i}",
             )
-            for i, t in enumerate(topics)
-        ]
-
-    monkeypatch.setattr(
-        "services.internal_rag_source.InternalRagSource.generate",
-        fake_internal_generate,
-    )
 
     async def fake_embed_text(text, *, site_config=None):
         return [0.1] * 768
