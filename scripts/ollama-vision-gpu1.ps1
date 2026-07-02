@@ -24,6 +24,17 @@
     background-services.ps1.
 #>
 
+# Import the operator's user-level OLLAMA_* tuning vars (OLLAMA_MODELS,
+# flash-attn, KV cache type, num_ctx). Scheduled-task processes do not
+# reliably inherit HKCU environment, so read the registry explicitly -
+# without this the instance falls back to the default ~\.ollama\models
+# store and reports every model as not found.
+$userEnv = [Environment]::GetEnvironmentVariables('User')
+foreach ($key in $userEnv.Keys) {
+    if ($key -like 'OLLAMA_*') { Set-Item -Path "env:$key" -Value $userEnv[$key] }
+}
+
+# Pin vars come AFTER the import so they always win.
 $env:CUDA_DEVICE_ORDER = "PCI_BUS_ID"    # deterministic index mapping across driver updates
 $env:CUDA_VISIBLE_DEVICES = "1"          # RTX 3090 only
 $env:OLLAMA_HOST = "127.0.0.1:11435"
