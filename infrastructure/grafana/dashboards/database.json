@@ -1223,6 +1223,79 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 21,
+      "type": "table",
+      "title": "Data feed freshness — dead-man's switch",
+      "description": "Age of the newest row per data feed vs its staleness threshold. STALE means every panel reading that table is showing old data without looking broken. Alerting is handled by brain/data_freshness_probe.py (edge-triggered data_feed_stale finding, feeds configured in app_settings.data_freshness_feeds); this panel is the at-a-glance view. Thresholds here mirror the seeded defaults - keep in sync when tuning.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 54
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT feed, latest, round(age_min) AS age_minutes, threshold_min,\n       CASE WHEN age_min > threshold_min THEN 'STALE' ELSE 'fresh' END AS state\nFROM (\n  SELECT 'cost_logs' AS feed, max(created_at) AS latest,\n         EXTRACT(EPOCH FROM (now() - max(created_at)))/60 AS age_min, 180 AS threshold_min FROM cost_logs\n  UNION ALL SELECT 'gpu_metrics', max(\"timestamp\"),\n         EXTRACT(EPOCH FROM (now() - max(\"timestamp\")))/60, 30 FROM gpu_metrics\n  UNION ALL SELECT 'atom_runs', max(created_at),\n         EXTRACT(EPOCH FROM (now() - max(created_at)))/60, 720 FROM atom_runs\n  UNION ALL SELECT 'page_views', max(created_at),\n         EXTRACT(EPOCH FROM (now() - max(created_at)))/60, 2880 FROM page_views\n  UNION ALL SELECT 'sensor_samples (corsair_csv)', max(sampled_at),\n         EXTRACT(EPOCH FROM (now() - max(sampled_at)))/60, 120 FROM sensor_samples WHERE source = 'corsair_csv'\n) feeds\nORDER BY age_min DESC NULLS LAST",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          }
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            }
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "STALE": {
+                  "color": "red",
+                  "index": 0
+                },
+                "fresh": {
+                  "color": "green",
+                  "index": 1
+                }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "state"
+            },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-background"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "options": {
+        "showHeader": true,
+        "sortBy": []
+      }
     }
   ],
   "description": "CHARTER: Postgres internals + data-feed freshness — connection pressure, table growth, index health, and the feed dead-man's switch. Answers 'is the spinal cord healthy and is its data current?'."

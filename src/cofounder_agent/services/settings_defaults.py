@@ -1261,6 +1261,25 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # 504 operator_paged events in one week. 0 disables the gate.
     'operator_page_cooldown_minutes': '30',
 
+    # ----- Data-feed freshness dead-man's switch (2026-07-01 audit) -----
+    # brain/data_freshness_probe.py watches each feed's newest row and emits
+    # an edge-triggered `data_feed_stale` finding (warning → Discord via the
+    # findings router) when it exceeds threshold_minutes — so a dead producer
+    # can't leave dashboards silently serving stale data. table/column are
+    # validated as SQL identifiers; a feed with zero rows is not assessed.
+    # The corsair_csv sensor feed keeps its dedicated corsair_feed_probe.
+    'data_freshness_probe_enabled': 'true',
+    'data_freshness_feeds': (
+        '[{"name": "cost_logs", "table": "cost_logs", "column": "created_at",'
+        ' "threshold_minutes": 180},'
+        ' {"name": "gpu_metrics", "table": "gpu_metrics", "column": "timestamp",'
+        ' "threshold_minutes": 30},'
+        ' {"name": "atom_runs", "table": "atom_runs", "column": "created_at",'
+        ' "threshold_minutes": 720},'
+        ' {"name": "page_views", "table": "page_views", "column": "created_at",'
+        ' "threshold_minutes": 2880}]'
+    ),
+
     # ----- Content-flow concurrency cap (Glad-Labs/poindexter#578) -----
     # The native Prefect work-pool concurrency limit caps how many
     # content_generation_flow runs execute simultaneously. Each run loads

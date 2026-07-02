@@ -292,6 +292,21 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_CORSAIR_FEED_PROBE = False
 
 try:
+    # 2026-07-01 audit — generalized data-feed dead-man's switch. Watches
+    # app_settings.data_freshness_feeds (cost_logs / gpu_metrics /
+    # atom_runs / page_views by default) and emits an edge-triggered
+    # `finding` when a feed's newest row exceeds its threshold, so
+    # dashboards can't silently serve stale data.
+    from data_freshness_probe import run_data_freshness_probe
+    _HAS_DATA_FRESHNESS_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.data_freshness_probe import run_data_freshness_probe
+        _HAS_DATA_FRESHNESS_PROBE = True
+    except ImportError:
+        _HAS_DATA_FRESHNESS_PROBE = False
+
+try:
     # PR staleness probe — every cycle, pull open PRs from GitHub and
     # flag any that have been sitting >24h with green CI but no merge.
     # Catches the "agent shipped a PR and the operator forgot" failure
@@ -416,6 +431,8 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
      "Windows wslrelay stuck-state auto-recovery offline (#222)"),
     ("_HAS_CORSAIR_FEED_PROBE", "brain/corsair_feed_probe.py",
      "iCUE corsair_csv sensor feed staleness goes unalerted (#868)"),
+    ("_HAS_DATA_FRESHNESS_PROBE", "brain/data_freshness_probe.py",
+     "Data-feed dead-man's switch offline — dashboards can serve stale data silently"),
     ("_HAS_PR_STALENESS_PROBE", "brain/pr_staleness_probe.py",
      "Stale PR detection offline — agent PRs sit unmerged forever"),
     ("_HAS_DISCORD_BOT_PROBE", "brain/discord_bot_probe.py",
@@ -2842,6 +2859,23 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] corsair_feed probe failed: %s", e)
+
+    # Generalized data-feed freshness watchdog (2026-07-01 audit). Same
+    # transition-only-finding pattern as corsair_feed above, but the feed
+    # list is declarative JSON in app_settings.data_freshness_feeds
+    # (cost_logs / gpu_metrics / atom_runs / page_views by default) — a
+    # dead-man's switch for DATA, so a producer dying no longer leaves
+    # dashboards silently serving stale numbers.
+    if _HAS_DATA_FRESHNESS_PROBE:
+        try:
+            df_summary = await run_data_freshness_probe(pool)
+            probe_results["data_freshness"] = {
+                "ok": bool(df_summary.get("ok", False)),
+                "detail": df_summary.get("detail", ""),
+                "summary": df_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] data_freshness probe failed: %s", e)
 
     # GlitchTip triage probe — pulls open issues every cycle, auto-resolves
     # known noise per glitchtip_triage_auto_resolve_patterns, and pages on
