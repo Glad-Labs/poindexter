@@ -25,6 +25,7 @@ from modules.content.stages.generate_video_shot_list import (
     _extract_json_object,
     _log_audit,
     _reconcile_shot_list,
+    _tolerant_json_loads,
 )
 from plugins.stage import StageResult
 from schemas.video_shot_list import VideoShotList
@@ -128,7 +129,7 @@ class ReviewVideoShotListStage:
             logger.warning("[VIDEO_REVIEW] no JSON in review output (%s)", prompt_key)
             return None
         try:
-            parsed = _reconcile_shot_list(json.loads(body))
+            parsed = _reconcile_shot_list(_tolerant_json_loads(body))
             revised = VideoShotList.model_validate(parsed)
         except Exception as exc:
             logger.warning("[VIDEO_REVIEW] revised list invalid (%s): %s", prompt_key, exc)

@@ -169,3 +169,37 @@ async def test_review_timeout_read_from_db_setting() -> None:
     assert platform.config.get_int.call_args.args[0] == "video_director_timeout_seconds"
     _, kwargs = platform.dispatch.complete.call_args
     assert kwargs["timeout_s"] == 555
+
+
+@pytest.mark.asyncio
+async def test_review_recovers_unquoted_key_dialect() -> None:
+    """The reviewer emits the same near-JSON dialect the director does
+    (unquoted keys) — the shared ``_tolerant_json_loads`` repairs it
+    deterministically instead of discarding the revision."""
+    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+
+    dialect_revision = (
+        '{ version: 1, aspect: "16:9", total_duration_s: 10.0, shots: ['
+        '{ idx: 0, duration_s: 5.0, intent: "open", source: "pexels", '
+        'query: "server room", narration_offset_s: 0.0 },'
+        '{ idx: 1, duration_s: 5.0, intent: "close", source: "wan21", '
+        'prompt: "flat vector circuit, faceless", narration_offset_s: 5.0 }'
+        '], director_model: "reviewer", director_prompt_version: "review_v1", '
+        'director_decided_at: "2026-07-03T00:00:00+00:00" }'
+    )
+    ctx = {
+        "title": "T", "content": "C body " * 20, "podcast_script": "script " * 20,
+        "video_shot_list": _valid_list(),
+        "platform": _platform(dispatch_text=dialect_revision),
+        "database_service": _make_db(),
+        "task_id": "t1",
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+        mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
+        result = await ReviewVideoShotListStage().execute(ctx, {})
+
+    assert result.ok
+    assert result.metrics["reviewed"] is True
+    assert result.context_updates["video_shot_list"]["shots"][1]["source"] == "wan21"

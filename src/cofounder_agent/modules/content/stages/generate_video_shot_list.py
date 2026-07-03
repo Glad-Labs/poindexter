@@ -131,31 +131,161 @@ def _extract_json_object(text: str) -> str | None:
     return None
 
 
+# Python-literal spellings the director leaks into JSON output.
+_JSON_REPAIR_LITERALS = {"True": "true", "False": "false", "None": "null"}
+
+
+def _repair_json_syntax(text: str) -> str:
+    """Deterministically rewrite the near-JSON dialects local directors emit
+    into strict JSON.
+
+    Observed dialects (audit ``shot_list_failed`` phase=schema_validate,
+    "Expecting property name enclosed in double quotes", raw preview
+    ``{ sho…``): unquoted object keys. Also repaired while we're scanning:
+    single-quoted strings, Python literals (``True``/``False``/``None``),
+    bare-word string values, and trailing commas.
+
+    A character scanner that tracks string context, so repairs never touch
+    the inside of a double-quoted string value. Best-effort by design: the
+    output goes straight back to ``json.loads`` — anything still malformed
+    fails there exactly like an unrepaired parse does today. Deterministic
+    repair beats an LLM retry burning writer-grade GPU time
+    (``feedback_calculated_vs_generated``).
+    """
+    out: list[str] = []
+    i = 0
+    n = len(text)
+    in_string = False
+    escape = False
+    while i < n:
+        ch = text[i]
+        if in_string:
+            out.append(ch)
+            if escape:
+                escape = False
+            elif ch == "\\":
+                escape = True
+            elif ch == '"':
+                in_string = False
+            i += 1
+            continue
+        if ch == '"':
+            in_string = True
+            out.append(ch)
+            i += 1
+            continue
+        if ch == "'":
+            # Single-quoted string → double-quoted (escaping inner ``"``).
+            j = i + 1
+            buf: list[str] = []
+            while j < n:
+                cj = text[j]
+                if cj == "\\" and j + 1 < n:
+                    buf.append(cj)
+                    buf.append(text[j + 1])
+                    j += 2
+                    continue
+                if cj == "'":
+                    break
+                buf.append('\\"' if cj == '"' else cj)
+                j += 1
+            out.append('"')
+            out.extend(buf)
+            out.append('"')
+            i = j + 1
+            continue
+        if ch.isalpha() or ch == "_":
+            # Bare identifier: an unquoted key, a Python/JSON literal, or a
+            # bare-word string value.
+            j = i
+            while j < n and (text[j].isalnum() or text[j] == "_"):
+                j += 1
+            word = text[i:j]
+            k = j
+            while k < n and text[k] in " \t\r\n":
+                k += 1
+            if k < n and text[k] == ":":
+                out.append(f'"{word}"')  # unquoted key
+            elif word in _JSON_REPAIR_LITERALS:
+                out.append(_JSON_REPAIR_LITERALS[word])
+            elif word in ("true", "false", "null"):
+                out.append(word)
+            else:
+                # Bare word in value position (after ``:`` / ``[`` / ``,``)
+                # is an unquoted string value — quote it. Anywhere else,
+                # leave it for json.loads to reject.
+                prev = next((c for c in reversed(out) if not c.isspace()), "")
+                out.append(f'"{word}"' if prev in (":", "[", ",") else word)
+            i = j
+            continue
+        if ch in "}]":
+            # Trailing comma: drop a comma directly preceding the closer.
+            k = len(out) - 1
+            while k >= 0 and out[k].isspace():
+                k -= 1
+            if k >= 0 and out[k] == ",":
+                del out[k]
+        out.append(ch)
+        i += 1
+    return "".join(out)
+
+
+def _tolerant_json_loads(body: str) -> Any:
+    """``json.loads`` with a deterministic dialect-repair fallback.
+
+    Strict parse first — well-formed output never passes through the
+    rewriter. On a parse error, repair the known local-model dialects
+    (see :func:`_repair_json_syntax`) and parse again, letting a still-
+    broken result raise to the caller's existing failure path.
+    """
+    try:
+        return json.loads(body)
+    except json.JSONDecodeError:
+        parsed = json.loads(_repair_json_syntax(body))
+        logger.info(
+            "[VIDEO_DIRECTOR] tolerant JSON repair recovered a shot list "
+            "the strict parser rejected (unquoted keys / trailing commas / "
+            "Python literals)",
+        )
+        return parsed
+
+
 _MAX_SHOTS = 30  # Mirror VideoShotList.shots max_length — cap before validation.
+_MAX_SHOT_DURATION_S = 30.0  # Mirror Shot.duration_s le=30 — clamp before validation.
 
 
 def _reconcile_shot_list(parsed: Any) -> Any:
     """Deterministically repair the director's mechanical slips before schema
     validation.
 
-    The local "standard"-tier LLM reliably botches three pieces of bookkeeping
-    the ``VideoShotList`` schema enforces as hard gates — and every botch
-    rejected the WHOLE shot list, so Stage-2 video rendering silently no-opped
-    on every post (audit: ``shot_list_failed`` 11 / ``shot_list_produced`` 0
-    over 10 days). These constraints are *calculated*, not creative, so we
-    compute them here rather than throw away the director's otherwise-usable
-    shot choices (``feedback_calculated_vs_generated``). Creative fields
-    (sources, prompts, queries, intents) are never touched.
+    The local "standard"-tier LLM reliably botches several pieces of
+    bookkeeping the ``VideoShotList`` schema enforces as hard gates — and
+    every botch rejected the WHOLE shot list, so Stage-2 video rendering
+    silently no-opped on every post (audit: ``shot_list_failed`` 11 /
+    ``shot_list_produced`` 0 over 10 days; the 2026-06/07 follow-up audit
+    added ``duration_s > 30`` and missing ``narration_offset_s`` as the two
+    dominant remaining reject classes). These constraints are *calculated*,
+    not creative, so we compute them here rather than throw away the
+    director's otherwise-usable shot choices
+    (``feedback_calculated_vs_generated``). Creative fields (sources,
+    prompts, queries, intents) are never touched.
 
     Repairs, in order:
 
-    1. **Pacing** — break runs of >2 consecutive same-source non-holdover shots
+    1. **Duration clamp** — cap ``duration_s`` at the schema ceiling (30s).
+       The director emits 30.2–46s "hold" shots; the shot *choice* is
+       creative, its length cap is bookkeeping.
+    2. **Pacing** — break runs of >2 consecutive same-source non-holdover shots
        by inserting a ``holdover`` transition (a pure cross-fade, no asset).
-    2. **Count** — cap to the schema max (30 shots); the director front-loads
+    3. **Count** — cap to the schema max (30 shots); the director front-loads
        the hook, so dropping the tail is the least-bad truncation.
-    3. **Index** — renormalize ``idx`` to a contiguous ``0..n-1`` (the renderer
+    4. **Index** — renormalize ``idx`` to a contiguous ``0..n-1`` (the renderer
        concats in idx order; the schema requires no gaps).
-    4. **Total duration** — set ``total_duration_s`` to the sum of shot
+    5. **Narration offset** — a shot missing ``narration_offset_s`` (a
+       required field the director drops on individual shots) gets it derived
+       from the cumulative duration of all prior shots — the exact rule the
+       director prompt states. Present offsets are never overwritten.
+    6. **Total duration** — set ``total_duration_s`` to the sum of shot
        durations so the director can never disagree with its own arithmetic.
 
     A non-dict input, or a dict with no usable ``shots`` list, is returned
@@ -171,7 +301,18 @@ def _reconcile_shot_list(parsed: Any) -> Any:
     if not shots:
         return parsed
 
-    # 1. Break same-source streaks with holdover transitions.
+    # 1. Clamp per-shot duration to the schema ceiling. Non-numeric values
+    #    are left alone — the total loop below counts them as 0.0 and logs.
+    for shot in shots:
+        raw_duration = shot.get("duration_s")
+        if (
+            isinstance(raw_duration, (int, float))
+            and not isinstance(raw_duration, bool)
+            and raw_duration > _MAX_SHOT_DURATION_S
+        ):
+            shot["duration_s"] = _MAX_SHOT_DURATION_S
+
+    # 2. Break same-source streaks with holdover transitions.
     paced: list[dict[str, Any]] = []
     streak_src: str | None = None
     streak = 0
@@ -184,24 +325,33 @@ def _reconcile_shot_list(parsed: Any) -> Any:
         if src == streak_src:
             streak += 1
             if streak > 2:
+                # No narration_offset_s here — the reindex loop below derives
+                # it from cumulative prior durations, which is more accurate
+                # than copying the following shot's (possibly absent) offset.
                 paced.append({
                     "duration_s": 0.5,
                     "intent": "transition",
                     "source": "holdover",
-                    "narration_offset_s": shot.get("narration_offset_s", 0.0) or 0.0,
                 })
                 streak = 1  # this shot opens a fresh run after the transition
         else:
             streak_src, streak = src, 1
         paced.append(shot)
 
-    # 2. Cap to the schema max.
+    # 3. Cap to the schema max.
     paced = paced[:_MAX_SHOTS]
 
-    # 3 + 4. Reindex contiguously and recompute the total from the durations.
+    # 4 + 5 + 6. Reindex contiguously, derive missing narration offsets from
+    # the running duration sum, and recompute the total from the durations.
     total = 0.0
     for i, shot in enumerate(paced):
         shot["idx"] = i
+        try:
+            float(shot["narration_offset_s"])
+        except (KeyError, TypeError, ValueError):
+            # Required field the director dropped — derive it as the
+            # cumulative duration of all prior shots (the prompt's own rule).
+            shot["narration_offset_s"] = round(total, 2)
         raw_duration = shot.get("duration_s")
         try:
             total += float(raw_duration or 0.0)
@@ -358,7 +508,17 @@ class GenerateVideoShotListStage:
                 pool,
                 event_type="video_director.shot_list_failed",
                 task_id=task_id,
-                details={"phase": "llm_dispatch", "prompt_key": prompt_key, "error": str(exc)},
+                details={
+                    "phase": "llm_dispatch",
+                    "prompt_key": prompt_key,
+                    "error": str(exc),
+                    # The effective per-call ceiling — so a future timeout
+                    # failure shows at a glance whether the DB setting
+                    # actually reached the dispatch (2026-06-20 incident:
+                    # "Timeout passed=120.0" rows from a stale worker still
+                    # running the pre-#1750 hardcoded 120s).
+                    "timeout_s": timeout_s,
+                },
                 severity="warning",
             )
             return None
@@ -383,11 +543,14 @@ class GenerateVideoShotListStage:
             return None
 
         try:
-            parsed = json.loads(json_body)
-            # Repair the director's mechanical/arithmetic slips (count cap,
-            # idx, total-duration sum, pacing streaks) BEFORE validation — the
-            # local LLM botches this bookkeeping every run, and an unrepaired
-            # reject silently no-ops Stage-2 video. Creative fields untouched.
+            # Tolerant parse (strict first, then deterministic dialect
+            # repair — unquoted keys were rejecting whole shot lists), then
+            # repair the director's mechanical/arithmetic slips (duration
+            # clamp, missing narration offsets, count cap, idx, total sum,
+            # pacing streaks) BEFORE validation — the local LLM botches this
+            # bookkeeping every run, and an unrepaired reject silently
+            # no-ops Stage-2 video. Creative fields untouched.
+            parsed = _tolerant_json_loads(json_body)
             parsed = _reconcile_shot_list(parsed)
             shot_list = VideoShotList.model_validate(parsed)
         except Exception as exc:

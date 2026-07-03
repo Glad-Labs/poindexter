@@ -20,6 +20,7 @@ from modules.content.stages.generate_video_shot_list import (
     _estimate_target_duration,
     _extract_json_object,
     _reconcile_shot_list,
+    _tolerant_json_loads,
 )
 from schemas.video_shot_list import VideoShotList
 
@@ -285,6 +286,12 @@ async def test_llm_failure_logs_audit_does_not_raise() -> None:
         if "video_director.shot_list_failed" in c.args[1]
     ]
     assert failure_calls
+    # The effective per-call ceiling is recorded on the failure row, so a
+    # timeout failure shows at a glance whether the DB-configured
+    # video_director_timeout_seconds actually reached the dispatch
+    # (2026-06-20 stale-worker incident diagnosability).
+    failure_details = json.loads(failure_calls[0].args[3])
+    assert failure_details["timeout_s"] == 300
 
 
 @pytest.mark.asyncio
@@ -735,6 +742,157 @@ def test_reconcile_passthrough_when_shots_empty() -> None:
     director-failure path still fires (no fabricated success)."""
     assert _reconcile_shot_list({}) == {}
     assert _reconcile_shot_list({"shots": []}) == {"shots": []}
+
+
+def test_reconcile_clamps_duration_over_30() -> None:
+    """The dominant recent reject class (audit 2026-06/07): the director
+    holds single shots 30.2–46s, and the schema's ``le=30`` gate rejected
+    the whole list. Clamp to the ceiling and recompute the total."""
+    shots = [
+        _raw_shot(0, "pexels", duration=34.0),
+        _raw_shot(1, "image_gen", duration=42.0),
+        _raw_shot(2, "pexels", duration=10.0),
+    ]
+    fixed = _reconcile_shot_list(_raw_list(shots, total=86.0))
+    assert [s["duration_s"] for s in fixed["shots"]] == [30.0, 30.0, 10.0]
+    assert fixed["total_duration_s"] == 70.0
+    VideoShotList.model_validate(fixed)
+
+
+def test_reconcile_fills_missing_narration_offset() -> None:
+    """The #2 recent reject class: individual shots missing the required
+    ``narration_offset_s``. Derive it from cumulative prior durations (the
+    prompt's own rule); present offsets are never overwritten."""
+    shots = [
+        _raw_shot(0, "pexels", duration=5.0),
+        _raw_shot(1, "image_gen", duration=7.0),
+        _raw_shot(2, "pexels", duration=4.0),
+    ]
+    del shots[1]["narration_offset_s"]
+    shots[2]["narration_offset_s"] = 99.0  # present (even if odd) → untouched
+    fixed = _reconcile_shot_list(_raw_list(shots, total=16.0))
+    assert fixed["shots"][1]["narration_offset_s"] == 5.0  # cumulative prior
+    assert fixed["shots"][2]["narration_offset_s"] == 99.0
+    VideoShotList.model_validate(fixed)
+
+
+def test_reconcile_derived_offsets_use_clamped_durations() -> None:
+    """Offset derivation runs AFTER the duration clamp, so a derived offset
+    reflects the durations the renderer will actually play."""
+    shots = [
+        _raw_shot(0, "pexels", duration=40.0),  # clamps to 30
+        _raw_shot(1, "image_gen", duration=5.0),
+    ]
+    del shots[1]["narration_offset_s"]
+    fixed = _reconcile_shot_list(_raw_list(shots, total=45.0))
+    assert fixed["shots"][1]["narration_offset_s"] == 30.0
+    VideoShotList.model_validate(fixed)
+
+
+def test_reconcile_inserted_holdover_gets_derived_offset() -> None:
+    """The pacing holdover no longer copies the following shot's (possibly
+    absent) offset — it gets the cumulative-duration derivation like any
+    other offset-less shot, so it's monotonic mid-list rather than 0.0."""
+    shots = [_raw_shot(i, "wan21", duration=5.0) for i in range(4)]
+    fixed = _reconcile_shot_list(_raw_list(shots, total=20.0))
+    holdovers = [s for s in fixed["shots"] if s["source"] == "holdover"]
+    assert holdovers
+    # Inserted before the 3rd same-source shot → offset = 2 prior shots × 5s.
+    assert holdovers[0]["narration_offset_s"] == 10.0
+    VideoShotList.model_validate(fixed)
+
+
+# ---------------------------------------------------------------------------
+# _tolerant_json_loads — deterministic dialect repair before any LLM retry
+# (feedback_calculated_vs_generated). Observed prod dialect: unquoted keys
+# ("Expecting property name enclosed in double quotes", preview "{ sho…").
+# ---------------------------------------------------------------------------
+
+
+def test_tolerant_loads_strict_json_passthrough() -> None:
+    body = '{"shots": [{"idx": 0}], "total_duration_s": 5.0}'
+    assert _tolerant_json_loads(body) == {
+        "shots": [{"idx": 0}], "total_duration_s": 5.0,
+    }
+
+
+def test_tolerant_loads_repairs_unquoted_keys() -> None:
+    """The exact prod dialect: bare object keys."""
+    body = '{ shots: [{ idx: 0, duration_s: 5.0, source: "pexels" }], version: 1 }'
+    parsed = _tolerant_json_loads(body)
+    assert parsed["version"] == 1
+    assert parsed["shots"][0]["source"] == "pexels"
+
+
+def test_tolerant_loads_repairs_trailing_commas_and_python_literals() -> None:
+    body = '{ "a": True, "b": None, "c": [1, 2,], }'
+    assert _tolerant_json_loads(body) == {"a": True, "b": None, "c": [1, 2]}
+
+
+def test_tolerant_loads_repairs_single_quotes_and_bare_values() -> None:
+    body = "{ source: 'pexels', intent: establish, ok: true }"
+    assert _tolerant_json_loads(body) == {
+        "source": "pexels", "intent": "establish", "ok": True,
+    }
+
+
+def test_tolerant_loads_never_touches_string_interiors() -> None:
+    """Colons/commas/bare words inside a double-quoted string must survive."""
+    body = '{ intent: "establish: servers, code on screens", idx: 0 }'
+    parsed = _tolerant_json_loads(body)
+    assert parsed["intent"] == "establish: servers, code on screens"
+
+
+def test_tolerant_loads_still_raises_on_garbage() -> None:
+    """Unrepairable output flows to the stage's existing failure path."""
+    with pytest.raises(json.JSONDecodeError):
+        _tolerant_json_loads('{ "shots": [ this is not eve')
+
+
+@pytest.mark.asyncio
+async def test_stage_recovers_unquoted_key_dialect_end_to_end() -> None:
+    """End-to-end: the director emits the unquoted-key dialect WITH a >30s
+    shot AND a missing narration_offset_s — the three recent reject classes
+    at once — and the stage still produces a valid shot list."""
+    bad_output = (
+        '{ version: 1, total_duration_s: 45.0, shots: ['
+        '{ idx: 0, duration_s: 35.0, intent: "open", source: "pexels", '
+        'query: "data center", narration_offset_s: 0.0 },'
+        '{ idx: 1, duration_s: 5.0, intent: "mid", source: "image_kenburns", '
+        'prompt: "flat vector data flow, faceless" },'
+        '{ idx: 2, duration_s: 5.0, intent: "close", source: "pexels", '
+        'query: "server racks", narration_offset_s: 40.0 }'
+        '], director_model: "test-model", director_prompt_version: "v1.3", '
+        'director_decided_at: "2026-07-03T00:00:00+00:00" }'
+    )
+    db_service = _make_db_service()
+    context = {
+        "title": "Test Post",
+        "content": "Some content " * 50,
+        "podcast_script": "script " * 40,
+        "task_id": "task-dialect",
+        "database_service": db_service,
+        "platform": _platform_with_dispatch(
+            returns=MagicMock(text=bad_output), model="director-model-x",
+        ),
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+
+        result = await GenerateVideoShotListStage().execute(context, {})
+
+    assert result.ok
+    shot_list = result.context_updates["video_shot_list"]
+    assert shot_list["shots"][0]["duration_s"] == 30.0  # clamped
+    assert shot_list["shots"][1]["narration_offset_s"] == 30.0  # derived
+    assert shot_list["total_duration_s"] == 40.0  # recomputed post-clamp
+    audit_events = [c.args[1] for c in db_service.pool.execute.call_args_list]
+    assert any("video_director.shot_list_produced" in e for e in audit_events)
 
 
 @pytest.mark.asyncio

@@ -135,23 +135,28 @@ Pexels is exempt from the style policy — it IS real footage.
 HARD RULES
 ----------
 1. Output EXACTLY one JSON object matching the schema below. No prose
-   before or after. No markdown code fences.
+   before or after. No markdown code fences. Strict JSON syntax: every
+   key MUST be enclosed in double quotes ("idx": — never a bare idx:).
 2. shots[].idx is 0-indexed and contiguous (0, 1, 2, ...).
 3. Sum of shots[].duration_s MUST equal target_duration_s ±0.5s.
-4. shots[].narration_offset_s is the cumulative duration of all prior
-   shots (shot 0 starts at 0, shot 1 starts at shot 0's duration, etc.).
+4. shots[].narration_offset_s is REQUIRED on EVERY shot — no shot may
+   omit it. It is the cumulative duration of all prior shots (shot 0
+   starts at 0, shot 1 starts at shot 0's duration, etc.).
 5. Never more than 2 consecutive shots from the same source. Mix
    liberally — Pexels for concrete, image_kenburns for abstract,
    generative for the hero motion beats.
 6. First and last shots MUST NOT be "generative" — its artifacts are most
    visible at attention peaks (start + close).
-7. 6-12 shots total. Each shot 3-15 seconds.
+7. 6-12 shots total, NEVER more than 30 (hard schema cap). Each shot
+   3-15 seconds; duration_s MUST NOT exceed 30.0 — a longer value is
+   rejected outright, so split a long beat into multiple shots instead
+   of holding one shot past 30 seconds.
 8. AI-source prompts (image_gen / image_kenburns / generative) MUST follow the
    HUMAN-SUBJECT POLICY and STYLE POLICY above. Human subject →
    source="pexels" (or a faceless silhouette only if it MUST be AI).
    Never name a human noun in an AI prompt, not even as "no people".
    No photorealism.
-9. Set director_model to "{model}" and director_prompt_version to "v1.2".
+9. Set director_model to "{model}" and director_prompt_version to "v1.3".
 10. Set director_decided_at to the current UTC ISO timestamp: "{now_iso}"
 
 SCHEMA (output this shape):
@@ -186,7 +191,7 @@ SCHEMA (output this shape):
     }}
   ],
   "director_model": "{model}",
-  "director_prompt_version": "v1.2",
+  "director_prompt_version": "v1.3",
   "director_decided_at": "{now_iso}"
 }}
 
@@ -267,21 +272,24 @@ line art / cyberpunk neon / glassmorphism / low poly. Never "photorealistic",
 HARD RULES (short-form)
 -----------------------
 1. Output EXACTLY one JSON object matching the schema below. No prose, no
-   markdown fences.
+   markdown fences. Strict JSON syntax: every key MUST be enclosed in
+   double quotes ("idx": — never a bare idx:).
 2. Set "aspect" to "9:16".
 3. THE FIRST SHOT IS A COLD-OPEN HOOK: ≤ 2.5s, visually arresting, lands the
    core promise of the clip immediately. Never open on "holdover".
 4. shots[].idx is 0-indexed contiguous (0, 1, 2, ...).
 5. Sum of shots[].duration_s MUST equal target_duration_s ±0.5s.
-6. shots[].narration_offset_s is the cumulative duration of all prior shots.
-7. Punchy pacing: 4-8 shots total, each 2-6 seconds. Short clips drag with
-   long holds — keep cuts frequent.
+6. shots[].narration_offset_s is REQUIRED on EVERY shot — no shot may omit
+   it. It is the cumulative duration of all prior shots.
+7. Punchy pacing: 4-8 shots total, each 2-6 seconds (duration_s MUST NOT
+   exceed 30.0 — hard schema cap). Short clips drag with long holds — keep
+   cuts frequent.
 8. Never more than 2 consecutive shots from the same source. First and last
    shots MUST NOT be "generative".
 9. AI-source prompts MUST follow the HUMAN-SUBJECT + STYLE policies above —
    human subject → source="pexels", and never a human noun (not even
    "no people") in an image_gen / image_kenburns / generative prompt.
-10. Set director_model to "{model}", director_prompt_version to "short_v1.1",
+10. Set director_model to "{model}", director_prompt_version to "short_v1.2",
     director_decided_at to "{now_iso}".
 
 SCHEMA (output this shape):
@@ -309,7 +317,7 @@ SCHEMA (output this shape):
     }}
   ],
   "director_model": "{model}",
-  "director_prompt_version": "short_v1.1",
+  "director_prompt_version": "short_v1.2",
   "director_decided_at": "{now_iso}"
 }}
 
@@ -360,10 +368,12 @@ CONSTRAINTS (keep the draft valid):
 - HUMAN-SUBJECT POLICY unchanged: humans go to source "pexels"; never name a
   human noun in an image_gen / image_kenburns / generative prompt, not even as "no people".
 - shots idx 0-indexed and contiguous; sum of duration_s equals total_duration_s
-  within 0.5s; narration_offset_s equals the cumulative prior durations; never
-  more than 2 consecutive shots with the same source.
+  within 0.5s; duration_s never exceeds 30.0 per shot and the list never
+  exceeds 30 shots (hard schema caps); narration_offset_s is REQUIRED on every
+  shot and equals the cumulative prior durations; never more than 2
+  consecutive shots with the same source.
 - Output EXACTLY one JSON object in the same schema as the draft. No prose, no
-  code fences.
+  code fences. Every JSON key double-quoted — never bare keys.
 - Set director_model to "{model}", director_prompt_version to "review_v1",
   director_decided_at to "{now_iso}".
 
@@ -399,9 +409,11 @@ image_kenburns / generative use a non-empty on-brand "prompt" (no humans) and NO
 "query"; holdover uses neither. When you change a shot's source, swap its field
 to match - a generative/image_gen/image_kenburns shot with no "prompt" makes the whole
 revision INVALID. aspect "9:16"; idx contiguous; sum of duration_s equals
-total_duration_s within 0.5s; narration_offset_s cumulative; never more than 2
-consecutive shots with the same source. Output ONE JSON object in the draft's
-schema, no prose or fences. Set director_model to "{model}",
+total_duration_s within 0.5s; duration_s never above 30.0 per shot and at most
+30 shots (hard schema caps); narration_offset_s REQUIRED on every shot
+(cumulative prior durations); never more than 2 consecutive shots with the
+same source. Output ONE JSON object in the draft's schema (every key
+double-quoted), no prose or fences. Set director_model to "{model}",
 director_prompt_version to "review_short_v1", director_decided_at to "{now_iso}".
 
 OUTPUT THE REVISED SHOT LIST JSON NOW:
