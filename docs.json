@@ -65,6 +65,7 @@
             "group": "Runbooks",
             "pages": [
               "docs/operations/litellm-cutover-rollback",
+              "docs/operations/model-endpoint-routing",
               "docs/operations/oauth-grafana",
               "docs/operations/voice-bridge",
               "docs/operations/voice-stt-tts",
