@@ -146,7 +146,16 @@ async def score_shot_frame(
         visual=(shot.prompt or shot.query or ""),
         source=shot.source,
     )
-    base = site_config.get("ollama_base_url", _DEFAULT_OLLAMA_URL)
+    from services.llm_providers.api_base_overrides import resolve_ollama_api_base
+
+    # Per-model override (model_api_base_overrides) so the vision model can
+    # be served by the GPU-pinned second Ollama instance (#2075) instead of
+    # the eviction-prone primary; falls back to ollama_base_url.
+    base = resolve_ollama_api_base(
+        model,
+        site_config=site_config,
+        default=site_config.get("ollama_base_url", _DEFAULT_OLLAMA_URL),
+    )
     url = f"{str(base).rstrip('/')}/api/chat"
     payload = {
         "model": model,

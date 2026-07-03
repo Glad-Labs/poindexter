@@ -57,6 +57,31 @@ async def test_scores_a_still_frame(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_api_base_override_routes_to_pinned_instance(tmp_path):
+    """model_api_base_overrides re-points the DIRECT vision call at the
+    GPU-pinned second Ollama instance (#2075) — without it the scorer keeps
+    hitting the eviction-prone primary regardless of the operator's map."""
+    frame = tmp_path / "shot_00.png"
+    frame.write_bytes(b"fake-png")
+    sc = SiteConfig(initial_config={
+        "qa_vision_model": "ollama/qwen3-vl:30b",
+        "ollama_base_url": "http://ollama:11434",
+        "plugin.llm_provider.litellm":
+            '{"enabled": true, "config": {"model_api_base_overrides": '
+            '{"ollama/qwen3-vl:30b": "http://host.docker.internal:11435"}}}',
+    })
+    client = _ollama_client('{"score": 82, "reason": "ok"}')
+    res = await score_shot_frame(
+        frame_path=str(frame), shot=_shot(), site_config=sc,
+        http_client_factory=lambda *a, **k: client,
+    )
+    assert res.score == 82.0
+    assert client.post.call_args.args[0] == (
+        "http://host.docker.internal:11435/api/chat"
+    )
+
+
+@pytest.mark.asyncio
 async def test_no_model_returns_none_score(tmp_path):
     frame = tmp_path / "shot_00.png"
     frame.write_bytes(b"fake-png")

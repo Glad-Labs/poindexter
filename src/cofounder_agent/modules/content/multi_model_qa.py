@@ -2105,6 +2105,25 @@ class MultiModelQA:
             prompt, reviewer_name="internal_consistency", pass_key="consistent"
         )
 
+    def _vision_ollama_url(self, model: str) -> str:
+        """``/api/chat`` URL for one DIRECT vision call — honors the per-model
+        ``model_api_base_overrides`` map so the vision model is served by the
+        GPU-pinned second Ollama instance when the operator routed it there
+        (glad-labs-stack#2051 / #2075). The direct-httpx vision paths bypass
+        LiteLLM (they need the native ``images`` payload), so without this
+        they'd keep hitting the eviction-prone primary regardless of the map.
+        """
+        from services.llm_providers.api_base_overrides import resolve_ollama_api_base
+
+        cfg = self._platform.config if self._platform else None
+        default = (
+            cfg.get("ollama_base_url", "http://host.docker.internal:11434")
+            if cfg is not None else "http://host.docker.internal:11434"
+        )
+        source = self._site_config if self._site_config is not None else cfg
+        base = resolve_ollama_api_base(model, site_config=source, default=default)
+        return f"{str(base).rstrip('/')}/api/chat"
+
     @observe(as_type="generation", name="multi_model_qa._check_image_relevance")
     async def _check_image_relevance(
         self, title: str, topic: str, content: str,
@@ -2271,10 +2290,7 @@ class MultiModelQA:
             ],
             "options": {"temperature": 0.2, "num_predict": num_predict},
         }
-        _ollama_url = (
-            self._platform.config.get("ollama_base_url", "http://host.docker.internal:11434")
-            if self._platform else "http://host.docker.internal:11434"
-        ) + "/api/chat"
+        _ollama_url = self._vision_ollama_url(model)
         _vision_timeout = httpx.Timeout(120.0, connect=5.0)
 
         async def _call_ollama(client: "httpx.AsyncClient"):
@@ -2484,10 +2500,7 @@ class MultiModelQA:
             ],
             "options": {"temperature": 0.2, "num_predict": num_predict},
         }
-        _ollama_url = (
-            self._platform.config.get("ollama_base_url", "http://host.docker.internal:11434")
-            if self._platform else "http://host.docker.internal:11434"
-        ) + "/api/chat"
+        _ollama_url = self._vision_ollama_url(model)
         _preview_timeout = httpx.Timeout(180.0, connect=5.0)
 
         async def _call_preview(client: "httpx.AsyncClient"):

@@ -1125,6 +1125,80 @@ class TestRenderCheckLoop:
         assert f["extra"]["score"] == 15.0
 
     @pytest.mark.asyncio
+    async def test_unscored_shot_stamps_outcome_and_emits_finding(self, tmp_path):
+        """A shot the scorer could NOT score (score=None: model/infra down) is
+        accepted fail-open, but the audit row says qa_outcome='unscored' and a
+        vision_scorer_unavailable finding fires — the no-op must be visible,
+        not a bare NULL qa_score (which also means 'reused' or 'QA off')."""
+        import json as _json
+
+        import services.video_renderers.shot_list_renderer as mod
+        from services.video_renderers.shot_vision_qa import ShotQAResult
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
+                      prompt="cyan grid", narration_offset_s=0.0),
+                 Shot(idx=1, duration_s=3.0, intent="beat", source="image_gen",
+                      prompt="teal mesh", narration_offset_s=3.0)]
+        scorer = AsyncMock(side_effect=[
+            ShotQAResult(90.0),
+            ShotQAResult(score=None, reason="vision call failed"),
+        ])
+        pool = AsyncMock()
+        captured = []
+        with patch.object(mod, "score_shot_frame", scorer), \
+             patch.object(mod, "emit_finding", lambda **kw: captured.append(kw)), \
+             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+                   self._mock_compositor()):
+            result = await render_shot_list(
+                post_id="post-abc", shot_list=_build_shot_list(shots),
+                audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
+                image_gen_url="http://image-gen:9836", site_config=_QASC(),
+                pool=pool, http_client_factory=self._image_gen_factory())
+        assert result.success is True  # fail-open: the shot still ships
+        audits = [_json.loads(c.args[2]) for c in pool.execute.await_args_list]
+        unscored = [a for a in audits if a["qa_outcome"] == "unscored"]
+        assert len(unscored) == 1
+        assert unscored[0]["shot_idx"] == 1
+        assert unscored[0]["qa_score"] is None
+        f = next(f for f in captured if f["kind"] == "vision_scorer_unavailable")
+        assert f["severity"] == "warn"
+        assert f["dedup_key"] == "vision_scorer_unavailable:shot_list_renderer:post-abc"
+        assert f["extra"]["unscored"] == 1
+        assert f["extra"]["shots_total"] == 2
+        assert "vision call failed" in f["body"]
+
+    @pytest.mark.asyncio
+    async def test_reused_shot_stamps_skipped_reused_no_finding(self, tmp_path):
+        """Holdover shots reuse an already-vetted prior clip — they're skipped
+        by design, stamped qa_outcome='skipped_reused', and never counted as
+        scorer no-ops (no vision_scorer_unavailable finding)."""
+        import json as _json
+
+        import services.video_renderers.shot_list_renderer as mod
+        from services.video_renderers.shot_vision_qa import ShotQAResult
+        shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
+                      prompt="cyan grid", narration_offset_s=0.0),
+                 Shot(idx=1, duration_s=2.0, intent="carry", source="holdover",
+                      narration_offset_s=3.0)]
+        scorer = AsyncMock(return_value=ShotQAResult(90.0))
+        pool = AsyncMock()
+        captured = []
+        with patch.object(mod, "score_shot_frame", scorer), \
+             patch.object(mod, "emit_finding", lambda **kw: captured.append(kw)), \
+             patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+                   self._mock_compositor()):
+            result = await render_shot_list(
+                post_id="post-def", shot_list=_build_shot_list(shots),
+                audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
+                image_gen_url="http://image-gen:9836", site_config=_QASC(),
+                pool=pool, http_client_factory=self._image_gen_factory())
+        assert result.success is True
+        assert scorer.await_count == 1  # only the fresh image_gen shot scored
+        audits = [_json.loads(c.args[2]) for c in pool.execute.await_args_list]
+        by_idx = {a["shot_idx"]: a for a in audits}
+        assert by_idx[1]["qa_outcome"] == "skipped_reused"
+        assert not [f for f in captured if f["kind"] == "vision_scorer_unavailable"]
+
+    @pytest.mark.asyncio
     async def test_all_renders_precede_any_vision_call(self, tmp_path):
         """Anti-thrash invariant: with QA on, EVERY shot is rendered before
         ANY vision score runs — so image-gen stays resident for the whole render

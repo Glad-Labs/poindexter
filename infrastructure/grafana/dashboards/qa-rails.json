@@ -1524,6 +1524,262 @@
       ],
       "title": "Top 10 Rejection Reasons (by count, current window)",
       "type": "table"
+    },
+    {
+      "collapsed": false,
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 70
+      },
+      "id": 22,
+      "panels": [],
+      "title": "Vision Rail — Scored vs Pass-Open",
+      "type": "row"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Share of image_relevance (vision_gate) reviews in the window that PASSED OPEN — the vision scorer no-op'd (model/infra unavailable) and the gate accepted without looking. 0% is healthy; a sustained high value means the vision leg is dark (it ran at 100% silently for weeks pre-fix). Vacuous passes (no images to assess) are excluded from the denominator.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "thresholds"
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 20
+              },
+              {
+                "color": "red",
+                "value": 50
+              }
+            ]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 4,
+        "x": 0,
+        "y": 71
+      },
+      "id": 23,
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "auto"
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE r->>'feedback_preview' ILIKE '%passing open%') / NULLIF(COUNT(*) FILTER (WHERE r->>'feedback_preview' NOT ILIKE '%vacuity%'), 0), 0) AS \"pass-open %\" FROM audit_log, LATERAL jsonb_array_elements(details->'reviews') r WHERE event_type = 'qa_pass_completed' AND r->>'reviewer' = 'image_relevance' AND $__timeFilter(timestamp);",
+          "refId": "A"
+        }
+      ],
+      "title": "Vision pass-open % (window)",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "qa.vision image_relevance reviews per day: scored (the vision model actually looked) vs pass_open (scorer unavailable, gate accepted blind) vs vacuous_pass (no images to assess). The scored share should dominate; pass_open bars are the vision_scorer_unavailable finding's trend line.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 10,
+        "x": 4,
+        "y": 71
+      },
+      "id": 24,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day', timestamp) AS time, CASE WHEN r->>'feedback_preview' ILIKE '%passing open%' THEN 'pass_open' WHEN r->>'feedback_preview' ILIKE '%vacuity%' THEN 'vacuous_pass' ELSE 'scored' END AS metric, COUNT(*)::int AS value FROM audit_log, LATERAL jsonb_array_elements(details->'reviews') r WHERE event_type = 'qa_pass_completed' AND r->>'reviewer' = 'image_relevance' AND $__timeFilter(timestamp) GROUP BY 1, 2 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "Blog vision reviews per day (scored vs pass-open)",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Per-shot render-check outcomes per day (video_shot_rendered, successful renders only). accepted/regenerated = scored; unscored = scorer no-op'd, shot accepted blind (emits vision_scorer_unavailable); skipped_reused = holdover/pexels-miss reusing an already-vetted clip (by design); none = QA disabled or pre-fix rows where the outcome wasn't stamped.",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 80,
+            "gradientMode": "none",
+            "hideFrom": {
+              "legend": false,
+              "tooltip": false,
+              "viz": false
+            },
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "auto",
+            "spanNulls": false,
+            "stacking": {
+              "group": "A",
+              "mode": "normal"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        }
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 10,
+        "x": 14,
+        "y": 71
+      },
+      "id": 25,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "bottom",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT date_trunc('day', timestamp) AS time, COALESCE(details->>'qa_outcome', CASE WHEN details->>'qa_score' IS NOT NULL THEN 'scored' ELSE 'none' END) AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'video_shot_rendered' AND (details->>'success')::boolean AND $__timeFilter(timestamp) GROUP BY 1, 2 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "Shot render-check outcomes per day",
+      "type": "timeseries"
     }
   ],
   "description": "CHARTER: per-reviewer QA behavior — pass rates, score distributions, and what the rails veto. Answers 'are the quality gates doing their job, and which rail is the outlier?'."

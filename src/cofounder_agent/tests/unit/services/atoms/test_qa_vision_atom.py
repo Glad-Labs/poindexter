@@ -227,8 +227,9 @@ class TestQaVisionAtom:
     async def test_images_present_but_unassessable_passes_open_and_pages(self, monkeypatch):
         """Case D (operator policy = fail-open + page): inline images ARE
         present but the image leg couldn't assess them (vision model down /
-        unparseable). The atom passes open (advisory) AND pages the operator,
-        rather than failing the post closed."""
+        unparseable). The atom passes open (advisory), pages the operator,
+        AND emits a vision_scorer_unavailable finding so the pass-open shows
+        up on the Findings surfaces instead of living only in qa_feedback."""
         async def img(self, title, topic, content, featured_image_url=None):
             return None  # model unreachable
         monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
@@ -241,6 +242,11 @@ class TestQaVisionAtom:
             "services.integrations.operator_notify.notify_operator", fake_notify,
         )
 
+        findings = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        )
+
         body = 'Body.\n<img src="https://r2.dev/x.webp" alt="x" width="1024" />\nmore'
         out = await qa_vision.run(_state(content=body, task_id="def456"))
         reviews = out["qa_rail_reviews"]
@@ -250,3 +256,26 @@ class TestQaVisionAtom:
         assert reviews[0]["advisory"] is True       # but doesn't gate the score
         assert "could not assess" in reviews[0]["feedback"].lower()
         assert notified.get("message")              # operator paged (fail-open + page)
+        f = next(f for f in findings if f["kind"] == "vision_scorer_unavailable")
+        assert f["severity"] == "warn"
+        assert f["source"] == "qa_vision"
+        assert f["dedup_key"].startswith("vision_scorer_unavailable:qa_vision:")
+        assert f["extra"]["image_count"] == 1
+
+    async def test_no_finding_when_nothing_to_assess(self, monkeypatch):
+        """Case C (no inline images): pass by vacuity is HEALTHY — no
+        vision_scorer_unavailable finding, no page."""
+        async def img(self, title, topic, content, featured_image_url=None):
+            return None
+        monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
+
+        findings = []
+        monkeypatch.setattr(
+            "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+        )
+
+        out = await qa_vision.run(_state())  # no images, no preview
+        assert any(
+            r["reviewer"] == "image_relevance" for r in out["qa_rail_reviews"]
+        )
+        assert not findings

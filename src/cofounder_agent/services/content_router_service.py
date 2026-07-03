@@ -277,6 +277,30 @@ async def process_content_generation_task(
         _settings_service = _get_service("settings")
     except Exception:
         _settings_service = None
+    if _settings_service is None:
+        # The Prefect flow subprocess never runs main.py's lifespan, so the
+        # module-level ServiceContainer has no "settings" registration and
+        # get_service returns None (it doesn't raise). A None settings_service
+        # silently disables every settings-gated QA leg downstream — qa.vision's
+        # image-relevance check read qa_vision_check_enabled as false and passed
+        # open on 100% of posts since the Prefect cutover. Build one from the
+        # task's own pool instead.
+        _pool = getattr(database_service, "pool", None)
+        if _pool is not None:
+            from services.settings_service import SettingsService as _SettingsService
+            _settings_service = _SettingsService(_pool)
+            logger.info(
+                "[CONTENT_ROUTER] no 'settings' registration in the service "
+                "container — built SettingsService from the database pool "
+                "(Prefect subprocess path)",
+            )
+        else:
+            logger.warning(
+                "[CONTENT_ROUTER] settings_service unavailable and "
+                "database_service has no .pool — settings-gated QA legs "
+                "(qa.vision image relevance, preview screenshot) will "
+                "read their enable flags as false this run",
+            )
     from services.image_style_rotation import ImageStyleTracker as _IST
     _style_tracker = _IST(
         history_size=_sc.get_int("image_style_history_size", 10),

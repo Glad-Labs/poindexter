@@ -161,6 +161,32 @@ async def _emit_deliberate_pass(
             "returned no result — confirm the vision model (qa_vision_model) is "
             "loaded and reachable on the worker."
         )
+        # Typed finding so the pass-open is VISIBLE on the Findings surfaces
+        # (dashboard panel + per-kind delivery policy) instead of living only
+        # in this task's qa_feedback text. The gate still fails open — the
+        # finding is the durable "fix the vision infra" signal. Routed per
+        # findings.vision_scorer_unavailable.delivery.
+        try:
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="qa_vision",
+                kind="vision_scorer_unavailable",
+                title=(
+                    f"qa.vision passed open on task {task_id} — "
+                    "vision scorer unavailable"
+                ),
+                body=page_msg,
+                severity="warn",
+                dedup_key=f"vision_scorer_unavailable:qa_vision:{task_id}",
+                extra={
+                    "surface": "qa_vision",
+                    "task_id": str(state.get("task_id") or ""),
+                    "image_count": len(image_urls),
+                },
+            )
+        except Exception as exc:  # noqa: BLE001 — finding emission must not gate QA
+            logger.warning("[qa.vision] finding emission failed: %s", exc)
     elif preview_unavailable:
         reason = (
             "no inline images, and preview-screenshot QA is enabled but no "

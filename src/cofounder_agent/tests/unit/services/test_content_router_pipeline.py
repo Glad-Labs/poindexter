@@ -585,3 +585,78 @@ async def test_models_by_phase_and_tags_seeded_in_context():
 
     # ...and they survive on the returned result (it's the same dict)
     assert result["tags"] == ["a", "b"]
+
+
+# ---------------------------------------------------------------------------
+# settings_service fallback (Prefect subprocess path)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_settings_service_built_from_pool_when_container_lookup_raises():
+    """The Prefect flow subprocess never runs main.py's lifespan, so the
+    module ServiceContainer has no 'settings' registration. The dispatcher
+    must fall back to a pool-backed SettingsService rather than threading
+    None — a None settings_service silently disabled qa.vision's
+    image-relevance leg (it read qa_vision_check_enabled as false and passed
+    open on 100% of posts since the Prefect cutover)."""
+    from services.content_router_service import process_content_generation_task
+    from services.settings_service import SettingsService
+
+    db = _make_db()
+    overrides, tmpl_runner, site_config_obj = _patch_externals()
+
+    with _ImportPatchContext(overrides, site_config_obj):
+        await process_content_generation_task(
+            topic="x", style="s", tone="t", target_length=500,
+            database_service=db, site_config=site_config_obj,
+        )
+
+    context = tmpl_runner.run.call_args.args[1]
+    assert isinstance(context["settings_service"], SettingsService)
+    assert context["settings_service"].pool is db.pool
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_settings_service_built_from_pool_when_container_returns_none():
+    """get_service('settings') returns None (not raises) when the key was
+    never registered — the prod Prefect-subprocess shape. Same fallback."""
+    from services.content_router_service import process_content_generation_task
+    from services.settings_service import SettingsService
+
+    db = _make_db()
+    overrides, tmpl_runner, site_config_obj = _patch_externals()
+    overrides["services.container"].get_service = MagicMock(return_value=None)
+
+    with _ImportPatchContext(overrides, site_config_obj):
+        await process_content_generation_task(
+            topic="x", style="s", tone="t", target_length=500,
+            database_service=db, site_config=site_config_obj,
+        )
+
+    context = tmpl_runner.run.call_args.args[1]
+    assert isinstance(context["settings_service"], SettingsService)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_registered_settings_service_is_not_replaced():
+    """When the lifespan DID register a settings service (FastAPI worker
+    path), the dispatcher threads it through untouched."""
+    from services.content_router_service import process_content_generation_task
+
+    db = _make_db()
+    overrides, tmpl_runner, site_config_obj = _patch_externals()
+    sentinel = MagicMock(name="lifespan-settings-service")
+    overrides["services.container"].get_service = MagicMock(return_value=sentinel)
+
+    with _ImportPatchContext(overrides, site_config_obj):
+        await process_content_generation_task(
+            topic="x", style="s", tone="t", target_length=500,
+            database_service=db, site_config=site_config_obj,
+        )
+
+    context = tmpl_runner.run.call_args.args[1]
+    assert context["settings_service"] is sentinel

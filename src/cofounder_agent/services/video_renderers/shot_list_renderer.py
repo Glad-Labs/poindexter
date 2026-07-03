@@ -698,6 +698,7 @@ async def _finalize_pass(
     """
     final_prior: str | None = None
     out: list[ShotRenderResult] = []
+    unscored: list[_ShotState] = []
     for st in states:
         shot = st.shot
         result = st.result
@@ -712,10 +713,19 @@ async def _finalize_pass(
                     idx=shot.idx, source=shot.source, success=True,
                     clip_path=final_prior, duration_s=shot.duration_s,
                 )
+            if qa.enabled:
+                # Distinguish "reused a vetted prior clip, skipped by design"
+                # from "couldn't score" in the audit row — a NULL qa_score
+                # alone conflates the two and hid weeks of scorer no-ops.
+                qa_outcome = "skipped_reused"
         elif not qa.enabled or not result.success or not result.clip_path:
             pass  # accept the render verbatim — no QA verdict to apply
         elif st.qa is None or st.qa.score is None:
-            pass  # could not score → accept, don't penalise
+            # Could not score (no model / infra down / unparseable) → accept,
+            # don't penalise — but stamp the outcome + collect for the
+            # vision_scorer_unavailable finding so the fail-open is visible.
+            qa_outcome = "unscored"
+            unscored.append(st)
         elif st.qa.score < qa.threshold:
             qa_score = st.qa.score
             if final_prior:
@@ -754,6 +764,35 @@ async def _finalize_pass(
         out.append(result)
         if result.success and result.clip_path:
             final_prior = result.clip_path
+
+    if unscored:
+        # One finding per render, not per shot — this is a "fix the vision
+        # infra" signal (the shots ship regardless, fail-open by design).
+        # Routed per findings.vision_scorer_unavailable.delivery.
+        reasons = sorted({(st.qa.reason or "unknown") for st in unscored if st.qa})
+        emit_finding(
+            source="shot_list_renderer",
+            kind="vision_scorer_unavailable",
+            title=(
+                f"shot render-check could not score {len(unscored)} of "
+                f"{len(states)} shot(s) — accepted unscored"
+            ),
+            body=(
+                f"post {post_id}: {len(unscored)} rendered shot(s) were "
+                f"accepted without a vision QA score (fail-open). "
+                f"reasons: {'; '.join(reasons)}. Confirm the vision model "
+                f"(qa_vision_model) is loaded and reachable."
+            ),
+            severity="warn",
+            dedup_key=f"vision_scorer_unavailable:shot_list_renderer:{post_id}",
+            extra={
+                "surface": "shot_list_renderer",
+                "post_id": post_id,
+                "unscored": len(unscored),
+                "shots_total": len(states),
+                "reasons": reasons,
+            },
+        )
     return out
 
 

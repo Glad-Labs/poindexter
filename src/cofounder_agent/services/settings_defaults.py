@@ -1305,6 +1305,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.langfuse_prompts_unavailable.fallback': 'log_only',
     'findings.langfuse_prompts_unavailable.cooldown_minutes': '1440',
     'findings.langfuse_prompts_unavailable.min_severity': 'warn',
+    # Vision scorer no-op'd: qa.vision passed open ("could not assess N inline
+    # image(s)") or a shot-list render accepted shots it couldn't score. The
+    # gate stays fail-open by design — this finding makes the no-op VISIBLE
+    # (the image-relevance leg was silently dark for weeks at 100% pass-open).
+    # Discord with a cooldown: it's a "fix the vision infra" signal, not
+    # per-post noise.
+    'findings.vision_scorer_unavailable.delivery': 'discord',
+    'findings.vision_scorer_unavailable.fallback': 'log_only',
+    'findings.vision_scorer_unavailable.cooldown_minutes': '360',
+    'findings.vision_scorer_unavailable.min_severity': 'warn',
 
     # ----- Settings read-telemetry + orphan probe (#756 items 2-3) -----
     # SiteConfig.get records read keys in-memory; FlushSettingsReadTelemetryJob
