@@ -53,7 +53,14 @@ ARG HOST_UID=1001
 ARG HOST_GID=1001
 RUN addgroup --system --gid "${HOST_GID}" backup \
  && adduser  --system --uid "${HOST_UID}" --ingroup backup --no-create-home backup \
- && chown -R backup:backup /app
+ && mkdir -p /var/cache/restic \
+ && chown -R backup:backup /app /var/cache/restic
 USER backup
+
+# restic's default cache is ~/.cache/restic, but the backup user has no
+# home (--no-create-home above), so every invocation logged "unable to
+# open cache: mkdir /home/backup: permission denied" and re-fetched repo
+# metadata from the S3 remote. Point restic at a dir the user owns.
+ENV RESTIC_CACHE_DIR=/var/cache/restic
 
 ENTRYPOINT ["/app/run.sh"]
