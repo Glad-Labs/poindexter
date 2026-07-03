@@ -187,6 +187,17 @@ Quote a short phrase from the CONTENT for anything you praise or
 criticize. If you cannot point to text that supports a judgment, do not
 make that judgment.
 
+FEEDBACK MUST BE ACTIONABLE WITHOUT INVENTING MATERIAL:
+
+Your feedback drives an automated revision pass that can only rework
+what is already on the page or in SOURCES. Never ask the writer to add
+anecdotes, quotes from industry experts, case studies, statistics, or
+citations that are absent from the CONTENT and SOURCES — demands like
+those push the reviser toward fabrication. When a section feels thin,
+either name the specific on-page or in-SOURCES material to expand, or
+lower the score for lack of depth and say so plainly, without
+prescribing additions that would have to be invented.
+
 HANDLING CLAIMS YOU DO NOT RECOGNIZE:
 
 Your training data has a cutoff. The article may cover hardware,
