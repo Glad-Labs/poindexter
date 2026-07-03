@@ -152,7 +152,7 @@ async def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
     # parse — even on the fix_output_format retry. All Ragas 0.4.x
     # internal prompts (faithfulness_statements, nli_statements, etc.)
     # expect bare JSON, so JSON-mode is safe for all three metrics. See
-    # Glad-Labs/glad-labs-stack#1910.
+    # Glad-Labs/poindexter#1910.
     llm = LangchainLLMWrapper(
         ChatOllama(model=judge_model, base_url=base_url, temperature=0.0, format="json")
     )

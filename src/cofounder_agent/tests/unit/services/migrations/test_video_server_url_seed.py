@@ -1,6 +1,6 @@
 """Contract test for the ``video_server_url`` baseline seed.
 
-Pins the 2026-05-28 fix (Glad-Labs/glad-labs-stack#649 PR 2): the
+Pins the 2026-05-28 fix (Glad-Labs/poindexter#649 PR 2): the
 seed had pointed at ``host.docker.internal:9840`` but the
 slideshow path that ``services/video_service.py::generate_video_for_post``
 drives expects the ffmpeg slideshow server on ``:9837``. The

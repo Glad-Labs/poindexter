@@ -100,7 +100,7 @@ if [ -n "$PYTHON_BIN" ] && [ -f "$SCRIPT_DIR/_grafana_webhook_token.py" ]; then
     # (re)write the env_file when we actually got a token, or when none exists to
     # keep. The grafana service loads this via env_file: so the token also survives
     # a plain ``docker compose up`` / ``docker restart poindexter-grafana``
-    # (Glad-Labs/glad-labs-stack#231). git-ignored operator secret.
+    # (Glad-Labs/poindexter#231). git-ignored operator secret.
     if [ -z "$GRAFANA_WEBHOOK_TOKEN" ] && [ -f "$_RUNTIME_ENV" ] \
         && grep -qE '^GRAFANA_WEBHOOK_TOKEN=.+' "$_RUNTIME_ENV"; then
         echo "WARNING: grafana token helper returned empty; preserving existing $_RUNTIME_ENV" >&2
