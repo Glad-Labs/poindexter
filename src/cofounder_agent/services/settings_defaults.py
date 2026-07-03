@@ -1282,6 +1282,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.settings_zero_reader_keys.fallback': 'log_only',
     'findings.settings_zero_reader_keys.cooldown_minutes': '1440',
     'findings.settings_zero_reader_keys.min_severity': 'warn',
+    # Prompt-catalog drift. ProbePromptCatalogDriftJob
+    # emits prompt_catalog_drift (dot-free kind — same 3-segment parser note as
+    # above) at severity='warn' when Langfuse holds prompt names the SKILL.md
+    # catalog no longer declares (dead edit surfaces). Daily probe, so the
+    # 1440-minute cooldown re-pages at most once per drift-day.
+    'findings.prompt_catalog_drift.delivery': 'discord',
+    'findings.prompt_catalog_drift.fallback': 'log_only',
+    'findings.prompt_catalog_drift.cooldown_minutes': '1440',
+    'findings.prompt_catalog_drift.min_severity': 'warn',
     # Stale-sweep + GPU-lock visibility (poindexter#807). NOTE: kinds without
     # a policy already route loud — findings_alert_router deliberately ignores
     # findings.default.* ("a kind with NO policy => 'route'") — so these seeds
@@ -1330,6 +1339,9 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # than this, so a constantly-read key is written ~1×/hour, not 60×.
     'settings_read_telemetry_min_restamp_seconds': '3600',
     'settings_zero_reader_probe_enabled': 'true',
+    # Daily SKILL.md-catalog-vs-Langfuse drift probe (ProbePromptCatalogDriftJob).
+    # No-ops quietly when Langfuse isn't configured, so 'true' is safe on OSS.
+    'prompt_catalog_drift_probe_enabled': 'true',
     # A key is an orphan candidate only after it has existed (created_at) this
     # many days with last_read_at still NULL — gives newly-seeded keys time to be
     # read before they can be flagged, and self-suppresses on fresh installs.

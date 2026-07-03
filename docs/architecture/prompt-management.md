@@ -71,6 +71,8 @@ The `narrate_bundle` and `pipeline_architect` templates carry the operator perso
 
 Langfuse versions every change. Roll back by promoting an older version to `production`.
 
+If the key isn't in Langfuse yet, create it there only when you intend a durable divergence from the shipped default — see [Catalog ↔ Langfuse drift](#catalog--langfuse-drift) for why "sync everything into Langfuse" is the wrong instinct.
+
 ### Tier 2 — `SKILL.md` edit (when Langfuse isn't an option)
 
 1. Open the pack that owns the key (e.g. `skills/content/seo-metadata/SKILL.md` for `seo.*`).
@@ -141,6 +143,17 @@ The loader (`prompt_manager._initialize_skills`) lives _inside_ the package (`<p
 One parser reads `SKILL.md` everywhere: `services/skill_frontmatter.py` (`parse_frontmatter` + `extract_section`), shared by both the runtime loader (`_initialize_skills`) and the importer (`poindexter skills import`). It anchors the closing `---` to the start of a line, so a `---` inside a quoted frontmatter value — or a thematic break in the body — is never mistaken for the delimiter. (The two paths previously used different parsers; a pack could import clean and then fail to load.)
 
 `poindexter skills import` **fails loud** (per `feedback_no_silent_defaults.md`) when a declared key has no resolvable `## <key>` section — it runs the same `extract_section` the loader uses, so a pack that imports clean is guaranteed to resolve every key it advertises. The check runs before anything is written to disk or recorded in `skill_catalog`.
+
+## Catalog ↔ Langfuse drift
+
+Nothing auto-creates Langfuse entries: the runtime is **read-only** against Langfuse, and population is a manual bulk import (`scripts/import_prompts_to_langfuse.py`). Two drift shapes follow, with opposite severities:
+
+- **Orphaned Langfuse prompts** (name exists in Langfuse, key gone from the catalog — renamed or deleted): **real drift.** The UI happily accepts edits that do nothing in production. 8 such prompts accumulated between the one-time 2026-05-14 bulk import and the 2026-07-03 cleanup that deleted them.
+- **Repo-only keys** (declared in `SKILL.md`, absent from Langfuse): **healthy, by policy.** These serve their `SKILL.md` default. Do NOT bulk-sync them into Langfuse "for completeness" — every imported key becomes a frozen snapshot that masks all future `SKILL.md` improvements for that key (the masking trap: a `SKILL.md` edit ships, CI is green, and production keeps serving the stale Langfuse version), and re-running the import script moves the `production` label onto the fresh import, clobbering intentional operator edits.
+
+**Policy: Langfuse holds intentional overrides only.** Create a prompt in Langfuse when you mean to diverge from the shipped default for that key; otherwise leave the key repo-only. (The 40 keys currently in Langfuse predate this policy — they're the 2026-05-14 bulk import. Treat an un-edited imported key as a candidate for deletion whenever it blocks a `SKILL.md` improvement.)
+
+`ProbePromptCatalogDriftJob` (`services/jobs/probe_prompt_catalog_drift.py`) enforces the policy's alertable half: it diffs the two catalogs daily and emits an advisory `prompt_catalog_drift` finding (severity `warn` → Discord ops) listing orphaned Langfuse names. Repo-only keys are reported as a count for context, never alerted. Gated by `prompt_catalog_drift_probe_enabled`; skips quietly when Langfuse isn't configured (the OSS default).
 
 ## Why Langfuse + `SKILL.md`, not just one
 

@@ -688,6 +688,13 @@ def get_core_samples() -> dict[str, list[Any]]:
         # window are emitted as an advisory settings_zero_reader_keys finding
         # (orphan candidates -> Discord ops). poindexter#756 item 3.
         ("jobs", "services.jobs.probe_zero_reader_settings", "ProbeZeroReaderSettingsJob"),
+        # ProbePromptCatalogDriftJob — daily SKILL.md-catalog-vs-Langfuse diff:
+        # Langfuse prompt names with zero repo references are dead edit
+        # surfaces (renamed/deleted keys — UI edits silently do nothing);
+        # emitted as an advisory prompt_catalog_drift finding -> Discord ops.
+        # Repo-only keys are the healthy state (Langfuse holds intentional
+        # overrides only; see docs/architecture/prompt-management.md).
+        ("jobs", "services.jobs.probe_prompt_catalog_drift", "ProbePromptCatalogDriftJob"),
         ("jobs", "services.jobs.analyze_topic_gaps", "AnalyzeTopicGapsJob"),
         # SEO Harvest Loop Phase 1 — read-only analyzer that classifies
         # published posts into opportunity tiers from the latest GSC snapshot.
