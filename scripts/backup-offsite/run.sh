@@ -36,6 +36,7 @@ DEFAULT_INTERVAL="24h"
 DEFAULT_SOURCE_TIER="daily"
 DEFAULT_VERIFY_INTERVAL_HOURS="168"
 DEFAULT_VERIFY_SUBSET_PCT="5"
+DEFAULT_RESTIC_HOST="poindexter"
 
 log() { printf '[%s] %s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$*"; }
 
@@ -103,7 +104,7 @@ emit_alert() {
 }
 
 run_backup() {
-    local repo="$1" source_tier="$2"
+    local repo="$1" source_tier="$2" restic_host="${3:-${DEFAULT_RESTIC_HOST}}"
     # Separate statement: expansions in a `local` happen before its
     # assignments land, so ${source_tier} above isn't visible yet.
     local src="${BACKUP_DIR}/${source_tier}"
@@ -111,11 +112,16 @@ run_backup() {
         log "source dir ${src} missing — nothing to back up yet"
         return 0
     fi
-    log "restic backup ${src} → ${repo}"
+    log "restic backup ${src} → ${repo} (host=${restic_host})"
     # Capture rc on the same statement: a fall-through `if` resets $? to 0,
     # which made the 2026-06-23 failure alert claim "rc=0" and return success.
     local rc=0
-    restic -r "${repo}" backup "${src}" --tag poindexter --tag "${source_tier}" || rc=$?
+    # --host pins the snapshot lineage: restic picks the parent snapshot by
+    # (host, paths), and the container hostname changes on every recreate —
+    # without the pin each recreate logs "no parent snapshot found" and
+    # rescans the full source dir instead of just the delta.
+    restic -r "${repo}" backup "${src}" --host "${restic_host}" \
+        --tag poindexter --tag "${source_tier}" || rc=$?
     if [[ "${rc}" -eq 0 ]]; then
         log "offsite backup OK"
         emit_heartbeat "offsite_backup_succeeded" "restic backup of ${src} complete"
@@ -187,7 +193,9 @@ tick() {
         export AWS_DEFAULT_REGION="${region}"
     fi
     source_tier=$(read_setting offsite_backup_source_tier "${DEFAULT_SOURCE_TIER}")
-    if run_backup "${repo}" "${source_tier}"; then
+    local restic_host
+    restic_host=$(read_setting offsite_backup_restic_host "${DEFAULT_RESTIC_HOST}")
+    if run_backup "${repo}" "${source_tier}" "${restic_host}"; then
         maybe_prune "${repo}"
         maybe_verify "${repo}"
     fi

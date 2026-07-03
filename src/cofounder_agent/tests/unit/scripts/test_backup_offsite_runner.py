@@ -31,32 +31,43 @@ _HARNESS = """
 source "${RUN_SH}"
 
 # Stub the external/DB-touching pieces. restic's exit code is driven by
-# FAKE_RESTIC_RC; the emit_* helpers print markers instead of hitting psql.
-restic() { return "${FAKE_RESTIC_RC}"; }
+# FAKE_RESTIC_RC (its args are echoed for flag assertions); the emit_*
+# helpers print markers instead of hitting psql.
+restic() { echo "RESTIC_ARGS $*"; return "${FAKE_RESTIC_RC}"; }
 emit_heartbeat() { echo "HEARTBEAT event=$1"; }
 emit_alert() { echo "ALERT severity=$1 summary=$2 description=$3"; }
 
 rc=0
-run_backup "s3:example.test/repo" "daily" || rc=$?
+if [[ -n "${HOST_ARG:-}" ]]; then
+    run_backup "s3:example.test/repo" "daily" "${HOST_ARG}" || rc=$?
+else
+    # Two-arg call — exercises the in-function default under `set -u`.
+    run_backup "s3:example.test/repo" "daily" || rc=$?
+fi
 echo "RUN_BACKUP_RC=${rc}"
 """
 
 
-def _run_backup_harness(tmp_path: Path, restic_rc: int) -> subprocess.CompletedProcess:
+def _run_backup_harness(
+    tmp_path: Path, restic_rc: int, restic_host: str | None = None
+) -> subprocess.CompletedProcess:
     assert _BASH is not None  # guarded by the module-level skipif
     backup_dir = tmp_path / "backups"
     (backup_dir / "daily").mkdir(parents=True)
+    env = {
+        "PATH": str(Path(_BASH).parent),
+        "RUN_SH": _RUN_SH.as_posix(),
+        "BACKUP_DIR": backup_dir.as_posix(),
+        "FAKE_RESTIC_RC": str(restic_rc),
+    }
+    if restic_host is not None:
+        env["HOST_ARG"] = restic_host
     return subprocess.run(
         [_BASH, "-c", _HARNESS],
         capture_output=True,
         text=True,
         timeout=30,
-        env={
-            "PATH": str(Path(_BASH).parent),
-            "RUN_SH": _RUN_SH.as_posix(),
-            "BACKUP_DIR": backup_dir.as_posix(),
-            "FAKE_RESTIC_RC": str(restic_rc),
-        },
+        env=env,
     )
 
 
@@ -92,3 +103,19 @@ def test_failure_propagates_nonzero_to_caller(tmp_path):
     """tick() must see failure so it skips prune/verify on a failed backup."""
     result = _run_backup_harness(tmp_path, restic_rc=1)
     assert "RUN_BACKUP_RC=0" not in result.stdout
+
+
+def test_backup_pins_default_restic_host(tmp_path):
+    """--host must default to a stable value: the container hostname changes
+    on every recreate, which would start a new snapshot lineage ("no parent
+    snapshot found") and force a full source rescan."""
+    result = _run_backup_harness(tmp_path, restic_rc=0)
+    assert "--host poindexter" in result.stdout
+
+
+def test_backup_pins_configured_restic_host(tmp_path):
+    """offsite_backup_restic_host (passed through by tick()) wins over the
+    default."""
+    result = _run_backup_harness(tmp_path, restic_rc=0, restic_host="my-install")
+    assert "--host my-install" in result.stdout
+    assert "--host poindexter" not in result.stdout

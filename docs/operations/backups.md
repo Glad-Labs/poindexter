@@ -129,6 +129,7 @@ existing deployments — only the three secrets are written by the wizard):
 | `offsite_backup_source_tier`                     | `daily`                | Which Tier 1 dir to ship (`daily` / `hourly`)                                                                              |
 | `offsite_backup_repository`                      | _(set by wizard)_      | `s3:https://<endpoint>/<bucket>/<path>`                                                                                    |
 | `offsite_backup_s3_region`                       | _(set by wizard)_      | SigV4 signing region — required for non-us-east-1 buckets (e.g. B2 `us-east-005`); the wizard derives it from the endpoint |
+| `offsite_backup_restic_host`                     | `poindexter`           | Stable `restic backup --host` — container hostnames change on recreate, which would break parent-snapshot selection        |
 | `offsite_backup_restic_image`                    | `restic/restic:0.16.4` | Pinned restic image (runner + wizard use the same version)                                                                 |
 | `offsite_backup_keep_daily`                      | `7`                    | Retention (only applied if pruning is enabled)                                                                             |
 | `offsite_backup_keep_weekly`                     | `4`                    |                                                                                                                            |

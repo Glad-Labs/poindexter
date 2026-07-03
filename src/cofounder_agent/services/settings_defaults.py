@@ -95,6 +95,10 @@ DEFAULTS: dict[str, str] = {
     'offsite_backup_max_age_hours': '26',
     'offsite_backup_prune_enabled': 'false',
     'offsite_backup_repository': '',
+    # Stable `restic backup --host` value — the container hostname changes on
+    # every recreate, which would otherwise start a new snapshot lineage
+    # ("no parent snapshot found") and force a full source rescan.
+    'offsite_backup_restic_host': 'poindexter',
     'offsite_backup_restic_image': 'restic/restic:0.16.4',
     'offsite_backup_s3_region': '',
     'offsite_backup_source_tier': 'daily',
