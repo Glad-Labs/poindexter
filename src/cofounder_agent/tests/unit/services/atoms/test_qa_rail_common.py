@@ -345,3 +345,91 @@ class TestIsRescuableReject:
         assert is_rescuable_reject(
             [], [], final_score=60.0, threshold=70.0, broaden=True,
         ) is True
+
+
+# ---------------------------------------------------------------------------
+# resolve_gate_states — strict-with-live-pool contract (2026-07-02 fix)
+# ---------------------------------------------------------------------------
+
+from types import SimpleNamespace
+from unittest.mock import MagicMock
+
+from modules.content.atoms._qa_rail_common import (
+    GateStatesUnavailable,
+    resolve_gate_states,
+)
+
+
+class _FakeQA:
+    """Duck-typed MultiModelQA stand-in for resolve_gate_states."""
+
+    def __init__(self, pool=None, states=None, exc=None, platform=None):
+        self.pool = pool
+        self._platform = platform
+        self._states = states
+        self._exc = exc
+
+    async def _load_gate_states(self):
+        if self._exc is not None:
+            raise self._exc
+        return dict(self._states or {})
+
+
+@pytest.mark.unit
+class TestResolveGateStates:
+    """2026-07-02 latent-path fix: a failed/empty qa_gates read with a LIVE
+    pool used to come back as {} — and _mark_advisory_if_configured treats an
+    absent gate name as "required", so every advisory rail silently became a
+    hard veto and a DB blip could reject a finished draft. With a live pool
+    the resolver now raises GateStatesUnavailable (retryable infra failure)
+    instead; the no-DB fallback ({}) is preserved for pool=None callers."""
+
+    async def test_no_pool_lookup_failure_returns_empty(self):
+        qa = _FakeQA(pool=None, exc=RuntimeError("no db"))
+        assert await resolve_gate_states(qa) == {}
+
+    async def test_no_pool_empty_states_returns_empty(self):
+        qa = _FakeQA(pool=None, states={})
+        assert await resolve_gate_states(qa) == {}
+
+    async def test_live_pool_returns_states(self):
+        states = {"ragas_eval": (True, False), "llm_critic": (True, True)}
+        qa = _FakeQA(pool=object(), states=states)
+        assert await resolve_gate_states(qa) == states
+
+    async def test_live_pool_lookup_failure_raises(self):
+        qa = _FakeQA(pool=object(), exc=ConnectionError("connection blip"))
+        with pytest.raises(GateStatesUnavailable):
+            await resolve_gate_states(qa)
+
+    async def test_live_pool_empty_states_raises(self):
+        # qa_gates is baseline-seeded in prod — zero rows with a live pool
+        # means the read failed or the install is broken, never "no config".
+        qa = _FakeQA(pool=object(), states={})
+        with pytest.raises(GateStatesUnavailable):
+            await resolve_gate_states(qa)
+
+    async def test_failure_emits_audit_event(self):
+        audit = MagicMock()
+        qa = _FakeQA(
+            pool=object(),
+            exc=RuntimeError("blip"),
+            platform=SimpleNamespace(audit=audit),
+        )
+        with pytest.raises(GateStatesUnavailable):
+            await resolve_gate_states(qa)
+        audit.write_bg.assert_called_once()
+        assert audit.write_bg.call_args.args[0] == "qa_gate_states_unavailable"
+
+    async def test_audit_failure_does_not_mask_the_raise(self):
+        # The audit write is best-effort — a broken platform handle must not
+        # swallow or replace the GateStatesUnavailable signal.
+        audit = MagicMock()
+        audit.write_bg.side_effect = RuntimeError("audit down")
+        qa = _FakeQA(
+            pool=object(),
+            exc=RuntimeError("blip"),
+            platform=SimpleNamespace(audit=audit),
+        )
+        with pytest.raises(GateStatesUnavailable):
+            await resolve_gate_states(qa)

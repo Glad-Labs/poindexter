@@ -471,6 +471,35 @@ class TestQaAggregateVacuousPassGuard:
         assert out["qa_final_verdict"] == "approve"
         assert "_halt" not in out
 
+    async def test_gate_states_unavailable_propagates(self, monkeypatch):
+        """2026-07-02 latent-path fix: a live pool that can't read qa_gates
+        must fail the node loudly (retryable infra halt) — not silently skip
+        the vacuous-pass guard and approve unverified content."""
+        from modules.content.atoms._qa_rail_common import GateStatesUnavailable
+
+        async def _unavailable(_qa):
+            raise GateStatesUnavailable("qa_gates read blip")
+
+        monkeypatch.setattr(
+            "modules.content.atoms.qa_aggregate.resolve_gate_states",
+            _unavailable,
+        )
+        monkeypatch.setattr(
+            "modules.content.multi_model_qa.MultiModelQA.__init__",
+            lambda self, **kw: None,
+        )
+        state = {
+            "platform": FakePlatform(),
+            "database_service": _VacuousDB(),
+            "site_config": _FakeSiteConfig(),
+            "qa_rail_reviews": [
+                {"reviewer": "deepeval_g_eval", "approved": True, "score": 88.0,
+                 "provider": "ollama", "advisory": False, "feedback": "good"},
+            ],
+        }
+        with pytest.raises(GateStatesUnavailable):
+            await qa_aggregate.run(state)
+
 
 @pytest.mark.unit
 class TestQaAggregateRescueDispatch:

@@ -19,6 +19,10 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.logger_config import get_logger
+
+logger = get_logger(__name__)
+
 # Provider -> weight bucket. programmatic = validator weight; the LLM
 # critics = critic weight; the gate providers = gate weight. Unknown
 # providers default to 0.5 (matches multi_model_qa.review()).
@@ -244,8 +248,10 @@ def missing_required_gates(
     the #680 guard; the alias table predates it but the guard didn't use it).
 
     ``gate_states`` is ``{name: (enabled, required_to_pass)}`` as returned by
-    ``resolve_gate_states``. An empty mapping (no-DB / fresh checkout) yields
-    an empty list — the guard then leaves the aggregate decision untouched.
+    ``resolve_gate_states``. An empty mapping (no-DB environments only —
+    with a live pool ``resolve_gate_states`` raises instead of returning
+    ``{}``) yields an empty list — the guard then leaves the aggregate
+    decision untouched.
     """
     from services.qa_gates_db_writer import reviewer_to_gate
 
@@ -262,18 +268,80 @@ def missing_required_gates(
     ]
 
 
-async def resolve_gate_states(qa: Any) -> dict[str, Any]:
-    """Best-effort ``{gate_name: (enabled, required_to_pass)}`` from ``qa_gates`` via
-    the MultiModelQA instance. Empty dict on any failure — advisory marking
-    then leaves reviews as seeded (qa_gates is baseline-seeded in prod, so ``{}``
-    only happens in no-DB environments)."""
+class GateStatesUnavailable(RuntimeError):
+    """``qa_gates`` config could not be read even though a DB pool is live.
+
+    Raised by :func:`resolve_gate_states` so a ``qa.*`` rail atom fails
+    LOUDLY — the node halts the run as a retryable infra failure — instead
+    of proceeding with ``gate_states={}``. Proceeding is the dangerous
+    path: ``MultiModelQA._mark_advisory_if_configured`` treats an absent
+    gate name as "required", so an empty dict silently converts EVERY
+    advisory rail into a hard veto and a finished draft gets rejected
+    over a transient DB blip (latent path confirmed 2026-07-02; violates
+    feedback_no_silent_defaults).
+    """
+
+
+def _audit_gate_states_unavailable(qa: Any, *, reason: str) -> None:
+    """Loud surfacing for a gate-state read failure: WARNING log always,
+    plus a best-effort ``qa_gate_states_unavailable`` audit event when the
+    MultiModelQA instance carries a platform handle."""
+    logger.warning(
+        "[qa rails] qa_gates state unavailable with a live pool (%s) — "
+        "failing the rail atom loudly instead of defaulting every gate "
+        "to required",
+        reason,
+    )
     try:
-        return await qa._load_gate_states()
-    except Exception:  # noqa: BLE001
-        return {}
+        platform = getattr(qa, "_platform", None)
+        if platform is not None:
+            platform.audit.write_bg(
+                "qa_gate_states_unavailable",
+                source="qa_rails",
+                details={"reason": reason[:500]},
+                severity="warning",
+            )
+    except Exception:  # noqa: BLE001 — audit is best-effort
+        pass
+
+
+async def resolve_gate_states(qa: Any) -> dict[str, Any]:
+    """``{gate_name: (enabled, required_to_pass)}`` from ``qa_gates`` via the
+    MultiModelQA instance.
+
+    No-DB environments (``qa.pool is None`` — unit tests, callers without a
+    DB) get ``{}`` — advisory marking then leaves reviews as seeded, the
+    long-standing legacy fallback. With a LIVE pool, a failed or empty
+    lookup raises :class:`GateStatesUnavailable` instead: ``qa_gates`` is
+    baseline-seeded in prod, so "live pool but no gate rows" only means the
+    read failed or the install is broken — and proceeding would silently
+    promote every advisory rail to a hard gate (see the exception class
+    docstring).
+    """
+    pool = getattr(qa, "pool", None)
+    try:
+        states = await qa._load_gate_states()
+    except Exception as exc:  # noqa: BLE001
+        if pool is None:
+            return {}
+        reason = f"{type(exc).__name__}: {exc}"
+        _audit_gate_states_unavailable(qa, reason=reason)
+        raise GateStatesUnavailable(
+            f"qa_gates lookup failed with a live pool ({reason})"
+        ) from exc
+    if not states and pool is not None:
+        _audit_gate_states_unavailable(
+            qa, reason="empty gate_states with a live pool",
+        )
+        raise GateStatesUnavailable(
+            "qa_gates returned no rows with a live pool — advisory/required "
+            "config unavailable; refusing to default every rail to required"
+        )
+    return states
 
 
 __all__ = [
+    "GateStatesUnavailable",
     "aggregate_rail_reviews",
     "is_rescuable_reject",
     "known_wrong_fact_rescued",

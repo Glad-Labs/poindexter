@@ -115,14 +115,31 @@ async def load_qa_gate_chain(
                 *args,
             )
     except Exception as exc:  # noqa: BLE001
-        # Table missing on fresh-clone test runs, or a transient
-        # connection blip during startup. Falling back to the legacy
-        # hardcoded chain is strictly better than failing the whole
-        # pipeline because the catalog table isn't there yet.
-        logger.debug(
-            "qa_gates lookup failed (%s) — runtime will use legacy chain",
-            exc,
-        )
+        # Two very different failures land here, and only one is benign:
+        #
+        # - Table missing (SQLSTATE 42P01) on a fresh clone that hasn't
+        #   migrated yet — the legacy-chain fallback is the designed
+        #   behavior, keep it quiet.
+        # - A LIVE pool failed mid-query (connection blip, timeout, …).
+        #   Returning [] here means DB-driven advisory/required gate
+        #   config is unavailable to the caller — consumers that treat
+        #   an absent gate as "required" would silently promote every
+        #   advisory rail to a hard veto. Per feedback_no_silent_defaults
+        #   that must be loud (the qa.* atoms additionally refuse to run
+        #   on it — see modules/content/atoms/_qa_rail_common.py).
+        if getattr(exc, "sqlstate", None) == "42P01":
+            logger.debug(
+                "qa_gates table missing (%s) — runtime will use legacy chain",
+                exc,
+            )
+        else:
+            logger.warning(
+                "qa_gates lookup failed with a live pool (%s: %s) — returning "
+                "empty chain; advisory/required gate config is UNAVAILABLE "
+                "for this call",
+                type(exc).__name__,
+                exc,
+            )
         return []
 
     chain: list[QAGateSpec] = []

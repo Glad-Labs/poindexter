@@ -54,6 +54,23 @@ lowering the threshold_. A degenerate all-advisory review set falls back to
 scoring everything, so the score can't collapse to a spurious `0`. Pinned by
 `test_qa_rail_common.py::test_advisory_reviews_excluded_from_score`.
 
+**Gate-config read failures fail loud, not required-everything (2026-07).**
+The advisory flag comes from a `qa_gates` read at rail-atom time
+(`resolve_gate_states` → `MultiModelQA._load_gate_states`), and
+`_mark_advisory_if_configured` treats a gate name absent from the loaded
+states as "required". That made a transient DB blip a silent config flip:
+the read failed, came back `{}`, and every advisory rail became a hard
+veto — rejecting a finished draft over infra noise. Since 2026-07,
+`resolve_gate_states` raises `GateStatesUnavailable` when a **live pool**
+fails the read (or returns zero rows — `qa_gates` is baseline-seeded, so
+that never legitimately happens), which halts the node as a retryable
+infra failure instead of producing a wrong content rejection; the failure
+also logs at WARNING and emits a `qa_gate_states_unavailable` audit event.
+The `{}` → "everything required" fallback survives only for genuinely
+no-DB callers (`pool=None`: unit tests, fresh checkouts). Pinned by
+`test_qa_rail_common.py::TestResolveGateStates` and
+`test_qa_ragas_atom.py::test_live_pool_gate_lookup_failure_fails_loud`.
+
 The programmatic validator's warning penalty is gentler and DB-tunable too: each
 non-critical warning shaves `qa_validator_warning_penalty` points (default `5`,
 was a hard-coded `10`) so soft nits nudge the score instead of sinking a clean

@@ -211,3 +211,49 @@ class TestLoadQAGateChain:
         pool, conn = _make_pool_with_rows([])
         chain = await load_qa_gate_chain(pool)
         assert chain == []
+
+
+# ---------------------------------------------------------------------------
+# Failure logging — loud on transient failure, quiet on missing table
+# (2026-07-02 latent-path fix)
+# ---------------------------------------------------------------------------
+
+
+def _make_failing_pool(exc):
+    pool = MagicMock()
+    acquire_ctx = MagicMock()
+    acquire_ctx.__aenter__ = AsyncMock(side_effect=exc)
+    acquire_ctx.__aexit__ = AsyncMock(return_value=None)
+    pool.acquire = MagicMock(return_value=acquire_ctx)
+    return pool
+
+
+class TestLoadQAGateChainFailureLogging:
+    """A transient qa_gates read failure used to log at DEBUG only, while
+    callers defaulted every advisory rail to required — a silent config
+    flip (feedback_no_silent_defaults). The failure must be WARNING-loud
+    unless it's the benign missing-table case (SQLSTATE 42P01) on a fresh
+    checkout that hasn't migrated."""
+
+    @pytest.mark.asyncio
+    async def test_transient_failure_logs_warning(self, monkeypatch):
+        fake_logger = MagicMock()
+        monkeypatch.setattr("services.qa_gates_db.logger", fake_logger)
+        pool = _make_failing_pool(ConnectionError("connection was closed"))
+        assert await load_qa_gate_chain(pool) == []
+        fake_logger.warning.assert_called_once()
+        fake_logger.debug.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_missing_table_stays_debug(self, monkeypatch):
+        class _UndefinedTable(Exception):
+            sqlstate = "42P01"  # asyncpg UndefinedTableError SQLSTATE
+
+        fake_logger = MagicMock()
+        monkeypatch.setattr("services.qa_gates_db.logger", fake_logger)
+        pool = _make_failing_pool(
+            _UndefinedTable('relation "qa_gates" does not exist')
+        )
+        assert await load_qa_gate_chain(pool) == []
+        fake_logger.debug.assert_called_once()
+        fake_logger.warning.assert_not_called()

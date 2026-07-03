@@ -21,6 +21,7 @@ import logging
 from typing import Any
 
 from modules.content.atoms._qa_rail_common import (
+    GateStatesUnavailable,
     aggregate_rail_reviews,
     is_rescuable_reject,
     missing_required_gates,
@@ -137,8 +138,17 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                         f"missing_required:{g}" for g in missing_required
                     ],
                 }
+        except GateStatesUnavailable:
+            # A live pool that can't read qa_gates means the guard CAN'T
+            # verify required rails were present — and the same failed read
+            # would have mislabeled advisory rails upstream. Fail the node
+            # loudly (retryable infra halt) rather than approve unverified
+            # (feedback_no_silent_defaults).
+            raise
         except Exception as _guard_err:  # noqa: BLE001
-            logger.debug("[qa.aggregate] vacuous-pass guard skipped: %s", _guard_err)
+            logger.warning(
+                "[qa.aggregate] vacuous-pass guard skipped: %s", _guard_err,
+            )
     if result.get("known_wrong_fact_rescued"):
         logger.info(
             "[qa.aggregate] web fact-check rescued a known_wrong_fact-only "
@@ -189,7 +199,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # rather than discarded, AND the regen pass is broadened to cover any
     # text-fixable veto (broaden=True) so the garbage-collector reruns it first.
     flag_instead = str(
-        (config.get("qa_flag_instead_of_reject", "false") if config else "false")
+        config.get("qa_flag_instead_of_reject", "false") if config else "false"
     ).strip().lower() in ("true", "1", "yes", "on")
     if (
         not approved

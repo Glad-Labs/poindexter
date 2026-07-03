@@ -430,6 +430,14 @@ class MultiModelQA:
           legacy callers) see the post as passing this gate
         - prepend ``[advisory]`` to the feedback so operators see what
           actually happened in the audit log
+
+        A gate name absent from ``states`` leaves the review UNCHANGED —
+        i.e. required. That makes ``states={}`` mean "every rail is a hard
+        gate", which is only safe when there's genuinely no DB. The qa.*
+        atoms therefore obtain ``states`` via ``resolve_gate_states``,
+        which raises ``GateStatesUnavailable`` instead of returning ``{}``
+        when a live pool fails the qa_gates read (2026-07-02 latent-path
+        fix; feedback_no_silent_defaults).
         """
         if review is None:
             return None

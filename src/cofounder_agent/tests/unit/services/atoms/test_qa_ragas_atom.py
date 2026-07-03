@@ -84,3 +84,27 @@ class TestQaRagasAtom:
 
     async def test_empty_content(self):
         assert await qa_ragas.run({"content": "  ", "site_config": _Cfg()}) == {}
+
+    async def test_live_pool_gate_lookup_failure_fails_loud(self, monkeypatch):
+        """2026-07-02 latent-path fix: a DB blip during the qa_gates read with
+        a LIVE pool must raise (retryable infra halt) — NOT emit a review
+        that _mark_advisory_if_configured leaves required, which would let
+        this advisory rail hard-veto a finished draft in qa.aggregate."""
+        from types import SimpleNamespace
+
+        from modules.content.atoms._qa_rail_common import GateStatesUnavailable
+
+        async def boom(self):
+            raise ConnectionError("qa_gates read blip")
+
+        async def rail_must_not_run(self, content, topic, research):
+            raise AssertionError(
+                "rail must not run when gate states are unavailable"
+            )
+
+        monkeypatch.setattr(MultiModelQA, "_load_gate_states", boom)
+        monkeypatch.setattr(MultiModelQA, "_check_ragas_eval", rail_must_not_run)
+        state = _state()
+        state["database_service"] = SimpleNamespace(pool=object())  # live pool
+        with pytest.raises(GateStatesUnavailable):
+            await qa_ragas.run(state)
