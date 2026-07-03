@@ -58,10 +58,13 @@ Return ONLY the JSON, no commentary.
 
 ```text
 Read the snippets from an AI-operated content business's internal records.
-Extract a proposed blog post topic and the unique angle (the "why this matters / what we learned").
+You are looking for a STORY worth telling the audience below — something that changed or broke, a decision that was made, or a lesson that was learned. Routine operational status (clean cycles, monitoring chatter, internal tooling housekeeping) is not a story.
+
+Audience / niche: {niche_context}
 
 Snippets:
 {joined}
 
-Return STRICT JSON: {{"topic": "<short title>", "angle": "<one-sentence framing>"}}.
+If the snippets contain a story, return STRICT JSON: {{"topic": "<short title>", "angle": "<one-sentence framing: why this matters / what we learned>"}}.
+If they do not, return STRICT JSON: {{"storyworthy": false, "reason": "<one short phrase>"}}.
 ```

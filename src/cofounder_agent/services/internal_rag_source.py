@@ -1,13 +1,27 @@
 """Generate topic candidates from the internal embedded corpus.
 
-The Glad Labs writing pivot — instead of summarising external content,
-mine our own claude_sessions / brain_knowledge / audit / decision_log /
-git history / memory / posts for storyworthy events and turn each into
-a proposed topic + angle.
+The writing pivot — instead of summarising external content, mine our
+own claude_sessions / brain_knowledge / audit / decision_log / git
+history / memory / posts for storyworthy events and turn each into a
+proposed topic + angle. The operator's first-party knowledge is the
+content moat; external sources are a popularity signal, not source
+material (poindexter#822).
+
+Storyworthy selection (poindexter#820): snippets are ranked by pgvector
+similarity to the niche's weighted goal vectors within a recency window,
+instead of plain newest-N — the newest ops rows are, by volume, routine
+housekeeping ("clean cycle completed") that distilled into rejected
+topics 1,441:4 over 30 days. Per-kind weights bias sampling toward
+story-dense kinds (decision_log / memory) over status-dense ones
+(audit / brain), and the distiller may answer ``{"storyworthy": false}``
+to kill a non-story before it costs a batch slot. Every step fails open
+to the legacy recency behaviour — a ranking outage must not sink a
+discovery sweep (same posture as the dedup pass).
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass, field
 from typing import Any
 from uuid import UUID
@@ -112,12 +126,32 @@ class InternalRagSource:
         if bad:
             raise ValueError(f"unknown source_kinds: {bad}")
 
+        # Storyworthy selection context (poindexter#820). Fail-open: when
+        # the niche/goal-vector resolution is unavailable (missing niche,
+        # embed outage, unit-test pool stubs) both come back None and
+        # selection degrades to the legacy newest-N behaviour.
+        query_vec, niche_context = await self._resolve_selection_context(niche_id)
+        kind_weights = self._resolve_kind_weights()
+        lookback_days = self._site_config.get_int(
+            "niche_internal_rag_lookback_days", 30,
+        )
+
         results: list[InternalCandidate] = []
         for kind in source_kinds:
-            snippets = await self._fetch_recent_snippets(kind, per_kind_limit)
+            # Bias sampling toward story-dense kinds: effective limit =
+            # per_kind_limit x weight (half-up rounding). Weight 0 skips
+            # the kind entirely; an unlisted kind weighs 1.0.
+            eff_limit = int(per_kind_limit * kind_weights.get(kind, 1.0) + 0.5)
+            if eff_limit <= 0:
+                continue
+            snippets = await self._fetch_recent_snippets(
+                kind, eff_limit,
+                query_vec=query_vec, lookback_days=lookback_days,
+            )
             for primary_ref, snippet, supporting in snippets:
                 distilled = await self._distill_topic_angle(
                     [snippet] + [s["snippet"] for s in supporting],
+                    niche_context=niche_context,
                 )
                 # Per-candidate resilience: a single empty / unparseable LLM
                 # response must not sink the whole discovery sweep (it did —
@@ -137,10 +171,96 @@ class InternalRagSource:
                 ))
         return results
 
+    async def _resolve_selection_context(
+        self, niche_id: UUID | str,
+    ) -> tuple[list[float] | None, str | None]:
+        """Resolve (query_vec, niche_context) for storyworthy selection.
+
+        ``query_vec`` is the niche's goal vectors combined by ``weight_pct``
+        — the same vectors the downstream embed pre-rank scores candidates
+        against, so snippet selection optimises for what actually wins a
+        batch. ``niche_context`` is a short human-readable audience line for
+        the distillation prompt.
+
+        Fail-open by design: any resolution failure (unknown niche, embed
+        outage, stub pools in tests) returns ``(None, None)`` and selection
+        falls back to the legacy newest-N path. A ranking outage must never
+        sink a discovery sweep.
+        """
+        try:
+            from services.niche_service import NicheService
+            from services.topic_ranking import goal_vector_for
+
+            svc = NicheService(self._pool)
+            niche = await svc.get_by_id(
+                niche_id if isinstance(niche_id, UUID) else UUID(str(niche_id))
+            )
+            if niche is None:
+                return None, None
+            audience = ", ".join(niche.target_audience_tags or []) or "general"
+            niche_context = f"{niche.name} (audience: {audience})"
+
+            goals = await svc.get_goals(niche.id)
+            combined: list[float] | None = None
+            total_weight = 0.0
+            for g in goals:
+                weight = float(g.weight_pct or 0)
+                if weight <= 0:
+                    continue
+                gv = await goal_vector_for(
+                    g.goal_type, site_config=self._site_config,
+                )
+                if combined is None:
+                    combined = [weight * x for x in gv]
+                else:
+                    combined = [c + weight * x for c, x in zip(combined, gv, strict=True)]
+                total_weight += weight
+            if combined is None or total_weight <= 0:
+                return None, niche_context
+            return [c / total_weight for c in combined], niche_context
+        except Exception:
+            logger.warning(
+                "[internal_rag] selection-context resolution failed — "
+                "falling back to recency selection",
+                exc_info=True,
+            )
+            return None, None
+
+    def _resolve_kind_weights(self) -> dict[str, float]:
+        """Parse ``niche_internal_rag_kind_weights`` (JSON object) off site_config.
+
+        Maps source_kind → sampling weight; a kind absent from the map
+        weighs 1.0, weight 0 skips the kind. Malformed values fall back to
+        the empty map (all kinds 1.0) with a warning rather than sinking
+        the sweep.
+        """
+        raw = self._site_config.get("niche_internal_rag_kind_weights", "") or ""
+        if not str(raw).strip():
+            return {}
+        try:
+            parsed = json.loads(raw) if isinstance(raw, str) else dict(raw)
+            return {str(k): float(v) for k, v in parsed.items()}
+        except (ValueError, TypeError):
+            logger.warning(
+                "[internal_rag] niche_internal_rag_kind_weights=%r is not a "
+                "JSON object of kind→number; using flat weights", raw,
+            )
+            return {}
+
     async def _fetch_recent_snippets(
-        self, source_kind: str, limit: int,
+        self,
+        source_kind: str,
+        limit: int,
+        *,
+        query_vec: list[float] | None = None,
+        lookback_days: int | None = None,
     ) -> list[tuple[str, str, list[dict[str, Any]]]]:
-        """Pull the most-recent N entries for this kind from the embeddings table.
+        """Pull the top-N entries for this kind from the embeddings table.
+
+        With ``query_vec`` set, rows within the ``lookback_days`` window are
+        ranked by pgvector cosine distance to the niche goal vector — the
+        storyworthy-selection path (poindexter#820). Without it (or on any
+        vector-query failure) the legacy newest-N ordering applies.
 
         Returns list of (primary_ref, snippet, supporting_refs).
         Mapping source_kind → embeddings.source_table:
@@ -166,26 +286,65 @@ class InternalRagSource:
             # git_commit not yet implemented — would query git log directly
             return []
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT source_id, text_preview
-                  FROM embeddings
-                 WHERE source_table = $1
-                 ORDER BY created_at DESC
-                 LIMIT $2
-                """,
-                st, limit,
-            )
+            rows = None
+            if query_vec is not None:
+                try:
+                    # pgvector has no asyncpg codec — pass the vector in its
+                    # text form (pattern: services/embeddings_db.py).
+                    vec_str = "[" + ",".join(str(v) for v in query_vec) + "]"
+                    rows = await conn.fetch(
+                        """
+                        SELECT source_id, text_preview
+                          FROM embeddings
+                         WHERE source_table = $1
+                           AND created_at > NOW() - make_interval(days => $2)
+                         ORDER BY embedding <=> $3::vector
+                         LIMIT $4
+                        """,
+                        st, int(lookback_days or 30), vec_str, limit,
+                    )
+                except Exception:
+                    # Dimension mismatch / missing extension / stub pool —
+                    # degrade to recency rather than sinking the sweep.
+                    logger.warning(
+                        "[internal_rag] vector-ranked snippet query failed "
+                        "for %s — falling back to recency", st,
+                        exc_info=True,
+                    )
+                    rows = None
+            # Fall back when the vector path failed OR its lookback window
+            # was empty — the ranked path must never return *less* than the
+            # legacy recency path would have.
+            if not rows:
+                rows = await conn.fetch(
+                    """
+                    SELECT source_id, text_preview
+                      FROM embeddings
+                     WHERE source_table = $1
+                     ORDER BY created_at DESC
+                     LIMIT $2
+                    """,
+                    st, limit,
+                )
         return [(str(r["source_id"]), r["text_preview"] or "", []) for r in rows]
 
     async def _distill_topic_angle(
-        self, snippets: list[str]
+        self,
+        snippets: list[str],
+        *,
+        niche_context: str | None = None,
     ) -> tuple[str, str] | None:
         """Run a small LLM call to extract a proposed (topic, angle) from raw snippets.
 
         Returns ``None`` when the model returns an empty or unparseable
         response so the caller can skip this candidate instead of crashing
         the whole sweep (2026-05-28 content-gen stall).
+
+        ``niche_context`` is formatted into the prompt (templates without a
+        ``{niche_context}`` placeholder simply ignore it), and the prompt
+        invites a ``{"storyworthy": false}`` verdict for routine ops status
+        — treated as a skip, so a non-story dies here instead of after a
+        full generation run (poindexter#820).
 
         Snippet truncation length is operator-tunable via
         ``niche_internal_rag_snippet_max_chars``. The model resolves via
@@ -207,13 +366,13 @@ class InternalRagSource:
         prompt = get_prompt_manager().get_prompt(
             "research.distill_topic_angle",
             joined=joined,
+            niche_context=niche_context or "a general technology audience",
         )
         # #272 Phase-2b: topic_ranking._ollama_chat_json no longer carries a
         # lifespan-bound module global — pass our injected SiteConfig.
         raw = await _ollama_chat_json(
             prompt, model=model, site_config=self._site_config,
         )
-        import json
         if not raw or not raw.strip():
             logger.warning(
                 "[internal_rag] distill returned empty response (model=%s) — "
@@ -226,6 +385,17 @@ class InternalRagSource:
             logger.warning(
                 "[internal_rag] distill response not valid JSON (model=%s): "
                 "%s — skipping candidate", model, e,
+            )
+            return None
+        # Distiller judged the snippets a non-story (routine ops status,
+        # housekeeping chatter). Skip quietly — this verdict is the point
+        # of the storyworthiness prompt, not a failure. Only prompts that
+        # ask for the verdict ever emit it, so old templates are unaffected.
+        if isinstance(parsed, dict) and parsed.get("storyworthy") is False:
+            logger.info(
+                "[internal_rag] distiller judged snippets not storyworthy "
+                "(reason=%r) — skipping candidate",
+                str(parsed.get("reason") or "")[:120],
             )
             return None
         # The LLM occasionally returns `{"topic": ""}` (or omits the key).

@@ -425,6 +425,17 @@ DEFAULTS: dict[str, str] = {
     'niche_internal_rag_snippet_max_chars': '600',
     # Cap internal_rag's discovery-batch share (finding #5); 1.0 disables.
     'niche_internal_rag_batch_share_cap': '0.5',
+    # Storyworthy selection (poindexter#820): recency window for the
+    # goal-vector-ranked snippet query; snippets older than this never
+    # become topic candidates.
+    'niche_internal_rag_lookback_days': '30',
+    # source_kind → sampling-weight JSON: biases snippet sampling toward
+    # story-dense kinds (decisions, memory) over status-dense ops logs
+    # (audit, brain). Unlisted kinds weigh 1.0; 0 skips a kind entirely.
+    'niche_internal_rag_kind_weights': (
+        '{"decision_log": 1.5, "memory_file": 1.5, "claude_session": 1.0, '
+        '"post_history": 1.0, "audit_event": 0.5, "brain_knowledge": 0.5}'
+    ),
     'rag_default_top_k': '5',
     'rag_embed_retry_attempts': '3',
     'rag_embed_retry_base_delay_seconds': '0.25',
@@ -1703,7 +1714,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'niche_embedding_model': {'owner': 'topic_discovery', 'value_type': 'model'},
     'qa_vision_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'qa_preview_vision_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
-    'qa_vision_num_predict': {'owner': 'multi_model_qa', 'value_type': 'int'},
+    'qa_vision_num_predict': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'vision_alt_model': {'owner': 'image_service', 'value_type': 'model'},
     'rag_rerank_model': {'owner': 'rag_engine', 'value_type': 'model'},
     'rag_rerank_device': {'owner': 'rag_engine', 'value_type': 'string'},
@@ -1736,6 +1747,12 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
 
     # ----- RAG / retrieval (incident: rag_source_filter empty = corpus pollution 2026-06) -----
     'rag_source_filter': {'owner': 'rag_engine', 'value_type': 'csv'},
+    'niche_internal_rag_lookback_days': {
+        'owner': 'internal_rag_source', 'value_type': 'integer',
+    },
+    'niche_internal_rag_kind_weights': {
+        'owner': 'internal_rag_source', 'value_type': 'string',
+    },
     'rag_hybrid_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
     'rag_rerank_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
     'rag_engine_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},

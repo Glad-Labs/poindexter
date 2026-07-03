@@ -115,7 +115,7 @@ def test_qa_vision_num_predict_has_headroom_for_thinking_plus_json():
     from services.settings_defaults import DEFAULTS, METADATA
 
     assert int(DEFAULTS["qa_vision_num_predict"]) >= 768  # > the broken 400
-    assert METADATA["qa_vision_num_predict"]["value_type"] == "int"
+    assert METADATA["qa_vision_num_predict"]["value_type"] == "integer"
 
 
 # ---------------------------------------------------------------------------
@@ -440,9 +440,10 @@ class TestGroupingMakesSense:
         # qa scoring + gate-behavior cluster (qa_accuracy_* … qa_rewrite_max_attempts
         # / qa_flag_instead_of_reject). The slack accommodates that ~210-line gap
         # plus the non-qa keys that legitimately live in it (e.g. the writer_*
-        # block — writer_length_expansion_enabled / writer_min_length_ratio); a
+        # block — writer_length_expansion_enabled / writer_min_length_ratio, and
+        # the RAG section's niche_internal_rag_* storyworthy-selection keys); a
         # genuinely new far-flung qa_ section would still overshoot it.
-        assert span < 240, (
+        assert span < 275, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

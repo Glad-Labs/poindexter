@@ -67,7 +67,7 @@ async def test_generate_pulls_top_k_per_source_kind(db_pool, monkeypatch):
     # and return distilled candidates.
     src = InternalRagSource(db_pool, site_config=SiteConfig())
     # Mock the LLM distillation step — it turns a snippet into (topic, angle).
-    async def fake_distill(snippets):
+    async def fake_distill(snippets, niche_context=None):
         return ("How we handled OAuth phase 1", "Why client credentials grant first")
     monkeypatch.setattr(src, "_distill_topic_angle", fake_distill)
 
@@ -202,7 +202,7 @@ async def test_generate_aggregates_across_multiple_kinds(monkeypatch):
 
     seen_snippets: list[list[str]] = []
 
-    async def fake_distill(snippets):
+    async def fake_distill(snippets, niche_context=None):
         seen_snippets.append(snippets)
         return (f"topic-{len(seen_snippets)}", f"angle-{len(seen_snippets)}")
 
@@ -232,9 +232,9 @@ async def test_generate_propagates_per_kind_limit_to_fetch(monkeypatch):
     seen_limits: list[int] = []
     real_fetch = src._fetch_recent_snippets
 
-    async def spy(kind, limit):
+    async def spy(kind, limit, **kwargs):
         seen_limits.append(limit)
-        return await real_fetch(kind, limit)
+        return await real_fetch(kind, limit, **kwargs)
 
     monkeypatch.setattr(src, "_fetch_recent_snippets", spy)
 
@@ -279,7 +279,7 @@ async def test_generate_skips_candidates_when_distill_returns_none(monkeypatch):
     pool = _FakePool(rows_by_table=rows_by_table)
     src = InternalRagSource(pool, site_config=SiteConfig())
 
-    async def fake_distill(snippets):
+    async def fake_distill(snippets, niche_context=None):
         # First snippet distills fine; second returns None (bad response).
         return ("topic", "angle") if snippets == ["good"] else None
 
@@ -373,6 +373,163 @@ async def test_distill_returns_none_on_empty_topic(monkeypatch, raw):
     monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
 
     assert await src._distill_topic_angle(["snippet"]) is None
+
+
+async def test_distill_skips_not_storyworthy_verdict(monkeypatch):
+    # poindexter#820: the storyworthiness prompt may answer
+    # {"storyworthy": false} for routine ops status — treated as a skip,
+    # same as empty/unparseable responses. Old prompt templates never emit
+    # the key, so this is opt-in via the prompt.
+    import services.llm_text as llm_text
+    import services.prompt_manager as pm
+    import services.topic_ranking as tr
+
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
+    monkeypatch.setattr(
+        tr, "_ollama_chat_json",
+        AsyncMock(return_value='{"storyworthy": false, "reason": "routine ops status"}'),
+    )
+    fake_pm = AsyncMock()
+    fake_pm.get_prompt = lambda *a, **k: "prompt"
+    monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
+
+    assert await src._distill_topic_angle(["clean cycle completed"]) is None
+
+
+async def test_distill_passes_niche_context_to_prompt(monkeypatch):
+    import services.llm_text as llm_text
+    import services.prompt_manager as pm
+    import services.topic_ranking as tr
+
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
+    monkeypatch.setattr(
+        tr, "_ollama_chat_json",
+        AsyncMock(return_value='{"topic": "T", "angle": "A"}'),
+    )
+    captured_kwargs: dict = {}
+
+    def fake_get_prompt(key, **kwargs):
+        captured_kwargs.update(kwargs)
+        return "prompt"
+
+    fake_pm = AsyncMock()
+    fake_pm.get_prompt = fake_get_prompt
+    monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
+
+    await src._distill_topic_angle(["s"], niche_context="PC Gaming (audience: esports)")
+    assert captured_kwargs["niche_context"] == "PC Gaming (audience: esports)"
+
+    # Unset context formats a generic default rather than crashing a
+    # template that contains {niche_context}.
+    await src._distill_topic_angle(["s"])
+    assert captured_kwargs["niche_context"]
+
+
+async def test_resolve_kind_weights_parses_json_and_falls_back():
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig(
+        initial_config={
+            "niche_internal_rag_kind_weights":
+                '{"audit_event": 0.5, "decision_log": 1.5}',
+        },
+    ))
+    assert src._resolve_kind_weights() == {"audit_event": 0.5, "decision_log": 1.5}
+
+    # Unset → empty map (all kinds weigh 1.0).
+    src2 = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    assert src2._resolve_kind_weights() == {}
+
+    # Malformed → empty map, not an exception (a bad setting must not
+    # sink the sweep).
+    src3 = InternalRagSource(_FakePool(), site_config=SiteConfig(
+        initial_config={"niche_internal_rag_kind_weights": "not json"},
+    ))
+    assert src3._resolve_kind_weights() == {}
+
+
+async def test_generate_applies_kind_weights_to_limits(monkeypatch):
+    # audit_event weighted 0.5 → half the per-kind limit (half-up);
+    # weight 0 skips the kind without a fetch.
+    pool = _FakePool(rows=[])
+    src = InternalRagSource(pool, site_config=SiteConfig(
+        initial_config={
+            "niche_internal_rag_kind_weights":
+                '{"audit_event": 0.5, "brain_knowledge": 0}',
+        },
+    ))
+    seen: list[tuple[str, int]] = []
+
+    async def spy(kind, limit, **kwargs):
+        seen.append((kind, limit))
+        return []
+
+    monkeypatch.setattr(src, "_fetch_recent_snippets", spy)
+    await src.generate(
+        niche_id="00000000-0000-0000-0000-000000000001",
+        source_kinds=["claude_session", "audit_event", "brain_knowledge"],
+        per_kind_limit=4,
+    )
+    assert seen == [("claude_session", 4), ("audit_event", 2)]
+
+
+async def test_fetch_snippets_with_query_vec_ranks_by_vector(monkeypatch):
+    # The storyworthy path orders by pgvector distance within the lookback
+    # window; params are (table, lookback_days, vec_text, limit).
+    rows = [{"source_id": "x", "text_preview": "story"}]
+    pool = _FakePool(rows=rows)
+    src = InternalRagSource(pool, site_config=SiteConfig())
+    out = await src._fetch_recent_snippets(
+        "claude_session", 3, query_vec=[0.1, 0.2], lookback_days=14,
+    )
+    assert out == [("x", "story", [])]
+    assert pool.last_conn is not None
+    query, args = pool.last_conn.last_args
+    assert "embedding <=>" in query
+    assert args == ("claude_sessions", 14, "[0.1,0.2]", 3)
+
+
+async def test_fetch_snippets_empty_vector_window_falls_back_to_recency():
+    # An empty lookback window must not return less than the legacy
+    # newest-N path would have — the second (recency) query runs.
+    class _TwoQueryConn(_FakeConn):
+        def __init__(self):
+            super().__init__([])
+            self.queries: list[str] = []
+
+        async def fetch(self, query, *args):
+            self.queries.append(query)
+            self.last_args = (query, args)
+            if "embedding <=>" in query:
+                return []
+            return [{"source_id": "old", "text_preview": "older story"}]
+
+    conn = _TwoQueryConn()
+
+    class _Pool:
+        def acquire(self):
+            return _FakeAcquireCtx(conn)
+
+    src = InternalRagSource(_Pool(), site_config=SiteConfig())
+    out = await src._fetch_recent_snippets(
+        "brain_knowledge", 2, query_vec=[0.5], lookback_days=30,
+    )
+    assert out == [("old", "older story", [])]
+    assert len(conn.queries) == 2
+    assert "embedding <=>" in conn.queries[0]
+    assert "ORDER BY created_at DESC" in conn.queries[1]
+
+
+async def test_resolve_selection_context_fails_open_on_stub_pool():
+    # _FakeConn has no fetchrow → NicheService lookup raises inside the
+    # helper → (None, None), i.e. legacy recency selection. A resolution
+    # failure must never sink the sweep.
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    vec, ctx = await src._resolve_selection_context(
+        "00000000-0000-0000-0000-000000000001",
+    )
+    assert vec is None
+    assert ctx is None
 
 
 async def test_valid_source_kinds_includes_all_supported_kinds():
