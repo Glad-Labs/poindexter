@@ -529,7 +529,7 @@ The worker re-reads on every poll; no restart needed.
 | `rag_rerank_enabled` | `true` |  |  |
 | `rag_rerank_model` | `cross-encoder/ms-marco-MiniLM-L-6-v2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_rrf_k` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
-| `rag_source_filter` | `` |  | Auto-seeded by services.settings_defaults (#379) |
+| `rag_source_filter` | `posts` |  | CSV allowlist of embeddings.source_table values RAG retrieval may draw from. Default 'posts' keeps generation grounde... |
 | `resend_audience_id` | `33b1580d-cfda-4428-9890-d52f443b023b` |  |  |
 | `restore_test_backup_dir` | `/host-backups/auto` |  |  |
 | `restore_test_critical_tables` | `posts,app_settings,audit_log` |  |  |
