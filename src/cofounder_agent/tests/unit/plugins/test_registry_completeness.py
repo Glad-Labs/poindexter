@@ -54,7 +54,6 @@ _NON_PROVIDER_MODULES: set[str] = {
     "dispatcher",  # services/llm_providers/dispatcher.py — dispatch helper
     "thinking_models",  # services/llm_providers/thinking_models.py — model-class detection helpers
     "ollama_unload",  # services/llm_providers/ollama_unload.py — VRAM-guard helper (no provider class)
-    "api_base_overrides",  # services/llm_providers/api_base_overrides.py — per-model api_base helper for direct Ollama callers
 }
 
 

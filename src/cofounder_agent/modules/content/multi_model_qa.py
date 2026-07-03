@@ -2105,24 +2105,62 @@ class MultiModelQA:
             prompt, reviewer_name="internal_consistency", pass_key="consistent"
         )
 
-    def _vision_ollama_url(self, model: str) -> str:
-        """``/api/chat`` URL for one DIRECT vision call — honors the per-model
-        ``model_api_base_overrides`` map so the vision model is served by the
-        GPU-pinned second Ollama instance when the operator routed it there
-        (glad-labs-stack#2051 / #2075). The direct-httpx vision paths bypass
-        LiteLLM (they need the native ``images`` payload), so without this
-        they'd keep hitting the eviction-prone primary regardless of the map.
-        """
-        from services.llm_providers.api_base_overrides import resolve_ollama_api_base
+    async def _vision_complete(
+        self,
+        *,
+        prompt: str,
+        images_b64: list[str],
+        model: str,
+        num_predict: int,
+        phase: str,
+        mime: str = "image/jpeg",
+        timeout_s: float = 150.0,
+    ) -> str | None:
+        """Run one multimodal vision call through the LiteLLM dispatcher.
 
-        cfg = self._platform.config if self._platform else None
-        default = (
-            cfg.get("ollama_base_url", "http://host.docker.internal:11434")
-            if cfg is not None else "http://host.docker.internal:11434"
-        )
-        source = self._site_config if self._site_config is not None else cfg
-        base = resolve_ollama_api_base(model, site_config=source, default=default)
-        return f"{str(base).rstrip('/')}/api/chat"
+        Routes the vision rail through the SAME ``dispatch_complete`` path as
+        every other LLM call, so it lands in ``cost_logs`` + Langfuse and picks
+        up the per-model ``model_api_base_overrides`` (the GPU-pinned instance)
+        for free — no bespoke httpx/URL plumbing. Images are passed as
+        OpenAI-multimodal ``image_url`` data URIs; LiteLLM translates them to
+        Ollama's native ``images`` array. LiteLLM's ``ollama_chat`` path also
+        handles qwen3-vl's thinking channel (verified), so no explicit
+        ``think`` flag is needed. ``dispatch_complete`` additionally holds the
+        reentrant ``gpu.lock("ollama")``, serialising the call against writer /
+        media renders — the eviction the #2075 GPU pin was chasing.
+
+        Goes through the ``platform.dispatch`` capability seam (Seam 1, #667) —
+        NOT a direct ``services`` import — so content stays on the right side of
+        the module-purity boundary, matching ``media_qa`` / ``ai_content_generator``.
+
+        Returns the response text, or ``None`` on any failure (fail-soft — a
+        vision-QA infra miss must never block a pipeline run).
+        """
+        if self.pool is None or self._platform is None:
+            logger.debug(
+                "[VISION_QA] no pool/platform handle — cannot dispatch vision call",
+            )
+            return None
+
+        content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
+        for b64 in images_b64:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": f"data:{mime};base64,{b64}"},
+            })
+        messages = [{"role": "user", "content": content}]
+        try:
+            completion = await self._platform.dispatch.complete(
+                pool=self.pool, messages=messages, model=model,
+                tier="standard", phase=phase,
+                temperature=0.2, max_tokens=num_predict, timeout_s=timeout_s,
+            )
+        except Exception as exc:  # noqa: BLE001 — vision QA is fail-soft
+            logger.warning(
+                "[VISION_QA] dispatch vision call failed (non-critical): %s", exc,
+            )
+            return None
+        return (getattr(completion, "text", "") or "").strip()
 
     @observe(as_type="generation", name="multi_model_qa._check_image_relevance")
     async def _check_image_relevance(
@@ -2147,7 +2185,6 @@ class MultiModelQA:
             qa_vision_pass_threshold   — default 60 (min per-image score
                                          the gate considers "relevant")
         """
-        import asyncio
         import base64
         import json
         import re
@@ -2273,50 +2310,18 @@ class MultiModelQA:
             content_snippet=content_snippet,
         )
 
-        # Ollama /api/chat with images — single message, images array.
-        payload = {
-            "model": model,
-            "stream": False,
-            # Thinking vision models (qwen3-vl) bury the answer in `thinking`
-            # and return an empty `content` — disable thinking so the verdict
-            # lands in `content` and the reviewer parses. #video-vision-qa.
-            "think": False,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt,
-                    "images": [b64 for _u, b64 in encoded_images],
-                }
-            ],
-            "options": {"temperature": 0.2, "num_predict": num_predict},
-        }
-        _ollama_url = self._vision_ollama_url(model)
-        _vision_timeout = httpx.Timeout(120.0, connect=5.0)
-
-        async def _call_ollama(client: "httpx.AsyncClient"):
-            return await asyncio.wait_for(
-                client.post(_ollama_url, json=payload, timeout=_vision_timeout),
-                timeout=150,
-            )
-
-        try:
-            if http_client is not None:
-                resp = await _call_ollama(http_client)
-            else:
-                async with httpx.AsyncClient(timeout=_vision_timeout) as client:
-                    resp = await _call_ollama(client)
-            if resp.status_code != 200:
-                logger.warning(
-                    "[VISION_QA] ollama returned HTTP %d: %s",
-                    resp.status_code, resp.text[:200],
-                )
-                return None
-            data = resp.json()
-            text = data.get("message", {}).get("content", "")
-        except Exception as e:
-            logger.warning("[VISION_QA] ollama call failed (non-critical): %s", e)
-            return None
-
+        # Vision call via the LiteLLM dispatcher (images are already
+        # normalized to JPEG above). One message carries the prompt + every
+        # image; dispatch_complete handles cost logging, Langfuse tracing, the
+        # GPU-pinned api_base override, and the gpu.lock serialisation.
+        text = await self._vision_complete(
+            prompt=prompt,
+            images_b64=[b64 for _u, b64 in encoded_images],
+            model=model,
+            num_predict=num_predict,
+            phase="qa_vision_image_relevance",
+            mime="image/jpeg",
+        )
         if not text:
             return None
 
@@ -2396,7 +2401,6 @@ class MultiModelQA:
             qa_preview_viewport_width      — default 1280
             qa_preview_viewport_height     — default 1024
         """
-        import asyncio
         import base64
         import json
         import re
@@ -2479,54 +2483,18 @@ class MultiModelQA:
             topic=topic,
         )
 
-        try:
-            import httpx
-        except Exception:
-            return None
-
-        payload = {
-            "model": model,
-            "stream": False,
-            # Thinking vision models (qwen3-vl) bury the answer in `thinking`
-            # and return an empty `content` — disable thinking so the verdict
-            # lands in `content` and the reviewer parses. #video-vision-qa.
-            "think": False,
-            "messages": [
-                {
-                    "role": "user",
-                    "content": prompt,
-                    "images": [b64],
-                }
-            ],
-            "options": {"temperature": 0.2, "num_predict": num_predict},
-        }
-        _ollama_url = self._vision_ollama_url(model)
-        _preview_timeout = httpx.Timeout(180.0, connect=5.0)
-
-        async def _call_preview(client: "httpx.AsyncClient"):
-            return await asyncio.wait_for(
-                client.post(_ollama_url, json=payload, timeout=_preview_timeout),
-                timeout=200,
-            )
-
-        try:
-            if http_client is not None:
-                resp = await _call_preview(http_client)
-            else:
-                async with httpx.AsyncClient(timeout=_preview_timeout) as client:
-                    resp = await _call_preview(client)
-            if resp.status_code != 200:
-                logger.warning(
-                    "[PREVIEW_QA] ollama returned HTTP %d: %s",
-                    resp.status_code, resp.text[:200],
-                )
-                return None
-            data = resp.json()
-            text = data.get("message", {}).get("content", "")
-        except Exception as e:
-            logger.warning("[PREVIEW_QA] ollama call failed (non-critical): %s", e)
-            return None
-
+        # Preview screenshot (PNG) scored via the LiteLLM dispatcher — same
+        # cost/trace/GPU-lock/api_base-override benefits as the image-relevance
+        # leg. Longer timeout: a full-page screenshot is a heavier prompt.
+        text = await self._vision_complete(
+            prompt=prompt,
+            images_b64=[b64],
+            model=model,
+            num_predict=num_predict,
+            phase="qa_vision_preview",
+            mime="image/png",
+            timeout_s=200.0,
+        )
         if not text:
             return None
 

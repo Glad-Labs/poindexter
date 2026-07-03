@@ -28,7 +28,6 @@ from schemas.video_shot_list import Shot
 
 logger = logging.getLogger(__name__)
 
-_DEFAULT_OLLAMA_URL = "http://host.docker.internal:11434"
 _VIDEO_EXTS = (".mp4", ".mov", ".webm", ".mkv")
 
 
@@ -112,17 +111,25 @@ async def score_shot_frame(
     frame_path: str,
     shot: Shot,
     site_config: Any,
-    http_client_factory: Any = None,
+    pool: Any = None,
 ) -> ShotQAResult:
     """Score one rendered shot frame 0-100 with the vision model.
+
+    Routes through the LiteLLM dispatcher (``dispatch_complete``) — the same
+    path every other LLM call takes — so the shot-QA vision call lands in
+    ``cost_logs`` + Langfuse and picks up the per-model ``api_base`` override
+    (the GPU-pinned instance) for free. LiteLLM's ``ollama_chat`` path handles
+    qwen3-vl's thinking channel, so no ``think`` flag is needed. Requires a
+    ``pool``; without one (legacy/test callers) it fail-softs to no-score.
 
     Returns ``ShotQAResult(score=None)`` on any failure (fail-soft).
     """
     if site_config is None:
         return ShotQAResult(score=None, reason="no site_config")
-    model = (
-        (site_config.get("qa_vision_model", "") or "").strip().removeprefix("ollama/")
-    )
+    if pool is None:
+        logger.debug("[SHOT_QA] no pool — shot QA skipped (cannot dispatch)")
+        return ShotQAResult(score=None, reason="no pool for dispatch")
+    model = (site_config.get("qa_vision_model", "") or "").strip()
     if not model:
         logger.debug("[SHOT_QA] qa_vision_model not set — shot QA skipped")
         return ShotQAResult(score=None, reason="no vision model configured")
@@ -146,45 +153,27 @@ async def score_shot_frame(
         visual=(shot.prompt or shot.query or ""),
         source=shot.source,
     )
-    from services.llm_providers.api_base_overrides import resolve_ollama_api_base
 
-    # Per-model override (model_api_base_overrides) so the vision model can
-    # be served by the GPU-pinned second Ollama instance (#2075) instead of
-    # the eviction-prone primary; falls back to ollama_base_url.
-    base = resolve_ollama_api_base(
-        model,
-        site_config=site_config,
-        default=site_config.get("ollama_base_url", _DEFAULT_OLLAMA_URL),
-    )
-    url = f"{str(base).rstrip('/')}/api/chat"
-    payload = {
-        "model": model,
-        "stream": False,
-        # qwen3-vl is a thinking vision model: with thinking on it spends the
-        # num_predict budget inside `thinking` and returns an empty `content`,
-        # so the score never parses (always None → silent no-op). Disable
-        # thinking so the JSON verdict lands in `content`. #video-vision-qa.
-        "think": False,
-        "messages": [{"role": "user", "content": prompt, "images": [b64]}],
-        "options": {"temperature": 0.2, "num_predict": 300},
-    }
+    from services.llm_providers.dispatcher import dispatch_complete
 
-    import httpx
-
-    if http_client_factory is None:
-        http_client_factory = httpx.AsyncClient
-    timeout = httpx.Timeout(120.0, connect=5.0)
+    # OpenAI-multimodal message; LiteLLM translates image_url data URIs into
+    # Ollama's native images array. Frames are PNG (image_gen still, or an
+    # extracted video frame).
+    messages = [{
+        "role": "user",
+        "content": [
+            {"type": "text", "text": prompt},
+            {"type": "image_url",
+             "image_url": {"url": f"data:image/png;base64,{b64}"}},
+        ],
+    }]
     try:
-        async with http_client_factory(timeout=timeout) as client:
-            resp = await asyncio.wait_for(
-                client.post(url, json=payload, timeout=timeout), timeout=150,
-            )
-        if resp.status_code != 200:
-            logger.warning(
-                "[SHOT_QA] ollama HTTP %d for shot %d", resp.status_code, shot.idx,
-            )
-            return ShotQAResult(score=None, reason=f"ollama http {resp.status_code}")
-        text = resp.json().get("message", {}).get("content", "")
+        completion = await dispatch_complete(
+            pool, messages, model,
+            tier="standard", phase="qa_shot_vision",
+            temperature=0.2, max_tokens=300, timeout_s=150.0,
+        )
+        text = (getattr(completion, "text", "") or "").strip()
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[SHOT_QA] vision call failed for shot %d (non-critical): %s",

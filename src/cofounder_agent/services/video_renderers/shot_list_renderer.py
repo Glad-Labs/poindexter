@@ -567,7 +567,7 @@ async def _score_pass(
     *,
     qa: _QAConfig,
     site_config: Any,
-    http_client_factory: Any,
+    pool: Any,
 ) -> None:
     """Score every fresh, non-reused clip — vision model resident across the pass.
 
@@ -583,7 +583,7 @@ async def _score_pass(
             continue
         st.qa = await score_shot_frame(
             frame_path=st.result.clip_path, shot=st.shot,
-            site_config=site_config, http_client_factory=http_client_factory,
+            site_config=site_config, pool=pool,
         )
 
 
@@ -609,7 +609,7 @@ async def _repair_pass(
     qa: _QAConfig,
     site_config: Any,
     render_kwargs: dict[str, Any],
-    http_client_factory: Any,
+    pool: Any,
 ) -> None:
     """Batched keep-best regeneration for the sub-threshold stochastic shots.
 
@@ -638,7 +638,7 @@ async def _repair_pass(
                 continue
             cand_qa = await score_shot_frame(
                 frame_path=cand.clip_path, shot=st.shot,
-                site_config=site_config, http_client_factory=http_client_factory,
+                site_config=site_config, pool=pool,
             )
             best = st.qa
             if (cand_qa.score is not None and best is not None
@@ -922,12 +922,11 @@ async def render_shot_list(
 
     states = await _render_pass(capped_shots, render_kwargs=render_kwargs)
     await _score_pass(
-        states, qa=qa, site_config=site_config,
-        http_client_factory=http_client_factory,
+        states, qa=qa, site_config=site_config, pool=pool,
     )
     await _repair_pass(
         states, qa=qa, site_config=site_config,
-        render_kwargs=render_kwargs, http_client_factory=http_client_factory,
+        render_kwargs=render_kwargs, pool=pool,
     )
     shot_results = await _finalize_pass(
         states, qa=qa, pool=pool, post_id=post_id,
