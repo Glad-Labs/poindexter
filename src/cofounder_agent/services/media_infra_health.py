@@ -1,0 +1,168 @@
+"""Render-infra health probe for the Stage-2 media lane.
+
+Why this exists (2026-07-03): six published posts sat permanently wedged at
+``media_pipeline_redispatch_max`` because Stage-2 dispatches fired during
+wan-server / image-gen / DNS outage windows (the post-crash boot windows) and
+every fast-fail burned one of the task's bounded re-dispatch attempts. The
+re-dispatch cap exists to stop a *permanently-failing render* from looping
+forever — an *infra outage* is a different failure class and should defer the
+attempt, not consume it.
+
+Two consumers share this probe:
+
+- ``services/jobs/dispatch_media_pipeline.py`` — probes BEFORE dispatching
+  (defers the whole cycle while unhealthy) and re-probes after a run failure
+  (an unhealthy-infra fast-fail un-claims the piece instead of leaving the
+  marker set for the watchdog to burn a re-dispatch on).
+- ``services/jobs/media_reconciliation.py`` — requires a healthy probe before
+  it resets a cap-wedged task's re-dispatch counter (the bounded self-heal).
+
+Probes (all app_settings-tunable, per DB-first config):
+
+- **wan-server** ``GET {wan_server_url}/health`` — URL resolution mirrors
+  ``Wan21Provider`` (``wan_server_url`` → the plugin namespace → default
+  ``:9840``).
+- **image-gen** ``GET {image_gen_server_url}/health`` (default ``:9836``).
+- **DNS canary** — resolve ``media_infra_dns_canary_host`` (default: derive
+  the host from ``storage_public_url``; skip when neither is set). Catches
+  the in-container-DNS-broken outage class where the render servers are up
+  but uploads/research would fail anyway.
+
+Settings:
+
+- ``media_infra_healthcheck_enabled`` (default ``true``) — master switch;
+  ``false`` short-circuits to healthy (OSS forks without a wan sidecar).
+- ``media_infra_health_timeout_seconds`` (default ``5``) — per-probe timeout.
+- ``media_infra_dns_canary_host`` (default ``''`` = derive / skip).
+"""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import socket
+from dataclasses import dataclass
+from typing import Any
+from urllib.parse import urlparse
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+
+@dataclass
+class MediaInfraHealth:
+    """Outcome of a render-infra probe pass.
+
+    ``detail`` is operator-facing: which probe(s) failed and how, or why the
+    pass was skipped. Consumers put it verbatim in logs / JobResult details.
+    """
+
+    healthy: bool
+    detail: str = ""
+
+
+def _resolve_wan_health_url(site_config: Any) -> str:
+    """Wan health endpoint — same URL resolution chain as ``Wan21Provider``
+    (per-install ``wan_server_url`` → plugin namespace → default ``:9840``),
+    so the probe watches the exact server the render will hit."""
+    from services.video_providers.wan2_1 import _resolve_server_url
+
+    return _resolve_server_url({}, site_config).rstrip("/") + "/health"
+
+
+def _resolve_image_gen_health_url(site_config: Any) -> str:
+    base = (
+        site_config.get("image_gen_server_url", "http://host.docker.internal:9836")
+        or "http://host.docker.internal:9836"
+    )
+    return str(base).rstrip("/") + "/health"
+
+
+def _resolve_dns_canary_host(site_config: Any) -> str:
+    """The hostname the DNS canary resolves. Explicit setting wins; else the
+    ``storage_public_url`` host (the render's delivery target, so its
+    resolvability is load-bearing); else '' = skip the canary."""
+    explicit = (site_config.get("media_infra_dns_canary_host", "") or "").strip()
+    if explicit:
+        return explicit
+    base = (site_config.get("storage_public_url", "") or "").strip()
+    if base:
+        return urlparse(base).hostname or ""
+    return ""
+
+
+async def _probe_http(client: Any, name: str, url: str) -> str | None:
+    """GET a health endpoint. Returns None when healthy (2xx), else a
+    one-line failure description for the aggregate detail string."""
+    try:
+        resp = await client.get(url)
+    except Exception as exc:  # noqa: BLE001 — unreachable IS the signal here
+        logger.debug("[media_infra_health] %s probe raised: %s", name, exc)
+        return f"{name} {url} unreachable ({exc.__class__.__name__}: {exc})"
+    if 200 <= resp.status_code < 300:
+        return None
+    return f"{name} {url} returned HTTP {resp.status_code}"
+
+
+async def _probe_dns(host: str, timeout_s: float) -> str | None:
+    """Resolve the canary host. Returns None on success, else a description."""
+    try:
+        await asyncio.wait_for(
+            asyncio.to_thread(socket.getaddrinfo, host, None),
+            timeout=timeout_s,
+        )
+    except Exception as exc:  # noqa: BLE001 — resolution failure IS the signal
+        logger.debug("[media_infra_health] DNS canary %r raised: %s", host, exc)
+        return f"DNS canary {host!r} did not resolve ({exc.__class__.__name__})"
+    return None
+
+
+async def check_media_infra_health(
+    site_config: Any,
+    *,
+    http_client_factory: Any = None,
+) -> MediaInfraHealth:
+    """Probe wan-server + image-gen ``/health`` and the DNS canary.
+
+    Healthy only when every configured probe passes. ``site_config=None``
+    (bootstrap/test paths with no DI seam) and the disabled master switch
+    both read as healthy — the gate must never brick dispatch for installs
+    that haven't configured render infra probing.
+    """
+    if site_config is None:
+        return MediaInfraHealth(healthy=True, detail="no site_config — probes skipped")
+    if not site_config.get_bool("media_infra_healthcheck_enabled", True):
+        return MediaInfraHealth(
+            healthy=True, detail="media_infra_healthcheck_enabled=false",
+        )
+
+    if http_client_factory is None:
+        http_client_factory = httpx.AsyncClient
+    timeout_s = site_config.get_float("media_infra_health_timeout_seconds", 5.0) or 5.0
+
+    failures: list[str] = []
+    probes = (
+        ("wan-server", _resolve_wan_health_url(site_config)),
+        ("image-gen", _resolve_image_gen_health_url(site_config)),
+    )
+    async with http_client_factory(
+        timeout=httpx.Timeout(timeout_s, connect=min(timeout_s, 3.0)),
+    ) as client:
+        for name, url in probes:
+            failure = await _probe_http(client, name, url)
+            if failure:
+                failures.append(failure)
+
+    canary = _resolve_dns_canary_host(site_config)
+    if canary:
+        failure = await _probe_dns(canary, timeout_s)
+        if failure:
+            failures.append(failure)
+
+    if failures:
+        return MediaInfraHealth(healthy=False, detail="; ".join(failures))
+    return MediaInfraHealth(healthy=True, detail="all render-infra probes passed")
+
+
+__all__ = ["MediaInfraHealth", "check_media_infra_health"]

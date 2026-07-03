@@ -874,9 +874,13 @@ class TestVideoRedispatch:
         pool.execute.assert_awaited_once()
 
     async def test_redispatch_video_respects_attempt_cap(self):
-        """count >= cap → do NOT clear the marker → False."""
+        """count >= cap → do NOT clear the marker → False. (The bounded
+        cap-reset self-heal is disabled here — it has its own suite below.)"""
         job = MediaReconciliationJob()
-        job._site_config = SiteConfig(initial_config={"media_pipeline_redispatch_max": "2"})
+        job._site_config = SiteConfig(initial_config={
+            "media_pipeline_redispatch_max": "2",
+            "media_redispatch_cap_reset_enabled": "false",
+        })
         pool = self._RedispatchPool({"task_id": "t1", "media_pipeline_redispatch_count": 2})
         ok = await job._redispatch_video(pool, {"id": "post-1"})
         assert ok is False
@@ -896,6 +900,154 @@ class TestVideoRedispatch:
         """The direct video-generation path is gone — the pipeline is the sole
         video producer now."""
         assert not hasattr(MediaReconciliationJob, "_regen_video")
+
+    def test_clear_marker_sql_only_counts_actual_clears(self):
+        """2026-07-03 marker-churn fix: the clear-marker UPDATEs must match
+        only rows whose marker is SET. Without the IS NOT NULL guard, a task
+        already pending pickup (marker NULL while the dispatch job defers
+        through an infra outage) had its count bumped every 15-min watchdog
+        cycle — the whole attempt budget burned in ~45 min with zero renders."""
+        assert "media_pipeline_dispatched_at IS NOT NULL" in (
+            MediaReconciliationJob._CLEAR_MARKER_SQL
+        )
+        assert "podcast_dispatched_at IS NOT NULL" in (
+            MediaReconciliationJob._PODCAST_CLEAR_MARKER_SQL
+        )
+
+    async def test_redispatch_video_already_pending_is_noop_false(self):
+        """Marker already NULL (waiting for the dispatcher) → the guarded
+        UPDATE matches 0 rows → False, and no count was burned."""
+        job = MediaReconciliationJob()
+        job._site_config = SiteConfig(initial_config={"media_pipeline_redispatch_max": "3"})
+        pool = self._RedispatchPool(
+            {"task_id": "t1", "media_pipeline_redispatch_count": 1},
+            exec_tag="UPDATE 0",  # guard filtered the row out
+        )
+        ok = await job._redispatch_video(pool, {"id": "post-1"})
+        assert ok is False
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestVideoCapReset:
+    """Bounded cap-reset self-heal (2026-07-03,
+    feedback_self_heal_not_suppress): a task wedged AT
+    media_pipeline_redispatch_max gets its counter reset + Stage-2 re-armed
+    when the render infra probes healthy — at most once per cooldown per task
+    (the media_pipeline_cap_reset_at stamp inside _CAP_RESET_SQL) — instead of
+    re-reporting the same media_drift forever with no recovery path."""
+
+    _AT_CAP_ROW = {"task_id": "t1", "media_pipeline_redispatch_count": 3}
+
+    def _job(self, **sc_overrides):
+        job = MediaReconciliationJob()
+        base = {"media_pipeline_redispatch_max": "3"}
+        base.update(sc_overrides)
+        job._site_config = SiteConfig(initial_config=base)
+        return job
+
+    def _health(self, healthy: bool, detail: str = ""):
+        from services.media_infra_health import MediaInfraHealth
+
+        return AsyncMock(return_value=MediaInfraHealth(healthy, detail))
+
+    async def test_at_cap_healthy_infra_resets_and_redispatches(self):
+        job = self._job()
+        pool = TestVideoRedispatch._RedispatchPool(dict(self._AT_CAP_ROW))
+        emit = MagicMock()
+        with patch(
+            "services.media_infra_health.check_media_infra_health",
+            self._health(True, "ok"),
+        ), patch(
+            "services.jobs.media_reconciliation.emit_finding", emit,
+        ):
+            ok = await job._redispatch_video(pool, {"id": "post-1"})
+        assert ok is True
+        sql = pool.execute.await_args.args[0]
+        assert "media_pipeline_cap_reset_at = NOW()" in sql
+        assert "media_pipeline_redispatch_count = 1" in sql
+        # The heal is operator-visible (info severity, per-task dedup).
+        assert emit.call_count == 1
+        assert emit.call_args.kwargs["kind"] == "media_redispatch_cap_reset"
+        assert emit.call_args.kwargs["severity"] == "info"
+
+    async def test_at_cap_unhealthy_infra_does_not_reset(self):
+        job = self._job()
+        pool = TestVideoRedispatch._RedispatchPool(dict(self._AT_CAP_ROW))
+        with patch(
+            "services.media_infra_health.check_media_infra_health",
+            self._health(False, "wan-server unreachable"),
+        ):
+            ok = await job._redispatch_video(pool, {"id": "post-1"})
+        assert ok is False
+        pool.execute.assert_not_called()
+
+    async def test_reset_disabled_keeps_hard_cap(self):
+        job = self._job(media_redispatch_cap_reset_enabled="false")
+        pool = TestVideoRedispatch._RedispatchPool(dict(self._AT_CAP_ROW))
+        health = self._health(True, "ok")
+        with patch(
+            "services.media_infra_health.check_media_infra_health", health,
+        ):
+            ok = await job._redispatch_video(pool, {"id": "post-1"})
+        assert ok is False
+        pool.execute.assert_not_called()
+        health.assert_not_awaited()  # disabled → never even probes
+
+    async def test_cooldown_active_returns_false(self):
+        """A reset inside the cooldown window: the conditional UPDATE matches
+        0 rows (media_pipeline_cap_reset_at too recent) → no reset, False."""
+        job = self._job()
+        pool = TestVideoRedispatch._RedispatchPool(
+            dict(self._AT_CAP_ROW), exec_tag="UPDATE 0",
+        )
+        emit = MagicMock()
+        with patch(
+            "services.media_infra_health.check_media_infra_health",
+            self._health(True, "ok"),
+        ), patch(
+            "services.jobs.media_reconciliation.emit_finding", emit,
+        ):
+            ok = await job._redispatch_video(pool, {"id": "post-1"})
+        assert ok is False
+        emit.assert_not_called()
+
+    async def test_under_cap_never_touches_reset_path(self):
+        """A task under the cap takes the ordinary clear-marker path — no
+        probe, no reset SQL."""
+        job = self._job()
+        pool = TestVideoRedispatch._RedispatchPool(
+            {"task_id": "t1", "media_pipeline_redispatch_count": 1},
+        )
+        health = self._health(True, "ok")
+        with patch(
+            "services.media_infra_health.check_media_infra_health", health,
+        ):
+            ok = await job._redispatch_video(pool, {"id": "post-1"})
+        assert ok is True
+        health.assert_not_awaited()
+        assert "media_pipeline_cap_reset_at" not in pool.execute.await_args.args[0]
+
+    async def test_health_probe_cached_per_cycle(self):
+        """The probe result is cached on the job instance, so several
+        cap-wedged posts in one cycle cost one probe pass."""
+        job = self._job()
+        health = self._health(True, "ok")
+        with patch(
+            "services.media_infra_health.check_media_infra_health", health,
+        ), patch(
+            "services.jobs.media_reconciliation.emit_finding", MagicMock(),
+        ):
+            for post in ("post-1", "post-2"):
+                pool = TestVideoRedispatch._RedispatchPool(dict(self._AT_CAP_ROW))
+                await job._redispatch_video(pool, {"id": post})
+        assert health.await_count == 1
+
+    def test_cap_reset_sql_is_cooldown_guarded(self):
+        sql = MediaReconciliationJob._CAP_RESET_SQL
+        assert "media_pipeline_redispatch_count >= $2" in sql
+        assert "media_pipeline_cap_reset_at IS NULL" in sql
+        assert "make_interval(hours => $3)" in sql
 
 
 @pytest.mark.unit

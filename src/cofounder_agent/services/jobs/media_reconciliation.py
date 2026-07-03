@@ -53,6 +53,19 @@ produce the same symptom (a media-wanting post with no asset):
    durable local render (no re-render), falling back to re-dispatch only
    if that local file is also gone.
 
+## Bounded cap-reset self-heal (2026-07-03)
+
+A video task AT ``media_pipeline_redispatch_max`` is not surfaced-forever
+anymore: when the render infra (wan-server + image-gen + DNS canary, via
+``services/media_infra_health.py``) probes healthy, the watchdog resets the
+task's counter and re-arms Stage-2 — at most once per
+``media_redispatch_cap_reset_cooldown_hours`` (default 24) per task, stamped
+on ``pipeline_tasks.media_pipeline_cap_reset_at``. The cap still catches a
+render that keeps failing on *healthy* infra (it re-wedges within the
+cooldown); what it no longer does is permanently wedge tasks whose attempts
+were burned by an outage window (``feedback_self_heal_not_suppress``).
+Disable via ``media_redispatch_cap_reset_enabled=false``.
+
 ## Approval-gate seeding (self-healing)
 
 Both passes route every stamped asset through ``_record_media_asset`` →
@@ -282,6 +295,9 @@ class MediaReconciliationJob:
         # on every config dict. Captured here so the regen helpers can
         # build a fresh R2UploadService per regen attempt.
         self._site_config = config.get("_site_config")
+        # Fresh infra-health probe per cycle (consumed lazily by the
+        # cap-reset self-heal only — see _probe_infra_health).
+        self._infra_health_cache = None
 
         lookback_days = int(config.get("lookback_days", 14))
         # Row-stamp pass scans the full window (default unbounded). The
@@ -932,12 +948,18 @@ class MediaReconciliationJob:
          WHERE p.id = $1::uuid
          LIMIT 1
     """
+    # ``podcast_dispatched_at IS NOT NULL`` (2026-07-03): only an *actual*
+    # marker clear counts as a re-dispatch. Without it, a task already waiting
+    # for the dispatcher (marker NULL — e.g. the dispatch job is deferring
+    # through an infra outage) had its count bumped by every 15-min watchdog
+    # cycle, burning the whole attempt budget without a single render.
     _PODCAST_CLEAR_MARKER_SQL = """
         UPDATE pipeline_tasks
            SET podcast_dispatched_at = NULL,
                podcast_redispatch_count = podcast_redispatch_count + 1
          WHERE task_id = $1
            AND podcast_redispatch_count < $2
+           AND podcast_dispatched_at IS NOT NULL
     """
 
     async def _redispatch_podcast(self, pool: Any, post_row: dict[str, Any]) -> bool:
@@ -1025,12 +1047,36 @@ class MediaReconciliationJob:
     """
     # Re-arm Stage-2 (NULL the marker) and bump the per-task counter, but only
     # while under the cap — so a permanently-failing render can't loop forever.
+    # ``media_pipeline_dispatched_at IS NOT NULL`` (2026-07-03): only an actual
+    # marker clear counts as a re-dispatch — a task already pending pickup
+    # (marker NULL while the dispatch job defers through an infra outage) used
+    # to have its count bumped every 15-min cycle, hitting the cap in ~45 min
+    # with zero real render attempts.
     _CLEAR_MARKER_SQL = """
         UPDATE pipeline_tasks
            SET media_pipeline_dispatched_at = NULL,
                media_pipeline_redispatch_count = media_pipeline_redispatch_count + 1
          WHERE task_id = $1
            AND media_pipeline_redispatch_count < $2
+           AND media_pipeline_dispatched_at IS NOT NULL
+    """
+
+    # Bounded cap-reset self-heal (2026-07-03, feedback_self_heal_not_suppress):
+    # a task AT the cap whose render infra is healthy again gets its counter
+    # reset and Stage-2 re-armed — at most once per cooldown, enforced
+    # atomically via the ``media_pipeline_cap_reset_at`` stamp. The counter
+    # restarts at 1 because this reset IS the first re-dispatch of the fresh
+    # budget. Command tag 'UPDATE 0' = cooldown not elapsed (or a concurrent
+    # cycle won the race).
+    _CAP_RESET_SQL = """
+        UPDATE pipeline_tasks
+           SET media_pipeline_dispatched_at = NULL,
+               media_pipeline_redispatch_count = 1,
+               media_pipeline_cap_reset_at = NOW()
+         WHERE task_id = $1
+           AND media_pipeline_redispatch_count >= $2
+           AND (media_pipeline_cap_reset_at IS NULL
+                OR media_pipeline_cap_reset_at < NOW() - make_interval(hours => $3))
     """
 
     async def _redispatch_video(self, pool: Any, post_row: dict[str, Any]) -> bool:
@@ -1054,6 +1100,10 @@ class MediaReconciliationJob:
             )
             return False
         if row["media_pipeline_redispatch_count"] >= cap:
+            if await self._maybe_reset_video_redispatch_cap(
+                pool, post_row["id"], row["task_id"], cap,
+            ):
+                return True
             logger.warning(
                 "media_reconciliation: post %s hit video re-dispatch cap (%d)",
                 post_row["id"], cap,
@@ -1061,3 +1111,73 @@ class MediaReconciliationJob:
             return False
         result = await pool.execute(self._CLEAR_MARKER_SQL, row["task_id"], cap)
         return str(result).strip().endswith(" 1")
+
+    async def _maybe_reset_video_redispatch_cap(
+        self, pool: Any, post_id: str, task_id: str, cap: int,
+    ) -> bool:
+        """Bounded self-heal for a cap-wedged video task (2026-07-03).
+
+        The cap exists to stop a *permanently-failing render* from looping —
+        but six posts hit it purely because their dispatches fired during
+        wan/image-gen/DNS outage windows, then sat wedged forever while the
+        watchdog re-reported the same ``media_drift`` every cycle
+        (``feedback_self_heal_not_suppress``). When the render infra probes
+        healthy again, reset the counter and re-arm Stage-2 — at most once per
+        ``media_redispatch_cap_reset_cooldown_hours`` per task, enforced
+        atomically by the ``media_pipeline_cap_reset_at`` stamp in
+        ``_CAP_RESET_SQL``. Returns True iff this call performed the reset.
+        """
+        sc = getattr(self, "_site_config", None)
+        if sc is None or not sc.get_bool("media_redispatch_cap_reset_enabled", True):
+            return False
+        health = await self._probe_infra_health()
+        if not health.healthy:
+            logger.info(
+                "media_reconciliation: post %s is at the re-dispatch cap but "
+                "render infra is unhealthy (%s) — not resetting",
+                post_id, health.detail,
+            )
+            return False
+        cooldown_h = sc.get_int("media_redispatch_cap_reset_cooldown_hours", 24) or 24
+        result = await pool.execute(self._CAP_RESET_SQL, task_id, cap, cooldown_h)
+        if not str(result).strip().endswith(" 1"):
+            return False  # cooldown not elapsed, or a concurrent cycle won
+        logger.warning(
+            "media_reconciliation: reset video re-dispatch cap for post %s "
+            "(task %s) — render infra healthy again; re-armed Stage-2 "
+            "(bounded: once per %dh)", post_id, task_id, cooldown_h,
+        )
+        emit_finding(
+            source="media_reconciliation",
+            kind="media_redispatch_cap_reset",
+            severity="info",
+            title=f"Re-dispatch cap reset for post {post_id} — infra healthy again",
+            body=(
+                f"Task {task_id} was wedged at the video re-dispatch cap ({cap}) "
+                "— its attempts burned during a render-infra outage window. The "
+                "infra health probes pass now, so the counter was reset and "
+                "Stage-2 re-armed. This self-heal fires at most once per "
+                f"{cooldown_h}h per task; a task that keeps failing on healthy "
+                "infra will re-wedge and needs operator triage."
+            ),
+            dedup_key=f"media_redispatch_cap_reset:{task_id}",
+            extra={"post_id": str(post_id), "task_id": str(task_id), "cap": cap},
+        )
+        return True
+
+    async def _probe_infra_health(self) -> Any:
+        """Render-infra health, probed at most once per job cycle.
+
+        ``run()`` clears the cache each cycle; direct test callers that never
+        ran ``run()`` fall through the ``getattr`` default. Only the cap-reset
+        path consumes this, so ordinary cycles pay zero probe round-trips.
+        """
+        cached = getattr(self, "_infra_health_cache", None)
+        if cached is None:
+            from services.media_infra_health import check_media_infra_health
+
+            cached = await check_media_infra_health(
+                getattr(self, "_site_config", None),
+            )
+            self._infra_health_cache = cached
+        return cached

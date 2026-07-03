@@ -22,6 +22,7 @@ import pytest
 from modules.content.atoms import _media_render
 from modules.content.atoms.media_render_long_video import run as run_long
 from modules.content.atoms.media_render_short_video import run as run_short
+from services.site_config import SiteConfig
 
 
 class _FakeLock:
@@ -248,14 +249,15 @@ class TestRenderFromStateHelper:
         mock_render.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_partial_render_emits_finding_and_still_returns_path(self):
-        """shots_rendered < shots_total (but >=1) → emit a finding (a
-        degraded video would otherwise ship silently), and still return
-        the path. Redesign §9 / Gap C."""
+    async def test_partial_render_above_ratio_emits_finding_and_ships(self):
+        """shots_rendered < shots_total but AT/above
+        video_render_min_shot_ratio (default 0.5 — 5/8 here) → the video still
+        ships, with a partial_render finding so the degrade is never silent.
+        Redesign §9 / Gap C."""
         state = {"task_id": "t-99", "video_shot_list": _LONG_SHOT_LIST}
         mock_render = AsyncMock(
             return_value=_ok_result(
-                shots_rendered=3, shots_total=8, output_path="/tmp/partial.mp4"
+                shots_rendered=5, shots_total=8, output_path="/tmp/partial.mp4"
             )
         )
         mock_emit = MagicMock()
@@ -270,8 +272,88 @@ class TestRenderFromStateHelper:
         kwargs = mock_emit.call_args.kwargs
         assert kwargs["kind"] == "partial_render"
         assert kwargs["severity"] == "warn"
-        assert kwargs["extra"]["shots_rendered"] == 3
+        assert kwargs["extra"]["shots_rendered"] == 5
         assert kwargs["extra"]["shots_total"] == 8
+
+    @pytest.mark.asyncio
+    async def test_partial_render_below_ratio_is_treated_as_failed(self):
+        """Below video_render_min_shot_ratio (default 0.5 — 2/7 here, the
+        shipped-degraded incident shape) → the render is REJECTED: empty
+        output key (so no video persists and the media_reconciliation
+        watchdog re-dispatches it) + a partial_render_rejected finding."""
+        state = {"task_id": "t-99", "video_shot_list": _LONG_SHOT_LIST}
+        mock_render = AsyncMock(
+            return_value=_ok_result(
+                shots_rendered=2, shots_total=7, output_path="/tmp/degraded.mp4"
+            )
+        )
+        mock_emit = MagicMock()
+        with patch.object(_media_render, "render_shot_list", mock_render), patch.object(
+            _media_render, "emit_finding", mock_emit
+        ):
+            out = await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        assert out == {"long_video_path": ""}
+        assert mock_emit.call_count == 1
+        kwargs = mock_emit.call_args.kwargs
+        assert kwargs["kind"] == "partial_render_rejected"
+        assert kwargs["severity"] == "warn"
+        assert kwargs["extra"]["shots_rendered"] == 2
+        assert kwargs["extra"]["shots_total"] == 7
+        assert kwargs["extra"]["min_ratio"] == 0.5
+
+    @pytest.mark.asyncio
+    async def test_min_shot_ratio_is_site_config_tunable(self):
+        """An operator-raised ratio (0.9) rejects a 5/8 partial that the
+        default would ship — the knob is DB-first per feedback_db_first_config."""
+        site_config = SiteConfig(
+            initial_config={"video_render_min_shot_ratio": "0.9"},
+        )
+        state = {
+            "task_id": "t-99",
+            "video_shot_list": _LONG_SHOT_LIST,
+            "site_config": site_config,
+        }
+        mock_render = AsyncMock(
+            return_value=_ok_result(shots_rendered=5, shots_total=8)
+        )
+        mock_emit = MagicMock()
+        with patch.object(_media_render, "render_shot_list", mock_render), patch.object(
+            _media_render, "emit_finding", mock_emit
+        ):
+            out = await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        assert out == {"long_video_path": ""}
+        assert mock_emit.call_args.kwargs["kind"] == "partial_render_rejected"
+
+    @pytest.mark.asyncio
+    async def test_min_shot_ratio_zero_disables_the_gate(self):
+        """'0' disables the gate: every partial ships (prior behaviour),
+        still flagged by the partial_render finding."""
+        site_config = SiteConfig(
+            initial_config={"video_render_min_shot_ratio": "0"},
+        )
+        state = {
+            "task_id": "t-99",
+            "video_shot_list": _LONG_SHOT_LIST,
+            "site_config": site_config,
+        }
+        mock_render = AsyncMock(
+            return_value=_ok_result(
+                shots_rendered=1, shots_total=8, output_path="/tmp/partial.mp4"
+            )
+        )
+        mock_emit = MagicMock()
+        with patch.object(_media_render, "render_shot_list", mock_render), patch.object(
+            _media_render, "emit_finding", mock_emit
+        ):
+            out = await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        assert out == {"long_video_path": "/tmp/partial.mp4"}
+        assert mock_emit.call_args.kwargs["kind"] == "partial_render"
 
     @pytest.mark.asyncio
     async def test_full_render_emits_no_finding(self):

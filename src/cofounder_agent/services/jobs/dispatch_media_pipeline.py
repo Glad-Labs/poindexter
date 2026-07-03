@@ -23,6 +23,16 @@ re-dispatch impossible across concurrent cycles and worker restarts. On a
 dispatch *failure* the marker stays set (no auto-retry here) — retries/backoff
 are the Plan-8 reconciliation watchdog's job (#677).
 
+**Render-infra health gate (2026-07-03).** Before claiming anything the job
+probes wan-server + image-gen ``/health`` and a DNS canary
+(``services/media_infra_health.py``); an unhealthy probe defers the whole
+cycle with markers and re-dispatch counts untouched. If a run fails and the
+*post-failure* probe is unhealthy (infra died mid-cycle), the piece is
+un-claimed instead of left for the watchdog — an outage fast-fail must never
+consume one of the task's bounded ``media_pipeline_redispatch_count``
+attempts (six posts wedged permanently at the cap this way during the
+wan/image-gen/DNS outage windows).
+
 **Source-task scripts + media-scoped thread.** ``media.load_scripts`` loads the
 persisted scripts by ``task_id`` from ``pipeline_versions``, so the media graph
 runs with the *source* (approved) task's id. It runs under a distinct
@@ -36,6 +46,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from services.media_infra_health import check_media_infra_health
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -66,6 +77,16 @@ _CLAIM_SQL = """
        SET media_pipeline_dispatched_at = NOW()
      WHERE task_id = $1
        AND media_pipeline_dispatched_at IS NULL
+"""
+
+# Revert a claim WE made this cycle after an unhealthy-infra fast-fail. The
+# marker goes back to NULL so the next healthy cycle re-claims the piece
+# directly — no media_reconciliation re-dispatch (and no
+# media_pipeline_redispatch_count burn) is needed to recover from an outage.
+_UNCLAIM_SQL = """
+    UPDATE pipeline_tasks
+       SET media_pipeline_dispatched_at = NULL
+     WHERE task_id = $1
 """
 
 
@@ -145,7 +166,28 @@ class DispatchMediaPipelineJob:
             logger.warning("[DISPATCH_MEDIA] eligible-task query failed: %s", exc)
             return JobResult(ok=False, detail=f"query failed: {exc}", changes_made=0)
 
+        # Health-gate the cycle (2026-07-03): a dispatch fired into a
+        # wan/image-gen/DNS outage fast-fails, and the failure path burns one of
+        # the task's bounded media_reconciliation re-dispatch attempts — six
+        # posts wedged permanently at the cap this way. Probing only when
+        # there is work keeps idle cycles free of HTTP round-trips. Deferring
+        # leaves markers + counts untouched, so the piece is picked up intact
+        # by the first healthy cycle.
+        if rows:
+            health = await check_media_infra_health(sc)
+            if not health.healthy:
+                logger.warning(
+                    "[DISPATCH_MEDIA] render infra unhealthy — deferring %d "
+                    "eligible piece(s): %s", len(rows), health.detail,
+                )
+                return JobResult(
+                    ok=True,
+                    detail=f"deferred — render infra unhealthy: {health.detail}",
+                    changes_made=0,
+                )
+
         dispatched = 0
+        deferred_mid_cycle = False
         for row in rows or []:
             task_id = row["task_id"]
             # Claim-before-run: stamp the marker first. A 0-row update means a
@@ -172,6 +214,29 @@ class DispatchMediaPipelineJob:
                     "[DISPATCH_MEDIA] media_pipeline run failed for %s: %s",
                     task_id, exc,
                 )
+                # Re-probe: if the infra died mid-cycle (or the pre-dispatch
+                # probe raced a crash), this failure is an outage fast-fail,
+                # not a bad piece. Un-claim so the next healthy cycle retries
+                # it directly — without this, the marker stays set and the
+                # watchdog must burn one of the task's bounded re-dispatch
+                # attempts just to recover from downtime.
+                post_health = await check_media_infra_health(sc)
+                if not post_health.healthy:
+                    try:
+                        await pool.execute(_UNCLAIM_SQL, task_id)
+                        logger.warning(
+                            "[DISPATCH_MEDIA] infra unhealthy after failure "
+                            "(%s) — un-claimed %s and deferring the rest of "
+                            "the cycle", post_health.detail, task_id,
+                        )
+                    except Exception as unclaim_exc:  # noqa: BLE001
+                        logger.warning(
+                            "[DISPATCH_MEDIA] un-claim failed for %s: %s — "
+                            "the reconciliation watchdog will re-dispatch it",
+                            task_id, unclaim_exc,
+                        )
+                    deferred_mid_cycle = True
+                    break
                 emit_finding(
                     source="dispatch_media_pipeline",
                     kind="media_dispatch_failed",
@@ -186,7 +251,14 @@ class DispatchMediaPipelineJob:
                     extra={"task_id": str(task_id), "error": str(exc)},
                 )
 
-        detail = f"dispatched {dispatched}" if dispatched else "no eligible pieces"
+        if deferred_mid_cycle:
+            detail = (
+                f"dispatched {dispatched}, then deferred — infra went unhealthy"
+            )
+        elif dispatched:
+            detail = f"dispatched {dispatched}"
+        else:
+            detail = "no eligible pieces"
         return JobResult(ok=True, detail=detail, changes_made=dispatched)
 
 

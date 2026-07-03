@@ -18,11 +18,18 @@ import pytest
 
 from services.jobs import dispatch_media_pipeline as dmp
 from services.jobs.dispatch_media_pipeline import DispatchMediaPipelineJob
+from services.media_infra_health import MediaInfraHealth
 from services.site_config import SiteConfig
 
 
 def _sc(**overrides):
-    base = {"media_pipeline_trigger_enabled": "false"}
+    base = {
+        "media_pipeline_trigger_enabled": "false",
+        # Keep the render-infra health gate out of the legacy dispatch tests —
+        # a real probe would hit the network. The gate has its own tests below
+        # (which patch check_media_infra_health directly).
+        "media_infra_healthcheck_enabled": "false",
+    }
     base.update(overrides)
     return SiteConfig(initial_config=base)
 
@@ -169,3 +176,123 @@ def test_job_protocol_shape():
     assert isinstance(job.schedule, str)
     # GPU-bound render — overlapping instances must NOT run concurrently.
     assert job.idempotent is False
+
+
+# ---------------------------------------------------------------------------
+# Render-infra health gate (2026-07-03) — a dispatch fired into a
+# wan/image-gen/DNS outage fast-fails and burns one of the task's bounded
+# media_reconciliation re-dispatch attempts (six posts wedged at the cap this
+# way). The job now probes before claiming and un-claims on an
+# unhealthy-infra fast-fail.
+# ---------------------------------------------------------------------------
+
+
+def _sc_gated(**overrides):
+    """Site config with the trigger on and the health gate ENABLED (tests
+    patch check_media_infra_health, so no real probe runs)."""
+    base = {
+        "media_pipeline_trigger_enabled": "true",
+        "media_infra_healthcheck_enabled": "true",
+    }
+    base.update(overrides)
+    return SiteConfig(initial_config=base)
+
+
+@pytest.mark.asyncio
+async def test_unhealthy_infra_defers_cycle_without_claiming():
+    """Unhealthy probe → the whole cycle defers: no claim, no run, markers and
+    re-dispatch counts untouched, ok=True (an outage is not a job failure)."""
+    job = DispatchMediaPipelineJob()
+    pool = _FakePool([{"task_id": "t1"}])
+    run_mock = AsyncMock()
+    health = AsyncMock(return_value=MediaInfraHealth(False, "wan-server down"))
+    with patch.object(dmp, "_run_media_pipeline", run_mock), patch.object(
+        dmp, "check_media_infra_health", health
+    ):
+        out = await job.run(pool, {"_site_config": _sc_gated()})
+    assert out.ok
+    assert out.changes_made == 0
+    assert "unhealthy" in out.detail
+    pool.execute.assert_not_called()  # nothing claimed
+    run_mock.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_healthy_infra_dispatches_normally():
+    job = DispatchMediaPipelineJob()
+    pool = _FakePool([{"task_id": "t1"}], claim="UPDATE 1")
+    run_mock = AsyncMock()
+    health = AsyncMock(return_value=MediaInfraHealth(True, "ok"))
+    with patch.object(dmp, "_run_media_pipeline", run_mock), patch.object(
+        dmp, "check_media_infra_health", health
+    ):
+        out = await job.run(pool, {"_site_config": _sc_gated()})
+    assert out.changes_made == 1
+    run_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_no_eligible_rows_skips_the_probe():
+    """Idle cycles must not pay probe round-trips — the health check runs
+    only when there is work to gate."""
+    job = DispatchMediaPipelineJob()
+    pool = _FakePool([])
+    health = AsyncMock(return_value=MediaInfraHealth(True, "ok"))
+    with patch.object(dmp, "check_media_infra_health", health):
+        out = await job.run(pool, {"_site_config": _sc_gated()})
+    assert out.ok
+    health.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_infra_fast_fail_unclaims_and_stops_without_finding():
+    """Run fails AND the post-failure probe is unhealthy → the piece is
+    un-claimed (marker back to NULL, so no watchdog re-dispatch is burned to
+    recover), no media_dispatch_failed finding, and the rest of the batch is
+    deferred."""
+    job = DispatchMediaPipelineJob()
+    pool = _FakePool([{"task_id": "a"}, {"task_id": "b"}], claim="UPDATE 1")
+    run_mock = AsyncMock(side_effect=RuntimeError("connect refused"))
+    emit_mock = MagicMock()
+    # Healthy at cycle start (dispatch proceeds), infra dead by the re-probe.
+    health = AsyncMock(
+        side_effect=[
+            MediaInfraHealth(True, "ok"),
+            MediaInfraHealth(False, "wan-server unreachable"),
+        ]
+    )
+    with patch.object(dmp, "_run_media_pipeline", run_mock), patch.object(
+        dmp, "check_media_infra_health", health
+    ), patch.object(dmp, "emit_finding", emit_mock):
+        out = await job.run(
+            pool,
+            {"_site_config": _sc_gated(media_pipeline_max_per_cycle="2")},
+        )
+    assert out.ok
+    assert out.changes_made == 0
+    emit_mock.assert_not_called()  # outage fast-fail is not a piece failure
+    run_mock.assert_awaited_once()  # 'b' was never attempted (break)
+    # Claim for 'a' + the un-claim revert.
+    executed_sql = [c.args[0] for c in pool.execute.await_args_list]
+    assert any("SET media_pipeline_dispatched_at = NOW()" in q for q in executed_sql)
+    assert any("SET media_pipeline_dispatched_at = NULL" in q for q in executed_sql)
+
+
+@pytest.mark.asyncio
+async def test_genuine_failure_on_healthy_infra_still_emits_finding():
+    """Run fails but infra is healthy → the existing behaviour: marker stays
+    set, a media_dispatch_failed finding fires, and the watchdog owns retry."""
+    job = DispatchMediaPipelineJob()
+    pool = _FakePool([{"task_id": "a"}], claim="UPDATE 1")
+    run_mock = AsyncMock(side_effect=RuntimeError("render boom"))
+    emit_mock = MagicMock()
+    health = AsyncMock(return_value=MediaInfraHealth(True, "ok"))
+    with patch.object(dmp, "_run_media_pipeline", run_mock), patch.object(
+        dmp, "check_media_infra_health", health
+    ), patch.object(dmp, "emit_finding", emit_mock):
+        out = await job.run(pool, {"_site_config": _sc_gated()})
+    assert out.ok
+    assert emit_mock.call_count == 1
+    # No un-claim: the only execute is the claim itself.
+    executed_sql = [c.args[0] for c in pool.execute.await_args_list]
+    assert not any("SET media_pipeline_dispatched_at = NULL" in q for q in executed_sql)

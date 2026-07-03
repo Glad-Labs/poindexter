@@ -215,6 +215,14 @@ DEFAULTS: dict[str, str] = {
     # excess hero shots to image_kenburns (see shot_list_renderer._cap_hero_shots).
     'generative_video_model': 'Wan-AI/Wan2.2-TI2V-5B',
     'video_hero_shots_max': '3',
+    # Minimum fraction of shots that must render for a video to SHIP
+    # (modules/content/atoms/_media_render.py). Below this ratio the render is
+    # treated as failed — empty output key, render_failed-class finding — so
+    # the media_reconciliation watchdog retries it instead of a badly degraded
+    # video shipping (2026-07-03: task 9318d724 shipped 2/7 shots). Partials
+    # at-or-above the ratio still ship and still emit the partial_render
+    # finding. '0' disables the gate (every partial ships, prior behaviour).
+    'video_render_min_shot_ratio': '0.5',
     # Caption ASR engine for media.transcribe_narration. Default 'speaches'
     # reuses the already-running Speaches faster-whisper sidecar (narration TTS /
     # voice STT) instead of a second whisper.cpp install. The prior default,
@@ -798,6 +806,26 @@ DEFAULTS: dict[str, str] = {
     # fallback — seeded here so they're DB-tunable like every other knob.
     'media_pipeline_redispatch_max': '3',
     'podcast_redispatch_max': '3',
+    # Render-infra health gate (2026-07-03): six posts wedged at
+    # media_pipeline_redispatch_max because dispatches fired during
+    # wan-server/image-gen/DNS outage windows and every fast-fail burned a
+    # bounded re-dispatch. dispatch_media_pipeline now probes wan + image-gen
+    # /health (plus a DNS canary) before dispatching and defers the cycle
+    # while unhealthy; an unhealthy-infra run failure un-claims the piece
+    # instead of consuming an attempt. media_reconciliation requires a
+    # healthy probe before its bounded cap reset (below). The canary host
+    # defaults to the storage_public_url host when unset.
+    'media_infra_healthcheck_enabled': 'true',
+    'media_infra_health_timeout_seconds': '5',
+    'media_infra_dns_canary_host': '',
+    # Bounded cap-reset self-heal (feedback_self_heal_not_suppress): when a
+    # missing-video post's task sits AT media_pipeline_redispatch_max but the
+    # render infra probes healthy again, media_reconciliation resets the
+    # counter and re-arms Stage-2 — at most once per cooldown per task
+    # (pipeline_tasks.media_pipeline_cap_reset_at) — instead of re-reporting
+    # the same media_drift forever with no recovery path.
+    'media_redispatch_cap_reset_enabled': 'true',
+    'media_redispatch_cap_reset_cooldown_hours': '24',
     # Per-medium call-to-action outros (DB-tunable; ML-optimizable later).
     # ``media.cta.podcast`` is LIVE — ``podcast.render`` appends it to the script
     # before TTS so the episode asks for ratings/reviews. The video CTAs are
@@ -1650,6 +1678,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_shot_qa_max_retries': {'owner': 'video', 'value_type': 'integer'},
     'generative_video_model': {'owner': 'video', 'value_type': 'model'},
     'video_hero_shots_max': {'owner': 'video', 'value_type': 'integer'},
+    'video_render_min_shot_ratio': {'owner': 'media_render', 'value_type': 'float'},
     'video_caption_engine': {'owner': 'caption_providers', 'value_type': 'string'},
     'plugin.caption_provider.speaches.enabled': {
         'owner': 'caption_providers', 'value_type': 'boolean',
@@ -1728,6 +1757,13 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- Media pipeline master switches -----
     'media_pipeline_trigger_enabled': {'owner': 'dispatch_media_pipeline', 'value_type': 'boolean'},
     'podcast_pipeline_trigger_enabled': {'owner': 'dispatch_podcast_pipeline', 'value_type': 'boolean'},
+
+    # ----- Render-infra health gate + bounded cap reset (2026-07-03) -----
+    'media_infra_healthcheck_enabled': {'owner': 'media_infra_health', 'value_type': 'boolean'},
+    'media_infra_health_timeout_seconds': {'owner': 'media_infra_health', 'value_type': 'float'},
+    'media_infra_dns_canary_host': {'owner': 'media_infra_health', 'value_type': 'string'},
+    'media_redispatch_cap_reset_enabled': {'owner': 'media_reconciliation', 'value_type': 'boolean'},
+    'media_redispatch_cap_reset_cooldown_hours': {'owner': 'media_reconciliation', 'value_type': 'integer'},
 
     # ----- Content pipeline behaviour -----
     'content_flow_stale_inprogress_minutes': {'owner': 'content_generation_flow', 'value_type': 'integer'},
