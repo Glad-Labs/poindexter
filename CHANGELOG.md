@@ -2,6 +2,33 @@
 
 ## Unreleased
 
+## [0.93.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.92.0...v0.93.0) (2026-07-03)
+
+
+### Features
+
+* **alerts:** PoindexterContainerMemoryHigh — per-container RSS ceiling (DB-tunable) ([#2068](https://github.com/Glad-Labs/glad-labs-stack/issues/2068)) ([ffc2bef](https://github.com/Glad-Labs/glad-labs-stack/commit/ffc2befc17939c85befc8cf4a0fafa6f40e954b3))
+* **brain:** Postiz queue-wedge watch — self-heal the Temporal-restart wedge ([#2067](https://github.com/Glad-Labs/glad-labs-stack/issues/2067)) ([ac4ab95](https://github.com/Glad-Labs/glad-labs-stack/commit/ac4ab953c90c1bd881b5722f8743e8cfcccacf73))
+* **grafana:** publishing-funnel row on Pipeline (poindexter[#811](https://github.com/Glad-Labs/glad-labs-stack/issues/811) item 5) ([#2065](https://github.com/Glad-Labs/glad-labs-stack/issues/2065)) ([07798e9](https://github.com/Glad-Labs/glad-labs-stack/commit/07798e9682c247d921ccf3625b7f96ab1f64071b))
+* **grafana:** upgrade publishing funnel to cohort-based (replaces [#2065](https://github.com/Glad-Labs/glad-labs-stack/issues/2065)'s window-mixed stats) ([#2069](https://github.com/Glad-Labs/glad-labs-stack/issues/2069)) ([acefa69](https://github.com/Glad-Labs/glad-labs-stack/commit/acefa69d4f57692b16f3ae87807ec51280f4fe53))
+* **llm:** per-model api_base overrides in LiteLLM provider ([#2074](https://github.com/Glad-Labs/glad-labs-stack/issues/2074)) ([1980460](https://github.com/Glad-Labs/glad-labs-stack/commit/198046017d7b4af900e53e8a3220eb5132645862))
+* **ops:** second Ollama instance pinned to GPU 1 for vision-rail warmth ([#2075](https://github.com/Glad-Labs/glad-labs-stack/issues/2075)) ([294aca8](https://github.com/Glad-Labs/glad-labs-stack/commit/294aca8dfaca10435bc99dc782d525a300a6e58b))
+
+
+### Bug Fixes
+
+* **backup:** offsite failure alert reported rc=0 and returned success (poindexter[#817](https://github.com/Glad-Labs/glad-labs-stack/issues/817)) ([#2079](https://github.com/Glad-Labs/glad-labs-stack/issues/2079)) ([d969e71](https://github.com/Glad-Labs/glad-labs-stack/commit/d969e71053a31152f372d8a5d78766a5fa49f191))
+* **content:** catch the gemma meta-commentary title dialect — junk-guard vocab, fallback screening, reject/retry, validator families ([#2084](https://github.com/Glad-Labs/glad-labs-stack/issues/2084)) ([bf2fa16](https://github.com/Glad-Labs/glad-labs-stack/commit/bf2fa166d60e2f9cf4712f789c344f03d85c366f))
+* **db:** pre-read pool-size settings over a direct connection — the seeded keys were silently inert ([#2072](https://github.com/Glad-Labs/glad-labs-stack/issues/2072)) ([90ce5a9](https://github.com/Glad-Labs/glad-labs-stack/commit/90ce5a9a49aff9b8db07a8307b4d1f985a4d0d2c))
+* **deploy:** never skip the worker restart when compose-apply or the brain rebuild fails ([#2073](https://github.com/Glad-Labs/glad-labs-stack/issues/2073)) ([b5000f6](https://github.com/Glad-Labs/glad-labs-stack/commit/b5000f60c6aef290a497bc93faa45e7b51b5c83b))
+* **llm:** stop setting litellm.api_base global — it defeats per-model overrides ([#2082](https://github.com/Glad-Labs/glad-labs-stack/issues/2082)) ([0237329](https://github.com/Glad-Labs/glad-labs-stack/commit/02373290af7bba747384cd3b1a9c2b41317fe97e))
+* **media:** reattach Layer-1 quality eval + review ping at the seeding choke point (poindexter[#816](https://github.com/Glad-Labs/glad-labs-stack/issues/816)) ([#2070](https://github.com/Glad-Labs/glad-labs-stack/issues/2070)) ([7c9563f](https://github.com/Glad-Labs/glad-labs-stack/commit/7c9563fe2b53fc1e2feac3c79d7eeba439b17a4b))
+* **observability:** GlitchTip-triage fixes — clamp notify channels, drop GraphInterrupt noise, complete brain mirror ([#2071](https://github.com/Glad-Labs/glad-labs-stack/issues/2071)) ([4664aba](https://github.com/Glad-Labs/glad-labs-stack/commit/4664aba2dd7560607d0e686338667b6655533ce5))
+* **ops:** disable Vulkan backend on ollama-vision-gpu1 so the GPU pin holds ([#2078](https://github.com/Glad-Labs/glad-labs-stack/issues/2078)) ([f7e299d](https://github.com/Glad-Labs/glad-labs-stack/commit/f7e299d38ccbac4253fdf237a12f159852012ab2))
+* **ops:** ollama-vision-gpu1 imports user-level OLLAMA_* env explicitly ([#2076](https://github.com/Glad-Labs/glad-labs-stack/issues/2076)) ([beb4e99](https://github.com/Glad-Labs/glad-labs-stack/commit/beb4e99668320821fdcaafd22df925b2fbf6103b))
+* **ops:** pin ollama-vision-gpu1 by GPU UUID, not numeric index ([#2077](https://github.com/Glad-Labs/glad-labs-stack/issues/2077)) ([a9fd8d8](https://github.com/Glad-Labs/glad-labs-stack/commit/a9fd8d8a2224bc81f1c65d5c0671e57ce663b6dd))
+* **topics:** topic-sanity gate at tap ingest + rag_source_filter seed drift ([#2081](https://github.com/Glad-Labs/glad-labs-stack/issues/2081)) ([2cc8996](https://github.com/Glad-Labs/glad-labs-stack/commit/2cc899612453a968bebb4dd421453362b6d3a8f8))
+
 ## [0.92.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.91.1...v0.92.0) (2026-07-02)
 
 
