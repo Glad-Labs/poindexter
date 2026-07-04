@@ -25,6 +25,7 @@ and writes round-trip realistically.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from datetime import datetime, timedelta, timezone
@@ -62,8 +63,14 @@ def _make_row(
     description: str = "",
     status: str = "firing",
     force_channel: str = "",
+    fingerprint: str = "",
 ) -> dict:
-    """Match the asyncpg row shape ``alert_events`` returns."""
+    """Match the asyncpg row shape ``alert_events`` returns.
+
+    ``fingerprint`` mirrors the ``alert_events.fingerprint`` column the
+    findings router / Alertmanager stamp on each row. Empty by default so
+    existing tests exercise the recompute-from-message path unchanged.
+    """
     labels = {
         "alertname": alertname,
         "severity": severity,
@@ -82,6 +89,7 @@ def _make_row(
         "category": category,
         "labels": json.dumps(labels),
         "annotations": json.dumps(annotations),
+        "fingerprint": fingerprint,
     }
 
 
@@ -817,3 +825,142 @@ class TestSuppressWindowVsGrafanaRepeatInterval:
         # and the test should be deleted alongside.
         assert decision2["action"] == "dispatch"
         assert decision2["repeat_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for the 2026-07-04 alert-spam root causes.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestStoredFingerprintDedup:
+    """A row carrying a stable ``alert_events.fingerprint`` must dedup even
+    when the rendered message body varies per fire.
+
+    The findings router derives a stable fingerprint from the finding's
+    ``dedup_key`` (e.g. ``topic-sanity-ingest:glad-labs:devto``) and writes
+    it to ``alert_events.fingerprint``. Before the fix the dispatcher ignored
+    that column and recomputed its own fingerprint from the rendered message
+    (summary + description) — and ``topic_sanity_rejected`` embeds the
+    dropped article titles in the description, so every fire hashed to a
+    fresh fingerprint and NONE deduped. That was the Discord flood.
+    """
+
+    async def test_varying_body_same_stored_fingerprint_dispatches_once(self):
+        stable_fp = (
+            "finding:tap_builtin_topic_source:"
+            "topic-sanity-ingest:glad-labs:devto"
+        )
+        # Ten fires, identical stable fingerprint, DIFFERENT description each
+        # time (the real-world pattern: a different junk headline per run).
+        # The titles vary by PROSE, not digits — digit runs would be collapsed
+        # by _normalize_message, masking the bug this test exists to catch.
+        titles = [
+            "The Future Of AI Is",
+            "Reading Anthropic When AI Builds Itself",
+            "Why Rust Ate My Weekend",
+            "The Case Against Microservices",
+            "Postgres Is All You Need",
+            "How We Cut Our Cloud Bill",
+            "A Love Letter To The Terminal",
+            "Stop Writing Dead Code",
+            "The Quiet Death Of The Homepage",
+            "What Nobody Tells You About Kafka",
+        ]
+        rows_per_cycle = [
+            [_make_row(
+                row_id=i,
+                severity="warning",
+                alertname="tap_builtin_topic_source:topic_sanity_rejected",
+                category="finding",
+                summary="Dropped 2 contentless topic(s) at tap ingest (glad-labs/devto)",
+                description=f"- truncated_title: '{titles[i]}'",
+                fingerprint=stable_fp,
+            )]
+            for i in range(10)
+        ]
+        pool = _StatePool(rows_to_serve=rows_per_cycle)
+        notify = AsyncMock(return_value=None)
+
+        for _ in range(10):
+            await ad.poll_and_dispatch(pool, notify_fn=notify)
+
+        # Honoring the stored fingerprint collapses all ten into ONE page,
+        # with a single dedup-state entry — not ten distinct message-derived
+        # fingerprints each dispatching.
+        assert notify.await_count == 1, (
+            "varying message bodies under one stable stored fingerprint must "
+            f"dedup to a single dispatch; got {notify.await_count}"
+        )
+        assert len(pool.dedup_state) == 1
+
+    async def test_empty_stored_fingerprint_still_recomputes_from_message(self):
+        """Rows with NO stored fingerprint (Grafana webhooks pre-dating the
+        column, legacy inserts) keep the recompute-from-message behavior, so
+        two genuinely different alerts stay distinct."""
+        rows = [
+            [_make_row(row_id=1, severity="warning", alertname="A",
+                       summary="alpha")],
+            [_make_row(row_id=2, severity="warning", alertname="B",
+                       summary="bravo")],
+        ]
+        pool = _StatePool(rows_to_serve=rows)
+        notify = AsyncMock(return_value=None)
+        await ad.poll_and_dispatch(pool, notify_fn=notify)
+        await ad.poll_and_dispatch(pool, notify_fn=notify)
+        # Distinct messages, no stored fingerprint => two dispatches.
+        assert notify.await_count == 2
+        assert len(pool.dedup_state) == 2
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestTriageSkippedForSuppressedRows:
+    """Suppressed (deduped) repeats must NOT be re-triaged.
+
+    Before the fix ``poll_and_dispatch`` scheduled the firefighter triage
+    for EVERY polled row regardless of dispatch outcome. A suppressed repeat
+    was handed an empty ``notify_result``, so ``send_followup``'s degraded
+    (no-parent-id) branch fired the AI diagnosis to Telegram as a standalone
+    message — i.e. the dedup that correctly kept the repeat OFF Discord
+    routed its diagnosis ONTO Telegram. That was the ``topic_batch_stuck``
+    "stuck 37h/38h/39h" Telegram flood.
+    """
+
+    async def test_suppressed_repeats_are_not_triaged(self, monkeypatch):
+        # Five identical warnings: the first dispatches, the next four are
+        # suppressed by dedup. (Errored rows are still triaged — that's the
+        # #347 contract, pinned by test_alert_dispatcher_triage.py; here every
+        # non-first row is a clean suppress, so only row 0 should triage.)
+        rows_per_cycle = [[_make_row(row_id=i, severity="warning")]
+                          for i in range(5)]
+        pool = _StatePool(
+            rows_to_serve=rows_per_cycle,
+            app_settings={
+                "ops_triage_enabled": "true",
+                "api_base_url": "http://worker:8002",
+            },
+        )
+
+        triaged_rows: list[int] = []
+
+        async def _spy_triage(_pool, row, _notify_result, **_kw):
+            triaged_rows.append(row["id"])
+
+        monkeypatch.setattr(ad, "_triage_one_guarded", _spy_triage)
+
+        notify = AsyncMock(return_value=None)
+        for _ in range(5):
+            await ad.poll_and_dispatch(pool, notify_fn=notify)
+            await asyncio.sleep(0)  # let the scheduled triage task run
+        # Flush any still-pending triage tasks.
+        for _ in range(3):
+            await asyncio.sleep(0)
+
+        # Only the first fire was actually dispatched; the four suppressed
+        # repeats must not be triaged (no duplicate diagnosis to Telegram).
+        assert triaged_rows == [0], (
+            "triage must run only for genuinely dispatched rows, not "
+            f"suppressed repeats; got {triaged_rows}"
+        )

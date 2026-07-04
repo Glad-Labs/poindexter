@@ -657,7 +657,8 @@ async def _resolve_notify_fn(pool: Any = None) -> NotifyFn | None:
 
 
 _POLL_SQL = """
-SELECT id, alertname, status, severity, category, labels, annotations
+SELECT id, alertname, status, severity, category, labels, annotations,
+       fingerprint
 FROM alert_events
 WHERE dispatched_at IS NULL
 ORDER BY id ASC
@@ -779,18 +780,27 @@ async def poll_and_dispatch(
     dedup_config["notify_fn_injected"] = notify_fn_injected
 
     for row in rows:
+        suppressed_before = summary.get("suppressed", 0)
         notify_result = await _dispatch_one(
             pool, row, notify_fn, summary,
             dedup_config=dedup_config,
         )
+        # Skip triage for SUPPRESSED (deduped) repeats only. A suppressed
+        # repeat was already diagnosed on its first fire, so re-triaging it
+        # wastes an LLM call — and because a suppressed row carries no parent
+        # message ids, ``send_followup``'s degraded path posts the duplicate
+        # diagnosis straight to Telegram (the topic_batch_stuck "stuck Nh"
+        # Telegram flood, 2026-07-04). Dispatched AND errored rows still get
+        # triaged: enrichment is independent of paging, so a flaky Telegram
+        # (notify raised) must NOT block the diagnosis the operator wants for
+        # the other half of the failure (#347). ``summary["suppressed"]``
+        # rises only on the suppress branch, so it's the precise signal.
+        row_was_suppressed = summary.get("suppressed", 0) > suppressed_before
         # Schedule the parallel triage task — never awaited inline so the
         # operator's page never waits on the LLM (the spec's hard NO).
-        # Triage is scheduled regardless of notify outcome so a flaky
-        # Telegram doesn't block the LLM analysis the operator wants
-        # for diagnosing the OTHER half of the failure. When notify
-        # fails the parent message ids are absent and the follow-up
-        # falls back to a standalone diagnosis send (still useful).
-        if triage_enabled:
+        # When notify itself failed the parent ids are absent and the
+        # follow-up falls back to a standalone diagnosis send (still useful).
+        if triage_enabled and not row_was_suppressed:
             try:
                 task = asyncio.create_task(
                     _triage_one_guarded(pool, row, notify_result or {}),
@@ -864,6 +874,17 @@ async def _dispatch_one(
         # per-kind findings.<kind>.delivery policy (Glad-Labs/poindexter#461).
         # Empty for every non-findings alert, so their routing is unchanged.
         force_channel = (labels.get("force_channel") or "").strip()
+        # Prefer the fingerprint the producer already stamped on the row.
+        # ``findings_alert_router`` derives it from the finding's stable
+        # ``dedup_key`` (e.g. ``topic-sanity-ingest:glad-labs:devto``) and
+        # Alertmanager sets its own. When absent we recompute from the
+        # message body below. Without this the dispatcher ALWAYS recomputed
+        # from the rendered prose — and findings whose body carries per-fire
+        # detail (topic_sanity_rejected embeds the dropped article titles)
+        # hashed to a fresh fingerprint every fire and never deduped, which
+        # was the Discord alert flood (glad-labs-stack alert-spam fix,
+        # 2026-07-04).
+        stored_fingerprint = (row.get("fingerprint") or "").strip()
         message = _format_alert_message(alert)
 
         if dedup_config is not None:
@@ -871,6 +892,7 @@ async def _dispatch_one(
                 pool, message=message,
                 severity=severity, alertname=alertname, category=category,
                 config=dedup_config, now_fn=now_fn,
+                stored_fingerprint=stored_fingerprint,
             )
             if decision["action"] == "suppress":
                 await pool.execute(
@@ -985,6 +1007,7 @@ async def _evaluate_dedup_decision(
     category: str,
     config: dict[str, Any],
     now_fn: Callable[[], datetime] | None = None,
+    stored_fingerprint: str = "",
 ) -> dict[str, Any]:
     """Decide whether to dispatch, suppress, or escalate to AI summary.
 
@@ -1015,9 +1038,17 @@ async def _evaluate_dedup_decision(
     # a header that includes alertname, so the same string isn't
     # collapsing across two unrelated alerts.
     source = alertname or category or "alert"
-    fingerprint = _compute_fingerprint(
-        source=source, severity=severity, message=message
-    )
+    if stored_fingerprint:
+        # Honor the producer's own fingerprint (findings router derives it
+        # from the finding's stable dedup_key; Alertmanager sets its own).
+        # Fold in severity so an escalation (warning -> critical) of the same
+        # source still re-pages — preserving _compute_fingerprint's
+        # severity-in-key invariant even on the stored-fingerprint path.
+        fingerprint = f"{stored_fingerprint}|{severity or ''}"
+    else:
+        fingerprint = _compute_fingerprint(
+            source=source, severity=severity, message=message
+        )
 
     state = await _fetch_dedup_state(pool, fingerprint)
     suppress_window_min = config["suppress_window_minutes"]

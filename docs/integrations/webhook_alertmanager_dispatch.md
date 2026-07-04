@@ -82,6 +82,15 @@ UPDATE webhook_endpoints SET enabled = FALSE WHERE name = 'alertmanager';
 
 The legacy `/api/webhooks/alertmanager` route in `routes/alertmanager_webhook_routes.py` also continues to serve requests during the migration window.
 
+## Dedup & enrichment (brain dispatcher)
+
+Delivery of every `alert_events` row — webhook-sourced **and** findings-sourced (via `FindingsAlertRouterJob`) — is owned by the brain's `alert_dispatcher` poll loop, which dedups and optionally enriches before it pages:
+
+- **Fingerprint precedence.** The dispatcher dedups on the row's own `alert_events.fingerprint` when the producer set one (`findings_alert_router` derives it from the finding's stable `dedup_key`; Alertmanager sends its own), folding in severity so an escalation still re-pages. Only when that column is empty does it fall back to hashing the rendered message body. Without this, a finding whose body carries per-fire detail — e.g. `topic_sanity_rejected` embedding each dropped article title — hashed to a fresh fingerprint on every fire and defeated dedup entirely (the Discord alert flood, 2026-07-04).
+- **Triage enrichment only on dispatch.** With `ops_triage_enabled=true`, the firefighter follow-up (`/api/triage` → diagnosis reply) runs **only for rows the dispatcher actually sent this cycle**. Suppressed repeats are not re-triaged: they were already diagnosed on their first fire, and re-triaging a suppressed (parent-id-less) row pushed the duplicate diagnosis to Telegram through `send_followup`'s degraded path — so a warning that was correctly kept Discord-only leaked its diagnosis to the phone (the `topic_batch_stuck` "stuck Nh" Telegram flood, 2026-07-04).
+
+Both behaviors live in `brain/alert_dispatcher.py` (`_evaluate_dedup_decision` and `poll_and_dispatch`).
+
 ## Related
 
 - Framework overview: [Integrations](/docs/integrations/index)
