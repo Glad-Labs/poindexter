@@ -167,8 +167,12 @@ scripts/secrets-to-scrub.txt
 # console shipped without an index.html). Keep this negation.
 !src/cofounder_agent/console/index.html
 
-# Branded frontend (private — not part of the open-source engine)
-web/public-site/
+# NOTE: web/public-site/ (the branded frontend) is deliberately NOT ignored.
+# It is tracked source — Vercel deploys it from this repo. Privacy vs the
+# public poindexter mirror is enforced by scripts/sync-to-github.sh, which
+# strips it during the mirror rebuild. A blanket ignore here only booby-traps
+# new site files (same failure mode as the *.html/console incident above);
+# junk is covered by web/public-site/.gitignore (node_modules, .next, etc.).
 
 
 # Premium Grafana dashboards (kept locally for Matt's Grafana, never committed)

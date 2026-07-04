@@ -7,14 +7,14 @@ with and interact with the Glad Labs platform.
 
 The following endpoints are publicly accessible without any credentials:
 
-| Endpoint | Method | Description |
-|----------|--------|-------------|
-| `/api/posts` | GET | Paginated blog post index |
-| `/api/posts/{slug}` | GET | Individual post content |
-| `/api/newsletter/subscribe` | POST | Newsletter subscription |
-| `/feed.xml` | GET | RSS feed (blog posts) |
-| `/podcast-feed.xml` | GET | RSS feed (podcast episodes) |
-| `/sitemap.xml` | GET | Full site sitemap |
+| Endpoint                    | Method | Description                 |
+| --------------------------- | ------ | --------------------------- |
+| `/api/posts`                | GET    | Paginated blog post index   |
+| `/api/posts/{slug}`         | GET    | Individual post content     |
+| `/api/newsletter/subscribe` | POST   | Newsletter subscription     |
+| `/feed.xml`                 | GET    | RSS feed (blog posts)       |
+| `/podcast-feed.xml`         | GET    | RSS feed (podcast episodes) |
+| `/sitemap.xml`              | GET    | Full site sitemap           |
 
 ## MCP Server Access (Operator Authentication Required)
 
@@ -51,10 +51,10 @@ grant_type=client_credentials
 
 ### Supported Scopes
 
-| Scope | Description |
-|-------|-------------|
-| `mcp:read` | Read-only MCP tool access |
-| `mcp:write` | Full MCP tool access including mutations |
+| Scope          | Description                               |
+| -------------- | ----------------------------------------- |
+| `mcp:read`     | Read-only MCP tool access                 |
+| `mcp:write`    | Full MCP tool access including mutations  |
 | `content:read` | Read published content and pipeline state |
 
 ## Content Licensing
@@ -69,15 +69,17 @@ See `robots.txt` for the machine-readable declaration (Content-Signal directives
 
 ## Discovery Resources
 
-| Resource | URL |
-|----------|-----|
-| API Catalog | `/.well-known/api-catalog` |
-| MCP Server Card | `/.well-known/mcp/server-card.json` |
-| OAuth Protected Resource | `/.well-known/oauth-protected-resource` |
-| Agent Skills Index | `/.well-known/agent-skills/index.json` |
+| Resource                    | URL                                     |
+| --------------------------- | --------------------------------------- |
+| API Catalog                 | `/.well-known/api-catalog`              |
+| MCP Server Card             | `/.well-known/mcp/server-card.json`     |
+| OAuth Protected Resource    | `/.well-known/oauth-protected-resource` |
+| Agent Skills Index          | `/.well-known/agent-skills/index.json`  |
+| Security Contact (RFC 9116) | `/.well-known/security.txt`             |
 
 ## Contact
 
 - **General**: hello@gladlabs.io
 - **Privacy**: privacy@gladlabs.io
+- **Security**: security@gladlabs.io (see `/.well-known/security.txt`)
 - **Documentation**: https://gladlabs.mintlify.app
