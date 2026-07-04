@@ -1447,12 +1447,17 @@ function NewsletterPanel({ newsletter }) {
 // ── Telemetry: Loki logs (native) ─────────────────────────────
 function LogsPanel({ logs, onFilter, service, level }) {
   const lines = (logs && logs.lines) || [];
-  const tone = (lv) =>
-    lv === 'error'
+  // Loki returns the level label UPPERCASE (INFO/WARNING/ERROR); compare
+  // case-insensitively so error lines colour red and warnings amber (a bare
+  // lv === 'error' silently fell through to c-dim on real data).
+  const tone = (lv) => {
+    const v = (lv || '').toLowerCase();
+    return v === 'error'
       ? 'c-red'
-      : lv === 'warn' || lv === 'warning'
+      : v === 'warn' || v === 'warning'
         ? 'c-amber'
         : 'c-dim';
+  };
   return (
     <div className="panel" id="sec-logs">
       <div className="panel__head">

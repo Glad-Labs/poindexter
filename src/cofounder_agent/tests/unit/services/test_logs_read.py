@@ -4,7 +4,7 @@ from __future__ import annotations
 import httpx
 import pytest
 
-from services.logs_read import build_logql, flatten_streams, read_logs
+from services.logs_read import build_logql, flatten_streams, normalize_level, read_logs
 
 _LOKI_PAYLOAD = {
     "status": "success",
@@ -34,13 +34,41 @@ def test_build_logql_defaults_to_service_selector():
 
 @pytest.mark.unit
 def test_build_logql_appends_service_and_level_matchers():
+    # The console sends lowercase `error`; Loki stores UPPERCASE `ERROR`, so
+    # the selector must carry the mapped value or it matches zero streams.
     out = build_logql("", "poindexter-worker", "error")
-    assert out == '{service=~".+",service="poindexter-worker",level="error"}'
+    assert out == '{service=~".+",service="poindexter-worker",level="ERROR"}'
 
 
 @pytest.mark.unit
 def test_build_logql_passthrough_when_full_query_given():
     assert build_logql('{container="x"}', "ignored", "ignored") == '{container="x"}'
+
+
+@pytest.mark.unit
+@pytest.mark.parametrize(
+    ("token", "expected"),
+    [
+        ("info", "INFO"),
+        ("INFO", "INFO"),
+        ("warn", "WARNING"),  # console token → Loki's WARNING (doubly remapped)
+        ("warning", "WARNING"),
+        ("error", "ERROR"),
+        ("err", "ERROR"),
+        ("", ""),  # empty in → empty out (no level matcher)
+        ("critical", "CRITICAL"),  # unknown-but-real → upper-cased fallback
+    ],
+)
+def test_normalize_level_maps_console_token_to_loki_value(token, expected):
+    assert normalize_level(token) == expected
+
+
+@pytest.mark.unit
+def test_build_logql_maps_warn_token_to_loki_warning():
+    # Regression: the LOGS panel's `warn` chip built `level="warn"` which never
+    # matched Loki's `WARNING` — the whole level filter row returned nothing.
+    out = build_logql("", "", "warn")
+    assert out == '{service=~".+",level="WARNING"}'
 
 
 @pytest.mark.unit

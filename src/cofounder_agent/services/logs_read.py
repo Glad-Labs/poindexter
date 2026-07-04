@@ -24,6 +24,35 @@ def _ns_to_iso(ns: str) -> str:
         return ""
 
 
+# The console sends lowercase level tokens (info/warn/error); Loki on this
+# stack stores the `level` label UPPERCASE (INFO/WARNING/ERROR — verified via
+# list_loki_label_values). Map between them: without this, every level filter
+# selected a non-existent label value and the console's log panel came back
+# empty. `warn` is doubly off — Loki's value is WARNING, not WARN.
+_LEVEL_ALIASES = {
+    "info": "INFO",
+    "warn": "WARNING",
+    "warning": "WARNING",
+    "error": "ERROR",
+    "err": "ERROR",
+    "debug": "DEBUG",
+    "critical": "CRITICAL",
+}
+
+
+def normalize_level(level: str) -> str:
+    """Map a console filter token to Loki's ``level`` label value.
+
+    Known tokens map via ``_LEVEL_ALIASES``; any other non-empty value is
+    upper-cased to match Loki's convention on this stack. Empty in → empty out
+    (no level matcher added).
+    """
+    key = level.strip().lower()
+    if not key:
+        return ""
+    return _LEVEL_ALIASES.get(key, key.upper())
+
+
 def build_logql(query: str, service: str, level: str) -> str:
     """Full ``query`` wins; otherwise build a selector with optional label matchers."""
     if query.strip():
@@ -33,8 +62,9 @@ def build_logql(query: str, service: str, level: str) -> str:
     matchers = ['service=~".+"']
     if service:
         matchers.append(f'service="{service}"')
-    if level:
-        matchers.append(f'level="{level}"')
+    lvl = normalize_level(level)
+    if lvl:
+        matchers.append(f'level="{lvl}"')
     return "{" + ",".join(matchers) + "}"
 
 
