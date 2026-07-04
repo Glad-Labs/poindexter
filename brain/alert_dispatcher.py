@@ -103,7 +103,17 @@ try:
     from brain.remediation.engine import evaluate_for_dispatch as evaluate_for_dispatch_hook
     from brain.remediation.engine import run_verify_scan as run_verify_scan_hook
     from brain.remediation.rules import load_firefighter_config as _load_firefighter_config
-except Exception:  # noqa: BLE001 — partial/legacy image: firefighter disabled
+except Exception as _ff_import_err:  # noqa: BLE001 — partial/legacy image
+    # LOUD, not silent: this fallback once hid a real packaging bug — the
+    # brain/remediation/ subpackage wasn't COPYed into the image, so the
+    # firefighter ran dead-not-inert. Warn so a future miss is visible instead
+    # of the loop quietly paging as if no rules existed.
+    logging.getLogger("brain.alert_dispatcher").warning(
+        "[firefighter] brain.remediation import failed (%s) — firefighter hooks "
+        "disabled, alerts page as usual. If unexpected, rebuild the brain image "
+        "(check `COPY remediation/` in brain/Dockerfile).",
+        _ff_import_err,
+    )
     from types import SimpleNamespace
 
     async def evaluate_for_dispatch_hook(*a, **k):  # type: ignore[misc]

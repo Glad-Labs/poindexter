@@ -52,3 +52,24 @@ def test_every_availability_table_module_is_copied_into_the_image():
         f"silently offline (runtime guard pages, but catch it at PR time). "
         f"Add the file(s) to the COPY list in brain/Dockerfile."
     )
+
+
+def test_remediation_subpackage_is_copied_into_the_image():
+    """The firefighter lives in the ``brain/remediation/`` SUBPACKAGE, not a
+    flat ``.py``, so the flat COPY line above misses it. Without an explicit
+    directory COPY, ``from brain.remediation.engine import ...`` in
+    ``alert_dispatcher.py`` fails inside the container and the firefighter
+    hooks silently degrade to no-op stubs (dead, not merely inert). Guard the
+    directory COPY at PR time.
+    """
+    dockerfile = (REPO_ROOT / "brain" / "Dockerfile").read_text(encoding="utf-8")
+    assert re.search(r"COPY\s+remediation/\s+/app/brain/remediation/", dockerfile), (
+        "brain/Dockerfile must `COPY remediation/ /app/brain/remediation/` so the "
+        "firefighter package resolves as `brain.remediation.*` in the container "
+        "(matches the `from brain.bootstrap` convention). Missing it makes the "
+        "dispatcher's firefighter hooks fall back to no-ops."
+    )
+    # The package itself must be present on disk with its entry modules.
+    pkg = REPO_ROOT / "brain" / "remediation"
+    for f in ("__init__.py", "engine.py", "registry.py", "rules.py"):
+        assert (pkg / f).is_file(), f"brain/remediation/{f} missing from the source tree"
