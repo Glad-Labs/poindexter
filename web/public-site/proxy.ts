@@ -18,8 +18,7 @@ const STATIC_URL =
   process.env.NEXT_PUBLIC_STATIC_URL ||
   'https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/static';
 
-const SITE_URL =
-  process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io';
+const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io';
 
 const POST_PATH = /^\/posts\/([^/]+)\/?$/;
 // Distinct, edge-cacheable markdown URL: /posts/<slug>.md . Cloudflare's cache
@@ -29,6 +28,12 @@ const POST_PATH = /^\/posts\/([^/]+)\/?$/;
 // and browsers get served raw markdown too (the 2026-06-29 incident).
 const POST_MD_PATH = /^\/posts\/([^/]+)\.md$/;
 const MD_CACHE = 'public, max-age=3600, stale-while-revalidate=86400';
+// A rejected/deleted post keeps its /posts/<slug> URL, but its per-slug JSON is
+// pruned from R2. The ISR route then renders not-found.tsx with a 200 (App-Router
+// soft-404), which Google files as "Crawled - currently not indexed". Return an
+// explicit 410 Gone so those URLs deindex cleanly. Short TTL so a re-published
+// slug recovers within minutes. (SEO indexing audit, 2026-07-03.)
+const GONE_CACHE = 'public, max-age=300';
 // Header used to prevent infinite recursion when the proxy fetches /robots.txt.
 const PROXY_BYPASS_HEADER = 'x-proxy-bypass';
 
@@ -62,7 +67,8 @@ export async function proxy(request: NextRequest) {
           status: 200,
           headers: {
             'Content-Type': 'text/plain; charset=utf-8',
-            'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
+            'Cache-Control':
+              'public, max-age=3600, stale-while-revalidate=86400',
           },
         });
       }
@@ -97,6 +103,20 @@ export async function proxy(request: NextRequest) {
       return res;
     }
     // Fall through — serve normal HTML page.
+  }
+
+  // ── Dead post slug → 410 Gone (never a soft-404 200) ──────────────────
+  // Fires ONLY on a definitive R2 404 for the post JSON (see postIsGone);
+  // transient errors fall through to the normal render so an R2 blip can't
+  // 410 a live post. Skip the `.md` alternate — its own handler above already
+  // dealt with it; here we'd only mis-probe `/posts/<slug>.md.json`.
+  const deadCheck = POST_PATH.exec(pathname);
+  if (
+    deadCheck &&
+    !pathname.endsWith('.md') &&
+    (await postIsGone(deadCheck[1]))
+  ) {
+    return goneResponse();
   }
 
   // ── Pass through; inject Vary + advertise the markdown alternate ───────
@@ -177,7 +197,7 @@ function mdAlternateLink(slug: string): string {
 // Fetch a post's static JSON from R2. Returns null (caller falls through to the
 // normal HTML page / 404) on any non-OK status, timeout, or network error.
 async function fetchPostJson(
-  slug: string,
+  slug: string
 ): Promise<Record<string, unknown> | null> {
   try {
     const upstream = await fetch(`${STATIC_URL}/posts/${slug}.json`, {
@@ -191,6 +211,46 @@ async function fetchPostJson(
     // Swallow — caller serves the normal HTML page instead.
   }
   return null;
+}
+
+// True ONLY when R2 definitively reports the post JSON is missing (HTTP 404).
+// A non-404 status (200 live, 5xx outage) or any network/timeout error returns
+// false, so a transient R2 problem never turns a live post into a 410 — that
+// would tell Google to deindex it. Mirrors getPostBySlug's 404-vs-5xx split in
+// lib/posts.ts. Uses HEAD to keep the hot HTML render path cheap. Exported for
+// unit tests.
+export async function postIsGone(slug: string): Promise<boolean> {
+  try {
+    const res = await fetch(`${STATIC_URL}/posts/${slug}.json`, {
+      method: 'HEAD',
+      signal: AbortSignal.timeout(2500),
+    });
+    return res.status === 404;
+  } catch {
+    return false;
+  }
+}
+
+// 410 Gone for a removed post: noindex so crawlers drop it, short cache so a
+// re-published slug recovers within GONE_CACHE's TTL.
+function goneResponse(): NextResponse {
+  const body =
+    '<!doctype html><html lang="en"><head><meta charset="utf-8">' +
+    '<meta name="robots" content="noindex">' +
+    '<title>Gone — Glad Labs</title></head><body>' +
+    '<h1>410 — This post is no longer available</h1>' +
+    '<p>This article has been removed. Browse the ' +
+    '<a href="/archive/1">archive</a> for current posts.</p>' +
+    '</body></html>';
+  return new NextResponse(body, {
+    status: 410,
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': GONE_CACHE,
+      'X-Robots-Tag': 'noindex',
+      Vary: 'Accept',
+    },
+  });
 }
 
 // Build a `text/markdown` response with the given Cache-Control. The distinct
