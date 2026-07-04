@@ -1,10 +1,29 @@
-"""Reject-path persistence for qa.aggregate (atom-cutover Plan 5, #355).
+"""QA-decision persistence for qa.aggregate (atom-cutover Plan 5, #355).
 
 When qa.aggregate rejects a draft it must replicate the DB writes the
 legacy cross_model_qa stage did (services/stages/cross_model_qa.py:460-556),
 because `status` is not a PipelineState channel and the caller does no DB
 re-read — the rejected state lives ONLY in the DB. Underscore-prefixed so
 the atom registry skips it (helper, not an atom).
+
+2026-07-03 (stale-reclaim last-run-wins incident): two additions —
+
+- :func:`persist_qa_approved_snapshot` makes the APPROVE decision durable
+  the moment qa.aggregate makes it. Before this, the approved draft lived
+  only in the LangGraph checkpoint until ``content.persist_task`` (~7 nodes
+  later, past the SEO/media block where the overnight Docker/WSL crashes
+  hit); the stale sweep then cleared the checkpoint and the re-run
+  regenerated from scratch — usually worse, and last-run-wins overwrote the
+  approved version. The snapshot rides ``pipeline_versions.stage_data``
+  under the ``qa_approved_snapshot`` key, which the stale sweep
+  (``tasks_db.sweep_stale_tasks``) and the flow crash handler use to promote
+  the task to ``awaiting_approval`` instead of re-running it.
+- :func:`persist_qa_reject` now refuses to overwrite a version that carries
+  that marker: a re-run whose fresh draft rejects restores the task to
+  ``awaiting_approval`` with the stored approved draft (keep-best across
+  runs, per feedback_iterate_with_qa_not_oneshot). Operator rejection clears
+  the marker (``PipelineDB.clear_qa_approved_snapshot``), so content a human
+  explicitly threw away is never resurrected.
 
 Every write is best-effort: a telemetry/version hiccup must not crash the
 pipeline. update_task (the load-bearing status write) runs first; the rest
@@ -15,11 +34,38 @@ from __future__ import annotations
 
 import json
 import logging
+from datetime import datetime, timezone
 from typing import Any
 
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
+
+
+async def _read_qa_approved_marker(database_service: Any, task_id: str) -> dict[str, Any] | None:
+    """Return ``{"quality_score": ...}`` when the task's pipeline_versions row
+    carries the ``qa_approved_snapshot`` marker, else None. Best-effort: any
+    read failure returns None (keep-best is protection, not a gate — a blip
+    here degrades to the pre-2026-07 reject behavior)."""
+    try:
+        row = await database_service.pool.fetchrow(
+            """
+            SELECT quality_score,
+                   (stage_data ? 'qa_approved_snapshot') AS has_qa_approved_snapshot
+            FROM pipeline_versions
+            WHERE task_id = $1 AND version = 1
+            """,
+            task_id,
+        )
+    except Exception as exc:  # noqa: BLE001 — degrade to normal reject
+        logger.warning(
+            "[qa.aggregate] qa_approved_snapshot probe failed for %s "
+            "(keep-best guard skipped this run): %s", task_id[:8], exc,
+        )
+        return None
+    if row and dict(row).get("has_qa_approved_snapshot"):
+        return {"quality_score": dict(row).get("quality_score")}
+    return None
 
 
 def build_reject_reason(reviews: list[dict[str, Any]], vetoed_by: list[Any], final_score: float) -> str:
@@ -56,16 +102,91 @@ async def persist_qa_reject(
     title: str,
     qa_feedback: str,
     models_used_by_phase: dict[str, Any],
-) -> None:
+) -> str | None:
     """Replicate the legacy cross_model_qa reject DB writes. Best-effort.
 
     1. pipeline_tasks: status=rejected + quality_score (load-bearing).
     2. pipeline_versions: persist the rejected draft (#473).
     3. model_performance.human_approved=False (learning signal).
     4. pipeline_gate_history: 'rejected' row (Grafana approval_status).
+
+    Keep-best guard (2026-07-03): when the stored version carries the
+    ``qa_approved_snapshot`` marker, this run is a re-run of a task whose
+    earlier draft already PASSED QA (crash-after-approve recovery). The
+    reject then persists nothing over it — the task is restored to
+    ``awaiting_approval`` at the stored approved score and the fresh
+    (rejected) draft is discarded. Returns ``"kept_qa_approved"`` in that
+    case, ``"rejected"`` on the normal path, ``None`` on the no-op path.
     """
     if database_service is None or not task_id:
-        return
+        return None
+
+    marker = await _read_qa_approved_marker(database_service, task_id)
+    if marker is not None:
+        approved_score = float(marker.get("quality_score") or 0.0)
+        logger.warning(
+            "[qa.aggregate] keep-best: task %s re-run rejected at %.1f but an "
+            "earlier QA-APPROVED draft (score %.1f) is stored in "
+            "pipeline_versions — restoring awaiting_approval instead of "
+            "overwriting it", task_id[:8], float(final_score), approved_score,
+        )
+        try:
+            await database_service.update_task(task_id, {
+                "status": "awaiting_approval",
+                "error_message": None,
+                "quality_score": approved_score,
+            })
+        except Exception as exc:  # noqa: BLE001
+            logger.error(
+                "[qa.aggregate] keep-best restore write failed for %s: %s",
+                task_id[:8], exc,
+            )
+        try:
+            await database_service.pool.execute(
+                """
+                INSERT INTO pipeline_gate_history
+                    (task_id, gate_name, event_kind, feedback, actor, metadata)
+                VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+                """,
+                task_id, "multi_model_qa", "kept_qa_approved",
+                (
+                    f"Re-run rejected at {final_score:.0f} — kept the stored "
+                    f"QA-approved draft (score {approved_score:.0f}). {reason}"
+                )[:2000],
+                "multi_model_qa",
+                json.dumps({
+                    "reviewer": "multi_model_qa",
+                    "decision": "kept_qa_approved",
+                    "rerun_score": float(final_score),
+                    "approved_score": approved_score,
+                }, default=str),
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.warning(
+                "[qa.aggregate] keep-best gate_history write failed for %s: %s",
+                task_id[:8], exc,
+            )
+        emit_finding(
+            source="qa.aggregate",
+            kind="qa_rerun_kept_approved_draft",
+            severity="warn",
+            title="Re-run rejected — kept the earlier QA-approved draft",
+            body=(
+                f"Task {task_id[:8]}: a re-run (typically a stale-sweep recovery "
+                f"after a crash) produced a draft QA rejected at "
+                f"{final_score:.0f}, but pipeline_versions already holds a "
+                f"QA-approved draft (score {approved_score:.0f}) from an earlier "
+                f"run. The approved draft was kept and the task restored to "
+                f"awaiting_approval; the worse re-run draft was discarded."
+            ),
+            dedup_key=f"qa-rerun-kept-approved:{task_id}",
+            extra={
+                "task_id": task_id,
+                "rerun_score": float(final_score),
+                "approved_score": approved_score,
+            },
+        )
+        return "kept_qa_approved"
 
     # 1. Status write — the load-bearing one. If THIS fails, log loud.
     try:
@@ -130,5 +251,74 @@ async def persist_qa_reject(
     except Exception as exc:  # noqa: BLE001
         logger.warning("[qa.aggregate] pipeline_gate_history write failed for %s: %s", task_id[:8], exc)
 
+    return "rejected"
 
-__all__ = ["build_qa_feedback", "build_reject_reason", "persist_qa_reject"]
+
+async def persist_qa_approved_snapshot(
+    database_service: Any,
+    *,
+    task_id: str,
+    title: str,
+    content: str,
+    final_score: float,
+    qa_feedback: str,
+    models_used_by_phase: dict[str, Any],
+    featured_image_url: str | None = None,
+) -> None:
+    """Durably persist the QA-APPROVED draft the moment qa.aggregate approves.
+
+    Writes the approved body + score to ``pipeline_versions`` with the
+    ``qa_approved_snapshot`` stage_data marker. ``content.persist_task``
+    overwrites the columns with the final (SEO'd) values ~7 nodes later on a
+    healthy run; the marker itself survives that upsert (stage_data is a
+    shallow JSONB merge). If the run crashes in between — the observed
+    overnight window — the stale sweep / flow crash handler see the marker and
+    promote the task to ``awaiting_approval`` instead of regenerating.
+
+    Best-effort: a failure here must never block the approve (the healthy
+    path still persists at finalize), but it removes the crash protection,
+    so it emits a warn finding.
+    """
+    if database_service is None or not task_id or not content:
+        return
+    try:
+        from services.pipeline_db import PipelineDB
+        await PipelineDB(database_service.pool).upsert_version(task_id, {
+            "title": title,
+            "content": content,
+            "featured_image_url": featured_image_url,
+            "quality_score": int(round(float(final_score))),
+            "qa_feedback": qa_feedback,
+            "models_used_by_phase": models_used_by_phase or {},
+            "qa_approved_snapshot": {
+                "score": float(final_score),
+                "approved_at": datetime.now(timezone.utc).isoformat(),
+            },
+        })
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[qa.aggregate] approved-snapshot write failed for %s: %s",
+            task_id[:8], exc,
+        )
+        emit_finding(
+            source="qa.aggregate",
+            kind="qa_approved_snapshot_persist_failed",
+            severity="warn",
+            title="QA approve: durable snapshot not written",
+            body=(
+                f"persist_qa_approved_snapshot could not write the approved "
+                f"draft for task {task_id[:8]} to pipeline_versions: "
+                f"{type(exc).__name__}: {exc}. The approve still proceeds, but "
+                f"a crash before content.persist_task would lose this draft to "
+                f"a from-scratch re-run (the 2026-07-03 last-run-wins class)."
+            ),
+            dedup_key="qa_approved_snapshot_persist_failed",
+        )
+
+
+__all__ = [
+    "build_qa_feedback",
+    "build_reject_reason",
+    "persist_qa_approved_snapshot",
+    "persist_qa_reject",
+]

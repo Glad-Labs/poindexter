@@ -557,9 +557,14 @@ class TestQaAggregateRescueDispatch:
         events = [w for w in fake.audit.writes_bg if w["event_type"] == "qa_rescue_scheduled"]
         assert len(events) == 1
         assert events[0]["details"]["attempt"] == 1
-        # The terminal qa_pass_completed is NOT emitted on a deferred rescue.
+        # 2026-07-03: the deferred pass now ALSO emits qa_pass_completed
+        # (marked non-terminal) so rescue passes are visible in audit_log —
+        # previously only the terminal pass emitted, making rewrite
+        # conversions invisible on /d/qa-rails.
         passes = [w for w in fake.audit.writes_bg if w["event_type"] == "qa_pass_completed"]
-        assert passes == []
+        assert len(passes) == 1
+        assert passes[0]["details"]["terminal"] is False
+        assert passes[0]["details"]["rescue_deferred"] is True
 
     async def test_score_threshold_reject_defers(self):
         # Critic APPROVED, but the weighted score (62) is below the 70 floor.
@@ -968,3 +973,145 @@ class TestQaAggregateFlagAndContinue:
         ))
         assert out["_goto"] == "qa_rewrite"
         assert "_halt" not in out
+
+
+@pytest.mark.unit
+class TestQaAggregateDurableApproval:
+    """2026-07-03 stale-reclaim incident: a crash between QA approval (node 28)
+    and content.persist_task (node ~35) lost the approved draft — the sweep
+    cleared the checkpoint and the re-run regenerated from scratch, usually
+    worse (last-run-wins). qa.aggregate now persists an approved-draft snapshot
+    to pipeline_versions the moment it approves, and stamps every
+    qa_pass_completed event with terminal/rescue metadata so rescue passes are
+    visible in audit_log."""
+
+    def _approve_state(self, **extra):
+        state = {
+            "platform": FakePlatform(),
+            "task_id": "task-snap",
+            "content": "approved body",
+            "title": "The Title",
+            "featured_image_url": "https://img/x.png",
+            "models_used_by_phase": {"writer": "gemma"},
+            "database_service": _DB2(),
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": True, "score": 88.0,
+                 "provider": "ollama", "advisory": False, "feedback": "solid"},
+            ],
+        }
+        state.update(extra)
+        return state
+
+    async def test_terminal_approve_persists_snapshot(self, monkeypatch):
+        calls: list[dict] = []
+
+        async def _spy(db, **kw):
+            calls.append(kw)
+
+        monkeypatch.setattr(
+            "modules.content.atoms._qa_persist.persist_qa_approved_snapshot", _spy,
+        )
+        out = await qa_aggregate.run(self._approve_state())
+        assert out["qa_final_verdict"] == "approve"
+        assert len(calls) == 1
+        assert calls[0]["task_id"] == "task-snap"
+        assert calls[0]["content"] == "approved body"
+        assert calls[0]["final_score"] == 88.0
+        assert calls[0]["featured_image_url"] == "https://img/x.png"
+
+    async def test_snapshot_failure_never_blocks_approve(self, monkeypatch):
+        async def _boom(db, **kw):
+            raise RuntimeError("version write down")
+
+        monkeypatch.setattr(
+            "modules.content.atoms._qa_persist.persist_qa_approved_snapshot", _boom,
+        )
+        out = await qa_aggregate.run(self._approve_state())
+        assert out["qa_final_verdict"] == "approve"
+        assert "_halt" not in out
+
+    async def test_deferred_rescue_does_not_snapshot(self, monkeypatch):
+        calls: list[dict] = []
+
+        async def _spy(db, **kw):
+            calls.append(kw)
+
+        monkeypatch.setattr(
+            "modules.content.atoms._qa_persist.persist_qa_approved_snapshot", _spy,
+        )
+        out = await qa_aggregate.run(self._approve_state(
+            qa_rail_reviews=[
+                {"reviewer": "ollama_critic", "approved": False, "score": 55.0,
+                 "provider": "ollama", "advisory": False, "feedback": "weak"},
+            ],
+        ))
+        assert out["_goto"] == "qa_rewrite"
+        assert calls == []
+
+    async def test_terminal_reject_does_not_snapshot(self, monkeypatch):
+        calls: list[dict] = []
+
+        async def _spy(db, **kw):
+            calls.append(kw)
+
+        monkeypatch.setattr(
+            "modules.content.atoms._qa_persist.persist_qa_approved_snapshot", _spy,
+        )
+
+        class _FakePipelineDB:
+            def __init__(self, pool): pass
+            async def upsert_version(self, task_id, fields): pass
+
+        monkeypatch.setattr("services.pipeline_db.PipelineDB", _FakePipelineDB)
+        out = await qa_aggregate.run(self._approve_state(
+            platform=FakePlatform(config={"qa_rewrite_max_attempts": "0"}),
+            qa_rail_reviews=[
+                {"reviewer": "ollama_critic", "approved": False, "score": 40.0,
+                 "provider": "ollama", "advisory": False, "feedback": "bad"},
+            ],
+        ))
+        assert out["_halt"] is True
+        assert calls == []
+
+    async def test_kept_qa_approved_outcome_restores_awaiting_approval(self, monkeypatch):
+        # persist_qa_reject reports it kept an earlier QA-approved version →
+        # the state must reflect awaiting_approval, not rejected, and still halt
+        # (continuing the graph would re-persist the worse draft).
+        async def _kept(*a, **kw):
+            return "kept_qa_approved"
+
+        monkeypatch.setattr(
+            "modules.content.atoms._qa_persist.persist_qa_reject", _kept,
+        )
+        out = await qa_aggregate.run(self._approve_state(
+            platform=FakePlatform(config={"qa_rewrite_max_attempts": "0"}),
+            qa_rail_reviews=[
+                {"reviewer": "ollama_critic", "approved": False, "score": 40.0,
+                 "provider": "ollama", "advisory": False, "feedback": "bad"},
+            ],
+        ))
+        assert out["_halt"] is True
+        assert out["status"] == "awaiting_approval"
+        assert "kept" in out["_halt_reason"]
+
+    async def test_terminal_event_carries_rescue_metadata(self):
+        fake = FakePlatform()
+        out = await qa_aggregate.run(self._approve_state(
+            platform=fake, qa_rewrite_attempts=1,
+        ))
+        assert out["qa_final_verdict"] == "approve"
+        passes = [w for w in fake.audit.writes_bg if w["event_type"] == "qa_pass_completed"]
+        assert len(passes) == 1
+        d = passes[0]["details"]
+        assert d["terminal"] is True
+        assert d["qa_rewrite_attempts"] == 1
+        assert d["rescued"] is True
+
+    async def test_terminal_event_unrescued_run(self):
+        fake = FakePlatform()
+        await qa_aggregate.run(self._approve_state(platform=fake))
+        passes = [w for w in fake.audit.writes_bg if w["event_type"] == "qa_pass_completed"]
+        d = passes[0]["details"]
+        assert d["terminal"] is True
+        assert d["qa_rewrite_attempts"] == 0
+        assert d["rescued"] is False

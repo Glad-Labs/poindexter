@@ -229,11 +229,24 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             except Exception as exc:  # noqa: BLE001
                 # silent-ok: a telemetry audit write must never break the QA gate
                 logger.debug("[qa.aggregate] qa_rescue_scheduled audit skipped: %s", exc)
-        # Defer: route to qa.rewrite. NO persist, NO _halt, NO qa_pass_completed
-        # (the terminal pass emits that). Omit qa_reviews — its operator.add
-        # reducer would concat stale+fresh on the terminal pass; the terminal
-        # pass populates it once. Pass the counter through unchanged (qa.rewrite
-        # bumps it).
+        # Deferred passes emit qa_pass_completed too (marked non-terminal) so
+        # rescue passes are visible in audit_log — without this, a rescued run
+        # showed a single terminal event and rewrite conversions were
+        # indistinguishable from clean passes (2026-07-03 audit). Dashboards
+        # that count DECISIONS filter on details->>'terminal'.
+        _emit_qa_pass_event(
+            state, approved=False, final_score=float(final_score),
+            threshold=float(threshold), reviews=reviews,
+            terminal=False, rewrite_attempts=attempts,
+            extra={"rescue_deferred": True, "rescue_attempt": attempts + 1},
+            # info, not warning: this reject is being rescued, not persisted —
+            # the terminal pass carries the loud severity if it stands.
+            severity="info",
+        )
+        # Defer: route to qa.rewrite. NO persist, NO _halt. Omit qa_reviews —
+        # its operator.add reducer would concat stale+fresh on the terminal
+        # pass; the terminal pass populates it once. Pass the counter through
+        # unchanged (qa.rewrite bumps it).
         return {
             "qa_final_score": final_score,
             "qa_final_verdict": result["qa_final_verdict"],
@@ -338,7 +351,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 f"{float(final_score):.0f}); the per-rail breakdown below is from "
                 f"the final revision.\n" + qa_feedback
             )
-        await persist_qa_reject(
+        reject_outcome = await persist_qa_reject(
             state.get("database_service"),
             task_id=str(state.get("task_id") or ""),
             reason=reason,
@@ -349,11 +362,51 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             models_used_by_phase=state.get("models_used_by_phase") or {},
         )
         out["_halt"] = True
-        out["_halt_reason"] = f"qa.aggregate: reject (score={kept_score}, {reason[:120]})"
-        # Belt-and-suspenders: the DB write above is load-bearing (status is
-        # not a PipelineState channel), but set it in state too in case a
-        # caller reads final_state.
-        out["status"] = "rejected"
+        if reject_outcome == "kept_qa_approved":
+            # Keep-best across runs (2026-07-03): the stored version is an
+            # earlier QA-APPROVED draft — persist_qa_reject restored the task
+            # to awaiting_approval instead of overwriting it. Still halt: the
+            # rest of the graph would re-persist this run's worse draft.
+            out["_halt_reason"] = (
+                f"qa.aggregate: re-run rejected (score={kept_score}) but an "
+                f"earlier QA-approved draft was kept — task restored to "
+                f"awaiting_approval"
+            )
+            out["status"] = "awaiting_approval"
+        else:
+            out["_halt_reason"] = f"qa.aggregate: reject (score={kept_score}, {reason[:120]})"
+            # Belt-and-suspenders: the DB write above is load-bearing (status is
+            # not a PipelineState channel), but set it in state too in case a
+            # caller reads final_state.
+            out["status"] = "rejected"
+    else:
+        # Terminal APPROVE: make the decision durable NOW. content.persist_task
+        # writes the finalized record ~7 nodes later, but the SEO/media block in
+        # between is exactly where the overnight crashes hit — and a crash there
+        # used to lose the approved draft to a from-scratch re-run (last-run-wins
+        # incident 2026-07-03). Best-effort: the helper never raises.
+        from modules.content.atoms._qa_persist import (
+            build_qa_feedback as _build_fb,
+        )
+        from modules.content.atoms._qa_persist import (
+            persist_qa_approved_snapshot,
+        )
+        try:
+            await persist_qa_approved_snapshot(
+                state.get("database_service"),
+                task_id=str(state.get("task_id") or ""),
+                title=str(state.get("title") or state.get("topic") or ""),
+                content=kept_content,
+                final_score=kept_score,
+                qa_feedback=_build_fb(reviews, kept_score, approved=True),
+                models_used_by_phase=state.get("models_used_by_phase") or {},
+                featured_image_url=state.get("featured_image_url"),
+            )
+        except Exception as exc:  # noqa: BLE001 — durability garnish, never blocks approve
+            logger.warning(
+                "[qa.aggregate] approved-snapshot persist raised (approve "
+                "proceeds without crash protection this run): %s", exc,
+            )
 
     # Bump the qa_gates run counters (total_runs / total_rejections) for
     # every rail that produced a review. The legacy cross_model_qa stage did
@@ -377,41 +430,78 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # audit_log WHERE event_type='qa_pass_completed' and project details)
     # AND removing the "N passes" denominator the QaRailFullySkipped alert
     # needs (poindexter#553). Re-emit it here. Best-effort — a telemetry
-    # write must never break the pipeline.
-    try:
-        # Seam 1 Wave 3c (#667) — audit through the capability handle. The
-        # handle's write_bg preserves the fire-and-forget + #303 loud-on-reject
-        # (severity='warning') behavior the raw audit_log_bg call had.
-        _platform = state.get("platform")
-        if _platform is not None:
-            _platform.audit.write_bg(
-                "qa_pass_completed",
-                source="qa.aggregate",
-                details={
-                    "approved": approved,
-                    "final_score": round(float(final_score), 2),
-                    "approval_threshold": float(threshold),
-                    "reviewer_count": len(reviews),
-                    "reviews": [
-                        {
-                            "reviewer": r.get("reviewer"),
-                            "provider": r.get("provider"),
-                            "approved": bool(r.get("approved")),
-                            "score": round(float(r.get("score") or 0.0), 2),
-                            "advisory": bool(r.get("advisory")),
-                            # First 200 chars for debugging; full text in logs.
-                            "feedback_preview": (str(r.get("feedback") or ""))[:200],
-                        }
-                        for r in reviews
-                    ],
-                },
-                task_id=(str(state.get("task_id")) or None) if state.get("task_id") else None,
-                severity="info" if approved else "warning",
-            )
-    except Exception as exc:  # noqa: BLE001
-        logger.debug("[qa.aggregate] qa_pass_completed audit skipped: %s", exc)
+    # write must never break the pipeline. The terminal event carries the
+    # rescue metadata (qa_rewrite_attempts / rescued) so rewrite conversions
+    # are measurable in audit_log (2026-07-03).
+    _emit_qa_pass_event(
+        state, approved=approved, final_score=float(final_score),
+        threshold=float(threshold), reviews=reviews,
+        terminal=True, rewrite_attempts=attempts,
+        severity="info" if approved else "warning",
+    )
 
     return out
+
+
+def _emit_qa_pass_event(
+    state: dict[str, Any],
+    *,
+    approved: bool,
+    final_score: float,
+    threshold: float,
+    reviews: list[dict[str, Any]],
+    terminal: bool,
+    rewrite_attempts: int,
+    severity: str,
+    extra: dict[str, Any] | None = None,
+) -> None:
+    """Emit one ``qa_pass_completed`` audit row for a QA pass (terminal
+    decision OR a deferred rescue pass). Best-effort — never raises.
+
+    Seam 1 Wave 3c (#667) — audit through the capability handle. The handle's
+    write_bg preserves the fire-and-forget + #303 loud-on-reject
+    (severity='warning') behavior the raw audit_log_bg call had.
+
+    ``terminal`` distinguishes the gate DECISION (approve / hard-reject /
+    flag) from a rescue-deferred pass; decision-counting dashboard panels
+    filter ``details->>'terminal'``.
+    """
+    try:
+        _platform = state.get("platform")
+        if _platform is None:
+            return
+        details: dict[str, Any] = {
+            "approved": approved,
+            "final_score": round(float(final_score), 2),
+            "approval_threshold": float(threshold),
+            "reviewer_count": len(reviews),
+            "terminal": terminal,
+            "qa_rewrite_attempts": int(rewrite_attempts),
+            "rescued": bool(rewrite_attempts > 0),
+            "reviews": [
+                {
+                    "reviewer": r.get("reviewer"),
+                    "provider": r.get("provider"),
+                    "approved": bool(r.get("approved")),
+                    "score": round(float(r.get("score") or 0.0), 2),
+                    "advisory": bool(r.get("advisory")),
+                    # First 200 chars for debugging; full text in logs.
+                    "feedback_preview": (str(r.get("feedback") or ""))[:200],
+                }
+                for r in reviews
+            ],
+        }
+        if extra:
+            details.update(extra)
+        _platform.audit.write_bg(
+            "qa_pass_completed",
+            source="qa.aggregate",
+            details=details,
+            task_id=(str(state.get("task_id")) or None) if state.get("task_id") else None,
+            severity=severity,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[qa.aggregate] qa_pass_completed audit skipped: %s", exc)
 
 
 __all__ = ["ATOM_META", "run"]

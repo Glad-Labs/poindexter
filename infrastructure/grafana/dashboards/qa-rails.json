@@ -140,7 +140,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COUNT(*) AS \"QA Passes\" FROM audit_log WHERE event_type = 'qa_pass_completed' AND timestamp > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COUNT(*) AS \"QA Passes\" FROM audit_log WHERE event_type = 'qa_pass_completed' AND COALESCE(details->>'terminal','true') <> 'false' AND timestamp > NOW() - INTERVAL '24 hours';",
           "refId": "A"
         }
       ],
@@ -213,7 +213,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT COALESCE(AVG(CASE WHEN (details->>'approved')::boolean THEN 1.0 ELSE 0.0 END), 0)::float AS \"Approval Rate\" FROM audit_log WHERE event_type = 'qa_pass_completed' AND timestamp > NOW() - INTERVAL '24 hours';",
+          "rawSql": "SELECT COALESCE(AVG(CASE WHEN (details->>'approved')::boolean THEN 1.0 ELSE 0.0 END), 0)::float AS \"Approval Rate\" FROM audit_log WHERE event_type = 'qa_pass_completed' AND COALESCE(details->>'terminal','true') <> 'false' AND timestamp > NOW() - INTERVAL '24 hours';",
           "refId": "A"
         }
       ],
@@ -533,7 +533,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('hour', timestamp) AS time, CASE WHEN (details->>'approved')::boolean THEN 'approved' ELSE 'rejected' END AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'qa_pass_completed' AND $__timeFilter(timestamp) GROUP BY 1, 2 ORDER BY 1;",
+          "rawSql": "SELECT date_trunc('hour', timestamp) AS time, CASE WHEN (details->>'approved')::boolean THEN 'approved' ELSE 'rejected' END AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'qa_pass_completed' AND COALESCE(details->>'terminal','true') <> 'false' AND $__timeFilter(timestamp) GROUP BY 1, 2 ORDER BY 1;",
           "refId": "A"
         }
       ],
@@ -937,7 +937,7 @@
           },
           "format": "table",
           "rawQuery": true,
-          "rawSql": "SELECT timestamp AS \"Time\",\n       (details->>'approved')::boolean AS \"Approved\",\n       (details->>'final_score')::float AS \"Final Score\",\n       (details->>'reviewer_count')::int AS \"Reviewers\",\n       task_id AS \"Task ID\",\n       details AS \"Details (JSON)\"\nFROM audit_log\nWHERE event_type = 'qa_pass_completed'\nORDER BY timestamp DESC\nLIMIT 20;",
+          "rawSql": "SELECT timestamp AS \"Time\",\n       (details->>'approved')::boolean AS \"Approved\",\n       COALESCE(details->>'terminal','true')::boolean AS \"Terminal\",\n       COALESCE((details->>'qa_rewrite_attempts')::int, 0) AS \"Rewrites\",\n       (details->>'final_score')::float AS \"Final Score\",\n       (details->>'reviewer_count')::int AS \"Reviewers\",\n       task_id AS \"Task ID\",\n       details AS \"Details (JSON)\"\nFROM audit_log\nWHERE event_type = 'qa_pass_completed'\nORDER BY timestamp DESC\nLIMIT 20;",
           "refId": "A"
         }
       ],
@@ -1389,7 +1389,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('hour', timestamp) AS time, 'flagged (kept for review)' AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'qa_flagged_surfaced' AND $__timeFilter(timestamp) GROUP BY 1 UNION ALL SELECT date_trunc('hour', timestamp) AS time, 'discarded (hard reject)' AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'qa_pass_completed' AND NOT COALESCE((details->>'approved')::boolean, false) AND $__timeFilter(timestamp) GROUP BY 1 ORDER BY 1;",
+          "rawSql": "SELECT date_trunc('hour', timestamp) AS time, 'flagged (kept for review)' AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'qa_flagged_surfaced' AND $__timeFilter(timestamp) GROUP BY 1 UNION ALL SELECT date_trunc('hour', timestamp) AS time, 'discarded (hard reject)' AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'qa_pass_completed' AND COALESCE(details->>'terminal','true') <> 'false' AND NOT COALESCE((details->>'approved')::boolean, false) AND $__timeFilter(timestamp) GROUP BY 1 ORDER BY 1;",
           "refId": "A"
         }
       ],

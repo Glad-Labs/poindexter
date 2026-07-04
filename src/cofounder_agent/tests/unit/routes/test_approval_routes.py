@@ -136,6 +136,36 @@ class TestRejectTask:
         data = resp.json()
         assert data["status"] == "rejected_final"
 
+    def test_reject_clears_qa_approved_snapshot_marker(self):
+        """Operator rejection is the explicit 'I don't want this content'
+        signal — it must clear the pipeline_versions qa_approved_snapshot
+        marker so the keep-best guard / stale-sweep promote bucket never
+        resurrect the rejected draft on a later re-run."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=AWAITING_TASK)
+        client = TestClient(_build_app(mock_db))
+
+        cleared: list[str] = []
+
+        class _FakePipelineDB:
+            def __init__(self, pool): ...
+
+            async def clear_qa_approved_snapshot(self, task_id):
+                cleared.append(task_id)
+
+        with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()), \
+             patch("services.pipeline_db.PipelineDB", _FakePipelineDB):
+            resp = client.post(
+                "/api/tasks/task-001/reject",
+                json={
+                    "reason": "Off voice",
+                    "feedback": "Rewrite it",
+                    "allow_revisions": True,
+                },
+            )
+        assert resp.status_code == 200
+        assert cleared == ["task-001"]
+
     def test_reject_nonexistent_task_returns_404(self):
         mock_db = make_mock_db()
         mock_db.get_task = AsyncMock(return_value=None)

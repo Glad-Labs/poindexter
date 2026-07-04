@@ -144,6 +144,21 @@ async def reject_task(
             },
         )
 
+        # Operator rejection revokes the durable QA-approval marker
+        # (qa_approved_snapshot on pipeline_versions, 2026-07-03): without
+        # this, a rejected_retry re-run's keep-best guard — or the stale
+        # sweep's promote bucket — would resurrect the very draft the human
+        # just threw away. Best-effort; the rejection itself stands regardless.
+        try:
+            from services.pipeline_db import PipelineDB
+
+            await PipelineDB(db_service.pool).clear_qa_approved_snapshot(full_task_id)
+        except Exception as marker_err:
+            logger.warning(
+                "[reject_task] clear_qa_approved_snapshot failed for %s: %s",
+                full_task_id, marker_err,
+            )
+
         # Record the rejection on pipeline_gate_history so `content_tasks`
         # view's approval_status / approved_by / human_feedback columns
         # resolve non-NULL. The view's scalar subqueries pull the latest

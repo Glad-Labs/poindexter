@@ -35,6 +35,9 @@ def _make_pool(claim_row=None, settings_rows=None):
     conn.fetchrow = AsyncMock(return_value=claim_row)
     conn.execute = AsyncMock()
     conn.fetch = AsyncMock(return_value=settings_rows if settings_rows is not None else [])
+    # _mark_task_failed_on_flow_crash probes pipeline_versions for the
+    # qa_approved_snapshot marker; default False → the plain 'failed' path.
+    conn.fetchval = AsyncMock(return_value=False)
 
     @asynccontextmanager
     async def _tx():
@@ -439,6 +442,64 @@ class TestFlowCrashMarksTaskFailed:
             sql = update_calls[0].args[0]
             assert "WHERE task_id = $2 AND status = 'in_progress'" in sql
 
+    @pytest.mark.asyncio
+    async def test_helper_promotes_qa_approved_task_instead_of_failing(self):
+        """2026-07-03 last-run-wins fix: when the crash happened AFTER QA
+        approval (pipeline_versions carries qa_approved_snapshot), the helper
+        promotes the row to awaiting_approval — the approved draft is already
+        persisted, so failing the task (or letting the sweep re-run it) would
+        destroy a QA-approved post over a crash in the SEO/media tail."""
+        from services.flows.content_generation import _mark_task_failed_on_flow_crash
+
+        pool = _make_pool(claim_row=None)
+        async with pool.acquire() as conn:
+            conn.fetchval = AsyncMock(return_value=True)  # marker present
+        db = _make_db_service(pool)
+
+        await _mark_task_failed_on_flow_crash(
+            database_service=db,
+            task_id="t-approved",
+            error=RuntimeError("crashed in media block"),
+        )
+
+        async with pool.acquire() as conn:
+            promote_calls = [
+                c for c in conn.execute.call_args_list
+                if "SET status = 'awaiting_approval'" in c.args[0]
+            ]
+            assert promote_calls, "expected promote UPDATE for marker-bearing task"
+            sql = promote_calls[0].args[0]
+            assert "WHERE task_id = $2 AND status = 'in_progress'" in sql
+            failed_calls = [
+                c for c in conn.execute.call_args_list
+                if "SET status = 'failed'" in c.args[0]
+            ]
+            assert not failed_calls, "must not fail a task with an approved draft"
+
+    @pytest.mark.asyncio
+    async def test_helper_marker_probe_failure_falls_back_to_failed(self):
+        """If the marker probe itself errors, the helper must still mark the
+        task failed (the sweep's promote bucket remains the safety net)."""
+        from services.flows.content_generation import _mark_task_failed_on_flow_crash
+
+        pool = _make_pool(claim_row=None)
+        async with pool.acquire() as conn:
+            conn.fetchval = AsyncMock(side_effect=RuntimeError("probe blip"))
+        db = _make_db_service(pool)
+
+        await _mark_task_failed_on_flow_crash(
+            database_service=db,
+            task_id="t-probe-err",
+            error=RuntimeError("original crash"),
+        )
+
+        async with pool.acquire() as conn:
+            failed_calls = [
+                c for c in conn.execute.call_args_list
+                if "SET status = 'failed'" in c.args[0]
+            ]
+            assert failed_calls, "probe failure must degrade to the failed path"
+
 
 # ---------------------------------------------------------------------------
 # reclaim_stale_inprogress_tasks safety net
@@ -466,7 +527,7 @@ class TestReclaimStaleInprogress:
 
         result = await reclaim_stale_inprogress_tasks.fn(db, site_config)
 
-        assert result == {"reset": 0, "failed": 0}
+        assert result == {"reset": 0, "failed": 0, "promoted": 0}
         db.sweep_stale_tasks.assert_not_called()
 
     @pytest.mark.asyncio
@@ -539,6 +600,32 @@ class TestReclaimStaleInprogress:
         mock_notify.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_notifies_operator_when_tasks_promoted(self):
+        """A promoted (QA-approved, crash-recovered) task lands in the
+        operator's approval queue without ever completing a flow run —
+        notify so it isn't a silent surprise."""
+        from services.flows.content_generation import reclaim_stale_inprogress_tasks
+
+        pool = _make_pool()
+        db = _make_db_service(pool)
+        db.sweep_stale_tasks = AsyncMock(
+            return_value={"reset": 0, "failed": 0, "promoted": 1}
+        )
+
+        site_config = MagicMock()
+        site_config.get = MagicMock(return_value="30")
+
+        with patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=AsyncMock(),
+        ) as mock_notify:
+            result = await reclaim_stale_inprogress_tasks.fn(db, site_config)
+
+        assert result == {"reset": 0, "failed": 0, "promoted": 1}
+        mock_notify.assert_called_once()
+        assert "promoted" in mock_notify.call_args.args[0]
+
+    @pytest.mark.asyncio
     async def test_no_notify_when_nothing_reclaimed(self):
         """When sweep returns zeros, notify_operator must NOT be called."""
         from services.flows.content_generation import reclaim_stale_inprogress_tasks
@@ -573,7 +660,7 @@ class TestReclaimStaleInprogress:
 
         result = await reclaim_stale_inprogress_tasks.fn(db, site_config)
 
-        assert result == {"reset": 0, "failed": 0}, (
+        assert result == {"reset": 0, "failed": 0, "promoted": 0}, (
             "sweep exception must not propagate — return zeros instead"
         )
 

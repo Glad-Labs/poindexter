@@ -121,9 +121,15 @@ class PipelineDB:
         """Insert or update version 1 of pipeline_versions (current content state)."""
         try:
             stage_data = {}
+            # ``qa_approved_snapshot`` is the durable QA-approval marker
+            # (written by qa.aggregate on approve, 2026-07-03). It rides
+            # stage_data because the shallow ``||`` merge below preserves it
+            # across the later content.persist_task upsert; the stale sweep
+            # and the keep-best reject guard key on its presence.
             for key in ("metadata", "result", "task_metadata", "model_selections",
                         "model_selection_log", "featured_image_data",
-                        "featured_image_prompt", "tags", "progress"):
+                        "featured_image_prompt", "tags", "progress",
+                        "qa_approved_snapshot"):
                 val = data.get(key)
                 if val is not None:
                     stage_data[key] = val if isinstance(val, (dict, list)) else str(val)
@@ -163,6 +169,31 @@ class PipelineDB:
             )
         except Exception as e:
             logger.warning("[pipeline_db] upsert_version failed for %s: %s", task_id, e)
+
+    async def clear_qa_approved_snapshot(self, task_id: str) -> None:
+        """Remove the durable QA-approval marker from a task's version row.
+
+        Called on OPERATOR rejection (routes/approval_routes.reject_task):
+        a human explicitly discarding the content must also revoke the
+        crash-recovery marker, otherwise the keep-best guard / stale-sweep
+        promote bucket would resurrect the very draft the operator threw
+        away on the next re-run. Best-effort — logs on failure.
+        """
+        try:
+            await self.pool.execute(
+                """
+                UPDATE pipeline_versions
+                SET stage_data = stage_data - 'qa_approved_snapshot'
+                WHERE task_id = $1
+                  AND stage_data ? 'qa_approved_snapshot'
+                """,
+                task_id,
+            )
+        except Exception as e:
+            logger.warning(
+                "[pipeline_db] clear_qa_approved_snapshot failed for %s: %s",
+                task_id, e,
+            )
 
     # ------------------------------------------------------------------
     # pipeline_distributions

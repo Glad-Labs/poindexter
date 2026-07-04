@@ -1210,7 +1210,7 @@ class TestSweepStaleTasks:
 
         db = TasksDatabase(pool=pool)
         result = await db.sweep_stale_tasks(stale_threshold_minutes=60)
-        assert result == {"reset": 0, "failed": 0}
+        assert result == {"reset": 0, "failed": 0, "promoted": 0}
 
     @pytest.mark.asyncio
     async def test_resets_under_max_retries(self):
@@ -1242,7 +1242,7 @@ class TestSweepStaleTasks:
 
         db = TasksDatabase(pool=pool)
         result = await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
-        assert result == {"reset": 1, "failed": 1}
+        assert result == {"reset": 1, "failed": 1, "promoted": 0}
         # Five execute calls: one reset + one fail + three checkpoint DELETEs.
         assert conn.execute.await_count == 5
 
@@ -1333,7 +1333,7 @@ class TestSweepStaleTasks:
         pool.acquire = MagicMock(side_effect=RuntimeError("conn lost"))
         db = TasksDatabase(pool=pool)
         result = await db.sweep_stale_tasks(stale_threshold_minutes=60)
-        assert result == {"reset": 0, "failed": 0}
+        assert result == {"reset": 0, "failed": 0, "promoted": 0}
 
     @pytest.mark.asyncio
     async def test_handles_null_retry_count(self):
@@ -1364,7 +1364,7 @@ class TestSweepStaleTasks:
         db = TasksDatabase(pool=pool)
         result = await db.sweep_stale_tasks()
         # Both should be reset (retry_count defaults to 0)
-        assert result == {"reset": 2, "failed": 0}
+        assert result == {"reset": 2, "failed": 0, "promoted": 0}
 
     @pytest.mark.asyncio
     async def test_clears_checkpoints_for_swept_threads(self):
@@ -1396,7 +1396,7 @@ class TestSweepStaleTasks:
 
         db = TasksDatabase(pool=pool)
         result = await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
-        assert result == {"reset": 1, "failed": 1}
+        assert result == {"reset": 1, "failed": 1, "promoted": 0}
 
         # The to_regclass guard ran.
         guard_sql = conn.fetchval.await_args.args[0]
@@ -1449,7 +1449,7 @@ class TestSweepStaleTasks:
         db = TasksDatabase(pool=pool)
         result = await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
         # Status reset still happened.
-        assert result == {"reset": 1, "failed": 0}
+        assert result == {"reset": 1, "failed": 0, "promoted": 0}
         # No checkpoint DELETE was issued.
         assert not any(
             "DELETE FROM checkpoint" in c.args[0]
@@ -1483,7 +1483,7 @@ class TestSweepStaleTasks:
         db = TasksDatabase(pool=pool)
         # Must NOT raise — and the reset still reports.
         result = await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
-        assert result == {"reset": 1, "failed": 0}
+        assert result == {"reset": 1, "failed": 0, "promoted": 0}
 
     @pytest.mark.asyncio
     async def test_no_checkpoint_clear_when_nothing_swept(self):
@@ -1508,7 +1508,7 @@ class TestSweepStaleTasks:
 
         db = TasksDatabase(pool=pool)
         result = await db.sweep_stale_tasks(stale_threshold_minutes=60)
-        assert result == {"reset": 0, "failed": 0}
+        assert result == {"reset": 0, "failed": 0, "promoted": 0}
         conn.fetchval.assert_not_awaited()
         conn.execute.assert_not_awaited()
 
@@ -1610,7 +1610,92 @@ class TestSweepStaleTasks:
             result = await db.sweep_stale_tasks(
                 stale_threshold_minutes=60, max_retries=3
             )
-        assert result == {"reset": 1, "failed": 0}
+        assert result == {"reset": 1, "failed": 0, "promoted": 0}
+
+    # -- QA-approved promote bucket (2026-07-03 last-run-wins incident) ------
+
+    @staticmethod
+    def _sweep_conn(stale_rows):
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=stale_rows)
+        conn.execute = AsyncMock(return_value="DELETE 0")
+        conn.fetchval = AsyncMock(return_value=True)
+
+        @asynccontextmanager
+        async def _txn():
+            yield None
+        conn.transaction = _txn
+
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+        pool.acquire = _acquire
+        return conn, pool
+
+    @pytest.mark.asyncio
+    async def test_promotes_qa_approved_rows_instead_of_rerunning(self):
+        """A stale in_progress task whose pipeline_versions row carries the
+        ``qa_approved_snapshot`` marker already HAS a QA-approved draft — the
+        crash happened after QA approval (SEO/media block). Resetting it to
+        pending would regenerate from scratch and usually score worse
+        (last-run-wins destroyed 4 approved drafts week of 2026-06-29). The
+        sweep must promote it straight to awaiting_approval instead — even
+        when retry_count is exhausted (06715fb0 died 'Exceeded maximum
+        retries' with an 86.0-approved pass in audit_log)."""
+        stale_rows = [
+            {"task_id": "t-approved", "retry_count": 3, "has_qa_approved_snapshot": True},
+            {"task_id": "t-plain", "retry_count": 0, "has_qa_approved_snapshot": False},
+        ]
+        conn, pool = self._sweep_conn(stale_rows)
+        db = TasksDatabase(pool=pool)
+        result = await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
+        assert result == {"reset": 1, "failed": 0, "promoted": 1}
+
+        all_calls = [c for c in conn.execute.await_args_list]
+        promote_calls = [
+            c for c in all_calls if "SET status = 'awaiting_approval'" in c.args[0]
+        ]
+        assert len(promote_calls) == 1
+        assert "UPDATE pipeline_tasks" in promote_calls[0].args[0]
+        assert promote_calls[0].args[2] == ["t-approved"]
+        # The plain row still goes back to pending.
+        reset_calls = [c for c in all_calls if "SET status = 'pending'" in c.args[0]]
+        assert reset_calls and reset_calls[0].args[2] == ["t-plain"]
+        # No fail UPDATE — the exhausted row was promoted, not failed.
+        assert not any("SET status = 'failed'" in c.args[0] for c in all_calls)
+        # Promoted tasks also get their poisoned checkpoint cleared.
+        delete_calls = [c for c in all_calls if "DELETE FROM" in c.args[0]]
+        for c in delete_calls:
+            assert set(c.args[1]) == {"t-approved", "t-plain"}
+
+    @pytest.mark.asyncio
+    async def test_promote_emits_finding(self):
+        stale_rows = [
+            {"task_id": "t-approved", "retry_count": 1, "has_qa_approved_snapshot": True},
+        ]
+        _conn, pool = self._sweep_conn(stale_rows)
+        db = TasksDatabase(pool=pool)
+        with patch("utils.findings.emit_finding") as emit:
+            await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
+        kinds = {c.kwargs["kind"]: c.kwargs for c in emit.call_args_list}
+        assert "stale_task_promoted_qa_approved" in kinds
+        promoted = kinds["stale_task_promoted_qa_approved"]
+        assert promoted["severity"] == "warn"
+        assert promoted["dedup_key"] == "stale-task-promoted:t-approved"
+        assert "t-approved" in promoted["body"]
+
+    @pytest.mark.asyncio
+    async def test_sweep_select_joins_version_marker(self):
+        """The stale SELECT must surface the qa_approved_snapshot marker from
+        pipeline_versions so the promote bucket can partition on it."""
+        conn, pool = self._sweep_conn([])
+        db = TasksDatabase(pool=pool)
+        await db.sweep_stale_tasks(stale_threshold_minutes=30)
+        select_sql = conn.fetch.await_args.args[0]
+        assert "qa_approved_snapshot" in select_sql
+        assert "pipeline_versions" in select_sql
 
 
 # ---------------------------------------------------------------------------

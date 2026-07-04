@@ -515,7 +515,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `_citation_match.py` | Pure citation-matching core shared by the citation rail atoms. |
 | `_media_render.py` | Shared render helper for the Stage-2 media render atoms (Plan 4). |
 | `_narration_render.py` | Shared narration-TTS helper for the Stage-2 media render atoms (#689). |
-| `_qa_persist.py` | Reject-path persistence for qa.aggregate (atom-cutover Plan 5, #355). |
+| `_qa_persist.py` | QA-decision persistence for qa.aggregate (atom-cutover Plan 5, #355). |
 | `_qa_rail_common.py` | Shared helpers for the qa.* rail atoms (atom-cutover Plan 3, #355). |
 | `_seo_common.py` | Shared helpers for the SEO atoms (seo.generate_title / .generate_description |
 | `_youtube_attribution.py` | Pure YouTube-attribution core for the citation-repair atom. |

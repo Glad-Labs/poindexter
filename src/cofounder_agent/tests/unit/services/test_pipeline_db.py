@@ -62,6 +62,40 @@ class TestUpsertVersion:
         mock_pool.execute = AsyncMock(side_effect=Exception("DB down"))
         await pdb.upsert_version("test-123", {"title": "Test"})
 
+    @pytest.mark.asyncio
+    async def test_upsert_version_carries_qa_approved_snapshot_marker(self, pdb, mock_pool):
+        """The qa_approved_snapshot marker (durable QA-approval, 2026-07-03)
+        must land in stage_data so the stale-sweep promote bucket and the
+        keep-best reject guard can see it."""
+        import json
+
+        await pdb.upsert_version("test-123", {
+            "title": "T",
+            "content": "body",
+            "qa_approved_snapshot": {"score": 86.0, "approved_at": "2026-07-03T00:00:00Z"},
+        })
+        args = mock_pool.execute.call_args.args
+        stage_data = json.loads(args[-1])
+        assert stage_data["qa_approved_snapshot"]["score"] == 86.0
+
+
+class TestClearQaApprovedSnapshot:
+    @pytest.mark.asyncio
+    async def test_clear_removes_marker_key(self, pdb, mock_pool):
+        """Operator rejection must clear the marker so keep-best never
+        resurrects content the operator explicitly threw away."""
+        await pdb.clear_qa_approved_snapshot("test-123")
+        mock_pool.execute.assert_awaited_once()
+        sql = mock_pool.execute.call_args.args[0]
+        assert "stage_data - 'qa_approved_snapshot'" in sql
+        assert "pipeline_versions" in sql
+
+    @pytest.mark.asyncio
+    async def test_clear_handles_error(self, pdb, mock_pool):
+        mock_pool.execute = AsyncMock(side_effect=Exception("DB down"))
+        # Best-effort — must not raise.
+        await pdb.clear_qa_approved_snapshot("test-123")
+
 
 # NOTE: TestAddReview removed 2026-05-09 — the pipeline_reviews writes
 # unified onto pipeline_gate_history per Glad-Labs/poindexter#366. The

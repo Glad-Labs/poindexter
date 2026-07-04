@@ -1422,34 +1422,72 @@ class TasksDatabase(DatabaseServiceMixin):
                     # Fetch stale rows directly from pipeline_tasks. The
                     # ``retry_count`` column is a real integer (NOT NULL
                     # DEFAULT 0 since migration 20260527_183209) — no
-                    # JSON arithmetic, no view dependency.
+                    # JSON arithmetic, no view dependency. The LEFT JOIN
+                    # surfaces the qa_approved_snapshot marker (written by
+                    # qa.aggregate on approve, 2026-07-03) so tasks whose
+                    # crash happened AFTER QA approval are promoted to
+                    # awaiting_approval instead of re-run from scratch.
                     stale_rows = await conn.fetch(
                         """
-                        SELECT task_id, retry_count
-                        FROM pipeline_tasks
-                        WHERE status = 'in_progress'
-                          AND awaiting_gate IS NULL
-                          AND updated_at < $1
+                        SELECT t.task_id, t.retry_count,
+                               COALESCE(v.stage_data ? 'qa_approved_snapshot', FALSE)
+                                   AS has_qa_approved_snapshot
+                        FROM pipeline_tasks t
+                        LEFT JOIN pipeline_versions v
+                          ON v.task_id = t.task_id AND v.version = 1
+                        WHERE t.status = 'in_progress'
+                          AND t.awaiting_gate IS NULL
+                          AND t.updated_at < $1
                         """,
                         cutoff,
                     )
 
                     if not stale_rows:
-                        return {"reset": 0, "failed": 0}
+                        return {"reset": 0, "failed": 0, "promoted": 0}
 
-                    # Partition into reset vs. fail buckets
+                    # Partition into promote vs. reset vs. fail buckets.
+                    # Promote wins even at exhausted retries: the task
+                    # already HAS a QA-approved draft in pipeline_versions —
+                    # failing it (the 06715fb0 outcome) or regenerating it
+                    # (the 4eb9228f last-run-wins outcome) both destroy
+                    # approved work.
+                    promote_ids: list[str] = []
                     reset_ids: list[str] = []
                     fail_ids: list[str] = []
 
                     for row in stale_rows:
-                        task_id = row["task_id"]
-                        retry_count = row["retry_count"] or 0
-                        if retry_count < max_retries:
+                        r = dict(row)
+                        task_id = r["task_id"]
+                        retry_count = r["retry_count"] or 0
+                        if r.get("has_qa_approved_snapshot"):
+                            promote_ids.append(task_id)
+                        elif retry_count < max_retries:
                             reset_ids.append(task_id)
                         else:
                             fail_ids.append(task_id)
 
                     now = datetime.now(timezone.utc)
+
+                    # Batch promote: the approved draft is already persisted
+                    # (content/title/score/qa_feedback in pipeline_versions),
+                    # so the task goes straight to the human approval queue.
+                    # SEO metadata / media scripts from the crashed tail may
+                    # be missing — the operator reviews the post anyway
+                    # (approve = stage, not go-live).
+                    if promote_ids:
+                        await conn.execute(
+                            """
+                            UPDATE pipeline_tasks
+                            SET status = 'awaiting_approval',
+                                stage = 'awaiting_approval',
+                                percentage = 100,
+                                error_message = NULL,
+                                updated_at = $1
+                            WHERE task_id = ANY($2::text[])
+                            """,
+                            now,
+                            promote_ids,
+                        )
 
                     # Batch reset: set back to pending with incremented
                     # retry_count. The atom-column form lets the
@@ -1503,15 +1541,18 @@ class TasksDatabase(DatabaseServiceMixin):
                     # Verified in prod: clearing the rows makes the next
                     # run execute the full 21-node graph normally.
                     #
-                    # Covers BOTH buckets (reset→pending AND →failed): a
-                    # failed task may still be retried by an operator, and
-                    # neither should ever resume a stale checkpoint.
-                    swept_ids = reset_ids + fail_ids
+                    # Covers ALL buckets (promote→awaiting_approval,
+                    # reset→pending AND →failed): a failed task may still be
+                    # retried by an operator, a promoted task may be regen'd,
+                    # and none should ever resume a stale checkpoint.
+                    swept_ids = promote_ids + reset_ids + fail_ids
                     await self._clear_checkpoints_for_threads(conn, swept_ids)
 
                     logger.info(
-                        "Stale task sweep complete: %d reset, %d failed (threshold=%dm)",
-                        len(reset_ids), len(fail_ids), stale_threshold_minutes,
+                        "Stale task sweep complete: %d promoted, %d reset, "
+                        "%d failed (threshold=%dm)",
+                        len(promote_ids), len(reset_ids), len(fail_ids),
+                        stale_threshold_minutes,
                     )
 
             # poindexter#807 — the crash→sweep→requeue cycle was invisible
@@ -1524,14 +1565,19 @@ class TasksDatabase(DatabaseServiceMixin):
                 stale_rows=stale_rows,
                 reset_ids=reset_ids,
                 fail_ids=fail_ids,
+                promote_ids=promote_ids,
                 stale_threshold_minutes=stale_threshold_minutes,
                 max_retries=max_retries,
             )
-            return {"reset": len(reset_ids), "failed": len(fail_ids)}
+            return {
+                "reset": len(reset_ids),
+                "failed": len(fail_ids),
+                "promoted": len(promote_ids),
+            }
 
         except Exception as e:
             logger.error("Failed to sweep stale tasks: %s", e, exc_info=True)
-            return {"reset": 0, "failed": 0}
+            return {"reset": 0, "failed": 0, "promoted": 0}
 
     def _emit_sweep_findings(
         self,
@@ -1541,8 +1587,10 @@ class TasksDatabase(DatabaseServiceMixin):
         fail_ids: list[str],
         stale_threshold_minutes: int,
         max_retries: int,
+        promote_ids: list[str] | None = None,
     ) -> None:
-        """Emit ``stale_task_reclaimed`` / ``task_retries_exhausted`` findings.
+        """Emit ``stale_task_reclaimed`` / ``task_retries_exhausted`` /
+        ``stale_task_promoted_qa_approved`` findings.
 
         Observability garnish — never raises (a failing emitter must not fail
         a sweep whose DB writes already committed).
@@ -1553,6 +1601,29 @@ class TasksDatabase(DatabaseServiceMixin):
             retry_by_id = {
                 row["task_id"]: int(row["retry_count"] or 0) for row in stale_rows
             }
+            for task_id in promote_ids or []:
+                emit_finding(
+                    source="sweep_stale_tasks",
+                    kind="stale_task_promoted_qa_approved",
+                    title="Stale task promoted to awaiting_approval "
+                    "(QA-approved draft recovered)",
+                    body=(
+                        f"Task {task_id} sat in_progress for over "
+                        f"{stale_threshold_minutes}m, but pipeline_versions "
+                        "already holds a QA-APPROVED draft from this run "
+                        "(the crash hit after QA approval, in the SEO/media "
+                        "tail). Promoted straight to awaiting_approval "
+                        "instead of re-running — review it in the approval "
+                        "queue; SEO metadata / media scripts from the "
+                        "crashed tail may be missing."
+                    ),
+                    severity="warn",
+                    dedup_key=f"stale-task-promoted:{task_id}",
+                    extra={
+                        "task_id": task_id,
+                        "retry_count": retry_by_id.get(task_id, 0),
+                    },
+                )
             for task_id in reset_ids:
                 prior = retry_by_id.get(task_id, 0)
                 emit_finding(

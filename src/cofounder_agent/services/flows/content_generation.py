@@ -181,7 +181,7 @@ async def reclaim_stale_inprogress_tasks(
             "[CONTENT_FLOW] reclaim_stale_inprogress_tasks: database_service "
             "has no .pool — skipping stale reclaim this run"
         )
-        return {"reset": 0, "failed": 0}
+        return {"reset": 0, "failed": 0, "promoted": 0}
 
     # Read threshold from site_config; warn loudly on missing/unparseable
     # (per feedback_no_silent_defaults — required settings fail loudly).
@@ -207,7 +207,7 @@ async def reclaim_stale_inprogress_tasks(
                 threshold,
             )
 
-    result: dict[str, int] = {"reset": 0, "failed": 0}
+    result: dict[str, int] = {"reset": 0, "failed": 0, "promoted": 0}
     try:
         result = await database_service.sweep_stale_tasks(
             timeout_minutes=threshold
@@ -218,12 +218,17 @@ async def reclaim_stale_inprogress_tasks(
             "sweep_stale_tasks raised — stale tasks may remain in_progress",
             exc_info=True,
         )
-        return {"reset": 0, "failed": 0}
+        return {"reset": 0, "failed": 0, "promoted": 0}
 
-    if result.get("reset", 0) > 0 or result.get("failed", 0) > 0:
+    if (
+        result.get("reset", 0) > 0
+        or result.get("failed", 0) > 0
+        or result.get("promoted", 0) > 0
+    ):
         msg = (
             f"[CONTENT_FLOW] stale reclaim: reset={result.get('reset', 0)}, "
-            f"failed={result.get('failed', 0)} (threshold={threshold}m)"
+            f"failed={result.get('failed', 0)}, "
+            f"promoted={result.get('promoted', 0)} (threshold={threshold}m)"
         )
         logger.warning(msg)
         try:
@@ -237,7 +242,11 @@ async def reclaim_stale_inprogress_tasks(
                 exc_info=True,
             )
 
-    return {"reset": result.get("reset", 0), "failed": result.get("failed", 0)}
+    return {
+        "reset": result.get("reset", 0),
+        "failed": result.get("failed", 0),
+        "promoted": result.get("promoted", 0),
+    }
 
 
 @flow(
@@ -688,6 +697,59 @@ async def _mark_task_failed_on_flow_crash(
     error_message = f"flow crashed: {type(error).__name__}: {error!s}"[:2048]
     try:
         async with pool.acquire() as conn:
+            # 2026-07-03 last-run-wins fix: when QA already APPROVED this
+            # run's draft (qa.aggregate persisted the qa_approved_snapshot
+            # marker before the SEO/media tail crashed), the approved draft
+            # is safely in pipeline_versions — promote the task to the
+            # approval queue instead of failing it. Failing it either ends an
+            # approved post at 'failed' (retries exhausted) or hands it to
+            # the stale sweep for a from-scratch re-run that usually scores
+            # worse. Probe failure degrades to the failed path (the sweep's
+            # promote bucket remains the safety net).
+            has_approved_snapshot = False
+            try:
+                has_approved_snapshot = bool(await conn.fetchval(
+                    """
+                    SELECT EXISTS (
+                        SELECT 1 FROM pipeline_versions
+                        WHERE task_id = $1
+                          AND stage_data ? 'qa_approved_snapshot'
+                    )
+                    """,
+                    task_id,
+                ))
+            except Exception:  # noqa: BLE001 — probe is best-effort
+                logger.warning(
+                    "[CONTENT_FLOW] qa_approved_snapshot probe failed for "
+                    "task=%s — falling back to marking it failed",
+                    task_id, exc_info=True,
+                )
+
+            if has_approved_snapshot:
+                await conn.execute(
+                    """
+                    UPDATE pipeline_tasks
+                    SET status = 'awaiting_approval',
+                        stage = 'awaiting_approval',
+                        percentage = 100,
+                        error_message = $1,
+                        updated_at = NOW()
+                    WHERE task_id = $2 AND status = 'in_progress'
+                    """,
+                    (
+                        f"recovered after flow crash: QA-approved draft "
+                        f"promoted to awaiting_approval (SEO/media tail may "
+                        f"be incomplete). Original error: {error_message}"
+                    )[:2048],
+                    task_id,
+                )
+                logger.warning(
+                    "[CONTENT_FLOW] task=%s promoted to awaiting_approval "
+                    "after flow crash (QA-approved draft recovered): %s",
+                    task_id, error_message,
+                )
+                return
+
             await conn.execute(
                 """
                 UPDATE pipeline_tasks
