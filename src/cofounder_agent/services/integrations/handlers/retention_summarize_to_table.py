@@ -229,18 +229,14 @@ def _resolve_summary_prompt_template() -> str:
     try:
         from services.prompt_manager import get_prompt_manager
 
-        # Two passes: (1) fetch the *raw* template (no placeholders
-        # filled), (2) skip the manager's auto-format by going through
-        # the underlying prompts dict + langfuse-first path manually.
+        # Raw-template fetch (no placeholders filled) via the manager's
+        # resolution seam. _resolve_template_with_meta honors the
+        # langfuse_prompt_overrides_enabled gate (poindexter#825) — the
+        # previous hand-rolled pm._fetch_from_langfuse() call bypassed it,
+        # leaving this the one Langfuse-first prompt after the SKILL.md-
+        # authoritative flip.
         pm = get_prompt_manager()
-        # Langfuse first (operator's edit surface). Falls through to YAML
-        # if Langfuse isn't configured / fails.
-        template = pm._fetch_from_langfuse(_SUMMARY_PROMPT_KEY)
-        if template is None and _SUMMARY_PROMPT_KEY in pm.prompts:
-            template = pm.prompts[_SUMMARY_PROMPT_KEY]["template"]
-        if template is None:
-            raise KeyError(_SUMMARY_PROMPT_KEY)
-        return template
+        return pm._resolve_template_with_meta(_SUMMARY_PROMPT_KEY)[0]
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[retention.summarize_to_table] prompt_manager lookup for "

@@ -107,13 +107,15 @@ def test_retention_resolver_returns_raw_template_from_prompt_manager():
     from services.integrations.handlers import retention_summarize_to_table
 
     with patch("services.prompt_manager.get_prompt_manager") as mock_pm:
-        mock_pm.return_value._fetch_from_langfuse.return_value = None
-        mock_pm.return_value.prompts = {
-            "ops.retention.summarize_to_table": {
-                "template": "PM RAW: {source_table}/{n}/{bucket_start_iso}/"
-                            "{row_count}/{joined}",
-            },
-        }
+        # poindexter#825: the resolver goes through the gated
+        # _resolve_template_with_meta seam (raw template + provenance)
+        # instead of hand-rolling _fetch_from_langfuse + prompts-dict —
+        # the hand-rolled path bypassed langfuse_prompt_overrides_enabled.
+        mock_pm.return_value._resolve_template_with_meta.return_value = (
+            "PM RAW: {source_table}/{n}/{bucket_start_iso}/{row_count}/{joined}",
+            "yaml",
+            None,
+        )
         result = retention_summarize_to_table._resolve_summary_prompt_template()
     # Raw template returned — placeholders intact for the caller to fill
     assert "{bucket_start_iso}" in result

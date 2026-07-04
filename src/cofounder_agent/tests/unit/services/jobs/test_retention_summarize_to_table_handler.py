@@ -660,3 +660,40 @@ class TestRegistration:
         # If load_all() or a direct import has run, this lookup succeeds.
         h = registry.lookup("retention", "summarize_to_table")
         assert h is mod.summarize_to_table
+
+
+# ---------------------------------------------------------------------------
+# Prompt resolution honors the langfuse_prompt_overrides_enabled gate
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSummaryPromptResolution:
+    def test_default_path_never_consults_langfuse(self):
+        """poindexter#825 regression: this resolver used to call
+        pm._fetch_from_langfuse() directly, bypassing the SKILL.md-
+        authoritative flip — the one Langfuse-first prompt left after
+        #2100. It must now go through _resolve_template_with_meta, which
+        honors the (default-off) override gate."""
+        from unittest.mock import MagicMock
+
+        from services import prompt_manager as pm_mod
+
+        pm = pm_mod.UnifiedPromptManager()
+        with patch.object(
+            pm, "_fetch_from_langfuse_with_meta",
+            MagicMock(return_value=("LANGFUSE COPY", 1)),
+        ) as lf, patch.object(pm_mod, "get_prompt_manager", return_value=pm):
+            template = mod._resolve_summary_prompt_template()
+        lf.assert_not_called()
+        # the SKILL.md-registered raw template served (not the fallback,
+        # not Langfuse)
+        assert template == pm.prompts["ops.retention.summarize_to_table"]["template"]
+
+    def test_falls_back_inline_when_manager_unavailable(self):
+        with patch(
+            "services.prompt_manager.get_prompt_manager",
+            side_effect=RuntimeError("boom"),
+        ):
+            template = mod._resolve_summary_prompt_template()
+        assert template == mod._SUMMARY_PROMPT_FALLBACK
