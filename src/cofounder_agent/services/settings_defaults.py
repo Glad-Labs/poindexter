@@ -1282,10 +1282,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.settings_zero_reader_keys.fallback': 'log_only',
     'findings.settings_zero_reader_keys.cooldown_minutes': '1440',
     'findings.settings_zero_reader_keys.min_severity': 'warn',
-    # Prompt-catalog drift. ProbePromptCatalogDriftJob
-    # emits prompt_catalog_drift (dot-free kind — same 3-segment parser note as
-    # above) at severity='warn' when Langfuse holds prompt names the SKILL.md
-    # catalog no longer declares (dead edit surfaces). Daily probe, so the
+    # Prompt-catalog drift. SyncPromptCatalogToLangfuseJob emits
+    # prompt_catalog_drift (dot-free kind — same 3-segment parser note as
+    # above) at severity='warn' for orphaned Langfuse names (key gone from the
+    # SKILL.md catalog) and for hand-edited mirror versions it replaced. The
     # 1440-minute cooldown re-pages at most once per drift-day.
     'findings.prompt_catalog_drift.delivery': 'discord',
     'findings.prompt_catalog_drift.fallback': 'log_only',
@@ -1339,9 +1339,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # than this, so a constantly-read key is written ~1×/hour, not 60×.
     'settings_read_telemetry_min_restamp_seconds': '3600',
     'settings_zero_reader_probe_enabled': 'true',
-    # Daily SKILL.md-catalog-vs-Langfuse drift probe (ProbePromptCatalogDriftJob).
-    # No-ops quietly when Langfuse isn't configured, so 'true' is safe on OSS.
-    'prompt_catalog_drift_probe_enabled': 'true',
+    # Langfuse prompt mirror (SyncPromptCatalogToLangfuseJob): pushes SKILL.md
+    # catalog defaults into Langfuse every 6h so the UI shows all production
+    # prompts for review. No-ops quietly when Langfuse isn't configured, so
+    # 'true' is safe on OSS. (Replaces prompt_catalog_drift_probe_enabled —
+    # dropped by migration 20260704.)
+    'langfuse_prompt_mirror_enabled': 'true',
+    # Legacy Langfuse-first prompt override lookup in prompt_manager. OFF by
+    # default: SKILL.md packs are authoritative and Langfuse is a read-only
+    # mirror (a bulk import once shadowed every SKILL.md edit — the masking
+    # trap). Enable only for deliberate live prompt experiments.
+    'langfuse_prompt_overrides_enabled': 'false',
     # A key is an orphan candidate only after it has existed (created_at) this
     # many days with last_read_at still NULL — gives newly-seeded keys time to be
     # read before they can be flagged, and self-suppresses on fresh installs.

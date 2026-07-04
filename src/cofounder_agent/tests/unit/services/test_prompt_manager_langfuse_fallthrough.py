@@ -1,17 +1,14 @@
-"""Unit tests for ``UnifiedPromptManager`` Langfuse fall-through paths.
+"""Unit tests for ``UnifiedPromptManager`` Langfuse paths.
 
-The Langfuse stack is the operator's preferred prompt-edit surface
-(per CLAUDE.md and feedback_prompts_must_be_db_configurable). It must
-fall through gracefully to the YAML defaults when:
+SKILL.md packs are authoritative (poindexter#825); Langfuse is a read-only
+mirror, and the legacy Langfuse-first override lookup sits behind
+``langfuse_prompt_overrides_enabled`` (default off). These tests pin:
 
-  - The langfuse package isn't installed (OSS distribution path).
-  - Credentials are missing in ``app_settings`` (fresh checkout).
-  - The Langfuse host is unreachable (live outage / credential rotation).
-  - A specific prompt isn't synced yet to Langfuse.
-
-Silent breakage in any of these paths means operator edits land in
-Langfuse but production keeps serving the old YAML version. These
-tests catch the regression where the fall-through chain stops working.
+  - the default path NEVER consults Langfuse (the masking-trap fix),
+  - the opt-in override path still works and falls through gracefully
+    when the package is missing / credentials absent / host unreachable /
+    a specific prompt isn't in Langfuse,
+  - the poindexter#815 configured-but-unusable finding semantics.
 """
 
 from __future__ import annotations
@@ -286,10 +283,10 @@ def test_get_prompt_falls_through_to_yaml_when_langfuse_disabled():
     assert "AI healthcare" in result
 
 
-def test_get_prompt_uses_langfuse_override_when_present(monkeypatch):
-    """When Langfuse returns a template, it MUST win over YAML —
-    that's the whole point of the override layer (per
-    feedback_prompts_must_be_db_configurable).
+def test_get_prompt_uses_langfuse_override_when_explicitly_enabled(monkeypatch):
+    """The legacy override layer still works when the operator opts in
+    via langfuse_prompt_overrides_enabled=true — the escape hatch for
+    live prompt experiments.
     """
     fake_module = MagicMock(name="langfuse")
     client = MagicMock()
@@ -304,12 +301,62 @@ def test_get_prompt_uses_langfuse_override_when_present(monkeypatch):
     sc.get.side_effect = lambda key, default="": {
         "langfuse_host": "http://lf:3000",
         "langfuse_public_key": "pk-test",
+        "langfuse_prompt_overrides_enabled": "true",
     }.get(key, default)
     pm._site_config = sc
     pm._langfuse_secret_key = "sk-test"
 
     result = pm.get_prompt("seo.generate_title", topic="hardware")
     assert result == "Custom Langfuse-edited prompt about hardware"
+
+
+def test_get_prompt_ignores_langfuse_by_default(monkeypatch):
+    """SKILL.md is authoritative: without the explicit
+    langfuse_prompt_overrides_enabled opt-in, a Langfuse production
+    version must NOT shadow the pack default. This is the structural
+    fix for the masking trap (bulk-imported copies silently served
+    stale prompts while SKILL.md edits shipped green through CI).
+    """
+    fake_module = MagicMock(name="langfuse")
+    client = MagicMock()
+    prompt_obj = MagicMock()
+    prompt_obj.prompt = "STALE imported snapshot about {topic}"
+    client.get_prompt = MagicMock(return_value=prompt_obj)
+    fake_module.Langfuse = MagicMock(return_value=client)
+    monkeypatch.setitem(sys.modules, "langfuse", fake_module)
+
+    pm = UnifiedPromptManager()
+    sc = MagicMock()
+    sc.get.side_effect = lambda key, default="": {
+        "langfuse_host": "http://lf:3000",
+        "langfuse_public_key": "pk-test",
+        # no langfuse_prompt_overrides_enabled key — the shipped default
+    }.get(key, default)
+    pm._site_config = sc
+    pm._langfuse_secret_key = "sk-test"
+
+    result = pm.get_prompt("seo.generate_title", topic="hardware")
+    assert "STALE" not in result
+    assert "hardware" in result  # the SKILL.md default served
+    client.get_prompt.assert_not_called()  # Langfuse never consulted
+
+
+def test_resolution_source_is_yaml_by_default(monkeypatch):
+    """get_prompt_resolution provenance must say 'yaml' (the in-memory
+    SKILL.md default) when the override layer is off, even with Langfuse
+    fully configured."""
+    monkeypatch.setitem(sys.modules, "langfuse", MagicMock(name="langfuse"))
+    pm = UnifiedPromptManager()
+    sc = MagicMock()
+    sc.get.side_effect = lambda key, default="": {
+        "langfuse_host": "http://lf:3000",
+        "langfuse_public_key": "pk-test",
+    }.get(key, default)
+    pm._site_config = sc
+    pm._langfuse_secret_key = "sk-test"
+
+    r = pm.get_prompt_resolution("seo.generate_title", topic="AI")
+    assert r.source == "yaml"
 
 
 # --------------------------------------------------------------------------- #

@@ -339,7 +339,6 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `podcast_distribute.py` | PodcastDistributeJob — Stage-3 link + Gate-2-seed + RSS distribution (#689). |
 | `postgres_vacuum.py` | PostgresVacuumJob — keep high-churn tables from bloating with dead tuples. |
 | `probe_cloudflare_beacon.py` | ProbeCloudflareBeaconJob — active outage detector for the page-views beacon. |
-| `probe_prompt_catalog_drift.py` | ProbePromptCatalogDriftJob — surface Langfuse prompts the code no longer reads. |
 | `probe_zero_reader_settings.py` | ProbeZeroReaderSettingsJob — surface app_settings keys nothing reads. |
 | `reap_stale_topic_batches.py` | ReapStaleTopicBatchesJob — self-heal watchdog for wedged topic_batches. |
 | `reload_site_config.py` | ReloadSiteConfigJob — periodically refresh the in-memory site_config cache. |
@@ -356,6 +355,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `static_export_orphan_sweep.py` | StaticExportOrphanSweepJob — retire de-published post exports. |
 | `static_export_reconciliation.py` | StaticExportReconciliationJob — DB ↔ R2 drift watchdog. |
 | `sync_cloudflare_analytics.py` | SyncCloudflareAnalyticsJob — pull page-view rows from CF Analytics Engine. |
+| `sync_prompt_catalog_to_langfuse.py` | SyncPromptCatalogToLangfuseJob — keep Langfuse a read-only mirror of the |
 | `topic_auto_resolve.py` | TopicAutoResolveJob — auto-rank + auto-resolve open topic_batches. |
 | `tune_publish_threshold.py` | TunePublishThresholdJob — auto-tune ``auto_publish_threshold`` app_setting. |
 | `update_utility_rates.py` | UpdateUtilityRatesJob — refresh electricity rate + GPU TDP in app_settings. |

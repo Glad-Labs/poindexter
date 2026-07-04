@@ -1,4 +1,4 @@
-"""Wiring/contract tests for the prompt-catalog drift probe.
+"""Wiring/contract tests for the Langfuse prompt-mirror sync job.
 
 Locks the same three things the #756 zero-reader wiring test locks (a future
 edit could silently break any of them):
@@ -6,19 +6,26 @@ edit could silently break any of them):
 - the finding kind stays dot-free so findings_alert_router's 3-segment policy
   parser actually binds the Discord delivery policy,
 - the job is registered in the core samples table.
+
+Plus the mirror-architecture invariants: the legacy Langfuse-first override
+lookup ships OFF, and the superseded probe flag is not re-seeded.
 """
 
 from __future__ import annotations
 
 from plugins.registry import get_core_samples
 from services.jobs.findings_alert_router import _delivery_for
-from services.jobs.probe_prompt_catalog_drift import _FINDING_KIND
+from services.jobs.sync_prompt_catalog_to_langfuse import _FINDING_KIND
 from services.settings_defaults import DEFAULTS
 
 _NEW_KEYS = {
     "findings.prompt_catalog_drift.delivery": "discord",
     "findings.prompt_catalog_drift.min_severity": "warn",
-    "prompt_catalog_drift_probe_enabled": "true",
+    "langfuse_prompt_mirror_enabled": "true",
+    # SKILL.md is authoritative — the override layer must ship disabled or
+    # the masking trap (bulk-imported Langfuse copies shadowing SKILL.md
+    # edits) comes back on day one.
+    "langfuse_prompt_overrides_enabled": "false",
 }
 
 
@@ -27,6 +34,12 @@ def test_seeds_present_and_nonempty():
         assert DEFAULTS.get(key) == expected
         # '' is the unset sentinel that crashes NOT-NULL CI — never seed it.
         assert DEFAULTS[key] != ""
+
+
+def test_superseded_probe_flag_not_reseeded():
+    # Migration 20260704_024658 deletes this key from live installs; a seed
+    # would resurrect it on next boot (reference_baseline_seeds_reseed_drift).
+    assert "prompt_catalog_drift_probe_enabled" not in DEFAULTS
 
 
 def test_finding_kind_is_dot_free():
@@ -46,4 +59,7 @@ def test_delivery_resolves_to_discord():
 
 def test_job_registered():
     job_names = {j.name for j in get_core_samples()["jobs"]}
-    assert "probe_prompt_catalog_drift" in job_names
+    assert "sync_prompt_catalog_to_langfuse" in job_names
+    # the superseded probe must be gone — two jobs hitting the same finding
+    # kind would double-page
+    assert "probe_prompt_catalog_drift" not in job_names

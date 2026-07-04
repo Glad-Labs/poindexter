@@ -4,11 +4,11 @@
 
 ## Where prompts live
 
-The single source of truth for every production prompt is a set of **`SKILL.md` packs** under `src/cofounder_agent/skills/<pack>/<skill>/SKILL.md`, accessed via the `UnifiedPromptManager` cascade. There are exactly three places a prompt body can come from at runtime:
+The single source of truth for every production prompt is a set of **`SKILL.md` packs** under `src/cofounder_agent/skills/<pack>/<skill>/SKILL.md` — **authoritative at runtime** as of poindexter#825 (2026-07). Resolution:
 
-1. **Langfuse `production` label** — the operator's preferred edit surface. Cached in-process for ~60s; edits in the Langfuse UI take effect on the next `get_prompt()` call without a worker restart.
-2. **`SKILL.md` pack default** — what ships with the repo (the in-memory default loaded at boot). The OSS-friendly fallback when Langfuse isn't configured (or the lookup fails). Edits land via PR.
-3. **`KeyError`** — if neither source has the key. Per `feedback_no_silent_defaults.md`, an unknown key is a configuration bug, not a quiet fallback.
+1. **`SKILL.md` pack default** — what ships with the repo (the in-memory default loaded at boot) and what production serves. Edits land via PR + the prompt contract tests.
+2. **Langfuse `production` label** — consulted FIRST only when `app_settings.langfuse_prompt_overrides_enabled='true'` (default `false`). The legacy override layer, kept as an escape hatch for deliberate live prompt experiments. Langfuse itself is otherwise a **read-only mirror** maintained by `SyncPromptCatalogToLangfuseJob` — see [Langfuse as a read-only mirror](#langfuse-as-a-read-only-mirror).
+3. **`KeyError`** — if the key isn't registered. Per `feedback_no_silent_defaults.md`, an unknown key is a configuration bug, not a quiet fallback.
 
 > The legacy `prompts/*.yaml` loader (`_initialize_prompts`) still runs at boot for backward compatibility, but the repo ships zero YAML prompt files — every key now comes from a `SKILL.md` pack via `_initialize_skills`. Skills load _after_ YAML so a migrated `SKILL.md` transparently wins over any leftover YAML entry for the same key.
 
@@ -19,24 +19,30 @@ caller: prompt = pm.get_prompt("qa.topic_delivery", topic=t, opening=o)
                     ↓
         UnifiedPromptManager.get_prompt(key, **kwargs)
                     ↓
-        ┌──────────────────────────────┐
-        │ 1. Langfuse client            │
-        │    .get_prompt(name=key,      │
-        │     label="production")       │
-        │    → returns template if hit  │
-        └──────────────────────────────┘
+        ┌───────────────────────────────────┐
+        │ 0. langfuse_prompt_overrides_     │
+        │    enabled == 'true'?  (default   │
+        │    false — skip straight to 2)    │
+        └───────────────────────────────────┘
+                    ↓ (only when enabled)
+        ┌───────────────────────────────────┐
+        │ 1. Langfuse client                │
+        │    .get_prompt(name=key,          │
+        │     label="production")           │
+        │    → returns template if hit      │
+        └───────────────────────────────────┘
                     ↓ (if None or error)
-        ┌──────────────────────────────┐
-        │ 2. self.prompts[key]          │
-        │    (in-memory default, loaded │
-        │     from SKILL.md packs at boot) │
-        │    → returns template         │
-        └──────────────────────────────┘
+        ┌───────────────────────────────────┐
+        │ 2. self.prompts[key]              │
+        │    (in-memory default, loaded     │
+        │     from SKILL.md packs at boot)  │
+        │    → returns template             │
+        └───────────────────────────────────┘
                     ↓ (if KeyError)
                   raises
 ```
 
-Both paths feed the same `template.format(**kwargs)` step at the end, so the call-site contract (kwargs in, formatted string out) is identical regardless of which tier wins.
+All paths feed the same `template.format(**kwargs)` step at the end, so the call-site contract (kwargs in, formatted string out) is identical regardless of which tier wins.
 
 ## Available prompt keys
 
@@ -62,23 +68,20 @@ The `narrate_bundle` and `pipeline_architect` templates carry the operator perso
 
 ## How operators tune prompts
 
-### Tier 1 — Langfuse UI (preferred)
-
-1. Open Langfuse: `<langfuse_host>/project/poindexter/prompts`
-2. Find the prompt by key (e.g. `qa.topic_delivery`)
-3. Edit the body. Save with the `production` label.
-4. Next `get_prompt()` call (within ~60s) picks up the new body.
-
-Langfuse versions every change. Roll back by promoting an older version to `production`.
-
-If the key isn't in Langfuse yet, create it there only when you intend a durable divergence from the shipped default — see [Catalog ↔ Langfuse drift](#catalog--langfuse-drift) for why "sync everything into Langfuse" is the wrong instinct.
-
-### Tier 2 — `SKILL.md` edit (when Langfuse isn't an option)
+### The one edit path — `SKILL.md` via PR
 
 1. Open the pack that owns the key (e.g. `skills/content/seo-metadata/SKILL.md` for `seo.*`).
-2. Edit the body in that key's `## <key>` section.
-3. Commit. The container picks up the new body on next deploy / restart.
+2. Edit the body in that key's `## <key>` section (in practice: ask an agent to).
+3. Commit / merge. The container picks up the new body on next deploy / restart, and `SyncPromptCatalogToLangfuseJob` pushes it into the Langfuse mirror within ~6h.
 4. The prompt contract tests (`tests/unit/services/test_prompt_*.py`, `test_prompt_manager_skills.py`, and per-surface tests like `test_multi_model_qa_prompts.py`) pin rendered bodies — update the affected expectation in the same PR.
+
+### Reviewing prompts — Langfuse UI (read-only)
+
+Open `<langfuse_host>/project/poindexter/prompts` to browse every production prompt with full version history — the mirror job keeps it current. **Edits made there do not take effect** (the runtime serves the SKILL.md default); the mirror will replace a hand-edited version with the current default on its next cycle and page Discord about it.
+
+### Escape hatch — live overrides (off by default)
+
+Set `langfuse_prompt_overrides_enabled='true'` to restore the legacy Langfuse-first lookup for deliberate live experiments (UI edit takes effect within ~60s, no deploy). While it's on, remember the trade you're making: any Langfuse `production` version shadows its SKILL.md default — the masking-trap behavior — so turn it back off (or delete the experimental versions) when the experiment ends.
 
 The contract tests serve two purposes:
 
@@ -144,22 +147,26 @@ One parser reads `SKILL.md` everywhere: `services/skill_frontmatter.py` (`parse_
 
 `poindexter skills import` **fails loud** (per `feedback_no_silent_defaults.md`) when a declared key has no resolvable `## <key>` section — it runs the same `extract_section` the loader uses, so a pack that imports clean is guaranteed to resolve every key it advertises. The check runs before anything is written to disk or recorded in `skill_catalog`.
 
-## Catalog ↔ Langfuse drift
+## Langfuse as a read-only mirror
 
-Nothing auto-creates Langfuse entries: the runtime is **read-only** against Langfuse, and population is a manual bulk import (`scripts/import_prompts_to_langfuse.py`). Two drift shapes follow, with opposite severities:
+`SyncPromptCatalogToLangfuseJob` (`services/jobs/sync_prompt_catalog_to_langfuse.py`, every 6h, gated by `langfuse_prompt_mirror_enabled`) keeps Langfuse showing **every** production prompt so the operator reviews the whole catalog in one UI. Per cycle:
 
-- **Orphaned Langfuse prompts** (name exists in Langfuse, key gone from the catalog — renamed or deleted): **real drift.** The UI happily accepts edits that do nothing in production. 8 such prompts accumulated between the one-time 2026-05-14 bulk import and the 2026-07-03 cleanup that deleted them.
-- **Repo-only keys** (declared in `SKILL.md`, absent from Langfuse): **healthy, by policy.** These serve their `SKILL.md` default. Do NOT bulk-sync them into Langfuse "for completeness" — every imported key becomes a frozen snapshot that masks all future `SKILL.md` improvements for that key (the masking trap: a `SKILL.md` edit ships, CI is green, and production keeps serving the stale Langfuse version), and re-running the import script moves the `production` label onto the fresh import, clobbering intentional operator edits.
+- **Missing key** → created with the `production` label and a `config.source='skill_sync'` provenance marker.
+- **Default changed** → new version pushed (the label moves with it), so the mirror always matches what production serves.
+- **Hand-edited version** (production version without the sync marker) → replaced with the current default + a warn `prompt_catalog_drift` finding ("Langfuse is a mirror — edit the SKILL.md"). The edited body stays in Langfuse version history.
+- **Orphaned name** (key renamed/deleted in the repo) → warn `prompt_catalog_drift` finding; deletion stays a human action.
 
-**Policy: Langfuse holds intentional overrides only.** Create a prompt in Langfuse when you mean to diverge from the shipped default for that key; otherwise leave the key repo-only. (The 40 keys currently in Langfuse predate this policy — they're the 2026-05-14 bulk import. Treat an un-edited imported key as a candidate for deletion whenever it blocks a `SKILL.md` improvement.)
+Skips quietly when Langfuse isn't configured (the OSS default).
 
-`ProbePromptCatalogDriftJob` (`services/jobs/probe_prompt_catalog_drift.py`) enforces the policy's alertable half: it diffs the two catalogs daily and emits an advisory `prompt_catalog_drift` finding (severity `warn` → Discord ops) listing orphaned Langfuse names. Repo-only keys are reported as a count for context, never alerted. Gated by `prompt_catalog_drift_probe_enabled`; skips quietly when Langfuse isn't configured (the OSS default).
+### History — why the mirror is one-way
+
+The pre-2026-07 design was Langfuse-first resolution populated by a manual bulk import (`scripts/import_prompts_to_langfuse.py`, now retired; its `imported_by` versions are treated as sync-owned and upgraded in place). That produced the **masking trap**: the import left a `production` copy of every key, so later `SKILL.md` edits shipped green through CI while production silently served stale snapshots — a 2026-07-03 audit found 12 of 39 imported prompts masking newer defaults, including a same-day critic fix, plus 8 orphans under renamed/deleted keys. The fix is structural: `SKILL.md` is authoritative, the mirror is write-only from the repo's perspective, and the override layer is an explicit opt-in (poindexter#824, #825).
 
 ## Why Langfuse + `SKILL.md`, not just one
 
-- **`SKILL.md` alone:** edits require a PR + CI + deploy. Operators tuning prompts at 11pm on a Saturday don't want to touch the repo.
-- **Langfuse alone:** an OSS fork operator who hasn't set up Langfuse has nothing to fall back on.
-- **Both:** the pack default ships as the OSS-friendly baseline; Langfuse is the operator's edit surface; contract tests prevent silent drift.
+- **`SKILL.md` alone:** no single place to review the live catalog with version history — you'd read 20+ pack files. Prompt bodies also wouldn't be linkable from traces.
+- **Langfuse alone:** prompts wouldn't ship with the product (the consumer stack has no Langfuse at all), couldn't be edited atomically with the code that formats them, and would bypass PR review + the contract tests.
+- **Both, with `SKILL.md` authoritative:** the pack default is what ships, what CI tests, and what production serves; Langfuse mirrors it for review and keeps the override escape hatch for live experiments.
 
 ## Related docs
 

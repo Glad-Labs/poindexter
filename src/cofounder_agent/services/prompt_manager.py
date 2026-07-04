@@ -423,13 +423,18 @@ class UnifiedPromptManager:
         """
         Get a prompt by key and format with provided kwargs.
 
-        Priority: Langfuse production label > YAML file > KeyError.
-        Langfuse is the operator's edit surface; edits in the Langfuse
-        UI take effect on the next get_prompt call without a worker
-        restart (the SDK caches in-process for ~60s). When Langfuse
-        isn't configured (OSS distribution without a Langfuse host /
-        key) or the lookup fails, the call falls through to the
-        baked-in YAML defaults — the open-source path.
+        The SKILL.md pack default is authoritative (poindexter#824
+        follow-up): prompts are edited in the repo (PR + contract
+        tests) and Langfuse is a **read-only mirror** maintained by
+        ``SyncPromptCatalogToLangfuseJob`` for review in the UI.
+
+        The legacy Langfuse-first override lookup still exists behind
+        ``app_settings.langfuse_prompt_overrides_enabled`` (default
+        ``false``). It was the default until 2026-07 and produced the
+        masking trap: a one-time bulk import left every key shadowed,
+        so SKILL.md edits shipped green through CI while production
+        kept serving stale Langfuse snapshots. Enable it only for
+        deliberate live prompt experiments.
 
         Phase 2 of poindexter#47 dropped the prompt_templates DB
         override layer; the parallel store added no value over Langfuse
@@ -476,6 +481,22 @@ class UnifiedPromptManager:
             text=rendered, key=key, version=version, source=source,
         )
 
+    def _langfuse_overrides_enabled(self) -> bool:
+        """Whether the legacy Langfuse-first override lookup is on.
+
+        Off by default: SKILL.md packs are authoritative and Langfuse
+        is a read-only mirror. Read as a raw string (not ``get_bool``)
+        so MagicMock site_configs in tests coerce to False rather than
+        truthy-mock.
+        """
+        try:
+            raw = self._site_config.get("langfuse_prompt_overrides_enabled", "")
+        except Exception:  # noqa: BLE001
+            # silent-ok: an unreadable flag means "overrides off" — the safe
+            # default; prompt resolution must never crash on a config read.
+            return False
+        return str(raw).strip().lower() in ("1", "true", "yes", "on")
+
     def _resolve_template_with_meta(
         self, key: str,
     ) -> tuple[str, str, int | None]:
@@ -484,11 +505,14 @@ class UnifiedPromptManager:
         ``source`` is one of ``"langfuse"`` / ``"yaml"``. Raises
         ``KeyError`` when the key isn't registered in either source.
         """
-        # Langfuse first — operator's preferred edit surface.
-        lf = self._fetch_from_langfuse_with_meta(key)
-        if lf is not None:
-            template, version = lf
-            return template, "langfuse", version
+        # Legacy override layer — only consulted when the operator has
+        # explicitly opted in (langfuse_prompt_overrides_enabled=true).
+        # Default path is SKILL.md-authoritative; Langfuse is a mirror.
+        if self._langfuse_overrides_enabled():
+            lf = self._fetch_from_langfuse_with_meta(key)
+            if lf is not None:
+                template, version = lf
+                return template, "langfuse", version
 
         # Fall back to YAML-loaded prompts (the OSS default).
         if key not in self.prompts:
