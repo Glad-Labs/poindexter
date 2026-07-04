@@ -65,11 +65,32 @@ function Sparkline({
 }) {
   const w = 100,
     h = height;
-  const min = Math.min(...data),
-    max = Math.max(...data);
+  const gid = useRef('sg' + Math.random().toString(36).slice(2, 8)).current;
+  // Need ≥2 finite points to form a line/area. With 0 points the area string
+  // becomes ` L${w},${h} L0,${h} Z` — a `d` with no leading M, which SVG
+  // rejects ("Expected moveto path command"); with 1 point, i/(len-1) divides
+  // by zero → NaN coords. Both happen on honest-empty series (e.g. a KPI with
+  // no data yet, or every panel at once when the API briefly returns nothing).
+  // Render an empty but valid svg box so the layout height still holds.
+  const series = Array.isArray(data)
+    ? data.filter((v) => Number.isFinite(v))
+    : [];
+  if (series.length < 2) {
+    return (
+      <svg
+        viewBox={`0 0 ${w} ${h}`}
+        preserveAspectRatio="none"
+        width="100%"
+        height={h}
+        style={{ display: 'block' }}
+      />
+    );
+  }
+  const min = Math.min(...series),
+    max = Math.max(...series);
   const range = max - min || 1;
-  const pts = data.map((v, i) => {
-    const x = (i / (data.length - 1)) * w;
+  const pts = series.map((v, i) => {
+    const x = (i / (series.length - 1)) * w;
     const y = h - ((v - min) / range) * (h - 3) - 1.5;
     return [x, y];
   });
@@ -77,7 +98,6 @@ function Sparkline({
     .map((p, i) => `${i ? 'L' : 'M'}${p[0].toFixed(1)},${p[1].toFixed(1)}`)
     .join(' ');
   const area = `${line} L${w},${h} L0,${h} Z`;
-  const gid = useRef('sg' + Math.random().toString(36).slice(2, 8)).current;
   return (
     <svg
       viewBox={`0 0 ${w} ${h}`}
