@@ -875,6 +875,26 @@ button {
   color: var(--gl-text);
   font-weight: 500;
 }
+
+/* Loki log feed (Telemetry tab). Needs its OWN bounded scroll box: without a
+   height cap the "all" filter (~300 lines) grows a single unsplittable panel
+   (break-inside: avoid) tall enough that the columns:3 masonry balancer
+   stretches every column to match it, blowing out the whole page. The feed
+   scrolls internally instead; overflow-wrap keeps long request URLs / stack
+   lines inside the column rather than overflowing it. */
+.logfeed {
+  font-family: var(--gl-font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+  max-height: 460px;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+.logline {
+  padding: 2px 0;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .c-cyan {
   color: var(--gl-cyan);
 }
