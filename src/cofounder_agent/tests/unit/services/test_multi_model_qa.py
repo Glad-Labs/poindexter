@@ -3,10 +3,12 @@ Unit tests for services/multi_model_qa.py
 
 Tests MultiModelQA review pipeline: programmatic validation gate,
 cloud reviewer integration, weighted score aggregation, and graceful
-handling when Ollama is unavailable.
-All external calls (OllamaClient, Gemini) are mocked.
+handling when the LLM provider is unavailable.
+All LLM transport is mocked at the ``MultiModelQA._dispatch_llm`` seam
+(poindexter#828 — the critic + gates route through the LiteLLM dispatcher).
 """
 
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -55,31 +57,39 @@ def _failing_validation() -> ValidationResult:
     )
 
 
-def _mock_ollama_client(approved: bool = True, score: float = 85.0):
-    """Return a mock OllamaClient that returns a valid JSON review."""
+def _completion(text: str, prompt_tokens: int = 200, completion_tokens: int = 50):
+    """Shape a dispatcher Completion (duck-typed — the code reads attrs)."""
+    return SimpleNamespace(
+        text=text,
+        prompt_tokens=prompt_tokens,
+        completion_tokens=completion_tokens,
+    )
+
+
+def _mock_dispatch(approved: bool = True, score: float = 85.0):
+    """AsyncMock for MultiModelQA._dispatch_llm returning a critic JSON review.
+
+    ``_dispatch_llm``'s contract (poindexter#828): a Completion-shaped object
+    on success, ``None`` on any transport failure (no pool / provider down /
+    timeout) — callers treat ``None`` as "skip this reviewer".
+    """
     import json
 
-    client = AsyncMock()
-    client.check_health = AsyncMock(return_value=True)
-    client.generate = AsyncMock(return_value={
-        "text": json.dumps({
-            "approved": approved,
-            "quality_score": score,
-            "feedback": "Well-written and informative content.",
-        }),
-        "tokens": 50,
-        "prompt_tokens": 200,
-    })
-    client.close = AsyncMock()
-    return client
+    return AsyncMock(return_value=_completion(json.dumps({
+        "approved": approved,
+        "quality_score": score,
+        "feedback": "Well-written and informative content.",
+    })))
 
 
-def _mock_ollama_client_down():
-    """Return a mock OllamaClient that reports unhealthy."""
-    client = AsyncMock()
-    client.check_health = AsyncMock(return_value=False)
-    client.close = AsyncMock()
-    return client
+def _mock_dispatch_down():
+    """AsyncMock for _dispatch_llm when the provider is unreachable (None)."""
+    return AsyncMock(return_value=None)
+
+
+def _mock_dispatch_text(text: str):
+    """AsyncMock for _dispatch_llm returning a raw-text completion."""
+    return AsyncMock(return_value=_completion(text))
 
 
 # Captured before the autouse fixture patches it, so the dedicated
@@ -136,7 +146,7 @@ class TestValidatorPasses:
     async def test_passes_validator_runs_cloud_review(self, qa):
         """When programmatic validator passes, cloud review should execute."""
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
-            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client()):
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch()):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         # Should have at least programmatic + ollama (url_verifier may also run)
@@ -148,7 +158,7 @@ class TestValidatorPasses:
     async def test_all_pass_approved(self, qa):
         """When all reviewers pass and score >= 70, result is approved."""
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
-            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=85.0)):
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=85.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         assert result.approved is True
@@ -199,7 +209,7 @@ class TestWeightedScore:
     async def test_weighted_average_programmatic_40_cloud_60(self, qa):
         """Score should be 40% programmatic + 60% cloud reviewer."""
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
-            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=80.0)):
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=80.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         # Core reviewers: programmatic (100, w=0.4) + ollama (80, w=0.6) = 88
@@ -210,7 +220,7 @@ class TestWeightedScore:
     async def test_low_cloud_score_can_block_approval(self, qa):
         """Even if validator passes, a low cloud score (<70) blocks approval."""
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
-            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=False, score=30.0)):
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=False, score=30.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         # Cloud reviewer rejected -> all_passed is False -> not approved
@@ -225,7 +235,7 @@ class TestWeightedScore:
 class TestAllReviewersPass:
     async def test_high_scores_approved(self, qa):
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
-            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=95.0)):
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=95.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         assert result.approved is True
@@ -233,7 +243,7 @@ class TestAllReviewersPass:
 
     async def test_result_has_summary(self, qa):
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
-            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client()):
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch()):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         summary = result.summary
@@ -250,7 +260,7 @@ class TestOllamaDown:
     async def test_ollama_unhealthy_skips_to_fallback(self, qa):
         """When Ollama is down, review should still complete (fallback or skip)."""
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
-            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client_down()):
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_down()):
                 # Also patch Gemini to be unavailable (no API key)
                 with patch.dict("os.environ", {}, clear=False):
                     import os
@@ -265,12 +275,10 @@ class TestOllamaDown:
         assert any(r.reviewer == "programmatic_validator" for r in result.reviews)
 
     async def test_ollama_exception_handled_gracefully(self, qa):
-        """If OllamaClient raises, the review should still complete."""
+        """If the dispatch seam raises, the review should still complete."""
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
-            mock_client = AsyncMock()
-            mock_client.check_health = AsyncMock(side_effect=Exception("connection refused"))
-            mock_client.close = AsyncMock()
-            with patch("services.ollama_client.OllamaClient", return_value=mock_client):
+            mock_dispatch = AsyncMock(side_effect=Exception("connection refused"))
+            with patch.object(MultiModelQA, "_dispatch_llm", mock_dispatch):
                 with patch.dict("os.environ", {}, clear=False):
                     import os
                     os.environ.pop("GOOGLE_API_KEY", None)
@@ -284,7 +292,7 @@ class TestOllamaDown:
     async def test_only_validator_when_no_cloud(self, qa):
         """With no cloud reviewers, approval is based on validator + score threshold."""
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
-            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client_down()):
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_down()):
                 with patch.dict("os.environ", {}, clear=False):
                     import os
                     os.environ.pop("GOOGLE_API_KEY", None)
@@ -339,22 +347,17 @@ class TestMultiModelResult:
 # ---------------------------------------------------------------------------
 
 
-def _mock_gate_client(json_payload: dict):
-    """Return a mock OllamaClient that returns a canned JSON response.
+def _mock_gate_dispatch(json_payload: dict):
+    """AsyncMock for _dispatch_llm returning a canned gate JSON completion.
 
     Used for the gate tests — the gates expect a JSON object with
     gate-specific keys (delivers/consistent, score, reason/contradictions).
     """
     import json
-    client = AsyncMock()
-    client.check_health = AsyncMock(return_value=True)
-    client.generate = AsyncMock(return_value={
-        "text": json.dumps(json_payload),
-        "tokens": 40,
-        "prompt_tokens": 600,
-    })
-    client.close = AsyncMock()
-    return client
+
+    return AsyncMock(return_value=_completion(
+        json.dumps(json_payload), prompt_tokens=600, completion_tokens=40,
+    ))
 
 
 @pytest.fixture
@@ -372,7 +375,7 @@ class TestTopicDeliveryGate:
             "score": 90,
             "reason": "The body faithfully covers the requested topic.",
         }
-        with patch("services.ollama_client.OllamaClient", return_value=_mock_gate_client(payload)):
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_gate_dispatch(payload)):
             review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
         assert review is not None
         assert review.reviewer == "topic_delivery"
@@ -387,7 +390,7 @@ class TestTopicDeliveryGate:
             "score": 40,
             "reason": "Title promises 11 indie hackers; body names 2 in passing.",
         }
-        with patch("services.ollama_client.OllamaClient", return_value=_mock_gate_client(payload)):
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_gate_dispatch(payload)):
             review = await raw_qa._check_topic_delivery("11 solo indie hackers", "Body is an abstract systems essay.")
         assert review is not None
         assert review.approved is False
@@ -399,22 +402,15 @@ class TestTopicDeliveryGate:
         review = await raw_qa._check_topic_delivery("", GOOD_CONTENT)
         assert review is None
 
-    async def test_ollama_unhealthy_skipped(self, raw_qa):
-        """When Ollama health check fails, gate returns None (skipped)."""
-        client = AsyncMock()
-        client.check_health = AsyncMock(return_value=False)
-        client.close = AsyncMock()
-        with patch("services.ollama_client.OllamaClient", return_value=client):
+    async def test_provider_unreachable_skipped(self, raw_qa):
+        """When the dispatch fail-softs to None, gate returns None (skipped)."""
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_down()):
             review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
         assert review is None
 
     async def test_malformed_json_skipped(self, raw_qa):
-        """Unparseable Ollama response returns None."""
-        client = AsyncMock()
-        client.check_health = AsyncMock(return_value=True)
-        client.generate = AsyncMock(return_value={"text": "not json at all", "tokens": 5})
-        client.close = AsyncMock()
-        with patch("services.ollama_client.OllamaClient", return_value=client):
+        """Unparseable model response returns None."""
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_text("not json at all")):
             review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
         assert review is None
 
@@ -427,7 +423,7 @@ class TestInternalConsistencyGate:
             "score": 92,
             "contradictions": [],
         }
-        with patch("services.ollama_client.OllamaClient", return_value=_mock_gate_client(payload)):
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_gate_dispatch(payload)):
             review = await raw_qa._check_internal_consistency(GOOD_CONTENT)
         assert review is not None
         assert review.reviewer == "internal_consistency"
@@ -445,7 +441,7 @@ class TestInternalConsistencyGate:
                 "Section 2 shows custom auth code; Section 4 says 'never build custom auth'",
             ],
         }
-        with patch("services.ollama_client.OllamaClient", return_value=_mock_gate_client(payload)):
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_gate_dispatch(payload)):
             review = await raw_qa._check_internal_consistency(GOOD_CONTENT)
         assert review is not None
         assert review.approved is False
@@ -457,21 +453,18 @@ class TestInternalConsistencyGate:
         review = await raw_qa._check_internal_consistency("")
         assert review is None
 
-    async def test_ollama_unhealthy_skipped(self, raw_qa):
-        """Ollama health check failure returns None."""
-        client = AsyncMock()
-        client.check_health = AsyncMock(return_value=False)
-        client.close = AsyncMock()
-        with patch("services.ollama_client.OllamaClient", return_value=client):
+    async def test_provider_unreachable_skipped(self, raw_qa):
+        """Dispatch fail-soft (None) returns None."""
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_down()):
             review = await raw_qa._check_internal_consistency(GOOD_CONTENT)
         assert review is None
 
     async def test_exception_returns_none(self, raw_qa):
         """An exception anywhere in the gate is caught and returns None."""
-        client = AsyncMock()
-        client.check_health = AsyncMock(side_effect=Exception("connection refused"))
-        client.close = AsyncMock()
-        with patch("services.ollama_client.OllamaClient", return_value=client):
+        with patch.object(
+            MultiModelQA, "_dispatch_llm",
+            AsyncMock(side_effect=Exception("connection refused")),
+        ):
             review = await raw_qa._check_internal_consistency(GOOD_CONTENT)
         assert review is None
 
@@ -499,7 +492,7 @@ class TestConsistencyGateVetoPolicy:
         qa._check_internal_consistency = _consistency_moderate  # type: ignore[method-assign]
 
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
-            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=90.0)):
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=90.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         # Final score is still well above threshold and gate didn't hard-veto
@@ -523,7 +516,7 @@ class TestConsistencyGateVetoPolicy:
         qa._check_internal_consistency = _consistency_low  # type: ignore[method-assign]
 
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
-            with patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=90.0)):
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=90.0)):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         assert result.approved is False
@@ -563,7 +556,7 @@ class TestSettingsOverrides:
         qa._check_internal_consistency = _skip_gate
 
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
-             patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(score=80.0)):
+             patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(score=80.0)):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         # With 50/50 weights, final_score should be between validator (100) and critic (80)
@@ -586,7 +579,7 @@ class TestSettingsOverrides:
         qa._check_internal_consistency = _skip_gate
 
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
-             patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(score=75.0)):
+             patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(score=75.0)):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         # Weighted final score is somewhere around (100*0.4 + 75*0.6)/1.0 = 85
@@ -609,7 +602,7 @@ class TestSettingsOverrides:
         qa._check_internal_consistency = _skip_gate
 
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
-             patch("services.ollama_client.OllamaClient", return_value=_mock_ollama_client(approved=True, score=60.0)):
+             patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=60.0)):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
         assert result.approved is True
@@ -839,12 +832,7 @@ class TestGatePromptBranches:
             "reason": "Good coverage",
         }) + "\n```"
 
-        client = AsyncMock()
-        client.check_health = AsyncMock(return_value=True)
-        client.generate = AsyncMock(return_value={"text": fenced, "tokens": 40})
-        client.close = AsyncMock()
-
-        with patch("services.ollama_client.OllamaClient", return_value=client):
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_text(fenced)):
             review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
 
         assert review is not None
@@ -855,12 +843,7 @@ class TestGatePromptBranches:
         """Gates should fall back to regex-extracting a JSON object from prose."""
         mixed = 'The editor says: {"delivers": false, "score": 30, "reason": "Off-topic"} — that is all.'
 
-        client = AsyncMock()
-        client.check_health = AsyncMock(return_value=True)
-        client.generate = AsyncMock(return_value={"text": mixed, "tokens": 40})
-        client.close = AsyncMock()
-
-        with patch("services.ollama_client.OllamaClient", return_value=client):
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_text(mixed)):
             review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
 
         assert review is not None
@@ -868,25 +851,19 @@ class TestGatePromptBranches:
         assert review.score == 30
 
     async def test_empty_generate_response_returns_none(self, raw_qa):
-        client = AsyncMock()
-        client.check_health = AsyncMock(return_value=True)
-        client.generate = AsyncMock(return_value={"text": "", "tokens": 0})
-        client.close = AsyncMock()
-
-        with patch("services.ollama_client.OllamaClient", return_value=client):
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_text("")):
             review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
 
         assert review is None
 
     async def test_generate_timeout_returns_none(self, raw_qa):
-        """asyncio.TimeoutError during generate returns None (gate skipped)."""
+        """A timeout escaping the dispatch seam returns None (gate skipped)."""
         import asyncio
-        client = AsyncMock()
-        client.check_health = AsyncMock(return_value=True)
-        client.generate = AsyncMock(side_effect=asyncio.TimeoutError())
-        client.close = AsyncMock()
 
-        with patch("services.ollama_client.OllamaClient", return_value=client):
+        with patch.object(
+            MultiModelQA, "_dispatch_llm",
+            AsyncMock(side_effect=asyncio.TimeoutError()),
+        ):
             review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
 
         assert review is None
@@ -903,15 +880,7 @@ class TestGatePromptBranches:
             ],
         }
 
-        client = AsyncMock()
-        client.check_health = AsyncMock(return_value=True)
-        client.generate = AsyncMock(return_value={
-            "text": __import__("json").dumps(payload),
-            "tokens": 40,
-        })
-        client.close = AsyncMock()
-
-        with patch("services.ollama_client.OllamaClient", return_value=client):
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_gate_dispatch(payload)):
             review = await raw_qa._check_internal_consistency(GOOD_CONTENT)
 
         assert review is not None
@@ -967,9 +936,7 @@ class TestWarningQAPenalty:
 
         validation = _validation_with_warnings(9)
         with patch("modules.content.multi_model_qa.validate_content", return_value=validation), \
-             patch(
-                 "services.ollama_client.OllamaClient",
-                 return_value=_mock_ollama_client(approved=True, score=85.0),
+             patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=85.0),
              ):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -998,9 +965,7 @@ class TestWarningQAPenalty:
         qa._check_internal_consistency = _skip_gate
 
         with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()), \
-             patch(
-                 "services.ollama_client.OllamaClient",
-                 return_value=_mock_ollama_client(approved=True, score=85.0),
+             patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=85.0),
              ):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -1029,9 +994,7 @@ class TestWarningQAPenalty:
         # Only 4 warnings but 5 pt penalty = 20 pt drop. Base ~80 → ~60.
         validation = _validation_with_warnings(4)
         with patch("modules.content.multi_model_qa.validate_content", return_value=validation), \
-             patch(
-                 "services.ollama_client.OllamaClient",
-                 return_value=_mock_ollama_client(approved=True, score=85.0),
+             patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=85.0),
              ):
             result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -1047,7 +1010,7 @@ class TestWarningQAPenalty:
 # the fixed production code:
 #
 # 1. enabled=False on a gate row → the gate's LLM call is NOT invoked
-#    (mock OllamaClient call_count == 0 for the disabled gate).
+#    (the _dispatch_llm mock's await_count == 0 for the disabled gate).
 # 2. required_to_pass=False (advisory) on a gate row → the gate still RUNS
 #    so its score feeds the weighted average for trend tracking, but a
 #    failing run does NOT veto the overall pass/fail decision.
@@ -1111,8 +1074,8 @@ class TestQAGatesEnabledFalseSkipsLLMCall:
     short-circuited entirely (no inference, no review entry, no cost)."""
 
     async def test_llm_critic_disabled_does_not_invoke_ollama(self):
-        """The mock OllamaClient must never see ``check_health`` /
-        ``generate`` when llm_critic is disabled in qa_gates."""
+        """The dispatch seam must never fire when llm_critic is disabled
+        in qa_gates."""
         rows = [
             _row_for("programmatic_validator", order=100, enabled=True),
             _row_for("llm_critic", order=200, enabled=False),
@@ -1127,27 +1090,21 @@ class TestQAGatesEnabledFalseSkipsLLMCall:
         qa._check_topic_delivery = AsyncMock(return_value=None)
         qa._check_rendered_preview = AsyncMock(return_value=None)
 
-        # The sentinel: the OllamaClient mock counts calls. If llm_critic's
-        # _review_with_cloud_model fires, check_health + generate are hit.
-        ollama_mock = _mock_ollama_client(approved=True, score=90.0)
+        # The sentinel: the dispatch mock counts awaits. If llm_critic's
+        # _review_with_cloud_model fires, _dispatch_llm gets awaited.
+        dispatch_mock = _mock_dispatch(approved=True, score=90.0)
 
         with patch(
             "modules.content.multi_model_qa.validate_content",
             return_value=_passing_validation(),
         ):
-            with patch(
-                "services.ollama_client.OllamaClient",
-                return_value=ollama_mock,
+            with patch.object(MultiModelQA, "_dispatch_llm", dispatch_mock,
             ):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
-        assert ollama_mock.check_health.call_count == 0, (
-            "llm_critic disabled in qa_gates → OllamaClient.check_health "
-            f"must NOT be called, got {ollama_mock.check_health.call_count}"
-        )
-        assert ollama_mock.generate.call_count == 0, (
-            "llm_critic disabled in qa_gates → OllamaClient.generate "
-            f"must NOT be called, got {ollama_mock.generate.call_count}"
+        assert dispatch_mock.await_count == 0, (
+            "llm_critic disabled in qa_gates → _dispatch_llm "
+            f"must NOT be awaited, got {dispatch_mock.await_count}"
         )
         # And the resulting review list must not contain ollama_critic.
         names = [r.reviewer for r in result.reviews]
@@ -1185,9 +1142,7 @@ class TestQAGatesEnabledFalseSkipsLLMCall:
             "modules.content.multi_model_qa.validate_content",
             return_value=_passing_validation(),
         ):
-            with patch(
-                "services.ollama_client.OllamaClient",
-                return_value=_mock_ollama_client(approved=True, score=90.0),
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=90.0),
             ):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -1229,9 +1184,7 @@ class TestQAGatesAdvisoryDoesNotVeto:
             "modules.content.multi_model_qa.validate_content",
             return_value=_passing_validation(),
         ):
-            with patch(
-                "services.ollama_client.OllamaClient",
-                return_value=_mock_ollama_client(approved=False, score=30.0),
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=False, score=30.0),
             ):
                 result = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 
@@ -1279,14 +1232,10 @@ class TestQAGatesAdvisoryDoesNotVeto:
             "modules.content.multi_model_qa.validate_content",
             return_value=_passing_validation(),
         ):
-            with patch(
-                "services.ollama_client.OllamaClient",
-                return_value=_mock_ollama_client(approved=True, score=90.0),
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=90.0),
             ):
                 high = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
-            with patch(
-                "services.ollama_client.OllamaClient",
-                return_value=_mock_ollama_client(approved=False, score=30.0),
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=False, score=30.0),
             ):
                 low = await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
 

@@ -1129,6 +1129,60 @@ class MultiModelQA:
         logger.info("[MULTI_QA] All QA models unavailable — skipping review")
         return None
 
+    async def _dispatch_llm(
+        self,
+        prompt: str,
+        model: str,
+        *,
+        temperature: float,
+        max_tokens: int,
+        timeout_s: float,
+        phase: str,
+    ):
+        """Route one text prompt through the LiteLLM dispatcher (fail-soft).
+
+        The single LLM-transport seam for the critic + the topic-delivery /
+        internal-consistency gates — the text twin of
+        ``_dispatch_vision_message`` (poindexter#828, retiring the last
+        concrete-OllamaClient bypass). Dispatching lands the call in
+        ``cost_logs`` (incl. ``electricity_kwh`` attribution for local
+        models), Langfuse, the per-model ``api_base`` overrides (GPU-pinned
+        instances), and the reentrant ``gpu.lock("ollama")`` serialisation.
+
+        Goes through the ``platform.dispatch`` capability handle (Seam 1,
+        poindexter#667) — NOT a direct ``services`` import — so content
+        stays on the right side of the module-purity boundary, matching
+        ``_dispatch_vision_message`` / ``media_qa`` / ``ai_content_generator``.
+        Every graph_def-path construction (the qa.* atoms) threads a
+        ``platform`` handle via ``state['platform']``; the only platform-less
+        construction is the substrate preview-QA path, which runs the vision
+        gate, not the critic/text gates.
+
+        Returns the provider ``Completion``, or ``None`` when the pool /
+        platform handle is missing or the dispatch failed — callers treat
+        ``None`` as "skip this reviewer" per the QA chain's fail-soft
+        contract.
+        """
+        if self.pool is None or self._platform is None:
+            logger.warning(
+                "[MULTI_QA] %s: no pool/platform handle — cannot dispatch "
+                "LLM call", phase,
+            )
+            return None
+        messages = [{"role": "user", "content": prompt}]
+        try:
+            return await self._platform.dispatch.complete(
+                pool=self.pool, messages=messages, model=model,
+                tier="standard", phase=phase,
+                temperature=temperature, max_tokens=max_tokens,
+                timeout_s=timeout_s,
+            )
+        except Exception as exc:  # noqa: BLE001 — QA rails are fail-soft
+            logger.warning(
+                "[MULTI_QA] %s dispatch failed (non-critical): %s", phase, exc,
+            )
+            return None
+
     async def _review_with_ollama(
         self,
         title: str,
@@ -1137,53 +1191,32 @@ class MultiModelQA:
         model_override: str | None = None,
         research_sources: str | None = None,
     ) -> tuple[ReviewerResult, dict] | None:
-        """Review content using local Ollama (zero cost).
+        """Review content with the local-default critic via the dispatcher.
 
         Model resolved via ``_resolve_critic_model`` —
         operators tune ``app_settings.pipeline_critic_model`` to
         switch the critic without code edits.
 
+        Routed through ``_dispatch_llm`` (poindexter#828). The prior "v2.3
+        deliberate non-migration" onto the concrete OllamaClient existed for
+        electricity attribution + the health short-circuit, both of which the
+        dispatcher now provides (``cost_logs.electricity_kwh`` via
+        ``cost_guard.estimate_local_kwh``; a downed Ollama fails fast with a
+        connection error instead of hanging).
+
         Returns a ``(review, cost_log)`` tuple on success, or ``None`` if
         the model was unreachable / returned unparseable output. The
         caller (``_review_with_cloud_model``) passes the tuple straight
         through and its outer caller unpacks to ``cross_review,
-        qa_cost_log = cross_result``.
+        qa_cost_log = cross_result``. The tuple's ``cost_log`` is advisory
+        caller metadata — the authoritative cost row is written by the
+        dispatcher itself.
         """
-        import asyncio
         import json
         import re
+        import time
 
         try:
-            # v2.3 deliberate non-migration: this path stays on the concrete
-            # OllamaClient because it uses Ollama-specific features that the
-            # Provider Protocol intentionally does not expose:
-            #   - configure_electricity() for local GPU cost attribution
-            #   - check_health() short-circuit
-            #   - raw result dict fields (cost, duration_seconds, tokens)
-            # These are the core of the critic-cost telemetry (see
-            # feedback_no_paid_apis + session_58 electricity tracking).
-            from services.ollama_client import OllamaClient
-
-            # Explicit 90s timeout on the main critic — thinking models (glm-4.7,
-            # qwen3:30b) can legitimately take ~60s for a 1500-token review, so
-            # 90s gives headroom without risking a multi-minute hang.
-            client = OllamaClient(timeout=90)
-            # Configure electricity rate from app_settings if available
-            if self.settings:
-                rate = await self.settings.get("electricity_rate_kwh")
-                if rate:
-                    client.configure_electricity(electricity_rate_kwh=float(rate))
-            try:
-                healthy = await asyncio.wait_for(client.check_health(), timeout=5)
-            except asyncio.TimeoutError:
-                logger.warning("[MULTI_QA] Ollama check_health timed out after 5s")
-                await client.close()
-                return None
-            if not healthy:
-                logger.debug("[MULTI_QA] Ollama not available, skipping local review")
-                await client.close()
-                return None
-
             # Build the sources block if the caller passed a research corpus.
             # Cap it at 4000 chars so it doesn't dwarf the content in the prompt.
             sources_block = ""
@@ -1234,28 +1267,29 @@ class MultiModelQA:
                 ollama_model, substrings=resolve_thinking_substrings(self._site_config)
             )
             max_tok = thinking_max if _is_thinking else standard_max
-            try:
-                result = await asyncio.wait_for(
-                    client.generate(
-                        prompt=prompt,
-                        model=ollama_model,
-                        temperature=temperature,
-                        max_tokens=max_tok,
-                    ),
-                    timeout=90,
-                )
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "[MULTI_QA] Main critic %s timed out after 90s — skipping",
-                    ollama_model,
-                )
-                await client.close()
+            # Critic timeout — thinking models (glm-4.7, qwen3:30b) can
+            # legitimately take ~60s for a 1500-token review, so the 90s
+            # default gives headroom without risking a multi-minute hang.
+            # DB-tunable like the gate twin (qa_gate_timeout_seconds).
+            timeout_s = (
+                self._platform.config.get_int("qa_critic_timeout_seconds", 90)
+                if self._platform else 90
+            )
+            started = time.monotonic()
+            completion = await self._dispatch_llm(
+                prompt,
+                ollama_model,
+                temperature=temperature,
+                max_tokens=max_tok,
+                timeout_s=float(timeout_s),
+                phase="qa_review",
+            )
+            if completion is None:
                 return None
-            await client.close()
 
-            text = result.get("text", "")
+            text = getattr(completion, "text", "") or ""
             if not text:
-                logger.warning("[MULTI_QA] Ollama returned empty response")
+                logger.warning("[MULTI_QA] critic returned empty response")
                 return None
 
             # Parse JSON response
@@ -1275,19 +1309,21 @@ class MultiModelQA:
                     logger.warning("[MULTI_QA] Ollama response was not valid JSON: %s", text[:200])
                     return None
 
-            # Cost is calculated from GPU power draw * duration by the Ollama client
-            electricity_cost = result.get("cost", 0.0)
-            duration_s = result.get("duration_seconds", 0.0)
+            # Advisory caller metadata only — the authoritative cost_logs row
+            # (incl. electricity_kwh for local calls) is written by the
+            # dispatcher inside _dispatch_llm.
+            out_tokens = int(getattr(completion, "completion_tokens", 0) or 0)
+            duration_s = time.monotonic() - started
             cost_log = {
-                "provider": "ollama", "model": ollama_model,
-                "input_tokens": result.get("prompt_tokens", 0),
-                "output_tokens": result.get("tokens", 0),
-                "cost_usd": round(electricity_cost, 6), "phase": "qa_review",
+                "provider": "dispatcher", "model": ollama_model,
+                "input_tokens": int(getattr(completion, "prompt_tokens", 0) or 0),
+                "output_tokens": out_tokens,
+                "cost_usd": 0.0, "phase": "qa_review",
                 "duration_seconds": round(duration_s, 2),
             }
             logger.info(
-                "[MULTI_QA] Ollama QA: model=%s, tokens=%d, electricity=$%.6f",
-                ollama_model, result.get("tokens", 0), electricity_cost,
+                "[MULTI_QA] critic review: model=%s, tokens=%d, %.1fs",
+                ollama_model, out_tokens, duration_s,
             )
 
             score = float(data.get("quality_score", 0))
@@ -1304,7 +1340,7 @@ class MultiModelQA:
             return review, cost_log
 
         except Exception as e:
-            logger.warning("[MULTI_QA] Ollama review failed (non-critical): %s", e)
+            logger.warning("[MULTI_QA] critic review failed (non-critical): %s", e)
             return None
 
     async def _run_gate_prompt(
@@ -1315,41 +1351,17 @@ class MultiModelQA:
     ) -> ReviewerResult | None:
         """Shared plumbing for the topic-delivery and consistency gates.
 
-        Runs a JSON-returning Ollama prompt, parses the result, and turns it
-        into a ReviewerResult with provider='consistency_gate'. Returns None
-        if Ollama is unreachable or returns unparseable output — in that
-        case the gate is silently skipped and does not block approval.
+        Runs a JSON-returning gate prompt through ``_dispatch_llm``
+        (poindexter#828 — same dispatcher path as the main critic), parses
+        the result, and turns it into a ReviewerResult with
+        provider='consistency_gate'. Returns None if the model is
+        unreachable or returns unparseable output — in that case the gate
+        is silently skipped and does not block approval.
         """
-        import asyncio
         import json
         import re
 
         try:
-            # v2.3 deliberate non-migration: same rationale as the main
-            # critic call above — electricity tracking + health probe are
-            # OllamaClient-specific and essential for cost telemetry.
-            from services.ollama_client import OllamaClient
-
-            # 60s per gate — gates use shorter prompts (max_tokens=600) and
-            # should respond well under that even on the thinking critic.
-            client = OllamaClient(timeout=60)
-            if self.settings:
-                rate = await self.settings.get("electricity_rate_kwh")
-                if rate:
-                    client.configure_electricity(electricity_rate_kwh=float(rate))
-            try:
-                healthy = await asyncio.wait_for(client.check_health(), timeout=5)
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "[MULTI_QA] %s: Ollama health check timed out after 5s", reviewer_name
-                )
-                await client.close()
-                return None
-            if not healthy:
-                logger.debug("[MULTI_QA] Ollama not available, skipping %s", reviewer_name)
-                await client.close()
-                return None
-
             # Cost-tier API (Lane B sweep). Gates use the standard tier
             # since they're fast/cheap critic prompts. The
             # qa_fallback_critic_model setting remains the operator's
@@ -1369,26 +1381,18 @@ class MultiModelQA:
 
             _gate_max = self._platform.config.get_int("qa_gate_max_tokens", 600) if self._platform else 600
             _gate_timeout = self._platform.config.get_int("qa_gate_timeout_seconds", 60) if self._platform else 60
-            try:
-                result = await asyncio.wait_for(
-                    client.generate(
-                        prompt=prompt,
-                        model=ollama_model,
-                        temperature=temperature,
-                        max_tokens=_gate_max,
-                    ),
-                    timeout=_gate_timeout,
-                )
-            except asyncio.TimeoutError:
-                logger.warning(
-                    "[MULTI_QA] %s timed out after %ds — gate skipped",
-                    reviewer_name, _gate_timeout,
-                )
-                await client.close()
+            completion = await self._dispatch_llm(
+                prompt,
+                ollama_model,
+                temperature=temperature,
+                max_tokens=_gate_max,
+                timeout_s=float(_gate_timeout),
+                phase=f"qa_gate_{reviewer_name}",
+            )
+            if completion is None:
                 return None
-            await client.close()
 
-            text = result.get("text", "")
+            text = getattr(completion, "text", "") or ""
             if not text:
                 return None
 
