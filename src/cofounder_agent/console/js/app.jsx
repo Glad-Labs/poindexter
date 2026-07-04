@@ -1696,6 +1696,15 @@ function draftToInbox(d) {
 // Map a /api/tasks/pending-approval row → the Action Inbox item shape.
 function approvalToInbox(t) {
   const PX = window.PX;
+  // Rendered-preview link: every awaiting-approval task mints a preview_token
+  // (verify_task → content.persist_task) and the worker serves the rendered
+  // draft at /preview/{token} (cms_routes) — the same link the Discord
+  // notification carries. The console is served same-origin by that worker,
+  // so a relative href works on localhost and over the tailnet alike.
+  const previewToken = (t.metadata && t.metadata.preview_token) || '';
+  const previewUrl = /^[a-f0-9]{32}$/.test(previewToken)
+    ? `/preview/${previewToken}`
+    : null;
   return {
     id: t.task_id,
     kind: 'approve',
@@ -1718,6 +1727,7 @@ function approvalToInbox(t) {
       topic: t.topic,
       featured_image_url: t.featured_image_url,
       task: t.task_id,
+      preview_url: previewUrl,
     },
   };
 }

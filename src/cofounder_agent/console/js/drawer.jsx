@@ -67,7 +67,29 @@ function Drawer({ entity, onClose, actions }) {
                   />
                 </>
               ) : null}
-              <div className="section-label">Draft preview</div>
+              <div
+                className="section-label"
+                style={{
+                  display: 'flex',
+                  justifyContent: 'space-between',
+                  alignItems: 'center',
+                }}
+              >
+                <span>Draft preview</span>
+                {d.preview_url ? (
+                  <a
+                    className="mbtn mbtn--ghost"
+                    href={d.preview_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    title="Open the rendered draft in a new tab"
+                    style={{ textDecoration: 'none' }}
+                  >
+                    <Icon name="link" size={12} />
+                    Open preview
+                  </a>
+                ) : null}
+              </div>
               <div className="preview">
                 <h4>{e.title}</h4>
                 <p>

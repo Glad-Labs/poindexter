@@ -195,6 +195,18 @@ function ActionInbox({
               >
                 {it.kind === 'approve' && (
                   <>
+                    {it.detail && it.detail.preview_url ? (
+                      <a
+                        className="mbtn mbtn--ghost"
+                        href={it.detail.preview_url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        title="Open the rendered draft in a new tab"
+                        style={{ textDecoration: 'none' }}
+                      >
+                        <Icon name="link" size={12} />
+                      </a>
+                    ) : null}
                     <button
                       className="mbtn mbtn--primary"
                       onClick={() => onApprove(it)}
