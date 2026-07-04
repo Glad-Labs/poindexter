@@ -33,7 +33,7 @@ from services.jobs.fix_uncategorized_posts import FixUncategorizedPostsJob as _F
 # No module-level ``pytestmark = pytest.mark.asyncio``: the project runs
 # ``asyncio_mode = "auto"`` (pyproject.toml), so coroutine tests are
 # auto-marked. An explicit mark here wrongly tagged the sync tests in this
-# module, emitting a PytestWarning (Glad-Labs/glad-labs-stack#997).
+# module, emitting a PytestWarning (Glad-Labs/poindexter#997).
 
 
 class _FakePoolCtx:
