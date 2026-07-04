@@ -84,6 +84,7 @@ function ActionInbox({
   onOpen,
   onApprove,
   onReject,
+  onRejectNotes,
   onRetry,
   onAck,
   onFix,
@@ -216,8 +217,8 @@ function ActionInbox({
                     </button>
                     <button
                       className="mbtn mbtn--ghost"
-                      onClick={() => onReject(it)}
-                      title="Reject"
+                      onClick={() => (onRejectNotes || onReject)(it)}
+                      title="Reject — add a note before sending back"
                     >
                       <Icon name="x" size={12} />
                     </button>

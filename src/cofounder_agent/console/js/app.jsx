@@ -1122,7 +1122,7 @@ function App() {
     },
   };
 
-  const open = (type, data) => setEntity({ type, data });
+  const open = (type, data, extra) => setEntity({ type, data, ...extra });
 
   // ── Command palette commands (built from live state) ──────────────────
   const commands = useMemo(() => {
@@ -1427,6 +1427,9 @@ function App() {
                   onOpen={(it) => open('inbox', it)}
                   onApprove={A.approve}
                   onReject={A.reject}
+                  onRejectNotes={(it) =>
+                    open('inbox', it, { openReject: true })
+                  }
                   onRetry={A.retry}
                   onAck={A.ack}
                   onFix={A.fix}

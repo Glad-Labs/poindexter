@@ -29,9 +29,12 @@ function Drawer({ entity, onClose, actions }) {
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
   }, [onClose]);
-  // Reset the reject panel whenever the drawer target changes.
+  // Reset the reject panel whenever the drawer target changes. An entity
+  // opened with `openReject` (the inbox row's ✕ quick-action) lands straight
+  // on the "Reason for sending back" textarea instead of the action footer,
+  // so operator notes can be typed without a second click.
   useEffect(() => {
-    setRejectOpen(false);
+    setRejectOpen(!!(entity && entity.openReject));
     setFeedback('');
   }, [entity]);
 
