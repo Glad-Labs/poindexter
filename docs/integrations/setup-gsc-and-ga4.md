@@ -228,6 +228,8 @@ The schedule is `every 6 hours` for both. Watch the **Integrations & Admin** Gra
 
 `external_metrics` table. The mapping config on each row determines which fields become metric rows vs which become dimensions in the jsonb. For GSC each performance row produces 4 `external_metrics` rows (impressions / clicks / ctr / position); for GA4 each page_metrics row produces 4 (sessions / screenPageViews / engagementRate / userEngagementDuration).
 
+**Writes are idempotent.** Singer taps re-emit their whole backfill window on every run (every 6h), so the writer upserts on the natural key `(source, metric_name, date, slug, dimensions)` — a re-emitted row updates in place (last-write-wins) rather than appending a copy. This lets a metric that finalises over several days (GSC clicks mature over ~3 days) converge on the latest value, and keeps `SUM(metric_value)` aggregates (e.g. `rollup_post_performance`) accurate. The `ux_external_metrics_natural_key` unique index (`NULLS NOT DISTINCT`, so the site-wide `performance_report_date` rows with NULL slug still dedup) is the arbiter — migration `20260704_033500`, which also one-time-deduped the ~382k rows the pre-upsert writer had accumulated.
+
 Query examples:
 
 ```sql

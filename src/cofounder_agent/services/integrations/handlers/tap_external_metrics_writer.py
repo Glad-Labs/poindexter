@@ -25,12 +25,22 @@ Lives under ``row.config.metrics_mapping``. Shape:
 
 For each RECORD on ``<stream-name>``:
 
-- One ``external_metrics`` row is inserted **per metric_field**
+- One ``external_metrics`` row is **upserted per metric_field**
   (so a record with 4 metrics becomes 4 rows — keeps the table
   schema-stable across taps that emit different metric sets).
 - ``dimension_fields`` get bundled into the ``dimensions`` jsonb.
 - Missing date or unparseable values cause the record to be skipped
   with a debug log; one bad record never aborts the run.
+
+The upsert arbitrates on the natural key
+``(source, metric_name, date, slug, dimensions)`` via the
+``ux_external_metrics_natural_key`` unique index (``NULLS NOT DISTINCT``,
+migration ``20260704_033500``). Singer taps re-emit their whole backfill
+window every run, so without this a bare INSERT accumulated one duplicate
+per run (GA4 hit 99.8% duplicates before the fix). ``ON CONFLICT ... DO
+UPDATE`` makes re-emits update in place — last-write-wins, so a metric that
+matures over successive pulls (GSC finalises a day's clicks over ~3 days)
+converges on the latest value instead of stacking copies.
 
 ## Example mapping for tap-google-search-console
 
@@ -237,12 +247,24 @@ async def external_metrics_writer(
                 skipped_metrics += 1
                 continue
 
+            # Upsert on the natural key (source, metric_name, date, slug,
+            # dimensions) so a Singer tap re-emitting its backfill window
+            # updates the row in place instead of appending a duplicate.
+            # Last-write-wins on metric_value lets GSC's maturing values
+            # self-correct (an early 0 gets overwritten by the finalised
+            # value on a later pull). Arbiter index: ux_external_metrics_
+            # natural_key (NULLS NOT DISTINCT), added 20260704_033500.
             await conn.execute(
                 """
                 INSERT INTO external_metrics
                   (source, metric_name, metric_value, dimensions,
                    post_id, slug, date, fetched_at)
                 VALUES ($1, $2, $3, $4::jsonb, $5, $6, $7, now())
+                ON CONFLICT (source, metric_name, date, slug, dimensions)
+                DO UPDATE SET
+                    metric_value = EXCLUDED.metric_value,
+                    post_id = EXCLUDED.post_id,
+                    fetched_at = EXCLUDED.fetched_at
                 """,
                 source,
                 metric_name,
