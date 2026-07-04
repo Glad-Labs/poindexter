@@ -1069,6 +1069,11 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # (spans dropped, Tempo panels empty).
     'enable_tracing': 'true',
     'langfuse_host': '',
+    # Browser-facing Langfuse base for the console's trace "waterfall" deeplinks.
+    # Distinct from langfuse_host (http://langfuse-web:3000, a Docker-internal
+    # name the operator's browser can't resolve). Compose publishes the UI on
+    # :3010 (3010→3000). Empty falls back to langfuse_host in traces_routes.
+    'langfuse_public_url': 'http://localhost:3010',
     'langfuse_tracing_enabled': 'true',
     # Tempo's OTLP HTTP receiver on /v1/traces. Matches the exporter
     # we actually import (``opentelemetry.exporter.otlp.proto.http``).

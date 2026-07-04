@@ -35,6 +35,9 @@ async def list_traces(
     task_id: str = Query("", description="Scope to one pipeline task (Langfuse sessionId)"),
 ) -> dict[str, Any]:
     host = site_config.get("langfuse_host", "")
+    # Browser-facing base for trace deeplinks (langfuse_host is a Docker-internal
+    # name the operator's browser can't resolve). Falls back to host when unset.
+    public_url = site_config.get("langfuse_public_url", "") or host
     public_key = await site_config.get_secret("langfuse_public_key", "")
     secret_key = await site_config.get_secret("langfuse_secret_key", "")
     client = getattr(request.app.state, "http_client", None)
@@ -45,6 +48,7 @@ async def list_traces(
                 host=host,
                 public_key=public_key,
                 secret_key=secret_key,
+                public_url=public_url,
                 hours=hours,
                 limit=limit,
                 task_id=task_id,
@@ -55,6 +59,7 @@ async def list_traces(
                 host=host,
                 public_key=public_key,
                 secret_key=secret_key,
+                public_url=public_url,
                 hours=hours,
                 limit=limit,
                 task_id=task_id,

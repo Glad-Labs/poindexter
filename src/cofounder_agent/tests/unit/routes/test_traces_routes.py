@@ -34,7 +34,16 @@ def _build_app(*, authed=True):
     app = FastAPI()
     app.include_router(router)
     sc = MagicMock()
-    sc.get.return_value = "http://localhost:3010"
+
+    # Distinct internal host vs browser-facing URL so tests can assert the
+    # route threads the right one into each read_traces argument.
+    def _get(key, default=""):
+        return {
+            "langfuse_host": "http://langfuse-web:3000",
+            "langfuse_public_url": "http://localhost:3010",
+        }.get(key, default)
+
+    sc.get.side_effect = _get
     sc.get_secret = AsyncMock(return_value="key")
     app.dependency_overrides[get_site_config_dependency] = lambda: sc
     if authed:
@@ -49,6 +58,21 @@ def test_returns_traces_payload():
         res = TestClient(app).get("/api/traces?hours=12&limit=10")
     assert res.status_code == 200
     assert res.json() == SAMPLE
+
+
+@pytest.mark.unit
+def test_route_threads_public_url_and_host_separately():
+    # The deeplink base (public_url) must be the browser URL, while the API
+    # host stays the Docker-internal name — the whole point of the fix.
+    app, _ = _build_app()
+    mock = AsyncMock(return_value=SAMPLE)
+    with patch("routes.traces_routes.read_traces", new=mock):
+        res = TestClient(app).get("/api/traces")
+    assert res.status_code == 200
+    assert mock.await_args is not None
+    kwargs = mock.await_args.kwargs
+    assert kwargs["host"] == "http://langfuse-web:3000"
+    assert kwargs["public_url"] == "http://localhost:3010"
 
 
 @pytest.mark.unit

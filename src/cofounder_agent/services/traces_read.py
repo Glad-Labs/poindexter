@@ -27,7 +27,12 @@ def _num(v: Any) -> float | None:
         return None
 
 
-def map_trace(t: dict[str, Any], host: str) -> dict[str, Any]:
+def map_trace(t: dict[str, Any], public_url: str) -> dict[str, Any]:
+    # ``public_url`` is the BROWSER-facing Langfuse base (langfuse_public_url,
+    # e.g. http://localhost:3010) — NOT the server-side ``langfuse_host``
+    # (http://langfuse-web:3000), which is a Docker-internal name the operator's
+    # browser can't resolve. Building the deeplink from host sent the "waterfall"
+    # button to an unreachable address.
     tid = t.get("id") or ""
     meta = t.get("metadata") or {}
     qa: float | None = None
@@ -46,7 +51,7 @@ def map_trace(t: dict[str, Any], host: str) -> dict[str, Any]:
         "qa_score": qa,
         "task_id": meta.get("task_id") or t.get("sessionId") or "",
         "timestamp": t.get("timestamp") or "",
-        "web_url": f"{host.rstrip('/')}/trace/{tid}" if host and tid else "",
+        "web_url": f"{public_url.rstrip('/')}/trace/{tid}" if public_url and tid else "",
     }
 
 
@@ -56,10 +61,14 @@ async def read_traces(
     host: str,
     public_key: str,
     secret_key: str,
+    public_url: str = "",
     hours: int = 24,
     limit: int = 50,
     task_id: str = "",
 ) -> dict[str, Any]:
+    # ``host`` is the server-side base for the API call below; ``public_url`` is
+    # the browser-facing base for trace deeplinks. When unset we fall back to
+    # ``host`` (preserves prior behaviour rather than emptying the link).
     if not host or not public_key or not secret_key:
         raise LangfuseNotConfigured(
             "Langfuse not configured — set langfuse_host + langfuse_public_key + "
@@ -78,5 +87,6 @@ async def read_traces(
         timeout=15.0,
     )
     resp.raise_for_status()
-    rows = [map_trace(t, host) for t in (resp.json().get("data") or [])]
+    link_base = public_url or host
+    rows = [map_trace(t, link_base) for t in (resp.json().get("data") or [])]
     return {"traces": rows, "stats": {"count": len(rows)}}

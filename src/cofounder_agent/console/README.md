@@ -155,7 +155,12 @@ day-to-day operation no longer requires opening Grafana directly:
   reimplemented. Requires `langfuse_host` + `langfuse_public_key` +
   `langfuse_secret_key`. The last two are **secrets** — set them via
   `poindexter setup` / `set_secret`, never in `settings_defaults.py`. Until
-  they're set, the route 503s and the panel renders honest-empty.
+  they're set, the route 503s and the panel renders honest-empty. The
+  waterfall deeplink is built from `langfuse_public_url` (browser-facing,
+  default `http://localhost:3010`) — **not** `langfuse_host`, which is the
+  Docker-internal name (`http://langfuse-web:3000`) the worker uses server-side
+  and the browser can't resolve. Set `langfuse_public_url` to your tailnet URL
+  if you drive the console from another device.
 - **Grafana** — embedded `/d-solo` iframes for the rich time-series history
   charts and the Database internals board (the views the console's instant
   Prometheus queries can't render). Base URL is the client-side `px_grafana`

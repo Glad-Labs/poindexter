@@ -21,6 +21,7 @@ _TRACE = {
 
 @pytest.mark.unit
 def test_map_trace_builds_row_and_deeplink():
+    # Deeplink is built from the BROWSER-facing base, not the internal host.
     row = map_trace(_TRACE, "http://localhost:3010")
     assert row["id"] == "abc123"
     assert row["model"] == "gemma-4-31b"
@@ -29,6 +30,42 @@ def test_map_trace_builds_row_and_deeplink():
     assert row["qa_score"] == 87
     assert row["task_id"] == "task-9"
     assert row["web_url"] == "http://localhost:3010/trace/abc123"
+
+
+@pytest.mark.unit
+async def test_read_traces_deeplink_uses_public_url_not_internal_host():
+    # Regression: web_url was built from the Docker-internal langfuse_host
+    # (http://langfuse-web:3000), which the operator's browser can't resolve —
+    # the "waterfall" button opened a dead address. It must use public_url.
+    def handler(request: httpx.Request) -> httpx.Response:
+        # The server-side API call still goes to the INTERNAL host.
+        assert str(request.url).startswith("http://langfuse-web:3000/")
+        return httpx.Response(200, json={"data": [_TRACE]})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        out = await read_traces(
+            client,
+            host="http://langfuse-web:3000",
+            public_url="http://localhost:3010",
+            public_key="pk",
+            secret_key="sk",
+        )
+    assert out["traces"][0]["web_url"] == "http://localhost:3010/trace/abc123"
+
+
+@pytest.mark.unit
+async def test_read_traces_deeplink_falls_back_to_host_when_public_url_unset():
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert "/api/public/traces" in str(request.url)
+        return httpx.Response(200, json={"data": [_TRACE]})
+
+    transport = httpx.MockTransport(handler)
+    async with httpx.AsyncClient(transport=transport) as client:
+        out = await read_traces(
+            client, host="http://localhost:3010", public_key="pk", secret_key="sk"
+        )
+    assert out["traces"][0]["web_url"] == "http://localhost:3010/trace/abc123"
 
 
 @pytest.mark.unit
