@@ -2,6 +2,42 @@
 
 ## Unreleased
 
+## [0.94.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.93.0...v0.94.0) (2026-07-04)
+
+
+### Features
+
+* **console:** inbox ✕ opens the reject panel so notes can be added ([#2115](https://github.com/Glad-Labs/glad-labs-stack/issues/2115)) ([6b077c3](https://github.com/Glad-Labs/glad-labs-stack/commit/6b077c30fb11f398e387bf196ee2d718e9c5d4fd))
+* **console:** link the rendered draft preview from the approval inbox ([#2104](https://github.com/Glad-Labs/glad-labs-stack/issues/2104)) ([4303d64](https://github.com/Glad-Labs/glad-labs-stack/commit/4303d642d96ba5657eca123b3f0b80e9f263d477))
+* **prompts:** migrate the last 3 inline-only prompts to the SKILL.md catalog (poindexter[#829](https://github.com/Glad-Labs/glad-labs-stack/issues/829)) ([#2112](https://github.com/Glad-Labs/glad-labs-stack/issues/2112)) ([351b4c2](https://github.com/Glad-Labs/glad-labs-stack/commit/351b4c2f9e7a773eafb6071de8a516aadb085a5f))
+* **prompts:** SKILL.md packs authoritative; Langfuse becomes a read-only mirror (poindexter[#825](https://github.com/Glad-Labs/glad-labs-stack/issues/825)) ([#2100](https://github.com/Glad-Labs/glad-labs-stack/issues/2100)) ([c2b9cfd](https://github.com/Glad-Labs/glad-labs-stack/commit/c2b9cfd4f9f5fc0bf18cff6b83f883ef1e127e80))
+* **site:** flip Content-Signal to agents-welcome (ai-train=yes, ai-input=yes) ([#2105](https://github.com/Glad-Labs/glad-labs-stack/issues/2105)) ([4927797](https://github.com/Glad-Labs/glad-labs-stack/commit/4927797ceed4c7f5a0ed9f474047cf95fcd27c59))
+* **site:** RFC 9116 security.txt + defuse web/public-site gitignore trap ([#2102](https://github.com/Glad-Labs/glad-labs-stack/issues/2102)) ([6929d5d](https://github.com/Glad-Labs/glad-labs-stack/commit/6929d5d396fb556b0d21ab7abb7805a7214b7336))
+* **topics:** storyworthy internal_rag selection — amplify operator knowledge ([#2093](https://github.com/Glad-Labs/glad-labs-stack/issues/2093)) ([aec7837](https://github.com/Glad-Labs/glad-labs-stack/commit/aec783738f80e216db823194ebaf2b6636134318))
+
+
+### Bug Fixes
+
+* **alerts:** honor stored fingerprint for dedup + stop triaging suppressed repeats ([#2114](https://github.com/Glad-Labs/glad-labs-stack/issues/2114)) ([8260adb](https://github.com/Glad-Labs/glad-labs-stack/commit/8260adba4dc06b94eeca8edf31b53317c0ee0cf5))
+* **backup:** give restic a writable cache dir — backup user has no home ([#2088](https://github.com/Glad-Labs/glad-labs-stack/issues/2088)) ([96ac1b6](https://github.com/Glad-Labs/glad-labs-stack/commit/96ac1b68d8da0129f2b48c3bb90624ff12ff34e8))
+* **backup:** pin restic snapshot host — container hostname churn breaks parent selection ([#2095](https://github.com/Glad-Labs/glad-labs-stack/issues/2095)) ([8694ea8](https://github.com/Glad-Labs/glad-labs-stack/commit/8694ea8a13d56ac7e1695242a46ffda1ecf17a31))
+* **console:** bound the Loki log feed height so "all" can't blow out the layout ([#2117](https://github.com/Glad-Labs/glad-labs-stack/issues/2117)) ([218c94a](https://github.com/Glad-Labs/glad-labs-stack/commit/218c94a0a5549b3d53fd857fef46abbb93b257f2))
+* **console:** logs level filter sent lowercase; Loki labels are UPPERCASE ([#2118](https://github.com/Glad-Labs/glad-labs-stack/issues/2118)) ([d4b52a0](https://github.com/Glad-Labs/glad-labs-stack/commit/d4b52a064a9a037817af15a066ae4df277d6e9c0))
+* **console:** reject sent the approve route's field — every reject 400'd ([#2108](https://github.com/Glad-Labs/glad-labs-stack/issues/2108)) ([64e6250](https://github.com/Glad-Labs/glad-labs-stack/commit/64e62505d05e54687a9e3aad02b7965610636d6a))
+* **console:** Sparkline emitted invalid SVG path on empty data ([#2120](https://github.com/Glad-Labs/glad-labs-stack/issues/2120)) ([750ae9a](https://github.com/Glad-Labs/glad-labs-stack/commit/750ae9a8e13d208fb118601920d00328895d4f64))
+* **console:** trace waterfall deeplink used the Docker-internal Langfuse host ([#2119](https://github.com/Glad-Labs/glad-labs-stack/issues/2119)) ([511fe0c](https://github.com/Glad-Labs/glad-labs-stack/commit/511fe0c383d44e373e4158e66541899c62a4db9b))
+* **media:** health-gate Stage-2 dispatch + bounded redispatch-cap self-heal ([#2092](https://github.com/Glad-Labs/glad-labs-stack/issues/2092)) ([0e174fd](https://github.com/Glad-Labs/glad-labs-stack/commit/0e174fd37403aefde41d79eda43be69e77f9b4d4))
+* **pipeline:** empty atom-registry cache no longer fatals tasks as fake graph_def drift ([#2106](https://github.com/Glad-Labs/glad-labs-stack/issues/2106)) ([2321767](https://github.com/Glad-Labs/glad-labs-stack/commit/23217670919139456f6aa656783076739f7b8b21))
+* **pipeline:** keep-best across re-runs — stale-sweep stops destroying QA-approved drafts ([#2101](https://github.com/Glad-Labs/glad-labs-stack/issues/2101)) ([6c3d367](https://github.com/Glad-Labs/glad-labs-stack/commit/6c3d367f0c65f239ab00a6f1b9ffb4b144284d87))
+* **prompts:** retention summarizer must honor the langfuse-overrides gate ([#2103](https://github.com/Glad-Labs/glad-labs-stack/issues/2103)) ([e4df918](https://github.com/Glad-Labs/glad-labs-stack/commit/e4df918eec1bdee22d845bc26e7fff3b36aade14))
+* **qa:** critic must not prescribe invented material — anecdotes/expert-quote demands invite fabrication ([#2096](https://github.com/Glad-Labs/glad-labs-stack/issues/2096)) ([58866bb](https://github.com/Glad-Labs/glad-labs-stack/commit/58866bb06d1c9933d085d873109666168aa0c5aa))
+* **qa:** empty the deepeval_g_eval_criterion seed so the SKILL.md catalog is authoritative (poindexter[#830](https://github.com/Glad-Labs/glad-labs-stack/issues/830)) ([#2116](https://github.com/Glad-Labs/glad-labs-stack/issues/2116)) ([922c0e8](https://github.com/Glad-Labs/glad-labs-stack/commit/922c0e8be998cc8a3746f331299e028dc3b2ecb8))
+* **qa:** fail loud when the qa_gates read fails — stop silently converting advisory rails into hard gates ([#2090](https://github.com/Glad-Labs/glad-labs-stack/issues/2090)) ([dba3c4f](https://github.com/Glad-Labs/glad-labs-stack/commit/dba3c4fd6751baddeb404cba4b557fd6f513df16))
+* **qa:** vision rail never scored on the Prefect path — wire settings_service, route to pinned Ollama, surface pass-open ([#2094](https://github.com/Glad-Labs/glad-labs-stack/issues/2094)) ([397fa0d](https://github.com/Glad-Labs/glad-labs-stack/commit/397fa0d571fbbd3191b2438c74b8bcb21027d181))
+* **seo:** return 410 Gone for removed posts instead of a soft-404 200 ([#2107](https://github.com/Glad-Labs/glad-labs-stack/issues/2107)) ([e2ac61f](https://github.com/Glad-Labs/glad-labs-stack/commit/e2ac61ff68afb577342a295ee13268beebb1abef))
+* **taps:** external_metrics writer upserts on natural key — kill ~370k duplicate GA4/GSC rows ([#2110](https://github.com/Glad-Labs/glad-labs-stack/issues/2110)) ([63721de](https://github.com/Glad-Labs/glad-labs-stack/commit/63721de77a825afc950e649e62ff1f140dea7382))
+* **video:** deterministically repair director shot lists — duration clamp, offset derivation, tolerant JSON ([#2089](https://github.com/Glad-Labs/glad-labs-stack/issues/2089)) ([56441cf](https://github.com/Glad-Labs/glad-labs-stack/commit/56441cf4b464800d6d09fa175b8083fc1378dd72))
+
 ## [0.93.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.92.0...v0.93.0) (2026-07-03)
 
 
