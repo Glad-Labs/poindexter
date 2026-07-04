@@ -1413,6 +1413,29 @@ class TestDeepEvalGEvalGate:
         assert kwargs["threshold"] == 0.85
         assert kwargs["criterion"] == "Custom criterion text"
 
+    @pytest.mark.asyncio
+    async def test_empty_criterion_setting_falls_through_to_catalog(self):
+        """poindexter#830: an empty '' criterion setting (the seeded default)
+        must NOT override — the rail passes criterion=None so evaluate_g_eval
+        resolves the qa.deepeval_g_eval_criterion SKILL.md catalog default.
+        A non-empty seed would silently shadow the catalog."""
+        settings = AsyncMock()
+        settings.get = AsyncMock(side_effect=lambda key: {
+            "deepeval_threshold_g_eval": "0.7",
+            "deepeval_g_eval_criterion": "",
+        }.get(key))
+        qa = MultiModelQA(pool=None, settings_service=settings, site_config=SiteConfig())
+
+        with patch(
+            "services.deepeval_rails.evaluate_g_eval",
+            return_value=(True, 0.9, "ok"),
+        ) as judge_mock, patch(
+            "services.deepeval_rails.is_enabled", return_value=True,
+        ):
+            await qa._check_deepeval_g_eval("body", "topic")
+
+        assert judge_mock.call_args.kwargs["criterion"] is None
+
 
 @pytest.mark.unit
 class TestDeepEvalFaithfulnessGate:
