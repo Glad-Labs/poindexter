@@ -238,23 +238,18 @@ def test_collapse_resolver_falls_back_on_pm_failure():
 async def test_collapse_llm_summary_prefers_explicit_prompt_template():
     """A per-policy-row ``config.prompt_template`` wins over the catalog
     default — the resolver must not even be consulted."""
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
     from services.integrations.handlers import retention_embeddings_collapse as mod
 
-    captured: dict[str, str] = {}
-
-    class _FakeOllama:
-        def __init__(self, model):
-            pass
-
-        async def generate(self, *, prompt, temperature, max_tokens, timeout):
-            captured["prompt"] = prompt
-            return {"text": "a summary"}
-
-        async def close(self):
-            pass
-
-    fake_client_mod = type("M", (), {"OllamaClient": _FakeOllama})
-    with patch.dict("sys.modules", {"services.ollama_client": fake_client_mod}), patch.object(
+    # poindexter#827: the summarizer routes through dispatch_complete now,
+    # so mock the dispatcher (not OllamaClient) and read the prompt off the
+    # captured messages payload.
+    dispatch_mock = AsyncMock(return_value=SimpleNamespace(text="a summary"))
+    with patch(
+        "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+    ), patch.object(
         mod, "_resolve_summary_prompt_template",
     ) as resolver:
         result = await mod.build_summary_text_via_llm(
@@ -263,31 +258,25 @@ async def test_collapse_llm_summary_prefers_explicit_prompt_template():
             model="m",
             timeout_s=5,
             prompt_template="POLICY ROW: {n} {source_table} {joined}",
+            pool="POOL",
         )
     assert result == "a summary"
-    assert captured["prompt"].startswith("POLICY ROW: 2 claude_sessions")
+    prompt = dispatch_mock.call_args.kwargs["messages"][0]["content"]
+    assert prompt.startswith("POLICY ROW: 2 claude_sessions")
     resolver.assert_not_called()
 
 
 @pytest.mark.unit
 async def test_collapse_llm_summary_uses_catalog_template_when_config_unset():
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
     from services.integrations.handlers import retention_embeddings_collapse as mod
 
-    captured: dict[str, str] = {}
-
-    class _FakeOllama:
-        def __init__(self, model):
-            pass
-
-        async def generate(self, *, prompt, temperature, max_tokens, timeout):
-            captured["prompt"] = prompt
-            return {"text": "a summary"}
-
-        async def close(self):
-            pass
-
-    fake_client_mod = type("M", (), {"OllamaClient": _FakeOllama})
-    with patch.dict("sys.modules", {"services.ollama_client": fake_client_mod}), patch.object(
+    dispatch_mock = AsyncMock(return_value=SimpleNamespace(text="a summary"))
+    with patch(
+        "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+    ), patch.object(
         mod, "_resolve_summary_prompt_template",
         return_value="CATALOG: {n} {source_table} {joined}",
     ) as resolver:
@@ -297,7 +286,9 @@ async def test_collapse_llm_summary_uses_catalog_template_when_config_unset():
             model="m",
             timeout_s=5,
             prompt_template=None,
+            pool="POOL",
         )
     assert result == "a summary"
-    assert captured["prompt"].startswith("CATALOG: 1 brain")
+    prompt = dispatch_mock.call_args.kwargs["messages"][0]["content"]
+    assert prompt.startswith("CATALOG: 1 brain")
     resolver.assert_called_once()

@@ -1,13 +1,14 @@
 """Unit tests for CodebaseSource.
 
-Mocks httpx.AsyncClient (Ollama embed calls) and the asyncpg pool. No
-real network, no real pgvector.
+Mocks the dispatch_embed seam (poindexter#827 — embeds route through the
+LiteLLM dispatcher) and the asyncpg pool. No real network, no real
+pgvector.
 """
 
 from __future__ import annotations
 
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 
@@ -107,18 +108,18 @@ class TestExtractTopicFromRow:
 # ---------------------------------------------------------------------------
 
 
-def _make_embed_client(embedding: list[float] | None):
-    """Fake Ollama client returning the given embedding (or None for failure)."""
-    resp = MagicMock()
-    resp.status_code = 200 if embedding is not None else 500
-    resp.json = MagicMock(return_value={"embedding": embedding or []})
+_DISPATCH_EMBED = "services.llm_providers.dispatcher.dispatch_embed"
 
-    client = AsyncMock()
-    client.post = AsyncMock(return_value=resp)
-    ctx = AsyncMock()
-    ctx.__aenter__ = AsyncMock(return_value=client)
-    ctx.__aexit__ = AsyncMock(return_value=False)
-    return ctx, client
+
+def _embed_dispatch(embedding: list[float] | None):
+    """AsyncMock for dispatch_embed (poindexter#827 — the embed transport).
+
+    ``None`` simulates a failed dispatch (provider down) — the source
+    fail-softs that query to an empty batch.
+    """
+    if embedding is None:
+        return AsyncMock(side_effect=Exception("embed backend down"))
+    return AsyncMock(return_value=embedding)
 
 
 def _make_pool(rows_per_call: list[list[dict]] | None = None):
@@ -151,7 +152,7 @@ class TestCodebaseSourceExtract:
 
     @pytest.mark.asyncio
     async def test_yields_topic_from_posts_row(self):
-        ctx, client = _make_embed_client([0.1] * 768)
+        embed_mock = _embed_dispatch([0.1] * 768)
         pool = _make_pool([
             [
                 {
@@ -164,7 +165,7 @@ class TestCodebaseSourceExtract:
         ])
 
         source = CodebaseSource()
-        with patch("httpx.AsyncClient", return_value=ctx):
+        with patch(_DISPATCH_EMBED, embed_mock):
             topics = await source.extract(
                 pool=pool,
                 config={"seed_queries": ["rust async"]},
@@ -177,7 +178,7 @@ class TestCodebaseSourceExtract:
 
     @pytest.mark.asyncio
     async def test_similarity_threshold_filters_low_sim(self):
-        ctx, _ = _make_embed_client([0.1] * 768)
+        embed_mock = _embed_dispatch([0.1] * 768)
         pool = _make_pool([
             [
                 {
@@ -189,7 +190,7 @@ class TestCodebaseSourceExtract:
             ],
         ])
         source = CodebaseSource()
-        with patch("httpx.AsyncClient", return_value=ctx):
+        with patch(_DISPATCH_EMBED, embed_mock):
             topics = await source.extract(
                 pool=pool, config={"seed_queries": ["x"]},
             )
@@ -198,7 +199,7 @@ class TestCodebaseSourceExtract:
     @pytest.mark.asyncio
     async def test_dedup_by_source_id(self):
         # Same source_id appears in two different seed queries' results.
-        ctx, _ = _make_embed_client([0.1] * 768)
+        embed_mock = _embed_dispatch([0.1] * 768)
         dup_row = {
             "source_table": "posts",
             "source_id": "post-A",
@@ -208,7 +209,7 @@ class TestCodebaseSourceExtract:
         pool = _make_pool([[dup_row], [dup_row]])
 
         source = CodebaseSource()
-        with patch("httpx.AsyncClient", return_value=ctx):
+        with patch(_DISPATCH_EMBED, embed_mock):
             topics = await source.extract(
                 pool=pool,
                 config={"seed_queries": ["q1", "q2"]},
@@ -218,7 +219,7 @@ class TestCodebaseSourceExtract:
 
     @pytest.mark.asyncio
     async def test_non_posts_source_skipped(self):
-        ctx, _ = _make_embed_client([0.1] * 768)
+        embed_mock = _embed_dispatch([0.1] * 768)
         pool = _make_pool([
             [
                 {
@@ -230,28 +231,19 @@ class TestCodebaseSourceExtract:
             ],
         ])
         source = CodebaseSource()
-        with patch("httpx.AsyncClient", return_value=ctx):
+        with patch(_DISPATCH_EMBED, embed_mock):
             topics = await source.extract(
                 pool=pool, config={"seed_queries": ["x"]},
             )
         assert topics == []
 
     @pytest.mark.asyncio
-    async def test_embed_http_failure_skipped_not_aborted(self):
-        """Failing embed for one seed shouldn't abort the whole pass."""
-        # First call fails (None embedding → status 500), second succeeds.
-        resp_fail = MagicMock()
-        resp_fail.status_code = 500
-
-        resp_ok = MagicMock()
-        resp_ok.status_code = 200
-        resp_ok.json = MagicMock(return_value={"embedding": [0.1] * 768})
-
-        client = AsyncMock()
-        client.post = AsyncMock(side_effect=[resp_fail, resp_ok])
-        ctx = AsyncMock()
-        ctx.__aenter__ = AsyncMock(return_value=client)
-        ctx.__aexit__ = AsyncMock(return_value=False)
+    async def test_embed_failure_skipped_not_aborted(self):
+        """Failing embed dispatch for one seed shouldn't abort the whole pass."""
+        # First dispatch raises (provider down), second succeeds.
+        embed_mock = AsyncMock(
+            side_effect=[Exception("provider down"), [0.1] * 768],
+        )
 
         pool = _make_pool([
             [
@@ -264,7 +256,7 @@ class TestCodebaseSourceExtract:
             ],
         ])
         source = CodebaseSource()
-        with patch("httpx.AsyncClient", return_value=ctx):
+        with patch(_DISPATCH_EMBED, embed_mock):
             topics = await source.extract(
                 pool=pool,
                 config={"seed_queries": ["q1", "q2"]},
@@ -274,10 +266,10 @@ class TestCodebaseSourceExtract:
 
     @pytest.mark.asyncio
     async def test_empty_embedding_response_skipped(self):
-        ctx, _ = _make_embed_client([])
+        embed_mock = _embed_dispatch([])
         pool = _make_pool([])
         source = CodebaseSource()
-        with patch("httpx.AsyncClient", return_value=ctx):
+        with patch(_DISPATCH_EMBED, embed_mock):
             topics = await source.extract(
                 pool=pool, config={"seed_queries": ["x"]},
             )
@@ -285,10 +277,10 @@ class TestCodebaseSourceExtract:
 
     @pytest.mark.asyncio
     async def test_custom_lookback_threaded_into_sql(self):
-        ctx, _ = _make_embed_client([0.1] * 768)
+        embed_mock = _embed_dispatch([0.1] * 768)
         pool = _make_pool([])
         source = CodebaseSource()
-        with patch("httpx.AsyncClient", return_value=ctx):
+        with patch(_DISPATCH_EMBED, embed_mock):
             await source.extract(
                 pool=pool,
                 config={"seed_queries": ["x"], "lookback_days": 7},
@@ -308,26 +300,19 @@ class TestCodebaseSourceExtract:
 
         call_times: list[float] = []
 
-        async def slow_post(url: str, **kwargs: object) -> MagicMock:
+        async def slow_embed(_pool: object, _text: str, _model: str) -> list[float]:
             call_times.append(time.monotonic())
-            await asyncio.sleep(0.02)  # 20ms simulated Ollama latency
-            resp = MagicMock()
-            resp.status_code = 200
-            resp.json = MagicMock(return_value={"embedding": [0.1] * 768})
-            return resp
+            await asyncio.sleep(0.02)  # 20ms simulated embed latency
+            return [0.1] * 768
 
-        client = AsyncMock()
-        client.post = slow_post
-        ctx = AsyncMock()
-        ctx.__aenter__ = AsyncMock(return_value=client)
-        ctx.__aexit__ = AsyncMock(return_value=False)
+        embed_mock = slow_embed
 
         pool = _make_pool([])  # no DB results — just testing call overlap
 
         source = CodebaseSource()
         seed_queries = ["q1", "q2", "q3", "q4"]
         start = time.monotonic()
-        with patch("httpx.AsyncClient", return_value=ctx):
+        with patch(_DISPATCH_EMBED, embed_mock):
             await source.extract(pool=pool, config={"seed_queries": seed_queries})
         elapsed = time.monotonic() - start
 

@@ -347,3 +347,80 @@ def test_build_summary_text_truncates_long_preview():
     assert len(parts) == 2
     assert parts[0].endswith("...")
     assert len(parts[0]) <= 53  # 50 + "..."
+
+
+# ---------------------------------------------------------------------------
+# build_summary_text_via_llm — dispatcher routing (poindexter#827 sweep)
+# ---------------------------------------------------------------------------
+
+
+class TestSummaryViaLLMDispatch:
+    """The collapse summarizer routes through dispatch_complete — the
+    direct-OllamaClient path it replaces was a dispatcher bypass."""
+
+    @pytest.mark.asyncio
+    async def test_dispatches_with_pool(self):
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+
+        from services.integrations.handlers.retention_embeddings_collapse import (
+            build_summary_text_via_llm,
+        )
+
+        dispatch_mock = AsyncMock(
+            return_value=SimpleNamespace(text="A dense factual summary."),
+        )
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+        ):
+            out = await build_summary_text_via_llm(
+                ["preview one", "preview two"],
+                source_table="brain",
+                model="gemma3:12b",
+                timeout_s=30,
+                pool="POOL",
+            )
+
+        assert out == "A dense factual summary."
+        kwargs = dispatch_mock.call_args.kwargs
+        assert kwargs["pool"] == "POOL"
+        assert kwargs["model"] == "gemma3:12b"
+        assert kwargs["phase"] == "retention_embeddings_collapse"
+
+    @pytest.mark.asyncio
+    async def test_no_pool_skips_llm(self):
+        from unittest.mock import AsyncMock, patch
+
+        from services.integrations.handlers.retention_embeddings_collapse import (
+            build_summary_text_via_llm,
+        )
+
+        dispatch_mock = AsyncMock()
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+        ):
+            out = await build_summary_text_via_llm(
+                ["preview"], source_table="brain", model="m", timeout_s=30,
+            )
+
+        assert out is None
+        dispatch_mock.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_dispatch_error_returns_none(self):
+        from unittest.mock import AsyncMock, patch
+
+        from services.integrations.handlers.retention_embeddings_collapse import (
+            build_summary_text_via_llm,
+        )
+
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete",
+            AsyncMock(side_effect=RuntimeError("provider down")),
+        ):
+            out = await build_summary_text_via_llm(
+                ["preview"], source_table="brain", model="m", timeout_s=30,
+                pool="POOL",
+            )
+
+        assert out is None

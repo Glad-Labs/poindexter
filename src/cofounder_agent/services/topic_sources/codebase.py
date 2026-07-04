@@ -38,8 +38,6 @@ import asyncio
 import logging
 from typing import Any
 
-import httpx
-
 from plugins.topic_source import DiscoveredTopic
 
 logger = logging.getLogger(__name__)
@@ -156,11 +154,6 @@ class CodebaseSource:
             list(seed_queries_cfg) if isinstance(seed_queries_cfg, list) and seed_queries_cfg
             else list(_DEFAULT_SEED_QUERIES)
         )
-        from services.bootstrap_defaults import DEFAULT_OLLAMA_URL
-        ollama_url = (
-            config.get("ollama_url")
-            or site_config.get("ollama_base_url", DEFAULT_OLLAMA_URL)
-        )
         embed_model = (
             config.get("embed_model")
             or site_config.get("embed_model", "nomic-embed-text")
@@ -174,26 +167,22 @@ class CodebaseSource:
         topics: list[DiscoveredTopic] = []
         seen_source_ids: set[str] = set()
 
-        async def _run_query(
-            client: httpx.AsyncClient, query: str,
-        ) -> list[tuple[str, DiscoveredTopic]]:
+        async def _run_query(query: str) -> list[tuple[str, DiscoveredTopic]]:
             """Embed one seed query and return (source_id, topic) pairs."""
             try:
-                resp = await client.post(
-                    f"{ollama_url}/api/embeddings",
-                    json={"model": embed_model, "prompt": query},
-                    timeout=15,
-                )
-            except (httpx.HTTPError, httpx.TimeoutException) as e:
+                # Route through the LiteLLM dispatcher (poindexter#827) —
+                # retires the direct POST to Ollama's DEPRECATED
+                # /api/embeddings endpoint; the embed now honors the
+                # configured provider + base-url overrides and traces.
+                from services.llm_providers.dispatcher import dispatch_embed
+
+                embedding = await dispatch_embed(pool, query, embed_model)
+            except Exception as e:  # noqa: BLE001 — advisory source; fail-soft per query
                 logger.debug(
-                    "CodebaseSource: embed request failed for %r: %s", query[:30], e,
+                    "CodebaseSource: embed dispatch failed for %r: %s", query[:30], e,
                 )
                 return []
 
-            if resp.status_code != 200:
-                return []
-
-            embedding = resp.json().get("embedding", [])
             if not embedding:
                 return []
 
@@ -242,11 +231,10 @@ class CodebaseSource:
         # 8 × (embed latency + pgvector query) could exceed the 60s runner
         # timeout when Ollama was slow (stack#1150). Dedup by source_id after
         # gathering so a document that matches multiple queries is included once.
-        async with httpx.AsyncClient(timeout=30) as client:
-            query_results = await asyncio.gather(
-                *[_run_query(client, q) for q in seed_queries],
-                return_exceptions=True,
-            )
+        query_results = await asyncio.gather(
+            *[_run_query(q) for q in seed_queries],
+            return_exceptions=True,
+        )
 
         for batch in query_results:
             if isinstance(batch, BaseException):

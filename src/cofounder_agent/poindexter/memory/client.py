@@ -222,10 +222,34 @@ class MemoryClient:
     # ----- embedding ------------------------------------------------------
 
     async def embed(self, text: str) -> list[float]:
-        """Embed a single text blob via Ollama. Returns a 768-dim vector."""
-        if self._http is None:
+        """Embed a single text blob. Returns a 768-dim vector.
+
+        Routes through the LiteLLM dispatcher (``dispatch_embed``,
+        poindexter#827) when the worker's ``services`` package is
+        importable — in-repo consumers (worker, CLI, MCP server) get the
+        configured provider, tracing, and per-model base-url overrides.
+        Standalone ``pip install poindexter`` installs (memory client
+        without the worker codebase) keep the direct Ollama
+        ``/api/embed`` path — same dispatcher-or-direct shape as
+        ``llm_text`` / ``topic_ranking``.
+        """
+        if self._http is None or self._pool is None:
             await self.connect()
         assert self._http is not None  # for type checker
+
+        try:
+            from services.llm_providers.dispatcher import dispatch_embed
+        except ImportError:
+            dispatch_embed = None
+
+        if dispatch_embed is not None and self._pool is not None:
+            vec = list(await dispatch_embed(self._pool, text, self.embed_model))
+            if len(vec) != self.embed_dim:
+                raise RuntimeError(
+                    f"Expected {self.embed_dim}-dim vector from {self.embed_model}, "
+                    f"got {len(vec)}"
+                )
+            return vec
 
         resp = await self._http.post(
             f"{self.ollama_url}/api/embed",

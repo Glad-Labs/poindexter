@@ -58,7 +58,6 @@ import logging
 import math
 import random
 from collections.abc import Iterable, Sequence
-from contextlib import suppress
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
@@ -254,17 +253,28 @@ async def build_summary_text_via_llm(
     model: str,
     timeout_s: int,
     prompt_template: str | None = None,
+    pool: Any = None,
 ) -> str | None:
-    """Summarize a cluster via the local Ollama model.
+    """Summarize a cluster via the LiteLLM dispatcher (poindexter#827 sweep).
 
     An explicit ``prompt_template`` (the per-policy-row config value)
     wins; when None, the template resolves from the SKILL.md catalog via
     :func:`_resolve_summary_prompt_template`.
 
-    Returns ``None`` on any failure — callers fall back to
+    Routes through ``dispatch_complete`` so the collapse summarizer lands
+    in ``cost_logs`` + Langfuse like every other LLM call — the direct
+    OllamaClient path this replaces was one of the last dispatcher
+    bypasses. Requires ``pool``; without one the LLM step is skipped
+    (returns ``None``) and callers fall back to the deterministic
     :func:`build_summary_text`. Never raises.
     """
     if not previews:
+        return None
+    if pool is None:
+        logger.warning(
+            "[retention.embeddings_collapse] no pool — skipping LLM "
+            "summarization, using joined-preview fallback",
+        )
         return None
 
     pieces: list[str] = []
@@ -286,24 +296,24 @@ async def build_summary_text_via_llm(
     )
 
     try:
-        from services.ollama_client import OllamaClient
-        client = OllamaClient(model=model)
-        try:
-            result = await client.generate(
-                prompt=prompt,
-                temperature=0.3,
-                max_tokens=400,
-                timeout=timeout_s,
-            )
-            text = (result.get("text") or "").strip()
-            if not text:
-                return None
-            if text.startswith('"') and text.endswith('"'):
-                text = text[1:-1].strip()
-            return text or None
-        finally:
-            with suppress(Exception):  # silent-ok: best-effort client cleanup; failure here is irrelevant to the caller
-                await client.close()
+        from services.llm_providers.dispatcher import dispatch_complete
+
+        completion = await dispatch_complete(
+            pool=pool,
+            messages=[{"role": "user", "content": prompt}],
+            model=model,
+            tier="budget",
+            phase="retention_embeddings_collapse",
+            temperature=0.3,
+            max_tokens=400,
+            timeout_s=float(timeout_s),
+        )
+        text = (getattr(completion, "text", "") or "").strip()
+        if not text:
+            return None
+        if text.startswith('"') and text.endswith('"'):
+            text = text[1:-1].strip()
+        return text or None
     except Exception as exc:  # noqa: BLE001
         logger.warning(
             "[retention.embeddings_collapse] LLM summarization failed "
@@ -568,6 +578,7 @@ async def embeddings_collapse(
                 model=summary_model,
                 timeout_s=summary_timeout_s,
                 prompt_template=summary_prompt_template,
+                pool=pool,
             )
         if not summary_text:
             summary_text = build_summary_text(previews)
