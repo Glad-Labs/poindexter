@@ -87,12 +87,118 @@ async def _resolve_judge_model(site_config: Any = None) -> str:
     )
 
 
-async def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
+def _build_dispatcher_ragas_wrappers(
+    *, pool: Any, judge_model: str, embed_model: str,
+) -> tuple[Any, Any]:
+    """LangChain-shaped adapters that route Ragas through the dispatcher.
+
+    Poindexter#826: ``ChatOllama`` / ``OllamaEmbeddings`` own their HTTP
+    transport, so Ragas judge + embedding calls bypassed the LiteLLM
+    dispatcher — no ``cost_logs`` rows, no Langfuse traces, and the judge
+    resolved its own base URL (silently ignoring per-model ``api_base``
+    overrides). These adapters re-establish the seam at the layer the
+    libraries provide: a ``BaseChatModel`` whose ``_agenerate`` is a
+    normal ``dispatch_complete`` call (``phase='qa_ragas_judge'``,
+    ``response_format=json_object`` — the #1910 constrained-decoding fix,
+    previously ``format="json"``), and an ``Embeddings`` whose async
+    methods call ``dispatch_embed``.
+
+    Async-only by design: Ragas 0.4's executor drives the async LangChain
+    surface (``agenerate_prompt`` / ``aembed_*``), and the asyncpg pool is
+    loop-bound so a sync bridge would be a footgun. The sync methods raise
+    loudly instead of silently bypassing the dispatcher.
+    """
+    from langchain_core.embeddings import Embeddings
+    from langchain_core.language_models.chat_models import BaseChatModel
+    from langchain_core.messages import AIMessage
+    from langchain_core.outputs import ChatGeneration, ChatResult
+    from ragas.embeddings import LangchainEmbeddingsWrapper
+    from ragas.llms import LangchainLLMWrapper
+
+    from services.llm_providers.dispatcher import dispatch_complete, dispatch_embed
+
+    class _DispatcherChatModel(BaseChatModel):
+        judge_model_name: str
+        dispatch_pool: Any
+
+        model_config = {"arbitrary_types_allowed": True}
+
+        @property
+        def _llm_type(self) -> str:
+            return "poindexter_dispatcher"
+
+        def _generate(self, messages, stop=None, run_manager=None, **kwargs):
+            raise NotImplementedError(
+                "_DispatcherChatModel is async-only — Ragas drives the "
+                "async LangChain surface (poindexter#826)"
+            )
+
+        async def _agenerate(self, messages, stop=None, run_manager=None, **kwargs):
+            role_map = {"ai": "assistant", "system": "system"}
+            payload = [
+                {
+                    "role": role_map.get(getattr(m, "type", "human"), "user"),
+                    "content": str(m.content),
+                }
+                for m in messages
+            ]
+            completion = await dispatch_complete(
+                pool=self.dispatch_pool,
+                messages=payload,
+                model=self.judge_model_name,
+                tier="standard",
+                phase="qa_ragas_judge",
+                temperature=0.0,
+                response_format={"type": "json_object"},
+            )
+            text = getattr(completion, "text", "") or ""
+            generation = ChatGeneration(
+                message=AIMessage(content=text),
+                generation_info={"finish_reason": "stop"},
+            )
+            return ChatResult(generations=[generation])
+
+    class _DispatcherEmbeddings(Embeddings):
+        def __init__(self, pool_: Any, model: str):
+            self._pool = pool_
+            self._model = model
+
+        def embed_documents(self, texts):
+            raise NotImplementedError(
+                "_DispatcherEmbeddings is async-only (poindexter#826)"
+            )
+
+        def embed_query(self, text):
+            raise NotImplementedError(
+                "_DispatcherEmbeddings is async-only (poindexter#826)"
+            )
+
+        async def aembed_documents(self, texts):
+            return [
+                await dispatch_embed(self._pool, t, self._model) for t in texts
+            ]
+
+        async def aembed_query(self, text):
+            return await dispatch_embed(self._pool, text, self._model)
+
+    llm = LangchainLLMWrapper(
+        _DispatcherChatModel(judge_model_name=judge_model, dispatch_pool=pool)
+    )
+    embeddings = LangchainEmbeddingsWrapper(_DispatcherEmbeddings(pool, embed_model))
+    return llm, embeddings
+
+
+async def _build_ragas_models(
+    site_config: Any = None, pool: Any = None,
+) -> tuple[Any, Any]:
     """Build the LLM + embedding wrappers Ragas needs.
 
-    Ragas expects LangChain-shaped LLM/embedding objects. We wire it
-    to the local Ollama backend via langchain-ollama + Ragas's wrappers
-    so all eval calls stay local (free, private, audit-friendly).
+    Ragas expects LangChain-shaped LLM/embedding objects. With a ``pool``
+    (production / worker path) they route through the LiteLLM dispatcher
+    (poindexter#826) so judge + embedding calls land in cost accounting,
+    Langfuse, and per-model ``api_base`` overrides. Without a pool the
+    legacy direct langchain-ollama wiring is used (tests / bootstrap) —
+    the same dispatcher-or-direct shape as ``llm_text`` / ``topic_ranking``.
 
     Returns ``(llm_wrapper, embeddings_wrapper)``. Lazy-imports the
     Ragas + langchain modules so the module imports cleanly when those
@@ -145,6 +251,14 @@ async def _build_ragas_models(site_config: Any = None) -> tuple[Any, Any]:
                 "using default %r",
                 type(exc).__name__, exc, embed_model,
             )
+
+    # Production path: route judge + embeddings through the LiteLLM
+    # dispatcher (poindexter#826). The adapters carry the #1910 JSON-mode
+    # constraint via response_format={"type": "json_object"}.
+    if pool is not None:
+        return _build_dispatcher_ragas_wrappers(
+            pool=pool, judge_model=judge_model, embed_model=embed_model,
+        )
 
     # format="json" is required: without Ollama's constrained decoding,
     # phi4:14b and similar models wrap their responses in markdown code
@@ -221,6 +335,7 @@ async def evaluate_sample(
     retrieved_contexts: list[str] | None = None,
     site_config: Any = None,
     task_id: str | None = None,
+    pool: Any = None,
 ) -> dict[str, float]:
     """Run Ragas faithfulness + answer_relevancy + context_precision
     against a single (topic, content, contexts) tuple.
@@ -254,7 +369,7 @@ async def evaluate_sample(
             faithfulness,
         )
 
-        llm, embeddings = await _build_ragas_models(site_config)
+        llm, embeddings = await _build_ragas_models(site_config, pool=pool)
 
         ds = Dataset.from_dict({
             "question": [topic],

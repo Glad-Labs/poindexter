@@ -39,8 +39,10 @@ SCAN_DIRS = [
 # ---------------------------------------------------------------------------
 KERNEL_PURITY_BASELINE = {
     # deepeval_rails calls content_validator lazily to avoid circular import;
-    # needs a platform.validate seam.
-    "services/deepeval_rails.py:164",
+    # needs a platform.validate seam. Line shifted 164 -> 239 by the
+    # poindexter#826 _build_dispatcher_judge_model helper (dispatcher-backed
+    # deepeval judge inserted above _build_brand_fabrication_metric).
+    "services/deepeval_rails.py:239",
     # guardrails_rails calls content_validator lazily for the same reason.
     "services/guardrails_rails.py:90",
     # pipeline_templates dev_diary factory imports narrate_bundle atom lazily;

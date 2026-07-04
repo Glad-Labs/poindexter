@@ -1509,10 +1509,10 @@ class MultiModelQA:
     ) -> ReviewerResult | None:
         """Run DeepEval's G-Eval (LLM-judge) and return a ReviewerResult.
 
-        Async because the judge model issues an LLM call. The underlying
-        ``deepeval_rails.evaluate_g_eval`` is sync (DeepEval's measure()
-        is sync) but we wrap it in ``asyncio.to_thread`` so the
-        FastAPI event loop isn't blocked while the judge runs.
+        Async because the judge model issues an LLM call. As of
+        poindexter#826 ``deepeval_rails.evaluate_g_eval`` is async
+        (``a_measure``) and the judge dispatches through the LiteLLM
+        dispatcher on this event loop via ``pool`` — no worker thread.
 
         Returns ``None`` if the rail is globally disabled. Threshold +
         criterion + judge model are pulled from app_settings so operators
@@ -1597,14 +1597,14 @@ class MultiModelQA:
                 )
 
         try:
-            passed, score_unit, reason = await asyncio.to_thread(
-                deepeval_rails.evaluate_g_eval,
+            passed, score_unit, reason = await deepeval_rails.evaluate_g_eval(
                 content,
                 topic,
                 criterion=criterion,
                 judge_model=judge_model,
                 threshold=threshold,
                 site_config=self.settings,
+                pool=self.pool,
             )
         except Exception as exc:
             self._surface_reviewer_failure("deepeval_g_eval", exc)
@@ -1720,13 +1720,13 @@ class MultiModelQA:
             return None
 
         try:
-            passed, score_unit, reason = await asyncio.to_thread(
-                deepeval_rails.evaluate_faithfulness,
+            passed, score_unit, reason = await deepeval_rails.evaluate_faithfulness(
                 content,
                 chunks,
                 judge_model=judge_model,
                 threshold=threshold,
                 site_config=self.settings,
+                pool=self.pool,
             )
         except Exception as exc:
             self._surface_reviewer_failure("deepeval_faithfulness", exc)
@@ -1865,6 +1865,7 @@ class MultiModelQA:
                 generated_content=content,
                 retrieved_contexts=chunks,
                 site_config=self._site_config,
+                pool=self.pool,
             )
         except Exception as exc:
             self._surface_reviewer_failure("ragas_eval", exc)

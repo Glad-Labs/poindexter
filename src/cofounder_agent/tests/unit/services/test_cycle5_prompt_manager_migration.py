@@ -114,9 +114,14 @@ class _FakeGEvalMetric:
     def measure(self, _case) -> float:
         return self._score
 
+    async def a_measure(self, _case) -> float:
+        # poindexter#826: evaluate_g_eval runs the metric via a_measure so
+        # the judge dispatches through the LiteLLM dispatcher on the loop.
+        return self._score
+
 
 @pytest.mark.unit
-def test_evaluate_g_eval_explicit_criterion_wins(monkeypatch):
+async def test_evaluate_g_eval_explicit_criterion_wins(monkeypatch):
     """An explicit criterion (the multi_model_qa app_settings override)
     must reach the metric untouched — the catalog resolver only fires
     when no criterion is passed."""
@@ -132,7 +137,7 @@ def test_evaluate_g_eval_explicit_criterion_wins(monkeypatch):
     with patch(
         "services.deepeval_rails._resolve_g_eval_criterion",
     ) as resolver:
-        passed, score, _reason = deepeval_rails.evaluate_g_eval(
+        passed, score, _reason = await deepeval_rails.evaluate_g_eval(
             "body", "topic",
             criterion="Operator override rubric",
             judge_model="gpt-4o-mini",
@@ -145,7 +150,7 @@ def test_evaluate_g_eval_explicit_criterion_wins(monkeypatch):
 
 
 @pytest.mark.unit
-def test_evaluate_g_eval_resolves_criterion_when_none(monkeypatch):
+async def test_evaluate_g_eval_resolves_criterion_when_none(monkeypatch):
     """criterion=None (the multi_model_qa default when the app_setting is
     unset) routes through the SKILL.md catalog resolver."""
     from services import deepeval_rails
@@ -161,7 +166,7 @@ def test_evaluate_g_eval_resolves_criterion_when_none(monkeypatch):
         "services.deepeval_rails._resolve_g_eval_criterion",
         return_value="Catalog rubric",
     ) as resolver:
-        deepeval_rails.evaluate_g_eval(
+        await deepeval_rails.evaluate_g_eval(
             "body", "topic", judge_model="gpt-4o-mini", threshold=0.7,
         )
     resolver.assert_called_once()

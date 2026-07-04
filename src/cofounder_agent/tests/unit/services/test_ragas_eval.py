@@ -170,6 +170,144 @@ class TestBuildRagasModels:
 
 
 # ---------------------------------------------------------------------------
+# Dispatcher-backed wrappers (poindexter#826)
+# ---------------------------------------------------------------------------
+
+
+def _identity_wrapper_modules():
+    """sys.modules fakes where the Ragas wrappers are identity functions.
+
+    Lets the tests reach the inner LangChain adapters without a working
+    ragas install (its 0.4.x transitive deps are broken in some envs —
+    see ``requires_ragas``). ``langchain_core`` is a real dependency.
+    """
+    from unittest.mock import MagicMock
+
+    fake_ragas_llms = MagicMock()
+    fake_ragas_llms.LangchainLLMWrapper = MagicMock(side_effect=lambda x: x)
+    fake_ragas_embeddings = MagicMock()
+    fake_ragas_embeddings.LangchainEmbeddingsWrapper = MagicMock(
+        side_effect=lambda x: x,
+    )
+    return {
+        "ragas": MagicMock(),
+        "ragas.llms": fake_ragas_llms,
+        "ragas.embeddings": fake_ragas_embeddings,
+    }
+
+
+@pytest.mark.unit
+class TestDispatcherWrappers:
+    """With a ``pool``, Ragas judge + embeddings route through the
+    LiteLLM dispatcher instead of langchain-ollama's own transport."""
+
+    @pytest.mark.asyncio
+    async def test_pool_prefers_dispatcher_over_chat_ollama(self):
+        import sys
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from services.ragas_eval import _build_ragas_models
+
+        mock_chat_cls = MagicMock()
+        fake_langchain_ollama = MagicMock()
+        fake_langchain_ollama.ChatOllama = mock_chat_cls
+        fake_langchain_ollama.OllamaEmbeddings = MagicMock()
+
+        with (
+            patch(
+                "services.ragas_eval._resolve_judge_model",
+                new_callable=AsyncMock,
+                return_value="phi4:14b",
+            ),
+            patch.dict(sys.modules, {
+                "langchain_ollama": fake_langchain_ollama,
+                **_identity_wrapper_modules(),
+            }),
+        ):
+            llm, embeddings = await _build_ragas_models(None, pool="POOL")
+
+        mock_chat_cls.assert_not_called()
+        # Identity wrappers → the adapters themselves come back.
+        assert type(llm).__name__ == "_DispatcherChatModel"
+        assert type(embeddings).__name__ == "_DispatcherEmbeddings"
+
+    @pytest.mark.asyncio
+    async def test_agenerate_routes_through_dispatch_complete(self, monkeypatch):
+        import sys
+        from types import SimpleNamespace
+        from unittest.mock import AsyncMock, patch
+
+        from langchain_core.messages import HumanMessage
+
+        from services.ragas_eval import _build_dispatcher_ragas_wrappers
+
+        dispatch_mock = AsyncMock(
+            return_value=SimpleNamespace(text='{"statements": []}'),
+        )
+        monkeypatch.setattr(
+            "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+        )
+        with patch.dict(sys.modules, _identity_wrapper_modules()):
+            llm, _ = _build_dispatcher_ragas_wrappers(
+                pool="POOL", judge_model="phi4:14b", embed_model="nomic-embed-text",
+            )
+
+        result = await llm._agenerate([HumanMessage(content="judge this")])
+
+        assert result.generations[0].message.content == '{"statements": []}'
+        kwargs = dispatch_mock.call_args.kwargs
+        assert kwargs["pool"] == "POOL"
+        assert kwargs["model"] == "phi4:14b"
+        assert kwargs["phase"] == "qa_ragas_judge"
+        # The #1910 JSON-mode constraint rides response_format now.
+        assert kwargs["response_format"] == {"type": "json_object"}
+
+    @pytest.mark.asyncio
+    async def test_aembed_routes_through_dispatch_embed(self, monkeypatch):
+        import sys
+        from unittest.mock import AsyncMock, patch
+
+        from services.ragas_eval import _build_dispatcher_ragas_wrappers
+
+        embed_mock = AsyncMock(return_value=[0.1, 0.2])
+        monkeypatch.setattr(
+            "services.llm_providers.dispatcher.dispatch_embed", embed_mock,
+        )
+        with patch.dict(sys.modules, _identity_wrapper_modules()):
+            _, embeddings = _build_dispatcher_ragas_wrappers(
+                pool="POOL", judge_model="phi4:14b", embed_model="nomic-embed-text",
+            )
+
+        vec = await embeddings.aembed_query("some text")
+        docs = await embeddings.aembed_documents(["a", "b"])
+
+        assert vec == [0.1, 0.2]
+        assert docs == [[0.1, 0.2], [0.1, 0.2]]
+        assert embed_mock.await_count == 3
+
+    @pytest.mark.asyncio
+    async def test_sync_paths_raise(self):
+        import sys
+        from unittest.mock import patch
+
+        from langchain_core.messages import HumanMessage
+
+        from services.ragas_eval import _build_dispatcher_ragas_wrappers
+
+        with patch.dict(sys.modules, _identity_wrapper_modules()):
+            llm, embeddings = _build_dispatcher_ragas_wrappers(
+                pool="POOL", judge_model="phi4:14b", embed_model="nomic-embed-text",
+            )
+
+        with pytest.raises(NotImplementedError):
+            llm._generate([HumanMessage(content="x")])
+        with pytest.raises(NotImplementedError):
+            embeddings.embed_query("x")
+        with pytest.raises(NotImplementedError):
+            embeddings.embed_documents(["x"])
+
+
+# ---------------------------------------------------------------------------
 # evaluate_sample — happy path with stubbed Ragas
 # ---------------------------------------------------------------------------
 

@@ -1350,7 +1350,7 @@ class TestDeepEvalGEvalGate:
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.evaluate_g_eval",
-            return_value=(True, 0.9, "well grounded"),
+            new=AsyncMock(return_value=(True, 0.9, "well grounded")),
         ), patch(
             "services.deepeval_rails.is_enabled", return_value=True,
         ):
@@ -1367,7 +1367,7 @@ class TestDeepEvalGEvalGate:
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.evaluate_g_eval",
-            return_value=(False, 0.4, "vague claims"),
+            new=AsyncMock(return_value=(False, 0.4, "vague claims")),
         ), patch(
             "services.deepeval_rails.is_enabled", return_value=True,
         ):
@@ -1403,7 +1403,7 @@ class TestDeepEvalGEvalGate:
 
         with patch(
             "services.deepeval_rails.evaluate_g_eval",
-            return_value=(True, 0.9, "ok"),
+            new=AsyncMock(return_value=(True, 0.9, "ok")),
         ) as judge_mock, patch(
             "services.deepeval_rails.is_enabled", return_value=True,
         ):
@@ -1474,7 +1474,7 @@ class TestDeepEvalFaithfulnessGate:
         qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
         with patch(
             "services.deepeval_rails.evaluate_faithfulness",
-            return_value=(True, 0.95, "all claims attributable"),
+            new=AsyncMock(return_value=(True, 0.95, "all claims attributable")),
         ) as judge_mock, patch(
             "services.deepeval_rails.is_enabled", return_value=True,
         ):
@@ -1521,7 +1521,7 @@ class TestDeepEvalFaithfulnessGate:
 
         with patch(
             "services.deepeval_rails.evaluate_faithfulness",
-            return_value=(True, 0.95, "ok"),
+            new=AsyncMock(return_value=(True, 0.95, "ok")),
         ) as judge_mock, patch(
             "services.deepeval_rails.is_enabled", return_value=True,
         ), caplog.at_level("WARNING"):

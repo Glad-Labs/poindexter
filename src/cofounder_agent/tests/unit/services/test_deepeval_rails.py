@@ -169,21 +169,28 @@ class _FakeMetric:
     def measure(self, _case) -> float:
         return self._score
 
+    async def a_measure(self, _case) -> float:
+        # poindexter#826: the rails run metrics via a_measure so judge
+        # calls dispatch on the event loop.
+        return self._score
+
 
 @pytest.mark.unit
 class TestEvaluateGEval:
-    def test_empty_content_skips(self):
-        passed, score, reason = evaluate_g_eval("", topic="x")
+    @pytest.mark.asyncio
+    async def test_empty_content_skips(self):
+        passed, score, reason = await evaluate_g_eval("", topic="x")
         assert passed is True
         assert score == 1.0
         assert reason == "empty content"
 
-    def test_high_score_passes_threshold(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_high_score_passes_threshold(self, monkeypatch):
         def factory(*_a, **kw):
             return _FakeMetric(0.9, reason="grounded", **kw)
 
         monkeypatch.setattr("deepeval.metrics.GEval", factory)
-        passed, score, reason = evaluate_g_eval(
+        passed, score, reason = await evaluate_g_eval(
             "Decent post about FastAPI.",
             topic="Backends",
             threshold=0.7,
@@ -192,12 +199,13 @@ class TestEvaluateGEval:
         assert score == pytest.approx(0.9)
         assert "grounded" in reason
 
-    def test_low_score_fails_threshold(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_low_score_fails_threshold(self, monkeypatch):
         def factory(*_a, **kw):
             return _FakeMetric(0.3, reason="vague claims", **kw)
 
         monkeypatch.setattr("deepeval.metrics.GEval", factory)
-        passed, score, _reason = evaluate_g_eval(
+        passed, score, _reason = await evaluate_g_eval(
             "Mushy post.",
             topic="Backends",
             threshold=0.7,
@@ -205,17 +213,19 @@ class TestEvaluateGEval:
         assert passed is False
         assert score == pytest.approx(0.3)
 
-    def test_judge_exception_returns_safe_default(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_judge_exception_returns_safe_default(self, monkeypatch):
         def factory(*_a, **_kw):
             raise RuntimeError("judge api down")
 
         monkeypatch.setattr("deepeval.metrics.GEval", factory)
-        passed, score, reason = evaluate_g_eval("post", topic="x")
+        passed, score, reason = await evaluate_g_eval("post", topic="x")
         assert passed is True
         assert score == 1.0
         assert "deepeval-error" in reason
 
-    def test_ollama_judge_model_wrapped_in_ollama_model(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_ollama_judge_model_wrapped_in_ollama_model(self, monkeypatch):
         """Regression: before the 2026-05-27 fix, the resolver stripped
         the ``ollama/`` prefix and DeepEval's stock model loader treated
         the bare string as an OpenAI model — every g_eval call hit
@@ -233,7 +243,7 @@ class TestEvaluateGEval:
             return _FakeMetric(0.9, reason="ok", **kw)
 
         monkeypatch.setattr("deepeval.metrics.GEval", factory)
-        evaluate_g_eval(
+        await evaluate_g_eval(
             "post", topic="x",
             judge_model="ollama/gemma3:27b",
             threshold=0.7,
@@ -245,7 +255,8 @@ class TestEvaluateGEval:
             f"got {type(captured['model']).__name__}: {captured['model']!r}"
         )
 
-    def test_bare_openai_model_string_passthrough(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_bare_openai_model_string_passthrough(self, monkeypatch):
         """Non-``ollama/`` model strings (e.g. ``gpt-4o``) must NOT
         be wrapped — they go straight through to DeepEval which
         already handles OpenAI via its stock model loader. Wrapping
@@ -258,7 +269,7 @@ class TestEvaluateGEval:
             return _FakeMetric(0.9, reason="ok", **kw)
 
         monkeypatch.setattr("deepeval.metrics.GEval", factory)
-        evaluate_g_eval(
+        await evaluate_g_eval(
             "post", topic="x",
             judge_model="gpt-4o-mini",
             threshold=0.7,
@@ -268,34 +279,38 @@ class TestEvaluateGEval:
 
 @pytest.mark.unit
 class TestEvaluateFaithfulness:
-    def test_empty_content_skips(self):
-        passed, _score, reason = evaluate_faithfulness(
+    @pytest.mark.asyncio
+    async def test_empty_content_skips(self):
+        passed, _score, reason = await evaluate_faithfulness(
             "", retrieval_context=["fact"]
         )
         assert passed is True
         assert reason == "empty content"
 
-    def test_no_context_skips(self):
-        passed, score, reason = evaluate_faithfulness(
+    @pytest.mark.asyncio
+    async def test_no_context_skips(self):
+        passed, score, reason = await evaluate_faithfulness(
             "Some post.", retrieval_context=None,
         )
         assert passed is True
         assert score == 1.0
         assert reason == "no-context"
 
-    def test_no_context_empty_list_also_skips(self):
-        passed, _score, reason = evaluate_faithfulness(
+    @pytest.mark.asyncio
+    async def test_no_context_empty_list_also_skips(self):
+        passed, _score, reason = await evaluate_faithfulness(
             "Some post.", retrieval_context=[],
         )
         assert passed is True
         assert reason == "no-context"
 
-    def test_grounded_content_passes(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_grounded_content_passes(self, monkeypatch):
         def factory(*_a, **kw):
             return _FakeMetric(0.95, reason="all claims attributable", **kw)
 
         monkeypatch.setattr("deepeval.metrics.FaithfulnessMetric", factory)
-        passed, score, _reason = evaluate_faithfulness(
+        passed, score, _reason = await evaluate_faithfulness(
             "FastAPI runs on uvicorn.",
             retrieval_context=["FastAPI uses uvicorn as its ASGI server."],
             threshold=0.8,
@@ -303,17 +318,101 @@ class TestEvaluateFaithfulness:
         assert passed is True
         assert score == pytest.approx(0.95)
 
-    def test_judge_exception_returns_safe_default(self, monkeypatch):
+    @pytest.mark.asyncio
+    async def test_judge_exception_returns_safe_default(self, monkeypatch):
         def factory(*_a, **_kw):
             raise RuntimeError("judge died")
 
         monkeypatch.setattr("deepeval.metrics.FaithfulnessMetric", factory)
-        passed, score, reason = evaluate_faithfulness(
+        passed, score, reason = await evaluate_faithfulness(
             "post.", retrieval_context=["context."],
         )
         assert passed is True
         assert score == 1.0
         assert "deepeval-error" in reason
+
+
+@pytest.mark.unit
+@requires_deepeval
+class TestDispatcherJudgeModel:
+    """poindexter#826 — with a ``pool``, the judge routes through the
+    LiteLLM dispatcher instead of DeepEval's own OllamaModel transport."""
+
+    @pytest.mark.asyncio
+    async def test_pool_builds_dispatcher_judge(self, monkeypatch):
+        from typing import Any
+
+        captured: dict[str, Any] = {}
+
+        def factory(*_a, **kw):
+            captured["model"] = kw["model"]
+            return _FakeMetric(0.9, reason="ok", **kw)
+
+        monkeypatch.setattr("deepeval.metrics.GEval", factory)
+        await evaluate_g_eval(
+            "post", topic="x",
+            judge_model="ollama/gemma3:27b",
+            threshold=0.7,
+            pool=object(),
+        )
+
+        from deepeval.models.base_model import DeepEvalBaseLLM
+        judge = captured["model"]
+        assert isinstance(judge, DeepEvalBaseLLM), (
+            f"expected dispatcher judge (DeepEvalBaseLLM) when pool is "
+            f"wired, got {type(judge).__name__}"
+        )
+        assert judge.get_model_name() == "dispatcher:ollama/gemma3:27b"
+
+    @pytest.mark.asyncio
+    async def test_a_generate_routes_through_dispatch_complete(self, monkeypatch):
+        from types import SimpleNamespace
+
+        dispatch_mock = AsyncMock(return_value=SimpleNamespace(text="judge says hi"))
+        monkeypatch.setattr(
+            "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+        )
+        model = _de_mod._build_dispatcher_judge_model(
+            "ollama/gemma3:27b", pool="POOL",
+        )
+        out = await model.a_generate("prompt text")
+
+        assert out == "judge says hi"
+        kwargs = dispatch_mock.call_args.kwargs
+        assert kwargs["pool"] == "POOL"
+        assert kwargs["model"] == "ollama/gemma3:27b"
+        assert kwargs["phase"] == "qa_deepeval_judge"
+        # No schema → plain-text call, no forced JSON mode.
+        assert "response_format" not in kwargs
+
+    @pytest.mark.asyncio
+    async def test_a_generate_with_schema_parses_json(self, monkeypatch):
+        from types import SimpleNamespace
+
+        from pydantic import BaseModel
+
+        class _Verdict(BaseModel):
+            answer: str
+
+        dispatch_mock = AsyncMock(
+            return_value=SimpleNamespace(text='```json\n{"answer": "yes"}\n```'),
+        )
+        monkeypatch.setattr(
+            "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
+        )
+        model = _de_mod._build_dispatcher_judge_model("gemma3:27b", pool="POOL")
+        out = await model.a_generate("prompt", schema=_Verdict)
+
+        assert isinstance(out, _Verdict)
+        assert out.answer == "yes"
+        # Schema requests JSON mode so weak local judges stay parseable.
+        kwargs = dispatch_mock.call_args.kwargs
+        assert kwargs["response_format"] == {"type": "json_object"}
+
+    def test_sync_generate_raises(self):
+        model = _de_mod._build_dispatcher_judge_model("gemma3:27b", pool="POOL")
+        with pytest.raises(RuntimeError, match="async-only"):
+            model.generate("prompt")
 
 
 @pytest.mark.unit

@@ -150,6 +150,81 @@ def _build_deepeval_judge_model(
     return judge_model
 
 
+def _build_dispatcher_judge_model(judge_model: str, *, pool: Any) -> Any:
+    """Wrap the judge in a DeepEval model that routes through the dispatcher.
+
+    Poindexter#826: DeepEval's stock ``OllamaModel`` owns its own HTTP
+    transport, so judge calls bypassed ``dispatch_complete`` — no
+    ``cost_logs`` rows, no Langfuse trace, and the judge silently ignored
+    the per-model ``api_base`` overrides (GPU-pinned instances). This
+    adapter re-establishes the seam at the layer DeepEval provides
+    (``DeepEvalBaseLLM``): every judge call becomes a normal dispatcher
+    call (``phase='qa_deepeval_judge'``).
+
+    Async-only by design — the rails invoke metrics via ``a_measure`` on
+    the worker's event loop (the asyncpg pool is loop-bound, so a sync
+    ``measure()`` inside ``asyncio.to_thread`` could not reach the
+    dispatcher). ``generate`` raises to make a sync regression loud.
+
+    Returns ``None`` when deepeval isn't importable — callers fall back
+    to the legacy model resolution.
+    """
+    try:
+        from deepeval.models.base_model import DeepEvalBaseLLM
+    except ImportError:
+        return None
+
+    import json as _json
+    import re as _re
+
+    from services.llm_providers.dispatcher import dispatch_complete
+
+    class _DispatcherJudgeLLM(DeepEvalBaseLLM):
+        def __init__(self):
+            self._pool = pool
+            super().__init__(judge_model)
+
+        def load_model(self):
+            return self
+
+        def get_model_name(self) -> str:
+            return f"dispatcher:{judge_model}"
+
+        async def a_generate(self, prompt: str, schema: Any = None) -> Any:
+            kwargs: dict[str, Any] = {}
+            if schema is not None:
+                # json_object keeps weaker local judges inside JSON mode
+                # (LiteLLM maps it to Ollama's format=json) — same
+                # constrained-decoding fix as the Ragas rail (#1910).
+                kwargs["response_format"] = {"type": "json_object"}
+            completion = await dispatch_complete(
+                pool=self._pool,
+                messages=[{"role": "user", "content": prompt}],
+                model=judge_model,
+                tier="standard",
+                phase="qa_deepeval_judge",
+                temperature=0.2,
+                **kwargs,
+            )
+            text = (getattr(completion, "text", "") or "").strip()
+            if schema is None:
+                return text
+            cleaned = text
+            fence = _re.search(r"```(?:json)?\s*(\{.*\})\s*```", text, _re.DOTALL)
+            if fence:
+                cleaned = fence.group(1)
+            return schema.model_validate(_json.loads(cleaned))
+
+        def generate(self, prompt: str, schema: Any = None) -> Any:
+            raise RuntimeError(
+                "_DispatcherJudgeLLM is async-only — run the metric via "
+                "a_measure (poindexter#826 routes deepeval judges through "
+                "the LiteLLM dispatcher on the event loop)"
+            )
+
+    return _DispatcherJudgeLLM()
+
+
 # ---------------------------------------------------------------------------
 # Custom metric wrapping our existing fabrication patterns
 # ---------------------------------------------------------------------------
@@ -378,7 +453,7 @@ async def _resolve_judge_model(site_config: Any) -> str:
     )
 
 
-def evaluate_g_eval(
+async def evaluate_g_eval(
     content: str,
     topic: str = "",
     *,
@@ -386,6 +461,7 @@ def evaluate_g_eval(
     judge_model: str = "",
     threshold: float = 0.7,
     site_config: Any | None = None,
+    pool: Any = None,
 ) -> tuple[bool, float, str]:
     """Run DeepEval's G-Eval (LLM-judge) against ``content``.
 
@@ -399,6 +475,13 @@ def evaluate_g_eval(
     app_settings override read by ``multi_model_qa``) wins; when
     None/empty, the rubric resolves from the SKILL.md catalog via
     :func:`_resolve_g_eval_criterion`.
+
+    Async as of poindexter#826: the metric runs via ``a_measure`` so the
+    judge calls go through the LiteLLM dispatcher on the event loop when
+    a ``pool`` is wired (production — cost_logs + Langfuse + api_base
+    overrides). Without a pool it falls back to the legacy direct
+    ``OllamaModel`` wrap (tests / bootstrap), the same
+    dispatcher-or-direct shape as ``llm_text`` / ``topic_ranking``.
 
     Returns ``(passed, score, reason)`` — ``passed = score >= threshold``.
     Never raises: import failures or judge errors return safe defaults.
@@ -416,11 +499,16 @@ def evaluate_g_eval(
     if not criterion:
         criterion = _resolve_g_eval_criterion()
 
-    # Wrap ``ollama/...`` judge-model strings in a real OllamaModel so
+    # Dispatcher-backed judge when a pool is reachable (poindexter#826);
+    # else wrap ``ollama/...`` judge-model strings in a real OllamaModel so
     # DeepEval doesn't fall back to its OpenAI client and raise
     # ``DeepEvalError: OPENAI_API_KEY is not configured`` (the 2026-05-27
     # audit's "g_eval always errors" finding).
-    resolved_model = _build_deepeval_judge_model(judge_model, site_config=site_config)
+    resolved_model = None
+    if pool is not None:
+        resolved_model = _build_dispatcher_judge_model(judge_model, pool=pool)
+    if resolved_model is None:
+        resolved_model = _build_deepeval_judge_model(judge_model, site_config=site_config)
 
     try:
         metric = _GEvalMetric(
@@ -434,7 +522,7 @@ def evaluate_g_eval(
             threshold=threshold,
         )
         case = LLMTestCase(input=topic or "blog post", actual_output=content)
-        score = float(metric.measure(case))
+        score = float(await metric.a_measure(case))
         reason = (getattr(metric, "reason", None) or "")[:300]
         passed = bool(getattr(metric, "success", score >= threshold))
         return passed, score, reason
@@ -443,13 +531,14 @@ def evaluate_g_eval(
         return True, 1.0, f"deepeval-error: {type(e).__name__}"
 
 
-def evaluate_faithfulness(
+async def evaluate_faithfulness(
     content: str,
     retrieval_context: list[str] | None,
     *,
     judge_model: str = "",
     threshold: float = 0.8,
     site_config: Any | None = None,
+    pool: Any = None,
 ) -> tuple[bool, float, str]:
     """Run DeepEval's ``FaithfulnessMetric`` on ``content``.
 
@@ -458,6 +547,10 @@ def evaluate_faithfulness(
     snippets seeded earlier in the pipeline). Score is the fraction
     of claims that are faithful to the context — 1.0 means every
     claim is grounded; lower scores flag potential fabrications.
+
+    Async as of poindexter#826 — same dispatcher-or-direct judge shape
+    as ``evaluate_g_eval`` (dispatcher via ``a_measure`` when ``pool``
+    is wired; legacy ``OllamaModel`` otherwise).
 
     Returns ``(passed, score, reason)``. Returns
     ``(True, 1.0, "no-context")`` when ``retrieval_context`` is empty
@@ -479,7 +572,11 @@ def evaluate_faithfulness(
         )
         return True, 1.0, "deepeval-not-installed"
 
-    resolved_model = _build_deepeval_judge_model(judge_model, site_config=site_config)
+    resolved_model = None
+    if pool is not None:
+        resolved_model = _build_dispatcher_judge_model(judge_model, pool=pool)
+    if resolved_model is None:
+        resolved_model = _build_deepeval_judge_model(judge_model, site_config=site_config)
     try:
         metric = FaithfulnessMetric(
             threshold=threshold,
@@ -491,7 +588,7 @@ def evaluate_faithfulness(
             actual_output=content,
             retrieval_context=list(retrieval_context),
         )
-        score = float(metric.measure(case))
+        score = float(await metric.a_measure(case))
         reason = (getattr(metric, "reason", None) or "")[:300]
         passed = bool(getattr(metric, "success", score >= threshold))
         return passed, score, reason
