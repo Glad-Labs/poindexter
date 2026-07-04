@@ -13,9 +13,10 @@ Three inline prompts migrated to YAML+Langfuse per
 Note: ``memory.collapse_old_embeddings.summary`` was migrated from
 ``services.jobs.collapse_old_embeddings._resolve_summary_prompt_template``
 — the job was retired 2026-06-24 (folded into retention_policies handler
-``embeddings_collapse``). The handler uses the inline prompt constant
-directly; the YAML key remains registered so the prompt can be tuned via
-Langfuse if needed in the future.
+``embeddings_collapse``). The handler briefly used the inline prompt
+constant directly; cycle 5 (poindexter#829, see
+test_cycle5_prompt_manager_migration.py) re-wired it to resolve the
+registered key.
 
 Each resolver pulls from UnifiedPromptManager and falls back to the
 inline constant on any lookup failure — same pattern as the cycle-3

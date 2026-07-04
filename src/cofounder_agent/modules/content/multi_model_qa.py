@@ -1512,7 +1512,9 @@ class MultiModelQA:
 
         Returns ``None`` if the rail is globally disabled. Threshold +
         criterion + judge model are pulled from app_settings so operators
-        can tune without a code change.
+        can tune without a code change; when the criterion setting is
+        unset, ``evaluate_g_eval`` resolves the default rubric from the
+        SKILL.md catalog (``qa.deepeval_g_eval_criterion``).
         """
         try:
             from services import deepeval_rails
@@ -1541,7 +1543,9 @@ class MultiModelQA:
             return None
 
         threshold = 0.7
-        criterion = deepeval_rails._DEFAULT_G_EVAL_CRITERION
+        # None → evaluate_g_eval resolves qa.deepeval_g_eval_criterion from
+        # the SKILL.md catalog; the app_settings override below still wins.
+        criterion: str | None = None
         try:
             judge_model = await deepeval_rails._resolve_judge_model(self._site_config)
         except ValueError as e:

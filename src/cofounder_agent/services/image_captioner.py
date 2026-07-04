@@ -59,13 +59,36 @@ _IMAGE_OF_PREFIX_RE = re.compile(
 )
 
 
+_CAPTION_PROMPT_KEY = "image.caption_alt_text"
+
+# Inline bootstrap fallback — must stay byte-identical to the
+# ``## image.caption_alt_text`` body in skills/content/image-generation/SKILL.md
+# (including the trailing newline the SKILL.md loader appends); the shared
+# drift guard in tests/unit/services/test_prompt_fallback_drift.py enforces it.
+_CAPTION_PROMPT_FALLBACK = (
+    "Write alt text for this image. Describe ONLY what is actually visible "
+    "— factual, concise, one sentence, under {budget} characters. Do NOT begin "
+    "with 'image of' or 'photo of'. Do NOT invent details that aren't "
+    "visible.\n"
+)
+
+
 def _prompt(budget: int) -> str:
-    return (
-        "Write alt text for this image. Describe ONLY what is actually visible "
-        f"— factual, concise, one sentence, under {budget} characters. Do NOT begin "
-        "with 'image of' or 'photo of'. Do NOT invent details that aren't "
-        "visible."
-    )
+    """Resolve the vision alt-text instruction via UnifiedPromptManager
+    (``image.caption_alt_text``), inline fallback on any lookup failure
+    per ``feedback_prompts_must_be_db_configurable``.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+
+        return get_prompt_manager().get_prompt(_CAPTION_PROMPT_KEY, budget=budget)
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[image_captioner] prompt_manager lookup for %r failed (%s) — "
+            "using inline fallback",
+            _CAPTION_PROMPT_KEY, exc,
+        )
+        return _CAPTION_PROMPT_FALLBACK.format(budget=budget)
 
 
 async def _fetch_b64(image_url: str) -> str | None:

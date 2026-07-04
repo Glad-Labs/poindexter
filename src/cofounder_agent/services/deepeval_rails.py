@@ -276,11 +276,42 @@ def evaluate_brand_fabrication(content: str, topic: str = "") -> tuple[bool, flo
         return True, 1.0, f"deepeval-error: {type(e).__name__}"
 
 
+_G_EVAL_CRITERION_KEY = "qa.deepeval_g_eval_criterion"
+
+# Inline bootstrap fallback — must stay identical to the
+# ``## qa.deepeval_g_eval_criterion`` body in skills/content/content-qa/SKILL.md
+# AND to the seeded ``app_settings.deepeval_g_eval_criterion`` value, so all
+# three sources grade against the same rubric. The resolver strips the SKILL.md
+# loader's trailing newline, so this constant carries none; the shared drift
+# guard in tests/unit/services/test_prompt_fallback_drift.py enforces agreement.
 _DEFAULT_G_EVAL_CRITERION = (
     "The output is well-grounded in the input topic, internally "
     "consistent across paragraphs, and does not invent specific facts, "
     "names, statistics, or quotes that lack support."
 )
+
+
+def _resolve_g_eval_criterion() -> str:
+    """Resolve the g-eval grounding rubric via UnifiedPromptManager
+    (``qa.deepeval_g_eval_criterion``), inline fallback on any lookup
+    failure per ``feedback_prompts_must_be_db_configurable``.
+
+    Strips the loader's trailing newline: the criterion is a bare
+    single-sentence rubric handed to DeepEval's GEval (and mirrored by
+    the seeded ``deepeval_g_eval_criterion`` app_setting, which is also
+    newline-free), not a rendered prompt body.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+
+        return get_prompt_manager().get_prompt(_G_EVAL_CRITERION_KEY).strip()
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[deepeval] prompt_manager lookup for %r failed (%s) — "
+            "using inline fallback",
+            _G_EVAL_CRITERION_KEY, exc,
+        )
+        return _DEFAULT_G_EVAL_CRITERION
 
 
 async def _resolve_judge_model(site_config: Any) -> str:
@@ -351,7 +382,7 @@ def evaluate_g_eval(
     content: str,
     topic: str = "",
     *,
-    criterion: str = _DEFAULT_G_EVAL_CRITERION,
+    criterion: str | None = None,
     judge_model: str = "",
     threshold: float = 0.7,
     site_config: Any | None = None,
@@ -363,6 +394,11 @@ def evaluate_g_eval(
     the output along those steps, and emits a 0.0–1.0 grade. It's
     the closest DeepEval analogue to our existing critic gate, so
     we treat it as advisory rather than a hard veto.
+
+    An explicit ``criterion`` (e.g. the ``deepeval_g_eval_criterion``
+    app_settings override read by ``multi_model_qa``) wins; when
+    None/empty, the rubric resolves from the SKILL.md catalog via
+    :func:`_resolve_g_eval_criterion`.
 
     Returns ``(passed, score, reason)`` — ``passed = score >= threshold``.
     Never raises: import failures or judge errors return safe defaults.
@@ -376,6 +412,9 @@ def evaluate_g_eval(
     except ImportError as e:
         logger.warning("[deepeval] deepeval not installed (%s) — skipping g-eval", e)
         return True, 1.0, "deepeval-not-installed"
+
+    if not criterion:
+        criterion = _resolve_g_eval_criterion()
 
     # Wrap ``ollama/...`` judge-model strings in a real OllamaModel so
     # DeepEval doesn't fall back to its OpenAI client and raise

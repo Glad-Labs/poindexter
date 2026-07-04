@@ -23,18 +23,18 @@ Operational summarization prompts that bound storage growth.
 `ops.retention.summarize_to_table` is used by
 `services/integrations/handlers/retention_summarize_to_table.py` to
 compress one calendar day of rows (e.g. audit_log) into a single summary
-row. `memory.collapse_old_embeddings.summary` is registered here for
-Langfuse/DB tunability; the consuming handler is
+row. `memory.collapse_old_embeddings.summary` is consumed by
 `services/integrations/handlers/retention_embeddings_collapse.py` (#242,
-retired `services/jobs/collapse_old_embeddings.py` 2026-06-24) — it uses
-the inline `_DEFAULT_SUMMARY_PROMPT` constant as a fallback but prefers
-the DB-registered key if present.
+retired `services/jobs/collapse_old_embeddings.py` 2026-06-24) — a
+per-policy-row `config.prompt_template` wins over the catalog default
+(poindexter#829 wired the handler to this key).
 
-`UnifiedPromptManager` resolves each template by `key`; both callers
-fetch the raw template and apply the `{...}` placeholders themselves. A
-Langfuse production-label override still wins over the bodies below; the
-inline fallbacks in the handlers stay as a bootstrap safety net per
-`feedback_prompts_must_be_db_configurable`.
+`UnifiedPromptManager` resolves each template by `key`; both handlers
+fetch the raw template through the gated `_resolve_template_with_meta`
+seam and apply the `{...}` placeholders themselves. The inline fallbacks
+in the handlers stay as a bootstrap safety net per
+`feedback_prompts_must_be_db_configurable` and must stay byte-identical
+to the bodies below (the shared drift guard enforces it).
 
 ## ops.retention.summarize_to_table
 

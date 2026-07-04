@@ -2,9 +2,10 @@
 name: image-generation
 description: >
   Image-direction prompts for the content pipeline. Generate featured-image
-  prompts, build stock image search queries, and run the image-director
+  prompts, build stock image search queries, run the image-director
   reasoning that picks which sections get visuals (image_gen vs pexels, style,
-  and prompt/query for each) plus one featured hero image.
+  and prompt/query for each) plus one featured hero image, and caption
+  rendered images with vision-derived alt text.
 license: Apache-2.0
 metadata:
   category: image_generation
@@ -21,15 +22,19 @@ metadata:
     - key: image.decision
       output_format: json
       description: 'Image-director reasoning prompt — picks which sections get visuals, image_gen vs pexels, style, and prompt/query for each, plus one featured hero image'
+    - key: image.caption_alt_text
+      output_format: text
+      description: 'Vision alt-text instruction — describe only what is actually visible in the image, one factual sentence under {budget} characters. Used by services/image_captioner.py (the caption_images stage + the alt-text backfill script).'
 ---
 
 # Image generation skill
 
-Three prompts the pipeline uses to direct visuals for a post — a featured
-hero prompt, stock search queries, and the image-director reasoning that
-decides which sections get images. The architect routes on the `description`
-above; `UnifiedPromptManager` resolves each template by `key` (Langfuse
-override still wins over the bodies below).
+The prompts the pipeline uses to direct visuals for a post — a featured
+hero prompt, inline-section illustrations, stock search queries, the
+image-director reasoning that decides which sections get images, and the
+vision alt-text captioner that describes the rendered result. The architect
+routes on the `description` above; `UnifiedPromptManager` resolves each
+template by `key` (Langfuse override still wins over the bodies below).
 
 Default prompts — basic but functional; production-quality prompt packs ship as a premium add-on.
 
@@ -106,4 +111,10 @@ Output ONLY valid JSON (no markdown, no explanation):
     }}
   ]
 }}
+```
+
+## image.caption_alt_text
+
+```text
+Write alt text for this image. Describe ONLY what is actually visible — factual, concise, one sentence, under {budget} characters. Do NOT begin with 'image of' or 'photo of'. Do NOT invent details that aren't visible.
 ```

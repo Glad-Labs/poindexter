@@ -7,7 +7,6 @@ from typing import Any
 
 import pytest
 
-
 # ---------------------------------------------------------------------------
 # Helpers — minimal asyncpg pool substitute
 # ---------------------------------------------------------------------------
@@ -49,7 +48,7 @@ def _embedding_row(
 
 
 class _TxCtx:
-    def __init__(self, conn: "_RecordingConn"):
+    def __init__(self, conn: _RecordingConn):
         self.conn = conn
 
     async def __aenter__(self):
@@ -70,7 +69,7 @@ class _TxCtx:
 
 
 class _RecordingConn:
-    def __init__(self, pool: "FakePool"):
+    def __init__(self, pool: FakePool):
         self.pool = pool
         self.in_tx = False
         self.tx_inserts: list[dict[str, Any]] = []
@@ -119,7 +118,7 @@ class _RecordingConn:
 
 
 class _AcquireCtx:
-    def __init__(self, pool: "FakePool"):
+    def __init__(self, pool: FakePool):
         self.pool = pool
 
     async def __aenter__(self) -> _RecordingConn:
@@ -233,6 +232,66 @@ async def test_two_clusters_writes_summaries_and_deletes_originals():
         meta = json.loads(summary["metadata"])
         assert meta["is_summary"] is True
         assert meta["collapsed_count"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_policy_row_prompt_template_reaches_llm_summarizer(monkeypatch):
+    """poindexter#829: the per-policy-row ``config.prompt_template`` must be
+    threaded through to ``build_summary_text_via_llm`` (where an explicit
+    template wins over the ``memory.collapse_old_embeddings.summary``
+    catalog default)."""
+    from unittest.mock import AsyncMock
+
+    from services.integrations.handlers import retention_embeddings_collapse as mod
+
+    low = [_embedding_row(i, f"low-{i}", _vec("A", jitter=i * 0.001)) for i in range(4)]
+    pool = FakePool(candidate_rows=low)
+    row = _make_row(
+        source_table="claude_sessions",
+        cluster_size=2,
+        summary_provider="ollama",
+        summary_model="test-model",
+        prompt_template="POLICY ROW TEMPLATE: {n} {source_table} {joined}",
+    )
+
+    llm_mock = AsyncMock(return_value="an llm summary")
+    monkeypatch.setattr(mod, "build_summary_text_via_llm", llm_mock)
+
+    result = await mod.embeddings_collapse(None, site_config=None, row=row, pool=pool)
+
+    assert result["summarized"] >= 1
+    assert llm_mock.await_count >= 1
+    for call in llm_mock.await_args_list:
+        assert call.kwargs["prompt_template"] == (
+            "POLICY ROW TEMPLATE: {n} {source_table} {joined}"
+        )
+
+
+@pytest.mark.asyncio
+async def test_no_prompt_template_config_passes_none_to_llm_summarizer(monkeypatch):
+    """Without a per-policy-row override the handler passes None — the
+    catalog default resolves downstream in build_summary_text_via_llm."""
+    from unittest.mock import AsyncMock
+
+    from services.integrations.handlers import retention_embeddings_collapse as mod
+
+    low = [_embedding_row(i, f"low-{i}", _vec("A", jitter=i * 0.001)) for i in range(4)]
+    pool = FakePool(candidate_rows=low)
+    row = _make_row(
+        source_table="claude_sessions",
+        cluster_size=2,
+        summary_provider="ollama",
+        summary_model="test-model",
+    )
+
+    llm_mock = AsyncMock(return_value="an llm summary")
+    monkeypatch.setattr(mod, "build_summary_text_via_llm", llm_mock)
+
+    await mod.embeddings_collapse(None, site_config=None, row=row, pool=pool)
+
+    assert llm_mock.await_count >= 1
+    for call in llm_mock.await_args_list:
+        assert call.kwargs["prompt_template"] is None
 
 
 @pytest.mark.asyncio

@@ -48,21 +48,21 @@ All paths feed the same `template.format(**kwargs)` step at the end, so the call
 
 Each `SKILL.md` pack declares the keys it provides in its frontmatter `metadata.prompts` list — **that frontmatter is the authoritative key inventory** (the loader registers exactly those keys). The packs that ship today:
 
-| Pack (`skills/<pack>/<skill>/SKILL.md`)                       | `metadata.category` | Surface                                                                             |
-| ------------------------------------------------------------- | ------------------- | ----------------------------------------------------------------------------------- |
-| `content/writer`                                              | content             | base content-writer persona + narrative-pass seed                                   |
-| `content/two-pass-writer`                                     | content             | TWO_PASS draft/revise prompts                                                       |
-| `content/blog-generation`                                     | content             | initial draft / SEO+social / iterative refinement                                   |
-| `content/content-qa`, `content/qa`                            | content_qa          | the `qa.*` review, critique, topic-delivery, consistency, aggregate-rewrite prompts |
-| `content/research`                                            | research            | search-result analysis + topic-candidate ranking                                    |
-| `content/image-generation`                                    | image               | featured-image, search-query, and image-director prompts                            |
-| `content/seo-metadata`                                        | seo_metadata        | `seo.*` title / description / keywords / excerpt / category / tags                  |
-| `content/social-media`                                        | social              | trend research + post creation                                                      |
-| `content/podcast`, `content/video`, `content/video-director`  | media               | media-script and shot-list prompts                                                  |
-| `content/atoms`                                               | content             | `atoms.*` system prompts (narrate_bundle, review_with_critic, pipeline_architect)   |
-| `content/utility`                                             | utility             | content summarization / JSON conversion helpers                                     |
-| `ops/automation`, `ops/business`, `ops/triage`, `ops/hygiene` | ops                 | `task.*` business/automation/ops prompts                                            |
-| `voice/agent`                                                 | voice               | `voice.*` system prompts — Emma persona + Claude-bridge TTS override (`{surface}`)  |
+| Pack (`skills/<pack>/<skill>/SKILL.md`)                       | `metadata.category` | Surface                                                                                                             |
+| ------------------------------------------------------------- | ------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `content/writer`                                              | content             | base content-writer persona + narrative-pass seed                                                                   |
+| `content/two-pass-writer`                                     | content             | TWO_PASS draft/revise prompts                                                                                       |
+| `content/blog-generation`                                     | content             | initial draft / SEO+social / iterative refinement                                                                   |
+| `content/content-qa`, `content/qa`                            | content_qa          | the `qa.*` review, critique, topic-delivery, consistency, aggregate-rewrite prompts + the DeepEval g-eval criterion |
+| `content/research`                                            | research            | search-result analysis + topic-candidate ranking                                                                    |
+| `content/image-generation`                                    | image               | featured-image, search-query, image-director, and vision alt-text caption prompts                                   |
+| `content/seo-metadata`                                        | seo_metadata        | `seo.*` title / description / keywords / excerpt / category / tags                                                  |
+| `content/social-media`                                        | social              | trend research + post creation                                                                                      |
+| `content/podcast`, `content/video`, `content/video-director`  | media               | media-script and shot-list prompts                                                                                  |
+| `content/atoms`                                               | content             | `atoms.*` system prompts (narrate_bundle, review_with_critic, pipeline_architect)                                   |
+| `content/utility`                                             | utility             | content summarization / JSON conversion helpers                                                                     |
+| `ops/automation`, `ops/business`, `ops/triage`, `ops/hygiene` | ops                 | `task.*` business/automation/ops prompts + the retention/memory-hygiene summarizers                                 |
+| `voice/agent`                                                 | voice               | `voice.*` system prompts — Emma persona + Claude-bridge TTS override (`{surface}`)                                  |
 
 The `narrate_bundle` and `pipeline_architect` templates carry the operator persona as `{site_name}` / `{site_url}` placeholders, rendered from the run-bound `site_config` by the calling atom before the text reaches the model.
 

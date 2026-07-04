@@ -50,6 +50,9 @@ metadata:
     - key: qa.video_shot_quality
       output_format: json
       description: 'Vision-QA: per-shot rendered-frame scoring (video-quality Piece 2 render-check loop). A vision-capable Ollama model rates one rendered video shot 0-100 on match-to-intent, on-brand palette, and usability. Used by services.video_renderers.shot_vision_qa.score_shot_frame.'
+    - key: qa.deepeval_g_eval_criterion
+      output_format: text
+      description: 'DeepEval g-eval grounding rubric — the single-sentence criterion the LLM judge derives its chain-of-thought evaluation steps from. Used by services.deepeval_rails.evaluate_g_eval; the seeded app_settings.deepeval_g_eval_criterion operator override still wins when set.'
 ---
 
 # Content QA skill
@@ -398,4 +401,10 @@ Judge:
 
 Output EXACTLY one JSON object, no prose, no code fences:
 {{"score": <integer 0-100>, "reason": "<one short sentence>"}}
+```
+
+## qa.deepeval_g_eval_criterion
+
+```text
+The output is well-grounded in the input topic, internally consistent across paragraphs, and does not invent specific facts, names, statistics, or quotes that lack support.
 ```

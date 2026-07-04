@@ -23,11 +23,12 @@ _IMAGE_KEYS = (
     "image.inline_illustration",
     "image.search_queries",
     "image.decision",
+    "image.caption_alt_text",
 )
 
 
 def test_image_keys_resolve_from_skill() -> None:
-    """All three image keys must load from the image-generation skill."""
+    """Every image key must load from the image-generation skill."""
     pm = UnifiedPromptManager()
     for key in _IMAGE_KEYS:
         assert key in pm.prompts, f"{key} did not load from the image-generation skill"
@@ -67,6 +68,12 @@ def test_image_templates_carry_placeholders() -> None:
     assert "{max_images}" in decision
     # Literal JSON braces in the template must survive (escaped as {{ }}).
     assert '{{\n  "featured"' in decision
+
+    # caption_alt_text joined the pack in cycle 5 (poindexter#829) — the
+    # vision alt-text instruction migrated from services/image_captioner.py.
+    caption = pm.prompts["image.caption_alt_text"]["template"]
+    assert "{budget}" in caption
+    assert "ONLY what is actually visible" in caption
 
 
 def test_image_templates_end_with_single_newline() -> None:

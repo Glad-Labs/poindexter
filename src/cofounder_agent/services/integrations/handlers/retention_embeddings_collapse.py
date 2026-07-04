@@ -14,6 +14,10 @@ Config keys (from the ``config`` JSONB column on the retention_policies row):
 - ``summary_provider`` (str, default "ollama") — "ollama" calls the local
   budget-tier model; anything else uses the joined-preview fallback.
 - ``summary_timeout_s`` (int, default 60) — per-cluster LLM timeout.
+- ``prompt_template`` (str, optional) — per-policy-row summarizer prompt.
+  When unset, the ``memory.collapse_old_embeddings.summary`` SKILL.md
+  catalog key is resolved via UnifiedPromptManager (inline fallback when
+  the manager is unreachable).
 
 Returns: {
     "deleted":      int,   # raw rows removed
@@ -39,9 +43,11 @@ filters already-collapsed summaries out of the candidate query.
 ## LLM summarization
 
 When ``summary_provider = "ollama"``, each cluster's preview texts are sent
-to the budget-tier model for a 3-6 sentence dense factual summary. Any LLM
-failure silently falls back to the joined-preview heuristic (no crash, no
-abort). Model resolved via ``resolve_tier_model(pool, "budget")``.
+to the configured ``summary_model`` for a 3-6 sentence dense factual summary.
+Any LLM failure silently falls back to the joined-preview heuristic (no
+crash, no abort). Prompt resolution order: per-policy-row
+``config.prompt_template`` > ``memory.collapse_old_embeddings.summary``
+catalog key > inline ``_DEFAULT_SUMMARY_PROMPT`` fallback.
 """
 
 from __future__ import annotations
@@ -193,6 +199,13 @@ def build_summary_text(previews: Iterable[str], *, chars_per_member: int = 200) 
     return " | ".join(parts)
 
 
+_SUMMARY_PROMPT_KEY = "memory.collapse_old_embeddings.summary"
+
+# Inline bootstrap fallback — must stay byte-identical to the
+# ``## memory.collapse_old_embeddings.summary`` body in
+# skills/ops/hygiene/SKILL.md (including the trailing newline the SKILL.md
+# loader appends); the shared drift guard in
+# tests/unit/services/test_prompt_fallback_drift.py enforces it.
 _DEFAULT_SUMMARY_PROMPT = (
     "You are compressing a cluster of older memories so the system "
     "remembers the gist without storing every detail. Below are "
@@ -208,6 +221,32 @@ _DEFAULT_SUMMARY_PROMPT = (
 )
 
 
+def _resolve_summary_prompt_template() -> str:
+    """Pull the cluster-collapse summarizer template (no placeholders
+    filled) via the manager's resolution seam — the caller
+    (:func:`build_summary_text_via_llm`) fills ``{n}`` /
+    ``{source_table}`` / ``{joined}`` itself.
+
+    ``_resolve_template_with_meta`` honors the
+    ``langfuse_prompt_overrides_enabled`` gate (poindexter#825; mirrors
+    the #2103 fix in ``retention_summarize_to_table``). Inline fallback
+    when the manager is unreachable, per
+    ``feedback_prompts_must_be_db_configurable``.
+    """
+    try:
+        from services.prompt_manager import get_prompt_manager
+
+        pm = get_prompt_manager()
+        return pm._resolve_template_with_meta(_SUMMARY_PROMPT_KEY)[0]
+    except Exception as exc:  # noqa: BLE001
+        logger.error(
+            "[retention.embeddings_collapse] prompt_manager lookup for %r "
+            "failed (%s) — using inline fallback",
+            _SUMMARY_PROMPT_KEY, exc,
+        )
+        return _DEFAULT_SUMMARY_PROMPT
+
+
 async def build_summary_text_via_llm(
     previews: Sequence[str],
     *,
@@ -217,6 +256,10 @@ async def build_summary_text_via_llm(
     prompt_template: str | None = None,
 ) -> str | None:
     """Summarize a cluster via the local Ollama model.
+
+    An explicit ``prompt_template`` (the per-policy-row config value)
+    wins; when None, the template resolves from the SKILL.md catalog via
+    :func:`_resolve_summary_prompt_template`.
 
     Returns ``None`` on any failure — callers fall back to
     :func:`build_summary_text`. Never raises.
@@ -236,7 +279,7 @@ async def build_summary_text_via_llm(
     if not pieces:
         return None
 
-    prompt = (prompt_template or _DEFAULT_SUMMARY_PROMPT).format(
+    prompt = (prompt_template or _resolve_summary_prompt_template()).format(
         n=len(pieces),
         source_table=source_table,
         joined="\n---\n".join(pieces),
@@ -439,6 +482,10 @@ async def embeddings_collapse(
         config.get("summary_model") or "phi4:14b"
     ).strip().removeprefix("ollama/")
 
+    # Per-policy-row prompt override; None → the SKILL.md catalog default
+    # (memory.collapse_old_embeddings.summary) resolved downstream.
+    summary_prompt_template = str(config.get("prompt_template") or "").strip() or None
+
     cutoff = datetime.now(timezone.utc) - timedelta(days=max(0, age_days))
 
     # Fetch old raw rows.
@@ -520,6 +567,7 @@ async def embeddings_collapse(
                 source_table=source_table,
                 model=summary_model,
                 timeout_s=summary_timeout_s,
+                prompt_template=summary_prompt_template,
             )
         if not summary_text:
             summary_text = build_summary_text(previews)

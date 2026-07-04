@@ -92,6 +92,30 @@ def _ops_triage():
     return m._resolve_system_prompt()
 
 
+def _image_caption():
+    from services import image_captioner as m
+
+    return m._prompt(budget=125)
+
+
+def _g_eval_criterion():
+    from services import deepeval_rails as m
+
+    return m._resolve_g_eval_criterion()
+
+
+def _collapse():
+    from services.integrations.handlers import retention_embeddings_collapse as m
+
+    return m._resolve_summary_prompt_template()
+
+
+def _retention_summarize():
+    from services.integrations.handlers import retention_summarize_to_table as m
+
+    return m._resolve_summary_prompt_template()
+
+
 # (name, skill_key, resolver_callable)
 _CASES = [
     ("review_with_critic", "atoms.review_with_critic.system_prompt", _critic),
@@ -101,10 +125,14 @@ _CASES = [
     ("pipeline_architect", "atoms.pipeline_architect.system_prompt", _architect),
     ("social_twitter", "social.twitter_promote", _social_twitter),
     ("social_linkedin", "social.linkedin_promote", _social_linkedin),
-    # ("collapse", "memory.collapse_old_embeddings.summary", ...) removed
-    # 2026-06-24: embeddings_collapse retention handler uses an inline constant
-    # (not a resolver function), so it doesn't participate in this drift-guard.
     ("ops_triage", "ops.triage.system_prompt", _ops_triage),
+    # poindexter#829 (cycle 5): the last three inline-only prompts joined the
+    # catalog, plus drift coverage for the summarize_to_table raw template
+    # (whose fallback had silently drifted by its missing trailing newline).
+    ("image_caption", "image.caption_alt_text", _image_caption),
+    ("deepeval_g_eval_criterion", "qa.deepeval_g_eval_criterion", _g_eval_criterion),
+    ("collapse", "memory.collapse_old_embeddings.summary", _collapse),
+    ("retention_summarize", "ops.retention.summarize_to_table", _retention_summarize),
 ]
 
 _IDS = [c[0] for c in _CASES]

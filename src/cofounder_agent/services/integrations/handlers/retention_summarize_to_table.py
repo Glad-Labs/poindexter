@@ -78,12 +78,12 @@ from collections.abc import Sequence
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from services.integrations.operator_notify import notify_operator
-from services.integrations.registry import register_handler
 from services.integrations.handlers.retention_embeddings_collapse import (
     build_summary_text,
     build_summary_text_via_llm,
 )
+from services.integrations.operator_notify import notify_operator
+from services.integrations.registry import register_handler
 
 logger = logging.getLogger(__name__)
 
@@ -208,12 +208,14 @@ _SUMMARY_PROMPT_FALLBACK = (
     "summary will be stored as a single row replacing all {row_count} "
     "raw rows for the day, so dense factual content beats prose.\n\n"
     "Rows:\n{joined}\n\n"
-    "Summary:"
+    "Summary:\n"
 )
-"""Inline bootstrap fallback. Production reads come from
-``ops.retention.summarize_to_table`` via Langfuse → YAML; this
-constant protects the cold-start / test path per
-``feedback_prompts_must_be_db_configurable``."""
+"""Inline bootstrap fallback. Production reads come from the
+``ops.retention.summarize_to_table`` SKILL.md key; this constant protects
+the cold-start / test path per ``feedback_prompts_must_be_db_configurable``
+and must stay byte-identical to the SKILL.md body (including the trailing
+newline the loader appends) — the shared drift guard in
+tests/unit/services/test_prompt_fallback_drift.py enforces it."""
 
 
 def _resolve_summary_prompt_template() -> str:
@@ -238,7 +240,10 @@ def _resolve_summary_prompt_template() -> str:
         pm = get_prompt_manager()
         return pm._resolve_template_with_meta(_SUMMARY_PROMPT_KEY)[0]
     except Exception as exc:  # noqa: BLE001
-        logger.warning(
+        # ERROR, not WARNING — the fallback self-heals but must not
+        # suppress the "prompt registry unreachable" signal, per
+        # feedback_self_heal_not_suppress (drift-guard contract).
+        logger.error(
             "[retention.summarize_to_table] prompt_manager lookup for "
             "%r failed (%s) — using inline fallback",
             _SUMMARY_PROMPT_KEY, exc,
