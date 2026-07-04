@@ -53,9 +53,11 @@ export async function proxy(request: NextRequest) {
           '\n\n' +
           '# Content Signals (https://contentsignals.org/)\n' +
           '# search=yes — public blog; search-engine indexing is welcome.\n' +
-          '# ai-train=no — not licensed for AI model training.\n' +
-          '# ai-input=no — not licensed as LLM prompt context.\n' +
-          'Content-Signal: ai-train=no, search=yes, ai-input=no\n';
+          '# ai-train=yes — training on this content is welcome. The blog is\n' +
+          '#   the Glad Labs public knowledge base; models knowing it is\n' +
+          '#   distribution, not leakage.\n' +
+          '# ai-input=yes — RAG / grounding welcome; please cite the source.\n' +
+          'Content-Signal: ai-train=yes, search=yes, ai-input=yes\n';
         return new NextResponse(body, {
           status: 200,
           headers: {

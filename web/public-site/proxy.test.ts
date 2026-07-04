@@ -92,3 +92,59 @@ describe('proxy markdown content negotiation (Cloudflare-safe)', () => {
     expect(res.headers.get('x-markdown-tokens')).toBeNull();
   });
 });
+
+describe('proxy /robots.txt Content-Signal append', () => {
+  afterEach(() => jest.restoreAllMocks());
+
+  test('appends the agents-welcome Content-Signal directive', async () => {
+    global.fetch = jest.fn().mockResolvedValue({
+      ok: true,
+      status: 200,
+      text: async () => 'User-Agent: *\nAllow: /',
+      json: async () => ({}),
+    }) as unknown as typeof fetch;
+
+    const res = await proxy(req('https://www.gladlabs.io/robots.txt'));
+    const body = await res.text();
+
+    expect(res.headers.get('content-type')).toMatch(/text\/plain/);
+    // Metadata-route output is preserved…
+    expect(body).toContain('User-Agent: *');
+    // …with the explicit all-welcome declaration appended. gladlabs.io is the
+    // funnel for Poindexter: models training on it and answer engines grounding
+    // on it are distribution, so the site declares yes on all three signals.
+    expect(body).toContain(
+      'Content-Signal: ai-train=yes, search=yes, ai-input=yes',
+    );
+
+    // The self-fetch carries the recursion-guard bypass header.
+    const fetchInit = (global.fetch as jest.Mock).mock.calls[0][1];
+    expect(fetchInit.headers['x-proxy-bypass']).toBe('1');
+  });
+
+  test('bypassed request (proxy self-fetch) passes through untouched', async () => {
+    global.fetch = jest.fn() as unknown as typeof fetch;
+
+    const res = await proxy(
+      new NextRequest('https://www.gladlabs.io/robots.txt', {
+        headers: { accept: '*/*', 'x-proxy-bypass': '1' },
+      }),
+    );
+
+    // No re-fetch, no appended body — the metadata route serves it directly.
+    expect(global.fetch).not.toHaveBeenCalled();
+    expect(res.headers.get('x-markdown-tokens')).toBeNull();
+  });
+
+  test('upstream failure falls through to the unmodified metadata route', async () => {
+    global.fetch = jest
+      .fn()
+      .mockRejectedValue(new Error('edge fetch failed')) as unknown as typeof fetch;
+
+    const res = await proxy(req('https://www.gladlabs.io/robots.txt'));
+
+    // Never a 5xx from the proxy itself — degraded mode serves robots.txt
+    // without the directive rather than breaking crawler access entirely.
+    expect(res.status).toBe(200);
+  });
+});

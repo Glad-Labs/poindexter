@@ -62,8 +62,8 @@ grant_type=client_credentials
 Content published on gladlabs.io is copyright Glad Labs, LLC.
 
 - **Search indexing**: Permitted
-- **AI training**: Not permitted without explicit license agreement
-- **AI input / RAG**: Not permitted without explicit license agreement
+- **AI training**: Permitted — this content is published to be learned from
+- **AI input / RAG**: Permitted — attribution / citation appreciated
 
 See `robots.txt` for the machine-readable declaration (Content-Signal directives).
 

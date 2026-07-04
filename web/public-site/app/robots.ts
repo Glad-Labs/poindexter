@@ -1,7 +1,7 @@
 import { MetadataRoute } from 'next';
 import { SITE_URL } from '@/lib/site.config';
 
-// Content Signals (`Content-Signal: ai-train=no, search=yes, ai-input=no`)
+// Content Signals (`Content-Signal: ai-train=yes, search=yes, ai-input=yes`)
 // cannot be injected via MetadataRoute.Robots — the type has no escape hatch
 // for custom directives. The `proxy.ts` edge proxy intercepts /robots.txt and
 // appends the directive to whatever this function generates, so the live HTTP
