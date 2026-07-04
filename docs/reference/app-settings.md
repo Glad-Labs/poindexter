@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-07-02.**  
+> **Auto-generated from live `app_settings` table on 2026-07-04.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 720 active rows across 58 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 14 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -961,7 +961,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `deepeval_g_eval_criterion` | `The output is well-grounded in the in...` |  | Criterion text the DeepEval g-eval judge model uses to grade the post. Operators can rewrite this to emphasize differ... |
+| `deepeval_g_eval_criterion` | `` |  | OPTIONAL operator override for the DeepEval g-eval rubric. Empty (the default) means "use the qa.deepeval_g_eval_crit... |
 | `deepeval_judge_model` | `ollama/phi4:14b` |  | LLM model identifier used by the DeepEval g-eval and faithfulness reviewers. Default 'phi4:14b' is a fast, non-thinki... |
 | `deepeval_threshold_faithfulness` | `0.8` |  | Threshold (0–1) above which the DeepEval faithfulness reviewer marks the post as approved. Default 0.8 — at least 80%... |
 | `deepeval_threshold_g_eval` | `0.7` |  | Threshold (0–1) above which the DeepEval g-eval reviewer marks the post as approved. Default 0.7 — anything below mea... |
