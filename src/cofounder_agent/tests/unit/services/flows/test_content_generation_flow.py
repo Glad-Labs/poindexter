@@ -502,6 +502,156 @@ class TestFlowCrashMarksTaskFailed:
 
 
 # ---------------------------------------------------------------------------
+# Atom-registry-unavailable release path (2026-07-03, task ba4d627a)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRegistryUnavailableReleasesTask:
+    """When the graph load fails because the atom registry came up EMPTY in
+    this subprocess (AtomRegistryUnavailableError — an infra fault, not
+    content failure), the task must be RELEASED back to pending (bounded by
+    retry_count) instead of permanently failed. ba4d627a was fataled with
+    'stored graph_def is out of date with the atom registry' listing every
+    node as missing — a one-shot discovery blip."""
+
+    @pytest.mark.asyncio
+    async def test_flow_releases_task_on_registry_unavailable(self):
+        from services.atom_registry import AtomRegistryUnavailableError
+        from services.flows.content_generation import content_generation_flow
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        boom = AtomRegistryUnavailableError("atom registry is empty")
+        pipeline_mock = AsyncMock(side_effect=boom)
+
+        with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+            new=pipeline_mock,
+        ):
+            with pytest.raises(AtomRegistryUnavailableError):
+                await content_generation_flow.fn(
+                    task_id="registry-blip-task",
+                    topic="A topic",
+                    database_service=db,
+                )
+
+        async with pool.acquire() as conn:
+            release_calls = [
+                c for c in conn.execute.call_args_list
+                if "retry_count = retry_count + 1" in c.args[0]
+                and "'pending'" in c.args[0]
+            ]
+            assert release_calls, "expected a release-to-pending UPDATE"
+            sql = release_calls[0].args[0]
+            assert "UPDATE pipeline_tasks" in sql
+            assert "status = 'in_progress'" in sql  # only touches claimed row
+            # No permanent unconditional fail write.
+            failed_calls = [
+                c for c in conn.execute.call_args_list
+                if c.args[0].strip().startswith("UPDATE pipeline_tasks")
+                and "SET status = 'failed'" in c.args[0]
+            ]
+            assert not failed_calls, (
+                "a transient registry fault must not permanently fail the task"
+            )
+
+    @pytest.mark.asyncio
+    async def test_other_errors_still_mark_failed(self):
+        """Non-registry errors keep the existing mark-failed behavior."""
+        from services.flows.content_generation import content_generation_flow
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        pipeline_mock = AsyncMock(side_effect=RuntimeError("real crash"))
+
+        with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+            new=pipeline_mock,
+        ):
+            with pytest.raises(RuntimeError, match="real crash"):
+                await content_generation_flow.fn(
+                    task_id="crash-task-2",
+                    topic="A topic",
+                    database_service=db,
+                )
+
+        async with pool.acquire() as conn:
+            failed_calls = [
+                c for c in conn.execute.call_args_list
+                if "SET status = 'failed'" in c.args[0]
+            ]
+            assert failed_calls
+
+    @pytest.mark.asyncio
+    async def test_release_helper_bounds_retries_in_sql(self):
+        """The release UPDATE must bound the pending reset with a retry_count
+        CASE so a persistently-broken registry can't ping-pong a task forever."""
+        from services.flows.content_generation import (
+            _release_task_on_registry_unavailable,
+        )
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        await _release_task_on_registry_unavailable(
+            database_service=db,
+            task_id="t-bound",
+            error=RuntimeError("registry empty"),
+        )
+
+        async with pool.acquire() as conn:
+            sql = conn.execute.call_args.args[0]
+            normalized = " ".join(sql.split())
+            assert "CASE WHEN retry_count <" in normalized
+            assert "'pending'" in sql and "'failed'" in sql
+            assert "retry_count = retry_count + 1" in sql
+
+    @pytest.mark.asyncio
+    async def test_release_helper_noop_when_task_id_none(self):
+        from services.flows.content_generation import (
+            _release_task_on_registry_unavailable,
+        )
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+        await _release_task_on_registry_unavailable(
+            database_service=db, task_id=None, error=RuntimeError("x"),
+        )
+        async with pool.acquire() as conn:
+            conn.execute.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_release_helper_swallows_db_errors(self):
+        from services.flows.content_generation import (
+            _release_task_on_registry_unavailable,
+        )
+
+        db = MagicMock()
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            raise RuntimeError("conn lost")
+            yield  # pragma: no cover
+
+        pool.acquire = _acquire
+        db.pool = pool
+        # Must not raise — the caller's re-raise of the original error matters.
+        await _release_task_on_registry_unavailable(
+            database_service=db, task_id="t-db-err", error=RuntimeError("orig"),
+        )
+
+
+# ---------------------------------------------------------------------------
 # reclaim_stale_inprogress_tasks safety net
 # ---------------------------------------------------------------------------
 

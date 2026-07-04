@@ -88,6 +88,43 @@ class TestAssertCurrent:
             pa.assert_graph_def_current(stamped)
 
 
+class TestAssertCurrentEmptyRegistry:
+    """2026-07-03 (task ba4d627a): a Prefect subprocess with an EMPTY atom
+    registry (transient discovery failure) tripped the drift gate with
+    'no longer exists in the registry' for EVERY node — a fake drift that
+    permanently failed the task. An empty registry is an infra fault, not
+    contract drift: it must raise the distinct AtomRegistryUnavailableError
+    so the flow can release the task for retry instead of failing it."""
+
+    def test_empty_registry_raises_unavailable_not_drift(self, registry, monkeypatch):
+        from services.atom_registry import AtomRegistryUnavailableError
+
+        stamped = pa.stamp_graph_def(_spec())
+        monkeypatch.setattr(pa, "registry_is_empty", lambda: True)
+        with pytest.raises(AtomRegistryUnavailableError):
+            pa.assert_graph_def_current(stamped)
+
+    def test_unavailable_is_not_a_contract_error(self):
+        from services.atom_registry import AtomRegistryUnavailableError
+
+        assert not issubclass(AtomRegistryUnavailableError, pa.GraphContractError)
+
+    def test_nodeless_spec_does_not_probe_registry(self, monkeypatch):
+        # A spec with no nodes has nothing to validate — must not raise even
+        # when the registry is empty.
+        monkeypatch.setattr(pa, "registry_is_empty", lambda: True)
+        pa.assert_graph_def_current({"name": "empty", "nodes": []})
+
+    def test_populated_registry_keeps_normal_drift_semantics(self, registry, monkeypatch):
+        # With a populated registry, a genuinely-missing atom still reports
+        # as contract drift (GraphContractError), not as unavailable.
+        monkeypatch.setattr(pa, "registry_is_empty", lambda: False)
+        stamped = pa.stamp_graph_def(_spec())
+        del registry["atoms.title"]
+        with pytest.raises(pa.GraphContractError, match="atoms.title"):
+            pa.assert_graph_def_current(stamped)
+
+
 class TestGraphSignature:
     def test_stable(self, registry):
         s = pa.stamp_graph_def(_spec())

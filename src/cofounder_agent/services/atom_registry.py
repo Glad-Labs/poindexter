@@ -29,6 +29,20 @@ from plugins.atom import AtomMeta
 logger = logging.getLogger(__name__)
 
 
+class AtomRegistryUnavailableError(RuntimeError):
+    """The atom registry is EMPTY after a discovery attempt — an infra fault
+    (transient import failure, e.g. a deploy-clone mid-sync in a fresh Prefect
+    subprocess), not genuine graph/atom drift.
+
+    Deliberately NOT a ``pipeline_architect.GraphContractError``: prod task
+    ba4d627a (2026-06-30) was permanently failed with a "graph_def is out of
+    date" error that listed EVERY node — including pure-Python atoms — as
+    missing, because an empty registry is indistinguishable from total drift
+    inside the gate. Callers (``flows.content_generation``) catch this class
+    and release the task for retry instead of failing it.
+    """
+
+
 _ATOMS: dict[str, AtomMeta] = {}
 _RUNNERS: dict[str, Callable[..., Any]] = {}
 _DISCOVERED = False
@@ -135,6 +149,24 @@ def discover() -> None:
         _walk_package("modules.content.atoms")
 
     _surface_stages_as_atoms()
+
+    # 2026-07-03 (task ba4d627a): never latch an EMPTY discovery. A transient
+    # wholesale import failure (deploy-clone mid-sync, broken sys.path in a
+    # fresh Prefect subprocess) used to set _DISCOVERED=True over zero atoms,
+    # poisoning every subsequent lookup in the process — the graph_def drift
+    # gate then reported every node as "no longer exists in the registry" and
+    # permanently failed the task. Leaving _DISCOVERED False makes the next
+    # lookup retry discovery, so a blip self-heals within the process.
+    if not _ATOMS:
+        logger.error(
+            "[atom_registry] discovery yielded ZERO atoms — every discovery "
+            "source failed (module imports, plugin registry, stage "
+            "surfacing). NOT caching the empty result; the next lookup "
+            "retries. Graph loads in the meantime will raise "
+            "AtomRegistryUnavailableError instead of fake contract drift."
+        )
+        return
+
     _DISCOVERED = True
     logger.info(
         "[atom_registry] discovered %d atom(s): %s",
@@ -282,6 +314,18 @@ def _make_stage_runner(
     return runner
 
 
+def registry_is_empty() -> bool:
+    """True when the registry holds ZERO atoms after a discovery attempt.
+
+    Used by ``pipeline_architect.assert_graph_def_current`` to distinguish
+    "the registry never came up in this process" (infra —
+    :class:`AtomRegistryUnavailableError`) from genuine per-atom contract
+    drift. Triggers discovery, so a False return means a real catalog exists.
+    """
+    discover()
+    return not _ATOMS
+
+
 def list_atoms() -> list[AtomMeta]:
     """Return all registered atoms in alphabetical order by name."""
     discover()
@@ -413,10 +457,12 @@ def _json_dumps(payload: dict[str, Any]) -> str:
 
 
 __all__ = [
+    "AtomRegistryUnavailableError",
     "discover",
     "get_atom_callable",
     "get_atom_meta",
     "list_atoms",
+    "registry_is_empty",
     "sync_to_db",
     "to_catalog_text",
 ]

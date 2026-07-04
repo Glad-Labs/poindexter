@@ -582,11 +582,23 @@ async def _run_content_generation_flow(
                 platform=_platform,
             )
     except Exception as exc:
-        await _mark_task_failed_on_flow_crash(
-            database_service=database_service,
-            task_id=task_id,
-            error=exc,
-        )
+        if _is_registry_unavailable_error(exc):
+            # 2026-07-03 (task ba4d627a): an EMPTY atom registry in this
+            # subprocess is a transient infra fault (discovery failed
+            # wholesale — deploy-clone mid-sync etc.), not a content
+            # failure. Release the claimed row for retry (bounded by
+            # retry_count) instead of permanently failing it.
+            await _release_task_on_registry_unavailable(
+                database_service=database_service,
+                task_id=task_id,
+                error=exc,
+            )
+        else:
+            await _mark_task_failed_on_flow_crash(
+                database_service=database_service,
+                task_id=task_id,
+                error=exc,
+            )
         # Send a deduped, severity-routed operator alert. Best-effort —
         # never raises, never blocks the re-raise below.
         try:
@@ -657,6 +669,86 @@ async def _run_content_generation_flow(
         )
 
     return {"claimed": True, "task_id": task_id, "result": result}
+
+
+def _is_registry_unavailable_error(exc: BaseException) -> bool:
+    """True when ``exc`` is the atom-registry-empty infra fault (lazy import
+    so the flow module stays light for Prefect's deployment discovery)."""
+    try:
+        from services.atom_registry import AtomRegistryUnavailableError
+    except ImportError:
+        return False
+    return isinstance(exc, AtomRegistryUnavailableError)
+
+
+# Bound for the registry-unavailable release loop — mirrors the stale-sweep
+# max_retries default so a persistently-broken registry converges on 'failed'
+# instead of ping-ponging pending -> in_progress forever.
+_REGISTRY_RELEASE_MAX_RETRIES = 3
+
+
+async def _release_task_on_registry_unavailable(
+    *,
+    database_service: Any,
+    task_id: str | None,
+    error: BaseException,
+) -> None:
+    """Release a claimed task back to ``pending`` after a transient
+    atom-registry fault (2026-07-03, prod task ba4d627a).
+
+    The graph never ran a node — the failure was at load-time validation in
+    a subprocess whose atom discovery came up empty — so the task itself is
+    fine and a fresh subprocess will succeed. Bounded in-SQL: once
+    ``retry_count`` reaches ``_REGISTRY_RELEASE_MAX_RETRIES`` the row goes to
+    ``failed`` (a persistently-empty registry is a real outage, and the
+    operator alert from the flow's re-raise + send_failure_alert covers it).
+
+    Best-effort like :func:`_mark_task_failed_on_flow_crash`: never raises,
+    never masks the caller's re-raise.
+    """
+    if task_id is None:
+        return
+    pool = getattr(database_service, "pool", None)
+    if pool is None:
+        logger.warning(
+            "[CONTENT_FLOW] cannot release task=%s after registry fault — no "
+            "DB pool; rely on sweep_stale_tasks to recover",
+            task_id,
+        )
+        return
+    error_message = (
+        f"released for retry: atom registry unavailable in flow subprocess "
+        f"({type(error).__name__}: {error!s})"
+    )[:2048]
+    try:
+        async with pool.acquire() as conn:
+            await conn.execute(
+                f"""
+                UPDATE pipeline_tasks
+                SET status = CASE
+                        WHEN retry_count < {_REGISTRY_RELEASE_MAX_RETRIES}
+                            THEN 'pending'
+                        ELSE 'failed'
+                    END,
+                    retry_count = retry_count + 1,
+                    error_message = $1,
+                    updated_at = NOW()
+                WHERE task_id = $2 AND status = 'in_progress'
+                """,
+                error_message,
+                task_id,
+            )
+        logger.warning(
+            "[CONTENT_FLOW] task=%s released back to pending after "
+            "atom-registry fault (bounded at %d retries): %s",
+            task_id, _REGISTRY_RELEASE_MAX_RETRIES, error_message,
+        )
+    except Exception:  # noqa: BLE001 — best-effort cleanup
+        logger.exception(
+            "[CONTENT_FLOW] failed to release task=%s after registry fault; "
+            "the stale-sweep will recover it on next fire",
+            task_id,
+        )
 
 
 async def _mark_task_failed_on_flow_crash(
@@ -809,4 +901,5 @@ __all__ = [
     "reclaim_stale_inprogress_tasks",
     "content_generation_flow",
     "_mark_task_failed_on_flow_crash",
+    "_release_task_on_registry_unavailable",
 ]

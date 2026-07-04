@@ -156,8 +156,23 @@ class TestManifestDrivenAtomDiscovery:
         # behaviour is preserved even when the module registry is broken.
         walk_mock.assert_called_once_with("modules.content.atoms")
 
+    @staticmethod
+    def _walk_that_registers(name: str = "atoms.fake"):
+        """A _walk_package stand-in that actually populates the registry —
+        successful discovery, so caching applies."""
+        import services.atom_registry as ar
+
+        def _walk(_pkg: str) -> None:
+            meta = MagicMock()
+            meta.name = name
+            ar._ATOMS[name] = meta
+            ar._RUNNERS[name] = MagicMock()
+
+        return MagicMock(side_effect=_walk)
+
     def test_discover_is_idempotent(self):
-        """Calling discover() twice does not double-walk packages."""
+        """Calling discover() twice after a SUCCESSFUL (non-empty) discovery
+        does not double-walk packages."""
         import services.atom_registry as ar
 
         ar._DISCOVERED = False
@@ -165,7 +180,7 @@ class TestManifestDrivenAtomDiscovery:
         ar._RUNNERS.clear()
 
         mod = _make_module("modules.content.atoms")
-        walk_mock = MagicMock()
+        walk_mock = self._walk_that_registers()
 
         with (
             patch("plugins.registry.get_modules", return_value=[mod]),
@@ -176,3 +191,59 @@ class TestManifestDrivenAtomDiscovery:
             ar.discover()  # second call must be a no-op
 
         assert walk_mock.call_count == 1
+
+    def test_empty_discovery_is_not_cached(self):
+        """2026-07-03 (task ba4d627a): a Prefect subprocess whose discovery
+        yielded ZERO atoms (transient import failure — e.g. deploy-clone
+        mid-sync) cached the empty registry via _DISCOVERED=True, and every
+        graph_def load in that process then failed the drift gate with
+        'atom no longer exists in the registry' for EVERY node, fataling the
+        task. An empty discovery must not latch — the next call retries."""
+        import services.atom_registry as ar
+
+        ar._DISCOVERED = False
+        ar._ATOMS.clear()
+        ar._RUNNERS.clear()
+
+        mod = _make_module("modules.content.atoms")
+        walk_mock = MagicMock()  # no-op: discovery yields nothing
+
+        with (
+            patch("plugins.registry.get_modules", return_value=[mod]),
+            patch.object(ar, "_walk_package", walk_mock),
+            patch.object(ar, "_surface_stages_as_atoms"),
+        ):
+            ar.discover()
+            assert ar._DISCOVERED is False
+            ar.discover()  # empty result was not cached → retries the walk
+
+        assert walk_mock.call_count == 2
+
+    def test_empty_then_successful_discovery_heals(self):
+        """A transient empty discovery followed by a successful one leaves a
+        populated, cached registry (self-healing within the process)."""
+        import services.atom_registry as ar
+
+        ar._DISCOVERED = False
+        ar._ATOMS.clear()
+        ar._RUNNERS.clear()
+
+        mod = _make_module("modules.content.atoms")
+
+        with (
+            patch("plugins.registry.get_modules", return_value=[mod]),
+            patch.object(ar, "_walk_package", MagicMock()),
+            patch.object(ar, "_surface_stages_as_atoms"),
+        ):
+            ar.discover()  # transient failure: nothing registered
+        assert ar._DISCOVERED is False
+
+        walk_ok = self._walk_that_registers()
+        with (
+            patch("plugins.registry.get_modules", return_value=[mod]),
+            patch.object(ar, "_walk_package", walk_ok),
+            patch.object(ar, "_surface_stages_as_atoms"),
+        ):
+            ar.discover()  # retry succeeds
+            assert ar._DISCOVERED is True
+            assert not ar.registry_is_empty()

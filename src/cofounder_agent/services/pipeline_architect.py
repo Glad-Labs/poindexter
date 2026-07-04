@@ -50,9 +50,11 @@ from langgraph.graph import END, StateGraph
 
 from plugins.tracing import get_tracer
 from services.atom_registry import (
+    AtomRegistryUnavailableError,
     get_atom_callable,
     get_atom_meta,
     list_atoms,
+    registry_is_empty,
     to_catalog_text,
 )
 from services.site_config import SiteConfig
@@ -1205,7 +1207,21 @@ def stamp_graph_def(spec: dict[str, Any]) -> dict[str, Any]:
 def assert_graph_def_current(spec: dict[str, Any]) -> None:
     """Raise :class:`GraphContractError` if any node is unstamped, names a
     missing atom, or carries a ``_contract_fp`` that no longer matches the
-    registry's current contract for that atom."""
+    registry's current contract for that atom.
+
+    Raises :class:`services.atom_registry.AtomRegistryUnavailableError`
+    instead when the registry is EMPTY — that's an infra fault (discovery
+    failed wholesale in this process), not drift. Before this distinction,
+    an empty registry reported every node as "no longer exists" and the flow
+    permanently failed the task (prod task ba4d627a, 2026-06-30).
+    """
+    if spec.get("nodes") and registry_is_empty():
+        raise AtomRegistryUnavailableError(
+            "atom registry is empty in this process — discovery failed "
+            "wholesale (transient import fault?), so the stored graph_def "
+            "cannot be validated. This is retryable infra, not contract "
+            "drift; the task should be released, not failed."
+        )
     drift: list[str] = []
     for node in spec.get("nodes", []):
         nid, atom = node.get("id"), node.get("atom")
