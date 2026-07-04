@@ -511,8 +511,19 @@
       );
     },
     reject(id, human_feedback = '') {
+      // Body contract: RejectionRequest (routes/approval_routes.py) REQUIRES
+      // {reason, feedback} — a missing key 400s (VALIDATION_ERROR). The
+      // `human_feedback` field this used to send belongs to the APPROVE
+      // route's schema, not reject. allow_revisions=true → rejected_retry:
+      // the console's reject IS "send back to edit" (drawer copy), unlike
+      // the MCP reject_post tool's terminal allow_revisions=false.
       return pick(
-        () => http('POST', `/api/tasks/${id}/reject`, { human_feedback }),
+        () =>
+          http('POST', `/api/tasks/${id}/reject`, {
+            reason: 'operator_rejected',
+            feedback: human_feedback || '',
+            allow_revisions: true,
+          }),
         () => ({ ok: true })
       );
     },
