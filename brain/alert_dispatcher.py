@@ -96,6 +96,26 @@ from typing import Any
 logger = logging.getLogger("brain.alert_dispatcher")
 
 
+# Firefighter engine hooks — bound as module names so tests can monkeypatch
+# them, and so a brain image without brain/remediation still imports the
+# dispatcher (the hooks resolve to no-ops that page as usual).
+try:
+    from brain.remediation.engine import evaluate_for_dispatch as evaluate_for_dispatch_hook
+    from brain.remediation.engine import run_verify_scan as run_verify_scan_hook
+    from brain.remediation.rules import load_firefighter_config as _load_firefighter_config
+except Exception:  # noqa: BLE001 — partial/legacy image: firefighter disabled
+    from types import SimpleNamespace
+
+    async def evaluate_for_dispatch_hook(*a, **k):  # type: ignore[misc]
+        return SimpleNamespace(acted=False, action_name=None, run_id=None, reason="engine unavailable")
+
+    async def run_verify_scan_hook(*a, **k):  # type: ignore[misc]
+        return {"verified": 0, "resolved": 0, "still_firing": 0}
+
+    async def _load_firefighter_config(pool):  # type: ignore[misc]
+        return {"enabled": False}
+
+
 class NotifyFailed(RuntimeError):
     """Raised when ``notify`` reported zero channels accepted the message.
 
@@ -724,6 +744,23 @@ async def poll_and_dispatch(
             logger.warning("[alert_dispatcher] poll failed: %s", msg)
         return summary
 
+    # Verify pending remediations every cycle (independent of new alert rows).
+    # Use a SEPARATE local — do NOT reassign notify_fn, or the notify_fn_injected
+    # check below would wrongly flip to True on the production path and break the
+    # #420 severity routing.
+    verify_notify_fn = notify_fn if notify_fn is not None else await _resolve_notify_fn(pool=pool)
+    try:
+        ff_config = await _load_firefighter_config(pool)
+        if ff_config.get("enabled"):
+            vsummary = await run_verify_scan_hook(
+                pool, config=ff_config, logger=logger, notify_fn=verify_notify_fn,
+            )
+            for k in ("verified", "resolved", "still_firing"):
+                if vsummary.get(k):
+                    summary[k] = summary.get(k, 0) + vsummary[k]
+    except Exception as e:  # noqa: BLE001
+        logger.warning("[alert_dispatcher] verify scan failed: %s", e)
+
     if not rows:
         return summary
 
@@ -945,6 +982,26 @@ async def _dispatch_one(
                 )
                 return routed if isinstance(routed, dict) else None
             # action == "dispatch" -- fall through to severity-routed send.
+
+            # --- Firefighter: try deterministic remediation before paging. ---
+            ff_cfg = dedup_config.get("firefighter_config") or {}
+            if ff_cfg.get("enabled"):
+                ff = await evaluate_for_dispatch_hook(
+                    pool, alert=alert, fingerprint=decision["fingerprint"],
+                    config=ff_cfg, logger=logger,
+                )
+                if ff.acted:
+                    await pool.execute(
+                        _MARK_ERROR_SQL, row_id,
+                        f"remediating: {ff.action_name} (run {str(ff.run_id)[:8]})",
+                    )
+                    summary.setdefault("remediated", 0)
+                    summary["remediated"] += 1
+                    logger.info(
+                        "[alert_dispatcher] firefighter acted row=%s action=%s — page held",
+                        row_id, ff.action_name,
+                    )
+                    return None  # page HELD; verify scan will resolve or escalate
 
         # Severity-routed dispatch path (also the legacy fall-through).
         if dedup_config is not None:
@@ -1595,12 +1652,14 @@ async def _read_dedup_config(pool: Any) -> dict[str, Any]:
     )
     force_set = await _read_force_telegram_event_types(pool)
     triage_retry_max, triage_backoff = await _read_triage_retry_config(pool)
+    firefighter_config = await _load_firefighter_config(pool)
     return {
         "suppress_window_minutes": max(0, suppress_window),
         "summarize_threshold_minutes": max(0, summarize_threshold),
         "force_telegram_set": force_set,
         "triage_retry_max": triage_retry_max,
         "triage_backoff": triage_backoff,
+        "firefighter_config": firefighter_config,
     }
 
 

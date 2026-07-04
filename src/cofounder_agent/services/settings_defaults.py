@@ -63,6 +63,21 @@ from typing import Any
 # column. Numeric / bool consumers parse via `site_config.get_int()`,
 # `get_float()`, `get_bool()` etc.
 DEFAULTS: dict[str, str] = {
+    # ----- Self-healing firefighter (deterministic core, Plan A) -----
+    # Master switch. Ships enabled; the remediation_rules table is empty so it's
+    # a safe no-op until rules are seeded. Off = pages exactly as today.
+    "ops_firefighter_enabled": "true",
+    # Circuit breaker: at most N attempts of the same (alert, action) inside the
+    # window before the firefighter stops trying and pages.
+    "ops_firefighter_max_attempts_per_window": "3",
+    "ops_firefighter_window_minutes": "60",
+    # Grace period before the verify scan re-checks whether the alert cleared.
+    "ops_firefighter_verify_after_seconds": "120",
+    # Global backstop across ALL actions, per rolling hour.
+    "ops_firefighter_max_actions_per_hour": "10",
+    # CSV of enabled action_names; empty = all registered actions allowed.
+    # Per-action-type kill switch (e.g. "restart_container" to allow only that).
+    "ops_firefighter_action_allowlist": "",
     # ----- Identity / branding -----
     # Operator identity is generic on OSS (each install is its own company); the
     # Glad Labs operator overlay (services.operator_overrides) restores Matt /

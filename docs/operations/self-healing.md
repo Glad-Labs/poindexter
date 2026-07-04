@@ -3,8 +3,9 @@
 Poindexter tries to **fix problems before it pages a human**. Every alert
 should have an auto-resolution path that is exhausted first; paging is the last
 resort, not the first response. This doc describes the self-heal machinery: the
-brain's liveness probes, the host Recovery Agent, and the detect→act→escalate
-loop they form.
+brain's liveness probes, the host Recovery Agent, the detect→act→escalate loop
+they form, and the rule-driven **firefighter** that generalizes that loop across
+every alert on the dispatch path.
 
 ## Principle: self-heal before paging
 
@@ -19,6 +20,146 @@ A probe that detects a problem should, where it safely can:
 A _successful_ self-heal is recorded in `audit_log` (and surfaces on the
 Findings / System Health dashboards) but does **not** page — the whole point is
 that the operator doesn't have to care about transient failures.
+
+## Deterministic firefighter (detect → act → verify → escalate)
+
+The probes below are the _original_ self-heal: each one hard-codes its own
+recovery for the surface it watches, on the 5-minute cycle. The **firefighter**
+is the generalization — a rule-driven `detect → act → verify → escalate` loop
+that runs on the **alert-dispatch path** (the brain's 30-second
+`alert_dispatcher.poll_and_dispatch`), so _any_ alert can earn an auto-recovery
+without a bespoke probe. It lives in `brain/remediation/` (`registry.py` /
+`rules.py` / `engine.py`) and is wired into the dispatcher.
+
+The loop, when an alert is about to page:
+
+1. **Detect.** The dispatcher holds an `alert_events` row it's about to send.
+2. **Match.** `engine.evaluate_for_dispatch` looks up a `remediation_rules` row
+   for the alert (exact `alertname` first, then `match_regex` over
+   alertname/fingerprint). No rule → page as usual; the firefighter is invisible
+   to unconfigured alerts.
+3. **Act.** The matched rule names an action in the **action registry** (below).
+   The engine runs it, writes a `remediation_action` row to `audit_log`, and — if
+   the action ran OK — **holds the page**. The `alert_events` row is marked
+   `remediating: <action> (run <id>)` instead of sent.
+4. **Verify.** On a later poll cycle (once the rule's `verify_after_seconds`
+   grace has elapsed), `engine.run_verify_scan` asks _did it work?_ The signal is
+   `alert_dedup_state.last_seen_at`: the dispatcher bumps it every time the alert
+   re-fires (even when suppressed), keyed by the same fingerprint the engine
+   stored. Not advanced past the moment we acted → **resolved, silently**
+   (`remediation_verify` row, `result=resolved`, no page). Advanced → **still
+   firing → page now** (`result=still_firing`), because the fix didn't hold.
+5. **Escalate.** An action that couldn't even run pages immediately — there's
+   nothing to wait for. A tripped circuit breaker or rate cap pages as usual —
+   the firefighter steps aside rather than hammering a broken thing.
+
+Everything rides existing tables — no new state store. `remediation_rules` holds
+the rules; `audit_log` (`event_type IN ('remediation_action','remediation_verify')`)
+is both the durable history and the circuit-breaker's memory; `alert_dedup_state`
+is the "still firing?" oracle.
+
+### The action registry
+
+`brain/remediation/registry.py` maps an `action_name` to an executor. Executors
+**must be idempotent, reversible, and blast-radius-bounded, and must never raise**
+into the loop (they return `ActionResult(status="failed", …)` instead). v1 ships
+two, each wrapping a primitive the brain already owns:
+
+| `action_name`        | Params                    | Does                                                                                                                |
+| -------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `restart_container`  | `{"container": "<name>"}` | `docker restart <name>` (inspect-then-restart) via `brain_daemon.docker_restart_container`.                         |
+| `run_auto_remediate` | _(none)_                  | Re-runs `brain_daemon.auto_remediate` — the stuck-`in_progress` / stale-`awaiting_approval` `pipeline_tasks` sweep. |
+
+Adding an action = register one more executor in `ACTION_REGISTRY` (+ the
+primitive it wraps). An unknown `action_name` is `skipped` — it never crashes the
+loop.
+
+### Safety guardrails
+
+- **Master switch.** `ops_firefighter_enabled` (default `true`). Off → the loop
+  is skipped entirely and every alert pages the old way.
+- **Empty by default = inert.** Shipping enabled with **zero** `remediation_rules`
+  rows is a no-op: nothing matches, nothing acts, everything pages as before.
+  Rules are opt-in, one alert at a time.
+- **Circuit breaker.** Per `(fingerprint, action_name)`: after
+  `max_attempts_per_window` actions in `window_minutes` (rule-level override, else
+  `ops_firefighter_max_attempts_per_window` / `ops_firefighter_window_minutes`)
+  the firefighter stops acting and pages — a genuinely broken thing can't spin a
+  restart loop. Counted from the `remediation_action` audit rows, so it survives a
+  brain restart.
+- **Global rate cap.** `ops_firefighter_max_actions_per_hour` (default `10`)
+  across all actions — a backstop when many alerts fire at once.
+- **Allowlist.** `ops_firefighter_action_allowlist` (CSV, default empty = every
+  registered action allowed). Set it to shrink what can run without deleting rules.
+- **Verify-then-page.** A successful action never silences an unfixed problem: if
+  the alert is still firing after the grace window, it pages. Silence is earned
+  only by the alert actually stopping.
+
+### Authoring a rule
+
+Rules live in the `remediation_rules` table. Match on an exact `alertname` _or_ a
+`match_regex`; name an `action_name` from the registry; optionally pin per-rule
+caps. Discover live alertnames first:
+
+```sql
+SELECT DISTINCT alertname FROM alert_events ORDER BY 1;
+```
+
+Restart a wedged container when its liveness alert fires:
+
+```sql
+INSERT INTO remediation_rules (alertname, action_name, params, description)
+VALUES (
+  'SomeSidecarDown',
+  'restart_container',
+  '{"container": "poindexter-<name>"}',
+  'Restart <name> when its liveness alert fires; verify then page.'
+);
+```
+
+Kick the stuck-task sweep on demand (regex across a family of alerts):
+
+```sql
+INSERT INTO remediation_rules (match_regex, action_name, verify_after_seconds, description)
+VALUES (
+  '(?i)task.*stuck',
+  'run_auto_remediate',
+  180,
+  'Re-run the pipeline_tasks sweep when a stuck-task alert fires.'
+);
+```
+
+**Only wire an action to an alert it can actually fix.** `restart_container`
+targets **containers** — confirm the surface is one (`docker ps`) before pointing
+a rule at it. Several _noisy_ surfaces are **host-native, not containers**, so a
+`docker restart` can't touch them and the rule would act uselessly, then page:
+
+- **Ollama** (`Ollama Unresponsive`) runs on the host
+  (`host.docker.internal:11434`), not in a container.
+- The **MCP HTTP server** (`mcp_http_server_unreachable`) is a host Scheduled
+  Task — it already has the `mcp-http` host-recover path (see the Recovery Agent
+  below).
+- **image-gen / wan** inference servers are host-native too.
+
+Route those through a probe + host Recovery Agent action, not a firefighter rule.
+And note `run_auto_remediate` already runs unconditionally every brain cycle, so a
+rule for it only adds an _on-demand_ re-run between cycles.
+
+### Deploy order (rules come last)
+
+The firefighter code is image-baked into the brain, and `remediation_rules` is
+created by a worker-boot migration. After merging:
+
+1. Worker boots → the `remediation_rules` table is created (empty).
+2. Rebuild + recreate the brain so it has the firefighter code
+   (`docker compose build brain-daemon && docker compose up -d brain-daemon`) —
+   the 10-min deploy-checkout-sync does this automatically on a `brain/` change.
+3. _Then_ seed your first `remediation_rules`, verified, one alert at a time.
+
+Until step 3 the firefighter is live but inert (enabled, no rules). The
+**Self-Healing / Remediation** row on the System Health dashboard shows silent
+auto-recoveries, still-firing/paged counts, actions-by-type, and the latest
+actions once rules begin matching.
 
 ## The detector / actor split
 
@@ -353,6 +494,12 @@ Example watch list:
 | `auto_embed_watch_enabled`                                    | `true`                        | Embedder-freshness probe.                                                                                                 |
 | `docker_port_forward_max_failed_recoveries_before_alert_only` | `1`                           | Consecutive failed recoveries before a `restart` entry switches to alert-only (adaptive give-up).                         |
 | `docker_port_forward_alert_only_backoff_minutes`              | `60`                          | Minutes a container stays alert-only after the give-up trips, before one more restart is allowed.                         |
+| `ops_firefighter_enabled`                                     | `true`                        | Master switch for the deterministic firefighter. Off = every alert pages the old way.                                     |
+| `ops_firefighter_max_attempts_per_window`                     | `3`                           | Per-`(fingerprint, action)` circuit-breaker cap; a matched rule may override.                                             |
+| `ops_firefighter_window_minutes`                              | `60`                          | Circuit-breaker rolling window (minutes); a matched rule may override.                                                    |
+| `ops_firefighter_verify_after_seconds`                        | `120`                         | Grace before the verify scan judges an action resolved vs still-firing; a matched rule may override.                      |
+| `ops_firefighter_max_actions_per_hour`                        | `10`                          | Global cap on firefighter actions across all rules per hour.                                                              |
+| `ops_firefighter_action_allowlist`                            | (empty)                       | CSV of allowed `action_name`s; empty = every registered action allowed.                                                   |
 
 ## Deploying the Recovery Agent
 

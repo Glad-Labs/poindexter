@@ -1591,6 +1591,40 @@ async def send_followup(
     }
 
 
+async def docker_restart_container(container: str, *, pool=None) -> tuple[bool, str]:
+    """Docker-restart a named container. Inspect-then-restart to avoid racing a
+    mid-recreate window (the same guard restart_service uses). Returns
+    (ok, detail). Silent on success — the firefighter engine records the
+    outcome to audit_log; this helper does NOT page.
+
+    Distinct from restart_service (which maps a handful of *logical* names to
+    containers and notifies): the firefighter needs to restart an *arbitrary*
+    container named in a remediation_rules row.
+    """
+    del pool  # reserved for future settings-driven behavior; unused today
+    if not IS_DOCKER:
+        return (False, "not running in docker; no container-restart path")
+    try:
+        inspect = subprocess.run(
+            ["docker", "inspect", "--format", "{{.State.Status}}", container],
+            capture_output=True, text=True, timeout=10,
+        )
+        if inspect.returncode != 0:
+            return (False, f"container {container} not found (likely mid-recreate)")
+        result = subprocess.run(
+            ["docker", "restart", container],
+            capture_output=True, text=True, timeout=30,
+        )
+        if result.returncode == 0:
+            logger.info("[BRAIN] firefighter docker-restarted container %s", container)
+            return (True, f"restarted {container}")
+        return (False, f"docker restart failed for {container}: {result.stderr[:200]}")
+    except FileNotFoundError:
+        return (False, "docker CLI not available in brain container")
+    except Exception as e:  # noqa: BLE001
+        return (False, f"docker restart error for {container}: {e}"[:200])
+
+
 async def restart_service(name: str, *, pool=None):
     """Attempt to restart a local service on the operator's PC."""
     if IS_DOCKER:

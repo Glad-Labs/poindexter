@@ -4,7 +4,7 @@ Consumes Grafana Alertmanager webhook payloads. For every alert in the batch:
 
 1. Inserts a row into `alert_events` (persistence).
 2. Evaluates `_should_page_operator` (severity=critical OR category=infrastructure, and status=firing). If true, fans out to Discord + Telegram via `services.integrations.operator_notify.notify_operator` (the legacy `services.task_executor._notify_alert` helper was deleted with `task_executor.py` in Prefect Stage 4, 2026-05-16).
-3. Looks up `plugin.remediation.<alertname>` in `app_settings` and logs the intended remediation action (concrete handlers land in follow-up work).
+3. Looks up `plugin.remediation.<alertname>` in `app_settings` and logs the intended remediation action. This webhook-side hook records **intent only**; autonomous execution is delivered brain-side by the **firefighter** (rule-driven, keyed on the `remediation_rules` table) — see [Deterministic firefighter](/docs/operations/self-healing).
 
 Replaces the bespoke route in `routes/alertmanager_webhook_routes.py`.
 
@@ -59,7 +59,9 @@ enabled:            true  (default false)
 
 ### Remediation hook
 
-For each firing alert, the handler fetches `plugin.remediation.<alertname>` from `app_settings`. If the row exists and has `"enabled": true`, the dispatcher logs the intended action. Concrete remediation execution is intentionally deferred — the scaffold records intent so operators can audit what _would_ run before enabling autonomous remediation.
+For each firing alert, the handler fetches `plugin.remediation.<alertname>` from `app_settings`. If the row exists and has `"enabled": true`, the dispatcher logs the intended action. This webhook-side hook records **intent only** — a lightweight per-alert audit of what _would_ run.
+
+Autonomous execution is now delivered separately, brain-side, by the **firefighter** (`brain/remediation/`): it matches each about-to-page alert against the `remediation_rules` table, runs an allowlisted action (e.g. `restart_container`, `run_auto_remediate`), holds the page, then verifies before it either resolves silently or escalates. See [Deterministic firefighter](/docs/operations/self-healing) for the loop, the action registry, safety guardrails, and rule authoring. The two surfaces are complementary: this hook is worker-side intent-logging keyed on `plugin.remediation.*`; the firefighter is the closed detect→act→verify→escalate loop keyed on `remediation_rules`.
 
 Example row:
 

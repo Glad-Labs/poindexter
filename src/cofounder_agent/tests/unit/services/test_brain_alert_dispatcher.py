@@ -102,12 +102,18 @@ class TestPollAndDispatch:
         notify = AsyncMock(return_value=None)
         result = await ad.poll_and_dispatch(pool, notify_fn=notify)
 
-        assert pool.fetch.await_count == 1
-        sql = pool.fetch.call_args.args[0]
-        assert "FROM alert_events" in sql
+        # poll_and_dispatch also runs the firefighter verify scan, which
+        # issues its own fetch — so locate the alert_events poll among the
+        # fetch calls rather than assuming it is the only one.
+        poll_calls = [
+            c for c in pool.fetch.await_args_list
+            if "FROM alert_events" in c.args[0]
+        ]
+        assert len(poll_calls) == 1
+        sql = poll_calls[0].args[0]
         assert "dispatched_at IS NULL" in sql
         # Default batch size threads through.
-        assert pool.fetch.call_args.args[1] == 50
+        assert poll_calls[0].args[1] == 50
         assert result == {"polled": 0, "sent": 0, "errors": 0}
         notify.assert_not_awaited()
 
@@ -272,7 +278,12 @@ class TestPollAndDispatch:
         pool = _make_pool([])
         notify = AsyncMock(return_value=None)
         await ad.poll_and_dispatch(pool, batch_size=10, notify_fn=notify)
-        assert pool.fetch.call_args.args[1] == 10
+        # Locate the alert_events poll (the verify scan issues its own fetch).
+        poll_calls = [
+            c for c in pool.fetch.await_args_list
+            if "FROM alert_events" in c.args[0]
+        ]
+        assert poll_calls[0].args[1] == 10
 
 
 @pytest.mark.unit
