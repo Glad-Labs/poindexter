@@ -39,6 +39,8 @@
     <script src="js/kpis.js"></script>
     <!-- Pure Grafana-embed URL builder (PX.telemetry) — must load before panels2.jsx. -->
     <script src="js/telemetry.js"></script>
+    <!-- Reliability core (PXR.usePolledResource + ConnectionState) — before JSX. -->
+    <script src="js/reliability.js"></script>
 
     <!-- JSX components (Babel-compiled). app.jsx is LAST: it calls ReactDOM.createRoot. -->
     <script

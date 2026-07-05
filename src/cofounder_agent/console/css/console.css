@@ -1468,3 +1468,38 @@ button {
     padding: 12px;
   }
 }
+
+/* ── Reliability: global connection banner + per-panel freshness ────────── */
+/* Fixed, non-blocking, high z-index. Colorblind-safe via icon + text, not
+   color alone (amber is the accent, but the ⚠ glyph carries the signal). */
+.connbanner {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 6px 12px;
+  font-family: var(--gl-font-mono);
+  font-size: 12px;
+  background: var(--gl-amber);
+  color: var(--gl-on-amber, #1a1400);
+  border-bottom: 1px solid var(--gl-hairline-strong);
+}
+/* Per-panel freshness badge. Stale = dim + italic + ⚠ icon, never color alone. */
+.freshness {
+  font-family: var(--gl-font-mono);
+  font-size: 10px;
+  color: var(--gl-text-dim);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.freshness--stale {
+  color: var(--gl-amber);
+  font-style: italic;
+  opacity: 0.85;
+}

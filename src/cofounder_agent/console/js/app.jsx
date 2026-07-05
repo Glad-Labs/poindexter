@@ -69,6 +69,14 @@ function App() {
   const [toastNode, pushToast] = useToasts();
   const mainRef = useR(null);
   const feedKey = useR(0);
+  // Connection heartbeat — the ONLY resource that drives the global banner.
+  // Called unconditionally (Rules of Hooks); mock mode resolves ok so it never
+  // trips. 30s cadence: fast enough to notice an outage, cheap enough to always
+  // poll. Each poll re-renders App, so the topbar SYNC age stays current too.
+  const health = window.PXR.usePolledResource(
+    () => (PX.api.isLive() ? PX.api.health() : Promise.resolve({ ok: true })),
+    { intervalMs: 30_000, key: 'health' }
+  );
 
   // ── Live simulation (subtle) ──────────────────────────────
   useE(() => {
@@ -1315,6 +1323,7 @@ function App() {
 
   return (
     <div className={`app gl-atmosphere mode-${mode}`}>
+      <ConnectionBanner />
       {/* Rail */}
       <nav className="rail">
         <div className="rail__logo" title="Poindexter">
@@ -1403,7 +1412,20 @@ function App() {
         <div className="topbar__meta">
           <span>
             <span className="k">SYNC</span>{' '}
-            <span className="live-dot" style={{ verticalAlign: 'middle' }} /> 5m
+            <span
+              className="live-dot"
+              style={{
+                verticalAlign: 'middle',
+                opacity: window.PXR.isDisconnected(
+                  window.PXR.ConnectionState.getState()
+                )
+                  ? 0.3
+                  : 1,
+              }}
+            />{' '}
+            {health && health.lastUpdatedAt
+              ? window.agoLabel(health.lastUpdatedAt)
+              : '—'}
           </span>
           <span className="tnum">{clock}</span>
         </div>

@@ -72,6 +72,7 @@ function makeRecordingAdapter() {
     setTimeout,
     clearTimeout,
     URLSearchParams,
+    AbortController, // http() now wraps each fetch in an abortable timeout
     performance,
     fetch: fetchStub,
     PX_API_LIVE: true,

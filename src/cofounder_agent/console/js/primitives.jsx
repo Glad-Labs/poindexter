@@ -325,6 +325,54 @@ function Panel({
   );
 }
 
+/* ─── Relative-age label ('just now' | '8s' | '3m' | '2h') ──── */
+function agoLabel(ms) {
+  if (ms == null) return '—';
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 5) return 'just now';
+  if (s < 60) return `${s}s`;
+  if (s < 3600) return `${Math.floor(s / 60)}m`;
+  return `${Math.floor(s / 3600)}h`;
+}
+
+/* ─── Per-panel freshness badge (colorblind-safe: text+icon+opacity) ─── */
+function Freshness({ lastUpdatedAt, stale }) {
+  const [, tick] = useState(0);
+  // Re-render every 5s so the age label counts up even without new data.
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 5000);
+    return () => clearInterval(t);
+  }, []);
+  return (
+    <span className={`freshness ${stale ? 'freshness--stale' : ''}`}>
+      {stale && <Icon name="alert" size={10} />}
+      {stale ? 'stale ' : 'updated '}
+      {agoLabel(lastUpdatedAt)}
+    </span>
+  );
+}
+
+/* ─── Global connection banner (fixed, non-blocking) ────────── */
+function ConnectionBanner() {
+  const [st, setSt] = useState(window.PXR.ConnectionState.getState());
+  useEffect(() => window.PXR.ConnectionState.subscribe(setSt), []);
+  const [, tick] = useState(0);
+  useEffect(() => {
+    const t = setInterval(() => tick((n) => n + 1), 5000);
+    return () => clearInterval(t);
+  }, []);
+  if (!window.PXR.isDisconnected(st)) return null;
+  return (
+    <div className="connbanner" role="status">
+      <Icon name="alert" size={13} />
+      <span>
+        Backend unreachable — reconnecting… (last seen {agoLabel(st.lastSeenAt)}
+        )
+      </span>
+    </div>
+  );
+}
+
 Object.assign(window, {
   Icon,
   Sparkline,
@@ -335,4 +383,7 @@ Object.assign(window, {
   StatusGlyph: STATUS_GLYPH,
   useToasts,
   Panel,
+  agoLabel,
+  Freshness,
+  ConnectionBanner,
 });

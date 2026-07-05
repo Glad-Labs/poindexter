@@ -76,6 +76,10 @@
     sim: LS.getItem('px_sim') ?? 'normal', // normal | slow | error | empty
   };
 
+  // Client-side request ceiling. A hung backend rejects here instead of leaving
+  // a panel's poll pending forever (the poll cadence is the retry).
+  const HTTP_TIMEOUT_MS = 8000;
+
   // In-memory OAuth token cache (never persisted — short-lived JWT).
   let _tok = { value: '', exp: 0 };
   // De-dupes concurrent mints. Going LIVE mounts ~11 panel effects at once, each
@@ -143,14 +147,27 @@
     const url = (root ?? cfg.base) + path;
     const doFetch = async () => {
       const tok = await getToken();
-      return fetch(url, {
-        method,
-        headers: {
-          'Content-Type': 'application/json',
-          Authorization: 'Bearer ' + tok,
-        },
-        ...(body ? { body: JSON.stringify(body) } : {}),
-      });
+      const ctrl = new AbortController();
+      const timer = setTimeout(() => ctrl.abort(), HTTP_TIMEOUT_MS);
+      try {
+        return await fetch(url, {
+          method,
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + tok,
+          },
+          signal: ctrl.signal,
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        });
+      } catch (e) {
+        if (e && e.name === 'AbortError')
+          throw new Error(
+            `${method} ${path} → timed out after ${HTTP_TIMEOUT_MS}ms`
+          );
+        throw e;
+      } finally {
+        clearTimeout(timer);
+      }
     };
     let res = await doFetch();
     if (res.status === 401) {
@@ -164,24 +181,32 @@
 
   // Prometheus instant query → single scalar (best-effort).
   async function promScalar(promql) {
-    const u =
-      cfg.prometheus + '/api/v1/query?query=' + encodeURIComponent(promql);
-    const j = await (await fetch(u)).json();
-    const v = j?.data?.result?.[0]?.value?.[1];
-    return v != null ? Number(v) : null;
+    try {
+      const u =
+        cfg.prometheus + '/api/v1/query?query=' + encodeURIComponent(promql);
+      const j = await (await fetch(u)).json();
+      const v = j?.data?.result?.[0]?.value?.[1];
+      return v != null ? Number(v) : null;
+    } catch {
+      return null; // Prometheus unreachable → honest-empty, never throw.
+    }
   }
 
   // Prometheus instant query → full vector: [{labels, value:Number}]. Used when
   // one query carries a value PER series (e.g. per-container liveness) and we
   // need to key the results by a label instead of taking result[0].
   async function promVector(promql) {
-    const u =
-      cfg.prometheus + '/api/v1/query?query=' + encodeURIComponent(promql);
-    const j = await (await fetch(u)).json();
-    return (j?.data?.result || []).map((r) => ({
-      labels: r.metric || {},
-      value: r.value ? Number(r.value[1]) : null,
-    }));
+    try {
+      const u =
+        cfg.prometheus + '/api/v1/query?query=' + encodeURIComponent(promql);
+      const j = await (await fetch(u)).json();
+      return (j?.data?.result || []).map((r) => ({
+        labels: r.metric || {},
+        value: r.value ? Number(r.value[1]) : null,
+      }));
+    } catch {
+      return []; // Prometheus unreachable → honest-empty, never throw.
+    }
   }
 
   // ISO timestamp → compact relative age ('22m', '3h', '2d'). Used to render
@@ -398,6 +423,9 @@
   PX.api = {
     // ── config ──────────────────────────────────────────────
     config: cfg,
+    // Prometheus instant-query helpers (reused by native hardware/DB panels).
+    promScalar,
+    promVector,
     isLive: () => cfg.live,
     setLive(on) {
       cfg.live = !!on;

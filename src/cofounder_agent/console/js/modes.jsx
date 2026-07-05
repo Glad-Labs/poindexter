@@ -547,8 +547,21 @@ function WallDisplay({
           <div className="wall__clock-time">{clock}</div>
           <div className="wall__clock-date">{date}</div>
           <div className="wall__status-sub" style={{ marginTop: '1.4vh' }}>
-            <span className="live-dot" style={{ marginRight: 8 }} />
-            LIVE · 5m SYNC
+            <span
+              className="live-dot"
+              style={{
+                marginRight: 8,
+                opacity: window.PXR.isDisconnected(
+                  window.PXR.ConnectionState.getState()
+                )
+                  ? 0.3
+                  : 1,
+              }}
+            />
+            {window.PXR.isDisconnected(window.PXR.ConnectionState.getState())
+              ? 'OFFLINE'
+              : 'LIVE'}{' '}
+            · SYNC
           </div>
         </div>
       </div>
