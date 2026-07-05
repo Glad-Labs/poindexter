@@ -2,6 +2,18 @@
 
 ## Unreleased
 
+## [0.95.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.94.0...v0.95.0) (2026-07-05)
+
+
+### Features
+
+* **firefighter:** deterministic self-healing remediation — detect → act → verify → escalate ([#2124](https://github.com/Glad-Labs/glad-labs-stack/issues/2124)) ([7a504b6](https://github.com/Glad-Labs/glad-labs-stack/commit/7a504b6ef3715171feade0009530df0b3d82cf78))
+
+
+### Bug Fixes
+
+* **firefighter:** package brain/remediation into the brain image (was dead-not-inert) ([#2134](https://github.com/Glad-Labs/glad-labs-stack/issues/2134)) ([2b41850](https://github.com/Glad-Labs/glad-labs-stack/commit/2b418501d82d068950fae457b979a82c2678c1bc))
+
 ## [0.94.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.93.0...v0.94.0) (2026-07-04)
 
 
