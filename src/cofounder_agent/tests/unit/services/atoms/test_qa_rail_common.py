@@ -433,3 +433,54 @@ class TestResolveGateStates:
         )
         with pytest.raises(GateStatesUnavailable):
             await resolve_gate_states(qa)
+
+
+class TestAllRailVisibility:
+    """Informational all-rail score + per-rail breakdown (#2125).
+
+    The operator wants to SEE a score reflecting EVERY rail (advisory
+    included) plus what each rail said — without those advisory rails
+    gating. qa_all_rail_score/rail_breakdown are informational only.
+    """
+
+    def _reviews(self):
+        return [
+            {"reviewer": "ollama_critic", "approved": True, "score": 90.0,
+             "provider": "ollama", "advisory": False, "feedback": "solid"},
+            {"reviewer": "ragas_eval", "approved": True, "score": 30.0,
+             "provider": "ragas", "advisory": True, "feedback": "low ctx"},
+        ]
+
+    def test_all_rail_score_includes_advisory_but_gated_excludes_it(self):
+        out = aggregate_rail_reviews(
+            self._reviews(), validator_weight=0.4, critic_weight=0.6,
+            gate_weight=0.3, threshold=70.0,
+        )
+        # Gated score: only the non-advisory critic (90) counts.
+        assert out["qa_final_score"] == 90.0
+        # All-rail score: advisory ragas (30, weight 0.5) + critic (90,
+        # weight 0.6) → (90*0.6 + 30*0.5) / (0.6 + 0.5) = 62.73.
+        assert out["qa_all_rail_score"] == pytest.approx(62.73, abs=0.01)
+        # Advisory rail did not veto and the gated score cleared threshold.
+        assert out["approved"] is True
+
+    def test_rail_breakdown_lists_every_rail_with_flags(self):
+        out = aggregate_rail_reviews(
+            self._reviews(), validator_weight=0.4, critic_weight=0.6,
+            gate_weight=0.3, threshold=70.0,
+        )
+        bd = {r["reviewer"]: r for r in out["rail_breakdown"]}
+        assert set(bd) == {"ollama_critic", "ragas_eval"}
+        assert bd["ollama_critic"]["gated"] is True
+        assert bd["ollama_critic"]["advisory"] is False
+        assert bd["ragas_eval"]["gated"] is False
+        assert bd["ragas_eval"]["advisory"] is True
+        assert bd["ragas_eval"]["feedback"] == "low ctx"
+
+    def test_visibility_fields_present_on_empty_reviews(self):
+        out = aggregate_rail_reviews(
+            [], validator_weight=0.4, critic_weight=0.6,
+            gate_weight=0.3, threshold=70.0,
+        )
+        assert out["qa_all_rail_score"] == 0.0
+        assert out["rail_breakdown"] == []

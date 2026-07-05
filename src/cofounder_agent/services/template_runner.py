@@ -480,6 +480,16 @@ class PipelineState(TypedDict, total=False):
     # graph_def path (same lesson as seo_keywords_list / research_context).
     qa_best_content: str
     qa_best_score: float
+    # qa_all_rail_score / qa_rail_breakdown (#2125): informational-only QA
+    # visibility. qa.aggregate emits an all-rail weighted score (advisory rails
+    # included, unlike the gated qa_final_score) and a per-rail breakdown
+    # (score / pass / advisory / feedback) so the operator can see what EVERY
+    # rail scored and said — diagnosing false positives instead of flying
+    # blind. NEITHER gates; only programmatic_validator + llm_critic reject.
+    # Declared as last-value channels so they survive the graph_def adapter's
+    # state merge (undeclared keys are dropped on the graph_def path).
+    qa_all_rail_score: float
+    qa_rail_breakdown: list
     # preview_token / preview_url (#563): the rendered-preview QA rail
     # (qa.vision) screenshots the post's /preview/{token} page, so it needs a
     # preview_url DURING the qa.* block — which runs BEFORE finalize_task. The

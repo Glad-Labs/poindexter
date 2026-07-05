@@ -296,6 +296,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         "_goto": "",
         # Surface veto reasons for callers and tests; empty list on approve.
         "vetoed_by": result.get("vetoed_by", []),
+        # Informational visibility (#2125): an all-rail score (advisory rails
+        # included) + per-rail breakdown so the operator can see what EVERY
+        # rail scored/said, not just the gated subset. Neither gates.
+        "qa_all_rail_score": result.get("qa_all_rail_score"),
+        "qa_rail_breakdown": result.get("rail_breakdown", []),
     }
     # Only override the body channel when keep-best actually restored an earlier
     # draft — leaves the approve / normal-reject state byte-identical to before.

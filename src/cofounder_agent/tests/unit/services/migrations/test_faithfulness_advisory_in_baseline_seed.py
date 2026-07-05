@@ -82,18 +82,23 @@ def test_noisy_judge_rail_seeded_advisory(baseline_seeds_text: str, rail: str) -
     )
 
 
-def test_brand_fabrication_left_as_hard_gate(baseline_seeds_text: str) -> None:
-    """Scope guard: the demotion is the three noisy LLM judges only.
+def test_brand_fabrication_demoted_to_advisory(baseline_seeds_text: str) -> None:
+    """``deepeval_brand_fabrication`` ships ADVISORY (glad-labs-stack#2126).
 
-    ``deepeval_brand_fabrication`` is a separate, pattern-backed rail whose
-    hardness is decided elsewhere — this test documents that the advisory
-    demotion deliberately did NOT touch it, so a future change to brand_fabrication
-    is a conscious edit, not an accidental side-effect of this guard.
+    It was demoted from a hard gate on 2026-07-04 because
+    ``deepeval_rails.evaluate_brand_fabrication`` fail-OPENS to a passing
+    ``(True, 1.0)`` when deepeval is missing/errors — so as a "hard" gate it
+    silently scored a perfect PASS on every run whenever deepeval was
+    unhealthy. The operator wants exactly two hard rejectors
+    (``programmatic_validator`` + ``llm_critic``); everything else is
+    advisory-but-visible. Convergence for existing installs is
+    ``20260704_180500_demote_deepeval_brand_fabrication_advisory.py``.
     """
     value = _gate_required_to_pass(baseline_seeds_text, "deepeval_brand_fabrication")
     assert value is not None, "deepeval_brand_fabrication seed row missing from baseline"
-    assert value == "true", (
-        "deepeval_brand_fabrication is expected to ship as a hard gate "
-        f"(required_to_pass=true); found {value!r}. If this was a deliberate "
-        "demotion, update _ADVISORY_JUDGE_RAILS and this guard together."
+    assert value == "false", (
+        "deepeval_brand_fabrication is expected to ship ADVISORY "
+        f"(required_to_pass=false, #2126); found {value!r}. It fail-opens to a "
+        "passing score, so it must not gate. Re-arm it only if the rail is made "
+        "to fail CLOSED."
     )

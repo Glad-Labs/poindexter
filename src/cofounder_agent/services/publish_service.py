@@ -429,6 +429,37 @@ def _parse_json_field(value, field_name: str = "field", task_id: str = "") -> di
     return value
 
 
+def _surface_schedule_rail_open(*, reason: str, detail: str) -> None:
+    """Make a publish-scheduling fail-OPEN visible (no silent bypass).
+
+    ``_calculate_scheduled_publish_time`` returns ``None`` ("publish now") when
+    it cannot read the cap/spacing settings or query the post counts. That keeps
+    a transient DB blip from wedging the pipeline, but it also bypasses the
+    daily-cap / spacing rail — so the operator must be told (#2127). Emits a
+    typed finding routed to Discord / the Findings board. Best-effort; never
+    raises.
+    """
+    try:
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="publish_service._calculate_scheduled_publish_time",
+            kind="publish_schedule_rail_open",
+            severity="warn",
+            title="Publish cap/spacing rail bypassed",
+            body=(
+                f"The scheduled-publish pacing rail could not evaluate "
+                f"({reason}: {detail}) and fell back to publishing immediately, "
+                "bypassing the daily cap and spacing window. Verify the DB / "
+                "app_settings are healthy; posts may publish faster than the "
+                "configured cadence until this clears."
+            ),
+            dedup_key=f"publish_schedule_rail_open_{reason}",
+        )
+    except Exception:  # noqa: BLE001  # silent-ok: emit_finding is best-effort telemetry about a rail bypass already logged at warning above — it must never crash the publish path
+        logger.debug("[schedule] emit_finding unavailable", exc_info=True)
+
+
 async def _calculate_scheduled_publish_time(db_service) -> datetime | None:
     """Determine when a post should be published to avoid batch-publishing.
 
@@ -449,9 +480,18 @@ async def _calculate_scheduled_publish_time(db_service) -> datetime | None:
     try:
         max_per_day = int(await db_service.get_setting_value("max_posts_per_day", 3))
         spacing_hours = int(await db_service.get_setting_value("publish_spacing_hours", 4))
-    except Exception:
-        # If settings lookup fails, publish immediately — don't block the pipeline
-        logger.debug("[schedule] Could not read scheduling settings, publishing now")
+    except Exception as e:
+        # Settings lookup failed. We still publish now so a transient DB blip
+        # can't wedge the pipeline — but this is a fail-OPEN of the daily-cap /
+        # spacing rail, so it MUST be loud (feedback_no_silent_defaults): a
+        # silent debug line let the cap silently disappear before #2127.
+        logger.warning(
+            "[schedule] Could not read scheduling settings (%s) — publishing "
+            "NOW without cap/spacing enforcement", e,
+        )
+        _surface_schedule_rail_open(
+            reason="settings_read_failed", detail=str(e),
+        )
         return None
 
     pool = getattr(db_service, "cloud_pool", None) or db_service.pool
@@ -468,7 +508,16 @@ async def _calculate_scheduled_publish_time(db_service) -> datetime | None:
                 """
             )
     except Exception as e:
-        logger.debug("[schedule] DB query failed, publishing now: %s", e)
+        # Same fail-OPEN posture as the settings read above — publish now so a
+        # transient error can't wedge the pipeline, but surface it loudly so the
+        # bypassed daily cap is visible (feedback_no_silent_defaults, #2127).
+        logger.warning(
+            "[schedule] daily-count query failed (%s) — publishing NOW without "
+            "cap/spacing enforcement", e,
+        )
+        _surface_schedule_rail_open(
+            reason="daily_count_query_failed", detail=str(e),
+        )
         return None
 
     today_count = row["cnt"] if row else 0
@@ -515,7 +564,17 @@ async def _calculate_scheduled_publish_time(db_service) -> datetime | None:
                     """,
                     check_date,
                 )
-        except Exception:
+        except Exception as e:
+            # A DB error mid next-slot scan previously broke the loop with NO
+            # log, silently scheduling at whichever check_date the loop reached
+            # (#2127). Surface it, then break to the current best-effort date.
+            logger.warning(
+                "[schedule] next-slot scan query failed at %s (%s) — using the "
+                "best date found so far", check_date, e,
+            )
+            _surface_schedule_rail_open(
+                reason="next_slot_scan_failed", detail=str(e),
+            )
             break
 
         day_count = row["cnt"] if row else 0
@@ -1166,8 +1225,30 @@ async def _emit_publish_webhook(db_service, task_id: str, post_title: str) -> No
             "post.published",
             {"task_id": str(task_id), "title": post_title, "site": "default"},
         )
-    except Exception:
-        logger.debug("[WEBHOOK] Failed to emit post.published event", exc_info=True)
+    except Exception as e:
+        # A failed post.published emit means external subscribers are never told
+        # the post went live. Previously debug-only — surface it (#2127).
+        logger.warning(
+            "[WEBHOOK] Failed to emit post.published event for task %s: %s",
+            task_id, e, exc_info=True,
+        )
+        try:
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="publish_service._emit_publish_webhook",
+                kind="webhook_emit_failed",
+                severity="warn",
+                title="post.published webhook emit failed",
+                body=(
+                    f"Emitting the post.published event for task {task_id} "
+                    f"raised {type(e).__name__}: {e}. External webhook "
+                    "subscribers were not notified that the post went live."
+                ),
+                dedup_key="post_published_webhook_emit_failed",
+            )
+        except Exception:  # noqa: BLE001  # silent-ok: emit_finding is best-effort telemetry about a webhook failure already logged at warning above — it must never crash the publish path
+            logger.debug("[WEBHOOK] emit_finding unavailable", exc_info=True)
 
 
 def _queue_sync_and_embed(

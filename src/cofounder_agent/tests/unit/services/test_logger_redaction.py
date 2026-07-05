@@ -253,17 +253,25 @@ class TestRedactorRobustness:
         # Token still got masked even though Weird is alongside.
         assert out["token"] == lc.REDACTED_VALUE
 
-    def test_exception_in_walk_falls_back_to_original_dict(self, monkeypatch, capsys):
-        # Force _redact_walk to raise. The top-level handler should catch
-        # it, write a warning to stderr, and return the dict unchanged.
+    def test_exception_in_walk_fails_closed_dropping_original(self, monkeypatch, capsys):
+        # Force _redact_walk to raise. The top-level handler must catch it,
+        # write a warning to stderr, and fail CLOSED — return a scrubbed
+        # placeholder that drops the original fields rather than leaking them
+        # un-redacted (#2131). (Previously this returned the dict unchanged,
+        # which leaked secrets on a redactor bug.)
         def boom(*_args, **_kwargs):
             raise RuntimeError("synthetic explosion")
 
         monkeypatch.setattr(lc, "_redact_walk", boom)
-        original = {"event": "x", "data": {"nested": "value"}}
+        original = {"event": "x", "level": "info", "data": {"nested": "secretval"}}
         out = lc.redact_secrets(None, "info", dict(original))
-        # The processor returned without raising.
-        assert out == original
+        # The processor returned without raising, but the original fields are
+        # gone — nothing from `data` survives.
+        assert "secretval" not in repr(out)
+        assert "data" not in out
+        assert "secret-redaction processor failed" in out["event"]
+        assert out["redaction_error"] == "RuntimeError"
+        assert out["level"] == "info"
         captured = capsys.readouterr()
         assert "secret-redaction processor failed" in captured.err
 
@@ -369,3 +377,27 @@ class TestStdlibFilter:
         record = self._make_record(payload={"nested": "value"})
         result = f.filter(record)
         assert result is True
+
+
+class TestRedactSecretsFailsClosed:
+    """On a redactor bug the processor must fail CLOSED — drop the original
+    fields rather than leak them un-redacted (#2131)."""
+
+    def test_failure_returns_scrubbed_placeholder_not_original(self, monkeypatch, capsys):
+        def boom(_v):
+            raise RuntimeError("redactor bug")
+
+        monkeypatch.setattr(lc, "_looks_like_secret_value", boom)
+        event = {"event": "db connect", "level": "info", "password": "hunter2"}
+        out = lc.redact_secrets(None, "info", event)
+
+        # The secret value must NOT survive anywhere in the returned dict.
+        flat = repr(out)
+        assert "hunter2" not in flat
+        assert out.get("password") is None  # original field dropped entirely
+        assert "secret-redaction processor failed" in out["event"]
+        assert out["redaction_error"] == "RuntimeError"
+        # Level preserved so log routing still works.
+        assert out["level"] == "info"
+        # Loud: a stderr warning was emitted.
+        assert "secret-redaction processor failed" in capsys.readouterr().err

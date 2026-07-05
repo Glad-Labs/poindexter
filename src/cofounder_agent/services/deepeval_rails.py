@@ -345,10 +345,47 @@ def evaluate_brand_fabrication(content: str, topic: str = "") -> tuple[bool, flo
         logger.warning(
             "[deepeval] deepeval not installed (%s) — skipping rail", e,
         )
+        _surface_deepeval_degraded("deepeval-not-installed", str(e))
         return True, 1.0, "deepeval-not-installed"
     except Exception as e:
         logger.warning("[deepeval] Unexpected error in brand metric: %s", e, exc_info=True)
+        _surface_deepeval_degraded(
+            f"deepeval-error: {type(e).__name__}", str(e),
+        )
         return True, 1.0, f"deepeval-error: {type(e).__name__}"
+
+
+def _surface_deepeval_degraded(reason: str, detail: str) -> None:
+    """Make a deepeval brand-rail fail-open VISIBLE (no silent skip).
+
+    ``evaluate_brand_fabrication`` must not raise (a rail can't take down
+    the pipeline), so on a missing package or runtime error it returns a
+    passing ``(True, 1.0, ...)``. That is a fail-OPEN: the rail scores a
+    perfect pass without actually checking anything. Before this, the only
+    trace was a WARNING log — an operator watching dashboards would see the
+    brand rail "passing" and assume it was working. Emit a typed finding so
+    the degradation routes to Discord / the Findings board instead of
+    hiding in the logs (feedback_no_silent_defaults).
+    """
+    try:
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="deepeval_rails.evaluate_brand_fabrication",
+            kind="qa_rail_degraded",
+            severity="warn",
+            title="DeepEval brand-fabrication rail failed open",
+            body=(
+                f"The deepeval brand-fabrication rail could not run ({reason}: "
+                f"{detail}). It returned a passing score without checking the "
+                "post. The rail is advisory, so this does not block publish — "
+                "but brand-fabrication signal is missing until deepeval is "
+                "healthy. Investigate the deepeval install / runtime."
+            ),
+            dedup_key=f"deepeval_brand_degraded_{reason}",
+        )
+    except Exception:  # noqa: BLE001 — finding emission is best-effort
+        logger.debug("[deepeval] emit_finding unavailable", exc_info=True)
 
 
 _G_EVAL_CRITERION_KEY = "qa.deepeval_g_eval_criterion"

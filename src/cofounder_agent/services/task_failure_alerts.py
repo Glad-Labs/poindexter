@@ -192,13 +192,27 @@ async def send_failure_alert(
             "task_failure_alert_dedup_window_seconds", "900"
         )
         window_seconds = max(0, int(window_raw))
-    except Exception:
+    except Exception as e:
+        logger.warning(
+            "[task_failure_alerts] Could not read "
+            "task_failure_alert_dedup_window_seconds (%s) — using 900s default",
+            e,
+        )
         window_seconds = 900
     try:
         severity_raw = await get_setting(
             "task_failure_alert_severity", "discord"
         )
-    except Exception:
+    except Exception as e:
+        # This is the alert path itself. A silent downgrade here means the
+        # operator misses the Telegram page on the exact failure that most
+        # needs it — mirror the loud invalid-value branch below (#2127).
+        logger.error(
+            "[task_failure_alerts] Could not read task_failure_alert_severity "
+            "(%s) — falling back to 'discord'; a Telegram page may be missed "
+            "until this clears",
+            e,
+        )
         severity_raw = "discord"
     severity = (severity_raw or "discord").strip().lower()
     if severity not in ("discord", "telegram"):

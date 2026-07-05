@@ -1466,10 +1466,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'title_originality_external_penalty': '-50',
 
     # ----- Auto-publish gate (dev_diary) -----
-    'dev_diary_auto_publish_dry_run': 'true',
+    # dev_diary is GRADUATED to live auto-publish (2026-07-04, #2128): the
+    # operator is confident enough in the daily dev entries. These defaults now
+    # match 0000_baseline.seeds.sql so the armed state is intentional, not an
+    # ordering artifact of two seed sources disagreeing (settings_defaults said
+    # dry_run=true/threshold=-1 while the baseline seed said false/70). The
+    # GLOBAL gate ships OFF (auto_publish_threshold=0, require_human_approval=
+    # true); only dev_diary is armed.
+    'dev_diary_auto_publish_dry_run': 'false',
     'dev_diary_auto_publish_max_edit_distance': '50',
     'dev_diary_auto_publish_min_clean_runs': '3',
-    'dev_diary_auto_publish_threshold': '-1',
+    'dev_diary_auto_publish_threshold': '70',
     # Niche allowlist publish gate (#729). When 'true', publish_service
     # refuses to publish a task whose niche_slug is not a KNOWN niche
     # (no matching ``niches`` row) or is missing -- the manual-approve

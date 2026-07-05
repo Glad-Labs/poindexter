@@ -236,8 +236,12 @@ def redact_secrets(
                 redacted[k] = v
         return redacted
     except Exception as exc:  # pragma: no cover - defensive
-        # Emit a single stderr line and fall back to the un-redacted dict.
-        # Crashing the logger is worse than logging an unredacted line.
+        # Fail CLOSED, not open (#2131). Previously this returned the ORIGINAL
+        # ``event_dict`` un-redacted — a redactor bug would leak secrets to the
+        # logs, the exact thing this processor exists to prevent. Crashing the
+        # logger is still worse than dropping one line, so instead of the raw
+        # dict we return a SCRUBBED placeholder that carries no original values:
+        # the log survives (loud — it names the failure) and nothing leaks.
         try:
             print(
                 f"Warning: secret-redaction processor failed: {exc}",
@@ -245,7 +249,17 @@ def redact_secrets(
             )
         except Exception:
             pass
-        return event_dict
+        level = event_dict.get("level")
+        safe: dict[Any, Any] = {
+            "event": (
+                "[log event suppressed: secret-redaction processor failed — "
+                "original fields dropped to avoid leaking secrets]"
+            ),
+            "redaction_error": type(exc).__name__,
+        }
+        if level is not None:
+            safe["level"] = level
+        return safe
 
 
 class SecretRedactionFilter(logging.Filter):

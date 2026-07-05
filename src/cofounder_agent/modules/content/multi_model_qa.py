@@ -388,8 +388,16 @@ class MultiModelQA:
                     },
                     severity="info",
                 )
-        except Exception:
-            pass
+        except Exception as e:
+            # The code whose job is making gate-skips visible must not hide its
+            # OWN failure — a swallowed audit write here means a skipped gate
+            # leaves no operator-visible trace at all (#2127). Log it; the audit
+            # write itself is best-effort so we don't re-raise into the pipeline.
+            logger.warning(
+                "[MULTI_QA] qa_reviewer_skipped audit write failed for "
+                "reviewer=%s (%s) — this skip may be invisible on the QA "
+                "dashboard", reviewer, e,
+            )
 
     async def _load_gate_states(self) -> dict[str, tuple[bool, bool]]:
         """Return ``{gate_name: (enabled, required_to_pass)}`` from ``qa_gates``.
@@ -645,8 +653,11 @@ class MultiModelQA:
                 logger.warning("[MULTI_QA] Cross-model review skipped — score will reflect validator only")
 
         # 2b. Topic-delivery gate — catches bait-and-switch titles where the
-        # body doesn't deliver what the topic promised. Binary gate: if the
-        # body fails to deliver, approved=False regardless of other scores.
+        # body doesn't deliver what the topic promised. ADVISORY as seeded
+        # (qa_gates.topic_delivery.required_to_pass=false): it scores and its
+        # feedback is surfaced, but it does NOT veto — only programmatic_
+        # validator + llm_critic are hard rejectors (#2125). Graduate it to a
+        # hard gate via qa_gates.topic_delivery.required_to_pass=true.
         topic_review = await self._check_topic_delivery(topic, content)
         if topic_review is not None:
             reviews.append(topic_review)
@@ -724,7 +735,12 @@ class MultiModelQA:
                 dead_links = [i for i in url_issues if i.category == "dead_link"]
 
                 if dead_links:
-                    # Dead links block publish — this is a fabricated/hallucinated URL
+                    # Dead links set approved=False on this review, BUT the
+                    # url_verifier gate is seeded ADVISORY (qa_gates.url_verifier
+                    # .required_to_pass=false), so _mark_advisory_if_configured
+                    # flips it back to approved and it does NOT block publish
+                    # (#2125). To make dead links actually block, graduate the
+                    # gate via qa_gates.url_verifier.required_to_pass=true.
                     url_review = ReviewerResult(
                         reviewer="url_verifier",
                         approved=False,

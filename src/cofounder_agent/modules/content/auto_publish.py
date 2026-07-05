@@ -63,7 +63,14 @@ async def _get_setting(
     try:
         raw = await database_service.get_setting_value(key, default)
         return str(raw) if raw is not None else default
-    except Exception:
+    except Exception as e:
+        # Best-effort read, but not SILENT — a swallowed settings error here
+        # silently degrades auto-publish decisions to defaults (#2127). Log so
+        # the fallback is visible; callers that need fail-closed wrap this.
+        logger.warning(
+            "[AUTO_PUBLISH] _get_setting(%s) failed (%s) — using default %r",
+            key, e, default,
+        )
         return default
 
 

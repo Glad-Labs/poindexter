@@ -217,12 +217,56 @@ def aggregate_rail_reviews(
 
     all_passed = not vetoed_by
     approved = all_passed and final_score >= threshold
+
+    # Informational-only visibility (#2125): the operator wants to SEE a score
+    # that reflects EVERY rail (advisory included) plus a per-rail breakdown,
+    # even though only the non-advisory rails feed the gating ``qa_final_score``
+    # and only the two hard rejectors can veto. ``qa_all_rail_score`` is the
+    # weighted mean over ALL positive-scored reviews; ``rail_breakdown`` is the
+    # per-rail detail (score, pass, advisory flag, feedback) so a false positive
+    # is diagnosable instead of invisible. Neither gates — do NOT compare
+    # ``qa_all_rail_score`` to the threshold.
+    all_scored = [r for r in reviews if _score(r) > 0]
+    if all_scored:
+        all_w = sum(
+            _weight_for(r.get("provider"), validator_weight=validator_weight,
+                        critic_weight=critic_weight, gate_weight=gate_weight)
+            for r in all_scored
+        )
+        all_rail_score = (
+            sum(
+                _score(r) * _weight_for(
+                    r.get("provider"), validator_weight=validator_weight,
+                    critic_weight=critic_weight, gate_weight=gate_weight)
+                for r in all_scored
+            ) / all_w
+            if all_w > 0 else 0.0
+        )
+    else:
+        all_rail_score = 0.0
+
+    rail_breakdown = [
+        {
+            "reviewer": r.get("reviewer"),
+            "provider": r.get("provider"),
+            "score": round(_score(r), 2),
+            "approved": bool(r.get("approved")),
+            "advisory": bool(r.get("advisory")),
+            "gated": _score(r) > 0 and not r.get("advisory"),
+            "feedback": (r.get("feedback") or "")[:200],
+        }
+        for r in reviews
+    ]
+
     return {
         "qa_final_score": round(float(final_score), 2),
         "qa_final_verdict": "approve" if approved else "reject",
         "approved": approved,
         "vetoed_by": vetoed_by,
         "known_wrong_fact_rescued": rescued,
+        # Informational only — see comment above. Not used for gating.
+        "qa_all_rail_score": round(float(all_rail_score), 2),
+        "rail_breakdown": rail_breakdown,
     }
 
 
