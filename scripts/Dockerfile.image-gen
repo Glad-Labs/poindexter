@@ -5,7 +5,7 @@
 # kernel images. The 5090 was reporting compute capability (12, 0) but
 # torch 2.5.1's bundled arch list stopped at sm_90, so every GPU op
 # failed with "no kernel image is available for execution on the
-# device" — see Glad-Labs/glad-labs-stack#334.
+# device" — see Glad-Labs/poindexter#334.
 FROM pytorch/pytorch:2.9.1-cuda12.8-cudnn9-runtime
 
 WORKDIR /app

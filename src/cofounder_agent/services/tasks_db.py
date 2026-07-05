@@ -335,7 +335,7 @@ class TasksDatabase(DatabaseServiceMixin):
                     # ``pipeline_tasks_view`` views project a NULL shim — so a
                     # value written here would never surface through them anyway.
                     # Do NOT re-add it; see TestAddTaskAgainstRealDb.
-                    # Tier 1b (Glad-Labs/glad-labs-stack#1997): stamp the
+                    # Tier 1b (Glad-Labs/poindexter#1997): stamp the
                     # enqueuer's W3C trace context onto the row so the claiming
                     # Prefect flow can link its root span to the trace of whatever
                     # created this task (the DB queue is a non-HTTP boundary the
