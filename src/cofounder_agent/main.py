@@ -1035,20 +1035,16 @@ def _patched_openapi() -> dict:
 if not _is_production:
     app.openapi = _patched_openapi  # type: ignore[method-assign]
 
-# ===== OPERATOR CONSOLE (static SPA) =====
+# ===== OPERATOR CONSOLE (static SPA — Pro-tier overlay) =====
 # Mounted after API routes so it never shadows /api/... paths.
 # html=True serves index.html for bare /console/ requests.
 # Not behind verify_api_token — the page loads freely; its /api/... calls carry the bearer token.
-from pathlib import Path as _Path  # noqa: E402
+# Presence-based: the console/ dir is a Pro-tier overlay stripped from the public
+# OSS mirror (scripts/sync-to-github.sh), so the mount is skipped — not crashed —
+# when the directory is absent. See utils/operator_console.py.
+from utils.operator_console import mount_operator_console  # noqa: E402
 
-from fastapi.staticfiles import StaticFiles as _StaticFiles  # noqa: E402
-
-app.mount(
-    "/console",
-    _StaticFiles(directory=_Path(__file__).parent / "console", html=True),
-    name="console",
-)
-logger.info("[STARTUP] ✅ Operator console mounted at /console/")
+mount_operator_console(app)
 
 # ===== UNIFIED HEALTH CHECK ENDPOINT =====
 # Consolidated from: /api/health, /status, /metrics/health, and route-specific health endpoints
