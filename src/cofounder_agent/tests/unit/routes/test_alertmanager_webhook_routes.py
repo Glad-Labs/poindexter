@@ -376,37 +376,32 @@ class TestWebhookEndpoint:
             "brain daemon's responsibility (brain/alert_dispatcher.py)."
         )
 
-    def test_remediation_scaffold_fires_when_configured(self):
+    def test_remediation_scaffold_was_removed(self):
+        """The ``plugin.remediation.<alertname>`` intent-logging scaffold is gone.
+
+        It only ever logged "would run … (not yet implemented)" and never
+        acted. Autonomous operational recovery now lives brain-side in the
+        deterministic firefighter (rule-driven, keyed on the
+        ``remediation_rules`` table — see ``brain/remediation/``). Hard-fail
+        if a future commit re-introduces the webhook-side scaffold: the
+        ``_maybe_remediate`` helper must stay deleted and the response must
+        not carry a ``remediated`` count (which implied this route did
+        remediation, when it never did).
+        """
+        from routes import alertmanager_webhook_routes as m
+        assert not hasattr(m, "_maybe_remediate"), (
+            "_maybe_remediate must stay deleted — operational recovery is the "
+            "brain firefighter's job (brain/remediation/), not a webhook-side "
+            "plugin.remediation.* app_settings scaffold."
+        )
+        # A configured plugin.remediation.* row is now inert: the route still
+        # ingests the alert but reports no remediated count.
         pool = _FakePool(settings={
             "plugin.remediation.PoindexterOllamaDown": json.dumps({
                 "enabled": True,
                 "action": "restart_container",
                 "params": {"container": "ollama"},
             }),
-        })
-        mock_notify = AsyncMock(return_value=None)
-        with patch(
-            "services.integrations.operator_notify.notify_operator",
-            new=mock_notify,
-        ):
-            client = TestClient(_build_app(pool))
-            resp = self._post(client, {
-                "alerts": [
-                    {
-                        "status": "firing",
-                        "labels": {"alertname": "PoindexterOllamaDown",
-                                   "severity": "warning",
-                                   "category": "infrastructure"},
-                        "annotations": {},
-                    }
-                ],
-            })
-        assert resp.status_code == 200
-        assert resp.json()["remediated"] == 1
-
-    def test_remediation_skipped_when_disabled(self):
-        pool = _FakePool(settings={
-            "plugin.remediation.PoindexterOllamaDown": json.dumps({"enabled": False}),
         })
         with patch(
             "services.integrations.operator_notify.notify_operator",
@@ -424,7 +419,12 @@ class TestWebhookEndpoint:
                     }
                 ],
             })
-        assert resp.json()["remediated"] == 0
+        assert resp.status_code == 200
+        assert resp.json()["persisted"] == 1
+        assert "remediated" not in resp.json(), (
+            "the route response must not carry a 'remediated' count — the "
+            "webhook side no longer does remediation."
+        )
 
     def test_tolerates_malformed_alerts_entry(self):
         pool = _FakePool()

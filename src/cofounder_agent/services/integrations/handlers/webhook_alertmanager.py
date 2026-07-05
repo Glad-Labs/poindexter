@@ -2,13 +2,16 @@
 
 Consumes an Alertmanager webhook payload, persists every alert to
 ``alert_events``, runs the should-page filter (severity=critical OR
-category=infrastructure), fans matching alerts out to Discord +
-Telegram via :func:`services.integrations.operator_notify.notify_operator`,
-and fires the remediation scaffold.
+category=infrastructure), and fans matching alerts out to Discord +
+Telegram via :func:`services.integrations.operator_notify.notify_operator`.
+
+Autonomous operational recovery is owned brain-side by the deterministic
+firefighter (rule-driven, keyed on the ``remediation_rules`` table — see
+``brain/remediation/``), not this webhook handler.
 
 Migrated from ``routes/alertmanager_webhook_routes.py``. The dispatch
-logic and the remediation scaffold move wholesale; only the transport
-changes from a bespoke FastAPI route to the declarative dispatcher.
+logic moves wholesale; only the transport changes from a bespoke
+FastAPI route to the declarative dispatcher.
 
 Operator-notify call signature changed during the Prefect Stage 4
 cutover (Glad-Labs/poindexter#410): the previous
@@ -130,39 +133,6 @@ async def _notify_operator(alert: dict[str, Any], site_config: Any) -> None:
 
 
 # ---------------------------------------------------------------------------
-# Remediation scaffold
-# ---------------------------------------------------------------------------
-
-
-async def _maybe_remediate(pool: Any, alert: dict[str, Any]) -> str | None:
-    if alert.get("status") == "resolved":
-        return None
-    alertname = (alert.get("labels") or {}).get("alertname")
-    if not alertname:
-        return None
-    key = f"plugin.remediation.{alertname}"
-    async with pool.acquire() as conn:
-        raw = await conn.fetchval(
-            "SELECT value FROM app_settings WHERE key = $1", key
-        )
-    if not raw:
-        return None
-    try:
-        spec = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("remediation: %s malformed JSON; skipping", key)
-        return None
-    if not spec.get("enabled"):
-        return None
-    action = spec.get("action") or "unknown"
-    logger.info(
-        "remediation: %s would run action=%r params=%r (not yet implemented)",
-        alertname, action, spec.get("params"),
-    )
-    return f"scheduled remediation action={action}"
-
-
-# ---------------------------------------------------------------------------
 # Handler entry point
 # ---------------------------------------------------------------------------
 
@@ -177,12 +147,12 @@ async def alertmanager_dispatch(
 ) -> dict[str, Any]:
     """Process a batch of alerts from one Alertmanager webhook call."""
     if not isinstance(payload, dict):
-        return {"persisted": 0, "paged": 0, "remediated": 0}
+        return {"persisted": 0, "paged": 0}
     if pool is None:
         raise RuntimeError("database pool unavailable")
 
     alerts = payload.get("alerts") or []
-    persisted = paged = remediated = 0
+    persisted = paged = 0
 
     for alert in alerts:
         try:
@@ -195,16 +165,8 @@ async def alertmanager_dispatch(
             await _notify_operator(alert, site_config)
             paged += 1
 
-        try:
-            status = await _maybe_remediate(pool, alert)
-            if status:
-                remediated += 1
-        except Exception:
-            logger.exception("alertmanager_dispatch: remediation lookup failed")
-
     return {
         "count": len(alerts),
         "persisted": persisted,
         "paged": paged,
-        "remediated": remediated,
     }

@@ -2,17 +2,19 @@
 
 Single endpoint — ``POST /api/webhooks/alertmanager`` — that consumes
 the payload Alertmanager / Grafana sends to its webhook receivers.
-Two responsibilities, in order:
+One responsibility: **persist** every inbound alert to ``alert_events``
+so the brain daemon (the dispatcher), operator UI, and future audit
+queries have a historical record. Rows land with ``dispatched_at IS
+NULL`` and the brain's ``alert_dispatcher`` poll picks them up on its
+30s cadence (see ``brain/alert_dispatcher.py``).
 
-1. **Persist** every inbound alert to ``alert_events`` so the brain
-   daemon (the dispatcher), operator UI, and future audit queries have
-   a historical record. Rows land with ``dispatched_at IS NULL`` and
-   the brain's ``alert_dispatcher`` poll picks them up on its 30s
-   cadence (see ``brain/alert_dispatcher.py``).
-2. **Remediation scaffold** — look up ``plugin.remediation.<alertname>``
-   in ``app_settings``. If present + enabled, hand off to a registry
-   dispatcher. Phase D4 ships the hook; concrete remediation handlers
-   arrive incrementally in follow-up commits.
+Autonomous operational recovery (restart / re-run) is owned brain-side
+by the deterministic **firefighter** (rule-driven, keyed on the
+``remediation_rules`` table — see ``brain/remediation/`` and
+``docs/operations/self-healing.md``). The old webhook-side
+``plugin.remediation.<alertname>`` intent-logging scaffold was retired
+once the firefighter shipped: it only ever logged an intended action
+and never acted.
 
 The webhook used to ALSO fan out to Telegram/Discord inline via
 ``services.integrations.operator_notify.notify_operator``. That coupled
@@ -331,48 +333,6 @@ def _format_alert_message(alert: dict[str, Any]) -> str:
 
 
 # ---------------------------------------------------------------------------
-# Remediation scaffold
-# ---------------------------------------------------------------------------
-
-
-async def _maybe_remediate(pool: Any, alert: dict[str, Any]) -> str | None:
-    """Look up ``plugin.remediation.<alertname>`` and invoke if configured.
-
-    Returns a short status string (logged), or None if nothing ran.
-    The registry is intentionally open-ended: handlers register via
-    entry_points in a later phase. For now the scaffold just records
-    that the hook fired and logs the intended action.
-    """
-    if alert.get("status") == "resolved":
-        return None
-    alertname = (alert.get("labels") or {}).get("alertname")
-    if not alertname:
-        return None
-
-    key = f"plugin.remediation.{alertname}"
-    async with pool.acquire() as conn:
-        raw = await conn.fetchval(
-            "SELECT value FROM app_settings WHERE key = $1", key
-        )
-    if not raw:
-        return None
-    try:
-        spec = json.loads(raw)
-    except json.JSONDecodeError:
-        logger.warning("remediation: %s has malformed JSON; skipping", key)
-        return None
-    if not spec.get("enabled"):
-        return None
-    action = spec.get("action") or "unknown"
-    # Phase D ships only the scaffold; concrete handlers land in follow-ups.
-    logger.info(
-        "remediation: %s would run action=%r params=%r (not yet implemented)",
-        alertname, action, spec.get("params"),
-    )
-    return f"scheduled remediation action={action}"
-
-
-# ---------------------------------------------------------------------------
 # Route
 # ---------------------------------------------------------------------------
 
@@ -402,7 +362,6 @@ async def alertmanager_webhook(
 
     persisted = 0
     pageable = 0
-    remediated = 0
     insert_errors: list[str] = []
     for alert in alerts:
         if not isinstance(alert, dict):
@@ -434,16 +393,9 @@ async def alertmanager_webhook(
         if _should_page_operator(alert):
             pageable += 1
 
-        try:
-            rem = await _maybe_remediate(pool, alert)
-            if rem:
-                remediated += 1
-        except Exception as e:
-            logger.warning("alertmanager webhook: remediation lookup failed: %s", e)
-
     logger.info(
-        "alertmanager webhook: received=%d persisted=%d pageable=%d remediated=%d errors=%d",
-        len(alerts), persisted, pageable, remediated, len(insert_errors),
+        "alertmanager webhook: received=%d persisted=%d pageable=%d errors=%d",
+        len(alerts), persisted, pageable, len(insert_errors),
     )
     if insert_errors:
         # Alertmanager retries on 5xx but treats 4xx as "client bug,
@@ -467,5 +419,4 @@ async def alertmanager_webhook(
         # owns dispatch now. ``pageable`` is the new, accurate name.
         "paged": pageable,
         "pageable": pageable,
-        "remediated": remediated,
     }

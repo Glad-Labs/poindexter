@@ -4,7 +4,8 @@ Consumes Grafana Alertmanager webhook payloads. For every alert in the batch:
 
 1. Inserts a row into `alert_events` (persistence).
 2. Evaluates `_should_page_operator` (severity=critical OR category=infrastructure, and status=firing). If true, fans out to Discord + Telegram via `services.integrations.operator_notify.notify_operator` (the legacy `services.task_executor._notify_alert` helper was deleted with `task_executor.py` in Prefect Stage 4, 2026-05-16).
-3. Looks up `plugin.remediation.<alertname>` in `app_settings` and logs the intended remediation action. This webhook-side hook records **intent only**; autonomous execution is delivered brain-side by the **firefighter** (rule-driven, keyed on the `remediation_rules` table) — see [Deterministic firefighter](/docs/operations/self-healing).
+
+Autonomous operational recovery is **not** done here — it's owned brain-side by the deterministic **firefighter** (rule-driven, keyed on the `remediation_rules` table) — see [Deterministic firefighter](/docs/operations/self-healing). The old webhook-side `plugin.remediation.<alertname>` intent-logging hook was retired once the firefighter shipped.
 
 Replaces the bespoke route in `routes/alertmanager_webhook_routes.py`.
 
@@ -25,7 +26,6 @@ enabled:            true  (default false)
 - `discord_ops_webhook_url` — Discord webhook for the #ops channel (notifications go here unconditionally for critical alerts).
 - `telegram_bot_token` (is_secret=true) and `telegram_chat_id` — for Telegram notifications on critical alerts.
 - `telegram_alerts_enabled` (default false) — optional; set to `true` to fan out non-critical alerts to Telegram as well.
-- `plugin.remediation.<alertname>` — optional per-alert remediation specs (JSON with `{enabled, action, params}`).
 
 ## Operator runbook
 
@@ -57,24 +57,11 @@ enabled:            true  (default false)
 - Everything else firing → Discord only (ignored by Telegram unless `telegram_alerts_enabled=true`)
 - Resolved alerts → never paged (but still persisted)
 
-### Remediation hook
+### Remediation (owned brain-side by the firefighter)
 
-For each firing alert, the handler fetches `plugin.remediation.<alertname>` from `app_settings`. If the row exists and has `"enabled": true`, the dispatcher logs the intended action. This webhook-side hook records **intent only** — a lightweight per-alert audit of what _would_ run.
+This webhook does **not** run remediation. Autonomous operational recovery is delivered brain-side by the deterministic **firefighter** (`brain/remediation/`): it matches each about-to-page alert against the `remediation_rules` table, runs an allowlisted action (e.g. `restart_container`, `run_auto_remediate`), holds the page, then verifies before it either resolves silently or escalates. See [Deterministic firefighter](/docs/operations/self-healing) for the loop, the action registry, safety guardrails, and rule authoring.
 
-Autonomous execution is now delivered separately, brain-side, by the **firefighter** (`brain/remediation/`): it matches each about-to-page alert against the `remediation_rules` table, runs an allowlisted action (e.g. `restart_container`, `run_auto_remediate`), holds the page, then verifies before it either resolves silently or escalates. See [Deterministic firefighter](/docs/operations/self-healing) for the loop, the action registry, safety guardrails, and rule authoring. The two surfaces are complementary: this hook is worker-side intent-logging keyed on `plugin.remediation.*`; the firefighter is the closed detect→act→verify→escalate loop keyed on `remediation_rules`.
-
-Example row:
-
-```sql
-INSERT INTO app_settings (key, value, category, description, is_secret)
-VALUES (
-  'plugin.remediation.HighGPUMemory',
-  '{"enabled": false, "action": "restart_ollama", "params": {"grace_seconds": 30}}',
-  'remediation',
-  'Restart Ollama if GPU memory pressure alert fires (currently dry-run only)',
-  FALSE
-);
-```
+> The earlier webhook-side `plugin.remediation.<alertname>` app_settings hook — intent-logging only; it logged "would run …" and never acted — was **removed** once the firefighter shipped. Author rules in the `remediation_rules` table instead.
 
 ### Disabling
 
