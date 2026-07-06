@@ -2,6 +2,19 @@
 
 ## Unreleased
 
+## [0.96.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.95.0...v0.96.0) (2026-07-06)
+
+
+### Features
+
+* **console:** make operator console a Pro-tier overlay ([#2137](https://github.com/Glad-Labs/glad-labs-stack/issues/2137)) ([ba0e03b](https://github.com/Glad-Labs/glad-labs-stack/commit/ba0e03b89ca3f96fba991e74dcb737472fb93cb3))
+* **console:** reliability & trust foundation (sub-project A, Tasks 1–8) ([#2141](https://github.com/Glad-Labs/glad-labs-stack/issues/2141)) ([1b8a4b4](https://github.com/Glad-Labs/glad-labs-stack/commit/1b8a4b4c3447a04dc80582ba5e04c7bedd45b08c))
+
+
+### Bug Fixes
+
+* **qa,publishing:** eliminate silent QA/publish failures + honest gate policy ([#2136](https://github.com/Glad-Labs/glad-labs-stack/issues/2136)) ([a7ecc20](https://github.com/Glad-Labs/glad-labs-stack/commit/a7ecc2060d9eb9723319d10b8a5d7c63748e6447))
+
 ## [0.95.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.94.0...v0.95.0) (2026-07-05)
 
 
