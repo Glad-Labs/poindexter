@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-07-04.**  
+> **Auto-generated from live `app_settings` table on 2026-07-05.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 720 active rows across 58 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 14 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -951,7 +951,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `dev_diary_auto_publish_dry_run` | `false` |  | When true (default), auto-publish gate runs in observe-only mode: logs 'would have auto-published Y/N' for each final... |
+| `dev_diary_auto_publish_dry_run` | `false` |  | When true, the auto-publish gate runs in observe-only mode: logs 'would have auto-published Y/N' for each finalize bu... |
 | `dev_diary_auto_publish_max_edit_distance` | `50` |  | Char-level edit distance threshold for the 'clean run' criterion. Default 50 — trivial typo fixes pass; substantive r... |
 | `dev_diary_auto_publish_min_clean_runs` | `3` |  | Trailing N publishes that must have edit_distance < auto_publish_max_edit_distance for the gate to fire. Default 3 — ... |
 | `dev_diary_auto_publish_threshold` | `70` |  | Quality_score floor for dev_diary auto-publish. Default -1 disables the gate entirely. Set to a value 0-100 (e.g. 85)... |
