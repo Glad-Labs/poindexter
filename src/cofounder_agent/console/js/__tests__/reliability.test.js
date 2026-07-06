@@ -51,6 +51,32 @@ test('resourceReducer: success after error clears the error', () => {
   assert.deepEqual(s, { data: [9], lastUpdatedAt: 99, error: null });
 });
 
+test('resourceReducer: mutate patches data but leaves freshness/error untouched', () => {
+  // Optimistic local patch (e.g. flip a service to "starting…" after a restart
+  // click). lastUpdatedAt must NOT move — the badge stays honest about when
+  // real data last arrived; the next poll reconciles the guess.
+  const prev = {
+    data: [{ n: 'a', ok: false }],
+    lastUpdatedAt: 42,
+    error: null,
+  };
+  const s = resourceReducer(prev, {
+    type: 'mutate',
+    updater: (d) => d.map((x) => ({ ...x, ok: true })),
+  });
+  assert.deepEqual(s.data, [{ n: 'a', ok: true }]);
+  assert.equal(s.lastUpdatedAt, 42); // freshness signal unchanged
+  assert.equal(s.error, null);
+});
+
+test('resourceReducer: mutate before first load (null data) is a safe no-op', () => {
+  const s = resourceReducer(RESOURCE_INIT, {
+    type: 'mutate',
+    updater: (d) => d.map((x) => x), // would throw on null
+  });
+  assert.equal(s.data, null); // no crash, unchanged
+});
+
 const {
   connectionReducer,
   CONNECTION_INIT,

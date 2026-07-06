@@ -26,6 +26,13 @@
         return { data: action.data, lastUpdatedAt: action.at, error: null };
       case 'error':
         return { ...state, error: action.error };
+      case 'mutate':
+        // Optimistic local patch: run the updater over the current data without
+        // moving lastUpdatedAt/error, so the Freshness badge keeps reporting when
+        // REAL data last arrived. No-op before first load (data still null) so an
+        // early click can't crash the updater. The next poll reconciles.
+        if (state.data == null) return state;
+        return { ...state, data: action.updater(state.data) };
       default:
         return state;
     }
@@ -111,6 +118,13 @@
       };
     }, [intervalMs, key]);
 
+    // Optimistic patch for panels with local actions (e.g. flip a service to
+    // "starting…" on restart). Stable identity so callers can pass it straight
+    // into handlers without re-subscribing.
+    const mutate = React.useCallback((updater) => {
+      dispatch({ type: 'mutate', updater });
+    }, []);
+
     const stale = computeStale(
       state.lastUpdatedAt,
       intervalMs,
@@ -122,6 +136,7 @@
       lastUpdatedAt: state.lastUpdatedAt,
       error: state.error,
       stale,
+      mutate,
     };
   }
 

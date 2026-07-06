@@ -296,6 +296,7 @@ function Panel({
   onAction,
   accent,
   flush,
+  fresh,
   children,
   style,
 }) {
@@ -311,6 +312,10 @@ function Panel({
         </span>
         <span className="panel__spacer" />
         {meta && <span className="panel__meta">{meta}</span>}
+        {/* Per-panel freshness (migrated live panels pass their resource here). */}
+        {fresh && (
+          <Freshness lastUpdatedAt={fresh.lastUpdatedAt} stale={fresh.stale} />
+        )}
         {action && (
           <button className="head-act" onClick={onAction}>
             {action}

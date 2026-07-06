@@ -28,20 +28,13 @@ function App() {
   const PX = window.PX;
   const [inbox, setInbox] = useS(PX.inbox);
   const [approved, setApproved] = useS([]); // live: staged tasks, awaiting publish
-  const [services, setServices] = useS(PX.services);
   const [gpu, setGpu] = useS(PX.gpu);
   const [pipeline, setPipeline] = useS(PX.pipeline); // live: real /api/tasks
-  const [topics, setTopics] = useS(PX.topics); // live: GET /api/topics/proposals
-  const [cost, setCost] = useS(PX.cost); // live: GET /api/metrics/costs/budget
-  const [findings, setFindings] = useS(PX.findings); // live: GET /api/findings
+  // Migrated to usePolledResource (Task 9 — see the "Live poll resources"
+  // block below): services, cost, logs, findings, seo, newsletter, traces,
+  // media, schedule, topics.
   const [brain, setBrain] = useS(PX.brain); // live: GET /api/memory/stats
-  const [media, setMedia] = useS(PX.media); // live: GET /api/media-approval/pending
-  const [schedule, setSchedule] = useS(PX.schedule); // live: GET /api/scheduling
-  const [seo, setSeo] = useS(PX.seo); // live: GET /api/seo
   const [social, setSocial] = useS({ drafts: [] }); // live: GET /api/social/drafts
-  const [newsletter, setNewsletter] = useS(null); // live: GET /api/newsletter/stats
-  const [logs, setLogs] = useS(PX.logs); // live: GET /api/logs (Loki proxy)
-  const [traces, setTraces] = useS(PX.traces); // live: GET /api/traces (Langfuse)
   const [logFilter, setLogFilter] = useS({ service: '', level: '' });
   // live: KPI-strip reads with no home panel — GET /api/posts (published 30d
   // histogram + avg quality 30d) + GET /api/analytics/views (page views 24h)
@@ -77,6 +70,130 @@ function App() {
     () => (PX.api.isLive() ? PX.api.health() : Promise.resolve({ ok: true })),
     { intervalMs: 30_000, key: 'health' }
   );
+
+  // ── Live poll resources (Task 9: clean single-state effects migrated onto
+  // usePolledResource). Each derives `x = xR.data || PX.x` and passes `fresh={xR}`
+  // to its panel for the per-panel <Freshness> badge. On a failed poll the hook
+  // retains last-good data + flips stale (the badge is the signal); the old
+  // per-poll error toast is dropped as popup-spam (the global ConnectionBanner
+  // covers a full outage). Bespoke effects with transforms / multi-state /
+  // dedup+animation (feed, approvals, tasks, brain, social, kpiExtras) stay
+  // hand-rolled below — see the "Task 9 exception" comments there.
+  const servicesR = window.PXR.usePolledResource(
+    () =>
+      PX.api.isLive()
+        ? PX.api.serviceHealth().then((rows) => {
+            if (!Array.isArray(rows))
+              throw new Error('serviceHealth: unexpected shape');
+            return rows;
+          })
+        : Promise.resolve(PX.services),
+    { intervalMs: 30_000, key: 'serviceHealth' }
+  );
+  const services = servicesR.data || PX.services;
+
+  const costR = window.PXR.usePolledResource(
+    () => {
+      if (!PX.api.isLive()) return Promise.resolve(PX.cost);
+      return PX.api.budget().then((b) => {
+        if (!b) throw new Error('budget: empty read');
+        // Merge the live spend read onto the PX.cost base: static facts ($0
+        // infra, energy rate, notes) come from the base; byModel/daily/energy
+        // stay empty until those reads are routed (honest-empty, not mocked).
+        return {
+          ...PX.cost,
+          monthToDate: b.amount_spent ?? PX.cost.monthToDate,
+          budget: b.monthly_budget ?? PX.cost.budget,
+          projected: b.projected_final_cost ?? PX.cost.projected,
+          dailyBurn: b.daily_burn_rate ?? PX.cost.dailyBurn,
+          percentUsed: b.percent_used ?? PX.cost.percentUsed,
+          status: b.status ?? PX.cost.status,
+          alerts: b.alerts ?? [],
+          byModel: [],
+          daily: [],
+          energyKwhMonth: null,
+        };
+      });
+    },
+    { intervalMs: 5 * 60 * 1000, key: 'budget' }
+  );
+  const cost = costR.data || PX.cost;
+
+  // Logs re-fetch immediately when the service/level filter changes: the filter
+  // is encoded in `key`, and usePolledResource re-runs its effect on key change.
+  const logsR = window.PXR.usePolledResource(
+    () => {
+      if (!PX.api.isLive()) return Promise.resolve(PX.logs);
+      const qs =
+        `?since=1h&limit=300` +
+        (logFilter.service
+          ? `&service=${encodeURIComponent(logFilter.service)}`
+          : '') +
+        (logFilter.level
+          ? `&level=${encodeURIComponent(logFilter.level)}`
+          : '');
+      return PX.api.logs(qs);
+    },
+    { intervalMs: 10_000, key: `logs:${logFilter.service}:${logFilter.level}` }
+  );
+  const logs = logsR.data || PX.logs;
+
+  const findingsR = window.PXR.usePolledResource(
+    () => (PX.api.isLive() ? PX.api.findings() : Promise.resolve(PX.findings)),
+    { intervalMs: 5 * 60 * 1000, key: 'findings' }
+  );
+  const findings = findingsR.data || PX.findings;
+
+  const seoR = window.PXR.usePolledResource(
+    () => (PX.api.isLive() ? PX.api.seo() : Promise.resolve(PX.seo)),
+    { intervalMs: 5 * 60 * 1000, key: 'seo' }
+  );
+  const seo = seoR.data || PX.seo;
+
+  // newsletter has no mock base (honest-empty null in mock mode, per its
+  // isLive-gated original); derive straight off the resource, no `|| PX.x`.
+  const newsletterR = window.PXR.usePolledResource(
+    () => (PX.api.isLive() ? PX.api.newsletter() : Promise.resolve(null)),
+    { intervalMs: 5 * 60 * 1000, key: 'newsletter' }
+  );
+  const newsletter = newsletterR.data;
+
+  const tracesR = window.PXR.usePolledResource(
+    () =>
+      PX.api.isLive()
+        ? PX.api.traces('?hours=24&limit=50')
+        : Promise.resolve(PX.traces),
+    { intervalMs: 60 * 1000, key: 'traces' }
+  );
+  const traces = tracesR.data || PX.traces;
+
+  // These three poll cleanly but ALSO carry optimistic drawer actions (Gate-2
+  // decide / reschedule / topic triage). The poll migrates here; the drawer
+  // handlers below call `<x>R.mutate(updater)` for the optimistic patch and
+  // `<x>R.mutate(() => prev)` to roll back on a failed write.
+  const mediaR = window.PXR.usePolledResource(
+    () => (PX.api.isLive() ? PX.api.mediaQueue() : Promise.resolve(PX.media)),
+    { intervalMs: 60 * 1000, key: 'media' }
+  );
+  const media = mediaR.data || PX.media;
+
+  const scheduleR = window.PXR.usePolledResource(
+    () => (PX.api.isLive() ? PX.api.schedule() : Promise.resolve(PX.schedule)),
+    { intervalMs: 60 * 1000, key: 'schedule' }
+  );
+  const schedule = scheduleR.data || PX.schedule;
+
+  const topicsR = window.PXR.usePolledResource(
+    () => {
+      if (!PX.api.isLive()) return Promise.resolve(PX.topics);
+      return PX.api.listTopicProposals().then((res) =>
+        // Canonical offset envelope (poindexter#745): read `.items`, not `.batches`.
+        res && res.items ? res : { items: [], total: 0, limit: 0, offset: 0 }
+      );
+    },
+    { intervalMs: 5 * 60 * 1000, key: 'topics' }
+  );
+  const topics = topicsR.data || PX.topics;
 
   // ── Live simulation (subtle) ──────────────────────────────
   useE(() => {
@@ -149,6 +266,10 @@ function App() {
   }, []);
 
   // ── Live: real audit feed (GET /api/pipeline/events) ──────────────────
+  // Task 9 exception (stays a bespoke effect): not a clean fetch→setState —
+  // it dedups against a seen-id ref, prepends+slices a rolling buffer, runs a
+  // fresh-flag fade animation, and drives setClock. No <Freshness> badge (the
+  // feed is a live stream, not a snapshot panel).
   // Mock keeps the local simulator above. On live we poll the real pipeline
   // events (QA decisions, rewrites, task lifecycle), map them to feed lines in
   // the adapter, and prepend new ones — deduped by audit_log event id — so the
@@ -194,6 +315,9 @@ function App() {
   }, []);
 
   // ── Live: load real pending approvals into the inbox ──────
+  // Task 9 exception (stays a bespoke effect): writes TWO states — it maps the
+  // approvals via approvalToInbox into `inbox` AND sets `approved` from a second
+  // list call. One usePolledResource can't own two states, so it stays hand-rolled.
   // In live mode the inbox shows ONLY real /api/tasks/pending-approval rows.
   // Other inbox kinds (fail/alert/drift/media) stay empty here until their own
   // phases wire them — we never carry mock rows into a live view.
@@ -224,6 +348,9 @@ function App() {
   }, []);
 
   // ── Live: load real tasks into the Pipeline panel ─────────
+  // Task 9 exception (stays a bespoke effect): not a plain setState — it maps
+  // rows via taskToRow then MERGES them into the existing pipeline shape with
+  // withLiveCounts (functional update over prior state), so it stays hand-rolled.
   // Maps /api/tasks rows → the panel task shape and derives per-block counts
   // from each task's current `stage` (the real graph_def node). Mock mode is
   // untouched. Polls on the same 5-min cadence as approvals.
@@ -249,121 +376,11 @@ function App() {
     };
   }, []);
 
-  // ── Live: load open topic batches into the Topics panel ───
-  // Surfaces what discovery proposed but hasn't been acted on — a stuck open
-  // batch is the recurring "content goes dark" failure, so this is the drain
-  // valve. Mock mode keeps PX.topics. Polls on the 5-min SYNC cadence.
-  useE(() => {
-    if (!PX.api.isLive()) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await PX.api.listTopicProposals();
-        if (!alive) return;
-        // Canonical offset envelope (poindexter#745): read `.items`, not `.batches`.
-        setTopics(
-          res && res.items ? res : { items: [], total: 0, limit: 0, offset: 0 }
-        );
-      } catch (e) {
-        pushToast(`Topics load failed — ${e.message}`, 'red', '✕');
-      }
-    };
-    load();
-    const timer = setInterval(load, 5 * 60 * 1000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
-
-  // ── Live: real service health from cAdvisor + worker /api/health ──
-  // Replaces the mock liveness with derived container_last_seen status (plus
-  // real cpu/mem/uptime/image). Faster cadence than the 5-min data polls — a
-  // down container is the thing an operator wants to see immediately. cAdvisor
-  // scrapes ~15s, so 30s is two scrapes of headroom. Mock mode keeps PX.services.
-  useE(() => {
-    if (!PX.api.isLive()) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const rows = await PX.api.serviceHealth();
-        if (!alive) return;
-        if (Array.isArray(rows)) setServices(rows);
-      } catch (e) {
-        pushToast(`Service health load failed — ${e.message}`, 'red', '✕');
-      }
-    };
-    load();
-    const timer = setInterval(load, 30 * 1000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
-
-  // ── Live: real LLM/API spend vs cap (budget) ──────────────
-  // The one cost read with an HTTP surface (GET /api/metrics/costs/budget). The
-  // by-model / daily breakdowns aren't routed, so live mode clears them to [] and
-  // the panel/drawer render an explicit "backend read pending" — honest, never
-  // mocked. $0 infra + energy are facts (not reads), so they stay as-is. Mock
-  // mode keeps the full PX.cost. 5-min cadence (spend moves slowly).
-  useE(() => {
-    if (!PX.api.isLive()) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const b = await PX.api.budget();
-        if (!alive || !b) return;
-        setCost((c) => ({
-          ...c,
-          monthToDate: b.amount_spent ?? c.monthToDate,
-          budget: b.monthly_budget ?? c.budget,
-          projected: b.projected_final_cost ?? c.projected,
-          dailyBurn: b.daily_burn_rate ?? c.dailyBurn,
-          percentUsed: b.percent_used ?? c.percentUsed,
-          status: b.status ?? c.status,
-          alerts: b.alerts ?? [],
-          byModel: [],
-          daily: [],
-          energyKwhMonth: null,
-        }));
-      } catch (e) {
-        pushToast(`Budget load failed — ${e.message}`, 'red', '✕');
-      }
-    };
-    load();
-    const timer = setInterval(load, 5 * 60 * 1000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
-
-  // ── Live: probe-findings triage (#461) ────────────────────
-  // Mirrors the Findings dashboard — emitted/pending counts + per-finding
-  // routing status. Read-only (the brain's findings_alert_router delivers them).
-  // Mock mode keeps PX.findings. 5-min cadence.
-  useE(() => {
-    if (!PX.api.isLive()) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await PX.api.findings();
-        if (!alive || !res) return;
-        setFindings(res);
-      } catch (e) {
-        pushToast(`Findings load failed — ${e.message}`, 'red', '✕');
-      }
-    };
-    load();
-    const timer = setInterval(load, 5 * 60 * 1000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
-
   // ── Live: real embedding corpus (GET /api/memory/stats) ───
+  // Task 9 exception (stays a bespoke effect): the `brain` state is fed by TWO
+  // effects — this corpus fetch AND the brain-daemon-activity fetch below — each
+  // a functional merge into the shared state. Two resources can't own one state,
+  // so both stay hand-rolled (a future combine-into-one-resource could migrate them).
   // Maps total + by_source_table + by_writer onto the Brain panel.
   // Mock mode keeps PX.brain. 60s cadence (the corpus grows slowly).
   useE(() => {
@@ -387,6 +404,8 @@ function App() {
   }, []);
 
   // ── Live: brain daemon activity (GET /api/brain/stats) ───
+  // Task 9 exception (stays a bespoke effect): second writer of the shared
+  // `brain` state (see the memory-stats effect above) — stays hand-rolled.
   // Merges decisions_24h/7d + knowledge_total + recent_decisions into the same
   // brain state the corpus fetch above populates. Functional update avoids
   // overwriting the corpus fields. 5min cadence (brain cycles are ~5 min).
@@ -424,79 +443,10 @@ function App() {
     };
   }, []);
 
-  // ── Live: media Gate-2 queue (GET /api/media-approval/pending) ──
-  // Real pending podcast/video awaiting review + the gate2Pending count. The
-  // render-rate KPIs have no read → honest '—' in live. Mock keeps PX.media.
-  // 60s cadence.
-  useE(() => {
-    if (!PX.api.isLive()) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await PX.api.mediaQueue();
-        if (!alive || !res) return;
-        setMedia(res);
-      } catch (e) {
-        pushToast(`Media queue load failed — ${e.message}`, 'red', '✕');
-      }
-    };
-    load();
-    const timer = setInterval(load, 60 * 1000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
-
-  // ── Live: scheduled-publish queue (GET /api/scheduling) ──
-  // Real posts with status='scheduled' + a future published_at. The panel
-  // derives depth / next-slot / past-due / upcoming-24h. Mock keeps PX.schedule.
-  // 60s cadence.
-  useE(() => {
-    if (!PX.api.isLive()) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await PX.api.schedule();
-        if (!alive || !res) return;
-        setSchedule(res);
-      } catch (e) {
-        pushToast(`Schedule load failed — ${e.message}`, 'red', '✕');
-      }
-    };
-    load();
-    const timer = setInterval(load, 60 * 1000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
-
-  // ── Live: SEO refresh pipeline (GET /api/seo) ────────────
-  // Real seo_opportunities — the actionable queue + recent refresh outcomes.
-  // Read-only (the seo.refresh loop is autonomous). Mock keeps PX.seo. 5-min
-  // cadence (opportunities move on the harvest cycle, not second-to-second).
-  useE(() => {
-    if (!PX.api.isLive()) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await PX.api.seo();
-        if (!alive || !res) return;
-        setSeo(res);
-      } catch (e) {
-        pushToast(`SEO load failed — ${e.message}`, 'red', '✕');
-      }
-    };
-    load();
-    const timer = setInterval(load, 5 * 60 * 1000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
-
   // ── Live: social draft queue (GET /api/social/drafts) ───────
+  // Task 9 exception (stays a bespoke effect): writes TWO states — `social` AND
+  // `inbox` (pending drafts are mapped via draftToInbox and merged into the
+  // action inbox). One resource can't own both, so it stays hand-rolled.
   // Fetches all recent drafts for per-post per-platform visibility — granularity
   // the Grafana aggregate Prometheus counters don't provide. Pending drafts also
   // surface in the action inbox as kind='social' for inline approve/reject.
@@ -529,31 +479,12 @@ function App() {
     };
   }, []);
 
-  // ── Live: newsletter stats (GET /api/newsletter/stats) ──────────
-  // Subscriber count + 30d campaign delivery summary from campaign_email_logs.
-  // 5-min cadence — subscriber counts don't change second-to-second.
-  useE(() => {
-    if (!PX.api.isLive()) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await PX.api.newsletter();
-        if (!alive || !res) return;
-        setNewsletter(res);
-      } catch (_e) {
-        /* honest-empty: leave panel as-is on transient error */
-      }
-    };
-    load();
-    const timer = setInterval(load, 5 * 60 * 1000);
-    return () => {
-      alive = false;
-      clearInterval(timer);
-    };
-  }, []);
-
   // ── Live: KPI strip reads (GET /api/posts + /api/analytics/views +
   // GET /api/tasks?status=failed) ──
+  // Task 9 exception (stays a bespoke effect): a 3-way Promise.all fan-in
+  // (posts + views + failedTasks, each independently .catch→null) into one
+  // `kpiReads` set — the KPI strip has no single panel header to badge, so it
+  // stays hand-rolled rather than becoming a usePolledResource.
   // The overview KPIs are mostly a projection of state other panels already
   // load (cost → spend, inbox → awaiting-approval); these reads cover the
   // rest. posts → published-in-30d histogram AND avg-quality-30d (the
@@ -580,57 +511,6 @@ function App() {
     return () => {
       alive = false;
       clearInterval(timer);
-    };
-  }, []);
-
-  // ── Live: Loki logs (GET /api/logs) ───────────────────────
-  // Re-fetches when the service/level filter changes; tails on a 10s cadence
-  // (a down service is the thing you want to see fast). Mock keeps PX.logs.
-  useE(() => {
-    if (!PX.api.isLive()) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const qs =
-          `?since=1h&limit=300` +
-          (logFilter.service
-            ? `&service=${encodeURIComponent(logFilter.service)}`
-            : '') +
-          (logFilter.level
-            ? `&level=${encodeURIComponent(logFilter.level)}`
-            : '');
-        const res = await PX.api.logs(qs);
-        if (alive && res) setLogs(res);
-      } catch (_e) {
-        /* honest-empty: leave panel as-is on a transient error */
-      }
-    };
-    load();
-    const id = setInterval(load, 10 * 1000);
-    return () => {
-      alive = false;
-      clearInterval(id);
-    };
-  }, [logFilter]);
-
-  // ── Live: Langfuse traces (GET /api/traces) ───────────────
-  // 60s cadence. A 503 (langfuse keys unset) is swallowed → honest-empty panel.
-  useE(() => {
-    if (!PX.api.isLive()) return;
-    let alive = true;
-    const load = async () => {
-      try {
-        const res = await PX.api.traces('?hours=24&limit=50');
-        if (alive && res) setTraces(res);
-      } catch (_e) {
-        /* honest-empty (incl. 503 when langfuse keys unset) */
-      }
-    };
-    load();
-    const id = setInterval(load, 60 * 1000);
-    return () => {
-      alive = false;
-      clearInterval(id);
     };
   }, []);
 
@@ -842,7 +722,7 @@ function App() {
         ['mint', 'REMEDIATE'],
         `operator applied URL fix · <b>${e.detail?.surface || ''}</b>`
       );
-      setServices((s) =>
+      servicesR.mutate((s) =>
         s.map((x) =>
           x.name === 'prefect-server'
             ? { ...x, status: 'ok', metric: 'starting…' }
@@ -862,7 +742,7 @@ function App() {
       closeDrawer();
       pushToast(`Restarting ${s.name}…`, 'cyan', '↻');
       pushFeed(['cyan', 'REMEDIATE'], `operator restarted <b>${s.name}</b>`);
-      setServices((arr) =>
+      servicesR.mutate((arr) =>
         arr.map((x) =>
           x.name === s.name ? { ...x, status: 'ok', metric: 'starting…' } : x
         )
@@ -897,7 +777,7 @@ function App() {
     // approved=true clears the asset for dispatch; reject sends it to regenerate.
     mediaApprove: async (it) => {
       const prev = media;
-      setMedia((m) => ({
+      mediaR.mutate((m) => ({
         ...m,
         queue: (m.queue || []).filter((q) => q.id !== it.id),
         gate2Pending: Math.max(0, (m.gate2Pending || 0) - 1),
@@ -915,13 +795,13 @@ function App() {
           `operator approved <b>${it.medium || 'media'}</b> · ${trunc(it.title || '', 36)}`
         );
       } catch (err) {
-        setMedia(prev);
+        mediaR.mutate(() => prev);
         pushToast(`Media approve failed — ${err.message}`, 'red', '✕');
       }
     },
     mediaReject: async (it) => {
       const prev = media;
-      setMedia((m) => ({
+      mediaR.mutate((m) => ({
         ...m,
         queue: (m.queue || []).filter((q) => q.id !== it.id),
         gate2Pending: Math.max(0, (m.gate2Pending || 0) - 1),
@@ -939,7 +819,7 @@ function App() {
           `operator rejected <b>${it.medium || 'media'}</b> · ${trunc(it.title || '', 36)}`
         );
       } catch (err) {
-        setMedia(prev);
+        mediaR.mutate(() => prev);
         pushToast(`Media reject failed — ${err.message}`, 'red', '✕');
       }
     },
@@ -950,7 +830,7 @@ function App() {
       const neg = byDelta.trim().startsWith('-');
       const mm = byDelta.match(/(\d+)\s*hour/i);
       const dMs = (mm ? parseInt(mm[1], 10) : 0) * 3600000 * (neg ? -1 : 1);
-      setSchedule((s) => ({
+      scheduleR.mutate((s) => ({
         ...s,
         rows: (s.rows || []).map((r) =>
           r.post_id === postId
@@ -967,7 +847,7 @@ function App() {
         await PX.api.scheduleShift(byDelta, [postId]);
         pushToast(`Slot shifted ${byDelta}`, 'cyan', '↻');
       } catch (err) {
-        setSchedule(prev);
+        scheduleR.mutate(() => prev);
         pushToast(`Reschedule failed — ${err.message}`, 'red', '✕');
       }
     },
@@ -982,7 +862,7 @@ function App() {
         .map((x) => x.id);
       const ordered = [c.id, ...rest];
       const prev = topics;
-      setTopics((t) => reRankBatch(t, b.batch_id, ordered));
+      topicsR.mutate((t) => reRankBatch(t, b.batch_id, ordered));
       try {
         await PX.api.rankTopicBatch(b.batch_id, ordered);
         pushToast(
@@ -995,13 +875,13 @@ function App() {
           `operator ranked <b>${trunc(c.title)}</b> #1 · ${b.niche_slug || ''}`
         );
       } catch (err) {
-        setTopics(prev);
+        topicsR.mutate(() => prev);
         pushToast(`Rank failed — ${err.message}`, 'red', '✕');
       }
     },
     topicResolve: async (b) => {
       const prev = topics;
-      setTopics((t) => removeBatch(t, b.batch_id));
+      topicsR.mutate((t) => removeBatch(t, b.batch_id));
       try {
         await PX.api.resolveTopicBatch(b.batch_id);
         pushToast('Batch resolved — winner queued to pipeline', 'mint', '✓');
@@ -1010,13 +890,13 @@ function App() {
           `operator resolved batch <b>${String(b.batch_id).slice(0, 8)}</b> → pipeline`
         );
       } catch (err) {
-        setTopics(prev);
+        topicsR.mutate(() => prev);
         pushToast(`Resolve failed — ${err.message}`, 'red', '✕');
       }
     },
     topicReject: async (b) => {
       const prev = topics;
-      setTopics((t) => removeBatch(t, b.batch_id));
+      topicsR.mutate((t) => removeBatch(t, b.batch_id));
       try {
         await PX.api.rejectTopicBatch(b.batch_id, '');
         pushToast(
@@ -1029,7 +909,7 @@ function App() {
           `operator rejected batch <b>${String(b.batch_id).slice(0, 8)}</b>`
         );
       } catch (err) {
-        setTopics(prev);
+        topicsR.mutate(() => prev);
         pushToast(`Reject failed — ${err.message}`, 'red', '✕');
       }
     },
@@ -1465,13 +1345,18 @@ function App() {
                 </div>
               )}
               <div id="sec-schedule">
-                <SchedulePanel schedule={schedule} onShift={A.scheduleShift} />
+                <SchedulePanel
+                  schedule={schedule}
+                  onShift={A.scheduleShift}
+                  fresh={scheduleR}
+                />
               </div>
               <div id="sec-services">
                 <ServiceGrid
                   services={services}
                   onOpen={(s) => open('service', s)}
                   onRestart={A.restart}
+                  fresh={servicesR}
                 />
               </div>
               <div id="sec-pipeline">
@@ -1488,6 +1373,7 @@ function App() {
                   onPick={A.topicPick}
                   onResolve={A.topicResolve}
                   onReject={A.topicReject}
+                  fresh={topicsR}
                 />
               </div>
               <div id="sec-social">
@@ -1498,7 +1384,7 @@ function App() {
                 />
               </div>
               <div id="sec-newsletter">
-                <NewsletterPanel newsletter={newsletter} />
+                <NewsletterPanel newsletter={newsletter} fresh={newsletterR} />
               </div>
               <div id="sec-gpu">
                 <GpuHud gpu={gpu} onOpen={() => open('gpu', gpu)} />
@@ -1514,6 +1400,7 @@ function App() {
                   }
                   onApprove={A.mediaApprove}
                   onReject={A.mediaReject}
+                  fresh={mediaR}
                 />
               </div>
               <div id="sec-revenue">
@@ -1545,10 +1432,14 @@ function App() {
                 <QAPanel qa={PX.qa} onOpen={() => open('qa', PX.qa)} />
               </div>
               <div id="sec-seo">
-                <SeoPanel seo={seo} />
+                <SeoPanel seo={seo} fresh={seoR} />
               </div>
               <div id="sec-cost">
-                <CostPanel cost={cost} onOpen={() => open('cost', cost)} />
+                <CostPanel
+                  cost={cost}
+                  onOpen={() => open('cost', cost)}
+                  fresh={costR}
+                />
               </div>
               <div id="sec-launch">
                 <LauncherPanel
@@ -1569,6 +1460,7 @@ function App() {
                 <FindingsPanel
                   findings={findings}
                   onOpen={() => open('findings', findings)}
+                  fresh={findingsR}
                 />
               </div>
               <div id="sec-telemetry">
@@ -1579,8 +1471,9 @@ function App() {
                   onFilter={(patch) =>
                     setLogFilter((f) => ({ ...f, ...patch }))
                   }
+                  fresh={logsR}
                 />
-                <TracesPanel traces={traces} />
+                <TracesPanel traces={traces} fresh={tracesR} />
                 <GrafanaEmbed />
               </div>
             </div>

@@ -257,7 +257,7 @@ const FINDING_STATUS_TAG = {
   routed: 'mint',
   'log-only': 'cyan',
 };
-function FindingsPanel({ findings, onOpen }) {
+function FindingsPanel({ findings, onOpen, fresh }) {
   const f = findings || {};
   const rows = f.findings || [];
   const emitted = (f.counts && f.counts.emitted) || 0;
@@ -267,6 +267,7 @@ function FindingsPanel({ findings, onOpen }) {
       idx="F1"
       title="FINDINGS"
       meta={`${emitted} EMITTED · ${pending} PENDING`}
+      fresh={fresh}
       flush
       action="Detail"
       onAction={onOpen}
@@ -591,7 +592,7 @@ function RevenuePanel({ revenue, onOpen }) {
 
 /* ─── Media pipeline (Stage 2) ──────────────────────────────── */
 const MEDIUM_TAG = { video: 'cyan', podcast: 'amber', short: 'mint' };
-function MediaPanel({ media, onOpenItem, onApprove, onReject }) {
+function MediaPanel({ media, onOpenItem, onApprove, onReject, fresh }) {
   const m = media || {};
   const queue = m.queue || [];
   // Render-rate KPIs have no read on the media-approval route → '—' in live
@@ -602,7 +603,13 @@ function MediaPanel({ media, onOpenItem, onApprove, onReject }) {
       ? `RENDER ${m.renderSuccess24h}% · ${m.dispatched} DISPATCHED`
       : `${m.gate2Pending ?? 0} GATE-2 PENDING`;
   return (
-    <Panel idx="M1" title="MEDIA PIPELINE · STAGE 2" meta={meta} flush>
+    <Panel
+      idx="M1"
+      title="MEDIA PIPELINE · STAGE 2"
+      meta={meta}
+      fresh={fresh}
+      flush
+    >
       <div
         style={{
           display: 'grid',
@@ -704,7 +711,7 @@ function relWhen(ms) {
   else v = Math.round(s / 86400) + 'd';
   return past ? v + ' overdue' : 'in ' + v;
 }
-function SchedulePanel({ schedule, onShift }) {
+function SchedulePanel({ schedule, onShift, fresh }) {
   const s = schedule || {};
   const now = Date.now();
   const rows = (s.rows || [])
@@ -723,6 +730,7 @@ function SchedulePanel({ schedule, onShift }) {
       idx="S1"
       title="SCHEDULED PUBLISH · QUEUE"
       meta={`${depth} QUEUED · ${pastDue} PAST-DUE`}
+      fresh={fresh}
       flush
     >
       <div
@@ -828,7 +836,7 @@ function seoAgo(iso) {
   if (s < 86400) return Math.round(s / 3600) + 'h';
   return Math.round(s / 86400) + 'd';
 }
-function SeoPanel({ seo }) {
+function SeoPanel({ seo, fresh }) {
   const s = seo || {};
   const queue = s.queue || [];
   const refreshes = s.refreshes || [];
@@ -842,6 +850,7 @@ function SeoPanel({ seo }) {
       idx="SE1"
       title="SEO REFRESH · OPPORTUNITIES"
       meta={`${byStatus.open || 0} OPEN · ${byStatus.queued || 0} QUEUED · ${byStatus.refreshed || 0} REFRESHED`}
+      fresh={fresh}
       flush
     >
       <div>
@@ -1139,7 +1148,7 @@ function LauncherPanel({ tools, onLaunch, onVoice }) {
 // free the niche for a fresh sweep). Resolve is disabled until something is
 // ranked — the backend 400s an unranked resolve, so we gate it in the UI too.
 const CAND_KIND_TAG = { external: 'cyan', internal: 'amber' };
-function TopicsPanel({ topics, onPick, onResolve, onReject }) {
+function TopicsPanel({ topics, onPick, onResolve, onReject, fresh }) {
   // Canonical offset envelope (poindexter#745): the list lives under `.items`.
   const batches = (topics && topics.items) || [];
   return (
@@ -1147,6 +1156,7 @@ function TopicsPanel({ topics, onPick, onResolve, onReject }) {
       idx="T1"
       title="TOPICS · DISCOVERY BATCHES"
       meta={`${batches.length} OPEN · AWAITING DECISION`}
+      fresh={fresh}
       flush
     >
       {batches.length === 0 && (
@@ -1262,7 +1272,7 @@ function TopicsPanel({ topics, onPick, onResolve, onReject }) {
 // GET /api/newsletter/stats → {subscriber_count, unsubscribed_count,
 //   last_30d:{sent,failed,total,delivery_rate,last_send_at}, recent_campaigns:[…]}
 // Data from newsletter_subscribers + campaign_email_logs. Honest-empty in mock.
-function NewsletterPanel({ newsletter }) {
+function NewsletterPanel({ newsletter, fresh }) {
   const PX = window.PX;
   const data = newsletter || {};
   const sub = data.subscriber_count || 0;
@@ -1280,6 +1290,7 @@ function NewsletterPanel({ newsletter }) {
       idx="NL"
       title="NEWSLETTER"
       meta={`${sub} subscribers · last send ${lastSend}`}
+      fresh={fresh}
       flush
     >
       <div
@@ -1445,7 +1456,7 @@ function NewsletterPanel({ newsletter }) {
 }
 
 // ── Telemetry: Loki logs (native) ─────────────────────────────
-function LogsPanel({ logs, onFilter, service, level }) {
+function LogsPanel({ logs, onFilter, service, level, fresh }) {
   const lines = (logs && logs.lines) || [];
   // Loki returns the level label UPPERCASE (INFO/WARNING/ERROR); compare
   // case-insensitively so error lines colour red and warnings amber (a bare
@@ -1466,6 +1477,9 @@ function LogsPanel({ logs, onFilter, service, level }) {
         </span>
         <span className="panel__spacer" style={{ flex: 1 }} />
         <span className="panel__meta">{lines.length} lines · Loki</span>
+        {fresh && (
+          <Freshness lastUpdatedAt={fresh.lastUpdatedAt} stale={fresh.stale} />
+        )}
       </div>
       <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
         <input
@@ -1507,7 +1521,7 @@ function LogsPanel({ logs, onFilter, service, level }) {
 }
 
 // ── Telemetry: Langfuse traces (native list, deeplink waterfall) ──
-function TracesPanel({ traces }) {
+function TracesPanel({ traces, fresh }) {
   const rows = (traces && traces.traces) || [];
   return (
     <div className="panel" id="sec-traces">
@@ -1517,6 +1531,9 @@ function TracesPanel({ traces }) {
         </span>
         <span className="panel__spacer" style={{ flex: 1 }} />
         <span className="panel__meta">{rows.length} · Langfuse</span>
+        {fresh && (
+          <Freshness lastUpdatedAt={fresh.lastUpdatedAt} stale={fresh.stale} />
+        )}
       </div>
       {rows.length === 0 ? (
         <div className="empty">

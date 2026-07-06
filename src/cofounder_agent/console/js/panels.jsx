@@ -304,7 +304,7 @@ function ActionInbox({
 
 /* ─── Service health grid ───────────────────────────────────── */
 const LED = { ok: 'led-ok', warn: 'led-warn', err: 'led-err', off: 'led-off' };
-function ServiceGrid({ services, onOpen, onRestart }) {
+function ServiceGrid({ services, onOpen, onRestart, fresh }) {
   const down = services.filter((s) => s.status === 'err').length;
   const warn = services.filter((s) => s.status === 'warn').length;
   return (
@@ -312,6 +312,7 @@ function ServiceGrid({ services, onOpen, onRestart }) {
       idx="S1"
       title="SERVICE HEALTH"
       meta={`${services.length} CONTAINERS · ${down} DOWN · ${warn} DEGRADED`}
+      fresh={fresh}
       flush
     >
       <div>
@@ -596,7 +597,7 @@ function BrainPanel({ brain, onOpen, onEmbed }) {
 }
 
 /* ─── Cost panel ────────────────────────────────────────────── */
-function CostPanel({ cost, onOpen }) {
+function CostPanel({ cost, onOpen, fresh }) {
   const pct =
     cost.percentUsed != null
       ? cost.percentUsed
@@ -635,6 +636,7 @@ function CostPanel({ cost, onOpen }) {
       idx="C1"
       title="COST CONTROL"
       meta={`PROJECTED $${cost.projected.toFixed(0)} / $${cost.budget}`}
+      fresh={fresh}
       flush
       action="Detail"
       onAction={onOpen}
