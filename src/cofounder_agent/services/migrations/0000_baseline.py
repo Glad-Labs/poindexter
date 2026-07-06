@@ -1,7 +1,7 @@
 """Baseline migration — schema + seed data as of the Phase F squash.
 
 This single migration replaces all prior migration files. **Phase F squash,
-2026-06-22** (under Glad-Labs/glad-labs-stack). It supersedes:
+2026-06-22** (under Glad-Labs/poindexter). It supersedes:
 
 - The 0000_baseline.py that captured the Phase E squash (2026-06-06,
   Glad-Labs/poindexter#1194, which absorbed the Phase D baseline +
