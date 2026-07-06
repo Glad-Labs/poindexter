@@ -1,0 +1,28 @@
+[
+  {
+    "topic": "Running a 27B LLM locally on a 24GB consumer GPU: what actually works",
+    "angle": "A hands-on take for hobbyists deciding whether local inference is worth it in 2026, honest about the tradeoffs vs. cloud APIs.",
+    "target_length": 1200,
+    "extra_instructions": "Write for a technical but non-expert reader. Be concrete about VRAM, quantization, and tokens/sec. Take a clear position on when local is worth it and when it isn't.",
+    "snippets": [
+      {
+        "source": "own-notes",
+        "text": "On a 24GB card, a 27B model at Q4 quantization leaves roughly 4-6GB headroom and sustains usable but not fast generation. Thinking models can burn their whole token budget in the reasoning channel and return empty output if not configured to skip it."
+      }
+    ]
+  },
+  {
+    "topic": "Is a self-hosted content pipeline actually cheaper than paying for cloud AI?",
+    "angle": "Contrarian: the up-front GPU cost and electricity often erase the 'zero API cost' savings for low-volume publishers.",
+    "target_length": 1100,
+    "extra_instructions": "Do the real math out loud: GPU price amortized over posts, electricity, vs per-post cloud API cost. Take a stance rather than concluding 'it depends'.",
+    "snippets": []
+  },
+  {
+    "topic": "Why most AI-written blogs read like slop — and the few prompt habits that fix it",
+    "angle": "Practical craft piece: the specific prompt and editing moves that separate publishable AI drafts from generic filler.",
+    "target_length": 1300,
+    "extra_instructions": "Give concrete before/after examples of a sentence. Name the specific LLM tells to cut. Avoid being generic about 'quality'.",
+    "snippets": []
+  }
+]
