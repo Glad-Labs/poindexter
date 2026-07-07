@@ -369,6 +369,38 @@ class TestSpendLookups:
         sql2 = pool.fetchrow.await_args.args[0]
         assert "date_trunc('month'" in sql2
 
+    @pytest.mark.asyncio
+    async def test_paid_spend_predicate_keys_on_electricity_axis_not_ollama(self) -> None:
+        """The cap sums genuinely-paid cloud spend via the electricity axis.
+
+        Since the 2026-05-16 LiteLLM-router cutover, local inference logs
+        ``provider='litellm'`` (the real Ollama model lands in ``model``) with
+        ``cost_usd=0`` by the P1 write invariant. The old provider-name denylist
+        ``NOT IN ('electricity','ollama','ollama_native')`` therefore both (a)
+        matched **zero** ``'ollama'`` rows and (b) failed to exclude the
+        litellm-tagged local rows — leaving them in the paid-spend set, a
+        phantom-regression landmine (a future non-zero local ``cost_usd`` would
+        false-trip the cap, the 2026-06-21 incident). The gate must key on the
+        electricity axis (``cost_type``), renting the single definition owned by
+        ``cost_ledger`` so it can never drift from the ledger the operator
+        dashboards already read.
+        """
+        from services import cost_ledger
+
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(return_value={"total": 0.0})
+        guard = CostGuard(pool=pool)
+        await guard.get_daily_spend()
+        sql = pool.fetchrow.await_args.args[0]
+
+        # Rents the ledger's single api-axis definition (no drift).
+        assert cost_ledger.API_AXIS_PREDICATE in sql
+        assert "NOT LIKE 'electricity%'" in sql
+        # The stale, router-blind provider-name denylist must never come back.
+        assert "'ollama'" not in sql
+        assert "ollama_native" not in sql
+        assert "NOT IN (" not in sql
+
 
 class TestPreflightAlertPath:
     """Soft alert path logs a warning at >=alert_threshold_pct (line 333)."""

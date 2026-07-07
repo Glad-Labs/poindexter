@@ -29,11 +29,25 @@ _WINDOW_SQL = {
 # electricity row every gap_minutes; turns a raw count into a coverage %.
 _WINDOW_MINUTES = {"day": 24 * 60, "month": 30 * 24 * 60}
 
-# All SQL below interpolates only a hardcoded window literal (keyed by the
-# Window enum), never user input — hence the uniform ``# nosec B608``.
+# The single definition of the "paid-API axis": a genuinely-billable row is a
+# non-electricity row. Local inference/media rows are $0 by the P1 write
+# invariant (``dispatcher.py::_record_dispatch_cost`` writes ``cost_usd=0`` for
+# any ``not _is_paid_llm_call``), so ``SUM(cost_usd)`` over this predicate is
+# real cloud spend without any in-SQL locality heuristic. Exported so every
+# spend consumer — notably the ``cost_guard`` cap — rents the SAME definition
+# rather than re-deriving a provider-name denylist that drifts. The pre-2026-07
+# ``NOT IN ('electricity','ollama','ollama_native')`` denylist did exactly that:
+# it omitted ``'litellm'`` (the post-2026-05-16 router tag for local inference)
+# and matched zero ``'ollama'`` rows. Keyed on ``cost_type`` it is router-
+# agnostic and survives another router swap.
+API_AXIS_PREDICATE = "COALESCE(cost_type, 'inference') NOT LIKE 'electricity%'"
+
+# All SQL below interpolates only hardcoded literals (the window literal keyed by
+# the Window enum + ``API_AXIS_PREDICATE`` above), never user input — hence the
+# uniform ``# nosec B608``.
 _API_SQL = (
     "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
-    "WHERE COALESCE(cost_type, 'inference') NOT LIKE 'electricity%' AND {w}"
+    f"WHERE {API_AXIS_PREDICATE} AND {{w}}"
 )
 _ELEC_SQL = (
     "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
@@ -44,7 +58,7 @@ _MEASURED_COUNT_SQL = (
 )
 _EST_KWH_SQL = (
     "SELECT COALESCE(SUM(electricity_kwh), 0) FROM cost_logs "
-    "WHERE COALESCE(cost_type,'inference') NOT LIKE 'electricity%' AND {w}"
+    f"WHERE {API_AXIS_PREDICATE} AND {{w}}"
 )
 _BYTYPE_SQL = (
     "SELECT COALESCE(cost_type, 'inference') AS t, COALESCE(SUM(cost_usd), 0) AS v "

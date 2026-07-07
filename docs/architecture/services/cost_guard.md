@@ -42,8 +42,9 @@ us-east-1" on energy as well as dollars.
   persists the call. Auto-fills `cost_usd` and `electricity_kwh` if
   caller passed `None`. Returns the dollar cost actually written.
 - `await guard.get_daily_spend() -> float` / `get_monthly_spend()` —
-  current spend in USD, excluding `electricity` / `ollama` /
-  `ollama_native` rows.
+  current genuinely-paid cloud spend in USD (the paid-API axis: every
+  non-`electricity%` `cost_type` row; local inference/media rows are `$0`
+  by the write invariant, so they contribute nothing).
 - `await guard.estimate_cloud_kwh(...) / guard.estimate_local_kwh(*, duration_ms)` —
   energy estimators in kWh.
 - `guard.kwh_to_usd(kwh) -> float` — convert energy at the configured
@@ -105,9 +106,11 @@ Known cloud providers: `gemini`, `openai`, `anthropic`, `openrouter`.
 ## Dependencies
 
 - **Reads from:**
-  - `cost_logs` for daily/monthly spend sums (filters out
-    `electricity` / `ollama` / `ollama_native` provider rows so
-    home-power tracking doesn't trip the cap).
+  - `cost_logs` for daily/monthly spend sums (the paid-API axis —
+    `COALESCE(cost_type,'inference') NOT LIKE 'electricity%'`, shared with the
+    `cost_ledger` seam via `API_AXIS_PREDICATE`; local rows are `$0` by the
+    write invariant so they self-exclude, and home-power `electricity` rows are
+    separated by `cost_type`, not by a since-retired provider-name denylist).
   - Injected `site_config` for limit + rate + energy settings.
   - `services.cost_lookup` (post-#199, LiteLLM-backed with 2,600+
     provider/model combos) — referenced in the module docstring;
@@ -146,8 +149,9 @@ Known cloud providers: `gemini`, `openai`, `anthropic`, `openrouter`.
 
 ## Common ops
 
-- **Inspect today's spend:**
-  `SELECT provider, model, SUM(cost_usd) FROM cost_logs WHERE created_at >= date_trunc('day', NOW()) AND provider NOT IN ('electricity','ollama','ollama_native') GROUP BY 1,2 ORDER BY 3 DESC;`
+- **Inspect today's paid cloud spend** (the paid-API axis — local rows are `$0`
+  by the write invariant, so this sums genuinely-billable cloud calls only):
+  `SELECT provider, model, SUM(cost_usd) FROM cost_logs WHERE created_at >= date_trunc('day', NOW()) AND COALESCE(cost_type,'inference') NOT LIKE 'electricity%' GROUP BY 1,2 ORDER BY 3 DESC;`
 - **Raise the daily cap temporarily:**
   `poindexter settings set daily_spend_limit_usd 10` (then unset after the burst).
 - **Check whether a model is known to LiteLLM:** see

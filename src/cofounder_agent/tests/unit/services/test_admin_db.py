@@ -203,6 +203,53 @@ class TestLogCost:
                 }
             )
 
+    @pytest.mark.asyncio
+    async def test_model_performance_mirror_electricity_not_keyed_on_ollama(self):
+        """The model_performance electricity mirror must not key on the dead
+        ``provider='ollama'`` tag.
+
+        Since the 2026-05-16 LiteLLM cutover local inference logs
+        ``provider='litellm'`` with ``cost_usd=0`` (the P1 write invariant), so
+        per-call electricity lives in ``cost_logs.electricity_kwh`` + the
+        ``cost_ledger`` seam — never on the inference row's ``cost_usd``. The
+        mirror therefore writes ``electricity_cost_usd=0.0`` regardless of the
+        provider tag; a legacy ``'ollama'`` row carrying a stray cost must not
+        be mis-mirrored as electricity.
+        """
+        conn = MagicMock()
+        conn.fetchrow = AsyncMock(return_value=object())
+        conn.execute = AsyncMock(return_value="OK")
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+
+        pool.acquire = _acquire
+        db = AdminDatabase(pool=pool)
+
+        with patch(f"{_CONVERTER}.to_cost_log_response", return_value=_make_cost_log_sentinel()):
+            # Legacy 'ollama' tag with a stray nonzero cost — must NOT be
+            # mirrored onto electricity_cost_usd (the old bug).
+            await db.log_cost(
+                {"task_id": "t1", "phase": "draft", "model": "gemma",
+                 "provider": "ollama", "cost_usd": 0.007}
+            )
+            # Router tag with the invariant's $0 local cost.
+            await db.log_cost(
+                {"task_id": "t2", "phase": "draft", "model": "gemma",
+                 "provider": "litellm", "cost_usd": 0.0}
+            )
+
+        mp_calls = [
+            c for c in conn.execute.await_args_list
+            if c.args and "model_performance" in c.args[0]
+        ]
+        assert mp_calls, "model_performance mirror was never written"
+        # electricity_cost_usd is the final ($10) positional param.
+        for c in mp_calls:
+            assert c.args[-1] == 0.0
+
 
 # ---------------------------------------------------------------------------
 # get_task_costs

@@ -149,9 +149,18 @@ class AdminDatabase(DatabaseServiceMixin):
                             cost_log.get("output_tokens", 0),
                             float(cost_log.get("cost_usd", 0.0)),
                             cost_log.get("gpu_watts_avg"),
-                            # For Ollama the reported cost IS the electricity
-                            # cost — derived from GPU watts × duration upstream.
-                            float(cost_log.get("cost_usd", 0.0)) if cost_log.get("provider") == "ollama" else 0.0,
+                            # Per-call electricity is no longer carried on the
+                            # inference row's cost_usd. Under the P1 write
+                            # invariant a local call logs cost_usd=0 and its
+                            # electricity is attributed to cost_logs.electricity_kwh
+                            # (summed via the cost_ledger seam), while the brain's
+                            # measured PSU rows are the bill. The old branch keyed
+                            # on the self-hosted provider name (the pre-2026-05-16
+                            # LiteLLM-cutover tag, now dead — local inference logs
+                            # the router tag) and, post-invariant, would read $0
+                            # anyway. Mirror 0.0; read electricity from the ledger
+                            # / electricity_kwh, not from this column.
+                            0.0,
                         )
                     except Exception as mp_err:
                         logger.debug(

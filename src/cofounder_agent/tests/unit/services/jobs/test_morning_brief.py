@@ -31,6 +31,7 @@ def _make_pool(
     cost_row: dict | None = None,
     brain_failures: int = 0,
     brain_cycles: int = 0,
+    query_log: list[str] | None = None,
 ) -> Any:
     """Construct an asyncpg-pool-shaped MagicMock that returns canned rows.
 
@@ -67,6 +68,8 @@ def _make_pool(
     pool.fetchrow = AsyncMock(side_effect=_settings_fetchrow)
 
     async def _conn_fetch(query: str, *args: Any) -> list[dict]:
+        if query_log is not None:
+            query_log.append(query)
         if "FROM posts" in query:
             return published
         if "status = 'awaiting_approval'" in query:
@@ -78,11 +81,15 @@ def _make_pool(
         return []
 
     async def _conn_fetchrow(query: str, *args: Any) -> dict | None:
+        if query_log is not None:
+            query_log.append(query)
         if "FROM cost_logs" in query:
             return cost_row
         return None
 
     async def _conn_fetchval(query: str, *args: Any) -> Any:
+        if query_log is not None:
+            query_log.append(query)
         if "FROM audit_log" in query and "severity" in query:
             return brain_failures
         if "FROM audit_log" in query:
@@ -336,3 +343,49 @@ class TestWebhookMissing:
         assert "not configured" in result.detail
         assert result.changes_made == 0
         notify_mock.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Cost split — partition by the P1 write invariant, not the dead ollama tag
+# ---------------------------------------------------------------------------
+
+
+class TestCostPartitionSQL:
+    """The cost split partitions inference rows by the P1 write invariant
+    (local = ``cost_usd = 0``, paid cloud = ``cost_usd > 0``), NOT by the
+    ``provider = 'ollama'`` tag that has matched zero rows since the 2026-05-16
+    LiteLLM-router cutover (local inference now logs ``provider = 'litellm'``,
+    with the real model in the ``model`` column). Regression guard for the
+    drift fixed alongside PR #2158."""
+
+    @pytest.mark.asyncio
+    async def test_cost_split_partitions_on_cost_not_ollama_provider(self):
+        queries: list[str] = []
+        pool = _make_pool(
+            settings={
+                "morning_brief_enabled": "true",
+                "discord_ops_webhook_url": "https://discord.example/webhook/abc",
+            },
+            cost_row={"cloud_usd": 0.0, "cloud_calls": 0, "local_calls": 5},
+            query_log=queries,
+        )
+
+        with patch(
+            "services.jobs.morning_brief.notify_operator", new=AsyncMock(),
+        ), patch(
+            "services.jobs.morning_brief._gather_open_prs",
+            new=AsyncMock(return_value=[]),
+        ):
+            await MorningBriefJob().run(pool, {})
+
+        # The partition query is the one aliasing local_calls (the electricity
+        # SUM is a separate, correctly-tagged provider='electricity' query).
+        cost_sql = next((q for q in queries if "local_calls" in q), "")
+        assert cost_sql, "morning_brief never ran the cloud/local partition query"
+        # Router-agnostic partition on the write invariant, within the
+        # inference axis (electricity already excluded by cost_type).
+        assert "cost_usd > 0" in cost_sql
+        assert "cost_usd = 0" in cost_sql
+        assert "cost_type" in cost_sql and "inference" in cost_sql
+        # The stale provider-name partition must never come back.
+        assert "'ollama'" not in cost_sql

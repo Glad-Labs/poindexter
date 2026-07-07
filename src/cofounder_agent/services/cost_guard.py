@@ -43,6 +43,8 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
+from services.cost_ledger import API_AXIS_PREDICATE
+
 logger = logging.getLogger(__name__)
 
 
@@ -223,13 +225,27 @@ class CostGuard:
     # ------------------------------------------------------------------
 
     async def _sum_cost(self, window_sql: str, *, strict: bool = False) -> float:
-        """Sum ``cost_usd`` from cost_logs over the given SQL window.
+        """Sum genuinely-paid cloud ``cost_usd`` from cost_logs over ``window_sql``.
 
         ``window_sql`` is a fragment such as ``"date_trunc('day', NOW())"``
-        — substituted directly into the WHERE clause. Filters out the
-        ``electricity`` and ``ollama`` providers because those entries
-        track home-power draw, not cloud spend, and would falsely trip
-        the guard.
+        substituted directly into the WHERE clause. The cap counts only the
+        **paid-API axis** (``cost_ledger.API_AXIS_PREDICATE`` — every
+        non-electricity row): local inference/media rows are ``$0`` by the P1
+        write invariant, so they contribute nothing, and electricity rows are
+        excluded by ``cost_type``.
+
+        This replaced a provider-name denylist that excluded electricity and the
+        self-hosted backends by name but omitted the ``litellm`` router tag that
+        local inference has carried since the 2026-05-16 cutover — so local rows
+        leaked into the paid set (a phantom-regression landmine that false-tripped
+        the cap on 2026-06-21) while the self-hosted names it did list matched no
+        rows at all. Renting the ledger's single definition keeps the cap and the
+        operator dashboards on one meter.
+
+        TODO(cost-attribution P2): swap this inline SUM for
+        ``cost_ledger.get_spend(pool, window=..., strict=strict).api_usd`` when
+        P2 lands — the predicate already matches, so the numbers won't move.
+        See ``docs/superpowers/specs/2026-06-21-cost-control-attribution-design.md``.
         """
         if self._pool is None:
             return 0.0
@@ -239,8 +255,8 @@ class CostGuard:
                 SELECT COALESCE(SUM(cost_usd), 0.0) AS total
                 FROM cost_logs
                 WHERE created_at >= {window_sql}
-                  AND provider NOT IN ('electricity', 'ollama', 'ollama_native')
-                """,  # nosec B608  # window_sql is hardcoded literal from get_daily_spend/get_monthly_spend ("date_trunc('day'/'month', NOW())")
+                  AND {API_AXIS_PREDICATE}
+                """,  # nosec B608  # both interpolations are hardcoded literals: window_sql from get_daily/monthly_spend, API_AXIS_PREDICATE is a module constant
             )
             return float(row["total"]) if row else 0.0
         except Exception as e:

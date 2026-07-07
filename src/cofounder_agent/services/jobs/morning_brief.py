@@ -257,35 +257,42 @@ async def _gather_brief_data(pool: Any, lookback_hours: int) -> dict[str, Any]:
             interval,
         )
 
-        # Cost split — partition LLM inference calls by provider; report
-        # electricity separately so it doesn't masquerade as cloud spend.
-        # Reason this changed (2026-05-28 audit): the brief showed
-        # "$1.19 cloud (287 calls, 0 local)" when reality was 283
-        # electricity-tracker rows + 4 local Ollama inference calls + 0
-        # cloud LLM calls. Two distinct bugs:
-        #   1. local Ollama calls have cost_usd > 0 (LiteLLM estimates
-        #      per-token cost even for local), so the old "cost_usd > 0
-        #      ⇒ cloud" heuristic mislabeled them.
-        #   2. electricity_idle / electricity_active rows in cost_logs
-        #      have cost_usd > 0 and got counted as "cloud calls".
-        # Fix: partition on provider, filter to cost_type='inference'.
+        # Cost split — partition LLM inference calls into paid-cloud vs local by
+        # the P1 write invariant (a local row is cost_usd=0; a genuinely-paid
+        # cloud call is cost_usd>0), within the inference axis so electricity is
+        # excluded by cost_type; electricity is reported separately below.
+        #
+        # History: the 2026-05-28 audit switched this to partition on the
+        # local-provider name because local calls then carried a phantom
+        # cost_usd>0 (a LiteLLM per-token estimate), which broke the natural
+        # cost-based split. Two things have since flipped that predicate back:
+        #   1. The dispatcher now writes cost_usd=0 for every local call
+        #      (services/llm_providers/dispatcher.py::_record_dispatch_cost),
+        #      so "cost>0 ⇒ paid" is correct again — electricity is attributed
+        #      to the separate electricity_kwh column, not onto cost_usd.
+        #   2. The 2026-05-16 LiteLLM cutover means local inference logs the
+        #      router tag ('litellm', real model in `model`), so the old local-
+        #      provider tag matched ZERO rows — every local call was miscounted
+        #      as cloud.
+        # Router-agnostic cost partition restored; see PR #2158 for the sibling
+        # alert fix and docs/superpowers/specs/2026-06-21-cost-control-attribution-design.md.
         cost_row = await conn.fetchrow(
             """
             WITH inference AS (
-                SELECT provider, cost_usd
+                SELECT cost_usd
                 FROM cost_logs
                 WHERE created_at >= NOW() - ($1::text)::interval
                   AND COALESCE(cost_type, 'inference') = 'inference'
             )
             SELECT
                 COALESCE(SUM(cost_usd) FILTER (
-                    WHERE provider <> 'ollama'
+                    WHERE cost_usd > 0
                 ), 0)::float AS cloud_usd,
                 COUNT(*) FILTER (
-                    WHERE provider <> 'ollama'
+                    WHERE cost_usd > 0
                 )                                    AS cloud_calls,
                 COUNT(*) FILTER (
-                    WHERE provider = 'ollama'
+                    WHERE cost_usd = 0
                 )                                    AS local_calls
             FROM inference
             """,
