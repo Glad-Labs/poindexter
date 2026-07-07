@@ -233,10 +233,10 @@ def _parse_iso(val: Any) -> _dt.datetime | None:
     about the alert — exactly the silent-failure mode
     ``feedback_no_silent_defaults`` calls out.
 
-    Mirrors the parser in
-    ``services/integrations/handlers/webhook_alertmanager.py`` —
-    consolidated copy because that module's import depth would create
-    a circular path for this route file.
+    This route owns the parser outright. It once mirrored a sibling copy
+    in the inbound ``webhook.alertmanager_dispatch`` handler, but that
+    handler was retired 2026-07-05 when the orphaned inbound ``webhook.*``
+    surface was removed (its generic dispatcher had been deleted 2026-05-09).
     """
     if not val:
         return None

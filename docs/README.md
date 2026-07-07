@@ -136,9 +136,6 @@ publishing adapters, webhooks, retention.
 - [integrations/tap_singer_subprocess.md](integrations/tap_singer_subprocess.md)
 - [integrations/retention_downsample.md](integrations/retention_downsample.md)
 - [integrations/retention_ttl_prune.md](integrations/retention_ttl_prune.md)
-- [integrations/webhook_alertmanager_dispatch.md](integrations/webhook_alertmanager_dispatch.md)
-- [integrations/webhook_revenue_event_writer.md](integrations/webhook_revenue_event_writer.md)
-- [integrations/webhook_subscriber_event_writer.md](integrations/webhook_subscriber_event_writer.md)
 - [integrations/setup-gsc-and-ga4.md](integrations/setup-gsc-and-ga4.md) —
   Google Search Console + Analytics 4 setup
 

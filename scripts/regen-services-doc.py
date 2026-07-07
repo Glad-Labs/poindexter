@@ -236,12 +236,28 @@ def render_pipeline_section(graph_def: dict) -> list[str]:
 # greps. Add an entry when you delete/rename/consolidate a service.
 _DELETED_SERVICES: list[dict[str, str]] = [
     {
+        "names": (
+            "`integrations/handlers/webhook_alertmanager.py` + "
+            "`integrations/handlers/webhook_revenue.py` + "
+            "`integrations/handlers/webhook_subscriber.py`"
+        ),
+        "note": (
+            "The inbound `webhook.*` handler surface "
+            "(`alertmanager_dispatch` / `revenue_event_writer` / "
+            "`subscriber_event_writer`). Retired 2026-07-05: orphaned when the "
+            "generic inbound webhook dispatcher was deleted 2026-05-09 "
+            "(`registry.dispatch(\"webhook\", …)` has no caller). Live inbound "
+            "webhooks are dedicated routes — `routes/alertmanager_webhook_routes.py` "
+            "(Alertmanager) and `routes/external_webhooks.py` (Lemon Squeezy + Resend)."
+        ),
+    },
+    {
         "names": "`task_executor.py`",
         "note": (
             "Legacy polling daemon. Deleted 2026-05-16 (Prefect Stage 4, "
             "Glad-Labs/poindexter#410). Replaced by `flows/content_generation.py`; "
-            "helpers moved to `integrations/operator_notify.py`, "
-            "`integrations/handlers/webhook_alertmanager.py`, and `auto_publish.py`."
+            "helpers moved to `integrations/operator_notify.py` and "
+            "`auto_publish.py`."
         ),
     },
     {

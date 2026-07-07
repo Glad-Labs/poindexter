@@ -17,7 +17,7 @@ Core pieces:
   surface routes through this function so the GH-107 raw-get bug class
   cannot reappear inside the framework.
 - ``handlers/`` — one module per surface with the handler
-  implementations (``handlers/webhook_revenue.py``, etc.). Each module
+  implementations (``handlers/outbound_apprise.py``, etc.). Each module
   is imported at framework startup to populate the registry.
 """
 

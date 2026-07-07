@@ -9,10 +9,10 @@ obvious and test-coverable.
 ## Naming
 
 Handlers are namespaced by surface so the same short name can be
-reused across surfaces. Example: ``revenue_event_writer`` registered
-under both ``webhook`` and ``tap`` surfaces writes to
-``revenue_events`` whether invoked from an inbound webhook or a
-Singer tap record stream.
+reused across surfaces. Example: ``apprise_notify`` under ``outbound``
+is looked up as ``outbound.apprise_notify`` and ``ttl_prune`` under
+``retention`` as ``retention.ttl_prune`` — the surface prefix means the
+same short name could live under two surfaces without collision.
 
 The canonical form is ``"<surface>.<name>"``. Both forms are accepted
 at lookup time; the surface prefix is required at registration.
@@ -34,7 +34,7 @@ class HandlerRegistrationError(RuntimeError):
 Handler = Callable[..., Awaitable[Any]]
 
 # Keyed by "<surface>.<name>". Surfaces allocate their own namespace
-# (e.g. "webhook.revenue_event_writer") so short names can repeat.
+# (e.g. "outbound.apprise_notify") so short names can repeat.
 _REGISTRY: dict[str, Handler] = {}
 
 

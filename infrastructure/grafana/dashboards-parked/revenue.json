@@ -42,7 +42,7 @@
     "from": "now-90d",
     "to": "now"
   },
-  "description": "Money in. Reads the revenue_events table (written by the webhook.revenue_event_writer handler from Lemon Squeezy + any affiliate/webhook source). Refunds are stored as negative amount_usd, so SUM(amount_usd) is net. Was a documented gap: revenue_events had zero dashboards until 2026-06-02.",
+  "description": "Money in. Reads the revenue_events table (written by the Lemon Squeezy webhook route, routes/external_webhooks.py, plus any affiliate/webhook source). Refunds are stored as negative amount_usd, so SUM(amount_usd) is net. Was a documented gap: revenue_events had zero dashboards until 2026-06-02.",
   "panels": [
     {
       "type": "row",
