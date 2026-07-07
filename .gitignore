@@ -48,6 +48,9 @@ coverage/
 *.coverage
 .coverage*
 
+# A/B writer harness output (generated candidates + answer keys)
+scripts/experiments/runs/
+
 # ============================================================
 # Log files (including rotated logs)
 # ============================================================

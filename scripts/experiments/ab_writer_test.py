@@ -82,7 +82,10 @@ DEFAULT_MODELS = [
 
 # Generation params (kept modest + fixed across contenders for fairness).
 OLLAMA_NUM_PREDICT = 2048
-ANTHROPIC_MAX_TOKENS = 4096
+# NOTE: on adaptive-thinking models (Sonnet 5+) max_tokens is a COMBINED
+# budget for thinking + text; 4096 starved the text on reasoning-heavy
+# topics (observed: draft cut mid-word after ~3K thinking tokens).
+ANTHROPIC_MAX_TOKENS = 8192
 TEMPERATURE = 0.7
 OLLAMA_TIMEOUT = 600  # local 27B can be slow
 ANTHROPIC_TIMEOUT = 180
@@ -169,6 +172,13 @@ def call_ollama(model_cfg: dict, prompt: str) -> str:
     msg = result.get("message") or {}
     content = (msg.get("content") or "").strip()
     if not content:
+        # Non-thinking models occasionally return a transient empty generation;
+        # one retry before declaring failure.
+        print(" [empty, retrying]", end="", flush=True)
+        result = _post_json(f"{OLLAMA_URL}/api/chat", payload, {}, OLLAMA_TIMEOUT)
+        msg = result.get("message") or {}
+        content = (msg.get("content") or "").strip()
+    if not content:
         raise RuntimeError("empty content from Ollama (thinking model? try 'think': false)")
     return content
 
@@ -184,7 +194,18 @@ def call_anthropic(model_cfg: dict, prompt: str) -> str:
         "messages": [{"role": "user", "content": prompt}],
     }
     headers = {"x-api-key": key, "anthropic-version": ANTHROPIC_VERSION}
-    result = _post_json(ANTHROPIC_URL, payload, headers, ANTHROPIC_TIMEOUT)
+    try:
+        result = _post_json(ANTHROPIC_URL, payload, headers, ANTHROPIC_TIMEOUT)
+    except urllib.error.HTTPError as e:
+        detail = e.read().decode("utf-8", "replace")
+        # Sonnet 5 / Opus 4.7+ reject sampling params outright ("`temperature`
+        # is deprecated for this model") — retry once at the model's default.
+        if e.code == 400 and "temperature" in detail and "temperature" in payload:
+            print(" [retrying without temperature]", end="", flush=True)
+            payload.pop("temperature")
+            result = _post_json(ANTHROPIC_URL, payload, headers, ANTHROPIC_TIMEOUT)
+        else:
+            raise RuntimeError(detail[:300]) from e
     parts = [b.get("text", "") for b in result.get("content", []) if b.get("type") == "text"]
     text = "".join(parts).strip()
     if not text:
