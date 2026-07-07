@@ -202,28 +202,43 @@ def test_speaches_backed_overrides_probe_health(baseline_seeds_text: str) -> Non
         )
 
 
-def test_podcast_tts_is_monitored_not_skipped(baseline_seeds_text: str) -> None:
-    """podcast_tts_base_url must be monitored via its /health override, not muted.
+def test_overridden_surfaces_are_monitored_not_skiplisted(baseline_seeds_text: str) -> None:
+    """Surfaces with a probe override must not ALSO be skip-listed, or they're muted.
 
-    It historically carried BOTH a skip-list entry AND a /health override — a
+    A key in BOTH operator_url_probe_skip_keys AND the override map is a
     contradiction: ``collect_app_setting_urls`` drops skip-listed keys before the
-    override is ever consulted, so the speaches podcast-TTS surface went
-    unmonitored while its siblings (caption / stt / tts) were probed. Un-skipping
-    it (while keeping the override) monitors it like the others, per the
-    no-silencing rule. Guard so it can't be silently re-muted.
+    override is ever consulted, so the skip-list wins and the surface goes
+    unmonitored. These were migrated off the skip-list (keeping their overrides)
+    so they're actually probed — the four speaches keys via /health, the three
+    ping/bucket surfaces via alive_codes 200-499 — per the no-silencing rule.
+    Guard so none can be silently re-muted.
+
+    ``voice_agent_claude_code_host_brain_url`` is deliberately excluded: its
+    /healthz host service (voice_brain_host on :8123) is intermittent, so it
+    stays skip-listed on purpose.
     """
     skip_raw = _sql_string_value(baseline_seeds_text, "operator_url_probe_skip_keys") or ""
     skip_keys = {s.strip() for s in skip_raw.split(",") if s.strip()}
-    assert "podcast_tts_base_url" not in skip_keys, (
-        "podcast_tts_base_url is skip-listed AND has a /health override — the "
-        "skip-list wins, so the surface is muted, not monitored. Remove it from "
-        "operator_url_probe_skip_keys."
+    overrides = _overrides(baseline_seeds_text)
+    monitored = (
+        "plugin.caption_provider.speaches.base_url",
+        "podcast_tts_base_url",
+        "voice_agent_stt_base_url",
+        "voice_agent_tts_base_url",
+        "google_sitemap_ping_url",
+        "indexnow_ping_url",
+        "storage_public_url",
     )
-    entry = _overrides(baseline_seeds_text).get("podcast_tts_base_url")
-    assert entry is not None and entry.get("probe_url") == "http://speaches:8000/health", (
-        "podcast_tts_base_url must keep its /health override so removing it from "
-        "the skip-list actually monitors it (not a bare /v1 404)."
-    )
+    for key in monitored:
+        assert key not in skip_keys, (
+            f"{key} is skip-listed AND has a probe override — the skip-list wins, "
+            f"so the surface is muted, not monitored. Remove it from "
+            f"operator_url_probe_skip_keys."
+        )
+        assert overrides.get(key) is not None, (
+            f"{key} must keep its override so un-skipping it actually monitors it "
+            f"(not a bare 404/405 false page)."
+        )
 
 
 def test_overrides_seed_is_idempotent(baseline_seeds_text: str) -> None:
