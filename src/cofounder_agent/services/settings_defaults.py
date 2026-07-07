@@ -773,8 +773,10 @@ DEFAULTS: dict[str, str] = {
     # qa_gates.opening_originality — SCORES on every run (QA Rails dashboard) but
     # does not veto until graduated. max_similarity is the cosine ceiling above
     # which the opening counts as a near-copy of its nearest published neighbor.
+    # 0.83 calibrated 2026-07-07 against the published corpus (rail median 0.73,
+    # p95 0.83); the prior 0.90 sat near p99 and caught 1 of 4 exemplar echoes.
     'opening_originality_enabled': 'true',
-    'opening_originality_max_similarity': '0.9',
+    'opening_originality_max_similarity': '0.83',
     # Citation reconciliation + advisory unlinked-attribution rail (#765).
     # why: deterministic repair that re-links named sources the writer dropped
     # the URL for, matched against the research corpus by domain handle — free,

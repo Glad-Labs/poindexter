@@ -206,3 +206,43 @@ class TestExtractOpening:
 
     def test_empty_returns_empty(self):
         assert qa_opening_originality._extract_opening("   ") == ""
+
+    def test_strips_leading_html_image(self):
+        """An image-first post (the-vram-currency-problem shape) must embed the
+        prose opening, not the <img> tag. Pre-fix that post opened with the
+        identical VRAM sentence yet scored only 0.749 (not ~0.90) because the
+        extractor fed the embedder its leading ``<img>`` HTML."""
+        content = (
+            '<img src="https://cdn.example/x.webp" alt="White cubes fill a glass">\n\n'
+            "If you are running local LLMs, you know that VRAM is the only currency."
+        )
+        opening = qa_opening_originality._extract_opening(content)
+        assert opening.startswith("If you are running local LLMs")
+        assert "<img" not in opening
+
+    def test_strips_leading_markdown_image(self):
+        content = (
+            "![a chart of throughput](https://cdn.example/y.png)\n\n"
+            "The actual analysis begins in this very sentence about inference."
+        )
+        opening = qa_opening_originality._extract_opening(content)
+        assert opening.startswith("The actual analysis begins")
+        assert "![a chart" not in opening
+
+    def test_strips_heading_then_image(self):
+        content = (
+            "# Redundant Title\n\n"
+            "<img src='z.webp' alt='hero'>\n\n"
+            "Prose that is the true opening of the post continues at length here."
+        )
+        opening = qa_opening_originality._extract_opening(content)
+        assert opening.startswith("Prose that is the true opening")
+        assert "Redundant Title" not in opening
+        assert "<img" not in opening
+
+    def test_keeps_prose_that_merely_mentions_image_word(self):
+        """Precision guard: a real prose opening is never stripped just because
+        it contains the word 'image' or a mid-sentence link."""
+        content = "The image of a lone GPU says a lot about local inference costs."
+        opening = qa_opening_originality._extract_opening(content)
+        assert opening.startswith("The image of a lone GPU")

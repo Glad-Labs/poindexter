@@ -34,7 +34,13 @@ two_pass writer grounds each draft on prior posts, so a dense topic cluster
 makes every new post paraphrase the sibling it retrieved; the 2026-06 "VRAM is
 the only currency that matters" cluster is the exemplar). Advisory-first via
 `qa_gates.opening_originality` (scores on every run, visible on the QA Rails
-dashboard); graduate it to a hard veto with `required_to_pass=true`.
+dashboard); graduate it to a hard veto with `required_to_pass=true` — but only
+after excluding same-niche/series posts from the comparison, since the recurring
+`dev_diary` "what-we-shipped" logs share an opening cadence by template and would
+otherwise be false-vetoed. The default ceiling is `0.83`, calibrated against the
+live published corpus (2026-07-07): the rail's real opening-vs-stored similarity
+runs a median of ~0.73 and p95 ~0.83, so the prior `0.90` sat near p99 and
+caught only one of the four exemplar VRAM-cluster echoes.
 `qa.aggregate` combines them into the gate decision and halts the graph
 on reject. `multi_model_qa.py` stays as the rail library the (other) atoms
 delegate to.

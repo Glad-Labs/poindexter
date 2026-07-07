@@ -13,18 +13,26 @@ defect is only visible *against the corpus*.
 
 This rail embeds the draft's opening and finds its nearest published-post
 neighbor by cosine similarity. Above ``opening_originality_max_similarity``
-(default 0.90) it flags the draft and names the offending post.
+(default 0.83) it flags the draft and names the offending post. The default was
+calibrated 2026-07-07 against the live published corpus: the rail's real
+opening-vs-stored-chunk similarity has a median of 0.73 and p95 of 0.83, so the
+prior 0.90 sat near p99 and caught only 1 of the 4 exemplar VRAM-cluster echoes.
 
 Advisory-first: seeded ``qa_gates.opening_originality.required_to_pass=false``
 so it SCORES on every run (visible on the QA Rails dashboard) but does not veto
-until an operator graduates it. Master switch ``opening_originality_enabled``
-(default true). Chain position: after ``qa.self_consistency``, before
-``qa.web_factcheck``.
+until an operator graduates it. NOTE: graduating to a hard veto
+(``required_to_pass=true``) first needs same-niche/series exclusion — the
+recurring ``dev_diary`` "what-we-shipped" posts share an opening cadence *by
+template* (they use ``narrate_bundle``, not RAG grounding) and dominate the
+flag list, so a naive hard gate would false-veto every shipping log. Master
+switch ``opening_originality_enabled`` (default true). Chain position: after
+``qa.self_consistency``, before ``qa.web_factcheck``.
 """
 
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
@@ -64,10 +72,23 @@ ATOM_META = AtomMeta(
 
 # Default cosine ceiling: above this, the opening is treated as a near-copy of
 # the nearest published post. DB-tunable via opening_originality_max_similarity.
-_DEFAULT_MAX_SIMILARITY = 0.90
+# 0.83 calibrated 2026-07-07 against the published corpus (rail median 0.73, p95
+# 0.83); the prior 0.90 sat near p99 and missed 3 of 4 exemplar echoes.
+_DEFAULT_MAX_SIMILARITY = 0.83
 # How much of the opening to embed. The echo lives in the first paragraph;
 # embedding the whole post would dilute the signal.
 _OPENING_CHARS = 400
+
+# Leading media boilerplate the pipeline injects ahead of the prose — a featured
+# or inline image (HTML ``<img>``/``<figure>``/``<picture>`` or anchor-wrapped
+# image, a markdown ``![alt](url)`` or linked image ``[![...``). Embedding it as
+# the "opening" blinds the rail to the actual prose: ``the-vram-currency-problem``
+# opens with the identical VRAM sentence yet scored 0.749 (not ~0.90) because its
+# body starts with an ``<img>`` tag. Anchored at the FRONT (leading-boilerplate
+# skip only) so a mid-article image never truncates real prose.
+_LEADING_IMAGE_RE = re.compile(
+    r"(?i)^(?:<img\b|<figure\b|<picture\b|<a\b[^>]*>\s*<img\b|!\[|\[!\[)"
+)
 
 
 def _is_enabled(site_config: Any) -> bool:
@@ -82,12 +103,15 @@ def _is_enabled(site_config: Any) -> bool:
 
 
 def _extract_opening(content: str, *, max_chars: int = _OPENING_CHARS) -> str:
-    """The substantive opening prose, minus a leading H1/H2 title.
+    """The substantive opening prose, minus a leading H1/H2 title + injected image.
 
     The canonical title is generated separately, so a leading ``# ...`` line is
     boilerplate that would only add noise (and false-match other posts' titles).
-    We skip leading blank + heading lines and take the first ``max_chars`` of
-    the body.
+    A featured/inline image the pipeline injects ahead of the first paragraph is
+    the same kind of noise — worse, embedding its ``<img>``/``![]`` markup as the
+    "opening" makes the rail blind to the real prose (see ``_LEADING_IMAGE_RE``).
+    We skip leading blank + heading + image lines and take the first ``max_chars``
+    of the body.
     """
     text = (content or "").strip()
     if not text:
@@ -95,8 +119,12 @@ def _extract_opening(content: str, *, max_chars: int = _OPENING_CHARS) -> str:
     body_lines: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
-        if not body_lines and (not stripped or stripped.startswith("#")):
-            continue  # skip leading blanks + title heading
+        if not body_lines and (
+            not stripped
+            or stripped.startswith("#")
+            or _LEADING_IMAGE_RE.match(stripped)
+        ):
+            continue  # skip leading blanks + title heading + injected image
         body_lines.append(line)
     body = "\n".join(body_lines).strip() or text
     return body[:max_chars]
