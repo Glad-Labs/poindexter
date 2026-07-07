@@ -118,7 +118,7 @@ torch = { version = ">=2.7,<2.12", source = "pytorch-cpu", optional = true }
 # Floor at 5.3.0 closes CVE-2026-4372 (HIGH) + CVE-2026-1839 (RCE via
 # malicious checkpoint / Text2Text pipeline). The 5.x line requires the
 # sentence-transformers >=5.6 bump below (3.x hard-caps transformers <5).
-transformers = { version = ">=5.3.0", optional = true }
+transformers = { version = ">=5.13.0", optional = true }
 # `accelerate` removed — zero imports in tracked code. Was optional ml extra.
 
 # Additional Required Packages
