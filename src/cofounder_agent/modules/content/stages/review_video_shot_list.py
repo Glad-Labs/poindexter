@@ -21,6 +21,8 @@ from datetime import datetime, timezone
 from typing import Any
 
 from modules.content.stages.generate_video_shot_list import (
+    _DIRECTOR_MAX_RETRIES_DEFAULT,
+    _DIRECTOR_MAX_TOKENS_DEFAULT,
     _DIRECTOR_TIMEOUT_DEFAULT,
     _extract_json_object,
     _log_audit,
@@ -39,15 +41,15 @@ class ReviewVideoShotListStage:
 
     name = "review_video_shot_list"
     description = "Director self-critique — revise the shot list before Gate 1"
-    # Up to two writer-grade director-class LLM calls (long + short), each capped
-    # by the shared ``video_director_timeout_seconds`` DB setting — the same knob
-    # the director uses, since the review is the identical model doing a second
-    # 6144-token structured pass. This stage-level budget only bites on the legacy
-    # template_runner path (canonical_blog runs on graph_def, which enforces the
-    # per-call ceiling), so size it to 2× the per-call default + margin so it never
-    # pre-empts the two dispatches it wraps. Non-halting: an overrun skips the
-    # review, never blocks the post.
-    timeout_seconds = 2 * _DIRECTOR_TIMEOUT_DEFAULT + 80
+    # Two lanes (long + short), each up to (1 + max_retries) writer-grade
+    # director-class LLM calls capped by the shared ``video_director_timeout_seconds``
+    # DB setting — the same knobs the director uses, since the review is the
+    # identical model doing a second structured pass. This stage-level budget only
+    # bites on the legacy template_runner path (canonical_blog runs on graph_def,
+    # which enforces the per-call ceiling), so size it above the worst-case
+    # dispatch count so it never pre-empts the dispatches it wraps. Non-halting: an
+    # overrun skips the review, never blocks the post.
+    timeout_seconds = (1 + _DIRECTOR_MAX_RETRIES_DEFAULT) * 2 * _DIRECTOR_TIMEOUT_DEFAULT + 80
     halts_on_failure = False
 
     async def _resolve_model(self, *, cfg: Any, pool: Any) -> str | None:
@@ -89,6 +91,8 @@ class ReviewVideoShotListStage:
         task_id: str | None,
         now_iso: str,
         think: bool | None = None,
+        max_tokens: int = _DIRECTOR_MAX_TOKENS_DEFAULT,
+        max_retries: int = 0,
     ) -> dict[str, Any] | None:
         """Render the review prompt, dispatch, validate. ``None`` on any failure."""
         from services.gpu_scheduler import gpu
@@ -111,28 +115,44 @@ class ReviewVideoShotListStage:
             return None
 
         # Disable the reasoning channel (default) — the reviewer is the same
-        # thinking-capable director model doing a second 6144-token structured
-        # pass, so leaving thinking on starves the revised JSON exactly like the
+        # thinking-capable director model doing a second structured pass, so
+        # leaving thinking on starves the revised JSON exactly like the
         # director's (see _resolve_director_think). Skip ``think`` on None.
         think_kwargs: dict[str, Any] = {} if think is None else {"think": think}
-        try:
-            async with gpu.lock("ollama", model=model, task_id=task_id, phase="video_review"):
-                result = await platform.dispatch.complete(
-                    pool=pool,
-                    messages=[{"role": "user", "content": rendered}],
-                    model=model,
-                    tier="standard",
-                    timeout_s=timeout_s,
-                    temperature=0.4,
-                    max_tokens=6144,
-                    **think_kwargs,
-                )
-            output = (getattr(result, "text", "") or "").strip()
-        except Exception as exc:
-            logger.warning("[VIDEO_REVIEW] dispatch failed (%s, %s)", exc, prompt_key)
-            return None
 
-        body = _extract_json_object(output)
+        # Retry on an empty/truncated extract, same as the director — a verbose
+        # revision cut past max_tokens otherwise silently discards the whole
+        # review (non-halting → the unreviewed draft ships). Dispatch exceptions
+        # (infra) fail fast; only a structurally-empty result retries.
+        body: str | None = None
+        attempts = 1 + max(0, max_retries)
+        for attempt in range(attempts):
+            try:
+                async with gpu.lock("ollama", model=model, task_id=task_id, phase="video_review"):
+                    result = await platform.dispatch.complete(
+                        pool=pool,
+                        messages=[{"role": "user", "content": rendered}],
+                        model=model,
+                        tier="standard",
+                        timeout_s=timeout_s,
+                        temperature=0.4,
+                        max_tokens=max_tokens,
+                        **think_kwargs,
+                    )
+                output = (getattr(result, "text", "") or "").strip()
+            except Exception as exc:
+                logger.warning("[VIDEO_REVIEW] dispatch failed (%s, %s)", exc, prompt_key)
+                return None
+
+            body = _extract_json_object(output)
+            if body:
+                break
+            if attempt < attempts - 1:
+                logger.info(
+                    "[VIDEO_REVIEW] no JSON in review output (%s, attempt %d/%d) "
+                    "— retrying", prompt_key, attempt + 1, attempts,
+                )
+
         if not body:
             logger.warning("[VIDEO_REVIEW] no JSON in review output (%s)", prompt_key)
             return None
@@ -202,8 +222,14 @@ class ReviewVideoShotListStage:
         task_id = context.get("task_id")
         # Disable the reasoning channel (default) — same rationale as the
         # director: leaving it on starves the revised JSON (see
-        # _resolve_director_think).
+        # _resolve_director_think). Same output-token + retry budget too.
         director_think = _resolve_director_think(cfg)
+        review_max_tokens = cfg.get_int(
+            "video_director_max_tokens", _DIRECTOR_MAX_TOKENS_DEFAULT
+        )
+        review_max_retries = cfg.get_int(
+            "video_director_max_retries", _DIRECTOR_MAX_RETRIES_DEFAULT
+        )
 
         # LONG. Non-halting: fall back to the unreviewed list on any failure.
         revised = await self._review_one(
@@ -212,6 +238,7 @@ class ReviewVideoShotListStage:
             script=context.get("podcast_script", ""), current=current,
             title=title, content_text=content_text, site_name=site_name,
             task_id=task_id, now_iso=now_iso, think=director_think,
+            max_tokens=review_max_tokens, max_retries=review_max_retries,
         )
         updates: dict[str, Any] = {
             "video_shot_list": revised if revised is not None else current,
@@ -226,6 +253,7 @@ class ReviewVideoShotListStage:
                 script=context.get("short_summary_script", ""), current=short,
                 title=title, content_text=content_text, site_name=site_name,
                 task_id=task_id, now_iso=now_iso, think=director_think,
+                max_tokens=review_max_tokens, max_retries=review_max_retries,
             )
             updates["short_shot_list"] = revised_short if revised_short is not None else short
 

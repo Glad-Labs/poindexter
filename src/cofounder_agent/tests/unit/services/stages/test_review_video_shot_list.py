@@ -53,7 +53,16 @@ def _platform(
 ) -> MagicMock:
     p = MagicMock()
     p.config.get = MagicMock(return_value=model)
-    p.config.get_int = MagicMock(return_value=timeout)
+    # get_int: the configured timeout for the timeout knob, 0 retries so these
+    # legacy fixtures stay single-dispatch (retry has its own tests below), and
+    # the caller default (e.g. max_tokens 8192) for everything else.
+    def _get_int(key: str, default: int = 0) -> int:
+        if key == "video_director_timeout_seconds":
+            return timeout
+        if key == "video_director_max_retries":
+            return 0
+        return default
+    p.config.get_int = MagicMock(side_effect=_get_int)
     p.dispatch.complete = AsyncMock(return_value=MagicMock(text=dispatch_text))
     return p
 
@@ -165,8 +174,13 @@ async def test_review_timeout_read_from_db_setting() -> None:
         mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
         await ReviewVideoShotListStage().execute(ctx, {})
 
-    # timeout sourced from the DB setting (not the old hardcoded 120)
-    assert platform.config.get_int.call_args.args[0] == "video_director_timeout_seconds"
+    # timeout sourced from the DB setting (not the old hardcoded 120). get_int
+    # is now called for several knobs (timeout / max_tokens / max_retries), so
+    # scan the call list rather than asserting on the last call.
+    assert any(
+        c.args[0] == "video_director_timeout_seconds"
+        for c in platform.config.get_int.call_args_list
+    )
     _, kwargs = platform.dispatch.complete.call_args
     assert kwargs["timeout_s"] == 555
 
@@ -237,3 +251,66 @@ async def test_review_dispatch_disables_thinking_by_default() -> None:
 
     assert result.ok
     assert platform.dispatch.complete.call_args.kwargs["think"] is False
+
+
+@pytest.mark.asyncio
+async def test_review_dispatch_uses_configured_max_tokens() -> None:
+    """max_tokens (default 8192) reaches the reviewer dispatch — same headroom
+    the director got, since the reviewer serializes the same JSON shape."""
+    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+
+    revised = _valid_list(source1="wan21")
+    platform = MagicMock()
+    _cfg = {"video_director_model": "ollama/gemma-4-31B-it-qat:latest"}
+    platform.config.get = MagicMock(side_effect=lambda k, d=None: _cfg.get(k, d))
+    platform.config.get_int = MagicMock(side_effect=lambda k, d=0: d)
+    platform.dispatch.complete = AsyncMock(return_value=MagicMock(text=json.dumps(revised)))
+    ctx = {
+        "title": "T", "content": "C body " * 20, "podcast_script": "script " * 20,
+        "video_shot_list": _valid_list(),
+        "platform": platform,
+        "database_service": _make_db(),
+        "task_id": "t1",
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+        mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
+        await ReviewVideoShotListStage().execute(ctx, {})
+
+    assert platform.dispatch.complete.call_args.kwargs["max_tokens"] == 8192
+
+
+@pytest.mark.asyncio
+async def test_review_retries_on_empty_extract_and_recovers() -> None:
+    """The reviewer retries a no-JSON (truncated) revision — same guard as the
+    director — so a verbose revision that overflows the budget isn't silently
+    discarded (which would ship the unreviewed draft)."""
+    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+
+    revised = _valid_list(source1="wan21")
+    platform = MagicMock()
+    _cfg = {"video_director_model": "ollama/gemma-4-31B-it-qat:latest"}
+    platform.config.get = MagicMock(side_effect=lambda k, d=None: _cfg.get(k, d))
+    platform.config.get_int = MagicMock(side_effect=lambda k, d=0: d)  # max_retries=1
+    platform.dispatch.complete = AsyncMock(side_effect=[
+        MagicMock(text='{ "version": 1, "shots": [ {"idx": 0'),  # truncated → no object
+        MagicMock(text=json.dumps(revised)),                       # retry → valid
+    ])
+    ctx = {
+        "title": "T", "content": "C body " * 20, "podcast_script": "script " * 20,
+        "video_shot_list": _valid_list(),
+        "platform": platform,
+        "database_service": _make_db(),
+        "task_id": "t1",
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+        mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
+        result = await ReviewVideoShotListStage().execute(ctx, {})
+
+    assert result.ok
+    assert platform.dispatch.complete.call_count == 2  # retried once
+    assert result.metrics["reviewed"] is True
+    assert result.context_updates["video_shot_list"]["shots"][1]["source"] == "wan21"

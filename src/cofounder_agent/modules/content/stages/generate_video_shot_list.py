@@ -61,6 +61,23 @@ _WORDS_PER_SECOND = 2.5  # Rough TTS narration pace; ~150 WPM
 _DIRECTOR_TIMEOUT_DEFAULT = 300
 
 
+# Output-token ceiling for the director dispatch. With thinking disabled
+# (_resolve_director_think) the whole budget goes to the JSON shot list, but a
+# verbose director occasionally serializes a long list (30 shots × long
+# intent/prompt strings) past the old hardcoded 6144, truncating the JSON
+# mid-object → _extract_json_object finds no complete object → empty shot list →
+# no video (2026-07-07: a real 300s post, d1979ebb, truncated this way even with
+# think=False). 8192 gives headroom; DB-tunable via ``video_director_max_tokens``.
+_DIRECTOR_MAX_TOKENS_DEFAULT = 8192
+
+# Retries when the director emits no extractable JSON object (the truncation /
+# empty-output symptom). A fresh generation almost always lands a complete list
+# — cheaper than losing the whole post's video to one unlucky run. DB-tunable via
+# ``video_director_max_retries``; 0 disables retrying. Dispatch *exceptions*
+# (infra) never retry here — only a structurally-empty result does.
+_DIRECTOR_MAX_RETRIES_DEFAULT = 1
+
+
 def _resolve_director_think(cfg: Any) -> bool | None:
     """``think`` flag for the director's (and reviewer's) LLM dispatches.
 
@@ -433,14 +450,14 @@ class GenerateVideoShotListStage:
 
     name = "generate_video_shot_list"
     description = "Director — produce shot list (sources, prompts, durations) for the post's video"
-    # Up to two LLM dispatches (long + short), each capped at the
-    # ``video_director_timeout_seconds`` DB setting (default
+    # Two lanes (long + short), each up to (1 + max_retries) LLM dispatches
+    # capped at the ``video_director_timeout_seconds`` DB setting (default
     # _DIRECTOR_TIMEOUT_DEFAULT). This stage-level budget only bites on the
     # legacy template_runner path — canonical_blog runs on graph_def, which
     # enforces the per-call ceiling inside _produce_shot_list — so keep it
-    # comfortably above 2× the per-call default so it never pre-empts the
-    # dispatches it wraps.
-    timeout_seconds = 2 * _DIRECTOR_TIMEOUT_DEFAULT + 80
+    # comfortably above the worst-case dispatch count (2 lanes × retry attempts)
+    # so it never pre-empts the dispatches it wraps.
+    timeout_seconds = (1 + _DIRECTOR_MAX_RETRIES_DEFAULT) * 2 * _DIRECTOR_TIMEOUT_DEFAULT + 80
     halts_on_failure = False  # Director failure shouldn't block the post
 
     async def _produce_shot_list(
@@ -459,6 +476,8 @@ class GenerateVideoShotListStage:
         site_name: str,
         timeout_s: int,
         think: bool | None = None,
+        max_tokens: int = _DIRECTOR_MAX_TOKENS_DEFAULT,
+        max_retries: int = 0,
     ) -> dict[str, Any] | None:
         """Render the director prompt, dispatch the LLM, validate the result.
 
@@ -511,64 +530,83 @@ class GenerateVideoShotListStage:
         # Dispatch the LLM call (Seam 1 Wave 3d, #667 — via the handle).
         from services.gpu_scheduler import gpu
 
-        director_output = ""
         # Disable the director model's reasoning channel (default) — a
         # thinking-capable model (the gemma-4-31B-it-qat director) otherwise
-        # spends the shared 6144-token output budget reasoning and starves the
-        # JSON shot list (empty content → json_extract failure; 2026-07-07).
-        # Only forward ``think`` when resolved — skip on None so an operator
-        # opt-out leaves the backend default rather than pinning it. Mirrors
-        # the writer path (#2163).
+        # spends the shared output budget reasoning and starves the JSON shot
+        # list (empty content → json_extract failure; 2026-07-07). Only forward
+        # ``think`` when resolved — skip on None so an operator opt-out leaves
+        # the backend default rather than pinning it. Mirrors the writer path
+        # (#2163).
         think_kwargs: dict[str, Any] = {} if think is None else {"think": think}
-        try:
-            async with gpu.lock(
-                "ollama", model=model,
-                task_id=task_id, phase="video_director",
-            ):
-                result = await platform.dispatch.complete(
-                    pool=pool,
-                    messages=[{"role": "user", "content": rendered_prompt}],
-                    model=model,
-                    tier="standard",
-                    timeout_s=timeout_s,
-                    temperature=0.4,  # Lower temp — director should be decisive
-                    # A full 30-shot list serializes past 3072 tokens, which
-                    # truncated the JSON mid-list (json_extract failures) — the
-                    # reconcile pass caps the shot count, but only if the model
-                    # was allowed to finish emitting valid JSON first.
-                    max_tokens=6144,
-                    **think_kwargs,
-                )
-            director_output = (getattr(result, "text", "") or "").strip()
-        except Exception as exc:
-            logger.warning(
-                "[VIDEO_DIRECTOR] LLM dispatch failed (%s, key=%s) — skipping",
-                exc, prompt_key,
-            )
-            await _log_audit(
-                pool,
-                event_type="video_director.shot_list_failed",
-                task_id=task_id,
-                details={
-                    "phase": "llm_dispatch",
-                    "prompt_key": prompt_key,
-                    "error": str(exc),
-                    # The effective per-call ceiling — so a future timeout
-                    # failure shows at a glance whether the DB setting
-                    # actually reached the dispatch (2026-06-20 incident:
-                    # "Timeout passed=120.0" rows from a stale worker still
-                    # running the pre-#1750 hardcoded 120s).
-                    "timeout_s": timeout_s,
-                },
-                severity="warning",
-            )
-            return None
 
-        # Parse + validate. The schema enforces all the pacing rules
-        # (no >2 consecutive same source, duration sum matches total,
-        # idx contiguous from 0). Validation failures here mean the
-        # director produced garbage; we record + skip.
-        json_body = _extract_json_object(director_output)
+        # Retry loop: a director that emits no extractable JSON object — the
+        # truncation symptom (a verbose list serialized past max_tokens, cut
+        # mid-object) or a rare empty return — gets a fresh generation before we
+        # give up. Losing the whole post's video to one unlucky run costs far
+        # more than a second dispatch (2026-07-07: d1979ebb truncated its 300s
+        # list even with think=False). Dispatch *exceptions* (infra) fail fast —
+        # they are NOT retried here.
+        director_output = ""
+        json_body: str | None = None
+        attempts = 1 + max(0, max_retries)
+        for attempt in range(attempts):
+            try:
+                async with gpu.lock(
+                    "ollama", model=model,
+                    task_id=task_id, phase="video_director",
+                ):
+                    result = await platform.dispatch.complete(
+                        pool=pool,
+                        messages=[{"role": "user", "content": rendered_prompt}],
+                        model=model,
+                        tier="standard",
+                        timeout_s=timeout_s,
+                        temperature=0.4,  # Lower temp — director should be decisive
+                        # With thinking disabled the whole budget is the JSON; a
+                        # verbose 30-shot list can still serialize long, so this
+                        # is DB-tunable (video_director_max_tokens) with headroom.
+                        max_tokens=max_tokens,
+                        **think_kwargs,
+                    )
+                director_output = (getattr(result, "text", "") or "").strip()
+            except Exception as exc:
+                logger.warning(
+                    "[VIDEO_DIRECTOR] LLM dispatch failed (%s, key=%s) — skipping",
+                    exc, prompt_key,
+                )
+                await _log_audit(
+                    pool,
+                    event_type="video_director.shot_list_failed",
+                    task_id=task_id,
+                    details={
+                        "phase": "llm_dispatch",
+                        "prompt_key": prompt_key,
+                        "error": str(exc),
+                        # The effective per-call ceiling — so a future timeout
+                        # failure shows at a glance whether the DB setting
+                        # actually reached the dispatch (2026-06-20 incident:
+                        # "Timeout passed=120.0" rows from a stale worker still
+                        # running the pre-#1750 hardcoded 120s).
+                        "timeout_s": timeout_s,
+                    },
+                    severity="warning",
+                )
+                return None
+
+            # Parse + validate. The schema enforces all the pacing rules
+            # (no >2 consecutive same source, duration sum matches total,
+            # idx contiguous from 0). No complete object means truncation /
+            # empty output — retry with a fresh generation if attempts remain.
+            json_body = _extract_json_object(director_output)
+            if json_body:
+                break
+            if attempt < attempts - 1:
+                logger.info(
+                    "[VIDEO_DIRECTOR] no JSON object in output (%s, attempt "
+                    "%d/%d, %d chars) — retrying",
+                    prompt_key, attempt + 1, attempts, len(director_output),
+                )
+
         if not json_body:
             await _log_audit(
                 pool,
@@ -577,6 +615,7 @@ class GenerateVideoShotListStage:
                 details={
                     "phase": "json_extract",
                     "prompt_key": prompt_key,
+                    "attempts": attempts,
                     "raw_output_preview": director_output[:500],
                 },
                 severity="warning",
@@ -711,6 +750,15 @@ class GenerateVideoShotListStage:
         # director model doesn't starve its own JSON output — see
         # _resolve_director_think.
         director_think = _resolve_director_think(cfg)
+        # Output-token ceiling + retry budget — DB-tunable so a verbose director
+        # that truncates its JSON gets headroom + a fresh attempt rather than
+        # silently losing the post's video (see the module constants).
+        director_max_tokens = cfg.get_int(
+            "video_director_max_tokens", _DIRECTOR_MAX_TOKENS_DEFAULT
+        )
+        director_max_retries = cfg.get_int(
+            "video_director_max_retries", _DIRECTOR_MAX_RETRIES_DEFAULT
+        )
 
         # LONG (unchanged behavior): the 16:9 director over podcast_script.
         long_shot_list = await self._produce_shot_list(
@@ -727,6 +775,8 @@ class GenerateVideoShotListStage:
             site_name=site_name,
             timeout_s=director_timeout,
             think=director_think,
+            max_tokens=director_max_tokens,
+            max_retries=director_max_retries,
         )
 
         if long_shot_list is None:
@@ -759,6 +809,8 @@ class GenerateVideoShotListStage:
                 site_name=site_name,
                 timeout_s=director_timeout,
                 think=director_think,
+                max_tokens=director_max_tokens,
+                max_retries=director_max_retries,
             )
 
         # Success — return via context_updates so it survives the graph_def

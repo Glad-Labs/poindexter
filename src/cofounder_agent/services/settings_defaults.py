@@ -267,6 +267,18 @@ DEFAULTS: dict[str, str] = {
     # reasoning director chain-of-think. Read via _resolve_director_think in
     # modules/content/stages/generate_video_shot_list.py.
     'video_director_disable_thinking': 'true',
+    # Output-token ceiling for the director / reviewer JSON dispatch. With
+    # thinking disabled the whole budget is the shot list, but a verbose director
+    # occasionally serializes a long list past the old hardcoded 6144, truncating
+    # the JSON mid-object → no complete object → empty shot list → no video
+    # (2026-07-07: a real 300s post, d1979ebb, truncated even with think=False).
+    # 8192 gives headroom. Read via cfg.get_int in generate_video_shot_list.py.
+    'video_director_max_tokens': '8192',
+    # Retries when the director / reviewer emits no extractable JSON object (the
+    # truncation / empty-output symptom). A fresh generation almost always lands
+    # a complete list — cheaper than losing the post's video to one unlucky run.
+    # 0 disables retrying; dispatch *exceptions* (infra) never retry regardless.
+    'video_director_max_retries': '1',
     # Per-shot vision-QA render-check loop (video-quality spec §3.2). The render
     # loop in shot_list_renderer scores each rendered frame with qa_vision_model
     # and regenerates (stochastic sources) or falls back to holdover on a miss.
@@ -1848,6 +1860,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_director_model': {'owner': 'video_director', 'value_type': 'model'},
     'video_director_timeout_seconds': {'owner': 'video_director', 'value_type': 'integer'},
     'video_director_disable_thinking': {'owner': 'video_director', 'value_type': 'boolean'},
+    'video_director_max_tokens': {'owner': 'video_director', 'value_type': 'integer'},
+    'video_director_max_retries': {'owner': 'video_director', 'value_type': 'integer'},
     'video_shot_qa_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_shot_qa_threshold': {'owner': 'video', 'value_type': 'integer'},
     'video_shot_qa_max_retries': {'owner': 'video', 'value_type': 'integer'},

@@ -173,8 +173,14 @@ def _platform_with_dispatch(
     p.dispatch.complete = AsyncMock(return_value=returns, side_effect=raises)
     p.config.get = MagicMock(return_value=model)
     # get_int returns the caller's default (realistic: the director-timeout
-    # setting is unset in these fixtures → cfg.get_int(key, default) → default).
-    p.config.get_int = MagicMock(side_effect=lambda key, default=0: default)
+    # setting is unset in these fixtures → cfg.get_int(key, default) → default),
+    # EXCEPT video_director_max_retries → 0 so these legacy fixtures stay
+    # single-dispatch and deterministic. Retry behavior has its own tests below.
+    p.config.get_int = MagicMock(
+        side_effect=lambda key, default=0: (
+            0 if key == "video_director_max_retries" else default
+        )
+    )
     return p
 
 
@@ -1055,3 +1061,135 @@ async def test_director_dispatch_omits_think_when_flag_off() -> None:
 
     assert result.ok
     assert "think" not in platform.dispatch.complete.call_args.kwargs
+
+
+# ---------------------------------------------------------------------------
+# Truncation hardening (2026-07-07 follow-up to #2191): with thinking disabled
+# the whole output budget is the JSON, but a verbose director can still
+# serialize a long list past the cap and truncate mid-object → no complete
+# object → empty shot list → no video (a real 300s post, d1979ebb, hit this).
+# max_tokens is DB-tunable with headroom (8192), and a no-JSON extract retries
+# a fresh generation before giving up.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_director_dispatch_uses_configured_max_tokens() -> None:
+    """max_tokens reaches the dispatch from video_director_max_tokens (default
+    8192, up from the old hardcoded 6144)."""
+    db_service = _make_db_service()
+    platform = _platform_dict_cfg(
+        cfg_map={"video_director_model": "ollama/gemma-4-31B-it-qat:latest"},
+        returns=MagicMock(text=_make_valid_director_output()),
+    )
+    context = {
+        "title": "Test Post", "content": "Some content " * 50,
+        "podcast_script": "script " * 40, "task_id": "task-maxtok",
+        "database_service": db_service, "platform": platform,
+    }
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+        result = await GenerateVideoShotListStage().execute(context, {})
+
+    assert result.ok
+    assert platform.dispatch.complete.call_args.kwargs["max_tokens"] == 8192
+    platform.config.get_int.assert_any_call("video_director_max_tokens", 8192)
+
+
+@pytest.mark.asyncio
+async def test_director_retries_on_empty_extract_and_recovers() -> None:
+    """A first dispatch with no extractable JSON (the truncation symptom) is
+    retried; the fresh generation lands a valid list → shot list produced."""
+    db_service = _make_db_service()
+    platform = _platform_dict_cfg(
+        cfg_map={"video_director_model": "ollama/gemma-4-31B-it-qat:latest"},
+        returns=None,
+    )
+    # 1st: truncated JSON (open brace, never closes → no object). 2nd: valid.
+    platform.dispatch.complete = AsyncMock(side_effect=[
+        MagicMock(text='{ "version": 1, "shots": [ {"idx": 0, "duration'),
+        MagicMock(text=_make_valid_director_output()),
+    ])
+    context = {
+        "title": "Test Post", "content": "Some content " * 50,
+        "podcast_script": "script " * 40, "task_id": "task-retry",
+        "database_service": db_service, "platform": platform,
+    }
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+        result = await GenerateVideoShotListStage().execute(context, {})
+
+    assert result.ok
+    assert platform.dispatch.complete.call_count == 2  # retried once
+    assert "video_shot_list" in result.context_updates
+    assert len(result.context_updates["video_shot_list"]["shots"]) == 3
+
+
+@pytest.mark.asyncio
+async def test_director_fails_after_retries_exhausted() -> None:
+    """No JSON on every attempt → failure recorded with the attempts count.
+    Default max_retries=1 → 2 dispatches, then give up (non-halting)."""
+    db_service = _make_db_service()
+    platform = _platform_dict_cfg(
+        cfg_map={"video_director_model": "ollama/gemma-4-31B-it-qat:latest"},
+        returns=MagicMock(text="{ truncated, never closes"),
+    )
+    context = {
+        "title": "Test Post", "content": "Some content " * 50,
+        "podcast_script": "script " * 40, "task_id": "task-exhaust",
+        "database_service": db_service, "platform": platform,
+    }
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+        result = await GenerateVideoShotListStage().execute(context, {})
+
+    assert result.ok  # non-halting
+    assert result.metrics.get("failed") is True
+    assert platform.dispatch.complete.call_count == 2  # 1 + 1 retry
+    fail_rows = [
+        c for c in db_service.pool.execute.call_args_list
+        if "video_director.shot_list_failed" in c.args[1]
+    ]
+    assert fail_rows
+    details = json.loads(fail_rows[-1].args[3])
+    assert details["phase"] == "json_extract"
+    assert details["attempts"] == 2
+
+
+@pytest.mark.asyncio
+async def test_director_dispatch_exception_does_not_retry() -> None:
+    """A dispatch *exception* (infra) fails fast — it must NOT burn a retry."""
+    db_service = _make_db_service()
+    platform = _platform_dict_cfg(
+        cfg_map={"video_director_model": "ollama/gemma-4-31B-it-qat:latest"},
+        returns=None,
+    )
+    platform.dispatch.complete = AsyncMock(side_effect=RuntimeError("infra down"))
+    context = {
+        "title": "Test Post", "content": "Some content " * 50,
+        "podcast_script": "script " * 40, "task_id": "task-infra",
+        "database_service": db_service, "platform": platform,
+    }
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+        result = await GenerateVideoShotListStage().execute(context, {})
+
+    assert result.ok
+    assert result.metrics.get("failed") is True
+    assert platform.dispatch.complete.call_count == 1  # fail fast, no retry
