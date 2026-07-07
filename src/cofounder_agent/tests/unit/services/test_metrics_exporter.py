@@ -35,6 +35,8 @@ def _reset_gauges():
         mx.AUTO_CANCELLED_TOTAL,
         mx.UNAPPLIED_MIGRATIONS_COUNT,
         mx.POSTS_PUBLISHED,
+        mx.DAILY_SPEND_USD,
+        mx.MONTHLY_SPEND_USD,
     ):
         g.set(0)
     # Labeled gauges — clear the series so each test starts absent.
@@ -130,6 +132,33 @@ class TestRefreshMetrics:
 
         # _value is the prometheus_client Gauge internal counter.
         assert mx.WORKER_UP._value.get() == 1  # type: ignore[attr-defined]
+
+    async def test_spend_gauges_route_through_cost_ledger(self):
+        """The exported spend gauges are the cost_ledger total (paid API +
+        measured electricity), not a raw blended SUM(cost_usd) — so the
+        Prometheus mirror agrees with the cap, dashboards, and MCP get_budget
+        that all read the same seam. Per-window: day and month."""
+        from services import cost_ledger
+        from services import metrics_exporter as mx
+
+        pool, _ = _make_pool([1, 1_700_000_000.0, 50, 300, 0, 0, 0, 0], [[], []])
+
+        async def _fake_get_spend(_pool, *, window, strict=False, site_config=None):
+            total = 1.25 if window == "day" else 34.5
+            return cost_ledger.SpendBreakdown(
+                api_usd=0.0, electricity_usd=total, total_usd=total,
+            )
+
+        with patch(
+            "services.metrics_exporter.httpx.AsyncClient"
+        ) as mock_http_cls, patch.object(
+            cost_ledger, "get_spend", new=_fake_get_spend
+        ):
+            mock_http_cls.return_value.__aenter__.side_effect = Exception("no ollama")
+            await mx.refresh_metrics(pool, "http://localhost:11434")
+
+        assert mx.DAILY_SPEND_USD._value.get() == 1.25  # type: ignore[attr-defined]
+        assert mx.MONTHLY_SPEND_USD._value.get() == 34.5  # type: ignore[attr-defined]
 
     async def test_postgres_latency_recorded_on_success(self):
         from services import metrics_exporter as mx

@@ -293,6 +293,14 @@ throttled): a dead DB must never become a content outage. Aligns with
 
 ### 7. P4 — per-axis anomaly (alert)
 
+> **✅ Shipped 2026-07-07** (follow-up to #2162). `detect_anomalies` splits the
+> cost metric on the shared `cost_ledger.API_AXIS_PREDICATE` /
+> `ELECTRICITY_AXIS_PREDICATE` (the electricity predicate was extracted to match
+> the api one). The sibling blended-meter gauge — `metrics_exporter`'s
+> `poindexter_daily_spend_usd` / `_monthly_spend_usd` — now routes through
+> `cost_ledger.get_spend().total_usd` instead of a raw blended `SUM(cost_usd)`,
+> so the Prometheus mirror agrees with the ledger the cap and dashboards read.
+
 `detect_anomalies.py::_metric_queries` replaces the single polluted
 `cost_per_day` metric with two:
 

@@ -283,12 +283,15 @@ AUTO_CANCELLED_TOTAL = Gauge(
 
 DAILY_SPEND_USD = Gauge(
     "poindexter_daily_spend_usd",
-    "Total LLM spend today in USD (rolling 24h from cost_logs)",
+    "Total cost today in USD via cost_ledger (calendar day): paid cloud API + "
+    "measured electricity. Mostly electricity until a paid provider is enabled; "
+    "see the Cost dashboard for the honest API-vs-electricity split.",
 )
 
 MONTHLY_SPEND_USD = Gauge(
     "poindexter_monthly_spend_usd",
-    "Total LLM spend this month in USD (from cost_logs)",
+    "Total cost this month in USD via cost_ledger: paid cloud API + measured "
+    "electricity. See the Cost dashboard for the honest API-vs-electricity split.",
 )
 
 # poindexter#553 — per-QA-rail skip ratio over the last N passes. A value of
@@ -798,22 +801,23 @@ async def refresh_metrics(
     except Exception as e:
         _note_refresh_error("unapplied_migrations", e)
 
-    # Spend.
+    # Spend — routed through the cost_ledger seam so the exported total agrees
+    # with the cap, the Cost dashboard, and the MCP get_budget, which all read
+    # the same axes. total_usd = paid cloud API (cost_ledger api axis; $0 unless
+    # a paid provider is enabled) + measured electricity. The old inline query
+    # was a raw blended SUM(cost_usd) — since local inference is $0 by the P1
+    # write invariant it read electricity-only yet was labelled "LLM spend". The
+    # honest API-vs-electricity split lives on the Cost & Analytics dashboard
+    # (SQL panels); these Prometheus gauges are the total for scraping/alerting.
+    # strict=True so a DB error surfaces via _note_refresh_error rather than
+    # silently reading $0.
     try:
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT
-                  COALESCE(SUM(CASE WHEN created_at > NOW() - INTERVAL '24 hours'
-                                     THEN cost_usd ELSE 0 END), 0) AS daily,
-                  COALESCE(SUM(cost_usd), 0) AS monthly
-                FROM cost_logs
-                WHERE created_at > date_trunc('month', NOW())
-                """
-            )
-        if row:
-            DAILY_SPEND_USD.set(float(row["daily"] or 0))
-            MONTHLY_SPEND_USD.set(float(row["monthly"] or 0))
+        from services.cost_ledger import get_spend
+
+        day = await get_spend(pool, window="day", strict=True)
+        month = await get_spend(pool, window="month", strict=True)
+        DAILY_SPEND_USD.set(day.total_usd)
+        MONTHLY_SPEND_USD.set(month.total_usd)
     except Exception as e:
         _note_refresh_error("cost_logs", e)
 

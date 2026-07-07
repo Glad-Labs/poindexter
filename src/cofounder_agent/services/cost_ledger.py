@@ -42,8 +42,16 @@ _WINDOW_MINUTES = {"day": 24 * 60, "month": 30 * 24 * 60}
 # agnostic and survives another router swap.
 API_AXIS_PREDICATE = "COALESCE(cost_type, 'inference') NOT LIKE 'electricity%'"
 
+# The complementary electricity axis: the brain daemon's measured PSU rows
+# (``cost_type LIKE 'electricity%'``) are the real power bill. Exported as the
+# single owner of the electricity predicate — the mirror of
+# ``API_AXIS_PREDICATE`` — so per-axis consumers (anomaly detection, the metrics
+# exporter) split cost_logs on the same two definitions everything else uses.
+# Every row is on exactly one axis: api (non-electricity) or electricity.
+ELECTRICITY_AXIS_PREDICATE = "cost_type LIKE 'electricity%'"
+
 # All SQL below interpolates only hardcoded literals (the window literal keyed by
-# the Window enum + ``API_AXIS_PREDICATE`` above), never user input — hence the
+# the Window enum + the axis predicates above), never user input — hence the
 # uniform ``# nosec B608``.
 _API_SQL = (
     "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
@@ -51,10 +59,10 @@ _API_SQL = (
 )
 _ELEC_SQL = (
     "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
-    "WHERE cost_type LIKE 'electricity%' AND {w}"
+    f"WHERE {ELECTRICITY_AXIS_PREDICATE} AND {{w}}"
 )
 _MEASURED_COUNT_SQL = (
-    "SELECT COUNT(*) FROM cost_logs WHERE cost_type LIKE 'electricity%' AND {w}"
+    f"SELECT COUNT(*) FROM cost_logs WHERE {ELECTRICITY_AXIS_PREDICATE} AND {{w}}"
 )
 _EST_KWH_SQL = (
     "SELECT COALESCE(SUM(electricity_kwh), 0) FROM cost_logs "

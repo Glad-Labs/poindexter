@@ -33,15 +33,44 @@ class TestDetectAnomaliesJobMetadata:
 
 
 @pytest.mark.unit
+class TestCostMetricSplit:
+    """P4 (cost-attribution): the single blended ``cost_per_day`` metric ran
+    ``SUM(cost_usd)`` with no axis awareness, so it summed measured electricity
+    and (now-$0) local inference into one z-score — an electricity spike could
+    mask an API spike and vice-versa. It's split into two axis-scoped metrics
+    that share the ``cost_ledger`` predicate definitions."""
+
+    def test_cost_metric_split_into_api_and_electricity_axes(self):
+        from services import cost_ledger
+        from services.jobs.detect_anomalies import _metric_queries
+
+        by_name = {name: (recent, hist) for name, recent, hist in _metric_queries(24, 30)}
+
+        # The blended metric is gone; two honest axes replace it.
+        assert "cost_per_day" not in by_name
+        assert "api_usd_per_day" in by_name
+        assert "electricity_usd_per_day" in by_name
+
+        api_recent, api_hist = by_name["api_usd_per_day"]
+        assert cost_ledger.API_AXIS_PREDICATE in api_recent
+        assert cost_ledger.API_AXIS_PREDICATE in api_hist
+
+        elec_recent, elec_hist = by_name["electricity_usd_per_day"]
+        assert cost_ledger.ELECTRICITY_AXIS_PREDICATE in elec_recent
+        assert cost_ledger.ELECTRICITY_AXIS_PREDICATE in elec_hist
+
+
+@pytest.mark.unit
 @pytest.mark.asyncio
 class TestDetectAnomaliesJobRun:
     async def test_no_anomalies_returns_normal_range(self):
         # All four metrics sit right at their mean → z_score = 0.
         pool = _make_pool(
-            recent_values=[0.05, 80.0, 1.0, 3],
+            recent_values=[0.05, 80.0, 1.0, 1.0, 3],
             hist_stats=[
                 {"mean": 0.05, "stddev": 0.02},
                 {"mean": 80.0, "stddev": 5.0},
+                {"mean": 1.0, "stddev": 0.5},
                 {"mean": 1.0, "stddev": 0.5},
                 {"mean": 3, "stddev": 1.0},
             ],
@@ -67,10 +96,11 @@ class TestDetectAnomaliesJobRun:
     async def test_single_spike_does_not_file_issue(self):
         """One metric spiking shouldn't fire a Gitea issue — too noisy."""
         pool = _make_pool(
-            recent_values=[0.5, 80.0, 1.0, 3],  # task_failure_rate huge spike
+            recent_values=[0.5, 80.0, 1.0, 1.0, 3],  # task_failure_rate huge spike
             hist_stats=[
                 {"mean": 0.05, "stddev": 0.02},   # z ≈ 22.5, definitely >2
                 {"mean": 80.0, "stddev": 5.0},
+                {"mean": 1.0, "stddev": 0.5},
                 {"mean": 1.0, "stddev": 0.5},
                 {"mean": 3, "stddev": 1.0},
             ],
@@ -86,10 +116,11 @@ class TestDetectAnomaliesJobRun:
 
     async def test_two_anomalies_file_gitea_issue(self):
         pool = _make_pool(
-            recent_values=[0.5, 20.0, 1.0, 3],  # 2 spikes: failure_rate + quality_score drop
+            recent_values=[0.5, 20.0, 1.0, 1.0, 3],  # 2 spikes: failure_rate + quality_score drop
             hist_stats=[
                 {"mean": 0.05, "stddev": 0.02},
                 {"mean": 80.0, "stddev": 5.0},   # z ≈ -12, definitely >|2|
+                {"mean": 1.0, "stddev": 0.5},
                 {"mean": 1.0, "stddev": 0.5},
                 {"mean": 3, "stddev": 1.0},
             ],
@@ -107,14 +138,37 @@ class TestDetectAnomaliesJobRun:
         # Title comes through as the keyword arg `title`.
         assert "2 metrics" in gitea_mock.call_args.kwargs["title"]
 
+    async def test_api_and_electricity_scored_independently(self):
+        """P4: an API spike and an electricity spike are two distinct anomalies
+        — neither masks the other, because the blended cost metric was split
+        into per-axis metrics. Order is [failure, quality, api, electricity,
+        error]; api and electricity both spike, the rest sit at mean."""
+        pool = _make_pool(
+            recent_values=[0.05, 80.0, 5.0, 50.0, 3],
+            hist_stats=[
+                {"mean": 0.05, "stddev": 0.02},
+                {"mean": 80.0, "stddev": 5.0},
+                {"mean": 1.0, "stddev": 0.5},    # api: z=(5-1)/0.5=8 → spike
+                {"mean": 34.0, "stddev": 2.0},   # electricity: z=(50-34)/2=8 → spike
+                {"mean": 3, "stddev": 1.0},
+            ],
+        )
+        with patch("utils.findings.emit_finding", new=MagicMock()) as f:
+            result = await DetectAnomaliesJob().run(pool, {})
+        assert result.changes_made == 2
+        flagged = {a["metric"] for a in result.metrics["anomalies"]}
+        assert flagged == {"api_usd_per_day", "electricity_usd_per_day"}
+        f.assert_called_once()
+
     async def test_zero_stddev_skips_metric(self):
         """If a metric has zero variance in the baseline window, it can't
         be an anomaly — skip rather than divide by zero."""
         pool = _make_pool(
-            recent_values=[1.0, 80.0, 1.0, 3],
+            recent_values=[1.0, 80.0, 1.0, 1.0, 3],
             hist_stats=[
                 {"mean": 0.05, "stddev": 0},   # zero stddev → skip
                 {"mean": 80.0, "stddev": 5.0},
+                {"mean": 1.0, "stddev": 0.5},
                 {"mean": 1.0, "stddev": 0.5},
                 {"mean": 3, "stddev": 1.0},
             ],
@@ -125,10 +179,11 @@ class TestDetectAnomaliesJobRun:
 
     async def test_null_recent_or_hist_skips_metric(self):
         pool = _make_pool(
-            recent_values=[None, 80.0, 1.0, 3],
+            recent_values=[None, 80.0, 1.0, 1.0, 3],
             hist_stats=[
                 {"mean": 0.05, "stddev": 0.02},
                 None,  # no historical data
+                {"mean": 1.0, "stddev": 0.5},
                 {"mean": 1.0, "stddev": 0.5},
                 {"mean": 3, "stddev": 1.0},
             ],
@@ -141,10 +196,11 @@ class TestDetectAnomaliesJobRun:
     async def test_config_overrides_thresholds(self):
         """issue_threshold=1 means a single spike files an issue."""
         pool = _make_pool(
-            recent_values=[0.5, 80.0, 1.0, 3],
+            recent_values=[0.5, 80.0, 1.0, 1.0, 3],
             hist_stats=[
                 {"mean": 0.05, "stddev": 0.02},
                 {"mean": 80.0, "stddev": 5.0},
+                {"mean": 1.0, "stddev": 0.5},
                 {"mean": 1.0, "stddev": 0.5},
                 {"mean": 3, "stddev": 1.0},
             ],

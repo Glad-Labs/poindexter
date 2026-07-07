@@ -95,3 +95,14 @@ async def test_api_axis_is_paid_only_when_local_is_zero():
     b = await cost_ledger.get_spend(pool, window="day")
     assert b.api_usd == 3.50
     assert b.total_usd == pytest.approx(37.75)
+
+
+def test_axis_predicates_are_complementary():
+    """The two exported axis predicates are the single owners of 'paid API' vs
+    'measured electricity'. Every cost_logs row is on exactly one axis — the
+    api axis is the negation of the electricity axis on cost_type — so per-axis
+    consumers (cost_guard, detect_anomalies, metrics_exporter) can share them
+    without double-counting or gaps."""
+    assert cost_ledger.ELECTRICITY_AXIS_PREDICATE == "cost_type LIKE 'electricity%'"
+    assert "NOT LIKE 'electricity%'" in cost_ledger.API_AXIS_PREDICATE
+    assert "cost_type" in cost_ledger.API_AXIS_PREDICATE

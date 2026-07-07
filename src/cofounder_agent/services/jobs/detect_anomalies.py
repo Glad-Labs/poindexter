@@ -9,8 +9,13 @@ anomalous in the same cycle.
 Metrics monitored:
 - task_failure_rate (content_tasks.status='failed' / total, daily)
 - avg_quality_score (content_tasks.quality_score, daily)
-- cost_per_day (cost_logs.cost_usd sum, daily)
+- api_usd_per_day (paid cloud spend — cost_ledger api axis, daily)
+- electricity_usd_per_day (measured power — cost_ledger electricity axis, daily)
 - error_log_rate (audit_log where severity='error', daily)
+
+The cost axis is split (P4, cost-attribution) so an electricity spike fires
+distinctly from an API spike; the old blended ``cost_per_day`` summed both into
+one z-score, letting either mask the other.
 
 Config (``plugin.job.detect_anomalies``):
 - ``enabled`` (default ``true``)
@@ -30,6 +35,7 @@ import math
 from typing import Any
 
 from plugins.job import JobResult
+from services.cost_ledger import API_AXIS_PREDICATE, ELECTRICITY_AXIS_PREDICATE
 
 logger = logging.getLogger(__name__)
 
@@ -75,16 +81,36 @@ def _metric_queries(current_h: int, baseline_d: int) -> list[tuple[str, str, str
                 GROUP BY day
             ) t""",  # nosec B608  # baseline_d is int
         ),
+        # Cost is split on the two cost_ledger axes (P4). Local inference is
+        # $0 by the P1 write invariant, so api_usd is genuinely-paid cloud only;
+        # electricity is the brain's measured PSU rows. Keeping them separate
+        # means an electricity spike and an API spike are distinct z-scores —
+        # neither masks the other, and neither is diluted by the blend.
         (
-            "cost_per_day",
+            "api_usd_per_day",
             f"""SELECT COALESCE(SUM(cost_usd), 0) as val FROM cost_logs
-                WHERE created_at > NOW() - INTERVAL '{current_h} hours'""",  # nosec B608  # current_h is int
+                WHERE created_at > NOW() - INTERVAL '{current_h} hours'
+                AND {API_AXIS_PREDICATE}""",  # nosec B608  # current_h is int; predicate is a module constant
             f"""SELECT AVG(daily_cost) as mean, STDDEV(daily_cost) as stddev FROM (
                 SELECT date_trunc('day', created_at) as day, COALESCE(SUM(cost_usd), 0) as daily_cost
                 FROM cost_logs
                 WHERE created_at > NOW() - INTERVAL '{baseline_d} days'
+                AND {API_AXIS_PREDICATE}
                 GROUP BY day
-            ) t""",  # nosec B608  # baseline_d is int
+            ) t""",  # nosec B608  # baseline_d is int; predicate is a module constant
+        ),
+        (
+            "electricity_usd_per_day",
+            f"""SELECT COALESCE(SUM(cost_usd), 0) as val FROM cost_logs
+                WHERE created_at > NOW() - INTERVAL '{current_h} hours'
+                AND {ELECTRICITY_AXIS_PREDICATE}""",  # nosec B608  # current_h is int; predicate is a module constant
+            f"""SELECT AVG(daily_cost) as mean, STDDEV(daily_cost) as stddev FROM (
+                SELECT date_trunc('day', created_at) as day, COALESCE(SUM(cost_usd), 0) as daily_cost
+                FROM cost_logs
+                WHERE created_at > NOW() - INTERVAL '{baseline_d} days'
+                AND {ELECTRICITY_AXIS_PREDICATE}
+                GROUP BY day
+            ) t""",  # nosec B608  # baseline_d is int; predicate is a module constant
         ),
         (
             "error_log_rate",
