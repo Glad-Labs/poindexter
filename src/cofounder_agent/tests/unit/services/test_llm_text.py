@@ -230,6 +230,26 @@ class TestOllamaChatTextDispatcherPath:
         kwargs = dispatch.await_args.kwargs
         assert kwargs["tier"] == "budget"
 
+    async def test_think_false_forwarded_to_dispatcher(self):
+        """think=False reaches dispatch_complete so the provider can disable the
+        model's reasoning channel (writer truncation fix, 2026-07-06)."""
+        pool = MagicMock()
+        sc = _StubSiteConfig()
+        dispatch = AsyncMock(return_value=_fake_completion("ok"))
+        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+            await ollama_chat_text("p", site_config=sc, pool=pool, think=False)
+        assert dispatch.await_args.kwargs.get("think") is False
+
+    async def test_think_omitted_by_default(self):
+        """think defaults to None → the kwarg is not forwarded, so non-writer
+        callers dispatch exactly as before."""
+        pool = MagicMock()
+        sc = _StubSiteConfig()
+        dispatch = AsyncMock(return_value=_fake_completion("ok"))
+        with patch("services.llm_providers.dispatcher.dispatch_complete", dispatch):
+            await ollama_chat_text("p", site_config=sc, pool=pool)
+        assert "think" not in dispatch.await_args.kwargs
+
     async def test_dispatch_path_runs_maybe_unwrap_json(self):
         """Some providers (Ollama) still return JSON envelopes — must unwrap."""
         pool = MagicMock()
@@ -287,6 +307,25 @@ class TestOllamaChatTextHttpxFallback:
         assert payload["model"] == "gemma3:27b"
         assert payload["stream"] is False
         assert payload["messages"] == [{"role": "user", "content": "hi"}]
+        # think omitted by default (no reasoning-channel control requested).
+        assert "think" not in payload
+
+    async def test_httpx_think_false_added_to_payload(self):
+        """think=False is forwarded on the httpx fallback path too."""
+        sc = _StubSiteConfig(base_url="http://localhost:11434")
+        mock_response = MagicMock()
+        mock_response.raise_for_status = MagicMock()
+        mock_response.json = MagicMock(return_value={"message": {"content": "ok"}})
+        mock_client = AsyncMock()
+        mock_client.post = AsyncMock(return_value=mock_response)
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        with patch("httpx.AsyncClient", return_value=mock_client):
+            await ollama_chat_text("hi", site_config=sc, think=False)
+
+        payload = mock_client.post.await_args[1]["json"]
+        assert payload["think"] is False
 
     async def test_httpx_fallback_dispatcher_is_not_called(self):
         """Explicit: when no pool is provided, the dispatcher is bypassed."""

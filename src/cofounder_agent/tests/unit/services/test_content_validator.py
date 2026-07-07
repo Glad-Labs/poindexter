@@ -2666,3 +2666,47 @@ class TestPlanningDumpRule:
         )
         result = validate_content("Quantization Guide", content, "hardware", site_config=_SC)
         assert not any(i.category == "planning_dump" for i in result.issues)
+
+
+class TestTruncatedAtHeading:
+    """A draft ending at a bare section heading is an early-stop truncation
+    shape the generic truncated_content rule used to exempt (headings lack
+    terminal punctuation). 2026-07-06 gemma thinking-channel investigation."""
+
+    _BODY = (
+        "Running a 27B model at Q4 on a 24GB card works, but it is not fast. "
+        "The honest tradeoff is matching the tool to how often you actually use "
+        "it, and how long you are willing to wait for a response.\n\n"
+        "## The VRAM Math\n\n"
+        "A 27B model at FP16 needs roughly 54GB just for the weights, which is "
+        "impossible on a consumer card. Quantizing to Q4 cuts that to about "
+        "13.5GB and leaves a few GB of headroom for the KV cache.\n\n"
+        "## Local Inference vs"
+    )
+
+    def test_flags_draft_ending_at_bare_heading(self):
+        result = validate_content(
+            "Local 27B Inference", self._BODY, "hardware", site_config=_SC)
+        assert any(i.category == "truncated_at_heading" for i in result.issues)
+        # It is a distinct diagnostic, not the generic mid-sentence category.
+        assert not any(i.category == "truncated_content" for i in result.issues)
+        assert result.critical_count >= 1
+
+    def test_clean_ending_not_flagged(self):
+        body = self._BODY.rsplit("\n\n## Local Inference vs", 1)[0]
+        body += "\n\n## Verdict\n\nLocal wins when you value privacy and control."
+        result = validate_content(
+            "Local 27B Inference", body, "hardware", site_config=_SC)
+        assert not any(i.category == "truncated_at_heading" for i in result.issues)
+
+    def test_midbody_heading_not_flagged(self):
+        # A heading in the MIDDLE of the body (with prose after it) is normal.
+        body = (
+            "Intro paragraph with enough words to clear the length gate for the "
+            "truncation rule to even consider the tail of this article body.\n\n"
+            "## A Real Section\n\n"
+            "This section has a full paragraph of prose under its heading, so "
+            "the article does not end at a bare heading and must not be flagged."
+        )
+        result = validate_content("Midbody", body, "hardware", site_config=_SC)
+        assert not any(i.category == "truncated_at_heading" for i in result.issues)

@@ -494,6 +494,16 @@ DEFAULTS: dict[str, str] = {
     # pass and keeps the longer of (original, expanded). Disable via the _enabled key.
     'writer_length_expansion_enabled': 'true',
     'writer_min_length_ratio': '0.7',
+    # Disable the model's reasoning/thinking channel on the WRITER calls
+    # (draft / revise / expand). A thinking-capable writer (e.g. the
+    # gemma-4-31B-it-qat QAT default) otherwise spends its generation budget in
+    # a hidden reasoning channel and the VISIBLE draft truncates mid-sentence or
+    # at a bare heading (2026-07-06 investigation: seed-matched A/B — think on →
+    # 708w truncated @3072 tok w/ 1082 hidden think-words; think off → 985w
+    # complete @1360 tok). Passed through the dispatcher as ``think=False``;
+    # harmless no-op on a non-thinking writer model. Set false only to
+    # deliberately let a reasoning writer chain-of-think in the draft channel.
+    'writer_disable_thinking': 'true',
     'writer_rag_context_snippet_max_chars': '500',
     'writer_rag_research_topic_max_sources': '2',
     'writer_rag_two_pass_research_max_sources': '2',

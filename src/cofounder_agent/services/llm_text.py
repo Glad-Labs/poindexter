@@ -145,6 +145,7 @@ async def ollama_chat_text(
     tier: str = "standard",
     task_id: str | None = None,
     phase: str = "ollama_chat_text",
+    think: bool | None = None,
 ) -> str:
     """Plain-text LLM chat call.
 
@@ -182,6 +183,13 @@ async def ollama_chat_text(
         tier: cost tier passed to the dispatcher when ``pool`` is set
             (``free`` / ``budget`` / ``standard`` / ``premium`` /
             ``flagship``). Ignored on the httpx fallback path.
+        think: when ``False``, disables the model's reasoning/thinking
+            channel (Ollama ``think`` request field). A thinking-capable
+            writer model otherwise spends its generation budget reasoning and
+            the visible completion truncates — the writer path passes
+            ``think=False``. ``None`` (default) omits the field entirely, so
+            non-writer callers are unchanged and non-thinking models are
+            unaffected.
 
     Returns:
         The raw assistant content (post-unwrap, see
@@ -216,6 +224,12 @@ async def ollama_chat_text(
             site_config.get_float(timeout_setting, timeout_default)
             if site_config is not None else timeout_default
         )
+        # Only forward ``think`` when explicitly set — keeps it out of kwargs
+        # for the non-writer callers so their dispatch is byte-identical to
+        # before, and lets non-thinking backends stay untouched.
+        extra: dict[str, Any] = {}
+        if think is not None:
+            extra["think"] = think
         completion = await dispatch_complete(
             pool=pool,
             messages=messages,
@@ -225,6 +239,7 @@ async def ollama_chat_text(
             task_id=task_id,
             phase=phase,
             num_ctx=resolve_num_ctx(phase, site_config=site_config),
+            **extra,
         )
         raw = getattr(completion, "text", "") or ""
         usage_details = {
@@ -247,11 +262,13 @@ async def ollama_chat_text(
             site_config.get_float(timeout_setting, timeout_default)
             if site_config is not None else timeout_default
         )
-        payload = {
+        payload: dict[str, Any] = {
             "model": resolved_model,
             "messages": messages,
             "stream": False,
         }
+        if think is not None:
+            payload["think"] = think
         async with httpx.AsyncClient(timeout=timeout) as client:
             resp = await client.post(f"{base_url}/api/chat", json=payload)
             resp.raise_for_status()

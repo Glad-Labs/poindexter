@@ -1347,6 +1347,7 @@ async def generate_with_context(
     pool: Any = None,
     task_id: str | None = None,
     target_length: int = 1200,
+    think: bool | None = None,
 ) -> str:
     """Build a prompt using the snippets as background context, generate the
     draft. Wraps the existing generation path; tests can monkeypatch here.
@@ -1358,6 +1359,11 @@ async def generate_with_context(
 
     ``site_config`` is REQUIRED (#272 Phase-2c) — the ``two_pass_writer``
     atom threads its run-bound instance.
+
+    ``think`` (2026-07-06): when ``False``, disables the writer model's
+    reasoning channel so a thinking-capable model doesn't burn its generation
+    budget reasoning and truncate the visible draft. Threaded to
+    ``ollama_chat_text``; ``None`` leaves the call unchanged.
     """
     from services.llm_text import ollama_chat_text
 
@@ -1394,6 +1400,7 @@ async def generate_with_context(
         timeout_setting="niche_ollama_chat_timeout_seconds",
         task_id=task_id,
         phase="draft_generation",
+        think=think,
     )
 
 

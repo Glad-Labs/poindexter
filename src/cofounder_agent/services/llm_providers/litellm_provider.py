@@ -763,7 +763,15 @@ class LiteLLMProvider:
         # rather than 4xx — so this is the safe seam to retire the legacy
         # direct-httpx ``"format": "json"`` payload key that the
         # ``_ollama_chat_json`` survivors were using.
-        for key in ("temperature", "max_tokens", "top_p", "response_format", "num_ctx"):
+        #
+        # ``think`` forwarding (2026-07-06): a thinking-capable Ollama model
+        # (e.g. the gemma-4-31B-it-qat writer) burns its generation budget in a
+        # hidden reasoning channel, truncating the VISIBLE draft. LiteLLM's
+        # ollama transformation forwards ``think`` as a top-level request field
+        # (verified in-container: think=False → complete draft vs baseline
+        # truncation), so the writer path passes ``think=False`` to disable the
+        # channel. Non-thinking backends ignore the param under drop_params.
+        for key in ("temperature", "max_tokens", "top_p", "response_format", "num_ctx", "think"):
             if key in kwargs:
                 completion_kwargs[key] = kwargs[key]
         self._apply_cloud_max_tokens(resolved_model, completion_kwargs)

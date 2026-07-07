@@ -2330,6 +2330,31 @@ def validate_content(
                         ),
                         matched_text=stripped_content[-160:],
                     ))
+                elif _is_heading and not _in_code:
+                    # Final line is a bare section heading with no body under
+                    # it — an early-stop truncation shape distinct from a
+                    # mid-sentence cut. The generic ``truncated_content`` branch
+                    # below EXEMPTS headings (a heading legitimately has no
+                    # terminal punctuation), which let a draft that ENDS at a
+                    # heading pass the truncation gate. A post never ends at a
+                    # bare heading (0/133 published posts do), so flag it with a
+                    # producer-specific category. The two_pass writer trims this
+                    # shape proactively (``_trim_dangling_heading``); this is the
+                    # safety net for any other producer (dev_diary / future
+                    # paths). 2026-07-06 gemma early-stop investigation.
+                    issues.append(ValidationIssue(
+                        severity="critical",
+                        category="truncated_at_heading",
+                        description=(
+                            f"Content ends at a bare section heading "
+                            f"('{last_line[-60:]}') with no body under it — the "
+                            f"writer stopped early. A post must never end at a "
+                            f"heading; the writer likely hit a token/early-stop "
+                            f"limit (a thinking-capable model can burn its budget "
+                            f"in the reasoning channel)."
+                        ),
+                        matched_text=stripped_content[-160:],
+                    ))
                 elif not (_in_code or _is_heading or _is_list_item):
                     issues.append(ValidationIssue(
                         severity="critical",

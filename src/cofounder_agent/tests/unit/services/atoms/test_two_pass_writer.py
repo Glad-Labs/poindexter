@@ -1546,3 +1546,201 @@ async def test_expansion_planning_dump_stripped_before_keep_best(monkeypatch):
     assert "*   Topic:" not in result["draft"]
     assert result["planning_dump_stripped"] >= 10
     assert any(f["kind"] == "writer_planning_dump_stripped" for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# Dangling-heading trim (2026-07-06 gemma early-stop investigation).
+#
+# The thinking-capable pipeline_writer_model can stop early and leave the draft
+# ENDING at a bare section heading with no body under it — a shape the
+# content_validator truncated_content rule EXEMPTS (headings legitimately lack
+# terminal punctuation). _trim_dangling_heading drops it deterministically
+# before the expansion decision so the persisted body ends on prose and the
+# keep-best length compare uses the real word count.
+# ---------------------------------------------------------------------------
+
+_DANGLING_BODY = (
+    "Real intro paragraph that sets up the piece with enough words to survive.\n\n"
+    "## The VRAM Math\n\n"
+    "A full paragraph of grounded prose about quantization and headroom here.\n\n"
+    "## Local Inference vs"
+)
+
+
+def test_trim_dangling_heading_drops_trailing_bare_heading():
+    """A draft ending at a bare heading is trimmed to end on the prior prose."""
+    clean, n = two_pass._trim_dangling_heading(_DANGLING_BODY)
+    assert n == 1
+    assert clean.rstrip().endswith("headroom here.")
+    assert "## Local Inference vs" not in clean
+
+
+def test_trim_dangling_heading_noop_on_prose_ending():
+    """A draft whose last line is real prose is returned untouched."""
+    body = "## Verdict\n\nThe honest tradeoff is matching the tool to the use."
+    clean, n = two_pass._trim_dangling_heading(body)
+    assert n == 0
+    assert clean == body
+
+
+def test_trim_dangling_heading_noop_on_mid_sentence_tail():
+    """A mid-sentence cut is NOT a heading — left for the validator's
+    truncated_content rule + rescue, not this guard."""
+    body = "## Costs\n\nThe amortized GPU cost means you aren"
+    clean, n = two_pass._trim_dangling_heading(body)
+    assert n == 0
+    assert clean == body
+
+
+def test_trim_dangling_heading_strips_stacked_headings():
+    """Two stacked trailing headings are both removed in one pass."""
+    body = "Intro prose that survives the trim.\n\n## Section A\n\n## Section B"
+    clean, n = two_pass._trim_dangling_heading(body)
+    assert n == 2
+    assert clean.rstrip().endswith("survives the trim.")
+
+
+def test_trim_dangling_heading_never_zeroes_heading_only_draft():
+    """A heading-only body is left untouched (never trimmed to nothing) so the
+    caller's finding + human review path takes over."""
+    body = "## Only A Heading"
+    clean, n = two_pass._trim_dangling_heading(body)
+    assert n == 0
+    assert clean == body
+
+
+async def test_run_trims_dangling_heading_and_fires_finding(monkeypatch):
+    """End-to-end: a draft ending at a bare heading is cleaned in run()'s
+    returned draft, surfaced via ``dangling_heading_trimmed``, and reported as
+    its own finding kind. Expansion is OFF so this isolates the trim."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                         site_config=None, **_kw):
+        return _DANGLING_BODY
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    findings: list[dict] = []
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+
+    result = await two_pass.run(
+        topic="Running a 27B LLM locally", angle="hands-on", niche_id="glad-labs",
+        pool=_fake_pool_with_no_snippets(),
+        # expansion OFF so the trim is the only transform under test
+        site_config=_short_draft_site_config(writer_length_expansion_enabled="false"),
+    )
+    assert "## Local Inference vs" not in result["draft"]
+    assert result["draft"].rstrip().endswith("headroom here.")
+    assert result["dangling_heading_trimmed"] == 1
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "writer_dangling_heading_trimmed"
+    assert findings[0]["severity"] == "warn"
+
+
+async def test_run_clean_ending_fires_no_dangling_finding(monkeypatch):
+    """A draft that ends on prose reports dangling_heading_trimmed=0, no finding."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                         site_config=None, **_kw):
+        return _REAL_BODY
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    findings: list[dict] = []
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: findings.append(kw))
+
+    result = await two_pass.run(
+        topic=_ECHO_TOPIC, angle=_ECHO_ANGLE, niche_id="glad-labs",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_short_draft_site_config(writer_length_expansion_enabled="false"),
+    )
+    assert result["dangling_heading_trimmed"] == 0
+    assert not any(f["kind"] == "writer_dangling_heading_trimmed" for f in findings)
+
+
+# ---------------------------------------------------------------------------
+# Writer thinking-channel disable (2026-07-06 gemma early-stop root fix).
+#
+# A thinking-capable writer model burns its generation budget in a hidden
+# reasoning channel, truncating the visible draft. _resolve_writer_think returns
+# False (disable) by default so the draft/revise/expand calls pass think=False.
+# ---------------------------------------------------------------------------
+
+def test_resolve_writer_think_disables_by_default():
+    """Default (writer_disable_thinking unset/true) → False (disable channel)."""
+    sc = _short_draft_site_config()  # no writer_disable_thinking override → default 'true'
+    assert two_pass._resolve_writer_think(sc) is False
+
+
+def test_resolve_writer_think_none_when_switch_off():
+    """writer_disable_thinking=false → None (leave the call unchanged)."""
+    sc = _short_draft_site_config(writer_disable_thinking="false")
+    assert two_pass._resolve_writer_think(sc) is None
+
+
+def test_resolve_writer_think_disables_when_site_config_missing():
+    """No site_config → default to disabling (the safe writer default)."""
+    assert two_pass._resolve_writer_think(None) is False
+
+
+async def test_run_passes_think_false_to_draft_call(monkeypatch):
+    """The draft call receives think=False by default so a thinking writer
+    doesn't truncate itself."""
+    seen: dict = {}
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                         site_config=None, **kw):
+        seen["think"] = kw.get("think")
+        return _REAL_BODY
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    await two_pass.run(
+        topic="t", angle="a", niche_id="glad-labs",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_short_draft_site_config(writer_length_expansion_enabled="false"),
+    )
+    assert seen["think"] is False
+
+
+async def test_run_omits_think_when_switch_off(monkeypatch):
+    """writer_disable_thinking=false → the draft call gets think=None (unchanged)."""
+    seen: dict = {}
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                         site_config=None, **kw):
+        seen["think"] = kw.get("think")
+        return _REAL_BODY
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    await two_pass.run(
+        topic="t", angle="a", niche_id="glad-labs",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_short_draft_site_config(
+            writer_length_expansion_enabled="false", writer_disable_thinking="false",
+        ),
+    )
+    assert seen["think"] is None

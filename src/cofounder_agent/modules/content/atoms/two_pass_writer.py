@@ -460,6 +460,10 @@ async def _draft_node(state: _State) -> _State:
         site_config=site_config, pool=pool,
         task_id=state.get("task_id"),
         target_length=state.get("target_length", 1200),
+        # Disable the writer model's reasoning channel (default) so a
+        # thinking-capable model doesn't burn its budget reasoning and
+        # truncate the visible draft. 2026-07-06 investigation.
+        think=_resolve_writer_think(site_config),
     )
     return {**state, "draft": draft}
 
@@ -725,6 +729,8 @@ async def _revise_node(state: _State) -> _State:
         )
     )
 
+    writer_think = _resolve_writer_think(site_config)
+
     async def _call(call_model: str) -> str:
         return await ollama_chat_text(
             revise_prompt,
@@ -734,6 +740,9 @@ async def _revise_node(state: _State) -> _State:
             timeout_setting="niche_ollama_chat_timeout_seconds",
             task_id=task_id,
             phase="two_pass_revise",
+            # Same reasoning-channel disable as the draft call — revise
+            # rewrites prose, not chain-of-thought.
+            think=writer_think,
         )
 
     # poindexter#574 — variant-override fallback. When a variant assigned
@@ -875,6 +884,28 @@ def _expansion_enabled(site_config: Any = None) -> bool:
         # value when a stubbed site_config raises (matches
         # _resolve_max_revision_loops above).
         return True
+
+
+def _resolve_writer_think(site_config: Any = None) -> bool | None:
+    """``think`` flag for the writer's draft / revise / expand LLM calls.
+
+    Returns ``False`` (disable the reasoning channel) when
+    ``writer_disable_thinking`` is on — the default. A thinking-capable writer
+    model (e.g. the gemma-4-31B-it-qat QAT default) otherwise burns its
+    generation budget in a hidden reasoning channel and the visible draft
+    truncates mid-sentence or at a bare heading (2026-07-06 investigation).
+    Returns ``None`` (omit the field, leave the call unchanged) when the switch
+    is off — for deliberately letting a reasoning writer chain-of-think.
+    """
+    if site_config is None:
+        return False
+    try:
+        raw = site_config.get("writer_disable_thinking", "true")
+        return False if str(raw).lower() in ("true", "1", "yes") else None
+    except Exception:  # noqa: BLE001 — defensive against test stubs
+        # silent-ok: optional feature flag — default to disabling thinking
+        # (the safe writer default) when a stubbed site_config raises.
+        return False
 
 
 # ---------------------------------------------------------------------------
@@ -1335,6 +1366,110 @@ def _emit_prompt_echo_finding(*, stripped_lines: int, task_id: str | None) -> No
         pass
 
 
+# ---------------------------------------------------------------------------
+# Dangling-heading trim (early-stop / thinking-budget truncation guard,
+# 2026-07-06).
+#
+# gemma-4-31B-it-qat (the ``pipeline_writer_model``) is a thinking-capable QAT
+# model: its chat template opens a ``<|channel>thought`` reasoning channel, and
+# the writer path does not disable it, so on some draws the model spends its
+# generation budget reasoning and the VISIBLE draft stops early. A/B repro on
+# the real draft prompt (scripts/experiments) put 8/8 gemma drafts under target,
+# and a recurring shape is a draft that ENDS at a bare section heading
+# ("## Local Inference vs", "## The Technical") with no body under it.
+#
+# That shape is structurally broken but slips through BOTH existing guards:
+#   - ``content_normalize_draft`` strips a LEADING scaffold, never a trailing tail;
+#   - the ``content_validator`` ``truncated_content`` rule EXEMPTS a trailing
+#     heading (a heading legitimately has no terminal punctuation), so a draft
+#     that ends AT one is never flagged as truncated.
+# It also poisons the keep-best expansion: the dangling heading inflates the
+# word count used for the expansion threshold, and the expand prompt is told to
+# "preserve every existing ... heading", so the broken heading can survive
+# verbatim into the persisted post.
+#
+# This guard deterministically drops a bare heading that sits as the final
+# non-blank line of a draft (no LLM call), and runs BEFORE the expansion
+# decision so (a) the persisted body ends on real prose and (b) the keep-best
+# length comparison uses the true body length. It only ever removes trailing
+# heading line(s) (looping to clean a stacked ``## A\n\n## B`` tail); it never
+# touches a draft whose last non-blank line is prose / list / code, and it never
+# zeroes a draft (a heading-only body is left untouched for the caller's finding
+# + human review). Complements the mid-sentence case, which the validator's
+# ``truncated_content`` rule already catches → reject → rescue.
+_DANGLING_HEADING_RE = re.compile(r"(?:\A|\n)[ \t]*(#{1,6}[ \t][^\n]*?)[ \t]*\Z")
+
+
+def _trim_dangling_heading(draft: str) -> tuple[str, int]:
+    """Strip a bare Markdown heading sitting as the final non-blank line.
+
+    Returns ``(clean_draft, headings_trimmed)`` — ``(draft, 0)`` when the last
+    non-blank line is prose / list / code, or when trimming would leave nothing.
+    Loops so a draft ending in stacked headings is fully cleaned.
+    """
+    if not draft or not draft.strip():
+        return draft, 0
+    body = draft
+    trimmed = 0
+    while True:
+        stripped = body.rstrip()
+        m = _DANGLING_HEADING_RE.search(stripped)
+        if not m:
+            break
+        candidate = stripped[: m.start()].rstrip()
+        if not candidate.strip():
+            break  # heading-only body — never zero the draft
+        body = candidate
+        trimmed += 1
+    return (body, trimmed) if trimmed else (draft, 0)
+
+
+def _emit_dangling_tail_finding(*, trimmed: int, task_id: str | None) -> None:
+    """Loud-but-recovered canary: the writer stopped at a bare trailing heading
+    and the deterministic guard dropped it. Self-heal is not silent
+    (feedback_self_heal_not_suppress) — the pipeline keeps the recovered body
+    while the model-quality signal stays visible on the Findings dashboard,
+    distinct from the echo/planning-dump kinds so the truncation flavour is
+    tracked separately. ``severity='warn'`` → Discord per the dispatcher policy.
+    """
+    logger.warning(
+        "[two_pass_writer] writer draft ended at a bare heading (%d trailing "
+        "heading line(s), no body under it); trimmed it and kept the article. "
+        "Recurring dangling headings mean the writer model is stopping early — "
+        "the thinking-capable pipeline_writer_model can spend its budget in the "
+        "reasoning channel and cut the visible draft short.",
+        trimmed,
+    )
+    try:
+        from utils.findings import emit_finding
+    except Exception:  # noqa: BLE001  # silent-ok: emit is best-effort; the WARNING log above already surfaced the trim
+        return
+    try:
+        emit_finding(
+            source="modules.content.atoms.two_pass_writer",
+            kind="writer_dangling_heading_trimmed",
+            title=f"Writer stopped at a bare heading ({trimmed} line(s)) — trimmed tail",
+            body=(
+                f"The two_pass writer produced a draft that ended at {trimmed} "
+                f"bare section heading(s) with no body underneath — an early-stop "
+                f"truncation shape the ``truncated_content`` validator exempts "
+                f"(headings legitimately lack terminal punctuation). The "
+                f"deterministic guard trimmed the trailing heading(s) so the "
+                f"persisted body ends on prose and the keep-best expansion sees "
+                f"the true word count. Recurring hits mean the writer model "
+                f"(pipeline_writer_model) is stopping early; the thinking-capable "
+                f"gemma QAT model can burn its generation budget in the reasoning "
+                f"channel — consider disabling thinking for the writer or a "
+                f"stronger writer."
+            ),
+            severity="warn",
+            dedup_key="writer_dangling_heading_trimmed",
+            extra={"trimmed": trimmed, "task_id": task_id},
+        )
+    except Exception:  # noqa: BLE001  # silent-ok: finding emission must never raise; the WARNING log above is the durable signal
+        pass
+
+
 async def _maybe_expand_to_target(
     draft: str,
     *,
@@ -1365,6 +1500,7 @@ async def _maybe_expand_to_target(
         "words_after": words_before,
         "echo_stripped": 0,
         "planning_stripped": 0,
+        "dangling_trimmed": 0,
     }
     if not (draft or "").strip() or target_length <= 0:
         return draft, meta
@@ -1388,6 +1524,9 @@ async def _maybe_expand_to_target(
             timeout_setting="niche_ollama_chat_timeout_seconds",
             task_id=task_id,
             phase="two_pass_expand",
+            # Same reasoning-channel disable as draft/revise — the expansion
+            # runs on the same writer model and must not truncate itself.
+            think=_resolve_writer_think(site_config),
         )
     except Exception as exc:  # noqa: BLE001 — expansion is best-effort
         logger.warning(
@@ -1413,6 +1552,13 @@ async def _maybe_expand_to_target(
     # post. Strip structurally before the word-count comparison.
     expanded, exp_planning = _strip_planning_dump_preamble(expanded)
     meta["planning_stripped"] = exp_planning
+    # Same compounding hazard, early-stop flavour: the expansion runs on the
+    # same thinking-capable writer model, so it can ITSELF stop at a bare
+    # trailing heading. Trim that before the keep-best comparison so a
+    # dangling-heading expansion can't win keep-best and bake the broken tail
+    # into the post.
+    expanded, exp_dangling = _trim_dangling_heading(expanded)
+    meta["dangling_trimmed"] = exp_dangling
     words_after = len(expanded.split())
     # Keep-best: only adopt the expansion when it genuinely lengthened the
     # draft. An empty / shorter response keeps the original (never zero/shrink).
@@ -1498,6 +1644,14 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
         # closed on it — the structural gate (the validator's own detector)
         # catches that shape and recovers the article fused under the dump.
         base_draft, dump_pre = _strip_planning_dump_preamble(base_draft)
+        # Dangling-heading guard (2026-07-06): the thinking-capable writer model
+        # can stop early and leave the draft ENDING at a bare section heading
+        # with no body under it — a shape the truncated_content validator
+        # exempts. Trim it BEFORE the expansion decision so (a) the persisted
+        # body ends on prose and (b) the keep-best threshold + length comparison
+        # use the true body length, not a heading-inflated one. No-op when the
+        # last line is real content.
+        base_draft, tail_pre = _trim_dangling_heading(base_draft)
         # Keep-best expansion guard: local writers under-deliver on long
         # targets even when the draft prompt asks for ~N words. If the final
         # draft is under ``target_length * writer_min_length_ratio``, run ONE
@@ -1523,6 +1677,9 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
             _emit_planning_dump_finding(
                 stripped_lines=planning_stripped, task_id=task_id,
             )
+        dangling_trimmed = tail_pre + int(expand_meta.get("dangling_trimmed", 0))
+        if dangling_trimmed:
+            _emit_dangling_tail_finding(trimmed=dangling_trimmed, task_id=task_id)
         return {
             "draft": _scrub_private_repo_refs(draft_out),
             "snippets_used": final.get("snippets", []),
@@ -1537,6 +1694,11 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
             # instruction/identity echo so the two failure flavours stay
             # distinguishable on the Findings dashboard.
             "planning_dump_stripped": planning_stripped,
+            # Dangling-heading guard observability — trailing bare heading(s)
+            # trimmed off an early-stopped draft (0 = clean), counted separately
+            # from the echo / planning-dump strips so the truncation flavour is
+            # its own signal on the Findings dashboard.
+            "dangling_heading_trimmed": dangling_trimmed,
             # Length-enforcement observability — did the expansion pass fire,
             # and the word counts before/after. Surfaced so the caller stage
             # can record it (capability_outcomes / metrics).
