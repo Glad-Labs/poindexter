@@ -4,8 +4,9 @@
 # Plain Node + git + gh. NO LLM, no Anthropic-API cost — distinct from the
 # disabled Claude-Code scheduled agents. Never a PR gate: the per-PR net runs
 # offline in console-unit; this is the ONLY live-worker touch. It runs solely on
-# the self-hosted PC runner (which can reach localhost:8002), gated on CI_RUNNER
-# so it is a quiet green skip whenever the runner is offline.
+# the self-hosted PC runner — a container, so it reaches the host-published
+# worker at host.docker.internal:8002 (NOT localhost, which is the container's
+# own loopback). Gated on CI_RUNNER so it is a quiet green skip when offline.
 #
 #   no schema drift  -> silent green no-op
 #   benign drift     -> refresh PR auto-merges once checks pass + Discord ping
@@ -29,11 +30,11 @@ on:
   workflow_dispatch:
     inputs:
       base:
-        description: Worker base URL (self-hosted → localhost; container → host.docker.internal)
-        default: http://localhost:8002
+        description: Worker base URL (the CI-runner container reaches the host at host.docker.internal)
+        default: http://host.docker.internal:8002
       prometheus:
         description: Prometheus base URL
-        default: http://localhost:9091
+        default: http://host.docker.internal:9091
 
 permissions:
   contents: write
@@ -52,8 +53,8 @@ jobs:
     runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
     timeout-minutes: 15
     env:
-      BASE: ${{ github.event.inputs.base || 'http://localhost:8002' }}
-      PROM: ${{ github.event.inputs.prometheus || 'http://localhost:9091' }}
+      BASE: ${{ github.event.inputs.base || 'http://host.docker.internal:8002' }}
+      PROM: ${{ github.event.inputs.prometheus || 'http://host.docker.internal:9091' }}
       CONTRACTS: src/cofounder_agent/console/js/__tests__/contracts
       # Surfaced as env vars because the `secrets` context is not allowed in a
       # step `if:` (GitHub rejects it at parse time); the `env` context is.
@@ -85,27 +86,46 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Record fixtures + snapshot (schema drift → exit 1)
+      # Capture the recorder's EXACT exit code — the branches below key off it.
+      # 0 = no drift, 1 = schema drift (artifacts refreshed), 2 = operational
+      # (worker unreachable / bad creds). We deliberately do NOT use
+      # continue-on-error + outcome (which is binary success/failure) because a
+      # crash and a real drift both exit non-zero — the recorder guarantees a
+      # connection failure is exit 2, never 1, so a down worker can't masquerade
+      # as drift. The step itself always ends green (exit 0); the code drives the
+      # rest of the job.
+      - name: Record fixtures + snapshot
         id: record
-        continue-on-error: true
+        shell: bash
         env:
           CONSOLE_CONTRACT_CLIENT_ID: ${{ secrets.CONSOLE_CONTRACT_CLIENT_ID }}
           CONSOLE_CONTRACT_CLIENT_SECRET: ${{ secrets.CONSOLE_CONTRACT_CLIENT_SECRET }}
-        run: node "$CONTRACTS/record-fixtures.mjs" --base "$BASE" --prometheus "$PROM"
+        run: |
+          set +e
+          node "$CONTRACTS/record-fixtures.mjs" --base "$BASE" --prometheus "$PROM"
+          code=$?
+          set -e
+          echo "code=$code" >> "$GITHUB_OUTPUT"
+          echo "recorder exit code: $code"
+          exit 0
 
       - name: No schema drift — done
-        if: steps.record.outcome == 'success'
-        run: echo "No console contract drift."
+        if: steps.record.outputs.code == '0'
+        run: echo "No console contract drift — snapshot matches the live backend."
+
+      - name: Worker unreachable — skip
+        if: steps.record.outputs.code != '0' && steps.record.outputs.code != '1'
+        run: echo "Recorder exit ${{ steps.record.outputs.code }} (worker unreachable or operational error) — nothing to refresh; retrying next cycle."
 
       # ── drift path (recorder exited 1: schema changed, artifacts refreshed) ──
       - name: Contract tests vs fresh fixtures
-        if: steps.record.outcome == 'failure'
+        if: steps.record.outputs.code == '1'
         id: verify
         continue-on-error: true
         run: npm run test:console
 
       - name: Open / update refresh PR
-        if: steps.record.outcome == 'failure'
+        if: steps.record.outputs.code == '1'
         id: pr
         shell: bash
         env:
@@ -117,6 +137,14 @@ jobs:
           git config user.email "bot@gladlabs.io"
           git checkout -B "$BR"
           git add "$CONTRACTS"
+          # Guard: a semantic-drift verdict can still re-serialize byte-identical
+          # (prettier/key-order), leaving nothing staged. Committing then would
+          # red-fail on "nothing to commit"; skip cleanly instead.
+          if git diff --cached --quiet; then
+            echo "Snapshot drifted semantically but re-serialized identically — nothing to commit; no PR."
+            echo "opened=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git commit -m "chore(console): refresh contract fixtures + OpenAPI snapshot"
           git push -f -u origin "$BR"
           gh pr create --base main --head "$BR" \
@@ -124,9 +152,10 @@ jobs:
             --body "Automated nightly refresh — the backend schema drifted. Contract tests vs the fresh fixtures: **${{ steps.verify.outcome }}**. Benign (green) auto-merges once checks pass; breaking (red) holds for review." \
             || echo "PR already open (branch updated)"
           echo "branch=$BR" >> "$GITHUB_OUTPUT"
+          echo "opened=true" >> "$GITHUB_OUTPUT"
 
       - name: Benign drift → auto-merge + Discord
-        if: steps.record.outcome == 'failure' && steps.verify.outcome == 'success' && env.DISCORD_OPS_WEBHOOK_URL != ''
+        if: steps.record.outputs.code == '1' && steps.pr.outputs.opened == 'true' && steps.verify.outcome == 'success' && env.DISCORD_OPS_WEBHOOK_URL != ''
         shell: bash
         env:
           GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
@@ -138,7 +167,7 @@ jobs:
             "$DISCORD_OPS_WEBHOOK_URL" >/dev/null || true
 
       - name: Breaking drift → hold + Telegram
-        if: steps.record.outcome == 'failure' && steps.verify.outcome == 'failure' && env.TELEGRAM_BOT_TOKEN != ''
+        if: steps.record.outputs.code == '1' && steps.pr.outputs.opened == 'true' && steps.verify.outcome == 'failure' && env.TELEGRAM_BOT_TOKEN != ''
         shell: bash
         run: |
           set -euo pipefail

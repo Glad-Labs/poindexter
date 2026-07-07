@@ -1,9 +1,19 @@
 #!/usr/bin/env node
 // Refresh contract fixtures + the pruned OpenAPI snapshot from a live worker.
 // Reads (GET) only — write surfaces are never invoked (a real POST would mutate
-// prod). Exit 0 = artifacts match the committed ones, 1 = they drifted.
+// prod).
+//
+// Exit codes (the nightly workflow branches on these):
+//   0  artifacts match the live backend — no drift
+//   1  schema DRIFT — snapshot + fixtures refreshed; open a review PR
+//   2  operational — worker unreachable or bad creds; NOT drift, green-skip
+//
+// A connection failure must never surface as exit 1: the workflow would misread
+// it as drift and try to open an empty PR. Every fetch path is guarded so a
+// connection error maps to exit 2 (see the connErrCode classifier + main catch).
 //
 //   node record-fixtures.mjs --base http://localhost:8002 --prometheus http://localhost:9091
+//   (in a container — e.g. the CI runner — use --base http://host.docker.internal:8002)
 //   (creds via --client-id/--client-secret or CONSOLE_CONTRACT_CLIENT_ID/_SECRET env)
 import fs from 'node:fs';
 import path from 'node:path';
@@ -166,13 +176,16 @@ function printSchemaDiff(oldSnap, newSnap) {
   const added = np.filter((p) => !op.includes(p));
   const removed = op.filter((p) => !np.includes(p));
   const changed = np.filter(
-    (p) => op.includes(p) && !isDeepStrictEqual(oldSnap.paths[p], newSnap.paths[p])
+    (p) =>
+      op.includes(p) && !isDeepStrictEqual(oldSnap.paths[p], newSnap.paths[p])
   );
   if (added.length) console.log('  + added:   ' + added.join(', '));
   if (removed.length) console.log('  - removed: ' + removed.join(', '));
   if (changed.length) console.log('  ~ changed: ' + changed.join(', '));
   if (!added.length && !removed.length && !changed.length) {
-    console.log('  ~ components/schemas changed (referenced model shape moved)');
+    console.log(
+      '  ~ components/schemas changed (referenced model shape moved)'
+    );
   }
 }
 
@@ -186,51 +199,111 @@ function printSchemaDiff(oldSnap, newSnap) {
 // churns a nightly PR.
 const FORCE = process.argv.includes('--force');
 const snapPath = path.join(__dirname, 'openapi.snapshot.json');
-const fresh = await snapshot(await mintToken());
-const committed = fs.existsSync(snapPath)
-  ? JSON.parse(fs.readFileSync(snapPath, 'utf8'))
-  : null;
-const schemaDrift = !committed || !isDeepStrictEqual(fresh, committed);
 
-if (schemaDrift && committed) {
-  console.log('── SCHEMA DRIFT vs committed snapshot ──');
-  printSchemaDiff(committed, fresh);
-} else if (schemaDrift) {
-  console.log('No committed snapshot yet — recording a fresh baseline.');
+// A connection failure (worker down, DNS, timeout) is NOT schema drift — it's
+// infrastructure. Walk the error's `cause` chain (undici wraps the socket error
+// under TypeError: fetch failed) for a known connect-level code. main()'s catch
+// maps a hit to exit 2 so the nightly green-skips instead of misreading a
+// down worker as drift and opening an empty PR.
+const CONN_CODES = new Set([
+  'ECONNREFUSED',
+  'ENOTFOUND',
+  'EAI_AGAIN',
+  'ETIMEDOUT',
+  'ECONNRESET',
+  'UND_ERR_CONNECT_TIMEOUT',
+  'UND_ERR_SOCKET',
+]);
+function connErrCode(err, seen = new Set()) {
+  // Walk BOTH the .cause chain (undici wraps the socket error one level down)
+  // AND .errors[] (an AggregateError — what you get when the host resolves to
+  // several addresses, e.g. localhost → ::1 + 127.0.0.1, or host.docker.internal
+  // on the CI runner — and every attempt is refused). The seen-set guards cycles.
+  let e = err;
+  while (e && typeof e === 'object' && !seen.has(e)) {
+    seen.add(e);
+    if (typeof e.code === 'string' && CONN_CODES.has(e.code)) return e.code;
+    if (Array.isArray(e.errors)) {
+      for (const sub of e.errors) {
+        const c = connErrCode(sub, seen);
+        if (c) return c;
+      }
+    }
+    e = e.cause;
+  }
+  return null;
 }
 
-if (schemaDrift || FORCE) {
-  const readRows = manifest.filter(isReadRow);
-  console.log(`Recording ${readRows.length} read fixtures from ${BASE} …`);
-  const skipped = [];
-  for (const row of readRows) {
-    const file = path.join(FIX_DIR, row.fixture || `${row.name}.json`);
-    try {
-      const raw = await recordRow(row);
-      fs.writeFileSync(file, JSON.stringify(raw, null, 2) + '\n');
-      console.log(`  ✓ ${path.basename(file)}`);
-    } catch (e) {
-      // A slow / unreachable read must not abort the whole nightly run — warn,
-      // preserve any committed fixture, and continue. A persistently-missing
-      // tier-3 fixture surfaces later as a loud contract-test failure.
-      skipped.push(row.name);
-      console.warn(`  ⚠ ${row.name} skipped: ${e.message}`);
+async function main() {
+  const fresh = await snapshot(await mintToken());
+  const committed = fs.existsSync(snapPath)
+    ? JSON.parse(fs.readFileSync(snapPath, 'utf8'))
+    : null;
+  const schemaDrift = !committed || !isDeepStrictEqual(fresh, committed);
+
+  if (schemaDrift && committed) {
+    console.log('── SCHEMA DRIFT vs committed snapshot ──');
+    printSchemaDiff(committed, fresh);
+  } else if (schemaDrift) {
+    console.log('No committed snapshot yet — recording a fresh baseline.');
+  }
+
+  if (schemaDrift || FORCE) {
+    const readRows = manifest.filter(isReadRow);
+    console.log(`Recording ${readRows.length} read fixtures from ${BASE} …`);
+    const skipped = [];
+    for (const row of readRows) {
+      const file = path.join(FIX_DIR, row.fixture || `${row.name}.json`);
+      try {
+        const raw = await recordRow(row);
+        fs.writeFileSync(file, JSON.stringify(raw, null, 2) + '\n');
+        console.log(`  ✓ ${path.basename(file)}`);
+      } catch (e) {
+        // A connection error mid-run means the worker went away — abort as
+        // infrastructure (rethrow → exit 2) rather than half-write fixtures and
+        // then report "drift". A per-row APP error (one slow/unreachable
+        // endpoint) is still just warned + skipped so one flaky read never
+        // aborts the whole nightly.
+        if (connErrCode(e)) throw e;
+        skipped.push(row.name);
+        console.warn(`  ⚠ ${row.name} skipped: ${e.message}`);
+      }
+    }
+    fs.writeFileSync(snapPath, JSON.stringify(fresh, null, 2) + '\n');
+    console.log('  ✓ openapi.snapshot.json');
+    if (skipped.length) {
+      console.warn(`Skipped ${skipped.length}: ${skipped.join(', ')}`);
     }
   }
-  fs.writeFileSync(snapPath, JSON.stringify(fresh, null, 2) + '\n');
-  console.log('  ✓ openapi.snapshot.json');
-  if (skipped.length) {
-    console.warn(`Skipped ${skipped.length}: ${skipped.join(', ')}`);
+
+  // Set exitCode and let the event loop drain naturally. Calling process.exit()
+  // here crashes libuv on Windows (UV_HANDLE_CLOSING) because fetch's keep-alive
+  // sockets are still tearing down; a hard exit mid-teardown is the bug.
+  if (schemaDrift) {
+    console.log(
+      '\nSchema drift detected → artifacts refreshed. Review + commit.'
+    );
+    process.exitCode = 1;
+  } else {
+    console.log('\nNo schema drift — snapshot matches the live backend.');
+    process.exitCode = 0;
   }
 }
 
-// Set exitCode and let the event loop drain naturally. Calling process.exit()
-// here crashes libuv on Windows (UV_HANDLE_CLOSING) because fetch's keep-alive
-// sockets are still tearing down; a hard exit mid-teardown is the bug.
-if (schemaDrift) {
-  console.log('\nSchema drift detected → artifacts refreshed. Review + commit.');
-  process.exitCode = 1;
-} else {
-  console.log('\nNo schema drift — snapshot matches the live backend.');
-  process.exitCode = 0;
-}
+main().catch((err) => {
+  const code = connErrCode(err);
+  if (code) {
+    // Worker unreachable — a normal state when the local stack is down. Exit 2
+    // (operational, NOT drift): the workflow green-skips the PR/ping path and
+    // retries next cycle. Never exit 1 here — that reads as schema drift.
+    console.error(
+      `Worker unreachable at ${BASE} (${code}) — skipping drift check ` +
+        '(exit 2, not drift).'
+    );
+  } else {
+    // Any other unexpected failure is still operational, not drift.
+    console.error('Recorder error (exit 2, not drift):', err && err.message);
+    if (err && err.stack) console.error(err.stack);
+  }
+  process.exitCode = 2;
+});

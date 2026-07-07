@@ -54,6 +54,8 @@ scheduling — verified live); every other surface is request- and shape-only.
 
 ```bash
 node record-fixtures.mjs --base http://localhost:8002 --prometheus http://localhost:9091
+# From inside a container (the CI runner) the host is host.docker.internal:
+#   node record-fixtures.mjs --base http://host.docker.internal:8002 --prometheus http://host.docker.internal:9091
 # creds: --client-id/--client-secret or CONSOLE_CONTRACT_CLIENT_ID/_SECRET
 # --force  re-records every read fixture even without schema drift
 ```
@@ -61,10 +63,16 @@ node record-fixtures.mjs --base http://localhost:8002 --prometheus http://localh
 The **drift anchor is the schema snapshot**, compared _semantically_
 (`isDeepStrictEqual`, so it survives FastAPI reordering its keys and prettier
 reformatting the committed file). Fixtures re-record only when the schema drifts
-(or `--force`), so a volatile `last_updated` timestamp never churns a PR. Exit
-**0 = snapshot matches the live backend**, **1 = drift** (the path-level diff is
-printed and the artifacts are rewritten for review). A slow/unreachable read is
-warned + skipped, not fatal — the nightly never aborts on one flaky endpoint.
+(or `--force`), so a volatile `last_updated` timestamp never churns a PR.
+
+**Exit codes are the workflow's contract** (`record-fixtures.exit.test.js` pins
+them): **0** = snapshot matches the live backend; **1** = drift (the path-level
+diff is printed and the artifacts are rewritten for review); **2** = operational
+— the worker was unreachable or the creds were missing. A connection failure is
+_never_ exit 1: a down worker must not be misread as drift and open an empty PR.
+A slow/unreachable _single_ read is warned + skipped mid-run (the nightly never
+aborts on one flaky endpoint), but if the whole worker is gone the run exits 2
+and the nightly green-skips.
 
 Provision the read-only OAuth client once:
 
@@ -86,8 +94,10 @@ poindexter auth register-client --name console-contract-drift --scopes "api:read
   `GITHUB_TOKEN`, opening the PR + pinging, but you merge it by hand).
 
 The job runs only on the self-hosted runner (gated on the `CI_RUNNER` repo
-variable) so it can reach `localhost:8002`; it is a quiet green skip whenever the
-runner is offline.
+variable) so it can reach the local worker. The runner is a **container**, so it
+targets `host.docker.internal:8002` (the host gateway), not `localhost` (its own
+loopback). It is a quiet green skip whenever the runner is offline **or** the
+worker is down (recorder exit 2).
 
 ## Honest limits
 
