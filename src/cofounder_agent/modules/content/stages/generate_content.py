@@ -246,9 +246,14 @@ class GenerateContentStage:
         logger.info("Generating title from content...")
         primary_keyword = tags[0] if tags else topic
         existing_titles = await self._fetch_existing_titles(database_service)
+        # Thread the DB pool so generate_canonical_title routes through the
+        # dispatcher — a cloud pipeline_writer_model then reaches LiteLLM
+        # instead of 404-ing against local Ollama (glad-labs-stack#2194).
+        pool = getattr(database_service, "pool", None)
         llm_title = await _generate_canonical_title(
             topic, primary_keyword, content_text[:500], existing_titles=existing_titles,
             site_config=context.get("site_config"),  # type: ignore[arg-type]
+            pool=pool,
         )
         # poindexter#471: prefer the writer's H1 over the raw topic when
         # the LLM title-gen call returns nothing. The raw topic carries
@@ -275,6 +280,7 @@ class GenerateContentStage:
                 topic, primary_keyword, content_text[:500],
                 existing_titles=avoid_list,
                 site_config=context.get("site_config"),  # type: ignore[arg-type]
+                pool=pool,
             )
             if title_v2:
                 originality_v2 = await _check_title_originality(

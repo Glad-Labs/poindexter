@@ -70,6 +70,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     tags = state.get("tags") or []
     database_service = state.get("database_service")
     site_config = state.get("site_config")
+    # Thread the DB pool so generate_canonical_title routes through the
+    # dispatcher — a cloud pipeline_writer_model then reaches LiteLLM instead
+    # of 404-ing against local Ollama (Sonnet-canary fix; glad-labs-stack#2194).
+    pool = getattr(database_service, "pool", None)
 
     primary_keyword = tags[0] if tags else topic
 
@@ -80,6 +84,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         topic, primary_keyword, content_text[:500],
         existing_titles=existing_titles,
         site_config=site_config,  # type: ignore[arg-type]
+        pool=pool,
     )
     title = _choose_canonical_title(
         topic, content_text, llm_title, site_config=site_config,
@@ -97,6 +102,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             topic, primary_keyword, content_text[:500],
             existing_titles=avoid_list,
             site_config=site_config,  # type: ignore[arg-type]
+            pool=pool,
         )
         if title_v2:
             originality_v2 = await _check_title_originality(title_v2, site_config=site_config)  # type: ignore[arg-type]

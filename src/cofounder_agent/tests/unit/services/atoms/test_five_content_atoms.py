@@ -108,6 +108,48 @@ class TestContentGenerateTitle:
         assert out["title_originality"]["is_original"] is True
         db.update_task.assert_called_once()
 
+    async def test_threads_pool_into_title_generation(self, monkeypatch):
+        """Sonnet-canary 404 fix: the live graph_def atom must thread
+        ``database_service.pool`` into ``generate_canonical_title`` so a cloud
+        writer routes through the dispatcher instead of the local Ollama
+        provider. Without the threaded pool the title path can never reach a
+        cloud writer (it falls back to the local ollama_native provider)."""
+        from modules.content.atoms import content_generate_title as atom
+
+        gen_mock = AsyncMock(return_value="Threaded Title")
+        monkeypatch.setattr(
+            "services.title_generation.generate_canonical_title", gen_mock,
+        )
+        monkeypatch.setattr(
+            "services.title_generation.choose_canonical_title",
+            lambda topic, content, llm_title, **kw: llm_title,
+        )
+        monkeypatch.setattr(
+            "services.title_generation.check_title_originality",
+            AsyncMock(return_value=_originality_result(is_original=True)),
+        )
+
+        # _fetch_existing_titles uses pool.acquire(); stub it so it succeeds.
+        mock_conn = AsyncMock()
+        mock_conn.fetch = AsyncMock(return_value=[])
+        sentinel_pool = MagicMock(name="pool")
+        sentinel_pool.acquire = MagicMock(
+            return_value=AsyncMock(
+                __aenter__=AsyncMock(return_value=mock_conn),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
+        db = _make_db(pool=sentinel_pool)
+
+        await atom.run(_base_state(database_service=db))
+
+        gen_mock.assert_awaited()
+        assert gen_mock.await_args.kwargs.get("pool") is sentinel_pool, (
+            "content.generate_title must pass database_service.pool as pool= "
+            "to generate_canonical_title so a cloud writer routes through the "
+            "dispatcher (Sonnet-canary 404 fix)"
+        )
+
     async def test_empty_content_returns_empty(self, monkeypatch):
         """Empty content → atom is a no-op (no LLM call, empty return)."""
         from modules.content.atoms import content_generate_title as atom

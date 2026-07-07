@@ -584,22 +584,43 @@ async def generate_canonical_title(
     existing_titles: str = "",
     *,
     site_config: SiteConfig,
+    pool: Any = None,
 ) -> str | None:
     """Generate an SEO-optimized title via LLM, avoiding similarity to existing titles.
 
     Phase-2 DI (#272): ``site_config`` is a required keyword arg — the
     module global + ``set_site_config`` shim was retired.
+
+    Routing (Sonnet-canary 404 fix; same class as glad-labs-stack#2194): the
+    title reuses the writer model via the ``pipeline_writer_model`` pin. When a
+    ``pool`` is supplied (the in-graph callers always have one via
+    ``database_service.pool``) the call routes through
+    :func:`services.llm_providers.dispatcher.dispatch_complete` — the SAME path
+    the draft uses — so a cloud writer (e.g. ``anthropic/claude-sonnet-5``)
+    reaches LiteLLM/Anthropic (cost-tracked + cost_guard-gated) instead of being
+    POSTed to local Ollama (which 404s on a cloud model name). When no ``pool``
+    is available (tests / bootstrap) the legacy local ``ollama_native`` provider
+    is called directly — that path is local-only by design.
     """
     _sc = site_config
     try:
-        from plugins.registry import get_all_llm_providers
         from services.prompt_manager import get_prompt_manager
         pm = get_prompt_manager()
-        providers = {p.name: p for p in get_all_llm_providers()}
-        provider = providers.get("ollama_native")
-        if provider is None:
-            logger.warning("[TITLE_GEN] ollama_native provider not registered; skipping")
-            return None
+        # The local ``ollama_native`` provider is only needed for the no-pool
+        # fallback. With a pool we defer provider selection to
+        # ``dispatch_complete`` (per ``plugin.llm_provider.primary.<tier>``),
+        # which is what lets a cloud ``pipeline_writer_model`` route to LiteLLM
+        # rather than 404 against local Ollama.
+        local_provider = None
+        if pool is None:
+            from plugins.registry import get_all_llm_providers
+            providers = {p.name: p for p in get_all_llm_providers()}
+            local_provider = providers.get("ollama_native")
+            if local_provider is None:
+                logger.warning(
+                    "[TITLE_GEN] ollama_native provider not registered; skipping"
+                )
+                return None
 
         prompt = pm.get_prompt(
             "seo.generate_title",
@@ -638,25 +659,53 @@ async def generate_canonical_title(
         max_title_length = _sc.get_int(
             "title_max_length", _DEFAULT_TITLE_MAX_LENGTH,
         )
+        seo_title_max_tokens = _sc.get_int(
+            "content_router_seo_title_max_tokens", 4000,
+        )
         attempt_prompt = prompt
         for attempt in range(1 + max_junk_retries):
-            result = await provider.complete(
-                messages=[{"role": "user", "content": attempt_prompt}],
-                model=model,
-                temperature=0.7,
-                max_tokens=_sc.get_int(
-                    "content_router_seo_title_max_tokens", 4000,
-                ),
-                # A title is short copy. pipeline_writer_model may be a reasoning
-                # model that would otherwise deliberate inside the 4000-token
-                # budget and leak its rationale as the "title" (task bb878d6b:
-                # 'Avoids the "Dev Diary/PR" style: It is framed as an evergreen
-                # resource rather than a log.'). think=False makes it emit
-                # the title directly. If the resolved model can't disable thinking
-                # the call errors and we fall through to None → H1/topic fallback,
-                # which is the same safe headline the junk guard would pick anyway.
-                think=False,
-            )
+            messages = [{"role": "user", "content": attempt_prompt}]
+            # A title is short copy. pipeline_writer_model may be a reasoning
+            # model that would otherwise deliberate inside the token budget and
+            # leak its rationale as the "title" (task bb878d6b: 'Avoids the
+            # "Dev Diary/PR" style: It is framed as an evergreen resource rather
+            # than a log.'). think=False makes it emit the title directly; on a
+            # cloud target LiteLLM drops the Ollama-only param, so it's harmless
+            # either way. If a local model can't disable thinking the call errors
+            # and we fall through to None → H1/topic fallback (the same safe
+            # headline the junk guard would pick anyway).
+            if pool is not None:
+                # Production / in-graph path — the SAME dispatcher the draft
+                # uses. A cloud writer routes to LiteLLM (cost-tracked +
+                # cost_guard-gated); a local writer stays local + free. This is
+                # the #2194-class fix: the old hardcoded ollama_native call
+                # POSTed a cloud model name to local Ollama and 404'd every post.
+                from services.llm_providers.dispatcher import dispatch_complete
+                result = await dispatch_complete(
+                    pool,
+                    messages,
+                    model,
+                    tier="standard",
+                    phase="title_generation",
+                    temperature=0.7,
+                    max_tokens=seo_title_max_tokens,
+                    think=False,
+                )
+            else:
+                # No pool (tests / bootstrap): call the local Ollama provider
+                # directly. Same behavior as before the dispatcher cutover;
+                # local-only by design. ``local_provider`` was resolved in the
+                # pool-is-None branch above (which returns early when
+                # ollama_native is missing); re-narrow it for the type checker.
+                if local_provider is None:  # pragma: no cover - unreachable
+                    return None
+                result = await local_provider.complete(
+                    messages=messages,
+                    model=model,
+                    temperature=0.7,
+                    max_tokens=seo_title_max_tokens,
+                    think=False,
+                )
 
             if not (result and result.text):
                 return None

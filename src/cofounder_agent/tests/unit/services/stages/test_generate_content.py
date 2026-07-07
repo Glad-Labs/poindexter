@@ -304,6 +304,40 @@ class TestGenerateContentStageExecute:
         assert originality_mock.await_count == 2
         assert title_mock.await_count == 2
 
+    async def test_threads_pool_into_title_generation(self):
+        """Sonnet-canary 404 fix: the legacy stage must thread
+        ``database_service.pool`` into ``generate_canonical_title`` so a cloud
+        ``pipeline_writer_model`` routes through the dispatcher instead of the
+        local Ollama provider."""
+        db = _FakeDb()
+        ctx: dict[str, Any] = {
+            "task_id": "t-pool",
+            "topic": "AI trends",
+            "style": "tech", "tone": "neutral", "target_length": 1200,
+            "tags": [], "models_by_phase": {},
+            "database_service": db,
+        }
+        title_mock = AsyncMock(return_value="Generated Title")
+        patches = _patch_everything()
+        for p in patches:
+            p.start()
+        try:
+            with patch(
+                "services.title_generation.generate_canonical_title",
+                new=title_mock,
+            ):
+                result = await GenerateContentStage().execute(ctx, {})
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        assert result.ok is True
+        title_mock.assert_awaited()
+        assert title_mock.await_args.kwargs.get("pool") is db.pool, (
+            "GenerateContentStage must pass database_service.pool as pool= to "
+            "generate_canonical_title (Sonnet-canary 404 fix)"
+        )
+
     async def test_empty_content_fails_loud_marks_task_failed_and_emits_finding(self):
         """poindexter#691: an empty writer draft must FAIL THE TASK loud —
         a load-bearing terminal ``status='failed'`` write with a specific
