@@ -115,6 +115,17 @@ _LOCAL_MODEL_PREFIXES: frozenset[str] = frozenset({
 })
 
 
+# Request params that are meaningful ONLY to a local Ollama backend and must
+# NOT reach a cloud provider. LiteLLM's ``drop_params`` strips *OpenAI-spec*
+# params the target doesn't support — but these aren't OpenAI-spec, so litellm
+# forwards them verbatim and Anthropic/OpenAI 400 ("Extra inputs are not
+# permitted"). ``num_ctx`` is Ollama's context-window option; ``think`` is
+# Ollama's reasoning-channel toggle (#2163, added for the gemma writer). Both
+# get dropped for any non-local prefix (2026-07-07 cloud-writer canary — this
+# was the second Ollama-ism to leak into the Sonnet path after api_base).
+_OLLAMA_ONLY_PARAMS: frozenset[str] = frozenset({"num_ctx", "think"})
+
+
 # Default completion budget for CLOUD models when the caller didn't pass
 # ``max_tokens``. Anthropic's API requires max_tokens and LiteLLM fills in
 # 4096 when absent; on adaptive-thinking Claude models (Sonnet 5+) thinking
@@ -655,6 +666,19 @@ class LiteLLMProvider:
         """
         if resolved_model in self._model_api_base_overrides:
             return True
+        return self._is_local_prefix(resolved_model)
+
+    def _is_local_prefix(self, resolved_model: str) -> bool:
+        """Whether the resolved model routes to a LOCAL backend.
+
+        Decides which request params are safe to forward (Ollama-only
+        params must be dropped for cloud — see ``_OLLAMA_ONLY_PARAMS``).
+        An inline ``http(s)://`` model string is local iff the URL is a
+        loopback / docker-internal host; otherwise the call is by
+        namespace prefix.
+        """
+        if resolved_model.startswith("http"):
+            return is_local_base_url(resolved_model)
         prefix = resolved_model.split("/", 1)[0].lower()
         return prefix in _LOCAL_MODEL_PREFIXES
 
@@ -809,6 +833,12 @@ class LiteLLMProvider:
         for key in ("temperature", "max_tokens", "top_p", "response_format", "num_ctx", "think"):
             if key in kwargs:
                 completion_kwargs[key] = kwargs[key]
+        # Ollama-only params (num_ctx / think) 400 a cloud provider — litellm
+        # forwards them verbatim because they aren't OpenAI-spec, so
+        # drop_params never strips them. Drop them for any non-local target.
+        if not self._is_local_prefix(resolved_model):
+            for _p in _OLLAMA_ONLY_PARAMS:
+                completion_kwargs.pop(_p, None)
         self._apply_cloud_max_tokens(resolved_model, completion_kwargs)
 
         logger.debug(
