@@ -554,7 +554,11 @@ class LiteLLMProvider:
             self._default_prefix = prefix
         # Re-read on every call so flipping the app_setting takes effect on
         # the next dispatch without a worker restart, same contract as
-        # ``api_base`` / ``timeout_seconds`` above.
+        # ``api_base`` / ``timeout_seconds`` above. The value may arrive from
+        # the nested ``config`` blob OR the flat
+        # ``plugin.llm_provider.litellm.allow_paid_base_url`` row — the
+        # dispatcher's ``get_provider_config`` folds the flat row in as a
+        # fallback (nested wins), so both shapes reach here identically.
         self._allow_paid_base_url = _coerce_bool(
             provider_config.get("allow_paid_base_url"),
         )
@@ -695,10 +699,11 @@ class LiteLLMProvider:
         if candidate_url and not is_local_base_url(candidate_url):
             raise RuntimeError(
                 f"LiteLLMProvider refuses non-local api_base "
-                f"{candidate_url!r} — set "
+                f"{candidate_url!r} — authorise paid endpoints by setting "
                 f"plugin.llm_provider.litellm.allow_paid_base_url=true "
-                f"in app_settings to authorise paid endpoints. Default "
-                f"is false per feedback_no_paid_apis to prevent "
+                f"(e.g. `poindexter settings set "
+                f"plugin.llm_provider.litellm.allow_paid_base_url true`). "
+                f"Default is false per feedback_no_paid_apis to prevent "
                 f"unmonitored spend when the dispatch target is "
                 f"swapped via DB edit."
             )
@@ -716,11 +721,12 @@ class LiteLLMProvider:
             f"LiteLLMProvider refuses paid model prefix {prefix!r} "
             f"(resolved_model={resolved_model!r}) — LiteLLM routes "
             f"this through a cloud vendor and auto-discovers the API "
-            f"key from env. Set "
-            f"plugin.llm_provider.litellm.allow_paid_base_url=true in "
-            f"app_settings to authorise paid endpoints, or fix the "
-            f"caller / per-step *_model setting to use a local "
-            f"prefix ({', '.join(sorted(_LOCAL_MODEL_PREFIXES))}). "
+            f"key from env. Authorise paid endpoints by setting "
+            f"plugin.llm_provider.litellm.allow_paid_base_url=true "
+            f"(e.g. `poindexter settings set "
+            f"plugin.llm_provider.litellm.allow_paid_base_url true`), "
+            f"or fix the caller / per-step *_model setting to use a "
+            f"local prefix ({', '.join(sorted(_LOCAL_MODEL_PREFIXES))}). "
             f"Default-deny per feedback_no_paid_apis."
         )
 

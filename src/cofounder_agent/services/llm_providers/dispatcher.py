@@ -404,9 +404,36 @@ async def get_provider(pool: Any, tier: str = "standard") -> Any:
 
 
 async def get_provider_config(pool: Any, provider_name: str) -> dict[str, Any]:
-    """Fetch ``plugin.llm_provider.<name>.config`` from app_settings."""
+    """Fetch ``plugin.llm_provider.<name>.config`` from app_settings.
+
+    Also folds the operator-facing FLAT security row
+    ``plugin.llm_provider.<name>.allow_paid_base_url`` into the returned
+    config as a fallback. That flat key is what ``settings_defaults`` seeds,
+    what the providers' refusal messages tell operators to flip, and what
+    ``poindexter settings set`` writes — but the providers read
+    ``allow_paid_base_url`` out of the NESTED ``config`` blob
+    (``PluginConfig.config``). Without this fold the flat row is dead: an
+    operator who follows the refusal message edits a row nothing reads and
+    the paid gate stays shut (the glad-labs-stack dual-key trap).
+
+    Resolution is backcompat-safe: an ``allow_paid_base_url`` already present
+    in the nested ``config`` WINS, so operators who set the JSON shape keep
+    their exact behavior. The flat row is consulted ONLY when the nested key
+    is absent — the fresh-install default, where the seeded nested config
+    carries api_base/timeout but no allow_paid flag. Both providers coerce
+    the raw TEXT value (``"true"``/``"false"``) via ``_coerce_bool`` at read
+    time, so passing the string straight through is correct.
+    """
     cfg = await PluginConfig.load(pool, "llm_provider", provider_name)
-    return cfg.config
+    config = dict(cfg.config)
+    if "allow_paid_base_url" not in config:
+        flat = await pool.fetchval(
+            "SELECT value FROM app_settings WHERE key = $1",
+            f"plugin.llm_provider.{provider_name}.allow_paid_base_url",
+        )
+        if flat is not None:
+            config["allow_paid_base_url"] = flat
+    return config
 
 
 async def dispatch_complete(

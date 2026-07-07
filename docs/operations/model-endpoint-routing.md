@@ -49,9 +49,11 @@ requires a second endpoint.
   ignored — dispatch falls back to the default `api_base`, never fails.
 - **The paid-endpoint policy applies to the effective endpoint.** An
   override pointing at a cloud host (e.g. `https://api.openai.com/v1`)
-  is refused unless `plugin.llm_provider.litellm.allow_paid_base_url`
-  is `true` — an override can't smuggle a paid endpoint past the
-  local-only default.
+  is refused unless the paid gate is open — an override can't smuggle a
+  paid endpoint past the local-only default. Open the gate by setting
+  `plugin.llm_provider.litellm.allow_paid_base_url` to `true` (with
+  `poindexter settings set`); the dispatcher folds that flat row into the
+  provider config, so you don't hand-edit the nested JSON blob.
 - Both streaming and non-streaming calls honor the map. All LLM traffic
   flows through the LiteLLM provider, so the map covers every pipeline
   stage, QA rail, and job.

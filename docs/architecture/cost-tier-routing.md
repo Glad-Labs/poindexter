@@ -133,14 +133,36 @@ them; that coupling is what per-step pins removed.
 UPDATE app_settings SET value = 'ollama/gemma3:27b' WHERE key = 'model_role_image_decision';
 ```
 
-### "I want premium cloud QA for high-stakes critic calls"
+### "I want a cloud model on a pin (e.g. premium QA for high-stakes critic calls)"
 
-Point the critic pin at a paid model; `cost_guard.py`'s daily/monthly cap fires
-before the call, so you can't accidentally blow the budget:
+Two steps — the model pin **and** the paid-endpoint opt-in. Both are required;
+the pin alone gets refused.
 
-```sql
-UPDATE app_settings SET value = 'anthropic/claude-sonnet-4-6' WHERE key = 'pipeline_critic_model';
-```
+1. **Point the pin at a paid model.** `cost_guard.py`'s daily/monthly cap fires
+   before the call, so you can't accidentally blow the budget:
+
+   ```sql
+   UPDATE app_settings SET value = 'anthropic/claude-sonnet-4-6' WHERE key = 'pipeline_critic_model';
+   ```
+
+2. **Authorise paid endpoints.** The LiteLLM router default-denies any non-local
+   model prefix (`anthropic/`, `openai/`, `gemini/`, …) or non-local `api_base`
+   per [`feedback_no_paid_apis`](../../CLAUDE.md) — so step 1 on its own raises
+   `LiteLLMProvider refuses paid model prefix …`. Open the gate by flipping the
+   flat operator key:
+
+   ```bash
+   poindexter settings set plugin.llm_provider.litellm.allow_paid_base_url true
+   ```
+
+   > **One effective key.** `allow_paid_base_url` resolves from the flat
+   > `plugin.llm_provider.<provider>.allow_paid_base_url` row — what the seed,
+   > the refusal message, and `poindexter settings set` all reference. The
+   > dispatcher's `get_provider_config` folds that row into the provider's
+   > config, so you never have to hand-edit the nested JSON `config` blob. A
+   > value already inside that nested blob still wins if present (backcompat),
+   > but the flat row is the supported path. Swap `litellm` for `openai_compat`
+   > if that's the provider configured for the tier.
 
 The provider for that call is selected separately via
 `plugin.llm_provider.primary.<tier>` (the tier→provider axis, still in place).

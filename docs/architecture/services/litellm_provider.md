@@ -43,7 +43,7 @@ LiteLLM prefixes provider on the model string. The provider auto-prefixes bare n
 
 ## Reads from / writes to
 
-- **Reads:** `_provider_config` kwargs from the dispatcher (`api_base`, `timeout_seconds`, `drop_params`, `default_prefix`); ENV vars only via LiteLLM's own config surface — the plugin doesn't read os.environ directly per `feedback_no_env_vars`.
+- **Reads:** `_provider_config` kwargs from the dispatcher (`api_base`, `timeout_seconds`, `drop_params`, `default_prefix`, `allow_paid_base_url`, `model_api_base_overrides`); ENV vars only via LiteLLM's own config surface — the plugin doesn't read os.environ directly per `feedback_no_env_vars`. The paid-endpoint gate `allow_paid_base_url` reaches the provider via that injected config: the dispatcher's `get_provider_config` folds the flat `plugin.llm_provider.litellm.allow_paid_base_url` row (the operator-facing key the seed + refusal messages reference) into the config as a fallback, so a value in the nested `config` blob **or** the flat row both take effect — nested wins when both are set.
 - **Writes:** nothing back to Postgres. Cost logging is the dispatcher's job; the plugin just exposes `response_cost` on the `Completion.raw` dict for the dispatcher to consume.
 - **External APIs:** whatever LiteLLM speaks — Ollama, OpenAI, Anthropic, Gemini, vLLM, llama.cpp, OpenRouter, Bedrock, Vertex. Per `feedback_no_paid_apis`, the OSS distribution defaults to Ollama via `default_prefix='ollama/'`; cloud providers stay opt-in behind `cost_guard`.
 

@@ -83,6 +83,11 @@ class OpenAICompatProvider:
         — lets callers pin a tight per-request timeout (QA reviewers,
         self-review) without editing the provider config.
         """
+        # ``_provider_config`` is injected by the dispatcher's
+        # ``get_provider_config``, which folds the flat
+        # ``plugin.llm_provider.openai_compat.allow_paid_base_url`` row in as a
+        # fallback — so ``allow_paid_base_url`` below resolves whether the
+        # operator set the nested ``config`` shape or the flat row.
         cfg = kwargs.get("_provider_config") or {}
         per_call_timeout = kwargs.get("timeout_s")
         timeout = (
@@ -118,11 +123,13 @@ class OpenAICompatProvider:
             return
         raise RuntimeError(
             f"OpenAICompatProvider refuses non-local base_url "
-            f"{base_url!r} — set "
+            f"{base_url!r} — authorise paid endpoints by setting "
             f"plugin.llm_provider.openai_compat.allow_paid_base_url=true "
-            f"in app_settings to authorise paid endpoints. Default is "
-            f"false per feedback_no_paid_apis to prevent unmonitored "
-            f"spend when the dispatch target is swapped via DB edit."
+            f"(e.g. `poindexter settings set "
+            f"plugin.llm_provider.openai_compat.allow_paid_base_url true`). "
+            f"Default is false per feedback_no_paid_apis to prevent "
+            f"unmonitored spend when the dispatch target is swapped via "
+            f"DB edit."
         )
 
     def _headers(self, api_key: str) -> dict[str, str]:

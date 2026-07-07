@@ -173,6 +173,80 @@ class TestGetProviderConfig:
         assert cfg == {}
 
 
+class _KeyedFakePool:
+    """asyncpg-pool stand-in that resolves ``fetchval`` by app_settings key.
+
+    Both ``PluginConfig.load`` (the nested ``plugin.llm_provider.<name>``
+    blob) and the flat-key paid-gate fallback
+    (``plugin.llm_provider.<name>.allow_paid_base_url``) read through
+    ``fetchval(query, key)`` — this fake lets a test seed each row
+    independently.
+    """
+
+    def __init__(self, rows: dict[str, str | None]):
+        self._rows = rows
+
+    async def fetchval(self, _query: str, key: str):
+        return self._rows.get(key)
+
+
+@pytest.mark.unit
+class TestGetProviderConfigPaidGateFallback:
+    """``get_provider_config`` folds the operator-facing FLAT
+    ``plugin.llm_provider.<name>.allow_paid_base_url`` row into the
+    returned config as a fallback, so the key the seed + refusal messages
+    + ``poindexter settings set`` all reference is actually honored
+    (glad-labs-stack dual-key trap). The nested JSON ``config`` value
+    wins when present (backcompat)."""
+
+    async def test_flat_row_folded_in_when_nested_config_omits_key(self):
+        pool = _KeyedFakePool({
+            "plugin.llm_provider.litellm": (
+                '{"enabled": true, "config": '
+                '{"api_base": "http://host.docker.internal:11434"}}'
+            ),
+            "plugin.llm_provider.litellm.allow_paid_base_url": "true",
+        })
+        cfg = await dispatcher.get_provider_config(pool, "litellm")
+        assert cfg["allow_paid_base_url"] == "true"
+        # The nested config keys still flow through untouched.
+        assert cfg["api_base"] == "http://host.docker.internal:11434"
+
+    async def test_nested_config_value_wins_over_flat_row(self):
+        # Backcompat: an operator who set the JSON shape keeps their exact
+        # behavior. Nested false must NOT be overridden by a stray flat true.
+        pool = _KeyedFakePool({
+            "plugin.llm_provider.litellm": (
+                '{"enabled": true, "config": {"allow_paid_base_url": false}}'
+            ),
+            "plugin.llm_provider.litellm.allow_paid_base_url": "true",
+        })
+        cfg = await dispatcher.get_provider_config(pool, "litellm")
+        assert cfg["allow_paid_base_url"] is False
+
+    async def test_no_key_when_neither_nested_nor_flat_present(self):
+        # Fresh install with the flat row absent (or truncated in tests):
+        # the key must not materialize out of nowhere.
+        pool = _KeyedFakePool({
+            "plugin.llm_provider.litellm": '{"enabled": true, "config": {}}',
+        })
+        cfg = await dispatcher.get_provider_config(pool, "litellm")
+        assert "allow_paid_base_url" not in cfg
+
+    async def test_flat_fallback_keys_off_provider_name(self):
+        # Same fold protects openai_compat — the flat key is derived from
+        # the provider name, so both providers are covered by one seam.
+        pool = _KeyedFakePool({
+            "plugin.llm_provider.openai_compat": (
+                '{"enabled": true, "config": {"base_url": '
+                '"https://api.groq.com/openai/v1"}}'
+            ),
+            "plugin.llm_provider.openai_compat.allow_paid_base_url": "true",
+        })
+        cfg = await dispatcher.get_provider_config(pool, "openai_compat")
+        assert cfg["allow_paid_base_url"] == "true"
+
+
 # ---------------------------------------------------------------------------
 # dispatch_complete
 # ---------------------------------------------------------------------------
