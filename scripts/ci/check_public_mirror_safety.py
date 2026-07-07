@@ -143,6 +143,9 @@ _STRIP_FILES = (
     # absent, so OSS installs keep the public defaults. Strip lock-step with the
     # git-rm line in sync-to-github.sh.
     "src/cofounder_agent/services/operator_overrides.py",
+    # Operator-identity RAG scrub overlay + its literal-carrying test (2026-07-07).
+    "src/cofounder_agent/services/operator_leak_patterns.py",
+    "src/cofounder_agent/tests/unit/services/test_operator_leak_patterns.py",
     ".woodpecker.yml",
     "scripts/migrate-poindexter-rename.sh",
     "scripts/sync-to-github.sh",

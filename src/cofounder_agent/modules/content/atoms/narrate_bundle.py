@@ -29,65 +29,9 @@ import logging
 import re
 from typing import Any
 
+from services.rag_scrub import scrub_private_repo_refs as _scrub_private_repo_refs
+
 logger = logging.getLogger(__name__)
-
-
-# Private-repo URL scrub — defense in depth. Only ``Glad-Labs/poindexter``
-# is public; any OTHER repo under the ``Glad-Labs`` org is internal and must
-# not leak into published content. We match "any Glad-Labs/<repo> that is NOT
-# poindexter" with a negative lookahead instead of naming the private repo —
-# that keeps this module free of the internal repo slug, so the public-mirror
-# sync's cosmetic internal-slug → ``poindexter`` rewrite has nothing to clobber
-# here and the scrub behaves IDENTICALLY on the source repo and the mirror.
-# (Hard-coding the slug made the mirror rewrite flip these regexes to match
-# ``poindexter`` and scrub the project's own public links — it was reddening
-# the mirror's unit-tests run. poindexter#996 follow-up.) The bundle no longer
-# carries PR/commit URLs to the LLM and the prompt directs ``(PR #N)`` plain
-# citations, but the model can still echo URLs from training data — last line
-# before publish.
-_PRIV = r"Glad-Labs/(?!poindexter\b)[A-Za-z0-9._-]+"
-_PRIVATE_REPO_PULL_INLINE = re.compile(
-    r"\[([^]]+)\]\(https?://github\.com/" + _PRIV + r"/pull/(\d+)\)"
-)
-_PRIVATE_REPO_COMMIT_INLINE = re.compile(
-    r"\[([^]]+)\]\(https?://github\.com/" + _PRIV + r"/commit/"
-    r"([0-9a-fA-F]{7})[0-9a-fA-F]*\)"
-)
-_PRIVATE_REPO_PULL_AUTOLINK = re.compile(
-    r"<https?://github\.com/" + _PRIV + r"/pull/(\d+)>"
-)
-_PRIVATE_REPO_COMMIT_AUTOLINK = re.compile(
-    r"<https?://github\.com/" + _PRIV + r"/commit/"
-    r"([0-9a-fA-F]{7})[0-9a-fA-F]*>"
-)
-_PRIVATE_REPO_PULL_BARE = re.compile(
-    r"https?://github\.com/" + _PRIV + r"/pull/(\d+)"
-)
-_PRIVATE_REPO_COMMIT_BARE = re.compile(
-    r"https?://github\.com/" + _PRIV + r"/commit/"
-    r"([0-9a-fA-F]{7})[0-9a-fA-F]*"
-)
-_PRIVATE_REPO_MENTION = re.compile(r"\b" + _PRIV + r"\b")
-
-
-def _scrub_private_repo_refs(text: str) -> str:
-    """Strip private-repo URLs from generated content.
-
-    Inline markdown links → ``text (PR #N)`` / ``text (`sha7`)``;
-    autolinks + bare URLs → ``(PR #N)`` / ``(`sha7`)``; remaining text
-    mentions of the private repo path → the public mirror path. Run
-    after the LLM emits prose and before the post is published.
-    """
-    if not text:
-        return text
-    text = _PRIVATE_REPO_PULL_INLINE.sub(r"\1 (PR #\2)", text)
-    text = _PRIVATE_REPO_COMMIT_INLINE.sub(r"\1 (`\2`)", text)
-    text = _PRIVATE_REPO_PULL_AUTOLINK.sub(r"(PR #\1)", text)
-    text = _PRIVATE_REPO_COMMIT_AUTOLINK.sub(r"(`\1`)", text)
-    text = _PRIVATE_REPO_PULL_BARE.sub(r"(PR #\1)", text)
-    text = _PRIVATE_REPO_COMMIT_BARE.sub(r"(`\1`)", text)
-    text = _PRIVATE_REPO_MENTION.sub("Glad-Labs/poindexter", text)
-    return text
 
 
 # ---------------------------------------------------------------------------

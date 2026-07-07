@@ -542,6 +542,17 @@ DEFAULTS: dict[str, str] = {
     # content allowlist there, because generated content must not be grounded
     # in operational telemetry.
     'rag_source_filter': 'posts',
+    # Writer-only snippet source allowlist, decoupled from rag_source_filter
+    # (which the general rag_engine retriever + internal-link discovery read).
+    # Empty = inherit rag_source_filter, then the built-in 'posts' allowlist.
+    # Set to e.g. 'claude_sessions,posts' to ground the writer on first-party
+    # sessions without leaking them into internal-link suggestions. Like
+    # rag_source_filter above, the writer NEVER queries unfiltered.
+    'writer_rag_source_filter': '',
+    # Per-source snippet caps for the writer, CSV 'source:N'; empty = no caps.
+    # Pair with writer_rag_source_filter, e.g. 'posts:2' so prior posts can't
+    # crowd out (or re-form the echo loop from) first-party session grounding.
+    'writer_rag_source_caps': '',
     # Minimum acceptable writer-draft length; below this the draft is treated
     # as a generation failure (empty/too-short → status='failed' + finding,
     # not a misleading reviewer_count:0 QA reject). A real canonical_blog post
@@ -1925,6 +1936,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
 
     # ----- RAG / retrieval (incident: rag_source_filter empty = corpus pollution 2026-06) -----
     'rag_source_filter': {'owner': 'rag_engine', 'value_type': 'csv'},
+    'writer_rag_source_filter': {'owner': 'two_pass_writer', 'value_type': 'csv'},
+    'writer_rag_source_caps': {'owner': 'two_pass_writer', 'value_type': 'string'},
     'niche_internal_rag_lookback_days': {
         'owner': 'internal_rag_source', 'value_type': 'integer',
     },

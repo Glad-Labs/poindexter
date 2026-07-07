@@ -441,10 +441,11 @@ class TestGroupingMakesSense:
         # qa scoring + gate-behavior cluster (qa_accuracy_* … qa_rewrite_max_attempts
         # / qa_flag_instead_of_reject). The slack accommodates that ~210-line gap
         # plus the non-qa keys that legitimately live in it (e.g. the writer_*
-        # block — writer_length_expansion_enabled / writer_min_length_ratio, and
-        # the RAG section's niche_internal_rag_* storyworthy-selection keys); a
-        # genuinely new far-flung qa_ section would still overshoot it.
-        assert span < 275, (
+        # block — writer_length_expansion_enabled / writer_min_length_ratio, the
+        # RAG section's niche_internal_rag_* storyworthy-selection keys, and
+        # writer_rag_source_filter); a genuinely new far-flung qa_ section (keys
+        # hundreds of lines from the cluster) would still overshoot it.
+        assert span < 285, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

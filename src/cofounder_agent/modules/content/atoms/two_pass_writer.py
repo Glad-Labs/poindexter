@@ -61,6 +61,7 @@ from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
 
 from services.logger_config import get_logger
+from services.rag_scrub import scrub_private_repo_refs as _scrub_private_repo_refs
 
 # Module-level keyed-by-thread store for non-serializable state (the asyncpg
 # pool). The MemorySaver checkpointer serializes state via msgpack, and an
@@ -81,51 +82,6 @@ _SITE_CONFIG_REGISTRY: dict[str, Any] = {}
 _MODEL_OVERRIDE_REGISTRY: dict[str, str] = {}
 
 logger = get_logger(__name__)
-
-
-# Private repo URL scrub — defense in depth, mirrors the same set used
-# by ``atoms.narrate_bundle`` (PR #680). Glad-Labs/glad-labs-stack is
-# the private operator repo; only Glad-Labs/poindexter is public. The
-# two_pass writer is grounded by embedding snippets + external web
-# research — neither source feeds private-repo URLs into the prompt,
-# but the model can still echo a URL from training data. This scrub
-# runs on every returned draft before the caller persists it.
-_PRIVATE_REPO_PULL_INLINE = re.compile(
-    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)\)"
-)
-_PRIVATE_REPO_COMMIT_INLINE = re.compile(
-    r"\[([^]]+)\]\(https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
-    r"([0-9a-fA-F]{7})[0-9a-fA-F]*\)"
-)
-_PRIVATE_REPO_PULL_AUTOLINK = re.compile(
-    r"<https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)>"
-)
-_PRIVATE_REPO_COMMIT_AUTOLINK = re.compile(
-    r"<https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
-    r"([0-9a-fA-F]{7})[0-9a-fA-F]*>"
-)
-_PRIVATE_REPO_PULL_BARE = re.compile(
-    r"https?://github\.com/Glad-Labs/glad-labs-stack/pull/(\d+)"
-)
-_PRIVATE_REPO_COMMIT_BARE = re.compile(
-    r"https?://github\.com/Glad-Labs/glad-labs-stack/commit/"
-    r"([0-9a-fA-F]{7})[0-9a-fA-F]*"
-)
-_PRIVATE_REPO_MENTION = re.compile(r"\bGlad-Labs/glad-labs-stack\b")
-
-
-def _scrub_private_repo_refs(text: str) -> str:
-    """Strip private-repo URLs from generated content (defense in depth)."""
-    if not text:
-        return text
-    text = _PRIVATE_REPO_PULL_INLINE.sub(r"\1 (PR #\2)", text)
-    text = _PRIVATE_REPO_COMMIT_INLINE.sub(r"\1 (`\2`)", text)
-    text = _PRIVATE_REPO_PULL_AUTOLINK.sub(r"(PR #\1)", text)
-    text = _PRIVATE_REPO_COMMIT_AUTOLINK.sub(r"(`\1`)", text)
-    text = _PRIVATE_REPO_PULL_BARE.sub(r"(PR #\1)", text)
-    text = _PRIVATE_REPO_COMMIT_BARE.sub(r"(`\1`)", text)
-    text = _PRIVATE_REPO_MENTION.sub("Glad-Labs/poindexter", text)
-    return text
 
 
 # Prompt key in UnifiedPromptManager + YAML registry. YAML default at
@@ -329,7 +285,13 @@ _DEFAULT_SNIPPET_SOURCE_FILTER = ("posts",)
 def _resolve_snippet_source_filter(site_config: Any = None) -> list[str]:
     """Resolve the ``source_table`` allowlist the writer may draw snippets from.
 
-    Reads the CSV ``rag_source_filter`` app_setting (default ``'posts'``).
+    Reads the writer-specific CSV ``writer_rag_source_filter`` first, falling
+    back to the general ``rag_source_filter`` app_setting, then the built-in
+    ``posts`` allowlist. ``writer_rag_source_filter`` is decoupled from
+    ``rag_source_filter`` (which other RAG consumers — internal-link discovery,
+    dedup — read) so the writer can ground on first-party ``claude_sessions``
+    without those sessions leaking into internal-link suggestions.
+
     Unlike the general ``rag_engine`` retriever — where an empty value means
     "all source_tables" — the writer NEVER queries the embeddings table
     unfiltered: an empty/unset value falls back to the built-in content
@@ -340,13 +302,15 @@ def _resolve_snippet_source_filter(site_config: Any = None) -> list[str]:
     near the topic vector would otherwise be handed to the writer as an
     "internal snippet" and reproduced wholesale into a draft (2026-06
     contamination incident; memory: ``project_rag_corpus_pollution``). Operators
-    broaden the corpus by adding content-bearing tables to ``rag_source_filter``
-    (e.g. ``'posts,samples'``).
+    broaden the corpus by adding content-bearing tables to
+    ``writer_rag_source_filter`` (e.g. ``'claude_sessions,posts'``).
     """
     if site_config is None:
         return list(_DEFAULT_SNIPPET_SOURCE_FILTER)
     try:
-        csv = (site_config.get("rag_source_filter", "") or "").strip()
+        csv = (site_config.get("writer_rag_source_filter", "") or "").strip()
+        if not csv:
+            csv = (site_config.get("rag_source_filter", "") or "").strip()
     except Exception:  # noqa: BLE001 — defensive against stubbed site_config
         return list(_DEFAULT_SNIPPET_SOURCE_FILTER)
     parsed = [s.strip() for s in csv.split(",") if s.strip()]
@@ -406,6 +370,7 @@ def _select_snippets(
     k: int,
     dedup_ceiling: float,
     mmr_lambda: float,
+    source_caps: dict[str, int] | None = None,
 ) -> list[dict]:
     """Pick up to ``k`` diverse grounding snippets from an oversampled pool.
 
@@ -413,7 +378,7 @@ def _select_snippets(
     pgvector ``1 - (embedding <=> query)`` at fetch time) and its parsed
     ``vec`` (for inter-candidate similarity).
 
-    Two levers, both DB-tunable:
+    Three levers, all DB-tunable:
 
     1. **Near-duplicate ceiling** — a candidate whose query-similarity is
        ``>= dedup_ceiling`` is a near-republish of what we're writing; drop it
@@ -424,7 +389,12 @@ def _select_snippets(
        echo cluster collapses to a single representative and the rest of the
        slots go to diverse posts. ``mmr_lambda = 1.0`` disables the diversity
        term (pure relevance ranking — the MMR escape hatch).
+    3. **Per-source caps** — ``source_caps`` (e.g. ``{"posts": 2}``) bounds how
+       many snippets any one ``source`` may contribute, so first-party (session)
+       grounding isn't crowded out by — or crowding out — a single source. A
+       capped-out source becomes ineligible for the rest of the MMR loop.
     """
+    source_caps = source_caps or {}
     if not candidates:
         return []
     pool = [c for c in candidates if c.get("relevance", 0.0) < dedup_ceiling]
@@ -432,10 +402,15 @@ def _select_snippets(
         pool = list(candidates)
 
     selected: list[dict] = []
+    per_source: dict[str, int] = {}
     remaining = list(pool)
     while remaining and len(selected) < k:
-        best_i, best_score = 0, None
+        best_i, best_score = None, None
         for i, cand in enumerate(remaining):
+            src = cand.get("source")
+            cap = source_caps.get(src)
+            if cap is not None and per_source.get(src, 0) >= cap:
+                continue  # this source is at its cap — ineligible
             diversity_penalty = (
                 max(_cosine(cand.get("vec", []), s.get("vec", [])) for s in selected)
                 if selected else 0.0
@@ -445,8 +420,37 @@ def _select_snippets(
             ) * diversity_penalty
             if best_score is None or score > best_score:
                 best_score, best_i = score, i
-        selected.append(remaining.pop(best_i))
+        if best_i is None:
+            break  # every remaining candidate is capped-out
+        chosen = remaining.pop(best_i)
+        selected.append(chosen)
+        per_source[chosen.get("source")] = per_source.get(chosen.get("source"), 0) + 1
     return selected
+
+
+def _parse_source_caps(site_config: Any = None) -> dict[str, int]:
+    """Parse ``writer_rag_source_caps`` (CSV ``source:N``) → ``{source: cap}``.
+
+    Empty/malformed entries are skipped (no cap). Deterministic, DB-tunable.
+    """
+    if site_config is None:
+        return {}
+    try:
+        csv = (site_config.get("writer_rag_source_caps", "") or "").strip()
+    except Exception:  # noqa: BLE001  # silent-ok: optional cap read — stub/malformed config yields no caps
+        return {}
+    caps: dict[str, int] = {}
+    for part in csv.split(","):
+        part = part.strip()
+        if ":" not in part:
+            continue
+        src, _, num = part.partition(":")
+        src = src.strip()
+        try:
+            caps[src] = int(num.strip())
+        except ValueError:
+            continue
+    return caps
 
 
 # -- nodes --
@@ -463,6 +467,7 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
     else:
         snippet_limit, multiplier, dedup_ceiling, mmr_lambda = 20, 3, 0.93, 0.5
     source_filter = _resolve_snippet_source_filter(site_config)
+    source_caps = _parse_source_caps(site_config)
     qvec = await embed_text(
         f"{state['topic']} — {state['angle']}", site_config=site_config,  # type: ignore[arg-type]
     )
@@ -511,11 +516,24 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
         k=snippet_limit,
         dedup_ceiling=dedup_ceiling,
         mmr_lambda=mmr_lambda,
+        source_caps=source_caps,
     )
-    snippets = [
-        {"source": c["source"], "ref": c["ref"], "snippet": c["snippet"]}
-        for c in selected
-    ]
+    # Read backstop: scrub each snippet before it enters the writer prompt.
+    # FAIL CLOSED — a scrub error drops the snippet rather than passing
+    # unscrubbed operator text to a public writer (defense in depth over the
+    # tap's write-path scrub; catches any source the write path missed).
+    from services.rag_scrub import scrub_rag_text
+    snippets: list[dict[str, Any]] = []
+    for c in selected:
+        try:
+            clean = scrub_rag_text(c["snippet"] or "")
+        except Exception as exc:  # noqa: BLE001 — never ground on unscrubbed text
+            logger.warning(
+                "[two_pass] snippet scrub failed (%s) — dropping ref %s",
+                exc, c.get("ref"),
+            )
+            continue
+        snippets.append({"source": c["source"], "ref": c["ref"], "snippet": clean})
     return {**state, "snippets": snippets, "revision_loops": 0,
             "external_lookups": [], "loop_capped": False}
 

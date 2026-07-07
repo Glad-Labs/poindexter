@@ -349,7 +349,9 @@ class ClaudeCodeSessionsTap:
                     skipped_empty += 1
                     continue
 
-                text = _scrub(text, scrub_patterns)
+                from services.rag_scrub import scrub_rag_text
+
+                text = scrub_rag_text(text, extra_patterns=scrub_patterns)
 
                 session_uuid = session_file.stem
                 base_source_id = (
