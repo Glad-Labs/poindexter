@@ -2,6 +2,30 @@
   "count": 5,
   "events": [
     {
+      "id": 147956,
+      "timestamp": "2026-07-07T04:51:40.474744+00:00",
+      "event_type": "task_started",
+      "source": "content_router",
+      "task_id": "db2a447f-8876-4ba8-bd8e-931cee90ac33",
+      "severity": "info",
+      "details": {
+        "topic": "How KV cache quantization stretches usable context length on a 24GB GPU",
+        "template_slug": "canonical_blog"
+      }
+    },
+    {
+      "id": 147943,
+      "timestamp": "2026-07-07T04:46:07.316179+00:00",
+      "event_type": "task_started",
+      "source": "content_router",
+      "task_id": "cd22c17b-1c93-459c-b040-a2dfafced79a",
+      "severity": "info",
+      "details": {
+        "topic": "The First-Party Content Thesis",
+        "template_slug": "canonical_blog"
+      }
+    },
+    {
       "id": 147904,
       "timestamp": "2026-07-07T04:29:44.012746+00:00",
       "event_type": "task_started",
@@ -36,31 +60,7 @@
         "topic": "The First-Party Content Thesis",
         "template_slug": "canonical_blog"
       }
-    },
-    {
-      "id": 147704,
-      "timestamp": "2026-07-07T03:19:20.708348+00:00",
-      "event_type": "task_started",
-      "source": "content_router",
-      "task_id": "ecaf0c01-fa4c-4488-82a6-19fd85767d6c",
-      "severity": "info",
-      "details": {
-        "topic": "Avoiding AI Hallucinations in Technical Writing",
-        "template_slug": "canonical_blog"
-      }
-    },
-    {
-      "id": 147627,
-      "timestamp": "2026-07-07T02:56:12.916591+00:00",
-      "event_type": "task_started",
-      "source": "content_router",
-      "task_id": "29cf6300-81db-47c5-9dfd-4b8eaf20132b",
-      "severity": "info",
-      "details": {
-        "topic": "The Autoblog Trap",
-        "template_slug": "canonical_blog"
-      }
     }
   ],
-  "server_time": "2026-07-07T04:35:14.454486+00:00"
+  "server_time": "2026-07-07T05:34:44.510074+00:00"
 }

@@ -216,6 +216,87 @@ function validateAgainstSchema(value, snapshot, ref, name) {
   checkNode(value, schema, snapshot, `[${name}] $`);
 }
 
+// Collect every #/components/schemas/<Name> $ref reachable inside `node`.
+function refsIn(node, set) {
+  if (!node || typeof node !== 'object') return;
+  if (Array.isArray(node)) return node.forEach((n) => refsIn(n, set));
+  for (const [k, v] of Object.entries(node)) {
+    if (k === '$ref' && typeof v === 'string') {
+      const m = v.match(/#\/components\/schemas\/(.+)$/);
+      if (m) set.add(m[1]);
+    } else {
+      refsIn(v, set);
+    }
+  }
+}
+
+// Prune a full OpenAPI doc down to the console's actual DRIFT SURFACE — the only
+// shapes a `PX.api` adapter depends on — so the nightly snapshot drift signal
+// fires on those and nothing else:
+//   (a) only the manifest-anchored paths;
+//   (b) within each operation, only the SUCCESS (2xx) responses. The console
+//       consumes 2xx bodies; it never depends on an error-response DECLARATION,
+//       so a 400→422 envelope swap or an added 401/403 is NOT console drift.
+//       (validateAgainstSchema likewise only reads responses['200'].);
+//   (c) the transitive component-schema closure of just those 2xx responses, so
+//       error models (HTTPValidationError/ValidationError, reachable only from a
+//       422) never enter the snapshot and never churn a refresh PR.
+// wantPaths is any iterable of path strings (e.g. the manifest's openapi paths).
+function pruneOpenApiSnapshot(full, wantPaths) {
+  const is2xx = (code) => /^2\d\d$/.test(code);
+  const paths = {};
+  for (const p of wantPaths) {
+    const src = full.paths && full.paths[p];
+    if (!src) continue;
+    const ops = {};
+    for (const [method, op] of Object.entries(src)) {
+      if (!op || typeof op !== 'object' || !op.responses) continue;
+      const ok = {};
+      for (const [code, resp] of Object.entries(op.responses)) {
+        if (is2xx(code)) ok[code] = resp;
+      }
+      // Keep only the success-response slice of the operation — dropping tags,
+      // summary, parameters, requestBody, and every 4xx/5xx declaration (all
+      // asserted elsewhere or console-irrelevant), which also kills the array-
+      // reformatting diff noise those sections carry.
+      if (Object.keys(ok).length) ops[method] = { responses: ok };
+    }
+    if (Object.keys(ops).length) paths[p] = ops;
+  }
+  const allSchemas = (full.components && full.components.schemas) || {};
+  const keep = new Set();
+  const queue = [];
+  const seed = new Set();
+  refsIn(paths, seed);
+  seed.forEach((n) => {
+    keep.add(n);
+    queue.push(n);
+  });
+  while (queue.length) {
+    const sub = new Set();
+    refsIn(allSchemas[queue.shift()], sub);
+    sub.forEach((n) => {
+      if (!keep.has(n)) {
+        keep.add(n);
+        queue.push(n);
+      }
+    });
+  }
+  const schemas = {};
+  [...keep].sort().forEach((n) => {
+    if (allSchemas[n]) schemas[n] = allSchemas[n];
+  });
+  return {
+    openapi: full.openapi,
+    info: {
+      title: full.info && full.info.title,
+      version: full.info && full.info.version,
+    },
+    paths,
+    components: { schemas },
+  };
+}
+
 module.exports = {
   jsonResponse,
   makeLocalStorage,
@@ -226,4 +307,6 @@ module.exports = {
   validateAgainstSchema,
   resolveRef,
   checkNode,
+  refsIn,
+  pruneOpenApiSnapshot,
 };

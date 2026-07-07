@@ -23,7 +23,10 @@ import { isDeepStrictEqual } from 'node:util';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const require = createRequire(import.meta.url);
-const { loadApiWithFetch } = require('./contract-runtime.js');
+const {
+  loadApiWithFetch,
+  pruneOpenApiSnapshot,
+} = require('./contract-runtime.js');
 const manifest = require('./contracts.manifest.js');
 
 const arg = (k, d) => {
@@ -106,24 +109,11 @@ async function mintToken() {
   return (await r.json()).access_token;
 }
 
-// Collect every #/components/schemas/<Name> $ref reachable inside `node`.
-function refsIn(node, set) {
-  if (!node || typeof node !== 'object') return;
-  if (Array.isArray(node)) return node.forEach((n) => refsIn(n, set));
-  for (const [k, v] of Object.entries(node)) {
-    if (k === '$ref' && typeof v === 'string') {
-      const m = v.match(/#\/components\/schemas\/(.+)$/);
-      if (m) set.add(m[1]);
-    } else {
-      refsIn(v, set);
-    }
-  }
-}
-
-// Dump the OpenAPI schema and prune to (a) the manifest's anchored paths and
-// (b) the TRANSITIVE closure of component schemas those paths reference. Keeping
-// only the console's actual dependencies is what makes the drift signal precise
-// — an unrelated backend model change must NOT churn a nightly refresh PR.
+// Dump the full OpenAPI schema and prune it to the console's drift surface —
+// the manifest-anchored paths, their SUCCESS (2xx) responses only, and the
+// transitive component closure of those. The pruning (and its rationale) lives
+// in contract-runtime.pruneOpenApiSnapshot so it is unit-tested against a fake
+// doc; here we just fetch + hand it the manifest's anchored paths.
 async function snapshot(tok) {
   const full = await (
     await fetch(BASE + OPENAPI_PATH, {
@@ -134,39 +124,7 @@ async function snapshot(tok) {
   manifest.forEach((row) => {
     if (row.openapi) wantPaths.add(row.openapi.path);
   });
-  const paths = {};
-  for (const p of wantPaths) {
-    if (full.paths && full.paths[p]) paths[p] = full.paths[p];
-  }
-  const allSchemas = (full.components && full.components.schemas) || {};
-  const keep = new Set();
-  const queue = [];
-  const seed = new Set();
-  refsIn(paths, seed);
-  seed.forEach((n) => {
-    keep.add(n);
-    queue.push(n);
-  });
-  while (queue.length) {
-    const sub = new Set();
-    refsIn(allSchemas[queue.shift()], sub);
-    sub.forEach((n) => {
-      if (!keep.has(n)) {
-        keep.add(n);
-        queue.push(n);
-      }
-    });
-  }
-  const schemas = {};
-  [...keep].sort().forEach((n) => {
-    if (allSchemas[n]) schemas[n] = allSchemas[n];
-  });
-  return {
-    openapi: full.openapi,
-    info: { title: full.info?.title, version: full.info?.version },
-    paths,
-    components: { schemas },
-  };
+  return pruneOpenApiSnapshot(full, wantPaths);
 }
 
 // Print a human-readable path-level schema diff (added / removed / changed).

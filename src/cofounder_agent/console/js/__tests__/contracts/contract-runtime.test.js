@@ -5,6 +5,7 @@ const {
   loadApiWithRecorder,
   assertRequest,
   requestMatches,
+  pruneOpenApiSnapshot,
 } = require('./contract-runtime.js');
 
 test('loadApiWithRecorder captures a read surface request', async () => {
@@ -164,4 +165,114 @@ test('validateAgainstSchema tolerates null values and empty arrays', () => {
     { path: '/api/media-approval/pending', method: 'get' },
     'mediaQueue'
   ); // no throw
+});
+
+// ── pruneOpenApiSnapshot ────────────────────────────────────────────────────
+// A full OpenAPI doc that models the exact drift the first nightly surfaced: an
+// anchored path whose 2xx refs a success model, whose 422 refs the FastAPI error
+// model, plus tags/params, and an unrelated path. The prune must keep only the
+// success surface so an error-envelope change never churns a refresh PR.
+const FULL = {
+  openapi: '3.1.0',
+  info: { title: 'X', version: '1', extra: 'dropme' },
+  paths: {
+    '/api/settings': {
+      get: {
+        tags: ['settings'],
+        summary: 'List',
+        parameters: [{ name: 'limit', in: 'query' }],
+        responses: {
+          200: {
+            description: 'ok',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/SettingListResponse' },
+              },
+            },
+          },
+          422: {
+            description: 'Validation Error',
+            content: {
+              'application/json': {
+                schema: { $ref: '#/components/schemas/HTTPValidationError' },
+              },
+            },
+          },
+        },
+      },
+    },
+    '/api/other': {
+      get: { responses: { 200: { description: 'ok' } } },
+    },
+  },
+  components: {
+    schemas: {
+      SettingListResponse: {
+        type: 'object',
+        properties: {
+          settings: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/SettingResponse' },
+          },
+        },
+      },
+      SettingResponse: {
+        type: 'object',
+        properties: { key: { type: 'string' } },
+      },
+      HTTPValidationError: {
+        type: 'object',
+        properties: {
+          detail: {
+            type: 'array',
+            items: { $ref: '#/components/schemas/ValidationError' },
+          },
+        },
+      },
+      ValidationError: { type: 'object' },
+      Unrelated: { type: 'object' },
+    },
+  },
+};
+
+test('pruneOpenApiSnapshot keeps only wanted paths', () => {
+  const snap = pruneOpenApiSnapshot(FULL, new Set(['/api/settings']));
+  assert.deepEqual(Object.keys(snap.paths), ['/api/settings']);
+});
+
+test('pruneOpenApiSnapshot keeps 2xx responses and drops 4xx/422', () => {
+  const snap = pruneOpenApiSnapshot(FULL, ['/api/settings']);
+  const codes = Object.keys(snap.paths['/api/settings'].get.responses);
+  assert.deepEqual(codes, ['200']);
+});
+
+test('pruneOpenApiSnapshot strips tags / summary / parameters from operations', () => {
+  const snap = pruneOpenApiSnapshot(FULL, ['/api/settings']);
+  assert.deepEqual(Object.keys(snap.paths['/api/settings'].get), ['responses']);
+});
+
+test('pruneOpenApiSnapshot keeps the success-response component closure', () => {
+  const snap = pruneOpenApiSnapshot(FULL, ['/api/settings']);
+  const kept = Object.keys(snap.components.schemas);
+  assert.ok(kept.includes('SettingListResponse'), 'success model kept');
+  assert.ok(kept.includes('SettingResponse'), 'transitively-referenced kept');
+});
+
+test('pruneOpenApiSnapshot EXCLUDES error-only + unreferenced components', () => {
+  const snap = pruneOpenApiSnapshot(FULL, ['/api/settings']);
+  const kept = Object.keys(snap.components.schemas);
+  assert.ok(
+    !kept.includes('HTTPValidationError'),
+    'error model (422-only) must not enter the snapshot'
+  );
+  assert.ok(
+    !kept.includes('ValidationError'),
+    'error model transitive dep must not enter the snapshot'
+  );
+  assert.ok(!kept.includes('Unrelated'), 'unreferenced component dropped');
+});
+
+test('pruneOpenApiSnapshot drops volatile top-level info fields', () => {
+  const snap = pruneOpenApiSnapshot(FULL, ['/api/settings']);
+  assert.deepEqual(Object.keys(snap.info).sort(), ['title', 'version']);
 });
