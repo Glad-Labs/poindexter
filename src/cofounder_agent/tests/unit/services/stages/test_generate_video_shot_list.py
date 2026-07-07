@@ -20,6 +20,7 @@ from modules.content.stages.generate_video_shot_list import (
     _estimate_target_duration,
     _extract_json_object,
     _reconcile_shot_list,
+    _resolve_director_think,
     _tolerant_json_loads,
 )
 from schemas.video_shot_list import VideoShotList
@@ -938,3 +939,119 @@ async def test_stage_recovers_arithmetic_slip_via_reconcile() -> None:
     # Success audit event, not failure.
     audit_events = [c.args[1] for c in db_service.pool.execute.call_args_list]
     assert any("video_director.shot_list_produced" in e for e in audit_events)
+
+
+# ---------------------------------------------------------------------------
+# think=False wiring (2026-07-07): the thinking-capable director model
+# (gemma-4-31B-it-qat) spends the shared 6144-token output budget in its
+# reasoning channel and STARVES the JSON shot list — content comes back empty,
+# _extract_json_object finds no object, and the shot list is lost so Stage-2
+# video never renders (audit: shot_list_failed phase=json_extract with a
+# reasoning-prose preview; the empty-content overflow was reproduced
+# in-container). Disabling the channel via video_director_disable_thinking
+# (default true) frees the whole budget for the structured output — mirrors the
+# writer path fix (writer_disable_thinking, #2163).
+# ---------------------------------------------------------------------------
+
+
+def _cfg_get(mapping: dict) -> MagicMock:
+    """A ``config.get`` stub backed by a dict (returns the caller default on miss)."""
+    return MagicMock(side_effect=lambda k, d=None: mapping.get(k, d))
+
+
+def test_resolve_director_think_defaults_to_disabled() -> None:
+    """Key unset → the seeded default 'true' → think=False (channel disabled)."""
+    cfg = MagicMock()
+    cfg.get = _cfg_get({})  # key absent → default "true" reached
+    assert _resolve_director_think(cfg) is False
+
+
+def test_resolve_director_think_true_disables() -> None:
+    cfg = MagicMock()
+    cfg.get = _cfg_get({"video_director_disable_thinking": "true"})
+    assert _resolve_director_think(cfg) is False
+
+
+def test_resolve_director_think_false_leaves_backend_default() -> None:
+    """Operator opt-out → None (don't pin ``think``; leave the backend default)."""
+    cfg = MagicMock()
+    cfg.get = _cfg_get({"video_director_disable_thinking": "false"})
+    assert _resolve_director_think(cfg) is None
+
+
+def test_resolve_director_think_none_cfg_disables() -> None:
+    """No config handle (test/bootstrap) → default to disabling thinking."""
+    assert _resolve_director_think(None) is False
+
+
+def test_resolve_director_think_swallows_cfg_error() -> None:
+    """A misbehaving config stub must not crash the director — default False."""
+    cfg = MagicMock()
+    cfg.get = MagicMock(side_effect=RuntimeError("boom"))
+    assert _resolve_director_think(cfg) is False
+
+
+def _platform_dict_cfg(*, cfg_map: dict, returns) -> MagicMock:
+    """Platform handle with a dict-backed ``config.get`` (so per-key values —
+    including video_director_disable_thinking — differ, unlike the return-model-
+    for-every-key ``_platform_with_dispatch``)."""
+    p = MagicMock()
+    p.dispatch.complete = AsyncMock(return_value=returns)
+    p.config.get = MagicMock(side_effect=lambda k, d=None: cfg_map.get(k, d))
+    p.config.get_int = MagicMock(side_effect=lambda k, d=0: d)
+    return p
+
+
+@pytest.mark.asyncio
+async def test_director_dispatch_disables_thinking_by_default() -> None:
+    """think=False reaches the LLM dispatch when the default-on flag is set —
+    the fix for the empty-{} shot list (thinking channel starving the JSON)."""
+    db_service = _make_db_service()
+    platform = _platform_dict_cfg(
+        cfg_map={"video_director_model": "ollama/gemma-4-31B-it-qat:latest"},
+        returns=MagicMock(text=_make_valid_director_output()),
+    )
+    context = {
+        "title": "Test Post", "content": "Some content " * 50,
+        "podcast_script": "script " * 40, "task_id": "task-think",
+        "database_service": db_service, "platform": platform,
+    }
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+        result = await GenerateVideoShotListStage().execute(context, {})
+
+    assert result.ok
+    assert platform.dispatch.complete.call_args.kwargs["think"] is False
+
+
+@pytest.mark.asyncio
+async def test_director_dispatch_omits_think_when_flag_off() -> None:
+    """Operator opt-out (video_director_disable_thinking=false) → ``think`` is
+    NOT forwarded, leaving the backend default rather than pinning it off."""
+    db_service = _make_db_service()
+    platform = _platform_dict_cfg(
+        cfg_map={
+            "video_director_model": "ollama/gemma-4-31B-it-qat:latest",
+            "video_director_disable_thinking": "false",
+        },
+        returns=MagicMock(text=_make_valid_director_output()),
+    )
+    context = {
+        "title": "Test Post", "content": "Some content " * 50,
+        "podcast_script": "script " * 40, "task_id": "task-think-off",
+        "database_service": db_service, "platform": platform,
+    }
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu") as mock_gpu:
+        mock_pm.return_value.get_prompt = MagicMock(return_value="rendered prompt")
+        mock_gpu.lock = MagicMock(return_value=AsyncMock(
+            __aenter__=AsyncMock(), __aexit__=AsyncMock(),
+        ))
+        result = await GenerateVideoShotListStage().execute(context, {})
+
+    assert result.ok
+    assert "think" not in platform.dispatch.complete.call_args.kwargs

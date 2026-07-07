@@ -61,6 +61,37 @@ _WORDS_PER_SECOND = 2.5  # Rough TTS narration pace; ~150 WPM
 _DIRECTOR_TIMEOUT_DEFAULT = 300
 
 
+def _resolve_director_think(cfg: Any) -> bool | None:
+    """``think`` flag for the director's (and reviewer's) LLM dispatches.
+
+    Returns ``False`` (disable the reasoning channel) when
+    ``video_director_disable_thinking`` is on — the default. The director model
+    (the gemma-4-31B-it-qat QAT default) is thinking-capable: with the channel
+    live, its reasoning shares the ``num_predict`` (6144) output budget, and
+    once the reasoning runs long it STARVES the JSON shot list — ``content``
+    comes back empty, the dispatcher falls back to the reasoning text, and
+    ``_extract_json_object`` finds no object, so the shot list is lost and
+    Stage-2 video never renders (audit: ``shot_list_failed`` phase=json_extract
+    with a reasoning-prose preview; 2026-07-07 investigation reproduced the
+    empty-``content`` overflow in-container). Disabling thinking frees the whole
+    budget for the structured output — the same fix the writer path took via
+    ``writer_disable_thinking`` (#2163).
+
+    Returns ``None`` (leave the backend default — thinking on) only when an
+    operator explicitly sets the flag off. ``think`` is forwarded to Ollama for
+    local models and dropped for cloud targets by the LiteLLM provider, so
+    ``False`` is safe for a non-thinking or cloud director model too.
+    """
+    if cfg is None:
+        return False
+    try:
+        raw = cfg.get("video_director_disable_thinking", "true")
+        return False if str(raw).lower() in ("true", "1", "yes") else None
+    except Exception:  # noqa: BLE001 — optional feature flag, never load-bearing
+        # silent-ok: default to disabling thinking (the safe, reliable path)
+        return False
+
+
 def _estimate_target_duration(podcast_script: str) -> float:
     """Estimate the podcast's spoken duration from word count.
 
@@ -427,6 +458,7 @@ class GenerateVideoShotListStage:
         content_text: str,
         site_name: str,
         timeout_s: int,
+        think: bool | None = None,
     ) -> dict[str, Any] | None:
         """Render the director prompt, dispatch the LLM, validate the result.
 
@@ -480,6 +512,14 @@ class GenerateVideoShotListStage:
         from services.gpu_scheduler import gpu
 
         director_output = ""
+        # Disable the director model's reasoning channel (default) — a
+        # thinking-capable model (the gemma-4-31B-it-qat director) otherwise
+        # spends the shared 6144-token output budget reasoning and starves the
+        # JSON shot list (empty content → json_extract failure; 2026-07-07).
+        # Only forward ``think`` when resolved — skip on None so an operator
+        # opt-out leaves the backend default rather than pinning it. Mirrors
+        # the writer path (#2163).
+        think_kwargs: dict[str, Any] = {} if think is None else {"think": think}
         try:
             async with gpu.lock(
                 "ollama", model=model,
@@ -497,6 +537,7 @@ class GenerateVideoShotListStage:
                     # reconcile pass caps the shot count, but only if the model
                     # was allowed to finish emitting valid JSON first.
                     max_tokens=6144,
+                    **think_kwargs,
                 )
             director_output = (getattr(result, "text", "") or "").strip()
         except Exception as exc:
@@ -666,6 +707,10 @@ class GenerateVideoShotListStage:
         director_timeout = cfg.get_int(
             "video_director_timeout_seconds", _DIRECTOR_TIMEOUT_DEFAULT
         )
+        # Disable the reasoning channel (default) so the thinking-capable
+        # director model doesn't starve its own JSON output — see
+        # _resolve_director_think.
+        director_think = _resolve_director_think(cfg)
 
         # LONG (unchanged behavior): the 16:9 director over podcast_script.
         long_shot_list = await self._produce_shot_list(
@@ -681,6 +726,7 @@ class GenerateVideoShotListStage:
             content_text=content_text,
             site_name=site_name,
             timeout_s=director_timeout,
+            think=director_think,
         )
 
         if long_shot_list is None:
@@ -712,6 +758,7 @@ class GenerateVideoShotListStage:
                 content_text=content_text,
                 site_name=site_name,
                 timeout_s=director_timeout,
+                think=director_think,
             )
 
         # Success — return via context_updates so it survives the graph_def

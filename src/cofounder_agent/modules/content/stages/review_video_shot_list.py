@@ -25,6 +25,7 @@ from modules.content.stages.generate_video_shot_list import (
     _extract_json_object,
     _log_audit,
     _reconcile_shot_list,
+    _resolve_director_think,
     _tolerant_json_loads,
 )
 from plugins.stage import StageResult
@@ -87,6 +88,7 @@ class ReviewVideoShotListStage:
         site_name: str,
         task_id: str | None,
         now_iso: str,
+        think: bool | None = None,
     ) -> dict[str, Any] | None:
         """Render the review prompt, dispatch, validate. ``None`` on any failure."""
         from services.gpu_scheduler import gpu
@@ -108,6 +110,11 @@ class ReviewVideoShotListStage:
             logger.warning("[VIDEO_REVIEW] prompt render failed (%s, %s)", exc, prompt_key)
             return None
 
+        # Disable the reasoning channel (default) — the reviewer is the same
+        # thinking-capable director model doing a second 6144-token structured
+        # pass, so leaving thinking on starves the revised JSON exactly like the
+        # director's (see _resolve_director_think). Skip ``think`` on None.
+        think_kwargs: dict[str, Any] = {} if think is None else {"think": think}
         try:
             async with gpu.lock("ollama", model=model, task_id=task_id, phase="video_review"):
                 result = await platform.dispatch.complete(
@@ -118,6 +125,7 @@ class ReviewVideoShotListStage:
                     timeout_s=timeout_s,
                     temperature=0.4,
                     max_tokens=6144,
+                    **think_kwargs,
                 )
             output = (getattr(result, "text", "") or "").strip()
         except Exception as exc:
@@ -192,6 +200,10 @@ class ReviewVideoShotListStage:
         title = context.get("title", "")
         content_text = context.get("content", "")
         task_id = context.get("task_id")
+        # Disable the reasoning channel (default) — same rationale as the
+        # director: leaving it on starves the revised JSON (see
+        # _resolve_director_think).
+        director_think = _resolve_director_think(cfg)
 
         # LONG. Non-halting: fall back to the unreviewed list on any failure.
         revised = await self._review_one(
@@ -199,7 +211,7 @@ class ReviewVideoShotListStage:
             prompt_key="video.review_v1", script_var="podcast_script",
             script=context.get("podcast_script", ""), current=current,
             title=title, content_text=content_text, site_name=site_name,
-            task_id=task_id, now_iso=now_iso,
+            task_id=task_id, now_iso=now_iso, think=director_think,
         )
         updates: dict[str, Any] = {
             "video_shot_list": revised if revised is not None else current,
@@ -213,7 +225,7 @@ class ReviewVideoShotListStage:
                 prompt_key="video.review_short_v1", script_var="short_script",
                 script=context.get("short_summary_script", ""), current=short,
                 title=title, content_text=content_text, site_name=site_name,
-                task_id=task_id, now_iso=now_iso,
+                task_id=task_id, now_iso=now_iso, think=director_think,
             )
             updates["short_shot_list"] = revised_short if revised_short is not None else short
 

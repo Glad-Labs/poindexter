@@ -203,3 +203,37 @@ async def test_review_recovers_unquoted_key_dialect() -> None:
     assert result.ok
     assert result.metrics["reviewed"] is True
     assert result.context_updates["video_shot_list"]["shots"][1]["source"] == "wan21"
+
+
+@pytest.mark.asyncio
+async def test_review_dispatch_disables_thinking_by_default() -> None:
+    """think=False reaches the reviewer dispatch (default-on
+    video_director_disable_thinking). The reviewer is the same thinking-capable
+    director model; leaving the reasoning channel on starves its revised JSON
+    the same way it empties the director's, so the self-critique fell back to
+    the draft on every run (2026-07-07 fix — mirrors the writer path, #2163)."""
+    from modules.content.stages.review_video_shot_list import ReviewVideoShotListStage
+
+    revised = _valid_list(source1="wan21")
+    # Dict-backed config so the disable-thinking key resolves to its default
+    # ("true"), unlike _platform() which returns the model for every key.
+    platform = MagicMock()
+    _cfg = {"video_director_model": "ollama/gemma-4-31B-it-qat:latest"}
+    platform.config.get = MagicMock(side_effect=lambda k, d=None: _cfg.get(k, d))
+    platform.config.get_int = MagicMock(side_effect=lambda k, d=0: d)
+    platform.dispatch.complete = AsyncMock(return_value=MagicMock(text=json.dumps(revised)))
+    ctx = {
+        "title": "T", "content": "C body " * 20, "podcast_script": "script " * 20,
+        "video_shot_list": _valid_list(),
+        "platform": platform,
+        "database_service": _make_db(),
+        "task_id": "t1",
+    }
+
+    with patch("services.prompt_manager.get_prompt_manager") as mock_pm, \
+         patch("services.gpu_scheduler.gpu", SimpleNamespace(lock=lambda *a, **k: _FakeLock())):
+        mock_pm.return_value.get_prompt = MagicMock(return_value="review prompt")
+        result = await ReviewVideoShotListStage().execute(ctx, {})
+
+    assert result.ok
+    assert platform.dispatch.complete.call_args.kwargs["think"] is False

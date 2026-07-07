@@ -255,6 +255,18 @@ DEFAULTS: dict[str, str] = {
     # Stage-2 video never rendered. Read via cfg.get_int in
     # modules/content/stages/generate_video_shot_list.py.
     'video_director_timeout_seconds': '300',
+    # Disable the director / reviewer model's reasoning channel (default). The
+    # thinking-capable director (gemma-4-31B-it-qat) otherwise spends the shared
+    # 6144-token output budget reasoning and starves the JSON shot list — the
+    # visible content comes back empty, so _extract_json_object fails and the
+    # shot list is lost, meaning Stage-2 video never renders (audit:
+    # shot_list_failed phase=json_extract; 2026-07-07 investigation reproduced
+    # the empty-content overflow in-container). Mirrors writer_disable_thinking
+    # (#2163). Harmless no-op on a non-thinking model, and dropped for cloud
+    # targets by the LiteLLM provider. Set false only to deliberately let a
+    # reasoning director chain-of-think. Read via _resolve_director_think in
+    # modules/content/stages/generate_video_shot_list.py.
+    'video_director_disable_thinking': 'true',
     # Per-shot vision-QA render-check loop (video-quality spec §3.2). The render
     # loop in shot_list_renderer scores each rendered frame with qa_vision_model
     # and regenerates (stochastic sources) or falls back to holdover on a miss.
@@ -1833,6 +1845,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'opening_originality_max_similarity': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'video_director_model': {'owner': 'video_director', 'value_type': 'model'},
     'video_director_timeout_seconds': {'owner': 'video_director', 'value_type': 'integer'},
+    'video_director_disable_thinking': {'owner': 'video_director', 'value_type': 'boolean'},
     'video_shot_qa_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_shot_qa_threshold': {'owner': 'video', 'value_type': 'integer'},
     'video_shot_qa_max_retries': {'owner': 'video', 'value_type': 'integer'},
