@@ -227,7 +227,7 @@ litellm = ">=1.83.7,<2.0"
 # path ever moves. Safe to retire in a fast-follow once re-enabled tracing
 # has soaked. See memory reference_langfuse_serializer_recursion_bug.md +
 # .shared-context/upstream-bug-reports/langfuse-event-serializer-cycle.md.
-langfuse = "^4.12"
+langfuse = "^4.13"
 deepeval = "^4.0.7"
 # guardrails-ai dropped 2026-05-12 — PyPI quarantined the package after
 # a suspect 0.10.1 release published that day (CVE-2026-45758, malware /
