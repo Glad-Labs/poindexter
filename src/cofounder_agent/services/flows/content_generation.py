@@ -484,6 +484,30 @@ async def _run_content_generation_flow(
     # claimed row stored one; stays None for direct task_id invocations.
     _parent_ctx: Any = None
     if task_id is None and topic is None:
+        # Spend throttle (P3, cost-attribution design §6): before claiming NEW
+        # work off the queue, check whether total spend (paid API + measured
+        # electricity, via cost_ledger) has crossed a soft budget ceiling. Over
+        # budget → defer claiming this run; in-flight tasks finish untouched.
+        # Fails OPEN (a dead DB never becomes a content outage). The per-LLM-call
+        # HARD stop is cost_guard; this is the gentle "stop starting new work".
+        # Operator-triggered runs (explicit task_id/topic) bypass this gate.
+        from services import spend_throttle
+
+        _throttle = await spend_throttle.should_throttle(
+            _pool, site_config=_wired_site_config
+        )
+        if _throttle.throttled:
+            logger.warning(
+                "[CONTENT_FLOW] spend throttle engaged (%s) — deferring new work "
+                "this run: %s", _throttle.ceiling, _throttle.reason,
+            )
+            return {
+                "claimed": False,
+                "task_id": None,
+                "throttled": True,
+                "ceiling": _throttle.ceiling,
+            }
+
         claimed = await claim_pending_task(database_service)
         if claimed is None:
             logger.info("[CONTENT_FLOW] queue empty — flow run exits cleanly")

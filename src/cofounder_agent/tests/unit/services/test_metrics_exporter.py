@@ -1013,3 +1013,55 @@ async def test_module_metrics_loop_tolerates_registry_failure():
     with patch("plugins.registry.get_modules", side_effect=RuntimeError("nope")):
         # Registry import/call failure must be swallowed.
         await mx._refresh_module_metrics(pool)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_spend_throttle_gauges_reflect_state(monkeypatch):
+    """P3 — the spend-throttle Prometheus gauges mirror ``spend_throttle.get_state``.
+
+    Drives the real ``refresh_metrics`` so the get_state()->gauge wiring is
+    exercised end-to-end. The pool returns benign values via ``return_value``
+    (not a fixed ``side_effect`` queue) so this can't break when the DB-read
+    order in ``refresh_metrics`` changes — the spend-throttle block reads
+    ``get_state()``, not the pool.
+    """
+    from services import cost_ledger, spend_throttle
+    from services import metrics_exporter as mx
+    from services.cost_ledger import SpendBreakdown
+    from services.site_config import SiteConfig
+
+    # Engage the throttle: daily total ($3.50) over the $3.00 cap.
+    spend_throttle.reset_for_tests()
+
+    async def _fake_spend(pool, *, window="day", strict=False, site_config=None):
+        return SpendBreakdown(total_usd=3.5 if window == "day" else 10.0)
+
+    monkeypatch.setattr(cost_ledger, "get_spend", _fake_spend)
+    cfg = SiteConfig(initial_config={
+        "cost_throttle_enabled": "true",
+        "cost_throttle_daily_budget_usd": "3.00",
+        "cost_throttle_monthly_budget_usd": "60.00",
+    })
+    await spend_throttle.should_throttle(object(), site_config=cfg)
+
+    conn = MagicMock()
+    conn.fetchval = AsyncMock(return_value=0)
+    conn.fetch = AsyncMock(return_value=[])
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=conn)
+    ctx.__aexit__ = AsyncMock(return_value=None)
+    pool = MagicMock()
+    pool.acquire = MagicMock(return_value=ctx)
+    pool.fetch = AsyncMock(return_value=[])
+    pool.fetchval = AsyncMock(return_value=0)
+
+    with patch("services.metrics_exporter.httpx.AsyncClient") as mock_http_cls:
+        mock_http_cls.return_value.__aenter__.side_effect = Exception("skip")
+        await mx.refresh_metrics(pool, "http://localhost:11434")
+
+    assert mx.SPEND_THROTTLE_ACTIVE._value.get() == 1  # type: ignore[attr-defined]
+    assert mx.SPEND_THROTTLE_DAILY_TOTAL_USD._value.get() == 3.5  # type: ignore[attr-defined]
+    assert mx.SPEND_THROTTLE_DAILY_BUDGET_USD._value.get() == 3.0  # type: ignore[attr-defined]
+    assert mx.SPEND_THROTTLE_MONTHLY_BUDGET_USD._value.get() == 60.0  # type: ignore[attr-defined]
+    spend_throttle.reset_for_tests()

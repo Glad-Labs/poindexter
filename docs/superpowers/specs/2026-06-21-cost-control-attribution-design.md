@@ -270,6 +270,22 @@ ledger's invariant supersedes the brittle provider-name filter.
 
 ### 6. P3 — spend throttle (total, soft)
 
+> **✅ Shipped 2026-07-07.** `services/spend_throttle.py` (mirrors
+> `pipeline_throttle`: module-singleton + `get_state()` + monotonic accounting +
+> fail-open) with two ceilings on `cost_ledger` `total_usd` — daily (rate limit
+>
+> - hysteresis via `cost_throttle_resume_buffer_pct`) and monthly (cumulative
+>   backstop, no hysteresis). Consulted at the `content_generation_flow` new-work
+>   seam before `claim_pending_task`; over budget → defer the claim, in-flight
+>   finishes. Emits a one-shot `spend_throttle_engaged` finding (`warn` → Discord)
+>   on the engage transition; six `poindexter_spend_throttle_*` Prometheus gauges
+>   mirror `get_state()`. Four `cost_throttle_*` keys seeded in
+>   `settings_defaults.py` (the two `electricity_*` ledger keys were already
+>   seeded by P1). The topic-discovery / `create_post` seams are a fast-follow —
+>   the claim seam is the complete backstop (nothing is _processed_ while
+>   throttled, so no spend is incurred). See
+>   [`docs/architecture/services/spend_throttle.md`](../../architecture/services/spend_throttle.md).
+
 A new `services/spend_throttle.py` mirrors `pipeline_throttle.py` exactly (same
 module-singleton + `get_state()` + Prometheus observability + DB-error → fail-
 open pattern), but keyed on spend instead of approval-queue depth:
@@ -438,7 +454,7 @@ Per `feedback_grafana_everything` + `feedback_visual_verification`:
    budget-system unification. Ship and verify before anything else.
 2. **P2 — total-cost gate** onto the ledger (`api_usd` hard, `total_usd` alert).
    ✅ Shipped 2026-07-07.
-3. **P3 — spend throttle** at the new-work seam.
+3. **P3 — spend throttle** at the new-work seam. ✅ Shipped 2026-07-07.
 4. **P4 — per-axis anomaly** split. ✅ Shipped 2026-07-07 (#2168).
 5. **P5 — savings view** (future / low-priority).
 

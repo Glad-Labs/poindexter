@@ -182,6 +182,19 @@ DEFAULTS: dict[str, str] = {
     'electricity_measured_min_coverage_pct': '80',
     'electricity_source_gap_minutes': '15',
 
+    # ----- Spend throttle (P3) — defer NEW work when total_usd (paid API +
+    # measured electricity) crosses a soft budget. Consulted at the
+    # content_generation_flow new-work seam (NOT the per-call hot path); fails
+    # OPEN so a dead DB never becomes a content outage. The per-call HARD stop is
+    # cost_guard (daily/monthly_spend_limit_usd). A budget <= 0 disables that
+    # axis; daily is a rate limit (clears at midnight, hysteresis on release),
+    # monthly is a cumulative backstop (sticky until rollover). Defaults sit
+    # comfortably above real burn — see design §10, both "tweak later".
+    'cost_throttle_enabled': 'true',
+    'cost_throttle_daily_budget_usd': '3.00',
+    'cost_throttle_monthly_budget_usd': '60.00',
+    'cost_throttle_resume_buffer_pct': '10',
+
     # ----- LLM model selection -----
     # OSS defaults pin only publicly-pullable Ollama tags so a fresh
     # `poindexter setup` install runs (enforced by
@@ -1788,6 +1801,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'monthly_spend_limit_usd': {'owner': 'cost_guard', 'value_type': 'float'},
     'electricity_measured_min_coverage_pct': {'owner': 'cost_ledger', 'value_type': 'float'},
     'electricity_source_gap_minutes': {'owner': 'cost_ledger', 'value_type': 'integer'},
+    'cost_throttle_enabled': {'owner': 'spend_throttle', 'value_type': 'boolean'},
+    'cost_throttle_daily_budget_usd': {'owner': 'spend_throttle', 'value_type': 'float'},
+    'cost_throttle_monthly_budget_usd': {'owner': 'spend_throttle', 'value_type': 'float'},
+    'cost_throttle_resume_buffer_pct': {'owner': 'spend_throttle', 'value_type': 'float'},
 
     # ----- LLM model selection (writer-flip = canary per feedback_writer_model_canary) -----
     'pipeline_writer_model': {'owner': 'content_router', 'value_type': 'model'},

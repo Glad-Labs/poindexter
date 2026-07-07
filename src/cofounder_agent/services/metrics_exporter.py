@@ -454,6 +454,39 @@ PIPELINE_THROTTLE_QUEUE_LIMIT = Gauge(
     "Configured max_approval_queue as last observed by the throttle check",
 )
 
+# Spend throttle (P3) — mirrors services.spend_throttle.get_state. Distinct from
+# the pipeline (approval-queue) throttle above: this one defers NEW work when
+# total_usd (paid API + measured electricity) crosses a soft budget ceiling.
+SPEND_THROTTLE_ACTIVE = Gauge(
+    "poindexter_spend_throttle_active",
+    "Total spend crossed a soft budget ceiling; new-work claiming deferred (1=throttled)",
+)
+
+SPEND_THROTTLE_SECONDS_TOTAL = Gauge(
+    "poindexter_spend_throttle_seconds_total",
+    "Cumulative seconds new-work claiming was deferred by the spend throttle",
+)
+
+SPEND_THROTTLE_DAILY_TOTAL_USD = Gauge(
+    "poindexter_spend_throttle_daily_total_usd",
+    "Daily total spend (paid API + measured electricity) as last observed by the throttle",
+)
+
+SPEND_THROTTLE_DAILY_BUDGET_USD = Gauge(
+    "poindexter_spend_throttle_daily_budget_usd",
+    "Configured cost_throttle_daily_budget_usd as last observed by the throttle",
+)
+
+SPEND_THROTTLE_MONTHLY_TOTAL_USD = Gauge(
+    "poindexter_spend_throttle_monthly_total_usd",
+    "Month-to-date total spend as last observed by the throttle",
+)
+
+SPEND_THROTTLE_MONTHLY_BUDGET_USD = Gauge(
+    "poindexter_spend_throttle_monthly_budget_usd",
+    "Configured cost_throttle_monthly_budget_usd as last observed by the throttle",
+)
+
 # Task counts — from DatabaseService.tasks.get_task_counts(). These overlap
 # semantically with POSTS_TOTAL above but run against content_tasks and are
 # kept separate because dashboards query them by name.
@@ -866,6 +899,20 @@ async def refresh_metrics(
         PIPELINE_THROTTLE_QUEUE_LIMIT.set(int(ts.get("queue_limit") or 0))
     except Exception as e:
         _note_refresh_error("pipeline_throttle", e)
+
+    # Spend throttle state (P3) — mirrors the pipeline throttle block above.
+    try:
+        from services.spend_throttle import get_state as _spend_throttle_state
+
+        ss = _spend_throttle_state()
+        SPEND_THROTTLE_ACTIVE.set(1 if ss.get("active") else 0)
+        SPEND_THROTTLE_SECONDS_TOTAL.set(float(ss.get("total_seconds") or 0))
+        SPEND_THROTTLE_DAILY_TOTAL_USD.set(float(ss.get("daily_total_usd") or 0))
+        SPEND_THROTTLE_DAILY_BUDGET_USD.set(float(ss.get("daily_budget_usd") or 0))
+        SPEND_THROTTLE_MONTHLY_TOTAL_USD.set(float(ss.get("monthly_total_usd") or 0))
+        SPEND_THROTTLE_MONTHLY_BUDGET_USD.set(float(ss.get("monthly_budget_usd") or 0))
+    except Exception as e:
+        _note_refresh_error("spend_throttle", e)
 
     # Task counts from content_tasks — needs DatabaseService.tasks.
     try:

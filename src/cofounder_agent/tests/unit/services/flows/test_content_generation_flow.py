@@ -222,6 +222,81 @@ class TestContentGenerationFlow:
         assert kwargs["category"] is None
 
     @pytest.mark.asyncio
+    async def test_schedule_driven_throttled_defers_claim(self):
+        """P3 — over the spend budget, the schedule-driven flow defers: it
+        returns throttled WITHOUT claiming a pending row or running the
+        pipeline, even though a row is available. In-flight work is untouched;
+        the flow simply stops starting new work."""
+        from services.flows.content_generation import content_generation_flow
+        from services.spend_throttle import ThrottleDecision
+
+        # A row IS claimable — the throttle must prevent us from taking it.
+        row = {"task_id": "task-should-not-run", "topic": "x", "target_length": 1500}
+        pool = _make_pool(claim_row=row)
+        db = _make_db_service(pool)
+
+        throttled = ThrottleDecision(
+            throttled=True, ceiling="daily",
+            reason="daily total $3.50 vs $3.00 cap (rate limit)",
+            daily_total_usd=3.5, daily_budget_usd=3.0,
+        )
+        claim_mock = AsyncMock(return_value=row)
+        with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.spend_throttle.should_throttle",
+            new=AsyncMock(return_value=throttled),
+        ), patch(
+            "services.flows.content_generation.claim_pending_task",
+            new=claim_mock,
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+        ) as pipeline_mock:
+            result = await content_generation_flow.fn(database_service=db)
+
+        assert result["claimed"] is False
+        assert result["throttled"] is True
+        assert result["ceiling"] == "daily"
+        # The whole point: we did NOT claim the available row, nor run the pipeline.
+        claim_mock.assert_not_called()
+        pipeline_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_schedule_driven_not_throttled_claims_normally(self):
+        """P3 regression guard — when under budget the throttle is transparent:
+        the flow claims + runs exactly as before."""
+        from services.flows.content_generation import content_generation_flow
+        from services.spend_throttle import ThrottleDecision
+
+        row = {"task_id": "task-ok", "topic": "y", "target_length": 1500}
+        pool = _make_pool(claim_row=row)
+        db = _make_db_service(pool)
+
+        not_throttled = ThrottleDecision(
+            throttled=False, ceiling=None, reason="within budget",
+        )
+        pipeline_mock = AsyncMock(return_value={"status": "awaiting_approval"})
+        with patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.spend_throttle.should_throttle",
+            new=AsyncMock(return_value=not_throttled),
+        ), patch(
+            "services.flows.content_generation.claim_pending_task",
+            new=AsyncMock(return_value=row),
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+            new=pipeline_mock,
+        ):
+            result = await content_generation_flow.fn(database_service=db)
+
+        assert result["claimed"] is True
+        assert result["task_id"] == "task-ok"
+        pipeline_mock.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_operator_triggered_uses_supplied_args(self):
         """Caller passes ``task_id`` + ``topic`` directly — flow doesn't
         try to claim from queue, just runs the pipeline. Parity with
