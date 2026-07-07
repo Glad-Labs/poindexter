@@ -477,6 +477,50 @@ for `mcp-http`.)
 Example watch list:
 `Poindexter Recovery Agent,Poindexter MCP HTTP,Poindexter-DeployCheckoutSync,Docker Engine Watchdog`.
 
+## Prefect flow-run zombie reclaim (concurrency-slot wedge)
+
+The `content-generation` deployment runs on `content-pool` at
+**`concurrency_limit=1`** (one gemma draft at a time — the single-GPU VRAM
+budget). One non-terminal flow run holds the only slot, so if a run gets stuck
+in a non-terminal state the pipeline **silently halts**: pending tasks exist,
+the worker is ONLINE and heartbeating, but nothing dispatches while cron-queued
+runs pile up SCHEDULED behind the held slot.
+
+`brain/prefect_stuck_flow_probe.py` is the working reclaim path. Every brain
+cycle it queries Prefect for `content_generation` runs in the watched states and
+force-terminalizes genuine zombies so the slot frees:
+
+| Held state   | "stuck" when…                                                                                                      | Reclaim action      | Threshold setting                                                                              |
+| ------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------- | ---------------------------------------------------------------------------------------------- |
+| `RUNNING`    | no graph-node progress (`pipeline_tasks.last_progress_at`) for `progress_stall_minutes`; NULL heartbeat → flat age | force **CRASHED**   | `prefect_stuck_flow_progress_stall_minutes` (20) / `prefect_stuck_flow_threshold_minutes` (30) |
+| `PENDING`    | stranded (worker died between claim and fork) past the PENDING threshold                                           | force **CRASHED**   | `prefect_stuck_flow_pending_threshold_minutes` (5)                                             |
+| `CANCELLING` | cancel requested but worker/process already dead, so `CANCELLING → CANCELLED` never completes, past the threshold  | force **CANCELLED** | `prefect_stuck_flow_cancelling_threshold_minutes` (10)                                         |
+
+All three are gated by the single `prefect_stuck_flow_auto_crash` master switch
+(default `true`); set it `false` for page-only. The probe also pages a distinct
+`probe.prefect_queue_backlog_detected` signal when overdue SCHEDULED runs pile
+up past `prefect_stuck_flow_queue_depth_threshold` **and** the slot-holder is not
+progressing — the backlog symptom of a genuinely held slot.
+
+**Why CANCELLING was added (2026-07-07).** A host/WSL/power event left two runs
+wedged in `CANCELLING` (`qualified-corgi` 62 min, `inscrutable-gharial` 28 min).
+A graceful `prefect flow-run cancel` on a run whose process is already dead
+transitions it to CANCELLING but can never complete the kill-confirm to
+CANCELLED — so it holds the slot forever. The RUNNING/PENDING-only scan was
+blind to it: the probe kept paging the backlog symptom (03:19, 04:07) but could
+not free the slot, and the pipeline stayed halted ~2h until an operator
+force-cancelled. The fix teaches the probe to force-CANCELLED a stuck CANCELLING
+run — the analogue of the RUNNING force-CRASHED path.
+
+**Prefect-native backstop (follow-up, not yet active).** Prefect 3.7's `Foreman`
+service only marks _workers_ offline on stale _worker_ heartbeats — it never
+crashes a flow run — so there is no built-in flow-run zombie-crash to "turn on".
+The worker now emits per-run heartbeats (`PREFECT_FLOWS_HEARTBEAT_FREQUENCY=30`)
+as groundwork, but that is **inert** until a Prefect Automation is added on the
+`prefect.flow-run.heartbeat`-absence trigger to auto-Crash a run whose heartbeats
+stopped. Until that lands, the brain probe above is the sole reclaim path. See
+`project_prefect_concurrency_zombie_stall` for the full incident write-up.
+
 ## Settings reference
 
 | Setting                                                       | Default                       | Meaning                                                                                                                   |

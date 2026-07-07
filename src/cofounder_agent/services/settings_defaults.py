@@ -1427,6 +1427,20 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # / write never landed) falls back to prefect_stuck_flow_threshold_minutes.
     'prefect_stuck_flow_progress_stall_minutes': '20',
 
+    # ----- Prefect stuck-flow CANCELLING coverage (2026-07-07 concurrency wedge) -----
+    # Minutes a run may sit in CANCELLING before the probe force-CANCELLED it to
+    # free the concurrency slot. A run enters CANCELLING when a cancel is
+    # requested; the WORKER completes CANCELLING -> CANCELLED after killing the
+    # process. If the worker/process is already dead (host/WSL/power event) nobody
+    # completes it and the run hangs holding the content-pool concurrency=1 slot
+    # forever — the 2026-07-07 wedge (qualified-corgi 62m, inscrutable-gharial
+    # 28m; ~73 runs piled up SCHEDULED behind them). A genuine process-worker
+    # cancel completes in seconds; 10m of no-terminalize means the holder is dead
+    # and the cancel must be forced through. Gated by the same
+    # prefect_stuck_flow_auto_crash master switch as the RUNNING/PENDING crash
+    # path. Tune DOWN for tighter detection. See project_prefect_concurrency_zombie_stall.
+    'prefect_stuck_flow_cancelling_threshold_minutes': '10',
+
     # ----- Operator-page cooldown (2026-07-01 alert-noise audit) -----
     # Repeat-suppression window for the brain's direct notify_operator()
     # pages: repeats of the same dedup key inside the window skip the

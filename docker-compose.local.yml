@@ -784,6 +784,16 @@ services:
       # Talk to the Prefect API server on the docker network, NOT
       # localhost. The worker container's localhost is itself.
       PREFECT_API_URL: "http://prefect-server:4200/api"
+      # Flow-run heartbeats — emit one every 30s while a run executes. This is
+      # GROUNDWORK for a Prefect-native zombie backstop: it's INERT on its own
+      # (Prefect 3.7's Foreman only marks *workers* offline, never crashes a
+      # flow run), and only becomes active once a Prefect Automation is added on
+      # the `prefect.flow-run.heartbeat`-absence trigger to auto-Crash a run
+      # whose heartbeats stopped. Until then the brain's prefect_stuck_flow_probe
+      # is the working reclaim path (RUNNING/PENDING -> Crashed, CANCELLING ->
+      # Cancelled). Enabling it now is cheap and unblocks that follow-up. See
+      # docs/operations/self-healing.md and project_prefect_concurrency_zombie_stall.
+      PREFECT_FLOWS_HEARTBEAT_FREQUENCY: "30"
       # Langfuse credentials so flow-run telemetry traces correctly
       # — the flow body calls into the same LLM dispatchers as the
       # legacy worker, which expect these.

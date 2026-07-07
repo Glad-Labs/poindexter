@@ -49,6 +49,18 @@ heartbeat is NULL (pre-migration task / write never landed) the probe falls
 back to the flat ``prefect_stuck_flow_threshold_minutes`` age check, so
 detection never regresses.
 
+CANCELLING coverage (2026-07-07): a run wedged in **CANCELLING** — the state
+a run enters when a cancel is requested but the worker/process is already
+dead, so nobody completes the CANCELLING → CANCELLED transition — holds the
+concurrency slot indefinitely. The RUNNING/PENDING-only scan was blind to it,
+so two such runs (``qualified-corgi`` 62m, ``inscrutable-gharial`` 28m) wedged
+the content-pool for 2h+ while the probe could only page the backlog symptom.
+The probe now watches CANCELLING too: a run stuck there past
+``prefect_stuck_flow_cancelling_threshold_minutes`` (default 10) is
+force-CANCELLED (completing the hung cancel), which frees the slot — the
+CANCELLING analogue of the RUNNING force-CRASHED path. See
+project_prefect_concurrency_zombie_stall.
+
 Why no in-memory dedupe like ``glitchtip_triage_probe``: there should
 never be MORE than one stuck flow run at a time on the
 ``content_generation`` deployment (concurrency=1). If the same run is
@@ -125,9 +137,25 @@ THRESHOLD_MINUTES_DEFAULT = 30
 PENDING_THRESHOLD_MINUTES_SETTING_KEY = "prefect_stuck_flow_pending_threshold_minutes"
 PENDING_THRESHOLD_MINUTES_DEFAULT = 5
 
-# State.type values the probe watches. PENDING covers Submitting +
-# any other PENDING sub-state names Prefect emits.
-WATCHED_STATE_TYPES: list[str] = ["RUNNING", "PENDING"]
+# Stuck-CANCELLING threshold. A run enters CANCELLING when a cancel is
+# requested; the WORKER is then responsible for killing the process and
+# completing CANCELLING → CANCELLED. If the worker/process is already dead
+# (host/WSL/power event), nobody confirms the kill, so the run hangs in
+# CANCELLING **holding the concurrency slot forever** — and a RUNNING/PENDING-
+# only scan is blind to it. Captured 2026-07-07: qualified-corgi sat
+# CANCELLING for 62 min and inscrutable-gharial for 28 min, wedging the
+# content-pool while ~73 scheduled runs piled up behind them. A genuine cancel
+# of a `process`-type worker completes in seconds; 10 min without terminalizing
+# means the holder is dead and the cancel must be forced through. See
+# project_prefect_concurrency_zombie_stall.
+CANCELLING_THRESHOLD_MINUTES_SETTING_KEY = "prefect_stuck_flow_cancelling_threshold_minutes"
+CANCELLING_THRESHOLD_MINUTES_DEFAULT = 10
+
+# State.type values the probe watches. PENDING covers Submitting + any other
+# PENDING sub-state names Prefect emits. CANCELLING is watched because a run
+# whose worker died mid-cancel hangs there holding the concurrency slot,
+# invisible to a RUNNING/PENDING-only scan (the 2026-07-07 wedge).
+WATCHED_STATE_TYPES: list[str] = ["RUNNING", "PENDING", "CANCELLING"]
 
 # Auto-remediation. When enabled, every detected stuck run gets its
 # state force-transitioned to CRASHED so subsequent scheduled runs can
@@ -324,27 +352,22 @@ def _scheduled_overdue_minutes(run: dict[str, Any]) -> int | None:
     return None
 
 
-async def _crash_flow_run(
-    client: Any, base_url: str, run_id: str, age_minutes: int,
+async def _force_flow_run_state(
+    client: Any, base_url: str, run_id: str, *,
+    target_type: str, target_name: str, message: str,
 ) -> bool:
-    """Force-transition a run to CRASHED. Returns True on 201.
+    """Force-transition a run to a terminal state. Returns True on 201.
 
-    Mirrors the manual ``curl ... /set_state`` call the operator used
-    on 2026-05-26 to unstick ``romantic-harrier``. ``force: true`` is
-    REQUIRED — Prefect rejects naive RUNNING → CRASHED transitions as
-    invalid state changes; the force flag is what makes
-    operator-driven crashes go through.
+    Mirrors the manual ``curl ... /set_state`` calls the operator used to
+    unstick zombies (``romantic-harrier`` CRASHED 2026-05-26; the CANCELLING
+    slot-holders force-CANCELLED 2026-07-07). ``force: true`` is REQUIRED —
+    Prefect rejects naive RUNNING → CRASHED or CANCELLING → CANCELLED
+    transitions as invalid; the force flag is what makes probe/operator-driven
+    terminalization go through. Any terminal state (CRASHED / CANCELLED) frees
+    the work-pool concurrency slot the run was holding.
     """
     payload = {
-        "state": {
-            "type": "CRASHED",
-            "name": "Crashed",
-            "message": (
-                f"Auto-crashed by brain.prefect_stuck_flow_probe — "
-                f"flow run held RUNNING for {age_minutes} minutes with "
-                f"no progress, blocking subsequent dispatches."
-            ),
-        },
+        "state": {"type": target_type, "name": target_name, "message": message},
         "force": True,
     }
     try:
@@ -365,6 +388,26 @@ async def _crash_flow_run(
         resp.status_code, run_id, resp.text[:200],
     )
     return False
+
+
+async def _crash_flow_run(
+    client: Any, base_url: str, run_id: str, age_minutes: int, state_type: str = "RUNNING",
+) -> bool:
+    """Force-transition a stuck RUNNING/PENDING run to CRASHED. True on 201.
+
+    Thin wrapper over :func:`_force_flow_run_state` preserved for the crash
+    path (and any out-of-tree callers). CANCELLING runs take the force-CANCELLED
+    path instead — completing an already-requested cancel rather than crashing.
+    """
+    return await _force_flow_run_state(
+        client, base_url, run_id,
+        target_type="CRASHED", target_name="Crashed",
+        message=(
+            f"Auto-crashed by brain.prefect_stuck_flow_probe — flow run held "
+            f"{state_type} for {age_minutes} minutes with no progress, "
+            f"blocking subsequent dispatches."
+        ),
+    )
 
 
 def _age_minutes(start_time_iso: str | None) -> int | None:
@@ -570,9 +613,13 @@ async def run_prefect_stuck_flow_probe(
     pending_threshold_min = await _read_int(
         pool, PENDING_THRESHOLD_MINUTES_SETTING_KEY, PENDING_THRESHOLD_MINUTES_DEFAULT,
     )
+    cancelling_threshold_min = await _read_int(
+        pool, CANCELLING_THRESHOLD_MINUTES_SETTING_KEY, CANCELLING_THRESHOLD_MINUTES_DEFAULT,
+    )
     thresholds_by_state = {
         "RUNNING": running_threshold_min,
         "PENDING": pending_threshold_min,
+        "CANCELLING": cancelling_threshold_min,
     }
     auto_crash = await _read_bool(pool, AUTO_CRASH_SETTING_KEY, True)
     queue_depth_threshold = await _read_int(
@@ -604,6 +651,8 @@ async def run_prefect_stuck_flow_probe(
     stuck_runs: list[dict[str, Any]] = []
     crashed_runs: list[dict[str, Any]] = []
     crash_failed: list[dict[str, Any]] = []
+    cancelled_runs: list[dict[str, Any]] = []
+    cancel_failed: list[dict[str, Any]] = []
     seen = 0
     overdue_scheduled_count = 0
     queue_backlog_detected = False
@@ -644,7 +693,7 @@ async def run_prefect_stuck_flow_probe(
                         running_run_count=running_run_count,
                     ):
                         continue
-                else:  # PENDING — never started, no progress signal; flat rule.
+                else:  # PENDING / CANCELLING — no progress signal; flat time-in-state rule.
                     if age < threshold_for_state:
                         continue
 
@@ -663,6 +712,14 @@ async def run_prefect_stuck_flow_probe(
                         f"(stall threshold {progress_stall_minutes}m)."
                     )
 
+                # RUNNING/PENDING zombies get force-CRASHED; a run wedged in
+                # CANCELLING (worker dead, cancel can't complete) gets
+                # force-CANCELLED — finishing the already-requested cancel, which
+                # likewise frees the concurrency slot. The manual-unstick hint in
+                # the page mirrors whichever the probe would apply.
+                remediation_type = "CANCELLED" if state_type == "CANCELLING" else "CRASHED"
+                remediation_name = "Cancelled" if state_type == "CANCELLING" else "Crashed"
+
                 # Detail string used in both notify_operator + audit_log.
                 detail = (
                     f"Prefect flow run '{name}' (id {run_id[:12]}…) has "
@@ -672,7 +729,7 @@ async def run_prefect_stuck_flow_probe(
                     f"the content pipeline stays idle. Manual unstick: "
                     f"curl -X POST {base_url}/flow_runs/{run_id}/set_state "
                     f"-H 'Content-Type: application/json' "
-                    f'-d \'{{"state":{{"type":"CRASHED","name":"Crashed"}},"force":true}}\''
+                    f'-d \'{{"state":{{"type":"{remediation_type}","name":"{remediation_name}"}},"force":true}}\''
                 )
                 stuck_runs.append({
                     "id": run_id,
@@ -703,9 +760,40 @@ async def run_prefect_stuck_flow_probe(
                     dedup_key=f"prefect_stuck_flow:{run_id}",
                 )
 
-                if auto_crash:
+                if auto_crash and state_type == "CANCELLING":
+                    # Force-CANCELLED — complete the hung cancel so the slot frees.
+                    cancelled = await _force_flow_run_state(
+                        client, base_url, run_id,
+                        target_type="CANCELLED", target_name="Cancelled",
+                        message=(
+                            f"Auto-cancelled by brain.prefect_stuck_flow_probe — "
+                            f"flow run hung in CANCELLING for {age} minutes "
+                            f"(worker/process dead, cancel could not complete), "
+                            f"holding the content-pool concurrency slot."
+                        ),
+                    )
+                    if cancelled:
+                        cancelled_runs.append({
+                            "id": run_id, "name": name,
+                            "state": state_type, "age_minutes": age,
+                        })
+                        await _emit_audit_event(
+                            pool,
+                            "probe.prefect_stuck_flow_auto_cancelled",
+                            f"Auto-cancelled {name} ({run_id[:12]}…) stuck in CANCELLING after {age}m",
+                            payload={
+                                "run_id": run_id, "name": name,
+                                "state": state_type, "age_minutes": age,
+                            },
+                        )
+                    else:
+                        cancel_failed.append({
+                            "id": run_id, "name": name,
+                            "state": state_type, "age_minutes": age,
+                        })
+                elif auto_crash:
                     crashed = await _crash_flow_run(
-                        client, base_url, run_id, age,
+                        client, base_url, run_id, age, state_type,
                     )
                     if crashed:
                         crashed_runs.append({
@@ -844,9 +932,12 @@ async def run_prefect_stuck_flow_probe(
         "detail": (
             f"Scanned {seen} watched flow(s); "
             f"{len(stuck_runs)} stuck "
-            f"(RUNNING>={running_threshold_min}m, PENDING>={pending_threshold_min}m); "
+            f"(RUNNING>={running_threshold_min}m, PENDING>={pending_threshold_min}m, "
+            f"CANCELLING>={cancelling_threshold_min}m); "
             f"{len(crashed_runs)} auto-crashed; "
             f"{len(crash_failed)} crash failed; "
+            f"{len(cancelled_runs)} auto-cancelled; "
+            f"{len(cancel_failed)} cancel failed; "
             f"{overdue_scheduled_count} overdue scheduled "
             f"(min_overdue={queue_overdue_min_minutes}m, "
             f"depth_threshold={queue_depth_threshold}, "
@@ -856,6 +947,8 @@ async def run_prefect_stuck_flow_probe(
         "stuck_count": len(stuck_runs),
         "auto_crashed_count": len(crashed_runs),
         "crash_failed_count": len(crash_failed),
+        "auto_cancelled_count": len(cancelled_runs),
+        "cancel_failed_count": len(cancel_failed),
         "stuck_runs": stuck_runs,
         "overdue_scheduled_count": overdue_scheduled_count,
         "queue_overdue_min_minutes": queue_overdue_min_minutes,
@@ -885,12 +978,16 @@ class PrefectStuckFlowProbe:
         "with no heartbeat it falls back to a flat "
         "prefect_stuck_flow_threshold_minutes age (default 30m). PENDING runs are "
         "stuck beyond prefect_stuck_flow_pending_threshold_minutes (default 5m). "
-        "Pages on every stuck run and auto-crashes by default "
-        "(prefect_stuck_flow_auto_crash, default true) so subsequent dispatches "
-        "resume without operator intervention. Also pages a DISTINCT signal when "
-        "overdue SCHEDULED runs pile up beyond "
-        "prefect_stuck_flow_queue_depth_threshold (default 3) AND the slot-holder "
-        "is not progressing — the queue-backlog symptom of a genuinely held slot."
+        "CANCELLING runs (worker died mid-cancel, hung holding the slot) are stuck "
+        "beyond prefect_stuck_flow_cancelling_threshold_minutes (default 10m). "
+        "Pages on every stuck run and auto-remediates by default "
+        "(prefect_stuck_flow_auto_crash, default true): RUNNING/PENDING zombies are "
+        "force-CRASHED, CANCELLING zombies force-CANCELLED — either frees the "
+        "concurrency slot so subsequent dispatches resume without operator "
+        "intervention. Also pages a DISTINCT signal when overdue SCHEDULED runs "
+        "pile up beyond prefect_stuck_flow_queue_depth_threshold (default 3) AND "
+        "the slot-holder is not progressing — the queue-backlog symptom of a "
+        "genuinely held slot."
     )
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 
@@ -912,6 +1009,8 @@ class PrefectStuckFlowProbe:
                     "stuck_count",
                     "auto_crashed_count",
                     "crash_failed_count",
+                    "auto_cancelled_count",
+                    "cancel_failed_count",
                     "overdue_scheduled_count",
                     "queue_depth_threshold",
                     "queue_backlog_detected",

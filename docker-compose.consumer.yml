@@ -490,6 +490,11 @@ services:
       PYTHONPATH: "/app:/opt/poindexter"
       PYTHONUTF8: "1"
       PREFECT_API_URL: "http://prefect-server:4200/api"
+      # Flow-run heartbeats — groundwork for a Prefect-native zombie backstop
+      # (inert until a `prefect.flow-run.heartbeat`-absence Automation is added;
+      # the brain's prefect_stuck_flow_probe is the working reclaim path). See
+      # the operator-stack worker block + docs/operations/self-healing.md.
+      PREFECT_FLOWS_HEARTBEAT_FREQUENCY: "30"
       # Langfuse disabled — same rationale as the worker block above.
       LANGFUSE_TRACING_ENABLED: "false"
       LANGFUSE_HOST: "http://localhost:3010"

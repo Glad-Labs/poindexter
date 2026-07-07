@@ -160,6 +160,30 @@ def _pending_run(*, run_id: str, name: str, minutes_ago: int) -> dict[str, Any]:
     }
 
 
+def _cancelling_run(*, run_id: str, name: str, minutes_ago: int) -> dict[str, Any]:
+    """Build a fake CANCELLING flow_run dict.
+
+    A run enters CANCELLING when a cancel is requested while it was RUNNING,
+    so ``start_time`` is set (it ran first) and ``state.timestamp`` records
+    when it entered CANCELLING — the field the probe reads for "how long
+    stuck cancelling". A CANCELLING run whose worker/process is already dead
+    can never complete the CANCELLING → CANCELLED transition (nobody confirms
+    the kill), so it holds the concurrency=1 slot forever — the 2026-07-07
+    wedge that the RUNNING/PENDING-only probe was blind to.
+    """
+    return {
+        "id": run_id,
+        "name": name,
+        # Ran a little before the cancel was requested.
+        "start_time": _iso_minutes_ago(minutes_ago + 5),
+        "state": {
+            "type": "CANCELLING",
+            "name": "Cancelling",
+            "timestamp": _iso_minutes_ago(minutes_ago),
+        },
+    }
+
+
 def _scheduled_run(
     *, run_id: str, name: str, minutes: int, use_state_details: bool = False,
 ) -> dict[str, Any]:
@@ -715,9 +739,9 @@ async def test_filter_payload_uses_flow_names_setting():
     ``dev_diary_compositor`` to the comma-separated setting gets it
     actually queried.
 
-    The state filter must include both RUNNING and PENDING so the
-    PENDING-stranded case (Glad-Labs/poindexter#518) is caught in the
-    same single API call.
+    The state filter must include RUNNING, PENDING and CANCELLING so the
+    PENDING-stranded case (Glad-Labs/poindexter#518) and the CANCELLING-wedge
+    case (2026-07-07) are all caught in the same single API call.
     """
     pool = _make_pool(setting_values={
         "prefect_stuck_flow_flow_names": "content_generation, custom_flow",
@@ -737,7 +761,7 @@ async def test_filter_payload_uses_flow_names_setting():
     assert len(filter_bodies) == 2
     stuck_body = next(
         b for b in filter_bodies
-        if b["flow_runs"]["state"]["type"]["any_"] == ["RUNNING", "PENDING"]
+        if b["flow_runs"]["state"]["type"]["any_"] == ["RUNNING", "PENDING", "CANCELLING"]
     )
     sched_body = next(
         b for b in filter_bodies
@@ -1147,3 +1171,179 @@ async def test_queue_overdue_min_minutes_setting_respected():
     assert summary["queue_overdue_min_minutes"] == 2
     assert summary["queue_backlog_detected"] is True
     notify.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# CANCELLING detection + auto-cancel — 2026-07-07 concurrency-slot wedge
+#
+# A graceful cancel of a run whose worker/process is already dead never
+# completes CANCELLING → CANCELLED (nobody confirms the kill), so it holds
+# the concurrency=1 slot forever. The probe watched only RUNNING/PENDING, so
+# it papered over the backlog (paging it) while never freeing the slot —
+# the 2h stall on 2026-07-07. These tests pin the CANCELLING coverage.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stuck_filter_query_includes_cancelling():
+    """The stuck-run filter must watch CANCELLING alongside RUNNING/PENDING.
+    Without it, a run wedged in CANCELLING holding the slot is never seen —
+    the probe can page the backlog symptom but never crash the holder."""
+    pool = _make_pool()
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[]),
+    })
+    await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    stuck_body = next(
+        b for url, b in client.posts
+        if url.endswith("/flow_runs/filter")
+        and b["flow_runs"]["state"]["type"]["any_"] != ["SCHEDULED"]
+    )
+    assert stuck_body["flow_runs"]["state"]["type"]["any_"] == [
+        "RUNNING", "PENDING", "CANCELLING",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_cancelling_under_threshold_is_not_stuck():
+    """A run that entered CANCELLING 2 minutes ago is a legit in-flight
+    cancel — the worker is still tearing the process down. Default CANCELLING
+    threshold is 10m; under it the probe leaves it alone (no page, no act)."""
+    pool = _make_pool()
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[
+            _cancelling_run(run_id="c1", name="being-cancelled", minutes_ago=2),
+        ]),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 0
+    notify.assert_not_called()
+    assert not any(url.endswith("/set_state") for url, _ in client.posts)
+
+
+@pytest.mark.asyncio
+async def test_cancelling_past_threshold_is_stuck_and_pages():
+    """A run stuck in CANCELLING past the threshold (worker dead, cancel can
+    never complete) is detected as stuck and paged with a CANCELLING-aware
+    title so the operator can tell it apart from a RUNNING zombie."""
+    pool = _make_pool(setting_values={"prefect_stuck_flow_auto_crash": "false"})
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[
+            _cancelling_run(run_id="c1", name="qualified-corgi", minutes_ago=25),
+        ]),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 1
+    notify.assert_called_once()
+    kwargs = notify.call_args.kwargs
+    assert "CANCELLING" in kwargs["title"]
+    assert "qualified-corgi" in kwargs["title"]
+    assert "state=CANCELLING" in kwargs["detail"]
+
+
+@pytest.mark.asyncio
+async def test_cancelling_auto_cancelled_when_opted_in():
+    """With auto_crash (the auto-remediate master switch) on, a stuck
+    CANCELLING run is force-transitioned to CANCELLED — completing the hung
+    cancel and freeing the slot. The remediation is a CANCELLED set_state
+    (NOT CRASHED — a cancel was already requested), with a distinct audit
+    event so the Grafana/audit consumers can tell crash from cancel."""
+    pool = _make_pool(setting_values={"prefect_stuck_flow_auto_crash": "true"})
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[
+            _cancelling_run(run_id="c1", name="qualified-corgi", minutes_ago=25),
+        ]),
+        "/set_state": _MockResponse(201, json_data={"state": {"type": "CANCELLED"}}),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 1
+    assert summary["auto_cancelled_count"] == 1
+    assert summary["cancel_failed_count"] == 0
+    # The RUNNING/PENDING crash counter is untouched — this was a cancel.
+    assert summary["auto_crashed_count"] == 0
+
+    set_state_body = next(
+        body for url, body in client.posts if url.endswith("/set_state")
+    )
+    assert set_state_body["force"] is True
+    assert set_state_body["state"]["type"] == "CANCELLED"
+
+    audit_event_types = [
+        args[0] for query, args in pool._audit_rows if "audit_log" in query
+    ]
+    assert "probe.prefect_stuck_flow_detected" in audit_event_types
+    assert "probe.prefect_stuck_flow_auto_cancelled" in audit_event_types
+    assert "probe.prefect_stuck_flow_auto_crashed" not in audit_event_types
+
+
+@pytest.mark.asyncio
+async def test_cancelling_pages_only_when_auto_crash_disabled():
+    """auto_crash=false → the probe pages the stuck CANCELLING run but never
+    touches its state (no set_state POST) — page-only, operator-driven."""
+    pool = _make_pool(setting_values={"prefect_stuck_flow_auto_crash": "false"})
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[
+            _cancelling_run(run_id="c1", name="qualified-corgi", minutes_ago=25),
+        ]),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 1
+    assert summary["auto_cancelled_count"] == 0
+    assert not any(url.endswith("/set_state") for url, _ in client.posts)
+
+
+@pytest.mark.asyncio
+async def test_cancelling_threshold_setting_respected():
+    """Operator can tune ``prefect_stuck_flow_cancelling_threshold_minutes``.
+    Lower it to 3 → a 5m-stuck CANCELLING run flips to stuck."""
+    pool = _make_pool(setting_values={
+        "prefect_stuck_flow_cancelling_threshold_minutes": "3",
+        "prefect_stuck_flow_auto_crash": "false",
+    })
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[
+            _cancelling_run(run_id="c1", name="qualified-corgi", minutes_ago=5),
+        ]),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 1
+    notify.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_cancelling_set_state_failure_records_cancel_failed():
+    """If Prefect rejects the force-CANCELLED set_state, the probe records the
+    failure in ``cancel_failed_count`` (parallel to crash_failed) so the
+    operator sees the slot wasn't freed."""
+    pool = _make_pool(setting_values={"prefect_stuck_flow_auto_crash": "true"})
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[
+            _cancelling_run(run_id="c1", name="qualified-corgi", minutes_ago=25),
+        ]),
+        "/set_state": _MockResponse(422, text="state transition rejected"),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 1
+    assert summary["auto_cancelled_count"] == 0
+    assert summary["cancel_failed_count"] == 1
