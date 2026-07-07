@@ -33,6 +33,22 @@ Config (``plugin.llm_provider.litellm`` in app_settings):
   Routes specific models to a different endpoint (glad-labs-stack#2051:
   a GPU-pinned second Ollama instance so vision QA never gets evicted
   by the writer). Overrides still pass the paid-endpoint policy.
+- ``cloud_max_tokens`` (default 8192) — completion budget applied to
+  CLOUD model calls when the caller didn't pass ``max_tokens``. LiteLLM
+  defaults ``anthropic/*`` to 4096, and adaptive-thinking Claude models
+  (Sonnet 5+) spend thinking + visible text from that ONE budget, so
+  4096 truncates long-form drafts mid-word (observed in the 2026-07-06
+  A/B writer run, glad-labs-stack#2153). Local prefixes are never
+  capped by this — Ollama keeps its unbounded default.
+
+Cloud credentials (DB-first — cloud-writer canary, 2026-07):
+
+- :func:`configure_cloud_api_keys` stamps the ``anthropic_api_key`` /
+  ``openai_api_key`` / ``gemini_api_key`` secret rows from app_settings
+  into the ``*_API_KEY`` env vars LiteLLM auto-discovers, at worker AND
+  Prefect-subprocess startup. The paid-endpoint gate below still decides
+  whether a cloud call is ALLOWED; this only makes an allowed call
+  authenticate without hand-managed container env vars.
 
 Observability — Langfuse tracing (poindexter#373):
 
@@ -92,6 +108,30 @@ _LOCAL_MODEL_PREFIXES: frozenset[str] = frozenset({
     "custom",
     "text-completion-openai-compatible",
 })
+
+
+# Default completion budget for CLOUD models when the caller didn't pass
+# ``max_tokens``. Anthropic's API requires max_tokens and LiteLLM fills in
+# 4096 when absent; on adaptive-thinking Claude models (Sonnet 5+) thinking
+# and visible text share that ONE budget, so 4096 starves a long-form draft
+# mid-word once the model spends ~3K tokens thinking (2026-07-06 A/B run,
+# glad-labs-stack#2153). Operators tune per-install via the
+# ``cloud_max_tokens`` key on the ``plugin.llm_provider.litellm`` config
+# row. Local prefixes are never capped by this floor.
+_DEFAULT_CLOUD_MAX_TOKENS = 8192
+
+
+# app_settings secret row → env var that LiteLLM auto-discovers cloud
+# credentials from at call time (the same axis-2 seam
+# ``_enforce_paid_endpoint_policy`` guards). Consumed by
+# :func:`configure_cloud_api_keys` at process startup. Row names follow the
+# settings_service env-fallback convention (``anthropic_api_key`` ↔
+# ``ANTHROPIC_API_KEY``).
+_CLOUD_API_KEY_ENV_MAP: dict[str, str] = {
+    "anthropic_api_key": "ANTHROPIC_API_KEY",
+    "openai_api_key": "OPENAI_API_KEY",
+    "gemini_api_key": "GEMINI_API_KEY",
+}
 
 
 def _coerce_bool(value: Any) -> bool:
@@ -318,6 +358,66 @@ async def configure_langfuse_callback(site_config: Any) -> bool:
     return True
 
 
+async def configure_cloud_api_keys(site_config: Any) -> list[str]:
+    """Stamp DB-stored cloud API keys into the process env for LiteLLM.
+
+    LiteLLM discovers cloud credentials from the process env at call time
+    (``ANTHROPIC_API_KEY`` / ``OPENAI_API_KEY`` / ``GEMINI_API_KEY`` — the
+    same axis-2 seam :meth:`LiteLLMProvider._enforce_paid_endpoint_policy`
+    guards). The canonical store for those credentials is the
+    ``is_secret=true`` app_settings rows (``anthropic_api_key`` /
+    ``openai_api_key`` / ``gemini_api_key``) per the DB-first config
+    contract — worker containers are NOT started with cloud keys in their
+    env. This function bridges the two at startup, mirroring the Langfuse
+    credential stamping in :func:`configure_langfuse_callback` above.
+
+    Call sites (idempotent; re-running refreshes rotated keys):
+
+    - ``main.py`` lifespan startup (FastAPI worker process)
+    - ``services/flows/content_generation.py`` flow-body wiring — the
+      Prefect subprocess never runs main.py's lifespan, so it re-wires
+      here for the same reason Langfuse / OTel / Sentry do.
+
+    Behavior:
+
+    - ``site_config is None`` → no-op ``[]`` (CLI scripts that don't
+      construct a SiteConfig).
+    - Empty / missing secret rows are the NORMAL local-only state — they
+      are skipped without complaint. The paid-endpoint gate
+      (``allow_paid_base_url``, default false) already refuses cloud
+      prefixes on such installs, and an operator who opens the gate
+      without a key gets a loud per-call auth error naming the provider.
+    - Non-empty secret → stamped over any existing env var (the DB value
+      wins over stale container env, same contract as the Langfuse
+      block). A ``get_secret`` failure propagates to the caller — both
+      call sites wrap in their existing warn-and-continue handling.
+
+    Returns the list of env var NAMES that were set. Key values are never
+    logged or returned in any other form.
+    """
+    if site_config is None:
+        logger.debug(
+            "[litellm_provider] configure_cloud_api_keys: site_config is "
+            "None, skipping",
+        )
+        return []
+
+    stamped: list[str] = []
+    for settings_key, env_var in _CLOUD_API_KEY_ENV_MAP.items():
+        value = ((await site_config.get_secret(settings_key, "")) or "").strip()
+        if not value:
+            continue
+        os.environ[env_var] = value
+        stamped.append(env_var)
+    if stamped:
+        logger.info(
+            "[litellm_provider] cloud API keys stamped into env from "
+            "app_settings: %s",
+            ", ".join(stamped),
+        )
+    return stamped
+
+
 _THINK_TAG_RE = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
@@ -405,6 +505,13 @@ class LiteLLMProvider:
         # be served by a GPU-pinned second Ollama instance. Empty = every
         # model uses ``self._api_base`` (the OSS default path).
         self._model_api_base_overrides: dict[str, str] = {}
+        # Cloud completion-budget floor — applied by
+        # ``_apply_cloud_max_tokens`` when a caller didn't pass
+        # ``max_tokens`` and the resolved model is a cloud prefix. See
+        # the ``_DEFAULT_CLOUD_MAX_TOKENS`` comment for the adaptive-
+        # thinking rationale. DB-tunable via the ``cloud_max_tokens``
+        # key on the ``plugin.llm_provider.litellm`` config row.
+        self._cloud_max_tokens = _DEFAULT_CLOUD_MAX_TOKENS
 
     def _configure_from(self, provider_config: dict[str, Any]) -> None:
         """Apply per-call provider config from PluginConfig (dispatcher
@@ -454,6 +561,16 @@ class LiteLLMProvider:
         self._model_api_base_overrides = _coerce_override_map(
             provider_config.get("model_api_base_overrides"),
         )
+        raw_cloud_max = provider_config.get("cloud_max_tokens")
+        if raw_cloud_max not in (None, ""):
+            try:
+                self._cloud_max_tokens = int(str(raw_cloud_max).strip())
+            except (TypeError, ValueError):
+                logger.warning(
+                    "[litellm_provider] cloud_max_tokens=%r is not an "
+                    "integer — keeping %d",
+                    raw_cloud_max, self._cloud_max_tokens,
+                )
         if not self._configured:
             self._apply_global_litellm_config()
             self._configured = True
@@ -505,6 +622,31 @@ class LiteLLMProvider:
             self._model_api_base_overrides.get(resolved_model)
             or self._api_base
         )
+
+    def _apply_cloud_max_tokens(
+        self, resolved_model: str, completion_kwargs: dict[str, Any],
+    ) -> None:
+        """Apply the cloud completion-budget floor in place.
+
+        Fires only when the caller didn't pass ``max_tokens`` AND the
+        resolved model is a cloud prefix (not in
+        ``_LOCAL_MODEL_PREFIXES``, not an inline ``http`` base). LiteLLM
+        defaults ``anthropic/*`` to ``max_tokens=4096``, and on
+        adaptive-thinking Claude models (Sonnet 5+) thinking + visible
+        text draw from that ONE budget — ~3K thinking tokens starve a
+        long-form draft mid-word (2026-07-06 A/B run,
+        glad-labs-stack#2153). Local backends are untouched: Ollama's
+        default is unbounded generation, and callers that want caps pass
+        ``max_tokens`` explicitly.
+        """
+        if "max_tokens" in completion_kwargs:
+            return
+        if resolved_model.startswith("http"):
+            return
+        prefix = resolved_model.split("/", 1)[0].lower()
+        if prefix in _LOCAL_MODEL_PREFIXES:
+            return
+        completion_kwargs["max_tokens"] = self._cloud_max_tokens
 
     def _enforce_paid_endpoint_policy(self, resolved_model: str) -> None:
         """Refuse paid LiteLLM targets unless the operator opted in.
@@ -618,6 +760,7 @@ class LiteLLMProvider:
         for key in ("temperature", "max_tokens", "top_p", "response_format", "num_ctx"):
             if key in kwargs:
                 completion_kwargs[key] = kwargs[key]
+        self._apply_cloud_max_tokens(resolved_model, completion_kwargs)
 
         logger.debug(
             "[litellm_provider] complete: model=%s timeout=%s",
@@ -735,6 +878,7 @@ class LiteLLMProvider:
         for key in ("temperature", "max_tokens", "top_p"):
             if key in kwargs:
                 completion_kwargs[key] = kwargs[key]
+        self._apply_cloud_max_tokens(resolved_model, completion_kwargs)
 
         response = await litellm.acompletion(**completion_kwargs)
         async for chunk in response:
@@ -785,5 +929,6 @@ class LiteLLMProvider:
 __all__ = [
     "LangfuseConfigError",
     "LiteLLMProvider",
+    "configure_cloud_api_keys",
     "configure_langfuse_callback",
 ]

@@ -145,6 +145,44 @@ UPDATE app_settings SET value = 'anthropic/claude-sonnet-4-6' WHERE key = 'pipel
 The provider for that call is selected separately via
 `plugin.llm_provider.primary.<tier>` (the tier→provider axis, still in place).
 
+Pointing a pin at a paid model is necessary but not sufficient — see the
+checklist below for the two other switches a cloud call needs.
+
+### "I want a cloud model on any pin" — full enablement checklist
+
+A `*_model` pin like `anthropic/claude-sonnet-5` needs three things before the
+first call succeeds. All three live in `app_settings`; nothing goes in
+container env files.
+
+1. **Credential.** Put the API key in the matching `is_secret=true` row —
+   `anthropic_api_key` / `openai_api_key` / `gemini_api_key`. At startup the
+   worker AND the Prefect flow subprocess run
+   `configure_cloud_api_keys` (`services/llm_providers/litellm_provider.py`),
+   which stamps the decrypted value into the `*_API_KEY` env var LiteLLM
+   auto-discovers. Empty rows are the normal local-only state and stamp
+   nothing.
+2. **Paid-endpoint gate.** The provider refuses non-local model prefixes by
+   default. Opt in on the **plugin config row's nested `config` object** (the
+   flat `plugin.llm_provider.litellm.allow_paid_base_url` row is seeded for
+   discoverability, but the provider reads the JSON row):
+
+   ```sql
+   UPDATE app_settings
+   SET value = jsonb_set(value::jsonb, '{config,allow_paid_base_url}', 'true')::text
+   WHERE key = 'plugin.llm_provider.litellm';
+   ```
+
+3. **Budget headroom.** `daily_spend_limit_usd` / `monthly_spend_limit_usd`
+   are enforced before every paid dispatch (fails closed). Size them for the
+   expected traffic or the first over-cap call raises `CostGuardExhausted`.
+
+One knob to know about: cloud calls that don't pass an explicit `max_tokens`
+get the `cloud_max_tokens` floor (default 8192, tunable on the same nested
+`config` object). LiteLLM's own Anthropic default is 4096, and
+adaptive-thinking Claude models (Sonnet 5+) spend thinking + visible text from
+that one budget — 4096 truncates long-form drafts mid-word. Local prefixes are
+never capped by this.
+
 ### "I want to see which model fired for which call"
 
 Every call goes through `cost_logs` (the LiteLLM cost-tracking path), which

@@ -422,6 +422,23 @@ async def _run_content_generation_flow(
                 "LLM traces will not land in Langfuse this run",
                 exc_info=True,
             )
+        # Cloud API keys: this Prefect subprocess is where the writer's
+        # LLM calls actually fire, and it never runs main.py's lifespan —
+        # so the DB→env key bridge has to run here too or a cloud writer
+        # pin (anthropic/claude-sonnet-5) fails auth on every dispatch.
+        # Same fail-soft posture as the blocks above; empty secret rows
+        # are the normal local-only state and stamp nothing.
+        try:
+            from services.llm_providers.litellm_provider import (
+                configure_cloud_api_keys,
+            )
+            await configure_cloud_api_keys(_wired_site_config)
+        except Exception:  # noqa: BLE001 — same fail-soft
+            logger.warning(
+                "[CONTENT_FLOW] Cloud API key injection failed — paid-model "
+                "dispatch will fail auth this run",
+                exc_info=True,
+            )
         # poindexter#703: Prefect spawns this flow in a fresh Python
         # subprocess that never runs main.py's lifespan — Sentry/GlitchTip
         # was never initialised here, so pipeline errors (the

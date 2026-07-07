@@ -373,6 +373,29 @@ async def lifespan(app: FastAPI):  # pylint: disable=redefined-outer-name
                 e,
             )
 
+        # Stamp DB-stored cloud API keys (anthropic/openai/gemini secret
+        # rows) into the env vars LiteLLM auto-discovers. DB-first: the
+        # containers don't carry cloud keys in their env; this bridge is
+        # what lets a paid model pin (e.g. pipeline_writer_model=
+        # anthropic/claude-sonnet-5) authenticate once the operator opens
+        # the allow_paid_base_url gate. Empty rows are the normal
+        # local-only state — names-only logging, never values.
+        try:
+            from services.llm_providers.litellm_provider import (
+                configure_cloud_api_keys,
+            )
+            stamped = await configure_cloud_api_keys(_site_cfg)
+            logger.info(
+                "[LIFESPAN] Cloud LLM API keys in env: %s",
+                ", ".join(stamped) if stamped else "none configured",
+            )
+        except Exception as e:
+            logger.warning(
+                "[LIFESPAN] Cloud API key injection failed: %s — paid-model "
+                "dispatch will fail auth until this is resolved",
+                e,
+            )
+
         # Initialize quality service
         logger.info("[LIFESPAN] Initializing quality service. ..")
         # Phase H (GH#95): thread site_config through ctor so pattern-
