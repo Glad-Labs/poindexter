@@ -621,22 +621,21 @@ class ImageService:
         Returns None if Ollama is unavailable or the response is empty
         — callers fall back to the raw topic.
         """
-        # Migrated v2.2: use the Provider Protocol rather than constructing
-        # OllamaClient directly. Keeps image_service swap-able across
-        # local inference backends (Ollama, vllm, llama.cpp) by
-        # changing ``plugin.llm_provider.primary.free`` in app_settings.
+        # Migrated v2.2 → dispatcher (glad-labs-stack#2199): the query call
+        # follows the pipeline's provider config on the ``free`` tier
+        # (``plugin.llm_provider.primary.free``) so image_service stays
+        # swap-able across backends (Ollama, vllm, llama.cpp) AND a cloud
+        # ``image_search_query_model`` reaches LiteLLM instead of 404ing
+        # against local Ollama.
         #
-        # 2026-05-12 fix: these are stdlib (asyncio) + first-party imports
-        # that must always resolve in a healthy worker. Swallowing
-        # ImportError as a "fall back to raw topic" path hid setup-time
-        # bugs as runtime degradation — the operator would see worse
-        # featured-image quality and never know why. Let ImportError
-        # propagate; the worker init path will fail loud at startup
-        # instead, which is the correct level of escalation for missing
-        # provider plumbing.
+        # 2026-05-12 fix (still holds): ``asyncio`` is stdlib and must always
+        # resolve; the first-party provider imports must too. Swallowing
+        # ImportError as a "fall back to raw topic" path hid setup-time bugs as
+        # runtime degradation. So the imports below are NOT wrapped — an
+        # ImportError propagates and fails loud rather than silently degrading
+        # featured-image quality. (``get_all_llm_providers`` is imported inside
+        # the no-pool branch because only that fallback needs it.)
         import asyncio
-
-        from plugins.registry import get_all_llm_providers
 
         # Tuning constants via app_settings (#198).
         _sc = self._site_config
@@ -657,11 +656,22 @@ class ImageService:
         _temp = _sc.get_float("image_search_query_temperature", 0.4)
         _generate_timeout = _sc.get_int("image_search_query_timeout_seconds", 20)
 
-        providers = {p.name: p for p in get_all_llm_providers()}
-        provider = providers.get("ollama_native")
-        if provider is None:
-            logger.debug("LLM semantic query: ollama_native provider not registered")
-            return None
+        # ImageService already reaches the DB pool via the SiteConfig it was
+        # constructed with (see ``_ensure_pexels_key``'s ``_pool`` guard). With
+        # a pool we defer provider selection to ``dispatch_complete``; the local
+        # ``ollama_native`` provider is resolved ONLY for the no-pool fallback
+        # (tests / bootstrap).
+        _pool = getattr(_sc, "_pool", None)
+        local_provider = None
+        if _pool is None:
+            from plugins.registry import get_all_llm_providers
+            providers = {p.name: p for p in get_all_llm_providers()}
+            local_provider = providers.get("ollama_native")
+            if local_provider is None:
+                logger.debug(
+                    "LLM semantic query: ollama_native provider not registered",
+                )
+                return None
 
         prompt = (
             "Convert this blog topic into a 3-5 word Pexels stock photo "
@@ -686,17 +696,44 @@ class ImageService:
             "Respond with ONLY the search query (3-5 words, no quotes, no explanation):"
         )
 
+        messages = [{"role": "user", "content": prompt}]
         try:
-            completion = await asyncio.wait_for(
-                provider.complete(
-                    messages=[{"role": "user", "content": prompt}],
-                    model=_model,
-                    temperature=_temp,
-                    max_tokens=_max_tokens,
-                    timeout_s=_client_timeout,
-                ),
-                timeout=_generate_timeout,
-            )
+            if _pool is not None:
+                # Production path — the SAME dispatcher the pipeline's LLM calls
+                # use. A cloud model routes to LiteLLM (cost-tracked +
+                # cost_guard-gated); a local one stays local + free. The old
+                # hardcoded ollama_native call POSTed a cloud model name to
+                # local Ollama and 404'd (the #2199 class).
+                from services.llm_providers.dispatcher import dispatch_complete
+                completion = await asyncio.wait_for(
+                    dispatch_complete(
+                        _pool,
+                        messages,
+                        _model,
+                        tier="free",
+                        phase="image_search_query",
+                        temperature=_temp,
+                        max_tokens=_max_tokens,
+                        timeout_s=_client_timeout,
+                    ),
+                    timeout=_generate_timeout,
+                )
+            else:
+                # No pool (tests / bootstrap): call the local Ollama provider
+                # directly. ``local_provider`` was resolved above (the pool-is-
+                # None branch returns early when ollama_native is missing).
+                if local_provider is None:  # pragma: no cover - resolved above
+                    return None
+                completion = await asyncio.wait_for(
+                    local_provider.complete(
+                        messages=messages,
+                        model=_model,
+                        temperature=_temp,
+                        max_tokens=_max_tokens,
+                        timeout_s=_client_timeout,
+                    ),
+                    timeout=_generate_timeout,
+                )
             text = (completion.text or "").strip()
             # Strip common LLM quote/markdown wrappers
             text = text.strip('"').strip("'").strip("`").strip()

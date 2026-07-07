@@ -1,9 +1,17 @@
 """Writer self-review pass — catch cross-section contradictions before QA.
 
 Lifted from content_router_service.py during Phase E2 (issue #170's
-prevention layer). A second Ollama call asks the model to review its own
-draft for internal contradictions; if any are found, a follow-up call
-asks the model to fix only those specific issues.
+prevention layer). A review call asks the model to check its own draft for
+internal contradictions; if any are found, a follow-up call asks the model
+to fix only those specific issues.
+
+Both calls reuse the writer via ``writer_self_review_model`` and route
+through :func:`services.llm_providers.dispatcher.dispatch_complete` when a
+``pool`` is available (same 404 class as glad-labs-stack#2199) — so a cloud
+model (e.g. ``anthropic/claude-sonnet-5``) reaches LiteLLM/Anthropic
+(cost-tracked + cost_guard-gated) instead of being POSTed to local Ollama,
+which 404s on a cloud model name. With no pool (tests / bootstrap) the local
+``ollama_native`` provider is called directly — local-only by design.
 
 Gated by app_settings ``enable_writer_self_review`` (default ``false``).
 When disabled, returns ``(draft, {"enabled": False, ...})`` unchanged.
@@ -114,7 +122,6 @@ async def self_review_and_revise(
     shares one config.
     """
     _sc = site_config
-    from plugins.registry import get_all_llm_providers
     stats: dict = {"enabled": False, "contradictions_found": 0, "revised": False}
 
     enabled = (
@@ -151,23 +158,72 @@ async def self_review_and_revise(
     timeout_s = _sc.get_int(
         "content_router_contradiction_timeout_seconds", 120,
     )
-    providers = {p.name: p for p in get_all_llm_providers()}
-    provider = providers.get("ollama_native")
-    if provider is None:
-        logger.warning(
-            "[SELF_REVIEW] ollama_native provider not registered; skipping",
+
+    # Routing (Sonnet-canary 404 fix; same class as glad-labs-stack#2199): the
+    # local ``ollama_native`` provider is only needed for the no-pool fallback.
+    # With a pool we defer provider selection to ``dispatch_complete`` (per
+    # ``plugin.llm_provider.primary.standard``), which is what lets a cloud
+    # ``writer_self_review_model`` route to LiteLLM rather than 404 against
+    # local Ollama.
+    local_provider = None
+    if pool is None:
+        from plugins.registry import get_all_llm_providers
+        providers = {p.name: p for p in get_all_llm_providers()}
+        local_provider = providers.get("ollama_native")
+        if local_provider is None:
+            logger.warning(
+                "[SELF_REVIEW] ollama_native provider not registered; skipping",
+            )
+            return draft, stats
+
+    async def _complete(
+        prompt: str, *, temperature: float, max_tokens: int,
+    ) -> Any:
+        """One self-review completion, routed like the draft.
+
+        Pool present → ``dispatch_complete`` (a cloud model routes to
+        LiteLLM + cost_guard; a local one stays local + free). No pool →
+        the local ``ollama_native`` provider resolved above. The LiteLLM
+        provider drops Ollama-only params for cloud targets, so the shared
+        call signature is safe on either backend.
+        """
+        messages = [{"role": "user", "content": prompt}]
+        if pool is not None:
+            # Production / in-graph path — the SAME dispatcher the draft uses.
+            # A cloud model routes to LiteLLM (cost-tracked + cost_guard-gated);
+            # a local model stays local + free. This is the #2199-class fix: the
+            # old hardcoded ollama_native call POSTed a cloud model name to
+            # local Ollama and 404'd.
+            from services.llm_providers.dispatcher import dispatch_complete
+            return await dispatch_complete(
+                pool,
+                messages,
+                review_model,
+                tier="standard",
+                phase="writer_self_review",
+                temperature=temperature,
+                max_tokens=max_tokens,
+                timeout_s=timeout_s,
+            )
+        if local_provider is None:  # pragma: no cover - pool is None ⟹ resolved above
+            raise RuntimeError(
+                "[SELF_REVIEW] ollama_native provider unavailable in no-pool path",
+            )
+        return await local_provider.complete(
+            messages=messages,
+            model=review_model,
+            temperature=temperature,
+            max_tokens=max_tokens,
+            timeout_s=timeout_s,
         )
-        return draft, stats
 
     try:
-        result = await provider.complete(
-            messages=[{"role": "user", "content": review_prompt}],
-            model=review_model,
+        result = await _complete(
+            review_prompt,
             temperature=0.2,
             max_tokens=_sc.get_int(
                 "content_router_contradiction_review_max_tokens", 1500,
             ),
-            timeout_s=timeout_s,
         )
         review_text = (result.text or "").strip()
 
@@ -188,14 +244,12 @@ async def self_review_and_revise(
             draft=draft,
             fallback=_REVISE_PROMPT_FALLBACK,
         )
-        revised = await provider.complete(
-            messages=[{"role": "user", "content": revise_prompt}],
-            model=review_model,
+        revised = await _complete(
+            revise_prompt,
             temperature=0.3,
             max_tokens=_sc.get_int(
                 "content_router_contradiction_revise_max_tokens", 8000,
             ),
-            timeout_s=timeout_s,
         )
         revised_text = (revised.text or "").strip()
 
