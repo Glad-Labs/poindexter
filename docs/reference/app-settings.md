@@ -433,8 +433,8 @@ The worker re-reads on every poll; no restart needed.
 | `plugin.job.media_reconciliation` | `{"enabled": true, "interval_seconds":...` |  |  |
 | `plugin.job.verify_published_posts` | `{"enabled":true,"interval_seconds":0,...` |  |  |
 | `plugin.llm_provider.gemini.enabled` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
-| `plugin.llm_provider.litellm.allow_paid_base_url` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
-| `plugin.llm_provider.openai_compat.allow_paid_base_url` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
+| `plugin.llm_provider.litellm.allow_paid_base_url` | `false` |  | Paid-endpoint opt-in gate per feedback_no_paid_apis; folded into provider config by get_provider_config. |
+| `plugin.llm_provider.openai_compat.allow_paid_base_url` | `false` |  | Paid-endpoint opt-in gate per feedback_no_paid_apis; folded into provider config by get_provider_config. |
 | `plugin.video_provider.wan2.1-1.3b.server_url` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `podcast_description` | `` |  | Podcast RSS description |
 | `podcast_name` | `` |  | Podcast title for RSS feeds |
