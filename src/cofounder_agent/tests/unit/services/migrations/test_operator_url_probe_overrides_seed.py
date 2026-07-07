@@ -202,6 +202,30 @@ def test_speaches_backed_overrides_probe_health(baseline_seeds_text: str) -> Non
         )
 
 
+def test_podcast_tts_is_monitored_not_skipped(baseline_seeds_text: str) -> None:
+    """podcast_tts_base_url must be monitored via its /health override, not muted.
+
+    It historically carried BOTH a skip-list entry AND a /health override — a
+    contradiction: ``collect_app_setting_urls`` drops skip-listed keys before the
+    override is ever consulted, so the speaches podcast-TTS surface went
+    unmonitored while its siblings (caption / stt / tts) were probed. Un-skipping
+    it (while keeping the override) monitors it like the others, per the
+    no-silencing rule. Guard so it can't be silently re-muted.
+    """
+    skip_raw = _sql_string_value(baseline_seeds_text, "operator_url_probe_skip_keys") or ""
+    skip_keys = {s.strip() for s in skip_raw.split(",") if s.strip()}
+    assert "podcast_tts_base_url" not in skip_keys, (
+        "podcast_tts_base_url is skip-listed AND has a /health override — the "
+        "skip-list wins, so the surface is muted, not monitored. Remove it from "
+        "operator_url_probe_skip_keys."
+    )
+    entry = _overrides(baseline_seeds_text).get("podcast_tts_base_url")
+    assert entry is not None and entry.get("probe_url") == "http://speaches:8000/health", (
+        "podcast_tts_base_url must keep its /health override so removing it from "
+        "the skip-list actually monitors it (not a bare /v1 404)."
+    )
+
+
 def test_overrides_seed_is_idempotent(baseline_seeds_text: str) -> None:
     """ON CONFLICT DO NOTHING so a baseline replay never clobbers an operator's
     runtime-tuned override map. Line-anchored (not ``[^;]``) because the JSON
