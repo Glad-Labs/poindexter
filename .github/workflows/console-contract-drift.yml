@@ -1,0 +1,148 @@
+# console-contract-drift — nightly live-backend drift check for the console
+# contract net (src/cofounder_agent/console/js/__tests__/contracts/).
+#
+# Plain Node + git + gh. NO LLM, no Anthropic-API cost — distinct from the
+# disabled Claude-Code scheduled agents. Never a PR gate: the per-PR net runs
+# offline in console-unit; this is the ONLY live-worker touch. It runs solely on
+# the self-hosted PC runner (which can reach localhost:8002), gated on CI_RUNNER
+# so it is a quiet green skip whenever the runner is offline.
+#
+#   no schema drift  -> silent green no-op
+#   benign drift     -> refresh PR auto-merges once checks pass + Discord ping
+#   breaking drift   -> refresh PR held (red CI) + Telegram ping
+#
+# Secrets (glad-labs-stack):
+#   CONSOLE_CONTRACT_CLIENT_ID / _SECRET  — read-only (api:read) OAuth client.
+#   DISCORD_OPS_WEBHOOK_URL               — benign-drift routine ping.
+#   TELEGRAM_BOT_TOKEN / TELEGRAM_CHAT_ID — breaking-drift critical ping.
+#   CONSOLE_CONTRACT_APP_ID / _PRIVATE_KEY (optional) — a GitHub App whose token
+#     authors the refresh PR. Required for hands-off auto-merge: a PR opened by
+#     the default GITHUB_TOKEN does NOT trigger `on: pull_request` CI, so the
+#     branch-protection checks `gh pr merge --auto` waits on would never start.
+#     Dormant until set — the workflow falls back to GITHUB_TOKEN (PR opens +
+#     pings, but you merge it by hand).
+name: console-contract-drift
+
+on:
+  schedule:
+    - cron: "0 8 * * *" # 08:00 UTC nightly (~00:00–03:00 US)
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Worker base URL (self-hosted → localhost; container → host.docker.internal)
+        default: http://localhost:8002
+      prometheus:
+        description: Prometheus base URL
+        default: http://localhost:9091
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: console-contract-drift
+  cancel-in-progress: false
+
+jobs:
+  drift:
+    # Source-of-truth repo only, and only when the self-hosted PC runner is
+    # online (CI_RUNNER set by runner-healthcheck) — the job must reach the local
+    # worker, so ubuntu-latest would be pointless. Quiet green skip otherwise.
+    if: github.repository == 'Glad-Labs/glad-labs-stack' && vars.CI_RUNNER != ''
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
+    timeout-minutes: 15
+    env:
+      BASE: ${{ github.event.inputs.base || 'http://localhost:8002' }}
+      PROM: ${{ github.event.inputs.prometheus || 'http://localhost:9091' }}
+      CONTRACTS: src/cofounder_agent/console/js/__tests__/contracts
+      # Surfaced as env vars because the `secrets` context is not allowed in a
+      # step `if:` (GitHub rejects it at parse time); the `env` context is.
+      CONSOLE_CONTRACT_APP_ID: ${{ secrets.CONSOLE_CONTRACT_APP_ID }}
+      DISCORD_OPS_WEBHOOK_URL: ${{ secrets.DISCORD_OPS_WEBHOOK_URL }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+    steps:
+      # Optional: mint an App installation token so the refresh PR triggers CI
+      # (GITHUB_TOKEN-authored PRs don't) and `gh pr merge --auto` can complete.
+      # Dormant until CONSOLE_CONTRACT_APP_ID is configured. SHA-pinned per the
+      # third-party-Actions lint.
+      - name: Mint PR-author App token (optional — enables auto-merge)
+        id: app-token
+        if: ${{ env.CONSOLE_CONTRACT_APP_ID != '' }}
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3.2.0
+        with:
+          app-id: ${{ secrets.CONSOLE_CONTRACT_APP_ID }}
+          private-key: ${{ secrets.CONSOLE_CONTRACT_APP_PRIVATE_KEY }}
+
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v4.3.1
+        with:
+          fetch-depth: 0
+          token: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+
+      - name: Setup Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e # v6.4.0
+        with:
+          node-version: "24"
+
+      - name: Record fixtures + snapshot (schema drift → exit 1)
+        id: record
+        continue-on-error: true
+        env:
+          CONSOLE_CONTRACT_CLIENT_ID: ${{ secrets.CONSOLE_CONTRACT_CLIENT_ID }}
+          CONSOLE_CONTRACT_CLIENT_SECRET: ${{ secrets.CONSOLE_CONTRACT_CLIENT_SECRET }}
+        run: node "$CONTRACTS/record-fixtures.mjs" --base "$BASE" --prometheus "$PROM"
+
+      - name: No schema drift — done
+        if: steps.record.outcome == 'success'
+        run: echo "No console contract drift."
+
+      # ── drift path (recorder exited 1: schema changed, artifacts refreshed) ──
+      - name: Contract tests vs fresh fixtures
+        if: steps.record.outcome == 'failure'
+        id: verify
+        continue-on-error: true
+        run: npm run test:console
+
+      - name: Open / update refresh PR
+        if: steps.record.outcome == 'failure'
+        id: pr
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          BR="chore/console-contract-refresh"
+          git config user.name "glad-labs-bot"
+          git config user.email "bot@gladlabs.io"
+          git checkout -B "$BR"
+          git add "$CONTRACTS"
+          git commit -m "chore(console): refresh contract fixtures + OpenAPI snapshot"
+          git push -f -u origin "$BR"
+          gh pr create --base main --head "$BR" \
+            --title "chore(console): refresh contract fixtures" \
+            --body "Automated nightly refresh — the backend schema drifted. Contract tests vs the fresh fixtures: **${{ steps.verify.outcome }}**. Benign (green) auto-merges once checks pass; breaking (red) holds for review." \
+            || echo "PR already open (branch updated)"
+          echo "branch=$BR" >> "$GITHUB_OUTPUT"
+
+      - name: Benign drift → auto-merge + Discord
+        if: steps.record.outcome == 'failure' && steps.verify.outcome == 'success' && env.DISCORD_OPS_WEBHOOK_URL != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token || secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          gh pr merge --auto --squash "${{ steps.pr.outputs.branch }}" || true
+          curl -fsS -H 'Content-Type: application/json' \
+            -d '{"content":"🟢 Console contract fixtures refreshed (benign backend drift) — PR auto-merging once checks pass."}' \
+            "$DISCORD_OPS_WEBHOOK_URL" >/dev/null || true
+
+      - name: Breaking drift → hold + Telegram
+        if: steps.record.outcome == 'failure' && steps.verify.outcome == 'failure' && env.TELEGRAM_BOT_TOKEN != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fsS "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            -d chat_id="${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=🔴 Console contract BROKEN: the backend changed a shape the console still assumes. Refresh PR chore/console-contract-refresh is held (red CI) — an adapter in console/js/api.js needs updating." \
+            >/dev/null || true

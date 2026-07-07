@@ -1,0 +1,999 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "AI Content Pipeline (worker)",
+    "version": "0.5.0"
+  },
+  "paths": {
+    "/api/metrics/costs/budget": {
+      "get": {
+        "tags": ["metrics"],
+        "summary": "Get Budget Status",
+        "description": "Get budget status and alerts for Week 2 dashboard\n\n**Parameters:**\n- monthly_budget: Monthly limit in USD. Omit to use the operator's real cap\n  from ``app_settings.monthly_spend_limit_usd`` (no hardcoded $150); supply a\n  value only to override for a what-if view.\n\n**Returns:**\n- Amount spent vs remaining\n- Percent used with color coding\n- Daily burn rate\n- Projected final month cost\n- Alerts (80%, 100% thresholds)\n\n**Example:** Shows spent $12.50, remaining $137.50, 8.33% used, status: healthy",
+        "operationId": "get_budget_status_api_metrics_costs_budget_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "monthly_budget",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "number",
+                  "maximum": 10000,
+                  "minimum": 10
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Monthly Budget"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Budget Status Api Metrics Costs Budget Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error_code", "message", "request_id"],
+                  "properties": {
+                    "error_code": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Field-level validation errors (field path → message)"
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/settings": {
+      "get": {
+        "tags": ["settings"],
+        "summary": "List all settings",
+        "description": "List all settings with optional category/environment filtering and pagination.",
+        "operationId": "list_settings_api_settings_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by category",
+              "title": "Category"
+            },
+            "description": "Filter by category"
+          },
+          {
+            "name": "environment",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/SettingEnvironmentEnum"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by environment",
+              "title": "Environment"
+            },
+            "description": "Filter by environment"
+          },
+          {
+            "name": "tags",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Comma-separated tag filter",
+              "title": "Tags"
+            },
+            "description": "Comma-separated tag filter"
+          },
+          {
+            "name": "search",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Search in key and description",
+              "title": "Search"
+            },
+            "description": "Search in key and description"
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "description": "Page number (1-indexed). Aliased by offset/limit.",
+              "default": 1,
+              "title": "Page"
+            },
+            "description": "Page number (1-indexed). Aliased by offset/limit."
+          },
+          {
+            "name": "per_page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "description": "Items per page. Aliased by offset/limit.",
+              "default": 20,
+              "title": "Per Page"
+            },
+            "description": "Items per page. Aliased by offset/limit."
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Result offset — canonical across the API; overrides page/per_page (#635).",
+              "title": "Offset"
+            },
+            "description": "Result offset — canonical across the API; overrides page/per_page (#635)."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "maximum": 100,
+                  "minimum": 1
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Max results — canonical across the API; overrides page/per_page (#635).",
+              "title": "Limit"
+            },
+            "description": "Max results — canonical across the API; overrides page/per_page (#635)."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of settings filtered by user role",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error_code", "message", "request_id"],
+                  "properties": {
+                    "error_code": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Field-level validation errors (field path → message)"
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing token"
+          },
+          "403": {
+            "description": "Forbidden - insufficient permissions"
+          }
+        }
+      },
+      "post": {
+        "tags": ["settings"],
+        "summary": "Create new setting",
+        "description": "Create a new setting. Key must be unique.",
+        "operationId": "create_setting_api_settings_post",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SettingCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Setting created successfully",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SettingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request body"
+          },
+          "401": {
+            "description": "Unauthorized - invalid or missing token"
+          },
+          "403": {
+            "description": "Forbidden - admin only"
+          },
+          "409": {
+            "description": "Setting key already exists"
+          }
+        }
+      }
+    },
+    "/api/media-approval/pending": {
+      "get": {
+        "tags": ["media-approval"],
+        "summary": "List pending media awaiting operator review",
+        "description": "Return pending media rows joined with post title/slug.",
+        "operationId": "list_pending_api_media_approval_pending_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "medium",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Filter by medium: podcast, video, etc.",
+              "title": "Medium"
+            },
+            "description": "Filter by medium: podcast, video, etc."
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 500,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MediaApprovalListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error_code", "message", "request_id"],
+                  "properties": {
+                    "error_code": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Field-level validation errors (field path → message)"
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/scheduling": {
+      "get": {
+        "tags": ["scheduling"],
+        "summary": "List scheduled posts",
+        "description": "Return all scheduled posts, defaulting to future-only.",
+        "operationId": "list_scheduled_api_scheduling_get",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "upcoming_only",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "description": "Only return future slots",
+              "default": true,
+              "title": "Upcoming Only"
+            },
+            "description": "Only return future slots"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Scheduled Api Scheduling Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error_code", "message", "request_id"],
+                  "properties": {
+                    "error_code": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Field-level validation errors (field path → message)"
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": ["scheduling"],
+        "summary": "Clear the schedule on one or all scheduled posts",
+        "description": "Clear (unschedule) one or more posts, returning them to ``approved`` status.\n\nWhen ``post_ids`` is omitted every future-dated scheduled post is cleared.",
+        "operationId": "clear_api_scheduling_delete",
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "parameters": [
+          {
+            "name": "post_ids",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Post IDs to clear; omit to clear all future-dated scheduled posts",
+              "title": "Post Ids"
+            },
+            "description": "Post IDs to clear; omit to clear all future-dated scheduled posts"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Clear Api Scheduling Delete"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Request validation failed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["error_code", "message", "request_id"],
+                  "properties": {
+                    "error_code": {
+                      "type": "string",
+                      "example": "VALIDATION_ERROR"
+                    },
+                    "message": {
+                      "type": "string"
+                    },
+                    "errors": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "string"
+                      },
+                      "description": "Field-level validation errors (field path → message)"
+                    },
+                    "request_id": {
+                      "type": "string",
+                      "format": "uuid"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "MediaApprovalItem": {
+        "properties": {
+          "post_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Post Id"
+          },
+          "medium": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medium"
+          },
+          "title": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Title"
+          },
+          "slug": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Slug"
+          },
+          "quality_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quality Score"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "title": "MediaApprovalItem",
+        "description": "One row in the Gate-2 media-approval queue (#1343).\n\nThe operator-facing projection joined with the post's title/slug. The\ninternal scoring columns (``quality_signals`` / ``quality_evaluated_at``)\nare intentionally not surfaced over HTTP — the ``poindexter media pending``\nCLI reads those straight from the service, not this endpoint."
+      },
+      "MediaApprovalListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/MediaApprovalItem"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "The page of results (never null)"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Total",
+            "description": "Total matching rows across all pages"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Limit",
+            "description": "Page size echoed back (the LIMIT)"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Offset",
+            "description": "Window start echoed back (the OFFSET)",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": ["total", "limit"],
+        "title": "MediaApprovalListResponse",
+        "description": "Pending media queue — canonical offset envelope (poindexter#745).\n\n``{items, total, limit, offset}`` via ``ListResponse[MediaApprovalItem]``.\nReplaces the prior untyped ``dict[str, Any]`` body that used a ``media`` key.\nThe list is capped at ``limit`` with no cursor, so ``offset`` is always 0.\nOperator Gate-2 surface (OAuth-JWT); the operator console reads ``items`` in\nlockstep."
+      },
+      "SettingCategoryEnum": {
+        "type": "string",
+        "enum": [
+          "general",
+          "api",
+          "database",
+          "security",
+          "feature_flags",
+          "performance",
+          "logging",
+          "integration"
+        ],
+        "title": "SettingCategoryEnum",
+        "description": "Setting category"
+      },
+      "SettingCreate": {
+        "properties": {
+          "key": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 255,
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Key",
+            "description": "Unique setting identifier"
+          },
+          "value": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value",
+            "description": "Setting value (can be complex JSON)"
+          },
+          "data_type": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingDataTypeEnum"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Data type of value",
+            "default": "string"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingCategoryEnum"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Setting category for organization"
+          },
+          "environment": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SettingEnvironmentEnum"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Environment applicability",
+            "default": "all"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Human-readable description"
+          },
+          "is_encrypted": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Encrypted",
+            "description": "Whether value is encrypted (secrets, passwords)",
+            "default": false
+          },
+          "is_read_only": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Is Read Only",
+            "description": "Whether this setting can be modified",
+            "default": false
+          },
+          "tags": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tags",
+            "description": "Tags for filtering and organization"
+          }
+        },
+        "additionalProperties": true,
+        "type": "object",
+        "title": "SettingCreate",
+        "description": "Model for creating new settings - supports both detailed and simple formats"
+      },
+      "SettingDataTypeEnum": {
+        "type": "string",
+        "enum": ["string", "int", "float", "bool", "json"],
+        "title": "SettingDataTypeEnum",
+        "description": "Setting data type"
+      },
+      "SettingEnvironmentEnum": {
+        "type": "string",
+        "enum": ["all", "development", "staging", "production"],
+        "title": "SettingEnvironmentEnum",
+        "description": "Environment scope"
+      },
+      "SettingListResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SettingResponse"
+            },
+            "type": "array",
+            "title": "Items",
+            "description": "The page of results (never null)"
+          },
+          "total": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Total",
+            "description": "Total matching rows across all pages"
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Limit",
+            "description": "Page size echoed back (the LIMIT)"
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "title": "Offset",
+            "description": "Window start echoed back (the OFFSET)",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": ["total", "limit"],
+        "title": "SettingListResponse",
+        "description": "Settings list — canonical offset envelope (poindexter#745).\n\n``{items, total, limit, offset}`` via ``ListResponse[SettingResponse]``.\nCompletes the #635 offset/limit canonicalization on the response side (the\nrequest side already accepted offset/limit); the page-based response fields\n(page/per_page/pages) were retired."
+      },
+      "SettingResponse": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Key",
+            "description": "Unique setting identifier"
+          },
+          "value": {
+            "type": "string",
+            "title": "Value",
+            "description": "Setting value (can be complex JSON)"
+          },
+          "data_type": {
+            "$ref": "#/components/schemas/SettingDataTypeEnum",
+            "description": "Data type of value",
+            "default": "string"
+          },
+          "category": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Category",
+            "description": "Setting category for organization"
+          },
+          "environment": {
+            "$ref": "#/components/schemas/SettingEnvironmentEnum",
+            "description": "Environment applicability",
+            "default": "all"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string",
+                "maxLength": 1000
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "Human-readable description"
+          },
+          "is_encrypted": {
+            "type": "boolean",
+            "title": "Is Encrypted",
+            "description": "Whether value is encrypted (secrets, passwords)",
+            "default": false
+          },
+          "is_read_only": {
+            "type": "boolean",
+            "title": "Is Read Only",
+            "description": "Whether this setting can be modified",
+            "default": false
+          },
+          "tags": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Tags",
+            "description": "Tags for filtering and organization"
+          },
+          "id": {
+            "type": "integer",
+            "title": "Id",
+            "description": "Setting database ID"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "Creation timestamp"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Updated At",
+            "description": "Last update timestamp"
+          },
+          "created_by_id": {
+            "type": "integer",
+            "title": "Created By Id",
+            "description": "User ID who created this setting"
+          },
+          "updated_by_id": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated By Id",
+            "description": "User ID who last updated this setting"
+          },
+          "value_preview": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Value Preview",
+            "description": "Preview of value (for encrypted values)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "value",
+          "id",
+          "created_at",
+          "updated_at",
+          "created_by_id"
+        ],
+        "title": "SettingResponse",
+        "description": "Model for returning setting data"
+      }
+    }
+  }
+}
