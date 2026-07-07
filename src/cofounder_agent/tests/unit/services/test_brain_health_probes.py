@@ -646,6 +646,31 @@ class TestStripOllamaPrefix:
 
 
 @pytest.mark.unit
+class TestIsLocalOllamaTag:
+    """The content-gen probe only sends Ollama's LOCAL /api/generate a name it
+    can actually serve. Cloud/remote provider-prefixed models and non-tag
+    sentinels are rejected so the probe never 404s (the 2026-07-07 Sonnet-canary
+    regression: pipeline_writer_model flipped to anthropic/claude-sonnet-5)."""
+
+    def test_bare_tag_is_local(self):
+        assert hp._is_local_ollama_tag("gemma3:27b") is True
+
+    def test_cloud_provider_prefix_is_not_local(self):
+        # A residual '/' after ollama/-stripping = a foreign LiteLLM provider
+        # prefix (anthropic/, openai/, gemini/, …) — not an Ollama tag.
+        assert hp._is_local_ollama_tag("anthropic/claude-sonnet-5") is False
+        assert hp._is_local_ollama_tag("openai/gpt-5") is False
+
+    def test_auto_sentinel_is_not_local(self):
+        # default_ollama_model ships as the literal 'auto' — not a concrete tag.
+        assert hp._is_local_ollama_tag("auto") is False
+
+    def test_empty_and_none_are_not_local(self):
+        assert hp._is_local_ollama_tag("") is False
+        assert hp._is_local_ollama_tag(None) is False
+
+
+@pytest.mark.unit
 @pytest.mark.asyncio
 class TestResolveContentGenModel:
     """The content-gen probe resolves its model dynamically from
@@ -668,6 +693,31 @@ class TestResolveContentGenModel:
         p = self._pool_with_settings(pipeline_writer_model="ollama/glm-4.7-5090:latest")
         model = await hp._resolve_content_gen_model(p)
         assert model == "glm-4.7-5090:latest"
+
+    async def test_skips_cloud_writer_model_and_falls_through(self):
+        # 2026-07-07 Sonnet-canary regression: pipeline_writer_model was flipped
+        # to a cloud model (anthropic/claude-sonnet-5). The brain runs Ollama's
+        # LOCAL /api/generate, which 404s on a provider-prefixed name — so the
+        # resolver must NOT return it; it falls through to the next local source.
+        p = self._pool_with_settings(
+            pipeline_writer_model="anthropic/claude-sonnet-5",
+            default_ollama_model="gemma3:27b",
+        )
+        model = await hp._resolve_content_gen_model(p)
+        assert model == "gemma3:27b"
+
+    async def test_skips_auto_sentinel_and_falls_through(self):
+        # default_ollama_model ships as the literal sentinel 'auto' (not a real
+        # tag). It must be treated as non-concrete and fall through to installed-
+        # model detection rather than being POSTed to /api/generate (→ 404).
+        p = self._pool_with_settings(
+            pipeline_writer_model="", default_ollama_model="auto"
+        )
+        tags = MagicMock()
+        tags.read.return_value = b'{"models": [{"name": "phi4:14b"}]}'
+        with patch("urllib" + ".request.urlopen", return_value=tags):
+            model = await hp._resolve_content_gen_model(p)
+        assert model == "phi4:14b"
 
     async def test_falls_back_to_default_ollama_model(self):
         p = self._pool_with_settings(
@@ -694,6 +744,49 @@ class TestResolveContentGenModel:
         with patch("urllib" + ".request.urlopen", side_effect=RuntimeError("down")):
             model = await hp._resolve_content_gen_model(p)
         assert model == hp._CONTENT_GEN_FALLBACK_MODEL
+
+
+@pytest.mark.unit
+class TestSmallestInstalledGenerativeModel:
+    """The content-gen fallback picks the SMALLEST installed non-embedding model
+    (by /api/tags ``size``), not the first in the list. The probe is a local-
+    generation liveness check, so it must not cold-load a 40GB 70B model (30s
+    timeout + VRAM oversubscription) when a ~2GB model proves Ollama generates."""
+
+    def _tags(self, payload: bytes):
+        resp = MagicMock()
+        resp.read.return_value = payload
+        return resp
+
+    def test_picks_smallest_generative_skipping_embedders(self):
+        # 70B listed first; embedder in the middle; small 3B last → 3B wins.
+        payload = (
+            b'{"models": ['
+            b'{"name": "Llama-3.3-70B:latest", "size": 40050000000},'
+            b'{"name": "nomic-embed-text:latest", "size": 270000000},'
+            b'{"name": "qwen2.5:3b", "size": 1930000000}'
+            b"]}"
+        )
+        with patch("urllib" + ".request.urlopen", return_value=self._tags(payload)):
+            assert hp._smallest_installed_generative_model() == "qwen2.5:3b"
+
+    def test_missing_size_degrades_to_declaration_order(self):
+        # Older Ollama may omit 'size' — degrade to first-non-embedding.
+        payload = (
+            b'{"models": [{"name": "nomic-embed-text:latest"},'
+            b' {"name": "phi4:14b"}]}'
+        )
+        with patch("urllib" + ".request.urlopen", return_value=self._tags(payload)):
+            assert hp._smallest_installed_generative_model() == "phi4:14b"
+
+    def test_empty_when_only_embedders(self):
+        payload = b'{"models": [{"name": "nomic-embed-text:latest", "size": 1}]}'
+        with patch("urllib" + ".request.urlopen", return_value=self._tags(payload)):
+            assert hp._smallest_installed_generative_model() == ""
+
+    def test_empty_when_ollama_unreachable(self):
+        with patch("urllib" + ".request.urlopen", side_effect=RuntimeError("down")):
+            assert hp._smallest_installed_generative_model() == ""
 
 
 @pytest.mark.unit
@@ -730,6 +823,38 @@ class TestProbeContentGen:
         assert r["ok"] is False
         assert r["model"] == "gemma3:27b"
         assert "gemma3:27b" in r["detail"]
+
+    async def test_cloud_writer_falls_through_to_local_model(self):
+        # End-to-end reproduction of the 2026-07-07 page: the writer is a cloud
+        # model. The probe must exercise an installed LOCAL model via /api/tags
+        # rather than POST 'anthropic/claude-sonnet-5' to Ollama (→ HTTP 404).
+        p = _make_pool()
+
+        async def _fv(_query, *args):
+            key = args[0] if args else None
+            return {
+                "pipeline_writer_model": "anthropic/claude-sonnet-5",
+                "default_ollama_model": "auto",
+            }.get(key)
+
+        p.fetchval = AsyncMock(side_effect=_fv)
+
+        def _urlopen(req, *_a, **_k):
+            url = getattr(req, "full_url", req)
+            resp = MagicMock()
+            if "/api/tags" in url:
+                resp.read.return_value = b'{"models": [{"name": "gemma3:27b"}]}'
+            else:  # /api/generate
+                resp.read.return_value = (
+                    b'{"response": "FastAPI is a Python web framework."}'
+                )
+            return resp
+
+        with patch("urllib" + ".request.urlopen", side_effect=_urlopen):
+            r = await hp.probe_content_gen(p)
+        assert r["ok"] is True
+        assert r["model"] == "gemma3:27b"
+        assert r["model"] != "anthropic/claude-sonnet-5"
 
 
 @pytest.mark.unit

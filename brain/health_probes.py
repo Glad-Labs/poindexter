@@ -353,17 +353,61 @@ def _strip_ollama_prefix(model: str) -> str:
     return model
 
 
-def _first_installed_generative_model() -> str:
-    """Return the first non-embedding model from Ollama's ``/api/tags``.
+# Non-tag sentinels that must never reach /api/generate. 'auto' is the seeded
+# default for default_ollama_model (settings_defaults) — a "let the system pick"
+# marker, not a pulled Ollama tag.
+_NON_TAG_SENTINELS = frozenset({"auto"})
 
-    Best-effort, sync (called via ``asyncio.to_thread``): returns ``""``
-    if Ollama is unreachable or only embedding models are installed.
-    Embedding models can't serve ``/api/generate`` (they 400/500), so we
-    skip names that look like embedders.
+
+def _is_local_ollama_tag(candidate: str) -> bool:
+    """True when ``candidate`` (already ``ollama/``-stripped) is a bare Ollama
+    tag the LOCAL ``/api/generate`` can serve.
+
+    Rejects two shapes that make ``/api/generate`` 404:
+
+    * **Cloud / remote models** — a residual ``/`` after the ``ollama/`` prefix
+      is stripped signals a foreign LiteLLM provider prefix (``anthropic/…``,
+      ``openai/…``, ``gemini/…``). Ollama runs local tags only. This is the
+      2026-07-07 Sonnet-canary regression: ``pipeline_writer_model`` was flipped
+      to ``anthropic/claude-sonnet-5`` and the probe 3x-paged POSTing that name
+      to Ollama.
+    * **Non-tag sentinels** — ``auto`` / empty are markers, not pulled tags.
+
+    Dependency-free by design: the brain is a stdlib+asyncpg container and can't
+    import LiteLLM's provider registry. The rare namespaced Ollama tag
+    (``ollama/hf.co/…``) is conservatively treated as non-local and falls
+    through to installed-model detection, which returns a real tag — so the
+    fallthrough is self-correcting, never a hard failure.
+    """
+    c = (candidate or "").strip()
+    if not c or c.lower() in _NON_TAG_SENTINELS:
+        return False
+    return "/" not in c
+
+
+def _smallest_installed_generative_model() -> str:
+    """Return the SMALLEST installed non-embedding model from ``/api/tags``
+    (by reported ``size`` in bytes).
+
+    The content-gen probe is a *local generation liveness* check, so its
+    fallback model just needs to prove Ollama can emit a sentence — it must NOT
+    cold-load a 40GB 70B behemoth (blows the probe's 30s timeout and triggers
+    the VRAM oversubscription the GPU lock guards against). A ~2GB 3B model
+    answers the liveness question in a fraction of the time and VRAM, so we pick
+    the smallest generative tag rather than whatever ``/api/tags`` lists first.
+
+    Best-effort, sync (called via ``asyncio.to_thread``): returns ``""`` if
+    Ollama is unreachable or only embedding models are installed. Embedding
+    models can't serve ``/api/generate`` (they 400/500), so names that look like
+    embedders are skipped. A model whose payload omits ``size`` sorts last
+    (treated as +inf), so a sized small model always wins; when no sizes are
+    present it degrades to declaration order.
     """
     ok, result = _http_json(f"{LOCAL_OLLAMA}/api/tags", timeout=5)
     if not ok:
         return ""
+    best_name = ""
+    best_size: float | None = None
     for m in result.get("models", []):
         name = (m.get("name") or "").strip()
         if not name:
@@ -371,20 +415,34 @@ def _first_installed_generative_model() -> str:
         lowered = name.lower()
         if "embed" in lowered or "bge" in lowered:
             continue
-        return name
-    return ""
+        size = m.get("size")
+        size = float(size) if isinstance(size, (int, float)) else float("inf")
+        if best_size is None or size < best_size:
+            best_size = size
+            best_name = name
+    return best_name
 
 
 async def _resolve_content_gen_model(pool) -> str:
-    """Resolve the model the content-gen probe should exercise.
+    """Resolve the LOCAL Ollama model the content-gen probe should exercise.
 
-    Resolution order (first non-empty wins):
+    Resolution order (first *locally-servable* value wins):
 
     1. ``app_settings.pipeline_writer_model`` — the configured writer
-       (``ollama/`` prefix stripped).
-    2. ``app_settings.default_ollama_model``.
-    3. The first installed non-embedding model from ``/api/tags``.
+       (``ollama/`` prefix stripped), **only if it is a local Ollama tag**.
+       A cloud/remote writer (e.g. ``anthropic/claude-sonnet-5``) is skipped —
+       the brain runs Ollama's local ``/api/generate``, which can't serve it.
+    2. ``app_settings.default_ollama_model`` — same local-tag filter (its seeded
+       default is the ``auto`` sentinel, which is skipped).
+    3. The smallest installed non-embedding model from ``/api/tags`` (a light
+       liveness pick — never the biggest model on disk).
     4. ``_CONTENT_GEN_FALLBACK_MODEL`` — a safe literal.
+
+    The probe verifies *local Ollama generation health*, so it must always land
+    on a tag Ollama actually has. When the writer is a cloud model the probe
+    still exercises a real local model (steps 2-4) rather than false-paging; the
+    cloud writer path is covered elsewhere (cost_guard / pipeline retries), not
+    by this stdlib brain probe.
 
     Best-effort — never raises; a DB hiccup just falls through to the
     next source.
@@ -400,11 +458,18 @@ async def _resolve_content_gen_model(pool) -> str:
             )
             raw = None
         model = _strip_ollama_prefix(str(raw) if raw is not None else "")
-        if model:
+        if model and _is_local_ollama_tag(model):
             return model
+        if model:
+            logger.info(
+                "[content_gen] %s=%r is not a local Ollama tag (cloud model or "
+                "sentinel); falling through so the probe exercises local "
+                "generation instead of 404ing on it.",
+                key, model,
+            )
 
-    # Neither setting resolved — ask Ollama what's actually installed.
-    installed = await asyncio.to_thread(_first_installed_generative_model)
+    # No locally-servable setting resolved — ask Ollama what's actually installed.
+    installed = await asyncio.to_thread(_smallest_installed_generative_model)
     if installed:
         return installed
 
