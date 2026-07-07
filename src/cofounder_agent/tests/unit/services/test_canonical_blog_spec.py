@@ -26,8 +26,8 @@ class TestCanonicalBlogSpec:
         # guardrails_enabled=false, and the atom was a dead no-op.
         assert {"qa.programmatic", "qa.critic", "qa.deepeval",
                 "qa.ragas", "qa.vision", "qa.topic_delivery", "qa.citations",
-                "qa.consistency", "qa.self_consistency", "qa.web_factcheck",
-                "qa.aggregate"} <= node_atoms
+                "qa.consistency", "qa.self_consistency", "qa.opening_originality",
+                "qa.web_factcheck", "qa.aggregate"} <= node_atoms
         assert "qa.guardrails" not in node_atoms
         # The three serial seo.* atoms were collapsed into one structured call
         # (seo.generate_all_metadata, poindexter#734) — saves ~2 min/post.
@@ -108,7 +108,11 @@ class TestCanonicalBlogSpec:
         assert ("qa_citations", "qa_consistency") not in edges
         # qa_self_consistency is inserted between consistency and web_factcheck
         assert ("qa_consistency", "qa_self_consistency") in edges
-        assert ("qa_self_consistency", "qa_web_factcheck") in edges
+        # qa_opening_originality (RAG self-echo net) is inserted between
+        # qa_self_consistency and qa_web_factcheck.
+        assert ("qa_self_consistency", "qa_opening_originality") in edges
+        assert ("qa_opening_originality", "qa_web_factcheck") in edges
+        assert ("qa_self_consistency", "qa_web_factcheck") not in edges
         assert ("qa_web_factcheck", "qa_aggregate") in edges
         # The old direct qa_vision → qa_aggregate edge must be gone (re-routed).
         assert ("qa_vision", "qa_aggregate") not in edges
@@ -197,6 +201,7 @@ class TestCanonicalBlogSpec:
         )
         assert txt.get("branch") is True and txt.get("loop") is True
 
-    def test_node_count_is_40(self):
-        # 38 + preview_gate (component-scoped regen gate, seeded disabled) + social.generate_drafts
-        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 40
+    def test_node_count_is_41(self):
+        # 38 + preview_gate (component-scoped regen gate, seeded disabled)
+        # + social.generate_drafts + qa.opening_originality (RAG self-echo net)
+        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 41

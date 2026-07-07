@@ -36,7 +36,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 - [`services/video_providers/`](#servicesvideoproviders) (3 files)
 - [`services/video_renderers/`](#servicesvideorenderers) (3 files)
 - [`modules/content/`](#modulescontent) (13 files)
-- [`modules/content/atoms/`](#modulescontentatoms) (56 files)
+- [`modules/content/atoms/`](#modulescontentatoms) (57 files)
 - [`modules/content/stages/`](#modulescontentstages) (18 files)
 
 ## services/ (top-level)
@@ -549,6 +549,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `qa_consistency.py` | qa.consistency — the internal self-contradiction gate as a rail atom. |
 | `qa_critic.py` | qa.critic — the legacy adversarial LLM critic as a composable atom. |
 | `qa_deepeval.py` | qa.deepeval — the DeepEval rail family as one composable atom. |
+| `qa_opening_originality.py` | qa.opening_originality — flag drafts whose opening near-duplicates a |
 | `qa_programmatic.py` | qa.programmatic — the programmatic ContentValidator as a composable QA rail. |
 | `qa_ragas.py` | qa.ragas — the Ragas rail as one composable atom. |
 | `qa_rewrite.py` | qa.rewrite — one bounded revision pass for a critic-vetoed draft. |
@@ -591,9 +592,9 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 
 ---
 
-## Content pipeline (`canonical_blog` graph_def) — 40 nodes
+## Content pipeline (`canonical_blog` graph_def) — 41 nodes
 
-Rendered in execution order from `services/canonical_blog_spec.py::CANONICAL_BLOG_GRAPH_DEF` (11 `stage.*` + 12 `content.*` + 13 `qa.*` + 1 `seo.*` + 2 `atoms.approval_gate` + 1 `social.*`). `stage.*` atoms live in `modules/content/stages/`; `content.*` / `qa.*` / `seo.*` / `social.*` and the approval gate in `modules/content/atoms/`.
+Rendered in execution order from `services/canonical_blog_spec.py::CANONICAL_BLOG_GRAPH_DEF` (11 `stage.*` + 12 `content.*` + 14 `qa.*` + 1 `seo.*` + 2 `atoms.approval_gate` + 1 `social.*`). `stage.*` atoms live in `modules/content/stages/`; `content.*` / `qa.*` / `seo.*` / `social.*` and the approval gate in `modules/content/atoms/`.
 
 1. `verify_task` → `stage.verify_task`
 2. `generate_draft` → `content.generate_draft`
@@ -621,20 +622,21 @@ Rendered in execution order from `services/canonical_blog_spec.py::CANONICAL_BLO
 24. `qa_unlinked_attribution` → `qa.unlinked_attribution`
 25. `qa_consistency` → `qa.consistency`
 26. `qa_self_consistency` → `qa.self_consistency`
-27. `qa_web_factcheck` → `qa.web_factcheck`
-28. `qa_aggregate` → `qa.aggregate`
-29. `qa_rewrite` → `qa.rewrite`
-30. `seo_all_metadata` → `seo.generate_all_metadata`
-31. `generate_media_scripts` → `stage.generate_media_scripts`
-32. `generate_video_shot_list` → `stage.generate_video_shot_list`
-33. `review_video_shot_list` → `stage.review_video_shot_list`
-34. `capture_training_data` → `stage.capture_training_data`
-35. `compile_meta` → `content.compile_meta`
-36. `persist_task` → `content.persist_task`
-37. `social_generate_drafts` → `social.generate_drafts`
-38. `record_pipeline_version` → `content.record_pipeline_version`
-39. `preview_gate` → `atoms.approval_gate`
-40. `evaluate_auto_publish` → `content.evaluate_auto_publish`
+27. `qa_opening_originality` → `qa.opening_originality`
+28. `qa_web_factcheck` → `qa.web_factcheck`
+29. `qa_aggregate` → `qa.aggregate`
+30. `qa_rewrite` → `qa.rewrite`
+31. `seo_all_metadata` → `seo.generate_all_metadata`
+32. `generate_media_scripts` → `stage.generate_media_scripts`
+33. `generate_video_shot_list` → `stage.generate_video_shot_list`
+34. `review_video_shot_list` → `stage.review_video_shot_list`
+35. `capture_training_data` → `stage.capture_training_data`
+36. `compile_meta` → `content.compile_meta`
+37. `persist_task` → `content.persist_task`
+38. `social_generate_drafts` → `social.generate_drafts`
+39. `record_pipeline_version` → `content.record_pipeline_version`
+40. `preview_gate` → `atoms.approval_gate`
+41. `evaluate_auto_publish` → `content.evaluate_auto_publish`
 
 ---
 

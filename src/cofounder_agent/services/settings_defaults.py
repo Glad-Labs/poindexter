@@ -743,6 +743,16 @@ DEFAULTS: dict[str, str] = {
     'self_consistency_enabled': 'false',
     'self_consistency_sample_count': '3',
     'self_consistency_threshold': '0.7',
+    # Opening-originality rail — flags a draft whose OPENING near-duplicates an
+    # existing published post (RAG self-echo). The two_pass writer grounds each
+    # draft in the nearest posts, so a dense topic cluster makes every new post
+    # paraphrase the sibling it retrieved (the 2026-06 "VRAM is the only currency
+    # that matters" cluster: 4 posts opened near-verbatim). Advisory-first via
+    # qa_gates.opening_originality — SCORES on every run (QA Rails dashboard) but
+    # does not veto until graduated. max_similarity is the cosine ceiling above
+    # which the opening counts as a near-copy of its nearest published neighbor.
+    'opening_originality_enabled': 'true',
+    'opening_originality_max_similarity': '0.9',
     # Citation reconciliation + advisory unlinked-attribution rail (#765).
     # why: deterministic repair that re-links named sources the writer dropped
     # the URL for, matched against the research corpus by domain handle — free,
@@ -1809,6 +1819,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     # ----- LLM model selection (writer-flip = canary per feedback_writer_model_canary) -----
     'pipeline_writer_model': {'owner': 'content_router', 'value_type': 'model'},
     'pipeline_critic_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
+    'opening_originality_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'opening_originality_max_similarity': {'owner': 'multi_model_qa', 'value_type': 'float'},
     'video_director_model': {'owner': 'video_director', 'value_type': 'model'},
     'video_director_timeout_seconds': {'owner': 'video_director', 'value_type': 'integer'},
     'video_shot_qa_enabled': {'owner': 'video', 'value_type': 'boolean'},

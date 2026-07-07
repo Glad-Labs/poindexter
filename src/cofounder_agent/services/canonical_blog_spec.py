@@ -112,6 +112,13 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"id": "qa_unlinked_attribution", "atom": "qa.unlinked_attribution"},
         {"id": "qa_consistency", "atom": "qa.consistency"},
         {"id": "qa_self_consistency", "atom": "qa.self_consistency"},
+        # RAG self-echo net: flags a draft whose OPENING near-duplicates an
+        # existing published post. The two_pass writer grounds on prior posts,
+        # so a dense topic cluster makes each new post paraphrase the sibling it
+        # retrieved (the 2026-06 "VRAM is the only currency that matters"
+        # cluster). Advisory-first (DB-gated via qa_gates.opening_originality) —
+        # SCORES on every run, does not veto until graduated.
+        {"id": "qa_opening_originality", "atom": "qa.opening_originality"},
         {"id": "qa_web_factcheck", "atom": "qa.web_factcheck"},
         {"id": "qa_aggregate", "atom": "qa.aggregate"},
         # QA rescue cycle: qa.aggregate emits _goto="qa_rewrite" on a rescuable
@@ -180,7 +187,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "qa_citations", "to": "qa_unlinked_attribution"},
         {"from": "qa_unlinked_attribution", "to": "qa_consistency"},
         {"from": "qa_consistency", "to": "qa_self_consistency"},
-        {"from": "qa_self_consistency", "to": "qa_web_factcheck"},
+        {"from": "qa_self_consistency", "to": "qa_opening_originality"},
+        {"from": "qa_opening_originality", "to": "qa_web_factcheck"},
         {"from": "qa_web_factcheck", "to": "qa_aggregate"},
         # seo.* collapsed (#734) — single structured call
         {"from": "qa_aggregate", "to": "seo_all_metadata"},
