@@ -32,6 +32,11 @@ hits the DB on every write.
 - `await svc.get(key, default=None) -> str | None` — TTL-cached read.
   Falls back to the uppercase env var when the DB row is empty,
   matching `SiteConfig.get()` semantics for migration compatibility.
+  Records the key into the process-wide `services.settings_read_sink`
+  so `FlushSettingsReadTelemetryJob` stamps `app_settings.last_read_at`
+  (poindexter#756). `get_all`/`get_by_category` deliberately do NOT
+  record — those bulk/admin reads would stamp the whole table and blind
+  the zero-reader probe.
 - `await svc.get_by_category(category) -> dict[str, str]` —
   `{key: value}` for every cached row whose `category` column matches.
 - `await svc.set(key, value, category=None, description=None, is_secret=None)` —

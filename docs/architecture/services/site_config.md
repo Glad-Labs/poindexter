@@ -157,7 +157,9 @@ Two scheduled jobs close the loop (both reach the lifespan-bound
 plugin scheduler):
 
 - **`FlushSettingsReadTelemetryJob`** (`services/jobs/flush_settings_read_telemetry.py`,
-  every minute) drains the set via `drain_read_keys()` and batch-stamps
+  every minute) drains the `SiteConfig` set via `drain_read_keys()`,
+  unions it with the process-wide `SettingsService` read sink
+  (`services.settings_read_sink`, poindexter#756), and batch-stamps
   `app_settings.last_read_at = NOW()` for those keys. The UPDATE only
   touches rows whose `last_read_at` is NULL or older than
   `settings_read_telemetry_min_restamp_seconds` (default 3600), so a
@@ -174,13 +176,15 @@ plugin scheduler):
   read. The live list also renders on the **Integrations & Admin**
   Grafana board ("Settings Lifecycle — Orphan Candidates").
 
-**Advisory, not authoritative.** `last_read_at` is only stamped on the
-`SiteConfig.get` path. A key read EXCLUSIVELY via a non-SiteConfig path
-— direct SQL (e.g. `findings_alert_router` reading `findings.*`
-policies) or `SettingsService.get` — also surfaces as an orphan
-candidate. Verify each key before retiring it. (If the signal proves
-noisy, the next step is to instrument `SettingsService.get` the same
-way.)
+**Advisory, not authoritative.** `last_read_at` is stamped on both
+in-process read accessors — `SiteConfig.get` (per-instance set) and
+`SettingsService.get` (the shared `services.settings_read_sink`, which
+the flush job unions in; poindexter#756). A key read EXCLUSIVELY via a
+path neither accessor covers still surfaces as an orphan candidate:
+raw SQL (e.g. `findings_alert_router` reading `findings.*` policies,
+`auto_publish` reading `auto_publish_threshold`) or the **brain
+daemon**'s own asyncpg reads (a separate process, so its reads never
+reach this worker's flush job). Verify each key before retiring it.
 
 ## See also
 

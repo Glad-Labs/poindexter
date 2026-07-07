@@ -12,12 +12,14 @@ with a stable ``dedup_key`` so the alert dispatcher collapses repeated fires
 into a single Discord page until the situation changes. The live list also
 renders on the Integrations & Admin Grafana board.
 
-ADVISORY, not authoritative. ``last_read_at`` is only stamped on the
-``SiteConfig.get`` path, so a key read EXCLUSIVELY via a non-SiteConfig path
-(direct SQL — e.g. ``findings_alert_router`` reading ``findings.*`` policies —
-or ``SettingsService.get``) also shows up here. The finding body says as much;
-verify each key before retiring it. (If this proves noisy, the next step is to
-instrument ``SettingsService.get`` the same way.)
+ADVISORY, not authoritative. ``last_read_at`` is stamped on both in-process
+read accessors — ``SiteConfig.get`` and ``SettingsService.get`` (the latter via
+the shared ``services.settings_read_sink``, poindexter#756). A key read
+EXCLUSIVELY via a path neither covers still shows up here: raw SQL (e.g.
+``findings_alert_router`` reading ``findings.*`` policies, ``auto_publish``
+reading ``auto_publish_threshold``) or the brain daemon's own asyncpg reads (a
+separate process, so they never reach this worker's flush job). The finding body
+says as much; verify each key before retiring it.
 """
 
 from __future__ import annotations
@@ -76,8 +78,9 @@ def _build_body(rows: list[dict[str, Any]], grace_days: int) -> str:
         f"system has read them via `SiteConfig.get` since read-telemetry began.",
         "",
         "**Advisory only.** A key also appears here if it is read EXCLUSIVELY "
-        "via a non-SiteConfig path (direct SQL, `SettingsService.get`). Verify "
-        "each is truly unused before retiring it.",
+        "via a path read-telemetry cannot see — raw SQL, or the brain daemon's "
+        "separate asyncpg process. Verify each is truly unused before retiring "
+        "it.",
         "",
     ]
     for r in rows:

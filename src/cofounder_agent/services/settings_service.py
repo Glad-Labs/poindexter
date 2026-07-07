@@ -13,6 +13,7 @@ import os
 import time
 
 from services.logger_config import get_logger
+from services.settings_read_sink import record_read
 
 logger = get_logger(__name__)
 
@@ -46,6 +47,15 @@ class SettingsService:
         bootstrap viability for tests/CI that don't seed the DB while
         surfacing the override in prod.
         """
+        # Read-telemetry (poindexter#756): record the access into the shared
+        # sink regardless of where it resolves (DB / env / default), mirroring
+        # SiteConfig.get. The flush job unions this with the SiteConfig drain and
+        # stamps app_settings.last_read_at — so a key read only via this path is
+        # no longer a false "never read" orphan. Only single-key get() records;
+        # get_all()/get_by_category() deliberately do NOT (they back the admin
+        # UI / bulk reads and would stamp the whole table, blinding the probe).
+        record_read(key)
+
         await self._ensure_cache()
 
         entry = self._cache.get(key)

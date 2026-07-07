@@ -25,6 +25,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from services import settings_read_sink
 
 logger = logging.getLogger(__name__)
 
@@ -69,9 +70,16 @@ class FlushSettingsReadTelemetryJob:
             # next cycle once a pool is available again.
             return JobResult(ok=False, detail="no pool available", changes_made=0)
 
-        # Drain unconditionally (even when disabled) so the in-memory set stays
-        # bounded — it never grows past one cycle's distinct reads.
-        keys = site_config.drain_read_keys()
+        # Drain unconditionally (even when disabled) so the in-memory sets stay
+        # bounded — neither grows past one cycle's distinct reads. Union the
+        # lifespan SiteConfig's instance drain with the process-wide
+        # SettingsService read sink (poindexter#756): SettingsService is built
+        # ad-hoc with only a pool (multi_model_qa, content_router, …), so its
+        # reads — the qa_* weights, pipeline_*_model — can't land on the
+        # SiteConfig instance and would otherwise look "never read" forever.
+        keys = list(
+            set(site_config.drain_read_keys()) | set(settings_read_sink.drain_read_keys())
+        )
 
         if not site_config.get_bool(_ENABLED_KEY, True):
             return JobResult(

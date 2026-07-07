@@ -275,3 +275,58 @@ class TestCacheBehavior:
 
         # fetch should not have been called again
         assert fetch_count_2 == fetch_count_1
+
+
+# ---------------------------------------------------------------------------
+# read telemetry (poindexter#756 — SettingsService.get feeds the shared sink)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestReadTelemetry:
+    def setup_method(self):
+        # The sink is module-global; start each test from empty so reads from
+        # other tests (or other files) can't bleed into the assertions.
+        from services import settings_read_sink
+
+        settings_read_sink.drain_read_keys()
+
+    def test_get_records_key_into_sink(self):
+        """A key read via SettingsService.get must land in the shared sink so
+        the flush job can stamp last_read_at — otherwise every qa_* weight and
+        pipeline_*_model read this way looks 'never read' to the probe."""
+        from services import settings_read_sink
+
+        pool = _make_pool([_row("pipeline_critic_model", "ollama/phi4:14b")])
+        svc = SettingsService(pool)
+        _run(svc.get("pipeline_critic_model"))
+        assert "pipeline_critic_model" in settings_read_sink.drain_read_keys()
+
+    def test_get_records_the_ask_even_on_default_miss(self):
+        from services import settings_read_sink
+
+        pool = _make_pool([])
+        svc = SettingsService(pool)
+        _run(svc.get("absent_key", default="x"))
+        # The ask is recorded wherever it resolves — the flush UPDATE filters to
+        # real app_settings rows, so a missing key is a harmless no-op there.
+        assert "absent_key" in settings_read_sink.drain_read_keys()
+
+    def test_get_all_does_not_record(self):
+        """get_all backs the settings admin UI; recording every key it touches
+        would stamp the entire table as 'read' and blind the zero-reader probe
+        permanently."""
+        from services import settings_read_sink
+
+        pool = _make_pool([_row("a", "1"), _row("b", "2")])
+        svc = SettingsService(pool)
+        _run(svc.get_all())
+        assert settings_read_sink.drain_read_keys() == []
+
+    def test_get_by_category_does_not_record(self):
+        from services import settings_read_sink
+
+        pool = _make_pool([_row("a", "1", category="social")])
+        svc = SettingsService(pool)
+        _run(svc.get_by_category("social"))
+        assert settings_read_sink.drain_read_keys() == []

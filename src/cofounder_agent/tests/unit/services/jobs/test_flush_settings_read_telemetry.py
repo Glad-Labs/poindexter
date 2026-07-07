@@ -15,10 +15,25 @@ from __future__ import annotations
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
+import pytest
+
+from services import settings_read_sink
 from services.jobs.flush_settings_read_telemetry import (
     FlushSettingsReadTelemetryJob,
 )
 from services.site_config import SiteConfig
+
+
+@pytest.fixture(autouse=True)
+def _clean_read_sink():
+    """The SettingsService read sink is module-global; other test files that
+    exercise ``SettingsService.get`` leave keys in it. Drain before and after
+    each flush-job test so those cross-file reads can't leak into (or out of)
+    these assertions — otherwise a stray sink key turns a no-op case into a
+    spurious UPDATE."""
+    settings_read_sink.drain_read_keys()
+    yield
+    settings_read_sink.drain_read_keys()
 
 
 def _make_pool(execute_status: str = "UPDATE 0") -> Any:
@@ -122,3 +137,52 @@ class TestFlushSettingsReadTelemetryJob:
         # Keys were NOT drained — they survive to the next cycle when a pool
         # is available again.
         assert "site_url" in sc.drain_read_keys()
+
+    # --- SettingsService read sink union (poindexter#756) -------------------
+
+    async def test_flushes_settings_service_sink_keys(self):
+        """SettingsService.get reads land in the shared sink, not the SiteConfig
+        instance set; the flush job must drain and stamp those too — else every
+        qa_* weight and pipeline_*_model read via SettingsService looks 'never
+        read' to the zero-reader probe."""
+        settings_read_sink.record_read("qa_critic_weight")
+        sc = SiteConfig()  # no SiteConfig-path reads
+        pool, conn = _make_pool(execute_status="UPDATE 1")
+
+        result = await FlushSettingsReadTelemetryJob().run(
+            pool, {"_site_config": sc}
+        )
+
+        assert result.ok is True
+        conn.execute.assert_awaited_once()
+        flushed_keys = set(conn.execute.await_args.args[1])
+        assert "qa_critic_weight" in flushed_keys
+
+    async def test_unions_siteconfig_and_sink_keys(self):
+        settings_read_sink.record_read("qa_temperature")  # SettingsService path
+        sc = _site_config_with_reads("site_url")  # SiteConfig path
+        pool, conn = _make_pool(execute_status="UPDATE 2")
+
+        await FlushSettingsReadTelemetryJob().run(pool, {"_site_config": sc})
+
+        flushed_keys = set(conn.execute.await_args.args[1])
+        assert {"site_url", "qa_temperature"} <= flushed_keys
+
+    async def test_sink_drained_after_flush(self):
+        settings_read_sink.record_read("qa_temperature")
+        sc = SiteConfig()
+        pool, _ = _make_pool(execute_status="UPDATE 1")
+        await FlushSettingsReadTelemetryJob().run(pool, {"_site_config": sc})
+        # Drained — the next cycle won't re-stamp a key not re-read since.
+        assert settings_read_sink.drain_read_keys() == []
+
+    async def test_none_pool_preserves_sink_keys(self):
+        """Symmetry with the SiteConfig path: no pool means we can't persist,
+        so the sink is left intact for the next cycle rather than lost."""
+        settings_read_sink.record_read("qa_temperature")
+        sc = _site_config_with_reads("site_url")
+        result = await FlushSettingsReadTelemetryJob().run(
+            None, {"_site_config": sc}
+        )
+        assert result.ok is False
+        assert "qa_temperature" in settings_read_sink.drain_read_keys()
