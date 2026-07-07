@@ -291,3 +291,108 @@ def test_sync_script_strips_operator_overrides() -> None:
         f"scripts/sync-to-github.sh has no reference to {_OPERATOR_OVERRIDES}. "
         "It's in _STRIP_FILES but the sync won't strip it — a silent leak."
     )
+
+
+# ---------------------------------------------------------------------------
+# GENERAL drift invariant (2026-07-07) — every _STRIP_FILES entry must be
+# actually git-rm'd by sync-to-github.sh, not just the hand-picked few above.
+#
+# The two lists are separate: _STRIP_FILES drives would_ship() (the guard's
+# scan-SKIP decision); sync-to-github.sh does the ACTUAL stripping. When a file
+# is added to _STRIP_FILES but NOT to the sync git-rm list, would_ship() returns
+# False — the guard skips scanning it — while the sync still SHIPS it intact.
+# A file that carries operator literals then leaks to the public mirror UNSEEN.
+#
+# That is exactly what happened: operator_leak_patterns.py + its test were added
+# to _STRIP_FILES but not to the sync git-rm block, so they shipped to
+# Glad-Labs/poindexter on the PR #2200 squash-merge carrying the operator's real
+# name / home paths / Tailnet IP / GitHub handle. The per-file
+# test_sync_script_strips_* tests above didn't catch it because nobody adds the
+# per-file test either. This iterates the WHOLE list so the class can't recur.
+# ---------------------------------------------------------------------------
+
+
+def _repo_root() -> Path:
+    return next(
+        p for p in Path(__file__).resolve().parents
+        if (p / "pyproject.toml").exists() and (p / "src").exists()
+    )
+
+
+def test_every_strip_files_entry_is_stripped_by_sync_script() -> None:
+    """Every _STRIP_FILES entry must have a matching `git rm` in the sync script.
+
+    Guards against the drift class that leaked operator_leak_patterns.py to the
+    public mirror (#2200): a file the guard treats as stripped (would_ship=False,
+    so no leak scan) but the sync never removes — it ships unscanned.
+    """
+    sync = (_repo_root() / "scripts" / "sync-to-github.sh").read_text(encoding="utf-8")
+    missing: list[str] = []
+    for entry in CHECK._STRIP_FILES:
+        # A file under a stripped directory is removed by that dir's `git rm -r`.
+        if any(entry.startswith(d) for d in CHECK._STRIP_DIR_PREFIXES):
+            continue
+        # Wildcard entries (e.g. .github/COMMIT_MESSAGE_*.txt) are removed by the
+        # same glob line; assert the literal prefix before the wildcard appears.
+        needle = entry.split("*")[0] if "*" in entry else entry
+        if needle not in sync:
+            missing.append(entry)
+    assert not missing, (
+        "These _STRIP_FILES entries have no `git rm` line in "
+        "scripts/sync-to-github.sh, so would_ship() skips scanning them while "
+        "the sync SHIPS them to the public mirror unscanned — a silent "
+        f"operator-info leak: {missing}. Add a `git rm --cached` line for each "
+        "in the strip block (lock-step with _STRIP_FILES)."
+    )
+
+
+def test_every_strip_dir_prefix_is_stripped_by_sync_script() -> None:
+    """Every _STRIP_DIR_PREFIXES entry must have a matching `git rm -r` too.
+
+    Sibling of the file invariant above: a directory the guard treats as
+    stripped but the sync never `git rm -r`'s would ship its whole contents
+    unscanned.
+    """
+    sync = (_repo_root() / "scripts" / "sync-to-github.sh").read_text(encoding="utf-8")
+    missing = [d for d in CHECK._STRIP_DIR_PREFIXES if d not in sync]
+    assert not missing, (
+        "These _STRIP_DIR_PREFIXES entries have no `git rm -r` line in "
+        f"scripts/sync-to-github.sh — their contents ship unscanned: {missing}. "
+        "Add a `git rm -r --cached` line for each."
+    )
+
+
+# ---------------------------------------------------------------------------
+# #2200 incident anchor — the operator-identity RAG scrub overlay + its test.
+# Named assertion so the specific files that leaked are greppable; the general
+# invariants above cover the sync-side lock-step.
+# ---------------------------------------------------------------------------
+
+_OPERATOR_LEAK_OVERLAY = (
+    "src/cofounder_agent/services/operator_leak_patterns.py",
+    "src/cofounder_agent/tests/unit/services/test_operator_leak_patterns.py",
+)
+
+
+def test_operator_leak_patterns_overlay_is_stripped() -> None:
+    """The operator-identity scrub overlay + its literal-carrying test must be stripped.
+
+    operator_leak_patterns.py carries OPERATOR_SCRUB_PATTERNS (the operator's
+    real name / home paths / Tailnet IP / GitHub handle) and its test carries
+    matching fixtures. rag_scrub imports the overlay via a no-op-when-absent
+    hook, so OSS installs get generic scrub only — the overlay never needs to
+    ship. Both must be in _STRIP_FILES (would_ship=False) AND git-rm'd by the
+    sync (covered by the general invariant above).
+    """
+    missing = [p for p in _OPERATOR_LEAK_OVERLAY if p not in CHECK._STRIP_FILES]
+    assert not missing, (
+        f"Operator-identity scrub overlay files missing from _STRIP_FILES: {missing}. "
+        "They carry the operator's real name / home paths / Tailnet IP / GitHub "
+        "handle. Add them here AND in scripts/sync-to-github.sh's strip block."
+    )
+    shipping = [p for p in _OPERATOR_LEAK_OVERLAY if CHECK.would_ship(p)]
+    assert not shipping, (
+        f"would_ship() still classifies these operator-overlay files as shipping: "
+        f"{shipping}. Verify the _STRIP_FILES entries and that no _LEAK_GUARD_ALLOW "
+        "entry re-exempts them."
+    )
