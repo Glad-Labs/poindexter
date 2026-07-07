@@ -2,6 +2,35 @@
 
 ## Unreleased
 
+## [0.97.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.96.0...v0.97.0) (2026-07-07)
+
+
+### Features
+
+* **console:** Task 9 — per-panel freshness (usePolledResource migration) ([#2154](https://github.com/Glad-Labs/glad-labs-stack/issues/2154)) ([3f2e4ab](https://github.com/Glad-Labs/glad-labs-stack/commit/3f2e4abef9116ed3c8175315f3e014eca04a44d6))
+* **firefighter:** Plan B live-action path — LLM long-tail engine + learning loop ([#2176](https://github.com/Glad-Labs/glad-labs-stack/issues/2176)) ([4c34495](https://github.com/Glad-Labs/glad-labs-stack/commit/4c3449548ea9c84cf2a485900358fd9ff5591e2a))
+* **firefighter:** Plan B selector service + worker /api/remediation/select route (dormant) ([#2166](https://github.com/Glad-Labs/glad-labs-stack/issues/2166)) ([a092753](https://github.com/Glad-Labs/glad-labs-stack/commit/a0927533480d1b65fdc69a91dc16e0830d9afb3d))
+* **firefighter:** seed the 2 operator remediation rules via the boot overlay ([#2160](https://github.com/Glad-Labs/glad-labs-stack/issues/2160)) ([eebfeb9](https://github.com/Glad-Labs/glad-labs-stack/commit/eebfeb998fc92ab70a6ef7269aa84a769e896a00))
+* **llm:** cloud-writer enablement — DB→env API-key bridge + cloud max_tokens floor ([#2159](https://github.com/Glad-Labs/glad-labs-stack/issues/2159)) ([66ba71b](https://github.com/Glad-Labs/glad-labs-stack/commit/66ba71b03a1ce6c8a625e75798e20630d9df3cec))
+
+
+### Bug Fixes
+
+* **brain:** reclaim CANCELLING zombies wedging the content-pool slot ([#2175](https://github.com/Glad-Labs/glad-labs-stack/issues/2175)) ([75a8ab1](https://github.com/Glad-Labs/glad-labs-stack/commit/75a8ab18147216b150a7b5f01da5ae2770946161))
+* **console:** harden contract-drift nightly against unreachable worker ([#2171](https://github.com/Glad-Labs/glad-labs-stack/issues/2171)) ([e4de3e9](https://github.com/Glad-Labs/glad-labs-stack/commit/e4de3e90b713faf8eb7bd9bf3bc35aa078b2d067))
+* **console:** narrow contract snapshot to 2xx responses (kill error-envelope drift) ([#2174](https://github.com/Glad-Labs/glad-labs-stack/issues/2174)) ([58925c1](https://github.com/Glad-Labs/glad-labs-stack/commit/58925c11b5ca357f7a63af34c74752a2fdc7d198))
+* **cost:** key local-vs-paid on the write invariant, not provider='ollama' ([#2162](https://github.com/Glad-Labs/glad-labs-stack/issues/2162)) ([5acc1b8](https://github.com/Glad-Labs/glad-labs-stack/commit/5acc1b86a29e23fb0a9bdba897313c0b4d74947a))
+* **cost:** route cost_guard onto the cost_ledger seam (P2) ([#2173](https://github.com/Glad-Labs/glad-labs-stack/issues/2173)) ([8c0b7a0](https://github.com/Glad-Labs/glad-labs-stack/commit/8c0b7a0e9e3d576e847e89b356185fef4f556067))
+* **cost:** split blended cost meter into api/electricity axes (P4) ([#2168](https://github.com/Glad-Labs/glad-labs-stack/issues/2168)) ([dc713f0](https://github.com/Glad-Labs/glad-labs-stack/commit/dc713f096b9956934f0391a151f14175693e9a07))
+* **deploy:** coalesce overlapping worker restarts + honest prod env defaults ([#2169](https://github.com/Glad-Labs/glad-labs-stack/issues/2169)) ([327cd72](https://github.com/Glad-Labs/glad-labs-stack/commit/327cd728d9936838b928759f16e059f3b0dbe926))
+* **experiments:** make A/B writer harness survive Sonnet 5 + flaky Ollama ([#2156](https://github.com/Glad-Labs/glad-labs-stack/issues/2156)) ([81d7ebd](https://github.com/Glad-Labs/glad-labs-stack/commit/81d7ebddb56b93e300295f486b5f17ed58d221a6))
+* **grafana-alert:** Ollama Unresponsive should count local $0 inference, not provider='ollama' ([#2158](https://github.com/Glad-Labs/glad-labs-stack/issues/2158)) ([97105bb](https://github.com/Glad-Labs/glad-labs-stack/commit/97105bb4280f5a2a3761075011288e628686c64f))
+* **llm-provider:** honor flat allow_paid_base_url row so the paid-gate opt-in isn't a dead key ([#2161](https://github.com/Glad-Labs/glad-labs-stack/issues/2161)) ([e6fb309](https://github.com/Glad-Labs/glad-labs-stack/commit/e6fb309d54f139b147ad26f5c1903126e0622cf9))
+* **llm:** default num_ctx for all local dispatches, not just the writer ([#2170](https://github.com/Glad-Labs/glad-labs-stack/issues/2170)) ([8421030](https://github.com/Glad-Labs/glad-labs-stack/commit/84210305151fd9d03117cde9c56486c9264d9365))
+* **llm:** drop Ollama-only params (num_ctx/think) from cloud calls ([#2177](https://github.com/Glad-Labs/glad-labs-stack/issues/2177)) ([58c63e8](https://github.com/Glad-Labs/glad-labs-stack/commit/58c63e8598572f10f8a0a454cbd6de7e71768a69))
+* **llm:** scope configured api_base to local model prefixes ([#2167](https://github.com/Glad-Labs/glad-labs-stack/issues/2167)) ([71a397d](https://github.com/Glad-Labs/glad-labs-stack/commit/71a397dfceef264032505bacea97df1b886647f7))
+* **writer:** disable gemma thinking channel + trim dangling headings ([#2163](https://github.com/Glad-Labs/glad-labs-stack/issues/2163)) ([54f5a71](https://github.com/Glad-Labs/glad-labs-stack/commit/54f5a7108214af0122c9e419bfcd38d704729efd))
+
 ## [0.96.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.95.0...v0.96.0) (2026-07-06)
 
 
