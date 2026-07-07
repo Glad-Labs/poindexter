@@ -398,6 +398,53 @@ module.exports = [
     },
   },
 
+  // ── D: GPU / hardware / power trends (Prometheus range) — request-only ──
+  {
+    name: 'gpuUtilSeries',
+    invoke: (api) => api.gpuUtilSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query: 'max by (gpu) (nvidia_gpu_utilization_percent)',
+    },
+  },
+  {
+    name: 'gpuTempSeries',
+    invoke: (api) => api.gpuTempSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query: 'max by (gpu) (nvidia_gpu_temperature_celsius)',
+    },
+  },
+  {
+    name: 'vramUsedSeries',
+    invoke: (api) => api.vramUsedSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query: 'max by (gpu) (nvidia_gpu_memory_used_mib) / 1024',
+    },
+  },
+  {
+    name: 'gpuPowerSeries',
+    invoke: (api) => api.gpuPowerSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query: 'max by (gpu) (nvidia_gpu_power_draw_watts)',
+    },
+  },
+  {
+    name: 'systemPowerSeries',
+    invoke: (api) => api.systemPowerSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query: 'system_total_power_estimate_watts',
+    },
+  },
+
   // ── C: time-series trends (worker / audit_log) — request-only, no OpenAPI ──
   {
     name: 'qaTrend',

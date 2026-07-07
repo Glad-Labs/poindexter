@@ -235,7 +235,14 @@
       if (!res.ok) return { series: [] };
       const j = await res.json();
       const result = (j && j.data && j.data.result) || [];
-      return { series: window.PX.ts.matrixToSeries(result) };
+      return {
+        series: window.PX.ts.matrixToSeries(
+          result,
+          undefined,
+          o.labelBy,
+          o.labelPrefix
+        ),
+      };
     } catch {
       return { series: [] }; // unreachable / aborted → honest-empty, never throw.
     } finally {
@@ -1262,6 +1269,67 @@
       const o = rangeOpts(range);
       return pick(
         () => labelledRange('poindexter_daily_spend_usd', o, '$/day'),
+        () => ({ series: [] })
+      );
+    },
+
+    // ── time-series trends (GPU / hardware / power — Prometheus) ─
+    // Gauges: no rate() window, so query_range samples them at each step and
+    // the PromQL is range-independent. max by (gpu) strips instance/job so the
+    // per-GPU label seam legends them "GPU 0" / "GPU 1" (colorblind-safe via
+    // TimeChart's dash + end-label).
+    gpuUtilSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          promRange('max by (gpu) (nvidia_gpu_utilization_percent)', {
+            ...o,
+            labelBy: 'gpu',
+            labelPrefix: 'GPU ',
+          }),
+        () => ({ series: [] })
+      );
+    },
+    gpuTempSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          promRange('max by (gpu) (nvidia_gpu_temperature_celsius)', {
+            ...o,
+            labelBy: 'gpu',
+            labelPrefix: 'GPU ',
+          }),
+        () => ({ series: [] })
+      );
+    },
+    vramUsedSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          promRange('max by (gpu) (nvidia_gpu_memory_used_mib) / 1024', {
+            ...o,
+            labelBy: 'gpu',
+            labelPrefix: 'GPU ',
+          }),
+        () => ({ series: [] })
+      );
+    },
+    gpuPowerSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          promRange('max by (gpu) (nvidia_gpu_power_draw_watts)', {
+            ...o,
+            labelBy: 'gpu',
+            labelPrefix: 'GPU ',
+          }),
+        () => ({ series: [] })
+      );
+    },
+    systemPowerSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () => labelledRange('system_total_power_estimate_watts', o, 'total'),
         () => ({ series: [] })
       );
     },

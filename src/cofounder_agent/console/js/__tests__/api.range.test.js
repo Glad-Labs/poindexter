@@ -129,3 +129,107 @@ test('qaTrend GETs /api/qa/trend with derived range_seconds+step_seconds', async
   assert.match(call.url, /step_seconds=15/);
   assert.ok(Array.isArray(out.series));
 });
+
+test('promRange labels multi-series output via labelBy/labelPrefix', async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      data: {
+        resultType: 'matrix',
+        result: [
+          { metric: { gpu: '0', job: 'nvidia-smi' }, values: [[1000, '2']] },
+          { metric: { gpu: '1', job: 'nvidia-smi' }, values: [[1000, '0']] },
+        ],
+      },
+    }),
+  });
+  const api = loadApiWithFetch(fetchImpl, {}, OPTS);
+  const out = await api.promRange(
+    'max by (gpu) (nvidia_gpu_utilization_percent)',
+    {
+      rangeSeconds: 3600,
+      stepSeconds: 15,
+      labelBy: 'gpu',
+      labelPrefix: 'GPU ',
+    }
+  );
+  const labels = out.series.map((s) => s.label);
+  assert.equal(out.series.length, 2);
+  assert.ok(labels.includes('GPU 0') && labels.includes('GPU 1'));
+});
+
+test('gpuUtilSeries issues the max-by-gpu utilization query with GPU 0/1 labels', async () => {
+  const fetchImpl = async (url) => {
+    const q = decodeURIComponent(new URL(url).searchParams.get('query') || '');
+    assert.equal(q, 'max by (gpu) (nvidia_gpu_utilization_percent)');
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: {
+          result: [
+            { metric: { gpu: '0' }, values: [[1000, '2']] },
+            { metric: { gpu: '1' }, values: [[1000, '0']] },
+          ],
+        },
+      }),
+    };
+  };
+  const api = loadApiWithFetch(fetchImpl, {}, OPTS);
+  const out = await api.gpuUtilSeries('1h');
+  const labels = out.series.map((s) => s.label);
+  assert.equal(out.series.length, 2);
+  assert.ok(labels.includes('GPU 0') && labels.includes('GPU 1'));
+});
+
+test('gpu/vram/system methods issue their exact PromQL', async () => {
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(decodeURIComponent(new URL(url).searchParams.get('query') || ''));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { result: [] } }),
+    };
+  };
+  const api = loadApiWithFetch(fetchImpl, {}, OPTS);
+  await api.gpuTempSeries('1h');
+  await api.gpuPowerSeries('1h');
+  await api.vramUsedSeries('1h');
+  await api.systemPowerSeries('1h');
+  assert.ok(seen.includes('max by (gpu) (nvidia_gpu_temperature_celsius)'));
+  assert.ok(seen.includes('max by (gpu) (nvidia_gpu_power_draw_watts)'));
+  assert.ok(seen.includes('max by (gpu) (nvidia_gpu_memory_used_mib) / 1024'));
+  assert.ok(seen.includes('system_total_power_estimate_watts'));
+});
+
+test('systemPowerSeries forces a single "total" label', async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      data: {
+        result: [
+          { metric: { instance: 'x', job: 'y' }, values: [[1000, '208']] },
+        ],
+      },
+    }),
+  });
+  const api = loadApiWithFetch(fetchImpl, {}, OPTS);
+  const out = await api.systemPowerSeries('1h');
+  assert.equal(out.series.length, 1);
+  assert.equal(out.series[0].label, 'total');
+});
+
+test('vramUsedSeries returns honest-empty when Prometheus throws', async () => {
+  const api = loadApiWithFetch(
+    async () => {
+      throw new Error('prometheus down');
+    },
+    {},
+    OPTS
+  );
+  const out = await api.vramUsedSeries('6h');
+  assert.ok(Array.isArray(out.series) && out.series.length === 0);
+});

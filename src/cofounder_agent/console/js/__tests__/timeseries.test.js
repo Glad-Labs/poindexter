@@ -71,3 +71,28 @@ test('matrixToSeries maps a Prometheus matrix to canonical series (sec->ms)', ()
   assert.equal(out[0].points[0][0], 1000 * 1000); // seconds -> ms
   assert.equal(out[0].points[0][1], 0.2);
 });
+
+test('matrixToSeries labels each series from labelBy with a prefix', () => {
+  const matrix = [
+    {
+      metric: { gpu: '0', instance: 'x', job: 'nvidia-smi' },
+      values: [[1000, '2']],
+    },
+    {
+      metric: { gpu: '1', instance: 'x', job: 'nvidia-smi' },
+      values: [[1000, '0']],
+    },
+  ];
+  const out = T.matrixToSeries(matrix, undefined, 'gpu', 'GPU ');
+  const labels = out.map((s) => s.label);
+  assert.equal(out.length, 2);
+  assert.ok(labels.includes('GPU 0') && labels.includes('GPU 1'));
+  assert.equal(out[0].points[0][0], 1000 * 1000); // still seconds -> ms
+});
+
+test('matrixToSeries without labelBy keeps the joined-label behavior', () => {
+  const out = T.matrixToSeries([
+    { metric: { quantile: '0.95' }, values: [[1000, '0.2']] },
+  ]);
+  assert.equal(out[0].label, 'quantile=0.95');
+});

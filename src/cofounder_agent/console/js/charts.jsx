@@ -216,8 +216,36 @@ function HistoryChart({ title, fetchSeries, range, unit }) {
   );
 }
 
-function HistoryPanel() {
+// A titled RangeControl over a responsive grid of HistoryCharts. Each group
+// owns its own range state, so HISTORY and GPU & POWER range independently.
+function TrendGroup({ id, heading, charts }) {
   const [range, setRange] = useState('6h');
+  return (
+    <div id={id}>
+      <div className="panel__head" style={{ marginBottom: 8 }}>
+        <span className="panel__title">
+          <span className="idx">▤</span>
+          {heading}
+        </span>
+        <span style={{ flex: 1 }} />
+        <RangeControl value={range} onChange={setRange} />
+      </div>
+      <div className="tc-grid">
+        {charts.map((c) => (
+          <HistoryChart
+            key={c.title}
+            title={c.title}
+            fetchSeries={c.fn}
+            range={range}
+            unit={c.unit}
+          />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function HistoryPanel() {
   const api = window.PX.api;
   const charts = [
     { title: 'API request rate', fn: (x) => api.httpRateSeries(x), unit: '' },
@@ -240,28 +268,25 @@ function HistoryPanel() {
       unit: '',
     },
   ];
-  return (
-    <div id="sec-history">
-      <div className="panel__head" style={{ marginBottom: 8 }}>
-        <span className="panel__title">
-          <span className="idx">▤</span>HISTORY
-        </span>
-        <span style={{ flex: 1 }} />
-        <RangeControl value={range} onChange={setRange} />
-      </div>
-      <div className="tc-grid">
-        {charts.map((c) => (
-          <HistoryChart
-            key={c.title}
-            title={c.title}
-            fetchSeries={c.fn}
-            range={range}
-            unit={c.unit}
-          />
-        ))}
-      </div>
-    </div>
-  );
+  return <TrendGroup id="sec-history" heading="HISTORY" charts={charts} />;
 }
 
-Object.assign(window, { TimeChart, RangeControl, HistoryPanel });
+function HardwarePanel() {
+  const api = window.PX.api;
+  const charts = [
+    { title: 'GPU utilization', fn: (x) => api.gpuUtilSeries(x), unit: '%' },
+    { title: 'GPU temperature', fn: (x) => api.gpuTempSeries(x), unit: '°C' },
+    { title: 'VRAM used', fn: (x) => api.vramUsedSeries(x), unit: ' GB' },
+    { title: 'GPU power draw', fn: (x) => api.gpuPowerSeries(x), unit: ' W' },
+    { title: 'System power', fn: (x) => api.systemPowerSeries(x), unit: ' W' },
+  ];
+  return <TrendGroup id="sec-hardware" heading="GPU & POWER" charts={charts} />;
+}
+
+Object.assign(window, {
+  TimeChart,
+  RangeControl,
+  TrendGroup,
+  HistoryPanel,
+  HardwarePanel,
+});

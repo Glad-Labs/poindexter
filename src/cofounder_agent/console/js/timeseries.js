@@ -88,15 +88,21 @@
     return _ticks(tMin, tMax, n);
   }
 
-  // Prometheus matrix result -> canonical series. Seconds -> ms; label from the
-  // metric's non-__name__ labels, else fallbackLabel.
-  function matrixToSeries(result, fallbackLabel) {
+  // Prometheus matrix result -> canonical series. Seconds -> ms. Label: when
+  // labelBy is set and present on a series' metric, use labelPrefix+that value
+  // (e.g. "GPU 0"); else the join of non-__name__ labels, else fallbackLabel.
+  function matrixToSeries(result, fallbackLabel, labelBy, labelPrefix) {
     return (result || []).map((r) => {
       const m = r.metric || {};
-      const parts = Object.keys(m)
-        .filter((k) => k !== '__name__')
-        .map((k) => k + '=' + m[k]);
-      const label = parts.length ? parts.join(',') : fallbackLabel || 'value';
+      let label;
+      if (labelBy && m[labelBy] != null) {
+        label = (labelPrefix || '') + m[labelBy];
+      } else {
+        const parts = Object.keys(m)
+          .filter((k) => k !== '__name__')
+          .map((k) => k + '=' + m[k]);
+        label = parts.length ? parts.join(',') : fallbackLabel || 'value';
+      }
       const points = (r.values || []).map(([t, v]) => [
         Math.round(Number(t) * 1000),
         v == null ? null : Number(v),
