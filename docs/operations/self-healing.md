@@ -564,14 +564,18 @@ not free the slot, and the pipeline stayed halted ~2h until an operator
 force-cancelled. The fix teaches the probe to force-CANCELLED a stuck CANCELLING
 run — the analogue of the RUNNING force-CRASHED path.
 
-**Prefect-native backstop (follow-up, not yet active).** Prefect 3.7's `Foreman`
-service only marks _workers_ offline on stale _worker_ heartbeats — it never
-crashes a flow run — so there is no built-in flow-run zombie-crash to "turn on".
-The worker now emits per-run heartbeats (`PREFECT_FLOWS_HEARTBEAT_FREQUENCY=30`)
-as groundwork, but that is **inert** until a Prefect Automation is added on the
-`prefect.flow-run.heartbeat`-absence trigger to auto-Crash a run whose heartbeats
-stopped. Until that lands, the brain probe above is the sole reclaim path. See
-`project_prefect_concurrency_zombie_stall` for the full incident write-up.
+**Prefect-native backstop (considered, deliberately not pursued).** Prefect 3.7's
+`Foreman` service only marks _workers_ offline on stale _worker_ heartbeats — it
+never crashes a flow run — so there is no built-in flow-run zombie-crash to "turn
+on". A Prefect Automation on a `prefect.flow-run.heartbeat`-absence trigger could
+crash a stale _RUNNING_ run brain-independently, but it would be **redundant**:
+the brain probe above already reclaims RUNNING zombies, and a heartbeat automation
+would not catch the _CANCELLING_ wedge that actually caused the 2026-07-07 incident
+(a cancelling run isn't emitting progressing heartbeats to go stale). The one
+scenario a native backstop helps — the brain being down — is already paged loudly
+by the deadmans-switch on `brain.cycle_heartbeat`. So the brain probe is the sole,
+sufficient reclaim path. See `project_prefect_concurrency_zombie_stall` for the
+full incident write-up.
 
 ## Settings reference
 
