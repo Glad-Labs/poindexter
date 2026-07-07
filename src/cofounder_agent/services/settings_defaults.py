@@ -79,6 +79,18 @@ DEFAULTS: dict[str, str] = {
     # CSV of enabled action_names; empty = all registered actions allowed.
     # Per-action-type kill switch (e.g. "restart_container" to allow only that).
     "ops_firefighter_action_allowlist": "",
+    # ----- LLM long-tail selector (Plan B) -----
+    # For an alert with NO deterministic rule, a small local model picks an action
+    # from the registry allowlist (or abstains). Runs on the worker via
+    # dispatch_complete (the brain image has no LLM libs), so the tag carries the
+    # ``ollama/`` litellm prefix like its sibling ops_triage_writer_model.
+    "ops_firefighter_model": "ollama/llama3.2:3b",
+    # Persistence gate: the LLM path engages only after an un-ruled alert has
+    # repeated this many times (a one-off blip pages as usual; only a persistent
+    # un-ruled alert is worth an inference call).
+    "ops_firefighter_min_repeats": "2",
+    # Confidence gate: an LLM selection below this score pages instead of acting.
+    "ops_firefighter_min_confidence": "0.6",
     # ----- Identity / branding -----
     # Operator identity is generic on OSS (each install is its own company); the
     # Glad Labs operator overlay (services.operator_overrides) restores Matt /
@@ -1630,6 +1642,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # without redeploying. All keys use per-IP keying (get_remote_address).
     'rate_limit_token_per_ip': '10/minute',         # POST /token — OAuth token mint
     'rate_limit_triage_per_ip': '20/minute',        # POST /api/triage — LLM per call
+    'rate_limit_remediation_select_per_ip': '30/minute',  # POST /api/remediation/select — firefighter LLM long-tail pick
     'rate_limit_topics_from_url_per_ip': '10/minute',  # POST /api/topics/from-url — outbound fetch
     'rate_limit_podcast_generate_per_ip': '5/minute',  # POST /api/podcast/generate/{id} — GPU
     'rate_limit_video_generate_per_ip': '5/minute',    # POST /api/video/generate/{id} — GPU

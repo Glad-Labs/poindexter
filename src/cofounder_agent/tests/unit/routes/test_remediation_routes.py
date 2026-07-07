@@ -1,0 +1,247 @@
+"""Unit tests for routes/remediation_routes.py (firefighter Plan B).
+
+``POST /api/remediation/select`` is a thin adapter over
+``services.firefighter_service.select_remediation_action``. These tests cover
+the route's own responsibilities — auth, the kill-switch, the provider check,
+and faithful pass-through of the service result — plus one end-to-end proof
+that the "off-list pick degrades to abstain" safety contract holds at the HTTP
+boundary (not just in the service unit tests).
+
+Simpler than the triage route: no idempotency cache and no cost_guard (the
+selector is Ollama-only / $0 by policy). Nothing here hits a real LLM,
+Postgres, or Telegram.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+from fastapi import FastAPI
+from fastapi.testclient import TestClient
+
+from middleware.api_token_auth import verify_api_token
+from routes.remediation_routes import router, set_model_router_for_tests
+from services.site_config import SiteConfig
+from utils.route_utils import get_database_dependency, get_site_config_dependency
+
+# ---------------------------------------------------------------------------
+# Fixtures / helpers
+# ---------------------------------------------------------------------------
+
+_CATALOG = [
+    {
+        "name": "restart_container",
+        "description": "Restart a docker container by name.",
+        "params_schema": {"container": "str"},
+    },
+    {
+        "name": "run_auto_remediate",
+        "description": "Sweep stuck pipeline tasks.",
+        "params_schema": {},
+    },
+]
+
+
+class _MockDB:
+    """DB service stub — the route only reaches for ``.pool`` (unused by the
+    selector itself; the stub router ignores it)."""
+
+    def __init__(self, pool):
+        self.pool = pool
+
+
+def _build_app(*, site_cfg: SiteConfig | None = None) -> FastAPI:
+    if site_cfg is None:
+        site_cfg = SiteConfig(initial_config={
+            "ops_firefighter_enabled": "true",
+            "local_llm_api_url": "http://localhost:11434",
+            "ops_firefighter_model": "ollama/llama3.2:3b",
+        })
+
+    app = FastAPI()
+    app.include_router(router)
+    app.dependency_overrides[get_database_dependency] = lambda: _MockDB(MagicMock())
+    app.dependency_overrides[get_site_config_dependency] = lambda: site_cfg
+    return app
+
+
+def _stub_router_factory(text: str, model: str = "ollama/llama3.2:3b", tokens: int = 12):
+    """Router-factory whose ``invoke`` returns ``text`` verbatim — the route
+    delegates parsing/validation to ``select_remediation_action``, so ``text``
+    is the raw model output under test."""
+
+    def _factory(_site_config):
+        router_obj = MagicMock()
+        router_obj.invoke = AsyncMock(return_value={
+            "text": text, "model": model, "tokens": tokens,
+        })
+        return router_obj
+
+    return _factory
+
+
+@pytest.fixture(autouse=True)
+def _reset_module_state():
+    """Clear the injected router-factory between tests so leakage is impossible."""
+    set_model_router_for_tests(None)
+    yield
+    set_model_router_for_tests(None)
+
+
+def _payload(*, alertname: str = "PyroscopeDown", catalog: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    return {
+        "alert": {"labels": {"alertname": alertname, "severity": "warning"}},
+        "action_catalog": _CATALOG if catalog is None else catalog,
+    }
+
+
+def _valid_selection_text() -> str:
+    return json.dumps({
+        "action_name": "restart_container",
+        "params": {"container": "poindexter-pyroscope"},
+        "confidence": 0.82,
+        "reason": "profiler scrape down; restart is safe",
+    })
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAuth:
+    def test_missing_authorization_returns_401(self):
+        # Build the app WITHOUT overriding verify_api_token so the real
+        # dependency runs and rejects the missing header.
+        app = _build_app()
+        client = TestClient(app)
+        resp = client.post("/api/remediation/select", json=_payload())
+        assert resp.status_code == 401
+
+    def test_overridden_auth_passes(self):
+        app = _build_app()
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
+        set_model_router_for_tests(_stub_router_factory(_valid_selection_text()))
+        client = TestClient(app)
+        resp = client.post("/api/remediation/select", json=_payload())
+        assert resp.status_code == 200, resp.text
+
+
+# ---------------------------------------------------------------------------
+# 503 paths
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestKillSwitchAndProvider:
+    def test_disabled_returns_503_firefighter_disabled(self):
+        site_cfg = SiteConfig(initial_config={
+            "ops_firefighter_enabled": "false",
+            "local_llm_api_url": "http://localhost:11434",
+        })
+        app = _build_app(site_cfg=site_cfg)
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
+        set_model_router_for_tests(_stub_router_factory(_valid_selection_text()))
+        client = TestClient(app)
+        resp = client.post("/api/remediation/select", json=_payload())
+        assert resp.status_code == 503
+        assert resp.json()["detail"]["code"] == "firefighter_disabled"
+
+    def test_missing_local_llm_url_returns_503_no_provider(self):
+        site_cfg = SiteConfig(initial_config={
+            "ops_firefighter_enabled": "true",
+            "local_llm_api_url": "",
+        })
+        app = _build_app(site_cfg=site_cfg)
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
+        set_model_router_for_tests(_stub_router_factory(_valid_selection_text()))
+        client = TestClient(app)
+        resp = client.post("/api/remediation/select", json=_payload())
+        assert resp.status_code == 503
+        assert resp.json()["detail"]["code"] == "no_provider"
+
+
+# ---------------------------------------------------------------------------
+# Happy path — faithful pass-through of the service result
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestHappyPath:
+    def test_valid_selection_passes_through(self):
+        app = _build_app()
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
+        set_model_router_for_tests(_stub_router_factory(_valid_selection_text()))
+        client = TestClient(app)
+        resp = client.post("/api/remediation/select", json=_payload())
+        assert resp.status_code == 200, resp.text
+        body = resp.json()
+        assert body["action_name"] == "restart_container"
+        assert body["params"] == {"container": "poindexter-pyroscope"}
+        assert body["confidence"] == pytest.approx(0.82)
+        assert body["reason"]
+        assert body["model"] == "ollama/llama3.2:3b"
+        assert body["ms"] >= 0
+
+
+# ---------------------------------------------------------------------------
+# Abstain contract at the HTTP boundary — an off-list / bad / failed pick
+# MUST surface as action_name="" (200), never an executable action.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestAbstainAtBoundary:
+    def test_off_list_action_returns_200_abstain(self):
+        # The safety-critical case: model names an action outside the catalog.
+        # The route MUST return 200 with an empty action_name (the brain reads
+        # that as "page as usual"), NEVER pass the unvalidated action through.
+        off_list = json.dumps(
+            {"action_name": "rm_minus_rf", "params": {}, "confidence": 0.99, "reason": "trust me"}
+        )
+        app = _build_app()
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
+        set_model_router_for_tests(_stub_router_factory(off_list))
+        client = TestClient(app)
+        resp = client.post("/api/remediation/select", json=_payload())
+        assert resp.status_code == 200, resp.text
+        assert resp.json()["action_name"] == ""
+
+    def test_malformed_json_returns_200_abstain(self):
+        app = _build_app()
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
+        set_model_router_for_tests(_stub_router_factory("not json, just prose"))
+        client = TestClient(app)
+        resp = client.post("/api/remediation/select", json=_payload())
+        assert resp.status_code == 200
+        assert resp.json()["action_name"] == ""
+
+    def test_router_raises_returns_200_abstain(self):
+        app = _build_app()
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
+
+        def _factory(_cfg):
+            router_obj = MagicMock()
+            router_obj.invoke = AsyncMock(side_effect=RuntimeError("ollama down"))
+            return router_obj
+
+        set_model_router_for_tests(_factory)
+        client = TestClient(app)
+        resp = client.post("/api/remediation/select", json=_payload())
+        assert resp.status_code == 200
+        assert resp.json()["action_name"] == ""
+
+    def test_empty_catalog_returns_200_abstain(self):
+        app = _build_app()
+        app.dependency_overrides[verify_api_token] = lambda: "test-token"
+        # A stub that would return a valid-looking pick if called — the service
+        # short-circuits on the empty catalog before invoking it.
+        set_model_router_for_tests(_stub_router_factory(_valid_selection_text()))
+        client = TestClient(app)
+        resp = client.post("/api/remediation/select", json=_payload(catalog=[]))
+        assert resp.status_code == 200
+        assert resp.json()["action_name"] == ""

@@ -332,6 +332,147 @@ async def run_triage(
     return {"diagnosis": text, "model": model_name, "tokens": tokens, "ms": elapsed_ms}
 
 
+# ---------------------------------------------------------------------------
+# Plan B — LLM long-tail action selector.
+#
+# For an alert with NO deterministic remediation_rule, the brain asks this
+# selector (running on the worker, where the LLM libs live) to pick ONE action
+# from the registry catalog the brain passes in, or abstain. The safety-critical
+# invariant: the returned action_name is ALWAYS one of the catalog names or "".
+# Validation lives here — the model's output is untrusted. The confidence
+# THRESHOLD is applied by the brain engine (alongside allowlist / breaker /
+# rate-cap); this layer only validates the shape and surfaces the score.
+# ---------------------------------------------------------------------------
+
+_SELECT_SYSTEM_PROMPT = (
+    "You are an SRE remediation action selector for an autonomous ops system. "
+    "You are given an ALERT that has no pre-written rule, plus a fixed CATALOG "
+    "of remediation actions. Choose the SINGLE best action from the catalog to "
+    "try first, or abstain if none is clearly safe and appropriate.\n\n"
+    "Respond with ONLY a JSON object — no prose, no code fence:\n"
+    '{"action_name": "<exactly one catalog name, or empty string to abstain>", '
+    '"params": {<only the params that action documents>}, '
+    '"confidence": <float 0.0-1.0>, "reason": "<one short sentence>"}\n\n'
+    "Rules: action_name MUST be exactly one of the catalog names, or empty to "
+    "abstain. Prefer to abstain (empty action_name, confidence 0) when the alert "
+    "is ambiguous or no catalog action addresses it — a wrong action is worse "
+    "than paging a human."
+)
+
+
+def _parse_selection_json(text: str) -> dict[str, Any] | None:
+    """Best-effort parse of the model's JSON selection.
+
+    Tolerates ```json fences and surrounding prose (small local models emit both).
+    Returns the decoded object, or None when no JSON object can be extracted —
+    the caller treats None as abstain.
+    """
+    if not text:
+        return None
+    s = text.strip()
+    if s.startswith("```"):
+        # ```json\n{...}\n``` or ```\n{...}\n``` — take the fenced body.
+        parts = s.split("```")
+        if len(parts) >= 3:
+            s = parts[1]
+        s = s.strip()
+        if s.lower().startswith("json"):
+            s = s[4:].strip()
+    # Try the whole (de-fenced) string first, then the first {...} span as a
+    # last resort. A narrow parse failure just moves on to the next candidate
+    # (``continue``, not a silent swallow); exhausting them returns None, which
+    # the caller treats as abstain.
+    candidates = [s]
+    start, end = s.find("{"), s.rfind("}")
+    if start != -1 and end > start:
+        candidates.append(s[start : end + 1])
+    for candidate in candidates:
+        try:
+            obj = json.loads(candidate)
+        except (TypeError, ValueError):
+            continue
+        if isinstance(obj, dict):
+            return obj
+    return None
+
+
+async def select_remediation_action(
+    *,
+    alert: dict[str, Any],
+    action_catalog: list[dict[str, Any]],
+    site_config: SiteConfig,
+    model_router: _ModelRouterLike,
+) -> dict[str, Any]:
+    """Pick one allowlisted action for an un-ruled alert, or abstain.
+
+    Returns ``{action_name, params, confidence, reason, model, ms}``. On any
+    problem — empty catalog, LLM error, unparseable output, or an action_name
+    not in ``action_catalog`` — returns ``action_name=""`` (abstain). Never
+    raises: the brain reads abstain as "page as usual".
+    """
+    abstain: dict[str, Any] = {
+        "action_name": "", "params": {}, "confidence": 0.0,
+        "reason": "", "model": "", "ms": 0,
+    }
+    catalog_names = {
+        str(a["name"]) for a in action_catalog
+        if isinstance(a, dict) and a.get("name")
+    }
+    if not catalog_names:
+        return abstain
+
+    model_class = site_config.get("ops_firefighter_model", "ollama/llama3.2:3b")
+    user_payload = json.dumps(
+        {"alert": alert, "catalog": action_catalog}, default=str, ensure_ascii=False
+    )
+
+    started = time.perf_counter()
+    try:
+        result = await model_router.invoke(
+            model_class=model_class, system=_SELECT_SYSTEM_PROMPT,
+            user=user_payload, max_tokens=512,
+        )
+    except Exception as e:  # noqa: BLE001 — selection must not raise into the caller
+        logger.warning("[firefighter] selector invoke raised: %s — abstaining", e)
+        return abstain
+    ms = int((time.perf_counter() - started) * 1000)
+
+    text, model_name = "", model_class
+    if isinstance(result, dict):
+        text = (result.get("text") or "").strip()
+        model_name = result.get("model") or model_class
+    elif result is not None:
+        text = (getattr(result, "text", "") or "").strip()
+        model_name = getattr(result, "model", model_class) or model_class
+
+    parsed = _parse_selection_json(text)
+    if not isinstance(parsed, dict):
+        logger.info("[firefighter] selector output not parseable JSON — abstaining")
+        return {**abstain, "model": model_name, "ms": ms}
+
+    action_name = str(parsed.get("action_name") or "").strip()
+    if action_name not in catalog_names:
+        # Off-list or empty -> abstain. THE untrusted-output guard: the model can
+        # never make the engine run an action the brain didn't offer.
+        return {**abstain, "model": model_name, "ms": ms}
+
+    params = parsed.get("params")
+    if not isinstance(params, dict):
+        params = {}
+    raw_conf = parsed.get("confidence")
+    try:
+        confidence = float(raw_conf) if raw_conf is not None else 0.0
+    except (TypeError, ValueError):
+        confidence = 0.0
+    confidence = max(0.0, min(1.0, confidence))
+    reason = str(parsed.get("reason") or "")[:500]
+
+    return {
+        "action_name": action_name, "params": params, "confidence": confidence,
+        "reason": reason, "model": model_name, "ms": ms,
+    }
+
+
 def _resolve_system_prompt() -> str:
     """Return the operator-persona triage system prompt.
 

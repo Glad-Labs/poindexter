@@ -128,8 +128,10 @@ class TestRouteManifestStructure:
         (brain daemon observability at /api/brain/stats).
         Updated 2026-06-28 (#1959): added logs_router + traces_router
         (console Telemetry proxies at /api/logs + /api/traces).
+        Updated 2026-07-07 (#347 Plan B): added remediation_router
+        (firefighter LLM long-tail action selector at /api/remediation/select).
         """
-        assert len(_WORKER_ROUTES) == 31
+        assert len(_WORKER_ROUTES) == 32
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

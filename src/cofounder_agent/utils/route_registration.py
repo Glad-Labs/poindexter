@@ -83,6 +83,7 @@ _WORKER_ROUTES = [
     ("routes.brain_routes", "router", "brain_router", "brain daemon observability (/api/brain/stats)"),
     ("routes.alertmanager_webhook_routes", "router", "alertmanager_webhook_router", "Alertmanager webhook consumer (Phase D4)"),
     ("routes.triage_routes", "router", "triage_router", "firefighter ops LLM diagnosis route (#347 step 3)"),
+    ("routes.remediation_routes", "router", "remediation_router", "firefighter LLM long-tail action selector (Plan B, #347)"),
     ("routes.external_webhooks", "external_webhooks_router", "external_webhooks_router", "Lemon Squeezy + Resend webhook sinks (internal tracker Phase 3.B)"),
     ("routes.voice_routes", "router", "voice_router", "voice agent web client (LiveKit web join page, poindexter#389)"),
     ("routes.module_probes_routes", "router", "module_probes_router", "Module v1 brain-probe inventory (/api/modules/probes, #239)"),
