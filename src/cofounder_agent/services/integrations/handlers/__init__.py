@@ -33,7 +33,11 @@ def load_all() -> None:
     # list alphabetized inside the import block; surface comments below
     # provide a quick reference for which handler owns which surface.
 
-    # webhook.* surface: webhook_alertmanager, webhook_revenue, webhook_subscriber
+    # webhook.* inbound surface: no first-party handlers. The three inbound
+    #   handlers were retired 2026-07-05 — their generic dispatcher was deleted
+    #   2026-05-09, so nothing invoked them; the live inbound webhooks are
+    #   bespoke routes (routes/alertmanager_webhook_routes.py +
+    #   routes/external_webhooks.py), not registry handlers.
     # outbound.* surface: outbound_apprise, outbound_vercel_isr
     #   (outbound_telegram retains Bot API helpers for pipeline_streaming but
     #    no longer registers a handler; outbound_discord was deleted — both
@@ -61,15 +65,11 @@ def load_all() -> None:
         tap_corsair_csv,
         tap_external_metrics_writer,
         tap_singer_subprocess,
-        webhook_alertmanager,
-        webhook_revenue,
-        webhook_subscriber,
     )
 
     # Reference the imported names so static analyzers don't drop them
     # — the import is purely for the @register_handler side effects.
     _ = (
-        webhook_alertmanager, webhook_revenue, webhook_subscriber,
         outbound_apprise, outbound_vercel_isr,
         publishing_youtube,
         retention_checkpoint_prune, retention_downsample,

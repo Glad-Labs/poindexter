@@ -20,7 +20,7 @@ name can be reused across surfaces. Five surfaces are in flight today.
 
 | Surface | Source-of-truth table | Dispatcher | Purpose |
 | --- | --- | --- | --- |
-| `webhook` | `webhook_endpoints` (direction=`inbound`) | `routes/external_webhooks.py` | External SaaS sends an event in (Lemon Squeezy, Resend, Alertmanager). |
+| `webhook` | `webhook_endpoints` (direction=`inbound`) | `routes/external_webhooks.py` + `routes/alertmanager_webhook_routes.py` | External SaaS sends an event in (Lemon Squeezy, Resend, Alertmanager) via dedicated routes. |
 | `outbound` | `webhook_endpoints` (direction=`outbound`) | `services/integrations/outbound_dispatcher.py` | We send an event out (Discord, Telegram, Vercel ISR purge). |
 | `tap` | `external_taps` | `services/integrations/tap_runner.py` | Pull external data on a schedule (HackerNews, Dev.to, GA4, GSC, Singer subprocesses). |
 | `retention` | `retention_policies` | `services/integrations/retention_runner.py` | Sweep aging data — TTL-prune, downsample, summarize-to-table. |
@@ -30,13 +30,16 @@ name can be reused across surfaces. Five surfaces are in flight today.
 
 <AccordionGroup>
   <Accordion title="webhook surface (inbound)">
-    External services post events to the worker. Each handler is responsible
-    for verifying the signature, normalizing the payload, and writing to the
-    appropriate landing table.
+    No first-party inbound handlers ship today. The live inbound webhooks are
+    served by dedicated FastAPI routes that verify the signature, normalize the
+    payload, and write to the landing table directly:
 
-    - [`webhook.revenue_event_writer`](/docs/integrations/webhook_revenue_event_writer) — Lemon Squeezy order/subscription events → `revenue_events`
-    - [`webhook.subscriber_event_writer`](/docs/integrations/webhook_subscriber_event_writer) — Resend email events → `subscriber_events`
-    - [`webhook.alertmanager_dispatch`](/docs/integrations/webhook_alertmanager_dispatch) — Grafana Alertmanager alerts → `alert_events` + operator notification fan-out
+    - **Alertmanager** → `alert_events` — `routes/alertmanager_webhook_routes.py` (`POST /api/webhooks/alertmanager`)
+    - **Lemon Squeezy** → `revenue_events` — `routes/external_webhooks.py` (`POST /api/webhooks/lemon-squeezy`)
+    - **Resend** → `subscriber_events` — `routes/external_webhooks.py` (`POST /api/webhooks/resend`)
+
+    The `webhook` surface stays available for third-party plugin handlers, which
+    register via `services.integrations.register_handler`.
   </Accordion>
 
   <Accordion title="outbound surface">

@@ -129,14 +129,6 @@
             "pages": ["docs/integrations/index"]
           },
           {
-            "group": "Inbound webhooks",
-            "pages": [
-              "docs/integrations/webhook_alertmanager_dispatch",
-              "docs/integrations/webhook_revenue_event_writer",
-              "docs/integrations/webhook_subscriber_event_writer"
-            ]
-          },
-          {
             "group": "Outbound",
             "pages": [
               "docs/integrations/outbound_apprise",
