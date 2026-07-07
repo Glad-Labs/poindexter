@@ -364,7 +364,8 @@ async def test_complete_normalizes_response_to_completion_dataclass(monkeypatch)
         choices=[_fake_choice("hello world", finish_reason="length")],
         usage=_fake_usage(prompt=12, completion=3, total=15),
         _response_ms=42.0,
-        response_cost=0.0007,
+        # LiteLLM exposes cost on _hidden_params, not a top-level attr (#2183).
+        _hidden_params={"response_cost": 0.0007},
     )
     fake_acompletion = AsyncMock(return_value=response)
     monkeypatch.setattr(_litellm_stub, "acompletion", fake_acompletion)

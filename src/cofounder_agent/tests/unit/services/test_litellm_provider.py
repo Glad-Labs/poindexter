@@ -34,6 +34,11 @@ def mock_litellm(monkeypatch):
     fake = MagicMock(name="litellm")
     fake.success_callback = []
     fake.failure_callback = []
+    # ``_extract_response_cost`` falls back to ``litellm.completion_cost()``
+    # when a response has no ``_hidden_params`` cost. Default that to None so
+    # a bare MagicMock doesn't return ``float(MagicMock())`` == 1.0 and stamp
+    # a phantom price — tests that exercise the fallback set their own value.
+    fake.completion_cost = MagicMock(return_value=None)
     monkeypatch.setitem(sys.modules, "litellm", fake)
     return fake
 
@@ -169,11 +174,16 @@ def _shaped_completion_response(
     resp.choices = [choice]
     resp.usage = usage
     resp.model_dump = MagicMock(return_value={"id": "fake-id"})
+    # LiteLLM exposes the computed cost on ``_hidden_params``, NOT as a
+    # top-level ``response.response_cost`` attribute (the naive hasattr read
+    # logged $0 for every paid call — glad-labs-stack #2183). Model that: a
+    # priced call carries the value in _hidden_params; an unpriced one has an
+    # empty dict so ``.get("response_cost")`` misses and the extractor falls
+    # back to ``litellm.completion_cost`` (stubbed to None by the fixture).
     if response_cost is not None:
-        resp.response_cost = response_cost
+        resp._hidden_params = {"response_cost": response_cost}
     else:
-        # explicit deletion: ensure hasattr() returns False
-        del resp.response_cost
+        resp._hidden_params = {}
     return resp
 
 
@@ -329,7 +339,7 @@ class TestLiteLLMProviderComplete:
             prompt_tokens=0, completion_tokens=0, total_tokens=0,
         )
         resp.model_dump = MagicMock(return_value={})
-        del resp.response_cost
+        resp._hidden_params = {}
         mock_litellm.acompletion = AsyncMock(return_value=resp)
         p = _provider_instance()
         out = await p.complete(

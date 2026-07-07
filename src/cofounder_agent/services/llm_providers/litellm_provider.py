@@ -464,6 +464,47 @@ def _recover_reasoning_text(msg: Any) -> str:
     return stripped or reasoning
 
 
+def _extract_response_cost(response: Any) -> float | None:
+    """Pull the LiteLLM-computed call cost off a completion response.
+
+    LiteLLM stores the price it derived from ``litellm.model_cost`` on the
+    response's ``_hidden_params`` dict — there is NO top-level
+    ``response.response_cost`` attribute (``hasattr`` returns False), so the
+    naive read logged $0 for every paid call. Order:
+
+    1. ``response._hidden_params["response_cost"]`` — the canonical location,
+       already computed, no recomputation cost.
+    2. ``litellm.completion_cost(completion_response=response)`` — recomputes
+       from usage + the model_cost table; covers responses where the hidden
+       param wasn't populated (streaming, some providers).
+
+    Returns ``None`` when neither yields a usable number so the caller leaves
+    ``cost_usd`` at its 0 default rather than stamping a bogus value — the
+    downstream electricity fallback only fires for genuinely-local ($0) calls,
+    so a paid call with no recoverable price is logged at 0 (visible
+    under-report) rather than crashing the dispatch.
+    """
+    hidden = getattr(response, "_hidden_params", None)
+    if isinstance(hidden, dict):
+        rc = hidden.get("response_cost")
+        if rc is not None:
+            try:
+                return float(rc)
+            except (TypeError, ValueError):
+                # silent-ok: a malformed hidden-params value falls through to
+                # the completion_cost() recompute below — cost is advisory.
+                pass
+    try:
+        import litellm
+
+        rc = litellm.completion_cost(completion_response=response)
+        if rc is not None:
+            return float(rc)
+    except Exception:  # noqa: BLE001  # silent-ok: cost is advisory — a failed lookup logs $0 (visible under-report), never breaks the LLM dispatch
+        return None
+    return None
+
+
 class LiteLLMProvider:
     """LLMProvider implementation backed by LiteLLM.
 
@@ -905,9 +946,18 @@ class LiteLLMProvider:
         )
         total_tokens = int(getattr(usage, "total_tokens", 0) or 0) if usage else 0
 
-        # LiteLLM stamps response_cost on the response when its cost
-        # table knows the model. Surface that in raw so cost_logs can
-        # consume it without re-deriving the price.
+        # LiteLLM computes the call cost but stores it on the response's
+        # ``_hidden_params`` dict — NOT as a top-level attribute, so
+        # ``hasattr(response, "response_cost")`` is ALWAYS False. Reading it
+        # that way meant every PAID cloud call logged cost_usd=0, which
+        # silently defeats the cost_guard cap (it sums cost_logs.cost_usd,
+        # so a table of zeros never trips the daily/monthly limit). Latent
+        # until the 2026-07-07 Sonnet cutover started making real paid calls
+        # — the first canary draft (8k in / 3.9k out) logged $0. Read the
+        # hidden-params value, then fall back to ``completion_cost()`` (both
+        # verified in-container to return the true price). ``_response_ms``
+        # has the same top-level-attr issue but is cosmetic (latency
+        # display), so it stays best-effort.
         raw: dict[str, Any] = {}
         try:
             raw = (
@@ -918,8 +968,9 @@ class LiteLLMProvider:
             raw = {}
         if hasattr(response, "_response_ms"):
             raw["_response_ms"] = response._response_ms  # noqa: SLF001
-        if hasattr(response, "response_cost"):
-            raw["response_cost"] = response.response_cost
+        response_cost = _extract_response_cost(response)
+        if response_cost is not None:
+            raw["response_cost"] = response_cost
 
         return Completion(
             text=text,
