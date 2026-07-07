@@ -368,13 +368,22 @@ services:
       dockerfile: Dockerfile.worker
     container_name: poindexter-worker
     restart: unless-stopped
+    # uvicorn only honors a SIGTERM received mid-startup once lifespan startup
+    # (~40-55s) completes, so Docker's default 10s stop window SIGKILLs a
+    # half-started process whenever a manual post-merge restart races the
+    # 10-min deploy-sync bounce (5x overnight 2026-07-07). docker stop/restart
+    # honor this per-container timeout when no -t is passed.
+    stop_grace_period: 75s
     ports:
       - "8002:8002"
     environment:
       DEPLOYMENT_MODE: worker
-      ENVIRONMENT: ${ENVIRONMENT:-development}
+      # Production default (consumer-compose parity) — the operator stack IS
+      # the production box. A production env var also vetoes the DB-keyed
+      # dev-token bypass (middleware/api_token_auth.py), and the old dev
+      # default made the startup banner misreport prod as a dev reloader.
+      ENVIRONMENT: ${ENVIRONMENT:-production}
       LOG_FORMAT: json
-      DEVELOPMENT_MODE: "true"
       PORT: "8002"
       # Secrets loaded from DB (app_settings) at startup — no env vars needed
       # Primary DB is local Postgres.

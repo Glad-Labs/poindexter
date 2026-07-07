@@ -291,6 +291,10 @@ services:
       dockerfile: Dockerfile.worker
     container_name: poindexter-worker
     restart: unless-stopped
+    # uvicorn only honors a SIGTERM received mid-startup once lifespan startup
+    # (~40-55s) completes; Docker's default 10s stop window would SIGKILL a
+    # half-started worker when restarts overlap.
+    stop_grace_period: 75s
     ports:
       - "8002:8002"
     environment:

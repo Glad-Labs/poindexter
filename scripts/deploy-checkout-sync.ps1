@@ -55,6 +55,16 @@
   silently leaving stale code running. On first run (no marker) it records
   the current SHA WITHOUT restarting, to avoid a surprise bounce on install.
 
+  Redundancy guard (Test-RestartRedundant): a container whose CURRENT
+  process already started AFTER this pass's `git reset` completed is
+  necessarily running the new tree (the code is bind-mounted), so its bounce
+  is skipped. This makes the scheduled sync a no-op behind a manual
+  post-merge deploy instead of double-bouncing the worker - the second
+  restart used to land mid-startup and SIGKILL the half-initialized process
+  at Docker's stop timeout (observed 5x overnight 2026-07-07). On any doubt
+  (no reset this pass, unparseable StartedAt, within the clock-skew margin)
+  it fails safe to restarting.
+
   Step independence: the brain rebuild, the compose-apply, and the container
   restarts ALL run every deploy pass - a failure in one is logged and fails
   the pass (marker withheld, so it retries next cycle) but never
@@ -343,6 +353,18 @@ function Invoke-SelfTest {
         Test-Case 'restart fail -> error, no marker'   (($o.Result -eq 'error') -and (-not $o.RecordMarker))
         $o = Get-DeployOutcome -BrainBuildFailed $true -ApplyFailed $true -RestartFailed $true
         Test-Case 'all fail -> all steps named'        (@($o.FailedSteps).Count -eq 3)
+
+        # 10) Restart-redundancy guard: skip the bounce only when the
+        # container's process provably started AFTER this pass's reset (plus
+        # a skew margin); every doubtful input must fall through to "bounce".
+        $rst = [datetimeoffset]::Parse('2026-07-07T04:00:00Z', [System.Globalization.CultureInfo]::InvariantCulture)
+        Test-Case 'fresh start after reset -> redundant'  (Test-RestartRedundant -ContainerStartedAt '2026-07-07T04:00:30.123456789Z' -TreeResetAtUtc $rst)
+        Test-Case 'start before reset -> bounce'          (-not (Test-RestartRedundant -ContainerStartedAt '2026-07-07T03:59:59Z' -TreeResetAtUtc $rst))
+        Test-Case 'start inside skew margin -> bounce'    (-not (Test-RestartRedundant -ContainerStartedAt '2026-07-07T04:00:03Z' -TreeResetAtUtc $rst))
+        Test-Case 'no reset this pass -> bounce'          (-not (Test-RestartRedundant -ContainerStartedAt '2026-07-07T04:00:30Z' -TreeResetAtUtc $null))
+        Test-Case 'unparseable StartedAt -> bounce'       (-not (Test-RestartRedundant -ContainerStartedAt 'not-a-time' -TreeResetAtUtc $rst))
+        Test-Case 'blank StartedAt -> bounce'             (-not (Test-RestartRedundant -ContainerStartedAt '' -TreeResetAtUtc $rst))
+        Test-Case 'nanosecond StartedAt parses'           (Test-RestartRedundant -ContainerStartedAt '2026-07-07T04:10:00.911897573Z' -TreeResetAtUtc $rst)
     } finally {
         Remove-Item -Path $tmp -Recurse -Force -ErrorAction SilentlyContinue
     }
@@ -475,6 +497,36 @@ function Test-CloneBehind {
     return $true
 }
 
+# True when the container's CURRENT process started after this pass's
+# working-tree reset completed - i.e. it already imported the new bind-mounted
+# code, so a `docker restart` would only bounce it onto the same tree (and,
+# when it lands mid-startup, SIGKILL a half-initialized process at the stop
+# timeout). The margin absorbs small host<->docker-VM clock skew. Fail-safe
+# direction matters: a wrong "redundant" would freeze stale code behind the
+# recorded marker, so on ANY doubt (no reset this pass, blank/unparseable
+# StartedAt, within-margin timing) return $false and let the bounce proceed.
+# Docker reports StartedAt with nanosecond precision; .NET parses at most 7
+# fractional digits, so the tail is trimmed first. Pure for -SelfTest.
+function Test-RestartRedundant {
+    param(
+        [string]$ContainerStartedAt,
+        $TreeResetAtUtc,
+        [int]$SkewMarginSec = 5
+    )
+    if ($null -eq $TreeResetAtUtc) { return $false }
+    if ([string]::IsNullOrWhiteSpace($ContainerStartedAt)) { return $false }
+    $normalized = $ContainerStartedAt.Trim() -replace '(\.\d{1,7})\d*', '$1'
+    $started = [datetimeoffset]::MinValue
+    $ok = [datetimeoffset]::TryParse(
+        $normalized,
+        [System.Globalization.CultureInfo]::InvariantCulture,
+        [System.Globalization.DateTimeStyles]::None,
+        [ref]$started
+    )
+    if (-not $ok) { return $false }
+    return ($started.ToUniversalTime() -gt $TreeResetAtUtc.ToUniversalTime().AddSeconds($SkewMarginSec))
+}
+
 # Decide the end-of-pass outcome from which deploy steps failed. Pure for
 # -SelfTest.
 #
@@ -596,6 +648,11 @@ try {
     $behindRaw = (& git -C $DeployDir rev-list --count HEAD.."$SourceRemote/$SyncBranch" 2>$null)
     $needReset = Test-CloneBehind $behindRaw
 
+    # Stamped after a successful reset+clean; drives Test-RestartRedundant.
+    # Stays $null when this pass didn't reset (tree advanced by another
+    # actor at an unknown time), so the redundancy skip can never fire then.
+    $resetAtUtc = $null
+
     if ($needReset) {
         # ---- Prefect flow-run guard (bounded wait, then FORCE) ------------
         # git reset --hard rewrites working-tree files. A Prefect flow spawns a
@@ -640,6 +697,7 @@ try {
             exit $rc
         }
         $null = Invoke-Logged 'git' @('-C', $DeployDir, 'clean', '-fd') 'git clean'
+        $resetAtUtc = [datetimeoffset]::UtcNow
     } else {
         Write-Log "Already at $SourceRemote/$SyncBranch (0 commits behind); no reset needed."
     }
@@ -741,11 +799,21 @@ try {
 
     $failed = @()
     $restarted = @()
+    $alreadyFresh = @()
     foreach ($c in $RestartContainers) {
         # Skip containers that aren't present (e.g. a deliberately-stopped bot) so
         # one missing container can't trap us into bouncing the others every cycle.
         & docker container inspect $c *> $null
         if ($LASTEXITCODE -ne 0) { Write-Log "  skip '$c' (not present)"; continue }
+        # A process that started after this pass's reset already imported the
+        # new bind-mounted tree - re-bouncing it would only risk SIGKILLing a
+        # mid-startup process when a manual post-merge deploy raced this cycle.
+        $startedAtRaw = (& docker container inspect -f '{{.State.StartedAt}}' $c 2>$null)
+        if (Test-RestartRedundant -ContainerStartedAt "$startedAtRaw" -TreeResetAtUtc $resetAtUtc) {
+            $alreadyFresh += $c
+            Write-Log "  skip '$c' (already restarted onto this tree at $("$startedAtRaw".Trim()))"
+            continue
+        }
         $rc = Invoke-Logged 'docker' @('restart', $c) 'docker'
         if ($rc -ne 0) { $failed += $c; Write-Log "  FAILED to restart '$c' (exit $rc)" 'ERROR' }
         else { $restarted += $c; Write-Log "  restarted '$c'" }
@@ -767,7 +835,10 @@ try {
         Set-Content -Path $markerFile -Value $head -NoNewline
         $brainNote = if ($brainRebuilt) { ' brain-daemon rebuilt + recreated.' } else { '' }
         Write-Log "Pipeline now running $shortHead.$brainNote"
-        $deployDetail = if ($brainRebuilt) { 'rebuilt brain-daemon image (brain/ changed)' } else { '' }
+        $detailParts = @()
+        if ($brainRebuilt) { $detailParts += 'rebuilt brain-daemon image (brain/ changed)' }
+        if ($alreadyFresh.Count -gt 0) { $detailParts += "skipped already-fresh: $($alreadyFresh -join ', ')" }
+        $deployDetail = $detailParts -join '; '
         Write-DeployStatus -Result $outcome.Result -Head $head -PreviousHead $lastDeployed -Restarted $restarted -Detail $deployDetail
     } else {
         $failDetail = "failed steps: $($outcome.FailedSteps -join ', ')"

@@ -341,6 +341,16 @@ auto-deploy too. `deploy-worker.ps1` remains the tool for an _immediate_ deploy
 elsewhere (which need `docker compose build`) and for `poindexter-prefect-worker`
 bootstrap-level changes.
 
+**Overlapping restarts coalesce instead of stacking.** The sync skips its
+bounce for any container whose current process already started _after_ the
+pass's `git reset` (bind-mounted code ⇒ it is already running the new tree), so
+a manual post-merge `docker restart` and the next scheduled cycle no longer
+double-bounce the worker. The worker service also sets `stop_grace_period: 75s`:
+uvicorn only honors a SIGTERM received mid-startup once lifespan startup
+(~40-55 s) completes, and Docker's default 10 s stop window used to SIGKILL the
+half-started process whenever restarts collided (observed 5x during the
+2026-07-07 overnight merge train).
+
 **Confirming the sync task actually ran.** The task runs hidden/non-interactive
 and the Windows TaskScheduler/Operational history log is disabled by default, so
 a green `0x0` "Last Run Result" is **not** proof it synced — it can skip every
