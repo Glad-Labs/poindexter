@@ -27,6 +27,7 @@ from plugins.llm_providers.gemini import (
     GeminiProviderError,
 )
 from services.cost_guard import CostGuard
+from services.cost_ledger import SpendBreakdown
 from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
@@ -480,16 +481,18 @@ class TestGeminiCostGuard:
             },
         )
 
-        # Build a guard whose monthly check passes but daily fails.
-        async def _fake_daily(*, strict: bool = False) -> float:
-            return 999.0  # well past any limit
+        # Build a guard whose monthly check passes but daily fails. P2 reads
+        # spend through the ledger seam (_daily_breakdown / _monthly_breakdown),
+        # so mock that boundary; api_usd is what the hard cap gates on.
+        async def _fake_daily(*, strict: bool = False) -> SpendBreakdown:
+            return SpendBreakdown(api_usd=999.0, total_usd=999.0)  # past any limit
 
-        async def _fake_monthly(*, strict: bool = False) -> float:
-            return 0.0
+        async def _fake_monthly(*, strict: bool = False) -> SpendBreakdown:
+            return SpendBreakdown(api_usd=0.0, total_usd=0.0)
 
         guard = CostGuard(site_config=site_config, pool=None)
-        guard.get_daily_spend = _fake_daily  # type: ignore[assignment]
-        guard.get_monthly_spend = _fake_monthly  # type: ignore[assignment]
+        guard._daily_breakdown = _fake_daily  # type: ignore[assignment]
+        guard._monthly_breakdown = _fake_monthly  # type: ignore[assignment]
 
         provider = GeminiProvider(site_config=site_config)
         models = _FakeAioModels(generate_response=_make_fake_response())
@@ -514,15 +517,15 @@ class TestGeminiCostGuard:
             extra={"monthly_spend_limit_usd": "0.001"},
         )
 
-        async def _fake_monthly(*, strict: bool = False) -> float:
-            return 5.0
+        async def _fake_monthly(*, strict: bool = False) -> SpendBreakdown:
+            return SpendBreakdown(api_usd=5.0, total_usd=5.0)
 
-        async def _fake_daily(*, strict: bool = False) -> float:
-            return 0.0
+        async def _fake_daily(*, strict: bool = False) -> SpendBreakdown:
+            return SpendBreakdown(api_usd=0.0, total_usd=0.0)
 
         guard = CostGuard(site_config=site_config, pool=None)
-        guard.get_monthly_spend = _fake_monthly  # type: ignore[assignment]
-        guard.get_daily_spend = _fake_daily  # type: ignore[assignment]
+        guard._monthly_breakdown = _fake_monthly  # type: ignore[assignment]
+        guard._daily_breakdown = _fake_daily  # type: ignore[assignment]
 
         provider = GeminiProvider(site_config=site_config)
         models = _FakeAioModels(

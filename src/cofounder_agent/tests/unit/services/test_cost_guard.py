@@ -12,12 +12,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from services import cost_ledger
 from services.cost_guard import (
     CostEstimate,
     CostGuard,
     CostGuardExhausted,
     is_local_base_url,
 )
+from services.cost_ledger import SpendBreakdown
 
 # ---------------------------------------------------------------------------
 # is_local_base_url helper
@@ -102,8 +104,17 @@ class TestCostGuardEstimate:
 
 def _make_guard(*, daily: float, monthly: float,
                 daily_limit: float = 2.0,
-                monthly_limit: float = 100.0) -> CostGuard:
-    """Build a CostGuard whose spend lookups are mocked deterministically."""
+                monthly_limit: float = 100.0,
+                daily_electricity: float = 0.0) -> CostGuard:
+    """Build a CostGuard whose spend lookups are mocked deterministically.
+
+    The gate reads the ledger's ``SpendBreakdown`` once per window (P2): the
+    hard cap keys on ``api_usd`` and the soft alert keys on ``total_usd``. We
+    mock the ``_daily_breakdown`` / ``_monthly_breakdown`` seam — the single
+    ``cost_ledger.get_spend`` boundary — so ``daily`` / ``monthly`` are the
+    paid-API axis and ``daily_electricity`` stacks onto the daily total to
+    drive the both-axes alert without any paid spend.
+    """
     sc = MagicMock()
     sc.get = MagicMock(side_effect=lambda key, default=None: {
         "daily_spend_limit_usd": daily_limit,
@@ -111,8 +122,14 @@ def _make_guard(*, daily: float, monthly: float,
         "cost_alert_threshold_pct": 80.0,
     }.get(key, default))
     guard = CostGuard(site_config=sc, pool=None)
-    guard.get_daily_spend = AsyncMock(return_value=daily)  # type: ignore[method-assign]
-    guard.get_monthly_spend = AsyncMock(return_value=monthly)  # type: ignore[method-assign]
+    guard._daily_breakdown = AsyncMock(return_value=SpendBreakdown(  # type: ignore[method-assign]
+        api_usd=daily,
+        electricity_usd=daily_electricity,
+        total_usd=daily + daily_electricity,
+    ))
+    guard._monthly_breakdown = AsyncMock(return_value=SpendBreakdown(  # type: ignore[method-assign]
+        api_usd=monthly, total_usd=monthly,
+    ))
     return guard
 
 
@@ -161,14 +178,19 @@ class TestCostGuardPreflight:
     async def test_unreadable_spend_fails_closed(self) -> None:
         """#611 — if cost_logs can't be read on the enforcement path,
         preflight raises CostGuardExhausted(scope='unknown') rather than
-        admitting the call on a silent $0 read (the fail-open bug)."""
+        admitting the call on a silent $0 read (the fail-open bug).
+
+        Post-P2 the spend read goes through ``cost_ledger.get_spend`` (which
+        uses ``fetchval``), so a failing ``fetchval`` is the ledger read
+        blowing up — ``get_spend(strict=True)`` re-raises and preflight fails
+        closed."""
         sc = MagicMock()
         sc.get = MagicMock(side_effect=lambda key, default=None: {
             "daily_spend_limit_usd": 2.0,
             "monthly_spend_limit_usd": 100.0,
         }.get(key, default))
         pool = MagicMock()
-        pool.fetchrow = AsyncMock(side_effect=RuntimeError("cost_logs down"))
+        pool.fetchval = AsyncMock(side_effect=RuntimeError("cost_logs down"))
         guard = CostGuard(site_config=sc, pool=pool)
         with pytest.raises(CostGuardExhausted) as excinfo:
             await guard.preflight(CostEstimate(
@@ -184,15 +206,22 @@ class TestCheckBudgetFailsClosed:
     error read as $0 and ADMITTED the call, silently disabling the spend cap."""
 
     @pytest.mark.asyncio
-    async def test_check_budget_fails_closed_on_unreadable_daily_spend(self) -> None:
+    async def test_check_budget_fails_closed_on_unreadable_daily_spend(self, monkeypatch) -> None:
         sc = MagicMock()
         sc.get = MagicMock(side_effect=lambda key, default=None: {
             "daily_spend_limit_usd": 2.0,
             "monthly_spend_limit_usd": 10.0,
         }.get(key, default))
-        pool = MagicMock()
-        pool.fetchrow = AsyncMock(side_effect=RuntimeError("cost_logs down"))
-        guard = CostGuard(site_config=sc, pool=pool)
+
+        async def _boom(pool, *, window="day", strict=False, site_config=None):
+            # The enforcement path reads strict=True, so a ledger failure must
+            # propagate (fail closed) rather than swallow to $0 (fail open).
+            if strict:
+                raise RuntimeError("cost_logs down")
+            return SpendBreakdown()
+
+        monkeypatch.setattr(cost_ledger, "get_spend", _boom)
+        guard = CostGuard(site_config=sc, pool=MagicMock())
         with pytest.raises(CostGuardExhausted):
             await guard.check_budget(
                 provider="gemini", model="gemini-2.0-flash",
@@ -200,7 +229,7 @@ class TestCheckBudgetFailsClosed:
             )
 
     @pytest.mark.asyncio
-    async def test_check_budget_admits_when_spend_readable_and_under_cap(self) -> None:
+    async def test_check_budget_admits_when_spend_readable_and_under_cap(self, monkeypatch) -> None:
         """Sanity: a healthy read under the cap does NOT raise (no over-zealous
         blocking of legitimate paid calls)."""
         sc = MagicMock()
@@ -208,9 +237,12 @@ class TestCheckBudgetFailsClosed:
             "daily_spend_limit_usd": 2.0,
             "monthly_spend_limit_usd": 10.0,
         }.get(key, default))
-        pool = MagicMock()
-        pool.fetchrow = AsyncMock(return_value={"total": 0.10})
-        guard = CostGuard(site_config=sc, pool=pool)
+
+        async def _fake(pool, *, window="day", strict=False, site_config=None):
+            return SpendBreakdown(api_usd=0.10, total_usd=0.10)
+
+        monkeypatch.setattr(cost_ledger, "get_spend", _fake)
+        guard = CostGuard(site_config=sc, pool=MagicMock())
         # 0.10 spent + 0.05 estimate < 2.0 daily → no raise.
         await guard.check_budget(
             provider="gemini", model="gemini-2.0-flash", estimated_cost_usd=0.05,
@@ -308,7 +340,11 @@ class TestLimitLookup:
 
 
 class TestSpendLookups:
-    """``get_daily_spend`` and ``get_monthly_spend`` query cost_logs (lines 215-244)."""
+    """``get_daily_spend`` / ``get_monthly_spend`` rent the ``cost_ledger`` read
+    seam (P2): each delegates to ``cost_ledger.get_spend(window=...)`` and
+    returns its ``api_usd`` (genuinely-paid cloud spend) — no hand-rolled inline
+    ``SUM(cost_usd)``. The one meter the cap and the dashboards share.
+    """
 
     @pytest.mark.asyncio
     async def test_returns_zero_when_no_pool(self) -> None:
@@ -317,32 +353,71 @@ class TestSpendLookups:
         assert await guard.get_monthly_spend() == 0.0
 
     @pytest.mark.asyncio
-    async def test_get_daily_spend_returns_db_total(self) -> None:
-        pool = MagicMock()
-        pool.fetchrow = AsyncMock(return_value={"total": 1.234})
-        guard = CostGuard(pool=pool)
+    async def test_get_daily_spend_returns_ledger_api_axis(self, monkeypatch) -> None:
+        # api=1.234 with a fat electricity axis; the cap must read the api axis
+        # only, never the blended total.
+        async def _fake(pool, *, window="day", strict=False, site_config=None):
+            return SpendBreakdown(api_usd=1.234, electricity_usd=9.0, total_usd=10.234)
+
+        monkeypatch.setattr(cost_ledger, "get_spend", _fake)
+        guard = CostGuard(pool=MagicMock())
         assert await guard.get_daily_spend() == pytest.approx(1.234)
 
     @pytest.mark.asyncio
-    async def test_get_monthly_spend_returns_db_total(self) -> None:
-        pool = MagicMock()
-        pool.fetchrow = AsyncMock(return_value={"total": 42.5})
-        guard = CostGuard(pool=pool)
+    async def test_get_monthly_spend_returns_ledger_api_axis(self, monkeypatch) -> None:
+        async def _fake(pool, *, window="day", strict=False, site_config=None):
+            return SpendBreakdown(api_usd=42.5, total_usd=42.5)
+
+        monkeypatch.setattr(cost_ledger, "get_spend", _fake)
+        guard = CostGuard(pool=MagicMock())
         assert await guard.get_monthly_spend() == 42.5
 
     @pytest.mark.asyncio
-    async def test_db_error_returns_zero(self) -> None:
+    async def test_delegates_to_ledger_with_correct_window(self, monkeypatch) -> None:
+        seen: list[str] = []
+
+        async def _spy(pool, *, window="day", strict=False, site_config=None):
+            seen.append(window)
+            return SpendBreakdown()
+
+        monkeypatch.setattr(cost_ledger, "get_spend", _spy)
+        guard = CostGuard(pool=MagicMock())
+        await guard.get_daily_spend()
+        await guard.get_monthly_spend()
+        assert seen == ["day", "month"]
+
+    @pytest.mark.asyncio
+    async def test_passes_strict_and_site_config_through(self, monkeypatch) -> None:
+        captured: dict = {}
+
+        async def _spy(pool, *, window="day", strict=False, site_config=None):
+            captured["strict"] = strict
+            captured["site_config"] = site_config
+            return SpendBreakdown()
+
+        monkeypatch.setattr(cost_ledger, "get_spend", _spy)
+        sc = MagicMock()
+        guard = CostGuard(site_config=sc, pool=MagicMock())
+        await guard.get_daily_spend(strict=True)
+        assert captured["strict"] is True
+        assert captured["site_config"] is sc
+
+    @pytest.mark.asyncio
+    async def test_db_error_returns_zero_when_not_strict(self) -> None:
+        # Real guard→ledger→pool stack: a failing fetchval, non-strict, is
+        # swallowed by the ledger to a zeroed breakdown → $0.
         pool = MagicMock()
-        pool.fetchrow = AsyncMock(side_effect=RuntimeError("conn lost"))
+        pool.fetchval = AsyncMock(side_effect=RuntimeError("conn lost"))
         guard = CostGuard(pool=pool)
         assert await guard.get_daily_spend() == 0.0
 
     @pytest.mark.asyncio
     async def test_db_error_raises_when_strict(self) -> None:
-        """#611 — the enforcement path reads strict=True, so a cost_logs
-        failure raises (fail closed) instead of silently reading $0 (fail open)."""
+        """#611 — the enforcement path reads strict=True, so a cost_logs failure
+        raises (fail closed) instead of silently reading $0 (fail open). The
+        ledger's ``get_spend(strict=True)`` re-raises; the guard propagates."""
         pool = MagicMock()
-        pool.fetchrow = AsyncMock(side_effect=RuntimeError("conn lost"))
+        pool.fetchval = AsyncMock(side_effect=RuntimeError("conn lost"))
         guard = CostGuard(pool=pool)
         with pytest.raises(RuntimeError):
             await guard.get_daily_spend(strict=True)
@@ -350,56 +425,36 @@ class TestSpendLookups:
             await guard.get_monthly_spend(strict=True)
 
     @pytest.mark.asyncio
-    async def test_db_returns_none_row(self) -> None:
-        """Empty result set -> 0.0."""
+    async def test_null_sums_read_as_zero(self) -> None:
+        """Empty windows (fetchval → None) read as $0, not a crash."""
         pool = MagicMock()
-        pool.fetchrow = AsyncMock(return_value=None)
+        pool.fetchval = AsyncMock(return_value=None)
+        pool.fetch = AsyncMock(return_value=[])
         guard = CostGuard(pool=pool)
         assert await guard.get_daily_spend() == 0.0
 
     @pytest.mark.asyncio
-    async def test_uses_correct_window_sql(self) -> None:
-        pool = MagicMock()
-        pool.fetchrow = AsyncMock(return_value={"total": 0.0})
-        guard = CostGuard(pool=pool)
-        await guard.get_daily_spend()
-        sql = pool.fetchrow.await_args.args[0]
-        assert "date_trunc('day'" in sql
-        await guard.get_monthly_spend()
-        sql2 = pool.fetchrow.await_args.args[0]
-        assert "date_trunc('month'" in sql2
-
-    @pytest.mark.asyncio
-    async def test_paid_spend_predicate_keys_on_electricity_axis_not_ollama(self) -> None:
-        """The cap sums genuinely-paid cloud spend via the electricity axis.
-
-        Since the 2026-05-16 LiteLLM-router cutover, local inference logs
-        ``provider='litellm'`` (the real Ollama model lands in ``model``) with
-        ``cost_usd=0`` by the P1 write invariant. The old provider-name denylist
-        ``NOT IN ('electricity','ollama','ollama_native')`` therefore both (a)
-        matched **zero** ``'ollama'`` rows and (b) failed to exclude the
-        litellm-tagged local rows — leaving them in the paid-spend set, a
-        phantom-regression landmine (a future non-zero local ``cost_usd`` would
-        false-trip the cap, the 2026-06-21 incident). The gate must key on the
-        electricity axis (``cost_type``), renting the single definition owned by
-        ``cost_ledger`` so it can never drift from the ledger the operator
-        dashboards already read.
+    async def test_gate_reads_spend_only_via_the_ledger_seam(self, monkeypatch) -> None:
+        """The cap no longer hand-rolls a ``SUM(cost_usd)`` — it reads spend
+        exclusively through ``cost_ledger.get_spend`` (which owns the single
+        api-axis definition, guarded end-to-end by ``test_cost_ledger`` + the
+        cross-consumer source scan in ``test_cost_logs_local_predicate``). This
+        pins the P2 delegation: the guard issues no ``fetchrow`` SQL of its own,
+        so the stale router-blind provider-name denylist that leaked local rows
+        into the paid set (the 2026-06-21 phantom-regression) can never return.
         """
-        from services import cost_ledger
+        called = {"n": 0}
 
+        async def _spy(pool, *, window="day", strict=False, site_config=None):
+            called["n"] += 1
+            return SpendBreakdown(api_usd=0.0, total_usd=0.0)
+
+        monkeypatch.setattr(cost_ledger, "get_spend", _spy)
         pool = MagicMock()
-        pool.fetchrow = AsyncMock(return_value={"total": 0.0})
         guard = CostGuard(pool=pool)
         await guard.get_daily_spend()
-        sql = pool.fetchrow.await_args.args[0]
-
-        # Rents the ledger's single api-axis definition (no drift).
-        assert cost_ledger.API_AXIS_PREDICATE in sql
-        assert "NOT LIKE 'electricity%'" in sql
-        # The stale, router-blind provider-name denylist must never come back.
-        assert "'ollama'" not in sql
-        assert "ollama_native" not in sql
-        assert "NOT IN (" not in sql
+        assert called["n"] == 1              # delegated to the ledger seam
+        pool.fetchrow.assert_not_called()    # no hand-rolled inline SQL
 
 
 class TestPreflightAlertPath:
@@ -416,6 +471,74 @@ class TestPreflightAlertPath:
             ))
         # The warning text starts with [COST_GUARD] approaching daily cap
         assert any("approaching daily cap" in r.message for r in caplog.records)
+
+
+class TestSoftAlertBothAxes:
+    """P2 — the soft alert fires on **both axes** via ``total_usd`` (api +
+    electricity) and emits an advisory finding, but NEVER blocks. The hard cap
+    stays on ``api_usd``; this alert is the earlier "combined burn is
+    approaching the daily budget" signal, routed to Discord (severity=warn).
+    """
+
+    @pytest.mark.asyncio
+    async def test_preflight_alert_keys_on_total_not_api(self) -> None:
+        # api=0.5 is nowhere near the $2 cap (25%), but api+electricity=1.7 is
+        # 85% of it → the both-axes alert must fire even though paid spend is low.
+        guard = _make_guard(daily=0.5, monthly=1.0,
+                            daily_limit=2.0, daily_electricity=1.2)
+        with patch("services.cost_guard.emit_finding") as emit:
+            await guard.preflight(CostEstimate(
+                estimated_usd=0.0, is_local=False, model="x", provider="x",
+            ))
+        emit.assert_called_once()
+        kwargs = emit.call_args.kwargs
+        assert kwargs["severity"] == "warn"        # routine → Discord, not a page
+        assert kwargs["source"] == "cost_guard"
+        assert kwargs.get("dedup_key")             # cooldown-able so it can't spam
+        assert kwargs["extra"]["daily_total_usd"] == pytest.approx(1.7)
+
+    @pytest.mark.asyncio
+    async def test_preflight_no_finding_below_threshold(self) -> None:
+        # api+electricity=0.7 = 35% of the $2 cap → below the 80% threshold.
+        guard = _make_guard(daily=0.2, monthly=1.0,
+                            daily_limit=2.0, daily_electricity=0.5)
+        with patch("services.cost_guard.emit_finding") as emit:
+            await guard.preflight(CostEstimate(
+                estimated_usd=0.0, is_local=False, model="x", provider="x",
+            ))
+        emit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_preflight_alert_never_blocks(self) -> None:
+        # Total over the alert threshold but api under the hard cap → advisory
+        # only: preflight returns without raising.
+        guard = _make_guard(daily=0.5, monthly=1.0,
+                            daily_limit=2.0, daily_electricity=1.4)
+        with patch("services.cost_guard.emit_finding"):
+            await guard.preflight(CostEstimate(
+                estimated_usd=0.0, is_local=False, model="x", provider="x",
+            ))  # no raise
+
+    @pytest.mark.asyncio
+    async def test_check_budget_alert_keys_on_total(self) -> None:
+        guard = _make_guard(daily=0.5, monthly=1.0,
+                            daily_limit=2.0, daily_electricity=1.2)
+        with patch("services.cost_guard.emit_finding") as emit:
+            await guard.check_budget(
+                provider="openai", model="gpt-4o", estimated_cost_usd=0.05,
+            )
+        emit.assert_called_once()
+        assert emit.call_args.kwargs["severity"] == "warn"
+
+    @pytest.mark.asyncio
+    async def test_check_budget_no_finding_below_threshold(self) -> None:
+        guard = _make_guard(daily=0.2, monthly=1.0,
+                            daily_limit=2.0, daily_electricity=0.3)
+        with patch("services.cost_guard.emit_finding") as emit:
+            await guard.check_budget(
+                provider="openai", model="gpt-4o", estimated_cost_usd=0.05,
+            )
+        emit.assert_not_called()
 
 
 class TestRecordAuditFallback:

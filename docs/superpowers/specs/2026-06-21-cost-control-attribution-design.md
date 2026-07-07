@@ -245,6 +245,16 @@ The `litellm`-provider clause is what catches the `$5.60` `llama3.2:3b` pollutio
 
 ### 5. P2 — total-cost gate (API hard, total alert)
 
+> **✅ Shipped 2026-07-07** (follow-up to #2162 / #2168). `cost_guard`'s
+> `preflight` + `check_budget` now read spend through `cost_ledger.get_spend`
+> (via a private `_daily_breakdown` / `_monthly_breakdown` seam) instead of an
+> inline `SUM`: the hard cap gates on `api_usd`, and a new advisory
+> `cost_budget_alert` finding (`severity='warn'` → Discord) fires when projected
+> daily `total_usd` crosses `cost_alert_threshold_pct` — both axes, never
+> blocks. §9 (budget-system unification) already shipped with P1. No new config
+> keys — the unlisted finding kind routes loud by default (`_delivery_for` →
+> `route`).
+
 `cost_guard.check_budget` / `preflight` replace their inline `_sum_cost` with
 `cost_ledger.get_spend(pool, window="day"|"month", strict=True)` and gate on
 `api_usd`:
@@ -423,12 +433,13 @@ Per `feedback_grafana_everything` + `feedback_visual_verification`:
 
 ## Implementation phasing
 
-1. **P1 — attribution (foundation).** Write invariant + `cost_ledger` +
-   measured/fallback electricity + backfill + dashboard split + budget-system
-   unification. Ship and verify before anything else.
+1. **P1 — attribution (foundation).** ✅ Shipped (#1852). Write invariant +
+   `cost_ledger` + measured/fallback electricity + backfill + dashboard split +
+   budget-system unification. Ship and verify before anything else.
 2. **P2 — total-cost gate** onto the ledger (`api_usd` hard, `total_usd` alert).
+   ✅ Shipped 2026-07-07.
 3. **P3 — spend throttle** at the new-work seam.
-4. **P4 — per-axis anomaly** split.
+4. **P4 — per-axis anomaly** split. ✅ Shipped 2026-07-07 (#2168).
 5. **P5 — savings view** (future / low-priority).
 
 Each phase is independently shippable; 2–4 depend only on P1.

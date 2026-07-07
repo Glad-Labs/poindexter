@@ -2,7 +2,7 @@
 
 **File:** `src/cofounder_agent/services/cost_guard.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_cost_guard.py`
-**Last reviewed:** 2026-04-30
+**Last reviewed:** 2026-07-07
 
 ## What it does
 
@@ -42,9 +42,11 @@ us-east-1" on energy as well as dollars.
   persists the call. Auto-fills `cost_usd` and `electricity_kwh` if
   caller passed `None`. Returns the dollar cost actually written.
 - `await guard.get_daily_spend() -> float` / `get_monthly_spend()` —
-  current genuinely-paid cloud spend in USD (the paid-API axis: every
-  non-`electricity%` `cost_type` row; local inference/media rows are `$0`
-  by the write invariant, so they contribute nothing).
+  current genuinely-paid cloud spend in USD (the ledger's **api axis**).
+  Both delegate to `cost_ledger.get_spend(window=...).api_usd` — the single
+  spend-read seam the cap and the operator dashboards share, so the cap can
+  never drift from the ledger. Local inference/media rows are `$0` by the
+  write invariant, so they contribute nothing.
 - `await guard.estimate_cloud_kwh(...) / guard.estimate_local_kwh(*, duration_ms)` —
   energy estimators in kWh.
 - `guard.kwh_to_usd(kwh) -> float` — convert energy at the configured
@@ -68,8 +70,11 @@ All from `app_settings` via `site_config`:
 
 - `daily_spend_limit_usd` (default `2.00`).
 - `monthly_spend_limit_usd` (default `100.00`).
-- `cost_alert_threshold_pct` (default `80.0`) — soft alert (log only,
-  doesn't block) when daily spend crosses this percentage of the cap.
+- `cost_alert_threshold_pct` (default `80.0`) — soft alert when projected
+  daily **total** spend (both axes: paid API + measured electricity)
+  crosses this percentage of the daily cap. Advisory only: it logs AND
+  emits a `cost_budget_alert` finding (`severity='warn'` → Discord), never
+  blocks. The hard cap gates on the api axis separately.
 - `electricity_rate_kwh` (default `0.16` USD/kWh — EIA 2024 US
   residential avg). Refreshed daily by `UpdateUtilityRatesJob` from
   the EIA API.
@@ -106,11 +111,14 @@ Known cloud providers: `gemini`, `openai`, `anthropic`, `openrouter`.
 ## Dependencies
 
 - **Reads from:**
-  - `cost_logs` for daily/monthly spend sums (the paid-API axis —
-    `COALESCE(cost_type,'inference') NOT LIKE 'electricity%'`, shared with the
-    `cost_ledger` seam via `API_AXIS_PREDICATE`; local rows are `$0` by the
-    write invariant so they self-exclude, and home-power `electricity` rows are
-    separated by `cost_type`, not by a since-retired provider-name denylist).
+  - `cost_logs` **only through `cost_ledger.get_spend`** (P2) — the single
+    read seam that owns the api-vs-electricity split. The hard cap reads
+    `api_usd` (genuinely-paid cloud); the soft alert reads `total_usd` (both
+    axes). Renting the seam means the cap and the operator dashboards read the
+    same meter and the api-axis predicate lives in exactly one place — no
+    re-derived provider-name denylist that can drift. Local rows are `$0` by the
+    write invariant so they self-exclude; home-power `electricity` rows are
+    separated by `cost_type`.
   - Injected `site_config` for limit + rate + energy settings.
   - `services.cost_lookup` (post-#199, LiteLLM-backed with 2,600+
     provider/model combos) — referenced in the module docstring;
@@ -122,6 +130,11 @@ Known cloud providers: `gemini`, `openai`, `anthropic`, `openrouter`.
     `error`) — best-effort, fired only when the cost_logs INSERT
     itself fails so the alert pipeline catches a budget tracker
     going dark (Glad-Labs/poindexter#322 finding 3).
+  - `audit_log` (event_type `finding`, kind `cost_budget_alert`,
+    severity `warn`) — the soft both-axes budget alert, emitted via
+    `utils.findings.emit_finding` when projected daily total spend
+    crosses `cost_alert_threshold_pct`. Advisory; routes to Discord
+    (unlisted kind → `route` by severity); never blocks.
 - **External APIs:** none directly. Provider plugins call out; the
   guard only watches their wallets.
 

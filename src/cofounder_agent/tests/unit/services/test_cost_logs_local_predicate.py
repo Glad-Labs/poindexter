@@ -9,9 +9,10 @@ with ``cost_usd=0`` — the P1 write invariant enforced in
 ``NOT IN ('electricity','ollama','ollama_native')`` that omits ``'litellm'``)
 silently matched wrong/zero rows:
 
-* ``cost_guard._sum_cost`` — the paid-spend cap left litellm-tagged local rows
-  in the summed set (a phantom-regression landmine that false-tripped the cap
-  on 2026-06-21).
+* ``cost_guard`` — the paid-spend cap left litellm-tagged local rows in the
+  summed set (a phantom-regression landmine that false-tripped the cap on
+  2026-06-21). P2 then routed the cap's read through ``cost_ledger.get_spend``
+  entirely, so it can't even re-derive its own SQL.
 * ``morning_brief`` — every local call was miscounted as cloud spend.
 * ``admin_db`` — the ``model_performance.electricity_cost_usd`` mirror keyed on
   a tag that never matches, mis-attributing a stray cost as electricity.
@@ -62,8 +63,10 @@ def test_api_axis_predicate_is_the_electricity_axis() -> None:
 
 def test_cost_guard_cap_rents_the_ledger_predicate() -> None:
     src = _src("cost_guard.py")
-    # Rents the shared definition rather than re-deriving a filter that drifts.
-    assert "API_AXIS_PREDICATE" in src
+    # P2: the cap reads spend through the ledger SEAM (get_spend), the strongest
+    # form of "no drift" — it doesn't even interpolate the predicate into its own
+    # SQL, let alone re-derive a provider-name filter.
+    assert "cost_ledger.get_spend" in src
     # The stale provider-name denylist must never come back.
     assert not _EXCLUSION_TUPLE.search(src)
     assert "ollama_native" not in src

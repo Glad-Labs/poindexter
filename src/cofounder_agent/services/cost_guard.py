@@ -43,7 +43,9 @@ import logging
 from dataclasses import dataclass
 from typing import Any
 
-from services.cost_ledger import API_AXIS_PREDICATE
+from services import cost_ledger
+from services.cost_ledger import SpendBreakdown
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -224,57 +226,113 @@ class CostGuard:
     # Spend lookups
     # ------------------------------------------------------------------
 
-    async def _sum_cost(self, window_sql: str, *, strict: bool = False) -> float:
-        """Sum genuinely-paid cloud ``cost_usd`` from cost_logs over ``window_sql``.
+    async def _breakdown(
+        self, window: cost_ledger.Window, *, strict: bool = False
+    ) -> SpendBreakdown:
+        """Read the spend breakdown for ``window`` from the single ledger seam.
 
-        ``window_sql`` is a fragment such as ``"date_trunc('day', NOW())"``
-        substituted directly into the WHERE clause. The cap counts only the
-        **paid-API axis** (``cost_ledger.API_AXIS_PREDICATE`` — every
-        non-electricity row): local inference/media rows are ``$0`` by the P1
-        write invariant, so they contribute nothing, and electricity rows are
-        excluded by ``cost_type``.
+        ``cost_ledger.get_spend`` owns the api-vs-electricity split (and the
+        api-axis predicate); renting it means the cap and the operator
+        dashboards read the SAME meter — the cost_guard cap can never drift from
+        the ledger. Returns api / electricity / total for the window:
 
-        This replaced a provider-name denylist that excluded electricity and the
-        self-hosted backends by name but omitted the ``litellm`` router tag that
-        local inference has carried since the 2026-05-16 cutover — so local rows
-        leaked into the paid set (a phantom-regression landmine that false-tripped
-        the cap on 2026-06-21) while the self-hosted names it did list matched no
-        rows at all. Renting the ledger's single definition keeps the cap and the
-        operator dashboards on one meter.
+        - the hard cap keys on ``api_usd`` (genuinely-paid cloud — local rows
+          are ``$0`` by the P1 write invariant, electricity excluded by axis),
+        - the soft alert keys on ``total_usd`` (both axes).
 
-        TODO(cost-attribution P2): swap this inline SUM for
-        ``cost_ledger.get_spend(pool, window=..., strict=strict).api_usd`` when
-        P2 lands — the predicate already matches, so the numbers won't move.
-        See ``docs/superpowers/specs/2026-06-21-cost-control-attribution-design.md``.
+        ``strict=True`` re-raises on a ledger read error so the enforcement path
+        fails CLOSED (budget unverifiable → refuse) rather than silently reading
+        ``$0`` and admitting unbounded spend. ``pool=None`` (no DB wired) → a
+        zeroed breakdown.
         """
         if self._pool is None:
-            return 0.0
-        try:
-            row = await self._pool.fetchrow(
-                f"""
-                SELECT COALESCE(SUM(cost_usd), 0.0) AS total
-                FROM cost_logs
-                WHERE created_at >= {window_sql}
-                  AND {API_AXIS_PREDICATE}
-                """,  # nosec B608  # both interpolations are hardcoded literals: window_sql from get_daily/monthly_spend, API_AXIS_PREDICATE is a module constant
-            )
-            return float(row["total"]) if row else 0.0
-        except Exception as e:
-            # A transient cost_logs read MUST NOT silently read as $0 —
-            # that fails OPEN and disables the spend cap. Log loud (so
-            # GlitchTip pages) and, on the enforcement path, fail CLOSED.
-            logger.error(
-                "[COST_GUARD] cost_logs query failed: %s", e, exc_info=True,
-            )
-            if strict:
-                raise
-            return 0.0
+            return SpendBreakdown()
+        return await cost_ledger.get_spend(
+            self._pool, window=window, strict=strict, site_config=self._site_config,
+        )
+
+    async def _daily_breakdown(self, *, strict: bool = False) -> SpendBreakdown:
+        return await self._breakdown("day", strict=strict)
+
+    async def _monthly_breakdown(self, *, strict: bool = False) -> SpendBreakdown:
+        return await self._breakdown("month", strict=strict)
 
     async def get_daily_spend(self, *, strict: bool = False) -> float:
-        return await self._sum_cost("date_trunc('day', NOW())", strict=strict)
+        """Genuinely-paid cloud spend today (the ledger's api axis)."""
+        return (await self._daily_breakdown(strict=strict)).api_usd
 
     async def get_monthly_spend(self, *, strict: bool = False) -> float:
-        return await self._sum_cost("date_trunc('month', NOW())", strict=strict)
+        """Genuinely-paid cloud spend this month (the ledger's api axis)."""
+        return (await self._monthly_breakdown(strict=strict)).api_usd
+
+    # ------------------------------------------------------------------
+    # Soft alert — both axes, advisory
+    # ------------------------------------------------------------------
+
+    def _emit_soft_alert(
+        self,
+        *,
+        daily_total: float,
+        estimate: float,
+        daily_limit: float,
+        provider: str | None = None,
+        model: str | None = None,
+    ) -> None:
+        """Advisory both-axes budget alert — log + finding, NEVER blocks.
+
+        Fires when projected daily **total** spend (paid API + measured
+        electricity + this call's estimate) reaches ``cost_alert_threshold_pct``
+        of the daily cap. Keyed on ``total_usd`` — not the api axis the hard gate
+        uses — so combined burn approaching the budget is surfaced early. Emits a
+        ``cost_budget_alert`` finding at ``severity='warn'`` (routine → Discord,
+        not a Telegram page) with a stable ``dedup_key`` so the findings
+        dispatcher can cool it down. Purely advisory: the caller never blocks on
+        it (the hard cap gates on ``api_usd`` separately).
+        """
+        if daily_limit <= 0:
+            return
+        alert_pct = self._limit("cost_alert_threshold_pct", 80.0) / 100.0
+        projected = daily_total + estimate
+        if projected < daily_limit * alert_pct:
+            return
+
+        pct = 100.0 * projected / daily_limit
+        suffix = f" (provider={provider} model={model})" if provider else ""
+        logger.warning(
+            "[COST_GUARD] approaching daily cap (%.1f%%): total $%.4f + $%.4f "
+            "vs $%.2f%s",
+            pct, daily_total, estimate, daily_limit, suffix,
+        )
+        emit_finding(
+            source="cost_guard",
+            kind="cost_budget_alert",
+            severity="warn",
+            title=(
+                f"daily spend at {pct:.0f}% of cap "
+                f"(${projected:.2f} of ${daily_limit:.2f})"
+            ),
+            body=(
+                "## Daily budget alert\n\n"
+                f"Projected daily **total** spend has reached **{pct:.0f}%** of "
+                f"the `${daily_limit:.2f}` daily cap.\n\n"
+                f"- Paid API + measured electricity so far: `${daily_total:.4f}`\n"
+                f"- This call's estimate: `${estimate:.4f}`\n"
+                f"- Projected total: `${projected:.4f}` / `${daily_limit:.2f}`\n\n"
+                "Advisory only — the hard cap gates on the API axis and has NOT "
+                "been exceeded. This both-axes signal surfaces combined burn "
+                "(paid API + measured electricity) approaching the daily budget."
+            ),
+            dedup_key="cost_budget_alert:daily",
+            extra={
+                "daily_total_usd": round(daily_total, 4),
+                "estimate_usd": round(estimate, 4),
+                "projected_usd": round(projected, 4),
+                "daily_limit_usd": round(daily_limit, 4),
+                "pct_of_cap": round(pct, 1),
+                "provider": provider,
+                "model": model,
+            },
+        )
 
     # ------------------------------------------------------------------
     # Estimation
@@ -339,12 +397,12 @@ class CostGuard:
         daily_limit = self._limit("daily_spend_limit_usd", 2.0)
         monthly_limit = self._limit("monthly_spend_limit_usd", 100.0)
 
-        # Enforcement path: read STRICT so a cost_logs query failure
-        # fails closed (raises) instead of silently reading $0 and
-        # admitting unbounded cloud spend (the fail-open bug).
+        # Enforcement path: read the ledger STRICT so a cost_logs read failure
+        # fails closed (raises) instead of silently reading $0 and admitting
+        # unbounded cloud spend (the fail-open bug).
         try:
-            daily = await self.get_daily_spend(strict=True)
-            monthly = await self.get_monthly_spend(strict=True)
+            daily_bd = await self._daily_breakdown(strict=True)
+            monthly_bd = await self._monthly_breakdown(strict=True)
         except CostGuardExhausted:
             raise
         except Exception as e:
@@ -356,33 +414,35 @@ class CostGuard:
                 limit_usd=0.0,
             ) from e
 
-        if monthly + estimate.estimated_usd > monthly_limit:
+        # Hard cap keys on the API axis (genuinely-paid cloud). Local rows are $0
+        # by the P1 write invariant; measured electricity has its own ceiling (P3).
+        daily_api = daily_bd.api_usd
+        monthly_api = monthly_bd.api_usd
+
+        if monthly_api + estimate.estimated_usd > monthly_limit:
             raise CostGuardExhausted(
-                f"Monthly spend cap reached: ${monthly:.4f} + "
+                f"Monthly spend cap reached: ${monthly_api:.4f} + "
                 f"${estimate.estimated_usd:.4f} > ${monthly_limit:.2f}",
                 scope="monthly",
-                spent_usd=monthly,
+                spent_usd=monthly_api,
                 limit_usd=monthly_limit,
             )
 
-        if daily + estimate.estimated_usd > daily_limit:
+        if daily_api + estimate.estimated_usd > daily_limit:
             raise CostGuardExhausted(
-                f"Daily spend cap reached: ${daily:.4f} + "
+                f"Daily spend cap reached: ${daily_api:.4f} + "
                 f"${estimate.estimated_usd:.4f} > ${daily_limit:.2f}",
                 scope="daily",
-                spent_usd=daily,
+                spent_usd=daily_api,
                 limit_usd=daily_limit,
             )
 
-        # Soft alert path — log only, don't block.
-        alert_pct = self._limit("cost_alert_threshold_pct", 80.0) / 100.0
-        if daily_limit > 0 and (daily + estimate.estimated_usd) >= daily_limit * alert_pct:
-            logger.warning(
-                "[COST_GUARD] approaching daily cap (%.1f%%): "
-                "$%.4f + $%.4f vs $%.2f",
-                100.0 * (daily + estimate.estimated_usd) / daily_limit,
-                daily, estimate.estimated_usd, daily_limit,
-            )
+        # Soft alert — both axes via total_usd; advisory (log + finding), never blocks.
+        self._emit_soft_alert(
+            daily_total=daily_bd.total_usd,
+            estimate=estimate.estimated_usd,
+            daily_limit=daily_limit,
+        )
 
     async def record(
         self,
@@ -690,7 +750,7 @@ class CostGuard:
         # guards against (audit M4). check_budget is the helper the cloud
         # providers + dispatcher use, so it must share the fail-closed posture.
         try:
-            daily = await self.get_daily_spend(strict=True)
+            daily_bd = await self._daily_breakdown(strict=True)
         except CostGuardExhausted:
             raise
         except Exception as e:
@@ -703,19 +763,20 @@ class CostGuard:
                 provider=provider,
                 model=model,
             ) from e
-        if daily_limit > 0 and (daily + estimated) > daily_limit:
+        daily_api = daily_bd.api_usd
+        if daily_limit > 0 and (daily_api + estimated) > daily_limit:
             raise CostGuardExhausted(
-                f"Daily spend cap reached: ${daily:.4f} + ${estimated:.4f} "
+                f"Daily spend cap reached: ${daily_api:.4f} + ${estimated:.4f} "
                 f"> ${daily_limit:.2f}",
                 scope="daily",
-                spent_usd=daily,
+                spent_usd=daily_api,
                 limit_usd=daily_limit,
                 provider=provider,
                 model=model,
             )
 
         try:
-            monthly = await self.get_monthly_spend(strict=True)
+            monthly_bd = await self._monthly_breakdown(strict=True)
         except CostGuardExhausted:
             raise
         except Exception as e:
@@ -728,26 +789,26 @@ class CostGuard:
                 provider=provider,
                 model=model,
             ) from e
-        if monthly_limit > 0 and (monthly + estimated) > monthly_limit:
+        monthly_api = monthly_bd.api_usd
+        if monthly_limit > 0 and (monthly_api + estimated) > monthly_limit:
             raise CostGuardExhausted(
-                f"Monthly spend cap reached: ${monthly:.4f} + "
+                f"Monthly spend cap reached: ${monthly_api:.4f} + "
                 f"${estimated:.4f} > ${monthly_limit:.2f}",
                 scope="monthly",
-                spent_usd=monthly,
+                spent_usd=monthly_api,
                 limit_usd=monthly_limit,
                 provider=provider,
                 model=model,
             )
 
-        # Soft alert path — log only, don't block.
-        alert_pct = self._limit("cost_alert_threshold_pct", 80.0) / 100.0
-        if daily_limit > 0 and (daily + estimated) >= daily_limit * alert_pct:
-            logger.warning(
-                "[COST_GUARD] approaching daily cap (%.1f%%): "
-                "$%.4f + $%.4f vs $%.2f (provider=%s model=%s)",
-                100.0 * (daily + estimated) / daily_limit,
-                daily, estimated, daily_limit, provider, model,
-            )
+        # Soft alert — both axes via total_usd; advisory (log + finding), never blocks.
+        self._emit_soft_alert(
+            daily_total=daily_bd.total_usd,
+            estimate=estimated,
+            daily_limit=daily_limit,
+            provider=provider,
+            model=model,
+        )
 
     async def record_usage(
         self,
