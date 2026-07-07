@@ -75,6 +75,7 @@ _WORKER_ROUTES = [
     ("routes.settings_routes", "router", "settings_router", "settings read/write"),
     ("routes.metrics_routes", "metrics_router", "metrics_router", "metrics & analytics"),
     ("routes.findings_routes", "router", "findings_router", "probe-findings triage summary (/api/findings, #461)"),
+    ("routes.qa_routes", "router", "qa_router", "QA pass-rate trend for the operator console (/api/qa/trend)"),
     ("routes.logs_routes", "router", "logs_router", "Loki log proxy for the operator console (/api/logs)"),
     ("routes.traces_routes", "router", "traces_router", "Langfuse trace proxy for the operator console (/api/traces)"),
     ("routes.seo_routes", "router", "seo_router", "SEO-refresh opportunity summary (/api/seo, #1466)"),

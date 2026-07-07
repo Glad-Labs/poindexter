@@ -174,3 +174,50 @@ async def read_findings(
         "watermark": watermark,
         "hours": hours,
     }
+
+
+async def get_findings_trend(pool: Any, *, range_seconds: int, step_seconds: int) -> dict[str, Any]:
+    """Findings-count time-series, one series per severity, over an epoch-floored
+    ``step_seconds`` grid of ``audit_log`` ``event_type='finding'`` rows. An empty
+    bucket is 0 (zero findings is a real value, not a gap). SQL lives here."""
+    from services.qa_trend import _clamp  # single clamp source
+
+    r, s = _clamp(range_seconds, step_seconds)
+    rows = await pool.fetch(
+        """
+        WITH grid AS (
+            -- EXTRACT(epoch) is numeric (PG 14+) → generate_series(numeric,numeric,numeric).
+            SELECT gs AS bucket FROM generate_series(
+                floor(extract(epoch FROM NOW() - ($1 * INTERVAL '1 second')) / $2) * $2,
+                floor(extract(epoch FROM NOW()) / $2) * $2,
+                $2::numeric
+            ) AS gs
+        ),
+        sev AS (
+            SELECT DISTINCT LOWER(severity) AS severity FROM audit_log
+            WHERE event_type = 'finding'
+              AND timestamp > NOW() - ($1 * INTERVAL '1 second')
+        ),
+        agg AS (
+            SELECT floor(extract(epoch FROM timestamp) / $2) * $2 AS bucket,
+                   LOWER(severity) AS severity, COUNT(*) AS c
+            FROM audit_log
+            WHERE event_type = 'finding'
+              AND timestamp > NOW() - ($1 * INTERVAL '1 second')
+            GROUP BY 1, 2
+        )
+        SELECT g.bucket AS bucket, sev.severity AS severity,
+               COALESCE(a.c, 0) AS c
+        FROM grid g CROSS JOIN sev
+        LEFT JOIN agg a ON a.bucket = g.bucket AND a.severity = sev.severity
+        ORDER BY sev.severity, g.bucket
+        """,
+        r,
+        s,
+    )
+    by_sev: dict[str, list] = {}
+    for row in rows:
+        by_sev.setdefault(row["severity"], []).append(
+            [int(row["bucket"]) * 1000, int(row["c"])]
+        )
+    return {"series": [{"label": sev, "points": pts} for sev, pts in by_sev.items()]}

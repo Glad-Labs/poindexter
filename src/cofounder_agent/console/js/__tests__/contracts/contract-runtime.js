@@ -111,7 +111,10 @@ function assertRequest(call, expected, name) {
     assert.equal(call.method, expected.method, `[${name}] method`);
   }
   if (expected.host === 'prometheus') {
-    assert.equal(url.pathname, '/api/v1/query', `[${name}] prometheus path`);
+    const promPath = expected.rangeQuery
+      ? '/api/v1/query_range'
+      : '/api/v1/query';
+    assert.equal(url.pathname, promPath, `[${name}] prometheus path`);
     assert.equal(
       url.searchParams.get('query'),
       expected.query,

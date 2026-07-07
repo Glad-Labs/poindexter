@@ -1589,7 +1589,8 @@ function TracesPanel({ traces, fresh }) {
 // UIDs/panelIds are the local Grafana boards. Confirm each uid via
 // search_dashboards / the board URL before relying on it.
 const GRAFANA_EMBEDS = [
-  { uid: 'cost-analytics', panelId: 2, label: 'Spend over time' },
+  // Spend-over-time is now the native History panel (sub-project C). GPU + DB
+  // stay embedded until sub-projects D/E replace them with native panels.
   { uid: 'hardware-power', panelId: 4, label: 'GPU history' },
   { uid: 'database', panelId: 2, label: 'DB connections' },
 ];

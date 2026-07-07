@@ -34,6 +34,8 @@
     <!-- Plain-JS globals first: window.PX (data), window.PX_SETTINGS, window.PX.api -->
     <script src="js/data.js"></script>
     <script src="js/settings-data.js"></script>
+    <!-- Pure chart-math (PX.ts) — dependency of api.js trend methods + charts.jsx. -->
+    <script src="js/timeseries.js"></script>
     <script src="js/api.js"></script>
     <!-- Pure live-KPI mapper (PX.kpisFromLive) — must load before app.jsx. -->
     <script src="js/kpis.js"></script>
@@ -54,6 +56,7 @@
       data-presets="react"
       src="js/panels2.jsx"
     ></script>
+    <script type="text/babel" data-presets="react" src="js/charts.jsx"></script>
     <script type="text/babel" data-presets="react" src="js/drawer.jsx"></script>
     <script type="text/babel" data-presets="react" src="js/modes.jsx"></script>
     <script

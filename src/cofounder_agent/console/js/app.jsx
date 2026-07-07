@@ -1464,6 +1464,7 @@ function App() {
                 />
               </div>
               <div id="sec-telemetry">
+                <HistoryPanel />
                 <LogsPanel
                   logs={logs}
                   service={logFilter.service}

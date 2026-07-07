@@ -1503,3 +1503,71 @@ button {
   font-style: italic;
   opacity: 0.85;
 }
+
+/* ── Telemetry: native time-series history (sub-project C) ───────── */
+/* RangeControl — a small segmented control, mirroring the rail's active accent. */
+.rangectl {
+  display: flex;
+  gap: 2px;
+}
+.rangectl__btn {
+  font-family: var(--gl-font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  padding: 3px 8px;
+  background: transparent;
+  border: 1px solid var(--gl-hairline);
+  color: var(--gl-text-dim);
+  cursor: pointer;
+  transition:
+    color 0.15s ease,
+    background 0.15s ease,
+    border-color 0.15s ease;
+}
+.rangectl__btn:hover {
+  color: var(--gl-text);
+  background: var(--gl-cyan-bg);
+}
+.rangectl__btn.is-active {
+  color: var(--gl-cyan);
+  border-color: var(--gl-cyan-dim);
+  background: var(--gl-cyan-bg);
+}
+
+/* Responsive chart grid — two-up in the ~585px telemetry pane, one-up on narrow,
+   three-up if the pane ever widens. auto-fit + a 260px floor keeps charts legible. */
+.tc-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 10px;
+}
+.tc-panel {
+  min-width: 0; /* let charts shrink inside the grid track */
+}
+.tc {
+  padding: 8px 10px 4px;
+}
+.tc svg {
+  overflow: visible;
+}
+/* Honest empty-state — no fabricated series, just a dim note (colorblind-safe). */
+.tc-empty {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--gl-font-mono);
+  font-size: 11px;
+  color: var(--gl-text-dim);
+  opacity: 0.7;
+}
+/* Hover readout under a chart. */
+.tc-readout {
+  font-family: var(--gl-font-mono);
+  font-size: 10px;
+  color: var(--gl-text-dim);
+  padding: 2px 10px 8px;
+  letter-spacing: 0.03em;
+}
+.tc-readout b {
+  color: var(--gl-text);
+}

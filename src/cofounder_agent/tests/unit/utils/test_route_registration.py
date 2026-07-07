@@ -130,8 +130,12 @@ class TestRouteManifestStructure:
         (console Telemetry proxies at /api/logs + /api/traces).
         Updated 2026-07-07 (#347 Plan B): added remediation_router
         (firefighter LLM long-tail action selector at /api/remediation/select).
+        Updated 2026-07-07 (PR #2192, console sub-project C): added qa_router
+        (QA pass-rate trend for the operator console at /api/qa/trend). The
+        companion /api/findings/trend route rides the existing findings_router,
+        so it adds no manifest entry.
         """
-        assert len(_WORKER_ROUTES) == 32
+        assert len(_WORKER_ROUTES) == 33
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

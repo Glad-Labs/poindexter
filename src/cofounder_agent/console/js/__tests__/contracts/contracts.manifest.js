@@ -339,4 +339,82 @@ module.exports = [
       });
     },
   },
+
+  // ── C: time-series trends (Prometheus range) — request-only, no OpenAPI ──
+  {
+    name: 'httpRateSeries',
+    invoke: (api) => api.httpRateSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query: 'sum(rate(poindexter_http_requests_total[60s]))',
+    },
+  },
+  {
+    name: 'httpErrorSeries',
+    invoke: (api) => api.httpErrorSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query:
+        'sum(rate(poindexter_http_requests_total{status=~"5.."}[60s])) ' +
+        '/ sum(rate(poindexter_http_requests_total[60s])) * 100',
+    },
+  },
+  {
+    name: 'httpLatencySeries',
+    invoke: (api) => api.httpLatencySeries('1h'),
+    request: [
+      {
+        host: 'prometheus',
+        rangeQuery: true,
+        query:
+          'histogram_quantile(0.95, sum(rate(poindexter_http_request_duration_seconds_bucket[60s])) by (le))',
+      },
+      {
+        host: 'prometheus',
+        rangeQuery: true,
+        query:
+          'histogram_quantile(0.99, sum(rate(poindexter_http_request_duration_seconds_bucket[60s])) by (le))',
+      },
+    ],
+  },
+  {
+    name: 'throughputSeries',
+    invoke: (api) => api.throughputSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query: 'poindexter_posts_total{status="published"}',
+    },
+  },
+  {
+    name: 'costSeries',
+    invoke: (api) => api.costSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query: 'poindexter_daily_spend_usd',
+    },
+  },
+
+  // ── C: time-series trends (worker / audit_log) — request-only, no OpenAPI ──
+  {
+    name: 'qaTrend',
+    invoke: (api) => api.qaTrend('1h'),
+    request: {
+      method: 'GET',
+      path: '/api/qa/trend',
+      query: { range_seconds: 3600, step_seconds: 15 },
+    },
+  },
+  {
+    name: 'findingsTrend',
+    invoke: (api) => api.findingsTrend('1h'),
+    request: {
+      method: 'GET',
+      path: '/api/findings/trend',
+      query: { range_seconds: 3600, step_seconds: 15 },
+    },
+  },
 ];

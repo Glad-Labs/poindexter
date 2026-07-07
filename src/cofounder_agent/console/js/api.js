@@ -209,6 +209,56 @@
     }
   }
 
+  // Prometheus RANGE query → canonical series {series:[{label,points:[[tMs,v|null]]}]}.
+  // The reusable history primitive (sub-projects C/D/E). Best-effort like its
+  // instant-query siblings: Prometheus unreachable / non-200 / abort → {series:[]},
+  // never throws. Own AbortController — a hung Prometheus can't hang a poll.
+  async function promRange(promql, opts) {
+    const o = opts || {};
+    const end = Math.floor(Date.now() / 1000);
+    const start = end - (o.rangeSeconds || 3600);
+    const step = o.stepSeconds || 60;
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(), HTTP_TIMEOUT_MS);
+    try {
+      const u =
+        cfg.prometheus +
+        '/api/v1/query_range?query=' +
+        encodeURIComponent(promql) +
+        '&start=' +
+        start +
+        '&end=' +
+        end +
+        '&step=' +
+        step;
+      const res = await fetch(u, { signal: ctrl.signal });
+      if (!res.ok) return { series: [] };
+      const j = await res.json();
+      const result = (j && j.data && j.data.result) || [];
+      return { series: window.PX.ts.matrixToSeries(result) };
+    } catch {
+      return { series: [] }; // unreachable / aborted → honest-empty, never throw.
+    } finally {
+      clearTimeout(timer);
+    }
+  }
+
+  // Range key → {rangeSeconds, stepSeconds}: the bucket grid, derived ONCE
+  // client-side (PX.ts) so the worker trend endpoints never re-derive it.
+  function rangeOpts(range) {
+    const rs = window.PX.ts.RANGES[range] || 3600;
+    return { rangeSeconds: rs, stepSeconds: window.PX.ts.deriveStep(rs) };
+  }
+  // Rate/quantile window for rate()/…_bucket — never below 60s.
+  function winFor(o) {
+    return Math.max(o.stepSeconds, 60) + 's';
+  }
+  // promRange + force one human label on a single-series aggregate result.
+  async function labelledRange(promql, opts, label) {
+    const r = await promRange(promql, opts);
+    return { series: r.series.map((s) => ({ ...s, label })) };
+  }
+
   // ISO timestamp → compact relative age ('22m', '3h', '2d'). Used to render
   // server-side created_at columns the same way the mock's ago() helper does.
   function relAge(iso) {
@@ -426,6 +476,7 @@
     // Prometheus instant-query helpers (reused by native hardware/DB panels).
     promScalar,
     promVector,
+    promRange,
     isLive: () => cfg.live,
     setLive(on) {
       cfg.live = !!on;
@@ -1146,6 +1197,99 @@
         utilHist: util != null ? Array(g.utilHist.length).fill(u) : g.utilHist,
         tempHist: temp != null ? Array(g.tempHist.length).fill(t) : g.tempHist,
       };
+    },
+
+    // ── time-series trends (Prometheus, via promRange) ──────────
+    // Verified metric names/labels: poindexter_http_requests_total {method,route,
+    // status}; poindexter_http_request_duration_seconds_bucket {le};
+    // poindexter_posts_total Gauge by status; poindexter_daily_spend_usd.
+    // pick-wrapped like gpu(): mock mode shows "no data" (never hits Prometheus).
+    httpRateSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          labelledRange(
+            `sum(rate(poindexter_http_requests_total[${winFor(o)}]))`,
+            o,
+            'req/s'
+          ),
+        () => ({ series: [] })
+      );
+    },
+    httpErrorSeries(range) {
+      const o = rangeOpts(range);
+      const w = winFor(o);
+      return pick(
+        () =>
+          labelledRange(
+            `sum(rate(poindexter_http_requests_total{status=~"5.."}[${w}])) ` +
+              `/ sum(rate(poindexter_http_requests_total[${w}])) * 100`,
+            o,
+            '5xx %'
+          ),
+        () => ({ series: [] })
+      );
+    },
+    httpLatencySeries(range) {
+      const o = rangeOpts(range);
+      const ql = (q) =>
+        `histogram_quantile(${q}, sum(rate(` +
+        `poindexter_http_request_duration_seconds_bucket[${winFor(o)}])) by (le))`;
+      return pick(
+        async () => {
+          const [p95, p99] = await Promise.all([
+            labelledRange(ql('0.95'), o, 'p95'),
+            labelledRange(ql('0.99'), o, 'p99'),
+          ]);
+          return { series: [...p95.series, ...p99.series] };
+        },
+        () => ({ series: [] })
+      );
+    },
+    throughputSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          labelledRange(
+            'poindexter_posts_total{status="published"}',
+            o,
+            'published'
+          ),
+        () => ({ series: [] })
+      );
+    },
+    costSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () => labelledRange('poindexter_daily_spend_usd', o, '$/day'),
+        () => ({ series: [] })
+      );
+    },
+
+    // ── time-series trends (worker / audit_log) ─────────────────
+    // Frontend derives the bucket grid once (rangeOpts) and passes it explicitly,
+    // so the grid is never re-derived server-side (no drift). The route clamps.
+    qaTrend(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          http(
+            'GET',
+            `/api/qa/trend?range_seconds=${o.rangeSeconds}&step_seconds=${o.stepSeconds}`
+          ),
+        () => ({ series: [] })
+      );
+    },
+    findingsTrend(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          http(
+            'GET',
+            `/api/findings/trend?range_seconds=${o.rangeSeconds}&step_seconds=${o.stepSeconds}`
+          ),
+        () => ({ series: [] })
+      );
     },
   };
 

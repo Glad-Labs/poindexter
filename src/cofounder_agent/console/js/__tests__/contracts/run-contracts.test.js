@@ -32,10 +32,15 @@ for (const row of manifest) {
     const fixture = loadFixture(fixtureFile);
     // Replay the recorded fixture (or {} when none) as the 200 response for
     // every non-/token call this surface makes.
-    const { api, calls } = loadApiWithRecorder(() => ({
-      status: 200,
-      payload: fixture == null ? {} : fixture,
-    }));
+    const { api, calls } = loadApiWithRecorder(
+      () => ({
+        status: 200,
+        payload: fixture == null ? {} : fixture,
+      }),
+      {},
+      // api.js's trend methods reach window.PX.ts at invoke time — preload it.
+      { preload: ['timeseries.js'] }
+    );
 
     const out = await row.invoke(api);
 
