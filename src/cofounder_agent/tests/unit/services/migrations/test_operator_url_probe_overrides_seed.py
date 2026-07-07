@@ -33,6 +33,9 @@ import pytest
 # added by timestamped migrations and MUST stay folded into the baseline or a
 # fresh install drifts from prod: data_fabric_loki_url / data_fabric_tempo_url /
 # podcast_tts_base_url (20260608_012805) and mcp_http_probe_recovery_url.
+# plugin.caption_provider.speaches.base_url routes to speaches /health like the
+# other three speaches-backed keys; without it the operator-url probe HEADs the
+# bare /v1 base path (404) and false-pages on a healthy caption sidecar.
 EXPECTED_OVERRIDE_KEYS = {
     "cloudflare_beacon_url",
     "data_fabric_loki_url",
@@ -40,6 +43,7 @@ EXPECTED_OVERRIDE_KEYS = {
     "google_sitemap_ping_url",
     "indexnow_ping_url",
     "mcp_http_probe_recovery_url",
+    "plugin.caption_provider.speaches.base_url",
     "podcast_tts_base_url",
     "storage_public_url",
     "video_server_url",
@@ -168,6 +172,33 @@ def test_data_fabric_overrides_probe_compose_dns(baseline_seeds_text: str) -> No
         )
         assert "localhost" not in got and "host.docker.internal" not in got, (
             f"{key} probe_url must not target the host-port path: {got!r}"
+        )
+
+
+def test_speaches_backed_overrides_probe_health(baseline_seeds_text: str) -> None:
+    """Every speaches-backed base_url override must probe /health, not bare /v1.
+
+    speaches serves its OpenAI-compatible API under ``/v1/*`` (``/v1/audio/
+    transcriptions`` for the caption provider, ``/v1/audio/speech`` for TTS) but
+    has no GET handler on the bare ``/v1`` base path, so a HEAD/GET there 404s.
+    The caption key was missing this override and false-paged the operator-url
+    probe on a healthy speaches sidecar; this guards all four speaches keys so
+    the gap can't reopen. ``/health`` is the container's own liveness endpoint
+    (200) — the same one docker-compose healthchecks.
+    """
+    overrides = _overrides(baseline_seeds_text)
+    speaches_keys = (
+        "plugin.caption_provider.speaches.base_url",
+        "podcast_tts_base_url",
+        "voice_agent_stt_base_url",
+        "voice_agent_tts_base_url",
+    )
+    for key in speaches_keys:
+        entry = overrides.get(key)
+        assert entry is not None, f"{key} override missing from baseline"
+        assert entry.get("probe_url") == "http://speaches:8000/health", (
+            f"{key} must probe speaches /health (200), got {entry.get('probe_url')!r}. "
+            "The bare /v1 base path 404s and false-pages the operator-url probe."
         )
 
 
