@@ -51,7 +51,9 @@ Deviations from plan:
 
 from __future__ import annotations
 
+import math
 import re
+from collections.abc import Sequence
 from typing import Any, TypedDict
 from uuid import UUID
 
@@ -351,16 +353,115 @@ def _resolve_snippet_source_filter(site_config: Any = None) -> list[str]:
     return parsed or list(_DEFAULT_SNIPPET_SOURCE_FILTER)
 
 
+# -- retrieval de-echo (MMR + near-duplicate ceiling) --
+#
+# Grounding on the top-N nearest `posts` by raw cosine lets a dense topic
+# cluster saturate the writer's context with the same opening restated 3-4
+# ways, so it parrots it (the 2026-06 "VRAM is the only currency" 4-post echo;
+# memory: project_rag_corpus_pollution). These select a DIVERSE grounding set
+# from an oversampled candidate pool: drop near-identical priors (fail-open),
+# then MMR-rank so an echo cluster collapses to a single representative snippet
+# instead of dominating every slot.
+
+
+def _parse_vector(raw: Any) -> list[float]:
+    """Turn pgvector's string/list representation into ``list[float]``.
+
+    asyncpg has no built-in codec for the ``vector`` type, so a selected
+    ``embedding`` column comes back as its text form ``'[a,b,c]'``. Mirrors
+    ``services/integrations/handlers/retention_embeddings_collapse._parse_vector``.
+    """
+    if raw is None:
+        return []
+    if isinstance(raw, (list, tuple)):
+        return [float(v) for v in raw]
+    text = str(raw).strip()
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+    if not text:
+        return []
+    return [float(v) for v in text.split(",") if v.strip()]
+
+
+def _cosine(a: Sequence[float], b: Sequence[float]) -> float:
+    """Cosine similarity of two vectors.
+
+    Returns ``0.0`` for a zero-magnitude vector (no direction → never NaN) and
+    for a dimension mismatch (a wrong-shape vector is treated as "not similar"
+    rather than crashing the whole draft).
+    """
+    if len(a) != len(b):
+        return 0.0
+    dot = sum(x * y for x, y in zip(a, b, strict=True))
+    na = math.sqrt(sum(x * x for x in a))
+    nb = math.sqrt(sum(y * y for y in b))
+    if na == 0.0 or nb == 0.0:
+        return 0.0
+    return dot / (na * nb)
+
+
+def _select_snippets(
+    candidates: list[dict],
+    *,
+    k: int,
+    dedup_ceiling: float,
+    mmr_lambda: float,
+) -> list[dict]:
+    """Pick up to ``k`` diverse grounding snippets from an oversampled pool.
+
+    Each candidate carries a precomputed query-similarity ``relevance`` (from the
+    pgvector ``1 - (embedding <=> query)`` at fetch time) and its parsed
+    ``vec`` (for inter-candidate similarity).
+
+    Two levers, both DB-tunable:
+
+    1. **Near-duplicate ceiling** — a candidate whose query-similarity is
+       ``>= dedup_ceiling`` is a near-republish of what we're writing; drop it
+       so it can't become snippet #1 and get parroted. **Fail-open**: if that
+       would empty the pool, keep the originals (thin grounding beats none).
+    2. **MMR** (Maximal Marginal Relevance) — greedily maximise
+       ``lambda * relevance - (1 - lambda) * max_sim_to_already_selected``, so an
+       echo cluster collapses to a single representative and the rest of the
+       slots go to diverse posts. ``mmr_lambda = 1.0`` disables the diversity
+       term (pure relevance ranking — the MMR escape hatch).
+    """
+    if not candidates:
+        return []
+    pool = [c for c in candidates if c.get("relevance", 0.0) < dedup_ceiling]
+    if not pool:  # fail-open — the ceiling never zeroes grounding
+        pool = list(candidates)
+
+    selected: list[dict] = []
+    remaining = list(pool)
+    while remaining and len(selected) < k:
+        best_i, best_score = 0, None
+        for i, cand in enumerate(remaining):
+            diversity_penalty = (
+                max(_cosine(cand.get("vec", []), s.get("vec", [])) for s in selected)
+                if selected else 0.0
+            )
+            score = mmr_lambda * cand.get("relevance", 0.0) - (
+                1.0 - mmr_lambda
+            ) * diversity_penalty
+            if best_score is None or score > best_score:
+                best_score, best_i = score, i
+        selected.append(remaining.pop(best_i))
+    return selected
+
+
 # -- nodes --
 
 async def _embed_and_fetch_snippets(state: _State) -> _State:
     from services.topic_ranking import embed_text
 
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
-    snippet_limit = (
-        site_config.get_int("writer_rag_two_pass_snippet_limit", 20)
-        if site_config is not None else 20
-    )
+    if site_config is not None:
+        snippet_limit = site_config.get_int("writer_rag_two_pass_snippet_limit", 20)
+        multiplier = site_config.get_int("writer_rag_candidate_multiplier", 3)
+        dedup_ceiling = site_config.get_float("writer_rag_dedup_ceiling", 0.93)
+        mmr_lambda = site_config.get_float("writer_rag_mmr_lambda", 0.5)
+    else:
+        snippet_limit, multiplier, dedup_ceiling, mmr_lambda = 20, 3, 0.93, 0.5
     source_filter = _resolve_snippet_source_filter(site_config)
     qvec = await embed_text(
         f"{state['topic']} — {state['angle']}", site_config=site_config,  # type: ignore[arg-type]
@@ -371,25 +472,50 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
     # Pattern matches services/embeddings_db.py:151 (the established way
     # this codebase passes vectors to pgvector queries).
     qvec_str = "[" + ",".join(str(v) for v in qvec) + "]"
+    # Oversample the candidate pool so MMR + the near-duplicate ceiling have
+    # room to de-echo before selecting the final snippet_limit. See
+    # _select_snippets / project_rag_corpus_pollution (the INVERSE self-echo).
+    candidate_limit = snippet_limit * max(1, multiplier)
     pool = _POOL_REGISTRY[state["pool_thread"]]
     async with pool.acquire() as conn:
         # source_table filter (corpus-pollution guard): only ground drafts in
         # content-bearing tables, never the claude_sessions / brain / audit
         # ops-log bulk of the corpus. See _resolve_snippet_source_filter.
+        # `1 - (embedding <=> query)` is cosine SIMILARITY (pgvector `<=>` is
+        # cosine distance); it feeds the near-duplicate ceiling + MMR relevance.
         rows = await conn.fetch(
             """
-            SELECT source_table, source_id, text_preview
+            SELECT source_table, source_id, text_preview, embedding,
+                   1 - (embedding <=> $1::vector) AS relevance
               FROM embeddings
              WHERE source_table = ANY($3::text[])
              ORDER BY embedding <=> $1::vector
              LIMIT $2
             """,
             qvec_str,
-            snippet_limit,
+            candidate_limit,
             source_filter,
         )
-    snippets = [{"source": r["source_table"], "ref": str(r["source_id"]),
-                 "snippet": r["text_preview"]} for r in rows]
+    candidates = [
+        {
+            "source": r["source_table"],
+            "ref": str(r["source_id"]),
+            "snippet": r["text_preview"],
+            "relevance": float(r["relevance"]),
+            "vec": _parse_vector(r["embedding"]),
+        }
+        for r in rows
+    ]
+    selected = _select_snippets(
+        candidates,
+        k=snippet_limit,
+        dedup_ceiling=dedup_ceiling,
+        mmr_lambda=mmr_lambda,
+    )
+    snippets = [
+        {"source": c["source"], "ref": c["ref"], "snippet": c["snippet"]}
+        for c in selected
+    ]
     return {**state, "snippets": snippets, "revision_loops": 0,
             "external_lookups": [], "loop_capped": False}
 

@@ -1744,3 +1744,252 @@ async def test_run_omits_think_when_switch_off(monkeypatch):
         ),
     )
     assert seen["think"] is None
+
+
+# ---------------------------------------------------------------------------
+# Retrieval de-echo — MMR + near-duplicate ceiling (RAG self-echo root fix).
+#
+# _embed_and_fetch_snippets used to take the top-N nearest `posts` by raw cosine
+# and hand them to the writer, which "draws ONLY from the provided snippets".
+# For a topic in a dense cluster the #1 neighbor is a SIBLING post, and 3-4 of
+# the top slots are the same echo cluster restating the same opening — so the
+# writer parrots it (the 2026-06 "VRAM is the only currency" 4-post echo).
+# qa.opening_originality (#2182) flags it post-hoc; this is the retrieval-side
+# root fix: oversample candidates, drop near-identical priors (fail-open), then
+# MMR-select for diversity so an echo cluster collapses to ONE representative.
+# memory: project_rag_corpus_pollution (the INVERSE self-echo failure).
+# ---------------------------------------------------------------------------
+
+
+def test_cosine_identical_vectors_is_one():
+    assert two_pass._cosine([1.0, 2.0, 3.0], [1.0, 2.0, 3.0]) == pytest.approx(1.0)
+
+
+def test_cosine_orthogonal_vectors_is_zero():
+    assert two_pass._cosine([1.0, 0.0], [0.0, 1.0]) == pytest.approx(0.0)
+
+
+def test_cosine_opposite_vectors_is_negative_one():
+    assert two_pass._cosine([1.0, 0.0], [-1.0, 0.0]) == pytest.approx(-1.0)
+
+
+def test_cosine_zero_vector_is_zero_not_nan():
+    """A zero vector has no direction — return 0.0, never divide-by-zero → NaN."""
+    assert two_pass._cosine([0.0, 0.0], [1.0, 1.0]) == 0.0
+
+
+def test_cosine_mismatched_dims_is_zero():
+    """A wrong-dimension vector is treated as 'not similar', never crashes."""
+    assert two_pass._cosine([1.0, 0.0], [1.0, 0.0, 0.0]) == 0.0
+
+
+def test_parse_vector_pgvector_string():
+    """asyncpg returns a `vector` column as its text form '[a,b,c]' (no codec)."""
+    assert two_pass._parse_vector("[0.1,0.2,0.3]") == [0.1, 0.2, 0.3]
+
+
+def test_parse_vector_passthrough_list():
+    assert two_pass._parse_vector([1, 2, 3]) == [1.0, 2.0, 3.0]
+
+
+def test_parse_vector_none_is_empty():
+    assert two_pass._parse_vector(None) == []
+
+
+def test_select_snippets_empty_returns_empty():
+    assert two_pass._select_snippets([], k=5, dedup_ceiling=1.0, mmr_lambda=0.5) == []
+
+
+def test_select_snippets_caps_at_k():
+    cands = [
+        {"ref": "a", "relevance": 0.9, "vec": [1.0, 0.0]},
+        {"ref": "b", "relevance": 0.8, "vec": [0.0, 1.0]},
+        {"ref": "c", "relevance": 0.7, "vec": [1.0, 1.0]},
+    ]
+    out = two_pass._select_snippets(cands, k=2, dedup_ceiling=1.0, mmr_lambda=1.0)
+    assert len(out) == 2
+
+
+def test_select_snippets_first_pick_is_highest_relevance():
+    cands = [
+        {"ref": "low", "relevance": 0.5, "vec": [0.0, 1.0]},
+        {"ref": "high", "relevance": 0.95, "vec": [1.0, 0.0]},
+    ]
+    out = two_pass._select_snippets(cands, k=2, dedup_ceiling=1.0, mmr_lambda=0.5)
+    assert out[0]["ref"] == "high"
+
+
+def test_select_snippets_mmr_prefers_diverse_over_near_duplicate():
+    """The load-bearing behaviour: given a top post A and a near-identical
+    sibling B plus a diverse C of slightly lower relevance, MMR (lambda 0.5)
+    picks A then the DIVERSE C — the echo sibling B is suppressed."""
+    cands = [
+        {"ref": "A", "relevance": 0.90, "vec": [1.0, 0.0]},
+        {"ref": "B", "relevance": 0.85, "vec": [1.0, 0.0]},  # near-identical to A
+        {"ref": "C", "relevance": 0.80, "vec": [0.0, 1.0]},  # diverse
+    ]
+    out = two_pass._select_snippets(cands, k=2, dedup_ceiling=1.0, mmr_lambda=0.5)
+    assert [c["ref"] for c in out] == ["A", "C"]
+
+
+def test_select_snippets_lambda_one_is_pure_relevance():
+    """lambda=1.0 disables the diversity term → pure relevance ranking (MMR off),
+    so the near-duplicate B (higher relevance than C) is kept. This is the DB
+    escape hatch to turn MMR off."""
+    cands = [
+        {"ref": "A", "relevance": 0.90, "vec": [1.0, 0.0]},
+        {"ref": "B", "relevance": 0.85, "vec": [1.0, 0.0]},
+        {"ref": "C", "relevance": 0.80, "vec": [0.0, 1.0]},
+    ]
+    out = two_pass._select_snippets(cands, k=2, dedup_ceiling=1.0, mmr_lambda=1.0)
+    assert [c["ref"] for c in out] == ["A", "B"]
+
+
+def test_select_snippets_dedup_ceiling_drops_near_identical_prior():
+    """A candidate at/above the ceiling is a near-republish of what we're writing
+    — dropped BEFORE selection so it can never be snippet #1 and get parroted."""
+    cands = [
+        {"ref": "dupe", "relevance": 0.95, "vec": [1.0, 0.0]},   # >= 0.93 ceiling
+        {"ref": "ok1", "relevance": 0.85, "vec": [0.0, 1.0]},
+        {"ref": "ok2", "relevance": 0.80, "vec": [1.0, 1.0]},
+    ]
+    out = two_pass._select_snippets(cands, k=5, dedup_ceiling=0.93, mmr_lambda=1.0)
+    refs = [c["ref"] for c in out]
+    assert "dupe" not in refs
+    assert refs == ["ok1", "ok2"]
+
+
+def test_select_snippets_dedup_ceiling_fails_open_when_all_excluded():
+    """If EVERY candidate is above the ceiling, keep them — grounding is never
+    zeroed by the ceiling (a thin diverse set beats no grounding at all)."""
+    cands = [
+        {"ref": "x", "relevance": 0.98, "vec": [1.0, 0.0]},
+        {"ref": "y", "relevance": 0.96, "vec": [0.0, 1.0]},
+    ]
+    out = two_pass._select_snippets(cands, k=5, dedup_ceiling=0.93, mmr_lambda=1.0)
+    assert {c["ref"] for c in out} == {"x", "y"}
+
+
+# -- node-level wiring: _embed_and_fetch_snippets oversamples + de-echoes --
+
+
+def _mmr_site_config(*, snippet_limit=2, multiplier=10, dedup_ceiling=1.0, mmr_lambda=0.5):
+    """SiteConfig stub with the retrieval de-echo knobs set to specific values
+    (the shared _fake_site_config always returns the caller's default, which
+    can't pin snippet_limit / multiplier / ceiling / lambda per-key)."""
+    ints = {
+        "writer_rag_two_pass_snippet_limit": snippet_limit,
+        "writer_rag_candidate_multiplier": multiplier,
+    }
+    floats = {
+        "writer_rag_dedup_ceiling": dedup_ceiling,
+        "writer_rag_mmr_lambda": mmr_lambda,
+    }
+    strs = {
+        "pipeline_writer_model": "glm-4.7-5090:latest",
+        "cost_tier.standard.model": "",
+        "writer_length_expansion_enabled": "false",
+        "rag_source_filter": "posts",
+    }
+    sc = MagicMock()
+    sc.get = MagicMock(side_effect=lambda key, default="": strs.get(key, default))
+    sc.get_int = MagicMock(side_effect=lambda key, default=0: ints.get(key, default))
+    sc.get_float = MagicMock(side_effect=lambda key, default=0.0: floats.get(key, default))
+    return sc
+
+
+def _pool_returning(rows):
+    """Fake asyncpg pool whose conn.fetch returns ``rows`` (dict records)."""
+    pool = MagicMock()
+    conn_mock = AsyncMock()
+    conn_mock.fetch = AsyncMock(return_value=rows)
+    acquire_ctx = AsyncMock()
+    acquire_ctx.__aenter__ = AsyncMock(return_value=conn_mock)
+    acquire_ctx.__aexit__ = AsyncMock(return_value=False)
+    pool.acquire = MagicMock(return_value=acquire_ctx)
+    return pool
+
+
+async def test_embed_and_fetch_oversamples_candidate_pool(monkeypatch):
+    """The fetch LIMIT must be snippet_limit * candidate_multiplier, not just
+    snippet_limit — MMR needs a bigger pool than it returns to select from."""
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        return "Clean draft, no markers."
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    pool, conn_mock = _recording_pool()
+    await two_pass.run(
+        topic="t", angle="a", niche_id="n", pool=pool,
+        site_config=_mmr_site_config(snippet_limit=5, multiplier=4),
+    )
+    sql, *params = conn_mock.fetch.await_args.args
+    assert 20 in params  # 5 * 4 candidate LIMIT (oversampled), not 5
+
+
+async def test_embed_and_fetch_mmr_suppresses_near_duplicate_sibling(monkeypatch):
+    """End-to-end at the node: three candidates where B is a near-duplicate of
+    the top A and C is diverse. The snippets handed to the writer must be
+    [A, C] — the echo sibling B is suppressed by MMR."""
+    captured: dict = {}
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        captured["snippets"] = snippets
+        return "Clean draft, no markers."
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    rows = [
+        {"source_table": "posts", "source_id": "A", "text_preview": "alpha", "embedding": "[1,0]", "relevance": 0.90},
+        {"source_table": "posts", "source_id": "B", "text_preview": "beta", "embedding": "[1,0]", "relevance": 0.85},
+        {"source_table": "posts", "source_id": "C", "text_preview": "gamma", "embedding": "[0,1]", "relevance": 0.80},
+    ]
+    await two_pass.run(
+        topic="t", angle="a", niche_id="n", pool=_pool_returning(rows),
+        site_config=_mmr_site_config(snippet_limit=2, dedup_ceiling=1.0, mmr_lambda=0.5),
+    )
+    refs = [s["ref"] for s in captured["snippets"]]
+    assert refs == ["A", "C"]
+
+
+async def test_embed_and_fetch_dedup_ceiling_drops_near_identical(monkeypatch):
+    """A candidate above the ceiling (a near-republish) is dropped before the
+    writer ever sees it; lambda=1.0 isolates the ceiling from MMR."""
+    captured: dict = {}
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        captured["snippets"] = snippets
+        return "Clean draft, no markers."
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    rows = [
+        {"source_table": "posts", "source_id": "dupe", "text_preview": "x", "embedding": "[1,0]", "relevance": 0.95},
+        {"source_table": "posts", "source_id": "ok1", "text_preview": "y", "embedding": "[0,1]", "relevance": 0.85},
+        {"source_table": "posts", "source_id": "ok2", "text_preview": "z", "embedding": "[1,1]", "relevance": 0.80},
+    ]
+    await two_pass.run(
+        topic="t", angle="a", niche_id="n", pool=_pool_returning(rows),
+        site_config=_mmr_site_config(snippet_limit=5, dedup_ceiling=0.93, mmr_lambda=1.0),
+    )
+    refs = [s["ref"] for s in captured["snippets"]]
+    assert "dupe" not in refs
+    assert set(refs) == {"ok1", "ok2"}

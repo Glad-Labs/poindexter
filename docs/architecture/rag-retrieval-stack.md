@@ -109,6 +109,38 @@ A complementary deterministic **prompt-echo guard** in the same atom
 strips any prompt preamble the writer model regurgitates as content —
 see `docs/architecture/anti-hallucination.md` (Layer 1).
 
+#### Retrieval de-echo — MMR + near-duplicate ceiling
+
+Source-scoping fixed _ops-log_ pollution, but `posts` itself becomes the
+contaminant when topics cluster: the raw top-N nearest `posts` for a dense
+topic are the same _sibling_ posts restating the same opening, and the writer
+(instructed to draw ONLY from the snippets) parrots it. This is the **inverse
+self-echo** failure — the 2026-06 "VRAM is the only currency" cluster where
+four published posts opened near-identically, each echoing the last. Every
+per-post QA rail scores a draft in isolation, so nothing catches it;
+`qa.opening_originality` flags it advisorily post-hoc, and this is the
+retrieval-side root fix.
+
+`_embed_and_fetch_snippets` now selects a **diverse** grounding set from an
+oversampled candidate pool rather than taking the raw top-N:
+
+1. **Oversample** — fetch `writer_rag_two_pass_snippet_limit ×
+writer_rag_candidate_multiplier` candidates (with their `embedding` +
+   query-similarity) so the selector has room to work.
+2. **Near-duplicate ceiling** — drop any candidate whose query cosine is
+   `>= writer_rag_dedup_ceiling` (default `0.93`, above the corpus p95
+   nearest-neighbour cosine of ~0.89 — so only the pathological near-republish
+   tail is struck). **Fail-open**: if that would empty the pool, the originals
+   are kept, so the ceiling can never zero grounding.
+3. **MMR** — greedily maximise `λ·relevance − (1−λ)·max_sim_to_selected`
+   (`writer_rag_mmr_lambda`, default `0.5`), so an echo cluster collapses to a
+   single representative snippet and the remaining slots go to diverse posts.
+   `writer_rag_mmr_lambda = 1.0` disables the diversity term (pure relevance —
+   the MMR escape hatch).
+
+All three knobs are DB-tunable app_settings. memory:
+`project_rag_corpus_pollution` (the INVERSE self-echo failure).
+
 ## Activation runbook
 
 1. **Verify llama-index is in the venv** — already pinned in

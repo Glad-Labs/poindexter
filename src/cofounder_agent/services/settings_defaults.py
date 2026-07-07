@@ -544,6 +544,17 @@ DEFAULTS: dict[str, str] = {
     'writer_rag_research_topic_max_sources': '2',
     'writer_rag_two_pass_research_max_sources': '2',
     'writer_rag_two_pass_snippet_limit': '20',
+    # Retrieval de-echo (RAG self-echo root fix, 2026-07-07). The two_pass
+    # writer grounds on the nearest `posts`; in a dense topic cluster the top
+    # slots are the same echo restated, so the writer parrots it. Oversample
+    # the candidate pool by this multiplier, drop near-identical priors at/above
+    # the dedup ceiling (fail-open), then MMR-select for diversity so an echo
+    # cluster collapses to one representative. mmr_lambda=1.0 disables MMR
+    # (pure relevance). Ceiling 0.93 sits above the corpus p95 nearest-neighbour
+    # cosine (~0.89), so it only strikes the pathological near-republish tail.
+    'writer_rag_candidate_multiplier': '3',
+    'writer_rag_dedup_ceiling': '0.93',
+    'writer_rag_mmr_lambda': '0.5',
     # Web-research grounding. When true (default) the writer's research step
     # FETCHES and extracts real page text from each web source (up to
     # web_research_max_content_chars) via WebResearcher.search — instead of
@@ -1895,6 +1906,10 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'rag_hybrid_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
     'rag_rerank_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
     'rag_engine_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
+    # Retrieval de-echo (two_pass writer): oversample + near-dup ceiling + MMR.
+    'writer_rag_candidate_multiplier': {'owner': 'two_pass_writer', 'value_type': 'integer'},
+    'writer_rag_dedup_ceiling': {'owner': 'two_pass_writer', 'value_type': 'float'},
+    'writer_rag_mmr_lambda': {'owner': 'two_pass_writer', 'value_type': 'float'},
 
     # ----- Auto-publish gate (incident: niche-leak 2026-05-26) -----
     'dev_diary_auto_publish_threshold': {'owner': 'auto_publish_gate', 'value_type': 'float'},
