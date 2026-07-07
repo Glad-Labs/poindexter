@@ -15,6 +15,7 @@ from .costs import costs_group
 from .dev_diary import dev_diary_group
 from .doctor import doctor_group
 from .experiments import experiments_group
+from .firefighter import firefighter_group
 from .integrations import integrations_group
 from .media import media_group
 from .memory import memory_group
@@ -25,13 +26,13 @@ from .posts import post_group, posts_group
 from .premium import premium_group
 from .publish_approval import PUBLISH_FLAT_ALIASES
 from .publishers import publishers_group
-from .social import social_group
 from .qa_gates import qa_gates_group
 from .retention import retention_group
 from .schedule import SCHEDULE_FLAT_ALIASES, schedule_group
 from .settings import settings_group
 from .setup import setup_command
 from .skills import skills_group
+from .social import social_group
 from .stores import stores_group
 from .taps import taps_group
 from .tasks import tasks_group
@@ -108,6 +109,12 @@ main.add_command(doctor_group, name="doctor")
 # Tier 2 off-machine backup operator surface (#386): setup wizard + status /
 # run / verify / snapshots over a restic S3-compatible repo.
 main.add_command(backup_group, name="backup")
+
+# Self-healing firefighter operator surface — CRUD the remediation_rules the
+# brain matches alerts against before paging (`firefighter rule add/list/rm/...`).
+# Rules are operational runtime state, so they live only in the DB (seeded by
+# neither baseline nor overlay); this is how you manage them without raw SQL.
+main.add_command(firefighter_group, name="firefighter")
 
 # Declarative-data-plane operator surfaces. Each module manages one of
 # the table+handler pairs (taps, retention, webhooks, qa_gates, etc.).

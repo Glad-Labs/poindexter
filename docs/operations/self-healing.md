@@ -147,11 +147,18 @@ proven fix to a durable `remediation_rules` row. Once promoted it runs
 deterministically, with no inference call or persistence wait. A still-firing
 attempt, or a rule-source resolve, emits nothing.
 
-### Authoring a rule
+### Managing rules
 
-Rules live in the `remediation_rules` table. Match on an exact `alertname` _or_ a
-`match_regex`; name an `action_name` from the registry; optionally pin per-rule
-caps. Discover live alertnames first:
+Rules are **operational runtime state** — you add, tune, and **retire** them one
+alert at a time as you learn which alerts are safely auto-recoverable — so they
+live only in the `remediation_rules` table, seeded by **neither** the baseline
+nor the operator overlay (a fresh install starts inert; see "Empty by default"
+above). Manage them with `poindexter firefighter rule …`, a thin adapter over
+`services.remediation_rules_service` (epic #1340 — the service owns the SQL, so
+no hand-written `INSERT` is needed).
+
+Discover which alerts are actually firing first (there's no CLI verb for the raw
+`alert_events` feed):
 
 ```sql
 SELECT DISTINCT alertname FROM alert_events ORDER BY 1;
@@ -159,27 +166,42 @@ SELECT DISTINCT alertname FROM alert_events ORDER BY 1;
 
 Restart a wedged container when its liveness alert fires:
 
-```sql
-INSERT INTO remediation_rules (alertname, action_name, params, description)
-VALUES (
-  'SomeSidecarDown',
-  'restart_container',
-  '{"container": "poindexter-<name>"}',
-  'Restart <name> when its liveness alert fires; verify then page.'
-);
+```bash
+poindexter firefighter rule add \
+  --action restart_container \
+  --alert SomeSidecarDown \
+  --param container=poindexter-<name> \
+  --description "Restart <name> when its liveness alert fires; verify then page."
 ```
 
 Kick the stuck-task sweep on demand (regex across a family of alerts):
 
-```sql
-INSERT INTO remediation_rules (match_regex, action_name, verify_after_seconds, description)
-VALUES (
-  '(?i)task.*stuck',
-  'run_auto_remediate',
-  180,
-  'Re-run the pipeline_tasks sweep when a stuck-task alert fires.'
-);
+```bash
+poindexter firefighter rule add \
+  --action run_auto_remediate \
+  --match '(?i)task.*stuck' \
+  --verify-after 180 \
+  --description "Re-run the pipeline_tasks sweep when a stuck-task alert fires."
 ```
+
+Inspect, tune in place, and retire — changes are live within one 30s dispatch
+cycle (the loader re-reads the table each cycle; no brain restart):
+
+```bash
+poindexter firefighter rule list [--state enabled|disabled]
+poindexter firefighter rule show 3            # or: --alert SomeSidecarDown
+poindexter firefighter rule disable 3         # stop acting, keep the row
+poindexter firefighter rule enable 3
+poindexter firefighter rule rm 3              # or: --alert SomeSidecarDown (this sticks — nothing re-seeds it)
+```
+
+`add` **validates before it writes**: an unknown `--action`, a rule with neither
+`--alert` nor `--match`, or a `restart_container` rule missing
+`--param container=…` all fail loud — a rule the brain could never run is a
+silent dead row, so it's rejected up front. Known actions today: `restart_container`,
+`run_auto_remediate`. Optional per-rule circuit-breaker caps: `--max-attempts`,
+`--window-minutes`, `--verify-after` (each falls back to the global default when
+omitted).
 
 **Only wire an action to an alert it can actually fix.** `restart_container`
 targets **containers** — confirm the surface is one (`docker ps`) before pointing
@@ -206,7 +228,8 @@ created by a worker-boot migration. After merging:
 2. Rebuild + recreate the brain so it has the firefighter code
    (`docker compose build brain-daemon && docker compose up -d brain-daemon`) —
    the 10-min deploy-checkout-sync does this automatically on a `brain/` change.
-3. _Then_ seed your first `remediation_rules`, verified, one alert at a time.
+3. _Then_ add your first rules with `poindexter firefighter rule add`, verified,
+   one alert at a time.
 
 Until step 3 the firefighter is live but inert (enabled, no rules). The
 **Self-Healing / Remediation** row on the System Health dashboard shows silent
