@@ -1,6 +1,6 @@
 /* Pure chart-math for the console time-series surface. Dual-mode (browser global
    + module.exports) so it unit-tests on node:test with no DOM, exactly like
-   js/kpis.js and js/telemetry.js. Loaded by index.html before api.js. */
+   js/kpis.js. Loaded by index.html before api.js. */
 (function () {
   const RANGES = { '1h': 3600, '6h': 21600, '24h': 86400, '7d': 604800 };
 

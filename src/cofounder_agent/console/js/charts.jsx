@@ -283,10 +283,32 @@ function HardwarePanel() {
   return <TrendGroup id="sec-hardware" heading="GPU & POWER" charts={charts} />;
 }
 
+function DatabasePanel() {
+  const api = window.PX.api;
+  const charts = [
+    { title: 'Connections', fn: (x) => api.dbConnectionsSeries(x), unit: '' },
+    {
+      title: 'Connections by state',
+      fn: (x) => api.dbConnStateSeries(x),
+      unit: '',
+    },
+    { title: 'Cache hit ratio', fn: (x) => api.dbCacheHitSeries(x), unit: '%' },
+    {
+      title: 'Transaction rate',
+      fn: (x) => api.dbTxnRateSeries(x),
+      unit: '/s',
+    },
+    { title: 'Database size', fn: (x) => api.dbSizeSeries(x), unit: ' GB' },
+    { title: 'Dead tuples', fn: (x) => api.dbDeadTuplesSeries(x), unit: '' },
+  ];
+  return <TrendGroup id="sec-database" heading="DATABASE" charts={charts} />;
+}
+
 Object.assign(window, {
   TimeChart,
   RangeControl,
   TrendGroup,
   HistoryPanel,
   HardwarePanel,
+  DatabasePanel,
 });

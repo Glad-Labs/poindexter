@@ -1334,6 +1334,93 @@
       );
     },
 
+    // ── time-series trends (Postgres internals — postgres_exporter) ─
+    // Cluster-wide sums except size (per real DB) + state (per state). The
+    // two 2-series merges mirror httpLatencySeries. datname is matched exactly
+    // to skip ephemeral unit/e2e test DBs.
+    dbConnectionsSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        async () => {
+          const [inUse, max] = await Promise.all([
+            labelledRange('sum(pg_stat_database_numbackends)', o, 'in use'),
+            labelledRange('pg_settings_max_connections', o, 'max'),
+          ]);
+          return { series: [...inUse.series, ...max.series] };
+        },
+        () => ({ series: [] })
+      );
+    },
+    dbConnStateSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          promRange(
+            'sum by (state) (pg_stat_activity_count{state=~"active|idle|idle in transaction"})',
+            { ...o, labelBy: 'state' }
+          ),
+        () => ({ series: [] })
+      );
+    },
+    dbCacheHitSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          labelledRange(
+            'sum(pg_stat_database_blks_hit) / ' +
+              '(sum(pg_stat_database_blks_hit) + sum(pg_stat_database_blks_read)) * 100',
+            o,
+            'hit %'
+          ),
+        () => ({ series: [] })
+      );
+    },
+    dbTxnRateSeries(range) {
+      const o = rangeOpts(range);
+      const w = winFor(o);
+      return pick(
+        async () => {
+          const [c, r] = await Promise.all([
+            labelledRange(
+              `sum(rate(pg_stat_database_xact_commit[${w}]))`,
+              o,
+              'commits/s'
+            ),
+            labelledRange(
+              `sum(rate(pg_stat_database_xact_rollback[${w}]))`,
+              o,
+              'rollbacks/s'
+            ),
+          ]);
+          return { series: [...c.series, ...r.series] };
+        },
+        () => ({ series: [] })
+      );
+    },
+    dbSizeSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          promRange(
+            'pg_database_size_bytes{datname=~"poindexter|poindexter_brain"} / 1073741824',
+            { ...o, labelBy: 'datname' }
+          ),
+        () => ({ series: [] })
+      );
+    },
+    dbDeadTuplesSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        () =>
+          labelledRange(
+            'sum(pg_stat_user_tables_n_dead_tup)',
+            o,
+            'dead tuples'
+          ),
+        () => ({ series: [] })
+      );
+    },
+
     // ── time-series trends (worker / audit_log) ─────────────────
     // Frontend derives the bucket grid once (rangeOpts) and passes it explicitly,
     // so the grid is never re-derived server-side (no drift). The route clamps.

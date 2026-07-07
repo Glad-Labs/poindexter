@@ -1585,55 +1585,6 @@ function TracesPanel({ traces, fresh }) {
   );
 }
 
-// ── Telemetry: embedded Grafana panels (history + DB) ─────────
-// UIDs/panelIds are the local Grafana boards. Confirm each uid via
-// search_dashboards / the board URL before relying on it.
-const GRAFANA_EMBEDS = [
-  // Spend-over-time (C) and GPU/power (D) are now native History/Hardware
-  // panels. Only the DB embed remains, until sub-project E replaces it.
-  { uid: 'database', panelId: 2, label: 'DB connections' },
-];
-function GrafanaEmbed() {
-  const base = window.PX.api.grafanaBase();
-  return (
-    <div className="panel" id="sec-grafana">
-      <div className="panel__head">
-        <span className="panel__title">
-          <span className="idx">▦</span>GRAFANA
-        </span>
-        <span className="panel__spacer" style={{ flex: 1 }} />
-        <span className="panel__meta">history · database</span>
-      </div>
-      <div style={{ display: 'grid', gap: 10 }}>
-        {GRAFANA_EMBEDS.map((g) => {
-          const src = window.PX.telemetry.grafanaPanelUrl(
-            base,
-            g.uid,
-            g.panelId
-          );
-          return src ? (
-            <iframe
-              key={g.uid + g.panelId}
-              title={g.label}
-              src={src}
-              style={{
-                width: '100%',
-                height: 220,
-                border: '1px solid var(--gl-line, rgba(255,255,255,.1))',
-                borderRadius: 2,
-              }}
-            />
-          ) : (
-            <div className="empty" key={g.label}>
-              set Grafana base in App Settings → Connection
-            </div>
-          );
-        })}
-      </div>
-    </div>
-  );
-}
-
 Object.assign(window, {
   RevenuePanel,
   MediaPanel,
@@ -1646,5 +1597,4 @@ Object.assign(window, {
   NewsletterPanel,
   LogsPanel,
   TracesPanel,
-  GrafanaEmbed,
 });

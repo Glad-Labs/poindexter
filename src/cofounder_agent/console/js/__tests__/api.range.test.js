@@ -233,3 +233,143 @@ test('vramUsedSeries returns honest-empty when Prometheus throws', async () => {
   const out = await api.vramUsedSeries('6h');
   assert.ok(Array.isArray(out.series) && out.series.length === 0);
 });
+
+test('dbConnStateSeries issues the by-state query and labels each state', async () => {
+  const fetchImpl = async (url) => {
+    const q = decodeURIComponent(new URL(url).searchParams.get('query') || '');
+    assert.equal(
+      q,
+      'sum by (state) (pg_stat_activity_count{state=~"active|idle|idle in transaction"})'
+    );
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: {
+          result: [
+            { metric: { state: 'active' }, values: [[1000, '1']] },
+            { metric: { state: 'idle' }, values: [[1000, '29']] },
+            { metric: { state: 'idle in transaction' }, values: [[1000, '0']] },
+          ],
+        },
+      }),
+    };
+  };
+  const api = loadApiWithFetch(fetchImpl, {}, OPTS);
+  const out = await api.dbConnStateSeries('1h');
+  const labels = out.series.map((s) => s.label);
+  assert.equal(out.series.length, 3);
+  assert.ok(
+    labels.includes('active') &&
+      labels.includes('idle') &&
+      labels.includes('idle in transaction')
+  );
+});
+
+test('cache-hit / size / dead-tuples issue their exact PromQL', async () => {
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(decodeURIComponent(new URL(url).searchParams.get('query') || ''));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: {
+          result: [
+            { metric: { datname: 'poindexter' }, values: [[1000, '1']] },
+          ],
+        },
+      }),
+    };
+  };
+  const api = loadApiWithFetch(fetchImpl, {}, OPTS);
+  await api.dbCacheHitSeries('1h');
+  await api.dbSizeSeries('1h');
+  await api.dbDeadTuplesSeries('1h');
+  assert.ok(
+    seen.includes(
+      'sum(pg_stat_database_blks_hit) / (sum(pg_stat_database_blks_hit) + sum(pg_stat_database_blks_read)) * 100'
+    )
+  );
+  assert.ok(
+    seen.includes(
+      'pg_database_size_bytes{datname=~"poindexter|poindexter_brain"} / 1073741824'
+    )
+  );
+  assert.ok(seen.includes('sum(pg_stat_user_tables_n_dead_tup)'));
+});
+
+test('dbSizeSeries labels series by datname', async () => {
+  const fetchImpl = async () => ({
+    ok: true,
+    status: 200,
+    json: async () => ({
+      data: {
+        result: [
+          { metric: { datname: 'poindexter' }, values: [[1000, '2']] },
+          { metric: { datname: 'poindexter_brain' }, values: [[1000, '1.5']] },
+        ],
+      },
+    }),
+  });
+  const api = loadApiWithFetch(fetchImpl, {}, OPTS);
+  const out = await api.dbSizeSeries('1h');
+  const labels = out.series.map((s) => s.label);
+  assert.ok(
+    labels.includes('poindexter') && labels.includes('poindexter_brain')
+  );
+});
+
+test('dbConnectionsSeries merges in-use + max into two labeled series', async () => {
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(decodeURIComponent(new URL(url).searchParams.get('query') || ''));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: { result: [{ metric: {}, values: [[1000, '1']] }] },
+      }),
+    };
+  };
+  const api = loadApiWithFetch(fetchImpl, {}, OPTS);
+  const out = await api.dbConnectionsSeries('1h');
+  const labels = out.series.map((s) => s.label);
+  assert.equal(out.series.length, 2);
+  assert.ok(labels.includes('in use') && labels.includes('max'));
+  assert.ok(seen.includes('sum(pg_stat_database_numbackends)'));
+  assert.ok(seen.includes('pg_settings_max_connections'));
+});
+
+test('dbTxnRateSeries merges commits + rollbacks with a rate window', async () => {
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(decodeURIComponent(new URL(url).searchParams.get('query') || ''));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        data: { result: [{ metric: {}, values: [[1000, '0']] }] },
+      }),
+    };
+  };
+  const api = loadApiWithFetch(fetchImpl, {}, OPTS);
+  const out = await api.dbTxnRateSeries('1h');
+  const labels = out.series.map((s) => s.label);
+  assert.equal(out.series.length, 2);
+  assert.ok(labels.includes('commits/s') && labels.includes('rollbacks/s'));
+  assert.ok(seen.includes('sum(rate(pg_stat_database_xact_commit[60s]))'));
+  assert.ok(seen.includes('sum(rate(pg_stat_database_xact_rollback[60s]))'));
+});
+
+test('dbCacheHitSeries returns honest-empty when Prometheus throws', async () => {
+  const api = loadApiWithFetch(
+    async () => {
+      throw new Error('prometheus down');
+    },
+    {},
+    OPTS
+  );
+  const out = await api.dbCacheHitSeries('6h');
+  assert.ok(Array.isArray(out.series) && out.series.length === 0);
+});

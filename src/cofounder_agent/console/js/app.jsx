@@ -1466,6 +1466,7 @@ function App() {
               <div id="sec-telemetry">
                 <HistoryPanel />
                 <HardwarePanel />
+                <DatabasePanel />
                 <LogsPanel
                   logs={logs}
                   service={logFilter.service}
@@ -1476,7 +1477,6 @@ function App() {
                   fresh={logsR}
                 />
                 <TracesPanel traces={traces} fresh={tracesR} />
-                <GrafanaEmbed />
               </div>
             </div>
 

@@ -445,6 +445,79 @@ module.exports = [
     },
   },
 
+  // ── E: Postgres internals (Prometheus range) — request-only ──
+  {
+    name: 'dbConnStateSeries',
+    invoke: (api) => api.dbConnStateSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query:
+        'sum by (state) (pg_stat_activity_count{state=~"active|idle|idle in transaction"})',
+    },
+  },
+  {
+    name: 'dbCacheHitSeries',
+    invoke: (api) => api.dbCacheHitSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query:
+        'sum(pg_stat_database_blks_hit) / (sum(pg_stat_database_blks_hit) + sum(pg_stat_database_blks_read)) * 100',
+    },
+  },
+  {
+    name: 'dbSizeSeries',
+    invoke: (api) => api.dbSizeSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query:
+        'pg_database_size_bytes{datname=~"poindexter|poindexter_brain"} / 1073741824',
+    },
+  },
+  {
+    name: 'dbDeadTuplesSeries',
+    invoke: (api) => api.dbDeadTuplesSeries('1h'),
+    request: {
+      host: 'prometheus',
+      rangeQuery: true,
+      query: 'sum(pg_stat_user_tables_n_dead_tup)',
+    },
+  },
+  {
+    name: 'dbConnectionsSeries',
+    invoke: (api) => api.dbConnectionsSeries('1h'),
+    request: [
+      {
+        host: 'prometheus',
+        rangeQuery: true,
+        query: 'sum(pg_stat_database_numbackends)',
+      },
+      {
+        host: 'prometheus',
+        rangeQuery: true,
+        query: 'pg_settings_max_connections',
+      },
+    ],
+  },
+  {
+    name: 'dbTxnRateSeries',
+    invoke: (api) => api.dbTxnRateSeries('1h'),
+    request: [
+      {
+        host: 'prometheus',
+        rangeQuery: true,
+        query: 'sum(rate(pg_stat_database_xact_commit[60s]))',
+      },
+      {
+        host: 'prometheus',
+        rangeQuery: true,
+        query: 'sum(rate(pg_stat_database_xact_rollback[60s]))',
+      },
+    ],
+  },
+
   // ── C: time-series trends (worker / audit_log) — request-only, no OpenAPI ──
   {
     name: 'qaTrend',
