@@ -4,13 +4,19 @@ audit_log directly (emit_finding is worker-side and unavailable here).
 from __future__ import annotations
 
 import json
+import re
 import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 
 from brain.remediation import rules as R
-from brain.remediation.registry import ActionResult, RemediationContext, execute
+from brain.remediation.registry import (
+    ActionResult,
+    RemediationContext,
+    describe_catalog,
+    execute,
+)
 
 
 @dataclass
@@ -36,65 +42,73 @@ async def _write_audit(
     )
 
 
-async def evaluate_for_dispatch(
-    pool: Any, *, alert: dict[str, Any], fingerprint: str,
-    config: dict[str, Any], logger: Any,
+async def _apply_action(
+    pool: Any, *, alert: dict[str, Any], alertname: str, fingerprint: str,
+    config: dict[str, Any], logger: Any, action_name: str, params: dict[str, Any],
+    source: str, verify_after: int, max_attempts: int, window_minutes: int,
+    rule_id: Any = None, extra_details: dict[str, Any] | None = None,
 ) -> RemediationDecision:
-    """Deterministic rule path, evaluated when an alert is about to be paged.
+    """Gate (allowlist -> breaker -> global rate) then execute + audit.
 
-    acted=True  -> an action ran OK; the dispatcher must HOLD the page and let
-                   the verify scan resolve/escalate it later.
-    acted=False -> page as usual (no rule, disabled, breaker/rate tripped, or
-                   the action failed to run so waiting to verify is pointless).
+    The single execution path shared by BOTH the deterministic rule source and
+    the LLM long-tail source, so a pick from either runs through identical
+    safety machinery and produces identically-shaped ``remediation_action`` /
+    ``remediation_verify`` audit rows. ``source`` ("rule"|"llm") is recorded in
+    the audit details (the Grafana rule-vs-LLM split reads it); ``extra_details``
+    carries the LLM-only fields (confidence / reason / model).
+
+    acted=True  -> action ran OK; the dispatcher HOLDS the page for verify.
+    acted=False -> gate rejection or non-ok execution; page now.
     """
-    if not config.get("enabled"):
-        return RemediationDecision(acted=False, reason="disabled")
-
-    alertname = (alert.get("labels", {}).get("alertname") or "").strip()
-    rule = await R.match_rule(pool, alertname=alertname, fingerprint=fingerprint)
-    if rule is None:
-        return RemediationDecision(acted=False, reason="no rule")
-
-    action_name = rule["action_name"]
     allowlist = config.get("action_allowlist") or []
     if allowlist and action_name not in allowlist:
-        return RemediationDecision(acted=False, reason=f"action {action_name} not in allowlist")
+        return RemediationDecision(
+            acted=False, action_name=action_name, source=source,
+            reason=f"action {action_name} not in allowlist",
+        )
 
-    max_attempts = rule["max_attempts_per_window"] or config["max_attempts_per_window"]
-    window_minutes = rule["window_minutes"] or config["window_minutes"]
     if await R.circuit_breaker_tripped(
         pool, fingerprint=fingerprint, action_name=action_name,
         max_attempts=max_attempts, window_minutes=window_minutes,
     ):
-        return RemediationDecision(acted=False, action_name=action_name, reason="circuit breaker tripped")
+        return RemediationDecision(
+            acted=False, action_name=action_name, source=source,
+            reason="circuit breaker tripped",
+        )
 
     if await R.global_rate_exceeded(pool, max_actions_per_hour=config["max_actions_per_hour"]):
-        return RemediationDecision(acted=False, action_name=action_name, reason="global rate cap")
+        return RemediationDecision(
+            acted=False, action_name=action_name, source=source, reason="global rate cap",
+        )
 
     run_id = str(uuid.uuid4())
-    verify_after = rule["verify_after_seconds"] or config["verify_after_seconds"]
     ctx = RemediationContext(pool=pool, alert=alert, logger=logger)
-    result = await execute(action_name, rule["params"], ctx)
+    result = await execute(action_name, params, ctx)
 
     source_label = f"firefighter:{alertname or 'alert'}"
+    details: dict[str, Any] = {
+        "remediation_run_id": run_id, "fingerprint": fingerprint, "alertname": alertname,
+        "action_name": action_name, "params": params, "source": source,
+        "verify_after_seconds": verify_after,
+        "execution": {"status": result.status, "detail": result.detail, "latency_ms": result.latency_ms},
+    }
+    if rule_id is not None:
+        details["rule_id"] = rule_id
+    if extra_details:
+        details.update(extra_details)
     await _write_audit(
         pool, event_type="remediation_action", source=source_label, severity="info",
-        details={
-            "remediation_run_id": run_id, "fingerprint": fingerprint, "alertname": alertname,
-            "action_name": action_name, "params": rule["params"], "source": "rule",
-            "rule_id": rule["id"], "verify_after_seconds": verify_after,
-            "execution": {"status": result.status, "detail": result.detail, "latency_ms": result.latency_ms},
-        },
+        details=details,
     )
 
     if result.status == "ok":
         logger.info(
-            "[firefighter] acted alert=%s action=%s run=%s — holding page for verify",
-            alertname, action_name, run_id[:8],
+            "[firefighter] acted alert=%s action=%s source=%s run=%s — holding page for verify",
+            alertname, action_name, source, run_id[:8],
         )
         return RemediationDecision(
-            acted=True, action_name=action_name, params=rule["params"],
-            source="rule", run_id=run_id, result=result, reason="rule matched",
+            acted=True, action_name=action_name, params=params,
+            source=source, run_id=run_id, result=result, reason=f"{source} matched",
         )
 
     # Action did not run OK -> nothing to verify; write a terminal verify row so
@@ -108,8 +122,151 @@ async def evaluate_for_dispatch(
         },
     )
     return RemediationDecision(
-        acted=False, action_name=action_name, source="rule", run_id=run_id,
+        acted=False, action_name=action_name, source=source, run_id=run_id,
         result=result, reason=f"action {result.status}: {result.detail}"[:200],
+    )
+
+
+async def _select_and_apply(
+    pool: Any, *, alert: dict[str, Any], alertname: str, fingerprint: str,
+    config: dict[str, Any], logger: Any, select_fn: Any,
+    repeat_count: int, age_minutes: int,
+) -> RemediationDecision:
+    """LLM long-tail path (Plan B): a gated, validated selection over the catalog.
+
+    Each gate that fails -> page as usual, no inference call:
+
+    * long-tail master switch off (``llm_longtail_enabled``);
+    * not persistent — ``repeat_count < min_repeats`` AND ``age < min_age_minutes``
+      (a first-sighting blip pages without burning a model call);
+    * alertname matches ``llm_exclude_regex`` — the circular-dependency guard, so
+      the model is never asked to fix the substrate it runs on (Ollama/GPU/…).
+
+    Then the selector is asked for ONE catalog action. The pick is re-validated
+    here (in-catalog + confidence >= ``min_confidence``) even though the worker
+    route already validates — the model's output stays untrusted end-to-end. A
+    valid pick flows through :func:`_apply_action` with ``source="llm"``.
+    """
+    if not config.get("llm_longtail_enabled", True):
+        return RemediationDecision(acted=False, reason="no rule; llm long-tail disabled")
+
+    min_repeats = int(config.get("min_repeats", 2) or 0)
+    min_age = int(config.get("min_age_minutes", 0) or 0)
+    persistent = repeat_count >= min_repeats or (min_age > 0 and age_minutes >= min_age)
+    if not persistent:
+        return RemediationDecision(acted=False, reason="no rule; alert not persistent yet")
+
+    exclude_regex = config.get("llm_exclude_regex") or ""
+    if exclude_regex:
+        try:
+            excluded = re.search(exclude_regex, alertname or "") is not None
+        except re.error as e:
+            logger.warning(
+                "[firefighter] bad llm_exclude_regex %r: %s — skipping llm path",
+                exclude_regex, e,
+            )
+            return RemediationDecision(acted=False, reason="no rule; bad exclude regex")
+        if excluded:
+            return RemediationDecision(acted=False, reason="no rule; alert excluded from llm path")
+
+    catalog = describe_catalog(config.get("action_allowlist") or None)
+    catalog_names = {c["name"] for c in catalog}
+    if not catalog_names:
+        return RemediationDecision(acted=False, reason="no rule; empty action catalog")
+
+    try:
+        selection = await select_fn(alert=alert, catalog=catalog)
+    except Exception as e:  # noqa: BLE001 — selector transport failure = page as usual
+        logger.warning("[firefighter] llm select_fn raised: %s — paging", e)
+        return RemediationDecision(acted=False, source="llm", reason="no rule; llm selector error")
+
+    if not isinstance(selection, dict):
+        return RemediationDecision(acted=False, source="llm", reason="no rule; llm abstained")
+    action_name = str(selection.get("action_name") or "").strip()
+    if not action_name:
+        return RemediationDecision(acted=False, source="llm", reason="no rule; llm abstained")
+    if action_name not in catalog_names:
+        # Untrusted-output guard (defense in depth — the worker validates too):
+        # the model can never make the engine run an action it wasn't offered.
+        logger.warning("[firefighter] llm picked off-catalog action %r — refusing", action_name)
+        return RemediationDecision(
+            acted=False, action_name=action_name, source="llm",
+            reason="llm picked off-catalog action",
+        )
+
+    try:
+        confidence = float(selection.get("confidence") or 0.0)
+    except (TypeError, ValueError):
+        confidence = 0.0
+    min_conf = float(config.get("min_confidence", 0.6) or 0.0)
+    if confidence < min_conf:
+        return RemediationDecision(
+            acted=False, action_name=action_name, source="llm",
+            reason=f"llm confidence {confidence:.2f} below {min_conf:.2f}",
+        )
+
+    params = selection.get("params")
+    if not isinstance(params, dict):
+        params = {}
+    logger.info(
+        "[firefighter] llm selected alert=%s action=%s confidence=%.2f — applying",
+        alertname, action_name, confidence,
+    )
+    return await _apply_action(
+        pool, alert=alert, alertname=alertname, fingerprint=fingerprint,
+        config=config, logger=logger, action_name=action_name, params=params,
+        source="llm", verify_after=config["verify_after_seconds"],
+        max_attempts=config["max_attempts_per_window"],
+        window_minutes=config["window_minutes"],
+        extra_details={
+            "confidence": confidence,
+            "reason": str(selection.get("reason") or "")[:500],
+            "model": str(selection.get("model") or ""),
+            "repeat_count": repeat_count,
+        },
+    )
+
+
+async def evaluate_for_dispatch(
+    pool: Any, *, alert: dict[str, Any], fingerprint: str,
+    config: dict[str, Any], logger: Any,
+    select_fn: Any = None, repeat_count: int = 0, age_minutes: int = 0,
+) -> RemediationDecision:
+    """Decide whether to remediate an about-to-page alert (rules first, LLM tail).
+
+    A matched ``remediation_rules`` row runs deterministically. With no rule and
+    a ``select_fn`` wired (Plan B), the gated LLM long-tail path may pick an
+    action; without a ``select_fn`` the no-rule alert pages as before.
+
+    acted=True  -> an action ran OK; the dispatcher must HOLD the page and let
+                   the verify scan resolve/escalate it later.
+    acted=False -> page as usual (no rule, disabled, gate tripped, LLM
+                   abstained/low-confidence, or the action failed to run).
+    """
+    if not config.get("enabled"):
+        return RemediationDecision(acted=False, reason="disabled")
+
+    alertname = (alert.get("labels", {}).get("alertname") or "").strip()
+    rule = await R.match_rule(pool, alertname=alertname, fingerprint=fingerprint)
+    if rule is not None:
+        return await _apply_action(
+            pool, alert=alert, alertname=alertname, fingerprint=fingerprint,
+            config=config, logger=logger, action_name=rule["action_name"],
+            params=rule["params"], source="rule",
+            verify_after=rule["verify_after_seconds"] or config["verify_after_seconds"],
+            max_attempts=rule["max_attempts_per_window"] or config["max_attempts_per_window"],
+            window_minutes=rule["window_minutes"] or config["window_minutes"],
+            rule_id=rule["id"],
+        )
+
+    # No deterministic rule. Fall back to the gated LLM long-tail path when a
+    # selector is wired; otherwise page as before (unchanged back-compat).
+    if select_fn is None:
+        return RemediationDecision(acted=False, reason="no rule")
+    return await _select_and_apply(
+        pool, alert=alert, alertname=alertname, fingerprint=fingerprint,
+        config=config, logger=logger, select_fn=select_fn,
+        repeat_count=repeat_count, age_minutes=age_minutes,
     )
 
 
@@ -181,6 +338,45 @@ LIMIT 50
 """
 
 
+async def _write_candidate_rule_finding(
+    pool: Any, *, details: dict[str, Any], alertname: str, action: str,
+    fingerprint: str, run_id: Any,
+) -> None:
+    """Emit a ``remediation_candidate_rule`` finding for a resolved LLM self-heal.
+
+    A finding-shaped ``audit_log`` row (matching ``utils.findings.emit_finding``,
+    which the brain can't call — it's worker-side) so the fix flows into the
+    Findings dashboard + ``findings_list`` triage, where the operator promotes it
+    to a durable ``remediation_rules`` row (the learning loop). ``severity=warn``
+    routes one Discord nudge per novel ``(alert, action)``; the stable
+    ``dedup_key`` keeps repeats quiet.
+    """
+    await _write_audit(
+        pool, event_type="finding", source=f"firefighter:{alertname or 'alert'}",
+        severity="warn",
+        details={
+            "kind": "remediation_candidate_rule",
+            "title": f"LLM self-heal worked: {action} resolved {alertname}",
+            "body": (
+                f"The firefighter's LLM long-tail path chose `{action}` for the "
+                f"un-ruled alert `{alertname}` and it resolved. Consider promoting "
+                f"this to a remediation_rules row so it runs deterministically "
+                f"(no inference call, no persistence wait)."
+            ),
+            "dedup_key": f"remediation-candidate:{alertname}:{action}",
+            "extra": {
+                "alertname": alertname,
+                "action_name": action,
+                "params": details.get("params") or {},
+                "confidence": details.get("confidence"),
+                "model": details.get("model") or "",
+                "fingerprint": fingerprint,
+                "remediation_run_id": run_id,
+            },
+        },
+    )
+
+
 async def run_verify_scan(
     pool: Any, *, config: dict[str, Any], logger: Any, notify_fn: Any = None,
 ) -> dict[str, int]:
@@ -241,4 +437,13 @@ async def run_verify_scan(
                 "[firefighter] resolved alert=%s action=%s run=%s (silent)",
                 alertname, action, str(run_id)[:8],
             )
+            # Learning loop: a RESOLVED llm-source self-heal for an un-ruled
+            # alert is a candidate for a durable rule — surface it for the
+            # operator to promote. Rule-source resolves are expected behaviour,
+            # not candidates, so they emit nothing.
+            if details.get("source") == "llm":
+                await _write_candidate_rule_finding(
+                    pool, details=details, alertname=alertname,
+                    action=action, fingerprint=fingerprint, run_id=run_id,
+                )
     return summary

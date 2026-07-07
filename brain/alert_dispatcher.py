@@ -993,12 +993,19 @@ async def _dispatch_one(
                 return routed if isinstance(routed, dict) else None
             # action == "dispatch" -- fall through to severity-routed send.
 
-            # --- Firefighter: try deterministic remediation before paging. ---
+            # --- Firefighter: try deterministic remediation, then the gated
+            #     LLM long-tail, before paging. ---
             ff_cfg = dedup_config.get("firefighter_config") or {}
             if ff_cfg.get("enabled"):
+                # repeat_count is the persistence signal for the LLM path; the
+                # engine gates on it (a first-sighting blip never reaches the
+                # model). select_fn is pure transport — the engine owns every
+                # gate, so we always hand it over and let the engine decide.
+                repeat_count = int((decision.get("state") or {}).get("repeat_count") or 0)
                 ff = await evaluate_for_dispatch_hook(
                     pool, alert=alert, fingerprint=decision["fingerprint"],
                     config=ff_cfg, logger=logger,
+                    select_fn=_make_select_fn(pool), repeat_count=repeat_count,
                 )
                 if ff.acted:
                     await pool.execute(
@@ -1832,6 +1839,113 @@ def _post_triage_sync(
             # branches on, not this diagnostic body.
             pass
         return e.code, body
+
+
+# ---------------------------------------------------------------------------
+# Firefighter LLM long-tail selector (Plan B) — POST /api/remediation/select.
+# The brain can't run an LLM (asyncpg/httpx/urllib only), so it asks the worker
+# to pick ONE action from the catalog the engine offers. Mirrors the triage
+# transport primitives above.
+# ---------------------------------------------------------------------------
+
+_SELECT_TIMEOUT_SECONDS = 30.0
+
+
+def _post_select_sync(url: str, payload: bytes, token: str, timeout: float) -> tuple[int, bytes]:
+    """Synchronous urllib POST to /api/remediation/select. Caller wraps in
+    ``to_thread``. Stdlib-only (brain triad); returns ``(status_code, body)``."""
+    req = urllib.request.Request(
+        url,
+        data=payload,
+        headers={
+            "Content-Type": "application/json",
+            "Authorization": f"Bearer {token}",
+            "User-Agent": "PoinDexterBrain-Remediation/1.0",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            return resp.status, resp.read()
+    except urllib.error.HTTPError as e:
+        body = b""
+        try:
+            body = e.read()
+        except Exception:  # noqa: BLE001
+            # silent-ok: best-effort read of an already-failed HTTPError body;
+            # the status code returned below is what the caller branches on.
+            pass
+        return e.code, body
+
+
+async def _remediation_select(
+    pool: Any,
+    *,
+    alert: dict[str, Any],
+    catalog: list[dict[str, Any]],
+    timeout: float = _SELECT_TIMEOUT_SECONDS,
+) -> dict[str, Any] | None:
+    """Ask the worker to pick ONE catalog action for an un-ruled alert.
+
+    Returns the parsed selection ``{action_name, params, confidence, reason,
+    model}`` on a 200 carrying a non-empty ``action_name``; otherwise ``None``.
+    ``None`` — no ``api_base_url``, no OAuth token, non-200 (e.g. 503 when the
+    firefighter is disabled / has no provider), a worker abstain, or a
+    transport / parse failure — means "no LLM pick", and the engine pages as
+    usual (the spec's Ollama-down degradation). Never raises into the caller.
+    """
+    base_url = await _read_api_base_url(pool)
+    if not base_url:
+        logger.debug("[alert_dispatcher] remediation select skipped: api_base_url unset")
+        return None
+    token = await _mint_oauth_token(pool, base_url)
+    if not token:
+        logger.debug("[alert_dispatcher] remediation select skipped: no OAuth token")
+        return None
+
+    payload = json.dumps({"alert": alert, "action_catalog": catalog}, default=str).encode("utf-8")
+    url = f"{base_url}/api/remediation/select"
+    try:
+        status, body = await asyncio.to_thread(_post_select_sync, url, payload, token, timeout)
+    except Exception as e:  # noqa: BLE001 — any transport failure = page as usual
+        logger.warning("[alert_dispatcher] remediation select POST failed: %s — paging", e)
+        return None
+    if status != 200:
+        logger.info("[alert_dispatcher] remediation select non-200 (%s) — paging", status)
+        return None
+    try:
+        data = json.loads(body)
+    except (ValueError, TypeError) as e:
+        logger.warning("[alert_dispatcher] remediation select bad JSON: %s — paging", e)
+        return None
+    if not isinstance(data, dict):
+        return None
+    action_name = str(data.get("action_name") or "").strip()
+    if not action_name:
+        return None  # worker abstained -> page
+    params = data.get("params")
+    return {
+        "action_name": action_name,
+        "params": params if isinstance(params, dict) else {},
+        "confidence": data.get("confidence") or 0.0,
+        "reason": str(data.get("reason") or ""),
+        "model": str(data.get("model") or ""),
+    }
+
+
+def _make_select_fn(pool: Any) -> Any:
+    """Build the engine's ``select_fn`` — a closure that POSTs to the worker.
+
+    The ENGINE builds the catalog and applies every gate (long-tail switch,
+    persistence, exclusion regex, confidence, allowlist); this closure is pure
+    transport, so all decision logic stays in one place.
+    """
+    async def select_fn(
+        *, alert: dict[str, Any], catalog: list[dict[str, Any]]
+    ) -> dict[str, Any] | None:
+        return await _remediation_select(pool, alert=alert, catalog=catalog)
+
+    return select_fn
 
 
 def _compose_triage_followup(alert: dict[str, Any], diagnosis: str) -> str:

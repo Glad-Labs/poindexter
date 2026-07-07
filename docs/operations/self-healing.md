@@ -36,8 +36,10 @@ The loop, when an alert is about to page:
 1. **Detect.** The dispatcher holds an `alert_events` row it's about to send.
 2. **Match.** `engine.evaluate_for_dispatch` looks up a `remediation_rules` row
    for the alert (exact `alertname` first, then `match_regex` over
-   alertname/fingerprint). No rule → page as usual; the firefighter is invisible
-   to unconfigured alerts.
+   alertname/fingerprint). A matched rule acts deterministically. **No rule →
+   the gated LLM long-tail path** (Plan B, below); only if that abstains or is
+   disabled does the alert page as usual, so the firefighter stays invisible to
+   unconfigured alerts unless the long-tail engages.
 3. **Act.** The matched rule names an action in the **action registry** (below).
    The engine runs it, writes a `remediation_action` row to `audit_log`, and — if
    the action ran OK — **holds the page**. The `alert_events` row is marked
@@ -94,6 +96,56 @@ loop.
 - **Verify-then-page.** A successful action never silences an unfixed problem: if
   the alert is still firing after the grace window, it pages. Silence is earned
   only by the alert actually stopping.
+
+### LLM long-tail — the un-ruled path (Plan B)
+
+A rule covers a _known_ alert shape. For an alert with **no** rule, the
+firefighter can still take a reasonable first action instead of paging blind: a
+small **local** model (`ops_firefighter_model`, default `ollama/llama3.2:3b`)
+picks one action from the registry catalog — or abstains. The selection never
+runs in the brain (which ships asyncpg/httpx/urllib only, no LLM libs): the
+brain POSTs the alert + the allowlisted catalog to the worker route
+`POST /api/remediation/select`, the worker runs local Ollama and returns a
+`{action_name, params, confidence, reason}` **constrained to the catalog it was
+sent**, and the engine re-validates that pick before acting. Local-only by
+policy — never a cloud LLM (`no_paid_apis`).
+
+The path is gated — each gate that fails pages as usual, with **no inference
+call**:
+
+- **Master switch.** `ops_firefighter_llm_longtail_enabled` (default `true`).
+  Off → only the deterministic rule path runs, even with the firefighter
+  enabled.
+- **Persistence.** A one-off blip pages without ever asking the model. The LLM
+  path engages only once the alert is persistent —
+  `repeat_count >= ops_firefighter_min_repeats` (default `2`) **or** it has been
+  firing longer than `ops_firefighter_min_age_minutes` (default `10`).
+- **Circular-dependency guard.** An alert whose name matches
+  `ops_firefighter_llm_exclude_regex` (default
+  `(?i)(ollama|gpu|vram|cuda|inference)`) is **never** sent to the model — you
+  can't ask the LLM to fix the substrate it runs on. Those stay
+  deterministic-rule-only.
+- **Confidence.** A selection below `ops_firefighter_min_confidence` (default
+  `0.6`) pages instead of acting.
+- **Untrusted output.** The model's `action_name` must be one of the catalog
+  names it was sent — re-validated on **both** the worker and the brain — so an
+  off-list, malformed, low-confidence, or Ollama-unreachable selection degrades
+  to _abstain → page_. Model quality affects the recovery _rate_, never
+  _safety_.
+
+A valid pick then runs the **same allowlist → circuit-breaker → rate-cap →
+execute → verify** machinery as a rule, recorded with `source="llm"` (plus
+`confidence` / `model`) in its `remediation_action` audit row. The **Rule vs LLM
+source split** and **LLM selector hit-rate per model** panels on the System
+Health dashboard track how much the long-tail is doing and whether the model is
+good enough.
+
+**The learning loop.** When an LLM-chosen action **resolves** (verified silent
+success), the verify scan emits a `remediation_candidate_rule` **finding** —
+surfaced on the Findings dashboard + `findings_list` — so you can promote the
+proven fix to a durable `remediation_rules` row. Once promoted it runs
+deterministically, with no inference call or persistence wait. A still-firing
+attempt, or a rule-source resolve, emits nothing.
 
 ### Authoring a rule
 
@@ -523,27 +575,33 @@ stopped. Until that lands, the brain probe above is the sole reclaim path. See
 
 ## Settings reference
 
-| Setting                                                       | Default                       | Meaning                                                                                                                   |
-| ------------------------------------------------------------- | ----------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
-| `compose_drift_host_recover_enabled`                          | `true`                        | Auto-heal compose drift via the host agent.                                                                               |
-| `compose_drift_host_recover_cap_per_window`                   | `3`                           | Max reapplies before escalating to a page.                                                                                |
-| `compose_drift_host_recover_window_minutes`                   | `60`                          | The rolling window for the cap.                                                                                           |
-| `compose_drift_on_demand_services`                            | `wan-server,image-gen-server` | CSV of services started on demand — exempt from the missing-container check.                                              |
-| `compose_drift_active_profiles`                               | (empty)                       | CSV of active compose `profiles:`. Services gated behind an unlisted profile are exempt from the missing-container check. |
-| `compose_drift_auto_recover_enabled`                          | `false`                       | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                               |
-| `mcp_http_probe_recovery_url`                                 | (empty)                       | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.              |
-| `mcp_http_probe_recovery_token`                               | secret                        | Bearer token matching the agent's `poindexter_recovery_token`.                                                            |
-| `scheduled_tasks_probe_watch_tasks`                           | (empty)                       | CSV of host Scheduled Task names the `scheduled_tasks` probe checks via `GET /tasks`. Empty = advisory no-op.             |
-| `offsite_backup_watch_enabled`                                | `true`                        | Backup-freshness probe.                                                                                                   |
-| `auto_embed_watch_enabled`                                    | `true`                        | Embedder-freshness probe.                                                                                                 |
-| `docker_port_forward_max_failed_recoveries_before_alert_only` | `1`                           | Consecutive failed recoveries before a `restart` entry switches to alert-only (adaptive give-up).                         |
-| `docker_port_forward_alert_only_backoff_minutes`              | `60`                          | Minutes a container stays alert-only after the give-up trips, before one more restart is allowed.                         |
-| `ops_firefighter_enabled`                                     | `true`                        | Master switch for the deterministic firefighter. Off = every alert pages the old way.                                     |
-| `ops_firefighter_max_attempts_per_window`                     | `3`                           | Per-`(fingerprint, action)` circuit-breaker cap; a matched rule may override.                                             |
-| `ops_firefighter_window_minutes`                              | `60`                          | Circuit-breaker rolling window (minutes); a matched rule may override.                                                    |
-| `ops_firefighter_verify_after_seconds`                        | `120`                         | Grace before the verify scan judges an action resolved vs still-firing; a matched rule may override.                      |
-| `ops_firefighter_max_actions_per_hour`                        | `10`                          | Global cap on firefighter actions across all rules per hour.                                                              |
-| `ops_firefighter_action_allowlist`                            | (empty)                       | CSV of allowed `action_name`s; empty = every registered action allowed.                                                   |
+| Setting                                                       | Default                                    | Meaning                                                                                                                   |
+| ------------------------------------------------------------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------- |
+| `compose_drift_host_recover_enabled`                          | `true`                                     | Auto-heal compose drift via the host agent.                                                                               |
+| `compose_drift_host_recover_cap_per_window`                   | `3`                                        | Max reapplies before escalating to a page.                                                                                |
+| `compose_drift_host_recover_window_minutes`                   | `60`                                       | The rolling window for the cap.                                                                                           |
+| `compose_drift_on_demand_services`                            | `wan-server,image-gen-server`              | CSV of services started on demand — exempt from the missing-container check.                                              |
+| `compose_drift_active_profiles`                               | (empty)                                    | CSV of active compose `profiles:`. Services gated behind an unlisted profile are exempt from the missing-container check. |
+| `compose_drift_auto_recover_enabled`                          | `false`                                    | Brain-side `docker compose up` — keep OFF on Windows hosts.                                                               |
+| `mcp_http_probe_recovery_url`                                 | (empty)                                    | Recovery Agent endpoint, e.g. `http://host.docker.internal:9841/recover`. Shared by all host-recover probes.              |
+| `mcp_http_probe_recovery_token`                               | secret                                     | Bearer token matching the agent's `poindexter_recovery_token`.                                                            |
+| `scheduled_tasks_probe_watch_tasks`                           | (empty)                                    | CSV of host Scheduled Task names the `scheduled_tasks` probe checks via `GET /tasks`. Empty = advisory no-op.             |
+| `offsite_backup_watch_enabled`                                | `true`                                     | Backup-freshness probe.                                                                                                   |
+| `auto_embed_watch_enabled`                                    | `true`                                     | Embedder-freshness probe.                                                                                                 |
+| `docker_port_forward_max_failed_recoveries_before_alert_only` | `1`                                        | Consecutive failed recoveries before a `restart` entry switches to alert-only (adaptive give-up).                         |
+| `docker_port_forward_alert_only_backoff_minutes`              | `60`                                       | Minutes a container stays alert-only after the give-up trips, before one more restart is allowed.                         |
+| `ops_firefighter_enabled`                                     | `true`                                     | Master switch for the deterministic firefighter. Off = every alert pages the old way.                                     |
+| `ops_firefighter_max_attempts_per_window`                     | `3`                                        | Per-`(fingerprint, action)` circuit-breaker cap; a matched rule may override.                                             |
+| `ops_firefighter_window_minutes`                              | `60`                                       | Circuit-breaker rolling window (minutes); a matched rule may override.                                                    |
+| `ops_firefighter_verify_after_seconds`                        | `120`                                      | Grace before the verify scan judges an action resolved vs still-firing; a matched rule may override.                      |
+| `ops_firefighter_max_actions_per_hour`                        | `10`                                       | Global cap on firefighter actions across all rules per hour.                                                              |
+| `ops_firefighter_action_allowlist`                            | (empty)                                    | CSV of allowed `action_name`s; empty = every registered action allowed.                                                   |
+| `ops_firefighter_llm_longtail_enabled`                        | `true`                                     | Master switch for the LLM long-tail (un-ruled) path. Off = deterministic rules only.                                      |
+| `ops_firefighter_model`                                       | `ollama/llama3.2:3b`                       | Local Ollama model the worker uses to pick an action for an un-ruled alert.                                               |
+| `ops_firefighter_min_repeats`                                 | `2`                                        | LLM path engages after an un-ruled alert repeats this many times…                                                         |
+| `ops_firefighter_min_age_minutes`                             | `10`                                       | …or has been firing this long (either signal qualifies).                                                                  |
+| `ops_firefighter_min_confidence`                              | `0.6`                                      | LLM selections below this confidence page instead of acting.                                                              |
+| `ops_firefighter_llm_exclude_regex`                           | `(?i)(ollama\|gpu\|vram\|cuda\|inference)` | Circular-dependency guard — alertnames matching this regex never take the LLM path.                                       |
 
 ## Deploying the Recovery Agent
 

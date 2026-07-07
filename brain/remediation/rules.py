@@ -59,18 +59,45 @@ async def _read_int(pool: Any, key: str, default: int) -> int:
         return default
 
 
+async def _read_float(pool: Any, key: str, default: float) -> float:
+    raw = await _read_str(pool, key, str(default))
+    try:
+        return float(str(raw).strip())
+    except (ValueError, TypeError):
+        return default
+
+
+_TRUTHY = ("true", "1", "yes", "on")
+
+# Circular-dependency guard default (spec's "never ask the LLM to fix the thing
+# it runs on"): the LLM long-tail path is SKIPPED for alerts whose name matches
+# this. MUST stay in sync with the ops_firefighter_llm_exclude_regex seed in
+# services/settings_defaults.py so a fresh/partial DB behaves identically.
+_DEFAULT_LLM_EXCLUDE_REGEX = r"(?i)(ollama|gpu|vram|cuda|inference)"
+
+
 async def load_firefighter_config(pool: Any) -> dict[str, Any]:
     """Snapshot the firefighter knobs once per cycle."""
     enabled_raw = await _read_str(pool, "ops_firefighter_enabled", "true")
     allowlist_raw = await _read_str(pool, "ops_firefighter_action_allowlist", "")
     allowlist = [p.strip() for p in allowlist_raw.split(",") if p.strip()]
+    longtail_raw = await _read_str(pool, "ops_firefighter_llm_longtail_enabled", "true")
     return {
-        "enabled": enabled_raw.strip().lower() in ("true", "1", "yes", "on"),
+        "enabled": enabled_raw.strip().lower() in _TRUTHY,
         "max_attempts_per_window": await _read_int(pool, "ops_firefighter_max_attempts_per_window", 3),
         "window_minutes": await _read_int(pool, "ops_firefighter_window_minutes", 60),
         "verify_after_seconds": await _read_int(pool, "ops_firefighter_verify_after_seconds", 120),
         "max_actions_per_hour": await _read_int(pool, "ops_firefighter_max_actions_per_hour", 10),
         "action_allowlist": allowlist,
+        # --- Plan B: LLM long-tail selector gates ---
+        "llm_longtail_enabled": longtail_raw.strip().lower() in _TRUTHY,
+        "min_repeats": await _read_int(pool, "ops_firefighter_min_repeats", 2),
+        "min_age_minutes": await _read_int(pool, "ops_firefighter_min_age_minutes", 10),
+        "min_confidence": await _read_float(pool, "ops_firefighter_min_confidence", 0.6),
+        "model": await _read_str(pool, "ops_firefighter_model", "ollama/llama3.2:3b"),
+        "llm_exclude_regex": await _read_str(
+            pool, "ops_firefighter_llm_exclude_regex", _DEFAULT_LLM_EXCLUDE_REGEX
+        ),
     }
 
 

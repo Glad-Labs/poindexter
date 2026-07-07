@@ -91,6 +91,17 @@ DEFAULTS: dict[str, str] = {
     "ops_firefighter_min_repeats": "2",
     # Confidence gate: an LLM selection below this score pages instead of acting.
     "ops_firefighter_min_confidence": "0.6",
+    # Long-tail master switch — turn OFF to keep only the deterministic rule path
+    # (Plan A) even while ops_firefighter_enabled stays true.
+    "ops_firefighter_llm_longtail_enabled": "true",
+    # Persistence gate (alternative to min_repeats): an un-ruled alert also
+    # qualifies for the LLM path once it has been firing this many minutes.
+    "ops_firefighter_min_age_minutes": "10",
+    # Circular-dependency guard — the LLM path is SKIPPED for alerts whose name
+    # matches this regex, so the model is never asked to fix the substrate it
+    # runs on (Ollama / GPU / inference). Those stay deterministic-rule-only.
+    # Keep in sync with rules._DEFAULT_LLM_EXCLUDE_REGEX.
+    "ops_firefighter_llm_exclude_regex": "(?i)(ollama|gpu|vram|cuda|inference)",
     # ----- Identity / branding -----
     # Operator identity is generic on OSS (each install is its own company); the
     # Glad Labs operator overlay (services.operator_overrides) restores Matt /

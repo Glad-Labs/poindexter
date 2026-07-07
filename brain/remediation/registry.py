@@ -93,6 +93,57 @@ ACTION_REGISTRY: dict[str, Executor] = {
 }
 
 
+# Human/LLM-facing metadata, kept parallel to ACTION_REGISTRY (not merged into
+# it, so the executor stays a plain callable). ``describe_catalog()`` is the
+# ONLY description of the actions the brain sends the LLM selector; the model
+# picks a name from here and the engine re-validates that pick against
+# ACTION_REGISTRY before executing — the model's output is never trusted.
+_ACTION_META: dict[str, dict[str, Any]] = {
+    "restart_container": {
+        "description": (
+            "Restart a single docker container by name. Idempotent and "
+            "blast-radius-bounded — for a wedged or unresponsive service."
+        ),
+        "params_schema": {
+            "container": "str (required) — container name, e.g. 'poindexter-pyroscope'",
+        },
+    },
+    "run_auto_remediate": {
+        "description": (
+            "Run the brain's stuck-task / stale-approval cleanup sweep "
+            "(resets orphaned pipeline rows, clears poisoned checkpoints). No params."
+        ),
+        "params_schema": {},
+    },
+}
+
+
+def describe_catalog(allowlist: list[str] | None = None) -> list[dict[str, Any]]:
+    """The action catalog the brain hands the LLM selector.
+
+    Returns ``[{name, description, params_schema}]`` for every registered
+    action, in registry order. A non-empty ``allowlist`` restricts the catalog
+    to those names — mirroring ``ops_firefighter_action_allowlist`` semantics
+    where an empty/absent list means "all registered actions". A name in the
+    allowlist that isn't registered is ignored: you can only ever offer an
+    action that actually executes.
+    """
+    allowed = set(allowlist) if allowlist else None
+    catalog: list[dict[str, Any]] = []
+    for name in ACTION_REGISTRY:
+        if allowed is not None and name not in allowed:
+            continue
+        meta = _ACTION_META.get(name, {})
+        catalog.append(
+            {
+                "name": name,
+                "description": str(meta.get("description", "")),
+                "params_schema": dict(meta.get("params_schema", {})),
+            }
+        )
+    return catalog
+
+
 async def execute(action_name: str, params: dict[str, Any], ctx: RemediationContext) -> ActionResult:
     """Run a registered action. Unknown name -> skipped. Executor blow-up -> failed.
 

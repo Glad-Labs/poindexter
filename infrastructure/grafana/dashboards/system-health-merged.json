@@ -2575,6 +2575,62 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "piechart",
+      "title": "Rule vs LLM source split (24h)",
+      "description": "Which decision source drove remediations — deterministic rules vs the LLM long-tail (Plan B).",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "id": 728,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 314
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(details->>'source','?') AS source, count(*) AS n FROM audit_log WHERE event_type='remediation_action' AND timestamp >= now() - interval '24 hours' GROUP BY 1 ORDER BY 2 DESC",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "LLM selector hit-rate per model (7d)",
+      "description": "Attempted vs resolved for llm-source remediations, per model — answers 'is the selector model good enough?' empirically (drives model_eval_loop). Wider 7d window since LLM-path actions are rarer than rule ones.",
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "id": 729,
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 314
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT a.details->>'model' AS model, count(*) AS attempted, count(*) FILTER (WHERE v.details->>'result'='resolved') AS resolved, round(100.0 * count(*) FILTER (WHERE v.details->>'result'='resolved') / NULLIF(count(*),0), 1) AS hit_rate_pct FROM audit_log a LEFT JOIN audit_log v ON v.event_type='remediation_verify' AND v.details->>'remediation_run_id' = a.details->>'remediation_run_id' WHERE a.event_type='remediation_action' AND a.details->>'source'='llm' AND a.timestamp >= now() - interval '7 days' GROUP BY 1 ORDER BY attempted DESC",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",

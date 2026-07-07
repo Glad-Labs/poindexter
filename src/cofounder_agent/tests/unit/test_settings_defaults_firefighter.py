@@ -24,3 +24,19 @@ def test_firefighter_llm_longtail_defaults_present_and_typed():
     # int / float consumers parse the string forms.
     assert int(DEFAULTS["ops_firefighter_min_repeats"]) >= 1
     assert 0.0 < float(DEFAULTS["ops_firefighter_min_confidence"]) <= 1.0
+
+
+def test_firefighter_llm_longtail_engine_gate_defaults():
+    """Plan B engine gates seeded: long-tail master switch, persistence age, and
+    the circular-dependency exclusion regex (the LLM must never be asked to fix
+    the substrate it runs on — spec's circular-dependency guard)."""
+    import re
+
+    assert DEFAULTS["ops_firefighter_llm_longtail_enabled"] == "true"
+    assert DEFAULTS["ops_firefighter_min_age_minutes"] == "10"
+    assert int(DEFAULTS["ops_firefighter_min_age_minutes"]) >= 0
+    excl = DEFAULTS["ops_firefighter_llm_exclude_regex"]
+    assert excl  # non-empty (value_not_null discipline)
+    # It actually matches the LLM's own substrate so those alerts stay rule-only.
+    assert re.search(excl, "OllamaUnresponsive")
+    assert re.search(excl, "GPUTempHigh")

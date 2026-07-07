@@ -84,3 +84,42 @@ async def test_load_config_parses_types():
     assert cfg["enabled"] is True
     assert cfg["max_attempts_per_window"] == 3
     assert cfg["action_allowlist"] == ["restart_container", "run_auto_remediate"]
+
+
+@pytest.mark.asyncio
+async def test_load_config_parses_llm_longtail_knobs():
+    """Plan B knobs — the LLM long-tail selector gates (persistence, confidence,
+    exclusion) all resolve through the same one-cycle config snapshot."""
+    pool = FakePool()
+    store = {
+        "ops_firefighter_enabled": "true",
+        "ops_firefighter_llm_longtail_enabled": "true",
+        "ops_firefighter_min_repeats": "2",
+        "ops_firefighter_min_age_minutes": "10",
+        "ops_firefighter_min_confidence": "0.6",
+        "ops_firefighter_model": "ollama/llama3.2:3b",
+        "ops_firefighter_llm_exclude_regex": "(?i)(ollama|gpu|vram)",
+    }
+    pool.set_fetchval(lambda sql, args: store.get(args[0]))
+    cfg = await R.load_firefighter_config(pool)
+    assert cfg["llm_longtail_enabled"] is True
+    assert cfg["min_repeats"] == 2
+    assert cfg["min_age_minutes"] == 10
+    assert cfg["min_confidence"] == 0.6
+    assert cfg["model"] == "ollama/llama3.2:3b"
+    assert "ollama" in cfg["llm_exclude_regex"]
+
+
+@pytest.mark.asyncio
+async def test_load_config_llm_longtail_defaults_when_unset():
+    """Missing rows fall back to the seeded defaults, not crashes — a fresh DB
+    (or a partial seed) still yields a usable, conservative config."""
+    pool = FakePool()
+    pool.set_fetchval(lambda sql, args: None)  # nothing seeded
+    cfg = await R.load_firefighter_config(pool)
+    assert cfg["llm_longtail_enabled"] is True
+    assert cfg["min_repeats"] == 2
+    assert cfg["min_age_minutes"] == 10
+    assert cfg["min_confidence"] == 0.6
+    assert cfg["model"] == "ollama/llama3.2:3b"
+    assert cfg["llm_exclude_regex"]  # non-empty circular-dependency guard
