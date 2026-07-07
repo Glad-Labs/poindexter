@@ -315,6 +315,42 @@ class TestDispatchComplete:
                     model="gemma3:27b",
                 )
 
+    async def test_threads_default_num_ctx_when_absent(self, monkeypatch):
+        """A caller that omits num_ctx gets the per-phase default forwarded to
+        the provider — so vision / media / research callers no longer load the
+        model at Ollama's Modelfile default (e.g. gemma-4-31B at 262144). The
+        clamp is disabled here to isolate the defaulting wiring."""
+        pool = _FakePool(setting_value="ollama_native")
+        provider = _FakeProvider(name="ollama_native")
+        provider.complete.return_value = _FakeCompletionResult()
+        monkeypatch.setattr(dispatcher, "_resolve_default_num_ctx", lambda _phase, _model, _pc: 9999)
+        monkeypatch.setattr(dispatcher, "_vram_guard_enabled", lambda: False)
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+            await dispatcher.dispatch_complete(
+                pool,
+                messages=[{"role": "user", "content": "hi"}],
+                model="gemma3:27b",
+            )
+        assert provider.complete.await_args.kwargs.get("num_ctx") == 9999
+
+    async def test_keeps_caller_supplied_num_ctx(self, monkeypatch):
+        """An explicit num_ctx is never overwritten by the default — the default
+        only fills a gap."""
+        pool = _FakePool(setting_value="ollama_native")
+        provider = _FakeProvider(name="ollama_native")
+        provider.complete.return_value = _FakeCompletionResult()
+        # If the default were wrongly applied it would clobber this to 9999.
+        monkeypatch.setattr(dispatcher, "_resolve_default_num_ctx", lambda *_a: 9999)
+        monkeypatch.setattr(dispatcher, "_vram_guard_enabled", lambda: False)
+        with patch.object(dispatcher, "get_all_llm_providers", return_value=[provider]):
+            await dispatcher.dispatch_complete(
+                pool,
+                messages=[{"role": "user", "content": "hi"}],
+                model="gemma3:27b",
+                num_ctx=16384,
+            )
+        assert provider.complete.await_args.kwargs.get("num_ctx") == 16384
+
 
 # ---------------------------------------------------------------------------
 # dispatch_embed

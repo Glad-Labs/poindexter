@@ -78,3 +78,47 @@ async def test_clamp_noop_when_arch_unavailable(monkeypatch):
         pool=None, model="m", num_ctx=8192, provider_config={},
     )
     assert out == 8192
+
+
+# ---------------------------------------------------------------------------
+# num_ctx defaulting — closes the seam gap where a LOCAL dispatch that never
+# threaded num_ctx (the vision-QA / media / research paths, not just the
+# writer) loaded the model at Ollama's Modelfile default (e.g. gemma-4-31B at
+# 262144) and sailed past the clamp, which only fires when num_ctx is present.
+# ---------------------------------------------------------------------------
+
+
+def test_resolve_default_num_ctx_none_for_paid(monkeypatch):
+    """A paid/cloud dispatch never gets a defaulted num_ctx — it is meaningless
+    there and would trigger a wasted /api/show against a non-local model in the
+    clamp below."""
+    import services.llm_providers.dispatcher as d
+
+    monkeypatch.setattr(d, "_is_paid_llm_call", lambda _model, _pc: True)
+    assert d._resolve_default_num_ctx("qa.vision", "claude-opus-4-8", {}) is None
+
+
+def test_resolve_default_num_ctx_resolves_for_local(monkeypatch):
+    """A local dispatch that didn't thread num_ctx gets the per-phase resolved
+    context, so vision / media / research are bounded + clamped like the writer.
+    Delegates to resolve_num_ctx with the request's phase and the container's
+    SiteConfig (None when no container is bootstrapped)."""
+    import services.llm_providers.dispatcher as d
+
+    monkeypatch.setattr(d, "_is_paid_llm_call", lambda _model, _pc: False)
+    captured = {}
+
+    def _fake_resolve(phase, *, site_config=None):
+        captured["phase"] = phase
+        captured["site_config"] = site_config
+        return 4096
+
+    monkeypatch.setattr("services.ollama_client.resolve_num_ctx", _fake_resolve)
+    monkeypatch.setattr("services.container_registry.get_container", lambda: None)
+
+    out = d._resolve_default_num_ctx(
+        "qa.vision", "ollama/gemma-4-31B-it-qat:latest", {},
+    )
+    assert out == 4096
+    assert captured["phase"] == "qa.vision"
+    assert captured["site_config"] is None

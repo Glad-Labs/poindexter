@@ -284,6 +284,31 @@ async def _clamp_num_ctx_to_budget(
     return safe
 
 
+def _resolve_default_num_ctx(
+    phase: str, model: str, provider_config: dict[str, Any] | None,
+) -> int | None:
+    """Per-phase num_ctx for a LOCAL dispatch that didn't thread one.
+
+    Closes the seam gap where callers other than the writer (vision QA via
+    ``MultiModelQA._vision_complete``, media renders, scheduled research)
+    reached ``dispatch_complete`` without a ``num_ctx`` — so Ollama loaded the
+    model at its Modelfile default (e.g. gemma-4-31B at 262144) and sailed past
+    the clamp, which only fires when num_ctx is present.
+
+    Returns the per-phase resolved context for local calls, or ``None`` for
+    paid/cloud calls — num_ctx is meaningless there and would force a wasted
+    ``/api/show`` against a non-local model in the clamp.
+    """
+    if _is_paid_llm_call(model, provider_config):
+        return None
+    from services.container_registry import get_container
+    from services.ollama_client import resolve_num_ctx
+
+    container = get_container()
+    site_config = container.site_config if container is not None else None
+    return resolve_num_ctx(phase, site_config=site_config)
+
+
 def _vram_guard_enabled() -> bool:
     """Master switch for the clamp. Default ON; a config-read failure leaves the
     guard ON (its clamp fails open anyway) rather than blocking the dispatch."""
@@ -481,12 +506,19 @@ async def dispatch_complete(
                 pool=pool, provider=provider, model=model,
                 provider_config=provider_config,
             )
+            # Default num_ctx for LOCAL dispatches that never threaded one, so
+            # every local path (vision QA, media, scheduled research) is bounded
+            # + clamped like the writer — not left at Ollama's Modelfile default
+            # (e.g. gemma-4-31B at 262144). Paid/cloud calls are left untouched.
+            if kwargs.get("num_ctx") is None:
+                default_ctx = _resolve_default_num_ctx(phase, model, provider_config)
+                if default_ctx is not None:
+                    kwargs["num_ctx"] = default_ctx
             # VRAM budget guard: clamp num_ctx to the dedicated-VRAM budget
-            # before the GPU lock, so a context-hungry writer can't project a
-            # footprint that spills into system RAM (the WDDM freeze). Only
-            # fires when a caller actually threads num_ctx (the LiteLLM writer
-            # path); a guard error logs and falls through to the requested ctx
-            # rather than breaking the dispatch.
+            # before the GPU lock, so a context-hungry call can't project a
+            # footprint that spills into system RAM (the WDDM freeze). A guard
+            # error logs and falls through to the requested ctx rather than
+            # breaking the dispatch.
             req_num_ctx = kwargs.get("num_ctx")
             if req_num_ctx and _vram_guard_enabled():
                 try:

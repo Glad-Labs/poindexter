@@ -126,6 +126,17 @@ phase's `<phase>_num_ctx`, raise `gpu_desktop_reserve_gb`, or confirm
 emit a `num_ctx_clamped` finding (severity `warn`) whenever it reduces a
 request — visible on the **Findings** dashboard (`/d/findings`).
 
+**Every local dispatch is bounded, not just the writer.** A local call that
+reaches `dispatch_complete` without an explicit `num_ctx` — vision QA
+(`MultiModelQA._vision_complete`), media scripts, scheduled research, anything
+that doesn't go through the writer's `ollama_chat_text` — is defaulted to its
+per-phase context (`<phase>_num_ctx` → `ollama_num_ctx` → 8192) _before_ the
+clamp runs. Without this, such a call would load the model at Ollama's Modelfile
+default (e.g. gemma-4-31B at 262144) and sail past the guard, since the clamp
+only fires when `num_ctx` is present. Paid/cloud calls are left untouched —
+`num_ctx` is meaningless there. Tune a context-hungry phase with its own
+`<phase>_num_ctx` key and leave the rest on the `ollama_num_ctx` default.
+
 > The Windows _Shared Usage_ (spill) counter itself is **not** in Prometheus —
 > `windows_exporter` ships no GPU collector — so the headroom panel is a
 > pre-spill **early-warning** derived from dedicated-VRAM use, not a direct read
@@ -152,5 +163,5 @@ asks `GPURegistry` for the total VRAM pool — the sum of every GPU's
 When a model is larger than the biggest single card, Ollama shards it across
 GPUs. Inter-GPU activations cross the PCIe bus every token, so a card on a
 narrow link (e.g. x4) or an older architecture bottlenecks the shard. The pool
-makes big models *fit*; it does not make them *fast*. Benchmark before committing
+makes big models _fit_; it does not make them _fast_. Benchmark before committing
 a latency-sensitive workload to a sharded model.
