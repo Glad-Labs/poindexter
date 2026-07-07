@@ -340,6 +340,84 @@ def _strip_markdown(text: str) -> str:
     return text.strip()
 
 
+# ---------------------------------------------------------------------------
+# Scaffold-dump guard — reject an LLM script that leaks its own prompt/plan
+# ---------------------------------------------------------------------------
+
+# A clean podcast script is pure spoken prose: the ``podcast.script_rewrite``
+# prompt explicitly forbids markdown, asterisks, and brackets. So a leading
+# block dominated by bullet / outline / checklist lines is unambiguously the
+# model dumping its prompt-echo + planning outline + self-QA checklist ahead of
+# the narration instead of "just output the script" — a known gemma-class
+# instruction-following failure that TTS would otherwise read aloud verbatim
+# (the podcast sibling of the blog planning_dump the writer guards via #2036).
+# Structure alone is the signal here: unlike a blog body (which can open with a
+# legitimate list, so the validator needs a vocabulary gate), the podcast
+# script has NO legitimate bullets to protect.
+_SCAFFOLD_BULLET_RE = re.compile(r"^[ \t]*(?:[*+•\-]|\d+[.)])[ \t]+\S")
+_SCAFFOLD_SCAN_LINES = 30          # opening window, in non-blank lines
+_SCAFFOLD_MIN_BULLETS = 5          # a real block, not one incidental dash
+_SCAFFOLD_MIN_BULLET_SHARE = 0.5   # bullets dominate the opening
+
+
+def _looks_like_scaffold_dump(script_body: str) -> bool:
+    """True when the LLM podcast script OPENS with a bullet/outline/checklist
+    dump instead of narration.
+
+    The ``podcast.script_rewrite`` prompt forbids markdown, so a clean script is
+    pure prose; a bullet-dominated opening is the model echoing the prompt rules
+    + its planning outline + a self-QA checklist ahead of the real script. The
+    caller falls back to the deterministic regex script rather than narrate the
+    scaffold aloud. Structure-only (no vocabulary gate) because the podcast
+    script has no legitimate bullets, unlike a blog body.
+    """
+    window = [ln for ln in (script_body or "").splitlines() if ln.strip()][
+        :_SCAFFOLD_SCAN_LINES
+    ]
+    if len(window) < _SCAFFOLD_MIN_BULLETS:
+        return False
+    bullets = sum(1 for ln in window if _SCAFFOLD_BULLET_RE.match(ln))
+    return (
+        bullets >= _SCAFFOLD_MIN_BULLETS
+        and bullets / len(window) >= _SCAFFOLD_MIN_BULLET_SHARE
+    )
+
+
+def _emit_scaffold_dump_finding(*, title: str) -> None:
+    """Loud-but-recovered canary: the podcast script LLM opened with a scaffold/
+    planning dump and we fell back to the deterministic script. Self-heal is not
+    silent (feedback_self_heal_not_suppress) — the episode still renders clean
+    (from the article body) while the model-quality signal stays visible on the
+    Findings dashboard. ``severity='warn'`` → Discord."""
+    try:
+        from utils.findings import emit_finding
+    except Exception:  # noqa: BLE001  # silent-ok: emit is best-effort; the WARNING log already surfaced the dump
+        return
+    try:
+        emit_finding(
+            source="services.podcast_service",
+            kind="podcast_scaffold_dump",
+            title=(
+                "Podcast script LLM emitted a scaffold/planning dump — "
+                "used deterministic fallback"
+            ),
+            body=(
+                "The podcast.script_rewrite model opened its output with a "
+                "bullet/outline/checklist dump (prompt-echo + planning outline "
+                "+ self-QA checklist) instead of the narration. TTS would have "
+                "read the whole scaffold aloud. podcast_service fell back to the "
+                "deterministic script (the article body read as speech) so the "
+                "episode is clean. If this recurs, the podcast_script_model "
+                "(gemma-class) is dumping its plan on long prompts — consider a "
+                "stronger script model."
+            ),
+            severity="warn",
+            dedup_key=f"podcast_scaffold_dump:{title[:80]}",
+        )
+    except Exception:  # noqa: BLE001  # silent-ok: finding emission must never raise; the WARNING log is the durable signal
+        pass
+
+
 async def _build_script_with_llm(
     title: str, content: str, *, site_config: "SiteConfig | None" = None
 ) -> str:
@@ -412,6 +490,23 @@ async def _build_script_with_llm(
                 "[PODCAST] LLM script too short (%d chars), falling back to regex",
                 len(script_body),
             )
+            return _build_script_fallback(title, content, site_config=_sc)
+
+        # Scaffold-dump guard: gemma-class models sometimes emit their
+        # prompt-echo + planning outline + self-QA checklist AHEAD of the
+        # narration instead of "just output the script" — TTS would read the
+        # whole scaffold aloud. A clean podcast script is pure prose, so a
+        # bullet-dominated opening is an unambiguous dump: discard it and use
+        # the deterministic regex script (the already-clean article body read
+        # as speech). Not silent — emit a finding so recurring dumps surface
+        # the model-quality signal (feedback_self_heal_not_suppress).
+        if _looks_like_scaffold_dump(script_body):
+            logger.warning(
+                "[PODCAST] LLM emitted a scaffold/planning dump for '%s' — "
+                "falling back to the deterministic script",
+                title[:50],
+            )
+            _emit_scaffold_dump_finding(title=title)
             return _build_script_fallback(title, content, site_config=_sc)
 
         logger.info(

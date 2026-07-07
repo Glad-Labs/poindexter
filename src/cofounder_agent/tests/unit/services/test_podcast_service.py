@@ -1018,3 +1018,105 @@ class TestResolveVoicePool:
 
     def test_none_site_config_falls_back_to_constant(self):
         assert _resolve_voice_pool(None) == list(VOICE_POOL)
+
+
+class TestScaffoldDumpGuard:
+    """The LLM podcast script must never narrate a leaked prompt/plan.
+
+    gemma-class models sometimes emit their prompt-echo + planning outline +
+    self-QA checklist ahead of the narration; a clean script is pure prose, so
+    ``_build_script_with_llm`` falls back to the deterministic regex script
+    when the output opens with a bullet dump (root cause of a podcast that read
+    its own checklist aloud, 2026-07-07).
+    """
+
+    # A representative slice of the real a5594ce1 leak: prompt-rule echo + an
+    # outline pass + a self-check checklist, then the narration finally begins.
+    _DUMP = (
+        "Blog article about Speculative Decoding, Draft Model.\n"
+        "Podcast script for a single narrator.\n\n"
+        " * Text-to-speech ready, exactly what should be spoken.\n"
+        " * Natural spoken English, no written/visual conventions.\n"
+        " * No URLs, links, image references, or attribution lines.\n"
+        " * No markdown formatting, asterisks, or brackets.\n"
+        " * NO first person; the narrator presents facts.\n"
+        " * *Intro:* Running models locally, the autoregressive pattern.\n"
+        " * *Concept:* Draft model proposes, target model verifies.\n"
+        " * *Quality/Safety:* Target model makes the decision.\n"
+        " * Check: Any markdown? Removed.\n"
+        " * Check: Acronyms spelled out? Yes.\n\n"
+        "Every token a model produces requires a full forward pass through "
+        "every layer of the network, and that is the bottleneck.\n"
+    )
+
+    def test_detects_leaked_scaffold_opening(self):
+        from services.podcast_service import _looks_like_scaffold_dump
+        assert _looks_like_scaffold_dump(self._DUMP) is True
+
+    def test_clean_prose_not_flagged(self):
+        from services.podcast_service import _looks_like_scaffold_dump
+        clean = (
+            "Every token a model produces requires a full forward pass through "
+            "every layer of the network. The model cannot guess ahead; it "
+            "computes one token, appends it, and starts over. This is the "
+            "autoregressive pattern, and it is why a large model feels sluggish."
+        )
+        assert _looks_like_scaffold_dump(clean) is False
+
+    def test_incidental_dash_not_flagged(self):
+        """A single hyphen aside in otherwise-prose output is not a dump."""
+        from services.podcast_service import _looks_like_scaffold_dump
+        mostly_prose = (
+            "Speculative decoding pairs two models instead of one.\n"
+            "The draft proposes tokens and the target verifies them.\n"
+            " - one incidental aside here\n"
+            "The verification step is what keeps the output identical.\n"
+            "That is the whole trick, and it is a clean engineering win.\n"
+        )
+        assert _looks_like_scaffold_dump(mostly_prose) is False
+
+    def test_empty_not_flagged(self):
+        from services.podcast_service import _looks_like_scaffold_dump
+        assert _looks_like_scaffold_dump("") is False
+
+    async def test_build_script_falls_back_on_dump(self):
+        """A scaffold-dump LLM response must be discarded in favour of the
+        deterministic fallback script — the scaffold never reaches TTS."""
+        from services.podcast_service import _build_script_with_llm
+
+        sc = SiteConfig(initial_config={
+            "podcast_script_model": "ollama/gemma-4-31B-it-qat",
+        })
+        sc._pool = MagicMock()  # non-None → the LLM path is taken
+
+        title = "Speculative Decoding for Local LLM Inference"
+        content = (
+            "# Speculative Decoding\n\n"
+            "Speculative decoding pairs a small draft model with a large target "
+            "model. The draft proposes several tokens and the target verifies "
+            "them in one parallel pass, so the output is identical to standard "
+            "decoding while latency drops. This is a rare pure engineering win."
+        )
+
+        dump_result = MagicMock()
+        dump_result.text = self._DUMP
+        mock_pm = MagicMock()
+        mock_pm.get_prompt.return_value = "rewrite prompt"
+
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete",
+            new=AsyncMock(return_value=dump_result),
+        ), patch(
+            "services.prompt_manager.get_prompt_manager", return_value=mock_pm,
+        ), patch("utils.findings.emit_finding") as mock_finding:
+            script = await _build_script_with_llm(title, content, site_config=sc)
+
+        # Fell back to the exact deterministic helper the guard calls.
+        assert script == _build_script(title, content, site_config=sc)
+        # The scaffold never reaches TTS.
+        assert "Text-to-speech ready" not in script
+        assert "*Intro:*" not in script
+        assert "Check:" not in script
+        # The real article content IS spoken, and recovery is observable.
+        assert "Speculative decoding pairs" in script
+        assert mock_finding.called
