@@ -57,6 +57,7 @@ Auto-generated from:
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 # Every value is stored as `str` because `app_settings.value` is a TEXT
@@ -2010,6 +2011,10 @@ async def apply_operator_overrides(pool: Any) -> int:
         from services.operator_overrides import OPERATOR_NICHE_OVERRIDES
     except ImportError:  # overlay predates niche overrides
         OPERATOR_NICHE_OVERRIDES = ()
+    try:
+        from services.operator_overrides import OPERATOR_REMEDIATION_RULES
+    except ImportError:  # overlay predates firefighter rule overrides
+        OPERATOR_REMEDIATION_RULES = ()
 
     overrides = {**OPERATOR_MODEL_PINS, **OPERATOR_SETTING_OVERRIDES}
     applied = 0
@@ -2056,6 +2061,28 @@ async def apply_operator_overrides(pool: Any) -> int:
                 *set_map.values(),
                 entry["match_slug"],
                 entry["expect_writer_prompt_override"],
+            )
+            if row_id is not None:
+                applied += 1
+
+        for rule in OPERATOR_REMEDIATION_RULES:
+            # Seed-if-absent by alertname: a fresh install / reseed restores the
+            # operator's firefighter rules, but a rule tuned (or disabled) live at
+            # runtime is left untouched, and a re-run never duplicates.
+            row_id = await conn.fetchval(
+                """
+                INSERT INTO remediation_rules
+                    (alertname, action_name, params, enabled, description)
+                SELECT $1, $2, $3::jsonb, TRUE, $4
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM remediation_rules WHERE alertname = $1
+                )
+                RETURNING id
+                """,
+                rule["alertname"],
+                rule["action_name"],
+                json.dumps(rule["params"]),
+                rule.get("description", ""),
             )
             if row_id is not None:
                 applied += 1

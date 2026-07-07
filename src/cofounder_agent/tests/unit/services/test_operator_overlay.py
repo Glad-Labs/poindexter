@@ -14,6 +14,7 @@ via a conditional UPDATE on ``niches`` guarded by the OSS-default
 
 from __future__ import annotations
 
+import json
 import re
 import sys
 from pathlib import Path
@@ -104,6 +105,7 @@ async def test_apply_compares_against_oss_default_and_counts_changes():
     oo = pytest.importorskip("services.operator_overrides")
     overrides = _all_overrides(oo)
     niche_entries = oo.OPERATOR_NICHE_OVERRIDES
+    rule_entries = oo.OPERATOR_REMEDIATION_RULES
 
     calls = []
 
@@ -120,10 +122,12 @@ async def test_apply_compares_against_oss_default_and_counts_changes():
         (q, a) for q, a in calls if "INSERT INTO app_settings" in q
     ]
     niche_calls = [(q, a) for q, a in calls if q.lstrip().startswith("UPDATE niches")]
+    rule_calls = [(q, a) for q, a in calls if "INSERT INTO remediation_rules" in q]
 
     assert len(setting_calls) == len(overrides)
     assert len(niche_calls) == len(niche_entries)
-    assert len(calls) == len(setting_calls) + len(niche_calls)
+    assert len(rule_calls) == len(rule_entries)
+    assert len(calls) == len(setting_calls) + len(niche_calls) + len(rule_calls)
     for _query, (key, value, _desc, oss_default) in setting_calls:
         # The overlay only overwrites the public OSS default for that key...
         assert oss_default == DEFAULTS.get(key)
@@ -255,4 +259,79 @@ def test_overlaid_keys_seed_matches_defaults():
     assert not drift, (
         "baseline.seeds.sql and settings_defaults.DEFAULTS disagree on the OSS "
         f"default for overlaid keys, so the overlay won't re-apply on reset: {drift}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_remediation_rule_overrides_issue_conditional_inserts():
+    """Each firefighter rule override issues a seed-if-absent INSERT into
+    remediation_rules — guarded by ``WHERE NOT EXISTS`` on the alertname — so a
+    fresh install / reseed restores the operator's rules without clobbering a
+    rule that was tuned live at runtime (and never duplicates one)."""
+    oo = pytest.importorskip("services.operator_overrides")
+    rules = oo.OPERATOR_REMEDIATION_RULES
+    assert rules, "operator overlay should carry firefighter remediation rules"
+
+    calls = []
+
+    def _fetchval(query, *args):
+        calls.append((query, args))
+        return "rule-id"
+
+    pool, _conn = _mock_pool(fetchval_side_effect=_fetchval)
+    applied = await apply_operator_overrides(pool)
+
+    rule_calls = [(q, a) for q, a in calls if "INSERT INTO remediation_rules" in q]
+    assert len(rule_calls) == len(rules)
+    for (query, args), rule in zip(rule_calls, rules, strict=True):
+        # Seed-if-absent + idempotent: the conditional guard and RETURNING id are
+        # what make a reseed safe and a re-run a no-op.
+        assert "WHERE NOT EXISTS" in query
+        assert "RETURNING id" in query
+        assert args[0] == rule["alertname"]
+        assert args[1] == rule["action_name"]
+        assert json.loads(args[2]) == rule["params"]
+        assert args[3] == rule.get("description", "")
+    # Every insert returned an id in this scenario, so each rule is counted.
+    assert applied >= len(rules)
+
+
+def test_remediation_rule_overrides_shape():
+    """Each firefighter rule override carries the columns the seed INSERT needs
+    and only names actions the brain-side registry can actually execute — a rule
+    naming an unknown action would seed a row the engine can never run."""
+    oo = pytest.importorskip("services.operator_overrides")
+    # v1 executors in brain/remediation/registry.py. Extend deliberately when the
+    # registry grows a new action.
+    known_actions = {"restart_container", "run_auto_remediate"}
+    seen_alertnames: set[str] = set()
+    for rule in oo.OPERATOR_REMEDIATION_RULES:
+        alertname = rule.get("alertname")
+        assert alertname, f"rule missing alertname: {rule}"
+        assert alertname not in seen_alertnames, (
+            f"duplicate alertname {alertname!r} — the seed-if-absent guard keys on "
+            "alertname, so only the first would ever seed."
+        )
+        seen_alertnames.add(alertname)
+        assert rule.get("action_name") in known_actions, (
+            f"rule {alertname!r} names action {rule.get('action_name')!r} not in the "
+            f"brain registry {sorted(known_actions)}."
+        )
+        assert isinstance(rule.get("params"), dict)
+        if rule["action_name"] == "restart_container":
+            assert rule["params"].get("container"), (
+                f"restart_container rule {alertname!r} needs a 'container' param."
+            )
+
+
+def test_remediation_rules_absent_from_public_baseline_seeds():
+    """The operator's firefighter rules name operator-specific containers and are
+    operator ops policy, so they live ONLY in the (mirror-stripped) overlay —
+    never in the public baseline seeds."""
+    text = _BASELINE_SEEDS.read_text(encoding="utf-8")
+    assert "INSERT INTO remediation_rules" not in text, (
+        "0000_baseline.seeds.sql seeds remediation_rules, but the firefighter "
+        "rules are operator-only and belong in "
+        "operator_overrides.OPERATOR_REMEDIATION_RULES (stripped from the public "
+        "mirror), not the public baseline."
     )

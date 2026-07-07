@@ -417,3 +417,42 @@ OPERATOR_NICHE_OVERRIDES: tuple[dict, ...] = (
         "set": {"writer_prompt_override": _DEV_DIARY_WRITER_PROMPT},
     },
 )
+
+# --- Firefighter remediation rules -------------------------------------------
+# The self-healing firefighter (brain/remediation/) matches an about-to-page
+# alert against the remediation_rules table and runs an allowlisted action.
+# These rows are OPERATOR ops policy — they name operator-specific containers
+# and aren't public product — so they never ship in the public baseline seeds.
+# The public apply hook re-asserts them seed-if-absent on a fresh install /
+# reseed (settings_defaults.apply_operator_overrides), so a DB reseed can't
+# silently drop the operator's auto-recovery. A rule tuned (or disabled) live at
+# runtime is left untouched — the guard keys on alertname existence, not value.
+#
+# Mirrors live prod (remediation_rules) as of 2026-07-06. Both target stateless
+# observability sidecars where a restart costs at most a sub-second gap with zero
+# data / zero pipeline impact — the safe profile the firefighter is scoped to.
+# ``action_name`` must be an executor registered in brain/remediation/registry.py.
+OPERATOR_REMEDIATION_RULES: tuple[dict, ...] = (
+    {
+        "alertname": "PyroscopeDown",
+        "action_name": "restart_container",
+        "params": {"container": "poindexter-pyroscope"},
+        "description": (
+            "Pyroscope (stateless profiler) down (up==0) -> restart the "
+            "container; verify then page. Warning severity, zero data risk; "
+            "fills the gap where docker_port_forward_probe only auto-recovers "
+            "the stuck-port-forward signature, not a genuine scrape-down."
+        ),
+    },
+    {
+        "alertname": "PromtailDown",
+        "action_name": "restart_container",
+        "params": {"container": "poindexter-promtail"},
+        "description": (
+            "Promtail (stateless log shipper) down (up==0) -> restart the "
+            "container; verify then page. Restart costs at most a sub-second "
+            "log-shipping gap, zero data / zero pipeline impact. Same safe "
+            "profile as PyroscopeDown (stateless observability sidecar)."
+        ),
+    },
+)
