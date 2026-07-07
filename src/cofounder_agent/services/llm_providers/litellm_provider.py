@@ -23,6 +23,11 @@ Config (``plugin.llm_provider.litellm`` in app_settings):
 
 - ``api_base`` (default: ``http://localhost:11434`` for the Ollama
   case; LiteLLM treats this as the base for ``ollama/<model>`` calls).
+  Scoped to LOCAL model prefixes: cloud prefixes (``anthropic/``,
+  ``openai/``, ...) never inherit it and route to their provider's
+  canonical endpoint — an explicit ``api_base`` would override the
+  prefix routing and land the "cloud" call on the local server (see
+  ``_api_base_applies``). Per-model overrides still apply to any prefix.
 - ``timeout_seconds`` (default 120) — per-call default; per-call
   overrides via the ``timeout_s`` kwarg still win.
 - ``drop_params`` (default true) — strip params the target backend
@@ -627,6 +632,32 @@ class LiteLLMProvider:
             or self._api_base
         )
 
+    def _api_base_applies(self, resolved_model: str) -> bool:
+        """Whether the effective ``api_base`` should be attached to this call.
+
+        The configured ``api_base`` row is the LOCAL backend endpoint
+        (Ollama in the default install) — every local-prefix model routes
+        there. A CLOUD prefix (``anthropic/``, ``openai/``, ...) must NOT
+        inherit it: litellm treats an explicit ``api_base`` as
+        authoritative over the prefix's canonical endpoint, so the "cloud"
+        call silently lands on the local server instead. Ollama ≥0.6 even
+        answers ``/v1/messages`` with an Anthropic-SHAPED error body
+        ("model 'claude-sonnet-5' not found", request_id and all), which
+        made exactly this failure masquerade as a real Anthropic 404
+        during the 2026-07-07 cloud-writer canary.
+
+        Cloud prefixes therefore fall through to litellm's per-provider
+        default endpoints (auth via the env keys
+        ``configure_cloud_api_keys`` stamps). An explicit per-model
+        override still wins for ANY prefix — that's the operator saying
+        "this exact model goes here", and the paid-endpoint policy has
+        already validated the override URL on axis 1.
+        """
+        if resolved_model in self._model_api_base_overrides:
+            return True
+        prefix = resolved_model.split("/", 1)[0].lower()
+        return prefix in _LOCAL_MODEL_PREFIXES
+
     def _apply_cloud_max_tokens(
         self, resolved_model: str, completion_kwargs: dict[str, Any],
     ) -> None:
@@ -751,7 +782,11 @@ class LiteLLMProvider:
             "stream": False,
         }
         effective_base = self._api_base_for(resolved_model)
-        if effective_base and not resolved_model.startswith("http"):
+        if (
+            effective_base
+            and not resolved_model.startswith("http")
+            and self._api_base_applies(resolved_model)
+        ):
             completion_kwargs["api_base"] = effective_base
         # ``response_format`` forwarding (2026-05-28): the topic_ranking +
         # writer-RAG JSON callers need to force structured-JSON output. The
@@ -887,7 +922,11 @@ class LiteLLMProvider:
             "stream": True,
         }
         effective_base = self._api_base_for(resolved_model)
-        if effective_base and not resolved_model.startswith("http"):
+        if (
+            effective_base
+            and not resolved_model.startswith("http")
+            and self._api_base_applies(resolved_model)
+        ):
             completion_kwargs["api_base"] = effective_base
         for key in ("temperature", "max_tokens", "top_p"):
             if key in kwargs:
