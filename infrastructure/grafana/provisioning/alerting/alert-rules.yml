@@ -552,7 +552,7 @@ groups:
                   reducer:
                     type: last
 
-      # 10. OLLAMA DOWN — no cost_logs from local models in last 6 hours
+      # 10. OLLAMA DOWN — no local (cost_usd=0) LLM inference in cost_logs in last 6 hours
       #     during active pipeline
       - uid: brain-ollama-down
         title: Ollama Unresponsive
@@ -562,6 +562,18 @@ groups:
         # pipeline_tasks_view + cost_logs); no-data means one of those was
         # renamed/dropped or the datasource is down. A blind "is Ollama
         # alive?" check that resolves OK is the silent failure #581 targets.
+        #
+        # PREDICATE (do not "simplify" back to provider='ollama'): local
+        # inference is logged provider='litellm' since the 2026-05-16 LiteLLM
+        # router cutover (the real Ollama model lands in the model column),
+        # NOT provider='ollama'. The old literal matched zero rows post-cutover,
+        # so this alert false-fired on every active task while Ollama was busy.
+        # cost_usd=0 is the local-vs-cloud discriminator — cost_guard stamps
+        # is_local calls at $0, so a cloud fallback through LiteLLM logs
+        # cost_usd>0 and is correctly excluded (a dead Ollama masked by a paid
+        # fallback still fires). The provider set keeps it to the LLM path so a
+        # local Whisper caption (provider='caption.speaches', also $0) can't
+        # mask a dead Ollama.
         noDataState: Alerting
         execErrState: Error
         labels:
@@ -577,7 +589,7 @@ groups:
               from: 21600
               to: 0
             model:
-              rawSql: "SELECT CASE WHEN (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status IN ('pending', 'in_progress')) = 0 THEN 1 ELSE (SELECT COUNT(*) FROM cost_logs WHERE provider = 'ollama' AND cost_type = 'inference' AND created_at > NOW() - INTERVAL '6 hours') END as ollama_ok"
+              rawSql: "SELECT CASE WHEN (SELECT COUNT(*) FROM pipeline_tasks_view WHERE status IN ('pending', 'in_progress')) = 0 THEN 1 ELSE (SELECT COUNT(*) FROM cost_logs WHERE cost_type = 'inference' AND cost_usd = 0 AND provider IN ('litellm', 'ollama', 'ollama_native') AND created_at > NOW() - INTERVAL '6 hours') END as ollama_ok"
               format: table
               editorMode: code
           - refId: B

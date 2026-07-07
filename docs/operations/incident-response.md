@@ -408,7 +408,9 @@ docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -c 
 
 ## Ollama Unresponsive
 
-**Means.** No local-model `cost_logs` rows in the last 6 hours WHILE tasks are pending. Ollama is probably down.
+**Means.** No _local_ LLM inference in the last 6 hours WHILE tasks are pending — i.e. no `cost_logs` rows with `cost_type='inference'`, `cost_usd = 0`, and `provider IN ('litellm','ollama','ollama_native')`. Ollama is probably down.
+
+> **Why the predicate looks the way it does.** It keys on `cost_usd = 0` (local inference is free — `cost_guard` stamps `is_local` calls at $0), _not_ `provider = 'ollama'`. Since the 2026-05-16 LiteLLM router cutover, local inference is logged `provider='litellm'` (the real Ollama model is in the `model` column), so the old `provider = 'ollama'` literal matched zero rows and the alert false-fired on every active task. `cost_usd = 0` also means a cloud fallback through LiteLLM (`cost_usd > 0`) is deliberately excluded, so a dead Ollama masked by a paid fallback still surfaces. Do not "simplify" it back to a provider literal.
 
 **Triage.**
 
