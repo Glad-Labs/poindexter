@@ -931,6 +931,22 @@ DEFAULTS: dict[str, str] = {
     'podcast_pipeline_trigger_enabled': 'false',
     'podcast_pipeline_max_per_cycle': '2',
     'podcast_distribute_max_per_cycle': '20',
+    # Disable the podcast script model's reasoning channel (default). The
+    # thinking-capable gemma-class script model (podcast_script_model) otherwise
+    # writes its prompt-echo + planning outline + self-QA checklist into the
+    # reasoning channel on every run — and ~71% of the time that plan LEAKS into
+    # the visible content instead, so TTS reads the scaffold aloud (the
+    # podcast_scaffold_dump finding; 2026-07-07 reproduced in-container: think on
+    # → 4.7k-char plan that intermittently lands in content, think=False → empty
+    # reasoning, clean full-length script). Podcast output is prose not JSON, so
+    # the symptom is a spoken-aloud leak rather than the empty-JSON the video
+    # director hit — same root cause, mirrors video_director_disable_thinking
+    # (#2191) / writer_disable_thinking (#2163). Harmless no-op on a non-thinking
+    # model, dropped for cloud targets by the LiteLLM provider. The #2186 scaffold
+    # guard stays as the safety net. Read via _resolve_podcast_think in
+    # services/podcast_service.py. Set false only to deliberately let a reasoning
+    # script model chain-of-think.
+    'podcast_disable_thinking': 'true',
     # media_reconciliation (the Stage-2 drift watchdog) re-dispatches the gated
     # video / podcast pipelines on a genuine miss instead of authoring media
     # directly. Each re-dispatch bumps pipeline_tasks.{media_pipeline,podcast}_

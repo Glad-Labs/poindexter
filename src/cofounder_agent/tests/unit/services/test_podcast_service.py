@@ -1120,3 +1120,81 @@ class TestScaffoldDumpGuard:
         # The real article content IS spoken, and recovery is observable.
         assert "Speculative decoding pairs" in script
         assert mock_finding.called
+
+
+class TestResolvePodcastThink:
+    """think=False is threaded into the podcast script dispatch by default so the
+    gemma-class model's reasoning channel can't leak its planning outline +
+    self-QA checklist into the spoken narration (podcast_scaffold_dump root
+    cause; mirrors writer #2163 / video director #2191)."""
+
+    def test_default_disables_thinking(self):
+        # Unset → default 'true' → disable the reasoning channel.
+        from services.podcast_service import _resolve_podcast_think
+        assert _resolve_podcast_think(SiteConfig()) is False
+
+    def test_explicit_true_disables_thinking(self):
+        from services.podcast_service import _resolve_podcast_think
+        sc = SiteConfig(initial_config={"podcast_disable_thinking": "true"})
+        assert _resolve_podcast_think(sc) is False
+
+    def test_opt_out_leaves_backend_default(self):
+        # Operator opt-out → None → leave the backend default (thinking on);
+        # never pin think=True from here.
+        from services.podcast_service import _resolve_podcast_think
+        sc = SiteConfig(initial_config={"podcast_disable_thinking": "false"})
+        assert _resolve_podcast_think(sc) is None
+
+    def test_none_site_config_disables_thinking(self):
+        from services.podcast_service import _resolve_podcast_think
+        assert _resolve_podcast_think(None) is False
+
+
+class TestBuildScriptThreadsThink:
+    """_build_script_with_llm forwards the resolved think flag to the dispatcher —
+    the source fix for podcast_scaffold_dump (the #2186 guard stays the net)."""
+
+    _CLEAN = (
+        "Every token a model produces requires a full forward pass through every "
+        "layer of the network. The model cannot guess ahead; it computes one "
+        "token, appends it, and starts over. That is the autoregressive pattern, "
+        "and it is why a large model can feel sluggish even with headroom. "
+        "Speculative decoding pairs a small draft model with a large target model "
+        "to break that sequential bottleneck without changing the output."
+    )
+
+    async def _dispatch_kwargs(self, disable_value):
+        """Run _build_script_with_llm with a clean (non-dump) LLM response and
+        return the kwargs the dispatcher was called with."""
+        from services.podcast_service import _build_script_with_llm
+
+        cfg = {"podcast_script_model": "ollama/gemma-4-31B-it-qat"}
+        if disable_value is not None:
+            cfg["podcast_disable_thinking"] = disable_value
+        sc = SiteConfig(initial_config=cfg)
+        sc._pool = MagicMock()  # non-None → the LLM path is taken
+
+        clean_result = MagicMock()
+        clean_result.text = self._CLEAN
+        mock_pm = MagicMock()
+        mock_pm.get_prompt.return_value = "rewrite prompt"
+        dispatch = AsyncMock(return_value=clean_result)
+
+        with patch(
+            "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+        ), patch(
+            "services.prompt_manager.get_prompt_manager", return_value=mock_pm,
+        ):
+            await _build_script_with_llm("Title", "# Body\n\nprose body", site_config=sc)
+
+        assert dispatch.await_count == 1
+        return dispatch.await_args.kwargs
+
+    async def test_default_forwards_think_false(self):
+        kwargs = await self._dispatch_kwargs(None)
+        assert kwargs.get("think") is False
+
+    async def test_opt_out_omits_think_kwarg(self):
+        # Operator opt-out resolves to None → no think kwarg, backend default kept.
+        kwargs = await self._dispatch_kwargs("false")
+        assert "think" not in kwargs

@@ -418,6 +418,35 @@ def _emit_scaffold_dump_finding(*, title: str) -> None:
         pass
 
 
+def _resolve_podcast_think(site_config: "SiteConfig | None") -> bool | None:
+    """``think`` flag for the podcast script LLM dispatch.
+
+    Returns ``False`` (disable the reasoning channel) when
+    ``podcast_disable_thinking`` is on — the default. The gemma-class script
+    model (``podcast_script_model``) is thinking-capable: with the channel live
+    it writes a prompt-echo + planning outline + self-QA checklist into its
+    reasoning on every run, and ~71% of the time that plan LEAKS into the visible
+    ``content`` instead of the reasoning channel, so TTS reads the scaffold aloud
+    (the ``podcast_scaffold_dump`` finding; 2026-07-07 reproduced in-container).
+    Disabling thinking removes the plan at the source — nothing to leak — the
+    same fix the writer (#2163) and video director (#2191) paths took. The #2186
+    scaffold guard stays as the safety net.
+
+    Returns ``None`` (leave the backend default — thinking on) only when an
+    operator explicitly sets the flag off. ``think`` is forwarded to Ollama for
+    local models and dropped for cloud targets by the LiteLLM provider, so
+    ``False`` is safe for a non-thinking or cloud script model too.
+    """
+    if site_config is None:
+        return False
+    try:
+        raw = site_config.get("podcast_disable_thinking", "true")
+        return False if str(raw).lower() in ("true", "1", "yes") else None
+    except Exception:  # noqa: BLE001 — optional feature flag, never load-bearing
+        # silent-ok: default to disabling thinking (the safe, reliable path)
+        return False
+
+
 async def _build_script_with_llm(
     title: str, content: str, *, site_config: "SiteConfig | None" = None
 ) -> str:
@@ -473,6 +502,13 @@ async def _build_script_with_llm(
         # Podcast script generation is a long-form completion (up to 8k
         # tokens). 180s is generous for local qwen3:30b/glm-4.7 on a 5090
         # while keeping the pipeline from ever stalling on a stuck model.
+        # Disable the script model's reasoning channel (default) so its planning
+        # outline + self-QA checklist never leaks into the spoken narration — the
+        # podcast_scaffold_dump root cause (mirrors the writer #2163 / director
+        # #2191 paths). Only forward ``think`` when resolved; skip on None so an
+        # operator opt-out leaves the backend default rather than pinning it.
+        think = _resolve_podcast_think(_sc)
+        think_kwargs = {} if think is None else {"think": think}
         messages = [{"role": "user", "content": prompt}]
         result = await dispatch_complete(
             pool=pool,
@@ -482,6 +518,7 @@ async def _build_script_with_llm(
             timeout_s=180,
             temperature=0.4,
             max_tokens=8192,
+            **think_kwargs,
         )
         script_body = (getattr(result, "text", "") or "").strip()
 
