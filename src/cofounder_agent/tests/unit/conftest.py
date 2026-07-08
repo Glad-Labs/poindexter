@@ -564,6 +564,63 @@ def _reset_singletons_between_tests():
 
 
 # ---------------------------------------------------------------------------
+# Layer 3.5 — cross-test ``sys.modules`` husk guard (fail-loud at the source)
+# ---------------------------------------------------------------------------
+#
+# A test that installs a bare ``types.ModuleType("torch")`` stub (only
+# ``.float16``/``.cuda``, no ``.Tensor``) into ``sys.modules`` and never
+# restores it silently poisons the NEXT unrelated test's real ``import
+# torch``: the husk has no ``.Tensor``, so a downstream
+# ``ragas -> transformers -> safetensors`` import (which evaluates
+# ``torch.Tensor`` in an annotation at def-time) dies with
+# ``AttributeError: module 'torch' has no attribute 'Tensor'`` in whatever
+# test happens to run next. Because it is order-dependent it surfaces as a
+# seed-dependent flake in an innocent victim, which is expensive to trace —
+# this class of leak bit us twice (#2209, #2214).
+#
+# Turn that into a deterministic, self-fingerprinting failure: after every
+# test, if a watched module is present but hollow (missing the sentinel attr
+# a real copy always carries), fail THAT test by ``nodeid`` and drop the husk
+# so innocent downstream tests aren't collateral. A ``MagicMock`` stub is
+# fine — it auto-vivifies attributes, so it never poisons a real import;
+# only a genuine bare ``ModuleType`` husk trips this, which is exactly the
+# class that breaks ``torch.Tensor`` at import time.
+#
+# torch-only for now: it is the sole proven offender and ``.Tensor`` is an
+# eager, O(1) attribute on a real torch. ``transformers`` is intentionally
+# NOT watched — its top-level ``__getattr__`` lazy-loads submodules, so
+# probing a sentinel there would trigger heavy imports (and interact badly
+# with a torch stub) at every teardown instead of staying O(1). Add a
+# ``module -> sentinel-attr`` entry here if a new husk class ever shows up.
+_HUSK_SENTINELS = {"torch": "Tensor"}
+
+
+@pytest.hookimpl(trylast=True)
+def pytest_runtest_teardown(item, nextitem):
+    """Fail loudly if a test left a hollow module husk in ``sys.modules``.
+
+    ``trylast`` so this runs AFTER the runner's own teardown phase (fixture
+    finalizers, ``monkeypatch`` undo) — a properly-scoped stub is already
+    restored by the time we look, so only genuine, unrestored leaks trip the
+    guard.
+    """
+    for _name, _sentinel in _HUSK_SENTINELS.items():
+        _mod = sys.modules.get(_name)
+        if _mod is not None and not hasattr(_mod, _sentinel):
+            sys.modules.pop(_name, None)  # self-heal so the next test runs clean
+            pytest.fail(
+                f"{item.nodeid} left a hollow '{_name}' in sys.modules "
+                f"(a bare stub missing '{_name}.{_sentinel}'), which poisons "
+                f"the next real 'import {_name}'. Some test installed a "
+                f"types.ModuleType('{_name}') husk without restoring the "
+                f"original. Scope the stub and restore only that key "
+                f"(sys.modules.pop('{_name}', None) in a finally), or use "
+                f"monkeypatch.setitem so it is undone automatically.",
+                pytrace=False,
+            )
+
+
+# ---------------------------------------------------------------------------
 # Layer 4 — optional real-Postgres ``db_pool`` fixture
 # ---------------------------------------------------------------------------
 #
