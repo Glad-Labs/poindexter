@@ -10,7 +10,10 @@ opt-in via ``app_settings.ragas_enabled`` and not pinned in pyproject).
 
 from __future__ import annotations
 
+import sys
+from contextlib import contextmanager
 from importlib.util import find_spec
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -25,6 +28,7 @@ import pytest
 # segfaults — so the skip is stale on both counts and has been removed. The
 # happy-path test still guards on Ragas being installed via ``requires_ragas``.
 from services.ragas_eval import evaluate_sample, is_enabled
+
 
 def _ragas_importable() -> bool:
     """Return True only when ragas is installed AND its transitive deps resolve.
@@ -132,7 +136,6 @@ class TestBuildRagasModels:
         Uses sys.modules injection so the test runs in CI even when ragas is not
         installed (the function's local imports become fakes; only the ChatOllama
         call_args matter)."""
-        import sys
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from services.ragas_eval import _build_ragas_models
@@ -151,7 +154,7 @@ class TestBuildRagasModels:
                 new_callable=AsyncMock,
                 return_value="phi4:14b",
             ),
-            patch.dict(sys.modules, {
+            _inject_fake_modules({
                 "langchain_ollama": fake_langchain_ollama,
                 "ragas": MagicMock(),
                 "ragas.llms": fake_ragas_llms,
@@ -174,7 +177,7 @@ class TestBuildRagasModels:
 # ---------------------------------------------------------------------------
 
 
-def _identity_wrapper_modules():
+def _identity_wrapper_modules() -> dict[str, Any]:
     """sys.modules fakes where the Ragas wrappers are identity functions.
 
     Lets the tests reach the inner LangChain adapters without a working
@@ -196,6 +199,36 @@ def _identity_wrapper_modules():
     }
 
 
+@contextmanager
+def _inject_fake_modules(fake_modules: dict[str, Any]):
+    """Insert fake ``sys.modules`` entries, restoring ONLY those keys on exit.
+
+    ``patch.dict(sys.modules, ...)`` is the obvious tool, but it's a footgun for
+    these tests: on exit it clears ``sys.modules`` wholesale and repopulates it
+    from an enter-time snapshot, DROPPING any module imported *inside* the block.
+    ``_build_ragas_models`` / ``_build_dispatcher_ragas_wrappers`` lazily import
+    ``langchain_core`` (-> ``transformers`` -> ``torch``) inside these blocks.
+    torch's C extension attaches docstrings to native functions at import and is
+    NOT re-import-safe, so once it's dropped the next test's re-import raises
+    ``RuntimeError: function '_has_torch_function' already has a docstring`` --
+    a test-order-dependent intra-file failure where the first dispatcher test
+    passes and poisons every one after it.
+
+    Touching only the faked keys leaves the real heavy modules cached across
+    tests, so the pollution can't happen regardless of test ordering.
+    """
+    saved = {name: sys.modules.get(name) for name in fake_modules}
+    sys.modules.update(fake_modules)
+    try:
+        yield
+    finally:
+        for name, original in saved.items():
+            if original is None:
+                sys.modules.pop(name, None)
+            else:
+                sys.modules[name] = original
+
+
 @pytest.mark.unit
 class TestDispatcherWrappers:
     """With a ``pool``, Ragas judge + embeddings route through the
@@ -203,7 +236,6 @@ class TestDispatcherWrappers:
 
     @pytest.mark.asyncio
     async def test_pool_prefers_dispatcher_over_chat_ollama(self):
-        import sys
         from unittest.mock import AsyncMock, MagicMock, patch
 
         from services.ragas_eval import _build_ragas_models
@@ -219,7 +251,7 @@ class TestDispatcherWrappers:
                 new_callable=AsyncMock,
                 return_value="phi4:14b",
             ),
-            patch.dict(sys.modules, {
+            _inject_fake_modules({
                 "langchain_ollama": fake_langchain_ollama,
                 **_identity_wrapper_modules(),
             }),
@@ -233,9 +265,8 @@ class TestDispatcherWrappers:
 
     @pytest.mark.asyncio
     async def test_agenerate_routes_through_dispatch_complete(self, monkeypatch):
-        import sys
         from types import SimpleNamespace
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock
 
         from langchain_core.messages import HumanMessage
 
@@ -247,7 +278,7 @@ class TestDispatcherWrappers:
         monkeypatch.setattr(
             "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
         )
-        with patch.dict(sys.modules, _identity_wrapper_modules()):
+        with _inject_fake_modules(_identity_wrapper_modules()):
             llm, _ = _build_dispatcher_ragas_wrappers(
                 pool="POOL", judge_model="phi4:14b", embed_model="nomic-embed-text",
             )
@@ -264,8 +295,7 @@ class TestDispatcherWrappers:
 
     @pytest.mark.asyncio
     async def test_aembed_routes_through_dispatch_embed(self, monkeypatch):
-        import sys
-        from unittest.mock import AsyncMock, patch
+        from unittest.mock import AsyncMock
 
         from services.ragas_eval import _build_dispatcher_ragas_wrappers
 
@@ -273,7 +303,7 @@ class TestDispatcherWrappers:
         monkeypatch.setattr(
             "services.llm_providers.dispatcher.dispatch_embed", embed_mock,
         )
-        with patch.dict(sys.modules, _identity_wrapper_modules()):
+        with _inject_fake_modules(_identity_wrapper_modules()):
             _, embeddings = _build_dispatcher_ragas_wrappers(
                 pool="POOL", judge_model="phi4:14b", embed_model="nomic-embed-text",
             )
@@ -287,14 +317,11 @@ class TestDispatcherWrappers:
 
     @pytest.mark.asyncio
     async def test_sync_paths_raise(self):
-        import sys
-        from unittest.mock import patch
-
         from langchain_core.messages import HumanMessage
 
         from services.ragas_eval import _build_dispatcher_ragas_wrappers
 
-        with patch.dict(sys.modules, _identity_wrapper_modules()):
+        with _inject_fake_modules(_identity_wrapper_modules()):
             llm, embeddings = _build_dispatcher_ragas_wrappers(
                 pool="POOL", judge_model="phi4:14b", embed_model="nomic-embed-text",
             )
