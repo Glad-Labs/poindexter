@@ -9,6 +9,7 @@ shortcut, single-prefix expansion, zero → not-found, many → an ambiguous
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -18,6 +19,7 @@ from click.testing import CliRunner
 
 from poindexter.cli.pipeline import (
     _fetch_paused_row,
+    _quiet_service_logging,
     pipeline_group,
 )
 
@@ -218,3 +220,39 @@ async def test_make_pool_loads_secret_key(monkeypatch):
 
     assert ensure_called is True, "_make_pool must load POINDEXTER_SECRET_KEY"
     assert pool is sentinel_pool
+
+
+# ---------------------------------------------------------------------------
+# _quiet_service_logging — INFO chatter suppression, verbose escape hatch
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestQuietServiceLogging:
+    @pytest.fixture(autouse=True)
+    def _restore_root_level(self):
+        root = logging.getLogger()
+        original = root.level
+        yield
+        root.setLevel(original)
+
+    def test_forces_warning_with_no_context(self):
+        """No active click context (e.g. called outside a command): quiet."""
+        logging.getLogger().setLevel(logging.INFO)
+        _quiet_service_logging()
+        assert logging.getLogger().level == logging.WARNING
+
+    def test_forces_warning_when_not_verbose(self):
+        logging.getLogger().setLevel(logging.INFO)
+        ctx = click.Context(click.Command("pipeline"), obj={"verbose": False})
+        with ctx.scope():
+            _quiet_service_logging()
+        assert logging.getLogger().level == logging.WARNING
+
+    def test_leaves_level_alone_when_verbose(self):
+        """``poindexter -v pipeline resume ...`` must still show INFO logs."""
+        logging.getLogger().setLevel(logging.INFO)
+        ctx = click.Context(click.Command("pipeline"), obj={"verbose": True})
+        with ctx.scope():
+            _quiet_service_logging()
+        assert logging.getLogger().level == logging.INFO

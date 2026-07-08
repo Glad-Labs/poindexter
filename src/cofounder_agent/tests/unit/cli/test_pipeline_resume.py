@@ -21,6 +21,7 @@ run.
 
 from __future__ import annotations
 
+import json
 from contextlib import ExitStack
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -220,3 +221,130 @@ class TestContinueResume:
         assert "resume" in result.output.lower()
         # Never tried to run the graph.
         bundle[1].return_value.run.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Bulk resume — multiple task_ids and --all (cumbersome-backlog fix)
+# ---------------------------------------------------------------------------
+
+_TID2 = "def45678-0000-0000-0000-000000000000"
+
+
+def _bulk_patches(rows: dict, *, run_result=None):
+    """Like ``_patches`` but ``_fetch_paused_row`` is keyed per task_id, so a
+    bulk batch can mix found/not-found/paused tasks in one invocation."""
+
+    async def _fake_fetch(_pool, task_id):
+        return rows.get(task_id)
+
+    runner_cls = MagicMock()
+    runner_cls.return_value.run = AsyncMock(
+        return_value=run_result or SimpleNamespace(ok=True, halted_at=None)
+    )
+    patches = [
+        patch("poindexter.cli.pipeline._make_pool",
+              new=AsyncMock(return_value=MagicMock(close=AsyncMock()))),
+        patch("poindexter.cli.pipeline._make_site_config",
+              new=AsyncMock(return_value=MagicMock())),
+        patch("poindexter.cli.pipeline._fetch_paused_row",
+              new=AsyncMock(side_effect=_fake_fetch)),
+        patch("services.approval_service.approve",
+              new=AsyncMock(return_value={
+                  "ok": True, "gate_name": "draft_gate", "gate_history_id": 7,
+              })),
+        patch("services.approval_service.rollback_resume_approval",
+              new=AsyncMock(return_value={"ok": True})),
+        patch("services.template_runner.TemplateRunner", new=runner_cls),
+        patch("services.template_runner.has_resumable_checkpoint",
+              new=AsyncMock(return_value=False)),
+        patch("poindexter.cli.pipeline._build_resume_handles",
+              new=AsyncMock(return_value=(MagicMock(close=AsyncMock()), MagicMock()))),
+        patch("poindexter.cli.pipeline._dsn",
+              new=MagicMock(return_value="postgresql://test/dsn")),
+    ]
+    return patches, runner_cls
+
+
+class TestBulkResume:
+    def test_multiple_task_ids_all_succeed(self):
+        rows = {_TID: _paused_row(), _TID2: _paused_row(task_id=_TID2)}
+        patches, runner_cls = _bulk_patches(rows)
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            result = CliRunner().invoke(resume_command, [_TID, _TID2])
+
+        assert result.exit_code == 0, result.output
+        assert runner_cls.return_value.run.await_count == 2
+        assert "2 succeeded, 0 failed" in result.output
+        assert _TID in result.output
+        assert _TID2 in result.output
+
+    def test_one_failure_does_not_block_the_rest_of_the_batch(self):
+        rows = {_TID: _paused_row(), _TID2: None}  # second task not found
+        patches, runner_cls = _bulk_patches(rows)
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            result = CliRunner().invoke(resume_command, [_TID, _TID2])
+
+        # Batch had a failure -> non-zero exit, but the good task still ran.
+        assert result.exit_code != 0
+        runner_cls.return_value.run.assert_awaited_once()
+        assert "1 succeeded, 1 failed" in result.output
+        assert f"Task {_TID2} not found" in result.output
+
+    def test_json_output_is_a_list_one_entry_per_task(self):
+        rows = {_TID: _paused_row(), _TID2: _paused_row(task_id=_TID2)}
+        patches, _ = _bulk_patches(rows)
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            result = CliRunner().invoke(
+                resume_command, [_TID, _TID2, "--json"],
+            )
+
+        assert result.exit_code == 0, result.output
+        payload = json.loads(result.output)
+        assert isinstance(payload, list)
+        assert {r["task_id"] for r in payload} == {_TID, _TID2}
+
+    def test_task_ids_and_all_together_is_an_error(self):
+        result = CliRunner().invoke(resume_command, [_TID, "--all"])
+        assert result.exit_code != 0
+        assert "not both" in result.output.lower()
+
+    def test_no_task_ids_and_no_all_is_an_error(self):
+        result = CliRunner().invoke(resume_command, [])
+        assert result.exit_code != 0
+        assert "--all" in result.output
+
+    def test_all_flag_resumes_every_paused_task(self):
+        rows = {_TID: _paused_row(), _TID2: _paused_row(task_id=_TID2)}
+        patches, runner_cls = _bulk_patches(rows)
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(patch(
+                "poindexter.cli.pipeline._fetch_paused_rows",
+                new=AsyncMock(return_value=[
+                    {"task_id": _TID}, {"task_id": _TID2},
+                ]),
+            ))
+            result = CliRunner().invoke(resume_command, ["--all"])
+
+        assert result.exit_code == 0, result.output
+        assert runner_cls.return_value.run.await_count == 2
+
+    def test_all_flag_with_nothing_paused_is_a_no_op(self):
+        with patch(
+            "poindexter.cli.pipeline._make_pool",
+            new=AsyncMock(return_value=MagicMock(close=AsyncMock())),
+        ), patch(
+            "poindexter.cli.pipeline._fetch_paused_rows",
+            new=AsyncMock(return_value=[]),
+        ):
+            result = CliRunner().invoke(resume_command, ["--all"])
+
+        assert result.exit_code == 0, result.output
+        assert "no paused pipelines" in result.output.lower()

@@ -7,7 +7,8 @@ durably checkpoints (Postgres checkpointer, keyed on ``thread_id`` =
 
     poindexter pipeline list-paused             # tasks waiting at a gate
     poindexter pipeline status <task_id>        # one task's gate state
-    poindexter pipeline resume <task_id>        # approve + resume the graph
+    poindexter pipeline resume <task_id> [...]  # approve + resume one or more
+    poindexter pipeline resume --all            # approve + resume every paused task
 
 ``resume`` records the approval in ``pipeline_gate_history`` (so the gate
 atom's idempotency check sees it) and then re-invokes the template with
@@ -52,6 +53,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import sys
 from typing import Any
 
@@ -60,6 +62,29 @@ import click
 from poindexter.cli._bootstrap import resolve_dsn as _dsn
 from poindexter.cli._prefix import resolve_uuid_prefix
 from services import tasks_mcp  # cheap: services/__init__ is empty, tasks_mcp imports only typing
+
+
+def _quiet_service_logging() -> None:
+    """Force the root logger to WARNING, unless the operator passed ``-v``.
+
+    ``resume``/``regen`` run the full LangGraph in-process, which logs at
+    INFO through every stage it touches (site_config, r2_upload,
+    static_export, revalidation, atom_runs, ...). ``poindexter.cli.app.main``
+    only raises the CLI's WARNING default when ``LOG_LEVEL`` is unset in the
+    shell — so running these commands inside the worker container (which
+    sets ``LOG_LEVEL=INFO`` for observability) floods the terminal with
+    service internals the operator didn't ask for. Force WARNING here
+    regardless of the inherited env; genuine warnings/errors still surface.
+
+    Respects an explicit ``poindexter -v pipeline resume ...`` — the root
+    ``-v/--verbose`` flag stamps ``ctx.obj["verbose"]`` before any subcommand
+    runs, so if that's set the operator asked for the noise and we leave the
+    level alone.
+    """
+    ctx = click.get_current_context(silent=True)
+    verbose = bool(ctx is not None and (ctx.obj or {}).get("verbose"))
+    if not verbose:
+        logging.getLogger().setLevel(logging.WARNING)
 
 
 def _ensure_selector_event_loop_on_windows() -> None:
@@ -84,6 +109,7 @@ def _ensure_selector_event_loop_on_windows() -> None:
 
 def _run(coro):
     _ensure_selector_event_loop_on_windows()
+    _quiet_service_logging()
     return asyncio.run(coro)
 
 
@@ -165,6 +191,44 @@ _TASK_COLUMNS = """
 """
 
 
+async def _fetch_paused_rows(pool: Any, limit: int | None) -> list[dict[str, Any]]:
+    """Every task currently paused at a gate, oldest-paused first.
+
+    Shared by ``list-paused`` and ``resume --all`` so this adapter carries
+    exactly one inline-SQL call site for "what's paused right now" rather than
+    two near-identical queries (adapter-purity ratchet — an adapter delegates,
+    it doesn't accumulate raw SQL; see
+    docs/architecture/2026-06-10-transport-adapter-contract.md).
+    ``limit=None`` returns every paused task — Postgres treats ``LIMIT NULL``
+    as no limit, verified against the live DB rather than assumed.
+    """
+    async with pool.acquire() as conn:
+        rows = await conn.fetch(
+            """
+            SELECT task_id::text AS task_id,
+                   awaiting_gate AS gate_name,
+                   gate_paused_at,
+                   status,
+                   topic,
+                   template_slug,
+                   COALESCE(
+                       ((SELECT stage_data -> 'task_metadata'
+                           FROM pipeline_versions pv
+                          WHERE pv.task_id::text = pt.task_id::text
+                          ORDER BY pv.version DESC LIMIT 1
+                        ) ->> 'qa_flagged')::boolean,
+                       false
+                   ) AS qa_flagged
+              FROM pipeline_tasks pt
+             WHERE awaiting_gate IS NOT NULL
+             ORDER BY gate_paused_at ASC NULLS LAST
+             LIMIT $1
+            """,
+            limit,
+        )
+    return [dict(r) for r in rows]
+
+
 async def _fetch_paused_row(pool: Any, task_id: str) -> dict[str, Any] | None:
     """Return the gate-relevant columns for a task, or None.
 
@@ -210,31 +274,7 @@ def list_paused_command(limit: int, json_output: bool) -> None:
     async def _impl():
         pool = await _make_pool()
         try:
-            async with pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT task_id::text AS task_id,
-                           awaiting_gate AS gate_name,
-                           gate_paused_at,
-                           status,
-                           topic,
-                           template_slug,
-                           COALESCE(
-                               ((SELECT stage_data -> 'task_metadata'
-                                   FROM pipeline_versions pv
-                                  WHERE pv.task_id::text = pt.task_id::text
-                                  ORDER BY pv.version DESC LIMIT 1
-                                ) ->> 'qa_flagged')::boolean,
-                               false
-                           ) AS qa_flagged
-                      FROM pipeline_tasks pt
-                     WHERE awaiting_gate IS NOT NULL
-                     ORDER BY gate_paused_at ASC NULLS LAST
-                     LIMIT $1
-                    """,
-                    limit,
-                )
-            return [dict(r) for r in rows]
+            return await _fetch_paused_rows(pool, limit)
         finally:
             await pool.close()
 
@@ -335,12 +375,8 @@ def status_command(task_id: str, json_output: bool) -> None:
 # ---------------------------------------------------------------------------
 
 
-@pipeline_group.command("resume")
-@click.argument("task_id")
-@click.option("--feedback", default=None, help="Optional operator note (recorded in gate_history).")
-@click.option("--json", "json_output", is_flag=True)
-def resume_command(task_id: str, feedback: str | None, json_output: bool) -> None:
-    """Approve the active gate and resume the interrupted graph.
+async def _resume_one(task_id: str, feedback: str | None) -> dict[str, Any]:
+    """Approve (if needed) and resume a single paused/stranded task.
 
     Two paths, picked from the task's state:
 
@@ -356,173 +392,168 @@ def resume_command(task_id: str, feedback: str | None, json_output: bool) -> Non
     and a prior approval on record — the shape left by a downstream node
     crashing AFTER the gate passed — resume from the checkpoint WITHOUT
     re-approving (the gate was already cleared, the approval is still valid).
+
+    Returns either an ``{"ok": ..., "task_id": ..., "gate_name": ..., ...}``
+    success payload or an ``{"error": ..., "code": ...}`` failure payload —
+    never raises for expected failure shapes (not-found, no template_slug,
+    nothing-to-resume). Unexpected exceptions propagate to the caller.
     """
+    pool = await _make_pool()
+    db_service = None  # built mid-try; closed in finally (guard early returns)
+    try:
+        row = await _fetch_paused_row(pool, task_id)
+        if row is None:
+            return {"error": f"Task {task_id} not found", "code": 1}
 
-    async def _impl():
-        pool = await _make_pool()
-        db_service = None  # built mid-try; closed in finally (guard early returns)
-        try:
-            row = await _fetch_paused_row(pool, task_id)
-            if row is None:
-                return {"error": f"Task {task_id} not found", "code": 1}
-
-            task_id_str = str(row["task_id"])
-            template_slug = row.get("template_slug")
-            if not template_slug:
-                return {
-                    "error": (
-                        f"Task {task_id} has no template_slug — cannot resume"
-                    ),
-                    "code": 1,
-                }
-
-            site_config = await _make_site_config(pool)
-
-            # Re-thread the live service handles into the RunnableConfig.
-            # ``preview_gate`` resumes MID-GRAPH, re-running atoms that call full
-            # DatabaseService delegates + dispatch through ``platform`` — so a
-            # bare pool shim is not enough. Build the real handles the Prefect
-            # subprocess builds (see ``_build_resume_handles``); closed in the
-            # ``finally`` below.
-            db_service, platform = await _build_resume_handles(site_config)
-
-            # Hand the runner an EXPLICIT checkpointer DSN. TemplateRunner's
-            # own fallback resolver (``_resolve_dsn``) imports
-            # ``brain.bootstrap``, which is NOT on sys.path in the installed
-            # CLI venv (poindexter-backend ships only ``cofounder_agent``;
-            # ``brain`` lives at the repo root). That import raises
-            # ModuleNotFoundError, gets swallowed, and the runner silently
-            # degrades to MemorySaver — which holds no checkpoint, so the
-            # "resume" re-runs the graph from its entry node with the CLI's
-            # thin initial state (no ``post_id``) and halts at
-            # ``content.load_existing_post``. ``_dsn()`` is the same vendored
-            # resolver that just built the pool, so it is guaranteed set here.
-            checkpointer_dsn = _dsn()
-
-            from services.template_runner import (
-                TemplateRunner,
-                has_resumable_checkpoint,
-            )
-
-            async def _run_resume(resume_gate: str | None):
-                runner = TemplateRunner(
-                    pool,
-                    checkpointer_dsn=checkpointer_dsn,
-                    site_config=site_config,
-                )
-                return await runner.run(
-                    template_slug,
-                    {
-                        "task_id": task_id_str,
-                        "topic": row.get("topic") or "",
-                        "database_service": db_service,
-                        "site_config": site_config,
-                        "platform": platform,
-                    },
-                    thread_id=task_id_str,
-                    resume=True,
-                    resume_value={"approved": True, "gate_name": resume_gate},
-                )
-
-            gate_name = row.get("awaiting_gate")
-
-            # ---- PATH 1: approve-and-resume (paused at a gate) -------------
-            if gate_name:
-                # Capture the paused state BEFORE approve clears it, so a
-                # failed resume can be compensated back to exactly here.
-                original_artifact = row.get("gate_artifact")
-                original_paused_at = row.get("gate_paused_at")
-
-                from services.approval_service import approve as approve_service
-                from services.approval_service import rollback_resume_approval
-
-                approval = await approve_service(
-                    task_id=task_id_str,
-                    gate_name=gate_name,
-                    feedback=feedback,
-                    actor="human",
-                    site_config=site_config,
-                    pool=pool,
-                )
-
-                try:
-                    summary = await _run_resume(gate_name)
-                except Exception as exc:  # noqa: BLE001 — surfaced below
-                    # The resume raised before the gate was durably passed
-                    # (the graph never advanced). Roll the approval back so the
-                    # task is re-resumable and no stale approval lingers.
-                    await rollback_resume_approval(
-                        task_id=task_id_str,
-                        gate_name=gate_name,
-                        gate_history_id=approval.get("gate_history_id"),
-                        artifact=original_artifact,
-                        paused_at=original_paused_at,
-                        pool=pool,
-                    )
-                    return {
-                        "error": (
-                            f"resume failed — approval rolled back, task is "
-                            f"re-resumable: {type(exc).__name__}: {exc}"
-                        ),
-                        "code": 1,
-                        "rolled_back": True,
-                    }
-
-                return {
-                    "ok": summary.ok,
-                    "task_id": task_id_str,
-                    "gate_name": gate_name,
-                    "template_slug": template_slug,
-                    "halted_at": summary.halted_at,
-                    "approval": approval,
-                    "mode": "approve_resume",
-                }
-
-            # ---- PATH 2: continue-resume (stranded past the gate) ----------
-            # awaiting_gate is NULL. If the task is an operator-driven resume
-            # that died past the gate (in_progress + intact checkpoint + a
-            # prior approval), continue from the checkpoint without re-approving.
-            from services.approval_service import latest_approved_gate
-
-            approved_gate = await latest_approved_gate(pool, task_id_str)
-            resumable = (
-                str(row.get("status")) == "in_progress"
-                and approved_gate is not None
-                and await has_resumable_checkpoint(pool, task_id_str)
-            )
-            if resumable:
-                summary = await _run_resume(approved_gate)
-                return {
-                    "ok": summary.ok,
-                    "task_id": task_id_str,
-                    "gate_name": approved_gate,
-                    "template_slug": template_slug,
-                    "halted_at": summary.halted_at,
-                    "mode": "continue_resume",
-                }
-
+        task_id_str = str(row["task_id"])
+        template_slug = row.get("template_slug")
+        if not template_slug:
             return {
                 "error": (
-                    f"Task {task_id} is not paused at a gate "
-                    f"(status={row.get('status')!r}) — nothing to resume"
+                    f"Task {task_id} has no template_slug — cannot resume"
                 ),
                 "code": 1,
             }
-        finally:
-            if db_service is not None:
-                await db_service.close()
-            await pool.close()
 
-    try:
-        result = _run(_impl())
-    except Exception as e:
-        _exit_error(f"unexpected: {type(e).__name__}: {e}")
-        return
+        site_config = await _make_site_config(pool)
 
-    if "error" in result:
-        _exit_error(result["error"], code=result.get("code", 1))
-        return
+        # Re-thread the live service handles into the RunnableConfig.
+        # ``preview_gate`` resumes MID-GRAPH, re-running atoms that call full
+        # DatabaseService delegates + dispatch through ``platform`` — so a
+        # bare pool shim is not enough. Build the real handles the Prefect
+        # subprocess builds (see ``_build_resume_handles``); closed in the
+        # ``finally`` below.
+        db_service, platform = await _build_resume_handles(site_config)
 
+        # Hand the runner an EXPLICIT checkpointer DSN. TemplateRunner's
+        # own fallback resolver (``_resolve_dsn``) imports
+        # ``brain.bootstrap``, which is NOT on sys.path in the installed
+        # CLI venv (poindexter-backend ships only ``cofounder_agent``;
+        # ``brain`` lives at the repo root). That import raises
+        # ModuleNotFoundError, gets swallowed, and the runner silently
+        # degrades to MemorySaver — which holds no checkpoint, so the
+        # "resume" re-runs the graph from its entry node with the CLI's
+        # thin initial state (no ``post_id``) and halts at
+        # ``content.load_existing_post``. ``_dsn()`` is the same vendored
+        # resolver that just built the pool, so it is guaranteed set here.
+        checkpointer_dsn = _dsn()
+
+        from services.template_runner import (
+            TemplateRunner,
+            has_resumable_checkpoint,
+        )
+
+        async def _run_resume(resume_gate: str | None):
+            runner = TemplateRunner(
+                pool,
+                checkpointer_dsn=checkpointer_dsn,
+                site_config=site_config,
+            )
+            return await runner.run(
+                template_slug,
+                {
+                    "task_id": task_id_str,
+                    "topic": row.get("topic") or "",
+                    "database_service": db_service,
+                    "site_config": site_config,
+                    "platform": platform,
+                },
+                thread_id=task_id_str,
+                resume=True,
+                resume_value={"approved": True, "gate_name": resume_gate},
+            )
+
+        gate_name = row.get("awaiting_gate")
+
+        # ---- PATH 1: approve-and-resume (paused at a gate) -----------------
+        if gate_name:
+            # Capture the paused state BEFORE approve clears it, so a
+            # failed resume can be compensated back to exactly here.
+            original_artifact = row.get("gate_artifact")
+            original_paused_at = row.get("gate_paused_at")
+
+            from services.approval_service import approve as approve_service
+            from services.approval_service import rollback_resume_approval
+
+            approval = await approve_service(
+                task_id=task_id_str,
+                gate_name=gate_name,
+                feedback=feedback,
+                actor="human",
+                site_config=site_config,
+                pool=pool,
+            )
+
+            try:
+                summary = await _run_resume(gate_name)
+            except Exception as exc:  # noqa: BLE001 — surfaced below
+                # The resume raised before the gate was durably passed
+                # (the graph never advanced). Roll the approval back so the
+                # task is re-resumable and no stale approval lingers.
+                await rollback_resume_approval(
+                    task_id=task_id_str,
+                    gate_name=gate_name,
+                    gate_history_id=approval.get("gate_history_id"),
+                    artifact=original_artifact,
+                    paused_at=original_paused_at,
+                    pool=pool,
+                )
+                return {
+                    "error": (
+                        f"resume failed — approval rolled back, task is "
+                        f"re-resumable: {type(exc).__name__}: {exc}"
+                    ),
+                    "code": 1,
+                    "rolled_back": True,
+                }
+
+            return {
+                "ok": summary.ok,
+                "task_id": task_id_str,
+                "gate_name": gate_name,
+                "template_slug": template_slug,
+                "halted_at": summary.halted_at,
+                "approval": approval,
+                "mode": "approve_resume",
+            }
+
+        # ---- PATH 2: continue-resume (stranded past the gate) --------------
+        # awaiting_gate is NULL. If the task is an operator-driven resume
+        # that died past the gate (in_progress + intact checkpoint + a
+        # prior approval), continue from the checkpoint without re-approving.
+        from services.approval_service import latest_approved_gate
+
+        approved_gate = await latest_approved_gate(pool, task_id_str)
+        resumable = (
+            str(row.get("status")) == "in_progress"
+            and approved_gate is not None
+            and await has_resumable_checkpoint(pool, task_id_str)
+        )
+        if resumable:
+            summary = await _run_resume(approved_gate)
+            return {
+                "ok": summary.ok,
+                "task_id": task_id_str,
+                "gate_name": approved_gate,
+                "template_slug": template_slug,
+                "halted_at": summary.halted_at,
+                "mode": "continue_resume",
+            }
+
+        return {
+            "error": (
+                f"Task {task_id} is not paused at a gate "
+                f"(status={row.get('status')!r}) — nothing to resume"
+            ),
+            "code": 1,
+        }
+    finally:
+        if db_service is not None:
+            await db_service.close()
+        await pool.close()
+
+
+def _render_resume_result(result: dict[str, Any], json_output: bool) -> None:
     if json_output:
         click.echo(json.dumps(result, indent=2, default=str))
         return
@@ -541,6 +572,124 @@ def resume_command(task_id: str, feedback: str | None, json_output: bool) -> Non
             f"{result.get('halted_at')!r}.",
             fg="yellow",
         )
+
+
+@pipeline_group.command("resume")
+@click.argument("task_ids", nargs=-1)
+@click.option(
+    "--all", "resume_all", is_flag=True,
+    help="Resume every task currently paused at a gate (list-paused's set).",
+)
+@click.option("--feedback", default=None, help="Optional operator note (recorded in gate_history).")
+@click.option("--json", "json_output", is_flag=True)
+def resume_command(
+    task_ids: tuple[str, ...],
+    resume_all: bool,
+    feedback: str | None,
+    json_output: bool,
+) -> None:
+    """Approve the active gate(s) and resume the interrupted graph(s).
+
+    Accepts one or more task ids/prefixes for a bulk resume — handy when the
+    backlog has piled up and typing each id individually is a chore::
+
+        poindexter pipeline resume abc123 def456 9a0b1c2d
+        poindexter pipeline resume --all   # every task-paused-at-a-gate
+
+    ``--feedback`` (if given) is recorded against every task in the batch.
+    Each task is resumed independently: one failure does not block the rest,
+    and the process exits non-zero if any task in the batch failed.
+
+    See :func:`_resume_one` for the per-task approve-and-resume /
+    continue-resume logic.
+    """
+    if resume_all and task_ids:
+        _exit_error("pass task_ids OR --all, not both")
+        return
+    if not resume_all and not task_ids:
+        _exit_error("provide at least one task_id, or pass --all")
+        return
+
+    if resume_all:
+        async def _resolve_all() -> list[str]:
+            pool = await _make_pool()
+            try:
+                rows = await _fetch_paused_rows(pool, limit=None)
+                return [r["task_id"] for r in rows]
+            finally:
+                await pool.close()
+
+        try:
+            targets = _run(_resolve_all())
+        except Exception as e:
+            _exit_error(f"unexpected: {type(e).__name__}: {e}")
+            return
+
+        if not targets:
+            click.echo("(no paused pipelines)")
+            return
+    else:
+        targets = list(task_ids)
+
+    # Single target: preserve the exact prior single-task behavior/output.
+    if len(targets) == 1:
+        try:
+            result = _run(_resume_one(targets[0], feedback))
+        except Exception as e:
+            _exit_error(f"unexpected: {type(e).__name__}: {e}")
+            return
+
+        if "error" in result:
+            _exit_error(result["error"], code=result.get("code", 1))
+            return
+
+        _render_resume_result(result, json_output)
+        return
+
+    # Bulk path — one task's failure doesn't block the rest of the batch.
+    results: list[dict[str, Any]] = []
+    for tid in targets:
+        try:
+            result = _run(_resume_one(tid, feedback))
+        except Exception as e:
+            result = {"error": f"unexpected: {type(e).__name__}: {e}", "code": 1}
+        result.setdefault("task_id", tid)
+        results.append(result)
+
+    if json_output:
+        click.echo(json.dumps(results, indent=2, default=str))
+    else:
+        click.secho(f"Resuming {len(targets)} paused pipelines:", fg="cyan")
+        click.echo()
+        for result in results:
+            tid = result.get("task_id", "?")
+            if "error" in result:
+                click.secho(f"  ✗ {tid}  {result['error']}", fg="red")
+                continue
+            verb = "Continued" if result.get("mode") == "continue_resume" else "Resumed"
+            if result.get("ok"):
+                click.secho(
+                    f"  ✓ {tid}  {verb.lower()} past gate "
+                    f"{result['gate_name']!r} — pipeline completed.",
+                    fg="green",
+                )
+            else:
+                click.secho(
+                    f"  ⚠ {tid}  {verb.lower()} past gate "
+                    f"{result['gate_name']!r}, halted at "
+                    f"{result.get('halted_at')!r}.",
+                    fg="yellow",
+                )
+
+        failed = sum(1 for r in results if "error" in r)
+        click.echo()
+        click.secho(
+            f"{len(results) - failed} succeeded, {failed} failed.",
+            fg=("red" if failed else "green"),
+        )
+
+    if any("error" in r for r in results):
+        sys.exit(1)
 
 
 # ---------------------------------------------------------------------------
