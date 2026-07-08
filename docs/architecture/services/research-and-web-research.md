@@ -121,8 +121,7 @@ app_settings changes apply without a restart (#198):
 - **Reads from:**
   - `posts` table (status = 'published') for internal-link candidates
     via the ILIKE-by-word-overlap query.
-  - DuckDuckGo (via `ddgs` package; falls back to legacy
-    `duckduckgo_search` import name if `ddgs` is missing).
+  - DuckDuckGo (via the `ddgs` package).
   - Arbitrary HTTP origins via `httpx.AsyncClient` (User-Agent
     `Mozilla/5.0 (compatible; ContentResearcher/1.0)`).
   - `services.site_config` for the tunables above.
@@ -149,9 +148,9 @@ app_settings changes apply without a restart (#198):
 - **DuckDuckGo hangs** — `asyncio.wait_for` aborts after
   `web_research_search_timeout_seconds`. Logged as
   `[RESEARCH] DuckDuckGo search timed out after Ns`.
-- **`ddgs` package missing** — falls back to importing legacy
-  `duckduckgo_search`. If both are missing the outer try/except
-  catches the ImportError and returns `[]`.
+- **`ddgs` package missing** — the `from ddgs import DDGS` raises
+  `ImportError`, which `_ddg_search` catches, logs at warning level,
+  and returns `[]`.
 - **HTTP fetch fails or returns non-200** — `_extract_content` returns
   empty string. The caller still keeps the title/URL/snippet from the
   search step.

@@ -17,11 +17,11 @@ response, and computes similarity against what it finds.
 
 Design constraints
 ------------------
-1. **``httpx``, not ``ddgs``.** The ``ddgs`` / ``duckduckgo_search``
-   packages transitively pull in ``primp.pyd``, which crashes on
-   Windows under aggressive DDG rate-limiting (see the project MEMORY
-   note). We issue a plain ``httpx.AsyncClient`` GET with a normal
-   browser ``User-Agent`` instead.
+1. **``httpx``, not ``ddgs``.** The ``ddgs`` package transitively
+   pulls in ``primp.pyd``, which crashes on Windows under aggressive
+   DDG rate-limiting (see the project MEMORY note). We issue a plain
+   ``httpx.AsyncClient`` GET with a normal browser ``User-Agent``
+   instead.
 2. **Fail-open on rate-limit / CAPTCHA / network error.** The check is
    a nice-to-have, not a hard gate. When we can't verify, we return
    the "looks original, we didn't actually check" shape so the pipeline

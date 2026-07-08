@@ -49,21 +49,21 @@ class TestSearchSimple:
 
 class TestDDGSearch:
     async def test_handles_import_error(self):
-        """Both DDG client modules unavailable -> empty list, no network call.
+        """`ddgs` unavailable -> empty list, no network call.
 
-        Production code tries `ddgs` first then falls back to
-        `duckduckgo_search`. Patch BOTH to None so the test can never
-        accidentally hit the real DuckDuckGo network in any environment
-        where one of them is installed (closes #170).
+        Production code imports `DDGS` from `ddgs`. Patch it to None so the
+        import raises `ImportError` and the test can never accidentally hit
+        the real DuckDuckGo network in an environment where `ddgs` is
+        installed (closes #170).
         """
         researcher = WebResearcher(site_config=SiteConfig())
         with patch.dict(
             "sys.modules",
-            {"ddgs": None, "duckduckgo_search": None},
+            {"ddgs": None},
         ):
-            # Should fail gracefully — both imports raise ImportError
+            # Should fail gracefully — the import raises ImportError
             results = await researcher._ddg_search("test", 3)
-            # Caller wraps in try/except and returns []
+            # _ddg_search catches ImportError and returns []
             assert isinstance(results, list)
             assert results == []
 
@@ -309,7 +309,7 @@ class TestDDGTimeoutPath:
             raise asyncio.TimeoutError()
 
         # Make sure the import resolves so we don't hit the ImportError branch
-        with patch.dict("sys.modules", {"duckduckgo_search": MagicMock(DDGS=MagicMock())}), \
+        with patch.dict("sys.modules", {"ddgs": MagicMock(DDGS=MagicMock())}), \
              patch("asyncio.wait_for", new=_slow_wait_for):
             results = await researcher._ddg_search("test query", 5)
             assert results == []
@@ -318,9 +318,8 @@ class TestDDGTimeoutPath:
     async def test_ddg_returns_results_on_success(self):
         """Verify _ddg_search transforms raw DDG output into the expected dict shape.
 
-        The real library is `ddgs` (new name); `duckduckgo_search` is only
-        a legacy fallback. Patch BOTH so whichever the code picks, the mock
-        wins and no real network call fires.
+        Patch the `ddgs` module so the mocked `DDGS` wins and no real
+        network call fires.
         """
         fake_ddgs = MagicMock()
         fake_ddgs_instance = MagicMock()
@@ -332,10 +331,7 @@ class TestDDGTimeoutPath:
         fake_ddgs.return_value.__enter__ = MagicMock(return_value=fake_ddgs_instance)
         fake_ddgs.return_value.__exit__ = MagicMock(return_value=False)
 
-        with patch.dict("sys.modules", {
-            "ddgs": MagicMock(DDGS=fake_ddgs),
-            "duckduckgo_search": MagicMock(DDGS=fake_ddgs),
-        }):
+        with patch.dict("sys.modules", {"ddgs": MagicMock(DDGS=fake_ddgs)}):
             researcher = WebResearcher(site_config=SiteConfig())
             results = await researcher._ddg_search("test", 3)
 
@@ -445,7 +441,7 @@ class TestAppContainerWiring:
 
 
 def _fake_ddgs_module(text_side_effect):
-    """Build a ``MagicMock`` standing in for the ddgs/duckduckgo_search module.
+    """Build a ``MagicMock`` standing in for the ``ddgs`` module.
 
     ``text_side_effect`` is passed straight to the mocked ``DDGS().text``
     (a value to return, or a callable/list of side effects to raise/return).
@@ -480,7 +476,7 @@ class TestDDGRetry:
             "web_research_ddg_retry_attempts": "3",
             "web_research_ddg_retry_base_delay_ms": "1",
         }))
-        with patch.dict("sys.modules", {"ddgs": module, "duckduckgo_search": module}), \
+        with patch.dict("sys.modules", {"ddgs": module}), \
              patch("asyncio.sleep", new_callable=AsyncMock) as sleep_mock:
             results = await researcher._ddg_search("q", 3)
 
@@ -496,7 +492,7 @@ class TestDDGRetry:
             "web_research_ddg_retry_attempts": "2",
             "web_research_ddg_retry_base_delay_ms": "1",
         }))
-        with patch.dict("sys.modules", {"ddgs": module, "duckduckgo_search": module}), \
+        with patch.dict("sys.modules", {"ddgs": module}), \
              patch("asyncio.sleep", new_callable=AsyncMock):
             results = await researcher._ddg_search("q", 3)
 
@@ -509,7 +505,7 @@ class TestDDGRetry:
         researcher = WebResearcher(site_config=SiteConfig(initial_config={
             "web_research_ddg_retry_attempts": "1",
         }))
-        with patch.dict("sys.modules", {"ddgs": module, "duckduckgo_search": module}), \
+        with patch.dict("sys.modules", {"ddgs": module}), \
              patch("asyncio.sleep", new_callable=AsyncMock) as sleep_mock:
             results = await researcher._ddg_search("q", 3)
 
