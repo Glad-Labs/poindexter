@@ -957,8 +957,12 @@ async def _upload_featured_to_r2(
         svc = R2UploadService(site_config=site_config)
         r2_id = task_id or uuid.uuid4().hex[:12]
         # R2UploadService converts JPEG/PNG→WebP and rewrites the key
-        # extension automatically (poindexter#732).
-        r2_key = f"images/featured/{r2_id}.jpg"
+        # extension automatically (poindexter#732). A random suffix keeps
+        # the key unique per upload attempt — the object is cached
+        # `immutable` for a year, so a same-task_id retry would silently
+        # overwrite a prior run's image at the same cached URL. Matches
+        # post_edit_service._upload_image's key scheme.
+        r2_key = f"images/featured/{r2_id[:8]}-{uuid.uuid4().hex[:8]}.jpg"
         r2_url = await svc.upload_to_r2(output_path, r2_key, content_type="image/jpeg")
         if r2_url:
             logger.info("Uploaded to R2: %s", r2_url[:80])
