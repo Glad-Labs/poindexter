@@ -32,7 +32,6 @@ function SocialPanel({ social, onApprove, onReject }) {
   const failed = drafts.filter((d) => d.status === 'failed').length;
   return (
     <Panel
-      idx="SD"
       title="SOCIAL DISTRIBUTION"
       meta={`${pending} PENDING · ${posted} POSTED · ${failed} FAILED`}
       flush
@@ -264,7 +263,6 @@ function FindingsPanel({ findings, onOpen, fresh }) {
   const pending = (f.counts && f.counts.pending) || 0;
   return (
     <Panel
-      idx="F1"
       title="FINDINGS"
       meta={`${emitted} EMITTED · ${pending} PENDING`}
       fresh={fresh}
@@ -486,7 +484,6 @@ function RevenuePanel({ revenue, onOpen }) {
       : null;
   return (
     <Panel
-      idx="R1"
       title="REVENUE"
       meta={live ? `MRR $${r.mrr} · LEMON SQUEEZY` : 'PRE-REVENUE'}
       flush
@@ -603,13 +600,7 @@ function MediaPanel({ media, onOpenItem, onApprove, onReject, fresh }) {
       ? `RENDER ${m.renderSuccess24h}% · ${m.dispatched} DISPATCHED`
       : `${m.gate2Pending ?? 0} GATE-2 PENDING`;
   return (
-    <Panel
-      idx="M1"
-      title="MEDIA PIPELINE · STAGE 2"
-      meta={meta}
-      fresh={fresh}
-      flush
-    >
+    <Panel title="MEDIA PIPELINE · STAGE 2" meta={meta} fresh={fresh} flush>
       <div
         style={{
           display: 'grid',
@@ -727,7 +718,6 @@ function SchedulePanel({ schedule, onShift, fresh }) {
     new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return (
     <Panel
-      idx="S1"
       title="SCHEDULED PUBLISH · QUEUE"
       meta={`${depth} QUEUED · ${pastDue} PAST-DUE`}
       fresh={fresh}
@@ -847,7 +837,6 @@ function SeoPanel({ seo, fresh }) {
   const num = (v, d = 1) => (v != null ? Number(v).toFixed(d) : '—');
   return (
     <Panel
-      idx="SE1"
       title="SEO REFRESH · OPPORTUNITIES"
       meta={`${byStatus.open || 0} OPEN · ${byStatus.queued || 0} QUEUED · ${byStatus.refreshed || 0} REFRESHED`}
       fresh={fresh}
@@ -946,7 +935,6 @@ function QAPanel({ qa, onOpen }) {
   const maxReason = Math.max(...qa.reasons.map((r) => r[1]));
   return (
     <Panel
-      idx="Q1"
       title="QA RAILS · MULTI-MODEL REVIEW"
       meta={
         live
@@ -1110,7 +1098,7 @@ function QAPanel({ qa, onOpen }) {
 /* ─── Sub-tool launcher + voice ─────────────────────────────── */
 function LauncherPanel({ tools, onLaunch, onVoice }) {
   return (
-    <Panel idx="X1" title="LAUNCH" meta="EXTERNAL TOOLS" flush>
+    <Panel title="LAUNCH" meta="EXTERNAL TOOLS" flush>
       <button className="voice-cta" onClick={onVoice}>
         <span className="voice-cta__dot">
           <span />
@@ -1153,7 +1141,6 @@ function TopicsPanel({ topics, onPick, onResolve, onReject, fresh }) {
   const batches = (topics && topics.items) || [];
   return (
     <Panel
-      idx="T1"
       title="TOPICS · DISCOVERY BATCHES"
       meta={`${batches.length} OPEN · AWAITING DECISION`}
       fresh={fresh}
@@ -1287,7 +1274,6 @@ function NewsletterPanel({ newsletter, fresh }) {
 
   return (
     <Panel
-      idx="NL"
       title="NEWSLETTER"
       meta={`${sub} subscribers · last send ${lastSend}`}
       fresh={fresh}

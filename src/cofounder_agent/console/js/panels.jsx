@@ -112,9 +112,7 @@ function ActionInbox({
   return (
     <section className="panel panel--amber" style={{ minHeight: 0 }}>
       <header className="panel__head">
-        <span className="panel__title">
-          <span className="idx">A1</span>NEEDS YOU
-        </span>
+        <span className="panel__title">NEEDS YOU</span>
         <span className="panel__spacer" />
         <span className="panel__meta">{items.length} OPEN</span>
       </header>
@@ -309,7 +307,6 @@ function ServiceGrid({ services, onOpen, onRestart, fresh }) {
   const warn = services.filter((s) => s.status === 'warn').length;
   return (
     <Panel
-      idx="S1"
       title="SERVICE HEALTH"
       meta={`${services.length} CONTAINERS · ${down} DOWN · ${warn} DEGRADED`}
       fresh={fresh}
@@ -348,7 +345,6 @@ function ServiceGrid({ services, onOpen, onRestart, fresh }) {
 function GpuHud({ gpu, onOpen }) {
   return (
     <Panel
-      idx="G1"
       title="GPU · RTX 5090"
       meta={gpu.driver ? `DRIVER ${gpu.driver}` : 'LIVE · nvidia_gpu'}
       flush
@@ -393,10 +389,16 @@ function GpuHud({ gpu, onOpen }) {
 
 /* ─── Pipeline panel ────────────────────────────────────────── */
 const TASK_STATUS = { ok: 'ok', fail: 'err', run: 'run' };
+// Task ids are UUIDs on live, short ints in mock. Show a stable 8-char stub so
+// the cell never wraps to multiple lines; the full id rides in the title
+// attribute and still opens with the row click.
+const shortTaskId = (id) => {
+  const s = String(id == null ? '' : id);
+  return s.includes('-') ? s.slice(0, 8) : s;
+};
 function PipelinePanel({ pipeline, onOpen, onOpenTask, onRetry }) {
   return (
     <Panel
-      idx="P1"
       title="CONTENT PIPELINE"
       meta={`SUCCESS ${pipeline.successRate}% · AVG ${pipeline.avgCompletion}`}
       flush
@@ -433,7 +435,7 @@ function PipelinePanel({ pipeline, onOpen, onOpenTask, onRetry }) {
           {pipeline.tasks.slice(0, 6).map((t) => (
             <tr key={t.id} onClick={() => onOpenTask(t)}>
               <td>
-                <b>#{t.id}</b>
+                <b title={String(t.id)}>#{shortTaskId(t.id)}</b>
               </td>
               <td
                 className="truncate"
@@ -442,7 +444,7 @@ function PipelinePanel({ pipeline, onOpen, onOpenTask, onRetry }) {
               >
                 {t.topic}
               </td>
-              <td>
+              <td className="truncate" title={t.stage}>
                 <StatusText kind={TASK_STATUS[t.status]}>{t.stage}</StatusText>
               </td>
               <td className="num">{t.quality ?? '—'}</td>
@@ -481,7 +483,6 @@ function BrainPanel({ brain, onOpen, onEmbed }) {
   const decisions = brain.decisions || [];
   return (
     <Panel
-      idx="B1"
       title="BRAIN · SEMANTIC MEMORY"
       meta={`${(brain.totalEmbeddings ?? 0).toLocaleString()} VECTORS`}
       flush
@@ -633,7 +634,6 @@ function CostPanel({ cost, onOpen, fresh }) {
   ];
   return (
     <Panel
-      idx="C1"
       title="COST CONTROL"
       meta={`PROJECTED $${cost.projected.toFixed(0)} / $${cost.budget}`}
       fresh={fresh}
@@ -707,7 +707,6 @@ function CostPanel({ cost, onOpen, fresh }) {
 function AuditFeed({ lines, onOpen }) {
   return (
     <Panel
-      idx="L1"
       title="EVENT STREAM"
       meta={
         <span>

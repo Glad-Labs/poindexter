@@ -11,7 +11,6 @@ const POINDEXTER_VERSION = '0.74.0'; // x-release-please-version
 
 const RAIL = [
   { id: 'overview', icon: 'overview', label: 'Overview' },
-  { id: 'trace', icon: 'pulse', label: 'Trace' },
   { id: 'pipeline', icon: 'pipeline', label: 'Pipeline' },
   { id: 'topics', icon: 'overview', label: 'Topics' },
   { id: 'social', icon: 'pulse', label: 'Social' },
@@ -572,7 +571,7 @@ function App() {
       const m = (location.hash || '').match(/^#trace\/(.+)$/);
       if (m) {
         setTraceTaskId(decodeURIComponent(m[1]));
-        setMode('trace');
+        setMode('tracedetail');
       }
     };
     applyHash();
@@ -626,11 +625,11 @@ function App() {
   // ── Task-trace navigation + actions ───────────────────────
   const openTrace = (taskId) => {
     setTraceTaskId(taskId);
-    setMode('trace');
+    setMode('tracedetail');
     location.hash = 'trace/' + encodeURIComponent(taskId);
   };
   const backFromTrace = () => {
-    setMode('console');
+    setMode('trace');
     if ((location.hash || '').indexOf('#trace/') === 0) location.hash = '';
   };
   // taskId-scoped approve/reject/publish for the deep-dive header (A.* takes
@@ -1184,7 +1183,7 @@ function App() {
     });
     [
       ['console', 'Console overview', 'overview'],
-      ['feed', 'Operations feed', null],
+      ['trace', 'Task trace + feed', null],
       ['map', 'System map', null],
       ['wall', 'Wall display', null],
     ].forEach(([m, lbl]) => {
@@ -1196,8 +1195,8 @@ function App() {
             ? 'gpu'
             : m === 'wall'
               ? 'overview'
-              : m === 'feed'
-                ? 'audit'
+              : m === 'trace'
+                ? 'pulse'
                 : 'overview',
         label: lbl,
         hint: 'view',
@@ -1343,13 +1342,17 @@ function App() {
         <div className="modeswitch">
           {[
             ['console', 'overview', 'Console'],
-            ['feed', 'audit', 'Feed'],
+            ['trace', 'pulse', 'Trace'],
             ['map', 'gpu', 'Map'],
             ['wall', 'overview', 'Wall'],
           ].map(([m, ic, lbl]) => (
             <button
               key={m}
-              className={mode === m ? 'is-active' : ''}
+              className={
+                mode === m || (m === 'trace' && mode === 'tracedetail')
+                  ? 'is-active'
+                  : ''
+              }
               onClick={() => setMode(m)}
               title={lbl}
             >
@@ -1401,17 +1404,6 @@ function App() {
             <div id="sec-overview">
               {/* Live in live mode (kpis memo → PX.kpisFromLive); PX.kpis in mock. */}
               <KpiStrip kpis={kpis} onOpen={(k) => open('kpi', k)} />
-            </div>
-
-            {/* Front-door task-trace board — full width above the masonry, so
-                "what's running now" reads at a glance; a card click opens the
-                full-bleed deep-dive (mode='trace'). */}
-            <div id="sec-trace">
-              <TraceBoard
-                data={traceR.data}
-                fresh={traceR}
-                onOpen={openTrace}
-              />
             </div>
 
             <div className="masonry masonry--overview">
@@ -1557,10 +1549,21 @@ function App() {
                   fresh={findingsR}
                 />
               </div>
+              {/* Each telemetry surface is its own masonry item. They used to
+                  share one <div>, but a single 5-panel child is un-breakable
+                  (break-inside: avoid) and ~5× taller than any other item, which
+                  wrecks the column balancer (one lonely card in a column). The id
+                  stays on the first for the Telemetry scroll-spy target. */}
               <div id="sec-telemetry">
                 <HistoryPanel />
+              </div>
+              <div>
                 <HardwarePanel />
+              </div>
+              <div>
                 <DatabasePanel />
+              </div>
+              <div>
                 <LogsPanel
                   logs={logs}
                   service={logFilter.service}
@@ -1570,6 +1573,8 @@ function App() {
                   }
                   fresh={logsR}
                 />
+              </div>
+              <div>
                 <TracesPanel traces={traces} fresh={tracesR} />
               </div>
             </div>
@@ -1590,16 +1595,29 @@ function App() {
           </div>
         )}
 
-        {mode === 'feed' && (
+        {mode === 'trace' && (
           <div className="main__inner">
-            <FeedMode
-              inbox={inbox}
-              feed={feed}
-              filter={feedFilter}
-              setFilter={setFeedFilter}
-              onOpen={(it) => open('inbox', it)}
-              A={A}
-            />
+            {/* The task-trace board IS this page now (renamed from Feed per
+                Matt — the landing was too busy). The operations feed rides
+                below it. A card opens the full-bleed deep-dive
+                (mode='tracedetail'); back returns here. */}
+            <div id="sec-trace">
+              <TraceBoard
+                data={traceR.data}
+                fresh={traceR}
+                onOpen={openTrace}
+              />
+            </div>
+            <div style={{ marginTop: 20 }}>
+              <FeedMode
+                inbox={inbox}
+                feed={feed}
+                filter={feedFilter}
+                setFilter={setFeedFilter}
+                onOpen={(it) => open('inbox', it)}
+                A={A}
+              />
+            </div>
           </div>
         )}
 
@@ -1615,7 +1633,7 @@ function App() {
           </div>
         )}
 
-        {mode === 'trace' && (
+        {mode === 'tracedetail' && (
           <div style={{ padding: 16 }}>
             <TraceDeepDive
               taskId={traceTaskId}

@@ -40,9 +40,7 @@ function FeedMode({ inbox, feed, filter, setFilter, onOpen, A }) {
   return (
     <div className="feedmode">
       <div className="feedmode__head">
-        <span className="panel__title">
-          <span className="idx">F</span>OPERATIONS FEED
-        </span>
+        <span className="panel__title">OPERATIONS FEED</span>
         <span className="panel__spacer" style={{ flex: 1 }} />
         <div className="feedmode__filters">
           {chips.map(([id, lbl]) => (
