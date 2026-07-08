@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+## [0.98.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.97.0...v0.98.0) (2026-07-08)
+
+
+### Features
+
+* **atom_runs:** incremental per-node capture for the console task-trace (Phase 1) ([#2208](https://github.com/Glad-Labs/glad-labs-stack/issues/2208)) ([331d8ad](https://github.com/Glad-Labs/glad-labs-stack/commit/331d8ad80d7c8e165a56a3f89727d82e3ea2ee56))
+* **brain:** DB clock-skew probe (WSL2 wall-clock excursion detection) ([#2212](https://github.com/Glad-Labs/glad-labs-stack/issues/2212)) ([d3b6285](https://github.com/Glad-Labs/glad-labs-stack/commit/d3b62850f8c4d39fd27ecaad6bb8272933035146))
+* **citation:** grounded-LLM citation reconciliation tail ([#765](https://github.com/Glad-Labs/glad-labs-stack/issues/765), part 2/2) ([#2211](https://github.com/Glad-Labs/glad-labs-stack/issues/2211)) ([b7dc4e1](https://github.com/Glad-Labs/glad-labs-stack/commit/b7dc4e1aba40dd4b9e81550223fcc12338cd547b))
+* **cli:** bulk pipeline resume + quiet its INFO log spam ([#2206](https://github.com/Glad-Labs/glad-labs-stack/issues/2206)) ([e46b6f7](https://github.com/Glad-Labs/glad-labs-stack/commit/e46b6f73f51fce5499c02bfe44ee93a81bc7d7ff))
+* **console:** native GPU/hardware/power panels (sub-project D) ([#2196](https://github.com/Glad-Labs/glad-labs-stack/issues/2196)) ([c842920](https://github.com/Glad-Labs/glad-labs-stack/commit/c8429203eeb970b19c53fb30ca8cf7d5dfc18481))
+* **console:** native Postgres-internals panels — Telemetry tab now 100% iframe-free (sub-project E) ([#2198](https://github.com/Glad-Labs/glad-labs-stack/issues/2198)) ([0b2427e](https://github.com/Glad-Labs/glad-labs-stack/commit/0b2427eb3985d0a150125eeefcb5e8e5d2e6f337))
+* **console:** native time-series history (sub-project C) ([#2192](https://github.com/Glad-Labs/glad-labs-stack/issues/2192)) ([260d4d8](https://github.com/Glad-Labs/glad-labs-stack/commit/260d4d80dd713a482804bf0dc8125e801a52829b))
+* **console:** Task Trace — read API + board + per-task deep-dive (P2+P3) ([#2213](https://github.com/Glad-Labs/glad-labs-stack/issues/2213)) ([ded74e4](https://github.com/Glad-Labs/glad-labs-stack/commit/ded74e4895a5c37aecf36f278a7c8ae945263135))
+* **cost:** spend throttle defers new work at a soft budget (P3) ([#2184](https://github.com/Glad-Labs/glad-labs-stack/issues/2184)) ([66870f7](https://github.com/Glad-Labs/glad-labs-stack/commit/66870f792a7fc403d81a7a114b8ef1c65d5be121))
+* **firefighter:** poindexter firefighter rule CRUD CLI + service seam ([#2190](https://github.com/Glad-Labs/glad-labs-stack/issues/2190)) ([60f6670](https://github.com/Glad-Labs/glad-labs-stack/commit/60f6670d209e9d97e8a9b591f2704a4448ef3da1))
+* **qa:** opening-originality rail — flag drafts that echo a prior post's opening ([#2182](https://github.com/Glad-Labs/glad-labs-stack/issues/2182)) ([79dabea](https://github.com/Glad-Labs/glad-labs-stack/commit/79dabea4d25a6124a8ed0e91a0eb3c25a2372fbe))
+* **rag-scrub:** writer first-party grounding — shared scrub + claude_sessions re-enable path ([#2200](https://github.com/Glad-Labs/glad-labs-stack/issues/2200)) ([b1c3af5](https://github.com/Glad-Labs/glad-labs-stack/commit/b1c3af5f241a36f9a871b98f25a13cbe5b4dbd4e))
+
+
+### Bug Fixes
+
+* **brain:** bake clock_skew_probe.py into the brain image ([#2212](https://github.com/Glad-Labs/glad-labs-stack/issues/2212) follow-up) ([#2215](https://github.com/Glad-Labs/glad-labs-stack/issues/2215)) ([212b360](https://github.com/Glad-Labs/glad-labs-stack/commit/212b3606cbf07d477ee45f4fb1a15e38f2e6dce5))
+* **brain:** monitor sitemap-ping / indexnow / R2 surfaces instead of muting them ([#2197](https://github.com/Glad-Labs/glad-labs-stack/issues/2197)) ([d22257d](https://github.com/Glad-Labs/glad-labs-stack/commit/d22257d240c22fd54f236465ea20500adb9b30e8))
+* **brain:** monitor speaches podcast-TTS surface instead of muting it ([#2195](https://github.com/Glad-Labs/glad-labs-stack/issues/2195)) ([26fb2f1](https://github.com/Glad-Labs/glad-labs-stack/commit/26fb2f14d8adf32598dc35b90ea46ff11fadb8ce))
+* **brain:** stop content_gen probe 404-paging when the writer is a cloud model ([#2194](https://github.com/Glad-Labs/glad-labs-stack/issues/2194)) ([16995cf](https://github.com/Glad-Labs/glad-labs-stack/commit/16995cfbc3ddc569b4310b6a21c056da1e87a0c4))
+* **brain:** stop operator-url probe false-paging on healthy speaches caption sidecar ([#2193](https://github.com/Glad-Labs/glad-labs-stack/issues/2193)) ([3f0d976](https://github.com/Glad-Labs/glad-labs-stack/commit/3f0d97625d207beac8b1923fa4713988c6e2d7ae))
+* **citation:** relink multi-word + unusual-frame corpus sources ([#765](https://github.com/Glad-Labs/glad-labs-stack/issues/765), part 1/2) ([#2207](https://github.com/Glad-Labs/glad-labs-stack/issues/2207)) ([cae50a3](https://github.com/Glad-Labs/glad-labs-stack/commit/cae50a36e67d07ff84112fa1e26f72cdd686a67e))
+* **content:** route self-review + image-query through the dispatcher so a cloud model doesn't 404 local Ollama ([#2202](https://github.com/Glad-Labs/glad-labs-stack/issues/2202)) ([a7dc3cb](https://github.com/Glad-Labs/glad-labs-stack/commit/a7dc3cb1fca2a0f7a3242dce872e97d0cd650760))
+* **content:** route title generation through the dispatcher so a cloud writer doesn't 404 local Ollama ([#2199](https://github.com/Glad-Labs/glad-labs-stack/issues/2199)) ([6d6cf8b](https://github.com/Glad-Labs/glad-labs-stack/commit/6d6cf8b6c8f97ab907a155201afeb75af147e177))
+* **content:** stop featured-image R2 key collisions across pipeline retries ([#2210](https://github.com/Glad-Labs/glad-labs-stack/issues/2210)) ([0d3cefd](https://github.com/Glad-Labs/glad-labs-stack/commit/0d3cefdc43d1c536047a16750e1041247494363e))
+* **llm:** capture paid-call cost from litellm _hidden_params ([#2183](https://github.com/Glad-Labs/glad-labs-stack/issues/2183)) ([5620e2a](https://github.com/Glad-Labs/glad-labs-stack/commit/5620e2acf9069d9e48ff0ffeef15e58dc84e1a0b))
+* **podcast:** disable script model's reasoning channel so its plan can't leak into the narration ([#2186](https://github.com/Glad-Labs/glad-labs-stack/issues/2186) follow-up) ([#2205](https://github.com/Glad-Labs/glad-labs-stack/issues/2205)) ([acfda7a](https://github.com/Glad-Labs/glad-labs-stack/commit/acfda7ad63630fcb30338146f4e67510fe93f0d1))
+* **podcast:** drop LLM script when it dumps prompt/plan into the narration ([#2186](https://github.com/Glad-Labs/glad-labs-stack/issues/2186)) ([e145a69](https://github.com/Glad-Labs/glad-labs-stack/commit/e145a69e072b445d2cab0311e74ce49626634831))
+* **qa:** calibrate opening-originality threshold + unblind image-first openings ([#2188](https://github.com/Glad-Labs/glad-labs-stack/issues/2188)) ([8e3af72](https://github.com/Glad-Labs/glad-labs-stack/commit/8e3af72727d1b0f57f7617edd19c58584ccf346b))
+* **rag:** de-echo two_pass writer retrieval — MMR + near-duplicate ceiling ([#2185](https://github.com/Glad-Labs/glad-labs-stack/issues/2185)) ([562e83a](https://github.com/Glad-Labs/glad-labs-stack/commit/562e83aa2738e1e6021777ed2a2a2a11440da7e2))
+* **research:** standardize web_research on ddgs, drop retired duckduckgo_search fallback ([#2204](https://github.com/Glad-Labs/glad-labs-stack/issues/2204)) ([16788e7](https://github.com/Glad-Labs/glad-labs-stack/commit/16788e7c491cef20ef4b5b782908b45f185190d8))
+* **security:** strip operator-identity leak (operator_leak_patterns.py) from public mirror ([#2203](https://github.com/Glad-Labs/glad-labs-stack/issues/2203)) ([b46f7b4](https://github.com/Glad-Labs/glad-labs-stack/commit/b46f7b439d710de186bc576217fce7f4d5e2a627))
+* **settings:** stamp last_read_at for SettingsService.get reads ([#756](https://github.com/Glad-Labs/glad-labs-stack/issues/756) follow-up) ([#2189](https://github.com/Glad-Labs/glad-labs-stack/issues/2189)) ([670c6f7](https://github.com/Glad-Labs/glad-labs-stack/commit/670c6f77b551afe1bb1bd62a77626fef1df78f72))
+* **tests:** scope image-gen torch stub so it can't poison ragas' torch import ([#2214](https://github.com/Glad-Labs/glad-labs-stack/issues/2214)) ([6ef5c00](https://github.com/Glad-Labs/glad-labs-stack/commit/6ef5c00506478d9ba89d97b0413577d834fa137f))
+* **tests:** stop patch.dict(sys.modules) from poisoning ragas_eval tests ([#2209](https://github.com/Glad-Labs/glad-labs-stack/issues/2209)) ([6a17744](https://github.com/Glad-Labs/glad-labs-stack/commit/6a17744bf3cb5c1c01bf4ae84209e0aadc67f8a0))
+* **video:** disable director/reviewer thinking so it can't starve the shot-list JSON ([#2191](https://github.com/Glad-Labs/glad-labs-stack/issues/2191)) ([9f4896a](https://github.com/Glad-Labs/glad-labs-stack/commit/9f4896a1ae04d16ede951646d2f933f719d86cb8))
+* **video:** headroom + retry so a verbose director shot list can't truncate to empty ([#2201](https://github.com/Glad-Labs/glad-labs-stack/issues/2201)) ([b795360](https://github.com/Glad-Labs/glad-labs-stack/commit/b795360a99c411579acaa0e3d69c1f1a823e5c6f))
+
 ## [0.97.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.96.0...v0.97.0) (2026-07-07)
 
 
