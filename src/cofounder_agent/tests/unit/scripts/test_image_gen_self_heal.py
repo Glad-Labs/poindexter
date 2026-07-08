@@ -29,6 +29,18 @@ def _find_repo_root(start: Path) -> Path:
 
 
 def _load_image_gen_server():
+    # image-gen-server imports torch at module top (GPU paths only). Stub it so
+    # the module loads without a CUDA stack — but keep the stub SCOPED to the
+    # exec below. Leaking a bare ``types.ModuleType("torch")`` into the
+    # process-wide ``sys.modules`` poisons every later real ``import torch``:
+    # the husk has no ``.Tensor``, so an unrelated downstream import
+    # (ragas -> transformers -> safetensors, which evaluates ``torch.Tensor`` in
+    # an annotation at def-time) dies with
+    # ``AttributeError: module 'torch' has no attribute 'Tensor'`` in whatever
+    # test runs next. Restoring only the ``torch`` key (never a whole-dict
+    # ``patch.dict`` — that would drop everything the server transitively
+    # imports) keeps the fake local to this load.
+    stub_installed = False
     if "torch" not in sys.modules:
         torch_stub = types.ModuleType("torch")
         # __spec__=None causes ValueError in importlib.util.find_spec() (Python 3.12+),
@@ -37,11 +49,19 @@ def _load_image_gen_server():
         torch_stub.float16 = "float16"
         torch_stub.cuda = types.SimpleNamespace(is_available=lambda: False)
         sys.modules["torch"] = torch_stub
+        stub_installed = True
 
     server_path = _find_repo_root(Path(__file__)) / "scripts" / "image-gen-server.py"
     spec = importlib.util.spec_from_file_location("img_gen_server_server_under_test", server_path)
     module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        # The loaded server keeps its own reference to the stub (its GPU paths
+        # are never exercised here), so drop the stub from sys.modules — torch
+        # was absent before us, so a fresh real ``import torch`` downstream wins.
+        if stub_installed:
+            sys.modules.pop("torch", None)
     return module
 
 
