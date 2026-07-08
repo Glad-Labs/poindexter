@@ -498,6 +498,28 @@ at draft time, the fix is a deterministic lookup, not a guess:
     The durable lever for them is writer-prompt discipline (cite only
     corpus-provided URLs), not broader matching here.
 
+- **`content.llm_reconcile_citations`** (grounded-LLM repair tail, right after
+  `content.reconcile_citations`, before `quality_evaluation`/`qa.*`): the LLM
+  half of the repair pair. It sees only the RESIDUAL the deterministic grammar
+  couldn't frame-match — the case that motivated it was _"into what Full Brim
+  Safety calls low-power mode"_, where the multi-word brand didn't collapse to
+  its `fullbrimsafety.com` domain and no verb frame matched "calls". It asks a
+  structured-extraction model for `{text, url}` link pairs + an `ungrounded` name
+  list, then follows the **"LLM proposes, deterministic code verifies + applies"**
+  rule: a proposed link is applied ONLY when its `url` is verbatim a corpus URL
+  (no hallucinated targets) **and** its `text` occurs verbatim in the draft
+  outside an existing link (no prose mangling, idempotent) — the LLM never edits
+  prose. The `ungrounded` list is surfaced as an `unlinked_named_sources` finding
+  **and** an advisory `citation_grounding` review, never used to mutate the body.
+  Cost-gated (`candidate_corpus_sources` skips the LLM call when nothing is
+  plausibly unlinked) and fail-open on every error (the deterministic pass
+  already ran, so this is a pure enhancement). The review is **advisory by
+  construction**: it emits only on a detection, so a _required_ gate would trip
+  `qa.aggregate`'s vacuous-pass guard and hard-reject every clean post — the
+  seeded `qa_gates.citation_grounding` row (`required_to_pass=false`, exec-order 165) exists for run-counter telemetry + `/d/qa-rails` visibility, not
+  graduation. Gated by `citation_reconcile_llm_enabled` (default on); model pin
+  `citation_reconcile_llm_model` (empty → `structured_extraction_model`).
+
 - **`qa.unlinked_attribution`** (advisory rail, after `qa.citations`): sees the
   RESIDUAL — attribution subjects that match no corpus source and aren't already
   linked (author names / unknown brands a deterministic linker can't safely
@@ -506,8 +528,8 @@ at draft time, the fix is a deterministic lookup, not a guess:
   groups by reviewer dynamically). **Advisory** via
   `qa_gates.unlinked_attribution.required_to_pass` (seeded `false`) — it surfaces
   feedback but neither vetoes nor feeds the gated score (advisory rails are
-  excluded from the weighted mean); graduate it with the poindexter#454 lever. Returns nothing when there's no corpus (real-vs-fabricated is then the
-  deferred grounded-LLM pass's job).
+  excluded from the weighted mean); graduate it with the poindexter#454 lever. Returns nothing when there's no corpus (real-vs-fabricated is then
+  `content.llm_reconcile_citations`' job — the grounded-LLM pass above).
 
 A grounded LLM citation pass is intentionally deferred — measure the
 deterministic coverage first. `test_citation_match.py` (matching core),

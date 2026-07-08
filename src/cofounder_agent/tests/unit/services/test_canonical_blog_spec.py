@@ -118,17 +118,22 @@ class TestCanonicalBlogSpec:
         assert ("qa_vision", "qa_aggregate") not in edges
 
     def test_citation_reconciliation_nodes_wired(self):
-        """#765: content.reconcile_citations sits after the writer block (before
-        quality_evaluation) so its inserted links flow through the dead-link
-        check; qa.unlinked_attribution sits after qa.citations."""
+        """#765: content.reconcile_citations (deterministic) then
+        content.llm_reconcile_citations (grounded-LLM tail) sit after the writer
+        block (before quality_evaluation) so their inserted links flow through the
+        dead-link check; qa.unlinked_attribution sits after qa.citations."""
         spec = CANONICAL_BLOG_GRAPH_DEF
         node_atoms = {n["atom"] for n in spec["nodes"]}
         assert "content.reconcile_citations" in node_atoms
+        assert "content.llm_reconcile_citations" in node_atoms
         assert "qa.unlinked_attribution" in node_atoms
         edges = {(e["from"], e["to"]) for e in spec["edges"]}
         assert ("resolve_internal_link_placeholders", "reconcile_citations") in edges
-        assert ("reconcile_citations", "quality_evaluation") in edges
-        # The old direct edge must be re-routed through reconcile_citations.
+        # Deterministic pass -> grounded-LLM tail -> quality_evaluation.
+        assert ("reconcile_citations", "llm_reconcile_citations") in edges
+        assert ("llm_reconcile_citations", "quality_evaluation") in edges
+        # The old direct edges must be re-routed through the citation atoms.
+        assert ("reconcile_citations", "quality_evaluation") not in edges
         assert ("resolve_internal_link_placeholders", "quality_evaluation") not in edges
 
     def test_passes_plan1_validator(self):
@@ -201,7 +206,8 @@ class TestCanonicalBlogSpec:
         )
         assert txt.get("branch") is True and txt.get("loop") is True
 
-    def test_node_count_is_41(self):
+    def test_node_count_is_42(self):
         # 38 + preview_gate (component-scoped regen gate, seeded disabled)
         # + social.generate_drafts + qa.opening_originality (RAG self-echo net)
-        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 41
+        # + content.llm_reconcile_citations (grounded-LLM citation tail, #765)
+        assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 42

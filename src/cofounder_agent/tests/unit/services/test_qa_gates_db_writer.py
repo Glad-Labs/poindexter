@@ -246,6 +246,11 @@ def test_alias_table_covers_every_known_inline_reviewer():
         # poindexter#765 — advisory unlinked-attribution rail, gate row seeded
         # in 20260611_190000_seed_citation_reconciliation_765.
         "unlinked_attribution",
+        # poindexter#765 follow-up — the grounded-LLM citation rail
+        # (content.llm_reconcile_citations) emits an advisory
+        # "citation_grounding" review when it detects ungrounded named sources;
+        # its gate row is seeded in 20260708_034620_add_citation_grounding_qa_gate.
+        "citation_grounding",
     }
     missing = must_be_documented - documented
     assert not missing, (
@@ -302,6 +307,10 @@ async def test_restored_rail_gates_bump_their_counters():
         # poindexter#765 — the new advisory unlinked-attribution rail seeds its
         # own gate row and must bump its counter too.
         _Review("unlinked_attribution", approved=True, advisory=True),
+        # poindexter#765 follow-up — the grounded-LLM citation_grounding rail
+        # is advisory-by-construction (approved=False when it fires) and must
+        # bump its own counter, not silently drop to total_runs=0.
+        _Review("citation_grounding", approved=False, advisory=True),
     ])
     bumped_gates = {args[0] for _, args in pool.executes}
     assert bumped_gates == {
@@ -309,6 +318,7 @@ async def test_restored_rail_gates_bump_their_counters():
         "topic_delivery",
         "self_consistency",
         "unlinked_attribution",
+        "citation_grounding",
     }
 
 

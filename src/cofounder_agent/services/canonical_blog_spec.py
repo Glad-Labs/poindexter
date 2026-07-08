@@ -89,6 +89,10 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         # domain handle. Placed BEFORE quality_evaluation/url_validation/qa.* so
         # the inserted links flow through the dead-link check like any citation.
         {"id": "reconcile_citations", "atom": "content.reconcile_citations"},
+        # Grounded-LLM tail (#765): links corpus sources the deterministic pass
+        # couldn't frame-match; flags ungrounded named sources. Runs before the
+        # QA rails so inserted links flow through qa.citations' dead-link check.
+        {"id": "llm_reconcile_citations", "atom": "content.llm_reconcile_citations"},
         {"id": "quality_evaluation", "atom": "stage.quality_evaluation"},
         {"id": "url_validation", "atom": "stage.url_validation"},
         # content.replace_inline_images decomposition (#362):
@@ -168,7 +172,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "draft_gate", "to": "writer_self_review"},
         {"from": "writer_self_review", "to": "resolve_internal_link_placeholders"},
         {"from": "resolve_internal_link_placeholders", "to": "reconcile_citations"},
-        {"from": "reconcile_citations", "to": "quality_evaluation"},
+        {"from": "reconcile_citations", "to": "llm_reconcile_citations"},
+        {"from": "llm_reconcile_citations", "to": "quality_evaluation"},
         {"from": "quality_evaluation", "to": "url_validation"},
         # replace_inline_images atom chain
         {"from": "url_validation", "to": "plan_image_markers"},

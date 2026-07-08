@@ -21,6 +21,10 @@ metadata:
       category: content_qa
       output_format: markdown
       description: 'Revise prompt for atoms.qa_rewrite — one bounded revision pass applying critic-flagged fixes while preserving structure/length/links/voice. Fills {feedback}/{content}.'
+    - key: atoms.content.llm_reconcile_citations
+      category: content_qa
+      output_format: json
+      description: 'Grounded-LLM citation auditor for atoms.content.llm_reconcile_citations (#765 follow-up) — finds named-source attributions the deterministic pass missed and returns {links:[{text,url}], ungrounded:[]} JSON. Proposals only: code verifies every url against the corpus before applying, and never edits prose. Fills {sources}/{content}.'
     - key: atoms.pipeline_architect.system_prompt
       category: utility
       output_format: json
@@ -49,7 +53,7 @@ metadata:
 
 # Atoms skill
 
-Three prompts the composable atoms in `services/atoms/` use. The
+Prompts the composable atoms in `modules/content/atoms/` use. The
 `narrate_bundle` and `pipeline_architect` templates carry the operator
 persona as `{site_name}`/`{site_url}` placeholders — the calling atom
 renders them from the run-bound `site_config` before the text reaches the
@@ -239,6 +243,31 @@ FIXES TO ADDRESS:
 {feedback}
 
 ORIGINAL DRAFT:
+{content}
+```
+
+## atoms.content.llm_reconcile_citations
+
+```text
+You are a citation auditor. Below is an article and a list of research SOURCES
+(name and URL). Find every place the article refers to one of these SOURCES **as
+the source of a claim or framing** (e.g. "X says", "according to X", "what X
+calls", "an X piece argues") but does NOT already link it.
+
+Return ONLY compact JSON, no prose, no code fence:
+{{"links":[{{"text":"<exact verbatim phrase from the article naming the source>","url":"<the matching SOURCE url, copied verbatim>"}}],
+ "ungrounded":["<name of any source the article attributes a claim to that is NOT in the SOURCES list>"]}}
+
+Rules:
+- Use ONLY urls copied verbatim from the SOURCES list. Never invent a url.
+- "text" MUST be an exact substring of the article (do not paraphrase).
+- Only source-attribution mentions — ignore names mentioned in passing.
+- If nothing matches, return {{"links":[],"ungrounded":[]}}.
+
+SOURCES:
+{sources}
+
+ARTICLE:
 {content}
 ```
 

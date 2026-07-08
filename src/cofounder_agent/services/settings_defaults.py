@@ -835,6 +835,18 @@ DEFAULTS: dict[str, str] = {
     # use the built-in DEFAULT_MULTITENANT_HOSTS denylist; a non-empty CSV
     # REPLACES it wholesale (mirrors trusted_source_domains' override semantics).
     'citation_repoint_multitenant_hosts': '',
+    # why: master switch for the grounded-LLM citation pass (content.
+    # llm_reconcile_citations, #765) — the tail-catcher for named-source mentions
+    # the deterministic repair can't frame-match. On by default; fail-open.
+    'citation_reconcile_llm_enabled': 'true',
+    # why: model pin for the pass; empty -> structured_extraction_model (a
+    # JSON-reliable instruct model, NOT the reasoning writer). Local by default.
+    'citation_reconcile_llm_model': '',
+    # why: per-call timeout for the pass (advisory enhancement — keep short).
+    'citation_reconcile_llm_timeout_seconds': '60',
+    # why: skip the LLM call when the draft exceeds this many chars (avoids a
+    # giant prompt on an outlier post; the deterministic pass already ran).
+    'citation_reconcile_llm_max_content_chars': '24000',
     # why: advisory rail scoring named-source attributions left unlinked +
     # unmatched against the corpus; on by default, feeds qa_feedback + Grafana.
     'unlinked_attribution_enabled': 'true',

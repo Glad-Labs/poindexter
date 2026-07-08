@@ -82,6 +82,16 @@ _REVIEWER_TO_GATE: dict[str, str] = {
     # unlinked-attribution rail (named-source-cited-without-link); it emits a
     # ReviewerResult on every graph_def QA pass and seeds its own qa_gates row.
     "unlinked_attribution": "unlinked_attribution",
+    # poindexter#765 follow-up — the grounded-LLM citation rail
+    # (content.llm_reconcile_citations) emits a "citation_grounding" advisory
+    # ReviewerResult when it detects named sources with no corpus match. Unlike
+    # the always-on rails above it only fires on a detection, so its counter
+    # tracks ungrounded-detection passes rather than every QA pass — but it
+    # still needs the identity alias or record_chain_run() drops the UPDATE and
+    # the /d/qa-rails dashboard shows total_runs=0 (the fourth recurrence this
+    # guard prevents). Gate row seeded in
+    # 20260708_034620_add_citation_grounding_qa_gate.
+    "citation_grounding": "citation_grounding",
     # Aliases — the inline reviewer name and the gate-row name diverged
     # historically; preserve both rather than rename either side.
     "image_relevance": "vision_gate",
