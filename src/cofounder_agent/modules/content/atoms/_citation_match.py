@@ -175,11 +175,19 @@ def _domain_match(subject: str, sources: list[CorpusSource]) -> CorpusSource | N
     """Repair-grade match: subject (or a token) equals a corpus domain handle."""
     subj = subject.strip().lower().rstrip(".")
     toks = _subject_tokens(subject)
+    # Space/punct-collapsed form: "full brim safety" -> "fullbrimsafety",
+    # "Kore.ai" -> "koreai" — so a multi-word brand matches its concatenated
+    # domain sld, which _domain_handles already exposes as a handle (when the
+    # sld is >= 3 chars and not a stopword). High precision: EQUALITY to a
+    # handle, never substring, so "Full Brim" / "Brim Safety Supplies" don't
+    # match fullbrimsafety.com (#765 follow-up — the multi-word-brand miss on
+    # task 249a74ca's "Full Brim Safety" / "Topular Strategy").
+    collapsed = re.sub(r"[^a-z0-9]", "", subj)
     for src in sources:
         handles = _domain_handles(src)
         if not handles:
             continue
-        if subj in handles or any(t in handles for t in toks):
+        if subj in handles or collapsed in handles or any(t in handles for t in toks):
             return src
     return None
 
@@ -238,7 +246,10 @@ _SUBJECT_VERBS = (
 # "described by/in X" frame already lives in ``_PREP_VERBS`` — its by/in
 # preposition anchors it enough to share; this is the anchorless subject-first
 # form, hence repair-only. New repair-safe verbs go here.)
-_REPAIR_EXTRA_VERBS = r"describes|described|describe"
+_REPAIR_EXTRA_VERBS = (
+    r"describes|described|describe|calls|call|called|frames|framed|"
+    r"dubs|dubbed|terms|termed|labels|labelled|labeled|brands|branded"
+)
 _REPAIR_SUBJECT_VERBS = rf"{_SUBJECT_VERBS}|{_REPAIR_EXTRA_VERBS}"
 
 _PREP_RE = re.compile(
@@ -249,6 +260,30 @@ _SUBJ_FIRST_RE = re.compile(
 )
 _SUBJ_FIRST_REPAIR_RE = re.compile(
     rf"\b({_SUBJECT_CS})\s+(?:{_REPAIR_SUBJECT_VERBS})\b", re.IGNORECASE,
+)
+# Repair-only "piece" frames (#765 follow-up): the brand is separated from the
+# attribution verb by a content noun ("piece"/"post"/…), or sits as a
+# prepositional object ("a piece on X"), so the subject-first frame can't span
+# it. Repair-only — every candidate must still clear the _domain_match gate, so
+# a broad frame just widens the candidate set; the domain gate decides.
+_CONTENT_NOUN = (
+    r"(?:piece|post|article|report|analysis|study|write-?up|breakdown|"
+    r"newsletter|blog|column|essay|thread|take)"
+)
+_PIECE_VERB = (
+    r"(?:makes?|made|frames?|framed|calls?|called|argues?|argued|notes?|"
+    r"noted|offers?|offered|puts?|says?|said|has|had|explains?|explained|"
+    r"shows?|showed)"
+)
+# "(a|an|the) <Brand> <content-noun> <verb>"
+_SUBJ_PIECE_REPAIR_RE = re.compile(
+    rf"\b(?:a|an|the)\s+({_SUBJECT_CS})\s+{_CONTENT_NOUN}\s+{_PIECE_VERB}\b",
+    re.IGNORECASE,
+)
+# "(a|an|the) <content-noun> (on|from|by|in|at) <Brand>"
+_PIECE_ON_REPAIR_RE = re.compile(
+    rf"\b(?:a|an|the)\s+{_CONTENT_NOUN}\s+(?:on|from|by|in|at)\s+({_SUBJECT_CS})",
+    re.IGNORECASE,
 )
 _ACCORDING_RE = re.compile(rf"according\s+to\s+({_SUBJECT_CS})", re.IGNORECASE)
 _PAREN_RE = re.compile(rf"\(\s*({_SUBJECT_CS})\s*\)")
@@ -323,7 +358,12 @@ def find_attributions(
     link_spans = _markdown_link_text_spans(content)
     seen: set[int] = set()
     results: list[Attribution] = []
-    for rx in (_PREP_RE, subj_first_rx, _ACCORDING_RE, _PAREN_RE):
+    frames = [_PREP_RE, subj_first_rx, _ACCORDING_RE, _PAREN_RE]
+    if repair:
+        # Repair-only "piece" frames — safe because the domain gate downstream
+        # decides what actually gets linked (see the regex comments above).
+        frames.extend([_SUBJ_PIECE_REPAIR_RE, _PIECE_ON_REPAIR_RE])
+    for rx in frames:
         for m in rx.finditer(content):
             subject = m.group(1).strip()
             if not subject:

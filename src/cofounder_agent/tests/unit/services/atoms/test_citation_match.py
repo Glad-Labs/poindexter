@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from modules.content.atoms._citation_match import (
     CorpusSource,
+    _domain_match,
     find_attributions,
     find_unmatched_attributions,
     link_matched_attributions,
@@ -58,6 +59,71 @@ def test_parse_corpus_skips_internal_post_links():
 def test_parse_corpus_empty_string():
     assert parse_corpus("") == []
     assert parse_corpus(None) == []  # type: ignore[arg-type]
+
+
+# --- _domain_match: multi-word brands (#765 follow-up) ----------------------
+
+def test_domain_match_collapses_multiword_brand_to_sld():
+    src = CorpusSource(
+        url="https://www.fullbrimsafety.com/p/mental-focus-the-autopilot-trap",
+        title="Mental Focus | Full Brim Safety", text="full brim safety",
+    )
+    # multi-word brand -> concatenated domain sld
+    assert _domain_match("Full Brim Safety", [src]) is src
+    src2 = CorpusSource(
+        url="https://www.topularstrategy.com/blog/the-professional-autopilot-trap",
+        title="The Professional Autopilot Trap | Topular Strategy",
+        text="topular strategy",
+    )
+    assert _domain_match("Topular Strategy", [src2]) is src2
+
+
+def test_domain_match_collapse_is_high_precision():
+    src = CorpusSource(url="https://www.fullbrimsafety.com/x", title="", text="")
+    # a partial / different brand must NOT match (equality to sld, not substring)
+    assert _domain_match("Full Brim", [src]) is None
+    assert _domain_match("Brim Safety Supplies", [src]) is None
+
+
+# --- repair frames: verbs + "piece" (#765 follow-up) ------------------------
+
+def _autopilot_corpus():
+    return parse_corpus(
+        "RECENT WEB SOURCES:\n"
+        "- [x | Full Brim Safety](https://www.fullbrimsafety.com/p/autopilot): a\n"
+        "- [The Professional Autopilot Trap | Topular Strategy]"
+        "(https://www.topularstrategy.com/blog/the-professional-autopilot-trap): b\n"
+        "- [Autopilot Trap | Sastry](https://www.linkedin.com/pulse/autopilot-trap-sastry-x): c\n"
+    )
+
+
+def test_repair_links_what_x_calls_frame():
+    body = "the brain shifts into what Full Brim Safety calls low-power mode."
+    new, linked = link_matched_attributions(body, _autopilot_corpus())
+    assert "[Full Brim Safety](https://www.fullbrimsafety.com/p/autopilot)" in new
+    assert linked and linked[0]["subject"] == "Full Brim Safety"
+
+
+def test_repair_links_brand_piece_frame():
+    body = "A Topular Strategy piece makes a point worth sitting with: autopilot."
+    new, _linked = link_matched_attributions(body, _autopilot_corpus())
+    assert (
+        "[Topular Strategy]"
+        "(https://www.topularstrategy.com/blog/the-professional-autopilot-trap)"
+    ) in new
+
+
+def test_repair_links_piece_on_brand_frame():
+    body = "A piece on LinkedIn frames this well: teams get faster."
+    new, _linked = link_matched_attributions(body, _autopilot_corpus())
+    assert "[LinkedIn](https://www.linkedin.com/pulse/autopilot-trap-sastry-x)" in new
+
+
+def test_advisory_scan_does_not_flag_calls_in_plain_prose():
+    # "calls" is repair-ONLY: the advisory scan must not start flagging ordinary
+    # prose (regression guard for the over-flag risk).
+    body = "The function calls the API and the retry policy calls it again."
+    assert find_attributions(body, _autopilot_corpus()) == []
 
 
 # --- find_attributions ------------------------------------------------------
