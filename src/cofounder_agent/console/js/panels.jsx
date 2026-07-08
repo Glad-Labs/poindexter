@@ -112,7 +112,10 @@ function ActionInbox({
   return (
     <section className="panel panel--amber" style={{ minHeight: 0 }}>
       <header className="panel__head">
-        <span className="panel__title">NEEDS YOU</span>
+        <span className="panel__title">
+          <Icon name="bell" size={14} className="panel__ico" />
+          NEEDS YOU
+        </span>
         <span className="panel__spacer" />
         <span className="panel__meta">{items.length} OPEN</span>
       </header>
@@ -307,6 +310,7 @@ function ServiceGrid({ services, onOpen, onRestart, fresh }) {
   const warn = services.filter((s) => s.status === 'warn').length;
   return (
     <Panel
+      icon="services"
       title="SERVICE HEALTH"
       meta={`${services.length} CONTAINERS · ${down} DOWN · ${warn} DEGRADED`}
       fresh={fresh}
@@ -345,6 +349,7 @@ function ServiceGrid({ services, onOpen, onRestart, fresh }) {
 function GpuHud({ gpu, onOpen }) {
   return (
     <Panel
+      icon="gpu"
       title="GPU · RTX 5090"
       meta={gpu.driver ? `DRIVER ${gpu.driver}` : 'LIVE · nvidia_gpu'}
       flush
@@ -399,6 +404,7 @@ const shortTaskId = (id) => {
 function PipelinePanel({ pipeline, onOpen, onOpenTask, onRetry }) {
   return (
     <Panel
+      icon="pipeline"
       title="CONTENT PIPELINE"
       meta={`SUCCESS ${pipeline.successRate}% · AVG ${pipeline.avgCompletion}`}
       flush
@@ -483,6 +489,7 @@ function BrainPanel({ brain, onOpen, onEmbed }) {
   const decisions = brain.decisions || [];
   return (
     <Panel
+      icon="brain"
       title="BRAIN · SEMANTIC MEMORY"
       meta={`${(brain.totalEmbeddings ?? 0).toLocaleString()} VECTORS`}
       flush
@@ -634,6 +641,7 @@ function CostPanel({ cost, onOpen, fresh }) {
   ];
   return (
     <Panel
+      icon="cost"
       title="COST CONTROL"
       meta={`PROJECTED $${cost.projected.toFixed(0)} / $${cost.budget}`}
       fresh={fresh}
@@ -707,6 +715,7 @@ function CostPanel({ cost, onOpen, fresh }) {
 function AuditFeed({ lines, onOpen }) {
   return (
     <Panel
+      icon="audit"
       title="EVENT STREAM"
       meta={
         <span>

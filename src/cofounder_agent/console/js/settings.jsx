@@ -427,7 +427,8 @@ function SettingsMode({ onApply, pushFeed }) {
         style={{ maxWidth: 1100, margin: '0 auto 14px' }}
       >
         <span className="panel__title">
-          <span className="idx">⚙</span>APP SETTINGS
+          <Icon name="settings" size={14} className="panel__ico" />
+          APP SETTINGS
         </span>
         <span className="panel__spacer" style={{ flex: 1 }} />
         <span className="panel__meta">

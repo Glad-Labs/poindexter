@@ -1885,7 +1885,8 @@ function PublishQueue({ items, onPublish }) {
     <div className="panel">
       <div className="panel__head">
         <span className="panel__title">
-          <span className="idx">▲</span>READY TO PUBLISH
+          <Icon name="check" size={14} className="panel__ico" />
+          READY TO PUBLISH
         </span>
         <span className="panel__spacer" style={{ flex: 1 }} />
         <span className="panel__meta">{items.length} staged</span>

@@ -385,6 +385,9 @@ button {
   border-bottom: 1px solid var(--gl-hairline);
 }
 .panel__title {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
   font-family: var(--gl-font-mono);
   font-size: 11px;
   font-weight: 600;
@@ -392,9 +395,11 @@ button {
   text-transform: uppercase;
   color: var(--gl-text);
 }
-.panel__title .idx {
-  color: var(--gl-text-dim);
-  margin-right: 7px;
+/* Panel header identity icon (replaces the old A1/S1/… index badges). Cyan
+   accent echoes the panel's left border; flex:none so it never shrinks. */
+.panel__ico {
+  color: var(--gl-cyan);
+  flex: none;
 }
 .panel__spacer {
   flex: 1;

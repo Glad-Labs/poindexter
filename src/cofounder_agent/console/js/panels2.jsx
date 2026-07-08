@@ -32,6 +32,7 @@ function SocialPanel({ social, onApprove, onReject }) {
   const failed = drafts.filter((d) => d.status === 'failed').length;
   return (
     <Panel
+      icon="pulse"
       title="SOCIAL DISTRIBUTION"
       meta={`${pending} PENDING · ${posted} POSTED · ${failed} FAILED`}
       flush
@@ -263,6 +264,7 @@ function FindingsPanel({ findings, onOpen, fresh }) {
   const pending = (f.counts && f.counts.pending) || 0;
   return (
     <Panel
+      icon="alert"
       title="FINDINGS"
       meta={`${emitted} EMITTED · ${pending} PENDING`}
       fresh={fresh}
@@ -484,6 +486,7 @@ function RevenuePanel({ revenue, onOpen }) {
       : null;
   return (
     <Panel
+      icon="pulse"
       title="REVENUE"
       meta={live ? `MRR $${r.mrr} · LEMON SQUEEZY` : 'PRE-REVENUE'}
       flush
@@ -600,7 +603,13 @@ function MediaPanel({ media, onOpenItem, onApprove, onReject, fresh }) {
       ? `RENDER ${m.renderSuccess24h}% · ${m.dispatched} DISPATCHED`
       : `${m.gate2Pending ?? 0} GATE-2 PENDING`;
   return (
-    <Panel title="MEDIA PIPELINE · STAGE 2" meta={meta} fresh={fresh} flush>
+    <Panel
+      icon="play"
+      title="MEDIA PIPELINE · STAGE 2"
+      meta={meta}
+      fresh={fresh}
+      flush
+    >
       <div
         style={{
           display: 'grid',
@@ -718,6 +727,7 @@ function SchedulePanel({ schedule, onShift, fresh }) {
     new Date(t).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
   return (
     <Panel
+      icon="refresh"
       title="SCHEDULED PUBLISH · QUEUE"
       meta={`${depth} QUEUED · ${pastDue} PAST-DUE`}
       fresh={fresh}
@@ -837,6 +847,7 @@ function SeoPanel({ seo, fresh }) {
   const num = (v, d = 1) => (v != null ? Number(v).toFixed(d) : '—');
   return (
     <Panel
+      icon="search"
       title="SEO REFRESH · OPPORTUNITIES"
       meta={`${byStatus.open || 0} OPEN · ${byStatus.queued || 0} QUEUED · ${byStatus.refreshed || 0} REFRESHED`}
       fresh={fresh}
@@ -935,6 +946,7 @@ function QAPanel({ qa, onOpen }) {
   const maxReason = Math.max(...qa.reasons.map((r) => r[1]));
   return (
     <Panel
+      icon="check"
       title="QA RAILS · MULTI-MODEL REVIEW"
       meta={
         live
@@ -1098,7 +1110,7 @@ function QAPanel({ qa, onOpen }) {
 /* ─── Sub-tool launcher + voice ─────────────────────────────── */
 function LauncherPanel({ tools, onLaunch, onVoice }) {
   return (
-    <Panel title="LAUNCH" meta="EXTERNAL TOOLS" flush>
+    <Panel icon="bolt" title="LAUNCH" meta="EXTERNAL TOOLS" flush>
       <button className="voice-cta" onClick={onVoice}>
         <span className="voice-cta__dot">
           <span />
@@ -1141,6 +1153,7 @@ function TopicsPanel({ topics, onPick, onResolve, onReject, fresh }) {
   const batches = (topics && topics.items) || [];
   return (
     <Panel
+      icon="overview"
       title="TOPICS · DISCOVERY BATCHES"
       meta={`${batches.length} OPEN · AWAITING DECISION`}
       fresh={fresh}
@@ -1274,6 +1287,7 @@ function NewsletterPanel({ newsletter, fresh }) {
 
   return (
     <Panel
+      icon="doc"
       title="NEWSLETTER"
       meta={`${sub} subscribers · last send ${lastSend}`}
       fresh={fresh}
@@ -1459,7 +1473,8 @@ function LogsPanel({ logs, onFilter, service, level, fresh }) {
     <div className="panel" id="sec-logs">
       <div className="panel__head">
         <span className="panel__title">
-          <span className="idx">▤</span>LOGS
+          <Icon name="audit" size={14} className="panel__ico" />
+          LOGS
         </span>
         <span className="panel__spacer" style={{ flex: 1 }} />
         <span className="panel__meta">{lines.length} lines · Loki</span>
@@ -1513,7 +1528,8 @@ function TracesPanel({ traces, fresh }) {
     <div className="panel" id="sec-traces">
       <div className="panel__head">
         <span className="panel__title">
-          <span className="idx">⌁</span>LLM TRACES
+          <Icon name="link" size={14} className="panel__ico" />
+          LLM TRACES
         </span>
         <span className="panel__spacer" style={{ flex: 1 }} />
         <span className="panel__meta">{rows.length} · Langfuse</span>

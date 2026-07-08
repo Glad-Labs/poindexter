@@ -218,13 +218,13 @@ function HistoryChart({ title, fetchSeries, range, unit }) {
 
 // A titled RangeControl over a responsive grid of HistoryCharts. Each group
 // owns its own range state, so HISTORY and GPU & POWER range independently.
-function TrendGroup({ id, heading, charts }) {
+function TrendGroup({ id, heading, charts, icon = 'pulse' }) {
   const [range, setRange] = useState('6h');
   return (
     <div id={id}>
       <div className="panel__head" style={{ marginBottom: 8 }}>
         <span className="panel__title">
-          <span className="idx">▤</span>
+          <Icon name={icon} size={14} className="panel__ico" />
           {heading}
         </span>
         <span style={{ flex: 1 }} />
@@ -280,7 +280,14 @@ function HardwarePanel() {
     { title: 'GPU power draw', fn: (x) => api.gpuPowerSeries(x), unit: ' W' },
     { title: 'System power', fn: (x) => api.systemPowerSeries(x), unit: ' W' },
   ];
-  return <TrendGroup id="sec-hardware" heading="GPU & POWER" charts={charts} />;
+  return (
+    <TrendGroup
+      id="sec-hardware"
+      heading="GPU & POWER"
+      charts={charts}
+      icon="gpu"
+    />
+  );
 }
 
 function DatabasePanel() {
@@ -301,7 +308,14 @@ function DatabasePanel() {
     { title: 'Database size', fn: (x) => api.dbSizeSeries(x), unit: ' GB' },
     { title: 'Dead tuples', fn: (x) => api.dbDeadTuplesSeries(x), unit: '' },
   ];
-  return <TrendGroup id="sec-database" heading="DATABASE" charts={charts} />;
+  return (
+    <TrendGroup
+      id="sec-database"
+      heading="DATABASE"
+      charts={charts}
+      icon="services"
+    />
+  );
 }
 
 Object.assign(window, {

@@ -289,6 +289,7 @@ function useToasts() {
 
 /* ─── Panel wrapper ─────────────────────────────────────────── */
 function Panel({
+  icon,
   title,
   meta,
   action,
@@ -305,7 +306,10 @@ function Panel({
       style={style}
     >
       <header className="panel__head">
-        <span className="panel__title">{title}</span>
+        <span className="panel__title">
+          {icon && <Icon name={icon} size={14} className="panel__ico" />}
+          {title}
+        </span>
         <span className="panel__spacer" />
         {meta && <span className="panel__meta">{meta}</span>}
         {/* Per-panel freshness (migrated live panels pass their resource here). */}
