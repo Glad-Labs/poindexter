@@ -11,6 +11,7 @@ const POINDEXTER_VERSION = '0.74.0'; // x-release-please-version
 
 const RAIL = [
   { id: 'overview', icon: 'overview', label: 'Overview' },
+  { id: 'trace', icon: 'pulse', label: 'Trace' },
   { id: 'pipeline', icon: 'pipeline', label: 'Pipeline' },
   { id: 'topics', icon: 'overview', label: 'Topics' },
   { id: 'social', icon: 'pulse', label: 'Social' },
@@ -57,6 +58,7 @@ function App() {
   const [feedFilter, setFeedFilter] = useS('all');
   const [active, setActive] = useS('overview');
   const [mode, setMode] = useS('console');
+  const [traceTaskId, setTraceTaskId] = useS(null);
   const [paletteOpen, setPaletteOpen] = useS(false);
   const [clock, setClock] = useS('14:32:00');
   const [toastNode, pushToast] = useToasts();
@@ -166,6 +168,18 @@ function App() {
     { intervalMs: 60 * 1000, key: 'traces' }
   );
   const traces = tracesR.data || PX.traces;
+
+  // Task-trace board (front-door): running + recent tasks. 30s cadence like the
+  // other observ polls; the deep-dive (TraceDeepDive) owns its own faster poll.
+  // Passed straight to <TraceBoard> as data + fresh (retains last-good + marks
+  // stale on a blip, so a blank board is never mistaken for an idle system).
+  const traceR = window.PXR.usePolledResource(
+    () =>
+      PX.api.isLive()
+        ? PX.api.traceActive()
+        : Promise.resolve(PX.traceActive || { runs: [], recent: [] }),
+    { intervalMs: 30_000, key: 'traceActive' }
+  );
 
   // These three poll cleanly but ALSO carry optimistic drawer actions (Gate-2
   // decide / reschedule / topic triage). The poll migrates here; the drawer
@@ -550,6 +564,22 @@ function App() {
     return () => el.removeEventListener('scroll', onScroll);
   }, [mode]);
 
+  // ── #trace/<task_id> deep-link routing (the alert→trace target, R4) ──
+  // On load + hashchange, jump straight into the deep-dive when the URL names a
+  // task. Lets a Telegram/Discord alert link land the operator on the exact run.
+  useE(() => {
+    const applyHash = () => {
+      const m = (location.hash || '').match(/^#trace\/(.+)$/);
+      if (m) {
+        setTraceTaskId(decodeURIComponent(m[1]));
+        setMode('trace');
+      }
+    };
+    applyHash();
+    window.addEventListener('hashchange', applyHash);
+    return () => window.removeEventListener('hashchange', applyHash);
+  }, []);
+
   const scrollToSec = (id) => {
     const el = mainRef.current,
       sec = document.getElementById('sec-' + id);
@@ -592,6 +622,59 @@ function App() {
     );
   };
   const closeDrawer = () => setEntity(null);
+
+  // ── Task-trace navigation + actions ───────────────────────
+  const openTrace = (taskId) => {
+    setTraceTaskId(taskId);
+    setMode('trace');
+    location.hash = 'trace/' + encodeURIComponent(taskId);
+  };
+  const backFromTrace = () => {
+    setMode('console');
+    if ((location.hash || '').indexOf('#trace/') === 0) location.hash = '';
+  };
+  // taskId-scoped approve/reject/publish for the deep-dive header (A.* takes
+  // inbox entities; the deep-dive only has a task id). The deep-dive's own 6s
+  // poll reconciles the header/actions after the write.
+  const traceAction = async (kind, taskId) => {
+    try {
+      if (kind === 'approve') {
+        await PX.api.approve(taskId);
+        pushToast('Approved — staged (not published)', 'mint', '✓');
+        pushFeed(
+          ['mint', 'APPROVE'],
+          `operator approved <b>#${taskId}</b> → staged`
+        );
+      } else if (kind === 'reject') {
+        await PX.api.reject(taskId, '');
+        pushToast('Rejected — sent back to edit', 'amber', '⚠');
+        pushFeed(['amber', 'REVIEW'], `operator rejected <b>#${taskId}</b>`);
+      } else if (kind === 'publish') {
+        await PX.api.publishTask(taskId);
+        pushToast('Published — is live', 'mint', '✓');
+        pushFeed(['mint', 'PUBLISH'], `operator published <b>#${taskId}</b>`);
+      }
+    } catch (err) {
+      pushToast(`${kind} failed — ${err.message}`, 'red', '✕');
+    }
+  };
+  // Langfuse escape hatch: resolve the task's newest trace via the existing
+  // /api/traces proxy (web_url is built server-side) and open it. No fabricated
+  // URL — if the task has no trace yet, say so honestly.
+  const traceLangfuse = async (session) => {
+    if (!session) return;
+    try {
+      const r = await PX.api.traces(
+        '?task_id=' + encodeURIComponent(session) + '&limit=1'
+      );
+      const t = r && r.traces && r.traces[0];
+      const url = t && (t.web_url || t.url);
+      if (url) window.open(url, '_blank', 'noopener');
+      else pushToast('No Langfuse trace for this task yet', 'amber', '⚠');
+    } catch (err) {
+      pushToast(`Langfuse lookup failed — ${err.message}`, 'red', '✕');
+    }
+  };
 
   const A = {
     // Approve STAGES the task (auto_publish=false). Optimistic remove + roll
@@ -1320,6 +1403,17 @@ function App() {
               <KpiStrip kpis={kpis} onOpen={(k) => open('kpi', k)} />
             </div>
 
+            {/* Front-door task-trace board — full width above the masonry, so
+                "what's running now" reads at a glance; a card click opens the
+                full-bleed deep-dive (mode='trace'). */}
+            <div id="sec-trace">
+              <TraceBoard
+                data={traceR.data}
+                fresh={traceR}
+                onOpen={openTrace}
+              />
+            </div>
+
             <div className="masonry masonry--overview">
               <div id="sec-overview-inbox">
                 <ActionInbox
@@ -1517,6 +1611,17 @@ function App() {
               onOpen={(s) => open('service', s)}
               onOpenGpu={() => open('gpu', gpu)}
               onRestart={A.restart}
+            />
+          </div>
+        )}
+
+        {mode === 'trace' && (
+          <div style={{ padding: 16 }}>
+            <TraceDeepDive
+              taskId={traceTaskId}
+              onBack={backFromTrace}
+              onAction={traceAction}
+              onLangfuse={traceLangfuse}
             />
           </div>
         )}

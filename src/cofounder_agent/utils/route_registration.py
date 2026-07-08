@@ -78,6 +78,7 @@ _WORKER_ROUTES = [
     ("routes.qa_routes", "router", "qa_router", "QA pass-rate trend for the operator console (/api/qa/trend)"),
     ("routes.logs_routes", "router", "logs_router", "Loki log proxy for the operator console (/api/logs)"),
     ("routes.traces_routes", "router", "traces_router", "Langfuse trace proxy for the operator console (/api/traces)"),
+    ("routes.trace_routes", "router", "trace_router", "console task-trace read API — board + per-task deep-dive (/api/trace/*)"),
     ("routes.seo_routes", "router", "seo_router", "SEO-refresh opportunity summary (/api/seo, #1466)"),
     ("routes.pipeline_events_routes", "router", "pipeline_events_router", "pipeline events observability (/api/pipeline, /pipeline)"),
     ("routes.memory_dashboard_routes", "router", "memory_dashboard_router", "shared-memory observability (/api/memory/*, /memory)"),

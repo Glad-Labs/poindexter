@@ -22,6 +22,7 @@
     <link rel="stylesheet" href="css/effects.css" />
     <link rel="stylesheet" href="css/modes.css" />
     <link rel="stylesheet" href="css/console.css" />
+    <link rel="stylesheet" href="css/trace.css" />
   </head>
   <body>
     <div id="root"></div>
@@ -41,6 +42,8 @@
     <script src="js/kpis.js"></script>
     <!-- Reliability core (PXR.usePolledResource + ConnectionState) — before JSX. -->
     <script src="js/reliability.js"></script>
+    <!-- Pure task-trace logic (window.TraceH) — dependency of trace.jsx. -->
+    <script src="js/trace-helpers.js"></script>
 
     <!-- JSX components (Babel-compiled). app.jsx is LAST: it calls ReactDOM.createRoot. -->
     <script
@@ -67,6 +70,7 @@
       data-presets="react"
       src="js/settings.jsx"
     ></script>
+    <script type="text/babel" data-presets="react" src="js/trace.jsx"></script>
     <script type="text/babel" data-presets="react" src="js/app.jsx"></script>
   </body>
 </html>

@@ -69,6 +69,9 @@ DEFAULTS: dict[str, str] = {
     # trace deep-dive shows). Bounded so a full draft never lands in every
     # row. Capture itself is gated by atom_runs_capture_enabled (baseline).
     "atom_runs_output_preview_max_bytes": "2048",
+    # How many recently-finished tasks the trace board's "recent" rail shows
+    # (GET /api/trace/active). The running list is unbounded (few at a time).
+    "trace_recent_limit": "10",
     # ----- Self-healing firefighter (deterministic core, Plan A) -----
     # Master switch. Ships enabled; the remediation_rules table is empty so it's
     # a safe no-op until rules are seeded. Off = pages exactly as today.

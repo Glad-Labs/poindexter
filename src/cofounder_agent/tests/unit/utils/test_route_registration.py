@@ -134,8 +134,10 @@ class TestRouteManifestStructure:
         (QA pass-rate trend for the operator console at /api/qa/trend). The
         companion /api/findings/trend route rides the existing findings_router,
         so it adds no manifest entry.
+        Updated 2026-07-08 (console task-trace Phase 2): added trace_router
+        (task-trace board + per-task deep-dive read API at /api/trace/*).
         """
-        assert len(_WORKER_ROUTES) == 33
+        assert len(_WORKER_ROUTES) == 34
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

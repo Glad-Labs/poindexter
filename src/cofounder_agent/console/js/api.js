@@ -731,6 +731,65 @@
       LS.setItem('px_grafana', cfg.grafana);
     },
 
+    // ── task-trace (console board + per-task deep-dive) ─────
+    // Three reads behind the worker's /api/trace/* (services/trace_read.py):
+    //   /active  → {runs, recent}   the front-door board
+    //   /summary → 24h health strip KPIs
+    //   /{id}    → the full per-task deep-dive (spine·corpus·qa·cost·halt)
+    // Deliberately mirrors findings()/traces(): the LIVE branch lets http()
+    // THROW on transport failure so usePolledResource keeps the last-good board
+    // and marks it STALE. Swallowing to an empty shape here would repaint the
+    // board blank on every blip — indistinguishable from an idle system, which
+    // is the one thing an operator must never be shown as fact. Honest-empty is
+    // the MOCK branch's job (sim=empty), and the freshness chip's in live.
+    traceActive() {
+      return pick(
+        () => http('GET', '/api/trace/active'),
+        () => pair(mock().traceActive, { runs: [], recent: [] })
+      );
+    },
+    traceSummary() {
+      const empty = {
+        window_hours: 24,
+        tasks: 0,
+        by_status: {},
+        pass_rate: null,
+        avg_quality: null,
+        avg_cost_usd: null,
+      };
+      return pick(
+        () => http('GET', '/api/trace/summary'),
+        () => pair(mock().traceSummary, empty)
+      );
+    },
+    // taskId → the assembled deep-dive; runId (optional) scopes to one run of
+    // the request (default server-side: the latest content run). Both ids are
+    // opaque → encodeURIComponent. Mock empty path is a fully honest-empty
+    // deep-dive (no fabricated spine, no fabricated cost).
+    traceDetail(taskId, runId) {
+      const empty = {
+        task_id: taskId || '',
+        run_id: runId || null,
+        runs: [],
+        task: null,
+        nodes: [],
+        corpus: '',
+        decisions: [],
+        qa: [],
+        cost_rollup: { by_model: [], total_usd: 0 },
+        final: null,
+        halt: null,
+        langfuse: { session_id: taskId || '', run_id: runId || null },
+      };
+      return pick(
+        () => {
+          const q = runId ? '?run_id=' + encodeURIComponent(runId) : '';
+          return http('GET', '/api/trace/' + encodeURIComponent(taskId) + q);
+        },
+        () => pair(mock().traceDetail, empty)
+      );
+    },
+
     // ── live event stream ───────────────────────────────────
     // Worker exposes GET /api/pipeline/events → {count, events[], server_time}.
     // On live we map each event onto the feed-line shape (newest-first; the
