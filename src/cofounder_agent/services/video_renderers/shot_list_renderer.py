@@ -304,14 +304,17 @@ async def _render_generative_clip(
     image_path: str | None,
     duration_s: int,
     site_config: Any,
-) -> bool:
+) -> tuple[bool, str]:
     """Render one hero clip to ``output_path`` via the Wan provider.
 
     When ``image_path`` is set it's the shot's stylized image-gen still, passed
     as the image-to-video init frame (animating the brand still keeps visual
     consistency — spec §3.3). Absent → text-to-video. Delegates to the
     existing ``Wan21Provider`` so the request body shape is the correct one
-    for the wan-server. Returns True on success.
+    for the wan-server. Returns ``(success, reason)`` — ``reason`` is empty on
+    success, else a short operator-facing string so a miss is diagnosable from
+    the ``hero_render_fallback`` finding alone (the wan-server container that
+    produced the miss may already be gone by the time anyone looks).
     """
     from services.video_providers.wan2_1 import Wan21Provider
 
@@ -331,11 +334,14 @@ async def _render_generative_clip(
             "[SHOT_LIST] generative render raised for %s: %s",
             os.path.basename(output_path), exc,
         )
-        return False
+        return False, f"{type(exc).__name__}: {exc}"
 
     if not results:
-        return False
-    return bool(results[0].file_path) and os.path.exists(results[0].file_path)  # type: ignore[arg-type]
+        return False, "wan provider returned no result — check wan-server logs/health"
+    ok = bool(results[0].file_path) and os.path.exists(results[0].file_path)  # type: ignore[arg-type]
+    if not ok:
+        return False, "wan provider result had no output file on disk"
+    return True, ""
 
 
 async def _render_one_shot(
@@ -495,7 +501,7 @@ async def _render_one_shot(
                 error="generative shot: image-gen still render failed",
             )
         clip_path = str(work_dir / f"shot_{shot.idx:02d}.mp4")
-        clip_ok = await _render_generative_clip(
+        clip_ok, clip_error = await _render_generative_clip(
             prompt=shot.prompt,
             output_path=clip_path,
             image_path=still_path,
@@ -514,7 +520,7 @@ async def _render_one_shot(
         # to a PNG scene automatically, so returning the still path is all it
         # takes; emit a finding so the operator sees the degrade. NOT a
         # holdover of the prior clip (spec §3.3).
-        _emit_hero_fallback_finding(shot=shot, post_id=post_id)
+        _emit_hero_fallback_finding(shot=shot, post_id=post_id, reason=clip_error)
         return ShotRenderResult(
             idx=shot.idx,
             source=source,
@@ -661,21 +667,30 @@ def _emit_fallback_finding(
     )
 
 
-def _emit_hero_fallback_finding(*, shot: Shot, post_id: str) -> None:
+def _emit_hero_fallback_finding(*, shot: Shot, post_id: str, reason: str = "") -> None:
     """Emit the ``hero_render_fallback`` finding — a generative hero shot's
     image-to-video render produced no clip, so the renderer fell back to the
     stylized image-gen still (Ken-Burns'd by the compositor). Distinct kind from
     ``shot_quality_fallback`` so the Findings dashboard can track i2v render
-    misses separately from QA-score fallbacks (spec §3.3)."""
+    misses separately from QA-score fallbacks (spec §3.3).
+
+    ``reason`` carries WHY the render missed (from ``_render_generative_clip``)
+    so the finding alone is diagnosable — the wan-server container that
+    produced the miss may already be gone (recreated / recycled) by the time
+    anyone looks at logs.
+    """
+    body = (f"shot {shot.idx} ({shot.source}) — image-to-video render "
+            f"produced no clip; used the stylized image-gen still with Ken Burns "
+            f"motion instead.")
+    if reason:
+        body += f" reason: {reason}"
     emit_finding(
         source="shot_list_renderer", kind="hero_render_fallback",
         title=f"hero shot {shot.idx} fell back to still (Ken Burns)",
-        body=(f"shot {shot.idx} ({shot.source}) — image-to-video render "
-              f"produced no clip; used the stylized image-gen still with Ken Burns "
-              f"motion instead."),
+        body=body,
         severity="warn",
         dedup_key=f"hero_render_fallback:{post_id}:{shot.idx}",
-        extra={"shot_idx": shot.idx, "source": shot.source},
+        extra={"shot_idx": shot.idx, "source": shot.source, "reason": reason},
     )
 
 

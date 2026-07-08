@@ -118,9 +118,14 @@ async def score_shot_frame(
     Routes through the LiteLLM dispatcher (``dispatch_complete``) — the same
     path every other LLM call takes — so the shot-QA vision call lands in
     ``cost_logs`` + Langfuse and picks up the per-model ``api_base`` override
-    (the GPU-pinned instance) for free. LiteLLM's ``ollama_chat`` path handles
-    qwen3-vl's thinking channel, so no ``think`` flag is needed. Requires a
-    ``pool``; without one (legacy/test callers) it fail-softs to no-score.
+    (the GPU-pinned instance) for free. qwen3-vl emits a long ``<think>``
+    trace even when nothing asks it not to, and that trace shares the
+    ``max_tokens`` budget with the JSON answer — the same failure
+    ``multi_model_qa._check_image_relevance`` already hit and fixed by
+    raising its budget 400->1024 (poindexter#563); ``max_tokens`` below
+    mirrors that fix so thinking doesn't starve the score out of the
+    response. Requires a ``pool``; without one (legacy/test callers) it
+    fail-softs to no-score.
 
     Returns ``ShotQAResult(score=None)`` on any failure (fail-soft).
     """
@@ -171,7 +176,7 @@ async def score_shot_frame(
         completion = await dispatch_complete(
             pool, messages, model,
             tier="standard", phase="qa_shot_vision",
-            temperature=0.2, max_tokens=300, timeout_s=150.0,
+            temperature=0.2, max_tokens=1024, timeout_s=150.0,
         )
         text = (getattr(completion, "text", "") or "").strip()
     except Exception as exc:  # noqa: BLE001

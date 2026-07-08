@@ -124,6 +124,25 @@ async def test_dispatch_failure_returns_none_score(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_dispatch_uses_a_thinking_safe_token_budget(tmp_path):
+    """qwen3-vl emits a long <think> trace that shares the token budget with
+    the JSON answer — the same bug ``multi_model_qa._check_image_relevance``
+    already hit and fixed by raising num_predict 400->1024 (poindexter#563,
+    see the comment there). 300 is even smaller than the blog side's
+    already-proven-insufficient original value, so this scorer needs the
+    same generous budget."""
+    frame = tmp_path / "shot_00.png"
+    frame.write_bytes(b"fake-png")
+    dispatch = AsyncMock(return_value=_completion('{"score": 82, "reason": "ok"}'))
+    with patch(_DISPATCH, dispatch):
+        await score_shot_frame(
+            frame_path=str(frame), shot=_shot(), site_config=_sc(), pool=object(),
+        )
+    _, kwargs = dispatch.call_args
+    assert kwargs["max_tokens"] >= 1024
+
+
+@pytest.mark.asyncio
 async def test_video_frame_is_extracted_before_scoring(tmp_path):
     clip = tmp_path / "shot_00.mp4"
     clip.write_bytes(b"fake-mp4")

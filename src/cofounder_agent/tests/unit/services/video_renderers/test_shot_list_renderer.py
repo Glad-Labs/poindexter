@@ -261,7 +261,7 @@ class TestRenderOneShot:
             assert image_path and image_path.endswith(".png")  # the i2v init still
             with open(output_path, "wb") as f:
                 f.write(b"MP4")
-            return True
+            return True, ""
 
         with patch.object(mod, "_render_image_gen_image", _fake_image_gen), \
                 patch.object(mod, "_render_generative_clip", _fake_clip):
@@ -289,7 +289,7 @@ class TestRenderOneShot:
             return True
 
         async def _fake_clip(**kw):
-            return False  # i2v miss
+            return False, "i2v miss"
 
         with patch.object(mod, "_render_image_gen_image", _fake_image_gen), \
                 patch.object(mod, "_render_generative_clip", _fake_clip), \
@@ -304,6 +304,39 @@ class TestRenderOneShot:
         assert result.clip_path.endswith(".png")  # the still, not the prior clip
         assert "/prior/clip.mp4" not in (result.clip_path or "")
         assert any(f.get("kind") == "hero_render_fallback" for f in findings)
+
+    @pytest.mark.asyncio
+    async def test_generative_fallback_finding_carries_failure_reason(self, tmp_path):
+        """The hero_render_fallback finding must carry WHY the i2v render
+        missed (timeout / unreachable / empty result) — not just that it
+        did. Without this, diagnosing a miss means grepping wan-server logs
+        that may already be gone (e.g. after the container recycled)."""
+        import services.video_renderers.shot_list_renderer as mod
+
+        shot = Shot(idx=1, duration_s=5.0, intent="hero", source="generative",
+                    prompt="neon GPU die", narration_offset_s=0.0)
+        findings: list[dict] = []
+
+        async def _fake_image_gen(*, prompt, output_path, **kw):
+            with open(output_path, "wb") as f:
+                f.write(b"\x89PNG")
+            return True
+
+        async def _fake_clip(**kw):
+            return False, "TimeoutError: wan-server /generate exceeded 900s"
+
+        with patch.object(mod, "_render_image_gen_image", _fake_image_gen), \
+                patch.object(mod, "_render_generative_clip", _fake_clip), \
+                patch.object(mod, "emit_finding",
+                             lambda **kw: findings.append(kw)):
+            await _render_one_shot(
+                shot, prior_clip="/prior/clip.mp4", work_dir=tmp_path,
+                image_gen_url="http://x", site_config=None,
+                http_client_factory=AsyncMock, post_id="post-1")
+
+        f = next(f for f in findings if f["kind"] == "hero_render_fallback")
+        assert "TimeoutError" in f["body"]
+        assert f["extra"]["reason"] == "TimeoutError: wan-server /generate exceeded 900s"
 
     @pytest.mark.asyncio
     async def test_generative_still_render_failure_is_hard_fail(self, tmp_path):

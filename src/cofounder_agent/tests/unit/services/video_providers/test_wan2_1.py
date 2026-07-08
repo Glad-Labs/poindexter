@@ -426,6 +426,37 @@ class TestWan21ProviderFetch:
 
         assert "image_b64" not in captured["json"]
 
+    async def test_generate_call_does_not_override_client_timeout(self, tmp_path):
+        """The /generate POST must not hardcode a tighter per-call timeout
+        than the client's _HTTP_TIMEOUT (900s, sized for Wan's worst-case
+        cold-load per its own docstring). httpx honors a per-call timeout=
+        over the client default, so a stray override here silently shrinks
+        the cold-start protection to whatever it says — this pinned it at
+        300s since the file's first commit, way under the documented 5-10min
+        worst case."""
+        captured: dict = {}
+
+        async def capture_post(url, json=None, timeout=None):
+            captured["timeout"] = timeout
+            return _video_response(content=b"\x00\x00MP4")
+
+        client = AsyncMock()
+        client.__aenter__ = AsyncMock(return_value=client)
+        client.__aexit__ = AsyncMock(return_value=False)
+        client.post = AsyncMock(side_effect=capture_post)
+
+        with patch(
+            "services.video_providers.wan2_1.httpx.AsyncClient",
+            return_value=client,
+        ):
+            await Wan21Provider().fetch(
+                "x", {"output_path": str(tmp_path / "o.mp4")},
+            )
+
+        # None ⇒ inherits the client-level _HTTP_TIMEOUT (900s). A hardcoded
+        # per-call value would override that cold-start protection.
+        assert captured["timeout"] is None
+
     async def test_generative_video_model_label_in_metadata(self, tmp_path):
         """The swappable-model seam: when ``generative_video_model`` is set the
         VideoResult metadata reflects it (so a 14B / LTX swap needs no code)."""
