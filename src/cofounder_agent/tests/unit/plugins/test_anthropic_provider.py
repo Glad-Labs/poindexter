@@ -15,6 +15,7 @@ Plus the recommended:
 
 from __future__ import annotations
 
+import importlib.machinery
 import sys
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
@@ -26,6 +27,14 @@ import pytest
 # regardless of whether the real SDK is installed in the test env.
 _anthropic_module = MagicMock(name="anthropic")
 _anthropic_module.AsyncAnthropic = MagicMock(name="AsyncAnthropic")
+# A plain MagicMock has no ``__spec__`` (it's a dunder MagicMock won't
+# auto-create), so when this stub wins the ``setdefault`` and persists in
+# ``sys.modules``, any later ``importlib.util.find_spec("anthropic")`` —
+# e.g. the one ``instructor`` runs at import in test_ragas_eval — raises
+# ``ValueError: anthropic.__spec__ is not set``, an order-dependent
+# collection error. Give the stub a well-formed spec so it looks like a
+# real (importable) module regardless of collection order.
+_anthropic_module.__spec__ = importlib.machinery.ModuleSpec("anthropic", loader=None)
 sys.modules.setdefault("anthropic", _anthropic_module)
 
 from plugins import LLMProvider  # noqa: E402,I001 — tests must register the SDK stub above before importing the provider

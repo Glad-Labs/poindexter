@@ -949,6 +949,102 @@ def build_graph_from_spec(
     return g
 
 
+def _preview_max_bytes(site_config: Any) -> int:
+    """Per-node ``output_preview`` byte cap from app_settings (fallback 2048).
+
+    Reads ``atom_runs_output_preview_max_bytes`` off the run-bound SiteConfig;
+    returns 2048 when there's no config or the value is unparseable.
+    """
+    try:
+        raw = (
+            site_config.get("atom_runs_output_preview_max_bytes", "2048")
+            if site_config is not None
+            else "2048"
+        )
+        return int(raw or 2048)
+    except (TypeError, ValueError):
+        return 2048
+
+
+def _preview(out: dict, keys: list[str], max_bytes: int) -> str:
+    """Bounded, human-readable snapshot of a node's changed output values.
+
+    Observational only (for ``atom_runs.output_preview``). Skips control
+    channels (leading ``_``) and truncates **per value** — a per-key byte
+    budget of ``max_bytes // n`` — so one huge value (a 5000-char draft)
+    can't bury the small keys. Returns ``""`` when there's nothing to show.
+    """
+    import json as _json
+
+    live = [k for k in keys if k in out and not str(k).startswith("_")]
+    if not live:
+        return ""
+    budget = max(48, int(max_bytes) // len(live))
+    payload: dict[str, str] = {}
+    for k in live:
+        v = out[k]
+        sv = v if isinstance(v, str) else _json.dumps(v, default=str, ensure_ascii=False)
+        raw = sv.encode("utf-8", "ignore")
+        if len(raw) > budget:
+            sv = raw[:budget].decode("utf-8", "ignore") + "…"
+        payload[str(k)] = sv
+    return _json.dumps(payload, ensure_ascii=False)
+
+
+class _RecordingSink(list):
+    """A ``record_sink`` (list of ``TemplateRunRecord``) that also fires an
+    async ``on_record(seq, record)`` after each append.
+
+    The default ``record_sink`` is a plain list drained once by the end-of-run
+    ``persist_atom_runs`` batch — so a run killed mid-graph leaves no trace
+    rows. This subclass lets the runner persist each node the instant it lands
+    (the console task-trace's live + partial-on-kill traces, spec §5.2) while
+    staying a drop-in list: LangGraph / legacy callers keep using ``.append``
+    (no notify); the notify only fires through ``append_and_notify``, which the
+    node adapters call when the sink supports it. ``on_record`` is set after
+    construction via :meth:`set_on_record` because the runner learns the run_id
+    (``thread_id``) only after the sink is built and threaded into the graph.
+    """
+
+    def __init__(self, on_record: Any = None) -> None:
+        super().__init__()
+        self._on_record = on_record
+
+    def set_on_record(self, on_record: Any) -> None:
+        """Attach (or replace) the async ``on_record(seq, record)`` callback."""
+        self._on_record = on_record
+
+    async def append_and_notify(self, rec: Any) -> None:
+        """Append ``rec`` then fire ``on_record(seq, rec)``.
+
+        ``seq`` is the pre-append length — monotonic per run and the same index
+        the end-of-run batch uses (``enumerate``), so incremental and batch
+        writes land on the same ``(run_id, seq)`` row. An ``on_record`` error is
+        swallowed: capture is observational and must never break the run.
+        """
+        seq = len(self)
+        self.append(rec)
+        if self._on_record is not None:
+            try:
+                await self._on_record(seq, rec)
+            except Exception:  # noqa: BLE001  # silent-ok: best-effort per-node capture must never break generation; a persistent failure is surfaced once (warning) by the end-of-run persist_atom_runs batch backstop, not per-node
+                logger.debug("[architect] on_record notify failed", exc_info=True)
+
+
+async def _emit_record(record_sink: Any, rec: Any) -> None:
+    """Append ``rec`` to ``record_sink``, firing the incremental notify when the
+    sink supports it (a :class:`_RecordingSink`), else a plain list append.
+
+    The single seam every node adapter (atom + stage) routes its record through,
+    so both the batch and the live/partial-on-kill paths see every node.
+    """
+    notify = getattr(record_sink, "append_and_notify", None)
+    if notify is not None:
+        await notify(rec)
+    else:
+        record_sink.append(rec)
+
+
 def _wrap_atom(
     run_fn: Callable[..., Any],
     atom_name: str,
@@ -1104,7 +1200,8 @@ def _wrap_atom(
                 ),
             )
             if record_sink is not None:
-                record_sink.append(
+                await _emit_record(
+                    record_sink,
                     TemplateRunRecord(
                         name=atom_name, ok=True,
                         detail=f"{len(str(out.get('content','') or ''))} chars",
@@ -1116,7 +1213,11 @@ def _wrap_atom(
                             "input_digest": digest_keys(input_keys),
                             "output_digest": digest_keys(output_keys),
                         },
-                    )
+                        output_preview=_preview(
+                            out, output_keys,
+                            _preview_max_bytes(atom_input.get("site_config")),
+                        ),
+                    ),
                 )
             return out
         except GraphInterrupt:
@@ -1140,7 +1241,8 @@ def _wrap_atom(
                 ),
             )
             if record_sink is not None:
-                record_sink.append(
+                await _emit_record(
+                    record_sink,
                     TemplateRunRecord(
                         name=atom_name, ok=False,
                         detail=f"raised {type(exc).__name__}: {exc}",
@@ -1152,7 +1254,10 @@ def _wrap_atom(
                             "input_digest": digest_keys(input_keys),
                             "output_digest": digest_keys([]),
                         },
-                    )
+                        output_preview=(
+                            f"{type(exc).__name__}: {exc}"
+                        )[: _preview_max_bytes(atom_input.get("site_config"))],
+                    ),
                 )
             return {"_halt": True, "_halt_reason": f"{atom_name}: {exc}"}
 

@@ -63,6 +63,12 @@ from typing import Any
 # column. Numeric / bool consumers parse via `site_config.get_int()`,
 # `get_float()`, `get_bool()` etc.
 DEFAULTS: dict[str, str] = {
+    # ----- Console task-trace (per-node capture) -----
+    # Max bytes of a node's changed-output snapshot stored in
+    # atom_runs.output_preview (the readable per-node preview the console
+    # trace deep-dive shows). Bounded so a full draft never lands in every
+    # row. Capture itself is gated by atom_runs_capture_enabled (baseline).
+    "atom_runs_output_preview_max_bytes": "2048",
     # ----- Self-healing firefighter (deterministic core, Plan A) -----
     # Master switch. Ships enabled; the remediation_rules table is empty so it's
     # a safe no-op until rules are seeded. Off = pages exactly as today.

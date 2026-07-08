@@ -77,6 +77,123 @@ def digest_keys(keys: Any) -> str:
     return hashlib.sha256(norm.encode("utf-8")).hexdigest()[:16]
 
 
+async def _write_row(
+    conn: Any,
+    *,
+    run_id: str,
+    task_id: str | None,
+    template_slug: str,
+    seq: int,
+    record: Any,
+    catalog: dict[str, Any],
+) -> None:
+    """Upsert one ``atom_runs`` row from a ``TemplateRunRecord``.
+
+    Keyed on ``(run_id, seq)`` so a re-persist — an incremental per-node write
+    followed by the end-of-run batch safety net, or a rescue-loop re-run —
+    updates the row in place instead of duplicating it. Assumes an already-
+    acquired ``conn`` and a prebuilt ``catalog`` (so the batch path builds the
+    atom catalog once, not once per row).
+
+    Identity + input shape (``atom`` / ``node_id`` / ``tier`` / ``input_*``)
+    are first-writer-wins — they're stable for a given ``(run_id, seq)``. The
+    outcome fields (``status`` / ``latency_ms`` / ``cost`` / ``model`` /
+    ``output_*`` / ``metrics`` / ``output_preview``) are refreshed on conflict
+    so a later, more-complete write (batch after incremental) supersedes.
+    """
+    r = record
+    atom = getattr(r, "name", "") or ""
+    meta = catalog.get(atom)
+    if meta is None:
+        for cand in (f"atoms.{atom}", f"stage.{atom}"):
+            if cand in catalog:
+                meta = catalog[cand]
+                break
+    tier = getattr(meta, "capability_tier", None) if meta else None
+
+    metrics = getattr(r, "metrics", {}) or {}
+    node_id = getattr(r, "node_id", None) or metrics.get("node_id")
+    model = metrics.get("model_used") or metrics.get("model")
+    cost = metrics.get("cost")
+    retries = int(metrics.get("retries", 0) or 0)
+    input_keys = metrics.get("input_keys")
+    output_keys = metrics.get("output_keys")
+    input_digest = metrics.get("input_digest")
+    output_digest = metrics.get("output_digest")
+    output_preview = getattr(r, "output_preview", None)
+
+    await conn.execute(
+        """
+        INSERT INTO atom_runs
+          (run_id, task_id, template_slug, seq, atom, node_id,
+           tier, model, latency_ms, cost, retries, status,
+           input_digest, output_digest, input_keys, output_keys,
+           metrics, output_preview)
+        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
+                $12, $13, $14, $15, $16, $17::jsonb, $18)
+        ON CONFLICT (run_id, seq) DO UPDATE SET
+          status = EXCLUDED.status,
+          latency_ms = EXCLUDED.latency_ms,
+          cost = EXCLUDED.cost,
+          model = EXCLUDED.model,
+          output_keys = EXCLUDED.output_keys,
+          output_digest = EXCLUDED.output_digest,
+          metrics = EXCLUDED.metrics,
+          output_preview = EXCLUDED.output_preview
+        """,
+        run_id, task_id, template_slug, seq, atom, node_id,
+        tier, model, int(getattr(r, "elapsed_ms", 0) or 0),
+        cost, retries, _status_of(r),
+        input_digest, output_digest,
+        list(input_keys) if input_keys is not None else None,
+        list(output_keys) if output_keys is not None else None,
+        json.dumps(metrics, default=str),
+        output_preview,
+    )
+
+
+async def persist_one_atom_run(
+    pool: Any,
+    *,
+    run_id: str,
+    task_id: str | None,
+    template_slug: str,
+    seq: int,
+    record: Any,
+    site_config: Any = None,
+) -> int:
+    """Upsert a single ``atom_runs`` row (keyed ``run_id`` + ``seq``).
+
+    Best-effort and idempotent. Used both incrementally — one write as each
+    node completes, so a live or killed run leaves per-node rows behind (the
+    console task-trace's live + partial-on-kill traces) — and by the end-of-run
+    batch. ``ON CONFLICT`` makes a re-persist a no-op-ish update, never a
+    duplicate. Gated by ``atom_runs_capture_enabled`` (via ``site_config``;
+    default-on when none is passed). Returns 1 on write, 0 when skipped/failed;
+    a DB error is logged + swallowed so capture never breaks generation.
+    """
+    if pool is None or record is None:
+        return 0
+    if not _capture_enabled(site_config):
+        return 0
+    catalog = _catalog_by_name()
+    try:
+        async with pool.acquire() as conn:
+            await _write_row(
+                conn,
+                run_id=run_id,
+                task_id=task_id,
+                template_slug=template_slug,
+                seq=seq,
+                record=record,
+                catalog=catalog,
+            )
+        return 1
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("[atom_runs] persist_one_atom_run failed: %s", exc)
+        return 0
+
+
 async def persist_atom_runs(
     pool: Any,
     *,
@@ -91,6 +208,9 @@ async def persist_atom_runs(
     Returns rows written. Gated by ``atom_runs_capture_enabled`` (via
     ``site_config``; default-on when no site_config is passed). Best-effort —
     exceptions are logged + swallowed so capture never breaks the pipeline.
+    Now an idempotent upsert (via :func:`_write_row`): re-running the batch
+    after the incremental per-node path already wrote the rows refreshes them
+    in place rather than duplicating.
     """
     if pool is None or not records:
         return 0
@@ -102,42 +222,14 @@ async def persist_atom_runs(
     try:
         async with pool.acquire() as conn:
             for seq, r in enumerate(records):
-                atom = getattr(r, "name", "") or ""
-                meta = catalog.get(atom)
-                if meta is None:
-                    for cand in (f"atoms.{atom}", f"stage.{atom}"):
-                        if cand in catalog:
-                            meta = catalog[cand]
-                            break
-                tier = getattr(meta, "capability_tier", None) if meta else None
-
-                metrics = getattr(r, "metrics", {}) or {}
-                node_id = getattr(r, "node_id", None) or metrics.get("node_id")
-                model = metrics.get("model_used") or metrics.get("model")
-                cost = metrics.get("cost")
-                retries = int(metrics.get("retries", 0) or 0)
-                input_keys = metrics.get("input_keys")
-                output_keys = metrics.get("output_keys")
-                input_digest = metrics.get("input_digest")
-                output_digest = metrics.get("output_digest")
-
-                await conn.execute(
-                    """
-                    INSERT INTO atom_runs
-                      (run_id, task_id, template_slug, seq, atom, node_id,
-                       tier, model, latency_ms, cost, retries, status,
-                       input_digest, output_digest, input_keys, output_keys,
-                       metrics)
-                    VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11,
-                            $12, $13, $14, $15, $16, $17::jsonb)
-                    """,
-                    run_id, task_id, template_slug, seq, atom, node_id,
-                    tier, model, int(getattr(r, "elapsed_ms", 0) or 0),
-                    cost, retries, _status_of(r),
-                    input_digest, output_digest,
-                    list(input_keys) if input_keys is not None else None,
-                    list(output_keys) if output_keys is not None else None,
-                    json.dumps(metrics, default=str),
+                await _write_row(
+                    conn,
+                    run_id=run_id,
+                    task_id=task_id,
+                    template_slug=template_slug,
+                    seq=seq,
+                    record=r,
+                    catalog=catalog,
                 )
                 written += 1
     except Exception as exc:  # noqa: BLE001
@@ -189,4 +281,9 @@ async def record_atom_run_outcome(
         return 0
 
 
-__all__ = ["digest_keys", "persist_atom_runs", "record_atom_run_outcome"]
+__all__ = [
+    "digest_keys",
+    "persist_atom_runs",
+    "persist_one_atom_run",
+    "record_atom_run_outcome",
+]

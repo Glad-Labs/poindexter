@@ -675,6 +675,10 @@ class TemplateRunRecord:
     # Graph node id (architect/graph_def composition). None for legacy
     # stage nodes that don't carry a distinct id (atom-cutover #355).
     node_id: str | None = None
+    # Bounded, readable snapshot of the node's changed output values, for the
+    # console task-trace (atom_runs.output_preview). None on records written by
+    # paths that don't capture it (e.g. dev_diary narrate_bundle).
+    output_preview: str | None = None
 
 
 @dataclass
@@ -788,14 +792,26 @@ def make_stage_node(
         # deleted the module global; callers thread the instance instead.)
         node_site_config: SiteConfig | None = context.get("site_config")
 
+        # Lazy import (pipeline_architect ⇄ template_runner import cycle — pa
+        # imports this module inside _wrap_atom; both are fully loaded by
+        # node-execution time). _emit_record routes every stage record through
+        # the incremental-persist notify when the sink is a _RecordingSink, so
+        # stage.* nodes join the live + partial-on-kill trace alongside atoms.
+        from services.pipeline_architect import (
+            _emit_record,
+            _preview,
+            _preview_max_bytes,
+        )
+
         cfg = await PluginConfig.load(pool, "stage", name)
         if not cfg.enabled:
             logger.info("template_runner: stage %r disabled — skipping", name)
             if record_sink is not None:
-                record_sink.append(
+                await _emit_record(
+                    record_sink,
                     TemplateRunRecord(
                         name=name, ok=True, detail="disabled", skipped=True,
-                    )
+                    ),
                 )
             await _emit_progress(
                 pool,
@@ -837,12 +853,13 @@ def make_stage_node(
             NODE_DURATION_SECONDS.labels(node=name, outcome="timeout").observe(elapsed / 1000.0)
             logger.exception("template_runner: stage %r timed out after %ds", name, timeout)
             if record_sink is not None:
-                record_sink.append(
+                await _emit_record(
+                    record_sink,
                     TemplateRunRecord(
                         name=name, ok=False,
                         detail=f"timed out after {timeout}s",
                         halted=halts, elapsed_ms=elapsed,
-                    )
+                    ),
                 )
             await _emit_progress(
                 pool,
@@ -874,12 +891,13 @@ def make_stage_node(
             NODE_DURATION_SECONDS.labels(node=name, outcome="error").observe(elapsed / 1000.0)
             logger.exception("template_runner: stage %r raised: %s", name, exc)
             if record_sink is not None:
-                record_sink.append(
+                await _emit_record(
+                    record_sink,
                     TemplateRunRecord(
                         name=name, ok=False,
                         detail=f"raised {type(exc).__name__}: {exc}",
                         halted=halts, elapsed_ms=elapsed,
-                    )
+                    ),
                 )
             await _emit_progress(
                 pool,
@@ -918,12 +936,18 @@ def make_stage_node(
         ).observe(elapsed / 1000.0)
 
         if record_sink is not None:
-            record_sink.append(
+            await _emit_record(
+                record_sink,
                 TemplateRunRecord(
                     name=name, ok=result.ok, detail=result.detail,
                     halted=halted, elapsed_ms=elapsed,
                     metrics=dict(result.metrics or {}),
-                )
+                    output_preview=_preview(
+                        updates,
+                        sorted(str(k) for k in updates.keys()),
+                        _preview_max_bytes(node_site_config),
+                    ),
+                ),
             )
 
         if halted:
@@ -1214,9 +1238,17 @@ class TemplateRunner:
         # Lazy import to avoid module-load cycle: pipeline_templates.__init__
         # imports adapters from here, here imports from there → cycle if
         # done at top level.
+        from services.pipeline_architect import _RecordingSink
         from services.pipeline_templates import TEMPLATES, load_active_graph_def
 
-        records: list[TemplateRunRecord] = []
+        # A _RecordingSink is a drop-in list that also fires an async
+        # on_record(seq, record) per append (via append_and_notify, which the
+        # node adapters call), so each node's atom_runs row is persisted the
+        # instant it lands — a live trace, and a partial trail if the run is
+        # killed mid-graph. The on_record callback is attached below, once
+        # thread_id (== run_id) is finalized. The end-of-run batch stays as an
+        # idempotent safety net (it upserts the same (run_id, seq) rows).
+        records: list[TemplateRunRecord] = _RecordingSink()
 
         # Cutover seam (#355 Plan 4): prefer the DB-stored graph_def
         # (compiled by build_graph_from_spec) when the operator has enabled
@@ -1296,6 +1328,31 @@ class TemplateRunner:
             or str(initial_state.get("task_id") or "")
             or template_slug
         )
+
+        # Now that run_id (== thread_id) is known, attach the incremental-persist
+        # callback to the sink. It fires per node during ainvoke (below), writing
+        # one atom_runs row as each node completes — so the console task-trace
+        # sees a run live and a killed run keeps its finished nodes. Guarded by
+        # atom_runs_capture_enabled inside persist_one_atom_run; a persist error
+        # is swallowed in append_and_notify, so capture never breaks the run.
+        if isinstance(records, _RecordingSink):
+            _trace_run_id = thread_id
+            _trace_task_id = str(initial_state.get("task_id") or "") or None
+
+            async def _persist_record(seq: int, rec: TemplateRunRecord) -> None:
+                from services.atom_runs import persist_one_atom_run
+
+                await persist_one_atom_run(
+                    self._pool,
+                    run_id=_trace_run_id,
+                    task_id=_trace_task_id,
+                    template_slug=template_slug,
+                    seq=seq,
+                    record=rec,
+                    site_config=self._site_config,
+                )
+
+            records.set_on_record(_persist_record)
 
         logger.info(
             "[template_runner] running template=%r thread_id=%r initial_keys=%s",
