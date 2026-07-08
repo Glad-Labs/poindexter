@@ -455,6 +455,9 @@ _BRAIN_REQUIRED_MODULES: tuple[tuple[str, str, str], ...] = (
     ("_HAS_DATA_FRESHNESS_PROBE", "brain/data_freshness_probe.py",
      "Data-feed dead-man's switch offline — dashboards can serve stale data "
      "silently (incl. the iCUE corsair_csv sensor feed, #868)"),
+    ("_HAS_CLOCK_SKEW_PROBE", "brain/clock_skew_probe.py",
+     "DB wall-clock skew detection offline — a WSL2 sleep/resume clock "
+     "excursion can silently poison every DB timestamp undetected (#2212)"),
     ("_HAS_PR_STALENESS_PROBE", "brain/pr_staleness_probe.py",
      "Stale PR detection offline — agent PRs sit unmerged forever"),
     ("_HAS_DISCORD_BOT_PROBE", "brain/discord_bot_probe.py",
