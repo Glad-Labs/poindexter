@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-07-07.**  
+> **Auto-generated from live `app_settings` table on 2026-07-08.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 720 active rows across 58 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 14 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -415,7 +415,7 @@ The worker re-reads on every poll; no restart needed.
 | `ollama_client_timeout_seconds` | `1500` |  |  |
 | `openclaw_gateway_url` | `http://localhost:18789` |  | OpenClaw gateway URL |
 | `operator_id` | `operator` |  | Default operator ID |
-| `operator_url_probe_skip_keys` | `gitea_url,google_sitemap_ping_url,ind...` |  |  |
+| `operator_url_probe_skip_keys` | `gitea_url,mcp_http_probe_base_url,oau...` |  |  |
 | `owner_email` | `` |  | Site owner email |
 | `owner_name` | `*(per-operator)*` | per-operator | Site owner display name |
 | `pexels_api_base` | `https://api.pexels.com/v1` |  | Auto-seeded by services.settings_defaults (#379) |
