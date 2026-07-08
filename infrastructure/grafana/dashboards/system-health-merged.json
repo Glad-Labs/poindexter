@@ -2631,6 +2631,67 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 730,
+      "title": "DB clock skew (seconds)",
+      "description": "poindexter-postgres-local clock_timestamp() minus an external UTC reference (HTTP Date header), sampled every 5-min brain cycle by brain/clock_skew_probe.py. Healthy is ~0; |skew| > clock_skew_threshold_seconds (default 120s, red line) pages a db_clock_skew finding. Gaps = reference unreachable (status='unknown'). See docs/operations/db-clock-skew.md.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 315
+      },
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "thresholdsStyle": {
+              "mode": "line"
+            }
+          },
+          "unit": "s",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "green", "value": null },
+              { "color": "red", "value": 120 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT sampled_at AS time, skew_seconds AS \"skew (s)\" FROM clock_skew_samples WHERE $__timeFilter(sampled_at) AND skew_seconds IS NOT NULL ORDER BY sampled_at",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "refresh": "30s",

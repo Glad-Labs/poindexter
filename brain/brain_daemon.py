@@ -310,6 +310,24 @@ except ImportError:  # pragma: no cover — package-qualified path
         _HAS_DATA_FRESHNESS_PROBE = False
 
 try:
+    # DB wall-clock skew probe (2026-07-08 investigation). Compares postgres
+    # clock_timestamp() to an external UTC reference (HTTP Date header) and
+    # emits an edge-triggered `db_clock_skew` finding (critical -> Telegram)
+    # when |skew| exceeds clock_skew_threshold_seconds. Catches transient WSL2
+    # CLOCK_REALTIME excursions on host sleep/resume that silently poison every
+    # DB timestamp. External-absolute reference (the probe's own clock shares
+    # the same VM clock and would be blind); degrades to `unknown` with no page
+    # when the reference is unreachable. See brain/clock_skew_probe.py.
+    from clock_skew_probe import run_clock_skew_probe
+    _HAS_CLOCK_SKEW_PROBE = True
+except ImportError:  # pragma: no cover — package-qualified path
+    try:
+        from brain.clock_skew_probe import run_clock_skew_probe
+        _HAS_CLOCK_SKEW_PROBE = True
+    except ImportError:
+        _HAS_CLOCK_SKEW_PROBE = False
+
+try:
     # PR staleness probe — every cycle, pull open PRs from GitHub and
     # flag any that have been sitting >24h with green CI but no merge.
     # Catches the "agent shipped a PR and the operator forgot" failure
@@ -2930,6 +2948,24 @@ async def run_cycle(pool):
             }
         except Exception as e:
             logger.warning("[BRAIN] data_freshness probe failed: %s", e)
+
+    # DB wall-clock skew probe (2026-07-08 investigation). Compares postgres
+    # clock_timestamp() to an external UTC reference and emits an
+    # edge-triggered `db_clock_skew` finding (critical -> Telegram) when the DB
+    # clock drifts off real time — the transient WSL2 CLOCK_REALTIME excursion
+    # class (host sleep/resume) that silently poisons every DB timestamp and
+    # broke a real-time correlation the day it happened. Degrades to `unknown`
+    # (no page) when the reference is unreachable. See brain/clock_skew_probe.py.
+    if _HAS_CLOCK_SKEW_PROBE:
+        try:
+            cs_summary = await run_clock_skew_probe(pool)
+            probe_results["clock_skew"] = {
+                "ok": bool(cs_summary.get("ok", False)),
+                "detail": cs_summary.get("detail", ""),
+                "summary": cs_summary,
+            }
+        except Exception as e:
+            logger.warning("[BRAIN] clock_skew probe failed: %s", e)
 
     # GlitchTip triage probe — pulls open issues every cycle, auto-resolves
     # known noise per glitchtip_triage_auto_resolve_patterns, and pages on

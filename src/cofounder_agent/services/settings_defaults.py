@@ -1359,6 +1359,12 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.anomaly.fallback': 'discord',
     'findings.anomaly.cooldown_minutes': '60',
     'findings.anomaly.min_severity': 'critical',
+    # db_clock_skew: a wrong DB wall-clock corrupts every timestamp and all
+    # real-time correlation — page it like anomaly (telegram/critical).
+    'findings.db_clock_skew.delivery': 'telegram',
+    'findings.db_clock_skew.fallback': 'discord',
+    'findings.db_clock_skew.cooldown_minutes': '60',
+    'findings.db_clock_skew.min_severity': 'critical',
     'findings.quality_regression.delivery': 'github_issue',
     'findings.quality_regression.fallback': 'discord',
     'findings.quality_regression.cooldown_minutes': '1440',
@@ -1592,6 +1598,23 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
         ' "column": "sampled_at", "threshold_minutes": 120,'
         ' "filter_column": "source", "filter_value": "corsair_csv"}]'
     ),
+
+    # ----- DB wall-clock skew probe (2026-07-08 investigation) -----
+    # brain/clock_skew_probe.py compares postgres clock_timestamp() to an
+    # external UTC reference (the HTTP Date header from clock_skew_reference_url)
+    # and emits an edge-triggered db_clock_skew finding (critical -> Telegram)
+    # when |skew| exceeds the threshold. Catches transient WSL2 CLOCK_REALTIME
+    # excursions on host sleep/resume that silently poison every DB timestamp.
+    # External-absolute (NOT the probe's own clock — it shares the same VM clock
+    # and would be blind to a VM-wide jump); degrades to 'unknown' with no page
+    # when the reference is unreachable, so it never false-pages on a normal
+    # resume. See docs/operations/db-clock-skew.md.
+    'clock_skew_probe_enabled': 'true',
+    'clock_skew_reference_url': 'https://www.cloudflare.com',
+    'clock_skew_threshold_seconds': '120',
+    'clock_skew_severity': 'critical',
+    'clock_skew_renotify_minutes': '60',
+    'clock_skew_sample_retention_days': '30',
 
     # ----- Content-flow concurrency cap (Glad-Labs/poindexter#578) -----
     # The native Prefect work-pool concurrency limit caps how many
