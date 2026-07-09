@@ -9,8 +9,16 @@ Config keys (from the ``config`` JSONB column on the retention_policies row):
 - ``source_table`` (str, required) — embeddings.source_table discriminator.
 - ``age_days`` (int, default 90) — candidate rows older than this are
   eligible.
-- ``cluster_size`` (int, default 8) — target rows per cluster (k-means k
-  is adjusted down for small candidate sets).
+- ``cluster_size`` (int, default 8) — target rows per cluster. Cluster
+  *count* scales with the candidate pool (``k ~= candidates / cluster_size``,
+  floored at 2), so a high-volume source doesn't collapse down to a
+  handful of giant, mostly-lossy clusters. See ``_choose_cluster_count``.
+- ``batch_size`` (int, default 500) — max candidate rows fetched per run
+  (oldest-first). Bounds both memory and the number of LLM summarization
+  calls a single run can trigger (~batch_size / cluster_size clusters);
+  a source with a large backlog catches up incrementally across runs
+  instead of clustering everything in one pass. Same pattern as
+  ``embeddings_orphan_prune``'s ``batch_size``.
 - ``summary_provider`` (str, default "ollama") — "ollama" calls the local
   budget-tier model; anything else uses the joined-preview fallback.
 - ``summary_timeout_s`` (int, default 60) — per-cluster LLM timeout.
@@ -24,6 +32,7 @@ Returns: {
     "summarized":   int,   # summary rows written
     "source_table": str,
     "clusters":     int,   # clusters that produced a summary
+    "batch_size":   int,   # candidate-fetch cap that was in effect
 }
 
 ## Clustering
@@ -64,6 +73,8 @@ from typing import Any
 from services.integrations.registry import register_handler
 
 logger = logging.getLogger(__name__)
+
+_DEFAULT_BATCH_SIZE = 500
 
 
 # ---------------------------------------------------------------------------
@@ -119,6 +130,23 @@ def _vector_literal(v: Sequence[float]) -> str:
 # ---------------------------------------------------------------------------
 # K-means clustering
 # ---------------------------------------------------------------------------
+
+
+def _choose_cluster_count(n: int, cluster_size: int) -> int:
+    """Cluster count for ``n`` candidates targeting ~``cluster_size`` rows each.
+
+    Scales with volume: doubling ``n`` roughly doubles the cluster count,
+    keeping average cluster size near ``cluster_size`` regardless of how
+    large the candidate pool is. Floored at 2 (kmeans_cluster itself caps
+    ``k`` back down to ``n`` for tiny pools). A prior version capped
+    ``k`` at ``cluster_size`` directly — fine for small pools, but for a
+    large pool it silently forced everything into ``cluster_size`` giant
+    clusters instead of ``~n / cluster_size`` right-sized ones.
+    """
+    if n <= 0:
+        return 0
+    size = max(1, cluster_size)
+    return max(2, n // size)
 
 
 def kmeans_cluster(
@@ -482,6 +510,7 @@ async def embeddings_collapse(
 
     age_days = int(config.get("age_days") or 90)
     cluster_size = int(config.get("cluster_size") or 8)
+    batch_size = int(config.get("batch_size") or _DEFAULT_BATCH_SIZE)
     summary_provider = str(config.get("summary_provider") or "ollama").strip().lower()
     summary_timeout_s = int(config.get("summary_timeout_s") or 60)
 
@@ -498,7 +527,9 @@ async def embeddings_collapse(
 
     cutoff = datetime.now(timezone.utc) - timedelta(days=max(0, age_days))
 
-    # Fetch old raw rows.
+    # Fetch old raw rows. Oldest-first + LIMIT so a large backlog is worked
+    # off incrementally across runs instead of loading (and clustering)
+    # the entire eligible set in one pass.
     async with pool.acquire() as conn:
         rows = await conn.fetch(
             """
@@ -509,9 +540,11 @@ async def embeddings_collapse(
               AND created_at < $2
               AND is_summary = FALSE
             ORDER BY created_at ASC
+            LIMIT $3
             """,
             source_table,
             cutoff,
+            batch_size,
         )
 
     if len(rows) < 2:
@@ -519,7 +552,10 @@ async def embeddings_collapse(
             "[retention.embeddings_collapse] %s: only %d candidates — skip",
             row.get("name"), len(rows),
         )
-        return {"deleted": 0, "summarized": 0, "source_table": source_table, "clusters": 0}
+        return {
+            "deleted": 0, "summarized": 0, "source_table": source_table,
+            "clusters": 0, "batch_size": batch_size,
+        }
 
     # Parse vectors; skip rows with missing/malformed embeddings.
     parsed: list[dict[str, Any]] = []
@@ -535,9 +571,12 @@ async def embeddings_collapse(
             "embedding_model": r["embedding_model"],
         })
     if len(parsed) < 2:
-        return {"deleted": 0, "summarized": 0, "source_table": source_table, "clusters": 0}
+        return {
+            "deleted": 0, "summarized": 0, "source_table": source_table,
+            "clusters": 0, "batch_size": batch_size,
+        }
 
-    k = min(cluster_size, max(2, len(parsed) // 2))
+    k = _choose_cluster_count(len(parsed), cluster_size)
     vectors = [p["embedding"] for p in parsed]
     assignments, centroids = kmeans_cluster(vectors, k)
 
@@ -616,12 +655,15 @@ async def embeddings_collapse(
         total_deleted += deleted
 
     logger.info(
-        "[retention.embeddings_collapse] %s: summarized=%d deleted=%d clusters=%d",
+        "[retention.embeddings_collapse] %s: summarized=%d deleted=%d clusters=%d "
+        "(candidates=%d, batch_size=%d)",
         row.get("name"), total_summarized, total_deleted, total_clusters,
+        len(parsed), batch_size,
     )
     return {
         "deleted": total_deleted,
         "summarized": total_summarized,
         "source_table": source_table,
         "clusters": total_clusters,
+        "batch_size": batch_size,
     }

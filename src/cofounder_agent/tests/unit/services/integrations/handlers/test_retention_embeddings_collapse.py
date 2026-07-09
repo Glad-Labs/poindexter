@@ -79,6 +79,8 @@ class _RecordingConn:
         return _TxCtx(self)
 
     async def fetch(self, query: str, *args: Any) -> list[dict[str, Any]]:
+        self.pool.last_fetch_query = query
+        self.pool.last_fetch_args = args
         if "FROM embeddings" in query and "source_table = $1" in query:
             return list(self.pool.candidate_rows)
         return []
@@ -142,6 +144,8 @@ class FakePool:
         self.inserted: list[dict[str, Any]] = []
         self.deleted_ids: list[int] = []
         self.insert_attempts = 0
+        self.last_fetch_query: str = ""
+        self.last_fetch_args: tuple[Any, ...] = ()
 
     def acquire(self) -> _AcquireCtx:
         return _AcquireCtx(self)
@@ -211,7 +215,8 @@ async def test_empty_candidates_returns_zeros():
 
 @pytest.mark.asyncio
 async def test_two_clusters_writes_summaries_and_deletes_originals():
-    """8 rows in two clear directions → 2 summary writes + 8 deletes."""
+    """8 rows in two clear directions, cluster_size=4 (target rows/cluster)
+    → 8 // 4 = 2 clusters → 2 summary writes + 8 deletes."""
     from services.integrations.handlers.retention_embeddings_collapse import (
         embeddings_collapse,
     )
@@ -219,7 +224,7 @@ async def test_two_clusters_writes_summaries_and_deletes_originals():
     low = [_embedding_row(i, f"low-{i}", _vec("A", jitter=i * 0.001)) for i in range(4)]
     high = [_embedding_row(10 + i, f"high-{i}", _vec("B", jitter=i * 0.001)) for i in range(4)]
     pool = FakePool(candidate_rows=low + high)
-    row = _make_row(source_table="claude_sessions", cluster_size=2)
+    row = _make_row(source_table="claude_sessions", cluster_size=4)
 
     result = await embeddings_collapse(None, site_config=None, row=row, pool=pool)
 
@@ -227,11 +232,101 @@ async def test_two_clusters_writes_summaries_and_deletes_originals():
     assert result["deleted"] == 8
     assert result["clusters"] == 2
     assert result["source_table"] == "claude_sessions"
+    assert result["batch_size"] == 500  # default, not overridden in _make_row
     assert len(pool.inserted) == 2
     for summary in pool.inserted:
         meta = json.loads(summary["metadata"])
         assert meta["is_summary"] is True
         assert meta["collapsed_count"] >= 2
+
+
+@pytest.mark.asyncio
+async def test_cluster_count_scales_with_volume_not_capped_at_cluster_size():
+    """poindexter regression: cluster COUNT must grow with the candidate
+    pool for a fixed cluster_size, not clamp at cluster_size forever.
+
+    40 rows (20 low + 20 high), cluster_size=4 → expect ~10 clusters
+    (40 // 4), never the old buggy behaviour of capping at cluster_size=4
+    total clusters regardless of how many rows exist.
+    """
+    from services.integrations.handlers.retention_embeddings_collapse import (
+        embeddings_collapse,
+    )
+
+    low = [_embedding_row(i, f"low-{i}", _vec("A", jitter=i * 0.0001)) for i in range(20)]
+    high = [_embedding_row(100 + i, f"high-{i}", _vec("B", jitter=i * 0.0001)) for i in range(20)]
+    pool = FakePool(candidate_rows=low + high)
+    row = _make_row(source_table="claude_sessions", cluster_size=4)
+
+    result = await embeddings_collapse(None, site_config=None, row=row, pool=pool)
+
+    assert result["clusters"] > 4  # old formula would have clamped to 4
+    assert result["deleted"] == 40
+    # every original row must have landed in exactly one surviving summary
+    assert sum(
+        json.loads(s["metadata"])["collapsed_count"] for s in pool.inserted
+    ) == 40
+
+
+@pytest.mark.asyncio
+async def test_batch_size_limits_candidate_fetch():
+    """config.batch_size must reach the SQL LIMIT clause, and the returned
+    dict must echo it back for observability."""
+    from services.integrations.handlers.retention_embeddings_collapse import (
+        embeddings_collapse,
+    )
+
+    low = [_embedding_row(i, f"low-{i}", _vec("A", jitter=i * 0.001)) for i in range(4)]
+    high = [_embedding_row(10 + i, f"high-{i}", _vec("B", jitter=i * 0.001)) for i in range(4)]
+    pool = FakePool(candidate_rows=low + high)
+    row = _make_row(source_table="claude_sessions", cluster_size=4, batch_size=250)
+
+    result = await embeddings_collapse(None, site_config=None, row=row, pool=pool)
+
+    assert result["batch_size"] == 250
+    assert pool.last_fetch_args[-1] == 250
+    assert "LIMIT $3" in pool.last_fetch_query
+
+
+@pytest.mark.asyncio
+async def test_batch_size_defaults_when_unset():
+    from services.integrations.handlers.retention_embeddings_collapse import (
+        _DEFAULT_BATCH_SIZE,
+        embeddings_collapse,
+    )
+
+    pool = FakePool(candidate_rows=[])
+    row = _make_row(source_table="claude_sessions", cluster_size=4)
+    row["config"].pop("batch_size", None)
+
+    result = await embeddings_collapse(None, site_config=None, row=row, pool=pool)
+
+    assert result["batch_size"] == _DEFAULT_BATCH_SIZE
+
+
+# ---------------------------------------------------------------------------
+# _choose_cluster_count — pure function
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("n", "cluster_size", "expected"),
+    [
+        (0, 8, 0),
+        (1, 8, 2),  # caller never invokes with n<2; floors at 2 if it did
+        (8, 8, 2),  # small pool floors at 2, matching prior small-N behaviour
+        (16, 8, 2),
+        (40, 4, 10),  # scales with volume — the regression this whole fix is for
+        (4000, 8, 500),
+        (10, 0, 10),  # degenerate cluster_size=0 clamps to 1 (no ZeroDivisionError)
+    ],
+)
+def test_choose_cluster_count(n, cluster_size, expected):
+    from services.integrations.handlers.retention_embeddings_collapse import (
+        _choose_cluster_count,
+    )
+
+    assert _choose_cluster_count(n, cluster_size) == expected
 
 
 @pytest.mark.asyncio
