@@ -995,7 +995,18 @@ function App() {
         pushToast(`Reject failed — ${err.message}`, 'red', '✕');
       }
     },
-    launch: (t) => pushToast(`Opening ${t.name}…`, 'cyan', '↗'),
+    launch: (t) => {
+      if (t && t.url && t.url !== '#') {
+        window.open(t.url, '_blank', 'noopener,noreferrer');
+        pushToast(`Opening ${t.name}…`, 'cyan', '↗');
+      } else {
+        pushToast(
+          `${(t && t.name) || 'Tool'} has no URL configured`,
+          'amber',
+          '⚠'
+        );
+      }
+    },
     // Open the REAL tap-to-join URL (operator config, fetched from
     // app_settings.voice_agent_public_join_url — never hardcoded). Honest
     // toast when it's unset rather than faking a connection.
@@ -1528,11 +1539,7 @@ function App() {
                 />
               </div>
               <div id="sec-launch">
-                <LauncherPanel
-                  tools={PX.launcher}
-                  onLaunch={A.launch}
-                  onVoice={A.voice}
-                />
+                <LauncherPanel tools={PX.launcher} onVoice={A.voice} />
               </div>
               <div id="sec-audit">
                 <AuditFeed

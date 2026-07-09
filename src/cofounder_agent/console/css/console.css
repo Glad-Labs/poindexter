@@ -1397,6 +1397,7 @@ button {
   cursor: pointer;
   padding: 9px 12px;
   text-align: left;
+  text-decoration: none;
   transition: background 0.12s ease;
 }
 .launch-tile:hover {

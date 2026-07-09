@@ -60,9 +60,15 @@
     base: LS.getItem('px_base') ?? '',
     // Prometheus is a different service/port; GPU + some rates come from here.
     // NOTE: the local stack runs Prometheus on :9091 (not the upstream default :9090).
-    prometheus: LS.getItem('px_prom') ?? 'http://localhost:9091',
-    // Grafana embed base — browser hits /d-solo iframes directly, like prometheus.
-    grafana: LS.getItem('px_grafana') ?? 'http://localhost:3000',
+    // Default to the CURRENT host (not a literal localhost) so the queries resolve
+    // from the tailnet IP too — localhost would point at the viewer's own device.
+    prometheus:
+      LS.getItem('px_prom') ??
+      `http://${(window.location && window.location.hostname) || 'localhost'}:9091`,
+    // Grafana embed/deeplink base — same host-relative default as prometheus.
+    grafana:
+      LS.getItem('px_grafana') ??
+      `http://${(window.location && window.location.hostname) || 'localhost'}:3000`,
     // OAuth2 client-credentials. Static Bearer was removed in #249 — every
     // request now rides a short-lived JWT minted from POST /token. Provision a
     // dedicated client with `poindexter auth register-client --name

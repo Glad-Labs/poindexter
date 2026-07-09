@@ -1108,7 +1108,7 @@ function QAPanel({ qa, onOpen }) {
 }
 
 /* ─── Sub-tool launcher + voice ─────────────────────────────── */
-function LauncherPanel({ tools, onLaunch, onVoice }) {
+function LauncherPanel({ tools, onVoice }) {
   return (
     <Panel icon="bolt" title="LAUNCH" meta="EXTERNAL TOOLS" flush>
       <button className="voice-cta" onClick={onVoice}>
@@ -1123,10 +1123,12 @@ function LauncherPanel({ tools, onLaunch, onVoice }) {
       </button>
       <div className="launch-grid">
         {tools.map((t) => (
-          <button
+          <a
             key={t.name}
             className="launch-tile"
-            onClick={() => onLaunch(t)}
+            href={t.url || '#'}
+            target="_blank"
+            rel="noopener noreferrer"
           >
             <span
               className={`svc__led ${{ ok: 'led-ok', warn: 'led-warn', err: 'led-err' }[t.status] || 'led-off'}`}
@@ -1134,7 +1136,7 @@ function LauncherPanel({ tools, onLaunch, onVoice }) {
             <span className="launch-tile__name">{t.name}</span>
             <span className="launch-tile__sub">{t.sub}</span>
             <Icon name="link" size={12} className="launch-tile__arr" />
-          </button>
+          </a>
         ))}
       </div>
     </Panel>

@@ -1061,18 +1061,30 @@
   ];
 
   // ── Sub-tool launcher (Mission Control link registry) ───────
-  const launcher = [
-    { name: 'Prefect', sub: 'orchestration', url: '#', status: 'err' },
-    { name: 'Langfuse', sub: 'LLM traces', url: '#', status: 'ok' },
-    { name: 'GlitchTip', sub: 'errors', url: '#', status: 'ok' },
-    { name: 'Grafana', sub: 'deep metrics', url: '#', status: 'ok' },
-    { name: 'Pyroscope', sub: 'profiling', url: '#', status: 'ok' },
-    { name: 'pgAdmin', sub: 'database', url: '#', status: 'ok' },
-    { name: 'Prometheus', sub: 'metrics', url: '#', status: 'ok' },
-    { name: 'Tempo', sub: 'tracing', url: '#', status: 'ok' },
-    { name: 'Loki', sub: 'logs', url: '#', status: 'ok' },
-    { name: 'Uptime Kuma', sub: 'uptime', url: '#', status: 'ok' },
-  ];
+  // Same-host, different-port: the operator reaches the console AND these tools
+  // at the same hostname on different ports, so each URL is built from the
+  // CURRENT host + the compose port. That keeps the links working from every
+  // access context (localhost on the machine, or a private-network IP / DNS name)
+  // instead of a dead literal localhost. (Ports are the stack's compose defaults;
+  // an operator who remaps them or fronts a tool with a reverse proxy would
+  // override these — a future app_settings-backed launcher registry.)
+  const launcher = ((h) => [
+    { name: 'Prefect', sub: 'orchestration', url: `http://${h}:4200` },
+    { name: 'Langfuse', sub: 'LLM traces', url: `http://${h}:3010` },
+    { name: 'GlitchTip', sub: 'errors', url: `http://${h}:8080` },
+    { name: 'Grafana', sub: 'deep metrics', url: `http://${h}:3000` },
+    { name: 'Pyroscope', sub: 'profiling', url: `http://${h}:4040` },
+    { name: 'pgAdmin', sub: 'database', url: `http://${h}:18443` },
+    { name: 'Prometheus', sub: 'metrics', url: `http://${h}:9091` },
+    { name: 'Tempo', sub: 'tracing', url: `http://${h}:3200` },
+    { name: 'Loki', sub: 'logs', url: `http://${h}:3100` },
+    { name: 'Uptime Kuma', sub: 'uptime', url: `http://${h}:3002` },
+  ])(
+    (typeof window !== 'undefined' &&
+      window.location &&
+      window.location.hostname) ||
+      'localhost'
+  );
 
   // media items injected into the Action Inbox (human-gated)
   const mediaInbox = [
