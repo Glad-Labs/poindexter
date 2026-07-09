@@ -427,7 +427,18 @@ function PipelinePanel({ pipeline, onOpen, onOpenTask, onRetry }) {
           ))}
         </div>
       </div>
-      <table className="tbl">
+      {/* Fixed layout + colgroup so the table always fits its masonry column:
+          the Topic/Stage truncate cells ellipsize within their share instead of
+          forcing the table wider than the column (which spilled into the next
+          column when both were long). */}
+      <table className="tbl tbl--fixed">
+        <colgroup>
+          <col style={{ width: '16%' }} />
+          <col style={{ width: '39%' }} />
+          <col style={{ width: '27%' }} />
+          <col style={{ width: '9%' }} />
+          <col style={{ width: '9%' }} />
+        </colgroup>
         <thead>
           <tr>
             <th>Task</th>

@@ -848,6 +848,18 @@ button {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+/* Fixed layout keeps a table within its container (e.g. a masonry column):
+   columns take their colgroup share and truncate cells ellipsize instead of
+   the table growing to content min-width and spilling into the next column. */
+.tbl--fixed {
+  table-layout: fixed;
+}
+.tbl--fixed td,
+.tbl--fixed th {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 /* ─── Terminal / log feed ───────────────────────────────────── */
 .feed {
