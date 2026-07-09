@@ -1068,18 +1068,27 @@
   // instead of a dead literal localhost. (Ports are the stack's compose defaults;
   // an operator who remaps them or fronts a tool with a reverse proxy would
   // override these — a future app_settings-backed launcher registry.)
-  const launcher = ((h) => [
-    { name: 'Prefect', sub: 'orchestration', url: `http://${h}:4200` },
-    { name: 'Langfuse', sub: 'LLM traces', url: `http://${h}:3010` },
-    { name: 'GlitchTip', sub: 'errors', url: `http://${h}:8080` },
-    { name: 'Grafana', sub: 'deep metrics', url: `http://${h}:3000` },
-    { name: 'Pyroscope', sub: 'profiling', url: `http://${h}:4040` },
-    { name: 'pgAdmin', sub: 'database', url: `http://${h}:18443` },
-    { name: 'Prometheus', sub: 'metrics', url: `http://${h}:9091` },
-    { name: 'Tempo', sub: 'tracing', url: `http://${h}:3200` },
-    { name: 'Loki', sub: 'logs', url: `http://${h}:3100` },
-    { name: 'Uptime Kuma', sub: 'uptime', url: `http://${h}:3002` },
-  ])(
+  const launcher = ((h) => {
+    const grafana = `http://${h}:3000`;
+    // Loki (:3100) and Tempo (:3200) are storage backends with no browsable UI of
+    // their own, and Kuma's own :3002 UI serves an empty reply. All three are
+    // surfaced in Grafana's merged Observability board (rows: Logs/Loki,
+    // Tracing/Tempo, Uptime/Kuma), which renders for an anonymous Viewer. Grafana
+    // Explore is NOT usable here -- it redirects anonymous Viewers to sign-in.
+    const observability = `${grafana}/d/observability-merged/observability`;
+    return [
+      { name: 'Prefect', sub: 'orchestration', url: `http://${h}:4200` },
+      { name: 'Langfuse', sub: 'LLM traces', url: `http://${h}:3010` },
+      { name: 'GlitchTip', sub: 'errors', url: `http://${h}:8080` },
+      { name: 'Grafana', sub: 'deep metrics', url: grafana },
+      { name: 'Pyroscope', sub: 'profiling', url: `http://${h}:4040` },
+      { name: 'pgAdmin', sub: 'database', url: `http://${h}:18443` },
+      { name: 'Prometheus', sub: 'metrics', url: `http://${h}:9091` },
+      { name: 'Tempo', sub: 'tracing (Grafana)', url: observability },
+      { name: 'Loki', sub: 'logs (Grafana)', url: observability },
+      { name: 'Uptime Kuma', sub: 'uptime (Grafana)', url: observability },
+    ];
+  })(
     (typeof window !== 'undefined' &&
       window.location &&
       window.location.hostname) ||
