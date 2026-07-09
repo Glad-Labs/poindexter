@@ -396,3 +396,66 @@ def test_operator_leak_patterns_overlay_is_stripped() -> None:
         f"{shipping}. Verify the _STRIP_FILES entries and that no _LEAK_GUARD_ALLOW "
         "entry re-exempts them."
     )
+
+
+# ---------------------------------------------------------------------------
+# Operator console (2026-07-09) — STRIPPED from the mirror but STILL SCANNED.
+#
+# The operator console SPA (src/cofounder_agent/console/) is a Pro-tier overlay
+# stripped from the public mirror by sync-to-github.sh (#2137 — verified 404 on
+# Glad-Labs/poindexter). Unlike every other stripped tree it is deliberately NOT
+# in _STRIP_DIR_PREFIXES: would_ship() stays True for it so the leak guard keeps
+# scanning the console — defense-in-depth on the operator UI, the most
+# operator-context-heavy tree (it caught a hardcoded Tailnet IP in a launcher
+# comment, #2227). That is the safe ship=no/scan=yes asymmetry.
+#
+# Because the console lives only on the sync side (not in _STRIP_*), the general
+# drift invariants above — which iterate _STRIP_FILES / _STRIP_DIR_PREFIXES —
+# don't cover its strip. These two tests pin BOTH halves explicitly: the sync
+# really strips it (so it can't silently regress to shipping) AND the guard
+# really scans it (so nobody "aligns the lists" and drops the operator-literal
+# net).
+# ---------------------------------------------------------------------------
+
+_OPERATOR_CONSOLE_DIR = "src/cofounder_agent/console/"
+
+
+def test_sync_script_strips_operator_console() -> None:
+    """sync-to-github.sh must git-rm the operator console (Pro-tier overlay, #2137).
+
+    The console is stripped from the public mirror (verified 404 on
+    Glad-Labs/poindexter). This pins the ``git rm -r`` line so the strip can't be
+    silently deleted: the console is intentionally absent from _STRIP_DIR_PREFIXES
+    (it stays in the guard's scan scope), so the general drift invariant above —
+    which only iterates the strip lists — does not otherwise cover it.
+    """
+    text = (_repo_root() / "scripts" / "sync-to-github.sh").read_text(encoding="utf-8")
+    assert _OPERATOR_CONSOLE_DIR in text, (
+        f"scripts/sync-to-github.sh has no `git rm` line for {_OPERATOR_CONSOLE_DIR}. "
+        "The operator console is a Pro-tier overlay that must NOT ship to the public "
+        "mirror (#2137). Add a `git rm -r --cached` line in the strip block."
+    )
+
+
+def test_console_is_scanned_despite_being_stripped() -> None:
+    """The guard must STILL scan the console even though the sync strips it.
+
+    The console is deliberately absent from _STRIP_DIR_PREFIXES / _STRIP_FILES so
+    would_ship() returns True and scan() opens its .js/.jsx files — defense-in-
+    depth that catches operator literals (e.g. the hardcoded Tailnet IP in #2227)
+    in the operator UI before any strip regression could leak them. Adding the
+    console to a strip list to silence dev-time false-positives would retire that
+    net — this test forbids it. (test_scan_flags_operator_email_in_shipping_js in
+    the frontend-exts suite proves the scan is load-bearing end-to-end.)
+    """
+    for rel in (
+        "src/cofounder_agent/console/js/settings-data.js",
+        "src/cofounder_agent/console/js/app.jsx",
+    ):
+        assert CHECK.would_ship(rel), (
+            f"would_ship({rel!r}) is False — the console has been added to "
+            "_STRIP_DIR_PREFIXES (or _STRIP_FILES), dropping it out of the leak "
+            "guard's scan scope. Keep the console OUT of the strip lists: the sync "
+            "already strips it (test_sync_script_strips_operator_console) and "
+            "scanning it is intentional defense-in-depth."
+        )

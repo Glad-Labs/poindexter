@@ -114,6 +114,18 @@ _STRIP_DIR_PREFIXES = (
     ".githooks/",
 )
 
+# NOTE — the operator console (``src/cofounder_agent/console/``) is deliberately
+# ABSENT from this tuple even though ``sync-to-github.sh`` git-rm's it (#2137), so
+# it does NOT ship (verified 404 on the mirror; pinned by
+# ``test_sync_script_strips_operator_console``). Leaving it out keeps
+# ``would_ship()`` = True for it, so the leak guard still SCANS the console —
+# defense-in-depth on the operator UI, the most operator-context-heavy tree. This
+# is the SAFE asymmetry (ship=no + scan=yes). Do NOT "align the lists" by adding
+# the console here: that flips ``would_ship()`` to False, drops it out of scan
+# scope, and silently retires the net that catches an operator literal in the UI
+# (e.g. a hardcoded Tailnet IP) before a strip regression could leak it. Pinned by
+# ``test_console_is_scanned_despite_being_stripped``.
+
 
 # Specific files stripped from public. Wildcard with ``*`` is OK
 # (matched via ``fnmatch``).
@@ -603,18 +615,26 @@ def would_ship(rel_path: str) -> bool:
 # accident — and there's no operator-private content in a PNG anyway.
 #
 # Front-end extensions (.js/.jsx/.ts/.tsx/.mjs/.cjs/.css/.html/.vue/.svelte)
-# were ADDED 2026-06-29: the shipping operator console
-# (``src/cofounder_agent/console/``) is all JS/JSX, and ``settings-data.js``
+# were ADDED 2026-06-29: back then the operator console
+# (``src/cofounder_agent/console/``) still SHIPPED, and ``settings-data.js``
 # seeded the operator's personal email + site URL as mock data — live on the
-# public mirror — because the guard never opened ``.js`` files. ``would_ship()``
-# still gates first, so the big STRIPPED front-end trees (web/public-site,
-# web/storefront, packages/) are skipped regardless of extension; only the
-# console + the two Cloudflare Workers actually enter scope. Vendored/minified
-# bundles pulled in by this are skipped via ``_is_vendored_or_minified``.
+# public mirror — because the guard never opened ``.js`` files. The console has
+# since been stripped from the mirror (#2137 — see the git-rm in
+# ``sync-to-github.sh`` and ``test_sync_script_strips_operator_console``), so
+# today these extensions earn their keep two ways: (1) the two Cloudflare Workers
+# (``infrastructure/cloudflare/*/src/index.ts``) genuinely ship, and (2) the
+# console is kept IN scan scope as defense-in-depth — ``would_ship()`` returns
+# True for it even though the sync strips it, so an operator literal added to the
+# operator UI is caught here BEFORE any strip regression could leak it (the safe
+# ship=no/scan=yes asymmetry — see the note on ``_STRIP_DIR_PREFIXES``).
+# ``would_ship()`` still gates first, so the big STRIPPED front-end trees
+# (web/public-site, web/storefront, packages/) are skipped regardless of
+# extension. Vendored/minified bundles are skipped via ``_is_vendored_or_minified``.
 _TEXT_EXTS = frozenset({
     ".py", ".md", ".json", ".yml", ".yaml", ".toml", ".sh",
     ".ps1", ".sql", ".txt", ".cfg", ".ini", ".env",
-    # Front-end family (2026-06-29 audit — operator console ships):
+    # Front-end family (2026-06-29 audit — Cloudflare Workers ship; console
+    # scanned as defense-in-depth though the sync strips it, #2137):
     ".js", ".jsx", ".ts", ".tsx", ".mjs", ".cjs",
     ".css", ".html", ".vue", ".svelte",
 })

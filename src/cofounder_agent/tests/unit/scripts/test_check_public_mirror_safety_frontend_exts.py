@@ -2,11 +2,14 @@
 
 Pins the 2026-06-29 PII audit finding: the leak guard's ``_TEXT_EXTS`` listed
 ``.py/.md/.json/.yml/.toml/.sh/.ps1/.sql/...`` but **no** front-end extensions,
-so every shipping ``.js/.jsx/.ts/.tsx`` file was invisible to ``scan()``. The
-operator console (``src/cofounder_agent/console/``) ships to the public mirror,
-and ``console/js/settings-data.js`` carried the operator's personal email
-(``owner_email``) + site URL as mock data — live on Glad-Labs/poindexter — past
-both the CI gate and the sync-time guard.
+so every shipping ``.js/.jsx/.ts/.tsx`` file was invisible to ``scan()``. Back
+then the operator console (``src/cofounder_agent/console/``) still shipped to the
+public mirror, and ``console/js/settings-data.js`` carried the operator's personal
+email (``owner_email``) + site URL as mock data — live on Glad-Labs/poindexter —
+past both the CI gate and the sync-time guard. (The console was later stripped
+entirely, #2137; the front-end extensions still earn their keep for the shipping
+Cloudflare Workers ``*.ts`` and for defense-in-depth scanning of the now-stripped
+console — see ``check_public_mirror_safety._TEXT_EXTS``.)
 
 Two independent gaps combined to let it through:
 
@@ -75,9 +78,10 @@ def test_frontend_extensions_are_in_text_exts() -> None:
     """``.js/.jsx/.ts/.tsx`` must be in ``_TEXT_EXTS`` so the guard opens them."""
     missing = [ext for ext in (".js", ".jsx", ".ts", ".tsx") if ext not in CHECK._TEXT_EXTS]
     assert not missing, (
-        f"Front-end extensions missing from _TEXT_EXTS: {missing}. The shipping "
-        "operator console (src/cofounder_agent/console/) is invisible to the leak "
-        "guard until these are scanned — the 2026-06-29 audit blind spot."
+        f"Front-end extensions missing from _TEXT_EXTS: {missing}. The operator "
+        "console (src/cofounder_agent/console/, scanned as defense-in-depth) and the "
+        "shipping Cloudflare Workers (*.ts) are invisible to the leak guard until "
+        "these are scanned — the 2026-06-29 audit blind spot."
     )
 
 
