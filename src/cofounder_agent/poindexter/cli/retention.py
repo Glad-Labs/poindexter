@@ -139,6 +139,9 @@ def retention_run(name: str | None, dry_run: bool) -> None:
     """
     async def _impl(pool):
         from services.integrations import retention_runner
+        from services.integrations.handlers import load_all
+
+        load_all()  # idempotent — registry refuses duplicate registrations
 
         targets: list[str] = []
         if dry_run:
@@ -165,7 +168,7 @@ def retention_run(name: str | None, dry_run: bool) -> None:
     click.echo(json.dumps(summary.to_dict(), indent=2, default=str))
 
 
-def _coerce(v: str) -> "bool | int | float | str":
+def _coerce(v: str) -> bool | int | float | str:
     """Coerce a KEY=VALUE string-value to a Python primitive.
 
     Order matters: booleans before ints (so "true" stays bool, not int),

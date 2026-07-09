@@ -118,6 +118,9 @@ def taps_run(name: str | None) -> None:
     """
     async def _impl(pool):
         from services.integrations import tap_runner
+        from services.integrations.handlers import load_all
+
+        load_all()  # idempotent — registry refuses duplicate registrations
         return await tap_runner.run_all(pool, only_names=[name] if name else None)
 
     try:

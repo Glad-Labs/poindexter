@@ -70,6 +70,33 @@ def test_taps_enable_missing_reports_and_exits():
     assert "no tap named" in result.output
 
 
+def test_taps_run_loads_handlers_before_dispatch():
+    """Regression: `poindexter taps run` used to call tap_runner.run_all
+    without ever importing the handler modules, so the registry was always
+    empty and every tap dispatch failed with HandlerRegistrationError."""
+    from poindexter.cli.taps import taps_group
+
+    calls: list[str] = []
+
+    def _fake_load_all():
+        calls.append("load_all")
+
+    async def _fake_run_all(pool, only_names=None):
+        calls.append("run_all")
+        from services.integrations.tap_runner import RunSummary
+        return RunSummary(taps=[], total_records=0, total_failed=0)
+
+    with (
+        patch("poindexter.cli.taps.run_service", _fake_run_service),
+        patch("services.integrations.handlers.load_all", _fake_load_all),
+        patch("services.integrations.tap_runner.run_all", _fake_run_all),
+    ):
+        result = CliRunner().invoke(taps_group, ["run", "rss"])
+
+    assert result.exit_code == 0
+    assert calls == ["load_all", "run_all"]
+
+
 def test_taps_enable_existing_upserts_enabled_true():
     from poindexter.cli.taps import taps_group
 
@@ -126,6 +153,35 @@ def test_retention_enable_missing_reports_and_exits():
         result = CliRunner().invoke(retention_group, ["enable", "ghost"])
     assert result.exit_code == 1
     assert "no policy named" in result.output
+
+
+def test_retention_run_loads_handlers_before_dispatch():
+    """Regression: `poindexter retention run` used to call
+    retention_runner.run_all without ever importing the handler modules,
+    so the registry was always empty and every policy dispatch failed
+    with HandlerRegistrationError (e.g. 'no handler registered under
+    retention.embeddings_collapse. Known: []')."""
+    from poindexter.cli.retention import retention_group
+
+    calls: list[str] = []
+
+    def _fake_load_all():
+        calls.append("load_all")
+
+    async def _fake_run_all(pool, only_names=None):
+        calls.append("run_all")
+        from services.integrations.retention_runner import RunSummary
+        return RunSummary(policies=[], total_deleted=0, total_summarized=0, total_failed=0)
+
+    with (
+        patch("poindexter.cli.retention.run_service", _fake_run_service),
+        patch("services.integrations.handlers.load_all", _fake_load_all),
+        patch("services.integrations.retention_runner.run_all", _fake_run_all),
+    ):
+        result = CliRunner().invoke(retention_group, ["run", "embeddings.collapse.claude_sessions"])
+
+    assert result.exit_code == 0
+    assert calls == ["load_all", "run_all"]
 
 
 def test_retention_config_show_prints_config_json():
