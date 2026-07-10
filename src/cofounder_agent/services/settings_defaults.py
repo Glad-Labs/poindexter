@@ -77,6 +77,15 @@ DEFAULTS: dict[str, str] = {
     # How many recently-finished tasks the trace board's "recent" rail shows
     # (GET /api/trace/active). The running list is unbounded (few at a time).
     "trace_recent_limit": "10",
+    # ----- Console live-activity pulse (what's the system doing now) -----
+    # A running live_activity row counts as "live" only if its heartbeat
+    # (updated_at) is within this window — filters out orphaned rows whose
+    # producer died mid-run before the reaper marks them stale.
+    "live_activity_freshness_seconds": "120",
+    # Running rows with no heartbeat past this get marked 'stale' by the reaper.
+    "live_activity_reaper_seconds": "300",
+    # Size of the "Just Happened" recent-trail rail on the console band.
+    "live_activity_recent_limit": "20",
     # ----- Self-healing firefighter (deterministic core, Plan A) -----
     # Master switch. Ships enabled; the remediation_rules table is empty so it's
     # a safe no-op until rules are seeded. Off = pages exactly as today.

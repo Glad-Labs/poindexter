@@ -936,6 +936,19 @@
     // poindexter#745). gate2Pending (= total) + the queue are real; render-rate
     // KPIs (renderSuccess24h / dispatched / videosPersisted) have no read here →
     // null, and the panel shows '—' (feedback_no_dummy_data).
+    // Live-activity pulse for the NOW RUNNING band: running work + recent trail
+    // + per-kind summary. Live → GET /api/activity; mock → PX.activity.
+    activity() {
+      return pick(
+        async () => {
+          const r = await http('GET', '/api/activity');
+          return (
+            r || { running: [], recent: [], summary: { running_by_kind: {} } }
+          );
+        },
+        () => PX.activity
+      );
+    },
     mediaQueue() {
       return pick(
         async () => {

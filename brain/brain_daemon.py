@@ -634,6 +634,40 @@ async def _create_brain_pool(db_url: str):
     )
 
 
+async def _brain_activity_begin(pool) -> int | None:
+    """Best-effort open a 'brain' live_activity row so the console pulse shows
+    the brain cycle running. The brain cannot import ``services/`` (minimal
+    container), so it writes the shared ledger table directly via asyncpg
+    (spinal-cord pattern). Swallows everything — incl. table-missing on a fresh
+    deploy before the worker has migrated — and returns None on any failure.
+    """
+    try:
+        return await pool.fetchval(
+            "INSERT INTO live_activity (kind, ref_id, title) "
+            "VALUES ('brain', 'monitor_cycle', 'Brain monitor cycle') RETURNING id"
+        )
+    except Exception:  # noqa: BLE001  # observability must never break the daemon
+        logger.debug("[BRAIN] live_activity begin swallowed", exc_info=True)
+        return None
+
+
+async def _brain_activity_finish(pool, activity_id, status: str) -> None:
+    """Best-effort close the brain's live_activity row. No-op on a None id (a
+    begin that failed) — mirrors ``services.live_activity.finish``."""
+    if activity_id is None:
+        return
+    try:
+        await pool.execute(
+            "UPDATE live_activity SET status = $2, updated_at = now(), "
+            "finished_at = now() WHERE id = $1 AND finished_at IS NULL",
+            activity_id,
+            status,
+        )
+    except Exception:  # noqa: BLE001
+        # silent-ok: best-effort pulse heartbeat; must never break the daemon.
+        logger.debug("[BRAIN] live_activity finish swallowed", exc_info=True)
+
+
 async def _run_cycle_with_watchdog(
     pool, *, cycle_timeout: float, run_cycle_fn=None,
 ) -> None:
@@ -648,7 +682,18 @@ async def _run_cycle_with_watchdog(
     only adds the timeout, it never swallows errors.
     """
     fn = run_cycle_fn or run_cycle
-    await asyncio.wait_for(fn(pool), timeout=cycle_timeout)
+    # Bracket the cycle with a best-effort 'brain' live_activity row so the
+    # console pulse shows brain liveness. begin/finish swallow their own errors
+    # and finish(None) no-ops, so this never changes the watchdog's contract:
+    # real exceptions (incl. the wait_for TimeoutError) still propagate.
+    aid = await _brain_activity_begin(pool)
+    try:
+        await asyncio.wait_for(fn(pool), timeout=cycle_timeout)
+    except Exception:
+        await _brain_activity_finish(pool, aid, "fail")
+        raise
+    else:
+        await _brain_activity_finish(pool, aid, "ok")
 
 
 def _arm_hang_watchdog(seconds: float) -> None:

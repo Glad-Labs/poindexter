@@ -32,6 +32,10 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
+# Dep-free (json/logging only), so importing it here doesn't break the lean
+# images that this module already guards apscheduler for.
+from services import live_activity
+
 # apscheduler is only needed by the worker that actually RUNS the scheduler.
 # Gate the import so lean images (the voice agent) can still ``import plugins``
 # — and thus ``plugins.secrets`` for get_secret — without shipping the dep.
@@ -157,6 +161,33 @@ class PluginScheduler:
         # (circular-safe) escalation path's cooldown. See _escalate_job_failure.
         self._last_failure_notify: dict[str, datetime] = {}
 
+    @staticmethod
+    async def _invoke_job_with_activity(*, pool: Any, job: Any, cfg: dict) -> Any:
+        """Run a job bracketed by a best-effort live_activity row (unless the
+        job opts out via ``activity_silent = True`` — the reaper and other
+        high-frequency housekeeping jobs set this so they don't spam the
+        ledger). The ledger writes never affect the job's own result or
+        exception path: begin/finish swallow their own errors, and
+        finish(None) is a no-op when the row couldn't open.
+        """
+        aid = None
+        if not getattr(job, "activity_silent", False):
+            aid = await live_activity.begin(
+                pool,
+                kind="job",
+                ref_id=job.name,
+                title=getattr(job, "description", None) or job.name,
+            )
+        try:
+            result = await job.run(pool, cfg)
+            await live_activity.finish(
+                pool, aid, status="ok" if result.ok else "fail"
+            )
+            return result
+        except Exception:
+            await live_activity.finish(pool, aid, status="fail")
+            raise
+
     async def register_job(self, job: Any) -> bool:
         """Add a single Job to the schedule.
 
@@ -210,7 +241,9 @@ class PluginScheduler:
             if self._site_config is not None and "_site_config" not in live_cfg.config:
                 live_cfg.config["_site_config"] = self._site_config
             try:
-                result = await job.run(self._pool, live_cfg.config)
+                result = await PluginScheduler._invoke_job_with_activity(
+                    pool=self._pool, job=job, cfg=live_cfg.config,
+                )
                 logger.info(
                     "scheduler: job %r ran ok=%s detail=%r changes=%d",
                     job.name, result.ok, result.detail, result.changes_made,

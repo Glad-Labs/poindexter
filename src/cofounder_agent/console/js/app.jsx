@@ -180,6 +180,16 @@ function App() {
     { intervalMs: 30_000, key: 'traceActive' }
   );
 
+  // Live-activity pulse — feeds the SYSTEM PULSE band. ~3s so "what's running
+  // now" feels live; the ledger read is two cheap indexed queries. Truly-running
+  // work comes from the ledger, not a loose status filter (fixes the
+  // taskStatusKind over-mapping the mock band carried).
+  const activityR = window.PXR.usePolledResource(
+    () => (PX.api.isLive() ? PX.api.activity() : Promise.resolve(PX.activity)),
+    { intervalMs: 3000, key: 'activity' }
+  );
+  const activity = activityR.data || PX.activity;
+
   // These three poll cleanly but ALSO carry optimistic drawer actions (Gate-2
   // decide / reschedule / topic triage). The poll migrates here; the drawer
   // handlers below call `<x>R.mutate(updater)` for the optimistic patch and
@@ -1413,16 +1423,12 @@ function App() {
         {mode === 'console' && (
           <div className="main__inner">
             <div id="sec-overview">
-              {/* NOW RUNNING band (design 1a) — live activity first. Mock
-                  renders come from PX.mediaRendering; live has no
-                  render-progress route yet so the component shows an honest
-                  empty with the gate-2 pending count. */}
+              {/* SYSTEM PULSE band — In Production / Background / Just Happened,
+                  fed by the /api/activity ledger (Phase 1). Truly-running work
+                  comes from the ledger, so terminal tasks never read as "in
+                  flight" (the taskStatusKind over-mapping the mock band had). */}
               <NowRunningBand
-                pipeline={pipeline}
-                renders={PX.api.isLive() ? [] : PX.mediaRendering || []}
-                gpu={gpu}
-                media={media}
-                brain={brain}
+                activity={activity}
                 onOpenTask={(t) => open('task', t)}
               />
               {/* Live in live mode (kpis memo → PX.kpisFromLive); PX.kpis in mock. */}

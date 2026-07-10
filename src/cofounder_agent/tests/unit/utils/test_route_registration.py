@@ -136,8 +136,10 @@ class TestRouteManifestStructure:
         so it adds no manifest entry.
         Updated 2026-07-08 (console task-trace Phase 2): added trace_router
         (task-trace board + per-task deep-dive read API at /api/trace/*).
+        Updated 2026-07-10 (console live-activity pulse Phase 1): added
+        activity_router (running work + recent trail at /api/activity).
         """
-        assert len(_WORKER_ROUTES) == 34
+        assert len(_WORKER_ROUTES) == 35
 
     def test_worker_approval_router_is_first(self):
         """OAuth metadata router is first now (PR #166); approval was first

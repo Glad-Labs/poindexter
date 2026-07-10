@@ -57,6 +57,8 @@ from langgraph.graph import END, StateGraph
 from langgraph.types import Command
 from prometheus_client import Histogram
 
+from services import live_activity
+from services.live_activity_content import content_step_pct
 from services.site_config import SiteConfig
 
 # SiteConfig is now injected exclusively via constructor DI (#272
@@ -1332,6 +1334,23 @@ class TemplateRunner:
             or template_slug
         )
 
+        # ── live-activity: content-in-production row (best-effort) — one row
+        # per pipeline run, updated per node, closed on success/halt/error.
+        # graph.nodes is the LangGraph StateGraph's node dict, so its length is
+        # the honest denominator for node-position progress. ──
+        _content_total = len(getattr(graph, "nodes", {}) or {})
+        _content_aid = await live_activity.begin(
+            self._pool,
+            kind="content",
+            ref_id=str(initial_state.get("task_id") or thread_id),
+            title=str(
+                initial_state.get("topic")
+                or initial_state.get("task_name")
+                or f"task {initial_state.get('task_id')}"
+            ),
+            detail={"template": template_slug},
+        )
+
         # Now that run_id (== thread_id) is known, attach the incremental-persist
         # callback to the sink. It fires per node during ainvoke (below), writing
         # one atom_runs row as each node completes — so the console task-trace
@@ -1343,6 +1362,11 @@ class TemplateRunner:
             _trace_task_id = str(initial_state.get("task_id") or "") or None
 
             async def _persist_record(seq: int, rec: TemplateRunRecord) -> None:
+                # Live progress first (cheap heartbeat), then the durable capture.
+                _step, _pct = content_step_pct(rec, seq, _content_total)
+                await live_activity.update(
+                    self._pool, _content_aid, step=_step, pct=_pct
+                )
                 from services.atom_runs import persist_one_atom_run
 
                 await persist_one_atom_run(
@@ -1453,6 +1477,9 @@ class TemplateRunner:
                 try:
                     final_state = await compiled.ainvoke(invoke_input, config)  # type: ignore[call-overload]
                 except Exception as exc:
+                    await live_activity.finish(
+                        self._pool, _content_aid, status="fail"
+                    )
                     return await self._handle_run_exception(
                         exc, template_slug, initial_state, records,
                         on_event=on_event,
@@ -1462,10 +1489,17 @@ class TemplateRunner:
             # failure. This indicates a Postgres-was-reachable-but-failed-
             # to-setup case which we surface loudly per
             # feedback_no_silent_defaults.
+            await live_activity.finish(self._pool, _content_aid, status="fail")
             raise
 
         ok = not any(r.halted for r in records)
         halted_at = next((r.name for r in records if r.halted), None)
+        # Close the content-in-production row — a halt (QA reject) reads as
+        # 'fail' in the trail, an unhalted run as 'ok' (best-effort; the reaper
+        # backstops any terminal path that doesn't reach here).
+        await live_activity.finish(
+            self._pool, _content_aid, status="ok" if ok else "fail"
+        )
 
         await _emit_progress(
             self._pool,

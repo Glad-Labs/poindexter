@@ -2184,6 +2184,66 @@
     },
   ];
 
+  // Live-activity pulse mock (NOW RUNNING band). started_at/finished_at use REAL
+  // Date.now() (not the frozen mock `now`) because the band computes elapsed
+  // client-side against Date.now() — mirrors the _ago helper below.
+  const isoAgo = (s) => new Date(Date.now() - s * 1000).toISOString();
+  const activity = {
+    running: [
+      {
+        kind: 'content',
+        ref_id: '4412',
+        title: 'A Field Guide to pgvector at Small Scale',
+        status: 'running',
+        step: 'qa.critic',
+        progress_pct: 62,
+        started_at: isoAgo(3 * 60),
+        detail: { model: 'gemma-4-31b' },
+      },
+      {
+        kind: 'job',
+        ref_id: 'dispatch_media_pipeline',
+        title: 'Media dispatch',
+        status: 'running',
+        started_at: isoAgo(35),
+      },
+      {
+        kind: 'brain',
+        ref_id: 'monitor_cycle',
+        title: 'Brain monitor cycle',
+        status: 'running',
+        started_at: isoAgo(4),
+      },
+    ],
+    recent: [
+      {
+        kind: 'job',
+        title: 'topic-harvest',
+        status: 'ok',
+        started_at: isoAgo(48 * 60),
+        finished_at: isoAgo(47 * 60),
+        duration_ms: 8200,
+      },
+      {
+        kind: 'job',
+        title: 'render_prometheus_rules',
+        status: 'ok',
+        started_at: isoAgo(122 * 60),
+        finished_at: isoAgo(122 * 60 - 1),
+        duration_ms: 1100,
+      },
+      {
+        kind: 'job',
+        title: 'deepeval_g_eval',
+        status: 'fail',
+        started_at: isoAgo(430 * 60),
+        finished_at: isoAgo(430 * 60 - 3),
+        duration_ms: 3400,
+      },
+    ],
+    summary: { running_by_kind: { content: 1, job: 1, brain: 1, media: 0 } },
+  };
+
   window.PX = {
     now,
     hhmmss,
@@ -2200,6 +2260,7 @@
     revenue,
     media,
     mediaRendering,
+    activity,
     qa,
     topics,
     findings,

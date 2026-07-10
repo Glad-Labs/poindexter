@@ -1242,6 +1242,31 @@ button {
   font-size: 11px;
   padding: 4px 0;
 }
+/* Just-Happened trail row: glyph + title + duration. */
+.nowrun__trow {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-family: var(--gl-font-mono);
+  font-size: 10.5px;
+  padding: 4px 0;
+  color: var(--gl-text-muted);
+  border-bottom: 1px solid var(--gl-hairline);
+}
+.nowrun__trow:last-child {
+  border-bottom: 0;
+}
+.nowrun__trow .ok {
+  color: var(--gl-mint);
+}
+.nowrun__trow .fail {
+  color: var(--gl-red);
+}
+.nowrun__trow .dur {
+  margin-left: auto;
+  color: var(--gl-text-dim);
+  font-variant-numeric: tabular-nums;
+}
 .nowrun__empty {
   font-family: var(--gl-font-mono);
   font-size: 11px;

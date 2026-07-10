@@ -752,6 +752,11 @@ def get_core_samples() -> dict[str, list[Any]]:
         # the dead (past expires_at) ones so the niche self-recovers. See
         # services/jobs/reap_stale_topic_batches.py docstring for the rails.
         ("jobs", "services.jobs.reap_stale_topic_batches", "ReapStaleTopicBatchesJob"),
+        # Reaper: flip orphaned 'running' live_activity rows (a producer that
+        # died mid-run) to 'stale' every minute so the console pulse's recent
+        # trail advances and rows don't accumulate. activity_silent — it must
+        # not write its own live_activity row every minute.
+        ("jobs", "services.jobs.reap_stale_activity", "ReapStaleActivityJob"),
         # Bridge: ``audit_log`` findings -> ``alert_events`` so the brain's
         # existing alert_dispatcher (with its dedup matrix) actually pages
         # operators on severity>=warn findings. Closes the "audit_log row
