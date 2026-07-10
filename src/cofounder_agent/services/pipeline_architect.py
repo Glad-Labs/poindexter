@@ -40,7 +40,7 @@ import copy
 import hashlib
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Iterable
 from dataclasses import dataclass
 from typing import Any
 
@@ -1537,6 +1537,80 @@ async def ensure_active_graph_defs_stamped(pool: Any) -> int:
             "graph_def(s) to stamp"
         )
     return stamped
+
+
+def assert_seeded_graph_defs_current(
+    rows: Iterable[tuple[str, dict[str, Any]]],
+) -> None:
+    """Assert every seeded+migrated active graph_def still matches the live atom
+    registry — the runtime-parity gate that would have caught the 2026-07-10
+    ``canonical_blog`` outage (#2250, fixed by #2261).
+
+    ``rows`` is ``(slug, graph_def)`` for every ``active=true`` row in
+    ``pipeline_templates`` on a **fresh baseline+migrations DB** — the state CI's
+    integration_db harness produces. Two seams already exist and both missed
+    #2250:
+
+    * The **PR-time** gate (:func:`assert_specs_match_contract_fingerprints`)
+      compares the in-tree specs against the committed fingerprint snapshot —
+      #2250 regenerated the snapshot, silencing it.
+    * The **runtime** gate (:func:`assert_graph_def_current`) compares the
+      *stored* graph_def against the registry — it caught the drift, but only in
+      prod at load time, because nothing exercises the seeded row in CI.
+
+    This closes the gap by running the runtime gate against the seeded rows in
+    CI. Per row:
+
+    * **Fully-unstamped** rows are skipped. A graph_def *reseed* migration writes
+      the raw spec with no per-node ``_contract_fp`` (so it stays importable in
+      the migrations-smoke env); the boot self-heal
+      (:func:`ensure_active_graph_defs_stamped`) stamps it from the live registry
+      on the next boot, so on a fresh DB it can never be stale. Skipping it is
+      exactly what running the real, *non-masking* self-heal would do —
+      :func:`is_graph_def_fully_unstamped` is that self-heal's own eligibility
+      predicate — but we replicate the decision here WITHOUT mutating the DB, so
+      this stays a pure assertion.
+
+    * **Stamped** rows carry a FROZEN fingerprint from the baseline seeds (or a
+      prior reseed's self-heal, folded into the baseline at the next squash).
+      :func:`assert_graph_def_current` re-checks that frozen stamp against the
+      live registry. If an atom's contract changed but no reseed migration
+      re-stamped the row, the frozen stamp is now stale and this raises — exactly
+      the #2250 miss (the baseline's ``content.plan_image_markers`` stamp stayed
+      ``5f20eda72266`` while the registry moved to ``1bad0eccc418``).
+
+    Drift across every row is aggregated into one :class:`GraphContractError` so
+    a developer sees every stale template at once. Propagates
+    :class:`~services.atom_registry.AtomRegistryUnavailableError` unchanged: an
+    empty registry is retryable infra, not drift, and must never read as a pass.
+    """
+    problems: list[str] = []
+    for slug, spec in rows:
+        if not isinstance(spec, dict) or not spec.get("nodes"):
+            # Node-less / malformed rows (column default '{}') carry no contract
+            # to verify — the load path falls back to the legacy factory, so
+            # there is nothing to gate.
+            continue
+        if is_graph_def_fully_unstamped(spec):
+            # Deliberate reseed output; owned by the boot self-heal.
+            continue
+        try:
+            assert_graph_def_current(spec)
+        except GraphContractError as exc:
+            problems.append(f"pipeline_templates[{slug!r}]:\n{exc}")
+
+    if problems:
+        raise GraphContractError(
+            "FIX: seeded graph_def(s) are STALE vs the live atom registry - an "
+            "atom contract changed without a pipeline_templates reseed migration "
+            "to re-stamp the row. This is the 2026-07-10 canonical_blog outage "
+            "(#2250 / #2261): regenerating the committed fingerprint snapshot "
+            "silences the PR-time gate, but the seeded row's FROZEN stamp stays "
+            "stale and halts the pipeline at load. Add a reseed migration "
+            "(mirror 20260710_171718_reseed_canonical_blog_image_markers.py) so "
+            "the boot self-heal re-stamps the row to the current contracts:\n\n"
+            + "\n\n".join(problems)
+        )
 
 
 def graph_signature(spec: dict[str, Any]) -> str:

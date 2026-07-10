@@ -123,6 +123,24 @@ and calls `notify_operator()`.
   (`is_graph_def_fully_unstamped`), leaving any row that carries a fingerprint
   untouched so this gate still catches genuine drift. Self-healing regardless of
   how a row got written, so a future reseed can keep emitting raw specs.
+- **Missing reseed → seeded-parity CI gate (follow-up, #2250 / #2261):** the boot
+  self-heal makes a _reseed_ safe, but the inverse still bit prod on 2026-07-10 —
+  a contract change with **no** reseed migration. `content.plan_image_markers`
+  gained a `featured_image_subject` output (fp `5f20eda72266` → `1bad0eccc418`);
+  PR #2250 regenerated the committed fingerprint snapshot — silencing the PR-time
+  gate `assert_specs_match_contract_fingerprints` — but shipped no reseed, so the
+  baseline's **frozen** stamp stayed stale (the self-heal only touches
+  fully-unstamped rows, so it leaves a stamped-but-stale row alone) and the
+  load-time gate halted every `canonical_blog` run. Nothing exercised the
+  seeded-then-migrated row in CI. The durable fix is
+  `assert_seeded_graph_defs_current`
+  (`tests/integration_db/test_seeded_graph_defs_current.py`): apply baseline +
+  every migration on a fresh DB, then run the load-time gate against each active
+  `pipeline_templates` row. Fully-unstamped rows are skipped (the boot self-heal
+  owns them — they can't be stale on a fresh DB); a **stamped** row whose atom
+  drifted without a reseed trips the gate at PR time, exactly the #2250 miss.
+  Lives in integration_db, not migrations-smoke, because the gate needs the full
+  atom registry to derive current fingerprints.
 
 ### 4. Checkpoint compatibility — discard on mismatch
 
@@ -153,6 +171,10 @@ resume` CLI (which keys by bare `task_id`).
   thread checkpoints deleted and run starts fresh.
 - **Integration-db:** seed a graph_def → load passes → monkeypatch an atom's
   `requires` → load now refuses with `GraphContractError`.
+- **Integration-db (seeded parity, #2250):** apply baseline + every migration on a
+  fresh DB → `assert_seeded_graph_defs_current` over every active
+  `pipeline_templates` row raises nothing; drift one atom on a frozen-stamped row
+  → it raises `GraphContractError` naming the stale template + atom.
 
 ## Files touched
 
