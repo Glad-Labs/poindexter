@@ -32,6 +32,70 @@ def mock_db() -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
+# Layer 2 — shared test stubs (spec 2026-07-09)
+# ---------------------------------------------------------------------------
+
+
+class _DBStub:
+    """Minimal async DB double for the Layer-2 helpers."""
+
+    def __init__(self, *, fetch_rows=None, post_title="A Title"):
+        self._fetch_rows = fetch_rows if fetch_rows is not None else []
+        self._post_title = post_title
+
+    async def fetch(self, *_a, **_k):
+        return self._fetch_rows
+
+    async def fetchrow(self, *_a, **_k):
+        return {"title": self._post_title, "content": "source body"}
+
+    async def execute(self, *_a, **_k):
+        return None
+
+
+class _SC:
+    """Sync .get site_config stub (mirrors SiteConfig.get(key, default))."""
+
+    def __init__(self, cfg):
+        self._c = cfg
+
+    def get(self, k, d=None):
+        return self._c.get(k, d)
+
+
+# ---------------------------------------------------------------------------
+# Layer 2 — shot-fidelity aggregate
+# ---------------------------------------------------------------------------
+
+
+async def test_aggregate_shot_qa_scores_excludes_reused_and_unscored():
+    rows = [
+        {"qa_score": 90.0, "outcome": "accepted"},
+        {"qa_score": 70.0, "outcome": "regenerated"},
+        {"qa_score": None, "outcome": "unscored"},        # excluded
+        {"qa_score": 95.0, "outcome": "skipped_reused"},  # excluded
+    ]
+    out = await media_quality_service._aggregate_shot_qa_scores(
+        _DBStub(fetch_rows=rows), "post-1",
+    )
+    assert out["shot_fidelity"] == 80.0          # mean(90, 70)
+    assert out["scored"] == 2
+    assert out["total"] == 4
+    assert out["shot_coverage"] == 0.5           # 2 / 4
+
+
+async def test_aggregate_shot_qa_scores_none_when_no_scored_rows():
+    rows = [{"qa_score": None, "outcome": "unscored"}]
+    out = await media_quality_service._aggregate_shot_qa_scores(
+        _DBStub(fetch_rows=rows), "post-1",
+    )
+    assert out["shot_fidelity"] is None
+    assert out["scored"] == 0
+    assert out["total"] == 1
+    assert out["shot_coverage"] == 0.0
+
+
+# ---------------------------------------------------------------------------
 # evaluate_podcast — auto-reject on Layer 1 failures
 # ---------------------------------------------------------------------------
 
@@ -94,12 +158,41 @@ async def test_podcast_passes_layer1_when_signals_clean(
             mock_db, "00000000-0000-0000-0000-000000000001", str(f),
         )
 
-    assert result["score"] == 1.0
+    # 0-100 rescale: a clean pass with no Layer-2 signal writes 100, not 1.0.
+    # No site_config passed → Layer 2 off → status "disabled".
+    assert result["score"] == 100.0
     assert result["layer1_failures"] == []
+    assert result["layer2_status"] == "disabled"
     # The UPDATE that fires must be the passing branch (no status change).
     update_sql = mock_db.execute.call_args.args[0]
     assert "status = 'rejected'" not in update_sql
     assert "quality_score = $3" in update_sql
+
+
+async def test_podcast_pass_enabled_stamps_unavailable(
+    mock_db: MagicMock, tmp_path,
+) -> None:
+    """Layer 2 enabled but no zero-cost podcast signal yet → status
+    'unavailable', score still the 0-100 clean-pass value (100).
+
+    This pins the cheap-half seam: the podcast faithfulness signal
+    (follow-up PR) replaces the bare 100 with a real composite here.
+    """
+    f = tmp_path / "test.mp3"
+    f.write_bytes(b"x" * 1_000_000)
+
+    with patch.object(
+        media_quality_service, "_probe_duration", return_value=180.0,
+    ), patch.object(
+        media_quality_service, "_probe_silence_ratio", return_value=0.05,
+    ):
+        result = await media_quality_service.evaluate_podcast(
+            mock_db, "00000000-0000-0000-0000-000000000001", str(f),
+            site_config=_SC({"media.layer2.enabled": "true"}),
+        )
+
+    assert result["score"] == 100.0
+    assert result["layer2_status"] == "unavailable"
 
 
 async def test_podcast_persists_signals_as_json(
@@ -170,8 +263,105 @@ async def test_video_passes_layer1_when_signals_clean(
             medium="video",
         )
 
-    assert result["score"] == 1.0
+    # No site_config passed → Layer 2 disabled → a clean Layer-1 pass now
+    # writes the 0-100 "nothing wrong" score (100.0), not the old binary 1.0.
+    assert result["score"] == 100.0
     assert result["layer1_failures"] == []
+    assert result["layer2_status"] == "disabled"
+
+
+# ---------------------------------------------------------------------------
+# _run_video_layer2 — composite from shot-fidelity (cheap-half slice)
+# ---------------------------------------------------------------------------
+
+
+async def test_video_layer2_composite_is_shot_fidelity(monkeypatch) -> None:
+    """Shot-fidelity is the only wired signal today, so composite == it."""
+    monkeypatch.setattr(
+        media_quality_service, "_aggregate_shot_qa_scores",
+        AsyncMock(return_value={
+            "shot_fidelity": 80.0, "shot_coverage": 1.0, "scored": 5, "total": 5,
+        }),
+    )
+    out = await media_quality_service._run_video_layer2(
+        _DBStub(), "p", "/v.mp4", _SC({"media.layer2.enabled": "true"}),
+    )
+    assert out["layer2_score"] == 80.0
+    assert out["layer2_status"] == "scored"
+
+
+async def test_video_layer2_unavailable_when_no_signals(monkeypatch) -> None:
+    """All shots reused/unscored → no signal → status 'unavailable'."""
+    monkeypatch.setattr(
+        media_quality_service, "_aggregate_shot_qa_scores",
+        AsyncMock(return_value={
+            "shot_fidelity": None, "shot_coverage": 0.0, "scored": 0, "total": 0,
+        }),
+    )
+    out = await media_quality_service._run_video_layer2(
+        _DBStub(), "p", "/v.mp4", _SC({"media.layer2.enabled": "true"}),
+    )
+    assert out["layer2_score"] is None
+    assert out["layer2_status"] == "unavailable"
+
+
+async def test_video_layer2_disabled_by_master_switch(monkeypatch) -> None:
+    """Master switch off → short-circuit; the aggregate is never queried."""
+    agg = AsyncMock()
+    monkeypatch.setattr(media_quality_service, "_aggregate_shot_qa_scores", agg)
+    out = await media_quality_service._run_video_layer2(
+        _DBStub(), "p", "/v.mp4", _SC({"media.layer2.enabled": "false"}),
+    )
+    assert out["layer2_status"] == "disabled"
+    agg.assert_not_awaited()
+
+
+async def test_video_layer2_low_fidelity_emits_finding(monkeypatch) -> None:
+    """Shot-fidelity below the configured min raises an advisory finding."""
+    monkeypatch.setattr(
+        media_quality_service, "_aggregate_shot_qa_scores",
+        AsyncMock(return_value={
+            "shot_fidelity": 20.0, "shot_coverage": 1.0, "scored": 4, "total": 4,
+        }),
+    )
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        media_quality_service, "emit_finding", lambda **kw: captured.append(kw),
+    )
+    await media_quality_service._run_video_layer2(
+        _DBStub(), "p", "/v.mp4",
+        _SC({"media.layer2.enabled": "true", "media.video.shot_fidelity_min": "60"}),
+    )
+    assert any(f["kind"] == "video_shot_fidelity_low" for f in captured)
+
+
+async def test_evaluate_video_pass_writes_0_100_composite(monkeypatch) -> None:
+    """A Layer-1 pass writes the Layer-2 composite (0-100), not 1.0."""
+    monkeypatch.setattr(
+        media_quality_service, "_probe_duration", AsyncMock(return_value=45.0),
+    )
+    monkeypatch.setattr(media_quality_service, "_file_size", lambda p: 5_000_000)
+    monkeypatch.setattr(
+        media_quality_service, "_run_video_layer2",
+        AsyncMock(return_value={
+            "layer2_status": "scored", "layer2_score": 80.0,
+            "shot_fidelity": 80.0, "shot_coverage": 1.0,
+        }),
+    )
+    monkeypatch.setattr(
+        media_quality_service, "_notify_if_pending", AsyncMock(),
+    )
+    db = AsyncMock()
+    db.fetchrow = AsyncMock(return_value=None)  # thresholds → defaults
+    out = await media_quality_service.evaluate_video(
+        db, "p", "/v.mp4", medium="video",
+        site_config=_SC({"media.layer2.enabled": "true"}),
+    )
+    assert out["score"] == 80.0
+    assert out["layer2_status"] == "scored"
+    # The passing UPDATE wrote 80.0 as quality_score (0-100), not 1.0.
+    update_args = [c.args for c in db.execute.await_args_list]
+    assert any(80.0 in a for a in update_args)
 
 
 # ---------------------------------------------------------------------------

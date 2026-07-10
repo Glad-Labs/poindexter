@@ -408,7 +408,7 @@ async def test_record_pending_then_notify_discord_dispatches_when_status_pending
         None,  # enable flag missing → defaults on
         {
             "status": "pending",
-            "quality_score": 0.85,
+            "quality_score": 85.0,  # 0-100 scale (spec 2026-07-09)
             "quality_signals": '{"duration_seconds": 240.0, "silence_ratio": 0.05, "file_size_bytes": 2400000}',
             "title": "Why Cofounders Burn Out",
             "slug": "why-cofounders-burn-out",
@@ -434,7 +434,9 @@ async def test_record_pending_then_notify_discord_dispatches_when_status_pending
     # Sanity: the rendered body contains the operator-useful fields.
     assert "podcast awaiting approval" in msg
     assert "Why Cofounders Burn Out" in msg
-    assert "score=0.85" in msg
+    # 0-100 scale renders with no decimals (.0f), not the old .2f.
+    assert "score=85" in msg
+    assert "score=85.00" not in msg
     assert "duration=240s" in msg
     assert "silence=5%" in msg
     # Operator commands appear so they can act on the ping.
@@ -919,7 +921,9 @@ async def test_record_pending_with_file_path_runs_podcast_eval(
         )
 
     assert status == "pending"
-    eval_podcast.assert_awaited_once_with(mock_db, _POST, "/data/media/pod.mp3")
+    eval_podcast.assert_awaited_once_with(
+        mock_db, _POST, "/data/media/pod.mp3", site_config=None,
+    )
 
 
 @pytest.mark.parametrize("medium", ["video", "video_short"])
@@ -938,8 +942,32 @@ async def test_record_pending_with_file_path_runs_video_eval(
         )
 
     eval_video.assert_awaited_once_with(
-        mock_db, _POST, "/data/media/clip.mp4", medium=medium,
+        mock_db, _POST, "/data/media/clip.mp4", medium=medium, site_config=None,
     )
+
+
+async def test_record_pending_threads_site_config_to_evaluator(
+    mock_db: MagicMock,
+) -> None:
+    """A site_config handed to record_pending reaches the Layer-2 evaluator.
+
+    Pins the Task-5 wiring: the master switch + thresholds Layer 2 reads
+    all live on site_config, so it MUST be threaded from the job caller
+    through record_pending → _evaluate_and_notify → evaluate_*.
+    """
+    mock_db.fetchrow.side_effect = _pending_row_side_effects()
+    sentinel = object()
+
+    eval_video = AsyncMock()
+    with patch(
+        "services.media_quality_service.evaluate_video", eval_video,
+    ):
+        await media_approval_service.record_pending(
+            mock_db, _POST, "video", file_path="/data/media/clip.mp4",
+            site_config=sentinel,
+        )
+
+    assert eval_video.await_args.kwargs["site_config"] is sentinel
 
 
 async def test_record_pending_without_file_path_still_pings_operator(

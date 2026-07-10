@@ -36,6 +36,23 @@ def test_ops_triage_defaults_to_small_model_not_heavy_writer():
     assert DEFAULTS["ops_triage_writer_model"] != DEFAULTS["pipeline_writer_model"]
 
 
+def test_media_layer2_defaults_seeded():
+    """Media Quality Layer 2 (spec 2026-07-09) tunables seed with sane defaults.
+
+    Model keys default empty → resolved from qa_vision_model / ragas_judge_model
+    at read time (empty = "not separately configured"), per the spec's
+    no-silent-defaults rule."""
+    from services.settings_defaults import DEFAULTS
+
+    assert DEFAULTS["media.layer2.enabled"] == "true"
+    assert DEFAULTS["media.video.topic_match_frames"] == "3"
+    assert DEFAULTS["media.video.topic_match_min"] == "50"
+    assert DEFAULTS["media.video.shot_fidelity_min"] == "60"
+    assert DEFAULTS["media.podcast.faithfulness_min"] == "60"
+    assert DEFAULTS["media.video.topic_match_model"] == ""
+    assert DEFAULTS["media.podcast.faithfulness_model"] == ""
+
+
 def test_rag_rerank_device_default_is_cpu():
     """The cross-encoder reranker must default to CPU so it stops stacking
     on the resident ~18 GB writer in VRAM (single-GPU stability core). The

@@ -178,6 +178,7 @@ class PodcastDistributeJob:
                 await record_pending(
                     pool, post_id, "podcast",
                     file_path=row.get("storage_path") or None,
+                    site_config=sc,
                 )
                 seeded += 1
                 logger.info("[PODCAST_DISTRIBUTE] linked asset %s → post %s + seeded", row["id"], post_id)
@@ -195,6 +196,7 @@ class PodcastDistributeJob:
                 await record_pending(
                     pool, row["post_id"], "podcast",
                     file_path=row.get("storage_path") or None,
+                    site_config=sc,
                 )
                 seeded += 1
                 logger.info("[PODCAST_DISTRIBUTE] backlog-seeded podcast approval for post %s", row["post_id"])

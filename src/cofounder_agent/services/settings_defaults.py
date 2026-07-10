@@ -1205,6 +1205,28 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # advisory ``av_desync`` finding (Plan 6 #1193). Advisory only.
     'media.qa.av_sync_tolerance_s': '2.0',
 
+    # ----- Media Quality Layer 2 (semantic scoring) — spec 2026-07-09 -----
+    # Replaces the binary 0/1 media quality_score with a 0-100 semantic
+    # signal. Advisory-first: informs the score + emits advisory findings,
+    # never auto-rejects. Master switch off → Layer 2 skipped (bare-100 pass).
+    'media.layer2.enabled': 'true',
+    # Vision model for the video topic-match signal. Empty → resolved from
+    # qa_vision_model at read time (empty = "not separately configured"; a
+    # still-empty qa_vision_model then skips the signal, per no-silent-defaults).
+    'media.video.topic_match_model': '',
+    # Frames sampled from the composed video for the topic-match check.
+    'media.video.topic_match_frames': '3',
+    # Below this 0-100 topic-match score → advisory ``video_topic_mismatch``.
+    'media.video.topic_match_min': '50',
+    # Below this mean rendered-shot vision score → advisory
+    # ``video_shot_fidelity_low`` (matches video_shot_qa_threshold).
+    'media.video.shot_fidelity_min': '60',
+    # Judge model for the podcast faithfulness signal. Empty → resolved from
+    # ragas_judge_model at read time (already a faithfulness judge).
+    'media.podcast.faithfulness_model': '',
+    # Below this 0-100 faithfulness score → advisory ``podcast_faithfulness_low``.
+    'media.podcast.faithfulness_min': '60',
+
     # ----- Observability / monitoring -----
     # DataFabric store URLs (#429). DataFabric clients run inside the
     # worker/brain containers, so the defaults use compose-service DNS — a

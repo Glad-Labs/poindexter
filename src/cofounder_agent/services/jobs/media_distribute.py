@@ -414,6 +414,7 @@ class MediaDistributeJob:
                 await record_pending(
                     pool, post_id, medium,
                     file_path=row.get("storage_path") or None,
+                    site_config=sc,
                 )
                 linked += 1
                 logger.info(

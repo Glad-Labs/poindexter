@@ -782,6 +782,7 @@ class TestRecordMediaAssetSeedsApprovalGate:
         rp.assert_awaited_once_with(
             pool, "post-1", "podcast",
             file_path="https://r2.test/podcast/v2/post-1.mp3",
+            site_config=None,
         )
 
     async def test_stamp_seeds_pending_approval_for_video(self):
@@ -801,6 +802,7 @@ class TestRecordMediaAssetSeedsApprovalGate:
         rp.assert_awaited_once_with(
             pool, "post-2", "video",
             file_path="https://r2.test/video/post-2.mp4",
+            site_config=None,
         )
 
     async def test_seed_failure_is_non_fatal(self):

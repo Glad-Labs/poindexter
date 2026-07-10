@@ -14,9 +14,17 @@ Layer 1 (this module):
   the row gets ``decided_by='auto:layer1'`` rejection with the
   failing signal in ``notes``.
 
-Layer 2 (future PR):
-- Whisper transcription -> LLM faithfulness scoring vs source post
-- Vision-model frame caption -> semantic match check
+Layer 2 (semantic scoring, spec 2026-07-09):
+- Composes a 0-100 quality_score on top of Layer 1: a hard-fail floors
+  it at 0, a pass hands off to the per-medium Layer-2 runner.
+- Video (shipped): shot-fidelity aggregate — the mean of the per-shot
+  vision scores the renderer already emitted (zero new LLM cost).
+- Video (follow-up PR): topic-match — vision score of composed frames
+  against the post title.
+- Podcast (follow-up PR): Whisper transcription -> LLM faithfulness
+  scoring vs the source post body.
+- Advisory-first: Layer 2 never auto-rejects; sub-scores below their
+  configured minima emit advisory findings only.
 
 Thresholds
 ==========
@@ -46,6 +54,8 @@ import os
 import re
 import shutil
 from typing import Any
+
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -147,6 +157,57 @@ async def _probe_silence_ratio(file_path: str, duration: float) -> float | None:
     return min(1.0, total_silence / duration)
 
 
+# Outcomes whose rows carry no meaningful per-shot vision score: a reused
+# clip was scored on a prior run (double-counting it skews the aggregate),
+# and an unscored clip never got a vision judgment at all. Both are excluded
+# from the shot-fidelity mean but still count toward coverage's denominator.
+_SHOT_EXCLUDE_OUTCOMES = frozenset({"unscored", "skipped_reused"})
+
+
+async def _aggregate_shot_qa_scores(db: Any, post_id: str) -> dict[str, Any]:
+    """Aggregate per-shot vision QA scores for a post into a fidelity signal.
+
+    Reads the ``video_shot_rendered`` audit rows the shot-list renderer
+    already emits (one per shot, carrying ``qa_score`` 0-100 + ``qa_outcome``)
+    and folds them into:
+
+    - ``shot_fidelity`` — mean of the scored shots' ``qa_score`` (0-100), or
+      ``None`` when no shot carried a usable score (all reused/unscored).
+    - ``shot_coverage`` — fraction of shots that were actually scored
+      (``scored / total``), a confidence weight on the fidelity number.
+    - ``scored`` / ``total`` — the raw counts behind those ratios.
+
+    This is the zero-new-LLM-cost half of Layer 2: the vision scoring already
+    happened at render time, so we only re-read audit rows here.
+    """
+    rows = await db.fetch(
+        """
+        SELECT (details->>'qa_score')::float AS qa_score,
+               details->>'qa_outcome'        AS outcome
+        FROM audit_log
+        WHERE event_type = 'video_shot_rendered'
+          AND details->>'post_id' = $1
+        """,
+        post_id,
+    )
+    total = len(rows)
+    scored_vals = [
+        r["qa_score"]
+        for r in rows
+        if r["qa_score"] is not None
+        and (r["outcome"] or "") not in _SHOT_EXCLUDE_OUTCOMES
+    ]
+    scored = len(scored_vals)
+    fidelity = (sum(scored_vals) / scored) if scored else None
+    coverage = (scored / total) if total else 0.0
+    return {
+        "shot_fidelity": fidelity,
+        "shot_coverage": coverage,
+        "scored": scored,
+        "total": total,
+    }
+
+
 def _file_size(file_path: str) -> int | None:
     try:
         return os.path.getsize(file_path)
@@ -171,8 +232,103 @@ async def _get_threshold(db: Any, key: str) -> float:
     return _DEFAULT_THRESHOLDS[key]
 
 
+# ---------------------------------------------------------------------------
+# Layer 2 — semantic scoring (spec 2026-07-09)
+#
+# Layer 1 answers "is this file broken?" (binary, deterministic). Layer 2
+# answers "is this file *good*?" (0-100, semantic). The two compose: a
+# Layer-1 hard-fail floors the score at 0; a Layer-1 pass hands off to the
+# Layer-2 runner, which returns a 0-100 composite (or None → 100 "nothing
+# measurable is wrong"). Advisory-first — nothing here auto-rejects.
+# ---------------------------------------------------------------------------
+
+
+def _layer2_enabled(site_config: Any) -> bool:
+    """Master switch. Absent site_config (legacy callers) → Layer 2 off."""
+    if site_config is None:
+        return False
+    raw = site_config.get("media.layer2.enabled", "true")
+    return str(raw if raw is not None else "true").strip().lower() in (
+        "true", "1", "yes",
+    )
+
+
+def _cfg_float(site_config: Any, key: str, default: float) -> float:
+    """Read a float tunable off site_config; fall back on missing/garbled."""
+    try:
+        return float(site_config.get(key, default) or default)
+    except (TypeError, ValueError):
+        return default
+
+
+async def _run_video_layer2(
+    db: Any, post_id: str, file_path: str, site_config: Any,
+) -> dict[str, Any]:
+    """Compute the video Layer-2 signals + composite. Fail-soft; never raises.
+
+    Cheap-half slice (spec 2026-07-09): the only wired signal today is the
+    shot-fidelity aggregate — the mean of the per-shot vision scores the
+    renderer already emitted, so this adds **zero new LLM cost**. The
+    topic-match vision signal lands in a follow-up PR at the marked
+    insertion point below; the composite is a mean of *available* signals,
+    so adding topic-match needs no change to this function's callers.
+
+    Returns ``{"layer2_status", "layer2_score", "shot_fidelity",
+    "shot_coverage"}``. No signal available → status ``"unavailable"``,
+    score ``None`` (the caller maps that to 100 on a clean Layer-1 pass).
+    Emits an advisory finding when shot-fidelity is below its configured min.
+    """
+    if not _layer2_enabled(site_config):
+        return {"layer2_status": "disabled", "layer2_score": None}
+
+    signals: dict[str, Any] = {}
+    try:
+        agg = await _aggregate_shot_qa_scores(db, post_id)
+        signals["shot_fidelity"] = agg["shot_fidelity"]
+        signals["shot_coverage"] = agg["shot_coverage"]
+
+        # --- topic-match vision signal (follow-up PR) plugs in here ---
+        #   title = await _fetch_post_title(db, post_id)
+        #   topic_match = await _score_video_topic_match(
+        #       db, file_path, title, site_config)
+        #   ...then add `topic_match` to `available` below and emit its
+        #   own advisory finding against media.video.topic_match_min.
+        available = [s for s in (agg["shot_fidelity"],) if s is not None]
+        composite = (sum(available) / len(available)) if available else None
+        signals["layer2_score"] = composite
+        signals["layer2_status"] = "scored" if composite is not None else "unavailable"
+
+        fid_min = _cfg_float(site_config, "media.video.shot_fidelity_min", 60.0)
+        if agg["shot_fidelity"] is not None and agg["shot_fidelity"] < fid_min:
+            emit_finding(
+                source="media_quality",
+                kind="video_shot_fidelity_low",
+                title=f"video shot-fidelity {agg['shot_fidelity']:.0f} < {fid_min:.0f}",
+                body=(
+                    f"post {post_id[:8]}: mean rendered-shot vision score "
+                    f"{agg['shot_fidelity']:.1f} (coverage "
+                    f"{agg['shot_coverage']:.0%}) below {fid_min:.0f}. Advisory."
+                ),
+                severity="warn",
+                dedup_key=f"video_shot_fidelity_low:{post_id}",
+                extra={
+                    "post_id": post_id,
+                    "shot_fidelity": agg["shot_fidelity"],
+                    "coverage": agg["shot_coverage"],
+                    "threshold": fid_min,
+                },
+            )
+    except Exception as exc:  # noqa: BLE001 — Layer 2 must never fail the eval
+        logger.warning(
+            "[media_quality] video Layer 2 raised (fail-soft): %s", exc,
+        )
+        signals.setdefault("layer2_status", "unavailable")
+        signals.setdefault("layer2_score", None)
+    return signals
+
+
 async def evaluate_podcast(
-    db: Any, post_id: str, file_path: str,
+    db: Any, post_id: str, file_path: str, *, site_config: Any = None,
 ) -> dict[str, Any]:
     """Compute Layer 1 signals for a podcast file + store on the row.
 
@@ -215,7 +371,19 @@ async def evaluate_podcast(
             f"silence_ratio={silence_ratio:.2f} > {max_silence}",
         )
 
-    score = 0.0 if failures else 1.0
+    # Layer 1 hard-fail floors the score at 0; otherwise 0-100 rescale.
+    # Podcast has no zero-cost Layer-2 signal (faithfulness needs a
+    # transcription pass + an LLM), so the cheap-half pass is a bare 100
+    # with the Layer-2 status stamped. The faithfulness signal (follow-up
+    # PR) plugs in here — swap this rescale for a `_run_podcast_layer2`
+    # call, same shape as `_run_video_layer2`.
+    if failures:
+        score = 0.0
+    else:
+        score = 100.0
+        signals["layer2_status"] = (
+            "unavailable" if _layer2_enabled(site_config) else "disabled"
+        )
     signals["layer1_failures"] = failures
     signals["score"] = score
 
@@ -269,6 +437,7 @@ async def evaluate_podcast(
 
 async def evaluate_video(
     db: Any, post_id: str, file_path: str, *, medium: str = "video",
+    site_config: Any = None,
 ) -> dict[str, Any]:
     """Compute Layer 1 signals for a video file + store on the row.
 
@@ -301,7 +470,16 @@ async def evaluate_video(
             f"duration_seconds={signals['duration_seconds']:.1f} < {min_dur}",
         )
 
-    score = 0.0 if failures else 1.0
+    # Layer 1 hard-fail floors the score at 0; otherwise Layer 2 computes the
+    # 0-100 composite (None → 100 when nothing measurable is wrong).
+    if failures:
+        score = 0.0
+    else:
+        layer2 = await _run_video_layer2(db, post_id, file_path, site_config)
+        signals.update({k: v for k, v in layer2.items() if k != "layer2_score"})
+        signals["layer2_status"] = layer2.get("layer2_status", "unavailable")
+        l2_score = layer2.get("layer2_score")
+        score = float(l2_score) if l2_score is not None else 100.0
     signals["layer1_failures"] = failures
     signals["score"] = score
 

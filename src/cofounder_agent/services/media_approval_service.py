@@ -197,6 +197,7 @@ async def _earned_autonomy_check(
 
 async def record_pending(
     db: Any, post_id: str, medium: str, *, file_path: str | None = None,
+    site_config: Any = None,
 ) -> str:
     """Insert a row for a freshly generated medium.
 
@@ -300,12 +301,13 @@ async def record_pending(
         "[media_approval] pending: %s for post %s (awaiting operator)",
         medium, post_id,
     )
-    await _evaluate_and_notify(db, post_id, medium, file_path)
+    await _evaluate_and_notify(db, post_id, medium, file_path, site_config)
     return "pending"
 
 
 async def _evaluate_and_notify(
     db: Any, post_id: str, medium: str, file_path: str | None,
+    site_config: Any = None,
 ) -> None:
     """Layer-1 eval + operator ping for a freshly seeded pending row (#816).
 
@@ -347,11 +349,12 @@ async def _evaluate_and_notify(
 
             if medium == "podcast":
                 await media_quality_service.evaluate_podcast(
-                    db, post_id, file_path,
+                    db, post_id, file_path, site_config=site_config,
                 )
             else:
                 await media_quality_service.evaluate_video(
                     db, post_id, file_path, medium=medium,
+                    site_config=site_config,
                 )
         else:
             await notify_pending_for_review(db, post_id, medium)
@@ -454,7 +457,8 @@ async def notify_pending_for_review(
     title = (row.get("title") or "(untitled)")[:80]
     post_id_short = post_id[:8]
 
-    score_str = f"{float(score):.2f}" if score is not None else "—"
+    # quality_score is 0-100 (spec 2026-07-09) — render as a whole number.
+    score_str = f"{float(score):.0f}" if score is not None else "—"
     dur_str = f"{dur:.0f}s" if dur is not None else "—"
     sil_str = f"{sil:.0%}" if sil is not None else "—"
     size_str = f"{int(size) // 1024}KB" if size is not None else "—"

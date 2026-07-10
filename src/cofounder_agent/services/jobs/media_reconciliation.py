@@ -901,7 +901,10 @@ class MediaReconciliationJob:
         try:
             from services.media_approval_service import record_pending
 
-            await record_pending(pool, post_id, asset_type, file_path=file_path)
+            await record_pending(
+                pool, post_id, asset_type, file_path=file_path,
+                site_config=getattr(self, "_site_config", None),
+            )
         except Exception as e:  # noqa: BLE001 — gate seed is additive, never fatal
             logger.warning(
                 "media_reconciliation: approval-gate seed failed for "
