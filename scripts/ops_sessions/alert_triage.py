@@ -7,7 +7,7 @@ from pathlib import Path
 
 import _common as c
 
-REPO = "Glad-Labs/glad-labs-stack"
+REPO = "Glad-Labs/poindexter"
 _SYSTEM = (
     "You are an SRE triaging a repeatedly-firing alert. Decide if the alert is a "
     "PROBE BUG (false positive / broken dedup repeating one fingerprint) or a REAL "

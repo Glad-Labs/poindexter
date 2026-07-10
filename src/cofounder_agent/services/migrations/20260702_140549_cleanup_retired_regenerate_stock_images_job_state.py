@@ -1,6 +1,6 @@
 """Migration 20260702_140549: clean up state for the retired regenerate_stock_images job.
 
-ISSUE: Glad-Labs/glad-labs-stack#2050 (stale-scheduled-jobs triage)
+ISSUE: Glad-Labs/poindexter#2050 (stale-scheduled-jobs triage)
 
 ``RegenerateStockImagesJob`` was removed in #1871 (its territory moved to
 ``media_reconciliation`` — see the "regenerate_stock_images class of bug,

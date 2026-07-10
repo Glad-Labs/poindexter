@@ -7,7 +7,7 @@ from pathlib import Path
 
 import _common as c
 
-REPO = "Glad-Labs/glad-labs-stack"
+REPO = "Glad-Labs/poindexter"
 RUFF_TARGETS = ["src/", "brain/", "scripts/"]
 BANDIT_TARGETS = ["brain/", "scripts/", "src/cofounder_agent/services/", "src/cofounder_agent/routes/"]
 
