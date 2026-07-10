@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-07-08.**  
+> **Auto-generated from live `app_settings` table on 2026-07-10.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 720 active rows across 58 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 14 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -349,6 +349,7 @@ The worker re-reads on every poll; no restart needed.
 | `findings.default.fallback` | `log_only` |  |  |
 | `findings.default.min_severity` | `warn` |  |  |
 | `findings.duplicate_post.delivery` | `log_only` |  |  |
+| `findings.image_gen_unreachable.delivery` | `discord` |  | Delivery channel when image-gen is unreachable and a post fell back to a Pexels stock photo |
 | `findings.media_drift.delivery` | `log_only` |  |  |
 | `findings.missing_seo.cooldown_minutes` | `1440` |  |  |
 | `findings.missing_seo.delivery` | `auto_fix` |  |  |
@@ -393,7 +394,7 @@ The worker re-reads on every poll; no restart needed.
 | `hn_top_stories` | `20` |  |  |
 | `host_home` | `` |  | Host home directory for Docker volume mounts |
 | `image_gen_enabled` | `true` |  | Master toggle for the image-gen featured/inline image pipeline. When false, source_featured_image skips the image-gen... |
-| `image_gen_server_url` | `http://host.docker.internal:9836` |  | Image generation server URL |
+| `image_gen_server_url` | `http://image-gen-server:9836` |  | Image generation server URL (compose service DNS — resolvable container-to-container over the shared network; never a... |
 | `image_model` | `sdxl_lightning` |  | Default image generation model (legacy) |
 | `indexnow_ping_url` | `https://api.indexnow.org/indexnow` |  | Auto-seeded by services.settings_defaults (#379) |
 | `internal_api_base_url` | `http://localhost:8002` |  | Base URL for the internal worker API (used for self-calls like the podcast feed regen) |
@@ -813,7 +814,7 @@ The worker re-reads on every poll; no restart needed.
 | `enable_tracing` | `true` |  | Master switch for OpenTelemetry tracing. When true, services.tracing.setup_tracing initializes the TracerProvider + O... |
 | `langfuse_host` | `http://langfuse-web:3000` |  | Langfuse base URL for prompt management + tracing. Default empty = Langfuse disabled, prompts resolve via DB+YAML fal... |
 | `langfuse_tracing_enabled` | `true` |  | When true (default), LiteLLMProvider registers Langfuse as a success/failure callback so every LLM call emits a span ... |
-| `operator_url_probe_target_overrides` | `{"cloudflare_beacon_url": {"alive_cod...` |  | Per-URL probe behavior overrides for the operator-url probe. JSON map keyed by app_setting key (e.g. 'google_sitemap_... |
+| `operator_url_probe_target_overrides` | `{"indexnow_ping_url": {"method": "HEA...` |  | Per-URL probe behavior overrides for the operator-url probe. JSON map keyed by app_setting key (e.g. 'google_sitemap_... |
 | `otel_exporter_otlp_endpoint` | `http://tempo:4318/v1/traces` |  | OTLP gRPC endpoint that the worker pushes spans to. Default points at the docker-compose tempo service on its OTLP gR... |
 | `pyroscope_server_url` | `http://pyroscope:4040` |  | Pyroscope ingestion URL for worker agent |
 | `sentry_profiles_sample_rate` | `0.1` |  | Fraction of transactions to capture as CPU profiles. Default 0.1. Same hardcoding bug as traces sample rate. |
