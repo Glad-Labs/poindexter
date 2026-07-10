@@ -182,6 +182,18 @@ scripts/secrets-to-scrub.txt
 infrastructure/grafana/dashboards/cost-analytics.json
 infrastructure/grafana/dashboards/infrastructure-data.json
 
+# ============================================================
+# design-sync (claude.ai/design import) — build scratch & machine state.
+# The durable INPUTS under .design-sync/ (config.json, NOTES.md,
+# conventions.md, previews/, overrides/) ARE committed; everything below
+# is staged scripts, regenerated build output, or per-run machine state.
+# ============================================================
+.ds-sync/
+ds-bundle/
+.design-sync/.cache/
+.design-sync/learnings/
+.design-sync/node_modules
+
 # Matt-specific operator scripts (scheduled tasks, watchdogs) — kept locally only
 scripts/glitchtip_audit.py
 scripts/run-hidden.vbs

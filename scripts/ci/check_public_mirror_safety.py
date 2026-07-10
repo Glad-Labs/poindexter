@@ -110,6 +110,7 @@ _STRIP_DIR_PREFIXES = (
     "src/cofounder_agent/tests/unit/modules/finance/",
     ".gitea/",
     ".shared-context/",
+    ".design-sync/",  # claude.ai/design sync inputs for the stripped @glad-labs/brand package
     ".github/workflows-disabled/",
     ".githooks/",
 )

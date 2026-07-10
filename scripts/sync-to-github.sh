@@ -66,6 +66,7 @@ git rm -r --cached --quiet web/public-site/ 2>/dev/null || true              # b
 git rm -r --cached --quiet web/storefront/ 2>/dev/null || true               # gladlabs.ai storefront (Lemon Squeezy checkout + copy)
 git rm -r --cached --quiet marketing/ 2>/dev/null || true                    # marketing materials
 git rm -r --cached --quiet packages/ 2>/dev/null || true                     # @glad-labs/brand design tokens (consumed only by stripped surfaces)
+git rm -r --cached --quiet .design-sync/ 2>/dev/null || true                 # claude.ai/design sync inputs for @glad-labs/brand (stripped above) — private projectId + operator notes
 
 # === Premium operator console (Pro-tier overlay) ===
 # The operator console SPA (static React app at /console/) is a Pro-tier product
