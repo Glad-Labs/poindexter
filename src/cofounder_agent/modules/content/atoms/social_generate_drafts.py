@@ -28,7 +28,7 @@ _svc = SocialDraftsService()
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
-    site_config: SiteConfig | None = state.get("site_config")  # type: ignore[assignment]
+    site_config: Any = state.get("site_config")
     if not site_config:
         return {}
     if site_config.get("social_drafts_enabled", "false").lower() not in ("true", "1", "yes"):
@@ -39,11 +39,31 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         logger.warning("[social.generate_drafts] no task_id in state — skipping")
         return {}
 
+    # Reach the DB pool through the graph_def seam: content_router_service
+    # seeds ``database_service`` (with a ``.pool``), never a bare ``pool`` key.
+    # Fall back to ``state["pool"]`` only for ad-hoc callers. Without a pool
+    # there is nowhere to persist a draft, so skip before spending LLM calls —
+    # mirrors media.persist's no-pool guard. Fixes #855: the atom previously
+    # read ``state.get("pool")`` alone (always None on the canonical_blog
+    # path), so ``create_draft`` got ``pool=None`` → ``'NoneType' object has
+    # no attribute 'acquire'`` for every post.
+    database_service = state.get("database_service")
+    pool = (
+        getattr(database_service, "pool", None)
+        if database_service is not None
+        else state.get("pool")
+    )
+    if pool is None:
+        logger.warning(
+            "[social.generate_drafts] no DB pool for task %s — skipping",
+            pipeline_task_id,
+        )
+        return {}
+
     title: str = state.get("title") or state.get("topic") or ""
     slug: str = state.get("post_slug") or state.get("slug") or ""
     excerpt: str = state.get("excerpt") or state.get("seo_description") or ""
     keywords: list[str] = _parse_csv(state.get("seo_keywords") or "")
-    pool = state.get("pool")
 
     platforms_raw = site_config.get("social_draft_platforms", "")
     platforms = [p.strip() for p in platforms_raw.split(",") if p.strip()]
