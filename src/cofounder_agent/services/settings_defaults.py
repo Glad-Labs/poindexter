@@ -507,7 +507,6 @@ DEFAULTS: dict[str, str] = {
     'plugin.video_provider.wan2.1-1.3b.server_url': '',
     'image_gen_server_url': 'http://image-gen-server:9836',
     'stable_audio_open_server_url': '',
-    'video_server_url': 'http://host.docker.internal:9837',
     'wan_server_url': '',
 
     # ----- RAG / retrieval -----

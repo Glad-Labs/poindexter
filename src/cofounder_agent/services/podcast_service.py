@@ -953,11 +953,10 @@ class PodcastService:
         composer.
 
         Gated by ``app_settings.podcast_video_narration_sibling_enabled``
-        (default ``true``). The video composer in
-        ``services/video_service.py::generate_video_for_post`` prefers
-        this file over ``{post_id}.mp3`` when present, so the slideshow
-        narration is the article body without the "Welcome to {name}"
-        intro / "Visit {site} for more" outro.
+        (default ``true``). The video renderer prefers this file over
+        ``{post_id}.mp3`` when present, so the video narration is the
+        article body without the "Welcome to {name}" intro / "Visit
+        {site} for more" outro.
 
         Cheap: edge-tts is local, so this is a second local TTS pass on
         already-normalized text. Same voice as the main episode to keep
@@ -965,9 +964,8 @@ class PodcastService:
         just a different framing of the same content).
 
         Never raises — narration sibling generation failure is non-fatal
-        (the main episode is fine; the video will just fall back to the
-        wrapped MP3 with the leading "Welcome to ..." per the comment in
-        ``video_service.generate_video_for_post``).
+        (the main episode is fine; the video path just falls back to the
+        wrapped MP3 with the leading "Welcome to ...").
         """
         try:
             enabled = (

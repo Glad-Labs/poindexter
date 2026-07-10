@@ -1493,11 +1493,9 @@ class TestMediaSpawnRespectsPolicy:
     @patch("services.publish_service._calculate_scheduled_publish_time", new_callable=AsyncMock, return_value=None)
     @patch("services.publish_service._spawn_background")
     @patch("services.podcast_service.generate_podcast_episode", new_callable=AsyncMock)
-    @patch("services.video_service.generate_video_episode", new_callable=AsyncMock)
-    @patch("services.video_service.generate_short_video_for_post", new_callable=AsyncMock)
     async def test_dev_diary_post_skips_all_media_spawns(
         self,
-        mock_short, mock_video, mock_podcast, mock_spawn,
+        mock_podcast, mock_spawn,
         mock_sched, mock_ping, mock_hooks, mock_export,
     ):
         """A dev_diary task (niche_slug='dev_diary') should produce a
@@ -1538,8 +1536,6 @@ class TestMediaSpawnRespectsPolicy:
 
         # None of the media services should have been called.
         mock_podcast.assert_not_called()
-        mock_video.assert_not_called()
-        mock_short.assert_not_called()
         # _spawn_background may have been called for other things
         # (ping_search_engines etc) but NOT with podcast/video/short
         # task names.

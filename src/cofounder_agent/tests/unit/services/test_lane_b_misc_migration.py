@@ -8,9 +8,6 @@ per ``feedback_no_silent_defaults.md``:
 - ``services.social_poster._resolve_social_model`` → ``social_poster_fallback_model``
 - ``modules.content.ai_content_generator._resolve_rag_writer_model`` → ``pipeline_writer_model``
 - ``services.ragas_eval._resolve_judge_model`` → ``ragas_judge_model``
-
-(``video_service._resolve_slideshow_prompt_model`` is covered by
-``test_video_service.py::TestResolveSlideshowPromptModel``.)
 """
 
 from __future__ import annotations

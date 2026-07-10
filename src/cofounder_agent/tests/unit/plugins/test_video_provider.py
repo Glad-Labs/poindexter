@@ -204,9 +204,9 @@ class TestVideoProviderRegistry:
         clear_registry_cache()
 
         providers = get_video_providers()
-        # Core samples (Wan21Provider + KenBurnsSlideshowProvider) merge
-        # in alongside the registered fake — assert fake is present and
-        # has the expected kind, not that it's the only entry.
+        # Core samples (Wan21Provider) merge in alongside the registered
+        # fake — assert fake is present and has the expected kind, not
+        # that it's the only entry.
         ok = next((p for p in providers if p.name == "ok"), None)
         assert ok is not None, f"'ok' not in {[p.name for p in providers]}"
         assert ok.kind == "generate"
@@ -218,9 +218,7 @@ class TestVideoProviderRegistry:
 
         samples = get_core_samples()
         assert "video_providers" in samples
-        # Wan21Provider + KenBurnsSlideshowProvider both ship as
-        # imperative core samples until the packaging issue is
-        # resolved.
+        # Wan21Provider ships as an imperative core sample until the
+        # packaging issue is resolved.
         names = sorted(p.__class__.__name__ for p in samples["video_providers"])
         assert "Wan21Provider" in names
-        assert "KenBurnsSlideshowProvider" in names

@@ -199,9 +199,8 @@ async def _render_image_gen_image(
 ) -> bool:
     """Render one image-gen image to disk via the image-gen server.
 
-    Mirrors the shape used in
-    ``video_service._generate_images_from_scenes`` but writes to a
-    caller-supplied path. Returns True when the PNG is on disk.
+    Writes the PNG to a caller-supplied path. Returns True when the
+    PNG is on disk.
     """
     import httpx
 
@@ -856,7 +855,7 @@ async def render_shot_list(
             ``posts.video_shot_list`` (or in-memory).
         audio_path: Local path to the podcast narration MP3 (ideally
             the body-only sibling — see
-            ``video_service.generate_video_for_post``).
+            ``podcast_service._maybe_generate_narration_sibling``).
         output_path: Where to write the final MP4.
         image_gen_url: Base URL of the image-gen inference server.
         site_config: DI seam — required for Wan2.1 provider config.

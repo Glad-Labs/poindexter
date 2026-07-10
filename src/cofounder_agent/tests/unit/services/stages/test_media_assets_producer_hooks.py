@@ -1,9 +1,8 @@
 """Tests for the ``media_assets`` producer hooks added by GH#161.
 
-Pre-fix, ``source_featured_image``, ``replace_inline_images``,
-``PodcastService.generate_episode``, and the legacy
-``video_service.generate_video_for_post`` all produced files but
-skipped the ``media_assets`` INSERT. This module asserts that the
+Pre-fix, ``source_featured_image``, ``replace_inline_images``, and
+``PodcastService.generate_episode`` all produced files but skipped the
+``media_assets`` INSERT. This module asserts that the
 hooks now fire for every successful production path.
 
 The recorder itself is mocked — these tests verify the *call shape*

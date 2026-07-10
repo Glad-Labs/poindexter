@@ -5,21 +5,18 @@ Endpoints:
     GET /api/video/feed.xml              — Video RSS feed (podcast-style)
     GET /api/video/episodes              — JSON list of all video episodes
     GET /api/video/episodes/{post_id}.mp4 — Stream a video MP4
-    POST /api/video/generate/{post_id}   — Manually trigger video generation
 """
 
 from datetime import datetime, timezone
 from typing import Any
 from xml.etree.ElementTree import Element, SubElement, tostring
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import FileResponse, Response
 
-from middleware.api_token_auth import verify_api_token
 from schemas.media_schemas import VideoEpisodeListResponse
 from services.logger_config import get_logger
 from services.video_service import VIDEO_DIR
-from utils.rate_limiter import _settings_limit, limiter
 from utils.route_utils import get_site_config_dependency
 
 logger = get_logger(__name__)
@@ -247,59 +244,3 @@ async def stream_video(post_id: str):
             "Cache-Control": "public, max-age=86400",
         },
     )
-
-
-@router.post("/generate/{post_id}", dependencies=[Depends(verify_api_token)])
-@limiter.limit(_settings_limit("rate_limit_video_generate_per_ip", "5/minute"))
-async def generate_video(
-    request: Request,
-    post_id: str,
-    site_config: Any = Depends(get_site_config_dependency),
-):
-    """Manually trigger video generation for a published post."""
-    from utils.route_utils import get_services
-
-    db = get_services().get_database()
-    pool = getattr(db, "cloud_pool", None) or (db.pool if db else None)
-    if not pool:
-        raise HTTPException(status_code=503, detail="Database not available")
-
-    try:
-        async with pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                SELECT id::text, title, content
-                FROM posts
-                WHERE id::text = $1 AND status = 'published'
-                """,
-                post_id,
-            )
-    except Exception as e:
-        logger.error("Video generate DB error: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail="Database error") from e
-
-    if not row:
-        raise HTTPException(status_code=404, detail="Published post not found")
-
-    from services.video_service import generate_video_for_post
-
-    result = await generate_video_for_post(
-        post_id=row["id"],
-        title=row["title"],
-        content=row["content"] or "",
-        force=True,
-        site_config=site_config,
-    )
-
-    if not result.success:
-        logger.error("Video generation failed for %s: %s", post_id, result.error)
-        raise HTTPException(status_code=500, detail="Video generation failed")
-
-    return {
-        "success": True,
-        "post_id": post_id,
-        "file_path": result.file_path,
-        "duration_seconds": result.duration_seconds,
-        "file_size_bytes": result.file_size_bytes,
-        "images_used": result.images_used,
-    }

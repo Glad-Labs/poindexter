@@ -46,7 +46,6 @@ EXPECTED_OVERRIDE_KEYS = {
     "plugin.caption_provider.speaches.base_url",
     "podcast_tts_base_url",
     "storage_public_url",
-    "video_server_url",
     "voice_agent_claude_code_host_brain_url",
     "voice_agent_stt_base_url",
     "voice_agent_tts_base_url",

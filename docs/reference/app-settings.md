@@ -574,7 +574,6 @@ The worker re-reads on every poll; no restart needed.
 | `video_compositor` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `video_feed_name` | `` |  | Video RSS feed title |
 | `video_negative_prompt` | `` |  | Auto-seeded by services.settings_defaults (#379) |
-| `video_server_url` | `http://host.docker.internal:9837` |  | Video generation server |
 | `video_tts_engine` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `vision_alt_enabled` | `true` |  |  |
 | `vision_alt_max_tokens` | `2048` |  |  |

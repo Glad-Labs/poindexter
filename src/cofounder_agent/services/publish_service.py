@@ -1548,10 +1548,9 @@ async def publish_post_from_task(
 
     # Glad-Labs/glad-labs-stack#649 PR 2 — propagate the director's
     # shot list from task_metadata to posts.video_shot_list so the
-    # shot-list renderer can find it when ``generate_video_for_post``
-    # runs for this post. Absent when the director stage skipped (no
-    # pool / no podcast script / etc.) — the column lands NULL and the
-    # renderer falls back to the legacy slideshow path.
+    # shot-list renderer can find it. Absent when the director stage
+    # skipped (no pool / no podcast script / etc.) — the column lands
+    # NULL and the media pipeline renders no video for this post.
     video_shot_list = merged.get("video_shot_list")
 
     post_data: dict[str, Any] = {

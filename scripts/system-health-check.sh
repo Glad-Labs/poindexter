@@ -239,11 +239,6 @@ check models "image-gen server idle/ready" bash -c '
   esac
 '
 
-check models "Voice bot (video generator) healthy" bash -c '
-  resp=$(curl -s -m 3 http://localhost:9837/ 2>&1)
-  echo "$resp" | grep -qE "Video Generation|video" || { echo "voice-bot not responding"; exit 2; }
-'
-
 # ---------------------------------------------------------------------------
 # Observability
 # ---------------------------------------------------------------------------

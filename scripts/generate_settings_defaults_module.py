@@ -32,7 +32,7 @@ GROUPS: list[tuple[str, str]] = [
     ("Identity / branding", r"^(site_|company_|owner_|operator_|app_|environment$|repo_root$|host_home$|development_mode$|disable_auth_for_dev$|gpu_)"),
     ("Cost / billing", r"^(daily_spend_limit|monthly_spend_limit|electricity_rate)"),
     ("LLM model selection", r"^(pipeline_|qa_fallback_writer_model|default_ollama_model|local_llm_|use_ollama|embed_model|embedding_model|inline_image_prompt_model|model_role_)"),
-    ("LLM providers / endpoints", r"^(ollama_|sdxl_|flux_|wan_|stable_audio|video_server_url|plugin\.)"),
+    ("LLM providers / endpoints", r"^(ollama_|sdxl_|flux_|wan_|stable_audio|plugin\.)"),
     ("LiteLLM / cost-lookup", r"^(litellm_)"),
     ("RAG / retrieval", r"^(rag_|writer_rag_|internal_rag|niche_internal_rag)"),
     ("Quality assurance pipeline", r"^(qa_)"),

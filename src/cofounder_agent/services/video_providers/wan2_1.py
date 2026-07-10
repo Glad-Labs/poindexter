@@ -58,8 +58,7 @@ logger = logging.getLogger(__name__)
 
 
 # Default inference-server URL. Lives at a different port from the
-# slideshow video server (9837) and from the image-gen/FLUX image servers
-# (9836/9838) so all four can run side-by-side during the A/B period.
+# image-gen/FLUX image servers (9836/9838) so they can run side-by-side.
 _DEFAULT_SERVER_URL = "http://host.docker.internal:9840"
 
 # Wan 2.1 1.3B defaults. The model is full-precision diffusion (not a

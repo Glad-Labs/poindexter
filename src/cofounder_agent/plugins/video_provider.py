@@ -24,7 +24,6 @@ Register a VideoProvider via ``pyproject.toml``:
 
     [project.entry-points."poindexter.video_providers"]
     wan2.1-1.3b = "cofounder_agent.services.video_providers.wan2_1:Wan21Provider"
-    ken_burns_slideshow = "cofounder_agent.services.video_providers.ken_burns_slideshow:KenBurnsSlideshowProvider"
 
 Per-install config lives in ``app_settings.plugin.video_provider.<name>``
 — ``server_url``, warmup flag, render dimensions, etc.
@@ -68,8 +67,8 @@ class VideoResult:
             ``"av1"``). Empty string when unknown.
         format: Container format (``"mp4"``, ``"webm"``). Empty string
             when unknown.
-        source: Provider name (``"wan2.1-1.3b"``, ``"ken_burns_slideshow"``,
-            etc.). Matches the entry_point key.
+        source: Provider name (``"wan2.1-1.3b"``, etc.). Matches the
+            entry_point key.
         prompt: The text prompt that produced this video (true T2V) or
             the post title (composition providers).
         metadata: Free-form per-provider metadata. Conventionally
