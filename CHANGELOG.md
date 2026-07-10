@@ -2,6 +2,41 @@
 
 ## Unreleased
 
+## [0.99.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.98.0...v0.99.0) (2026-07-10)
+
+
+### Features
+
+* **cli:** poindexter tasks rebuild-images ([#2242](https://github.com/Glad-Labs/glad-labs-stack/issues/2242)) ([63d224a](https://github.com/Glad-Labs/glad-labs-stack/commit/63d224a4cdfdddee643405f13b33c2390e98a923))
+* **console:** move task-trace board to a Trace tab + strip panel badges + tighten landing ([#2220](https://github.com/Glad-Labs/glad-labs-stack/issues/2220)) ([638e508](https://github.com/Glad-Labs/glad-labs-stack/commit/638e5080e3c2e86a34955f7e4287efdb0938abe4))
+* **console:** panel header identity icons in place of the removed A1/S1/… badges ([#2223](https://github.com/Glad-Labs/glad-labs-stack/issues/2223)) ([ef2c121](https://github.com/Glad-Labs/glad-labs-stack/commit/ef2c121d7cfb5579ca304e4ca98c8938d6ffb831))
+* **gates:** wire final_publish_approval into scheduled_publisher + honest gates list ([#2240](https://github.com/Glad-Labs/glad-labs-stack/issues/2240)) ([f28969b](https://github.com/Glad-Labs/glad-labs-stack/commit/f28969bb57f10590ddbc5813feedfc930650bbeb))
+* **media-qa:** Layer 2 LLM signals — video topic-match + podcast faithfulness ([#2238](https://github.com/Glad-Labs/glad-labs-stack/issues/2238)) ([96310a8](https://github.com/Glad-Labs/glad-labs-stack/commit/96310a8eb16b627dcba3097a2e8e98a398278566))
+* **media-qa:** Layer 2 semantic scoring (0-100) — video shot-fidelity + podcast rescale ([#2234](https://github.com/Glad-Labs/glad-labs-stack/issues/2234)) ([bf69513](https://github.com/Glad-Labs/glad-labs-stack/commit/bf69513342021a92dfbf32d7d45b55ca431c4a77))
+* **ops:** rewire scheduled-agent fleet off Claude Code OAuth (deterministic + local-LLM) ([#2236](https://github.com/Glad-Labs/glad-labs-stack/issues/2236)) ([943cf0e](https://github.com/Glad-Labs/glad-labs-stack/commit/943cf0ec4eb771a4fd3fddb96703b6ae309db1ba))
+* **power:** meter true wall power from a Shelly smart plug ([#2249](https://github.com/Glad-Labs/glad-labs-stack/issues/2249)) ([4580969](https://github.com/Glad-Labs/glad-labs-stack/commit/458096939973fe5ee3d652c813d8523c83d3905a))
+
+
+### Bug Fixes
+
+* **analytics:** beacon bot-flag — de-bot the page_views KPI ([#2246](https://github.com/Glad-Labs/glad-labs-stack/issues/2246)) ([7d3236a](https://github.com/Glad-Labs/glad-labs-stack/commit/7d3236afbd379c21d4d9fdf7d7b0f872f3faf9ed))
+* **audit:** stop findings lost on audit write — drain writes + widen source ([#2248](https://github.com/Glad-Labs/glad-labs-stack/issues/2248)) ([88ba93b](https://github.com/Glad-Labs/glad-labs-stack/commit/88ba93b26c7af1f50e61c947b2333ef2966ab27d))
+* **cli:** retention run and taps run never registered handlers ([#2230](https://github.com/Glad-Labs/glad-labs-stack/issues/2230)) ([bb91970](https://github.com/Glad-Labs/glad-labs-stack/commit/bb919703277992e39621e08036f1f8f262cc87ae))
+* **console:** keep the content-pipeline table inside its masonry column ([#2226](https://github.com/Glad-Labs/glad-labs-stack/issues/2226)) ([29e0a69](https://github.com/Glad-Labs/glad-labs-stack/commit/29e0a695a57dcb274ea7b45d76a5ec7144e155c2))
+* **console:** make Launch tiles (and Grafana/Prometheus bases) real host-relative links ([#2227](https://github.com/Glad-Labs/glad-labs-stack/issues/2227)) ([594d5b7](https://github.com/Glad-Labs/glad-labs-stack/commit/594d5b702b058e30b3cd46e1a61b8954abe89e0c))
+* **console:** point Loki/Tempo/Kuma launcher tiles at the Grafana Observability board ([#2231](https://github.com/Glad-Labs/glad-labs-stack/issues/2231)) ([142d3c3](https://github.com/Glad-Labs/glad-labs-stack/commit/142d3c37967921fecab61729666565e22b35bab4))
+* **console:** replace colliding chart end-labels with a readable dash-swatch legend ([#2232](https://github.com/Glad-Labs/glad-labs-stack/issues/2232)) ([b4f6dfd](https://github.com/Glad-Labs/glad-labs-stack/commit/b4f6dfd0ca8fddeb7ae5fc38619646b12ec42a96))
+* **console:** show service uptime on the card, drop ollama's stale model desc ([#2237](https://github.com/Glad-Labs/glad-labs-stack/issues/2237)) ([c3fc50e](https://github.com/Glad-Labs/glad-labs-stack/commit/c3fc50eb72f6c0b7fabeeb9ddf2dc1f1a3ebce9a))
+* **db:** extend PostgresVacuumJob to cover crash-restart-blind tables ([#2239](https://github.com/Glad-Labs/glad-labs-stack/issues/2239)) ([33029dc](https://github.com/Glad-Labs/glad-labs-stack/commit/33029dceb8af1c0bc2e4c644ce2a4c8024c09b41))
+* **deploy:** resolve pwsh-&gt;powershell.exe fallback in deploy-worker.ps1 ([#2235](https://github.com/Glad-Labs/glad-labs-stack/issues/2235)) ([9610b99](https://github.com/Glad-Labs/glad-labs-stack/commit/9610b996131495f9532b031a3d54dd8974f95911))
+* **image:** address image-gen by compose service DNS + alert on unreachable fallback ([#2244](https://github.com/Glad-Labs/glad-labs-stack/issues/2244)) ([b21f9b9](https://github.com/Glad-Labs/glad-labs-stack/commit/b21f9b9c9fd8eef88b2725f65c06ead232004c37))
+* **llm:** default litellm to httpx transport to kill Ollama stale-connection timeouts ([#2251](https://github.com/Glad-Labs/glad-labs-stack/issues/2251)) ([c1c1361](https://github.com/Glad-Labs/glad-labs-stack/commit/c1c1361857699301d4ae3ccdd4674ea6cb04a7cd))
+* **media-qa:** caption_fidelity diffs ASR against voiced text (script + CTA) ([#2243](https://github.com/Glad-Labs/glad-labs-stack/issues/2243)) ([eb62fb9](https://github.com/Glad-Labs/glad-labs-stack/commit/eb62fb9a9fe038f089667dd7c92daf5f70071d9a))
+* **retention:** embeddings_collapse cluster count was capped at cluster_size for any pool size ([#2228](https://github.com/Glad-Labs/glad-labs-stack/issues/2228)) ([28c7ecf](https://github.com/Glad-Labs/glad-labs-stack/commit/28c7ecf31290e1dfb456d9e0571ebcf1c127b000))
+* **retention:** make baseline seed race-safe for embeddings collapse ([#2241](https://github.com/Glad-Labs/glad-labs-stack/issues/2241)) ([1f2c6d4](https://github.com/Glad-Labs/glad-labs-stack/commit/1f2c6d45b1bd500d47eff65ceea8050e3c9106db))
+* **social:** resolve DB pool from database_service in generate_drafts atom ([#2245](https://github.com/Glad-Labs/glad-labs-stack/issues/2245)) ([c59e7e6](https://github.com/Glad-Labs/glad-labs-stack/commit/c59e7e6afc6aecf0ea39deb67b5db94086e7f1d1))
+* **video:** raise shot-vision-qa token budget, fix wan timeout override, surface hero-fallback reason ([#2224](https://github.com/Glad-Labs/glad-labs-stack/issues/2224)) ([422a0a5](https://github.com/Glad-Labs/glad-labs-stack/commit/422a0a540388a4c7546a4b849bfba57bd087828f))
+
 ## [0.98.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.97.0...v0.98.0) (2026-07-08)
 
 
