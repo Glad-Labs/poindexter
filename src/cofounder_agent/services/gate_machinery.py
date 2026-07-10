@@ -19,7 +19,48 @@ service per that module's stated design.
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from typing import Any
+
+# ---------------------------------------------------------------------------
+# Gate catalog — the single source of truth for which HITL gates exist, how
+# they gate, and where they fire. Consumed by approval_service.list_gates so
+# `poindexter gates list` shows every known gate (even one with no setting row
+# or paused task) with an honest mechanism/wiring label.
+#
+# mechanism follows execution context, not preference:
+#   - "graph-node"      — a LangGraph interrupt() atom; can only pause a LIVE
+#                         graph run (draft/preview in canonical_blog; seo_refresh).
+#   - "imperative-hold" — writes the awaiting_gate columns to hold an entity
+#                         OUTSIDE any live graph: topic_decision holds a task
+#                         before the flow claims it (pre-graph);
+#                         final_publish_approval holds a post before the
+#                         scheduled_publisher timer promotes it (post-graph).
+#
+# New gate? Add a row here so `gates list` stays honest.
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class GateSpec:
+    """One known HITL gate: its name, mechanism, wiring, and default state."""
+
+    name: str
+    mechanism: str  # "graph-node" | "imperative-hold"
+    wired_into: str  # human-readable location where it fires
+    default_enabled: bool
+
+
+GATE_CATALOG: tuple[GateSpec, ...] = (
+    GateSpec("draft_gate", "graph-node", "canonical_blog", False),
+    GateSpec("preview_gate", "graph-node", "canonical_blog", False),
+    GateSpec("seo_refresh_gate", "graph-node", "seo_refresh", True),
+    GateSpec("topic_decision", "imperative-hold", "topic proposals (CLI)", False),
+    GateSpec("final_publish_approval", "imperative-hold", "scheduled_publisher", False),
+)
+
+GATE_CATALOG_BY_NAME: dict[str, GateSpec] = {g.name: g for g in GATE_CATALOG}
+
 
 # ---------------------------------------------------------------------------
 # Exceptions — shared root so a caller can ``except GateServiceError`` and
@@ -147,6 +188,9 @@ def iso_or_none(value: Any) -> Any:
 
 __all__ = [
     "GateServiceError",
+    "GateSpec",
+    "GATE_CATALOG",
+    "GATE_CATALOG_BY_NAME",
     "coerce_artifact",
     "ensure_gate_match",
     "resolve_reject_status",

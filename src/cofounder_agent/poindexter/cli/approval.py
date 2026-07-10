@@ -482,12 +482,40 @@ def gates_list_command(json_output: bool) -> None:
         )
         return
 
-    click.echo(f"{'GATE':<28} {'STATE':<10} {'PENDING':<8}")
-    for row in rows:
+    default_rows = [r for r in rows if r.get("mechanism") == "default"]
+    gate_rows = [r for r in rows if r.get("mechanism") != "default"]
+
+    # Default publish gate — the always-on per-post sign-off. This is the gate
+    # that actually holds every post; it has no toggle.
+    for d in default_rows:
+        click.secho(
+            "DEFAULT PUBLISH GATE — every post requires per-post sign-off",
+            fg="cyan",
+            bold=True,
+        )
+        click.echo(
+            f"  {d['gate_name']:<22} always-on    {d.get('pending_count', 0)} pending"
+        )
+        armed = d.get("armed_niches") or []
+        armed_str = ", ".join(armed) if armed else "none"
+        click.echo(
+            f"  auto-publish: threshold={d.get('auto_publish_threshold')} "
+            f"require_human_approval={d.get('require_human_approval')} · "
+            f"armed niches: {armed_str}"
+        )
+        click.echo()
+
+    # Configurable gates — the interrupt-node + imperative-hold toggles.
+    click.secho("CONFIGURABLE GATES", fg="cyan", bold=True)
+    click.echo(
+        f"  {'GATE':<24} {'STATE':<10} {'WIRED INTO':<22} {'PENDING':<8}"
+    )
+    for row in gate_rows:
         state = "enabled" if row["enabled"] else "disabled"
         color = "green" if row["enabled"] else "yellow"
         click.secho(
-            f"{row['gate_name']:<28} {state:<10} {row['pending_count']:<8}",
+            f"  {row['gate_name']:<24} {state:<10} "
+            f"{str(row.get('wired_into', '')):<22} {row['pending_count']:<8}",
             fg=color,
         )
 

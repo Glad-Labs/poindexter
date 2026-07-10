@@ -593,3 +593,56 @@ class TestPipelineTasksStatusSync:
         conn.execute.assert_awaited_once()
         sync_arg = conn.execute.call_args[0][1]
         assert sync_arg == ["task-11111111"]
+
+
+# ---------------------------------------------------------------------------
+# final_publish_approval gate (scheduled → published)
+# ---------------------------------------------------------------------------
+
+
+class TestFinalPublishGate:
+    """final_publish_approval pauses due scheduled posts when enabled."""
+
+    @pytest.mark.asyncio
+    async def test_gate_off_does_not_park(self):
+        rows = [{"id": "p-1", "slug": "s", "title": "T", "pipeline_task_id": None}]
+        pool, _conn = _make_pool(rows)
+        get_pool = AsyncMock(return_value=pool)
+        with patch(
+            "services.posts_approval_service.pause_post_at_gate",
+            new=AsyncMock(),
+        ) as mock_pause:
+            await _run_one_iteration(get_pool)  # empty SiteConfig -> gate off
+        mock_pause.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_gate_on_parks_due_posts(self):
+        rows = [{"id": "p-1", "slug": "s-1", "title": "T1", "pipeline_task_id": None}]
+        pool, _conn = _make_pool(rows)
+        get_pool = AsyncMock(return_value=pool)
+        sc = SiteConfig(
+            initial_config={"pipeline_gate_final_publish_approval": "on"}
+        )
+        with patch(
+            "services.posts_approval_service.pause_post_at_gate",
+            new=AsyncMock(return_value={"ok": True}),
+        ) as mock_pause:
+            task = asyncio.create_task(
+                run_scheduled_publisher(get_pool, site_config=sc)
+            )
+            await asyncio.sleep(0.05)
+            task.cancel()
+            await task
+        mock_pause.assert_awaited()
+        _, kwargs = mock_pause.await_args
+        assert kwargs["post_id"] == "p-1"
+        assert kwargs["gate_name"] == "final_publish_approval"
+        assert kwargs["artifact"]["slug"] == "s-1"
+
+    @pytest.mark.asyncio
+    async def test_promote_query_excludes_parked_posts(self):
+        pool, conn = _make_pool([])
+        get_pool = AsyncMock(return_value=pool)
+        await _run_one_iteration(get_pool)  # gate off -> only the promote UPDATE
+        sql = conn.fetch.call_args[0][0]
+        assert "awaiting_gate IS NULL" in sql

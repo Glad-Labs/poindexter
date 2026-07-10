@@ -113,6 +113,14 @@ class FakeConnection:
                 else "regen_text_attempts"
             )
             return int(row.get(col, 0))
+        if sql_norm.startswith(
+            "SELECT COUNT(*) FROM pipeline_tasks WHERE status = 'awaiting_approval'"
+        ):
+            return sum(
+                1
+                for t in self._store.tasks.values()
+                if t.get("status") == "awaiting_approval"
+            )
         raise AssertionError(f"FakeConnection.fetchval saw unexpected SQL: {sql_norm[:80]}")
 
     async def execute(self, sql: str, *args):
@@ -243,6 +251,23 @@ class FakeConnection:
                 if g:
                     counts[g] = counts.get(g, 0) + 1
             return [{"gate_name": k, "pending_count": v} for k, v in counts.items()]
+        if sql_norm.startswith(
+            "SELECT awaiting_gate AS gate_name, COUNT(*) AS pending_count FROM posts"
+        ):
+            counts = {}
+            for p in self._store.posts.values():
+                g = p.get("awaiting_gate")
+                if g:
+                    counts[g] = counts.get(g, 0) + 1
+            return [{"gate_name": k, "pending_count": v} for k, v in counts.items()]
+        if sql_norm.startswith(
+            "SELECT key, value FROM app_settings WHERE key LIKE '%auto_publish%'"
+        ):
+            return [
+                {"key": k, "value": v["value"]}
+                for k, v in self._store.app_settings.items()
+                if "auto_publish" in k
+            ]
         raise AssertionError(f"FakeConnection.fetch saw unexpected SQL: {sql_norm[:80]}")
 
 
@@ -251,6 +276,7 @@ class FakeStore:
         self.tasks: dict[str, dict[str, Any]] = {}
         self.events: list[dict[str, Any]] = []
         self.app_settings: dict[str, dict[str, Any]] = {}
+        self.posts: dict[str, dict[str, Any]] = {}
 
 
 class FakePool:
@@ -636,26 +662,74 @@ class TestGateSettings:
             == "off"
         )
 
-    async def test_list_gates_merges_settings_and_live_rows(self, fake_pool):
-        # One known gate via settings, one live (paused) gate not yet in settings.
+    async def test_list_gates_merges_catalog_settings_and_live_rows(self, fake_pool):
+        # A catalog gate toggled on via settings; a live task-gate; a live
+        # post-gate (final_publish_approval parks on posts).
         fake_pool.store.app_settings["pipeline_gate_topic_decision"] = {
             "value": "on", "is_active": True, "description": "",
         }
         now = datetime.now(timezone.utc)
         fake_pool.store.tasks["t-1"] = {
-            "awaiting_gate": "preview_approval",
+            "awaiting_gate": "topic_decision",
             "gate_artifact": "{}",
             "gate_paused_at": now,
         }
+        fake_pool.store.posts["p-1"] = {"awaiting_gate": "final_publish_approval"}
+
         rows = await list_gates(pool=fake_pool)
-        names = {r["gate_name"] for r in rows}
-        assert names == {"topic_decision", "preview_approval"}
-        topic = next(r for r in rows if r["gate_name"] == "topic_decision")
-        preview = next(r for r in rows if r["gate_name"] == "preview_approval")
-        assert topic["enabled"] is True
-        assert topic["pending_count"] == 0
-        assert preview["enabled"] is False  # never set
-        assert preview["pending_count"] == 1
+        by_name = {r["gate_name"]: r for r in rows}
+
+        # Every catalog gate appears even with no setting row / no paused entity.
+        assert {
+            "draft_gate", "preview_gate", "seo_refresh_gate",
+            "topic_decision", "final_publish_approval",
+        } <= set(by_name)
+
+        # Mechanism / wiring come from the catalog.
+        assert by_name["final_publish_approval"]["mechanism"] == "imperative-hold"
+        assert by_name["final_publish_approval"]["wired_into"] == "scheduled_publisher"
+        assert by_name["draft_gate"]["mechanism"] == "graph-node"
+
+        # Enabled state from settings; seo_refresh_gate defaults on.
+        assert by_name["topic_decision"]["enabled"] is True
+        assert by_name["seo_refresh_gate"]["enabled"] is True
+        assert by_name["draft_gate"]["enabled"] is False
+
+        # Pending counts unioned across both tables.
+        assert by_name["topic_decision"]["pending_count"] == 1  # from tasks
+        assert by_name["final_publish_approval"]["pending_count"] == 1  # from posts
+
+    async def test_list_gates_prepends_default_awaiting_approval_row(self, fake_pool):
+        fake_pool.store.tasks["a-1"] = {"status": "awaiting_approval"}
+        fake_pool.store.tasks["a-2"] = {"status": "awaiting_approval"}
+        # An armed niche (threshold > 0 AND dry_run false) and a disarmed one.
+        fake_pool.store.app_settings["dev_diary_auto_publish_threshold"] = {
+            "value": "70", "is_active": True, "description": "",
+        }
+        fake_pool.store.app_settings["dev_diary_auto_publish_dry_run"] = {
+            "value": "false", "is_active": True, "description": "",
+        }
+        fake_pool.store.app_settings["glad_labs_auto_publish_threshold"] = {
+            "value": "80", "is_active": True, "description": "",
+        }
+        fake_pool.store.app_settings["glad_labs_auto_publish_dry_run"] = {
+            "value": "true", "is_active": True, "description": "",
+        }
+        sc = _make_site_config(
+            {"auto_publish_threshold": "0", "require_human_approval": "true"}
+        )
+
+        rows = await list_gates(pool=fake_pool, site_config=sc)
+
+        default = rows[0]
+        assert default["gate_name"] == "awaiting_approval"
+        assert default["mechanism"] == "default"
+        assert default["enabled"] is True
+        assert default["pending_count"] == 2
+        assert default["auto_publish_threshold"] == "0"
+        assert default["require_human_approval"] == "true"
+        # dev_diary armed (dry_run false); glad_labs not (dry_run true).
+        assert default["armed_niches"] == ["dev_diary"]
 
 
 # ---------------------------------------------------------------------------

@@ -68,6 +68,13 @@ async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig):
             if not pool:
                 continue
 
+            # HITL final-publish gate: when enabled, park due-but-unparked
+            # scheduled posts at final_publish_approval instead of letting the
+            # promote UPDATE publish them. Runs on its own connection BEFORE the
+            # promote transaction (pause_post_at_gate acquires its own). Never
+            # raises — a gate/notify failure must not poison the publish loop.
+            await _maybe_park_due_posts_at_gate(pool, site_config=_sc)
+
             async with pool.acquire() as conn:
                 async with conn.transaction():
                     # #327: pull the slug back too so we can revalidate
@@ -101,6 +108,7 @@ async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig):
                             updated_at = NOW(),
                             distributed_at = COALESCE(distributed_at, NOW())
                         WHERE status = 'scheduled' AND published_at <= NOW()
+                          AND awaiting_gate IS NULL
                         RETURNING id, title, slug,
                                   metadata ->> 'pipeline_task_id' AS pipeline_task_id
                         """)
@@ -176,6 +184,84 @@ async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig):
             break
         except Exception as e:
             logger.error("[scheduled_publisher] Error: %s", e, exc_info=True)
+
+
+async def _maybe_park_due_posts_at_gate(pool, *, site_config: SiteConfig) -> None:
+    """Pause due scheduled posts at ``final_publish_approval`` when enabled.
+
+    When ``pipeline_gate_final_publish_approval`` is on, every post that is
+    ``scheduled`` and due (``published_at <= NOW()``) but not already parked
+    (``awaiting_gate IS NULL``) is handed to
+    :func:`services.posts_approval_service.pause_post_at_gate`, which sets the
+    gate columns, notifies the operator, and writes the audit row. The promote
+    UPDATE (which now filters ``awaiting_gate IS NULL``) then skips them until
+    the operator clears the gate via ``poindexter schedule approve <post_id>``.
+
+    Best-effort: any failure is logged at WARNING and swallowed so the publish
+    loop keeps running (a crash here would wedge every subsequent due post).
+    """
+    from services.approval_service import is_gate_enabled
+    from services.posts_approval_service import (
+        FINAL_PUBLISH_GATE,
+        pause_post_at_gate,
+    )
+
+    if not is_gate_enabled(FINAL_PUBLISH_GATE, site_config):
+        return
+
+    try:
+        async with pool.acquire() as conn:
+            due = await conn.fetch(
+                """
+                SELECT id::text AS id, slug, title
+                  FROM posts
+                 WHERE status = 'scheduled'
+                   AND published_at <= NOW()
+                   AND awaiting_gate IS NULL
+                """
+            )
+    except Exception as exc:
+        logger.warning(
+            "[scheduled_publisher] final_publish_approval: due-post query "
+            "failed (non-fatal), skipping park this tick: %s",
+            exc,
+        )
+        return
+
+    site_url = ""
+    try:
+        site_url = str(site_config.get("site_url", "") or "")
+    except Exception:
+        site_url = ""
+
+    for row in due:
+        post_id = row["id"]
+        slug = row["slug"]
+        artifact = {"slug": slug, "title": row["title"]}
+        if site_url and slug:
+            artifact["permalink"] = f"{site_url.rstrip('/')}/posts/{slug}"
+        try:
+            await pause_post_at_gate(
+                post_id=post_id,
+                gate_name=FINAL_PUBLISH_GATE,
+                artifact=artifact,
+                site_config=site_config,
+                pool=pool,
+                notify=True,
+            )
+            logger.info(
+                "[scheduled_publisher] final_publish_approval: parked post %s "
+                "(%s) for operator sign-off",
+                post_id,
+                slug,
+            )
+        except Exception as exc:
+            logger.warning(
+                "[scheduled_publisher] final_publish_approval: pause_post_at_gate "
+                "failed for post %s (non-fatal): %s",
+                post_id,
+                exc,
+            )
 
 
 async def _revalidate_for_row(row, *, site_config: SiteConfig) -> None:

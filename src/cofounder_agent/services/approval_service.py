@@ -1163,26 +1163,85 @@ async def set_gate_enabled(
     return {"ok": True, "gate_name": gate_name, "enabled": enabled, "key": key}
 
 
+async def _auto_publish_posture(*, pool: Any, site_config: Any) -> dict[str, Any]:
+    """Return the global auto-publish posture for the default-gate row.
+
+    - ``auto_publish_threshold`` / ``require_human_approval``: the two globals
+      that keep every post in ``awaiting_approval`` (both must relax for a post
+      to auto-publish).
+    - ``armed_niches``: niches that HAVE opted into auto-publish —
+      ``<niche>_auto_publish_threshold > 0`` AND
+      ``<niche>_auto_publish_dry_run == 'false'``.
+
+    Best-effort: the armed-niche scan is swallowed on error (the CLI still
+    renders the global posture).
+    """
+    threshold = "0"
+    require_human = "true"
+    if site_config is not None:
+        threshold = str(site_config.get("auto_publish_threshold", "0"))
+        require_human = str(site_config.get("require_human_approval", "true"))
+
+    armed: list[str] = []
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                "SELECT key, value FROM app_settings WHERE key LIKE '%auto_publish%'"
+            )
+        thresholds: dict[str, float] = {}
+        dry: dict[str, str] = {}
+        for r in rows:
+            key = r["key"]
+            if key.endswith("_auto_publish_threshold"):
+                niche = key[: -len("_auto_publish_threshold")]
+                try:
+                    thresholds[niche] = float(r["value"])
+                except (TypeError, ValueError):
+                    thresholds[niche] = 0.0
+            elif key.endswith("_auto_publish_dry_run"):
+                niche = key[: -len("_auto_publish_dry_run")]
+                dry[niche] = str(r["value"]).strip().lower()
+        for niche in sorted(thresholds):
+            if thresholds[niche] > 0 and dry.get(niche) == "false":
+                armed.append(niche)
+    except Exception as exc:
+        # Best-effort, but visible: a scan failure still renders the global
+        # posture — the armed-niches line just goes empty — so a DB error here
+        # is worth surfacing to the operator running `gates list`.
+        logger.warning("[approval_service] armed-niche scan failed: %s", exc)
+
+    return {
+        "auto_publish_threshold": threshold,
+        "require_human_approval": require_human,
+        "armed_niches": armed,
+    }
+
+
 async def list_gates(
     *,
     pool: Any,
-    site_config: Any = None,  # noqa: ARG001 — kept for API consistency with other gate fns; callers pass it
+    site_config: Any = None,
 ) -> list[dict[str, Any]]:
-    """Return every gate the system has ever heard of, plus its state.
+    """Return every gate the system knows about, plus its state.
 
-    Sources of "known gates":
+    "Known gates" come from three sources, merged:
 
-    1. Every ``pipeline_gate_*`` row in app_settings (operator already
-       configured these).
-    2. Every distinct ``awaiting_gate`` value currently on any
-       ``content_tasks`` row (live gates, even if the setting hasn't
-       been written yet).
+    1. The :data:`services.gate_machinery.GATE_CATALOG` — every gate the code
+       defines, so a gate appears with an honest ``mechanism`` / ``wired_into``
+       label even when it has no setting row and no paused entity.
+    2. Every ``pipeline_gate_*`` row in app_settings (real enabled-state; also
+       surfaces a settings-only gate absent from the catalog as
+       ``mechanism='unknown'``).
+    3. Live ``awaiting_gate`` counts from BOTH gate-carrying tables —
+       ``pipeline_tasks`` (mid-pipeline + pre-graph holds) and ``posts``
+       (``final_publish_approval``).
 
-    Returns each gate with its enabled flag and how many tasks are
-    currently paused on it.
+    Each row carries ``gate_name`` / ``enabled`` / ``pending_count`` (backcompat)
+    plus ``mechanism`` / ``wired_into`` / ``setting_key``.
     """
+    from services.gate_machinery import GATE_CATALOG
+
     async with pool.acquire() as conn:
-        # All known gate-enable settings.
         setting_rows = await conn.fetch(
             """
             SELECT key, value, is_active
@@ -1191,9 +1250,9 @@ async def list_gates(
             """,
             f"{_GATE_SETTING_PREFIX}%",
         )
-        # Live in-flight gates — base table read so the count is
-        # accurate even mid-migration if the view hasn't been refreshed.
-        live_rows = await conn.fetch(
+        # Live in-flight gates — base-table reads so counts are accurate even
+        # mid-migration. A gate parks on pipeline_tasks OR posts.
+        task_live = await conn.fetch(
             """
             SELECT awaiting_gate AS gate_name, COUNT(*) AS pending_count
               FROM pipeline_tasks
@@ -1201,8 +1260,36 @@ async def list_gates(
              GROUP BY awaiting_gate
             """,
         )
+        post_live = await conn.fetch(
+            """
+            SELECT awaiting_gate AS gate_name, COUNT(*) AS pending_count
+              FROM posts
+             WHERE awaiting_gate IS NOT NULL
+             GROUP BY awaiting_gate
+            """,
+        )
+        # The always-on default gate: every post lands in awaiting_approval
+        # for per-post sign-off (auto_publish_threshold=0 / require_human).
+        awaiting_approval_count = await conn.fetchval(
+            "SELECT COUNT(*) FROM pipeline_tasks WHERE status = 'awaiting_approval'"
+        )
 
     gates: dict[str, dict[str, Any]] = {}
+
+    # 1. Seed from the catalog so every known gate appears with its honest
+    #    mechanism / wiring label, even absent a setting row or paused entity.
+    for spec in GATE_CATALOG:
+        gates[spec.name] = {
+            "gate_name": spec.name,
+            "enabled": spec.default_enabled,
+            "mechanism": spec.mechanism,
+            "wired_into": spec.wired_into,
+            "setting_key": _gate_setting_key(spec.name),
+            "pending_count": 0,
+        }
+
+    # 2. Overlay real enabled-state from settings; surface any settings-only
+    #    gate absent from the catalog (forward-compat) as mechanism=unknown.
     for row in setting_rows:
         gate_name = row["key"][len(_GATE_SETTING_PREFIX):]
         if not gate_name:
@@ -1212,27 +1299,52 @@ async def list_gates(
             str(row["value"]).strip().lower() in ("on", "true", "1", "yes")
             and bool(row.get("is_active", True))
         )
-        gates[gate_name] = {
-            "gate_name": gate_name,
-            "enabled": enabled,
-            "setting_key": row["key"],
-            "pending_count": 0,
-        }
+        entry = gates.get(gate_name)
+        if entry is None:
+            gates[gate_name] = {
+                "gate_name": gate_name,
+                "enabled": enabled,
+                "mechanism": "unknown",
+                "wired_into": "unknown",
+                "setting_key": row["key"],
+                "pending_count": 0,
+            }
+        else:
+            entry["enabled"] = enabled
+            entry["setting_key"] = row["key"]
 
-    for row in live_rows:
+    # 3. Add pending counts from BOTH tables. Surface any live gate not
+    #    otherwise known (e.g. a legacy awaiting_gate value) as unknown.
+    for row in list(task_live) + list(post_live):
         gate_name = row["gate_name"]
-        gates.setdefault(
+        entry = gates.setdefault(
             gate_name,
             {
                 "gate_name": gate_name,
                 "enabled": False,
+                "mechanism": "unknown",
+                "wired_into": "unknown",
                 "setting_key": _gate_setting_key(gate_name),
                 "pending_count": 0,
             },
         )
-        gates[gate_name]["pending_count"] = int(row["pending_count"])
+        entry["pending_count"] += int(row["pending_count"])
 
-    return sorted(gates.values(), key=lambda g: g["gate_name"])
+    ordered = sorted(gates.values(), key=lambda g: g["gate_name"])
+
+    # Prepend the always-on default gate — the per-post sign-off that actually
+    # holds every post — with the global auto-publish posture.
+    posture = await _auto_publish_posture(pool=pool, site_config=site_config)
+    default_row = {
+        "gate_name": "awaiting_approval",
+        "enabled": True,
+        "mechanism": "default",
+        "wired_into": "post_pipeline (every post)",
+        "setting_key": None,
+        "pending_count": int(awaiting_approval_count or 0),
+        **posture,
+    }
+    return [default_row, *ordered]
 
 
 __all__ = [

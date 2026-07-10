@@ -103,3 +103,35 @@ class TestIsoOrNone:
 
     def test_plain_value_passthrough(self):
         assert iso_or_none("2026-06-02") == "2026-06-02"
+
+
+class TestGateCatalog:
+    def test_catalog_has_the_five_known_gates(self):
+        from services.gate_machinery import GATE_CATALOG
+
+        names = {g.name for g in GATE_CATALOG}
+        assert names == {
+            "draft_gate",
+            "preview_gate",
+            "seo_refresh_gate",
+            "topic_decision",
+            "final_publish_approval",
+        }
+
+    def test_mechanism_and_wiring_are_accurate(self):
+        from services.gate_machinery import GATE_CATALOG_BY_NAME
+
+        fpa = GATE_CATALOG_BY_NAME["final_publish_approval"]
+        assert fpa.mechanism == "imperative-hold"
+        assert fpa.wired_into == "scheduled_publisher"
+        assert fpa.default_enabled is False
+
+        td = GATE_CATALOG_BY_NAME["topic_decision"]
+        assert td.mechanism == "imperative-hold"
+
+        draft = GATE_CATALOG_BY_NAME["draft_gate"]
+        assert draft.mechanism == "graph-node"
+        assert draft.wired_into == "canonical_blog"
+
+        seo = GATE_CATALOG_BY_NAME["seo_refresh_gate"]
+        assert seo.default_enabled is True

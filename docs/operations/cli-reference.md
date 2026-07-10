@@ -432,8 +432,17 @@ The gate is **opt-in**. Enable it with:
 poindexter gates set topic_decision on
 ```
 
-`poindexter gates list` shows the current state and pending count.
-With the gate off, manual `topics propose` calls land at
+`poindexter gates list` shows two groups: the **DEFAULT PUBLISH GATE**
+— the always-on `awaiting_approval` per-post sign-off that actually holds
+every post, with its live pending count and the global auto-publish posture
+(`auto_publish_threshold`, `require_human_approval`, and any armed niches) —
+and the **CONFIGURABLE GATES** table, each toggleable gate with its `STATE`
+(`enabled`/`disabled`), `WIRED INTO` (where it fires, e.g. `canonical_blog`,
+`seo_refresh`, `scheduled_publisher`), and `PENDING` count. `--json` emits the
+full rows (a superset of the table, including each gate's `mechanism`:
+`graph-node` / `imperative-hold` / `default`).
+
+With `topic_decision` off, manual `topics propose` calls land at
 `status='pending'` and the worker runs them end-to-end exactly like
 auto-discovered topics — the gate is purely additive.
 
@@ -622,10 +631,15 @@ Flags:
 
 ### `schedule approve` / `reject` / `pending` / `show-pending`
 
-Operate the final publish-approval gate on the `posts` table (the gate that
-fires _after_ scheduling). Formerly the top-level `approve-publish` /
-`reject-publish` / `list-pending-publish` / `show-pending-publish`, which
-still work as hidden deprecated aliases.
+Operate the `final_publish_approval` gate on the `posts` table — the operator's
+last veto before a **scheduled** post is auto-promoted to `published`. When the
+gate is enabled, `scheduled_publisher` pauses each due scheduled post here
+instead of publishing it (writing `posts.awaiting_gate`), notifies the operator,
+and waits; approve clears the gate and the next publisher tick (≤60s) promotes
+it. This gate only fires on the scheduled→published timer path — the manual
+approve→go-live flow is already a human action and is unaffected. Formerly the
+top-level `approve-publish` / `reject-publish` / `list-pending-publish` /
+`show-pending-publish`, which still work as hidden deprecated aliases.
 
 ```bash
 poindexter schedule pending                       # list posts at the gate
