@@ -122,3 +122,104 @@ def test_resolve_default_num_ctx_resolves_for_local(monkeypatch):
     assert out == 4096
     assert captured["phase"] == "qa.vision"
     assert captured["site_config"] is None
+
+
+# ---------------------------------------------------------------------------
+# Langfuse session/phase stamping — closes the 2026-07-10 finding that 0/3236
+# traces carried a session, so the console task-trace deeplink (which resolves
+# task_id as the Langfuse session id) pointed at nothing. dispatch_complete is
+# the single choke point every task-attributed LLM call flows through, so it
+# stamps the RESERVED Langfuse OTEL attributes on its span:
+#   - ``session.id``  (LangfuseOtelSpanAttributes.TRACE_SESSION_ID) -> groups a
+#     task's calls into one Langfuse session
+#   - ``langfuse.observation.metadata.phase`` -> first-class phase filter
+# Both keys are the verified constants from the installed langfuse 4.x SDK; a
+# wrong key is a silent no-op (the exact bug class being fixed), so these tests
+# pin the literal attribute strings the ingestion honors.
+# ---------------------------------------------------------------------------
+
+
+def _install_recording_dispatch(monkeypatch, d, recorded):
+    """Stub every dispatch_complete collaborator on the happy path and install a
+    tracer that records ``set_attribute`` calls into ``recorded``."""
+    import contextlib
+
+    class _RecordingSpan:
+        def set_attribute(self, key, value):
+            recorded.append((key, value))
+
+        def record_exception(self, _exc):
+            pass
+
+    class _FakeTracer:
+        @contextlib.contextmanager
+        def start_as_current_span(self, _name):
+            yield _RecordingSpan()
+
+    class _FakeCompletion:
+        prompt_tokens = 10
+        completion_tokens = 5
+        finish_reason = "stop"
+
+    class _FakeProvider:
+        name = "fake"
+
+        async def complete(self, **_kwargs):
+            return _FakeCompletion()
+
+    async def _get_provider(_pool, _tier):
+        return _FakeProvider()
+
+    async def _get_provider_config(_pool, _name):
+        return {}
+
+    async def _noop(*_a, **_k):
+        return None
+
+    monkeypatch.setattr(d, "_tracer", _FakeTracer())
+    monkeypatch.setattr(d, "get_provider", _get_provider)
+    monkeypatch.setattr(d, "get_provider_config", _get_provider_config)
+    monkeypatch.setattr(d, "_enforce_budget_if_paid", _noop)
+    monkeypatch.setattr(d, "_record_dispatch_cost", _noop)
+    monkeypatch.setattr(d, "_vram_guard_enabled", lambda: False)
+    monkeypatch.setattr(d, "_gpu_serialize_local_dispatch", lambda _m, _pc: False)
+
+
+async def test_dispatch_complete_stamps_langfuse_session_and_phase(monkeypatch):
+    import services.llm_providers.dispatcher as d
+
+    recorded: list[tuple[str, object]] = []
+    _install_recording_dispatch(monkeypatch, d, recorded)
+
+    await d.dispatch_complete(
+        pool=object(),
+        messages=[{"role": "user", "content": "hi"}],
+        model="ollama/gemma-4-31B-it-qat:latest",
+        tier="standard",
+        task_id="task-abc-123",
+        phase="draft_generation",
+        num_ctx=8192,  # pre-set so the default/clamp path is skipped
+    )
+
+    # session.id groups the task's LLM calls into one Langfuse session.
+    assert ("session.id", "task-abc-123") in recorded
+    # phase becomes a first-class, filterable observation-metadata field.
+    assert ("langfuse.observation.metadata.phase", "draft_generation") in recorded
+
+
+async def test_dispatch_complete_omits_session_when_no_task_id(monkeypatch):
+    import services.llm_providers.dispatcher as d
+
+    recorded: list[tuple[str, object]] = []
+    _install_recording_dispatch(monkeypatch, d, recorded)
+
+    await d.dispatch_complete(
+        pool=object(),
+        messages=[{"role": "user", "content": "hi"}],
+        model="ollama/gemma-4-31B-it-qat:latest",
+        tier="standard",
+        num_ctx=8192,
+    )
+
+    # No task context -> no session stamp (never mint an orphan empty session).
+    assert not any(key == "session.id" for key, _ in recorded)

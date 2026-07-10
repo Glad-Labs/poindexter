@@ -504,7 +504,20 @@ async def dispatch_complete(
         span.set_attribute("llm.messages.count", len(messages))
         if task_id:
             span.set_attribute("llm.task_id", task_id)
+            # Reserved Langfuse OTEL attribute (LangfuseOtelSpanAttributes
+            # .TRACE_SESSION_ID == "session.id" in langfuse 4.x): stamps the
+            # trace's session so a task's LLM calls group into ONE Langfuse
+            # session — the id the console task-trace deeplink resolves against
+            # (trace_read.get_trace uses task_id as the session id). Without it
+            # every trace is session-less (the 2026-07-10 finding: 0/3236 had a
+            # session). The exact string is verified against the installed SDK;
+            # a wrong key is a silent no-op, the bug class this fixes.
+            span.set_attribute("session.id", task_id)
         span.set_attribute("llm.phase", phase)
+        # Promote phase to first-class, filterable observation metadata. Langfuse
+        # flattens ``langfuse.observation.metadata.<key>`` back into the
+        # observation's metadata dict (attributes._flatten_and_serialize_metadata).
+        span.set_attribute("langfuse.observation.metadata.phase", phase)
         started = time.monotonic()
         provider = None
         provider_config: dict[str, Any] | None = None
