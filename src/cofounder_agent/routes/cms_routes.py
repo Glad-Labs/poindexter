@@ -693,16 +693,18 @@ async def get_view_stats(
     try:
         pool = await get_db_pool()
         async with pool.acquire() as conn:
+            # Reader KPI reads page_views_human (is_bot=false) — bot floods are
+            # excluded here; liveness/anomaly signals stay on raw page_views.
             # Views per day
             daily = await conn.fetch(
                 "SELECT date_trunc('day', created_at)::date as day, COUNT(*) as views "
-                "FROM page_views WHERE created_at > NOW() - ($1 || ' days')::interval "
+                "FROM page_views_human WHERE created_at > NOW() - ($1 || ' days')::interval "
                 "GROUP BY 1 ORDER BY 1",
                 str(days),
             )
             # Top posts
             top = await conn.fetch(
-                "SELECT slug, COUNT(*) as views FROM page_views "
+                "SELECT slug, COUNT(*) as views FROM page_views_human "
                 "WHERE slug IS NOT NULL AND slug != '' "
                 "AND created_at > NOW() - ($1 || ' days')::interval "
                 "GROUP BY slug ORDER BY views DESC LIMIT 20",
@@ -710,7 +712,7 @@ async def get_view_stats(
             )
             # Top referrers
             refs = await conn.fetch(
-                "SELECT referrer, COUNT(*) as views FROM page_views "
+                "SELECT referrer, COUNT(*) as views FROM page_views_human "
                 "WHERE referrer IS NOT NULL AND referrer != '' "
                 "AND created_at > NOW() - ($1 || ' days')::interval "
                 "GROUP BY referrer ORDER BY views DESC LIMIT 10",

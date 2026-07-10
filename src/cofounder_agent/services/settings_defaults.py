@@ -1902,6 +1902,24 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # for the browser-side beacon; set this app_setting to the same URL.
     'cloudflare_beacon_url': '',
 
+    # ----- Beacon bot-flag (de-bot the first-party page_views KPI) -----
+    # Stealth scrapers present a browser User-Agent and slip the sync job's
+    # narrow UA drop-filter, inflating page_views ~10x. FlagBotPageViewsJob
+    # (services/jobs/flag_bot_page_views.py) sweeps accumulated rows and flags
+    # any (user_agent, path) pair that floods past the cap. Reader-facing
+    # surfaces read page_views_human (is_bot=false); liveness signals stay raw.
+    # Master switch; 'false' makes the sweep job a no-op.
+    'beacon_bot_flag_enabled': 'true',
+    # Rolling window (hours) the flood pass groups over.
+    'beacon_flood_window_hours': '24',
+    # Max hits one (user_agent, path) pair may have in the window before the
+    # WHOLE pair is flagged as bot. At current traffic no real pair reaches 20
+    # same-UA hits/day; the bot pairs are in the hundreds. Tune up as traffic grows.
+    'beacon_flood_cap_per_window': '20',
+    # All-history cap for the one-time backfill pass (catches bots that flooded
+    # historically but aren't active in the current window).
+    'beacon_flood_backfill_cap': '30',
+
     # Social media distribution — Postiz integration
     'social_drafts_enabled': 'false',
     'social_draft_platforms': '',

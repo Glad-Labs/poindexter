@@ -1,9 +1,10 @@
 """Integration test for ``SyncCloudflareAnalyticsJob`` against a real test DB.
 
 Mocks only the CF AE SQL HTTP API surface; everything else (page_views
-INSERTs, posts.view_count UPDATEs, app_settings high-water-mark UPSERTs)
-runs against the actual ``poindexter_test`` Postgres. Mirrors the harness
-pattern from ``test_jobs_sync_page_views.py``.
+INSERTs, app_settings high-water-mark UPSERTs) runs against the actual
+``poindexter_test`` Postgres. Mirrors the harness pattern from
+``test_jobs_sync_page_views.py``. (posts.view_count is no longer bumped
+here — FlagBotPageViewsJob owns it; see the 20260710 beacon bot-flag PR.)
 """
 
 from __future__ import annotations

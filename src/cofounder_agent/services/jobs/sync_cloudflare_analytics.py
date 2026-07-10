@@ -187,7 +187,10 @@ class SyncCloudflareAnalyticsJob:
                         slug TEXT,
                         referrer TEXT,
                         user_agent TEXT,
-                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+                        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                        is_bot BOOLEAN NOT NULL DEFAULT false,
+                        bot_reason TEXT,
+                        flagged_at TIMESTAMP WITH TIME ZONE
                     )
                     """
                 )
@@ -341,18 +344,9 @@ class SyncCloudflareAnalyticsJob:
                         if max_ts is None or ts > max_ts:
                             max_ts = ts
 
-                    # Bump posts.view_count in lockstep — same behaviour the
-                    # deleted /api/track/view handler had per-call. Done in
-                    # one UPDATE per slug rather than per-row to keep the
-                    # transaction tight.
-                    for slug, delta in seen_slugs.items():
-                        await conn.execute(
-                            "UPDATE posts "
-                            "SET view_count = COALESCE(view_count, 0) + $2 "
-                            "WHERE slug = $1",
-                            slug,
-                            delta,
-                        )
+                    # posts.view_count is owned by FlagBotPageViewsJob (recompute
+                    # from page_views_human) so bot inflation never reaches it.
+                    # The sync ingest deliberately does NOT bump view_count.
 
             # Advance the high-water mark to the max timestamp we
             # observed. Done outside the transaction (app_settings is

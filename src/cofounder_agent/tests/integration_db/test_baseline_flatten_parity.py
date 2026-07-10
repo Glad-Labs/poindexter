@@ -80,6 +80,8 @@ _REQUIRED_VIEWS = (
     "lab_outcomes_v1",
     # 20260529_000342_phase1_experiments_harness_foundation.py
     "experiment_variant_scorecard_v1",
+    # 20260710 beacon bot-flag — de-botted reader view
+    "page_views_human",
 )
 
 
@@ -120,6 +122,8 @@ _REQUIRED_COLUMNS = (
     ("capability_outcomes", "variant_id"),
     # 20260529_012228_phase1_experiments_winner_label.py
     ("experiments", "winner_variant_label"),
+    # 20260710 beacon bot-flag
+    ("page_views", "is_bot"),
 )
 
 

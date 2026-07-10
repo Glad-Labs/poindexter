@@ -207,9 +207,11 @@ class TestSyncCloudflareAnalyticsHappyPath:
             "cloudflare_analytics_last_sync" in sql for sql in sql_calls
         )
 
-    async def test_inserts_rows_and_updates_view_count(self):
-        """Each fetched row → one INSERT into page_views; each distinct
-        slug → one UPDATE posts SET view_count += delta."""
+    async def test_inserts_rows_without_view_count_update(self):
+        """Each fetched row → one INSERT into page_views. posts.view_count is
+        owned by FlagBotPageViewsJob (recompute from page_views_human), so the
+        sync ingest no longer issues any ``UPDATE posts SET view_count`` bump —
+        which used to count bots before they could be flagged."""
         pool, conn = _make_pool()
         rows = [
             _row(slug="post-a", ts="2026-05-28 21:00:00"),
@@ -224,13 +226,12 @@ class TestSyncCloudflareAnalyticsHappyPath:
             )
         assert result.ok is True
         assert result.changes_made == 3
-        # Inspect execute calls — should include 3 INSERTs + 2 UPDATEs
-        # + watermark UPSERT + CREATE TABLE precheck.
+        # 3 INSERTs into page_views, but NO UPDATE posts (view_count bump removed).
         sql_calls = [c.args[0] for c in conn.execute.await_args_list]
         inserts = [s for s in sql_calls if "INSERT INTO page_views" in s]
         updates = [s for s in sql_calls if "UPDATE posts" in s]
         assert len(inserts) == 3
-        assert len(updates) == 2
+        assert len(updates) == 0
 
     async def test_dedup_skips_already_present_rows(self):
         """Row whose (slug, path, ts, ua) already exists is skipped."""

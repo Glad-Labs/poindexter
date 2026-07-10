@@ -597,6 +597,15 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.sync_cloudflare_analytics",
             "SyncCloudflareAnalyticsJob",
         ),
+        # Stealth-bot sweep for the ingested page_views (the sync job above drops
+        # only DECLARED crawler UAs; browser-UA scrapers slip through and inflate
+        # the beacon KPI ~10x). Windowed (user_agent, path) flood-cap flags them
+        # is_bot=true; reader surfaces read page_views_human. 15-min cadence.
+        (
+            "jobs",
+            "services.jobs.flag_bot_page_views",
+            "FlagBotPageViewsJob",
+        ),
         # Active outage detector for the page-views beacon Worker (the ingest
         # side above goes silent if the Worker is down). POSTs a side-effect-
         # free health ping every 5 min, sets the

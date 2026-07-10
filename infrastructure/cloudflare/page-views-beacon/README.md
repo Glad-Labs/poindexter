@@ -5,9 +5,16 @@ public site and writes one data point per view to a Cloudflare Analytics
 Engine dataset (`analytics_events`). The backend sync job
 (`services/jobs/sync_cloudflare_analytics.py`) pulls aggregated rows out
 via the CF AE SQL HTTP API every 5 minutes and inserts them into the
-local `page_views` table — feeding the existing Grafana panels,
-`posts.view_count`, and the `lab_outcomes_v1.views_*_post_publish`
-columns.
+local `page_views` table.
+
+Ingested rows are then swept by `FlagBotPageViewsJob` (a windowed
+`(user_agent, path)` flood-cap) which sets an `is_bot` flag on stealth
+scrapers that slip the ingest UA filter. Reader-facing surfaces — the
+console `/api/analytics/views` KPI, `posts.view_count`, and the
+`lab_outcomes_v1.views_*_post_publish` columns — read the `page_views_human`
+view (`is_bot = false`), while the Grafana liveness/anomaly panels and the
+`COUNT(*)` liveness examples below intentionally stay on raw `page_views`.
+See [`docs/architecture/page-views-bot-flag.md`](../../../docs/architecture/page-views-bot-flag.md).
 
 ## Why Cloudflare Analytics Engine
 
