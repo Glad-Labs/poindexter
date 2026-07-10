@@ -407,31 +407,31 @@ Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR fro
 
 ## Scheduled agents (Windows Task Scheduler)
 
-**STATUS 2026-06-10: all currently DISABLED.** The nine sessions below — plus the Startup and Watchdog tasks — were disabled in Windows Task Scheduler (2026-06-09) as cost-control ahead of Anthropic API billing going to full rate 2026-06-15; the definitions remain in place (re-enable via `.\claude-sessions.ps1 -Install`). NOTE: the Windows `claude-md-sync` agent is among the disabled, but the **repo-derivable** stats (file counts, dashboard count, latest-migration name) still auto-sync daily via the `.github/workflows/sync-claude-md.yml` GitHub Actions workflow (06:17 UTC), so those stay current. Only the **DB-derived** counts (posts, embeddings, app_settings totals) — which the Windows agent refreshed via a prod-DB probe — go stale until it's re-enabled.
+**STATUS 2026-07-09: rewired off Claude Code OAuth.** The sessions no longer run through Claude Code on the Max subscription — that OAuth token decayed (expired access token + blank refresh token → `401`), and the 2026-06-15 billing split is closing the automated-on-subscription path anyway. Seven worthwhile sessions were re-homed onto **deterministic Python scripts + the local Ollama fleet** (`scripts/ops_sessions/`), which never expire and never bill; two frontier-model sessions (`issue-resolver`, `test-expansion`) are kept **disabled** (`Enabled = $false`) pending a metered-API decision. Full runbook: [`docs/operations/scheduled-agents.md`](docs/operations/scheduled-agents.md); rationale: [`docs/superpowers/specs/2026-07-09-scheduled-agents-rewire-design.md`](docs/superpowers/specs/2026-07-09-scheduled-agents-rewire-design.md).
 
-Nine autonomous Claude Code sessions run on Matt's PC via Windows Task
-Scheduler, defined in `scripts/claude-sessions.ps1` (register/list/remove with
-`.\claude-sessions.ps1 -Install | -List | -Uninstall`). Each runs in an
-isolated git worktree off the latest `origin/main`, makes changes on a branch,
-and opens a **code** PR against `Glad-Labs/glad-labs-stack` (the source of truth;
-poindexter is a force-rebuilt mirror that can't take code) and never `main`
-directly. Issues, by contrast, are content-routed to either repo (OSS →
-poindexter, business/internal → glad-labs-stack). Per-session model is set via a
-`Model` key on the session block; **currently no session sets it, so all run the
-`claude-sonnet-4-6` default** — add a `Model` key in `claude-sessions.ps1` if you
-want a heavier model for a session (e.g. opus for `issue-resolver`).
+Defined in `scripts/claude-sessions.ps1` (register/list/remove with
+`.\claude-sessions.ps1 -Install | -List | -Uninstall`). `Run-Session` dispatches
+a per-session `Command` (an `ops_sessions/*.py` script) under the **main
+checkout's** poetry env — a fresh worktree has no venv, so scripts reuse
+`sys.executable` for their own tooling. `NeedsWorktree=$true` sessions commit +
+open a PR against `Glad-Labs/glad-labs-stack` from an isolated worktree;
+`$false` sessions merge PRs / file issues / edit labels without touching the
+local checkout. Issues are content-routed (OSS → poindexter, business →
+glad-labs-stack). Local-LLM model pins are the `OPS_OLLAMA_MODEL_*` env knobs.
 
-| Session             | When (local) | Model      | Does                                                    |
-| ------------------- | ------------ | ---------- | ------------------------------------------------------- |
-| `alert-triage`      | daily 01:00  | sonnet-4-6 | files probe-bug issues from `alert_events`              |
-| `codebase-audit`    | Wed 02:00    | sonnet-4-6 | `ruff` F401 fixes + `bandit` security issues            |
-| `test-health`       | daily 03:00  | sonnet-4-6 | fixes simple unit-test failures                         |
-| `test-expansion`    | daily 04:00  | sonnet-4-6 | adds tests to low-coverage files                        |
-| `issue-resolver`    | daily 05:00  | sonnet-4-6 | fixes one scoped open issue                             |
-| `dependency-review` | daily 06:30  | sonnet-4-6 | auto-merges green patch-bump dependabot PRs             |
-| `doc-sync`          | Fri 05:00    | sonnet-4-6 | verifies CLAUDE.md file references resolve              |
-| `triage-sweep`      | Mon 07:00    | sonnet-4-6 | applies derivable labels + surfaces triage proposals    |
-| `claude-md-sync`    | daily 02:30  | sonnet-4-6 | syncs CLAUDE.md DB-derived counts + migration narrative |
+| Session             | Tier          | When (local) | Does                                                    |
+| ------------------- | ------------- | ------------ | ------------------------------------------------------- |
+| `dependency-review` | deterministic | daily 06:30  | auto-merges green patch-bump dependabot PRs             |
+| `codebase-audit`    | deterministic | Wed 02:00    | `ruff --fix` F401/F841 + `bandit` security issues       |
+| `doc-sync`          | deterministic | Fri 05:00    | verifies/repairs CLAUDE.md path references              |
+| `claude-md-sync`    | deterministic | daily 02:30  | syncs DB-derived counts + surfaces migration drift      |
+| `triage-sweep`      | deterministic | Mon 07:00    | applies keyword area-labels + Discord digest            |
+| `alert-triage`      | local LLM     | daily 01:00  | classifies noisy `alert_events` → probe-bug issues      |
+| `test-health`       | local LLM     | daily 03:00  | fixes simple test failures behind a re-run gate         |
+| `issue-resolver`    | **disabled**  | daily 05:00  | (frontier) fixes one scoped open issue                  |
+| `test-expansion`    | **disabled**  | daily 04:00  | (frontier) adds tests to low-coverage files             |
+
+NOTE: repo-derivable CLAUDE.md stats still auto-sync daily via the `.github/workflows/sync-claude-md.yml` GitHub Action (06:17 UTC) independent of these sessions; the deterministic `claude-md-sync` refreshes the **DB-derived** counts (posts, embeddings, app_settings totals) via a prod-DB probe.
 
 ## Database migrations
 
