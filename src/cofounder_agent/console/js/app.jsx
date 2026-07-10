@@ -1413,6 +1413,18 @@ function App() {
         {mode === 'console' && (
           <div className="main__inner">
             <div id="sec-overview">
+              {/* NOW RUNNING band (design 1a) — live activity first. Mock
+                  renders come from PX.mediaRendering; live has no
+                  render-progress route yet so the component shows an honest
+                  empty with the gate-2 pending count. */}
+              <NowRunningBand
+                pipeline={pipeline}
+                renders={PX.api.isLive() ? [] : PX.mediaRendering || []}
+                gpu={gpu}
+                media={media}
+                brain={brain}
+                onOpenTask={(t) => open('task', t)}
+              />
               {/* Live in live mode (kpis memo → PX.kpisFromLive); PX.kpis in mock. */}
               <KpiStrip kpis={kpis} onOpen={(k) => open('kpi', k)} />
             </div>

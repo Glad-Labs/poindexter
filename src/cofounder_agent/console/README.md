@@ -98,6 +98,22 @@ method has a `live:` branch (real `fetch`) and a `mock:` branch via
 | logs              | `GET /api/logs` (worker proxy → Loki `query_range`)                                                          |
 | traces            | `GET /api/traces` (worker proxy → Langfuse `/api/public/traces`)                                             |
 
+### Now-running band (live activity)
+
+Pinned above the KPI strip, the **NOW RUNNING** band (`js/nowrunning.jsx`)
+answers "what is the system doing _right now_" at a glance — three columns of
+in-flight content tasks, media renders, and system vitals. Content tasks reuse
+the same `GET /api/tasks` poll the Pipeline panel already runs (no new read):
+rows with `status: 'run'` render with their pipeline stage and a
+phase-proportional progress bar. Media-render **progress** has no HTTP route on
+the worker yet, so in live mode that column renders honest-empty with the count
+of renders already awaiting Gate-2 (`— · no render-progress route yet · N
+rendered await gate-2`) rather than fabricated bars — wire a feed into the
+`renders` prop when that read lands. The SYSTEM VITALS column (GPU
+util/temp/power/VRAM, tasks in flight, embed queue, last brain cycle) reuses the
+same live `gpu`/`brain` objects the GPU and brain panels already render, and
+collapses out below 1280px (the band drops to two columns, then one at 920px).
+
 ### Overview KPI strip (live)
 
 The headline KPI strip is live-wired through a pure mapper (`js/kpis.js` →

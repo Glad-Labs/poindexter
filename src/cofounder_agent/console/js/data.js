@@ -2151,6 +2151,39 @@
     langfuse: { session_id: 'task-4405', run_id: 'task-4405' },
   };
 
+  // ── NOW RUNNING — mock in-flight media renders (design 1a band) ──
+  // Live has NO render-progress route yet; the band shows an honest empty
+  // with the gate-2 pending count instead. These mock rows exercise the UI.
+  const mediaRendering = [
+    {
+      id: 'vid-318',
+      medium: 'video',
+      title: 'The 200-Line Supervisor Pattern',
+      step: 'shot 6 / 9',
+      pct: 67,
+      age: ago(22),
+      eta: '~2m',
+    },
+    {
+      id: 'vid-317',
+      medium: 'video',
+      title: 'Tailscale as the Only Network You Need',
+      step: 'shot 3 / 7',
+      pct: 43,
+      age: ago(8),
+      eta: '~5m',
+    },
+    {
+      id: 'pod-204',
+      medium: 'podcast',
+      title: 'Why We Killed Our Observability Vendor',
+      step: 'mixing audio',
+      pct: 55,
+      age: ago(51),
+      eta: '—',
+    },
+  ];
+
   window.PX = {
     now,
     hhmmss,
@@ -2166,6 +2199,7 @@
     liveTemplates,
     revenue,
     media,
+    mediaRendering,
     qa,
     topics,
     findings,
