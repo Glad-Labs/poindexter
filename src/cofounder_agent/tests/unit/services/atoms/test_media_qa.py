@@ -24,7 +24,9 @@ test_media_transcribe_narration.
 """
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -52,6 +54,44 @@ def _site_config(**overrides):
         **overrides,
     }
     return SimpleNamespace(get=lambda key, default=None: cfg.get(key, default))
+
+
+@asynccontextmanager
+async def _noop_gpu_lock(*_args: Any, **_kwargs: Any):  # type: ignore[misc]
+    """Drop-in for ``gpu.lock`` that never acquires the real GPU advisory lock.
+
+    Mirrors the seam-test idiom in ``test_platform_dispatch_seam.py``.
+    """
+    yield
+
+
+@pytest.fixture(autouse=True)
+def _neutralize_gpu_lock():
+    """Isolate every media.qa test from the REAL cross-process GPU lock.
+
+    ``_detect_human_in_frame`` wraps its vision dispatch in
+    ``gpu.lock("ollama", ...)`` (``services.gpu_scheduler``), which takes a
+    Postgres ``pg_advisory_lock`` on a dedicated connection whenever a DSN
+    resolves. On the operator PC that lock is held by the live worker, so a unit
+    test that acquires it blocks until ``gpu_lock_acquire_timeout_seconds`` and
+    the atom's fail-soft ``except`` records "unavailable" — intermittently
+    flaking the human_found/clean assertions. CI has no bootstrap.toml DSN, so
+    the lock no-ops there and the flake stays invisible (nightly green, local
+    red).
+
+    ``_detect_human_in_frame`` does a *function-local*
+    ``from services.gpu_scheduler import gpu``, so the patch must target the
+    SOURCE singleton's ``lock`` attribute — not a call-site module global, which
+    a function-local import would ignore. Patching the whole ``lock`` method
+    also neutralises its ``finally`` (which otherwise writes ``gpu_task_sessions``
+    to the DB). This autouse fixture covers every test in the file — the four
+    that reach the lock today (model_says_no / model_says_yes / strips_think_block
+    / vision_error) and any future vision test — so none contend on real
+    infrastructure. See ``test_human_detect_isolated_from_real_gpu_lock`` for the
+    regression tripwire.
+    """
+    with patch("services.gpu_scheduler.gpu.lock", _noop_gpu_lock):
+        yield
 
 
 # ---------------------------------------------------------------------------
@@ -356,6 +396,66 @@ async def test_frame_detection_vision_error_failsoft(tmp_path):
     assert out["media_qa_result"]["long"]["human_detection"] == "unavailable"
     kinds = [c.kwargs.get("kind") for c in mock_emit.call_args_list]
     assert "human_in_frame" not in kinds
+
+
+@pytest.mark.asyncio
+async def test_human_detect_isolated_from_real_gpu_lock(tmp_path, monkeypatch):
+    """The media.qa vision path must NOT acquire the real cross-process GPU
+    advisory lock in a unit test.
+
+    ``_detect_human_in_frame`` wraps its vision dispatch in
+    ``gpu.lock("ollama", ...)`` (services.gpu_scheduler), which takes a Postgres
+    ``pg_advisory_lock`` on a dedicated connection whenever a DSN resolves. On
+    the operator PC that lock is held by the live worker, so a test that reaches
+    the REAL lock blocks until ``gpu_lock_acquire_timeout_seconds`` and the
+    atom's fail-soft ``except`` records "unavailable" — flaking every
+    human_found/clean assertion (``'unavailable' == 'human_found'``). CI has no
+    bootstrap.toml DSN, so the lock no-ops there and the flake stays invisible
+    (nightly green, local red).
+
+    Tripwire: sabotage the REAL lock's cross-process acquire so that *reaching*
+    it is fatal to the result. The module's autouse GPU-lock isolation keeps the
+    vision path off the real lock, so the happy path still returns "human_found".
+    If that isolation regresses, this test acquires the sabotaged lock →
+    GpuLockTimeoutError → "unavailable" and fails loudly in CI — no live-worker
+    contention required to reproduce the flake.
+    """
+    from services import gpu_scheduler
+
+    async def _sabotaged_acquire(self, *_args, **_kwargs):
+        # Stand in for a contended cross-process holder (the live worker on the
+        # operator PC) WITHOUT opening a real DB connection — raise the same
+        # typed error the real acquire raises when it times out on a held lock.
+        raise gpu_scheduler.GpuLockTimeoutError(
+            "simulated contended GPU lock — media.qa reached the REAL "
+            "pg_advisory_lock instead of the test no-op"
+        )
+
+    monkeypatch.setattr(
+        gpu_scheduler.GPUScheduler,
+        "_acquire_pg_advisory_lock",
+        _sabotaged_acquire,
+    )
+
+    long_video = _existing_file(tmp_path, "long.mp4")
+    mock_emit = MagicMock()
+    mock_dispatch = AsyncMock(return_value=SimpleNamespace(text="yes"))
+    state = {
+        "task_id": "t-lockguard",
+        "platform": SimpleNamespace(dispatch=SimpleNamespace(complete=mock_dispatch)),
+        "long_video_path": long_video,
+        "video_shot_list": {"total_duration_s": 60.0},
+        "site_config": _site_config(),
+    }
+    with patch.object(media_qa, "_probe_duration", AsyncMock(return_value=60.0)), patch.object(
+        media_qa, "_extract_frame", AsyncMock(return_value=b"PNGBYTES")
+    ), patch.object(media_qa, "emit_finding", mock_emit):
+        out = await qa_run(state)
+
+    # With the module's GPU-lock isolation in place the sabotaged real acquire is
+    # never reached, so the vision dispatch runs and the "yes" answer stands.
+    assert out["media_qa_result"]["long"]["human_detection"] == "human_found"
+    mock_dispatch.assert_awaited()
 
 
 # ---------------------------------------------------------------------------
