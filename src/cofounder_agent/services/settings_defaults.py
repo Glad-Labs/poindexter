@@ -894,6 +894,10 @@ DEFAULTS: dict[str, str] = {
     # Image generation blocks the HTTP handler, so this must exceed SDXL inference
     # time (~30-90s typical; longer after a post-crash boot window).
     'post_edit_regen_image_timeout_s': '300',
+    # Seconds the CLI waits for POST /api/tasks/{id}/rebuild-images. Rebuilds
+    # every image (featured + all inline) sequentially, so it must exceed a
+    # single regen by the image count — generous default.
+    'post_edit_rebuild_images_timeout_s': '600',
     # Inline-illustration style pool (JSON array of style strings). Empty =>
     # the stylized code fallback (modules/content/stages/replace_inline_images.py
     # INLINE_STYLES). Parallels 'image_styles' for the featured image. Photoreal

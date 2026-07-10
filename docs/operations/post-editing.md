@@ -67,6 +67,27 @@ no-humans / on-topic negative prompt), uploads it to object storage (R2), and
 swaps it in. Requires the image service to be reachable; otherwise the command
 reports a 503.
 
+### `tasks rebuild-images`
+
+```bash
+poindexter tasks rebuild-images <task_id>                # fail loud if any slot would be stock
+poindexter tasks rebuild-images <task_id> --allow-stock  # accept Pexels fallback
+```
+
+Rebuilds **every** image on the draft — the featured image and all inline images
+— in one shot. It re-plans each image's prompt from the article text (the same
+Image Decision Agent the pipeline uses), so **no prompts are typed**, and
+regenerates. Prefers generated (SDXL/Z-Image) images.
+
+- **Fail-loud by default.** If image-gen can't produce a slot and it would fall
+  back to a Pexels stock photo, the command **aborts and changes nothing**,
+  naming the affected slots. Pass `--allow-stock` to accept the fallback. (A slot
+  that produces _nothing at all_ always aborts, even with `--allow-stock`.)
+- Re-planning may change **how many** inline images the post has — it is a fresh
+  plan, not a 1-for-1 swap.
+- The multi-image run is longer than a single `regen-image`; the CLI wait is
+  tunable via `post_edit_rebuild_images_timeout_s` (default 600s).
+
 ## MCP parity
 
 The same edits from the bot / Claude surface:
@@ -85,17 +106,22 @@ The same edits from the bot / Claude surface:
 - `POST /api/tasks/{task_id}/replace-image` — body `{which, url}`
 - `POST /api/tasks/{task_id}/regen-image` — body `{which, prompt}`
 
-Each returns `{ok, field, detail, warnings, new_url}`.
+The first three each return `{ok, field, detail, warnings, new_url}`.
+
+- `POST /api/tasks/{task_id}/rebuild-images` — body `{allow_stock}` — returns
+  `{ok, task_id, detail, inline_total, inline_generated, featured_source, stock_slots}`
+  (no MCP wrapper yet; CLI + API only).
 
 ## Auditability
 
 Every edit writes an `audit_log` row so the change is traceable:
 
-| Action           | `event_type`         |
-| ---------------- | -------------------- |
-| body edit        | `post_edit_body`     |
-| image URL swap   | `post_image_replace` |
-| image regenerate | `post_image_regen`   |
+| Action             | `event_type`          |
+| ------------------ | --------------------- |
+| body edit          | `post_edit_body`      |
+| image URL swap     | `post_image_replace`  |
+| image regenerate   | `post_image_regen`    |
+| bulk image rebuild | `post_images_rebuild` |
 
 Each row records the `task_id`, the field touched, and (for body edits) the
 before/after length plus any validator warnings.

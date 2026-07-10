@@ -92,6 +92,16 @@ from modules.content.content_validator import (
 )
 
 # ---------------------------------------------------------------------------
+# image_rebuild_service
+# ---------------------------------------------------------------------------
+from modules.content.image_rebuild_service import (
+    ImageRebuildService as ImageRebuildService,
+)
+from modules.content.image_rebuild_service import (
+    RebuildResult as RebuildResult,
+)
+
+# ---------------------------------------------------------------------------
 # internal_link_coherence
 # ---------------------------------------------------------------------------
 from modules.content.internal_link_coherence import (
@@ -180,4 +190,7 @@ __all__ = [
     # post_edit_service
     "PostEditService",
     "EditResult",
+    # image_rebuild_service
+    "ImageRebuildService",
+    "RebuildResult",
 ]

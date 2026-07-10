@@ -760,3 +760,9 @@ class TestConfigExternalisationAuditKeys:
                 float(DEFAULTS[key])
             else:
                 int(DEFAULTS[key])  # raises if the default isn't an int string
+
+
+def test_rebuild_images_timeout_default_present():
+    from services.settings_defaults import DEFAULTS
+
+    assert DEFAULTS["post_edit_rebuild_images_timeout_s"] == "600"

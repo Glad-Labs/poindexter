@@ -206,7 +206,14 @@ class TestDraftEditingRoutes:
                     new_url="https://cdn/new.webp",
                 )
 
+            async def rebuild_all_images(self, task_id, **kw):
+                calls["rebuild_all_images"] = (task_id, kw)
+                from modules.content.image_rebuild_service import RebuildResult
+                return RebuildResult(task_id, ok=True, detail="rebuilt 2 inline + featured",
+                                     inline_total=2, inline_generated=2, featured_source="image_gen")
+
         monkeypatch.setattr(_pub_mod, "PostEditService", FakeSvc)
+        monkeypatch.setattr(_pub_mod, "ImageRebuildService", FakeSvc)
         # Keep regen from building the real (image-gen) image service.
         monkeypatch.setattr(
             "services.image_service.get_image_service",
@@ -248,6 +255,30 @@ class TestDraftEditingRoutes:
         assert r.status_code == 200, r.text
         assert r.json()["new_url"] == "https://cdn/new.webp"
         assert calls["regen_image"][1] == {"which": "featured", "prompt": "a teal robot"}
+
+    def test_rebuild_images_routes_to_service(self, monkeypatch):
+        calls: dict = {}
+        client = self._client_with_fake_service(monkeypatch, calls)
+        r = client.post(f"/{VALID_TASK_ID}/rebuild-images", json={"allow_stock": False})
+        assert r.status_code == 200, r.text
+        body = r.json()
+        assert body["ok"] is True
+        assert body["inline_generated"] == 2 and body["featured_source"] == "image_gen"
+        tid, kw = calls["rebuild_all_images"]
+        assert tid == VALID_TASK_ID and kw == {"allow_stock": False}
+
+    def test_rebuild_images_allow_stock_threads_through(self, monkeypatch):
+        calls: dict = {}
+        client = self._client_with_fake_service(monkeypatch, calls)
+        r = client.post(f"/{VALID_TASK_ID}/rebuild-images", json={"allow_stock": True})
+        assert r.status_code == 200, r.text
+        assert calls["rebuild_all_images"][1] == {"allow_stock": True}
+
+    def test_rebuild_images_unknown_task_404(self):
+        mock_db = make_mock_db()  # get_task returns None
+        client = TestClient(_build_app(mock_db))
+        r = client.post(f"/{VALID_TASK_ID}/rebuild-images", json={"allow_stock": False})
+        assert r.status_code == 404
 
     def test_edit_body_unknown_task_404(self):
         mock_db = make_mock_db()  # get_task returns None by default

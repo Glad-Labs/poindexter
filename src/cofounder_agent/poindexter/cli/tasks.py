@@ -636,6 +636,7 @@ def _post_edit(path: str, payload: dict[str, Any], timeout_key: str | None = Non
         if timeout_key:
             try:
                 import asyncpg
+
                 from poindexter.cli._bootstrap import resolve_dsn
                 conn = await asyncpg.connect(resolve_dsn())
                 try:
@@ -737,5 +738,35 @@ def tasks_regen_image(task_id: str, which: str, prompt: str) -> None:
             f"/api/tasks/{task_id}/regen-image",
             {"which": which, "prompt": prompt},
             timeout_key="post_edit_regen_image_timeout_s",
+        ),
+    )
+
+
+def _emit_rebuild_result(data: dict) -> None:
+    if data.get("ok"):
+        click.secho(f"✅ {data.get('detail', 'rebuilt images')}", fg="green")
+        if data.get("stock_slots"):
+            click.secho(f"   stock slots (allowed): {', '.join(data['stock_slots'])}", fg="yellow")
+    else:
+        click.secho(f"✋ {data.get('detail', 'rebuild aborted')}", fg="red")
+        sys.exit(1)
+
+
+@tasks_group.command("rebuild-images")
+@click.argument("task_id")
+@click.option("--allow-stock", is_flag=True,
+              help="Accept Pexels stock when image-gen can't produce a slot (default: fail loud).")
+def tasks_rebuild_images(task_id: str, allow_stock: bool) -> None:
+    """Rebuild ALL images on an awaiting_approval draft (featured + inline).
+
+    Re-plans each image prompt from the article text and regenerates — no
+    prompts typed. Prefers generated images; without --allow-stock it aborts
+    (changing nothing) if any slot would fall back to a Pexels stock photo.
+    """
+    _emit_rebuild_result(
+        _post_edit(
+            f"/api/tasks/{task_id}/rebuild-images",
+            {"allow_stock": allow_stock},
+            timeout_key="post_edit_rebuild_images_timeout_s",
         ),
     )
