@@ -6,6 +6,15 @@ growing by thousands of rows per tap cycle, ``audit_log`` and
 ``cost_logs`` appending constantly, ``content_tasks`` + ``pipeline_tasks``
 cycling through status transitions).
 
+2026-07-10 investigation (docs/operations/troubleshooting.md) found a
+second, sharper reason autovacuum can't be trusted alone here: this box's
+Postgres container restarts non-gracefully often enough (WSL2/Docker
+Desktop backend wedge, see ``project_vram_oversub_docker_crashes``
+memory) that crash recovery resets ``pg_stat_user_tables`` counters —
+including the dead-tuple count autovacuum's own trigger reads — before
+slower-churn tables ever cross the threshold. A scheduled VACUUM doesn't
+depend on that counter, so it's immune to the reset.
+
 This job runs ``VACUUM (ANALYZE)`` on a configured list of tables every
 6 hours by default. ``ANALYZE`` rebuilds planner statistics, which is
 the other thing that degrades when autovacuum falls behind.
@@ -52,6 +61,18 @@ DEFAULT_TABLES: tuple[str, ...] = (
     "content_tasks",       # same
     "page_views",          # append-only, per-request
     "app_settings",        # small but value-updates happen
+    # Below: too slow-churn to outrun a crash-restart's stats reset on
+    # their own (see module docstring) — added 2026-07-10.
+    "sensor_samples",      # steady low-rate writes, large row count
+    "checkpoints",         # LangGraph checkpointer
+    "checkpoint_writes",   # LangGraph checkpointer
+    "gpu_metrics",         # sampled + pruned
+    "atom_runs",           # per-atom pipeline run capture
+    "brain_decisions",     # low live-row count, high update churn
+    "alert_events",        # dedup/state updates
+    "pipeline_versions",   # per-task version rows
+    "gpu_task_sessions",   # GPU session tracking
+    "post_performance",    # per-post analytics rollup
 )
 
 

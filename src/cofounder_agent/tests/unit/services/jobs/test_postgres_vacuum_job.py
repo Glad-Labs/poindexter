@@ -46,6 +46,19 @@ class TestDefaultTables:
         required = {"embeddings", "audit_log", "cost_logs", "pipeline_tasks"}
         assert required.issubset(set(DEFAULT_TABLES))
 
+    def test_covers_crash_restart_prone_tables(self):
+        # 2026-07-10 investigation (docs/operations/troubleshooting.md):
+        # these tables don't churn fast enough to cross autovacuum's
+        # dead-tuple threshold before a WSL2/Docker crash-restart resets
+        # pg_stat_user_tables, so they need a floor that doesn't depend
+        # on autovacuum's own stats-driven trigger.
+        required = {
+            "sensor_samples", "checkpoints", "checkpoint_writes",
+            "gpu_metrics", "atom_runs", "brain_decisions", "alert_events",
+            "pipeline_versions", "gpu_task_sessions", "post_performance",
+        }
+        assert required.issubset(set(DEFAULT_TABLES))
+
 
 class TestRun:
     @pytest.mark.asyncio
