@@ -16,13 +16,14 @@ Layer 1 (this module):
 
 Layer 2 (semantic scoring, spec 2026-07-09):
 - Composes a 0-100 quality_score on top of Layer 1: a hard-fail floors
-  it at 0, a pass hands off to the per-medium Layer-2 runner.
-- Video (shipped): shot-fidelity aggregate — the mean of the per-shot
-  vision scores the renderer already emitted (zero new LLM cost).
-- Video (follow-up PR): topic-match — vision score of composed frames
-  against the post title.
-- Podcast (follow-up PR): Whisper transcription -> LLM faithfulness
-  scoring vs the source post body.
+  it at 0, a pass hands off to the per-medium Layer-2 runner, which means
+  whichever of its signals are available.
+- Video: shot-fidelity aggregate (mean of the per-shot vision scores the
+  renderer already emitted — zero marginal cost) + topic-match (one
+  vision call scoring whether N sampled frames belong in an article with
+  this title).
+- Podcast: faithfulness — full-episode Whisper transcription -> one LLM
+  call judging the transcript against the source post body.
 - Advisory-first: Layer 2 never auto-rejects; sub-scores below their
   configured minima emit advisory findings only.
 
@@ -48,13 +49,17 @@ crashing the gen path.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
 import logging
 import os
 import re
 import shutil
+import tempfile
 from typing import Any
 
+from services.caption_providers import get_caption_provider
+from services.llm_providers.dispatcher import dispatch_complete
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -69,6 +74,30 @@ _DEFAULT_THRESHOLDS = {
     "media.video.min_duration_seconds": 10.0,
     "media.video.min_file_size_bytes": 50_000,
 }
+
+# Layer-2 LLM-judge budget. qwen3-vl (and other thinking models) share the
+# max_tokens budget between the <think> trace and the JSON answer; a small
+# budget silently starves the answer to empty. 1024 keeps the tiny JSON reply
+# alive — the exact PR #2224 / poindexter#563 lesson, mirrored from
+# shot_vision_qa. Used by both the vision (topic-match) and text (faithfulness)
+# judges.
+_LAYER2_VISION_MAX_TOKENS = 1024
+
+_TOPIC_MATCH_PROMPT = (
+    "You are grading whether a video still belongs in an article titled "
+    "{title!r}. Consider subject, style, and on-topic-ness. Reply with ONLY a "
+    'JSON object: {{"score": <0-100 integer>}}. 100 = perfectly on-topic, '
+    "0 = unrelated."
+)
+
+_FAITHFULNESS_PROMPT = (
+    "Compare a podcast transcript against the source article it was generated "
+    "from. Does the episode faithfully represent the article's key claims "
+    "(no fabrication, no major omission, no contradiction)?\n\n"
+    "SOURCE ARTICLE:\n{source}\n\nEPISODE TRANSCRIPT:\n{transcript}\n\n"
+    'Reply with ONLY JSON: {{"score": <0-100 integer>, "reason": "<one sentence>"}}. '
+    "100 = fully faithful, 0 = unrelated or fabricated."
+)
 
 
 async def _run_argv(argv: list[str], *, timeout: float = 30.0) -> tuple[int, str, str]:
@@ -208,6 +237,121 @@ async def _aggregate_shot_qa_scores(db: Any, post_id: str) -> dict[str, Any]:
     }
 
 
+async def _extract_frame_at(file_path: str, at_s: float) -> bytes | None:
+    """Extract ONE frame at ``at_s`` seconds as PNG bytes. None on any failure.
+
+    Reuses the module's ``_run_argv`` (no shell) and the fast ``-ss``-before-``-i``
+    seek. Fail-soft: missing ffmpeg / failed extract / missing output → None.
+    """
+    if not shutil.which("ffmpeg"):
+        return None
+    out = os.path.join(
+        tempfile.gettempdir(),
+        f"mediaqa_topic_{os.getpid()}_{abs(hash((file_path, at_s))) % 10**8}.png",
+    )
+    try:
+        rc, _, _ = await _run_argv(
+            [
+                "ffmpeg", "-y", "-hide_banner", "-nostats",
+                "-ss", f"{max(0.0, at_s):.3f}", "-i", file_path,
+                "-frames:v", "1", out,
+            ],
+        )
+    except Exception:  # noqa: BLE001 — fail-soft
+        # silent-ok: best-effort frame grab; a failed ffmpeg extract just skips
+        # this frame — we sample several timestamps and need only one to land.
+        return None
+    if rc != 0:
+        return None
+    try:
+        with open(out, "rb") as f:
+            return f.read() or None
+    except OSError:
+        return None
+    finally:
+        try:
+            os.remove(out)
+        except OSError:
+            # silent-ok: best-effort temp-file cleanup; an unlink failure on a
+            # scratch PNG is not operator-actionable.
+            pass
+
+
+def _resolve_topic_match_model(site_config: Any) -> str:
+    """media.video.topic_match_model, falling back to qa_vision_model. '' → skip."""
+    raw = (site_config.get("media.video.topic_match_model", "") or "").strip()
+    if raw:
+        return raw
+    return (site_config.get("qa_vision_model", "") or "").strip()
+
+
+async def _score_video_topic_match(
+    db: Any, file_path: str, title: str, site_config: Any,
+) -> float | None:
+    """Sample N frames from the composed video and vision-score topic match.
+
+    One ``dispatch_complete`` call carrying all N frames → one 0-100 score
+    (does the footage actually belong in an article with this title?).
+    Returns None (fail-soft) on: no model, no duration, no extractable frame,
+    dispatch error, or unparseable response. Never raises.
+    """
+    model = _resolve_topic_match_model(site_config)
+    if not model:
+        return None
+    try:
+        n = int(site_config.get("media.video.topic_match_frames", "3") or "3")
+    except (TypeError, ValueError):
+        n = 3
+    n = max(1, n)
+
+    duration = await _probe_duration(file_path)
+    if not duration or duration <= 0:
+        return None
+
+    # Even interior timestamps: duration*i/(n+1) for i in 1..n (skips the
+    # black first/last frames a boundary sample would catch).
+    frames_b64: list[str] = []
+    for i in range(1, n + 1):
+        at_s = duration * i / (n + 1)
+        png = await _extract_frame_at(file_path, at_s)
+        if png:
+            frames_b64.append(base64.b64encode(png).decode("ascii"))
+    if not frames_b64:
+        return None
+
+    # OpenAI-multimodal message; LiteLLM translates image_url data URIs into
+    # Ollama's native images array (same shape shot_vision_qa proved out).
+    content: list[dict[str, Any]] = [
+        {"type": "text", "text": _TOPIC_MATCH_PROMPT.format(title=title or "this topic")},
+    ]
+    for b64 in frames_b64:
+        content.append({
+            "type": "image_url",
+            "image_url": {"url": f"data:image/png;base64,{b64}"},
+        })
+    messages = [{"role": "user", "content": content}]
+
+    pool = getattr(db, "pool", db)
+    try:
+        completion = await dispatch_complete(
+            pool, messages, model,
+            tier="standard", phase="media_qa_topic_match",
+            temperature=0.2, max_tokens=_LAYER2_VISION_MAX_TOKENS, timeout_s=150.0,
+        )
+        text = (getattr(completion, "text", "") or "").strip()
+    except Exception as exc:  # noqa: BLE001 — fail-soft
+        logger.warning("[media_quality] topic-match dispatch failed: %s", exc)
+        return None
+
+    match = re.search(r'"score"\s*:\s*([\d.]+)', text)
+    if not match:
+        return None
+    try:
+        return max(0.0, min(100.0, float(match.group(1))))
+    except (TypeError, ValueError):
+        return None
+
+
 def _file_size(file_path: str) -> int | None:
     try:
         return os.path.getsize(file_path)
@@ -261,22 +405,29 @@ def _cfg_float(site_config: Any, key: str, default: float) -> float:
         return default
 
 
+async def _fetch_post_title(db: Any, post_id: str) -> str:
+    """The post's title (the topic the video is supposed to be about). '' on miss."""
+    row = await db.fetchrow("SELECT title FROM posts WHERE id = $1::uuid", post_id)
+    return (row["title"] if row and row["title"] else "") if row is not None else ""
+
+
 async def _run_video_layer2(
     db: Any, post_id: str, file_path: str, site_config: Any,
 ) -> dict[str, Any]:
     """Compute the video Layer-2 signals + composite. Fail-soft; never raises.
 
-    Cheap-half slice (spec 2026-07-09): the only wired signal today is the
-    shot-fidelity aggregate — the mean of the per-shot vision scores the
-    renderer already emitted, so this adds **zero new LLM cost**. The
-    topic-match vision signal lands in a follow-up PR at the marked
-    insertion point below; the composite is a mean of *available* signals,
-    so adding topic-match needs no change to this function's callers.
+    Two signals compose into the 0-100 score:
+    - **shot-fidelity** — the mean of the per-shot vision scores the renderer
+      already emitted (zero marginal cost; re-read from audit rows).
+    - **topic-match** — one vision call over N sampled frames scoring whether
+      the composed footage actually belongs in an article with this title.
 
-    Returns ``{"layer2_status", "layer2_score", "shot_fidelity",
-    "shot_coverage"}``. No signal available → status ``"unavailable"``,
-    score ``None`` (the caller maps that to 100 on a clean Layer-1 pass).
-    Emits an advisory finding when shot-fidelity is below its configured min.
+    The composite is the mean of whichever signals are *available*, so a
+    missing signal degrades gracefully. Returns ``{"layer2_status",
+    "layer2_score", "shot_fidelity", "shot_coverage", "topic_match"}``. No
+    signal available → status ``"unavailable"``, score ``None`` (the caller
+    maps that to 100 on a clean Layer-1 pass). Emits advisory findings when
+    a sub-score is below its configured minimum.
     """
     if not _layer2_enabled(site_config):
         return {"layer2_status": "disabled", "layer2_score": None}
@@ -287,18 +438,22 @@ async def _run_video_layer2(
         signals["shot_fidelity"] = agg["shot_fidelity"]
         signals["shot_coverage"] = agg["shot_coverage"]
 
-        # --- topic-match vision signal (follow-up PR) plugs in here ---
-        #   title = await _fetch_post_title(db, post_id)
-        #   topic_match = await _score_video_topic_match(
-        #       db, file_path, title, site_config)
-        #   ...then add `topic_match` to `available` below and emit its
-        #   own advisory finding against media.video.topic_match_min.
-        available = [s for s in (agg["shot_fidelity"],) if s is not None]
+        title = await _fetch_post_title(db, post_id)
+        topic_match = await _score_video_topic_match(
+            db, file_path, title, site_config,
+        )
+        signals["topic_match"] = topic_match
+
+        available = [
+            s for s in (agg["shot_fidelity"], topic_match) if s is not None
+        ]
         composite = (sum(available) / len(available)) if available else None
         signals["layer2_score"] = composite
         signals["layer2_status"] = "scored" if composite is not None else "unavailable"
 
+        # Advisory findings (post-compose, so a missing signal never fires one).
         fid_min = _cfg_float(site_config, "media.video.shot_fidelity_min", 60.0)
+        tm_min = _cfg_float(site_config, "media.video.topic_match_min", 50.0)
         if agg["shot_fidelity"] is not None and agg["shot_fidelity"] < fid_min:
             emit_finding(
                 source="media_quality",
@@ -318,9 +473,142 @@ async def _run_video_layer2(
                     "threshold": fid_min,
                 },
             )
+        if topic_match is not None and topic_match < tm_min:
+            emit_finding(
+                source="media_quality",
+                kind="video_topic_mismatch",
+                title=f"video topic-match {topic_match:.0f} < {tm_min:.0f}",
+                body=(
+                    f"post {post_id[:8]}: composed-video frames scored "
+                    f"{topic_match:.1f} for topic relevance against the post "
+                    f"title, below {tm_min:.0f}. Advisory."
+                ),
+                severity="warn",
+                dedup_key=f"video_topic_mismatch:{post_id}",
+                extra={
+                    "post_id": post_id,
+                    "topic_match": topic_match,
+                    "threshold": tm_min,
+                },
+            )
     except Exception as exc:  # noqa: BLE001 — Layer 2 must never fail the eval
         logger.warning(
             "[media_quality] video Layer 2 raised (fail-soft): %s", exc,
+        )
+        signals.setdefault("layer2_status", "unavailable")
+        signals.setdefault("layer2_score", None)
+    return signals
+
+
+def _resolve_faithfulness_model(site_config: Any) -> str:
+    """media.podcast.faithfulness_model, falling back to ragas_judge_model. '' → skip."""
+    raw = (site_config.get("media.podcast.faithfulness_model", "") or "").strip()
+    if raw:
+        return raw
+    return (site_config.get("ragas_judge_model", "") or "").strip()
+
+
+async def _score_podcast_faithfulness(
+    db: Any, post_id: str, file_path: str, site_config: Any,
+) -> tuple[float | None, str]:
+    """Transcribe the full episode + judge faithfulness vs the source post.
+
+    Returns ``(score_0_100, reason)``. Fail-soft → ``(None, "")`` on: no model,
+    no source body, transcription failure, dispatch error, or unparseable judge
+    response. Never raises — Layer 2 must never fail the eval.
+    """
+    model = _resolve_faithfulness_model(site_config)
+    if not model:
+        return None, ""
+
+    row = await db.fetchrow("SELECT content FROM posts WHERE id = $1::uuid", post_id)
+    source = (row["content"] if row and row["content"] else "") if row is not None else ""
+    if not source.strip():
+        return None, ""
+
+    try:
+        provider = get_caption_provider(site_config)
+        result = await provider.transcribe(audio_path=file_path, task_id=post_id)
+    except Exception as exc:  # noqa: BLE001 — fail-soft
+        logger.warning("[media_quality] podcast transcribe failed: %s", exc)
+        return None, ""
+    if not getattr(result, "success", False):
+        return None, ""
+    transcript = " ".join(
+        s.text for s in (result.segments or []) if getattr(s, "text", "")
+    ).strip()
+    if not transcript:
+        return None, ""
+
+    prompt = _FAITHFULNESS_PROMPT.format(source=source, transcript=transcript)
+    pool = getattr(db, "pool", db)
+    try:
+        completion = await dispatch_complete(
+            pool, [{"role": "user", "content": prompt}], model,
+            tier="standard", phase="media_qa_faithfulness",
+            temperature=0.2, max_tokens=_LAYER2_VISION_MAX_TOKENS, timeout_s=180.0,
+        )
+        text = (getattr(completion, "text", "") or "").strip()
+    except Exception as exc:  # noqa: BLE001 — fail-soft
+        logger.warning("[media_quality] faithfulness dispatch failed: %s", exc)
+        return None, ""
+
+    match = re.search(r'"score"\s*:\s*([\d.]+)', text)
+    if not match:
+        return None, ""
+    try:
+        score = max(0.0, min(100.0, float(match.group(1))))
+    except (TypeError, ValueError):
+        return None, ""
+    reason_match = re.search(r'"reason"\s*:\s*"([^"]{0,200})"', text)
+    return score, (reason_match.group(1) if reason_match else "")
+
+
+async def _run_podcast_layer2(
+    db: Any, post_id: str, file_path: str, site_config: Any,
+) -> dict[str, Any]:
+    """Compute the podcast Layer-2 faithfulness signal. Fail-soft; never raises.
+
+    Faithfulness (transcript vs source article) is the single podcast signal,
+    so it IS the composite. None → status ``"unavailable"`` (caller maps to 100
+    on a clean Layer-1 pass). Emits an advisory ``podcast_faithfulness_low``
+    finding below ``media.podcast.faithfulness_min``.
+    """
+    if not _layer2_enabled(site_config):
+        return {"layer2_status": "disabled", "layer2_score": None}
+
+    signals: dict[str, Any] = {}
+    try:
+        score, reason = await _score_podcast_faithfulness(
+            db, post_id, file_path, site_config,
+        )
+        signals["faithfulness"] = score
+        signals["faithfulness_reason"] = reason
+        signals["layer2_score"] = score
+        signals["layer2_status"] = "scored" if score is not None else "unavailable"
+
+        f_min = _cfg_float(site_config, "media.podcast.faithfulness_min", 60.0)
+        if score is not None and score < f_min:
+            emit_finding(
+                source="media_quality",
+                kind="podcast_faithfulness_low",
+                title=f"podcast faithfulness {score:.0f} < {f_min:.0f}",
+                body=(
+                    f"post {post_id[:8]}: episode faithfulness vs the source "
+                    f"article scored {score:.1f} (< {f_min:.0f}). reason: "
+                    f"{reason}. Advisory."
+                ),
+                severity="warn",
+                dedup_key=f"podcast_faithfulness_low:{post_id}",
+                extra={
+                    "post_id": post_id,
+                    "faithfulness": score,
+                    "threshold": f_min,
+                },
+            )
+    except Exception as exc:  # noqa: BLE001 — Layer 2 must never fail the eval
+        logger.warning(
+            "[media_quality] podcast Layer 2 raised (fail-soft): %s", exc,
         )
         signals.setdefault("layer2_status", "unavailable")
         signals.setdefault("layer2_score", None)
@@ -371,19 +659,16 @@ async def evaluate_podcast(
             f"silence_ratio={silence_ratio:.2f} > {max_silence}",
         )
 
-    # Layer 1 hard-fail floors the score at 0; otherwise 0-100 rescale.
-    # Podcast has no zero-cost Layer-2 signal (faithfulness needs a
-    # transcription pass + an LLM), so the cheap-half pass is a bare 100
-    # with the Layer-2 status stamped. The faithfulness signal (follow-up
-    # PR) plugs in here — swap this rescale for a `_run_podcast_layer2`
-    # call, same shape as `_run_video_layer2`.
+    # Layer 1 hard-fail floors the score at 0; otherwise Layer 2 computes the
+    # 0-100 faithfulness composite (None → 100 when nothing measurable is wrong).
     if failures:
         score = 0.0
     else:
-        score = 100.0
-        signals["layer2_status"] = (
-            "unavailable" if _layer2_enabled(site_config) else "disabled"
-        )
+        layer2 = await _run_podcast_layer2(db, post_id, file_path, site_config)
+        signals.update({k: v for k, v in layer2.items() if k != "layer2_score"})
+        signals["layer2_status"] = layer2.get("layer2_status", "unavailable")
+        l2_score = layer2.get("layer2_score")
+        score = float(l2_score) if l2_score is not None else 100.0
     signals["layer1_failures"] = failures
     signals["score"] = score
 

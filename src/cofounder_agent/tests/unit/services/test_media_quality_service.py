@@ -14,6 +14,7 @@ need real audio files. We focus on the decision logic:
 from __future__ import annotations
 
 import json
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -335,6 +336,55 @@ async def test_video_layer2_low_fidelity_emits_finding(monkeypatch) -> None:
     assert any(f["kind"] == "video_shot_fidelity_low" for f in captured)
 
 
+async def test_video_layer2_composite_is_mean_of_both_signals(monkeypatch) -> None:
+    """Shot-fidelity + topic-match both present → composite is their mean."""
+    monkeypatch.setattr(
+        media_quality_service, "_aggregate_shot_qa_scores",
+        AsyncMock(return_value={
+            "shot_fidelity": 80.0, "shot_coverage": 1.0, "scored": 5, "total": 5,
+        }),
+    )
+    monkeypatch.setattr(
+        media_quality_service, "_score_video_topic_match",
+        AsyncMock(return_value=60.0),
+    )
+    monkeypatch.setattr(
+        media_quality_service, "_fetch_post_title", AsyncMock(return_value="T"),
+    )
+    out = await media_quality_service._run_video_layer2(
+        _DBStub(), "p", "/v.mp4", _SC({"media.layer2.enabled": "true"}),
+    )
+    assert out["layer2_score"] == 70.0  # mean(80, 60)
+    assert out["layer2_status"] == "scored"
+    assert out["topic_match"] == 60.0
+
+
+async def test_video_layer2_topic_mismatch_emits_finding(monkeypatch) -> None:
+    """Topic-match below its min raises an advisory finding (fidelity is fine)."""
+    monkeypatch.setattr(
+        media_quality_service, "_aggregate_shot_qa_scores",
+        AsyncMock(return_value={
+            "shot_fidelity": 90.0, "shot_coverage": 1.0, "scored": 4, "total": 4,
+        }),
+    )
+    monkeypatch.setattr(
+        media_quality_service, "_score_video_topic_match",
+        AsyncMock(return_value=20.0),
+    )
+    monkeypatch.setattr(
+        media_quality_service, "_fetch_post_title", AsyncMock(return_value="T"),
+    )
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        media_quality_service, "emit_finding", lambda **kw: captured.append(kw),
+    )
+    await media_quality_service._run_video_layer2(
+        _DBStub(), "p", "/v.mp4",
+        _SC({"media.layer2.enabled": "true", "media.video.topic_match_min": "50"}),
+    )
+    assert any(f["kind"] == "video_topic_mismatch" for f in captured)
+
+
 async def test_evaluate_video_pass_writes_0_100_composite(monkeypatch) -> None:
     """A Layer-1 pass writes the Layer-2 composite (0-100), not 1.0."""
     monkeypatch.setattr(
@@ -362,6 +412,202 @@ async def test_evaluate_video_pass_writes_0_100_composite(monkeypatch) -> None:
     # The passing UPDATE wrote 80.0 as quality_score (0-100), not 1.0.
     update_args = [c.args for c in db.execute.await_args_list]
     assert any(80.0 in a for a in update_args)
+
+
+# ---------------------------------------------------------------------------
+# _score_video_topic_match — vision score of composed frames vs title
+# ---------------------------------------------------------------------------
+
+
+async def test_topic_match_scores_and_uses_thinking_safe_budget(monkeypatch) -> None:
+    """One dispatch call over N frames → 0-100 score; budget >= 1024 (#2224)."""
+    async def _fake_frame(file_path, at_s):
+        return b"\x89PNG-fake"
+    monkeypatch.setattr(media_quality_service, "_extract_frame_at", _fake_frame)
+    monkeypatch.setattr(
+        media_quality_service, "_probe_duration", AsyncMock(return_value=30.0),
+    )
+    dispatch = AsyncMock(return_value=SimpleNamespace(text='{"score": 82}'))
+    monkeypatch.setattr(
+        media_quality_service, "dispatch_complete", dispatch, raising=False,
+    )
+
+    sc = _SC({
+        "media.video.topic_match_model": "ollama/qwen3-vl:30b",
+        "media.video.topic_match_frames": "3",
+    })
+    score = await media_quality_service._score_video_topic_match(
+        _DBStub(), "/v.mp4", "GPU undervolting", sc,
+    )
+
+    assert score == 82.0
+    _, kwargs = dispatch.call_args
+    assert kwargs["max_tokens"] >= 1024  # thinking-model budget pin
+
+
+async def test_topic_match_unavailable_when_no_model() -> None:
+    """No topic_match_model and no qa_vision_model fallback → None (skip)."""
+    sc = _SC({"media.video.topic_match_model": "", "qa_vision_model": ""})
+    score = await media_quality_service._score_video_topic_match(
+        _DBStub(), "/v.mp4", "t", sc,
+    )
+    assert score is None
+
+
+async def test_topic_match_fail_soft_on_dispatch_raise(monkeypatch) -> None:
+    """A dispatch error is swallowed → None, never propagates."""
+    async def _fake_frame(file_path, at_s):
+        return b"png"
+    monkeypatch.setattr(media_quality_service, "_extract_frame_at", _fake_frame)
+    monkeypatch.setattr(
+        media_quality_service, "_probe_duration", AsyncMock(return_value=30.0),
+    )
+    monkeypatch.setattr(
+        media_quality_service, "dispatch_complete",
+        AsyncMock(side_effect=RuntimeError("ollama down")), raising=False,
+    )
+    sc = _SC({"media.video.topic_match_model": "ollama/qwen3-vl:30b"})
+    assert await media_quality_service._score_video_topic_match(
+        _DBStub(), "/v.mp4", "t", sc,
+    ) is None
+
+
+# ---------------------------------------------------------------------------
+# _score_podcast_faithfulness — transcript vs source article
+# ---------------------------------------------------------------------------
+
+
+async def test_podcast_faithfulness_scores(monkeypatch) -> None:
+    """Transcribe → LLM judge → (score, reason)."""
+    seg = SimpleNamespace(text="the episode says gpus run cooler undervolted")
+    result = SimpleNamespace(success=True, segments=[seg], error=None)
+    provider = SimpleNamespace(transcribe=AsyncMock(return_value=result))
+    monkeypatch.setattr(
+        media_quality_service, "get_caption_provider", lambda sc: provider,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        media_quality_service, "dispatch_complete",
+        AsyncMock(return_value=SimpleNamespace(
+            text='{"score": 88, "reason": "faithful"}')),
+        raising=False,
+    )
+
+    class _DB:
+        async def fetchrow(self, *_a, **_k):
+            return {"content": "Undervolting keeps GPUs cool."}
+
+    sc = _SC({"media.podcast.faithfulness_model": "ollama/qwen3.6:latest"})
+    score, reason = await media_quality_service._score_podcast_faithfulness(
+        _DB(), "p", "/ep.mp3", sc,
+    )
+    assert score == 88.0
+    assert "faithful" in reason
+
+
+async def test_podcast_faithfulness_unavailable_no_transcript(monkeypatch) -> None:
+    """Transcription failure → (None, '') fail-soft."""
+    result = SimpleNamespace(success=False, segments=[], error="whisper down")
+    provider = SimpleNamespace(transcribe=AsyncMock(return_value=result))
+    monkeypatch.setattr(
+        media_quality_service, "get_caption_provider", lambda sc: provider,
+        raising=False,
+    )
+
+    class _DB:
+        async def fetchrow(self, *_a, **_k):
+            return {"content": "body"}
+
+    sc = _SC({"media.podcast.faithfulness_model": "ollama/qwen3.6:latest"})
+    score, _ = await media_quality_service._score_podcast_faithfulness(
+        _DB(), "p", "/ep.mp3", sc,
+    )
+    assert score is None
+
+
+async def test_podcast_faithfulness_unavailable_no_model() -> None:
+    """No faithfulness_model and no ragas_judge_model fallback → None (skip)."""
+    sc = _SC({"media.podcast.faithfulness_model": "", "ragas_judge_model": ""})
+    score, _ = await media_quality_service._score_podcast_faithfulness(
+        _DBStub(), "p", "/ep.mp3", sc,
+    )
+    assert score is None
+
+
+# ---------------------------------------------------------------------------
+# _run_podcast_layer2 + evaluate_podcast 0-100 composite
+# ---------------------------------------------------------------------------
+
+
+async def test_podcast_layer2_score_is_faithfulness(monkeypatch) -> None:
+    """Faithfulness is the podcast Layer-2 signal → it IS the composite."""
+    monkeypatch.setattr(
+        media_quality_service, "_score_podcast_faithfulness",
+        AsyncMock(return_value=(88.0, "ok")),
+    )
+    out = await media_quality_service._run_podcast_layer2(
+        _DBStub(), "p", "/ep.mp3", _SC({"media.layer2.enabled": "true"}),
+    )
+    assert out["layer2_score"] == 88.0
+    assert out["layer2_status"] == "scored"
+    assert out["faithfulness"] == 88.0
+
+
+async def test_podcast_layer2_unavailable(monkeypatch) -> None:
+    """No faithfulness score → status 'unavailable', score None."""
+    monkeypatch.setattr(
+        media_quality_service, "_score_podcast_faithfulness",
+        AsyncMock(return_value=(None, "")),
+    )
+    out = await media_quality_service._run_podcast_layer2(
+        _DBStub(), "p", "/ep.mp3", _SC({"media.layer2.enabled": "true"}),
+    )
+    assert out["layer2_score"] is None
+    assert out["layer2_status"] == "unavailable"
+
+
+async def test_podcast_layer2_low_faithfulness_emits_finding(monkeypatch) -> None:
+    """Faithfulness below its min raises an advisory finding."""
+    monkeypatch.setattr(
+        media_quality_service, "_score_podcast_faithfulness",
+        AsyncMock(return_value=(30.0, "drifted")),
+    )
+    captured: list[dict] = []
+    monkeypatch.setattr(
+        media_quality_service, "emit_finding", lambda **kw: captured.append(kw),
+    )
+    await media_quality_service._run_podcast_layer2(
+        _DBStub(), "p", "/ep.mp3",
+        _SC({"media.layer2.enabled": "true", "media.podcast.faithfulness_min": "60"}),
+    )
+    assert any(f["kind"] == "podcast_faithfulness_low" for f in captured)
+
+
+async def test_evaluate_podcast_pass_writes_0_100(monkeypatch) -> None:
+    """A Layer-1 pass writes the podcast Layer-2 composite (0-100), not 100 bare."""
+    monkeypatch.setattr(
+        media_quality_service, "_probe_duration", AsyncMock(return_value=600.0),
+    )
+    monkeypatch.setattr(
+        media_quality_service, "_probe_silence_ratio", AsyncMock(return_value=0.1),
+    )
+    monkeypatch.setattr(media_quality_service, "_file_size", lambda p: 8_000_000)
+    monkeypatch.setattr(
+        media_quality_service, "_run_podcast_layer2",
+        AsyncMock(return_value={
+            "layer2_status": "scored", "layer2_score": 88.0, "faithfulness": 88.0,
+        }),
+    )
+    monkeypatch.setattr(
+        media_quality_service, "_notify_if_pending", AsyncMock(),
+    )
+    db = AsyncMock()
+    db.fetchrow = AsyncMock(return_value=None)  # thresholds → defaults
+    out = await media_quality_service.evaluate_podcast(
+        db, "p", "/ep.mp3", site_config=_SC({"media.layer2.enabled": "true"}),
+    )
+    assert out["score"] == 88.0
+    assert out["layer2_status"] == "scored"
 
 
 # ---------------------------------------------------------------------------
