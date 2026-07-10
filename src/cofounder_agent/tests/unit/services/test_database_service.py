@@ -700,3 +700,35 @@ class TestCloseDualPool:
         await svc.close()
         # Should be called exactly once, not twice
         shared.close.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_close_drains_audit_writes_before_closing_pool(self):
+        """GlitchTip #863: close() must flush in-flight fire-and-forget audit
+        writes before closing the pool they run against, else a warn finding
+        emitted moments earlier (e.g. the spend-throttle engage finding) races
+        pool.close() and dies with InterfaceError('pool is closing')."""
+        from services.database_service import DatabaseService
+
+        svc = DatabaseService(database_url="x", site_config=SiteConfig())
+        cloud_pool = AsyncMock(name="cloud")
+        local_pool = AsyncMock(name="local")
+        svc.pool = cloud_pool
+        svc.local_pool = local_pool
+
+        order: list[str] = []
+        local_pool.close.side_effect = lambda *a, **k: order.append("local_close")
+        cloud_pool.close.side_effect = lambda *a, **k: order.append("cloud_close")
+
+        async def _record_drain(*a, **k):
+            order.append("drain")
+
+        with patch(
+            "services.database_service.drain_pending_writes",
+            new=AsyncMock(side_effect=_record_drain),
+        ) as drain:
+            await svc.close()
+
+        drain.assert_awaited_once()
+        # The drain MUST precede any pool close, or the write it is flushing
+        # would hit an already-closing pool.
+        assert order and order[0] == "drain", order

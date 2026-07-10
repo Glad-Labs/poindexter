@@ -359,3 +359,103 @@ class TestLoudOnDroppedFindings:
             log.debug.assert_called_once()
         finally:
             mod._global_audit_logger = original
+
+
+# ---------------------------------------------------------------------------
+# GlitchTip #863 root cause A — a fire-and-forget audit write scheduled right
+# before a short-lived pool's teardown (e.g. the spend-throttle engage finding
+# in a Prefect flow subprocess that builds+closes its own pool per run) raced
+# ``local_pool.close()`` and died with ``InterfaceError('pool is closing')`` —
+# losing a warn finding, the exact loss the #303 loud-drop path is meant to make
+# impossible. ``audit_log_bg`` now registers each background write, and
+# ``drain_pending_writes`` lets an owner flush them BEFORE closing the pool.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestDrainPendingWrites:
+    @pytest.mark.asyncio
+    async def test_audit_log_bg_registers_then_discards_task(self):
+        import services.audit_log as mod
+
+        original = mod._global_audit_logger
+        pool = _make_pool()
+        init_global_audit_logger(pool)
+        try:
+            mod._pending_writes.clear()
+            assert len(mod._pending_writes) == 0
+
+            audit_log_bg("finding", "spend_throttle", {"k": "v"}, severity="warn")
+            # Registered while in-flight so an owner can drain it.
+            assert len(mod._pending_writes) == 1
+
+            # Once the write completes, the done-callback discards it (no leak).
+            await asyncio.sleep(0.05)
+            assert len(mod._pending_writes) == 0
+        finally:
+            mod._global_audit_logger = original
+            mod._pending_writes.clear()
+
+    @pytest.mark.asyncio
+    async def test_drain_awaits_inflight_write_before_returning(self):
+        import services.audit_log as mod
+
+        original = mod._global_audit_logger
+        ran: list = []
+
+        async def execute(*args, **kwargs):
+            # Yield once so the task is genuinely in-flight (scheduled, not run),
+            # then record that the write landed.
+            await asyncio.sleep(0)
+            ran.append(args)
+
+        pool = AsyncMock()
+        pool.execute = execute
+        init_global_audit_logger(pool)
+        try:
+            mod._pending_writes.clear()
+            audit_log_bg("finding", "spend_throttle", {"k": "v"}, severity="warn")
+            # loop.create_task schedules but does not run synchronously — the
+            # write has NOT happened yet. This is the window where the old code
+            # closed the pool and lost the finding.
+            assert ran == []
+
+            await mod.drain_pending_writes()
+
+            # drain awaited the in-flight write to completion → finding persisted.
+            assert len(ran) == 1
+        finally:
+            mod._global_audit_logger = original
+            mod._pending_writes.clear()
+
+    @pytest.mark.asyncio
+    async def test_drain_is_noop_when_nothing_pending(self):
+        import services.audit_log as mod
+
+        mod._pending_writes.clear()
+        # Must return promptly and never raise when there is nothing to flush.
+        await mod.drain_pending_writes()
+
+    @pytest.mark.asyncio
+    async def test_drain_is_bounded_by_timeout(self):
+        import services.audit_log as mod
+
+        original = mod._global_audit_logger
+
+        async def hangs(*args, **kwargs):
+            await asyncio.sleep(3600)  # never completes within the test
+
+        pool = AsyncMock()
+        pool.execute = hangs
+        init_global_audit_logger(pool)
+        try:
+            mod._pending_writes.clear()
+            audit_log_bg("finding", "spend_throttle", {"k": "v"}, severity="warn")
+            # A hung write must not hang teardown: drain returns after its own
+            # timeout (the outer wait_for guards against a drain that ignores it).
+            await asyncio.wait_for(mod.drain_pending_writes(timeout=0.05), timeout=2.0)
+        finally:
+            mod._global_audit_logger = original
+            for t in list(mod._pending_writes):
+                t.cancel()
+            mod._pending_writes.clear()

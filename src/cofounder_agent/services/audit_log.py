@@ -42,6 +42,15 @@ def _is_loud(severity: str | None) -> bool:
 # ---------------------------------------------------------------------------
 _global_audit_logger: Optional["AuditLogger"] = None
 
+# In-flight fire-and-forget writes scheduled by audit_log_bg(). Tracked so a
+# short-lived pool owner (a Prefect flow subprocess that builds+closes its own
+# pool per run) can flush them via drain_pending_writes() BEFORE closing the
+# pool — otherwise a write scheduled moments before teardown races pool.close()
+# and dies with InterfaceError('pool is closing'), losing the finding the #303
+# loud-drop path exists to protect (GlitchTip #863). Holding the reference also
+# stops the task being garbage-collected mid-flight (asyncio best practice).
+_pending_writes: set[asyncio.Task] = set()
+
 
 def init_global_audit_logger(pool: Pool) -> "AuditLogger":
     """Initialise (or replace) the module-level AuditLogger singleton."""
@@ -86,6 +95,11 @@ def audit_log_bg(
     task = loop.create_task(
         al.log(event_type, source, details, task_id=task_id, severity=severity)
     )
+    # Register the in-flight write so drain_pending_writes() can flush it before
+    # a short-lived pool closes (GlitchTip #863), and so the task can't be GC'd
+    # mid-flight. The discard callback keeps the set from leaking completed tasks.
+    _pending_writes.add(task)
+    task.add_done_callback(_pending_writes.discard)
     # Swallow exceptions so a failed log write never propagates, but keep
     # warn/critical drops LOUD (#303) — bind the context the callback needs.
     task.add_done_callback(
@@ -133,6 +147,31 @@ def _handle_audit_task_exception(
         )
     else:
         logger.warning("Audit log background write failed: %s", exc)
+
+
+async def drain_pending_writes(timeout: float = 5.0) -> None:
+    """Flush in-flight ``audit_log_bg`` writes before their pool is closed.
+
+    A ``warn``/``critical`` finding emitted fire-and-forget moments before a
+    short-lived pool's teardown (e.g. the spend-throttle engage finding in a
+    Prefect flow subprocess that builds+closes its own pool per run) is only
+    *scheduled* — ``loop.create_task`` does not run it synchronously. If the
+    owner closes the pool before the task runs, the write dies with
+    ``asyncpg InterfaceError('pool is closing')`` and the finding is lost —
+    exactly the loss the #303 loud-drop path exists to prevent (GlitchTip #863).
+
+    Owners that close a pool the audit logger writes to (``DatabaseService.close``)
+    call this FIRST so the writes land while the pool is still open. Best-effort
+    and bounded: waits up to ``timeout`` seconds for the current in-flight set,
+    then cancels any stragglers so teardown never hangs on a wedged write. Never
+    raises — task exceptions are already retrieved by the per-task done-callback.
+    """
+    pending = [t for t in _pending_writes if not t.done()]
+    if not pending:
+        return
+    _, still_pending = await asyncio.wait(pending, timeout=timeout)
+    for task in still_pending:
+        task.cancel()
 
 
 # ---------------------------------------------------------------------------

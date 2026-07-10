@@ -29,7 +29,7 @@ from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
 from .admin_db import AdminDatabase
-from .audit_log import AuditLogger, init_global_audit_logger
+from .audit_log import AuditLogger, drain_pending_writes, init_global_audit_logger
 from .content_db import ContentDatabase
 from .embeddings_db import EmbeddingsDatabase
 from .tasks_db import TasksDatabase
@@ -325,6 +325,15 @@ class DatabaseService:
 
     async def close(self) -> None:
         """Close all connection pools."""
+        # Flush in-flight fire-and-forget audit writes (audit_log_bg) before
+        # closing the pool they run against. Without this, a warn/critical
+        # finding emitted moments earlier — e.g. the spend-throttle engage
+        # finding in a per-run Prefect flow subprocess that builds+closes its
+        # own pool — races local_pool.close() and dies with
+        # InterfaceError('pool is closing'), losing the finding the #303
+        # loud-drop path exists to protect (GlitchTip #863). Bounded and never
+        # raises, so teardown neither hangs nor is masked.
+        await drain_pending_writes()
         if self.local_pool and self.local_pool is not self.pool:
             await self.local_pool.close()
             logger.info("Local database pool closed")
