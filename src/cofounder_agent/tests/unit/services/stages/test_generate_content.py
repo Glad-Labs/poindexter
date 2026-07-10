@@ -38,10 +38,13 @@ class TestStripLeakedImagePrompts:
         assert "Intro paragraph." in out
         assert "Outro." in out
 
-    def test_removes_image_placeholders(self):
+    def test_keeps_writer_markers_strips_figure(self):
+        # [IMAGE:] / [IMAGE-N:] / [HERO-IMAGE:] are intentional writer markers now
+        # (blog-generation SKILL.md) — they survive so plan_image_markers can
+        # process them. Only [FIGURE:] (never a writer marker) is stripped.
         body = "Before [IMAGE-1: cat on sofa] after [FIGURE: graph here] end."
         out = _strip_leaked_image_prompts(body)
-        assert "IMAGE" not in out
+        assert "[IMAGE-1: cat on sofa]" in out
         assert "FIGURE" not in out
         assert "Before" in out
         assert "end." in out

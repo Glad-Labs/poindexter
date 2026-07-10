@@ -119,3 +119,26 @@ def test_blog_template_ends_with_single_trailing_newline(
     template = pm.prompts[key]["template"]
     assert template.endswith("\n"), f"{key} lost its trailing newline"
     assert not template.endswith("\n\n"), f"{key} has >1 trailing newline"
+
+
+def _blog_skill_body() -> str:
+    from pathlib import Path
+
+    p = Path(__file__).resolve()
+    root = next(a for a in p.parents if (a / "skills").is_dir())
+    return (root / "skills/content/blog-generation/SKILL.md").read_text(encoding="utf-8")
+
+
+@pytest.mark.unit
+def test_writer_skill_instructs_image_markers() -> None:
+    """Image-direction rework: the writer nominates images from full context.
+
+    It must instruct [IMAGE:]/[HERO-IMAGE:] placement and drop the old
+    suppression rules; no invented image count (feedback_no_hardcoded_lengths_in_prompts).
+    """
+    body = _blog_skill_body()
+    assert "[IMAGE:" in body
+    assert "[HERO-IMAGE:" in body
+    assert "Do NOT include image descriptions" not in body
+    assert "Images are handled separately" not in body
+    assert "exactly 3 images" not in body.lower()

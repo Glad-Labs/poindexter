@@ -36,6 +36,25 @@ def test_ops_triage_defaults_to_small_model_not_heavy_writer():
     assert DEFAULTS["ops_triage_writer_model"] != DEFAULTS["pipeline_writer_model"]
 
 
+def test_image_direction_defaults_present():
+    """Writer places images; local prompt-builder is a strong public model.
+
+    The public OSS default is gemma3:27b (better than the old llama3/phi4 pins);
+    Matt's rig overlays these onto his private gemma-4-31B fine-tune via
+    operator_overrides.OPERATOR_MODEL_PINS. Cloud models stay writer-only.
+    """
+    from services.settings_defaults import DEFAULTS, METADATA
+
+    assert DEFAULTS["writer_max_inline_images"] == "3"
+    assert DEFAULTS["image_decision_section_body_chars"] == "500"
+    assert DEFAULTS["inline_image_prompt_model"] == "ollama/gemma3:27b"
+    assert DEFAULTS["model_role_image_decision"] == "ollama/gemma3:27b"
+    assert METADATA["writer_max_inline_images"]["value_type"] == "integer"
+    assert METADATA["image_decision_section_body_chars"]["value_type"] == "integer"
+    assert METADATA["inline_image_prompt_model"]["value_type"] == "model"
+    assert METADATA["model_role_image_decision"]["value_type"] == "model"
+
+
 def test_media_layer2_defaults_seeded():
     """Media Quality Layer 2 (spec 2026-07-09) tunables seed with sane defaults.
 

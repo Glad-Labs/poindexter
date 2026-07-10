@@ -54,7 +54,9 @@ _REVISE_PROMPT_FALLBACK = (
     "CONTRADICTIONS TO FIX:\n{review_text}\n\n"
     "ORIGINAL DRAFT:\n{draft}\n\n"
     "Output only the revised draft. Keep the structure, length, and tone "
-    "identical. Only change what's needed to resolve the contradictions."
+    "identical. Only change what's needed to resolve the contradictions. "
+    "Preserve any [IMAGE: ...], [IMAGE-N: ...], and [HERO-IMAGE: ...] markers "
+    "exactly as they appear — do not remove, renumber, reword, or relocate them."
 )
 
 

@@ -49,7 +49,7 @@ _IMAGE_DECISION_EXPECTED = """You are an image director for a Test Category cont
 ARTICLE TOPIC: Test Topic
 CATEGORY: Test Category
 
-SECTIONS:
+SECTIONS (title + a short excerpt of the actual text):
   1. Section One
   2. Section Two
 
@@ -63,6 +63,7 @@ RULES:
 3. Also decide on 1 featured image (the hero/header image for the article)
 4. Be specific in your prompts — describe the exact scene, not vague concepts
 5. NEVER depict people, hands, faces, or human figures in ANY image — the brand style is objects, hardware, and environments only. Also never put text, words, or letters in AI-generated images.
+6. Ground each image's subject in the section's excerpt — depict what that section actually discusses, not a generic Test Category image.
 
 Output ONLY valid JSON (no markdown, no explanation):
 {
@@ -362,3 +363,38 @@ class TestPlanImagesEdgeCases:
         assert len(result.images) == 2
         # Empty featured dict is falsy → no featured image parsed.
         assert result.featured_image is None
+
+
+@pytest.mark.unit
+def test_section_list_includes_body_excerpt():
+    """The decision-agent fallback grounds on section BODY, not just headings."""
+    import services.image_decision_agent as ida
+
+    content = (
+        "## Draft phase\n\nA small draft model proposes tokens cheaply.\n\n"
+        "## Verify phase\n\nThe big model checks them."
+    )
+    sections = ida._extract_sections(content, body_chars=200)
+    assert [s["title"] for s in sections] == ["Draft phase", "Verify phase"]
+    assert "small draft model proposes tokens" in sections[0]["excerpt"]
+
+    section_list = ida._render_section_list(sections)
+    assert "Draft phase" in section_list
+    assert "small draft model proposes tokens" in section_list
+
+
+@pytest.mark.unit
+def test_extract_sections_truncates_to_budget():
+    import services.image_decision_agent as ida
+
+    content = "## H\n\n" + ("word " * 200)
+    sections = ida._extract_sections(content, body_chars=50)
+    assert len(sections[0]["excerpt"]) <= 50
+
+
+@pytest.mark.unit
+def test_extract_sections_bold_fallback_title_only():
+    import services.image_decision_agent as ida
+
+    sections = ida._extract_sections("**First Idea**\n\nprose\n", body_chars=200)
+    assert sections == [{"level": 2, "title": "First Idea", "excerpt": ""}]

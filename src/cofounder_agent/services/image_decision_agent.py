@@ -65,6 +65,40 @@ class ImagePlanResult:
     raw_response: str = ""
 
 
+def _extract_sections(content: str, *, body_chars: int) -> list[dict]:
+    """Sections as ``{level, title, excerpt}``.
+
+    Real H2/H3 headings first, each carrying a body excerpt (truncated to
+    ``body_chars``) so the agent grounds image subjects in what the section
+    actually discusses, not just the heading title. Bold-text pseudo-headings
+    (``**Title**`` on their own line) are the title-only #527 fallback when no
+    real markdown headings exist.
+    """
+    matches = list(re.finditer(r'^(#{2,3})\s+(.+)$', content, re.MULTILINE))
+    sections: list[dict] = []
+    for i, m in enumerate(matches):
+        start = m.end()
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(content)
+        excerpt = " ".join(content[start:end].split())[:body_chars]
+        sections.append(
+            {"level": len(m.group(1)), "title": m.group(2).strip(), "excerpt": excerpt}
+        )
+    if sections:
+        return sections
+    bold = re.findall(r'^\*\*(.{1,80}?)\*\*\s*$', content, re.MULTILINE)
+    return [{"level": 2, "title": t.strip(), "excerpt": ""} for t in bold if t.strip()]
+
+
+def _render_section_list(sections: list[dict]) -> str:
+    """Numbered section list for the image.decision prompt: title + excerpt."""
+    lines: list[str] = []
+    for i, s in enumerate(sections):
+        lines.append(f"  {i+1}. {s['title']}")
+        if s.get("excerpt"):
+            lines.append(f"     excerpt: {s['excerpt']}")
+    return "\n".join(lines)
+
+
 @observe(as_type="generation", name="image_decision_agent.plan_images")
 async def plan_images(
     content: str,
@@ -126,30 +160,14 @@ async def plan_images(
     # phrase ``**…**`` and short (<=80 chars). A `**foo**` mid-
     # paragraph isn't a heading, so we anchor to start- and end-of-
     # line with the multiline flag.
-    headings = re.findall(r'^(#{2,3})\s+(.+)$', content, re.MULTILINE)
-    sections = [{"level": len(h[0]), "title": h[1].strip()} for h in headings]
-
-    if not sections:
-        bold_headings = re.findall(
-            r'^\*\*(.{1,80}?)\*\*\s*$', content, re.MULTILINE,
-        )
-        sections = [
-            {"level": 2, "title": title.strip()}
-            for title in bold_headings
-            if title.strip()
-        ]
-        if sections:
-            logger.info(
-                "[IMAGE_AGENT] No real H2/H3 — fell back to %d "
-                "bold-text pseudo-headings as L2",
-                len(sections),
-            )
+    body_chars = int(_sc.get("image_decision_section_body_chars", "500") or 500)
+    sections = _extract_sections(content, body_chars=body_chars)
 
     if not sections:
         logger.info("[IMAGE_AGENT] No sections found — skipping image planning")
         return ImagePlanResult()
 
-    section_list = "\n".join(f"  {i+1}. {s['title']}" for i, s in enumerate(sections))
+    section_list = _render_section_list(sections)
 
     prompt = get_prompt_manager().get_prompt(
         "image.decision",

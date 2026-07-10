@@ -313,7 +313,7 @@ CONTRADICTIONS TO FIX:
 ORIGINAL DRAFT:
 {draft}
 
-Output only the revised draft. Keep the structure, length, and tone identical. Only change what's needed to resolve the contradictions.
+Output only the revised draft. Keep the structure, length, and tone identical. Only change what's needed to resolve the contradictions. Preserve any [IMAGE: ...], [IMAGE-N: ...], and [HERO-IMAGE: ...] markers exactly as they appear — do not remove, renumber, reword, or relocate them.
 ```
 
 ## qa.self_consistency.summarize

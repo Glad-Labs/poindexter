@@ -43,10 +43,10 @@ Default prompts — basic but functional; production-quality prompt packs ship a
 ```text
 Write a single Stable Diffusion XL image prompt for a magazine-style editorial cover illustration.
 
-Article topic: {topic}
+Image subject: {subject}
 Art style: {style} — {style_tags}
 
-Depict a concrete, specific subject or scene that represents the topic (a recognizable object, place, or visual metaphor), rendered fully in the "{style}" art style. Commit to that style's medium, palette, and composition. Do NOT default to a generic glowing-circuit board or abstract floating-data backdrop, and do not lock every image to teal/cyan — vary the focal subject, composition, and color treatment so it reads differently from a typical tech illustration. Faceless silhouettes are fine; no identifiable faces, no hands, no text or words in the image.
+Depict a concrete, specific subject or scene that represents the image subject above (a recognizable object, place, or visual metaphor), rendered fully in the "{style}" art style. Commit to that style's medium, palette, and composition. Do NOT default to a generic glowing-circuit board or abstract floating-data backdrop, and do not lock every image to teal/cyan — vary the focal subject, composition, and color treatment so it reads differently from a typical tech illustration. Faceless silhouettes are fine; no identifiable faces, no hands, no text or words in the image.
 
 Output ONLY the image prompt, 1-2 sentences, nothing else.
 ```
@@ -79,7 +79,7 @@ You are an image director for a {category} content site. Analyze this article an
 ARTICLE TOPIC: {topic}
 CATEGORY: {category}
 
-SECTIONS:
+SECTIONS (title + a short excerpt of the actual text):
 {section_list}
 
 AVAILABLE IMAGE SOURCES:
@@ -92,6 +92,7 @@ RULES:
 3. Also decide on 1 featured image (the hero/header image for the article)
 4. Be specific in your prompts — describe the exact scene, not vague concepts
 5. NEVER depict people, hands, faces, or human figures in ANY image — the brand style is objects, hardware, and environments only. Also never put text, words, or letters in AI-generated images.
+6. Ground each image's subject in the section's excerpt — depict what that section actually discusses, not a generic {category} image.
 
 Output ONLY valid JSON (no markdown, no explanation):
 {{

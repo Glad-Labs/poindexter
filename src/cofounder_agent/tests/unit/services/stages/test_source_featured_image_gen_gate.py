@@ -186,7 +186,7 @@ async def test_image_gen_failure_emits_routed_finding() -> None:
     with patch.object(sfi, "_render_image_gen", render_boom), \
             patch("utils.findings.emit_finding", _capture):
         result = await sfi._try_image_gen_featured(
-            topic="Test article",
+            subject="Test article",
             existing_prompt="a concrete editorial prompt",
             task_id="test-task-id",
             on_style_picked=lambda _s: None,

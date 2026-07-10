@@ -50,7 +50,9 @@ ATOM_META = AtomMeta(
 _LEAKED_IMAGE_PATTERNS: tuple[re.Pattern, ...] = (
     re.compile(r'(?m)^\s*\*(?:A |An |Imagine |Visual |Split|Close)[^*]{40,}\*\s*$'),
     re.compile(r'(?m)^\s*:\s*\*[A-Z][^*]{30,}\*\s*$'),
-    re.compile(r'\[IMAGE(?:-\d+)?:\s*[^\]]+\]'),
+    # [IMAGE:] / [IMAGE-N:] / [HERO-IMAGE:] are intentional writer markers now
+    # (blog-generation SKILL.md) — plan_image_markers processes them and
+    # inject_images cleans residuals. Only [FIGURE:] remains a genuine leak.
     re.compile(r'\[FIGURE:\s*[^\]]+\]'),
 )
 

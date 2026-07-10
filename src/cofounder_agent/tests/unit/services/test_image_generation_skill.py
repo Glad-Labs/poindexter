@@ -44,9 +44,10 @@ def test_image_templates_carry_placeholders() -> None:
 
     # featured_image was rewritten (#image-zimage-and-variety) to be style-aware
     # and drop the "evoke the FEELING" funnel — it now carries the rotated style
-    # + tags alongside the topic.
+    # + tags alongside the {subject} (the writer's HERO-IMAGE subject or the
+    # decision-agent hero pick, grounded rather than the bare topic string).
     featured = pm.prompts["image.featured_image"]["template"]
-    assert "{topic}" in featured
+    assert "{subject}" in featured
     assert "{style}" in featured
     assert "{style_tags}" in featured
 

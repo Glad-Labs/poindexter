@@ -58,10 +58,9 @@ SOURCING — specific claims need verifiable backing:
 
 IMPORTANT OUTPUT RULES:
 - Write ONLY the article in markdown. No preamble, no meta-commentary.
-- Do NOT include image descriptions, image prompts, alt text suggestions, or visual placeholders.
-- Do NOT include lines like "*A dramatic scene of...*" or "[IMAGE: ...]" or "![description]".
-- Do NOT describe what illustrations, photos, or diagrams should look like.
-- Images are handled separately — your job is text only.
+- Place images where a visual genuinely helps the reader. Mark each on its own line as: [IMAGE: a concrete, specific subject drawn from THIS section — an object, diagram, scene, or visual metaphor]. Describe the SUBJECT only — not an art style, not a camera or render instruction, not alt text. Only where it adds real value; skip code-heavy or very short sections. Do not state or aim for a fixed number of images.
+- Add exactly one hero image as the FIRST line of the article: [HERO-IMAGE: a concrete subject that represents the whole post].
+- Never put identifiable people, faces, hands, or any text/words in an image subject — the brand style is objects, hardware, diagrams, and environments. Do NOT write "![description]" markdown image syntax or "*A dramatic scene of...*" prose — only the bracket markers above.
 - Do NOT leave empty markdown brackets like " []" at the end of a sentence. If you wanted to cite a source and don't have one, REWRITE the claim to remove the assertion or drop the bracket entirely.
 
 MARKDOWN STRUCTURE — section dividers must be real H2/H3 headings, not bold-text fakes:

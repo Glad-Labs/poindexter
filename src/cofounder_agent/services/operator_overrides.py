@@ -40,6 +40,8 @@ OPERATOR_MODEL_PINS: dict[str, str] = {
     "structured_extraction_model": "ollama/gemma-4-31B-it-qat:latest",
     "image_prompt_model": "ollama/gemma-4-31B-it-qat:latest",
     "image_search_query_model": "ollama/gemma-4-31B-it-qat:latest",
+    "inline_image_prompt_model": "ollama/gemma-4-31B-it-qat:latest",
+    "model_role_image_decision": "ollama/gemma-4-31B-it-qat:latest",
     "writer_self_review_model": "ollama/gemma-4-31B-it-qat:latest",
     "qa_fallback_writer_model": "ollama/gemma-4-31B-it-qat:latest",
     "podcast_script_model": "ollama/gemma-4-31B-it-qat:latest",

@@ -982,8 +982,11 @@ _LEAKED_IMAGE_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r'(?m)^\s*\*(?:A |An |Imagine |Visual |Split|Close)[^*]{40,}\*\s*$'),
     # `: *description*` image caption patterns
     re.compile(r'(?m)^\s*:\s*\*[A-Z][^*]{30,}\*\s*$'),
-    # [IMAGE-N: description] placeholders
-    re.compile(r'\[IMAGE(?:-\d+)?:\s*[^\]]+\]'),
+    # NB: [IMAGE:] / [IMAGE-N:] / [HERO-IMAGE:] are deliberately NOT stripped
+    # here. The writer places them on purpose (blog-generation SKILL.md);
+    # content.plan_image_markers owns their lifecycle (extract hero, number the
+    # inline ones, enforce the cap) and inject_images strips any unfilled marker
+    # before publish. Only [FIGURE:] — never a writer marker — stays a leak.
     # [FIGURE: description] placeholders
     re.compile(r'\[FIGURE:\s*[^\]]+\]'),
 )

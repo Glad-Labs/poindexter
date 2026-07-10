@@ -139,16 +139,19 @@ class TestContentNormalizeDraft:
         assert "*A dramatic scene" not in out["content"]
         assert "Real body text." in out["content"]
 
-    async def test_strips_image_figure_placeholders(self, monkeypatch):
+    async def test_keeps_image_markers_strips_figure(self, monkeypatch):
         from modules.content.atoms import content_normalize_draft as atom
         monkeypatch.setattr("services.text_utils.normalize_text", lambda t: t, raising=False)
         monkeypatch.setattr(
             "services.text_utils.scrub_fabricated_links",
             lambda t, known_slugs=None: t, raising=False,
         )
-        content = "Body text. [IMAGE-1: a futuristic server room]. More text."
+        # Writer markers survive normalize now (content.plan_image_markers owns
+        # their lifecycle); only [FIGURE:] is still stripped as a leak.
+        content = "Body text. [IMAGE-1: a futuristic server room]. More [FIGURE: a chart] text."
         out = await atom.run(_base_state(content=content))
-        assert "[IMAGE-1:" not in out["content"]
+        assert "[IMAGE-1: a futuristic server room]" in out["content"]
+        assert "[FIGURE:" not in out["content"]
 
     async def test_empty_content_returns_empty(self):
         from modules.content.atoms import content_normalize_draft as atom
@@ -160,6 +163,13 @@ class TestContentNormalizeDraft:
         assert "[FIGURE:" not in result
         assert "Hello" in result
         assert "World" in result
+        # Writer image markers are an intentional channel now — they survive the
+        # strip; only [FIGURE:] (never a writer marker) is treated as a leak.
+        kept = strip_leaked_image_prompts(
+            "Intro [IMAGE: a chip] and [HERO-IMAGE: a board] end.",
+        )
+        assert "[IMAGE: a chip]" in kept
+        assert "[HERO-IMAGE: a board]" in kept
 
     async def test_repairs_orphaned_fabricated_citation_end_to_end(self):
         # Real scrubber (not mocked): a fabricated appended Title-Case citation

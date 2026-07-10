@@ -40,7 +40,7 @@ ATOM_META = AtomMeta(
         FieldSpec(name="image_plans", type="list", description="[{num, desc}, ...] — one entry per placeholder"),
     ),
     requires=("content",),
-    produces=("content", "image_plans"),
+    produces=("content", "image_plans", "featured_image_subject"),
     capability_tier=None,
     cost_class="api",
     idempotent=False,
@@ -59,6 +59,21 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     topic = state.get("topic", "")
     category = state.get("category", "technology")
     site_config = state.get("site_config")
+
+    # Writer-placed markers (blog-generation SKILL.md): extract the hero, number
+    # the inline markers, enforce the cap. No markers → the decision-agent
+    # fallback below runs (also the ImageRebuildService path, which strips
+    # <img> and re-plans marker-free text).
+    from modules.content.atoms._writer_markers import (
+        extract_hero_subject,
+        number_inline_markers,
+    )
+    max_inline = (
+        site_config.get_int("writer_max_inline_images", 3)
+        if site_config is not None else 3
+    )
+    content_text, hero_subject = extract_hero_subject(content_text)
+    content_text = number_inline_markers(content_text, max_inline)
 
     # VRAM guard: unload writer LLM before image-gen may load.
     try:
@@ -100,6 +115,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         "content": content_text,
         "image_plans": image_plans,
     }
+    if hero_subject:
+        result["featured_image_subject"] = hero_subject
     if result_extra:
         result.update(result_extra)
     if stages:

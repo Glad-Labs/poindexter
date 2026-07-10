@@ -65,3 +65,21 @@ class TestImagesToScore:
     def test_whitespace_featured_is_ignored(self):
         content = "![a](https://cdn.example/a.webp)"
         assert _images_to_score(content, "   ", max_images=3) == ["https://cdn.example/a.webp"]
+
+
+@pytest.mark.unit
+def test_resolve_featured_subject_precedence():
+    """Featured-image subject grounding: writer hero > decision plan > topic."""
+    from modules.content.stages.source_featured_image import _resolve_featured_subject
+
+    # writer hero wins over decision plan and topic
+    assert _resolve_featured_subject(
+        {"topic": "T", "featured_image_subject": "hero subj",
+         "featured_image_plan": {"prompt": "plan subj"}}
+    ) == "hero subj"
+    # decision-agent plan when no hero
+    assert _resolve_featured_subject(
+        {"topic": "T", "featured_image_plan": {"prompt": "plan subj"}}
+    ) == "plan subj"
+    # topic as last resort
+    assert _resolve_featured_subject({"topic": "T"}) == "T"

@@ -302,7 +302,7 @@ class SourceFeaturedImageStage:
                     pass  # no running loop — tests/bootstrap
 
             gen_image = await _try_image_gen_featured(
-                topic=topic,
+                subject=_resolve_featured_subject(context),
                 existing_prompt=context.get("featured_image_prompt", ""),
                 task_id=task_id,
                 on_style_picked=_on_style_picked_sync,
@@ -516,13 +516,40 @@ async def _record_featured_image_asset(
     )
 
 
+def _resolve_featured_subject(context: dict[str, Any]) -> str:
+    """The concrete subject to ground the featured/hero image on.
+
+    Precedence (most-specific first):
+
+    1. ``featured_image_subject`` — the writer's ``[HERO-IMAGE: …]`` subject,
+       extracted upstream by ``content.plan_image_markers``. The writer knows
+       what the post is actually about, so its hero subject beats a generic
+       topic string.
+    2. ``featured_image_plan.prompt`` — the Image Decision Agent's hero pick
+       (body-grounded as of the section-excerpt change).
+    3. ``topic`` — last-resort fallback (the historical topic-only behaviour).
+
+    A pre-built ``featured_image_prompt`` short-circuits *before* this in
+    ``_try_image_gen_featured`` (it's used verbatim and the subject is never
+    consulted), so it is deliberately not part of this precedence.
+    """
+    hero = (context.get("featured_image_subject") or "").strip()
+    if hero:
+        return hero
+    plan = context.get("featured_image_plan") or {}
+    plan_prompt = (plan.get("prompt") or "").strip() if isinstance(plan, dict) else ""
+    if plan_prompt:
+        return plan_prompt
+    return (context.get("topic") or "").strip()
+
+
 # ---------------------------------------------------------------------------
 # image-gen: prompt building + rendering + R2 upload
 # ---------------------------------------------------------------------------
 
 
 async def _try_image_gen_featured(
-    topic: str,
+    subject: str,
     existing_prompt: str,
     task_id: str | None,
     on_style_picked: Any,  # callable that records the chosen style
@@ -549,7 +576,7 @@ async def _try_image_gen_featured(
         img_gen_prompt = existing_prompt
         if not img_gen_prompt:
             img_gen_prompt = await _build_image_gen_prompt(
-                topic, on_style_picked, style_tracker,
+                subject, on_style_picked, style_tracker,
                 site_config=site_config, platform=platform,
             )
 
@@ -644,7 +671,9 @@ def _resolve_image_prompt(key: str, **kwargs: Any) -> str:
         )
         style = kwargs.get("style", "")
         style_tags = kwargs.get("style_tags", "")
-        subject = kwargs.get("topic") or kwargs.get("search_query") or ""
+        subject = (
+            kwargs.get("subject") or kwargs.get("topic") or kwargs.get("search_query") or ""
+        )
         return (
             f"Write a Stable Diffusion XL image prompt for a {style} illustration "
             f"depicting a concrete, specific scene about: {subject}. {style_tags}. "
@@ -653,8 +682,62 @@ def _resolve_image_prompt(key: str, **kwargs: Any) -> str:
         )
 
 
+def _select_style_lru(
+    styles: list[tuple[str, str]],
+    last_used: dict[str, str],
+    mem_recent: set[str],
+    *,
+    rng: Any = random,
+) -> tuple[str, str]:
+    """Pick the least-recently-used style.
+
+    Never-used styles (absent from ``last_used``) count as oldest, so the whole
+    pool cycles before any style repeats. The in-memory recent set is excluded
+    unless that would leave nothing to choose from. Ties (equally-old, including
+    all never-used) break randomly. #image-zimage-and-variety.
+    """
+    candidates = [s for s in styles if s[0] not in mem_recent] or styles
+    # "" sorts before any ISO timestamp → never-used styles are treated as oldest.
+    oldest_key = min(last_used.get(s[0], "") for s in candidates)
+    tied = [s for s in candidates if last_used.get(s[0], "") == oldest_key]
+    return rng.choice(tied)
+
+
+async def _load_style_last_used(site_config: Any = None) -> dict[str, str]:
+    """Map featured-style name → most-recent ``published_at`` (ISO) for LRU rotation.
+
+    Reads the style recorded on published posts
+    (``featured_image_data->>'image_style'``, falling back to
+    ``metadata->>'image_style'``). Best-effort: any DB error yields ``{}`` so
+    style selection degrades to a random tie-break rather than hard-failing.
+    """
+    if site_config is None:
+        return {}
+    pool = getattr(site_config, "_pool", None)
+    if pool is None:
+        return {}
+    _QUERY = """
+        SELECT COALESCE(featured_image_data->>'image_style', metadata->>'image_style') AS style,
+               MAX(published_at) AS last_used
+        FROM posts
+        WHERE status = 'published'
+          AND COALESCE(featured_image_data->>'image_style', metadata->>'image_style') IS NOT NULL
+        GROUP BY 1
+    """
+    try:
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(_QUERY)
+        return {
+            r["style"]: (r["last_used"].isoformat() if r["last_used"] else "")
+            for r in rows
+            if r["style"]
+        }
+    except Exception:  # silent-ok: best-effort LRU read — a DB error degrades to a random style tie-break, never worth failing the image stage
+        return {}
+
+
 async def _build_image_gen_prompt(
-    topic: str,
+    subject: str,
     on_style_picked: Any,
     style_tracker: Any,
     *,
@@ -673,12 +756,14 @@ async def _build_image_gen_prompt(
     """
     styles = _load_styles_from_settings(site_config) or list(DEFAULT_STYLES)
 
-    recent = await _load_recent_published_styles(site_config)
-    mem_recent = style_tracker.recent()
-    all_recent = set(recent) | set(mem_recent)
-
-    available = [s for s in styles if s[0] not in all_recent] or styles
-    chosen_style, style_tags = random.choice(available)
+    # Least-recently-used rotation: never-used styles first, then oldest-used,
+    # excluding the in-session recent set. Cycles the whole pool before repeating
+    # so style stays decoupled from content. (Supersedes the fixed
+    # image_style_dedup_window exclusion — _load_recent_published_styles is
+    # retained for its direct callers.) #image-zimage-and-variety.
+    last_used = await _load_style_last_used(site_config)
+    mem_recent = set(style_tracker.recent())
+    chosen_style, style_tags = _select_style_lru(styles, last_used, mem_recent)
     style_tracker.record(chosen_style)
     on_style_picked(chosen_style)
 
@@ -688,7 +773,7 @@ async def _build_image_gen_prompt(
     )
     img_prompt = _resolve_image_prompt(
         "image.featured_image",
-        topic=topic,
+        subject=subject,
         style=chosen_style,
         style_tags=style_tags,
     )

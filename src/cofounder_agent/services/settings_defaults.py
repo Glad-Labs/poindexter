@@ -221,9 +221,16 @@ DEFAULTS: dict[str, str] = {
     'pipeline_architect_model': 'ollama/gemma3:27b',
     'podcast_script_model': 'ollama/gemma3:27b',
     'preferred_ollama_model': 'gemma3:27b',
-    'inline_image_prompt_model': 'llama3:latest',
+    'inline_image_prompt_model': 'ollama/gemma3:27b',  # inline-image prompt-builder (public default; operator overlay pins the custom fine-tune)
     'local_llm_api_url': 'http://localhost:11434',
-    'model_role_image_decision': 'qwen3:8b',
+    'model_role_image_decision': 'ollama/gemma3:27b',  # image-director reasoning (public default; operator overlay pins the custom fine-tune)
+    # Writer places [IMAGE:]/[HERO-IMAGE:] markers; this caps how many inline
+    # images survive normalization (feedback_no_hardcoded_lengths_in_prompts —
+    # the prompt states no number, the cap lives here).
+    'writer_max_inline_images': '3',
+    # Body chars per section fed to the image decision agent fallback so its
+    # picks are grounded in content, not just heading titles.
+    'image_decision_section_body_chars': '500',
     'pipeline_architect_timeout_seconds': '120.0',
     # why: VRAM guard against the writer (~20GB) + image-gen (~12GB) overlap
     # at the stage-5→stage-7 boundary. Default-on fixes the 24GB-card OOM;
@@ -1975,6 +1982,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
 
     # ----- LLM model selection (writer-flip = canary per feedback_writer_model_canary) -----
     'pipeline_writer_model': {'owner': 'content_router', 'value_type': 'model'},
+    # ----- Image direction (writer nominates; local model phrases) -----
+    'inline_image_prompt_model': {'owner': 'image_pipeline', 'value_type': 'model'},
+    'model_role_image_decision': {'owner': 'image_decision_agent', 'value_type': 'model'},
+    'writer_max_inline_images': {'owner': 'plan_image_markers', 'value_type': 'integer'},
+    'image_decision_section_body_chars': {'owner': 'image_decision_agent', 'value_type': 'integer'},
     'pipeline_critic_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'opening_originality_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
     'opening_originality_max_similarity': {'owner': 'multi_model_qa', 'value_type': 'float'},

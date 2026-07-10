@@ -426,6 +426,9 @@ class PipelineState(TypedDict, total=False):
     seo_keywords_list: list[str]
     featured_image_url: str
     featured_image_data: dict
+    # Writer's [HERO-IMAGE:] subject, extracted by content.plan_image_markers;
+    # source_featured_image._resolve_featured_subject grounds the hero image on it.
+    featured_image_subject: str
     style: str
     tone: str
     target_length: int

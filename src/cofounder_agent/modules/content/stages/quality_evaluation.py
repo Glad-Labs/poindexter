@@ -31,11 +31,23 @@ Preserves observable behavior:
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 from plugins.stage import StageResult
 
 logger = logging.getLogger(__name__)
+
+# Writer image markers ([IMAGE:], [IMAGE-N:], [HERO-IMAGE:]) still live in the
+# body at this stage (plan_image_markers processes them later, node 13). Strip
+# them for scoring only so they don't skew word-count / pattern metrics — the
+# markers stay in the context body for downstream stages.
+_IMAGE_MARKER_RE = re.compile(r"\[(?:HERO-)?IMAGE(?:-\d+)?:[^\]]*\]", re.IGNORECASE)
+
+
+def _strip_image_markers(text: str) -> str:
+    """Remove writer image markers so they don't skew word-count / pattern scores."""
+    return _IMAGE_MARKER_RE.sub("", text)
 
 
 class QualityEvaluationStage:
@@ -75,7 +87,7 @@ class QualityEvaluationStage:
         )
 
         quality_result = await quality_service.evaluate(
-            content=content_text,
+            content=_strip_image_markers(content_text),
             context={
                 "topic": topic,
                 "keywords": tags or [topic],
