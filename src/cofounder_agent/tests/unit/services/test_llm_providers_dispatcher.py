@@ -287,6 +287,44 @@ class TestGetProviderConfigAiohttpTransportFallback:
         assert "disable_aiohttp_transport" not in cfg
 
 
+@pytest.mark.unit
+class TestGetProviderConfigAnthropicPromptCachingFallback:
+    """``get_provider_config`` folds the flat
+    ``plugin.llm_provider.<name>.anthropic_prompt_caching`` row the same way
+    it folds the other operator-facing flags — WITHOUT this fold the seeded
+    kill switch is a dead row nothing reads (the exact dual-key trap the fold
+    exists to prevent). Nested config still wins."""
+
+    async def test_flat_row_folded_in_when_nested_config_omits_key(self):
+        pool = _KeyedFakePool({
+            "plugin.llm_provider.litellm": (
+                '{"enabled": true, "config": '
+                '{"api_base": "http://host.docker.internal:11434"}}'
+            ),
+            "plugin.llm_provider.litellm.anthropic_prompt_caching": "false",
+        })
+        cfg = await dispatcher.get_provider_config(pool, "litellm")
+        assert cfg["anthropic_prompt_caching"] == "false"
+
+    async def test_nested_config_value_wins_over_flat_row(self):
+        pool = _KeyedFakePool({
+            "plugin.llm_provider.litellm": (
+                '{"enabled": true, "config": '
+                '{"anthropic_prompt_caching": false}}'
+            ),
+            "plugin.llm_provider.litellm.anthropic_prompt_caching": "true",
+        })
+        cfg = await dispatcher.get_provider_config(pool, "litellm")
+        assert cfg["anthropic_prompt_caching"] is False
+
+    async def test_no_key_when_neither_nested_nor_flat_present(self):
+        pool = _KeyedFakePool({
+            "plugin.llm_provider.litellm": '{"enabled": true, "config": {}}',
+        })
+        cfg = await dispatcher.get_provider_config(pool, "litellm")
+        assert "anthropic_prompt_caching" not in cfg
+
+
 # ---------------------------------------------------------------------------
 # dispatch_complete
 # ---------------------------------------------------------------------------

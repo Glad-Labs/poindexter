@@ -478,10 +478,12 @@ class TestGroupingMakesSense:
         # / qa_flag_instead_of_reject). The slack accommodates that ~210-line gap
         # plus the non-qa keys that legitimately live in it (e.g. the writer_*
         # block — writer_length_expansion_enabled / writer_min_length_ratio, the
-        # RAG section's niche_internal_rag_* storyworthy-selection keys, and
-        # writer_rag_source_filter); a genuinely new far-flung qa_ section (keys
+        # RAG section's niche_internal_rag_* storyworthy-selection keys,
+        # writer_rag_source_filter, and the plugin.llm_provider.litellm.* provider
+        # flags — allow_paid_base_url / disable_aiohttp_transport /
+        # anthropic_prompt_caching); a genuinely new far-flung qa_ section (keys
         # hundreds of lines from the cluster) would still overshoot it.
-        assert span < 285, (
+        assert span < 300, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

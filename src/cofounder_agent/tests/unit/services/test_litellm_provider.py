@@ -495,6 +495,167 @@ class TestLiteLLMProviderStream:
 # --------------------------------------------------------------------------- #
 
 
+# --------------------------------------------------------------------------- #
+# Anthropic prompt caching — inject a ``cache_control: ephemeral`` breakpoint
+# on the system prefix so reused writer prompts cache on the Anthropic path.
+# Gated by ``anthropic_prompt_caching`` (folded from the flat
+# ``plugin.llm_provider.litellm.anthropic_prompt_caching`` row). LiteLLM only
+# forwards the breakpoint for the ``anthropic/`` prefix; local + other-vendor
+# targets must be left untouched.
+# --------------------------------------------------------------------------- #
+
+
+class TestLiteLLMProviderAnthropicPromptCaching:
+    @pytest.mark.asyncio
+    async def test_annotates_system_prefix_on_anthropic_by_default(
+        self, mock_litellm,
+    ):
+        """The whole point of the fix: an ``anthropic/`` call rewrites the
+        system turn into a content-block carrying the ephemeral breakpoint,
+        with no explicit config (caching defaults on).
+        """
+        mock_litellm.acompletion = AsyncMock(
+            return_value=_shaped_completion_response(),
+        )
+        p = _provider_instance()
+        await p.complete(
+            messages=[
+                {"role": "system", "content": "You are a writer."},
+                {"role": "user", "content": "Write about bees."},
+            ],
+            model="anthropic/claude-sonnet-5",
+            _provider_config={"allow_paid_base_url": "true"},
+        )
+        sent = mock_litellm.acompletion.await_args.kwargs["messages"]
+        assert sent[0] == {
+            "role": "system",
+            "content": [
+                {
+                    "type": "text",
+                    "text": "You are a writer.",
+                    "cache_control": {"type": "ephemeral"},
+                },
+            ],
+        }
+        # User turn is untouched — the breakpoint sits at the end of the
+        # stable system prefix, not on the volatile per-post content.
+        assert sent[1] == {"role": "user", "content": "Write about bees."}
+
+    @pytest.mark.asyncio
+    async def test_no_cache_control_on_local_model(self, mock_litellm):
+        """Ollama has no cache_control concept — a local call must send the
+        system turn as a plain string so litellm's ollama transform isn't
+        handed an Anthropic-only shape.
+        """
+        mock_litellm.acompletion = AsyncMock(
+            return_value=_shaped_completion_response(),
+        )
+        p = _provider_instance()
+        await p.complete(
+            messages=[
+                {"role": "system", "content": "You are a writer."},
+                {"role": "user", "content": "Write about bees."},
+            ],
+            model="ollama/gemma-4-31b",
+        )
+        sent = mock_litellm.acompletion.await_args.kwargs["messages"]
+        assert sent[0] == {"role": "system", "content": "You are a writer."}
+
+    @pytest.mark.asyncio
+    async def test_gate_off_leaves_anthropic_system_untouched(self, mock_litellm):
+        """``anthropic_prompt_caching=false`` is the operator kill switch —
+        an anthropic call then sends the plain-string system turn.
+        """
+        mock_litellm.acompletion = AsyncMock(
+            return_value=_shaped_completion_response(),
+        )
+        p = _provider_instance()
+        await p.complete(
+            messages=[
+                {"role": "system", "content": "You are a writer."},
+                {"role": "user", "content": "Write about bees."},
+            ],
+            model="anthropic/claude-sonnet-5",
+            _provider_config={
+                "allow_paid_base_url": "true",
+                "anthropic_prompt_caching": "false",
+            },
+        )
+        sent = mock_litellm.acompletion.await_args.kwargs["messages"]
+        assert sent[0] == {"role": "system", "content": "You are a writer."}
+
+    @pytest.mark.asyncio
+    async def test_does_not_mutate_caller_messages(self, mock_litellm):
+        """The transform must return a copy — the caller (writer atom) may
+        log or replay its own list, so an in-place rewrite would leak the
+        Anthropic-only block shape back into the pipeline.
+        """
+        mock_litellm.acompletion = AsyncMock(
+            return_value=_shaped_completion_response(),
+        )
+        p = _provider_instance()
+        original = [
+            {"role": "system", "content": "You are a writer."},
+            {"role": "user", "content": "Write about bees."},
+        ]
+        await p.complete(
+            messages=original,
+            model="anthropic/claude-sonnet-5",
+            _provider_config={"allow_paid_base_url": "true"},
+        )
+        assert original[0] == {"role": "system", "content": "You are a writer."}
+
+    @pytest.mark.asyncio
+    async def test_no_system_turn_is_a_noop(self, mock_litellm):
+        """A user-only conversation has no stable prefix to cache — the
+        messages must pass through unchanged rather than crash.
+        """
+        mock_litellm.acompletion = AsyncMock(
+            return_value=_shaped_completion_response(),
+        )
+        p = _provider_instance()
+        await p.complete(
+            messages=[{"role": "user", "content": "Write about bees."}],
+            model="anthropic/claude-sonnet-5",
+            _provider_config={"allow_paid_base_url": "true"},
+        )
+        sent = mock_litellm.acompletion.await_args.kwargs["messages"]
+        assert sent == [{"role": "user", "content": "Write about bees."}]
+
+    @pytest.mark.asyncio
+    async def test_surfaces_cache_tokens_into_raw(self, mock_litellm):
+        """Close the telemetry gap: Anthropic's cache hit/miss token counts
+        must land on ``Completion.raw`` so cost_logs / Langfuse can see
+        whether the breakpoint is actually landing.
+        """
+        msg = SimpleNamespace(content="drafted")
+        choice = SimpleNamespace(message=msg, finish_reason="stop")
+        usage = SimpleNamespace(
+            prompt_tokens=8000,
+            completion_tokens=1200,
+            total_tokens=9200,
+            cache_read_input_tokens=7000,
+            cache_creation_input_tokens=500,
+        )
+        resp = MagicMock()
+        resp.choices = [choice]
+        resp.usage = usage
+        resp.model_dump = MagicMock(return_value={"id": "fake"})
+        resp._hidden_params = {"response_cost": 0.01}
+        mock_litellm.acompletion = AsyncMock(return_value=resp)
+        p = _provider_instance()
+        out = await p.complete(
+            messages=[
+                {"role": "system", "content": "You are a writer."},
+                {"role": "user", "content": "Write about bees."},
+            ],
+            model="anthropic/claude-sonnet-5",
+            _provider_config={"allow_paid_base_url": "true"},
+        )
+        assert out.raw["cache_read_input_tokens"] == 7000
+        assert out.raw["cache_creation_input_tokens"] == 500
+
+
 class TestLiteLLMProviderEmbed:
     @pytest.mark.asyncio
     async def test_embed_unpacks_attribute_style_response(self, mock_litellm):

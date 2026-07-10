@@ -525,6 +525,12 @@ DEFAULTS: dict[str, str] = {
     'plugin.llm_provider.litellm.allow_paid_base_url': 'false',
     # httpx not aiohttp — see litellm_provider.__init__ (GlitchTip 736).
     'plugin.llm_provider.litellm.disable_aiohttp_transport': 'true',
+    # Anthropic prompt caching on the litellm writer path: annotate the
+    # system prefix with an ephemeral cache breakpoint on the anthropic/
+    # target so a reused writer system prompt bills cached input at ~10%.
+    # ON by default; set 'false' to kill it. See
+    # litellm_provider._annotate_system_cache_control.
+    'plugin.llm_provider.litellm.anthropic_prompt_caching': 'true',
     'plugin.video_provider.wan2.1-1.3b.server_url': '',
     'image_gen_server_url': 'http://image-gen-server:9836',
     'stable_audio_open_server_url': '',
@@ -2058,6 +2064,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
         'owner': 'litellm_provider', 'value_type': 'boolean',
     },
     'plugin.llm_provider.litellm.disable_aiohttp_transport': {
+        'owner': 'litellm_provider', 'value_type': 'boolean',
+    },
+    'plugin.llm_provider.litellm.anthropic_prompt_caching': {
         'owner': 'litellm_provider', 'value_type': 'boolean',
     },
     'plugin.llm_provider.openai_compat.allow_paid_base_url': {

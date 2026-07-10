@@ -437,6 +437,7 @@ async def get_provider(pool: Any, tier: str = "standard") -> Any:
 _FLAT_FOLDED_CONFIG_KEYS: tuple[str, ...] = (
     "allow_paid_base_url",
     "disable_aiohttp_transport",
+    "anthropic_prompt_caching",
 )
 
 

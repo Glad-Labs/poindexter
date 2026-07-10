@@ -45,6 +45,14 @@ Config (``plugin.llm_provider.litellm`` in app_settings):
   4096 truncates long-form drafts mid-word (observed in the 2026-07-06
   A/B writer run, glad-labs-stack#2153). Local prefixes are never
   capped by this — Ollama keeps its unbounded default.
+- ``anthropic_prompt_caching`` (bool, default true) — when the resolved
+  model is an ``anthropic/`` prefix, annotate the system prefix with a
+  ``cache_control: {"type": "ephemeral"}`` breakpoint so a reused writer
+  system prompt bills cached input at ~10% (Anthropic prompt caching).
+  The litellm cutover otherwise forwards plain OpenAI-shaped messages
+  with NO breakpoint, so the Sonnet writer never cached. Local +
+  other-vendor targets are untouched (cache_control is Anthropic-only).
+  Flip to false to disable. See ``_annotate_system_cache_control``.
 
 Cloud credentials (DB-first — cloud-writer canary, 2026-07):
 
@@ -505,6 +513,59 @@ def _extract_response_cost(response: Any) -> float | None:
     return None
 
 
+def _is_anthropic_model(resolved_model: str) -> bool:
+    """Whether ``resolved_model`` routes to Anthropic's API directly.
+
+    Prompt-cache breakpoints are an Anthropic feature; LiteLLM forwards a
+    ``cache_control`` content-block annotation to the Messages API only for
+    the ``anthropic/`` prefix. Scope the injection to that prefix — the
+    writer's live cloud target is ``anthropic/claude-sonnet-5``. Other
+    Claude routes (``bedrock/``, ``vertex_ai/``, ``openrouter/anthropic/``)
+    are deliberately out of scope until an operator actually pins one.
+    """
+    return resolved_model.startswith("anthropic/")
+
+
+def _annotate_system_cache_control(
+    messages: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return a COPY of ``messages`` with an ephemeral cache breakpoint on
+    the system prefix, in the content-block shape LiteLLM forwards to
+    Anthropic.
+
+    Every string-content ``system`` turn is rewritten to a one-item ``text``
+    block list (uniform shape so litellm's Anthropic transform concatenates
+    them cleanly); the ``cache_control`` breakpoint lands on the LAST such
+    block, covering the whole reused system prefix with one breakpoint
+    (Anthropic caps at 4; the writer uses exactly one). A system turn that
+    already carries a content-block list (vision / pre-annotated) is left
+    untouched — never clobber a caller-supplied shape.
+
+    Returns the ORIGINAL object unchanged (no copy) when there is no
+    string-content system turn to annotate, so a user-only conversation
+    passes through untouched. The caller's list is never mutated in place —
+    the writer atom may log or replay it, and an Anthropic-only block shape
+    leaking back into the pipeline would break the Ollama path.
+    """
+    sys_indices = [
+        i for i, m in enumerate(messages)
+        if m.get("role") == "system" and isinstance(m.get("content"), str)
+    ]
+    if not sys_indices:
+        return messages
+    last = sys_indices[-1]
+    out: list[dict[str, Any]] = []
+    for i, m in enumerate(messages):
+        if i in sys_indices:
+            block: dict[str, Any] = {"type": "text", "text": m.get("content") or ""}
+            if i == last:
+                block["cache_control"] = {"type": "ephemeral"}
+            out.append({**m, "content": [block]})
+        else:
+            out.append(m)
+    return out
+
+
 class LiteLLMProvider:
     """LLMProvider implementation backed by LiteLLM.
 
@@ -586,6 +647,16 @@ class LiteLLMProvider:
         # once in ``_apply_global_litellm_config``; a flip takes effect on the
         # next worker start (litellm caches its transport per process).
         self._disable_aiohttp_transport = True
+        # Anthropic prompt caching (default ON). When the resolved model is
+        # an ``anthropic/`` prefix, annotate the system prefix with a
+        # ``cache_control: {"type": "ephemeral"}`` breakpoint so a reused
+        # writer system prompt bills cached input at ~10% on the Sonnet
+        # writer path (the litellm cutover otherwise sends plain messages
+        # with NO breakpoint, so nothing caches). Local + other-vendor
+        # targets are untouched — cache_control is Anthropic-only. Killable
+        # per-install via the flat
+        # ``plugin.llm_provider.litellm.anthropic_prompt_caching`` row.
+        self._anthropic_prompt_caching = True
 
     def _configure_from(self, provider_config: dict[str, Any]) -> None:
         """Apply per-call provider config from PluginConfig (dispatcher
@@ -629,6 +700,16 @@ class LiteLLMProvider:
         self._disable_aiohttp_transport = _coerce_bool(
             provider_config.get(
                 "disable_aiohttp_transport", self._disable_aiohttp_transport
+            )
+        )
+        # Re-read on every call so flipping the flat row takes effect on the
+        # next dispatch without a worker restart. Instance default (True) is
+        # the fallback, so an absent row keeps caching ON — matching the
+        # seeded default; ``_coerce_bool`` maps the TEXT ``"false"`` kill
+        # switch to a real bool.
+        self._anthropic_prompt_caching = _coerce_bool(
+            provider_config.get(
+                "anthropic_prompt_caching", self._anthropic_prompt_caching
             )
         )
         prefix = provider_config.get("default_prefix")
@@ -870,10 +951,16 @@ class LiteLLMProvider:
 
         resolved_model = self._resolve_model(model)
         self._enforce_paid_endpoint_policy(resolved_model)
+        # Anthropic prompt caching: annotate the system prefix with an
+        # ephemeral breakpoint on the ``anthropic/`` path (returns a copy;
+        # a no-op on local + other-vendor targets and when disabled).
+        call_messages = messages
+        if self._anthropic_prompt_caching and _is_anthropic_model(resolved_model):
+            call_messages = _annotate_system_cache_control(messages)
         timeout = float(kwargs.pop("timeout_s", self._timeout))
         completion_kwargs: dict[str, Any] = {
             "model": resolved_model,
-            "messages": messages,
+            "messages": call_messages,
             "timeout": timeout,
             "stream": False,
         }
@@ -1002,6 +1089,21 @@ class LiteLLMProvider:
         response_cost = _extract_response_cost(response)
         if response_cost is not None:
             raw["response_cost"] = response_cost
+
+        # Prompt-cache visibility: surface Anthropic's cache hit/miss token
+        # counts (mirrors the native anthropic provider's ``_extract_usage``).
+        # LiteLLM mirrors these onto ``usage`` for the anthropic path; they
+        # read 0 on local / other-vendor calls, so the stamp is skipped there.
+        # Cost is already correct via ``response_cost`` (litellm prices cache
+        # reads); this is purely so cost_logs + Langfuse can confirm the
+        # breakpoint is actually landing instead of silently no-op'ing.
+        cache_read = int(getattr(usage, "cache_read_input_tokens", 0) or 0) if usage else 0
+        cache_creation = (
+            int(getattr(usage, "cache_creation_input_tokens", 0) or 0) if usage else 0
+        )
+        if cache_read or cache_creation:
+            raw["cache_read_input_tokens"] = cache_read
+            raw["cache_creation_input_tokens"] = cache_creation
 
         return Completion(
             text=text,
