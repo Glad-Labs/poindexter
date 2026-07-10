@@ -606,6 +606,116 @@ def get_liquidctl_psu_metrics():
     return "\n".join(lines) + "\n" if lines else ""
 
 
+def _read_shelly_url_from_bootstrap() -> str:
+    """Shelly plug base URL from ~/.poindexter/bootstrap.toml key
+    ``shelly_psu_url`` (e.g. ``http://192.168.1.50``), or "" if absent.
+
+    The exporter is a stdlib-only HOST script with no DB access, and the
+    scheduled task that launches it does not inherit the user env — so the
+    plug's LAN address lives in bootstrap.toml, the one sanctioned on-disk
+    config (alongside database_url). Unset/unreadable → "" (a no-op: the
+    software estimate covers wall power until the plug is configured).
+    """
+    try:
+        import tomllib
+        from pathlib import Path
+
+        path = Path.home() / ".poindexter" / "bootstrap.toml"
+        if not path.is_file():
+            return ""
+        with path.open("rb") as fh:
+            data = tomllib.load(fh)
+        return str(data.get("shelly_psu_url", "") or "").strip().rstrip("/")
+    except Exception:  # noqa: BLE001 — defensive; never break the scrape
+        return ""
+
+
+def _default_fetch_json(url: str, timeout: float = 3.0):
+    """GET ``url`` and parse JSON. Isolated so tests can inject a fake."""
+    import json
+    import urllib.request
+
+    with urllib.request.urlopen(url, timeout=timeout) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def get_shelly_psu_metrics(base_url: str | None = None, *, _fetch=None) -> str:
+    """True wall power from a Shelly Gen2+ smart plug's LOCAL RPC API.
+
+    The plug meters actual AC draw at the OUTLET — physically independent of
+    the HX1500i's USB (which iCUE owns), so it never fights iCUE/HWiNFO for the
+    HID the way a second USB reader does. Emits ``psu_total_power_watts`` — the
+    canonical wall-power metric ``brain.psu_power`` and the Grafana Hardware &
+    Power board already consume — from the plug's ``apower`` reading.
+
+    Config: ``shelly_psu_url`` in bootstrap.toml. Unset → "" (no-op; the
+    software estimate covers it). Any error → "" so a plug reboot / network
+    blip never breaks the whole /metrics scrape.
+    """
+    if base_url is None:
+        base_url = _read_shelly_url_from_bootstrap()
+    if not base_url:
+        return ""
+
+    url = f"{base_url}/rpc/Switch.GetStatus?id=0"
+    fetch = _fetch or _default_fetch_json
+    try:
+        data = fetch(url)
+    except Exception as exc:  # noqa: BLE001 — a plug hiccup must not fail the scrape
+        logger.warning("shelly: poll failed (%s: %s)", type(exc).__name__, exc)
+        return ""
+
+    apower = data.get("apower") if isinstance(data, dict) else None
+    if apower is None:
+        return "# shelly: reachable but no 'apower' in Switch.GetStatus response\n"
+
+    lines = [
+        "# HELP psu_total_power_watts Wall power draw metered at the outlet (Shelly smart plug)",
+        "# TYPE psu_total_power_watts gauge",
+        f"psu_total_power_watts {float(apower):.2f}",
+    ]
+    voltage = data.get("voltage")
+    if voltage is not None:
+        lines += [
+            "# HELP psu_line_voltage_volts Mains line voltage (Shelly smart plug)",
+            "# TYPE psu_line_voltage_volts gauge",
+            f"psu_line_voltage_volts {float(voltage):.1f}",
+        ]
+    current = data.get("current")
+    if current is not None:
+        lines += [
+            "# HELP psu_line_current_amps Mains current draw (Shelly smart plug)",
+            "# TYPE psu_line_current_amps gauge",
+            f"psu_line_current_amps {float(current):.3f}",
+        ]
+    return "\n".join(lines) + "\n"
+
+
+def _dedupe_psu_metric(text: str) -> str:
+    """Keep only the first ``psu_total_power_watts`` block (HELP/TYPE/sample).
+
+    More than one source can emit this metric — the Shelly outlet meter
+    (preferred), HWiNFO's HXi read, AIDA64's. Concatenated verbatim they would
+    produce duplicate ``# HELP``/``# TYPE`` lines, which is malformed exposition
+    that breaks the Prometheus parser. The handler orders sources by priority
+    (Shelly first), so first-block-wins == highest-priority-wins.
+    """
+    metric = "psu_total_power_watts"
+    seen_sample = False
+    out = []
+    for line in text.split("\n"):
+        s = line.strip()
+        is_meta = s.startswith(f"# HELP {metric} ") or s.startswith(f"# TYPE {metric} ")
+        is_sample = s.startswith(f"{metric} ")
+        if is_meta or is_sample:
+            if seen_sample:
+                continue
+            if is_sample:
+                seen_sample = True
+        out.append(line)
+    return "\n".join(out)
+
+
 def get_lm_sensors_metrics():
     """Read hardware sensors via lm-sensors on Linux.
 
@@ -671,13 +781,17 @@ class MetricsHandler(BaseHTTPRequestHandler):
         if self.path == "/metrics":
             gpu = get_gpu_metrics()
             cpu = get_cpu_power_metrics()
+            shelly = get_shelly_psu_metrics()
             aida = get_aida64_metrics()
             hwinfo = get_hwinfo_metrics()
             lm = get_lm_sensors_metrics()
             total = get_total_power_metrics(gpu, cpu)
-            # Combine all sources — AIDA64/HWiNFO/lm-sensors complement each other
-            # liquidctl removed: fights iCUE/AIDA64 for Corsair USB; HWiNFO covers PSU via shared memory
-            body = (gpu + cpu + aida + hwinfo + lm + total).encode()
+            # Combine all sources — AIDA64/HWiNFO/lm-sensors complement each other.
+            # liquidctl removed: fights iCUE/AIDA64 for Corsair USB; HWiNFO covers PSU via shared memory.
+            # Shelly (outlet meter) is the preferred psu_total_power_watts source so it goes
+            # first; _dedupe_psu_metric keeps the first block when >1 source reports a PSU.
+            combined = gpu + cpu + shelly + aida + hwinfo + lm + total
+            body = _dedupe_psu_metric(combined).encode()
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; version=0.0.4")
             self.send_header("Content-Length", str(len(body)))

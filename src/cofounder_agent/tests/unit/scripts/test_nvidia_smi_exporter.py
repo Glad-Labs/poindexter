@@ -117,3 +117,76 @@ def test_total_power_sums_all_gpus():
     series = _series(EXPORTER.get_total_power_metrics(gpu, "system_cpu_package_power_watts 100.0\n"))
     # 43.57 + 17.28 (GPUs) + 100.0 (CPU) + 50.0 (overhead) = 210.85
     assert float(series["system_total_power_estimate_watts"]) == 210.8
+
+
+# ---------------------------------------------------------------------------
+# Shelly smart plug — true wall power via the local RPC (outlet meter).
+# ---------------------------------------------------------------------------
+def test_shelly_emits_wall_power_from_apower():
+    fake = {"apower": 350.42, "voltage": 121.3, "current": 2.918}
+    series = _series(
+        EXPORTER.get_shelly_psu_metrics("http://10.0.0.5", _fetch=lambda url: fake)
+    )
+    assert series["psu_total_power_watts"] == "350.42"
+    assert series["psu_line_voltage_volts"] == "121.3"
+    assert series["psu_line_current_amps"] == "2.918"
+
+
+def test_shelly_unconfigured_is_noop():
+    assert EXPORTER.get_shelly_psu_metrics("") == ""
+
+
+def test_shelly_fetch_error_is_graceful():
+    def boom(url):
+        raise OSError("connection refused")
+
+    assert EXPORTER.get_shelly_psu_metrics("http://10.0.0.5", _fetch=boom) == ""
+
+
+def test_shelly_missing_apower_no_sample():
+    out = EXPORTER.get_shelly_psu_metrics("http://10.0.0.5", _fetch=lambda url: {})
+    assert "psu_total_power_watts " not in out
+    assert out.startswith("# ")
+
+
+def test_shelly_queries_switch_getstatus_endpoint():
+    captured = {}
+
+    def spy(url):
+        captured["url"] = url
+        return {"apower": 100.0}
+
+    EXPORTER.get_shelly_psu_metrics("http://10.0.0.5", _fetch=spy)
+    assert captured["url"] == "http://10.0.0.5/rpc/Switch.GetStatus?id=0"
+
+
+# ---------------------------------------------------------------------------
+# Duplicate PSU sources collapse to a single psu_total_power_watts block.
+# ---------------------------------------------------------------------------
+def test_dedupe_keeps_first_psu_block_highest_priority_wins():
+    shelly = (
+        "# HELP psu_total_power_watts Wall power draw metered at the outlet (Shelly smart plug)\n"
+        "# TYPE psu_total_power_watts gauge\n"
+        "psu_total_power_watts 350.00\n"
+    )
+    hwinfo = (
+        "# HELP psu_total_power_watts Wall power draw from the Corsair HXi PSU (HWiNFO)\n"
+        "# TYPE psu_total_power_watts gauge\n"
+        "psu_total_power_watts 342.00\n"
+    )
+    out = EXPORTER._dedupe_psu_metric(shelly + hwinfo)
+    assert out.count("# TYPE psu_total_power_watts gauge") == 1
+    assert out.count("# HELP psu_total_power_watts") == 1
+    # Shelly is concatenated first, so its value survives.
+    assert _series(out)["psu_total_power_watts"] == "350.00"
+
+
+def test_dedupe_is_noop_for_single_source():
+    single = (
+        "# HELP psu_total_power_watts x\n"
+        "# TYPE psu_total_power_watts gauge\n"
+        "psu_total_power_watts 342.00\n"
+    )
+    out = EXPORTER._dedupe_psu_metric(single)
+    assert out.count("# TYPE psu_total_power_watts gauge") == 1
+    assert _series(out)["psu_total_power_watts"] == "342.00"
