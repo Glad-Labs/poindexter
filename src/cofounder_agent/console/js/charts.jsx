@@ -21,7 +21,7 @@ function TimeChart({ series, stale, height = 150, unit = '' }) {
     PADL = 34,
     PADB = 16,
     PADT = 8,
-    PADR = 44;
+    PADR = 12;
   const box = { x: PADL, y: PADT, w: W - PADL - PADR, h: H - PADT - PADB };
 
   if (ts.isEmptySeries(list)) {
@@ -113,34 +113,16 @@ function TimeChart({ series, stale, height = 150, unit = '' }) {
             {fmtT(t)}
           </text>
         ))}
-        {list.map((s, i) => {
-          const d = ts.buildPath(s.points, b, box);
-          const last = [...(s.points || [])]
-            .reverse()
-            .find(([, v]) => v != null);
-          return (
-            <g key={s.label + i}>
-              <path
-                d={d}
-                fill="none"
-                stroke={STROKES[i % STROKES.length]}
-                strokeWidth="1.5"
-                strokeDasharray={ts.dashFor(i)}
-              />
-              {last && (
-                <text
-                  x={box.x + box.w + 3}
-                  y={ts.scaleY(last[1], b.vMin, b.vMax, box).toFixed(1)}
-                  fontSize="7"
-                  dominantBaseline="middle"
-                  fill={STROKES[i % STROKES.length]}
-                >
-                  {s.label}
-                </text>
-              )}
-            </g>
-          );
-        })}
+        {list.map((s, i) => (
+          <path
+            key={s.label + i}
+            d={ts.buildPath(s.points, b, box)}
+            fill="none"
+            stroke={STROKES[i % STROKES.length]}
+            strokeWidth="1.5"
+            strokeDasharray={ts.dashFor(i)}
+          />
+        ))}
         {hoverX != null && (
           <line
             x1={hoverX}
@@ -153,6 +135,32 @@ function TimeChart({ series, stale, height = 150, unit = '' }) {
           />
         )}
       </svg>
+      {list.length >= 2 && (
+        <ul className="tc-legend">
+          {list.map((s, i) => (
+            <li className="tc-legend__item" key={s.label + i}>
+              <svg
+                className="tc-legend__sw"
+                viewBox="0 0 18 6"
+                width="18"
+                height="6"
+                aria-hidden="true"
+              >
+                <line
+                  x1="0"
+                  y1="3"
+                  x2="18"
+                  y2="3"
+                  stroke={STROKES[i % STROKES.length]}
+                  strokeWidth="2"
+                  strokeDasharray={ts.dashFor(i)}
+                />
+              </svg>
+              {s.label}
+            </li>
+          ))}
+        </ul>
+      )}
       {hoverX != null && (
         <div className="tc-readout">
           {fmtT(hoverT)}

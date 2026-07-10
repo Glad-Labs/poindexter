@@ -1589,3 +1589,26 @@ button {
 .tc-readout b {
   color: var(--gl-text);
 }
+/* Always-visible series legend — identity via dash-swatch + name, never
+   color-alone (replaces the old end-labels that collided when series converged). */
+.tc-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px 12px;
+  margin: 0;
+  padding: 2px 10px 6px;
+  list-style: none;
+  font-family: var(--gl-font-mono);
+  font-size: 10px;
+  color: var(--gl-text-dim);
+  letter-spacing: 0.03em;
+}
+.tc-legend__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  white-space: nowrap;
+}
+.tc-legend__sw {
+  flex: none;
+}
