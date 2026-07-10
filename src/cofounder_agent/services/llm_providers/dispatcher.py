@@ -428,36 +428,49 @@ async def get_provider(pool: Any, tier: str = "standard") -> Any:
         return providers[name]
 
 
+# Operator-facing FLAT app_settings rows folded into the nested provider
+# ``config`` blob as a fallback (see get_provider_config). Each is a key that
+# ``settings_defaults`` seeds, ``poindexter settings set`` writes, and the
+# providers read out of the NESTED ``config`` — without the fold the flat row
+# is dead (the glad-labs-stack dual-key trap). ``disable_aiohttp_transport``
+# joined ``allow_paid_base_url`` for the GlitchTip-736 aiohttp fix.
+_FLAT_FOLDED_CONFIG_KEYS: tuple[str, ...] = (
+    "allow_paid_base_url",
+    "disable_aiohttp_transport",
+)
+
+
 async def get_provider_config(pool: Any, provider_name: str) -> dict[str, Any]:
     """Fetch ``plugin.llm_provider.<name>.config`` from app_settings.
 
-    Also folds the operator-facing FLAT security row
-    ``plugin.llm_provider.<name>.allow_paid_base_url`` into the returned
-    config as a fallback. That flat key is what ``settings_defaults`` seeds,
-    what the providers' refusal messages tell operators to flip, and what
-    ``poindexter settings set`` writes — but the providers read
-    ``allow_paid_base_url`` out of the NESTED ``config`` blob
-    (``PluginConfig.config``). Without this fold the flat row is dead: an
-    operator who follows the refusal message edits a row nothing reads and
-    the paid gate stays shut (the glad-labs-stack dual-key trap).
+    Also folds the operator-facing FLAT rows in ``_FLAT_FOLDED_CONFIG_KEYS``
+    (``plugin.llm_provider.<name>.<key>``) into the returned config as a
+    fallback. Those flat keys are what ``settings_defaults`` seeds, what the
+    providers' refusal/behavior messages tell operators to flip, and what
+    ``poindexter settings set`` writes — but the providers read them out of the
+    NESTED ``config`` blob (``PluginConfig.config``). Without this fold the flat
+    row is dead: an operator who edits it changes a row nothing reads (the
+    glad-labs-stack dual-key trap).
 
-    Resolution is backcompat-safe: an ``allow_paid_base_url`` already present
-    in the nested ``config`` WINS, so operators who set the JSON shape keep
-    their exact behavior. The flat row is consulted ONLY when the nested key
-    is absent — the fresh-install default, where the seeded nested config
-    carries api_base/timeout but no allow_paid flag. Both providers coerce
-    the raw TEXT value (``"true"``/``"false"``) via ``_coerce_bool`` at read
-    time, so passing the string straight through is correct.
+    Resolution is backcompat-safe: a key already present in the nested
+    ``config`` WINS, so operators who set the JSON shape keep their exact
+    behavior. The flat row is consulted ONLY when the nested key is absent —
+    the fresh-install default, where the seeded nested config carries
+    api_base/timeout but no flat flag. Providers coerce the raw TEXT value
+    (``"true"``/``"false"``) via ``_coerce_bool`` at read time, so passing the
+    string straight through is correct.
     """
     cfg = await PluginConfig.load(pool, "llm_provider", provider_name)
     config = dict(cfg.config)
-    if "allow_paid_base_url" not in config:
+    for flat_key in _FLAT_FOLDED_CONFIG_KEYS:
+        if flat_key in config:
+            continue
         flat = await pool.fetchval(
             "SELECT value FROM app_settings WHERE key = $1",
-            f"plugin.llm_provider.{provider_name}.allow_paid_base_url",
+            f"plugin.llm_provider.{provider_name}.{flat_key}",
         )
         if flat is not None:
-            config["allow_paid_base_url"] = flat
+            config[flat_key] = flat
     return config
 
 

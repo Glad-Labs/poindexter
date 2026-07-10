@@ -502,6 +502,8 @@ DEFAULTS: dict[str, str] = {
     # call. Default-deny refuses both non-local api_base AND non-local
     # model prefixes; flip to 'true' to authorise any paid LiteLLM path.
     'plugin.llm_provider.litellm.allow_paid_base_url': 'false',
+    # httpx not aiohttp — see litellm_provider.__init__ (GlitchTip 736).
+    'plugin.llm_provider.litellm.disable_aiohttp_transport': 'true',
     'plugin.video_provider.wan2.1-1.3b.server_url': '',
     'image_gen_server_url': 'http://image-gen-server:9836',
     'stable_audio_open_server_url': '',
@@ -2028,6 +2030,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
 
     # ----- LLM provider gates (security — paid-API lock) -----
     'plugin.llm_provider.litellm.allow_paid_base_url': {
+        'owner': 'litellm_provider', 'value_type': 'boolean',
+    },
+    'plugin.llm_provider.litellm.disable_aiohttp_transport': {
         'owner': 'litellm_provider', 'value_type': 'boolean',
     },
     'plugin.llm_provider.openai_compat.allow_paid_base_url': {

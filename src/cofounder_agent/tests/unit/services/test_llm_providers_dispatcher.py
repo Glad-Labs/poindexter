@@ -247,6 +247,46 @@ class TestGetProviderConfigPaidGateFallback:
         assert cfg["allow_paid_base_url"] == "true"
 
 
+@pytest.mark.unit
+class TestGetProviderConfigAiohttpTransportFallback:
+    """``get_provider_config`` folds the flat
+    ``plugin.llm_provider.<name>.disable_aiohttp_transport`` row the same way
+    it folds ``allow_paid_base_url`` — so the seeded, operator-facing,
+    ``poindexter settings set``-writable key actually reaches the provider
+    (GlitchTip 736 aiohttp stale-connection fix). Nested config still wins."""
+
+    async def test_flat_row_folded_in_when_nested_config_omits_key(self):
+        pool = _KeyedFakePool({
+            "plugin.llm_provider.litellm": (
+                '{"enabled": true, "config": '
+                '{"api_base": "http://host.docker.internal:11434"}}'
+            ),
+            "plugin.llm_provider.litellm.disable_aiohttp_transport": "false",
+        })
+        cfg = await dispatcher.get_provider_config(pool, "litellm")
+        assert cfg["disable_aiohttp_transport"] == "false"
+        # The allow_paid fold is unaffected by the second folded key.
+        assert "allow_paid_base_url" not in cfg
+
+    async def test_nested_config_value_wins_over_flat_row(self):
+        pool = _KeyedFakePool({
+            "plugin.llm_provider.litellm": (
+                '{"enabled": true, "config": '
+                '{"disable_aiohttp_transport": true}}'
+            ),
+            "plugin.llm_provider.litellm.disable_aiohttp_transport": "false",
+        })
+        cfg = await dispatcher.get_provider_config(pool, "litellm")
+        assert cfg["disable_aiohttp_transport"] is True
+
+    async def test_no_key_when_neither_nested_nor_flat_present(self):
+        pool = _KeyedFakePool({
+            "plugin.llm_provider.litellm": '{"enabled": true, "config": {}}',
+        })
+        cfg = await dispatcher.get_provider_config(pool, "litellm")
+        assert "disable_aiohttp_transport" not in cfg
+
+
 # ---------------------------------------------------------------------------
 # dispatch_complete
 # ---------------------------------------------------------------------------

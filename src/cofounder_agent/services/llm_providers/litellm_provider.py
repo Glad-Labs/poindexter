@@ -569,6 +569,23 @@ class LiteLLMProvider:
         # thinking rationale. DB-tunable via the ``cloud_max_tokens``
         # key on the ``plugin.llm_provider.litellm`` config row.
         self._cloud_max_tokens = _DEFAULT_CLOUD_MAX_TOKENS
+        # aiohttp-transport opt-out (default ON → litellm uses httpx). LiteLLM
+        # 1.89.x defaults to a custom aiohttp transport
+        # (``llms/custom_httpx/aiohttp_transport.py``) that pools keep-alive
+        # connections. In the sparse nightly pipeline window Ollama closes idle
+        # sockets server-side; aiohttp then reuses a pooled-but-dead socket and
+        # its first read fails INSTANTLY with ``SocketTimeoutError: Timeout on
+        # reading data from socket`` (``Timeout passed=90.0, time taken=0.001
+        # seconds``), which litellm's ``exception_type`` mislabels
+        # ``litellm.Timeout`` → ``APIConnectionError: OllamaException``
+        # (GlitchTip issue 736, 13 events 2026-07-04→09). httpx discards closed
+        # pooled connections on reuse instead of failing instantly, so we
+        # default to it. DB-tunable via the flat
+        # ``plugin.llm_provider.litellm.disable_aiohttp_transport`` row — set
+        # ``false`` to restore litellm's aiohttp default. Applied process-wide
+        # once in ``_apply_global_litellm_config``; a flip takes effect on the
+        # next worker start (litellm caches its transport per process).
+        self._disable_aiohttp_transport = True
 
     def _configure_from(self, provider_config: dict[str, Any]) -> None:
         """Apply per-call provider config from PluginConfig (dispatcher
@@ -604,6 +621,14 @@ class LiteLLMProvider:
         self._reasoning_content_fallback = bool(
             provider_config.get(
                 "reasoning_content_fallback", self._reasoning_content_fallback
+            )
+        )
+        # Read BEFORE ``_apply_global_litellm_config`` (called at the tail of
+        # this method) so the once-only global wiring sees the configured
+        # value. Coerced because the flat app_settings row arrives as TEXT.
+        self._disable_aiohttp_transport = _coerce_bool(
+            provider_config.get(
+                "disable_aiohttp_transport", self._disable_aiohttp_transport
             )
         )
         prefix = provider_config.get("default_prefix")
@@ -642,6 +667,11 @@ class LiteLLMProvider:
         ``set_verbose=False`` keeps litellm out of our logs unless the
         operator opts in. ``drop_params`` lets one call signature work
         against backends with different param vocabularies.
+        ``disable_aiohttp_transport`` routes litellm onto httpx (see the
+        ``__init__`` note) — a process-wide knob litellm reads when it builds
+        its transport, so it must be set before the first ``acompletion``;
+        this method runs once at the top of the first ``complete``/``stream``/
+        ``embed`` call, which is that point.
         """
         # Deliberately does NOT set ``litellm.api_base``: litellm's ollama
         # branch resolves the endpoint as ``litellm.api_base or api_base
@@ -654,6 +684,7 @@ class LiteLLMProvider:
             import litellm
             litellm.set_verbose = False  # type: ignore[attr-defined]  # noqa: SLF001
             litellm.drop_params = self._drop_params
+            litellm.disable_aiohttp_transport = self._disable_aiohttp_transport
         except Exception as exc:  # noqa: BLE001
             logger.warning(
                 "[litellm_provider] global config apply failed: %s", exc,
