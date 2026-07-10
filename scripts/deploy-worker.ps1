@@ -88,6 +88,21 @@ function Resolve-GitBash {
     return 'bash'  # last resort; a failed rebuild surfaces if this is WSL bash
 }
 
+# Resolve the PowerShell interpreter used to run the child deploy-checkout-sync.ps1.
+# Prefer pwsh (PowerShell 7) when installed, else fall back to Windows PowerShell
+# 5.1 (powershell.exe, always present on Windows). Both scripts are 5.1-compatible
+# (they only shell out to git/docker/Git Bash), so 5.1 is a full substitute on a
+# box without pwsh. Without this, the bare `pwsh` token below throws
+# CommandNotFoundException under $ErrorActionPreference='Stop' on a 5.1-only host
+# and aborts the whole manual deploy. Mirrors the -Install block in
+# scripts/deploy-checkout-sync.ps1.
+function Resolve-PowerShell {
+    $exe = (Get-Command pwsh -ErrorAction SilentlyContinue).Source
+    if (-not $exe) { $exe = (Get-Command powershell -ErrorAction SilentlyContinue).Source }
+    if (-not $exe) { Fail "no PowerShell interpreter found (neither pwsh nor powershell.exe on PATH)." }
+    return $exe
+}
+
 # Repo root = parent of the scripts/ dir this file lives in.
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
@@ -133,7 +148,8 @@ Ok "checkout on main @ $($head.Substring(0,9)) == origin/main"
 Info "syncing deploy clone to origin/main..."
 $syncScript = Join-Path $PSScriptRoot 'deploy-checkout-sync.ps1'
 if (Test-Path $syncScript) {
-    & pwsh $syncScript
+    $pwshExe = Resolve-PowerShell
+    & $pwshExe $syncScript
     Ok "deploy clone synced"
 } else {
     Fail "deploy-checkout-sync.ps1 not found at $syncScript - run scripts/setup-deploy-checkout.sh first"
