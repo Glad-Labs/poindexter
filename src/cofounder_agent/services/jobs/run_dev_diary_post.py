@@ -60,7 +60,7 @@ _DEFAULT_GATES = "draft,final"
 class RunDevDiaryPostJob:
     name = "run_dev_diary_post"
     description = "Generate the daily Glad Labs dev-diary post (gated for operator approval)"
-    schedule = "0 13 * * *"  # 09:00 America/New_York during EDT
+    schedule = "0 9 * * *"  # 09:00 operator-local (services/clock.py) — was 0 13 UTC pre-tz-aware scheduler
     idempotent = True  # The internal date marker handles double-fire
 
     async def run(self, pool: Any, config: dict[str, Any]) -> JobResult:

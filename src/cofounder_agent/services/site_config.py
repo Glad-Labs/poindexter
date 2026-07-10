@@ -311,6 +311,18 @@ class SiteConfig:
         return [v.strip() for v in val.split(",") if v.strip()] if val else []
 
     @property
+    def timezone(self):
+        """The operator's IANA timezone as a ZoneInfo (store-UTC/present-local).
+
+        Reads the cached `operator_timezone` setting and resolves it via
+        services.clock (invalid -> loud-degrade to UTC). Picks up changes on
+        the minute-ly reload. Returns `zoneinfo.ZoneInfo`.
+        """
+        from services.clock import DEFAULT_TZ, resolve_operator_tz
+
+        return resolve_operator_tz(self.get("operator_timezone", DEFAULT_TZ))
+
+    @property
     def is_loaded(self) -> bool:
         """Whether the config has been loaded from DB."""
         return self._loaded

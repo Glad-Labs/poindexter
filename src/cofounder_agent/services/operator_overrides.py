@@ -72,6 +72,10 @@ If Matt says something you cannot answer with a tool, answer plainly. Never clai
 # content_validator fallback) so a fresh public install behaves as designed; the
 # overlay restores Matt / Glad Labs on the operator rig.
 OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
+    # Operator's real zone (OSS seed ships UTC). Drives cron fire-times +
+    # operator-facing timestamp rendering. Applied over the UTC default by
+    # apply_operator_overrides only while the row still holds the OSS default.
+    "operator_timezone": "America/New_York",
     "voice_agent_system_prompt": _VOICE_AGENT_SYSTEM_PROMPT,
     "gpu_model": "NVIDIA RTX 5090 (32GB VRAM)",
     "company_founder_name": "Matt",

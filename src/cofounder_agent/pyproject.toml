@@ -43,6 +43,12 @@ packages = [
 # blocked the security bump.
 python = ">=3.13,<3.14"
 
+# Timezone data — ships the IANA tz database so stdlib zoneinfo resolves
+# names on Windows hosts (Linux containers already have it). Explicit (was
+# transitive) so the system-timezone feature (services/clock.py) never
+# silently loses it.
+tzdata = "*"
+
 # Web Framework
 fastapi = ">=0.138.2"
 uvicorn = {version = ">=0.43,<0.49", extras = ["standard"]}

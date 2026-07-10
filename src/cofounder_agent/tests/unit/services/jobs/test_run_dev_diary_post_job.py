@@ -39,9 +39,9 @@ class TestMetadata:
     def test_name(self):
         assert RunDevDiaryPostJob.name == "run_dev_diary_post"
 
-    def test_schedule_is_cron_9am_et(self):
-        # 0 13 * * * UTC = 9am EDT (US Eastern during DST)
-        assert RunDevDiaryPostJob.schedule == "0 13 * * *"
+    def test_schedule_is_9am_operator_local(self):
+        # 0 9 * * * evaluated in operator_timezone (services/clock.py) = 9am local
+        assert RunDevDiaryPostJob.schedule == "0 9 * * *"
 
     def test_idempotent_flag_set(self):
         assert RunDevDiaryPostJob.idempotent is True

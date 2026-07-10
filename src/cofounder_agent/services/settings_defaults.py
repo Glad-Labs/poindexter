@@ -63,6 +63,11 @@ from typing import Any
 # column. Numeric / bool consumers parse via `site_config.get_int()`,
 # `get_float()`, `get_bool()` etc.
 DEFAULTS: dict[str, str] = {
+    # ----- Localization -----
+    # IANA timezone the system schedules cron jobs in and renders
+    # operator-facing timestamps in (store-UTC / present-local, services/clock.py).
+    # OSS default UTC — location-neutral; the operator overlay sets the real zone.
+    "operator_timezone": "UTC",
     # ----- Console task-trace (per-node capture) -----
     # Max bytes of a node's changed-output snapshot stored in
     # atom_runs.output_preview (the readable per-node preview the console

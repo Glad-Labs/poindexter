@@ -59,7 +59,7 @@ class FindingsDailyDigestJob:
         "Daily findings digest — once-a-day Discord rollup of audit_log "
         "findings by kind + delivery policy + pending-delivery count"
     )
-    # 09:00 local. Tunable via plugin.job.findings_daily_digest config.schedule.
+    # 09:00 operator-local (services/clock.py). Tunable via plugin.job.findings_daily_digest config.schedule.
     schedule = "0 9 * * *"
     idempotent = True
 

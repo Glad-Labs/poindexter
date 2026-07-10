@@ -40,9 +40,9 @@ _DISCORD_MAX_CHARS = 1800
 class MorningBriefJob:
     name = "morning_brief"
     description = "Daily morning brief — Discord digest + Telegram ping on overnight criticals"
-    # 0 7 * * * = 07:00 local container time. Hour is overridable via
-    # the ``morning_brief_hour_local`` app_settings key surfaced in
-    # PluginConfig.config['cron_expression'] for full schedule overrides.
+    # 0 7 * * * = 07:00 operator-local (services/clock.py resolves the scheduler
+    # timezone from app_settings.operator_timezone). Fires 7am in the operator's
+    # zone; the informational morning_brief_hour_local key mirrors the hour.
     schedule = "0 7 * * *"
     idempotent = True
 
@@ -101,8 +101,11 @@ class MorningBriefJob:
         # Open PRs come from a subprocess and are entirely optional.
         data["open_prs"] = await _gather_open_prs()
 
-        # ---- Format ----
-        message = _format_brief(data, lookback_hours, site_url, max_chars)
+        # ---- Format (operator-local date header; store-UTC/present-local) ----
+        from services.clock import get_operator_tz
+
+        tz = await get_operator_tz(pool)
+        message = _format_brief(data, lookback_hours, site_url, max_chars, tz)
 
         # ---- Send Discord ----
         try:
@@ -462,9 +465,11 @@ async def _gather_open_prs() -> list[dict[str, Any]]:
 
 
 def _format_brief(
-    data: dict[str, Any], lookback_hours: int, site_url: str, max_chars: int,
+    data: dict[str, Any], lookback_hours: int, site_url: str, max_chars: int, tz: Any,
 ) -> str:
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    from services.clock import today_local
+
+    today = today_local(tz).strftime("%Y-%m-%d")
     lines: list[str] = [f"\U0001F305 **Morning brief — {today}**", ""]
 
     # Published

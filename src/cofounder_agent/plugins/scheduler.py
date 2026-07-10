@@ -91,11 +91,12 @@ def _stable_stagger_seconds(job_name: str) -> int:
     return int.from_bytes(digest[:4], "big") % _FIRST_FIRE_STAGGER_S
 
 
-def _parse_schedule(schedule: str):
-    """Convert a Job.schedule string to an apscheduler trigger.
+def _parse_schedule(schedule: str, tz):
+    """Convert a Job.schedule string to an apscheduler trigger in zone ``tz``.
 
     Returns ``None`` if the schedule string is unrecognized — caller
-    should log + skip that Job.
+    should log + skip that Job. Interval triggers are relative and
+    timezone-agnostic; only cron triggers bind to ``tz``.
     """
     m = _INTERVAL_RE.match(schedule)
     if m:
@@ -104,9 +105,9 @@ def _parse_schedule(schedule: str):
         kwargs = {f"{unit}s": n}
         return IntervalTrigger(**kwargs)
 
-    # Cron fallback — let apscheduler parse the 5-field form.
+    # Cron fallback — parse the 5-field form in the operator timezone.
     try:
-        return CronTrigger.from_crontab(schedule)
+        return CronTrigger.from_crontab(schedule, timezone=tz)
     except Exception:
         return None
 
@@ -114,7 +115,7 @@ def _parse_schedule(schedule: str):
 class PluginScheduler:
     """Thin wrapper around apscheduler that understands our Job Protocol."""
 
-    def __init__(self, pool: Any, *, site_config: Any = None):
+    def __init__(self, pool: Any, *, site_config: Any = None, tz: Any = None):
         """Create the scheduler bound to a DB pool.
 
         ``pool`` is passed into each Job.run() call so Jobs can read/write
@@ -122,6 +123,10 @@ class PluginScheduler:
 
         ``site_config`` (Phase H DI seam, GH#95) is stored for jobs that
         need DB-backed config at scheduling time. Optional for back-compat.
+
+        ``tz`` (a ZoneInfo) is resolved from, in priority order: an explicit
+        arg, ``site_config['operator_timezone']``, else UTC. Wall-clock cron
+        jobs fire in this zone (services/clock.py; store-UTC/present-local).
         """
         if AsyncIOScheduler is None:  # apscheduler absent (lean image)
             raise ImportError(
@@ -131,7 +136,15 @@ class PluginScheduler:
             ) from _APSCHEDULER_IMPORT_ERROR
         self._pool = pool
         self._site_config = site_config
-        self._scheduler = AsyncIOScheduler()
+        from services.clock import DEFAULT_TZ, resolve_operator_tz
+
+        if tz is not None:
+            self._tz = tz
+        elif site_config is not None:
+            self._tz = resolve_operator_tz(site_config.get("operator_timezone", DEFAULT_TZ))
+        else:
+            self._tz = resolve_operator_tz(None)
+        self._scheduler = AsyncIOScheduler(timezone=self._tz)
         self._registered: list[str] = []
         # In-process run counters for /api/metrics/operational. Not persistent
         # — they reset on worker restart, which is fine for "is the scheduler
@@ -172,7 +185,7 @@ class PluginScheduler:
         # Per-install override (config.schedule in the DB row) wins over the
         # Job's code-default schedule.
         schedule = cfg.get("schedule", job.schedule)
-        trigger = _parse_schedule(schedule)
+        trigger = _parse_schedule(schedule, self._tz)
         if trigger is None:
             logger.error(
                 "scheduler: job %r has unrecognized schedule %r; skipping",

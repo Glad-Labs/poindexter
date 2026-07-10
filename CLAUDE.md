@@ -348,6 +348,14 @@ also settings with sensible defaults.
 target any S3-compatible provider (R2, S3, B2, MinIO). The old
 `cloudflare_r2_*` keys still work as a fallback but are deprecated.
 
+**Time is UTC-stored, operator-local presented.** `app_settings.operator_timezone`
+(IANA; OSS default `UTC`, operator overlay `America/New_York`) drives cron
+fire-times and operator-facing timestamps via `services/clock.py`. Storage,
+logs, metrics, and traces stay UTC. Wall-clock crons (`0 7 * * *`) are authored
+in operator-local time — the scheduler evaluates them in `operator_timezone`
+(DST-correct via `zoneinfo`), so don't hand-convert to UTC. See
+[`docs/architecture/system-timezone.md`](docs/architecture/system-timezone.md).
+
 ### Deployment
 
 Source of truth: `docs/operations/ci-deploy-chain.md`. Two-remote model (post-2026-04-30 gitea decommission):
