@@ -224,6 +224,39 @@ async def test_run_failsoft_returns_empty_both_lanes():
     assert out == {"long_caption_srt_path": "", "short_caption_srt_path": ""}
 
 
+@pytest.mark.asyncio
+async def test_run_diffs_against_voiced_text_script_plus_cta(monkeypatch):
+    """run() diffs the ASR against the VOICED text — labels stripped + the
+    per-lane CTA outro — not the raw script. render_narration voices
+    ``script + CTA``, so comparing against the bare script tanks fidelity
+    (worst on the short lane, where the CTA dominates) — the false positive
+    behind the caption_fidelity 0.00 alerts."""
+    seen = {}
+
+    async def _fake_one(*, audio_path, script, task_id, label, site_config):
+        seen[label] = script
+        return f"/tmp/{task_id}_{label}.srt"
+
+    monkeypatch.setattr(media_transcribe_narration, "_transcribe_one", _fake_one)
+    site_config = SimpleNamespace(
+        get=lambda key, default=None: {
+            "media.cta.video": "Subscribe to the channel.",
+            "media.cta.video_short": "Follow for more.",
+        }.get(key, default)
+    )
+    await transcribe_run({
+        "task_id": "t1",
+        "long_narration_audio_path": "/tmp/long.mp3",
+        "short_narration_audio_path": "/tmp/short.mp3",
+        "video_long_script": "Hook\nLong-form body.",
+        "short_summary_script": "Short summary body.",
+        "site_config": site_config,
+    })
+    # Label stripped, per-lane CTA appended — exactly what TTS voiced.
+    assert seen["long"] == "Long-form body.\n\nSubscribe to the channel."
+    assert seen["short"] == "Short summary body.\n\nFollow for more."
+
+
 def test_atom_meta_shape():
     from modules.content.atoms.media_transcribe_narration import ATOM_META
 

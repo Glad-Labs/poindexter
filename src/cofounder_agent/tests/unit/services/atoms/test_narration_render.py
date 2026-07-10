@@ -191,3 +191,69 @@ class TestStripScriptLabels:
         assert out == "/tmp/out.mp3"
         assert "Hook" not in seen["text"]
         assert seen["text"].startswith("Local LLMs")
+
+
+class TestComposeNarrationText:
+    """compose_narration_text produces the EXACT text render_narration voices —
+    labels stripped + CTA appended — so the caption_fidelity check can diff the
+    ASR transcript against what was actually spoken, not the raw script. Sharing
+    one composition is the whole point: the reference can never drift from the
+    audio.
+    """
+
+    def test_strips_labels_and_appends_cta(self):
+        out = _narration_render.compose_narration_text(
+            script="Hook\nLocal LLMs are eating the cloud's lunch.",
+            cta_key="media.cta.video",
+            site_config=_SC({"media.cta.video": "Like and subscribe."}),
+        )
+        assert out == "Local LLMs are eating the cloud's lunch.\n\nLike and subscribe."
+
+    def test_no_cta_returns_stripped_script_only(self):
+        out = _narration_render.compose_narration_text(
+            script="Hook\nBody only.",
+            cta_key="media.cta.video",
+            site_config=_SC({}),
+        )
+        assert out == "Body only."
+
+    def test_empty_script_returns_empty(self):
+        out = _narration_render.compose_narration_text(
+            script="   ",
+            cta_key="media.cta.video",
+            site_config=_SC({"media.cta.video": "CTA text."}),
+        )
+        assert out == ""
+
+    def test_none_site_config_returns_stripped_script(self):
+        out = _narration_render.compose_narration_text(
+            script="Hook\nLocal models keep winning.",
+            cta_key="media.cta.video", site_config=None,
+        )
+        assert out == "Local models keep winning."
+
+    @pytest.mark.asyncio
+    async def test_render_voices_exactly_compose_output(self, monkeypatch):
+        """render_narration synthesizes exactly compose_narration_text(...) — the
+        single source of truth guaranteeing the fidelity reference matches the
+        voiced audio."""
+        seen = {}
+
+        class _PS:
+            def __init__(self, *, site_config):
+                pass
+
+            async def synthesize(self, text, *, key):
+                seen["text"] = text
+                return "/tmp/out.mp3", 5.0
+
+        monkeypatch.setattr("services.podcast_service.PodcastService", _PS)
+        sc = _SC({"media.cta.video": "Subscribe now."})
+        script = "Opening Hook\nReal narration body."
+        await _narration_render.render_narration(
+            script=script, cta_key="media.cta.video", site_config=sc,
+            task_id="t1", key="t1_long",
+        )
+        assert seen["text"] == _narration_render.compose_narration_text(
+            script=script, cta_key="media.cta.video", site_config=sc,
+        )

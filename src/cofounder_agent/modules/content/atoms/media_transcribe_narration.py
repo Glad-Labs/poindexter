@@ -14,10 +14,16 @@ Per lane it does two things from one transcription (redesign §6 "one ASR pass")
    each lane narrates its OWN script, captions are per-lane.)
 
 2. **Fidelity QA (#676 part b):** compares each lane's ASR transcript against
-   that lane's source script (``video_long_script`` / ``short_summary_script``)
-   with a normalized ``difflib.SequenceMatcher`` ratio. A low ratio (below the
-   DB-configurable ``media.caption.fidelity_min_ratio``, default 0.80) emits an
-   advisory ``caption_fidelity`` finding — catches TTS dropouts / truncation.
+   the **voiced** narration text — the lane's script with stage-direction labels
+   stripped and its CTA outro appended (``compose_narration_text``, the exact
+   text ``render_narration`` synthesized) — with a normalized
+   ``difflib.SequenceMatcher`` ratio. Diffing against the voiced text rather than
+   the raw script keeps the CTA outro (and the dropped labels) from spuriously
+   tanking the ratio — worst on the short lane, where the CTA is a big fraction
+   of a brief summary, the cause of the ``caption_fidelity`` 0.00 false positives.
+   A low ratio (below the DB-configurable ``media.caption.fidelity_min_ratio``,
+   default 0.80) emits an advisory ``caption_fidelity`` finding — catches TTS
+   dropouts / truncation.
 
 Captions are **best-effort**: a caption failure (provider disabled / unreachable,
 audio missing, provider exception) must NEVER halt the graph — the video still
@@ -122,6 +128,11 @@ async def _transcribe_one(
 ) -> str:
     """One ASR pass over a single lane's narration → its SRT caption path.
 
+    ``script`` is the fidelity reference the ASR transcript is diffed against —
+    in production the fully **voiced** text (labels stripped + CTA outro),
+    composed by ``run`` via ``compose_narration_text`` so it matches what TTS
+    actually said, not the raw script.
+
     Returns the SRT path, or ``""`` on any no-op/failure (no audio, whisper
     unavailable, write error). Best-effort — never raises. Emits per-lane
     findings (dedup keyed by task + ``label``) on failure / low fidelity.
@@ -210,7 +221,8 @@ async def _transcribe_one(
                 title=f"ASR fidelity {ratio:.2f} < {threshold} ({label})",
                 body=(
                     f"The {label} narration ASR transcript for task {task_id} "
-                    f"diverged from its source script (normalized SequenceMatcher "
+                    f"diverged from the voiced narration text — its script (labels "
+                    f"stripped) plus the CTA outro (normalized SequenceMatcher "
                     f"ratio {ratio:.3f} < {threshold}). Likely a TTS dropout or "
                     "truncation. Captions still burned in; advisory only."
                 ),
@@ -240,16 +252,33 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     Best-effort — never raises. Returns ``{"long_caption_srt_path": <path-or-"">,
     "short_caption_srt_path": <path-or-"">}``.
     """
+    from modules.content.atoms._narration_render import compose_narration_text
+
     task_id = state.get("task_id")
     site_config = state.get("site_config")
+
+    # Diff the ASR against the VOICED text — labels stripped + the per-lane CTA
+    # outro appended — reproduced from the SAME composer render_narration used,
+    # so the reference matches what TTS actually said. Diffing against the raw
+    # script instead lacks the CTA (and keeps stage-direction labels), which
+    # tanks fidelity — worst on the short lane where the CTA dominates — and was
+    # the false positive behind the caption_fidelity 0.00 findings.
+    long_script = (state.get("video_long_script") or "").strip() or (
+        state.get("podcast_script") or ""
+    )
     long_srt = await _transcribe_one(
         audio_path=state.get("long_narration_audio_path") or "",
-        script=state.get("video_long_script") or state.get("podcast_script") or "",
+        script=compose_narration_text(
+            script=long_script, cta_key="media.cta.video", site_config=site_config,
+        ),
         task_id=task_id, label="long", site_config=site_config,
     )
     short_srt = await _transcribe_one(
         audio_path=state.get("short_narration_audio_path") or "",
-        script=state.get("short_summary_script") or "",
+        script=compose_narration_text(
+            script=state.get("short_summary_script") or "",
+            cta_key="media.cta.video_short", site_config=site_config,
+        ),
         task_id=task_id, label="short", site_config=site_config,
     )
     return {

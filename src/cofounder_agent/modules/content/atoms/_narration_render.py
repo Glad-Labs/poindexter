@@ -76,6 +76,28 @@ def _strip_script_labels(text: str) -> str:
     return "\n".join(out).strip()
 
 
+def compose_narration_text(*, script: str, cta_key: str, site_config: Any) -> str:
+    """The exact text the narration TTS voices: structural labels stripped, then
+    the per-medium CTA outro appended.
+
+    Shared by ``render_narration`` (what gets synthesized) and
+    ``media.transcribe_narration``'s fidelity check (what the ASR transcript is
+    diffed against), so the reference can never drift from the audio — the whole
+    point of the ``caption_fidelity`` CTA fix. Returns ``""`` when the script is
+    empty after label-stripping. ``site_config`` may be ``None`` (no CTA
+    resolvable) — the bare stripped script is returned.
+    """
+    text = _strip_script_labels((script or "").strip())
+    if not text:
+        return ""
+    cta = ""
+    if site_config is not None:
+        cta = (site_config.get(cta_key, "") or "").strip()
+    if cta:
+        text = f"{text}\n\n{cta}"
+    return text
+
+
 async def render_narration(
     *,
     script: str,
@@ -90,13 +112,11 @@ async def render_narration(
     script, no ``site_config``, or a TTS exception). NEVER raises — a narration
     failure must not halt the media graph.
     """
-    text = _strip_script_labels((script or "").strip())
+    text = compose_narration_text(
+        script=script, cta_key=cta_key, site_config=site_config,
+    )
     if not text or site_config is None:
         return ""
-
-    cta = (site_config.get(cta_key, "") or "").strip()
-    if cta:
-        text = f"{text}\n\n{cta}"
 
     from services.podcast_service import PodcastService
 
@@ -113,4 +133,4 @@ async def render_narration(
     return path or ""
 
 
-__all__ = ["render_narration"]
+__all__ = ["compose_narration_text", "render_narration"]
