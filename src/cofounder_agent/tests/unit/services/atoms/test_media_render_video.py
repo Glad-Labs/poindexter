@@ -429,7 +429,7 @@ class TestRenderFromStateHelper:
             )
         assert (
             mock_render.await_args.kwargs["image_gen_url"]
-            == "http://host.docker.internal:9836"
+            == "http://image-gen-server:9836"
         )
 
 

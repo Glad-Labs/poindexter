@@ -37,9 +37,13 @@ DEFAULT_OLLAMA_URL = "http://localhost:11434"
 """Ollama's default listen port. Set by compose as OLLAMA_BASE_URL;
 `site_config.get('ollama_base_url', DEFAULT_OLLAMA_URL)` fallback."""
 
-DEFAULT_IMAGE_GEN_URL = "http://localhost:9836"
-"""image-gen server (shipped in docker-compose.local.yml as
-the `image-gen-server` service). Fallback for `image_gen_server_url`."""
+DEFAULT_IMAGE_GEN_URL = "http://image-gen-server:9836"
+"""image-gen server (shipped in docker-compose.local.yml as the
+`image-gen-server` service). Fallback for `image_gen_server_url`. Addressed
+by its compose service DNS name so container-to-container requests resolve
+over the shared bridge network — never via `host.docker.internal` / a
+host-published port, whose Docker-Desktop/WSL2 proxy wedges and silently
+drops connections (the 2026-07 stock-image-fallback outage)."""
 
 # -------- Internal service mesh --------------------------------------------
 

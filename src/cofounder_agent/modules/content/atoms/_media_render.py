@@ -43,8 +43,10 @@ from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
-# image-gen URL convention (mirrors source_featured_image.py / the shot renderer).
-_DEFAULT_IMAGE_GEN_URL = "http://host.docker.internal:9836"
+# image-gen URL convention (mirrors source_featured_image.py / the shot renderer):
+# the compose service DNS name, resolvable container-to-container on the shared
+# network — never the host-published port (which wedges on Docker Desktop/WSL2).
+_DEFAULT_IMAGE_GEN_URL = "http://image-gen-server:9836"
 
 
 def _resolve_dims(aspect: str) -> tuple[int, int]:

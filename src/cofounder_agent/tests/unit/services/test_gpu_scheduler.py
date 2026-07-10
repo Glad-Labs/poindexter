@@ -145,6 +145,19 @@ class TestGPUSchedulerReentrancy:
 
     def setup_method(self):
         self.gpu = GPUScheduler()
+        # Reentrancy is an in-memory property; stub the external I/O an
+        # acquire fires so these tests are hermetic:
+        #  * the cross-process pg advisory lock opens a real dedicated asyncpg
+        #    connection and takes GPU_ADVISORY_LOCK_KEY — un-stubbed it collides
+        #    with any live worker holding the same lock on the shared DB (2s
+        #    timeout), which is not what "does the nested acquire deadlock?" is
+        #    testing (the sibling test covers the advisory lock explicitly);
+        #  * `_unload_image_gen` POSTs to image_gen_server_url, whose default is
+        #    now the compose service DNS `image-gen-server` — unresolvable off
+        #    the docker network, so an un-stubbed POST hangs on host/CI runs.
+        self.gpu._unload_image_gen = AsyncMock()
+        self.gpu._acquire_pg_advisory_lock = AsyncMock()
+        self.gpu._release_pg_advisory_lock = AsyncMock()
 
     @pytest.mark.asyncio
     async def test_nested_lock_does_not_deadlock(self):

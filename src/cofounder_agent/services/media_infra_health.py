@@ -73,8 +73,8 @@ def _resolve_wan_health_url(site_config: Any) -> str:
 
 def _resolve_image_gen_health_url(site_config: Any) -> str:
     base = (
-        site_config.get("image_gen_server_url", "http://host.docker.internal:9836")
-        or "http://host.docker.internal:9836"
+        site_config.get("image_gen_server_url", "http://image-gen-server:9836")
+        or "http://image-gen-server:9836"
     )
     return str(base).rstrip("/") + "/health"
 

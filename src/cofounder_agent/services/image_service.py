@@ -1026,9 +1026,11 @@ class ImageService:
         Returns:
             True if successful, False otherwise
         """
-        # Strategy 1: Try host image-gen server (runs on GPU outside Docker)
+        # Strategy 1: Try the image-gen server (GPU-resident container on the
+        # shared compose network — addressed by its service DNS name so the
+        # request never traverses the flaky host-published-port proxy).
         _sc = self._site_config
-        image_gen_server_url = _sc.get("image_gen_server_url", "http://host.docker.internal:9836")
+        image_gen_server_url = _sc.get("image_gen_server_url", "http://image-gen-server:9836")
         render_timeout = _sc.get_int("image_render_timeout_seconds", 240)
         try:
             import httpx

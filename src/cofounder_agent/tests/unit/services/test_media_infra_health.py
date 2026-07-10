@@ -178,7 +178,7 @@ class TestUrlResolution:
         sc = SiteConfig(initial_config={})
         assert (
             mih._resolve_image_gen_health_url(sc)
-            == "http://host.docker.internal:9836/health"
+            == "http://image-gen-server:9836/health"
         )
 
     def test_canary_explicit_wins_over_storage_url(self):

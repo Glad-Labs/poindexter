@@ -554,9 +554,9 @@ async def _try_image_gen_featured(
             )
 
         image_gen_url = (
-            site_config.get("image_gen_server_url", "http://host.docker.internal:9836")
+            site_config.get("image_gen_server_url", "http://image-gen-server:9836")
             if site_config is not None
-            else "http://host.docker.internal:9836"
+            else "http://image-gen-server:9836"
         )
         render_timeout = (
             site_config.get_int("image_render_timeout_seconds", 90)
@@ -592,7 +592,35 @@ async def _try_image_gen_featured(
             gen_meta=gen_meta,
         )
     except Exception as e:
-        logger.info("image-gen generation skipped (%s), falling back to Pexels", e)
+        # Image generation failed — the post will ship a Pexels STOCK photo
+        # instead of a unique generated image. This is a content-quality
+        # degradation, not a benign skip, so it logs at WARNING and raises a
+        # routed finding (Discord) rather than whispering at INFO. A wedged
+        # image-gen server (unreachable from the worker) silently bled stock
+        # photos into every post for ~2 days before this was surfaced —
+        # feedback_dont_silence_fix_dedup. The static dedup_key collapses a
+        # whole outage window to one page.
+        logger.warning(
+            "image-gen featured render failed (%s) — falling back to a Pexels "
+            "STOCK photo (not a unique generated image)", e,
+        )
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="stages.source_featured_image",
+            kind="image_gen_unreachable",
+            title="Image generation failed — post fell back to Pexels stock",
+            body=(
+                "The featured-image render failed, so the post is shipping a "
+                "Pexels **stock** photo instead of a unique generated image. "
+                f"Error: `{e!r}`. Check the image-gen server addressed by "
+                "`app_settings.image_gen_server_url` is reachable from the "
+                "worker container (it should be the compose service DNS name, "
+                "not a host-published port)."
+            ),
+            severity="warn",
+            dedup_key="image_gen_unreachable",
+        )
         return None
 
 

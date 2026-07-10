@@ -153,3 +153,53 @@ async def test_image_gen_attempted_by_default_when_setting_unset() -> None:
         await stage.execute(context, config={})
 
     assert gen_mock.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_image_gen_failure_emits_routed_finding() -> None:
+    """When the image-gen render fails, the featured stage must (a) fall back
+    (return None) AND (b) raise a routed ``image_gen_unreachable`` finding at
+    WARN severity — not whisper at INFO.
+
+    Regression guard for the 2026-07 outage: a wedged image-gen server
+    (unreachable from the worker via the host-published port) silently bled
+    Pexels stock photos into every post for ~2 days because the fallback
+    logged at INFO with no finding. The finding is what makes the next
+    outage page — see feedback_dont_silence_fix_dedup.
+    """
+    from modules.content.stages import source_featured_image as sfi
+
+    site_config = _make_site_config({
+        "image_gen_server_url": "http://image-gen-server:9836",
+    })
+
+    captured: dict[str, Any] = {}
+
+    def _capture(**kwargs: Any) -> None:
+        captured.update(kwargs)
+
+    # existing_prompt is set so the LLM prompt-build is skipped; the render is
+    # what fails (the "Server disconnected" signature of the wedged path).
+    render_boom = AsyncMock(
+        side_effect=RuntimeError("Server disconnected without sending a response."),
+    )
+    with patch.object(sfi, "_render_image_gen", render_boom), \
+            patch("utils.findings.emit_finding", _capture):
+        result = await sfi._try_image_gen_featured(
+            topic="Test article",
+            existing_prompt="a concrete editorial prompt",
+            task_id="test-task-id",
+            on_style_picked=lambda _s: None,
+            style_tracker=MagicMock(),
+            site_config=site_config,
+            platform=MagicMock(),
+        )
+
+    assert result is None, "image-gen failure must fall back (return None)"
+    assert captured.get("kind") == "image_gen_unreachable", (
+        f"expected an image_gen_unreachable finding; got {captured!r}"
+    )
+    assert captured.get("severity") == "warn", (
+        "finding must be WARN so the router delivers it — the router's severity "
+        "floor drops info (findings-delivery-needs-warn-severity)"
+    )

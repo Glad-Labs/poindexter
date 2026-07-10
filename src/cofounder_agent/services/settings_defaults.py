@@ -503,7 +503,7 @@ DEFAULTS: dict[str, str] = {
     # model prefixes; flip to 'true' to authorise any paid LiteLLM path.
     'plugin.llm_provider.litellm.allow_paid_base_url': 'false',
     'plugin.video_provider.wan2.1-1.3b.server_url': '',
-    'image_gen_server_url': 'http://host.docker.internal:9836',
+    'image_gen_server_url': 'http://image-gen-server:9836',
     'stable_audio_open_server_url': '',
     'video_server_url': 'http://host.docker.internal:9837',
     'wan_server_url': '',
@@ -1443,6 +1443,11 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.post_verification_failure.min_severity': 'warn',
     'findings.duplicate_post.delivery': 'log_only',
     'findings.stock_image_regenerated.delivery': 'log_only',
+    # image-gen server unreachable from the worker → the post fell back to a
+    # Pexels stock photo instead of a unique generated image. Routine infra
+    # degradation → Discord (per feedback_telegram_vs_discord); the emit site
+    # sets a static dedup_key so an outage window pages once, not per-post.
+    'findings.image_gen_unreachable.delivery': 'discord',
     'findings.uncategorized_post_autofixed.delivery': 'log_only',
     'findings.broken_external_link_autofixed.delivery': 'log_only',
     'findings.broken_internal_link_autofixed.delivery': 'log_only',

@@ -82,7 +82,7 @@ def _video_server_url(*, site_config: SiteConfig) -> str:
 
 def _image_gen_server_url(*, site_config: SiteConfig) -> str:
     """Resolve image_gen_server_url from site_config per-call (same rationale)."""
-    return site_config.get("image_gen_server_url", "http://host.docker.internal:9836")
+    return site_config.get("image_gen_server_url", "http://image-gen-server:9836")
 
 
 async def _resolve_slideshow_prompt_model(

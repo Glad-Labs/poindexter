@@ -646,7 +646,7 @@ async def _batch_generate_all_images(
         logger.debug("[IMAGE-BATCH] no platform handle — skipping batched image-gen generation")
         return [None] * n
 
-    image_gen_url = site_config.get("image_gen_server_url", "http://host.docker.internal:9836")
+    image_gen_url = site_config.get("image_gen_server_url", "http://image-gen-server:9836")
     model = site_config.get("inline_image_prompt_model", "llama3:latest")
 
     # ------------------------------------------------------------------ #
@@ -757,7 +757,7 @@ async def _try_image_gen(
     from services.gpu_scheduler import gpu
 
     try:
-        image_gen_url = site_config.get("image_gen_server_url", "http://host.docker.internal:9836")
+        image_gen_url = site_config.get("image_gen_server_url", "http://image-gen-server:9836")
         model = site_config.get("inline_image_prompt_model", "llama3:latest")
         inline_style = random.choice(_load_inline_styles(site_config))
         img_prompt_req = _build_inline_prompt_instruction(
