@@ -323,7 +323,11 @@
       port: 11434,
       status: 'warn',
       metric: 'GPU queue 2',
-      sub: 'glm-4.7-50b · host',
+      // Descriptor only — do NOT pin a model name here. serviceHealth() never
+      // overrides `sub`, so a hardcoded model freezes stale (it read
+      // "glm-4.7-50b" long after that model was retired). Which model is loaded
+      // is a live fact ollama's /api/ps owns, not a static console string.
+      sub: 'LLM runtime · host',
       uptime: '2d 11h',
       cpu: 64,
       mem: 9800,

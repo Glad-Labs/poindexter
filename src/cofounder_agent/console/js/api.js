@@ -1139,9 +1139,14 @@
               metric = 'down';
             } else if (a.value < 60) {
               status = 'ok';
-              metric = 'up · ' + Math.round(a.value) + 's';
+              // Show how long it's been UP (container_start_time), not the
+              // scrape-freshness age — the latter is always ~2-15s and tells
+              // the operator nothing when the service is healthy. Freshness
+              // still drives ok/stale below and the LED, so nothing is lost.
+              metric = 'up ' + fmtUptime(up[s.container]?.value);
             } else {
               status = 'warn';
+              // Stale: here the scrape-age IS the point — surface how stale.
               metric = 'stale · ' + Math.round(a.value) + 's';
             }
             if (workerOk === false && s.container === 'poindexter-worker') {
