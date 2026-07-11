@@ -90,8 +90,10 @@ DEFAULTS: dict[str, str] = {
     "live_activity_heartbeat_seconds": "30",
     # Running rows with no heartbeat past this get marked 'stale' by the reaper.
     "live_activity_reaper_seconds": "300",
-    # Size of the "Just Happened" recent-trail rail on the console band.
-    "live_activity_recent_limit": "20",
+    # Size of the "Just Happened" recent-trail rail on the console band. Kept
+    # compact so the SYSTEM PULSE band stays a glance, not a scrolling log — the
+    # trail is the band's height driver when the live columns are idle.
+    "live_activity_recent_limit": "8",
     # ----- Self-healing firefighter (deterministic core, Plan A) -----
     # Master switch. Ships enabled; the remediation_rules table is empty so it's
     # a safe no-op until rules are seeded. Off = pages exactly as today.

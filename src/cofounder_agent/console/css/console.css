@@ -1133,6 +1133,17 @@ button {
   background: var(--gl-surface);
   padding: 12px 14px;
   min-width: 0;
+  /* Ceiling so a busy column (many simultaneous jobs) can't balloon the band —
+     the pulse stays a compact glance; overflow scrolls within the column. */
+  max-height: 260px;
+  overflow-y: auto;
+}
+.nowrun__col::-webkit-scrollbar {
+  width: 6px;
+}
+.nowrun__col::-webkit-scrollbar-thumb {
+  background: var(--gl-hairline);
+  border-radius: 3px;
 }
 .nowrun__collabel {
   font-family: var(--gl-font-mono);
