@@ -843,7 +843,6 @@ DEFAULTS: dict[str, str] = {
     'content_validator_unlinked_citation_warning_threshold': '0',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
     'deepeval_enabled': 'true',
-    'enable_training_capture': 'true',
     'enable_writer_self_review': 'false',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
     'guardrails_enabled': 'true',

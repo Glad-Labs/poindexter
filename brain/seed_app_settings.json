@@ -134,34 +134,10 @@
       "description": "Fallback model when primary is unavailable"
     },
     {
-      "key": "cloud_api_mode",
-      "value": "disabled",
-      "category": "models",
-      "description": "Cloud API mode: disabled, emergency_only, fallback, always. Free tier runs Ollama-only."
-    },
-    {
-      "key": "cloud_api_daily_limit",
-      "value": "0",
-      "category": "models",
-      "description": "Hard cap on cloud API calls per day in emergency mode"
-    },
-    {
-      "key": "qa_overall_score_threshold",
-      "value": "70",
-      "category": "quality",
-      "description": "Minimum overall QA score (0-100) to pass"
-    },
-    {
       "key": "qa_final_score_threshold",
       "value": "70",
       "category": "quality",
       "description": "Multi-model QA final approval threshold"
-    },
-    {
-      "key": "qa_critical_dimension_floor",
-      "value": "50",
-      "category": "quality",
-      "description": "Minimum score on any single dimension"
     },
     {
       "key": "qa_validator_weight",
@@ -206,12 +182,6 @@
       "description": "Posts go to draft + preview token instead of publishing"
     },
     {
-      "key": "content_quality_minimum",
-      "value": "70",
-      "category": "pipeline",
-      "description": "Minimum quality to even queue for approval"
-    },
-    {
       "key": "min_curation_score",
       "value": "70",
       "category": "pipeline",
@@ -230,34 +200,10 @@
       "description": "Soft cap on generation per day"
     },
     {
-      "key": "content_weekly_cap",
-      "value": "3",
-      "category": "pipeline",
-      "description": "Maximum new posts per week (0 = unlimited)"
-    },
-    {
       "key": "max_approval_queue",
       "value": "10",
       "category": "pipeline",
       "description": "Queue size before generation throttles"
-    },
-    {
-      "key": "max_task_retries",
-      "value": "3",
-      "category": "pipeline",
-      "description": "Max retry attempts for failed tasks"
-    },
-    {
-      "key": "max_tokens_per_request",
-      "value": "4000",
-      "category": "pipeline",
-      "description": "Max tokens per LLM call"
-    },
-    {
-      "key": "max_tokens_per_task",
-      "value": "16000",
-      "category": "pipeline",
-      "description": "Max tokens summed across a whole task"
     },
     {
       "key": "publish_spacing_hours",
@@ -278,12 +224,6 @@
       "description": "Task considered stale after this"
     },
     {
-      "key": "task_sweep_interval_seconds",
-      "value": "300",
-      "category": "pipeline",
-      "description": "Seconds between stale-task sweeps"
-    },
-    {
       "key": "daily_spend_limit_usd",
       "value": "1.00",
       "category": "cost",
@@ -302,70 +242,16 @@
       "description": "Alert when spend exceeds this % of limit"
     },
     {
-      "key": "enable_memory_system",
-      "value": "true",
-      "category": "features",
-      "description": "Enable agent memory (pgvector)"
-    },
-    {
-      "key": "enable_mcp_server",
-      "value": "true",
-      "category": "features",
-      "description": "Enable Model Context Protocol server"
-    },
-    {
-      "key": "enable_training_capture",
-      "value": "false",
-      "category": "features",
-      "description": "Capture training data from pipeline runs"
-    },
-    {
       "key": "redis_enabled",
       "value": "false",
       "category": "features",
       "description": "Enable Redis for caching and pub/sub"
     },
     {
-      "key": "content_min_word_count",
-      "value": "800",
-      "category": "content",
-      "description": "Minimum word count for blog posts"
-    },
-    {
-      "key": "content_target_word_count",
-      "value": "1500",
-      "category": "content",
-      "description": "Target word count for blog posts"
-    },
-    {
-      "key": "content_max_refinement_attempts",
-      "value": "3",
-      "category": "content",
-      "description": "Max refinement iterations"
-    },
-    {
-      "key": "content_temperature",
-      "value": "0.7",
-      "category": "tokens",
-      "description": "Temperature for content generation"
-    },
-    {
       "key": "qa_temperature",
       "value": "0.3",
       "category": "tokens",
       "description": "Temperature for QA review"
-    },
-    {
-      "key": "image_primary_source",
-      "value": "ai_generation",
-      "category": "image",
-      "description": "Primary image source: 'pexels' or 'ai_generation'"
-    },
-    {
-      "key": "enable_featured_image",
-      "value": "true",
-      "category": "image",
-      "description": "Generate featured images for posts"
     },
     {
       "key": "image_generation_model",
@@ -378,12 +264,6 @@
       "value": "text, words, letters, numbers, watermark, signature, logo, face, person, human, hands, fingers, blurry, low quality, distorted, deformed",
       "category": "image",
       "description": "Negative prompt for all image-gen generations"
-    },
-    {
-      "key": "image_style_default",
-      "value": "professional digital art, abstract technology concept, blue and cyan color scheme, clean modern aesthetic, no people, no text, no faces, no letters",
-      "category": "image",
-      "description": "Default image-gen style for uncategorized posts"
     },
     {
       "key": "prometheus.threshold.embeddings_stale_seconds",
