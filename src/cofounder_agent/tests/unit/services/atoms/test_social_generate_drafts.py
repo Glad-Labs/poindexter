@@ -92,3 +92,81 @@ async def test_drafts_no_pool_skips_before_llm(monkeypatch, enabled_site_config)
 
     gen.assert_not_awaited()
     create_draft.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_drafts_predict_publish_slug_when_post_slug_missing(
+    monkeypatch, enabled_site_config
+):
+    """Root-cause regression (social-drafts linking bug): on canonical_blog the
+    upstream ``content.persist_task`` atom deliberately produces
+    ``post_slug=None`` (the posts row is only created at approval), so the atom
+    must derive the FINAL publish slug itself — via the same
+    ``derive_publish_identity`` chain ``publish_post_from_task`` uses — instead
+    of baking a dead ``/posts/`` URL (empty slug) into every draft."""
+    gen = AsyncMock(return_value=[])
+    monkeypatch.setattr(social_generate_drafts, "generate_social_posts", gen)
+
+    state = {
+        "task_id": "f3a71ef6-27a9-47db-ad3c-426d7fc35a2f",
+        "title": "Fallback Title",
+        "topic": "Some topic",
+        "content": "# Why VRAM Bandwidth Matters\n\nBody text here.",
+        "post_slug": None,
+        "database_service": SimpleNamespace(pool=object()),
+        "site_config": enabled_site_config,
+    }
+
+    await drafts_run(state)
+
+    gen.assert_awaited_once()
+    # Same derivation as publish: extracted H1 → sanitize → slug + task_id[:8].
+    assert gen.await_args.kwargs["slug"] == "why-vram-bandwidth-matters-f3a71ef6"
+
+
+@pytest.mark.asyncio
+async def test_drafts_predicted_slug_falls_back_to_title_then_topic(
+    monkeypatch, enabled_site_config
+):
+    """No H1 in content → the fallback chain mirrors publish exactly:
+    merged title, then topic."""
+    gen = AsyncMock(return_value=[])
+    monkeypatch.setattr(social_generate_drafts, "generate_social_posts", gen)
+
+    state = {
+        "task_id": "511012cc-3a5a-4650-95b6-8485eb109d59",
+        "title": "Automating AI Content Workflows",
+        "topic": "unused when title present",
+        "content": "Plain body with no leading heading.",
+        "post_slug": None,
+        "database_service": SimpleNamespace(pool=object()),
+        "site_config": enabled_site_config,
+    }
+
+    await drafts_run(state)
+
+    assert (
+        gen.await_args.kwargs["slug"]
+        == "automating-ai-content-workflows-511012cc"
+    )
+
+
+@pytest.mark.asyncio
+async def test_drafts_honor_existing_post_slug(monkeypatch, enabled_site_config):
+    """A real post_slug in state (e.g. a future existing-post/republish flow)
+    is used verbatim — prediction only kicks in when it is missing."""
+    gen = AsyncMock(return_value=[])
+    monkeypatch.setattr(social_generate_drafts, "generate_social_posts", gen)
+
+    state = {
+        "task_id": "task-abc",
+        "title": "A Title",
+        "content": "# A Different Heading\n\nBody.",
+        "post_slug": "already-live-slug-12345678",
+        "database_service": SimpleNamespace(pool=object()),
+        "site_config": enabled_site_config,
+    }
+
+    await drafts_run(state)
+
+    assert gen.await_args.kwargs["slug"] == "already-live-slug-12345678"

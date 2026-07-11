@@ -60,8 +60,10 @@ KERNEL_PURITY_BASELINE = {
     # Line shifted 1038 -> 1082 by the #729 _niche_allowlist_block helper;
     # shifted again 1082 -> 1095 by the #1942 newsletter audit_log_bg addition;
     # shifted 1095 -> 1154 by the #2127 no-silent-failures sweep (schedule-rail
-    # finding helper + louder webhook/cap handlers added above this import).
-    "services/publish_service.py:1154",
+    # finding helper + louder webhook/cap handlers added above this import);
+    # shifted 1154 -> 1181 by the poindexter#832 derive_publish_identity
+    # helper (social-draft slug prediction) added above it.
+    "services/publish_service.py:1181",
     # research_context calls internal_link_coherence lazily.
     "services/research_context.py:146",
     # topic_proposal_service calls build_topic_decision_artifact lazily

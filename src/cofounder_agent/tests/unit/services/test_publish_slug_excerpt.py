@@ -3,6 +3,7 @@
 from services.publish_service import (
     build_post_slug,
     choose_excerpt,
+    derive_publish_identity,
     sanitize_published_title,
 )
 
@@ -64,3 +65,55 @@ def test_choose_excerpt_falls_back_to_seo_description():
 
 def test_sanitize_published_title_strips_label():
     assert sanitize_published_title("Title: Best Eats") == "Best Eats"
+
+
+# ---------------------------------------------------------------------------
+# derive_publish_identity — the single source of truth for the publish-time
+# (title, content, slug) triple. publish_post_from_task AND the
+# social.generate_drafts atom both call it, so the slug a social draft bakes
+# into its copy can never drift from the slug the post actually publishes
+# under (social-drafts linking bug).
+# ---------------------------------------------------------------------------
+
+def test_derive_publish_identity_extracts_h1():
+    title, content, slug = derive_publish_identity(
+        draft_content="# My Title\n\nBody text.",
+        fallback_title="Ignored Fallback",
+        topic="Ignored Topic",
+        task_id="abcd1234ef567890",
+    )
+    assert title == "My Title"
+    assert content == "Body text."
+    assert slug == "my-title-abcd1234"
+
+
+def test_derive_publish_identity_falls_back_to_title_then_topic():
+    title, content, slug = derive_publish_identity(
+        draft_content="Plain body, no heading.",
+        fallback_title="Fallback Title",
+        topic="Topic",
+        task_id="abcd1234ef567890",
+    )
+    assert title == "Fallback Title"
+    assert content == "Plain body, no heading."
+    assert slug == "fallback-title-abcd1234"
+
+    title2, _content2, slug2 = derive_publish_identity(
+        draft_content="",
+        fallback_title="",
+        topic="Topic Only",
+        task_id="abcd1234ef567890",
+    )
+    assert title2 == "Topic Only"
+    assert slug2 == "topic-only-abcd1234"
+
+
+def test_derive_publish_identity_sanitizes_harness_suffix():
+    title, _content, slug = derive_publish_identity(
+        draft_content="# My Title (2026-05-11 17:48 batch C #5)\n\nBody.",
+        fallback_title="",
+        topic="",
+        task_id="abcd1234ef567890",
+    )
+    assert title == "My Title"
+    assert slug == "my-title-abcd1234"

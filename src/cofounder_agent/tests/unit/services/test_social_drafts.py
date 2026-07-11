@@ -36,6 +36,24 @@ def _make_site_config(settings: dict[str, str]) -> MagicMock:
     return sc
 
 
+def _draft_row(**overrides) -> dict:
+    """A social_post_drafts row as approve_draft's first fetchrow returns it."""
+    row = {
+        "id": "d-1", "platform": "twitter", "content": "copy",
+        "platform_config": "{}", "status": "pending",
+        "pipeline_task_id": "task-1", "post_id": None,
+    }
+    row.update(overrides)
+    return row
+
+
+def _post_row(**overrides) -> dict:
+    """A posts row as approve_draft's link-resolution fetchrow returns it."""
+    row = {"id": "post-1", "slug": "real-slug-abcd1234", "status": "published"}
+    row.update(overrides)
+    return row
+
+
 # ---------------------------------------------------------------------------
 # create_draft
 # ---------------------------------------------------------------------------
@@ -126,12 +144,9 @@ async def test_approve_draft_wrong_status():
 
 @pytest.mark.asyncio
 async def test_approve_draft_missing_integration_id():
-    row = {
-        "id": "d2", "platform": "linkedin",
-        "content": "some content", "platform_config": "{}",
-        "status": "pending",
-    }
-    pool, _ = _make_pool(fetchrow=row)
+    row = _draft_row(id="d2", platform="linkedin", content="some content")
+    pool, conn = _make_pool()
+    conn.fetchrow.side_effect = [row, _post_row()]
     # site_config returns empty string for all keys
     sc = _make_site_config({})
     svc = SocialDraftsService()
@@ -146,12 +161,9 @@ async def test_approve_draft_missing_integration_id():
 
 @pytest.mark.asyncio
 async def test_approve_draft_success():
-    row = {
-        "id": "d3", "platform": "twitter",
-        "content": "nice post", "platform_config": "{}",
-        "status": "pending",
-    }
-    pool, conn = _make_pool(fetchrow=row)
+    row = _draft_row(id="d3", content="nice post")
+    pool, conn = _make_pool()
+    conn.fetchrow.side_effect = [row, _post_row()]
     sc = _make_site_config({
         "postiz_integration_id_twitter": "uuid-abc",
         "postiz_api_url": "http://postiz:3000",
@@ -172,12 +184,9 @@ async def test_approve_draft_success():
 async def test_approve_draft_passes_api_key_to_postiz():
     """The Postiz org API key (secret) must be forwarded to PostizClient —
     the public API rejects unauthenticated requests with 401."""
-    row = {
-        "id": "d4", "platform": "twitter",
-        "content": "authed post", "platform_config": "{}",
-        "status": "pending",
-    }
-    pool, _conn = _make_pool(fetchrow=row)
+    row = _draft_row(id="d4", content="authed post")
+    pool, _conn = _make_pool()
+    _conn.fetchrow.side_effect = [row, _post_row()]
     sc = _make_site_config({
         "postiz_integration_id_twitter": "uuid-abc",
         "postiz_api_url": "http://postiz:3000",
@@ -199,12 +208,9 @@ async def test_approve_draft_passes_api_key_to_postiz():
 @pytest.mark.asyncio
 async def test_approve_draft_sets_made_with_ai_for_x():
     """X posts carry the made_with_ai disclosure flag (social_x_made_with_ai)."""
-    row = {
-        "id": "d7", "platform": "twitter",
-        "content": "ai post", "platform_config": "{}",
-        "status": "pending",
-    }
-    pool, _conn = _make_pool(fetchrow=row)
+    row = _draft_row(id="d7", content="ai post")
+    pool, _conn = _make_pool()
+    _conn.fetchrow.side_effect = [row, _post_row()]
     sc = _make_site_config({
         "postiz_integration_id_twitter": "uuid-abc",
         "postiz_api_url": "http://postiz:3000",
@@ -225,12 +231,9 @@ async def test_approve_draft_sets_made_with_ai_for_x():
 @pytest.mark.asyncio
 async def test_approve_draft_made_with_ai_disabled_by_setting():
     """social_x_made_with_ai=false flips the flag off."""
-    row = {
-        "id": "d8", "platform": "twitter",
-        "content": "human post", "platform_config": "{}",
-        "status": "pending",
-    }
-    pool, _conn = _make_pool(fetchrow=row)
+    row = _draft_row(id="d8", content="human post")
+    pool, _conn = _make_pool()
+    _conn.fetchrow.side_effect = [row, _post_row()]
     sc = _make_site_config({
         "postiz_integration_id_twitter": "uuid-abc",
         "postiz_api_url": "http://postiz:3000",
@@ -252,12 +255,9 @@ async def test_approve_draft_made_with_ai_disabled_by_setting():
 async def test_approve_draft_bluesky_maps_type_and_integration():
     """Bluesky drafts resolve to platform_type 'bluesky' + the bluesky
     integration id, and carry no X-only made_with_ai flag."""
-    row = {
-        "id": "d9", "platform": "bluesky",
-        "content": "skeet", "platform_config": "{}",
-        "status": "pending",
-    }
-    pool, _conn = _make_pool(fetchrow=row)
+    row = _draft_row(id="d9", platform="bluesky", content="skeet")
+    pool, _conn = _make_pool()
+    _conn.fetchrow.side_effect = [row, _post_row()]
     sc = _make_site_config({
         "postiz_integration_id_bluesky": "uuid-bsky",
         "postiz_api_url": "http://postiz:3000",
@@ -316,3 +316,143 @@ async def test_edit_draft_with_platform_config():
     conn.execute.assert_called_once()
     sql = conn.execute.call_args[0][0]
     assert "platform_config" in sql.lower()
+
+
+# ---------------------------------------------------------------------------
+# approve_draft — post-link gate + URL repair (social-drafts linking bug).
+# approve_draft is the last gate before content goes public: it must refuse
+# to push a draft whose blog post is not live, and must guarantee the URL in
+# the pushed copy is the post's real live URL.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_approve_draft_blocked_when_post_missing():
+    """No posts row for the draft's pipeline_task_id → refuse to post (the
+    promo link would 404) and leave the draft pending so it can be approved
+    again once the post is live. Regression: two drafts for task f3a71ef6
+    were pushed to X/Bluesky on 2026-07-10 while the post was still
+    awaiting_approval — with a dead link."""
+    pool, conn = _make_pool()
+    conn.fetchrow.side_effect = [_draft_row(), None]
+    sc = _make_site_config({"postiz_integration_id_twitter": "uuid-abc"})
+
+    with patch("services.social_drafts.PostizClient") as mock_cls:
+        svc = SocialDraftsService()
+        result = await svc.approve_draft("d-1", pool, sc)
+
+    assert result["success"] is False
+    assert "publish" in result["error"].lower()
+    mock_cls.assert_not_called()
+    # Block ≠ failure: no writes at all (status stays pending — NOT failed,
+    # so RetryFailedSocialDraftsJob doesn't burn retries on it).
+    conn.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_approve_draft_blocked_when_post_not_live():
+    """A staged post (status='approved', awaiting scheduled_publisher) is not
+    live yet — pushing social now would promote a 404."""
+    pool, conn = _make_pool()
+    conn.fetchrow.side_effect = [_draft_row(), _post_row(status="approved")]
+    sc = _make_site_config({"postiz_integration_id_twitter": "uuid-abc"})
+
+    with patch("services.social_drafts.PostizClient") as mock_cls:
+        svc = SocialDraftsService()
+        result = await svc.approve_draft("d-1", pool, sc)
+
+    assert result["success"] is False
+    assert "approved" in result["error"]  # names the current post status
+    mock_cls.assert_not_called()
+    conn.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_approve_draft_repairs_dead_url():
+    """The empty-slug URL a pre-fix draft baked in (`.../posts/ `) is
+    rewritten to the live post URL before the copy reaches Postiz, and the
+    repaired content is persisted back to the row."""
+    draft = _draft_row(
+        content="Unlock local LLM speed! https://www.gladlabs.io/posts/ #vram",
+        pipeline_task_id="f3a71ef6-27a9-47db-ad3c-426d7fc35a2f",
+    )
+    post = _post_row(slug="why-vram-bandwidth-matters-f3a71ef6")
+    pool, conn = _make_pool()
+    conn.fetchrow.side_effect = [draft, post]
+    sc = _make_site_config({
+        "postiz_integration_id_twitter": "uuid-abc",
+        "postiz_api_url": "http://postiz:3000",
+        "site_url": "https://gladlabs.io",
+    })
+
+    with patch("services.social_drafts.PostizClient") as mock_cls:
+        instance = mock_cls.return_value
+        instance.create_post = AsyncMock(
+            return_value={"success": True, "post_id": "pz-9", "error": None}
+        )
+        svc = SocialDraftsService()
+        result = await svc.approve_draft("d-1", pool, sc)
+
+    assert result["success"] is True
+    pushed = mock_cls.return_value.create_post.call_args.kwargs["content"]
+    assert (
+        "https://gladlabs.io/posts/why-vram-bandwidth-matters-f3a71ef6" in pushed
+    )
+    assert "gladlabs.io/posts/ " not in pushed
+    assert pushed.endswith("#vram")
+    # The repair + post_id link is persisted on the draft row.
+    link_sqls = [c[0][0].lower() for c in conn.execute.call_args_list]
+    assert any("content" in s and "post_id" in s for s in link_sqls)
+
+
+@pytest.mark.asyncio
+async def test_approve_draft_appends_url_when_missing():
+    """Copy that somehow carries no post URL gets the live URL appended —
+    a promo post without a link is useless."""
+    draft = _draft_row(content="Great new read on VRAM bandwidth!")
+    post = _post_row(slug="why-vram-bandwidth-matters-f3a71ef6")
+    pool, conn = _make_pool()
+    conn.fetchrow.side_effect = [draft, post]
+    sc = _make_site_config({
+        "postiz_integration_id_twitter": "uuid-abc",
+        "postiz_api_url": "http://postiz:3000",
+        "site_url": "https://gladlabs.io",
+    })
+
+    with patch("services.social_drafts.PostizClient") as mock_cls:
+        instance = mock_cls.return_value
+        instance.create_post = AsyncMock(
+            return_value={"success": True, "post_id": "pz-10", "error": None}
+        )
+        svc = SocialDraftsService()
+        await svc.approve_draft("d-1", pool, sc)
+
+    pushed = mock_cls.return_value.create_post.call_args.kwargs["content"]
+    assert pushed.endswith(
+        "https://gladlabs.io/posts/why-vram-bandwidth-matters-f3a71ef6"
+    )
+
+
+@pytest.mark.asyncio
+async def test_approve_draft_stamps_post_id_and_approved_at():
+    """A successful approve links the draft to its posts row (post_id) and
+    stamps approved_at alongside posted_at."""
+    pool, conn = _make_pool()
+    conn.fetchrow.side_effect = [_draft_row(), _post_row(id="post-42")]
+    sc = _make_site_config({
+        "postiz_integration_id_twitter": "uuid-abc",
+        "postiz_api_url": "http://postiz:3000",
+        "site_url": "https://gladlabs.io",
+    })
+
+    with patch("services.social_drafts.PostizClient") as mock_cls:
+        instance = mock_cls.return_value
+        instance.create_post = AsyncMock(
+            return_value={"success": True, "post_id": "pz-11", "error": None}
+        )
+        svc = SocialDraftsService()
+        result = await svc.approve_draft("d-1", pool, sc)
+
+    assert result["success"] is True
+    sqls = [c[0][0].lower() for c in conn.execute.call_args_list]
+    assert any("post_id" in s for s in sqls)
+    assert any("approved_at" in s and "posted" in s for s in sqls)

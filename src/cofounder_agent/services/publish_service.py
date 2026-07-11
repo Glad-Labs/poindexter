@@ -82,6 +82,33 @@ def build_post_slug(title: str, task_id: str) -> str:
     return f"{base or 'post'}-{task_id[:8]}"
 
 
+def derive_publish_identity(
+    draft_content: str,
+    fallback_title: str,
+    topic: str,
+    task_id: str,
+) -> tuple[str, str | None, str]:
+    """Single source of truth for the publish-time ``(title, content, slug)``.
+
+    ``publish_post_from_task`` derives the live slug through this exact
+    chain (H1 extracted from content → merged title → topic, sanitized,
+    then ``build_post_slug``). The ``social.generate_drafts`` atom calls
+    the same function at pipeline time — the posts row doesn't exist yet
+    (posts are created on approve) — so the URL baked into social copy
+    matches the slug the post later publishes under. If the two ever
+    drift (e.g. the title is edited between persist and publish),
+    ``SocialDraftsService.approve_draft`` repairs the URL against the
+    live posts row before anything reaches Postiz.
+    """
+    extracted_title, cleaned_content = extract_title_from_content(
+        draft_content or ""
+    )
+    post_title = sanitize_published_title(
+        extracted_title or fallback_title or topic
+    )
+    return post_title, cleaned_content, build_post_slug(post_title, task_id)
+
+
 def choose_excerpt(
     *,
     task_metadata: dict | None,
@@ -1466,23 +1493,16 @@ async def publish_post_from_task(
         return _niche_block
 
     # ---------------------------------------------------------------
-    # 2. Extract title from content (LLM often puts # Title at top)
+    # 2+3. Title + slug — via derive_publish_identity, the SAME chain the
+    # social.generate_drafts atom uses to predict this slug at pipeline
+    # time, so social-draft URLs can't drift from the published URL.
     # ---------------------------------------------------------------
-    extracted_title, cleaned_content = extract_title_from_content(draft_content)
-    post_title = extracted_title or merged.get("title") or topic
-    # Strip leaked test-harness batch/debug suffixes BEFORE the slug is
-    # derived (issue #4) so neither the title nor the slug carries them.
-    post_title = sanitize_published_title(post_title)
-    post_content = cleaned_content
+    post_title, post_content, slug = derive_publish_identity(
+        draft_content, merged.get("title") or "", topic, task_id,
+    )
 
     logger.info("[publish_service] Post title: %s", post_title)
-    logger.info("[publish_service] Extracted from content: %s", bool(extracted_title))
     logger.info("[publish_service] Content length: %d chars", len(post_content or ""))
-
-    # ---------------------------------------------------------------
-    # 3. Create slug
-    # ---------------------------------------------------------------
-    slug = build_post_slug(post_title, task_id)
 
     # ---------------------------------------------------------------
     # 4. Get author + category

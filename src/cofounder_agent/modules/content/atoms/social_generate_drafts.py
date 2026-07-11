@@ -61,7 +61,24 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         return {}
 
     title: str = state.get("title") or state.get("topic") or ""
-    slug: str = state.get("post_slug") or state.get("slug") or ""
+    # On canonical_blog the posts row does not exist yet — persist_task
+    # deliberately produces post_slug=None (posts are created on approve).
+    # Predict the FINAL publish slug through the same derive_publish_identity
+    # chain publish_post_from_task runs at approve time, so the URL baked
+    # into the copy is the URL the post actually goes live under. A real
+    # post_slug in state (existing-post flows) still wins. Before this,
+    # slug resolved to "" and every draft promoted the dead
+    # ``{site_url}/posts/`` index URL (social-drafts linking bug).
+    slug: str = state.get("post_slug") or ""
+    if not slug:
+        from services.publish_service import derive_publish_identity
+
+        _title, _content, slug = derive_publish_identity(
+            state.get("content") or "",
+            state.get("title") or "",
+            state.get("topic") or "",
+            pipeline_task_id,
+        )
     excerpt: str = state.get("excerpt") or state.get("seo_description") or ""
     keywords: list[str] = _parse_csv(state.get("seo_keywords") or "")
 

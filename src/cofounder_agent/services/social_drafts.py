@@ -7,9 +7,11 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
+from urllib.parse import urlparse
 
 from services.integrations.operator_notify import notify_operator
 from services.integrations.postiz_client import PostizClient
@@ -123,10 +125,20 @@ class SocialDraftsService:
         pool: Any,
         site_config: SiteConfig,
     ) -> dict[str, Any]:
-        """Approve a pending or failed draft: call Postiz immediately."""
+        """Approve a pending or failed draft: call Postiz immediately.
+
+        Post-link gate (social-drafts linking bug): approving pushes to the
+        platform NOW, so the blog post being promoted must already be live
+        (``posts.status='published'``) and the URL in the copy is verified /
+        repaired against the live posts row first. A blocked approve leaves
+        the draft ``pending`` — it is not a failure, so it neither consumes
+        ``RetryFailedSocialDraftsJob`` retries nor needs a reset; approve
+        again once the post is live.
+        """
         async with pool.acquire() as conn:
             row = await conn.fetchrow(
-                "SELECT id, platform, content, platform_config, status "
+                "SELECT id, pipeline_task_id, post_id, platform, content, "
+                "platform_config, status "
                 "FROM social_post_drafts WHERE id = $1",
                 draft_id,
             )
@@ -137,6 +149,53 @@ class SocialDraftsService:
                 "success": False,
                 "error": f"draft status={row['status']} cannot be approved",
             }
+
+        post = await _resolve_post(row, pool)
+        if post is None:
+            return {
+                "success": False,
+                "error": (
+                    f"no posts row for task {row['pipeline_task_id']} — "
+                    "publish the blog post first, then approve this draft "
+                    "(social posts go out immediately, so the promoted link "
+                    "must be live)"
+                ),
+            }
+        if post["status"] != "published":
+            return {
+                "success": False,
+                "error": (
+                    f"post {str(post['id'])[:8]} is status={post['status']!r}, "
+                    "not 'published' — the promoted link would 404. Wait for "
+                    "the scheduled publish (or publish now), then approve"
+                ),
+            }
+
+        # Verify/repair the promoted URL against the live posts row, then
+        # persist the repair + the post_id link on the draft before pushing.
+        content = row["content"]
+        site_url = (site_config.get("site_url", "") or "").rstrip("/")
+        if site_url:
+            canonical_url = f"{site_url}/posts/{post['slug']}"
+            content = _ensure_post_url(content, canonical_url, site_url)
+        if content != row["content"] or row["post_id"] is None:
+            async with pool.acquire() as conn:
+                await conn.execute(
+                    """
+                    UPDATE social_post_drafts
+                    SET content = $2, post_id = $3
+                    WHERE id = $1
+                    """,
+                    draft_id,
+                    content,
+                    post["id"],
+                )
+            if content != row["content"]:
+                logger.info(
+                    "[social_drafts] draft %s: repaired promoted URL → "
+                    "%s/posts/%s",
+                    draft_id[:8], site_url, post["slug"],
+                )
 
         platform = row["platform"]
         platform_config = _parse_jsonb(row["platform_config"])
@@ -167,7 +226,7 @@ class SocialDraftsService:
 
         result = await client.create_post(
             integration_id=integration_id,
-            content=row["content"],
+            content=content,
             platform_type=_PLATFORM_TYPE.get(platform) or platform,
             platform_settings=platform_settings,
             upload_ids=[],
@@ -267,12 +326,58 @@ class SocialDraftsService:
             )
 
 
+async def _resolve_post(draft_row: Any, pool: Any) -> Any:
+    """Resolve the posts row a draft promotes.
+
+    By ``post_id`` when already linked, else through the canonical
+    ``posts.metadata->>'pipeline_task_id'`` seam (stamped at insert by
+    ``publish_post_from_task``). Returns ``None`` when the post has not
+    been created yet (task still awaiting approval / staged-only).
+    """
+    async with pool.acquire() as conn:
+        if draft_row["post_id"]:
+            return await conn.fetchrow(
+                "SELECT id, slug, status FROM posts WHERE id = $1",
+                draft_row["post_id"],
+            )
+        return await conn.fetchrow(
+            """
+            SELECT id, slug, status FROM posts
+            WHERE metadata->>'pipeline_task_id' = $1
+            ORDER BY created_at DESC
+            LIMIT 1
+            """,
+            draft_row["pipeline_task_id"],
+        )
+
+
+def _ensure_post_url(content: str, canonical_url: str, site_url: str) -> str:
+    """Guarantee *content* promotes *canonical_url*.
+
+    Rewrites any existing ``{site_url}/posts/…`` URL — apex/www tolerant, so
+    it also catches the dead empty-slug ``…/posts/`` the pre-fix atom baked
+    in and any stale predicted slug after a title edit. Appends the URL when
+    the copy carries none: a promo post without a link is useless.
+    """
+    host = urlparse(site_url).netloc.removeprefix("www.")
+    if host:
+        pattern = re.compile(
+            rf"https?://(?:www\.)?{re.escape(host)}/posts/[^\s\"'<>()\[\]]*"
+        )
+        if pattern.search(content):
+            return pattern.sub(canonical_url, content)
+    if canonical_url in content:
+        return content
+    return f"{content.rstrip()} {canonical_url}".strip()
+
+
 async def _mark_posted(draft_id: str, postiz_post_id: str | None, pool: Any) -> None:
     async with pool.acquire() as conn:
         await conn.execute(
             """
             UPDATE social_post_drafts
-            SET status = 'posted', postiz_post_id = $2, posted_at = now()
+            SET status = 'posted', postiz_post_id = $2, posted_at = now(),
+                approved_at = COALESCE(approved_at, now())
             WHERE id = $1
             """,
             draft_id,

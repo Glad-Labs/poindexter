@@ -2,7 +2,7 @@
 
 **File:** `src/cofounder_agent/services/social_poster.py`
 **Tested by:** `src/cofounder_agent/tests/unit/services/test_social_poster.py`
-**Last reviewed:** 2026-06-30
+**Last reviewed:** 2026-07-10
 
 ## What it does
 
@@ -38,6 +38,21 @@ It does **not** distribute anything. `generate_social_posts` returns
 
 ## Key behaviors
 
+- **The promoted URL is the PREDICTED publish URL, verified at approve.**
+  On `canonical_blog` the posts row does not exist when drafts are generated
+  (`content.persist_task` produces `post_slug=None` — posts are created on
+  approve), so the `social.generate_drafts` atom derives the final slug
+  through `publish_service.derive_publish_identity` — the exact chain
+  `publish_post_from_task` runs at publish time (H1 from content → title →
+  topic, sanitized, + `-{task_id[:8]}`). `SocialDraftsService.approve_draft`
+  then enforces correctness at the last gate before the copy goes public:
+  it refuses to push unless the linked post exists **and is live**
+  (`posts.status='published'`, resolved via the
+  `posts.metadata->>'pipeline_task_id'` seam), rewrites any stale/dead
+  `…/posts/…` URL in the copy to the live slug, links `post_id`, and stamps
+  `approved_at`. (Before 2026-07-10 the atom read the always-`None`
+  `post_slug` from state, so every draft promoted the dead `…/posts/`
+  index URL — and approve pushed it as-is.)
 - **Twitter copy is reused for Bluesky + Mastodon.** Both are X-style
   short-form (Bluesky 300, Mastodon 500 chars), so the ≤280-char tweet fits
   both — no separate prompt or extra LLM call. The `social.generate_drafts`
