@@ -1137,6 +1137,12 @@ button {
      the pulse stays a compact glance; overflow scrolls within the column. */
   max-height: 260px;
   overflow-y: auto;
+  /* overflow-x MUST be explicit: a lone `overflow-y: auto` makes overflow-x
+     compute to `auto` too (CSS visible→auto quirk), turning the column into a
+     dual-axis scroll container. A hair of horizontal overflow then thrashes the
+     h-scrollbar against the vertical cap on hover ("spasming" cards). Clip x
+     like .main does. */
+  overflow-x: hidden;
 }
 .nowrun__col::-webkit-scrollbar {
   width: 6px;
