@@ -343,8 +343,8 @@ class MultiModelQA:
                     severity="warning",
                 )
         except Exception:
-            # Observability must never break the QA chain; write_bg is itself
-            # fire-and-forget, this guards the handle access too.
+            # silent-ok: observability guard — write_bg is fire-and-forget and the
+            # QA chain must never break on a telemetry write; guards handle access too.
             pass
 
     def _surface_reviewer_skip(
@@ -768,8 +768,11 @@ class MultiModelQA:
                         if _site_domain:
                             _internal_domains.add(_site_domain)
                             _internal_domains.add(f"www.{_site_domain}")
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        logger.warning(
+                            "[MULTI_QA] internal-domain resolution failed; "
+                            "using localhost-only fallback: %s", exc,
+                        )
                     _ext_urls = [
                         m.group(2) for m in _re.finditer(r'\[([^\]]*)\]\((https?://[^)]+)\)', content)
                         if _urlparse(m.group(2)).netloc.lower() not in _internal_domains
@@ -790,7 +793,7 @@ class MultiModelQA:
                     if citation_count:
                         logger.info("[MULTI_QA] URL verifier: %d verified citations (+%d bonus)", citation_count, citation_bonus)
             except Exception as e:
-                logger.debug("[MULTI_QA] URL verification skipped: %s", e)
+                logger.warning("[MULTI_QA] URL verification skipped: %s", e)
 
         # 2g. DeepEval brand-fabrication rail — first production wire-in
         # of DeepEval (sub-issue 1 of glad-labs-stack#329). Runs a
@@ -1032,7 +1035,7 @@ class MultiModelQA:
             from services.qa_gates_db_writer import record_chain_run
             await record_chain_run(self.pool, reviews)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("[MULTI_QA] qa_gates counter update skipped: %s", exc)
+            logger.warning("[MULTI_QA] qa_gates counter update skipped: %s", exc)
 
         # One audit row per QA pass with the full reviewer breakdown.
         # Powers the QA-rails Grafana dashboard (panels query
@@ -1067,7 +1070,7 @@ class MultiModelQA:
                     severity="info" if approved else "warning",
                 )
         except Exception as exc:  # noqa: BLE001
-            logger.debug("[MULTI_QA] qa_pass_completed audit skipped: %s", exc)
+            logger.warning("[MULTI_QA] qa_pass_completed audit skipped: %s", exc)
 
         logger.info("[MULTI_QA] %s — %s", title[:50], result.summary.split("\n")[0])
         return result
@@ -1133,7 +1136,7 @@ class MultiModelQA:
                         severity="warning",
                     )
             except Exception as _exc:
-                logger.debug("critic_fallback audit failed: %s", _exc)
+                logger.warning("critic_fallback audit failed: %s", _exc)
             fallback_result = await self._review_with_ollama(
                 title, content, topic,
                 model_override=fallback_model,
@@ -2280,7 +2283,7 @@ class MultiModelQA:
 
         try:
             import httpx
-        except Exception:
+        except Exception:  # silent-ok: httpx optional-import guard — vision QA degrades to skip
             return None
 
         # Download each image and base64-encode it for the Ollama chat API.
@@ -2306,7 +2309,7 @@ class MultiModelQA:
                         (url, base64.b64encode(img_bytes).decode("ascii"))
                     )
                 except Exception as e:
-                    logger.debug(
+                    logger.warning(
                         "[VISION_QA] image download failed for %s: %s",
                         url[:60], e,
                     )
@@ -2375,7 +2378,8 @@ class MultiModelQA:
             return None
         try:
             score_values = [float(s) for s in scores_list if isinstance(s, (int, float))]
-        except Exception:
+        except Exception as exc:
+            logger.warning("[VISION_QA] score coercion failed; skipping vision verdict: %s", exc)
             return None
         if not score_values:
             return None
@@ -2543,7 +2547,8 @@ class MultiModelQA:
 
         try:
             score = float(parsed.get("score", 0))
-        except Exception:
+        except Exception as exc:
+            logger.warning("[PREVIEW_QA] score coercion failed; skipping preview verdict: %s", exc)
             return None
         issues = parsed.get("issues") or []
         if not isinstance(issues, list):
