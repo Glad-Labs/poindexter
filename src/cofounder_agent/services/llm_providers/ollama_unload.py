@@ -4,7 +4,7 @@ The content pipeline keeps the writer LLM (~20 GB for ``gemma3:27b``)
 hot via Ollama's ``keep_alive`` default of 5 minutes. That is great for
 back-to-back LLM stages but creates a VRAM cliff at the boundary
 between ``quality_evaluation`` (last LLM stage) and
-``replace_inline_images`` / ``source_featured_image`` (the image-gen pair).
+``content.generate_images`` / ``source_featured_image`` (the image-gen pair).
 
 On a 32 GB card the writer (~20 GB) plus image-gen Lightning (~12 GB) hit
 ~98% VRAM during the ~30 s window the GPU scheduler takes to acquire
@@ -15,8 +15,8 @@ OOM-crashes the worker.
 ``_unload_ollama_models()`` when ``gpu.lock("image_gen", ...)`` is acquired,
 but Ollama treats ``keep_alive: 0`` as fire-and-forget — the API call
 returns immediately and the actual VRAM release is asynchronous. A
-``/generate`` request issued seconds later (the inline-image prompt
-build inside ``replace_inline_images``) can re-load a model before the
+``/generate`` request issued seconds later (the image-planning prompt
+build inside ``content.plan_image_markers``) can re-load a model before the
 prior unload has finished, leaving both resident.
 
 This helper provides a deterministic seam:
@@ -256,7 +256,7 @@ async def unload_loaded_ollama_models(
 async def maybe_unload_writer_before_image_gen(
     *,
     site_config: Any,
-    stage_label: str = "replace_inline_images",
+    stage_label: str = "content.plan_image_markers",
 ) -> list[str]:
     """Conditionally unload the writer LLM before an image-gen phase.
 
@@ -274,7 +274,7 @@ async def maybe_unload_writer_before_image_gen(
             pipeline stage context). Optional; missing config means we
             assume the default-on behavior.
         stage_label: Used in the success log line so operators can
-            grep ``[REPLACE_INLINE_IMAGES] Unloaded writer model``
+            grep ``[CONTENT.PLAN_IMAGE_MARKERS] Unloaded writer model``
             against task logs.
 
     Returns:
@@ -330,9 +330,9 @@ async def maybe_unload_writer_before_image_gen(
     )
 
     if unloaded:
-        # The log marker the verification step in the PR description
-        # looks for: ``[REPLACE_INLINE_IMAGES] Unloaded writer model X
-        # before image-gen phase``.
+        # The grep marker operators look for in worker logs to confirm the
+        # VRAM guard fired: ``[CONTENT.PLAN_IMAGE_MARKERS] Unloaded writer
+        # model X before image-gen phase``.
         detail = (
             f"confirm-poll, timeout={confirm_timeout:.0f}s"
             if confirm else f"blind grace={grace:.1f}s"

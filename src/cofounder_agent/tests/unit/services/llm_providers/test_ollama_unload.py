@@ -307,7 +307,7 @@ async def test_maybe_unload_no_ops_when_gate_disabled():
     ):
         unloaded = await maybe_unload_writer_before_image_gen(
             site_config=_site_config(unload_enabled=False),
-            stage_label="replace_inline_images",
+            stage_label="content.plan_image_markers",
         )
 
     assert unloaded == []
@@ -334,7 +334,7 @@ async def test_maybe_unload_runs_when_gate_enabled(caplog):
     ), caplog.at_level("INFO", logger="services.llm_providers.ollama_unload"):
         unloaded = await maybe_unload_writer_before_image_gen(
             site_config=_site_config(unload_enabled=True),
-            stage_label="replace_inline_images",
+            stage_label="content.plan_image_markers",
         )
 
     assert unloaded == ["gemma3:27b"]
@@ -342,9 +342,44 @@ async def test_maybe_unload_runs_when_gate_enabled(caplog):
     # fix is active.
     info_messages = [r.message for r in caplog.records if r.levelname == "INFO"]
     assert any(
-        "[REPLACE_INLINE_IMAGES] Unloaded writer model gemma3:27b" in msg
+        "[CONTENT.PLAN_IMAGE_MARKERS] Unloaded writer model gemma3:27b" in msg
         for msg in info_messages
     ), f"expected log marker, got: {info_messages}"
+
+
+@pytest.mark.asyncio
+async def test_maybe_unload_default_stage_label_uses_current_marker(caplog):
+    """With no explicit ``stage_label``, the default log marker is
+    ``[CONTENT.PLAN_IMAGE_MARKERS]`` — the sole production caller's node.
+
+    Regression guard: the default must not drift back to a deleted stage
+    name (the old ``replace_inline_images`` default referenced the removed
+    ReplaceInlineImagesStage, gone in #2329).
+    """
+    ps_resp = MagicMock()
+    ps_resp.status_code = 200
+    ps_resp.json = MagicMock(return_value={"models": [{"name": "gemma3:27b"}]})
+    client = _mock_http_client(ps_response=ps_resp)
+    # confirm-on: enumerate sees the model, first confirm poll sees it gone.
+    client.get = AsyncMock(side_effect=[ps_resp, _resp([])])
+
+    with patch(
+        "services.llm_providers.ollama_unload.httpx.AsyncClient",
+        return_value=client,
+    ), patch(
+        "services.llm_providers.ollama_unload.asyncio.sleep", new=AsyncMock(),
+    ), caplog.at_level("INFO", logger="services.llm_providers.ollama_unload"):
+        # No stage_label kwarg — exercise the default.
+        unloaded = await maybe_unload_writer_before_image_gen(
+            site_config=_site_config(unload_enabled=True),
+        )
+
+    assert unloaded == ["gemma3:27b"]
+    info_messages = [r.message for r in caplog.records if r.levelname == "INFO"]
+    assert any(
+        "[CONTENT.PLAN_IMAGE_MARKERS] Unloaded writer model gemma3:27b" in msg
+        for msg in info_messages
+    ), f"expected default marker, got: {info_messages}"
 
 
 @pytest.mark.asyncio
@@ -367,7 +402,7 @@ async def test_maybe_unload_threads_grace_seconds_from_settings():
             site_config=_site_config(
                 unload_enabled=True, grace_seconds=5, confirm_enabled=False,
             ),
-            stage_label="replace_inline_images",
+            stage_label="content.plan_image_markers",
         )
 
     sleep_mock.assert_awaited_once_with(5.0)
@@ -387,7 +422,7 @@ async def test_maybe_unload_defaults_to_on_when_site_config_missing():
     ):
         unloaded = await maybe_unload_writer_before_image_gen(
             site_config=None,
-            stage_label="replace_inline_images",
+            stage_label="content.plan_image_markers",
         )
 
     assert unloaded == []
