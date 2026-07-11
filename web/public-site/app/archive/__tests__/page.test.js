@@ -144,14 +144,18 @@ describe('Archive Page (/archive/[page])', () => {
       })
     );
     await renderPage();
-    const matches = screen.getAllByText(/nothing on this page yet|no articles/i);
+    const matches = screen.getAllByText(
+      /nothing on this page yet|no articles/i
+    );
     expect(matches.length).toBeGreaterThan(0);
   });
 
   test('handles fetch failure gracefully', async () => {
     global.fetch = jest.fn(() => Promise.reject(new Error('Network error')));
     await renderPage();
-    const matches = screen.getAllByText(/nothing on this page yet|no articles/i);
+    const matches = screen.getAllByText(
+      /nothing on this page yet|no articles/i
+    );
     expect(matches.length).toBeGreaterThan(0);
   });
 

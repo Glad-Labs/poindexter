@@ -50,14 +50,14 @@ describe('proxy markdown content negotiation (Cloudflare-safe)', () => {
 
     const body = await res.text();
     expect(body).toContain(
-      '# PII leaks and the three-stage shakedown of X distribution',
+      '# PII leaks and the three-stage shakedown of X distribution'
     );
   });
 
   test('Accept: text/markdown on the HTML URL returns NON-cacheable markdown', async () => {
     mockFetchOk();
     const res = await proxy(
-      req('https://www.gladlabs.io/posts/pii-leaks', 'text/markdown'),
+      req('https://www.gladlabs.io/posts/pii-leaks', 'text/markdown')
     );
 
     expect(res.headers.get('content-type')).toMatch(/text\/markdown/);
@@ -71,7 +71,7 @@ describe('proxy markdown content negotiation (Cloudflare-safe)', () => {
   test('browser (Accept: text/html) passes through to HTML, not markdown', async () => {
     mockFetchOk();
     const res = await proxy(
-      req('https://www.gladlabs.io/posts/pii-leaks', 'text/html'),
+      req('https://www.gladlabs.io/posts/pii-leaks', 'text/html')
     );
 
     expect(res.headers.get('content-type') ?? '').not.toMatch(/text\/markdown/);
@@ -114,7 +114,7 @@ describe('proxy /robots.txt Content-Signal append', () => {
     // funnel for Poindexter: models training on it and answer engines grounding
     // on it are distribution, so the site declares yes on all three signals.
     expect(body).toContain(
-      'Content-Signal: ai-train=yes, search=yes, ai-input=yes',
+      'Content-Signal: ai-train=yes, search=yes, ai-input=yes'
     );
 
     // The self-fetch carries the recursion-guard bypass header.
@@ -128,7 +128,7 @@ describe('proxy /robots.txt Content-Signal append', () => {
     const res = await proxy(
       new NextRequest('https://www.gladlabs.io/robots.txt', {
         headers: { accept: '*/*', 'x-proxy-bypass': '1' },
-      }),
+      })
     );
 
     // No re-fetch, no appended body — the metadata route serves it directly.
@@ -139,7 +139,9 @@ describe('proxy /robots.txt Content-Signal append', () => {
   test('upstream failure falls through to the unmodified metadata route', async () => {
     global.fetch = jest
       .fn()
-      .mockRejectedValue(new Error('edge fetch failed')) as unknown as typeof fetch;
+      .mockRejectedValue(
+        new Error('edge fetch failed')
+      ) as unknown as typeof fetch;
 
     const res = await proxy(req('https://www.gladlabs.io/robots.txt'));
 

@@ -60,7 +60,9 @@ export async function generateMetadata({
       type: 'website',
       // Next.js does not inherit the root layout's og:image when a page sets
       // its own openGraph, so include the site default explicitly (audit #7).
-      images: [{ url: '/og-image.jpg', width: 1200, height: 630, alt: SITE_NAME }],
+      images: [
+        { url: '/og-image.jpg', width: 1200, height: 630, alt: SITE_NAME },
+      ],
     },
   };
 }
@@ -95,8 +97,8 @@ export default async function ArchivePage({ params }: ArchivePageProps) {
             The <Display.Accent>archive.</Display.Accent>
           </Display>
           <p className="gl-body gl-body--lg mt-4 max-w-2xl">
-            Every article we&apos;ve published. In-depth dives across AI, hardware,
-            and the edges where they meet.
+            Every article we&apos;ve published. In-depth dives across AI,
+            hardware, and the edges where they meet.
           </p>
         </div>
       </section>
@@ -119,67 +121,70 @@ export default async function ArchivePage({ params }: ArchivePageProps) {
                   const title = cleanPostTitle(post.title);
                   const excerpt = postExcerpt(post, 140);
                   return (
-                  <Card key={post.id} className="group flex flex-col h-full overflow-hidden p-0">
-                    {imageUrl && (
-                      <div className="relative w-full aspect-video overflow-hidden bg-[var(--gl-surface)]">
-                        <Image
-                          src={imageUrl}
-                          alt=""
-                          fill
-                          className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                        />
-                      </div>
-                    )}
-                    <div className="flex flex-col justify-between flex-1 p-6">
-                      <div>
-                        <Card.Meta>
-                          {post.published_at ? (
-                            <time dateTime={post.published_at}>
-                              {new Date(post.published_at).toLocaleDateString(
-                                'en-US',
-                                {
-                                  year: 'numeric',
-                                  month: 'short',
-                                  day: 'numeric',
-                                }
-                              )}
-                            </time>
+                    <Card
+                      key={post.id}
+                      className="group flex flex-col h-full overflow-hidden p-0"
+                    >
+                      {imageUrl && (
+                        <div className="relative w-full aspect-video overflow-hidden bg-[var(--gl-surface)]">
+                          <Image
+                            src={imageUrl}
+                            alt=""
+                            fill
+                            className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                          />
+                        </div>
+                      )}
+                      <div className="flex flex-col justify-between flex-1 p-6">
+                        <div>
+                          <Card.Meta>
+                            {post.published_at ? (
+                              <time dateTime={post.published_at}>
+                                {new Date(post.published_at).toLocaleDateString(
+                                  'en-US',
+                                  {
+                                    year: 'numeric',
+                                    month: 'short',
+                                    day: 'numeric',
+                                  }
+                                )}
+                              </time>
+                            ) : null}
+                            {post.view_count > 0 ? (
+                              <>
+                                <span aria-hidden> · </span>
+                                <span>{post.view_count} views</span>
+                              </>
+                            ) : null}
+                          </Card.Meta>
+                          <Card.Title>
+                            <Link
+                              href={`/posts/${post.slug}`}
+                              className="hover:text-[color:var(--gl-cyan)] transition-colors"
+                            >
+                              {title}
+                            </Link>
+                          </Card.Title>
+                          {excerpt ? (
+                            <Card.Body className="line-clamp-3 mt-2">
+                              {excerpt}
+                            </Card.Body>
                           ) : null}
-                          {post.view_count > 0 ? (
-                            <>
-                              <span aria-hidden> · </span>
-                              <span>{post.view_count} views</span>
-                            </>
-                          ) : null}
-                        </Card.Meta>
-                        <Card.Title>
+                        </div>
+                        <div className="pt-4 mt-4 border-t border-[color:var(--gl-hairline)]">
                           <Link
                             href={`/posts/${post.slug}`}
-                            className="hover:text-[color:var(--gl-cyan)] transition-colors"
+                            className="gl-mono gl-mono--accent gl-mono--upper inline-flex items-center gap-2 hover:opacity-80 transition-opacity"
+                            aria-hidden="true"
+                            tabIndex={-1}
                           >
-                            {title}
+                            Read article
+                            <span aria-hidden>→</span>
                           </Link>
-                        </Card.Title>
-                        {excerpt ? (
-                          <Card.Body className="line-clamp-3 mt-2">
-                            {excerpt}
-                          </Card.Body>
-                        ) : null}
+                        </div>
                       </div>
-                      <div className="pt-4 mt-4 border-t border-[color:var(--gl-hairline)]">
-                        <Link
-                          href={`/posts/${post.slug}`}
-                          className="gl-mono gl-mono--accent gl-mono--upper inline-flex items-center gap-2 hover:opacity-80 transition-opacity"
-                          aria-hidden="true"
-                          tabIndex={-1}
-                        >
-                          Read article
-                          <span aria-hidden>→</span>
-                        </Link>
-                      </div>
-                    </div>
-                  </Card>
+                    </Card>
                   );
                 })}
               </div>

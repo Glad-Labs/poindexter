@@ -116,7 +116,11 @@ export default async function AuthorPage({
                           <time dateTime={post.published_at}>
                             {new Date(post.published_at).toLocaleDateString(
                               'en-US',
-                              { year: 'numeric', month: 'short', day: 'numeric' },
+                              {
+                                year: 'numeric',
+                                month: 'short',
+                                day: 'numeric',
+                              }
                             )}
                           </time>
                         ) : null}

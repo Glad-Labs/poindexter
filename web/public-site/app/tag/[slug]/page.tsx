@@ -153,71 +153,74 @@ export default async function TagPage({
                   card <h3> titles from skipping h1 -> h3 (#974). */}
               <h2 className="sr-only">Articles tagged {tag}</h2>
               <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {posts.map((post) => {
-                const imageUrl = postFeaturedImage(post);
-                const publishDate = post.published_at || post.created_at;
-                return (
-                  <Card
-                    key={post.id}
-                    className="group flex flex-col h-full overflow-hidden p-0"
-                  >
-                    {imageUrl && (
-                      <div className="relative w-full aspect-video overflow-hidden bg-[var(--gl-surface)]">
-                        <Image
-                          src={imageUrl}
-                          alt={post.title}
-                          fill
-                          className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                          sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
-                        />
-                      </div>
-                    )}
-                    <div className="flex flex-col justify-between flex-1 p-6">
-                      <div>
-                        <Card.Meta>
-                          <time dateTime={publishDate}>
-                            {new Date(publishDate).toLocaleDateString('en-US', {
-                              year: 'numeric',
-                              month: 'short',
-                              day: 'numeric',
-                            })}
-                          </time>
-                          {post.view_count > 0 ? (
-                            <>
-                              <span aria-hidden> · </span>
-                              <span>{post.view_count} views</span>
-                            </>
+                {posts.map((post) => {
+                  const imageUrl = postFeaturedImage(post);
+                  const publishDate = post.published_at || post.created_at;
+                  return (
+                    <Card
+                      key={post.id}
+                      className="group flex flex-col h-full overflow-hidden p-0"
+                    >
+                      {imageUrl && (
+                        <div className="relative w-full aspect-video overflow-hidden bg-[var(--gl-surface)]">
+                          <Image
+                            src={imageUrl}
+                            alt={post.title}
+                            fill
+                            className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                            sizes="(max-width: 768px) 100vw, (max-width: 1200px) 50vw, 33vw"
+                          />
+                        </div>
+                      )}
+                      <div className="flex flex-col justify-between flex-1 p-6">
+                        <div>
+                          <Card.Meta>
+                            <time dateTime={publishDate}>
+                              {new Date(publishDate).toLocaleDateString(
+                                'en-US',
+                                {
+                                  year: 'numeric',
+                                  month: 'short',
+                                  day: 'numeric',
+                                }
+                              )}
+                            </time>
+                            {post.view_count > 0 ? (
+                              <>
+                                <span aria-hidden> · </span>
+                                <span>{post.view_count} views</span>
+                              </>
+                            ) : null}
+                          </Card.Meta>
+                          <Card.Title>
+                            <Link
+                              href={`/posts/${post.slug}`}
+                              className="hover:text-[color:var(--gl-cyan)] transition-colors"
+                            >
+                              {post.title}
+                            </Link>
+                          </Card.Title>
+                          {post.excerpt ? (
+                            <Card.Body className="line-clamp-3 mt-2">
+                              {post.excerpt}
+                            </Card.Body>
                           ) : null}
-                        </Card.Meta>
-                        <Card.Title>
+                        </div>
+                        <div className="pt-4 mt-4 border-t border-[color:var(--gl-hairline)]">
                           <Link
                             href={`/posts/${post.slug}`}
-                            className="hover:text-[color:var(--gl-cyan)] transition-colors"
+                            className="gl-mono gl-mono--accent gl-mono--upper inline-flex items-center gap-2 hover:opacity-80 transition-opacity"
+                            aria-hidden="true"
+                            tabIndex={-1}
                           >
-                            {post.title}
+                            Read article
+                            <span aria-hidden>→</span>
                           </Link>
-                        </Card.Title>
-                        {post.excerpt ? (
-                          <Card.Body className="line-clamp-3 mt-2">
-                            {post.excerpt}
-                          </Card.Body>
-                        ) : null}
+                        </div>
                       </div>
-                      <div className="pt-4 mt-4 border-t border-[color:var(--gl-hairline)]">
-                        <Link
-                          href={`/posts/${post.slug}`}
-                          className="gl-mono gl-mono--accent gl-mono--upper inline-flex items-center gap-2 hover:opacity-80 transition-opacity"
-                          aria-hidden="true"
-                          tabIndex={-1}
-                        >
-                          Read article
-                          <span aria-hidden>→</span>
-                        </Link>
-                      </div>
-                    </div>
-                  </Card>
-                );
-              })}
+                    </Card>
+                  );
+                })}
               </div>
             </>
           )}

@@ -9,11 +9,7 @@
 
 import { NextResponse } from 'next/server';
 import { SITE_NAME, SITE_URL } from '@/lib/site.config';
-import {
-  sortPostsNewestFirst,
-  cleanPostTitle,
-  postExcerpt,
-} from '@/lib/posts';
+import { sortPostsNewestFirst, cleanPostTitle, postExcerpt } from '@/lib/posts';
 
 // Time-based ISR backstop (1h), matching podcast-feed.xml / video-feed.xml.
 // On-demand revalidateTag('posts') on publish is primary; this floor
@@ -151,7 +147,7 @@ ${items}
         'Cache-Control': 'public, max-age=3600, s-maxage=3600',
       },
     });
-  } catch (error) {
+  } catch (_error) {
     // Return a minimal valid RSS feed on error
     return new NextResponse(
       `<?xml version="1.0" encoding="UTF-8"?>

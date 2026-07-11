@@ -8,19 +8,30 @@
  */
 
 export const SITE_NAME = process.env.NEXT_PUBLIC_SITE_NAME || 'Glad Labs';
-export const SITE_URL = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io';
+export const SITE_URL =
+  process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io';
 export const SITE_DOMAIN = process.env.NEXT_PUBLIC_SITE_DOMAIN || 'gladlabs.io';
-export const SITE_TAGLINE = process.env.NEXT_PUBLIC_SITE_TAGLINE || 'Technology & Innovation';
-export const SITE_DESCRIPTION = process.env.NEXT_PUBLIC_SITE_DESCRIPTION || 'One person + AI = unlimited scale';
+export const SITE_TAGLINE =
+  process.env.NEXT_PUBLIC_SITE_TAGLINE || 'Technology & Innovation';
+export const SITE_DESCRIPTION =
+  process.env.NEXT_PUBLIC_SITE_DESCRIPTION ||
+  'One person + AI = unlimited scale';
 
-export const COMPANY_NAME = process.env.NEXT_PUBLIC_COMPANY_NAME || 'Glad Labs, LLC';
-export const SUPPORT_EMAIL = process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'hello@gladlabs.io';
-export const PRIVACY_EMAIL = process.env.NEXT_PUBLIC_PRIVACY_EMAIL || 'privacy@gladlabs.io';
-export const OWNER_EMAIL = process.env.NEXT_PUBLIC_OWNER_EMAIL || 'hello@gladlabs.io';
-export const NEWSLETTER_EMAIL = process.env.NEXT_PUBLIC_NEWSLETTER_EMAIL || 'newsletter@gladlabs.io';
+export const COMPANY_NAME =
+  process.env.NEXT_PUBLIC_COMPANY_NAME || 'Glad Labs, LLC';
+export const SUPPORT_EMAIL =
+  process.env.NEXT_PUBLIC_SUPPORT_EMAIL || 'hello@gladlabs.io';
+export const PRIVACY_EMAIL =
+  process.env.NEXT_PUBLIC_PRIVACY_EMAIL || 'privacy@gladlabs.io';
+export const OWNER_EMAIL =
+  process.env.NEXT_PUBLIC_OWNER_EMAIL || 'hello@gladlabs.io';
+export const NEWSLETTER_EMAIL =
+  process.env.NEXT_PUBLIC_NEWSLETTER_EMAIL || 'newsletter@gladlabs.io';
 
-export const PODCAST_NAME = process.env.NEXT_PUBLIC_PODCAST_NAME || 'Glad Labs Podcast';
-export const VIDEO_FEED_NAME = process.env.NEXT_PUBLIC_VIDEO_FEED_NAME || 'Glad Labs Video';
+export const PODCAST_NAME =
+  process.env.NEXT_PUBLIC_PODCAST_NAME || 'Glad Labs Podcast';
+export const VIDEO_FEED_NAME =
+  process.env.NEXT_PUBLIC_VIDEO_FEED_NAME || 'Glad Labs Video';
 
 // Google AdSense — publisher ID + the in-content ad slot used at the bottom of
 // each post. Both come from NEXT_PUBLIC_* env so a fork can drop in its own
@@ -31,5 +42,6 @@ export const VIDEO_FEED_NAME = process.env.NEXT_PUBLIC_VIDEO_FEED_NAME || 'Glad 
 // unit in the AdSense dashboard and set NEXT_PUBLIC_ADSENSE_SLOT_ID to its slot
 // ID; the bottom-of-post <ins> then renders and the consent-gated loader
 // (CookieConsentBanner) fills it.
-export const ADSENSE_ID = process.env.NEXT_PUBLIC_ADSENSE_ID || 'ca-pub-4578747062758519';
+export const ADSENSE_ID =
+  process.env.NEXT_PUBLIC_ADSENSE_ID || 'ca-pub-4578747062758519';
 export const ADSENSE_SLOT_ID = process.env.NEXT_PUBLIC_ADSENSE_SLOT_ID || '';

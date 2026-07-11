@@ -22,7 +22,9 @@ export const metadata: Metadata = {
     title: `Dev Diary — ${SITE_NAME}`,
     description: 'Daily founder notes from building Glad Labs.',
     type: 'website',
-    images: [{ url: '/og-image.jpg', width: 1200, height: 630, alt: SITE_NAME }],
+    images: [
+      { url: '/og-image.jpg', width: 1200, height: 630, alt: SITE_NAME },
+    ],
   },
 };
 
@@ -45,8 +47,8 @@ export default async function DevDiaryPage() {
             The <Display.Accent>diary.</Display.Accent>
           </Display>
           <p className="gl-body gl-body--lg mt-4 max-w-2xl">
-            Daily founder notes from building Glad Labs — raw progress, decisions,
-            and what broke today.
+            Daily founder notes from building Glad Labs — raw progress,
+            decisions, and what broke today.
           </p>
         </div>
       </section>
@@ -89,7 +91,7 @@ export default async function DevDiaryPage() {
                                     year: 'numeric',
                                     month: 'short',
                                     day: 'numeric',
-                                  },
+                                  }
                                 )}
                               </time>
                             ) : null}

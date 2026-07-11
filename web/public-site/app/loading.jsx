@@ -23,7 +23,9 @@ export default function Loading() {
         className="gl-mono gl-mono--upper motion-safe:animate-pulse"
         style={{ color: 'var(--gl-text-muted)', letterSpacing: '0.18em' }}
       >
-        <span aria-hidden style={{ color: 'var(--gl-cyan)' }}>{'// '}</span>
+        <span aria-hidden style={{ color: 'var(--gl-cyan)' }}>
+          {'// '}
+        </span>
         Fetching posts
       </p>
     </div>

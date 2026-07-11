@@ -42,8 +42,12 @@ function initLogDir() {
     return _logDir;
   }
   try {
-    const fs = require(/* webpackIgnore: true */ /* turbopackIgnore: true */ 'fs');
-    const path = require(/* webpackIgnore: true */ /* turbopackIgnore: true */ 'path');
+    const fs = require(
+      /* webpackIgnore: true */ /* turbopackIgnore: true */ 'fs'
+    );
+    const path = require(
+      /* webpackIgnore: true */ /* turbopackIgnore: true */ 'path'
+    );
     const dir = path.join(process.cwd(), 'logs');
     if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
     _logDir = dir;
@@ -82,8 +86,12 @@ function writeToFile(filename, line) {
     return;
   }
   try {
-    const fs = require(/* webpackIgnore: true */ /* turbopackIgnore: true */ 'fs');
-    const path = require(/* webpackIgnore: true */ /* turbopackIgnore: true */ 'path');
+    const fs = require(
+      /* webpackIgnore: true */ /* turbopackIgnore: true */ 'fs'
+    );
+    const path = require(
+      /* webpackIgnore: true */ /* turbopackIgnore: true */ 'path'
+    );
     fs.appendFileSync(path.join(_logDir, filename), line + '\n');
   } catch (_) {
     process.stdout && process.stdout.write(line + '\n');

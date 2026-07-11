@@ -10,7 +10,7 @@ import { useEffect } from 'react';
 const SITE_URL =
   typeof window !== 'undefined'
     ? window.location.origin
-    : (process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io');
+    : process.env.NEXT_PUBLIC_SITE_URL || 'https://www.gladlabs.io';
 
 export default function WebMCP() {
   useEffect(() => {
@@ -34,7 +34,8 @@ export default function WebMCP() {
               },
               limit: {
                 type: 'integer',
-                description: 'Maximum number of posts to return (default 10, max 50)',
+                description:
+                  'Maximum number of posts to return (default 10, max 50)',
                 default: 10,
               },
             },

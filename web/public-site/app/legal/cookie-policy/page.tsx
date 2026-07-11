@@ -32,10 +32,11 @@ export default function CookiePolicy() {
       </p>
 
       <p>
-        This is the cookie policy for <a href={SITE_URL}>{SITE_URL.replace('https://', '')}</a>,
-        operated by {COMPANY_NAME}. We try to be straightforward here — no
-        walls of legalese, just an honest explanation of what cookies and
-        third-party services our site uses and why.
+        This is the cookie policy for{' '}
+        <a href={SITE_URL}>{SITE_URL.replace('https://', '')}</a>, operated by{' '}
+        {COMPANY_NAME}. We try to be straightforward here — no walls of
+        legalese, just an honest explanation of what cookies and third-party
+        services our site uses and why.
       </p>
 
       <h2>1. What Are Cookies?</h2>
@@ -98,10 +99,10 @@ export default function CookiePolicy() {
       <ul>
         <li>
           <strong>Google Analytics 4 (GA4)</strong> — loaded dynamically after
-          consent. Sets cookies like <code>_ga</code> and <code>_ga_*</code>{' '}
-          to track page views and usage patterns. These cookies last up to 2
-          years. If you reject analytics, the GA script is never loaded and
-          no GA cookies are set.
+          consent. Sets cookies like <code>_ga</code> and <code>_ga_*</code> to
+          track page views and usage patterns. These cookies last up to 2 years.
+          If you reject analytics, the GA script is never loaded and no GA
+          cookies are set.
         </li>
       </ul>
 
@@ -109,9 +110,9 @@ export default function CookiePolicy() {
       <p>These are only activated if you opt in:</p>
       <ul>
         <li>
-          <strong>Google AdSense</strong> — may serve ads and set cookies for
-          ad personalization. The AdSense script is not loaded unless you
-          consent to advertising cookies.
+          <strong>Google AdSense</strong> — may serve ads and set cookies for ad
+          personalization. The AdSense script is not loaded unless you consent
+          to advertising cookies.
         </li>
       </ul>
 
@@ -123,9 +124,9 @@ export default function CookiePolicy() {
       <ul>
         <li>
           <strong>Giscus</strong> — powers the comment system on blog posts.
-          Loads a script from <code>giscus.app</code> which connects to
-          GitHub Discussions. If you interact with comments, Giscus and
-          GitHub may set their own cookies. We do not control those.
+          Loads a script from <code>giscus.app</code> which connects to GitHub
+          Discussions. If you interact with comments, Giscus and GitHub may set
+          their own cookies. We do not control those.
         </li>
         <li>
           <strong>Pexels</strong> — some images on the site are served from
@@ -198,14 +199,14 @@ export default function CookiePolicy() {
       <ul>
         <li>
           We do not load Google Analytics or AdSense scripts unless you
-          explicitly consent. If you reject all, those scripts never touch
-          your browser.
+          explicitly consent. If you reject all, those scripts never touch your
+          browser.
         </li>
         <li>We do not sell your personal data.</li>
         <li>We do not use third-party ad networks without your consent.</li>
         <li>
-          We do not use fingerprinting or any other tracking that bypasses
-          your cookie preferences.
+          We do not use fingerprinting or any other tracking that bypasses your
+          cookie preferences.
         </li>
       </ul>
 
@@ -217,34 +218,33 @@ export default function CookiePolicy() {
           banner will reappear on your next visit.
         </li>
         <li>
-          Use your browser&apos;s built-in cookie controls to delete any
-          cookies set by third parties.
+          Use your browser&apos;s built-in cookie controls to delete any cookies
+          set by third parties.
         </li>
         <li>
-          Contact us at{' '}
-          <a href={`mailto:${PRIVACY_EMAIL}`}>{PRIVACY_EMAIL}</a> if you need
-          help.
+          Contact us at <a href={`mailto:${PRIVACY_EMAIL}`}>{PRIVACY_EMAIL}</a>{' '}
+          if you need help.
         </li>
       </ul>
 
       <h2>7. Your Rights</h2>
       <p>
         <strong>If you are in the EU (GDPR):</strong> You have the right to
-        access, rectify, erase, restrict, port, and object to processing of
-        your personal data. You can withdraw consent at any time without
-        affecting the lawfulness of prior processing. You also have the right
-        to lodge a complaint with your local Data Protection Authority.
+        access, rectify, erase, restrict, port, and object to processing of your
+        personal data. You can withdraw consent at any time without affecting
+        the lawfulness of prior processing. You also have the right to lodge a
+        complaint with your local Data Protection Authority.
       </p>
       <p>
-        <strong>If you are in California (CCPA):</strong> You have the right
-        to know what personal information is collected, request its deletion,
-        and opt out of its sale. We do not sell personal information.
+        <strong>If you are in California (CCPA):</strong> You have the right to
+        know what personal information is collected, request its deletion, and
+        opt out of its sale. We do not sell personal information.
       </p>
 
       <h2>8. Data Processors</h2>
       <p>
-        When you consent to analytics or advertising, your data may be
-        processed by:
+        When you consent to analytics or advertising, your data may be processed
+        by:
       </p>
       <ul>
         <li>
@@ -261,16 +261,16 @@ export default function CookiePolicy() {
         </li>
         <li>
           <strong>Lemon Squeezy LLC</strong> — processes payments as our
-          merchant of record. May set cookies for fraud prevention and
-          checkout session management when you make a purchase.
+          merchant of record. May set cookies for fraud prevention and checkout
+          session management when you make a purchase.
         </li>
       </ul>
 
       <h2>9. Updates to This Policy</h2>
       <p>
-        If we change this policy, we will update the date at the top. We are
-        not going to email you about cookie policy changes — just check back
-        here if you are curious.
+        If we change this policy, we will update the date at the top. We are not
+        going to email you about cookie policy changes — just check back here if
+        you are curious.
       </p>
 
       <h2>10. Contact</h2>

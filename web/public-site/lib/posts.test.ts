@@ -227,7 +227,7 @@ describe('Posts API (lib/posts.ts)', () => {
         postFeaturedImage({
           featured_image_url: 'https://cdn/featured.jpg',
           cover_image_url: 'https://cdn/cover.jpg',
-        }),
+        })
       ).toBe('https://cdn/featured.jpg');
     });
 
@@ -236,7 +236,7 @@ describe('Posts API (lib/posts.ts)', () => {
         postFeaturedImage({
           featured_image_url: undefined,
           cover_image_url: 'https://cdn/cover.jpg',
-        }),
+        })
       ).toBe('https://cdn/cover.jpg');
     });
 
@@ -245,7 +245,7 @@ describe('Posts API (lib/posts.ts)', () => {
         postFeaturedImage({
           featured_image_url: '',
           cover_image_url: 'https://cdn/cover.jpg',
-        }),
+        })
       ).toBe('https://cdn/cover.jpg');
     });
 
@@ -254,7 +254,7 @@ describe('Posts API (lib/posts.ts)', () => {
         postFeaturedImage({
           featured_image_url: undefined,
           cover_image_url: undefined,
-        }),
+        })
       ).toBeNull();
     });
   });

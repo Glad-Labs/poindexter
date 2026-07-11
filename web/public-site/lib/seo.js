@@ -36,10 +36,7 @@ export function buildSEOTitle(title, siteName = SITE_NAME) {
 /**
  * Generate canonical URL to prevent duplicate content issues
  */
-export function generateCanonicalURL(
-  slug,
-  baseURL = SITE_URL
-) {
+export function generateCanonicalURL(slug, baseURL = SITE_URL) {
   if (!slug) return baseURL;
 
   // Ensure slug doesn't have leading/trailing slashes

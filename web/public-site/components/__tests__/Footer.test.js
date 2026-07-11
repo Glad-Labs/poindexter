@@ -10,7 +10,11 @@ import Footer from '../Footer';
 
 // Mock Next.js Link — spread all props so aria-label and other a11y attrs pass through
 jest.mock('next/link', () => {
-  return ({ children, href, ...rest }) => <a href={href} {...rest}>{children}</a>;
+  return ({ children, href, ...rest }) => (
+    <a href={href} {...rest}>
+      {children}
+    </a>
+  );
 });
 
 describe('Footer Component', () => {

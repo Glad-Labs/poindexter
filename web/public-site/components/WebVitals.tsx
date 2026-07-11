@@ -34,7 +34,7 @@ function sendToGoogleAnalytics({
   value: number;
   id: string;
 }) {
-  type WGtag = { gtag?: (...args: unknown[]) => void };
+  type WGtag = { gtag?: (..._args: unknown[]) => void };
   const w = window as unknown as WGtag;
   if (typeof window === 'undefined' || !w.gtag) return;
   w.gtag('event', name, {

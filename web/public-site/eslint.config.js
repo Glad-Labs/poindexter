@@ -83,7 +83,14 @@ export default [
       '@next/next/no-html-link-for-pages': 'off',
       '@next/next/no-img-element': 'warn',
       'no-console': 'error',
-      'no-unused-vars': ['warn', { argsIgnorePattern: '^_', varsIgnorePattern: '^_', caughtErrorsIgnorePattern: '^_' }],
+      'no-unused-vars': [
+        'warn',
+        {
+          argsIgnorePattern: '^_',
+          varsIgnorePattern: '^_',
+          caughtErrorsIgnorePattern: '^_',
+        },
+      ],
       'no-useless-escape': 'off',
       'no-unreachable': 'warn',
       'no-undef': 'warn',
@@ -123,6 +130,15 @@ export default [
       parserOptions: {
         ecmaFeatures: { jsx: true },
       },
+    },
+    rules: {
+      // `no-undef` is redundant on TypeScript and misfires on it: the TS
+      // compiler already reports undefined names, and type-only references to
+      // ambient namespaces like `React` (e.g. `React.ReactNode` /
+      // `React.CSSProperties`, used without a runtime import under the
+      // automatic JSX runtime) are false positives. typescript-eslint's own
+      // guidance is to turn `no-undef` off for TS files.
+      'no-undef': 'off',
     },
   },
   // Test files - disable img element warning for mocks

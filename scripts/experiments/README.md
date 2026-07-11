@@ -4,7 +4,7 @@ One question, answered honestly: **on the same topic and the same production
 prompt, how much better is a cloud model than the local model you ship today —
 and does the local model clear the bar of "publishable" at all?**
 
-It swaps *only the model*. Same prompt (pulled straight from
+It swaps _only the model_. Same prompt (pulled straight from
 `skills/content/two-pass-writer/SKILL.md`), same topic, angle, snippets, and
 length for every contender. You score the writing **blind** — the model
 identity is hidden until you run `reveal` — so your hope for the local model
@@ -13,7 +13,7 @@ can't tip the result.
 It deliberately tests the **draft stage** only. That's the clean signal for
 model quality: downstream revise/expand/QA are the same regardless of which
 model wrote the draft. If the raw draft is junk, nothing downstream saves it;
-if it's good, any remaining junk is a *pipeline* problem, not a *model* one.
+if it's good, any remaining junk is a _pipeline_ problem, not a _model_ one.
 
 ## Setup
 
@@ -27,11 +27,11 @@ if it's good, any remaining junk is a *pipeline* problem, not a *model* one.
 Edit `DEFAULT_MODELS` at the top of `ab_writer_test.py` (or pass your own with
 `--models a_models.json`):
 
-| label       | why it's here                                                        |
-|-------------|----------------------------------------------------------------------|
-| `local-27b` | what you ship today (`gemma3:27b`, ~5090-class hardware)              |
-| `local-8b`  | the **honest** everyday-hardware tier (~8GB VRAM). The real mission test: can the model a poor person can *actually* run clear the bar? |
-| `cloud`     | the ceiling. **Set the exact Anthropic model id your account accepts** before running. |
+| label       | why it's here                                                                                                                           |
+| ----------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `local-27b` | what you ship today (`gemma3:27b`, ~5090-class hardware)                                                                                |
+| `local-8b`  | the **honest** everyday-hardware tier (~8GB VRAM). The real mission test: can the model a poor person can _actually_ run clear the bar? |
+| `cloud`     | the ceiling. **Set the exact Anthropic model id your account accepts** before running.                                                  |
 
 The gap between `local-8b` and `cloud` is the mission question. The gap between
 `local-27b` and `cloud` is the "how much am I leaving on the table on my own
@@ -61,7 +61,7 @@ Don't just ask "which won" — cloud will probably win today. Ask:
 
 1. **Does `local-8b` (or `local-27b`) clear "publishable" on its own?** If yes,
    the mission is alive on today's hardware — ship local-first and keep cloud
-   as an optional tier. If no, build cloud-first *now* to earn credibility and
+   as an optional tier. If no, build cloud-first _now_ to earn credibility and
    revenue, and keep the local tier warming up as models improve.
 2. **How big is the gap?** A small gap means local is a genuine choice. A large
    gap means "$0 infra" is currently costing you the whole business.
@@ -74,4 +74,4 @@ Copy `topics.example.json`. Each entry: `topic`, `angle`, optional
 `target_length` (default 1200), optional `extra_instructions`, optional
 `snippets` (`[{ "source": "...", "text": "..." }]` — the background/RAG context
 the writer grounds itself in). For the fairest test, use topics your pipeline
-*actually* produced junk on, with the real snippets it had.
+_actually_ produced junk on, with the real snippets it had.

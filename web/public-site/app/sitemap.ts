@@ -62,7 +62,7 @@ async function fetchPublishedContent() {
     if (res.ok) return true;
     if (res.status === 404) return false;
     const err = new Error(
-      `fetchPublishedContent(${label}): R2 returned ${res.status} ${res.statusText}`,
+      `fetchPublishedContent(${label}): R2 returned ${res.status} ${res.statusText}`
     );
     Sentry.captureException(err);
     throw err;

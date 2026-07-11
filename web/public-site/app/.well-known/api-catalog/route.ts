@@ -20,7 +20,7 @@ export async function GET() {
             title: 'Glad Labs API Documentation',
           },
         ],
-        'describedby': [
+        describedby: [
           {
             href: `${base}/auth.md`,
             type: 'text/markdown',

@@ -157,9 +157,7 @@ export default async function CategoryPage({
           {posts.length === 0 ? (
             <Card accent="amber" className="text-center py-12">
               <Card.Meta>NO ARTICLES FOUND</Card.Meta>
-              <h2 className="gl-h2 mt-2">
-                Nothing in {category.name} yet.
-              </h2>
+              <h2 className="gl-h2 mt-2">Nothing in {category.name} yet.</h2>
               <p className="gl-body mt-3 max-w-md mx-auto">
                 New articles land here as the pipeline ships them. Check back
                 soon.

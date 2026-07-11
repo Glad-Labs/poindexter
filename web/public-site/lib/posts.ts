@@ -54,7 +54,7 @@ const POSTS_PER_PAGE = 10;
  * `{post.featured_image_url && ...}` conditional pattern.
  */
 export function postFeaturedImage(
-  post: Pick<Post, 'featured_image_url' | 'cover_image_url'>,
+  post: Pick<Post, 'featured_image_url' | 'cover_image_url'>
 ): string | null {
   return post.featured_image_url || post.cover_image_url || null;
 }
@@ -125,7 +125,7 @@ const EXCERPT_PLACEHOLDERS = new Set(['read this insightful article']);
 
 export function postExcerpt(
   post: { title: string; excerpt?: string; content?: string },
-  maxLength: number = 200,
+  maxLength: number = 200
 ): string | null {
   const title = cleanPostTitle(post.title);
   let excerpt = (post.excerpt || '').trim();
@@ -155,7 +155,8 @@ export function postExcerpt(
   if (excerpt.length > maxLength) {
     const cut = excerpt.slice(0, maxLength);
     const lastSpace = cut.lastIndexOf(' ');
-    excerpt = cut.slice(0, lastSpace > 60 ? lastSpace : maxLength).trimEnd() + '…';
+    excerpt =
+      cut.slice(0, lastSpace > 60 ? lastSpace : maxLength).trimEnd() + '…';
   }
   return excerpt;
 }
@@ -182,7 +183,7 @@ async function fetchPostIndex(): Promise<Post[]> {
     // 5xx or unexpected status: throw so ISR keeps the stale cache instead
     // of replacing it with an empty array (which would poison every listing page).
     const err = new Error(
-      `fetchPostIndex: R2 returned ${response.status} ${response.statusText}`,
+      `fetchPostIndex: R2 returned ${response.status} ${response.statusText}`
     );
     Sentry.captureException(err);
     throw err;
@@ -229,7 +230,7 @@ export async function getPostBySlug(slug: string): Promise<Post | null> {
     // 5xx or unexpected status: throw so ISR keeps the stale cached post
     // instead of serving a 404 to readers during an R2 outage.
     const err = new Error(
-      `getPostBySlug(${slug}): R2 returned ${response.status} ${response.statusText}`,
+      `getPostBySlug(${slug}): R2 returned ${response.status} ${response.statusText}`
     );
     Sentry.captureException(err);
     throw err;
@@ -308,7 +309,7 @@ export async function getMainFeedPosts(): Promise<Post[]> {
  */
 export async function getPostsByAuthor(
   authorId: string,
-  page: number = 1,
+  page: number = 1
 ): Promise<PostsResponse> {
   const allPosts = await fetchPostIndex();
   const filtered = allPosts.filter((p) => p.author_id === authorId);
@@ -323,4 +324,3 @@ export async function getPostsByAuthor(
     totalPages: Math.ceil(filtered.length / POSTS_PER_PAGE),
   };
 }
-

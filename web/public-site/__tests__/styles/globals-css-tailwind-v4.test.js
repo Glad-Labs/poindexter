@@ -31,7 +31,7 @@ const path = require('node:path');
 
 const RAW_GLOBALS_CSS = fs.readFileSync(
   path.join(__dirname, '..', '..', 'styles', 'globals.css'),
-  'utf8',
+  'utf8'
 );
 
 /*
@@ -56,7 +56,7 @@ describe('styles/globals.css — Tailwind v4 migration', () => {
 
   test('keeps the legacy tailwind.config.cjs reachable via @config', () => {
     expect(GLOBALS_CSS).toMatch(
-      /@config\s+['"]\.\.\/tailwind\.config\.cjs['"]\s*;/,
+      /@config\s+['"]\.\.\/tailwind\.config\.cjs['"]\s*;/
     );
   });
 

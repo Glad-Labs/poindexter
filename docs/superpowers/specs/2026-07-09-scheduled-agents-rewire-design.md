@@ -55,17 +55,17 @@ depend on Claude Code OAuth:
 
 Triage of the nine (agreed with the operator 2026-07-09):
 
-| Session | Bucket | Rationale |
-| --- | --- | --- |
-| `dependency-review` | deterministic | semver-parse patch bumps → checks-green + age gate → `gh pr merge`. No language judgment. |
-| `codebase-audit` | deterministic | `ruff --fix --select F401,F841` **is** the fix; bandit emits file:line → templated issue. |
-| `doc-sync` | deterministic | regex-extract path refs → `Test-Path` → unique-basename resolve or flag. Detection is 100% mechanical. |
-| `claude-md-sync` | deterministic | DB-count half is already a script; migration line is **extraction** of the migration docstring, not generation. |
-| `triage-sweep` | deterministic | already runs `run_weekly_sweep.py`; area label = keyword→label; Discord digest = template. |
-| `alert-triage` | local LLM | query is deterministic; "false-positive vs real failure" is bounded diagnosis over probe code + history. |
-| `test-health` | local LLM | detecting failures is deterministic; fixing a *simple* one is bounded judgment, gated by a deterministic re-run. |
-| `issue-resolver` | **disabled** (frontier) | read issue → find code → correct targeted fix is real engineering; a weak fix is review noise. Worth metered API or nothing. |
-| `test-expansion` | **disabled** (drop) | auto-generated tests are low-signal and add review load against ~11,440 existing tests. |
+| Session             | Bucket                  | Rationale                                                                                                                    |
+| ------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `dependency-review` | deterministic           | semver-parse patch bumps → checks-green + age gate → `gh pr merge`. No language judgment.                                    |
+| `codebase-audit`    | deterministic           | `ruff --fix --select F401,F841` **is** the fix; bandit emits file:line → templated issue.                                    |
+| `doc-sync`          | deterministic           | regex-extract path refs → `Test-Path` → unique-basename resolve or flag. Detection is 100% mechanical.                       |
+| `claude-md-sync`    | deterministic           | DB-count half is already a script; migration line is **extraction** of the migration docstring, not generation.              |
+| `triage-sweep`      | deterministic           | already runs `run_weekly_sweep.py`; area label = keyword→label; Discord digest = template.                                   |
+| `alert-triage`      | local LLM               | query is deterministic; "false-positive vs real failure" is bounded diagnosis over probe code + history.                     |
+| `test-health`       | local LLM               | detecting failures is deterministic; fixing a _simple_ one is bounded judgment, gated by a deterministic re-run.             |
+| `issue-resolver`    | **disabled** (frontier) | read issue → find code → correct targeted fix is real engineering; a weak fix is review noise. Worth metered API or nothing. |
+| `test-expansion`    | **disabled** (drop)     | auto-generated tests are low-signal and add review load against ~11,440 existing tests.                                      |
 
 ## Architecture
 
@@ -128,15 +128,15 @@ Task Scheduler harness.
 of work (per noisy alert; per simple failure), through `ollama_complete`. Direct
 Ollama over LiteLLM for these ops calls: they are not content-pipeline calls, do
 not need cost attribution or Langfuse tracing, and must not drag the full
-`SiteConfig`/DI/DB-pool bootstrap into a 15-minute cron script. *(If we later want
+`SiteConfig`/DI/DB-pool bootstrap into a 15-minute cron script. _(If we later want
 these traced, swapping the helper's URL to the LiteLLM proxy is a one-line change
-— the call sites don't move.)*
+— the call sites don't move.)_
 
 ## Session specifications
 
 Each script exits `0` on success (including the legitimate "nothing to do"),
 writes a one-line summary to its log, and surfaces hard failures via `notify_ops`
-+ non-zero exit. Output contracts match today's behavior so nothing downstream
+plus a non-zero exit. Output contracts match today's behavior so nothing downstream
 changes.
 
 ### `dependency_review.py` (deterministic, no worktree)
@@ -153,9 +153,10 @@ changes.
 
 1. `ruff check --fix --select F401,F841 <targets>` inside the worktree; stage the
    mechanical fixes.
-2. `bandit -r <targets> -q -ll -f json`; for each MEDIUM/HIGH, `gh issue create
-   --repo Glad-Labs/glad-labs-stack --label security` with a **templated** title
-   + body (file:line, test id, snippet). Security issues stay in the private repo.
+2. `bandit -r <targets> -q -ll -f json`; for each MEDIUM/HIGH,
+   `gh issue create --repo Glad-Labs/glad-labs-stack --label security` with a
+   **templated** title and body (file:line, test id, snippet). Security issues
+   stay in the private repo.
 3. If ruff staged anything: commit on the session branch, push, open a PR to
    `glad-labs-stack --base main`. Else exit clean.
 
@@ -196,12 +197,12 @@ changes.
 ### `alert_triage.py` (local LLM, no worktree)
 
 1. `SELECT alertname, severity, COUNT(*), … FROM alert_events WHERE received_at >
-   NOW() - INTERVAL '24 hours' GROUP BY … ORDER BY COUNT DESC` (via
+NOW() - INTERVAL '24 hours' GROUP BY … ORDER BY COUNT DESC` (via
    `resolve_database_url()`).
 2. For each `alertname` firing > 5×: load the most recent `dispatch_result` and
    the probe source (`brain/<name>_probe.py` if present) and make **one**
    `ollama_complete` call with `format=json` → `{classification: "probe_bug" |
-   "real_failure", reason, suspect_file}`.
+"real_failure", reason, suspect_file}`.
 3. `probe_bug` → `gh issue create --repo Glad-Labs/glad-labs-stack` with the
    reproduction + suspect file. `real_failure` → leave it (operator sees it on the
    morning brief). One issue per real probe bug.
@@ -211,7 +212,7 @@ changes.
 ### `test_health.py` (local LLM, worktree)
 
 1. `poetry run pytest tests/unit/ -q --tb=short -p no:cacheprovider
-   --continue-on-collection-errors`. **Ignore** collection errors (E, known
+--continue-on-collection-errors`. **Ignore** collection errors (E, known
    path-depth quirk); act only on real **failures** (F).
 2. For each failure in a `tests/` file only: send the failing test source + the
    traceback to `ollama_complete` asking for a **minimal patch to the test**
@@ -263,7 +264,7 @@ host-side ops-script config, resolved before any DB is reachable):
 
 - No LiteLLM dependency for ops calls.
 - No new Grafana board for ops-run history (file logs + Discord stay; a small
-  run-history panel is a *possible later add*, not now — noted for
+  run-history panel is a _possible later add_, not now — noted for
   `feedback_grafana_everything` follow-up).
 - No change to the worktree/junction mechanics that already work.
 - No metered-API wiring for `issue-resolver` — separate decision, separate spec.

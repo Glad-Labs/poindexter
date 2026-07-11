@@ -9,8 +9,7 @@ export async function GET() {
   const base = SITE_URL.replace(/\/$/, '');
 
   const index = {
-    $schema:
-      'https://agentskills.io/schemas/index/v0.2.0/schema.json',
+    $schema: 'https://agentskills.io/schemas/index/v0.2.0/schema.json',
     skills: [
       {
         name: 'poindexter-mcp',

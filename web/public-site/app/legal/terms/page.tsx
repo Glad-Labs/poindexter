@@ -33,14 +33,13 @@ export default function TermsOfService() {
       <h2>1. Agreement to Terms</h2>
       <p>
         By accessing gladlabs.io (&quot;the Site&quot;), you agree to these
-        terms. If you don&apos;t agree, don&apos;t use the site. Simple as
-        that.
+        terms. If you don&apos;t agree, don&apos;t use the site. Simple as that.
       </p>
 
       <h2>2. What You Can Do</h2>
       <p>
-        You&apos;re welcome to read, share, and learn from our content. You
-        may not:
+        You&apos;re welcome to read, share, and learn from our content. You may
+        not:
       </p>
       <ul>
         <li>Copy or republish our content without attribution</li>
@@ -58,24 +57,24 @@ export default function TermsOfService() {
         Some content on this site is produced or assisted by AI systems. All
         published content is reviewed and approved by {SITE_NAME} before
         publication. We stand behind what we publish, regardless of how it was
-        produced. That said, AI-generated content may contain errors — use
-        your judgment.
+        produced. That said, AI-generated content may contain errors — use your
+        judgment.
       </p>
 
       <h2>4. Disclaimer</h2>
       <p>
-        Everything on this site is provided &quot;as is.&quot; We share what
-        we know and what we&apos;re building, but we make no warranties —
-        expressed or implied — about accuracy, completeness, or fitness for
-        any particular purpose. Use the information at your own discretion.
+        Everything on this site is provided &quot;as is.&quot; We share what we
+        know and what we&apos;re building, but we make no warranties — expressed
+        or implied — about accuracy, completeness, or fitness for any particular
+        purpose. Use the information at your own discretion.
       </p>
 
       <h2>5. Limitations of Liability</h2>
       <p>
         {SITE_NAME} is not liable for any damages arising from your use of (or
-        inability to use) this site or its content. This includes loss of
-        data, profit, or business interruption — even if we&apos;ve been told
-        it might happen.
+        inability to use) this site or its content. This includes loss of data,
+        profit, or business interruption — even if we&apos;ve been told it might
+        happen.
       </p>
 
       <h2>6. Accuracy of Materials</h2>
@@ -88,9 +87,9 @@ export default function TermsOfService() {
 
       <h2>7. External Links</h2>
       <p>
-        We link to third-party sites for reference. We don&apos;t control
-        those sites and aren&apos;t responsible for their content. A link
-        isn&apos;t an endorsement.
+        We link to third-party sites for reference. We don&apos;t control those
+        sites and aren&apos;t responsible for their content. A link isn&apos;t
+        an endorsement.
       </p>
 
       <h2>8. Purchases &amp; Payments</h2>
@@ -106,21 +105,21 @@ export default function TermsOfService() {
           collection as the merchant of record
         </li>
         <li>
-          Your payment information is collected and stored by Lemon Squeezy,
-          not by {SITE_NAME} — we never see your full card details
+          Your payment information is collected and stored by Lemon Squeezy, not
+          by {SITE_NAME} — we never see your full card details
         </li>
         <li>
           Digital products are delivered immediately after purchase and are
           non-refundable unless the product is materially defective
         </li>
         <li>
-          Subscriptions may be cancelled at any time through your Lemon
-          Squeezy customer portal — cancellation takes effect at the end of
-          the current billing period
+          Subscriptions may be cancelled at any time through your Lemon Squeezy
+          customer portal — cancellation takes effect at the end of the current
+          billing period
         </li>
         <li>
-          Prices are listed in USD and may be subject to applicable sales tax
-          or VAT, collected by Lemon Squeezy based on your location
+          Prices are listed in USD and may be subject to applicable sales tax or
+          VAT, collected by Lemon Squeezy based on your location
         </li>
       </ul>
       <p>
@@ -145,24 +144,23 @@ export default function TermsOfService() {
 
       <h2>10. Intellectual Property</h2>
       <p>
-        All content on gladlabs.io — text, graphics, logos, images, and
-        software — is the property of {SITE_NAME} or its content suppliers and
-        is protected by copyright law. You&apos;re not granted any rights
-        beyond normal viewing and personal use.
+        All content on gladlabs.io — text, graphics, logos, images, and software
+        — is the property of {SITE_NAME} or its content suppliers and is
+        protected by copyright law. You&apos;re not granted any rights beyond
+        normal viewing and personal use.
       </p>
 
       <h2>11. Modifications</h2>
       <p>
-        We may update these terms at any time. Continued use of the site
-        means you accept the current version. We&apos;ll update the date at
-        the top when changes are made.
+        We may update these terms at any time. Continued use of the site means
+        you accept the current version. We&apos;ll update the date at the top
+        when changes are made.
       </p>
 
       <h2>12. Governing Law</h2>
       <p>
-        These terms are governed by the laws of the United States. Any
-        disputes will be resolved in the courts of the applicable
-        jurisdiction.
+        These terms are governed by the laws of the United States. Any disputes
+        will be resolved in the courts of the applicable jurisdiction.
       </p>
 
       <h2>13. Contact</h2>

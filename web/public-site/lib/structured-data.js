@@ -27,10 +27,7 @@ function formatDateISO(dateString) {
  * Generate JSON-LD structured data for a blog post
  * Returns BlogPosting schema for Google rich snippets
  */
-export function generateBlogPostingSchema(
-  post,
-  siteUrl = SITE_URL
-) {
+export function generateBlogPostingSchema(post, siteUrl = SITE_URL) {
   if (!post) return null;
 
   const {

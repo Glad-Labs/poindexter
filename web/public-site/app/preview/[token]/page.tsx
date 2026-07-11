@@ -146,9 +146,7 @@ export default async function PreviewPage({
 
         {/* Title */}
         <Eyebrow>GLAD LABS · PREVIEW</Eyebrow>
-        <h1
-          className="mt-2 font-[family-name:var(--gl-font-display)] font-bold text-white text-3xl sm:text-4xl md:text-5xl leading-[1.05] tracking-[-0.02em]"
-        >
+        <h1 className="mt-2 font-[family-name:var(--gl-font-display)] font-bold text-white text-3xl sm:text-4xl md:text-5xl leading-[1.05] tracking-[-0.02em]">
           {post.title}
         </h1>
 
@@ -228,12 +226,7 @@ export default async function PreviewPage({
             <p className="gl-mono gl-mono--upper gl-mono--accent text-xs mb-3">
               VIDEO EPISODE
             </p>
-            <video
-              controls
-              className="w-full"
-              preload="metadata"
-              playsInline
-            >
+            <video controls className="w-full" preload="metadata" playsInline>
               <source src={post.video_url} type="video/mp4" />
               Your browser does not support the video element.
             </video>

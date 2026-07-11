@@ -237,7 +237,12 @@ export default function TopNavigation() {
                   type="search"
                   value={query}
                   onChange={(e) => setQuery(e.target.value)}
-                  onKeyDown={(e) => { if (e.key === 'Escape') { setMenuOpen(false); setQuery(''); } }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Escape') {
+                      setMenuOpen(false);
+                      setQuery('');
+                    }
+                  }}
                   placeholder="Search…"
                   aria-label="Search articles"
                   className="gl-focus-ring flex-1"

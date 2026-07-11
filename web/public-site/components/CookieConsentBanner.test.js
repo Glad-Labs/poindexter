@@ -306,17 +306,13 @@ describe('CookieConsentBanner — consent-gated AdSense loader (issue #943)', ()
 
   it('does NOT inject the loader when advertising is rejected', () => {
     render(<CookieConsentBanner />);
-    fireEvent.click(
-      screen.getByRole('button', { name: /reject all/i })
-    );
+    fireEvent.click(screen.getByRole('button', { name: /reject all/i }));
     expect(adSenseScriptEl()).toBeNull();
   });
 
   it('injects the adsbygoogle.js loader after advertising consent (Accept All)', () => {
     render(<CookieConsentBanner />);
-    fireEvent.click(
-      screen.getByRole('button', { name: /accept all/i })
-    );
+    fireEvent.click(screen.getByRole('button', { name: /accept all/i }));
     const script = adSenseScriptEl();
     expect(script).not.toBeNull();
     expect(script.src).toContain(ADSENSE_SRC_PREFIX);
@@ -328,22 +324,16 @@ describe('CookieConsentBanner — consent-gated AdSense loader (issue #943)', ()
 
   it('persists the advertising consent choice to localStorage', () => {
     render(<CookieConsentBanner />);
-    fireEvent.click(
-      screen.getByRole('button', { name: /accept all/i })
-    );
+    fireEvent.click(screen.getByRole('button', { name: /accept all/i }));
     const saved = JSON.parse(localStorageMock.getItem('cookieConsent'));
     expect(saved.advertising).toBe(true);
   });
 
   it('does not inject the loader twice when consent is granted repeatedly', () => {
     const { rerender } = render(<CookieConsentBanner />);
-    fireEvent.click(
-      screen.getByRole('button', { name: /accept all/i })
-    );
+    fireEvent.click(screen.getByRole('button', { name: /accept all/i }));
     // Simulate the banner re-mounting and consent being re-saved.
     rerender(<CookieConsentBanner />);
-    expect(
-      document.querySelectorAll('script[data-gl-adsense]').length
-    ).toBe(1);
+    expect(document.querySelectorAll('script[data-gl-adsense]').length).toBe(1);
   });
 });

@@ -4,7 +4,12 @@ import Footer from '../components/Footer';
 import TopNavigation from '../components/TopNav.js';
 import WebMCP from '../components/WebMCP.js';
 import WebVitals from '../components/WebVitals';
-import { SITE_NAME, SITE_URL, SITE_TAGLINE, PODCAST_NAME } from '@/lib/site.config';
+import {
+  SITE_NAME,
+  SITE_URL,
+  SITE_TAGLINE,
+  PODCAST_NAME,
+} from '@/lib/site.config';
 import '../styles/globals.css';
 
 export const metadata = {

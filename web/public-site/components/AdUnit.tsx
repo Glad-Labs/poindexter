@@ -44,7 +44,11 @@ export default function AdUnit({
   }
 
   return (
-    <div className={`ad-unit ${className}`} role="complementary" aria-label="Advertisement">
+    <div
+      className={`ad-unit ${className}`}
+      role="complementary"
+      aria-label="Advertisement"
+    >
       <ins
         ref={adRef}
         className="adsbygoogle"

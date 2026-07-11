@@ -31,9 +31,7 @@ export default function Error({ error, reset }: ErrorProps) {
       <div className="flex-1 container mx-auto px-4 sm:px-6 lg:px-8 py-20 md:py-32 flex items-center justify-center">
         <div className="max-w-2xl w-full">
           <Eyebrow>GLAD LABS · ERROR</Eyebrow>
-          <h1
-            className="mt-2 font-[family-name:var(--gl-font-display)] font-bold text-white text-4xl md:text-5xl leading-tight tracking-tight"
-          >
+          <h1 className="mt-2 font-[family-name:var(--gl-font-display)] font-bold text-white text-4xl md:text-5xl leading-tight tracking-tight">
             Something went <span className="gl-accent">wrong.</span>
           </h1>
           <p className="gl-body gl-body--lg mt-4">{headline}</p>
@@ -92,14 +90,18 @@ export default function Error({ error, reset }: ErrorProps) {
             >
               Homepage
             </Link>
-            <span className="gl-mono opacity-30" aria-hidden>·</span>
+            <span className="gl-mono opacity-30" aria-hidden>
+              ·
+            </span>
             <Link
               href="/archive/1"
               className="gl-mono gl-mono--accent gl-mono--upper hover:opacity-80"
             >
               Archive
             </Link>
-            <span className="gl-mono opacity-30" aria-hidden>·</span>
+            <span className="gl-mono opacity-30" aria-hidden>
+              ·
+            </span>
             <a
               href={`mailto:${SUPPORT_EMAIL}`}
               className="gl-mono gl-mono--accent gl-mono--upper hover:opacity-80"

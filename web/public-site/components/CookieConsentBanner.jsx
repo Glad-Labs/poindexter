@@ -55,6 +55,10 @@ export default function CookieConsentBanner() {
     if (!showCustomize || !dialogRef.current) return;
 
     const dialog = dialogRef.current;
+    // Capture the trigger at effect-setup so the cleanup restores focus to the
+    // element that opened the dialog (react-hooks/exhaustive-deps: a ref's
+    // `.current` may change before cleanup runs, so read it here, not there).
+    const customizeTrigger = customizeTriggerRef.current;
     const focusable = dialog.querySelectorAll(
       'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
     );
@@ -86,7 +90,7 @@ export default function CookieConsentBanner() {
     dialog.addEventListener('keydown', handleKeyDown);
     return () => {
       dialog.removeEventListener('keydown', handleKeyDown);
-      customizeTriggerRef.current?.focus();
+      customizeTrigger?.focus();
     };
   }, [showCustomize]);
 
@@ -280,7 +284,10 @@ export default function CookieConsentBanner() {
                   style={{ accentColor: 'var(--gl-cyan)' }}
                 />
                 <div className="flex-1">
-                  <label htmlFor="essential" className="gl-mono gl-mono--upper gl-mono--amber block">
+                  <label
+                    htmlFor="essential"
+                    className="gl-mono gl-mono--upper gl-mono--amber block"
+                  >
                     Essential Cookies
                   </label>
                   <p className="gl-body gl-body--sm mt-1 text-[color:var(--gl-text-muted)]">

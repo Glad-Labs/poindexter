@@ -23,10 +23,12 @@
 ### Task 1: `GPURegistry` detection service
 
 **Files:**
+
 - Create: `src/cofounder_agent/services/gpu_registry.py`
 - Test: `src/cofounder_agent/tests/unit/services/test_gpu_registry.py`
 
 **Interfaces:**
+
 - Consumes: `SiteConfig` (ctor kwarg), Prometheus HTTP `/api/v1/query`.
 - Produces: `class GPURegistry` with `async def total_vram_gb(self) -> float | None` and ctor `GPURegistry(*, site_config: SiteConfig)`.
 
@@ -219,10 +221,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 2: Expose `gpu_registry` on `AppContainer`
 
 **Files:**
+
 - Modify: `src/cofounder_agent/services/container.py` (append a `cached_property`)
 - Test: `src/cofounder_agent/tests/unit/services/test_container.py` (add one test; create file only if absent — otherwise append)
 
 **Interfaces:**
+
 - Consumes: `GPURegistry` from Task 1; `AppContainer.site_config`.
 - Produces: `AppContainer.gpu_registry -> GPURegistry`.
 
@@ -290,10 +294,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 3: Settings — `auto` default + configurable fallback
 
 **Files:**
+
 - Modify: `src/cofounder_agent/services/settings_defaults.py` (DEFAULTS + METADATA)
 - Modify: `src/cofounder_agent/tests/unit/services/test_settings_defaults.py:49-62`
 
 **Interfaces:**
+
 - Produces: `DEFAULTS["gpu_vram_total_gb"] == "auto"`, `DEFAULTS["gpu_vram_autodetect_fallback_gb"] == "32"`; `METADATA["gpu_vram_total_gb"]["value_type"] == "string"`, `METADATA["gpu_vram_autodetect_fallback_gb"]["value_type"] == "float"`.
 
 - [ ] **Step 1: Update the failing test first**
@@ -333,7 +339,7 @@ In `settings_defaults.py`, change the `gpu_vram_total_gb` default and add the fa
     'gpu_vram_autodetect_fallback_gb': '32',
 ```
 
-And in the METADATA block (near the other gpu_* entries):
+And in the METADATA block (near the other gpu\_\* entries):
 
 ```python
     'gpu_vram_total_gb': {'owner': 'gpu_scheduler', 'value_type': 'string'},
@@ -360,10 +366,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 4: Resolve `"auto"` in the dispatcher budget guard
 
 **Files:**
+
 - Modify: `src/cofounder_agent/services/llm_providers/dispatcher.py:177-193` (make `_budget_inputs` async + add `_resolve_auto_total`) and `:232` (await the caller)
 - Test: `src/cofounder_agent/tests/unit/services/test_dispatcher_vram_budget.py` (create; if a dispatcher-budget test file already exists, append the three tests there)
 
 **Interfaces:**
+
 - Consumes: `AppContainer.gpu_registry` (Task 2), `gpu_vram_total_gb` / `gpu_vram_autodetect_fallback_gb` (Task 3), `utils.findings.emit_finding`.
 - Produces: `async def _budget_inputs(provider_config) -> tuple[float, float, float]`.
 
@@ -490,7 +498,9 @@ In `_clamp_num_ctx_to_budget` (line 232), change:
 ```python
     total, reserve, kv = _budget_inputs(provider_config)
 ```
+
 to:
+
 ```python
     total, reserve, kv = await _budget_inputs(provider_config)
 ```
@@ -514,9 +524,11 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 5: Grafana — "Detected VRAM pool" stat panel
 
 **Files:**
+
 - Modify: `infrastructure/grafana/dashboards/hardware-power.json`
 
 **Interfaces:**
+
 - Consumes: Prometheus `sum(nvidia_gpu_memory_total_mib) / 1024`.
 - Produces: a `stat` panel titled "Detected VRAM pool".
 
@@ -575,6 +587,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 6: Docs — multi-GPU VRAM pool
 
 **Files:**
+
 - Modify: `docs/operations/single-gpu-vram-tuning.md`
 
 **Interfaces:** none (documentation).
@@ -604,7 +617,7 @@ asks `GPURegistry` for the total VRAM pool — the sum of every GPU's
 When a model is larger than the biggest single card, Ollama shards it across
 GPUs. Inter-GPU activations cross the PCIe bus every token, so a card on a
 narrow link (e.g. x4) or an older architecture bottlenecks the shard. The pool
-makes big models *fit*; it does not make them *fast*. Benchmark before committing
+makes big models _fit_; it does not make them _fast_. Benchmark before committing
 a latency-sensitive workload to a sharded model.
 ```
 
@@ -622,7 +635,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ## Final verification (after all tasks)
 
 - [ ] Run the touched suites green:
-  `PYTHONPATH="$(pwd)" <venv-python> -m pytest tests/unit/services/test_gpu_registry.py tests/unit/services/test_container.py tests/unit/services/test_settings_defaults.py tests/unit/services/test_dispatcher_vram_budget.py tests/unit/services/test_gpu_scheduler.py -q`
+      `PYTHONPATH="$(pwd)" <venv-python> -m pytest tests/unit/services/test_gpu_registry.py tests/unit/services/test_container.py tests/unit/services/test_settings_defaults.py tests/unit/services/test_dispatcher_vram_budget.py tests/unit/services/test_gpu_scheduler.py -q`
 - [ ] Confirm exactly one caller of `_budget_inputs` and that it awaits: `grep -rn "_budget_inputs(" src/cofounder_agent`.
 - [ ] Push branch `claude/vram-pool-autodetect`, open PR against `main`, let CI (`test-backend`, `grafana-panels-lint`, `migrations-smoke`) gate, merge when green.
 - [ ] After merge: the fresh-seed default is already `auto`, but the existing prod row is `32` — update it via `poindexter settings set gpu_vram_total_gb auto` (or leave a pinned value if preferred), then watch the "Detected VRAM pool" panel read ~56 GB and confirm a 70B model is no longer num_ctx-clamped.

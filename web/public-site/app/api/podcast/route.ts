@@ -16,7 +16,7 @@ const API_BASE =
   process.env.NEXT_PUBLIC_FASTAPI_URL ||
   'http://localhost:8000';
 
-export async function GET(request: NextRequest) {
+export async function GET(_request: NextRequest) {
   try {
     const response = await fetch(`${API_BASE}/api/podcast/feed.xml`, {
       next: { revalidate: 3600 }, // Revalidate hourly
@@ -35,7 +35,7 @@ export async function GET(request: NextRequest) {
         'Cache-Control': 'public, max-age=3600, stale-while-revalidate=86400',
       },
     });
-  } catch (error) {
+  } catch (_error) {
     return new NextResponse('Podcast feed unavailable', { status: 502 });
   }
 }

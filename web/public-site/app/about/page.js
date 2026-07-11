@@ -27,7 +27,9 @@ export const metadata = {
     type: 'website',
     // Next.js does not inherit the root layout's og:image when a page sets
     // its own openGraph, so include the site default explicitly (audit #7).
-    images: [{ url: '/og-image.jpg', width: 1200, height: 630, alt: SITE_NAME }],
+    images: [
+      { url: '/og-image.jpg', width: 1200, height: 630, alt: SITE_NAME },
+    ],
   },
 };
 
@@ -60,12 +62,12 @@ export default function AboutPage() {
               <div className="space-y-2">
                 <p className="gl-h3 mb-0">Matt Gladding</p>
                 <p className="gl-body gl-body--sm gl-body--muted">
-                  Founder &amp; sole operator, Glad Labs LLC (founded
-                  September 25, 2025). Wyoming, Rhode Island.
+                  Founder &amp; sole operator, Glad Labs LLC (founded September
+                  25, 2025). Wyoming, Rhode Island.
                 </p>
                 <p className="gl-body gl-body--sm gl-body--muted">
-                  B.A.Sc. Game Development &amp; Simulation Programming, New England Institute of Technology 
-                  (2015).
+                  B.A.Sc. Game Development &amp; Simulation Programming, New
+                  England Institute of Technology (2015).
                 </p>
                 <div className="flex flex-wrap gap-3 pt-1 text-sm">
                   <a
@@ -121,42 +123,40 @@ export default function AboutPage() {
               </p>
 
               <p className="gl-body gl-body--lg">
-                My path here didn&apos;t go in a straight line. I grew up
-                around heavy equipment at the family excavation company in
-                Jamestown, Rhode Island — operating machinery, doing septic
-                installs and new-home foundation work. NEIT gave me a B.A.Sc.
-                in Computer Games &amp; Programming Skills (2015) — the
-                degree that taught me to think in systems, state machines,
-                and update loops before I knew that&apos;s also how AI
-                pipelines work.
+                My path here didn&apos;t go in a straight line. I grew up around
+                heavy equipment at the family excavation company in Jamestown,
+                Rhode Island — operating machinery, doing septic installs and
+                new-home foundation work. NEIT gave me a B.A.Sc. in Computer
+                Games &amp; Programming Skills (2015) — the degree that taught
+                me to think in systems, state machines, and update loops before
+                I knew that&apos;s also how AI pipelines work.
               </p>
 
               <p className="gl-body gl-body--lg">
                 After NEIT I spent over three years as a Production
-                Implementation Specialist in Providence — ETL data streams,
-                SQL procedures against Oracle warehouses, root cause analysis
-                on the kind of dashboards where moving a column the wrong
-                way breaks somebody&apos;s morning. After that came a stretch
-                managing residential construction projects, and since 2021
-                I&apos;ve worked as an application engineer in geotechnical
+                Implementation Specialist in Providence — ETL data streams, SQL
+                procedures against Oracle warehouses, root cause analysis on the
+                kind of dashboards where moving a column the wrong way breaks
+                somebody&apos;s morning. After that came a stretch managing
+                residential construction projects, and since 2021 I&apos;ve
+                worked as an application engineer in geotechnical
                 instrumentation — measurement systems and sensor arrays for
                 civil and infrastructure projects.
               </p>
 
               <p className="gl-body gl-body--lg">
-                Glad Labs is the nights-and-weekends project. Built outside
-                of working hours, on my own hardware, with the idea that one
+                Glad Labs is the nights-and-weekends project. Built outside of
+                working hours, on my own hardware, with the idea that one
                 operator plus the right AI systems can run a real content
-                business without giving up the day job until it earns its
-                keep.
+                business without giving up the day job until it earns its keep.
               </p>
 
               <p className="gl-body gl-body--lg">
-                That mix — heavy-equipment hands-on, ETL data plumbing,
-                project management, sensor systems, and a game-programming
-                degree — is exactly what an AI content pipeline turns out to
-                need. Reliable infrastructure, idempotent migrations, real
-                observability, no silent failures.
+                That mix — heavy-equipment hands-on, ETL data plumbing, project
+                management, sensor systems, and a game-programming degree — is
+                exactly what an AI content pipeline turns out to need. Reliable
+                infrastructure, idempotent migrations, real observability, no
+                silent failures.
               </p>
 
               <p className="gl-body gl-body--lg">
@@ -210,7 +210,9 @@ export default function AboutPage() {
                   <li>Local AI on RTX 5090 via Ollama</li>
                   <li>Self-hosted: PostgreSQL, Grafana, Prometheus, Loki</li>
                   <li>Content pipeline with quality gate + human approval</li>
-                  <li>Podcast (Kokoro TTS) + Video (AI image slideshow + ffmpeg)</li>
+                  <li>
+                    Podcast (Kokoro TTS) + Video (AI image slideshow + ffmpeg)
+                  </li>
                   <li>FastAPI backend, 11,400+ tests</li>
                   <li>Next.js 16 on Vercel + Cloudflare R2 CDN</li>
                 </ul>

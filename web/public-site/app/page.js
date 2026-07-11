@@ -257,67 +257,69 @@ export default async function HomePage() {
                       // title-repeated-as-excerpt. Omits cleanly when empty.
                       const cardExcerpt = postExcerpt(post, 140);
                       return (
-                      <Card
-                        key={post.id || post.slug}
-                        className="group flex flex-col h-full overflow-hidden p-0"
-                      >
-                        {cardImage && (
-                          <div className="relative aspect-video overflow-hidden bg-[var(--gl-surface)]">
-                            <Image
-                              src={cardImage}
-                              alt=""
-                              fill
-                              sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
-                              className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                            />
-                          </div>
-                        )}
+                        <Card
+                          key={post.id || post.slug}
+                          className="group flex flex-col h-full overflow-hidden p-0"
+                        >
+                          {cardImage && (
+                            <div className="relative aspect-video overflow-hidden bg-[var(--gl-surface)]">
+                              <Image
+                                src={cardImage}
+                                alt=""
+                                fill
+                                sizes="(min-width: 1024px) 33vw, (min-width: 768px) 50vw, 100vw"
+                                className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                              />
+                            </div>
+                          )}
 
-                        <div className="flex flex-col justify-between flex-1 p-6">
-                          <div>
-                            {post.published_at ? (
-                              <Card.Meta>
-                                <time dateTime={post.published_at}>
-                                  {new Date(
-                                    post.published_at
-                                  ).toLocaleDateString('en-US', {
-                                    year: 'numeric',
-                                    month: 'short',
-                                    day: 'numeric',
-                                  })}
-                                </time>
-                              </Card.Meta>
-                            ) : null}
-                            <Card.Title>
+                          <div className="flex flex-col justify-between flex-1 p-6">
+                            <div>
+                              {post.published_at ? (
+                                <Card.Meta>
+                                  <time dateTime={post.published_at}>
+                                    {new Date(
+                                      post.published_at
+                                    ).toLocaleDateString('en-US', {
+                                      year: 'numeric',
+                                      month: 'short',
+                                      day: 'numeric',
+                                    })}
+                                  </time>
+                                </Card.Meta>
+                              ) : null}
+                              <Card.Title>
+                                <Link
+                                  href={`/posts/${post.slug}`}
+                                  className="hover:text-[color:var(--gl-cyan)] transition-colors"
+                                >
+                                  {cardTitle}
+                                </Link>
+                              </Card.Title>
+                              {cardExcerpt && (
+                                <Card.Body className="line-clamp-3 mt-2">
+                                  {cardExcerpt}
+                                </Card.Body>
+                              )}
+                            </div>
+                            <div
+                              className="pt-4 mt-4"
+                              style={{
+                                borderTop: '1px solid var(--gl-hairline)',
+                              }}
+                            >
                               <Link
                                 href={`/posts/${post.slug}`}
-                                className="hover:text-[color:var(--gl-cyan)] transition-colors"
+                                className="gl-mono gl-mono--accent gl-mono--upper inline-flex items-center gap-2 hover:opacity-80 transition-opacity"
+                                aria-hidden="true"
+                                tabIndex={-1}
                               >
-                                {cardTitle}
+                                Read article
+                                <span aria-hidden>→</span>
                               </Link>
-                            </Card.Title>
-                            {cardExcerpt && (
-                              <Card.Body className="line-clamp-3 mt-2">
-                                {cardExcerpt}
-                              </Card.Body>
-                            )}
+                            </div>
                           </div>
-                          <div
-                            className="pt-4 mt-4"
-                            style={{ borderTop: '1px solid var(--gl-hairline)' }}
-                          >
-                            <Link
-                              href={`/posts/${post.slug}`}
-                              className="gl-mono gl-mono--accent gl-mono--upper inline-flex items-center gap-2 hover:opacity-80 transition-opacity"
-                              aria-hidden="true"
-                              tabIndex={-1}
-                            >
-                              Read article
-                              <span aria-hidden>→</span>
-                            </Link>
-                          </div>
-                        </div>
-                      </Card>
+                        </Card>
                       );
                     })}
                   </div>
@@ -330,7 +332,10 @@ export default async function HomePage() {
         {/* Dev Diary teaser — links to the dedicated /dev-diary feed (#1339) */}
         <section className="py-6 px-4 sm:px-6 lg:px-8">
           <div className="container mx-auto max-w-6xl text-center">
-            <a href="/dev-diary" className="text-[color:var(--gl-cyan)] hover:underline text-sm gl-mono">
+            <a
+              href="/dev-diary"
+              className="text-[color:var(--gl-cyan)] hover:underline text-sm gl-mono"
+            >
               Read the Dev Diary — daily founder notes from building Glad Labs →
             </a>
           </div>
@@ -340,9 +345,7 @@ export default async function HomePage() {
         <section className="py-16 px-4 sm:px-6 lg:px-8">
           <div className="container mx-auto max-w-5xl text-center">
             <Eyebrow>GLAD LABS · ARCHIVE</Eyebrow>
-            <h2 className="gl-h2 mt-1">
-              Every article we&apos;ve published.
-            </h2>
+            <h2 className="gl-h2 mt-1">Every article we&apos;ve published.</h2>
             <p className="gl-body gl-body--lg mt-4 max-w-2xl mx-auto">
               Explore our complete collection of insights and analyses across
               AI, hardware, and gaming.

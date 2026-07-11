@@ -42,7 +42,14 @@ const BACKEND_BASE_URL = (
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { email, first_name, last_name, company, marketing_consent, interest_categories } = body;
+    const {
+      email,
+      first_name,
+      last_name,
+      company,
+      marketing_consent,
+      interest_categories,
+    } = body;
 
     if (!email || !email.includes('@')) {
       return NextResponse.json(
@@ -55,22 +62,27 @@ export async function POST(request: NextRequest) {
     let dbStored = false;
     if (BACKEND_BASE_URL) {
       try {
-        const res = await fetch(`${BACKEND_BASE_URL}/api/newsletter/subscribe`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            email,
-            first_name,
-            last_name,
-            company,
-            marketing_consent,
-            interest_categories,
-          }),
-        });
+        const res = await fetch(
+          `${BACKEND_BASE_URL}/api/newsletter/subscribe`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              email,
+              first_name,
+              last_name,
+              company,
+              marketing_consent,
+              interest_categories,
+            }),
+          }
+        );
         dbStored = res.ok;
         if (!res.ok) {
           const detail = await res.text();
-          const err = new Error(`[Newsletter] backend store failed: ${res.status} ${detail}`);
+          const err = new Error(
+            `[Newsletter] backend store failed: ${res.status} ${detail}`
+          );
           Sentry.captureException(err);
           console.error(err.message);
         }
@@ -79,7 +91,9 @@ export async function POST(request: NextRequest) {
         console.error('[Newsletter] backend store error:', err);
       }
     } else {
-      const err = new Error('[Newsletter] NEXT_PUBLIC_API_BASE_URL not set — cannot persist signup to backend DB');
+      const err = new Error(
+        '[Newsletter] NEXT_PUBLIC_API_BASE_URL not set — cannot persist signup to backend DB'
+      );
       Sentry.captureException(err);
       console.error(err.message);
     }
@@ -120,7 +134,9 @@ export async function POST(request: NextRequest) {
 
     // --- Fail LOUD if the subscriber landed nowhere durable -----------------
     if (!dbStored && !audienceStored) {
-      const captureErr = new Error(`[Newsletter] subscriber NOT captured in any durable store: ${email}`);
+      const captureErr = new Error(
+        `[Newsletter] subscriber NOT captured in any durable store: ${email}`
+      );
       Sentry.captureException(captureErr);
       console.error(captureErr.message);
       return NextResponse.json(

@@ -16,7 +16,11 @@ import { render, screen } from '@testing-library/react';
 // The page wraps calls in try/catch so a simple empty-list response suffices.
 global.fetch = jest.fn().mockResolvedValue({
   ok: true,
-  json: async () => ({ posts: [], total: 0, exported_at: '2026-01-01T00:00:00Z' }),
+  json: async () => ({
+    posts: [],
+    total: 0,
+    exported_at: '2026-01-01T00:00:00Z',
+  }),
 });
 
 // Mock next/link

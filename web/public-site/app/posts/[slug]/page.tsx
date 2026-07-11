@@ -65,8 +65,7 @@ export async function generateMetadata({
     post.featured_image_url || post.cover_image_url || '/og-image.jpg';
   // Audit #2/#5: same display-layer guards as the page body — no "Title:"
   // prefixes or placeholder excerpts in <title>, OG, or Twitter cards.
-  const description =
-    post.seo_description || postExcerpt(post, 200) || '';
+  const description = post.seo_description || postExcerpt(post, 200) || '';
   const title = cleanPostTitle(post.seo_title || post.title);
   const canonicalUrl = generateCanonicalURL(post.slug, SITE_URL);
   const publishDate = post.published_at || post.created_at;
@@ -162,24 +161,28 @@ export default async function PostPage({
   const readingTime = Math.max(1, Math.round(wordCount / 238));
 
   function decodeEntities(str: string): string {
-    return str
-      .replace(/&rsquo;/g, "'")
-      .replace(/&lsquo;/g, "'")
-      .replace(/&rdquo;/g, '"')
-      .replace(/&ldquo;/g, '"')
-      .replace(/&mdash;/g, '-')
-      .replace(/&ndash;/g, '-')
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&hellip;/g, '...')
-      .replace(/&nbsp;/g, ' ')
-      // Use fromCodePoint (not fromCharCode) so astral-plane codepoints
-      // (emoji, etc.) round-trip correctly (#1328 item 2).
-      .replace(/&#(\d+);/g, (_m, code) => String.fromCodePoint(parseInt(code)))
-      .replace(/&#x([0-9a-f]+);/gi, (_m, code) =>
-        String.fromCodePoint(parseInt(code, 16))
-      );
+    return (
+      str
+        .replace(/&rsquo;/g, "'")
+        .replace(/&lsquo;/g, "'")
+        .replace(/&rdquo;/g, '"')
+        .replace(/&ldquo;/g, '"')
+        .replace(/&mdash;/g, '-')
+        .replace(/&ndash;/g, '-')
+        .replace(/&amp;/g, '&')
+        .replace(/&lt;/g, '<')
+        .replace(/&gt;/g, '>')
+        .replace(/&hellip;/g, '...')
+        .replace(/&nbsp;/g, ' ')
+        // Use fromCodePoint (not fromCharCode) so astral-plane codepoints
+        // (emoji, etc.) round-trip correctly (#1328 item 2).
+        .replace(/&#(\d+);/g, (_m, code) =>
+          String.fromCodePoint(parseInt(code))
+        )
+        .replace(/&#x([0-9a-f]+);/gi, (_m, code) =>
+          String.fromCodePoint(parseInt(code, 16))
+        )
+    );
   }
 
   // The page renders the post title as the single document <h1>. Demote any
@@ -287,9 +290,7 @@ export default async function PostPage({
           >
             <div className="container mx-auto max-w-4xl">
               <Eyebrow>GLAD LABS · ARTICLE</Eyebrow>
-              <h1 className="mt-2">
-                {title}
-              </h1>
+              <h1 className="mt-2">{title}</h1>
 
               {/* Meta row */}
               <div className="gl-mono gl-mono--upper mt-5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs">
@@ -420,7 +421,10 @@ export default async function PostPage({
             <div className="gl-log gl-mono--upper mt-10">
               Generated with AI assistance · Reviewed by a human editor ·
               Published by{' '}
-              <a href="https://www.gladlabs.io/about" className="hl hover:underline">
+              <a
+                href="https://www.gladlabs.io/about"
+                className="hl hover:underline"
+              >
                 Glad Labs
               </a>
             </div>
@@ -443,32 +447,32 @@ export default async function PostPage({
                 {relatedPosts.map((rp) => {
                   const rpImage = postFeaturedImage(rp);
                   return (
-                  <Card
-                    key={rp.slug}
-                    className="group flex flex-col h-full overflow-hidden p-0"
-                  >
-                    {rpImage && (
-                      <div className="relative h-36 overflow-hidden bg-[var(--gl-surface)]">
-                        <Image
-                          src={rpImage}
-                          alt=""
-                          fill
-                          className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                          sizes="(max-width: 768px) 100vw, 33vw"
-                        />
+                    <Card
+                      key={rp.slug}
+                      className="group flex flex-col h-full overflow-hidden p-0"
+                    >
+                      {rpImage && (
+                        <div className="relative h-36 overflow-hidden bg-[var(--gl-surface)]">
+                          <Image
+                            src={rpImage}
+                            alt=""
+                            fill
+                            className="object-cover transition-transform duration-300 group-hover:scale-[1.03]"
+                            sizes="(max-width: 768px) 100vw, 33vw"
+                          />
+                        </div>
+                      )}
+                      <div className="p-4">
+                        <Card.Title>
+                          <Link
+                            href={`/posts/${rp.slug}`}
+                            className="hover:text-[color:var(--gl-cyan)] transition-colors"
+                          >
+                            {cleanPostTitle(rp.title)}
+                          </Link>
+                        </Card.Title>
                       </div>
-                    )}
-                    <div className="p-4">
-                      <Card.Title>
-                        <Link
-                          href={`/posts/${rp.slug}`}
-                          className="hover:text-[color:var(--gl-cyan)] transition-colors"
-                        >
-                          {cleanPostTitle(rp.title)}
-                        </Link>
-                      </Card.Title>
-                    </div>
-                  </Card>
+                    </Card>
                   );
                 })}
               </div>

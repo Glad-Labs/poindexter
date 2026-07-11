@@ -19,7 +19,7 @@ try {
   // eslint-disable-next-line no-console
   console.warn(
     '[next.config] @sentry/nextjs failed to load — building without Sentry wrapping.',
-    err?.message || err,
+    err?.message || err
   );
 }
 
@@ -184,19 +184,23 @@ const nextConfig = {
       },
       // Custom image CDN domain (storage_image_custom_domain).
       // Set NEXT_PUBLIC_IMAGE_CDN_HOST to activate (e.g. images.gladlabs.io).
-      ...(process.env.NEXT_PUBLIC_IMAGE_CDN_HOST ? [{
-        protocol: 'https',
-        hostname: process.env.NEXT_PUBLIC_IMAGE_CDN_HOST,
-        pathname: '/**',
-      }] : [
-        // Fallback: always allow the known Glad Labs image CDN domain so
-        // next/image works even before NEXT_PUBLIC_IMAGE_CDN_HOST is set.
-        {
-          protocol: 'https',
-          hostname: 'images.gladlabs.io',
-          pathname: '/**',
-        },
-      ]),
+      ...(process.env.NEXT_PUBLIC_IMAGE_CDN_HOST
+        ? [
+            {
+              protocol: 'https',
+              hostname: process.env.NEXT_PUBLIC_IMAGE_CDN_HOST,
+              pathname: '/**',
+            },
+          ]
+        : [
+            // Fallback: always allow the known Glad Labs image CDN domain so
+            // next/image works even before NEXT_PUBLIC_IMAGE_CDN_HOST is set.
+            {
+              protocol: 'https',
+              hostname: 'images.gladlabs.io',
+              pathname: '/**',
+            },
+          ]),
     ],
 
     // Reduced variant cardinality to mitigate CVE-2026-27980 disk cache
@@ -344,7 +348,11 @@ const nextConfig = {
       // gladlabs.io is the blog/proof; the product/store lives on gladlabs.ai.
       // The old on-blog storefront at /product is consolidated there so there's
       // exactly one store. 308 permanent — passes link equity to the store.
-      { source: '/product', destination: 'https://www.gladlabs.ai', permanent: true },
+      {
+        source: '/product',
+        destination: 'https://www.gladlabs.ai',
+        permanent: true,
+      },
       // Common URLs Google tries that don't exist — redirect to real pages
       { source: '/blog', destination: '/archive/1', permanent: true },
       { source: '/blog/:slug', destination: '/posts/:slug', permanent: true },
@@ -362,8 +370,16 @@ const nextConfig = {
       // Legacy WordPress privacy URLs → the real page at /legal/privacy.
       // (Both previously pointed at /privacy, which 404s — caught in the
       // 2026-06-04 SEO indexing audit.)
-      { source: '/privacy-policy', destination: '/legal/privacy', permanent: true },
-      { source: '/privacy-policy-2', destination: '/legal/privacy', permanent: true },
+      {
+        source: '/privacy-policy',
+        destination: '/legal/privacy',
+        permanent: true,
+      },
+      {
+        source: '/privacy-policy-2',
+        destination: '/legal/privacy',
+        permanent: true,
+      },
       // WordPress artifacts — redirect to homepage
       { source: '/woocommerce-placeholder', destination: '/', permanent: true },
       { source: '/site-logo', destination: '/', permanent: true },
@@ -485,7 +501,7 @@ const hasSentryDsn =
 // Only fall back to it when no relay is set (e.g. a hosted DSN).
 const hasExternalSentryTunnel = Boolean(process.env.NEXT_PUBLIC_SENTRY_TUNNEL);
 
-export default (hasSentryDsn && withSentryConfig)
+export default hasSentryDsn && withSentryConfig
   ? withSentryConfig(nextConfig, {
       // Suppress Sentry CLI output during builds
       silent: true,

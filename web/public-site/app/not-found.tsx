@@ -95,14 +95,18 @@ export default async function NotFound() {
             >
               Archive
             </Link>
-            <span className="gl-mono opacity-30" aria-hidden>·</span>
+            <span className="gl-mono opacity-30" aria-hidden>
+              ·
+            </span>
             <Link
               href="/"
               className="gl-mono gl-mono--accent gl-mono--upper hover:opacity-80"
             >
               Homepage
             </Link>
-            <span className="gl-mono opacity-30" aria-hidden>·</span>
+            <span className="gl-mono opacity-30" aria-hidden>
+              ·
+            </span>
             <Link
               href="/about"
               className="gl-mono gl-mono--accent gl-mono--upper hover:opacity-80"

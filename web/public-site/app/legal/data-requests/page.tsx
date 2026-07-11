@@ -50,7 +50,10 @@ const RIGHTS = [
 
 const DATA_CATEGORIES = [
   { value: 'google-analytics', label: 'Google Analytics data (if consented)' },
-  { value: 'advertising', label: 'Advertising data / Google AdSense (if consented)' },
+  {
+    value: 'advertising',
+    label: 'Advertising data / Google AdSense (if consented)',
+  },
   { value: 'errors', label: 'Error monitoring data (Sentry)' },
   { value: 'cookies', label: 'Cookie preferences' },
   { value: 'logs', label: 'Server logs (IP addresses)' },
@@ -98,8 +101,12 @@ const INPUT_CLASS =
 const LABEL_CLASS = 'gl-mono gl-mono--upper block mb-1.5';
 
 function scrollToFormAndSelect(type: string) {
-  document.getElementById('request-form')?.scrollIntoView({ behavior: 'smooth' });
-  const select = document.getElementById('request-type') as HTMLSelectElement | null;
+  document
+    .getElementById('request-form')
+    ?.scrollIntoView({ behavior: 'smooth' });
+  const select = document.getElementById(
+    'request-type'
+  ) as HTMLSelectElement | null;
   if (select) select.value = type;
 }
 
@@ -108,9 +115,7 @@ export default function DataRequests() {
     <div className="container mx-auto px-4 sm:px-6 lg:px-8 max-w-4xl">
       {/* Header */}
       <Eyebrow>GLAD LABS · LEGAL</Eyebrow>
-      <h1
-        className="mt-2 font-[family-name:var(--gl-font-display)] font-bold text-white text-4xl md:text-5xl leading-tight tracking-tight"
-      >
+      <h1 className="mt-2 font-[family-name:var(--gl-font-display)] font-bold text-white text-4xl md:text-5xl leading-tight tracking-tight">
         Data subject rights.
       </h1>
       <p className="gl-body gl-body--lg mt-4 max-w-2xl">
@@ -295,7 +300,10 @@ export default function DataRequests() {
             </Button>
           </div>
 
-          <p className="gl-mono gl-mono--upper opacity-50 text-center" style={{ fontSize: '0.6875rem' }}>
+          <p
+            className="gl-mono gl-mono--upper opacity-50 text-center"
+            style={{ fontSize: '0.6875rem' }}
+          >
             Handled per GDPR · Confirmation within 24 hours
           </p>
         </form>

@@ -43,7 +43,9 @@ describe('lib/logger', () => {
 
   it('does not throw on warn / error calls', () => {
     expect(() => logger.warn('warn message')).not.toThrow();
-    expect(() => logger.error('error message', new Error('boom'))).not.toThrow();
+    expect(() =>
+      logger.error('error message', new Error('boom'))
+    ).not.toThrow();
   });
 
   it('serializes object args without crashing on circular refs', () => {

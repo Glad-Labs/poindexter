@@ -5,7 +5,7 @@ description: Look up a past decision or memory specifically — filtered to memo
 
 # Recall Decision
 
-Like `search-memory` but filtered to `source_table='memory'` — pulls only from the curated memory layer (decision*log, feedback*_, project\__, user\_* files), not from posts/issues/audit. Best for "what did I decide" questions where you want the *intent\* behind a choice, not the surrounding noise.
+Like `search-memory` but filtered to `source_table='memory'` — pulls only from the curated memory layer (`decision_log`, `feedback_*`, `project_*`, `user_*` files), not from posts/issues/audit. Best for "what did I decide" questions where you want the _intent_ behind a choice, not the surrounding noise.
 
 Backed by the same `/api/memory/search` route as `search-memory`, with `source_table=memory` filter.
 

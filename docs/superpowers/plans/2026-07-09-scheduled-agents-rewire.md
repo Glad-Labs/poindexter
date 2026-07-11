@@ -24,31 +24,33 @@
 
 ## File Structure
 
-| Path | Responsibility |
-| --- | --- |
-| `scripts/ops_sessions/_common.py` | DB query, Ollama call, `gh`/`git` wrappers, notify wrapper, logger, config resolution |
-| `scripts/ops_sessions/dependency_review.py` | Auto-merge green patch-bump dependabot PRs |
-| `scripts/ops_sessions/codebase_audit.py` | ruff `--fix` F401/F841 + bandit → security issue |
-| `scripts/ops_sessions/doc_sync.py` | Verify + repair CLAUDE.md path references |
-| `scripts/ops_sessions/claude_md_sync.py` | Run DB-stats script + refresh migration line |
-| `scripts/ops_sessions/triage_sweep.py` | Run weekly sweep + keyword area-labels + Discord digest |
-| `scripts/ops_sessions/alert_triage.py` | Classify noisy alerts (Ollama) → file probe-bug issues |
-| `scripts/ops_sessions/test_health.py` | Run pytest + local-model fix behind a re-run gate |
-| `scripts/claude-sessions.ps1` | *(modify)* harness dispatches `Command`; `NeedsWorktree`/`Enabled` fields |
-| `src/cofounder_agent/tests/unit/scripts/test_ops_*.py` | Contract tests for the pure functions |
-| `docs/operations/scheduled-agents.md` | *(create)* operator runbook |
-| `CLAUDE.md` | *(modify)* replace "all DISABLED" scheduled-agents section |
+| Path                                                   | Responsibility                                                                        |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------- |
+| `scripts/ops_sessions/_common.py`                      | DB query, Ollama call, `gh`/`git` wrappers, notify wrapper, logger, config resolution |
+| `scripts/ops_sessions/dependency_review.py`            | Auto-merge green patch-bump dependabot PRs                                            |
+| `scripts/ops_sessions/codebase_audit.py`               | ruff `--fix` F401/F841 + bandit → security issue                                      |
+| `scripts/ops_sessions/doc_sync.py`                     | Verify + repair CLAUDE.md path references                                             |
+| `scripts/ops_sessions/claude_md_sync.py`               | Run DB-stats script + refresh migration line                                          |
+| `scripts/ops_sessions/triage_sweep.py`                 | Run weekly sweep + keyword area-labels + Discord digest                               |
+| `scripts/ops_sessions/alert_triage.py`                 | Classify noisy alerts (Ollama) → file probe-bug issues                                |
+| `scripts/ops_sessions/test_health.py`                  | Run pytest + local-model fix behind a re-run gate                                     |
+| `scripts/claude-sessions.ps1`                          | _(modify)_ harness dispatches `Command`; `NeedsWorktree`/`Enabled` fields             |
+| `src/cofounder_agent/tests/unit/scripts/test_ops_*.py` | Contract tests for the pure functions                                                 |
+| `docs/operations/scheduled-agents.md`                  | _(create)_ operator runbook                                                           |
+| `CLAUDE.md`                                            | _(modify)_ replace "all DISABLED" scheduled-agents section                            |
 
 ---
 
 ### Task 1: `_common.py` shared helpers
 
 **Files:**
+
 - Create: `scripts/ops_sessions/_common.py`
 - Create: `scripts/ops_sessions/__init__.py` (empty — makes the dir a clean package for `-m`/test imports)
 - Test: `src/cofounder_agent/tests/unit/scripts/test_ops_common.py`
 
 **Interfaces:**
+
 - Produces:
   - `bootstrap_value(key: str) -> str` — read a key from `~/.poindexter/bootstrap.toml` (`""` if absent).
   - `db_url() -> str` — `brain.bootstrap.resolve_database_url()`, or notify+`SystemExit(2)` on None.
@@ -262,10 +264,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 2: `dependency_review.py` (deterministic, no worktree)
 
 **Files:**
+
 - Create: `scripts/ops_sessions/dependency_review.py`
 - Test: `src/cofounder_agent/tests/unit/scripts/test_ops_dependency_review.py`
 
 **Interfaces:**
+
 - Consumes: `_common.gh`, `_common.get_logger`.
 - Produces: `is_patch_bump(title: str) -> bool`; `all_checks_green(rollup: list[dict]) -> bool`; `older_than_hours(created_at_iso: str, hours: int, *, now: datetime | None = None) -> bool`; `main() -> int`.
 
@@ -414,10 +418,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 3: `codebase_audit.py` (deterministic, worktree)
 
 **Files:**
+
 - Create: `scripts/ops_sessions/codebase_audit.py`
 - Test: `src/cofounder_agent/tests/unit/scripts/test_ops_codebase_audit.py`
 
 **Interfaces:**
+
 - Consumes: `_common.run`, `_common.gh`, `_common.git`, `_common.get_logger`.
 - Produces: `bandit_issue_body(finding: dict) -> tuple[str, str]` (returns `(title, body)`); `main() -> int`.
 
@@ -465,7 +471,7 @@ Expected: FAIL — `ModuleNotFoundError`.
 
 - [ ] **Step 3: Write minimal implementation**
 
-```python
+````python
 # scripts/ops_sessions/codebase_audit.py
 """ruff --fix (F401/F841) + bandit → security issue. Deterministic, worktree."""
 from __future__ import annotations
@@ -524,7 +530,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-```
+````
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -545,10 +551,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 4: `doc_sync.py` (deterministic, worktree)
 
 **Files:**
+
 - Create: `scripts/ops_sessions/doc_sync.py`
 - Test: `src/cofounder_agent/tests/unit/scripts/test_ops_doc_sync.py`
 
 **Interfaces:**
+
 - Consumes: `_common.git`, `_common.gh`, `_common.get_logger`.
 - Produces: `extract_refs(md: str) -> list[str]`; `resolve_ref(ref: str, repo_root: Path) -> tuple[str, str | None]` (status ∈ `{"ok","fix","flag"}`); `main() -> int`.
 
@@ -690,10 +698,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 5: `claude_md_sync.py` (deterministic, worktree)
 
 **Files:**
+
 - Create: `scripts/ops_sessions/claude_md_sync.py`
 - Test: `src/cofounder_agent/tests/unit/scripts/test_ops_claude_md_sync.py`
 
 **Interfaces:**
+
 - Consumes: `_common.run`, `_common.git`, `_common.gh`, `_common.get_logger`.
 - Produces: `extract_migration_clause(source: str) -> str` (docstring first line, or filename fallback); `newest_migration(migrations_dir: Path) -> Path | None`; `main() -> int`.
 
@@ -816,9 +826,9 @@ if __name__ == "__main__":
     sys.exit(main())
 ```
 
-> **Design note (calculated-vs-generated):** the migration *narrative* is prose, not a
+> **Design note (calculated-vs-generated):** the migration _narrative_ is prose, not a
 > deterministic value, so this script does NOT auto-rewrite it — it runs the
-> deterministic DB-count sync and *surfaces* drift (CLAUDE.md missing the newest
+> deterministic DB-count sync and _surfaces_ drift (CLAUDE.md missing the newest
 > migration filename) via the PR body or a Discord note for a human/LLM to word.
 > `extract_migration_clause` + `newest_migration` stay because the drift check uses
 > them. Repo file-stat counts are owned by the `sync-claude-md.yml` Action — never
@@ -843,10 +853,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 6: `triage_sweep.py` (deterministic, no worktree)
 
 **Files:**
+
 - Create: `scripts/ops_sessions/triage_sweep.py`
 - Test: `src/cofounder_agent/tests/unit/scripts/test_ops_triage_sweep.py`
 
 **Interfaces:**
+
 - Consumes: `_common.run`, `_common.gh`, `_common.get_logger`, `_common.bootstrap_value`.
 - Produces: `AREA_KEYWORDS: dict[str, tuple[str, ...]]`; `pick_area_label(body: str) -> str | None` (single area or None if zero/multiple); `main() -> int`.
 
@@ -979,10 +991,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 7: `alert_triage.py` (local LLM, no worktree)
 
 **Files:**
+
 - Create: `scripts/ops_sessions/alert_triage.py`
 - Test: `src/cofounder_agent/tests/unit/scripts/test_ops_alert_triage.py`
 
 **Interfaces:**
+
 - Consumes: `_common.fetch_all`, `_common.ollama_chat`, `_common.MODEL_TRIAGE`, `_common.OllamaUnavailable`, `_common.gh`, `_common.notify_fail`, `_common.get_logger`, `_common.asyncio_run`.
 - Produces: `build_classification_prompt(alertname, dispatch_result, probe_src) -> str`; `parse_classification(raw: str) -> dict` (keys `classification`, `reason`, `suspect_file`; `classification` normalized to `probe_bug`/`real_failure`); `main() -> int`.
 
@@ -1156,16 +1170,18 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 8: `test_health.py` (local LLM, worktree, re-run gate)
 
 **Files:**
+
 - Create: `scripts/ops_sessions/test_health.py`
 - Test: `src/cofounder_agent/tests/unit/scripts/test_ops_test_health.py`
 
 **Interfaces:**
+
 - Consumes: `_common.run`, `_common.ollama_chat`, `_common.MODEL_TESTFIX`, `_common.OllamaUnavailable`, `_common.git`, `_common.gh`, `_common.get_logger`.
 - Produces: `parse_pytest_failures(output: str) -> list[dict]` (each `{"file", "test", "message"}`); `extract_patched_file(raw: str) -> str | None` (pull a fenced code block); `main() -> int`.
 
 - [ ] **Step 1: Write the failing test**
 
-```python
+````python
 # src/cofounder_agent/tests/unit/scripts/test_ops_test_health.py
 from __future__ import annotations
 
@@ -1203,7 +1219,7 @@ def test_extract_patched_file_pulls_code_fence():
 
 def test_extract_patched_file_none_when_no_fence():
     assert th.extract_patched_file("no code here") is None
-```
+````
 
 - [ ] **Step 2: Run test to verify it fails**
 
@@ -1212,7 +1228,7 @@ Expected: FAIL — `ModuleNotFoundError`.
 
 - [ ] **Step 3: Write minimal implementation**
 
-```python
+````python
 # scripts/ops_sessions/test_health.py
 """Run pytest; local-model fix behind a deterministic re-run gate."""
 from __future__ import annotations
@@ -1292,7 +1308,7 @@ def main() -> int:
 
 if __name__ == "__main__":
     sys.exit(main())
-```
+````
 
 - [ ] **Step 4: Run test to verify it passes**
 
@@ -1313,10 +1329,12 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 9: Refactor the harness — `Command` / `NeedsWorktree` / `Enabled`
 
 **Files:**
+
 - Modify: `scripts/claude-sessions.ps1`
 - Test: `src/cofounder_agent/tests/unit/scripts/test_ops_sessions_wiring.py`
 
 **Interfaces:**
+
 - Consumes: the 8 ops scripts (by path).
 - Produces: a `$Sessions` hashtable where each rewired entry has `Command` (string, run inside the worktree/checkout), `NeedsWorktree` (bool), `Enabled` (bool); `Run-Session` dispatches `Command` (falling back to the legacy `claude.exe` path only for entries that still carry a `Prompt` and no `Command`); `Install-Sessions` skips `Enabled=$false`.
 
@@ -1325,17 +1343,17 @@ literal `{runDir}` token; `Run-Session` substitutes the worktree path (when
 `NeedsWorktree=$true`) or `$WorkDir` (when `$false`). The `cd …\src\cofounder_agent`
 puts `poetry run` in the project dir; the script self-locates `ROOT` via `_repo_root()`.
 
-| Session | Command (PowerShell, `;` not `&&`) | NeedsWorktree | Enabled |
-| --- | --- | --- | --- |
-| dependency-review | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\dependency_review.py"` | `$false` | `$true` |
-| codebase-audit | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\codebase_audit.py"` | `$true` | `$true` |
-| doc-sync | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\doc_sync.py"` | `$true` | `$true` |
-| claude-md-sync | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\claude_md_sync.py"` | `$true` | `$true` |
-| triage-sweep | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\triage_sweep.py"` | `$false` | `$true` |
-| alert-triage | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\alert_triage.py"` | `$false` | `$true` |
-| test-health | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\test_health.py"` | `$true` | `$true` |
-| issue-resolver | *(keep existing `claude.exe` Prompt; no Command)* | `$true` | `$false` |
-| test-expansion | *(keep existing `claude.exe` Prompt; no Command)* | `$true` | `$false` |
+| Session           | Command (PowerShell, `;` not `&&`)                                                                          | NeedsWorktree | Enabled  |
+| ----------------- | ----------------------------------------------------------------------------------------------------------- | ------------- | -------- |
+| dependency-review | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\dependency_review.py"` | `$false`      | `$true`  |
+| codebase-audit    | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\codebase_audit.py"`    | `$true`       | `$true`  |
+| doc-sync          | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\doc_sync.py"`          | `$true`       | `$true`  |
+| claude-md-sync    | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\claude_md_sync.py"`    | `$true`       | `$true`  |
+| triage-sweep      | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\triage_sweep.py"`      | `$false`      | `$true`  |
+| alert-triage      | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\alert_triage.py"`      | `$false`      | `$true`  |
+| test-health       | `cd "{runDir}\src\cofounder_agent"; poetry run python "{runDir}\scripts\ops_sessions\test_health.py"`       | `$true`       | `$true`  |
+| issue-resolver    | _(keep existing `claude.exe` Prompt; no Command)_                                                           | `$true`       | `$false` |
+| test-expansion    | _(keep existing `claude.exe` Prompt; no Command)_                                                           | `$true`       | `$false` |
 
 - [ ] **Step 1: Write the failing test** (structural — Python asserts over the ps1 text)
 
@@ -1460,6 +1478,7 @@ Co-Authored-By: Claude Opus 4.8 <noreply@anthropic.com>"
 ### Task 10: Docs — runbook + CLAUDE.md section
 
 **Files:**
+
 - Create: `docs/operations/scheduled-agents.md`
 - Modify: `CLAUDE.md` (the "Scheduled agents" section)
 

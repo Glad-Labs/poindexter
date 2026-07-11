@@ -67,13 +67,17 @@ describe('TopNavigation', () => {
 
   it('renders search button', () => {
     render(<TopNavigation />);
-    expect(screen.getByRole('button', { name: 'Open search' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: 'Open search' })
+    ).toBeInTheDocument();
   });
 
   it('opens search input when search button is clicked', () => {
     render(<TopNavigation />);
     fireEvent.click(screen.getByRole('button', { name: 'Open search' }));
-    expect(screen.getByRole('searchbox', { name: 'Search articles' })).toBeInTheDocument();
+    expect(
+      screen.getByRole('searchbox', { name: 'Search articles' })
+    ).toBeInTheDocument();
   });
 });
 

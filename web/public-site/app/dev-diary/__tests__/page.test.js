@@ -26,24 +26,31 @@ jest.mock('next/image', () => {
 jest.mock('@glad-labs/brand', () => ({
   Card: Object.assign(
     ({ children, className, accent }) => (
-      <div className={className} data-accent={accent}>{children}</div>
+      <div className={className} data-accent={accent}>
+        {children}
+      </div>
     ),
     {
       Meta: ({ children }) => <span>{children}</span>,
       Title: ({ children }) => <h3>{children}</h3>,
-      Body: ({ children, className }) => <p className={className}>{children}</p>,
+      Body: ({ children, className }) => (
+        <p className={className}>{children}</p>
+      ),
       Tag: ({ children }) => <span>{children}</span>,
-    },
+    }
   ),
-  Display: Object.assign(
-    ({ children }) => <h1>{children}</h1>,
-    {
-      Accent: ({ children }) => <span>{children}</span>,
-    },
-  ),
+  Display: Object.assign(({ children }) => <h1>{children}</h1>, {
+    Accent: ({ children }) => <span>{children}</span>,
+  }),
   Eyebrow: ({ children }) => <p>{children}</p>,
   Button: ({ children, href, as: As, ...props }) =>
-    As ? <As href={href} {...props}>{children}</As> : <button {...props}>{children}</button>,
+    As ? (
+      <As href={href} {...props}>
+        {children}
+      </As>
+    ) : (
+      <button {...props}>{children}</button>
+    ),
 }));
 
 const DEV_DIARY_POSTS = [

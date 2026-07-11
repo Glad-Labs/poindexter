@@ -45,10 +45,18 @@ export default function GlobalError({ error, reset }: GlobalErrorProps) {
           >
             GLAD LABS · CRITICAL ERROR
           </p>
-          <h1 style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '1rem' }}>
+          <h1
+            style={{ fontSize: '2rem', fontWeight: 700, marginBottom: '1rem' }}
+          >
             Something went wrong.
           </h1>
-          <p style={{ color: '#94a3b8', marginBottom: '2rem', maxWidth: '32rem' }}>
+          <p
+            style={{
+              color: '#94a3b8',
+              marginBottom: '2rem',
+              maxWidth: '32rem',
+            }}
+          >
             A critical error occurred. Our team has been notified.
             {error?.digest ? ` (ref: ${error.digest})` : ''}
           </p>

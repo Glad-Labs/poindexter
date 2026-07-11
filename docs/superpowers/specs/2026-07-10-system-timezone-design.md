@@ -173,7 +173,7 @@ implementation time to confirm the full list.
 **The DB-override catch.** `_seed_job_config_if_absent` writes a `plugin.job.<name>`
 row `ON CONFLICT DO NOTHING` on first registration, so prod already holds a
 `plugin.job.run_dev_diary_post` row pinned at `0 13`; a code change to `0 9` never
-propagates because the DB override wins. So the dev_diary rebase needs a
+propagates because the DB override wins. So the `dev_diary` rebase needs a
 one-time, **guarded** data fix delivered as a one-shot convergence migration
 (`YYYYMMDD_HHMMSS_rebase_dev_diary_cron_local.py`, same pattern as the
 `drop_pipeline_tasks_category` convergence step): a JSON-guarded `UPDATE` that

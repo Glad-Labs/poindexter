@@ -7,7 +7,10 @@ interface GiscusWrapperProps {
   postTitle: string;
 }
 
-export function GiscusWrapper({ postSlug, postTitle }: GiscusWrapperProps) {
+export function GiscusWrapper({
+  postSlug,
+  postTitle: _postTitle,
+}: GiscusWrapperProps) {
   const ref = useRef<HTMLDivElement>(null);
   // No silent defaults — config lives in Vercel env vars only
   // (NEXT_PUBLIC_GISCUS_REPO / _REPO_ID / _CATEGORY_ID). If any of the
