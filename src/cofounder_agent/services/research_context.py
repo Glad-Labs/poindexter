@@ -78,6 +78,10 @@ async def build_rag_context(
         for hit in similar_posts:
             post_id = hit.source_id
             similarity = hit.similarity
+            # display_similarity is set only on the rerank path (a 0-1 sigmoid
+            # of the cross-encoder logit); None on the cosine path. getattr keeps
+            # us robust to any hit-shaped object that predates the field.
+            display_similarity = getattr(hit, "display_similarity", None)
             title = (hit.metadata or {}).get("title", "Untitled")
             lookup_id = post_id.removeprefix("post/")
 
@@ -120,6 +124,7 @@ async def build_rag_context(
             resolved.append({
                 "post_id": post_id,
                 "similarity": similarity,
+                "display_similarity": display_similarity,
                 "title": title,
                 "slug": slug,
                 "excerpt": excerpt,
@@ -186,9 +191,17 @@ async def build_rag_context(
                 else r["excerpt"]
             )
             url = f"/posts/{r['slug']}" if r["slug"] else f"(post id: {r['post_id']})"
+            # Prefer the display-normalized 0-1 score (rerank path); fall back to
+            # the raw similarity (cosine path, already 0-1). Prevents a raw
+            # cross-encoder logit like -7.86 surfacing as a negative "similarity".
+            sim_display = (
+                r["display_similarity"]
+                if r.get("display_similarity") is not None
+                else r["similarity"]
+            )
             lines.append(
                 f"{i}. [{r['title']}] -- {excerpt_short} ({url}) "
-                f"[similarity: {r['similarity']:.2f}]"
+                f"[similarity: {sim_display:.2f}]"
             )
 
         return "\n".join(lines)

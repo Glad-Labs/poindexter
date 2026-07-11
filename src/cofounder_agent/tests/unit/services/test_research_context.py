@@ -419,3 +419,67 @@ class TestBuildRagContextSelfLink:
         assert result is not None
         assert "/posts/slug-a" in result
         assert "/posts/slug-b" in result
+
+
+# ---------------------------------------------------------------------------
+# build_rag_context — rerank display-similarity normalization (2026-07-11)
+# ---------------------------------------------------------------------------
+
+
+class TestBuildRagContextDisplaySimilarity:
+    """The rendered ``[similarity: X]`` uses ``hit.display_similarity`` when the
+    rerank path set it (a 0-1 sigmoid of the cross-encoder logit), else the raw
+    ``.similarity`` (the cosine path, already 0-1)."""
+
+    @pytest.mark.asyncio
+    async def test_renders_display_similarity_when_present(self, stub_memory_client):
+        """Rerank path: raw ``.similarity`` is a cross-encoder logit (-7.86);
+        the writer prompt must show the bounded display value, never the raw
+        negative logit."""
+        hit = _FakeHit("44444444-4444-4444-4444-444444444444", -7.86, "Live")
+        hit.display_similarity = 0.92  # stand-in for sigmoid(logit)
+        stub_memory_client["find_similar_posts_result"] = [hit]
+        pool = _PoolDouble({
+            "44444444-4444-4444-4444-444444444444": {
+                "slug": "live-slug",
+                "excerpt": "x",
+                "status": "published",
+            },
+        })
+
+        from services.research_context import build_rag_context
+
+        result = await build_rag_context(
+            _DatabaseServiceDouble(pool),
+            topic="topic",
+        )
+
+        assert result is not None
+        assert "[similarity: 0.92]" in result
+        # The raw negative logit must NOT leak into the writer prompt.
+        assert "-7.86" not in result
+
+    @pytest.mark.asyncio
+    async def test_renders_raw_similarity_when_no_display(self, stub_memory_client):
+        """Cosine path (rerank off): ``.similarity`` is already 0-1 and there is
+        no ``display_similarity`` — render the raw value unchanged."""
+        hit = _FakeHit("44444444-4444-4444-4444-444444444444", 0.83, "Live")
+        # display_similarity intentionally unset (getattr fallback → raw).
+        stub_memory_client["find_similar_posts_result"] = [hit]
+        pool = _PoolDouble({
+            "44444444-4444-4444-4444-444444444444": {
+                "slug": "live-slug",
+                "excerpt": "x",
+                "status": "published",
+            },
+        })
+
+        from services.research_context import build_rag_context
+
+        result = await build_rag_context(
+            _DatabaseServiceDouble(pool),
+            topic="topic",
+        )
+
+        assert result is not None
+        assert "[similarity: 0.83]" in result

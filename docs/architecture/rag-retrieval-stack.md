@@ -91,6 +91,32 @@ All three wrappers come from `services/rag_engine.py` —
 lazy-build the relevant LlamaIndex `BaseRetriever` subclasses so
 the module imports cleanly without llama-index installed.
 
+#### Rerank scores are logits — normalized only for display
+
+The cross-encoder rerank wrapper re-scores candidates with raw relevance
+**logits** (`cross-encoder/ms-marco-MiniLM-L-6-v2`), not cosines. Live samples
+span roughly **+6 … −10**, so `NodeWithScore.score` — and therefore
+`MemoryHit.similarity` on the rerank path — is routinely negative. That is
+correct for _ordering_ (higher = more relevant) but wrong to render verbatim: a
+writer-prompt line reading `[similarity: -7.86]` is nonsense to a human or LLM.
+
+`MemoryClient._search_via_rag_engine` therefore attaches a **display-only**
+`MemoryHit.display_similarity` — the logistic sigmoid of the logit (0-1,
+monotonic, so it preserves rerank order) — but _only on the rerank path_. It
+stays `None` on the cosine + legacy paths, where `.similarity` is already a 0-1
+cosine. Surfaces that render a number to a human/LLM (today:
+`services/research_context.py::build_rag_context`'s internal-linking block) show
+`display_similarity` when present, else fall back to `.similarity`. The
+transform is `poindexter/memory/client.py::_rerank_logit_to_similarity`.
+
+Crucially, `.similarity` itself is **left as the raw logit**. Normalizing it at
+the source would silently change behavior for _threshold_ consumers, because a
+fixed cutoff selects a different set in logit-space vs probability-space — e.g.
+`services/topic_dedup_guard.py` re-checks `best.similarity >= 0.75`. (That
+re-check compares a rerank logit to a cosine threshold and is a separate
+pre-existing bug; the display normalization deliberately does not touch
+`.similarity`, so it neither fixes nor worsens that consumer.)
+
 ### Why this is wired through MemoryClient, not the writer stage
 
 #329 sub-issue 4's original framing pointed at

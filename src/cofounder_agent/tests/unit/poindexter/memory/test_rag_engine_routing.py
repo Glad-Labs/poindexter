@@ -549,3 +549,121 @@ class TestExtrasFlagsThreadedIntoRetriever:
         kwargs = get_mock.call_args.kwargs
         assert kwargs["hybrid"] is False
         assert kwargs["rerank"] is False
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-11 — rerank score display normalization
+#
+# When the cross-encoder reranker is on, ``NodeWithScore.score`` is a raw
+# cross-encoder LOGIT (unbounded, routinely negative — live samples span
+# +6.22 … -10.21), not a 0-1 cosine. Surfacing it verbatim into the writer
+# prompt as "[similarity: -7.86]" is cosmetically wrong. ``_search_via_rag_engine``
+# now attaches a display-only ``MemoryHit.display_similarity`` = sigmoid(logit)
+# on the rerank path, leaving the authoritative ``.similarity`` untouched so
+# threshold consumers (e.g. ``topic_dedup_guard``'s ``>= 0.75`` re-check) keep
+# their current behavior.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestRerankLogitToSimilarity:
+    """``_rerank_logit_to_similarity`` maps a cross-encoder logit → (0, 1)."""
+
+    def test_zero_logit_is_half(self):
+        from poindexter.memory.client import _rerank_logit_to_similarity
+
+        assert _rerank_logit_to_similarity(0.0) == pytest.approx(0.5)
+
+    def test_strong_positive_logit_near_one(self):
+        from poindexter.memory.client import _rerank_logit_to_similarity
+
+        # +6.22 was the top live match for "VRAM optimization for local LLM".
+        assert _rerank_logit_to_similarity(6.2212) == pytest.approx(0.998, abs=1e-3)
+
+    def test_deep_negative_logit_stays_small_positive(self):
+        from poindexter.memory.client import _rerank_logit_to_similarity
+
+        # -7.86 is a routine reranked score. It must map to a small positive
+        # in (0, 1) — never a negative "similarity" and never exactly 0.
+        v = _rerank_logit_to_similarity(-7.86)
+        assert 0.0 < v < 0.01
+
+    def test_monotonic_preserves_ordering(self):
+        from poindexter.memory.client import _rerank_logit_to_similarity
+
+        f = _rerank_logit_to_similarity
+        assert f(-4.39) < f(0.0) < f(2.45) < f(6.22)
+
+    def test_extreme_logits_do_not_overflow(self):
+        from poindexter.memory.client import _rerank_logit_to_similarity
+
+        # A naive 1/(1+exp(-x)) raises OverflowError at large negative x.
+        # The numerically-stable form must clamp to the (0, 1) bounds.
+        assert _rerank_logit_to_similarity(1000.0) == pytest.approx(1.0)
+        assert _rerank_logit_to_similarity(-1000.0) == pytest.approx(0.0)
+
+    def test_always_in_unit_interval(self):
+        from poindexter.memory.client import _rerank_logit_to_similarity
+
+        for x in (-12.5, -3.0, -0.1, 0.0, 0.1, 3.0, 12.5):
+            v = _rerank_logit_to_similarity(x)
+            assert 0.0 <= v <= 1.0
+
+
+@pytest.mark.unit
+class TestRerankDisplaySimilarity:
+    """``_search_via_rag_engine`` attaches a display-only normalized score on
+    the rerank path and leaves it ``None`` otherwise (cosine already 0-1)."""
+
+    @pytest.mark.asyncio
+    async def test_display_similarity_set_when_rerank_on(self):
+        from poindexter.memory.client import _rerank_logit_to_similarity
+
+        client = _make_client_with_pool(_FakePoolWithMultiSettings({
+            "rag_engine_enabled": "true",
+            "rag_rerank_enabled": "true",
+        }))
+        node = SimpleNamespace(
+            text="t", metadata={"source_table": "posts", "source_id": "p1"},
+        )
+        nws = SimpleNamespace(node=node, score=-7.86)
+        retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[nws]))
+        with patch(
+            "services.rag_engine.get_rag_retriever",
+            new=AsyncMock(return_value=retriever),
+        ):
+            hits = await client._search_via_rag_engine(
+                "query", source_table="posts", min_similarity=0.3, limit=5,
+            )
+
+        h = hits[0]
+        # Authoritative score is untouched — threshold consumers depend on it.
+        assert h.similarity == pytest.approx(-7.86)
+        # Display value is the sigmoid of the logit.
+        assert h.display_similarity == pytest.approx(
+            _rerank_logit_to_similarity(-7.86)
+        )
+
+    @pytest.mark.asyncio
+    async def test_display_similarity_none_when_rerank_off(self):
+        client = _make_client_with_pool(_FakePoolWithMultiSettings({
+            "rag_engine_enabled": "true",
+            "rag_rerank_enabled": "false",
+        }))
+        # rerank off → score is a real 0-1 cosine; no normalization needed.
+        node = SimpleNamespace(
+            text="t", metadata={"source_table": "posts", "source_id": "p1"},
+        )
+        nws = SimpleNamespace(node=node, score=0.87)
+        retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[nws]))
+        with patch(
+            "services.rag_engine.get_rag_retriever",
+            new=AsyncMock(return_value=retriever),
+        ):
+            hits = await client._search_via_rag_engine(
+                "query", source_table="posts", min_similarity=0.3, limit=5,
+            )
+
+        h = hits[0]
+        assert h.similarity == pytest.approx(0.87)
+        assert h.display_similarity is None

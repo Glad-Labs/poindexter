@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import math
 import os
 from collections.abc import Iterable
 from contextlib import suppress
@@ -66,6 +67,14 @@ class MemoryHit:
     writer: str | None
     origin_path: str | None
     metadata: dict[str, Any] = field(default_factory=dict)
+    # Display-only 0-1 score for surfaces that render a "similarity" to a
+    # human/LLM (e.g. the writer's internal-linking prompt). Set only on the
+    # rerank path — see `_search_via_rag_engine` — where `.similarity` is a raw
+    # cross-encoder logit (unbounded, routinely negative) rather than a cosine.
+    # `None` everywhere else; consumers fall back to `.similarity`. Kept
+    # deliberately separate from `.similarity` so threshold consumers (e.g.
+    # `topic_dedup_guard`'s `>= 0.75` re-check) see the unchanged raw score.
+    display_similarity: float | None = None
 
     def __str__(self) -> str:
         writer_str = f" ({self.writer})" if self.writer else ""
@@ -73,6 +82,29 @@ class MemoryHit:
             f"[{self.similarity:.3f}] {self.source_table}/{self.source_id}"
             f"{writer_str}: {self.text_preview[:80]}"
         )
+
+
+def _rerank_logit_to_similarity(logit: float) -> float:
+    """Map an unbounded cross-encoder rerank logit into a 0-1 display score.
+
+    The cross-encoder (`cross-encoder/ms-marco-MiniLM-L-6-v2`) emits raw
+    relevance logits, not cosines — live samples span roughly +6 … -10, so a
+    strong match reads "+6.22" and a weak one "-8.87". Rendering that verbatim
+    as a "similarity" is confusing (a negative similarity), so display surfaces
+    pass it through the logistic sigmoid, the standard logit→probability map.
+    It is monotonic (preserves rerank order) and bounded to (0, 1).
+
+    This is a **presentation transform only** — never re-threshold on the
+    result, because a fixed cutoff selects a different set in logit-space vs
+    probability-space (the reason `.similarity` stays the raw logit).
+
+    Written in the numerically-stable two-branch form so extreme logits clamp
+    to the bounds instead of raising `OverflowError` on `exp(-logit)`.
+    """
+    if logit >= 0.0:
+        return 1.0 / (1.0 + math.exp(-logit))
+    exp_logit = math.exp(logit)
+    return exp_logit / (1.0 + exp_logit)
 
 
 # ---------------------------------------------------------------------------
@@ -890,11 +922,20 @@ class MemoryClient:
         hits: list[MemoryHit] = []
         for nws in nodes:
             md = dict(getattr(nws.node, "metadata", {}) or {})
+            score = float(getattr(nws, "score", 0.0) or 0.0)
+            # On the rerank path `score` is a raw cross-encoder logit, not a
+            # cosine — attach a display-only 0-1 normalization so writer-prompt
+            # surfaces don't render a negative "similarity". `.similarity` keeps
+            # the raw score for ordering + threshold consumers (see MemoryHit).
+            display_similarity = (
+                _rerank_logit_to_similarity(score) if rerank else None
+            )
             hits.append(
                 MemoryHit(
                     source_table=str(md.get("source_table", "")),
                     source_id=str(md.get("source_id", "")),
-                    similarity=float(getattr(nws, "score", 0.0) or 0.0),
+                    similarity=score,
+                    display_similarity=display_similarity,
                     text_preview=getattr(nws.node, "text", "") or "",
                     writer=md.get("writer"),
                     origin_path=md.get("origin_path"),
