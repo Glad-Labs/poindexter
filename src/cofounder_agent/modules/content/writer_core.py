@@ -135,6 +135,13 @@ class GenerateContentStage:
         # Fetch active writing style samples for voice/tone matching.
         writing_style_context = await _build_writing_style_context(database_service)
 
+        # Operator voice (poindexter#756 follow-up) — the global
+        # writing_style_reference directive. Empty on the OSS default, so it is
+        # a no-op until the operator sets it. Threaded into BOTH writer paths
+        # below so it reaches canonical_blog content regardless of niche
+        # routing; dev_diary is unaffected (it runs the narrate_bundle atom).
+        writing_style_directive = _writing_style_directive(context.get("site_config"))
+
         # Build research context — start with anything the API caller
         # attached to the task (task_metadata JSON, metadata JSONB, or
         # top-level field), then layer on the ResearchService's auto-
@@ -185,6 +192,7 @@ class GenerateContentStage:
                 site_config=context.get("site_config"),
                 research_context=research_context,
                 regen_steering=regen_steering,
+                writing_style_directive=writing_style_directive,
                 target_length=target_length,
             )
         else:
@@ -211,7 +219,14 @@ class GenerateContentStage:
                     tags=tags,
                     preferred_model=preferred_model,
                     preferred_provider=preferred_provider,
-                    writing_style_context=writing_style_context,
+                    writing_style_context=(
+                        "\n\n".join(
+                            p
+                            for p in (writing_style_context, writing_style_directive)
+                            if p
+                        )
+                        or None
+                    ),
                     research_context=research_context,
                     target_audience=target_audience,
                     domain=domain,
@@ -849,6 +864,7 @@ class GenerateContentStage:
         site_config: Any = None,
         research_context: str = "",
         regen_steering: str = "",
+        writing_style_directive: str = "",
         target_length: int = 1200,
     ) -> tuple[str, str, dict[str, Any]]:
         """Run ``atoms.two_pass_writer`` and shape the result into the
@@ -925,6 +941,14 @@ class GenerateContentStage:
         writer_prompt_override = await self._read_writer_prompt_override(
             database_service, task_id,
         )
+
+        # Operator voice (poindexter#756) — prepend the global
+        # writing_style_reference directive to the niche override so it applies
+        # to every canonical_blog niche. Placed before the regen block below so
+        # a one-off regen note stays the most prominent line: the final order is
+        # [regen steering][writing style][niche override].
+        if writing_style_directive:
+            writer_prompt_override = writing_style_directive + (writer_prompt_override or "")
 
         # Operator regen steering (#149) — prepend before any niche-level
         # writer_prompt_override so the operator's note is the first thing
@@ -1242,3 +1266,28 @@ def _self_review_enabled(site_config: Any = None) -> bool:
         return str(raw).lower() in ("true", "1", "yes")
     except Exception:
         return True
+
+
+def _writing_style_directive(site_config: Any = None) -> str:
+    """Build the operator's global writing-voice directive from
+    ``app_settings.writing_style_reference``.
+
+    Returns a prompt block (with a trailing blank line) when the operator has
+    set a style reference, or ``""`` when it is unset / blank — the OSS default
+    — so this is a no-op until configured. Wired into both writer paths (niche
+    two_pass + legacy generate_blog_post) so ``poindexter settings set
+    writing_style_reference "<traits>"`` actually reaches the model. dev_diary is
+    unaffected: it runs through the narrate_bundle atom, not this writer.
+    """
+    if site_config is None:
+        return ""
+    # No try/except: SiteConfig.get is an in-memory cache read that returns the
+    # default for a missing key; a genuine failure here should surface, not be
+    # swallowed into a silent "no operator voice" (feedback_no_silent_defaults).
+    ref = (site_config.get("writing_style_reference", "") or "").strip()
+    if not ref:
+        return ""
+    return (
+        "WRITING STYLE — write in the operator's established voice, matching "
+        f"these traits:\n{ref}\n\n"
+    )

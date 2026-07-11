@@ -24,6 +24,8 @@ from modules.content.stages.generate_content import (
     _self_review_enabled,
     _strip_leaked_image_prompts,
 )
+from modules.content.writer_core import _writing_style_directive
+from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------
 # Pure helpers — no patching required
@@ -748,3 +750,143 @@ async def test_read_internal_grounding_none_when_absent():
 async def test_read_internal_grounding_none_on_error():
     db = _GroundingReadDb(_RAISE)
     assert await GenerateContentStage()._read_internal_grounding(db, "task-1") is None
+
+
+# ---------------------------------------------------------------------------
+# Operator voice (poindexter#756) — app_settings.writing_style_reference must
+# reach the writer. The key is seeded but was read by nothing (zero-reader
+# orphan); wiring it makes `poindexter settings set writing_style_reference
+# "<traits>"` actually shape generated content. Empty on the OSS default = no-op.
+# dev_diary is unaffected (it uses the narrate_bundle atom, not this writer).
+# ---------------------------------------------------------------------------
+
+
+_STYLE_REF = "punchy voice, first person, short declarative sentences"
+
+_STYLE_BODY = (
+    "# A Realistic Draft\n\nThis is a generated blog post body with enough "
+    "substance to comfortably clear the minimum-draft-length guard the pipeline "
+    "now enforces. It has a heading, multiple sentences, and well over two "
+    "hundred characters so the happy-path stage flow runs end to end without "
+    "tripping the empty/too-short writer guard."
+)
+
+
+def _style_metrics(model: str) -> dict[str, Any]:
+    return {
+        "models_used_by_phase": {"writer": model},
+        "model_selection_log": {},
+        "cost_log": {"cost_usd": 0.0, "provider": "ollama", "model": model},
+    }
+
+
+class TestWritingStyleReferenceDirective:
+    """The pure helper reading app_settings.writing_style_reference."""
+
+    def test_empty_when_site_config_none(self):
+        assert _writing_style_directive(None) == ""
+
+    def test_empty_when_key_unset_or_blank(self):
+        assert _writing_style_directive(SiteConfig(initial_config={})) == ""
+        assert (
+            _writing_style_directive(
+                SiteConfig(initial_config={"writing_style_reference": "   "})
+            )
+            == ""
+        )
+
+    def test_contains_reference_when_set(self):
+        directive = _writing_style_directive(
+            SiteConfig(initial_config={"writing_style_reference": _STYLE_REF})
+        )
+        assert _STYLE_REF in directive
+        assert directive.endswith("\n\n")  # a clean prompt block
+
+
+@pytest.mark.asyncio
+class TestWritingStyleReferenceWired:
+    """The directive must reach both writer paths."""
+
+    async def test_forwarded_to_niche_path(self):
+        """Niche tasks route through two_pass — the directive must be passed to
+        _generate_via_two_pass_atom so it can prepend it to writer_prompt_override."""
+        captured: dict[str, Any] = {}
+
+        async def _fake_two_pass(**kw: Any) -> tuple[str, str, dict[str, Any]]:
+            captured.update(kw)
+            return (_STYLE_BODY, "gemma-4-31b", _style_metrics("gemma-4-31b"))
+
+        ctx: dict[str, Any] = {
+            "task_id": "tstyle-niche",
+            "topic": "AI trends",
+            "style": "tech",
+            "tone": "neutral",
+            "target_length": 1200,
+            "tags": [],
+            "models_by_phase": {},
+            "database_service": _FakeDb(),
+            "site_config": SiteConfig(
+                initial_config={"writing_style_reference": _STYLE_REF}
+            ),
+        }
+        stage = GenerateContentStage()
+        patches = _patch_everything()
+        for p in patches:
+            p.start()
+        try:
+            with (
+                patch.object(stage, "_read_niche_slug", AsyncMock(return_value="gaming")),
+                patch.object(stage, "_generate_via_two_pass_atom", _fake_two_pass),
+            ):
+                result = await stage.execute(ctx, {})
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        assert result.ok is True
+        assert _STYLE_REF in captured.get("writing_style_directive", "")
+
+    async def test_included_in_legacy_path_style_context(self):
+        """Legacy (no niche_slug) tasks — the directive rides along in the
+        writing_style_context passed to content_generator.generate_blog_post."""
+        captured: dict[str, Any] = {}
+
+        async def _spy_generate(**kw: Any) -> tuple[str, str, dict[str, Any]]:
+            captured.update(kw)
+            return (_STYLE_BODY, "glm-4.7-5090", _style_metrics("glm-4.7-5090"))
+
+        ctx: dict[str, Any] = {
+            "task_id": "tstyle-legacy",
+            "topic": "AI trends",
+            "style": "tech",
+            "tone": "neutral",
+            "target_length": 1200,
+            "tags": [],
+            "models_by_phase": {},
+            "database_service": _FakeDb(),
+            "site_config": SiteConfig(
+                initial_config={"writing_style_reference": _STYLE_REF}
+            ),
+        }
+        stage = GenerateContentStage()
+        patches = _patch_everything()
+        for p in patches:
+            p.start()
+        try:
+            with (
+                patch.object(stage, "_read_niche_slug", AsyncMock(return_value=None)),
+                patch(
+                    "modules.content.ai_content_generator.get_content_generator",
+                    return_value=SimpleNamespace(
+                        _internal_links_cache=[],
+                        generate_blog_post=_spy_generate,
+                    ),
+                ),
+            ):
+                result = await stage.execute(ctx, {})
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        assert result.ok is True
+        assert _STYLE_REF in (captured.get("writing_style_context") or "")
