@@ -1,4 +1,6 @@
-.git
+# .git is intentionally NOT ignored: vercel.json's ignoreCommand runs
+# `git diff HEAD^ HEAD` to skip unchanged builds and needs the .git dir
+# present. Ignoring it here made every production deploy ERROR (see #2310).
 .gitignore
 README.md
 .env.example
