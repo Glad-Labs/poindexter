@@ -64,8 +64,10 @@ KERNEL_PURITY_BASELINE = {
     # shifted 1154 -> 1181 by the poindexter#832 derive_publish_identity
     # helper (social-draft slug prediction) added above it;
     # shifted 1181 -> 1218 by poindexter#834 (promote-path newsletter announce
-    # + _send_post_newsletter_bg pool-or-db docstring added above it).
-    "services/publish_service.py:1218",
+    # + _send_post_newsletter_bg pool-or-db docstring added above it);
+    # shifted 1218 -> 1221 by the 2026-07-11 edit-metrics freeze fix
+    # (approve_method param + loud-failure docstring lines added above it).
+    "services/publish_service.py:1221",
     # research_context calls internal_link_coherence lazily.
     "services/research_context.py:146",
     # topic_proposal_service calls build_topic_decision_artifact lazily

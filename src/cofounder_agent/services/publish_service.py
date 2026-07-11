@@ -1206,13 +1206,16 @@ async def _record_edit_distance_metrics(
     task_id: str,
     post_id: str,
     publisher: str,
+    approve_method: str = "publish_post_from_task",
 ) -> None:
     """Phase 13 — record the operator's edit distance as an auto-publish signal.
 
     Pre-approve content is what finalize_task snapshotted; post-approve is what
     shipped. The diff is the gate's primary trust signal per
     ``feedback_auto_publish_requires_edit_distance_track_record``. Best-effort —
-    a failure here must never fail a successful publish.
+    a failure here must never fail a successful publish, but it must be LOUD
+    (warning + finding, not the pre-2026-07-11 debug swallow): the gate's
+    training signal starving is invisible in the product itself.
     """
     try:
         from modules.content.api import record_post_approve_metrics
@@ -1239,13 +1242,36 @@ async def _record_edit_distance_metrics(
             niche_slug=task.get("niche_slug") or merged.get("niche_slug"),
             category=task.get("category") or merged.get("category"),
             approver=publisher,
-            approve_method="publish_post_from_task",
+            approve_method=approve_method,
             post_id=int(post_id) if str(post_id).isdigit() else None,
         )
-    except Exception:  # noqa: BLE001
-        logger.debug(
-            "[publish_service] edit-distance metrics failed (non-fatal)",
-            exc_info=True,
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[publish_service] edit-distance metrics failed for task %s "
+            "(non-fatal): %s",
+            task_id, exc, exc_info=True,
+        )
+        # feedback_self_heal_not_suppress: the 2026-06-24→07-11 freeze
+        # showed this signal can starve invisibly — the publish succeeds,
+        # the site looks fine, and the auto-publish gate quietly loses its
+        # trailing-clean-runs training data. Surface repeat failures in
+        # the findings UI. emit_finding is fire-and-forget by contract
+        # (never raises), so no nested guard is needed.
+        from utils.findings import emit_finding
+        emit_finding(
+            source="publish_service.record_edit_distance_metrics",
+            kind="edit_metrics_record_failed",
+            severity="warning",
+            title=f"Edit-distance metrics not recorded for task {task_id}",
+            body=(
+                f"_record_edit_distance_metrics raised "
+                f"{type(exc).__name__}: {exc}. The publish itself "
+                "succeeded, but no row was written to "
+                "published_post_edit_metrics — the auto-publish gate's "
+                "edit-distance training signal is starving. See "
+                "feedback_auto_publish_requires_edit_distance_track_record."
+            ),
+            dedup_key=f"edit_metrics_record_failed_{type(exc).__name__}",
         )
 
 
@@ -1675,6 +1701,36 @@ async def publish_post_from_task(
         publish_meta["scheduled_publish_at"] = scheduled_at.isoformat()
     merged["publish_metadata"] = publish_meta
 
+    # ---------------------------------------------------------------
+    # 6b. Edit-distance metrics — auto_publish_gate training signal
+    #     (phase 13, relocated to the approve seam 2026-07-11)
+    # ---------------------------------------------------------------
+    # This records the operator's approve-time edit distance, so it must
+    # run BEFORE the stage_only short-circuit below. It sat on the
+    # immediate-publish tail until 2026-07-11, but the operator default
+    # became approve→stage→promote around 2026-06-24 — the stage call
+    # returned from the short-circuit below and the later promote call
+    # short-circuited in _promote_or_skip_existing, so the tail was
+    # unreachable and published_post_edit_metrics froze (last row
+    # 2026-06-23T18:16Z; same control-flow class as the poindexter#834
+    # newsletter gap). One row per approve: re-stage and promote both
+    # short-circuit in phase 2 and never reach this line again.
+    await _record_edit_distance_metrics(
+        db_service,
+        task=task,
+        task_metadata=task_metadata,
+        merged=merged,
+        draft_content=draft_content,
+        task_id=task_id,
+        post_id=post_id,
+        publisher=publisher,
+        approve_method=(
+            "publish_post_from_task:stage_only"
+            if stage_only
+            else "publish_post_from_task"
+        ),
+    )
+
     # stage_only short-circuit: the posts row exists at status='approved'
     # with published_at=NULL, the pipeline_task already sits at 'approved'
     # from the approve_task handler that called us. We leave it there
@@ -1818,19 +1874,8 @@ async def publish_post_from_task(
     except Exception:
         logger.warning("[publish_service] Notification failed (non-fatal)", exc_info=True)
 
-    # ---------------------------------------------------------------
-    # 13. Edit-distance metrics — auto_publish_gate training signal — phase 13
-    # ---------------------------------------------------------------
-    await _record_edit_distance_metrics(
-        db_service,
-        task=task,
-        task_metadata=task_metadata,
-        merged=merged,
-        draft_content=draft_content,
-        task_id=task_id,
-        post_id=post_id,
-        publisher=publisher,
-    )
+    # (Phase 13 — edit-distance metrics — moved to 6b above: it is an
+    # approve-time signal and must fire on the stage_only path too.)
 
     return PublishResult(
         success=True,

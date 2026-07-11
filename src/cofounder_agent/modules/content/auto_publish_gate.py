@@ -46,10 +46,15 @@ The caller (finalize_task) inspects the decision:
 - ``would_fire=False`` → leave awaiting_approval, log gate state
 
 Edit-distance writer: :func:`record_post_approve_metrics` is called
-from approval_service.approve when an operator approves a post,
-diffing the pre-approve content snapshot against the post-approve
-content snapshot and writing one row to published_post_edit_metrics.
-That feeds the next gate evaluation's "trailing N clean runs" check.
+from ``publish_service._record_edit_distance_metrics`` at the APPROVE
+seam of ``publish_post_from_task`` — before the stage_only
+short-circuit, so the approve→stage→promote operator flow records it
+too (the 2026-06-24→07-11 freeze was this call sitting on the
+immediate-publish tail, unreachable from both the stage and promote
+short-circuits). It diffs the pre-approve content snapshot against
+the post-approve content snapshot and writes one row to
+published_post_edit_metrics; that feeds the next gate evaluation's
+"trailing N clean runs" check.
 
 2026-05-27 niche-leak fix: prior versions of this module read a
 HARDCODED ``dev_diary_auto_publish_threshold`` regardless of the
@@ -487,6 +492,16 @@ async def record_post_approve_metrics(
     default to None so existing call sites stay unchanged.
     """
     if pool is None:
+        # Loud skip, not a silent one: a caller wired without a DB pool
+        # starves the gate's edit-distance training signal invisibly —
+        # the approve/publish itself still succeeds, so nothing else
+        # surfaces the gap (2026-07-11 freeze RCA).
+        logger.warning(
+            "[auto_publish_gate] record_post_approve_metrics skipped for "
+            "task %s: caller passed pool=None — edit-distance row NOT "
+            "written",
+            task_id,
+        )
         return False
 
     pre = pre_approve_content or ""
