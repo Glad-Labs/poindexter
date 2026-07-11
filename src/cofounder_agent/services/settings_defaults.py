@@ -876,6 +876,29 @@ DEFAULTS: dict[str, str] = {
     # p95 0.83); the prior 0.90 sat near p99 and caught 1 of 4 exemplar echoes.
     'opening_originality_enabled': 'true',
     'opening_originality_max_similarity': '0.83',
+    # --- Affiliate-link injection (rebuild 2026-07-11) -----------------------
+    # Dark-launched: the content.inject_affiliate_links atom no-ops until this
+    # flips true. Real referral rows are added out-of-band via
+    # `poindexter affiliate add` (DB-only, never seeded in source).
+    'affiliate_injection_enabled': 'false',
+    # Max affiliate links injected per post (first-mention only, one per keyword).
+    'affiliate_max_links_per_post': '3',
+    # URL prefix the injected link points at: `{base}/{code}`. Default is the
+    # relative `/go` path (a CF Worker route on the site origin); set to an
+    # absolute origin (e.g. https://go.gladlabs.io) if hosting on a subdomain.
+    'affiliate_redirect_base_url': '/go',
+    # FTC disclosure banner copy, rendered near the top of any post containing an
+    # affiliate link. Empty string → frontend uses its built-in default. Generic
+    # (brand-free) per OSS-seed hygiene; the operator's branded wording is
+    # restored by operator_overrides.OPERATOR_SETTING_OVERRIDES.
+    'affiliate_disclosure_text': (
+        'Some links in this article are affiliate links — if you sign up '
+        'through them, we may earn a commission at no extra cost to you.'
+    ),
+    # Click-ingest job: pull the affiliate-click Analytics Engine dataset into
+    # affiliate_link_clicks every 5 min (mirrors sync_cloudflare_analytics).
+    'plugin.job.sync_affiliate_clicks.enabled': 'true',
+    'plugin.job.sync_affiliate_clicks.interval_seconds': '300',
     # Citation reconciliation + advisory unlinked-attribution rail (#765).
     # why: deterministic repair that re-links named sources the writer dropped
     # the URL for, matched against the research corpus by domain handle — free,

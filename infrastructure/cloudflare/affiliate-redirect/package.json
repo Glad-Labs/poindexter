@@ -1,0 +1,19 @@
+{
+  "name": "affiliate-redirect",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "deploy": "wrangler deploy",
+    "dev": "wrangler dev",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260708.1",
+    "esbuild": "^0.28.1",
+    "vitest": "^3.2.6",
+    "wrangler": "^4.102.0"
+  },
+  "overrides": {
+    "esbuild": "$esbuild"
+  }
+}

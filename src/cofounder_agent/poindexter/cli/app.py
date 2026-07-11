@@ -8,6 +8,7 @@ import os
 import click
 
 from ._event_loop import ensure_selector_event_loop_on_windows
+from .affiliate import affiliate_group
 from .approval import APPROVAL_FLAT_ALIASES, gates_group
 from .auth import auth_group
 from .auto_publish import auto_publish_group
@@ -108,6 +109,7 @@ main.add_command(model_eval_group, name="model-eval")
 main.add_command(integrations_group, name="integrations")
 main.add_command(validators_group, name="validators")
 main.add_command(auto_publish_group, name="auto-publish")
+main.add_command(affiliate_group, name="affiliate")
 main.add_command(dev_diary_group, name="dev-diary")
 main.add_command(publishers_group, name="publishers")
 main.add_command(social_group, name="social")

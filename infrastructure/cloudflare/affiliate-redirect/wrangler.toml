@@ -1,0 +1,27 @@
+name = "affiliate-redirect"
+main = "src/index.ts"
+# Matches the sibling workers (page-views-beacon, sentry-relay) rather than the
+# plan's placeholder date — keeps runtime semantics consistent across the zone.
+compatibility_date = "2026-05-01"
+
+# Analytics Engine binding — one data point per /go/<code> click. Operator
+# creates the dataset in the CF dashboard and references it here. Read back via
+# the AE SQL HTTP API (see README); SyncAffiliateClicksJob pulls it into the
+# affiliate_link_clicks table every 5 minutes.
+[[analytics_engine_datasets]]
+binding = "ANALYTICS_ENGINE"
+dataset = "affiliate_clicks"
+
+# Config vars.
+#   LINKS_URL — the code→url map published by the static export
+#     (services/static_export_service.py::_export_affiliate_links) under the R2
+#     `static/` prefix. Set the real R2 public host per-operator — do NOT commit
+#     an operator-specific hostname.
+#   HOME_URL  — fallback redirect for a blank or unknown code.
+[vars]
+LINKS_URL = "https://<r2-public-host>/static/affiliate-links.json"
+HOME_URL = "https://www.gladlabs.io"
+
+# Route — operator wires either `/go/*` on the site zone or a `go.` subdomain to
+# this Worker via the CF dashboard or `wrangler routes add`. Don't commit a
+# route block with an operator-specific hostname (see README deploy note).

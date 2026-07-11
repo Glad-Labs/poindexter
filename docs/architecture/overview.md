@@ -85,7 +85,7 @@ content with human oversight**, not "AI content factory" and not
 │  ┌────────────────────────────────────────────────────────────┐ │
 │  │  Prefect flow  →  ContentRouterService                     │ │
 │  │     → TemplateRunner (LangGraph canonical_blog template,   │ │
-│  │       42 nodes; dev_diary template, 5 nodes)               │ │
+│  │       43 nodes; dev_diary template, 5 nodes)               │ │
 │  │  LiteLLM router (primary on prod for all 5 cost tiers;     │ │
 │  │     Ollama default, cloud providers behind cost_guard +    │ │
 │  │     allow_paid_base_url opt-in per feedback_no_paid_apis)  │ │
@@ -178,7 +178,7 @@ LOCKED` and hands them to `content_router_service`. Retry /
 
 - RESTful API (~70 endpoints across tasks, posts, media, memory, pipeline, analytics, webhooks)
 - WebSocket support (planned)
-- LangGraph-orchestrated pipeline — `canonical_blog` graph_def (42 nodes, seeded into the `pipeline_templates` table from `services/canonical_blog_spec.py`), dispatched by Prefect via `services/flows/content_generation.py`.
+- LangGraph-orchestrated pipeline — `canonical_blog` graph_def (43 nodes, seeded into the `pipeline_templates` table from `services/canonical_blog_spec.py`), dispatched by Prefect via `services/flows/content_generation.py`.
 - LLM router via LiteLLM (`services/llm_providers/litellm_provider.py`) — primary on prod for all 5 cost tiers (`plugin.llm_provider.primary.{free,budget,standard,premium,flagship}='litellm'`) as of 2026-05-16. Provider routing, cost tracking, and retries all delegated to mature OSS. Paid-vendor model prefixes (`openai/`, `anthropic/`, `gemini/`, …) refuse to dispatch unless `plugin.llm_provider.litellm.allow_paid_base_url=true` (cycle-5 #251, 2026-05-27).
 - Semantic memory via pgvector (writer-segregated)
 - Async task processing with atomic task-claim via `SELECT ... FOR UPDATE SKIP LOCKED`

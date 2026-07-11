@@ -30,6 +30,10 @@ export interface Post {
   seo_description?: string;
   seo_keywords?: string;
   niche_slug?: string;
+  // Set by the static export when the post body contains /go affiliate links.
+  // Drives the conditional FTC disclosure banner (AffiliateDisclosure).
+  has_affiliate_links?: boolean;
+  affiliate_disclosure_text?: string;
 }
 
 export interface PostsResponse {

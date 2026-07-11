@@ -7,6 +7,7 @@
   "content.generate_images": "e09538385a9a",
   "content.generate_title": "6f6309d3e872",
   "content.image_rebuild_gate": "9cd331845130",
+  "content.inject_affiliate_links": "67e3432a21de",
   "content.inject_images": "c3524e4c30ca",
   "content.llm_reconcile_citations": "d33d2523107c",
   "content.load_draft_for_image_rebuild": "286dcadd1565",

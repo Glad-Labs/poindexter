@@ -93,6 +93,10 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         # couldn't frame-match; flags ungrounded named sources. Runs before the
         # QA rails so inserted links flow through qa.citations' dead-link check.
         {"id": "llm_reconcile_citations", "atom": "content.llm_reconcile_citations"},
+        # Inject curated affiliate links (keyword match, first-mention, capped).
+        # After citation repair, BEFORE quality_evaluation/url_validation so the
+        # injected /go/<code> links flow through the dead-link + QA checks.
+        {"id": "inject_affiliate_links", "atom": "content.inject_affiliate_links"},
         {"id": "quality_evaluation", "atom": "stage.quality_evaluation"},
         {"id": "url_validation", "atom": "stage.url_validation"},
         # content.replace_inline_images decomposition (#362):
@@ -173,7 +177,8 @@ CANONICAL_BLOG_GRAPH_DEF: dict[str, Any] = {
         {"from": "writer_self_review", "to": "resolve_internal_link_placeholders"},
         {"from": "resolve_internal_link_placeholders", "to": "reconcile_citations"},
         {"from": "reconcile_citations", "to": "llm_reconcile_citations"},
-        {"from": "llm_reconcile_citations", "to": "quality_evaluation"},
+        {"from": "llm_reconcile_citations", "to": "inject_affiliate_links"},
+        {"from": "inject_affiliate_links", "to": "quality_evaluation"},
         {"from": "quality_evaluation", "to": "url_validation"},
         # replace_inline_images atom chain
         {"from": "url_validation", "to": "plan_image_markers"},

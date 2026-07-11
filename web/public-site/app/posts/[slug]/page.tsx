@@ -9,6 +9,7 @@ import { generateBlogPostingSchema } from '../../../lib/structured-data';
 import { GiscusWrapper } from '../../../components/GiscusWrapper';
 import AdUnit from '../../../components/AdUnit';
 import { ViewTracker } from '../../../components/ViewTracker';
+import { AffiliateDisclosure } from '../../../components/AffiliateDisclosure';
 import sanitizeHtml from 'sanitize-html';
 import {
   buildMetaDescription,
@@ -325,6 +326,10 @@ export default async function PostPage({
         {/* Article body */}
         <div className="px-4 sm:px-6 lg:px-8 pb-16">
           <div className="container mx-auto max-w-4xl">
+            {/* FTC affiliate disclosure — before any /go links in the body */}
+            {post.has_affiliate_links && (
+              <AffiliateDisclosure text={post.affiliate_disclosure_text} />
+            )}
             {/* Table of Contents */}
             {tocEntries.length >= 3 && (
               <nav className="mb-10" aria-label="Table of contents">

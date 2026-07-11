@@ -228,11 +228,32 @@ def _markdown_to_html(content: str) -> str:
         return content
 
 
-def _post_full(post: dict) -> dict:
-    """Full post dict including content (converted to HTML)."""
+def _post_full(post: dict, *, affiliate_base: str = "/go", disclosure_text: str = "") -> dict:
+    """Full post dict including content (converted to HTML) + affiliate flag."""
     summary = _post_summary(post)
-    summary["content"] = _markdown_to_html(post.get("content", ""))
+    content_html = _markdown_to_html(post.get("content", ""))
+    summary["content"] = content_html
+    # has_affiliate_links is derived from the content itself (presence of the
+    # /go redirect path) — single source of truth, no PipelineState/persist flag.
+    marker = f"{affiliate_base.rstrip('/')}/"
+    has_aff = marker in content_html
+    summary["has_affiliate_links"] = has_aff
+    if has_aff and disclosure_text:
+        summary["affiliate_disclosure_text"] = disclosure_text
     return summary
+
+
+async def _export_affiliate_links(pool, *, site_config: SiteConfig) -> None:
+    """Upload static/affiliate-links.json — the code→url map the /go Worker resolves."""
+    try:
+        rows = await pool.fetch(
+            "SELECT code, url FROM affiliate_links WHERE is_active = true"
+        )
+    except Exception as e:  # noqa: BLE001 — never fail the export on the affiliate map
+        logger.warning("[STATIC_EXPORT] affiliate-links fetch failed: %s", e)
+        return
+    mapping = {r["code"]: {"url": r["url"]} for r in rows}
+    await _upload_json("affiliate-links.json", _to_json(mapping), site_config=site_config)
 
 
 def _build_json_feed(posts: list[dict], site_url: str, site_title: str) -> dict:
@@ -388,6 +409,8 @@ async def export_post(
     the export.
     """
     _sc = site_config
+    _aff_base = _sc.get("affiliate_redirect_base_url", "/go") or "/go"
+    _aff_text = _sc.get("affiliate_disclosure_text", "") or ""
 
     site_url = _sc.get("public_site_url") or _sc.require("site_url")
     site_title = _sc.get("site_title") or _sc.require("site_name")
@@ -396,7 +419,11 @@ async def export_post(
     try:
         post = await _fetch_post_by_slug(pool, slug)
         if post:
-            url = await _upload_json(f"posts/{slug}.json", _to_json(_post_full(post)), site_config=_sc)
+            url = await _upload_json(
+                f"posts/{slug}.json",
+                _to_json(_post_full(post, affiliate_base=_aff_base, disclosure_text=_aff_text)),
+                site_config=_sc,
+            )
             if not url:
                 success = False
             logger.info("[STATIC_EXPORT] Exported post: %s", slug)
@@ -449,6 +476,8 @@ async def export_post(
         if not url:
             success = False
 
+        await _export_affiliate_links(pool, site_config=_sc)
+
         logger.info(
             "[STATIC_EXPORT] Incremental export complete — %d posts, triggered by %s",
             len(all_posts), slug,
@@ -472,6 +501,8 @@ async def export_full_rebuild(
     the rebuild.
     """
     _sc = site_config
+    _aff_base = _sc.get("affiliate_redirect_base_url", "/go") or "/go"
+    _aff_text = _sc.get("affiliate_disclosure_text", "") or ""
 
     site_url = _sc.get("public_site_url") or _sc.require("site_url")
     site_title = _sc.get("site_title") or _sc.require("site_name")
@@ -492,7 +523,8 @@ async def export_full_rebuild(
 
         for post in all_posts:
             key = f"posts/{post['slug']}.json"
-            if not await _upload_json(key, _to_json(_post_full(post)), site_config=_sc):
+            full = _post_full(post, affiliate_base=_aff_base, disclosure_text=_aff_text)
+            if not await _upload_json(key, _to_json(full), site_config=_sc):
                 errors.append(key)
 
         # Retire any per-post JSON whose slug is no longer published — a
@@ -538,6 +570,8 @@ async def export_full_rebuild(
         }
         if not await _upload_json("manifest.json", _to_json(manifest), site_config=_sc):
             errors.append("manifest.json")
+
+        await _export_affiliate_links(pool, site_config=_sc)
 
         total_files = len(all_posts) + 5
         logger.info(

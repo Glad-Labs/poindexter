@@ -597,6 +597,17 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.sync_cloudflare_analytics",
             "SyncCloudflareAnalyticsJob",
         ),
+        # Sibling CF Analytics Engine ingest — the affiliate-redirect Worker at
+        # infrastructure/cloudflare/affiliate-redirect/ writes one AE data point
+        # per /go click; this job pulls the affiliate_clicks dataset every 5 min
+        # into affiliate_link_clicks and rolls per-code totals into
+        # affiliate_links.clicks. Opt-in (affiliate_injection_enabled default
+        # false), so it skips quietly when CF isn't configured.
+        (
+            "jobs",
+            "services.jobs.sync_affiliate_clicks",
+            "SyncAffiliateClicksJob",
+        ),
         # Stealth-bot sweep for the ingested page_views (the sync job above drops
         # only DECLARED crawler UAs; browser-UA scrapers slip through and inflate
         # the beacon KPI ~10x). Windowed (user_agent, path) flood-cap flags them

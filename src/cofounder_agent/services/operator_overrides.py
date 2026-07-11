@@ -87,6 +87,12 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     "podcast_name": "Glad Labs Podcast",
     "podcast_description": "AI-development audio essays from Glad Labs. Narrated deep-dives on building an autonomous content pipeline, local LLMs, and the solo-founder tech stack.",
     "video_feed_name": "Glad Labs Video",
+    # Branded FTC affiliate-disclosure copy. The OSS seed ships a generic
+    # "we may earn" version; this restores the Glad Labs wording on the rig.
+    "affiliate_disclosure_text": (
+        "Some links in this article are affiliate links — if you sign up "
+        "through them, Glad Labs may earn a commission at no extra cost to you."
+    ),
     "social_x_handle": "@_gladlabs",
     "social_x_url": "https://x.com/_gladlabs",
     "storage_bucket": "gladlabs-media",
