@@ -195,6 +195,92 @@ class TestContainerMemoryRule:
         assert "absent(" not in rule["expr"]
 
 
+class TestHostMemoryPressureRules:
+    """Host RAM-pressure alerts (2026-07-10 desktop-freeze investigation).
+
+    The worker host oversubscribes RAM — WSL2 (memory-capped in ~/.wslconfig),
+    the container stack, the host-native inference fleet, and the operator
+    desktop all compete for the same physical RAM. Measured over 14 days: the
+    minimum available RAM reached ~0 GB and the pagefile write rate peaked at
+    ~33,767 pages/s (~135 MB/s) against a ~0.08 pages/s idle median — the box
+    pages its working set to disk and the desktop compositor stalls (the
+    recurring freeze that escalates to a hard reset). There was NO host-memory
+    alert before this — only per-container (cAdvisor) and GPU-VRAM rules — so
+    the pressure that actually caused the freezes was invisible to Alertmanager.
+    windows_exporter (job="windows") exports both signals directly.
+    """
+
+    def test_rules_and_thresholds_registered(self):
+        assert "PoindexterHostMemoryLow" in rb.DEFAULT_RULES
+        assert "PoindexterHostMemoryThrashing" in rb.DEFAULT_RULES
+        # Calibrated from real telemetry, but every value stays DB-tunable.
+        assert rb.DEFAULT_THRESHOLDS["host_memory_available_warning_gb"] == "4"
+        assert (
+            rb.DEFAULT_THRESHOLDS["host_memory_paging_critical_pages_per_sec"]
+            == "2000"
+        )
+
+    @pytest.mark.asyncio
+    async def test_available_low_renders_against_windows_exporter(self):
+        pool = _FakePool([])
+        out = await rb.build_current(pool)
+        assert "alert: PoindexterHostMemoryLow" in out
+        section = out.split("alert: PoindexterHostMemoryLow")[1].split("alert:", 1)[0]
+        # Sources the available-RAM gauge the freeze investigation measured.
+        assert "windows_memory_available_bytes" in section
+        # Threshold substituted to its default; no leftover placeholder.
+        assert "{threshold." not in section
+        assert "1024*1024*1024) < 4" in section
+        # Warning → Discord: a sustained-headroom heads-up, not a phone page.
+        assert "severity: warning" in section
+
+    @pytest.mark.asyncio
+    async def test_thrashing_is_critical_and_targets_pagefile_writes(self):
+        pool = _FakePool([])
+        out = await rb.build_current(pool)
+        assert "alert: PoindexterHostMemoryThrashing" in out
+        section = out.split("alert: PoindexterHostMemoryThrashing")[1].split(
+            "alert:", 1
+        )[0]
+        # swap_pages_written = pagefile writes specifically (memory-pressure
+        # eviction), NOT ordinary buffered file I/O.
+        assert "windows_memory_swap_pages_written_total" in section
+        assert "> 2000" in section
+        # Critical → Telegram: it IS the freeze-in-progress signal and is rare
+        # (idle median ~0.08 pages/s), so it only fires during a real episode.
+        assert "severity: critical" in section
+
+    def test_no_absent_guard_so_exporter_death_doesnt_false_fire(self):
+        """WindowsExporterDown owns exporter death; a bare comparison yields no
+        series on no-data, so neither rule carries an absent() guard (#581)."""
+        assert "absent(" not in rb.DEFAULT_RULES["PoindexterHostMemoryLow"]["expr"]
+        assert (
+            "absent(" not in rb.DEFAULT_RULES["PoindexterHostMemoryThrashing"]["expr"]
+        )
+
+    def test_descriptions_carry_a_remediation_path(self):
+        """Every alert needs an operator-facing next step (feedback_self_heal_
+        not_suppress). Both name a concrete lever, not just the symptom."""
+        low = rb.DEFAULT_RULES["PoindexterHostMemoryLow"]["description"].lower()
+        thrash = rb.DEFAULT_RULES["PoindexterHostMemoryThrashing"][
+            "description"
+        ].lower()
+        assert "wsl" in low or "container" in low
+        assert "close" in thrash or "pause" in thrash
+
+    @pytest.mark.asyncio
+    async def test_thresholds_operator_tunable(self):
+        pool = _FakePool([
+            {"key": "prometheus.threshold.host_memory_available_warning_gb",
+             "value": "6"},
+            {"key": "prometheus.threshold.host_memory_paging_critical_pages_per_sec",
+             "value": "5000"},
+        ])
+        out = await rb.build_current(pool)
+        assert "1024*1024*1024) < 6" in out
+        assert "> 5000" in out
+
+
 # ---------------------------------------------------------------------------
 # load_thresholds / load_rules
 # ---------------------------------------------------------------------------

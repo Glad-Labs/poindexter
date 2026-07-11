@@ -21,7 +21,7 @@
   "tags": ["hardware", "gpu", "power", "infra"],
   "title": "Hardware & Power",
   "uid": "hardware-power",
-  "version": 2,
+  "version": 3,
   "panels": [
     {
       "type": "row",
@@ -1134,7 +1134,224 @@
         },
         "overrides": []
       }
+    },
+    {
+      "type": "row",
+      "title": "Host Memory — pressure (Prometheus)",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 86 },
+      "panels": [],
+      "id": 59
+    },
+    {
+      "id": 60,
+      "type": "stat",
+      "title": "Available RAM",
+      "description": "windows_memory_available_bytes = truly-free + reclaimable-standby. When this trends toward 0 the desktop compositor starves and the UI freezes. The PoindexterHostMemoryLow warning fires under 4 GB sustained.",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 87 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null },
+              { "color": "yellow", "value": 2147483648 },
+              { "color": "blue", "value": 4294967296 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "windows_memory_available_bytes",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 61,
+      "type": "stat",
+      "title": "Commit vs RAM",
+      "description": "windows_memory_committed_bytes / windows_memory_physical_total_bytes. Over 100% means committed memory exceeds physical RAM — the host is leaning on the pagefile. Sustained high commit is the structural oversubscription behind the freezes.",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 87 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "yellow", "value": 100 },
+              { "color": "orange", "value": 150 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "windows_memory_committed_bytes / windows_memory_physical_total_bytes * 100",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 62,
+      "type": "stat",
+      "title": "Page-out rate",
+      "description": "rate(windows_memory_swap_pages_written_total[5m]) — pages/s written to the pagefile (memory-pressure eviction, not ordinary file I/O). The PoindexterHostMemoryThrashing critical fires over 2000/s — the freeze-in-progress signal.",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 87 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "yellow", "value": 500 },
+              { "color": "orange", "value": 2000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "area",
+        "textMode": "value"
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "rate(windows_memory_swap_pages_written_total[5m])",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 63,
+      "type": "timeseries",
+      "title": "Available RAM (headroom)",
+      "description": "Host available RAM over time. The line at 4 GB is the PoindexterHostMemoryLow warning floor; when this approaches 0 the desktop compositor stalls (the host-memory freeze).",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 91 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "thresholdsStyle": { "mode": "line" }
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "orange", "value": null },
+              { "color": "blue", "value": 4294967296 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["min", "lastNotNull"],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "windows_memory_available_bytes",
+          "legendFormat": "Available RAM",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 64,
+      "type": "timeseries",
+      "title": "Pagefile write rate (thrash)",
+      "description": "rate(windows_memory_swap_pages_written_total[5m]) — sustained pagefile writes = memory-pressure eviction. The line at 2000 pages/s is the PoindexterHostMemoryThrashing critical floor; spikes here are freeze-in-progress episodes.",
+      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 91 },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "color": { "mode": "thresholds" },
+          "custom": {
+            "fillOpacity": 10,
+            "lineWidth": 2,
+            "showPoints": "never",
+            "thresholdsStyle": { "mode": "line" },
+            "axisLabel": "pages/s"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              { "color": "blue", "value": null },
+              { "color": "orange", "value": 2000 }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "legend": {
+          "calcs": ["max", "lastNotNull"],
+          "displayMode": "table",
+          "placement": "bottom"
+        },
+        "tooltip": { "mode": "multi" }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
+          "expr": "rate(windows_memory_swap_pages_written_total[5m])",
+          "legendFormat": "Page-out /s",
+          "refId": "A"
+        }
+      ]
     }
   ],
-  "description": "CHARTER: GPU/PSU/wall power — thermal and electrical headroom and electricity cost. GPU live is single-sourced from Prometheus nvidia_gpu_* (#653); the gpu_metrics SQL tables here are history only."
+  "description": "CHARTER: GPU/PSU/wall power + host-memory pressure — thermal, electrical, and RAM headroom and electricity cost. GPU live is single-sourced from Prometheus nvidia_gpu_* (#653); the gpu_metrics SQL tables here are history only. Host-memory row added 2026-07-10 (desktop-freeze investigation)."
 }

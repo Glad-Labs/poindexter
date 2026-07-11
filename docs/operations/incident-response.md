@@ -519,6 +519,43 @@ Other space to reclaim: clear old local model files, or archive high-churn table
 
 ---
 
+## Host Memory Pressure
+
+**Means.** The worker host is running out of physical RAM. The box is triple-booked — the container stack (WSL2, memory-capped in `~/.wslconfig`), the host-native Ollama/inference fleet, and the operator desktop all draw on the same physical RAM. When available RAM approaches zero the OS pages the working set to the pagefile; the desktop compositor (which shares the GPU and RAM) stalls and the UI freezes — occasionally hard enough to force a dirty reset (Windows Kernel-Power 41). Two **Prometheus** alerts (DB-rendered from `app_settings.prometheus.*`, sourced from windows_exporter — the `windows` scrape job on `host.docker.internal:9182`) cover it:
+
+- **`PoindexterHostMemoryLow`** (warning) — `windows_memory_available_bytes` under 4 GB for 10 minutes. A headroom heads-up: the next allocation spike will page.
+- **`PoindexterHostMemoryThrashing`** (critical) — `rate(windows_memory_swap_pages_written_total[5m])` over 2000 pages/s for 2 minutes. Active memory-pressure eviction — the freeze-in-progress signal. Idle median is ~0.08 pages/s, so it fires only during a genuine episode.
+
+Both thresholds are DB-tunable (`prometheus.threshold.host_memory_available_warning_gb`, `prometheus.threshold.host_memory_paging_critical_pages_per_sec`). Neither carries an `absent()` guard — a bare comparison yields no series when the exporter is down, so exporter death routes to `WindowsExporterDown`, not a false memory page. Visualize on the **Hardware & Power** board → "Host Memory — pressure" row (available RAM, commit-vs-RAM, page-out rate).
+
+**Triage.**
+
+```powershell
+# What's holding RAM (Windows host)? vmmemWSL = the whole container VM.
+Get-Process vmmemWSL,vmmem -EA SilentlyContinue |
+  Select-Object Name,@{n='WS_GB';e={[math]::Round($_.WorkingSet64/1GB,1)}}
+Get-Process | Sort-Object WorkingSet -Descending |
+  Select-Object -First 12 @{n='GB';e={[math]::Round($_.WorkingSet/1GB,2)}},ProcessName
+# Real pressure vs reclaimable cache (available includes reclaimable standby):
+(Get-Counter '\Memory\Available MBytes').CounterSamples[0].CookedValue
+```
+
+```bash
+# Which container is bloated?
+docker stats --no-stream --format "table {{.Name}}\t{{.MemUsage}}"
+```
+
+**Fix.** In order of leverage:
+
+- **Immediate:** close idle browser/Electron apps (they hold both RAM and display-GPU memory), or pause heavy pipeline work (image/video generation).
+- **Reclaim a leak:** `docker restart <container>` on a bloated one — cAdvisor has leaked before (`docker restart poindexter-cadvisor` reclaims it instantly).
+- **Unpin idle VRAM:** a `KEEP_ALIVE=-1` model (e.g. the vision instance on `:11435`) that WDDM has paged to system RAM is holding host RAM; unpin it if vision QA is idle.
+- **Durable:** the box is structurally oversubscribed — move the container tier onto separate hardware (bare-metal Linux) or add physical RAM.
+
+> **Not the PSU.** A recurring Kernel-Power 41 reset here reads like a power fault, but the HX1500i telemetry (`sensor_samples`) shows normal power (~380 W) and temperatures before each reset, and host telemetry goes _dark_ 28–30 min _ahead_ of the reset — the freeze signature, not an instantaneous power trip. Chase memory pressure first.
+
+---
+
 ## Site DOWN
 
 **Means.** Brain daemon's site probe failed for > 5 minutes. `https://www.gladlabs.io` is returning non-2xx.

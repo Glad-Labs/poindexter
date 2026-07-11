@@ -104,6 +104,19 @@ DEFAULT_THRESHOLDS: dict[str, str] = {
     # max_connections value (currently 300 in docker-compose.local.yml).
     "postgres_connection_warning_ratio": "0.80",
     "postgres_connection_critical_ratio": "0.95",
+    # Host RAM pressure (2026-07-10 desktop-freeze investigation). The worker
+    # host runs the container stack (WSL2, memory-capped in ~/.wslconfig), a
+    # host-native inference fleet, AND the operator desktop on shared physical
+    # RAM. When available RAM approaches zero the OS pages the working set to
+    # disk and the desktop compositor stalls — the recurring freeze that can
+    # escalate to a hard reset. Calibrated from 14 days of windows_exporter
+    # telemetry: available RAM bottomed at ~0 GB and the pagefile write rate
+    # peaked at ~33,767 pages/s vs a ~0.08 pages/s idle median. 4 GB is a
+    # comfortable warning floor (normal idle headroom is higher); 2000 pages/s
+    # (~8 MB/s sustained page-out) sits far above noise yet well under the
+    # freeze peak, so the paging alert fires only during a real episode.
+    "host_memory_available_warning_gb": "4",
+    "host_memory_paging_critical_pages_per_sec": "2000",
 }
 
 
@@ -417,6 +430,72 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "Check the System Health 'Memory Usage by Container' panel for "
             "the growth shape, then `docker restart {{ $labels.name }}` and "
             "consider a compose mem_limit if it recurs."
+        ),
+    },
+    # Host RAM pressure (2026-07-10 desktop-freeze investigation). The worker
+    # host oversubscribes RAM — WSL2, the container stack, the host inference
+    # fleet, and the operator desktop share one pool. There was no host-memory
+    # alert before this (only per-container cAdvisor + GPU-VRAM rules), so the
+    # pressure that actually froze the desktop was invisible to Alertmanager.
+    # Both source windows_exporter (job="windows"). No absent() guard on either:
+    # a bare comparison yields no series when the exporter is down, so neither
+    # false-fires on no-data — WindowsExporterDown owns exporter death (#581).
+    "PoindexterHostMemoryLow": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        # available = truly-free + reclaimable-standby. Sustained below the
+        # floor means the desktop + WSL + inference have crowded out headroom
+        # and the next allocation spike will page.
+        "expr": (
+            "windows_memory_available_bytes / (1024*1024*1024) < "
+            "{threshold.host_memory_available_warning_gb}"
+        ),
+        "for": "10m",
+        "severity": "warning",
+        "category": "infrastructure",
+        "summary": "Host available RAM below the warning floor for 10m",
+        "description": (
+            "windows_memory_available_bytes has stayed under the warning floor "
+            "(prometheus.threshold.host_memory_available_warning_gb, default "
+            "4 GB) for 10m. The host is oversubscribed: WSL2 (capped in "
+            "~/.wslconfig), the container stack, the host Ollama/inference "
+            "fleet, and the desktop are competing for RAM, and when available "
+            "reaches ~0 the desktop compositor stalls. Levers: close idle "
+            "browser/Electron apps, `docker restart` a bloated container (see "
+            "the Database + Hardware & Power boards for the growth shape), or "
+            "unpin an idle KEEP_ALIVE=-1 model. Durable fix is de-"
+            "oversubscription (move the container tier off the box, or add RAM)."
+        ),
+    },
+    "PoindexterHostMemoryThrashing": {
+        "enabled": True,
+        "group": "poindexter-infrastructure",
+        "interval": "30s",
+        # swap_pages_written = pagefile writes specifically (memory-pressure
+        # eviction), NOT ordinary buffered file I/O. Idle median ~0.08 pages/s,
+        # so a 2000 pages/s floor only trips during a genuine thrash episode —
+        # the minutes before a desktop lock-up, which is the lead time the box
+        # never gave before. Critical → Telegram because it IS the freeze-in-
+        # progress signal and it's rare, not chronic noise.
+        "expr": (
+            "rate(windows_memory_swap_pages_written_total[5m]) > "
+            "{threshold.host_memory_paging_critical_pages_per_sec}"
+        ),
+        "for": "2m",
+        "severity": "critical",
+        "category": "infrastructure",
+        "summary": "Host is thrashing — sustained page-out to disk",
+        "description": (
+            "The host has written to the pagefile at over "
+            "prometheus.threshold.host_memory_paging_critical_pages_per_sec "
+            "(default 2000) pages/s for 2m — active memory-pressure eviction, "
+            "the precursor to a desktop freeze / hard reset. Physical RAM is "
+            "exhausted and the working set is spilling to the pagefile. "
+            "Intervene now: close browser/Electron apps to free RAM, or pause "
+            "heavy pipeline work (image/video generation). If this recurs, the "
+            "host is structurally oversubscribed — reduce resident load or move "
+            "the container tier onto separate hardware."
         ),
     },
     # Postgres connection-pool saturation. Previously static in
