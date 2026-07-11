@@ -258,7 +258,8 @@ def backup_setup() -> None:
 
     Staged so nothing is persisted until a real first backup succeeds:
       1/4 append-only key check (advisory) → 2/4 ``restic init`` →
-      3/4 first backup of the latest daily dump (the acceptance gate) →
+      3/4 first backup — a creds/repo/network acceptance gate (see the note
+          at the call site; the in-stack runner streams uncompressed dumps) →
       4/4 encrypted persist + an OFFLINE-save banner for the restic password.
     """
     from brain import bootstrap
@@ -337,10 +338,20 @@ def backup_setup() -> None:
     daily_dir = Path(backup_dir) / src_tier
     if not daily_dir.is_dir() or not any(daily_dir.iterdir()):
         raise click.ClickException(
-            f"No Tier 1 daily dumps found at {daily_dir}. Tier 2 ships Tier 1's "
-            "dumps off-machine — ensure the in-stack backup has produced at least "
-            "one daily dump first (check the backup container / `poindexter backup status`)."
+            f"No Tier 1 daily dumps found at {daily_dir}. This setup step backs one "
+            "up to prove your bucket creds/repo/network work — ensure the in-stack "
+            "backup has produced at least one daily dump first (check the backup "
+            "container / `poindexter backup status`)."
         )
+    # Acceptance gate: back up an existing Tier 1 daily dump to prove creds +
+    # repo + network end-to-end before we persist config. This intentionally
+    # differs from the in-stack runner, which streams a fresh UNCOMPRESSED
+    # pg_dump into `restic backup --stdin` for dedup (see scripts/backup-offsite/
+    # run.sh): the wizard runs the pinned pg_dump-less `restic/restic` image, so
+    # it can't stream a dump here. Consequence: this snapshot's path (/data/daily)
+    # differs from the runner's (poindexter_brain.dump), so the runner's first
+    # tick finds no parent and re-ingests once — a one-time, fresh-install-only
+    # cost. Fully aligning the gate onto the streaming path is tracked separately.
     first = _run_restic(
         image,
         repo_url,

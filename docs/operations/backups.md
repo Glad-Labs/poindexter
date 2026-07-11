@@ -49,8 +49,8 @@ docker exec -i poindexter-postgres-local pg_restore \
 ## Tier 2 — off-machine (optional, recommended)
 
 Same-drive backups don't survive drive failure, theft, or ransomware.
-Tier 2 ships Tier 1's daily dumps **off-machine** to any S3-compatible
-bucket (Backblaze B2, AWS S3, Cloudflare R2, MinIO) via
+Tier 2 streams a fresh, encrypted copy of the database **off-machine** to
+any S3-compatible bucket (Backblaze B2, AWS S3, Cloudflare R2, MinIO) via
 [restic](https://restic.net) — encrypted, deduplicated, retention-managed.
 At our scale it runs ~$1/mo ($0.005/GB/mo on B2).
 
@@ -86,13 +86,34 @@ The wizard is **staged so nothing is saved until a real backup succeeds**:
 ### The `backup-offsite` runner
 
 `poindexter backup setup` configures an in-stack `backup-offsite` compose
-service (alpine + restic, reusing `scripts/Dockerfile.backup`). It reads
-`~/.poindexter/backups/auto/daily/` **read-only**, and on its cron:
+service (alpine + restic, reusing `scripts/Dockerfile.backup`). On its cron
+it:
 
-- runs `restic backup` of the latest daily dump, stamping an `audit_log`
-  heartbeat (`offsite_backup_succeeded`) on success;
+- streams a fresh **uncompressed** `pg_dump --format=custom -Z0` straight
+  into `restic backup --stdin`, stamping an `audit_log` heartbeat
+  (`offsite_backup_succeeded`) on success;
 - once a week runs `restic check --read-data-subset=<pct>%` against the
   remote to catch **bit-rot**, stamping `offsite_backup_verified`.
+
+> **Why an uncompressed dump, not `restic backup` of the Tier 1 files?**
+> Tier 1 writes `pg_dump --format=custom` (zlib-compressed). restic dedupes
+> and compresses via content-defined chunking, and compressed bytes defeat
+> both — a one-row change reshuffles the whole compressed stream, so every
+> daily dump reads as 100% new data. Measured 2026-07-11: **1.01× restic
+> compression, ~150–230 MiB added per dump, repo at 8.3 GiB across 62
+> snapshots after 25 days** (append-only, never pruned) — on track to
+> breach B2's 10 GB free cap in ~1–2 weeks. Feeding restic an **uncompressed**
+> dump lets it dedupe the ~unchanged bulk day-over-day and compress its own
+> packs, so the repo holds near the live DB size (~1 GB) regardless of
+> snapshot count. The runner takes its own dump (it already has psql/pg_dump
+> connectivity) rather than re-reading Tier 1's files, so Tier 1's dumps,
+> retention, and restore-test are left untouched. `set -o pipefail` surfaces
+> a mid-stream `pg_dump` failure even if restic exits 0 on the truncated
+> input, so a half-streamed dump alerts instead of saving a short snapshot.
+>
+> This change slows growth going forward; it does **not** shrink the existing
+> repo. To reclaim space already stored under the old scheme, prune once (see
+> below) or start a fresh repo path.
 
 `start-stack.sh` decrypts the three secrets into a git-ignored
 `.poindexter-backup-offsite.env` on every `up`/restart, so the runner picks
@@ -102,11 +123,22 @@ up credentials without any `.env` you maintain by hand.
 
 The runner is **backup-only** — it never issues `restic forget`/`prune`
 (which delete objects), so a write-only S3 key (no `deleteFiles`) is
-sufficient and is the recommended configuration. Manage retention on the
-bucket side instead: a B2 lifecycle rule or Object Lock / WORM. If you
-genuinely need restic-side pruning, the `offsite_backup_prune_enabled`
-escape hatch (default `false`) re-enables it — but then your key needs
-delete and you lose the ransomware guarantee.
+sufficient and is the recommended configuration. With the streamed
+uncompressed dump above, per-snapshot growth is a small delta, so the
+append-only repo stays under B2's free cap for a long time without any
+pruning at all.
+
+**Do NOT bound a restic repo with a raw age-based bucket lifecycle rule.**
+restic stores data in immutable pack files that stay referenced by future
+snapshots indefinitely; a "delete objects older than N days" lifecycle rule
+deletes live packs and **corrupts the repo**. The only safe way to reclaim
+space is restic's own `forget --prune`, which needs a delete-capable key —
+enable it via the `offsite_backup_prune_enabled` escape hatch (default
+`false`). To keep the ransomware guarantee while using a delete-capable key,
+put the bucket under **Object Lock / WORM** (a compliance-mode retention
+window bounds how long a compromised host could hold deletion off), or run
+the prune from a separate trusted context. See the B2 reclaim steps in the
+2026-07 offsite-dedup PR for the recommended one-time cleanup.
 
 ### Operator commands
 
@@ -122,26 +154,26 @@ poindexter backup snapshots   # list remote snapshots
 All Tier 2 tunables are DB-backed (seeded every boot, so they reach
 existing deployments — only the three secrets are written by the wizard):
 
-| Setting                                          | Default                | Notes                                                                                                                      |
-| ------------------------------------------------ | ---------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `offsite_backup_enabled`                         | `true`                 | Master switch for the runner                                                                                               |
-| `offsite_backup_interval`                        | `24h`                  | Backup cadence (`<N>{s\|m\|h\|d}`)                                                                                         |
-| `offsite_backup_source_tier`                     | `daily`                | Which Tier 1 dir to ship (`daily` / `hourly`)                                                                              |
-| `offsite_backup_repository`                      | _(set by wizard)_      | `s3:https://<endpoint>/<bucket>/<path>`                                                                                    |
-| `offsite_backup_s3_region`                       | _(set by wizard)_      | SigV4 signing region — required for non-us-east-1 buckets (e.g. B2 `us-east-005`); the wizard derives it from the endpoint |
-| `offsite_backup_restic_host`                     | `poindexter`           | Stable `restic backup --host` — container hostnames change on recreate, which would break parent-snapshot selection        |
-| `offsite_backup_restic_image`                    | `restic/restic:0.16.4` | Pinned restic image (runner + wizard use the same version)                                                                 |
-| `offsite_backup_keep_daily`                      | `7`                    | Retention (only applied if pruning is enabled)                                                                             |
-| `offsite_backup_keep_weekly`                     | `4`                    |                                                                                                                            |
-| `offsite_backup_keep_monthly`                    | `6`                    |                                                                                                                            |
-| `offsite_backup_prune_enabled`                   | `false`                | Escape hatch — re-enables delete-bearing `forget`/`prune`                                                                  |
-| `offsite_backup_verify_enabled`                  | `true`                 | Weekly `restic check`                                                                                                      |
-| `offsite_backup_verify_interval_hours`           | `168`                  | Verify cadence (168h = weekly)                                                                                             |
-| `offsite_backup_verify_read_data_subset_percent` | `5`                    | Fraction of pack data re-read each verify (bit-rot scan)                                                                   |
-| `offsite_backup_max_age_hours`                   | `26`                   | Staleness threshold for the brain watch (24h cadence + slack)                                                              |
-| `offsite_backup_watch_enabled`                   | `true`                 | Brain auto-retry watch master switch                                                                                       |
-| `offsite_backup_watch_max_retries`               | `2`                    | Cumulative restarts across cycles before escalation                                                                        |
-| `offsite_backup_watch_retry_delay_seconds`       | `120`                  | Wait between `docker restart` and the post-restart re-read                                                                 |
+| Setting                                          | Default                | Notes                                                                                                                        |
+| ------------------------------------------------ | ---------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `offsite_backup_enabled`                         | `true`                 | Master switch for the runner                                                                                                 |
+| `offsite_backup_interval`                        | `24h`                  | Backup cadence (`<N>{s\|m\|h\|d}`)                                                                                           |
+| `offsite_backup_source_tier`                     | `daily`                | Snapshot `--tag` only (advisory since the 2026-07 streamed-dump change; the runner dumps live, no longer reads a Tier 1 dir) |
+| `offsite_backup_repository`                      | _(set by wizard)_      | `s3:https://<endpoint>/<bucket>/<path>`                                                                                      |
+| `offsite_backup_s3_region`                       | _(set by wizard)_      | SigV4 signing region — required for non-us-east-1 buckets (e.g. B2 `us-east-005`); the wizard derives it from the endpoint   |
+| `offsite_backup_restic_host`                     | `poindexter`           | Stable `restic backup --host` — container hostnames change on recreate, which would break parent-snapshot selection          |
+| `offsite_backup_restic_image`                    | `restic/restic:0.16.4` | Pinned restic image (runner + wizard use the same version)                                                                   |
+| `offsite_backup_keep_daily`                      | `7`                    | Retention (only applied if pruning is enabled)                                                                               |
+| `offsite_backup_keep_weekly`                     | `4`                    |                                                                                                                              |
+| `offsite_backup_keep_monthly`                    | `6`                    |                                                                                                                              |
+| `offsite_backup_prune_enabled`                   | `false`                | Escape hatch — re-enables delete-bearing `forget`/`prune`                                                                    |
+| `offsite_backup_verify_enabled`                  | `true`                 | Weekly `restic check`                                                                                                        |
+| `offsite_backup_verify_interval_hours`           | `168`                  | Verify cadence (168h = weekly)                                                                                               |
+| `offsite_backup_verify_read_data_subset_percent` | `5`                    | Fraction of pack data re-read each verify (bit-rot scan)                                                                     |
+| `offsite_backup_max_age_hours`                   | `26`                   | Staleness threshold for the brain watch (24h cadence + slack)                                                                |
+| `offsite_backup_watch_enabled`                   | `true`                 | Brain auto-retry watch master switch                                                                                         |
+| `offsite_backup_watch_max_retries`               | `2`                    | Cumulative restarts across cycles before escalation                                                                          |
+| `offsite_backup_watch_retry_delay_seconds`       | `120`                  | Wait between `docker restart` and the post-restart re-read                                                                   |
 
 The three secrets — `offsite_backup_restic_password`,
 `offsite_backup_s3_access_key_id`, `offsite_backup_s3_secret_access_key` —

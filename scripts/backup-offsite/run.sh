@@ -3,11 +3,12 @@
 #
 # Lives in the same alpine image as Tier 1 (scripts/Dockerfile.backup,
 # which now bakes restic). Loops forever: each tick reads tunables from
-# app_settings via psql, runs `restic backup` of the Tier 1 daily dump
-# dir into the configured S3-compatible repo, stamps an audit_log
-# heartbeat, and — when due — runs `restic check`. On any restic failure
-# it inserts an alert_events row (same schema as Tier 1) so the brain
-# dispatcher pages.
+# app_settings via psql, streams a fresh UNCOMPRESSED pg_dump into
+# `restic backup --stdin` (so restic can actually dedupe + compress — see
+# run_backup) against the configured S3-compatible repo, stamps an
+# audit_log heartbeat, and — when due — runs `restic check`. On any
+# failure it inserts an alert_events row (same schema as Tier 1) so the
+# brain dispatcher pages.
 #
 # SECRETS come from env (RESTIC_PASSWORD / AWS_ACCESS_KEY_ID /
 # AWS_SECRET_ACCESS_KEY), materialized by start-stack.sh from encrypted
@@ -103,34 +104,57 @@ emit_alert() {
         2>&1 | tail -3 || log "WARN: alert insert failed (db unreachable?)"
 }
 
+# Stream a fresh, UNCOMPRESSED pg_dump straight into restic via --stdin.
+#
+# Why not `restic backup <daily-dir>` (the pre-2026-07 behaviour)? Tier 1's
+# dumps are `pg_dump --format=custom`, i.e. zlib-compressed. restic dedupes
+# and compresses by content-defined chunking, and compressed bytes defeat
+# both: a one-row change reshuffles the whole compressed stream, so every
+# daily dump looked like 100% new data (measured 2026-07-11: 1.01x restic
+# compression, ~150-230 MiB added per dump, repo at 8.3 GiB / 62 snapshots
+# after 25 days — on track to breach the B2 10 GB free cap). Feeding restic
+# an UNCOMPRESSED dump (-Z0) lets it dedupe the ~unchanged bulk day-over-day
+# and compress its own packs, so growth drops sharply and the repo holds
+# near the live DB size regardless of snapshot count. This is the documented
+# `pg_dump | restic backup --stdin` pattern.
+#
+# We take a fresh dump here (the offsite runner already has psql/pg_dump
+# connectivity — it reads app_settings every tick) rather than re-reading
+# Tier 1's compressed files, so Tier 1's dumps + retention + restore-test
+# are left completely untouched. `set -o pipefail` (global) makes the
+# pipeline's rc reflect a pg_dump failure even when restic exits 0 on
+# truncated input, so a half-streamed dump alerts + returns non-zero
+# instead of silently saving a short snapshot.
 run_backup() {
     local repo="$1" source_tier="$2" restic_host="${3:-${DEFAULT_RESTIC_HOST}}"
-    # Separate statement: expansions in a `local` happen before its
-    # assignments land, so ${source_tier} above isn't visible yet.
-    local src="${BACKUP_DIR}/${source_tier}"
-    if [[ ! -d "${src}" ]]; then
-        log "source dir ${src} missing — nothing to back up yet"
-        return 0
-    fi
-    log "restic backup ${src} → ${repo} (host=${restic_host})"
+    log "restic backup (streamed pg_dump -Z0 of ${PG_DATABASE}) → ${repo} (host=${restic_host})"
     # Capture rc on the same statement: a fall-through `if` resets $? to 0,
     # which made the 2026-06-23 failure alert claim "rc=0" and return success.
     local rc=0
-    # --host pins the snapshot lineage: restic picks the parent snapshot by
-    # (host, paths), and the container hostname changes on every recreate —
-    # without the pin each recreate logs "no parent snapshot found" and
-    # rescans the full source dir instead of just the delta.
-    restic -r "${repo}" backup "${src}" --host "${restic_host}" \
-        --tag poindexter --tag "${source_tier}" || rc=$?
+    # -Z0 = no pg_dump-side compression (the whole point — restic compresses).
+    # --stdin-filename pins the snapshot's single path so restic's
+    # (host, paths) parent selection stays stable across container recreates,
+    # the same reason --host is pinned: without both, each recreate logs "no
+    # parent snapshot found" and re-ingests the full dump instead of a delta.
+    PGPASSWORD="${PGPASSWORD}" pg_dump \
+        -h "${PG_HOST}" -p "${PG_PORT}" \
+        -U "${PG_USER}" -d "${PG_DATABASE}" \
+        --format=custom -Z0 \
+        --no-owner --no-acl \
+      | restic -r "${repo}" backup --stdin \
+            --stdin-filename "poindexter_brain.dump" \
+            --host "${restic_host}" \
+            --tag poindexter --tag "${source_tier}" || rc=$?
     if [[ "${rc}" -eq 0 ]]; then
         log "offsite backup OK"
-        emit_heartbeat "offsite_backup_succeeded" "restic backup of ${src} complete"
+        emit_heartbeat "offsite_backup_succeeded" \
+            "restic --stdin backup of ${PG_DATABASE} complete"
         return 0
     fi
     log "offsite backup FAILED rc=${rc}"
     emit_alert "critical" \
         "Offsite restic backup failed (rc=${rc})" \
-        "restic backup of ${src} → ${repo} returned ${rc}. Check creds, network, and the repo URL."
+        "streamed pg_dump -Z0 of ${PG_DATABASE} | restic backup --stdin → ${repo} returned ${rc}. Check creds, network, postgres reachability, and the repo URL."
     return "${rc}"
 }
 
