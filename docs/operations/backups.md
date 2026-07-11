@@ -68,8 +68,14 @@ The wizard is **staged so nothing is saved until a real backup succeeds**:
    cannot destroy backup history. If the key is delete-capable the wizard
    warns and asks for explicit confirmation.
 2. **`restic init`** — creates the encrypted repo.
-3. **First backup (acceptance gate)** — backs up the latest daily dump.
-   If this fails, _nothing is persisted_ — you fix the problem and re-run.
+3. **First backup (acceptance gate)** — streams a fresh
+   `pg_dump -Z0 | restic backup --stdin` (the same shape the runner uses
+   below), so this first snapshot shares the runner's `(host, stdin-filename)`
+   parent key and the runner's very first tick dedupes against it instead of
+   re-ingesting the whole dump. If the `poindexter-backup` image or the
+   postgres network isn't available it falls back to a pinned-`restic` backup
+   of the latest daily dump. Either way, if this fails _nothing is persisted_
+   — you fix the problem and re-run.
 4. **Encrypted persist** — writes the repo URL (plaintext) and the restic
    password + S3 key pair (encrypted via pgcrypto) to `app_settings`, then
    prints the restic password once for you to save offline.

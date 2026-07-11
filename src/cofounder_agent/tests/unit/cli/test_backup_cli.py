@@ -130,3 +130,161 @@ def test_fmt_age_buckets():
     assert bk._fmt_age(3600) == "1.0h ago"
     # >= 48h rolls over to days
     assert bk._fmt_age(72 * 3600) == "3.0d ago"
+
+
+# --- streaming acceptance gate (aligns the wizard onto the runner's path) ----
+#
+# Follow-up to PR #2317: the in-stack runner streams a fresh
+# `pg_dump --format=custom -Z0 | restic backup --stdin --stdin-filename
+# poindexter_brain.dump --host poindexter`. The wizard's first snapshot must
+# share that (host, stdin-filename) parent key so the runner's first tick
+# dedupes against it instead of re-ingesting the full dump once.
+
+
+def test_pg_creds_from_dsn_parses_user_password_database():
+    user, pw, db = bk._pg_creds_from_dsn(
+        "postgresql://poindexter:s3cr3t@localhost:5432/poindexter_brain"
+    )
+    assert (user, pw, db) == ("poindexter", "s3cr3t", "poindexter_brain")
+
+
+def test_pg_creds_from_dsn_url_decodes_password_and_ignores_query():
+    # A password with reserved chars is percent-encoded in the DSN; the wizard
+    # must hand the DECODED value to PGPASSWORD or pg_dump auth fails.
+    user, pw, db = bk._pg_creds_from_dsn(
+        "postgresql://poindexter:p%40ss%2Fword@host:5432/poindexter_brain?sslmode=disable"
+    )
+    assert user == "poindexter"
+    assert pw == "p@ss/word"
+    assert db == "poindexter_brain"
+
+
+def test_pg_creds_from_dsn_defaults_when_absent():
+    # Host-only DSN — fall back to the compose defaults the runner also uses.
+    user, pw, db = bk._pg_creds_from_dsn("postgresql://host:5432")
+    assert user == "poindexter"
+    assert pw == ""
+    assert db == "poindexter_brain"
+
+
+def _sample_streaming_cmd():
+    return bk._streaming_backup_cmd(
+        image="poindexter-backup:latest",
+        repo="s3:https://s3.us-east-005.backblazeb2.com/bkt/poindexter",
+        network="glad-labs-website_default",
+        pg_host="postgres-local",
+        pg_port="5432",
+        pg_user="poindexter",
+        pg_database="poindexter_brain",
+        restic_host="poindexter",
+        source_tier="daily",
+        stdin_filename="poindexter_brain.dump",
+        env={
+            "AWS_ACCESS_KEY_ID": "akid",
+            "AWS_SECRET_ACCESS_KEY": "sak",
+            "AWS_DEFAULT_REGION": "us-east-005",
+            "RESTIC_PASSWORD": "rpw",
+            "PGPASSWORD": "pgpw",
+        },
+    )
+
+
+def test_streaming_backup_cmd_uses_backup_image_on_postgres_network():
+    cmd = _sample_streaming_cmd()
+    assert cmd[:3] == ["docker", "run", "--rm"]
+    # Attaches to the discovered postgres network so pg_dump reaches postgres-local.
+    assert "--network" in cmd
+    assert cmd[cmd.index("--network") + 1] == "glad-labs-website_default"
+    # Uses the image that actually has pg_dump (Dockerfile.backup), NOT restic/restic.
+    assert "poindexter-backup:latest" in cmd
+    assert bk._DEFAULT_RESTIC_IMAGE not in cmd
+    # Entrypoint overridden to a shell so we can run the pg_dump | restic pipe.
+    assert cmd[cmd.index("--entrypoint") + 1] == "sh"
+    assert cmd[-2] == "-c"
+
+
+def test_streaming_backup_cmd_mirrors_runner_parent_key():
+    # The whole point of the follow-up: the wizard's snapshot must share the
+    # runner's (host, stdin-filename) parent key. restic selects a parent by
+    # (host, paths); for a --stdin backup, paths == the --stdin-filename.
+    pipeline = _sample_streaming_cmd()[-1]
+    assert "--stdin-filename poindexter_brain.dump" in pipeline
+    assert "--host poindexter" in pipeline
+    assert "restic -r" in pipeline
+    assert "s3:https://s3.us-east-005.backblazeb2.com/bkt/poindexter" in pipeline
+    assert "backup --stdin" in pipeline
+
+
+def test_streaming_backup_cmd_streams_uncompressed_dump_with_pipefail():
+    pipeline = _sample_streaming_cmd()[-1]
+    assert "pg_dump" in pipeline
+    # -Z0 = no pg_dump-side compression so restic can dedupe/compress (PR #2317).
+    assert "--format=custom -Z0" in pipeline
+    assert "--no-owner --no-acl" in pipeline
+    # A shell pipe, guarded by pipefail so a half-streamed dump fails the gate
+    # instead of silently saving a truncated snapshot.
+    assert "|" in pipeline
+    assert "pipefail" in pipeline
+    # Matches the runner's tags (poindexter + source tier).
+    assert "--tag poindexter --tag daily" in pipeline
+
+
+def test_streaming_backup_cmd_passes_secrets_only_via_env_not_shell():
+    cmd = _sample_streaming_cmd()
+    pipeline = cmd[-1]
+    # Secrets must never be interpolated into the shell string (they would leak
+    # via `ps` inside the container); they ride in through `-e KEY=VALUE`.
+    for secret in ("rpw", "sak", "pgpw"):
+        assert secret not in pipeline
+    joined = " ".join(cmd)
+    assert "-e RESTIC_PASSWORD=rpw" in joined
+    assert "-e PGPASSWORD=pgpw" in joined
+    assert "-e AWS_SECRET_ACCESS_KEY=sak" in joined
+
+
+class _FakeProc:
+    def __init__(self, returncode=0, stdout="", stderr=""):
+        self.returncode = returncode
+        self.stdout = stdout
+        self.stderr = stderr
+
+
+def test_postgres_network_returns_first_attached_network(monkeypatch):
+    def fake_run(cmd, **kwargs):
+        assert cmd[:2] == ["docker", "inspect"]
+        return _FakeProc(returncode=0, stdout="glad-labs-website_default \n")
+
+    monkeypatch.setattr(bk.subprocess, "run", fake_run)
+    assert bk._postgres_network() == "glad-labs-website_default"
+
+
+def test_postgres_network_none_when_container_absent(monkeypatch):
+    monkeypatch.setattr(
+        bk.subprocess,
+        "run",
+        lambda *a, **k: _FakeProc(returncode=1, stderr="No such object"),
+    )
+    assert bk._postgres_network() is None
+
+
+def test_postgres_network_none_on_empty_output(monkeypatch):
+    monkeypatch.setattr(
+        bk.subprocess, "run", lambda *a, **k: _FakeProc(returncode=0, stdout="  \n")
+    )
+    assert bk._postgres_network() is None
+
+
+def test_docker_image_present_true_on_zero_rc(monkeypatch):
+    monkeypatch.setattr(
+        bk.subprocess, "run", lambda *a, **k: _FakeProc(returncode=0, stdout="[]")
+    )
+    assert bk._docker_image_present("poindexter-backup:latest") is True
+
+
+def test_docker_image_present_false_on_nonzero_rc(monkeypatch):
+    monkeypatch.setattr(
+        bk.subprocess,
+        "run",
+        lambda *a, **k: _FakeProc(returncode=1, stderr="No such image"),
+    )
+    assert bk._docker_image_present("poindexter-backup:latest") is False

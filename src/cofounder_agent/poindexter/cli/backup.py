@@ -12,9 +12,11 @@ from __future__ import annotations
 import asyncio
 import os
 import secrets as _secrets
+import shlex
 import subprocess
 from pathlib import Path
 from typing import Any
+from urllib.parse import unquote, urlparse
 
 import click
 
@@ -24,6 +26,26 @@ import click
 # app_settings.offsite_backup_restic_image (settings_defaults.py).
 _DEFAULT_RESTIC_IMAGE = "restic/restic:0.16.4"
 _APPEND_ONLY_PROBE_KEY = ".poindexter-append-only-probe-nonexistent"
+
+# The poindexter-backup image (scripts/Dockerfile.backup) carries BOTH pg_dump
+# and restic, so the wizard's acceptance gate can stream a fresh dump exactly
+# like the in-stack runner (scripts/backup-offsite/run.sh). Matches the image
+# tag on the backup-* compose services.
+_BACKUP_IMAGE = "poindexter-backup:latest"
+# The postgres container the one-shot gate joins (compose container_name) so its
+# pg_dump reaches postgres over the compose network, same as the runner.
+_POSTGRES_CONTAINER = "poindexter-postgres-local"
+_RUNNER_PG_HOST = "postgres-local"  # compose PG_HOST on the backup services
+_RUNNER_PG_PORT = "5432"  # compose PG_PORT
+# These MUST match the runner's snapshot identity so restic's (host, paths)
+# parent selection treats the wizard's first snapshot as the runner's parent
+# (else the runner's first tick finds "no parent" and re-ingests the full dump):
+#   - restic --host           → offsite_backup_restic_host default (run.sh DEFAULT_RESTIC_HOST)
+#   - restic --stdin-filename → the paths half of the key (run.sh hardcodes this)
+#   - --tag <tier>            → offsite_backup_source_tier default (cosmetic; not in the key)
+_RUNNER_RESTIC_HOST = "poindexter"
+_RUNNER_STDIN_FILENAME = "poindexter_brain.dump"
+_RUNNER_SOURCE_TIER = "daily"
 
 
 # --- pure helpers (unit-tested without docker/DB) ---------------------------
@@ -68,6 +90,66 @@ def interpret_delete_probe(status_code: int) -> str:
 def generate_restic_password() -> str:
     """High-entropy restic repository password."""
     return _secrets.token_urlsafe(32)
+
+
+def _pg_creds_from_dsn(dsn: str) -> tuple[str, str, str]:
+    """Extract ``(user, password, database)`` from a postgres DSN.
+
+    Host/port are intentionally NOT taken from the DSN: the one-shot streaming
+    gate reaches postgres over the compose network as ``postgres-local:5432``
+    (the runner's PG_HOST/PG_PORT), never via the host-side address the DSN
+    encodes. The password is URL-decoded so a percent-encoded DSN password is
+    handed to PGPASSWORD verbatim. Defaults mirror the compose service vars
+    (``poindexter`` / ``poindexter_brain``) for a bare host-only DSN.
+    """
+    parsed = urlparse(dsn)
+    user = unquote(parsed.username) if parsed.username else "poindexter"
+    password = unquote(parsed.password) if parsed.password else ""
+    database = (parsed.path or "").lstrip("/") or "poindexter_brain"
+    return user, password, database
+
+
+def _streaming_backup_cmd(
+    *,
+    image: str,
+    repo: str,
+    network: str,
+    pg_host: str,
+    pg_port: str,
+    pg_user: str,
+    pg_database: str,
+    restic_host: str,
+    source_tier: str,
+    stdin_filename: str,
+    env: dict[str, str],
+) -> list[str]:
+    """Build the one-shot ``docker run … sh -c 'pg_dump -Z0 | restic --stdin'``.
+
+    Mirrors ``scripts/backup-offsite/run.sh::run_backup`` exactly — the
+    UNCOMPRESSED (``-Z0``) custom-format dump, the ``--stdin-filename`` /
+    ``--host`` pair that fixes restic's ``(host, paths)`` parent key, and the
+    tags — so the wizard's first snapshot is a valid parent for the runner's
+    first tick (which then dedupes instead of re-ingesting the whole dump).
+
+    Secrets ride in through ``-e KEY=VALUE`` (like the sibling ``_run_restic``),
+    never interpolated into the shell string. ``set -o pipefail`` propagates a
+    pg_dump failure through the pipe so a half-streamed dump fails the gate
+    rather than saving a truncated snapshot (the runner relies on the same).
+    """
+    q = shlex.quote
+    pipeline = (
+        "set -eo pipefail; "
+        f"pg_dump -h {q(pg_host)} -p {q(pg_port)} -U {q(pg_user)} -d {q(pg_database)} "
+        "--format=custom -Z0 --no-owner --no-acl "
+        f"| restic -r {q(repo)} backup --stdin "
+        f"--stdin-filename {q(stdin_filename)} --host {q(restic_host)} "
+        f"--tag poindexter --tag {q(source_tier)}"
+    )
+    cmd = ["docker", "run", "--rm", "--network", network]
+    for key, value in env.items():
+        cmd += ["-e", f"{key}={value}"]
+    cmd += ["--entrypoint", "sh", image, "-c", pipeline]
+    return cmd
 
 
 @click.group(name="backup")
@@ -175,6 +257,58 @@ def _run_restic(
     return subprocess.run(cmd, capture_output=True, text=True, timeout=600)
 
 
+def _docker_image_present(image: str) -> bool:
+    """True when ``docker image inspect <image>`` succeeds (image built locally).
+
+    Tier 1 (backup-hourly/daily) builds ``poindexter-backup:latest``, so a
+    healthy stack always has it. Any failure (image absent, docker unreachable)
+    returns False so the wizard degrades to the legacy ``restic/restic`` gate.
+    """
+    try:
+        res = subprocess.run(
+            ["docker", "image", "inspect", image],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception:  # noqa: BLE001
+        # silent-ok: image presence is advisory — docker unreachable/absent ⇒
+        # fall back to the legacy restic/restic gate, never block the wizard.
+        return False
+    return res.returncode == 0
+
+
+def _postgres_network(container: str = _POSTGRES_CONTAINER) -> str | None:
+    """First docker network the postgres container is attached to, or None.
+
+    The one-shot streaming gate joins this network so its pg_dump reaches
+    ``postgres-local:5432`` exactly as the in-stack runner does. Returns None
+    when the container isn't running (Tier 1 down) or docker is unreachable, so
+    the caller falls back to the legacy gate.
+    """
+    try:
+        res = subprocess.run(
+            [
+                "docker",
+                "inspect",
+                "-f",
+                "{{range $k, $v := .NetworkSettings.Networks}}{{$k}} {{end}}",
+                container,
+            ],
+            capture_output=True,
+            text=True,
+            timeout=30,
+        )
+    except Exception:  # noqa: BLE001
+        # silent-ok: network discovery is advisory — docker unreachable ⇒ fall
+        # back to the legacy gate, never block the wizard.
+        return None
+    if res.returncode != 0:
+        return None
+    nets = res.stdout.split()
+    return nets[0] if nets else None
+
+
 def _derive_s3_region(endpoint: str) -> str:
     """Best-effort region for the boto3 client when an explicit endpoint is set.
 
@@ -258,8 +392,11 @@ def backup_setup() -> None:
 
     Staged so nothing is persisted until a real first backup succeeds:
       1/4 append-only key check (advisory) → 2/4 ``restic init`` →
-      3/4 first backup — a creds/repo/network acceptance gate (see the note
-          at the call site; the in-stack runner streams uncompressed dumps) →
+      3/4 first backup — a creds/repo/network acceptance gate that streams a
+          fresh ``pg_dump -Z0 | restic --stdin`` matching the in-stack runner
+          (so its first tick dedupes against this snapshot), falling back to a
+          pinned-restic backup of an existing dump when the backup image or
+          postgres network isn't available →
       4/4 encrypted persist + an OFFLINE-save banner for the restic password.
     """
     from brain import bootstrap
@@ -334,7 +471,7 @@ def backup_setup() -> None:
         "3/4 — running first backup (must succeed before we save config)…", fg="cyan"
     )
     backup_dir = _host_backup_dir()
-    src_tier = "daily"
+    src_tier = _RUNNER_SOURCE_TIER
     daily_dir = Path(backup_dir) / src_tier
     if not daily_dir.is_dir() or not any(daily_dir.iterdir()):
         raise click.ClickException(
@@ -343,27 +480,66 @@ def backup_setup() -> None:
             "backup has produced at least one daily dump first (check the backup "
             "container / `poindexter backup status`)."
         )
-    # Acceptance gate: back up an existing Tier 1 daily dump to prove creds +
-    # repo + network end-to-end before we persist config. This intentionally
-    # differs from the in-stack runner, which streams a fresh UNCOMPRESSED
-    # pg_dump into `restic backup --stdin` for dedup (see scripts/backup-offsite/
-    # run.sh): the wizard runs the pinned pg_dump-less `restic/restic` image, so
-    # it can't stream a dump here. Consequence: this snapshot's path (/data/daily)
-    # differs from the runner's (poindexter_brain.dump), so the runner's first
-    # tick finds no parent and re-ingests once — a one-time, fresh-install-only
-    # cost. Fully aligning the gate onto the streaming path is tracked separately.
-    first = _run_restic(
-        image,
-        repo_url,
-        ["backup", f"/data/{src_tier}", "--tag", "poindexter"],
-        env=s3_env,
-        source_mount=backup_dir,
-    )
-    if first.returncode != 0:
-        raise click.ClickException(
-            f"First backup failed — nothing saved as configured.\n{first.stderr}"
+    # Acceptance gate: prove creds + repo + network end-to-end before we persist
+    # config. PREFER the STREAMING gate so this first snapshot shares the in-stack
+    # runner's (host, stdin-filename) parent key and the runner's first tick
+    # dedupes against it instead of re-ingesting the full dump once (follow-up to
+    # PR #2317). It runs a fresh `pg_dump -Z0 | restic backup --stdin` through
+    # poindexter-backup:latest (which has pg_dump) on postgres's compose network.
+    # Tier 1 being up (the daily-dump precondition above) implies that image is
+    # built and postgres is reachable — but if either is unavailable we fall back
+    # to the legacy `restic/restic` gate on an existing daily dump, which still
+    # proves creds/repo/network (at the one-time cost of one runner re-ingest).
+    network = _postgres_network() if _docker_image_present(_BACKUP_IMAGE) else None
+    if network:
+        click.echo(
+            "  streaming a fresh pg_dump into restic (matches the in-stack runner)…"
         )
-    click.secho("  OK — first snapshot created.", fg="green")
+        pg_user, pg_password, pg_database = _pg_creds_from_dsn(dsn)
+        cmd = _streaming_backup_cmd(
+            image=_BACKUP_IMAGE,
+            repo=repo_url,
+            network=network,
+            pg_host=_RUNNER_PG_HOST,
+            pg_port=_RUNNER_PG_PORT,
+            pg_user=pg_user,
+            pg_database=pg_database,
+            restic_host=_RUNNER_RESTIC_HOST,
+            source_tier=src_tier,
+            stdin_filename=_RUNNER_STDIN_FILENAME,
+            env={**s3_env, "PGPASSWORD": pg_password},
+        )
+        res = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        if res.returncode != 0:
+            raise click.ClickException(
+                f"First backup failed — nothing saved as configured.\n{res.stderr}"
+            )
+        click.secho(
+            "  OK — first snapshot created (streamed; the runner dedupes against it).",
+            fg="green",
+        )
+    else:
+        # Fallback: poindexter-backup:latest isn't built or its network isn't
+        # discoverable (Tier 1 not up). Prove creds/repo/network with the pinned
+        # restic image against an existing Tier 1 dump. This snapshot's path
+        # (/data/daily) differs from the runner's (poindexter_brain.dump), so the
+        # runner's first tick re-ingests once — a one-time, fresh-install cost.
+        click.echo(
+            "  poindexter-backup image/network unavailable — proving creds with the "
+            "pinned restic image on an existing daily dump."
+        )
+        first = _run_restic(
+            image,
+            repo_url,
+            ["backup", f"/data/{src_tier}", "--tag", "poindexter"],
+            env=s3_env,
+            source_mount=backup_dir,
+        )
+        if first.returncode != 0:
+            raise click.ClickException(
+                f"First backup failed — nothing saved as configured.\n{first.stderr}"
+            )
+        click.secho("  OK — first snapshot created.", fg="green")
 
     # 4/4 persist + save-offline banner --------------------------------------
     click.secho("4/4 — saving config…", fg="cyan")
