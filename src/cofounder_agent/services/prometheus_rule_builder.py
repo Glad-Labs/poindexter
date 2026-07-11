@@ -130,6 +130,32 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
     # is down (which is exactly when dynamic-rules rendering would fail).
     # Only content + business rules live here, since those are the ones
     # with tunable numbers.
+    #
+    # Restart-gap policy (glad-labs-stack#2330 follow-up audit, 2026-07-11):
+    # metrics from the worker's own exporter (services/metrics_exporter.py,
+    # instance worker:8002) blank on every deploy restart — a failed scrape
+    # writes staleness markers for ALL of the target's series, so instant
+    # selectors go empty on the next evaluation (no 5m lookback grace) and
+    # any in-flight `for:` clock resets. Observed 2026-07-11: 46 worker
+    # restarts punched 138 series holes in one day. Consequences by rule
+    # shape:
+    #   - Long-`for:` instant reads on worker gauges CANNOT complete their
+    #     pending window on active days → wrap the read in
+    #     last_over_time(...[1h]). last (value-faithful: the newest sample
+    #     wins, so genuine recoveries resolve immediately) over max (which
+    #     holds stale highs for the whole lookback) unless riding through
+    #     genuine dips is the point, as in QaRailFullySkipped.
+    #   - Range-vector exprs (increase()/rate()) are naturally restart-proof:
+    #     staleness markers don't remove raw samples from range windows.
+    #   - Short-`for:` worker rules (≤5m: daily spend, OllamaNoModelsLoaded,
+    #     pg connections) stay raw deliberately — a hole only delays them by
+    #     minutes, and their truths genuinely change at the moments a bridge
+    #     would paper over (connections release when the worker restarts;
+    #     daily spend resets at midnight; the Ollama rule's `unless` guard
+    #     needs both operands blanking in lockstep).
+    #   - Independent exporters (windows_exporter, nvidia-smi,
+    #     postgres_exporter, cadvisor) don't restart with worker deploys —
+    #     raw instant reads are fine there.
 
     # --- Content ---
     "EmbeddingsStale": {
@@ -160,9 +186,16 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "enabled": True,
         "group": "poindexter-content",
         "interval": "1m",
+        # last_over_time bridges deploy-restart scrape holes on BOTH operands
+        # — the current read and the offset read (a hole 24h ago blanks the
+        # offset side today). With raw instant reads the `for: 48h` clock
+        # reset on every restart: 4,002 pending-minutes across 92 chopped
+        # episodes and ZERO fires in the 14d before 2026-07-11 (a 48h rule
+        # can complete at most ~7 episodes in 14d). A fresh publish still
+        # resolves immediately — last_over_time returns the newest sample.
         "expr": (
-            '(poindexter_posts_total{status="published"} offset 24h) == '
-            'poindexter_posts_total{status="published"}'
+            'last_over_time(poindexter_posts_total{status="published"}[1h] offset 24h)'
+            ' == last_over_time(poindexter_posts_total{status="published"}[1h])'
         ),
         "for": "48h",
         "severity": "info",
@@ -227,8 +260,13 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         # Catches the "3 new posts published, 0 got embedded" case that
         # the embeddings_total rate alone misses when overall traffic
         # keeps the rate positive.
+        #
+        # last_over_time rides deploy-restart scrape holes so the 10m clock
+        # survives active-dev days; last (not max) so a backfill that clears
+        # the queue resolves the alert with the first fresh sample instead
+        # of a held high firing for up to 1h after the fix.
         "expr": (
-            "poindexter_embeddings_missing_posts > "
+            "last_over_time(poindexter_embeddings_missing_posts[1h]) > "
             "{threshold.embeddings_missing_posts}"
         ),
         "for": "10m",
@@ -275,7 +313,15 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         # restarted, so run_migrations() never re-ran. The /api/health
         # JSON probe surfaces this but Alertmanager couldn't see it
         # until the gauge landed in metrics_exporter.
-        "expr": "poindexter_unapplied_migrations_count > 0",
+        #
+        # last_over_time bridges deploy-restart scrape holes — drift arises
+        # exactly during dev-heavy (= restart-heavy) sessions, and the raw
+        # read reset the 30m clock on every restart (the QaRailFullySkipped
+        # / poindexter#839 failure shape). last, NOT max: a restart re-runs
+        # migrations on boot, i.e. the restart IS the remediation, so the
+        # fresh 0 must clear the alert immediately rather than a held max
+        # keeping it firing for up to 1h after the fix.
+        "expr": "last_over_time(poindexter_unapplied_migrations_count[1h]) > 0",
         "for": "30m",
         "severity": "warning",
         "category": "infra",
@@ -621,7 +667,17 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "enabled": True,
         "group": "poindexter-business",
         "interval": "1m",
-        "expr": "poindexter_monthly_spend_usd > {threshold.monthly_spend_warning_usd}",
+        # last_over_time bridges deploy-restart scrape holes so the 10m clock
+        # doesn't reset mid-ramp (353 pending-minutes of chopped ramps in the
+        # 14d before 2026-07-11 — it still fired eventually because monthly
+        # spend is cumulative, but detection lagged by up to the deploy-burst
+        # length). last, NOT max: the gauge legitimately drops to ~0 at month
+        # rollover, and a held max would false-fire for up to 1h into the new
+        # month (for: 10m < 1h lookback).
+        "expr": (
+            "last_over_time(poindexter_monthly_spend_usd[1h]) > "
+            "{threshold.monthly_spend_warning_usd}"
+        ),
         "for": "10m",
         "severity": "warning",
         "category": "business",

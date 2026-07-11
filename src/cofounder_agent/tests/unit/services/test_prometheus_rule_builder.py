@@ -490,6 +490,95 @@ class TestQaRailFullySkippedRule:
 
 
 # ---------------------------------------------------------------------------
+# Worker-restart gap bridging — the #2330 follow-up audit
+# ---------------------------------------------------------------------------
+
+
+class TestRestartGapBridging:
+    """Instant-vector rules over worker-exported gauges must bridge deploy-
+    restart scrape holes (glad-labs-stack#2330 follow-up audit).
+
+    Mechanism: every worker deploy restart fails 1-3 scrapes (15s interval),
+    and a failed scrape writes staleness markers for ALL ``worker:8002``
+    series — instant selectors go empty immediately (no 5m grace), resetting
+    any in-flight ``for:`` clock. Measured 2026-07-11: 46 restarts and 138
+    series holes in one day; ``NoPublishedPostsRecently`` logged 4,002
+    pending-minutes across 92 chopped episodes in 14d and never fired once
+    (a ``for: 48h`` rule can complete at most ~7 episodes in that span).
+
+    ``last_over_time`` (not ``max_over_time``) is deliberate for all four
+    rules here: it returns the newest sample in the window, so it bridges
+    *absence* without holding *stale highs* — a genuine recovery (migrations
+    applied on boot, month-rollover spend reset, backfilled embeddings, a
+    fresh publish) propagates with the first post-recovery sample instead of
+    false-firing for up to an hour like a held max would.
+    """
+
+    def test_no_published_posts_bridges_both_operands(self):
+        rule = rb.DEFAULT_RULES["NoPublishedPostsRecently"]
+        expr = rule["expr"]
+        # Both sides of the == carry the bridge: the current read AND the
+        # offset read (a restart hole 24h ago blanks the offset side today).
+        assert expr.count("last_over_time(") == 2
+        assert expr.count("[1h]") == 2
+        assert "offset 24h" in expr
+        # Intent unchanged: still the 24h-growth comparison held for 48h.
+        assert rule["for"] == "48h"
+
+    def test_unapplied_migrations_bridges_with_last_not_max(self):
+        rule = rb.DEFAULT_RULES["UnappliedMigrationsDrift"]
+        assert (
+            "last_over_time(poindexter_unapplied_migrations_count[1h])"
+            in rule["expr"]
+        )
+        # A worker restart re-runs migrations on boot, i.e. the restart IS
+        # the remediation — a held max would keep the alert firing for up
+        # to 1h after the drift was fixed.
+        assert "max_over_time" not in rule["expr"]
+
+    def test_monthly_spend_bridges_with_last_not_max(self):
+        rule = rb.DEFAULT_RULES["MonthlySpendHigh"]
+        assert "last_over_time(poindexter_monthly_spend_usd[1h])" in rule["expr"]
+        # Spend gauges legitimately drop to ~0 at month rollover; a held max
+        # would false-fire for up to 1h into the new month (for: 10m < 1h).
+        assert "max_over_time" not in rule["expr"]
+
+    @pytest.mark.asyncio
+    async def test_bridged_rules_render_with_thresholds_substituted(self):
+        pool = _FakePool([])
+        out = await rb.build_current(pool)
+        assert "last_over_time(poindexter_embeddings_missing_posts[1h]) > 3" in out
+        assert "last_over_time(poindexter_monthly_spend_usd[1h]) > 35.0" in out
+        assert (
+            'last_over_time(poindexter_posts_total{status=\\"published\\"}[1h]'
+            " offset 24h)" in out
+        )
+
+    def test_ratchet_long_for_rules_bridge_or_run_on_independent_exporters(self):
+        """Any rule holding a ``for:`` of 30m+ must either wrap its reads in a
+        ``*_over_time`` window (restart-proof) or source an exporter that does
+        not restart with worker deploys. A raw instant read cannot survive a
+        30m pending window on a box that restarts the worker 8-46x/day."""
+        import re
+
+        # cAdvisor / windows_exporter / nvidia-smi / postgres_exporter run as
+        # independent containers or host services — worker deploys don't
+        # blank their series.
+        independent = {"PoindexterContainerMemoryHigh"}
+        for name, rule in rb.DEFAULT_RULES.items():
+            m = re.fullmatch(r"(\d+)([mh])", str(rule["for"]))
+            assert m, f"{name}: unparseable for: {rule['for']!r}"
+            minutes = int(m.group(1)) * (60 if m.group(2) == "h" else 1)
+            if minutes < 30 or name in independent:
+                continue
+            assert "_over_time(" in rule["expr"], (
+                f"{name} holds for: {rule['for']} on a raw instant read — "
+                "a worker deploy restart resets its pending clock "
+                "(see QaRailFullySkipped / poindexter#839)"
+            )
+
+
+# ---------------------------------------------------------------------------
 # WindowsExporterDown — static infrastructure.yml (poindexter#705)
 # ---------------------------------------------------------------------------
 
