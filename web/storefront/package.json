@@ -9,8 +9,7 @@
   "scripts": {
     "dev": "next dev --port 3334",
     "build": "next build",
-    "start": "next start --port 3334",
-    "lint": "tsc --noEmit"
+    "start": "next start --port 3334"
   },
   "dependencies": {
     "@glad-labs/brand": "*",

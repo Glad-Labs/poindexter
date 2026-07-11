@@ -96,11 +96,12 @@ onto this one. Two anatomy labels still pay rent and stay as proper nouns:
 ### Starting Services
 
 ```bash
-npm run dev                  # Start both services concurrently (primary command)
-npm run dev:cofounder        # Backend only (FastAPI + uvicorn)
-npm run dev:public           # Next.js only
+npm run dev                  # Backend (:8002) + frontend (:3000) concurrently, for host dev
+npm run dev:cofounder        # Backend only (uvicorn via the backend poetry env, port 8002)
+npm run dev:public           # Next.js only (port 3000 — collides with Grafana while the operator Docker stack is up)
+npm run setup                # npm install + poetry -C src/cofounder_agent install
 
-# Docker backend stack:
+# Docker backend stack (how the backend actually runs in production):
 docker compose -f docker-compose.consumer.yml up -d                     # Consumer stack (8-16 GB VRAM / 32 GB RAM)
 docker compose -f docker-compose.consumer.yml --profile image-gen up -d      # + image-gen generation
 bash scripts/start-stack.sh up -d                                        # Full operator stack (Matt's PC — decrypts bootstrap.toml first)
@@ -109,12 +110,13 @@ bash scripts/start-stack.sh up -d                                        # Full 
 ### Testing
 
 ```bash
-# Python backend
+# Python backend (equivalently: npm run test:python / test:python:integration)
 cd src/cofounder_agent && poetry run pytest tests/unit/ -q    # Unit tests
 cd src/cofounder_agent && poetry run pytest tests/integration/ -q  # Integration
 
-# JavaScript (public site)
+# JavaScript
 npm run test                  # Jest for public site
+npm run test:console          # Operator-console JS tests (node:test + vm, no jsdom)
 
 # Playwright E2E
 npm run test:e2e              # All Playwright tests (headless)
@@ -125,7 +127,8 @@ npm run test:e2e              # All Playwright tests (headless)
 ```bash
 npm run lint                  # ESLint all workspaces
 npm run format                # Prettier
-npm run type:check            # Python mypy
+npm run lint:python           # Ruff over the backend
+npm run type:check            # Python mypy (backend poetry env)
 ```
 
 ## Architecture
