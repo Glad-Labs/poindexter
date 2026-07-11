@@ -2,6 +2,37 @@
 
 ## Unreleased
 
+## [0.100.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.99.0...v0.100.0) (2026-07-11)
+
+
+### Features
+
+* **activity:** media render producers — image/video/podcast in the console pulse ([#2272](https://github.com/Glad-Labs/glad-labs-stack/issues/2272)) ([57a37bd](https://github.com/Glad-Labs/glad-labs-stack/commit/57a37bd5c63c637da6d1c5e1d2b209081ac5f77e))
+* **console:** add NOW RUNNING live-activity band to overview ([#2260](https://github.com/Glad-Labs/glad-labs-stack/issues/2260)) ([5a3232c](https://github.com/Glad-Labs/glad-labs-stack/commit/5a3232c0adbd59feb2e49610b4f0647bbd302cc0))
+* **console:** live-activity pulse Phase 1 — ledger + producers + /api/activity + SYSTEM PULSE band ([#2262](https://github.com/Glad-Labs/glad-labs-stack/issues/2262)) ([eafeae2](https://github.com/Glad-Labs/glad-labs-stack/commit/eafeae2d620286247814cb038e098a7fa9e4cdf6))
+* **images:** writer-nominated, content-grounded image direction ([#2250](https://github.com/Glad-Labs/glad-labs-stack/issues/2250)) ([4654ff3](https://github.com/Glad-Labs/glad-labs-stack/commit/4654ff3262bb56db986312646dcbe0dbf2535ecd))
+* **llm:** prompt-cache the litellm anthropic writer system prefix ([#2264](https://github.com/Glad-Labs/glad-labs-stack/issues/2264)) ([10aca04](https://github.com/Glad-Labs/glad-labs-stack/commit/10aca04deb984665168c7ba2484561812c38014d))
+* **observability:** consolidate hardware sensors onto AIDA64 + iCUE, drop HWiNFO ([#2290](https://github.com/Glad-Labs/glad-labs-stack/issues/2290)) ([906616b](https://github.com/Glad-Labs/glad-labs-stack/commit/906616b81ae5c050f86ab309ff33661fc2137cfc))
+* **observability:** host-memory pressure alerts + Hardware & Power panels ([#2271](https://github.com/Glad-Labs/glad-labs-stack/issues/2271)) ([cdb1840](https://github.com/Glad-Labs/glad-labs-stack/commit/cdb1840301feb7d340648a17e79afc868e5747dc))
+* **ops:** system timezone awareness ([#2247](https://github.com/Glad-Labs/glad-labs-stack/issues/2247)) ([2ddfd39](https://github.com/Glad-Labs/glad-labs-stack/commit/2ddfd396d8397a6b9bc5352d04856aabc1ad34e0))
+* **pipeline:** image_rebuild graph template — rebuild-images enqueues instead of blocking ([#2287](https://github.com/Glad-Labs/glad-labs-stack/issues/2287)) ([0ebc6fb](https://github.com/Glad-Labs/glad-labs-stack/commit/0ebc6fbd1a01f9778a14a0cd125bc35a842b70d8))
+* **topics:** external candidates require internal grounding ([#822](https://github.com/Glad-Labs/glad-labs-stack/issues/822)) ([#2266](https://github.com/Glad-Labs/glad-labs-stack/issues/2266)) ([c0223ca](https://github.com/Glad-Labs/glad-labs-stack/commit/c0223cab1ad5cd911f7e9a63b06825c7c5854653))
+* **tracing:** capture prompt + completion on every dispatcher LLM span ([#2267](https://github.com/Glad-Labs/glad-labs-stack/issues/2267)) ([c1520a2](https://github.com/Glad-Labs/glad-labs-stack/commit/c1520a2a8027300d853688241d1f498b192e5850))
+* writer opens on the internal thread an external topic connects to ([#822](https://github.com/Glad-Labs/glad-labs-stack/issues/822)) ([#2279](https://github.com/Glad-Labs/glad-labs-stack/issues/2279)) ([0fcc32b](https://github.com/Glad-Labs/glad-labs-stack/commit/0fcc32b238afffdd0f13854eef67fde6811d9c4f))
+
+
+### Bug Fixes
+
+* **activity:** heartbeat long-running jobs so the pulse doesn't hide them ([#2268](https://github.com/Glad-Labs/glad-labs-stack/issues/2268)) ([7498c00](https://github.com/Glad-Labs/glad-labs-stack/commit/7498c00f6b1a17cdcda76c0eae62b53785a84e39))
+* **activity:** heartbeat the content run so a slow node doesn't hide it ([#2270](https://github.com/Glad-Labs/glad-labs-stack/issues/2270)) ([6354e7d](https://github.com/Glad-Labs/glad-labs-stack/commit/6354e7daca7641398d4587dd72716becb7edd8cb))
+* **architect:** correct dead atom names in the composition-heuristics prompt ([#2284](https://github.com/Glad-Labs/glad-labs-stack/issues/2284)) ([b666239](https://github.com/Glad-Labs/glad-labs-stack/commit/b6662396333fba5188cfe4a9c690be49b76a2837))
+* **console:** compact the SYSTEM PULSE band ([#2273](https://github.com/Glad-Labs/glad-labs-stack/issues/2273)) ([42e71e7](https://github.com/Glad-Labs/glad-labs-stack/commit/42e71e79bb630cc240245b860621d39d81343510))
+* **console:** stop SYSTEM PULSE cards jumping on hover (overflow-x quirk) ([#2285](https://github.com/Glad-Labs/glad-labs-stack/issues/2285)) ([40362d5](https://github.com/Glad-Labs/glad-labs-stack/commit/40362d56df50ed58465d7bc96f81ea860bb06d12))
+* **pipeline:** reseed canonical_blog graph_def for plan_image_markers contract ([#2261](https://github.com/Glad-Labs/glad-labs-stack/issues/2261)) ([139d57a](https://github.com/Glad-Labs/glad-labs-stack/commit/139d57a3f12714bc5798735a3a7360b775acdcdc))
+* **research:** skip duplicate research render on task re-run ([#2286](https://github.com/Glad-Labs/glad-labs-stack/issues/2286)) ([1d4dda4](https://github.com/Glad-Labs/glad-labs-stack/commit/1d4dda404e5cf55f6ea12cde464f4ae3c0a94ffd))
+* **social:** drafts link to the real post — predicted slug + approve-time gate (poindexter[#832](https://github.com/Glad-Labs/glad-labs-stack/issues/832)) ([#2282](https://github.com/Glad-Labs/glad-labs-stack/issues/2282)) ([b9f4eee](https://github.com/Glad-Labs/glad-labs-stack/commit/b9f4eee0c63987f4f21d44b9e6e82d80e13ee9fd))
+* **tracing:** stamp Langfuse session.id + phase on dispatcher LLM spans ([#2265](https://github.com/Glad-Labs/glad-labs-stack/issues/2265)) ([a8fe032](https://github.com/Glad-Labs/glad-labs-stack/commit/a8fe03250b8233fc1e5c08bf442fed60ac03b248))
+
 ## [0.99.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.98.0...v0.99.0) (2026-07-10)
 
 
