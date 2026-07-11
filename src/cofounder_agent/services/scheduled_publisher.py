@@ -109,7 +109,7 @@ async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig):
                             distributed_at = COALESCE(distributed_at, NOW())
                         WHERE status = 'scheduled' AND published_at <= NOW()
                           AND awaiting_gate IS NULL
-                        RETURNING id, title, slug,
+                        RETURNING id, title, slug, excerpt,
                                   metadata ->> 'pipeline_task_id' AS pipeline_task_id
                         """)
                     if rows:
@@ -179,6 +179,45 @@ async def run_scheduled_publisher(get_pool, *, site_config: SiteConfig):
                         # won't appear on www.gladlabs.io until the next
                         # 5-minute window.
                         await _revalidate_for_row(row, site_config=_sc)
+                        # Newsletter announce — this promote IS the
+                        # go-live moment for scheduled posts, and until
+                        # 2026-07-10 it never emailed subscribers (the
+                        # only newsletter hook lived on publish_service's
+                        # immediate-publish tail). Guarded like the
+                        # pipeline_task_id fetch above so dict-backed
+                        # mocks without the columns don't crash the loop;
+                        # send_post_newsletter dedups per (slug,
+                        # subscriber) so a re-promotion can't double-mail.
+                        try:
+                            _nl_slug = row["slug"]
+                        except (KeyError, IndexError):
+                            _nl_slug = None
+                        try:
+                            _nl_excerpt = row["excerpt"] or ""
+                        except (KeyError, IndexError):
+                            _nl_excerpt = ""
+                        if _nl_slug:
+                            try:
+                                from services.publish_service import (
+                                    _send_post_newsletter_bg,
+                                    _spawn_background,
+                                )
+                                _spawn_background(
+                                    _send_post_newsletter_bg(
+                                        pool,
+                                        _sc,
+                                        row["title"] or _nl_slug,
+                                        _nl_excerpt,
+                                        _nl_slug,
+                                    ),
+                                    name=f"send_newsletter({_nl_slug})",
+                                )
+                            except Exception as nl_exc:  # noqa: BLE001
+                                logger.warning(
+                                    "[scheduled_publisher] newsletter spawn "
+                                    "failed (non-fatal): %s",
+                                    nl_exc,
+                                )
         except asyncio.CancelledError:
             logger.info("[scheduled_publisher] Shutting down")
             break

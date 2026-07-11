@@ -817,6 +817,12 @@ services:
       # prefect-worker didn't — that asymmetry was masking the LLM
       # outage entirely.
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      # Post-publish distribution hooks (newsletter / sync / R2 / RSS)
+      # key off DEPLOYMENT_MODE == "worker". The auto-publish path can
+      # run publish_post_from_task INSIDE this container, and without
+      # this var those hooks silently no-op (2026-07-10 newsletter
+      # outage, third silent gap). Same value the legacy worker sets.
+      DEPLOYMENT_MODE: worker
     volumes:
       - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro

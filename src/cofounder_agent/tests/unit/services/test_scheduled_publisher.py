@@ -646,3 +646,81 @@ class TestFinalPublishGate:
         await _run_one_iteration(get_pool)  # gate off -> only the promote UPDATE
         sql = conn.fetch.call_args[0][0]
         assert "awaiting_gate IS NULL" in sql
+
+
+# ---------------------------------------------------------------------------
+# Newsletter announce on promote (2026-07-10)
+# ---------------------------------------------------------------------------
+
+
+class TestPromoteFiresNewsletter:
+    """The scheduled promote is a go-live moment: until 2026-07-10 it only
+    flipped status + revalidated ISR, so posts published via schedule
+    slots never emailed subscribers (the only newsletter hook lived on
+    publish_service's immediate-publish tail)."""
+
+    @pytest.mark.asyncio
+    async def test_newsletter_spawned_per_promoted_row(self, monkeypatch):
+        from services import publish_service
+
+        rows = [
+            {
+                "id": "post-uuid-nl",
+                "title": "Scheduled Post",
+                "slug": "scheduled-post-abc12345",
+                "excerpt": "The excerpt",
+                "pipeline_task_id": "task-nl-12345678",
+            },
+        ]
+        pool, conn = _make_pool(rows)
+        get_pool = AsyncMock(return_value=pool)
+
+        calls: list[tuple] = []
+
+        async def _fake_newsletter(pool_or_db, site_config, title, excerpt, slug):
+            calls.append((title, excerpt, slug))
+
+        # The loop lazy-imports the symbol from publish_service at spawn
+        # time, so patching the module attribute intercepts it.
+        monkeypatch.setattr(
+            publish_service, "_send_post_newsletter_bg", _fake_newsletter
+        )
+
+        await _run_one_iteration(get_pool)
+
+        assert calls == [("Scheduled Post", "The excerpt", "scheduled-post-abc12345")]
+
+    @pytest.mark.asyncio
+    async def test_newsletter_promotes_rows_returning_excerpt(self):
+        """The promote UPDATE...RETURNING must surface ``excerpt`` — the
+        announce email needs it and re-querying posts per row would be
+        a needless round-trip."""
+        pool, conn = _make_pool([])
+        get_pool = AsyncMock(return_value=pool)
+
+        await _run_one_iteration(get_pool)
+
+        sql = conn.fetch.call_args[0][0]
+        assert "RETURNING id, title, slug, excerpt" in sql
+
+    @pytest.mark.asyncio
+    async def test_missing_slug_skips_newsletter_without_crashing(self, monkeypatch):
+        from services import publish_service
+
+        rows = [{"id": "post-uuid-noslug", "title": "No slug"}]
+        pool, conn = _make_pool(rows)
+        get_pool = AsyncMock(return_value=pool)
+
+        calls: list[tuple] = []
+
+        async def _fake_newsletter(pool_or_db, site_config, title, excerpt, slug):
+            calls.append((title, excerpt, slug))
+
+        monkeypatch.setattr(
+            publish_service, "_send_post_newsletter_bg", _fake_newsletter
+        )
+
+        # Should not raise; no announce without a slug to link to.
+        await _run_one_iteration(get_pool)
+
+        assert calls == []

@@ -301,6 +301,55 @@ async def test_publish_promotes_existing_approved_post_to_published() -> None:
 
 
 @pytest.mark.asyncio
+async def test_publish_promote_fires_newsletter_when_hooks_on(monkeypatch) -> None:
+    """2026-07-10 regression: the promote-existing-approved short-circuit
+    returned before the phase-11f newsletter hook, so the approve→stage→
+    promote flow (the operator default since ~2026-06-24) never emailed
+    subscribers about anything. Promote is a go-live moment — it must
+    announce."""
+    import asyncio as _asyncio
+
+    from services import publish_service
+    from services.publish_service import publish_post_from_task
+
+    monkeypatch.setenv("DEPLOYMENT_MODE", "worker")
+
+    db = _make_db_service()
+    existing = {
+        "id": "66666666-6666-6666-6666-666666666666",
+        "slug": "test-post-for-stage-only-contract-11111111",
+        "title": "Promote announces",
+        "status": "approved",
+        "excerpt": "The excerpt",
+    }
+    db.pool.fetchrow = AsyncMock(return_value=existing)
+    db.pool.execute = AsyncMock(return_value="UPDATE 1")
+    db._test_conn.execute = AsyncMock(return_value="UPDATE 1")
+
+    spawned: dict[str, Any] = {}
+
+    async def _fake_newsletter(pool_or_db, site_config, title, excerpt, slug):
+        spawned["args"] = (title, excerpt, slug)
+
+    monkeypatch.setattr(publish_service, "_send_post_newsletter_bg", _fake_newsletter)
+
+    result = await publish_post_from_task(
+        db, _make_task(), "11111111-1111-1111-1111-111111111111",
+        publisher="operator-test",
+        stage_only=False,
+        draft_mode=False,
+        site_config=_TEST_SC,
+    )
+    # Yield once so the fire-and-forget spawn runs to completion.
+    await _asyncio.sleep(0)
+
+    assert result.success is True
+    assert spawned["args"] == (
+        "Promote announces", "The excerpt", existing["slug"],
+    )
+
+
+@pytest.mark.asyncio
 async def test_publish_skips_when_post_already_published() -> None:
     """Idempotency: a second publish call on a row already at
     status='published' must be a clean no-op (no extra UPDATE, no

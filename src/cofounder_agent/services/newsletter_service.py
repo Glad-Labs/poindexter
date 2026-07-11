@@ -8,8 +8,12 @@ Supports two providers (configured via app_settings):
 All configuration is DB-first via app_settings keys:
 - newsletter_enabled: bool (default false)
 - newsletter_provider: "resend" or "smtp"
-- newsletter_from_email: sender address
-- newsletter_from_name: sender display name
+- newsletter_from_email: sender address — bare (``news@example.com``) or a
+  full mailbox (``Name <news@example.com>``); both shapes parse. An
+  unparseable value skips the campaign loudly (finding + error log)
+  instead of burning a per-subscriber provider rejection.
+- newsletter_from_name: sender display name (wins over any display name
+  embedded in newsletter_from_email)
 - resend_api_key: Resend API key
 - smtp_host, smtp_port, smtp_user, smtp_password, smtp_use_tls: SMTP config
 - newsletter_batch_size: emails per batch (default 50)
@@ -150,8 +154,43 @@ def _build_html(
 </html>"""
 
 
-async def _send_via_resend(cfg: dict, to_email: str, subject: str, html: str) -> bool:
-    """Send a single email via Resend API."""
+def _from_header(cfg: dict) -> str:
+    """Build the RFC 5322 ``From`` header from operator config.
+
+    ``newsletter_from_email`` accepts a bare address or a full mailbox
+    (``Name <addr>``) — operators have stored both shapes, and the old
+    unconditional ``f"{name} <{email}>"`` wrap turned the mailbox shape
+    into ``Name <Name <addr>>``, which Resend 422s. That malformed wrap
+    failed every send for two months (2026-05-08 → 07-10) with only a
+    per-recipient warning to show for it.
+
+    ``newsletter_from_name`` (when set) wins as the display name over a
+    name embedded in the address value. Raises ``ValueError`` when no
+    parseable address is present so the caller can skip the campaign
+    loudly instead of collecting one provider rejection per subscriber.
+    """
+    from email.utils import formataddr, parseaddr
+
+    embedded_name, addr = parseaddr(cfg.get("from_email") or "")
+    if not addr or "@" not in addr:
+        raise ValueError(
+            f"newsletter_from_email is not a parseable address: "
+            f"{cfg.get('from_email')!r}"
+        )
+    display = (cfg.get("from_name") or "").strip() or embedded_name.strip()
+    return formataddr((display, addr)) if display else addr
+
+
+async def _send_via_resend(
+    cfg: dict, from_header: str, to_email: str, subject: str, html: str
+) -> tuple[bool, str | None]:
+    """Send a single email via Resend API.
+
+    Returns ``(ok, error)``. The error string is persisted to
+    ``campaign_email_logs.delivery_error`` — the pre-2026-07 constant
+    ``"send_error"`` hid Resend's actual rejection from the DB and made
+    the outage invisible to everything but Loki.
+    """
     try:
         import resend
 
@@ -161,27 +200,30 @@ async def _send_via_resend(cfg: dict, to_email: str, subject: str, html: str) ->
         result = await loop.run_in_executor(
             None,
             lambda: resend.Emails.send({
-                "from": f"{cfg['from_name']} <{cfg['from_email']}>",
+                "from": from_header,
                 "to": [to_email],
                 "subject": subject,
                 "html": html,
             }),
         )
-        return bool(result and result.get("id"))
+        if result and result.get("id"):
+            return True, None
+        return False, f"unexpected Resend response: {result!r}"
     except Exception as e:
         logger.warning("[NEWSLETTER] Resend send failed for %s: %s", to_email, e)
-        return False
+        return False, str(e)
 
 
 async def _send_via_smtp(
     cfg: dict,
+    from_header: str,
     to_email: str,
     subject: str,
     html: str,
     *,
     unsubscribe_token: str,
     site_config: SiteConfig,
-) -> bool:
+) -> tuple[bool, str | None]:
     """Send a single email via SMTP.
 
     ``unsubscribe_token`` is required so the ``List-Unsubscribe`` header
@@ -203,7 +245,7 @@ async def _send_via_smtp(
         import aiosmtplib
 
         msg = MIMEMultipart("alternative")
-        msg["From"] = f"{cfg['from_name']} <{cfg['from_email']}>"
+        msg["From"] = from_header
         msg["To"] = to_email
         msg["Subject"] = subject
         msg["List-Unsubscribe"] = f"<{_unsubscribe_url(unsubscribe_token, site_config=site_config)}>"
@@ -218,20 +260,60 @@ async def _send_via_smtp(
             password=cfg["smtp_password"] or None,
             use_tls=cfg["smtp_use_tls"],
         )
-        return True
+        return True, None
     except Exception as e:
         logger.warning("[NEWSLETTER] SMTP send failed for %s: %s", to_email, e)
-        return False
+        return False, str(e)
 
 
-async def _log_send(pool, subscriber_id: int, subject: str, status: str, error: str | None = None) -> None:
+def _campaign_name(slug: str) -> str:
+    """Per-post campaign key for ``campaign_email_logs.campaign_name``.
+
+    Slug-scoped (``post_published:<slug>``) so the delivered-set lookup in
+    :func:`send_post_newsletter` can make re-fires idempotent per post —
+    the newsletter now fires from every go-live seam (immediate publish,
+    promote, gate-clear re-trigger, scheduled promote), and two of those
+    can legitimately run for the same post. Historical rows used the
+    constant ``post_published`` and are all ``failed``, so they never
+    collide with the delivered-set lookup.
+    """
+    return f"post_published:{slug}"
+
+
+async def _already_delivered_ids(pool, campaign: str) -> set[int]:
+    """Subscriber ids already ``delivered`` for this campaign.
+
+    Best-effort: a lookup failure logs and returns the empty set — worst
+    case a re-fired campaign double-mails, which beats a transient SELECT
+    error blocking the send entirely.
+    """
+    try:
+        rows = await pool.fetch(
+            "SELECT subscriber_id FROM campaign_email_logs "
+            "WHERE campaign_name = $1 AND delivery_status = 'delivered'",
+            campaign,
+        )
+        return {r["subscriber_id"] for r in rows}
+    except Exception as e:
+        logger.warning("[NEWSLETTER] delivered-set lookup failed: %s", e)
+        return set()
+
+
+async def _log_send(
+    pool,
+    subscriber_id: int,
+    campaign: str,
+    subject: str,
+    status: str,
+    error: str | None = None,
+) -> None:
     """Log send attempt to campaign_email_logs."""
     try:
         await pool.execute(
             """INSERT INTO campaign_email_logs
                (subscriber_id, campaign_name, email_subject, delivery_status, delivery_error)
                VALUES ($1, $2, $3, $4, $5)""",
-            subscriber_id, "post_published", subject, status, error,
+            subscriber_id, campaign, subject, status, error,
         )
     except Exception as e:
         logger.debug("[NEWSLETTER] Failed to log send: %s", e)
@@ -278,6 +360,31 @@ async def send_post_newsletter(
         result["skipped_reason"] = "no_smtp_host"
         return result
 
+    try:
+        from_header = _from_header(cfg)
+    except ValueError as e:
+        # Config error, not a per-subscriber error: skip the whole
+        # campaign and surface it ONCE, loudly. Iterating would collect
+        # one identical provider rejection per subscriber (that shape
+        # burned 53/53 sends 2026-05-08 → 07-10 with warnings nobody saw).
+        logger.error("[NEWSLETTER] %s — campaign skipped", e)
+        from utils.findings import emit_finding
+        emit_finding(
+            source="newsletter_service",
+            kind="newsletter_config_invalid",
+            severity="warn",
+            title="Newsletter From address is unparseable — campaign skipped",
+            body=(
+                f"`newsletter_from_email` could not be parsed into an RFC "
+                f"5322 mailbox: {e}\n\nSet it to a bare address "
+                f"(`news@example.com`) or `Name <news@example.com>`. "
+                f"Post affected: `{slug}`."
+            ),
+            dedup_key="newsletter_invalid_from_email",
+        )
+        result["skipped_reason"] = "invalid_from_email"
+        return result
+
     subscribers = await _get_active_subscribers(pool)
     result["total_subscribers"] = len(subscribers)
 
@@ -285,9 +392,13 @@ async def send_post_newsletter(
         logger.info("[NEWSLETTER] No active subscribers to notify")
         return result
 
+    campaign = _campaign_name(slug)
+    already_delivered = await _already_delivered_ids(pool, campaign)
+
     subject = title
     batch_size = cfg["batch_size"]
     batch_delay = cfg["batch_delay"]
+    last_error: str | None = None
 
     logger.info(
         "[NEWSLETTER] Sending to %d subscribers via %s (batch=%d, delay=%ds)",
@@ -298,6 +409,11 @@ async def send_post_newsletter(
         batch = subscribers[i : i + batch_size]
 
         for sub in batch:
+            if sub["id"] in already_delivered:
+                # Re-fired campaign (promote after gate-clear, operator
+                # re-publish, …) — this subscriber already got this post.
+                result["skipped"] += 1
+                continue
             token = sub["unsubscribe_token"]
             html = _build_html(
                 title, excerpt, slug, sub.get("first_name"),
@@ -309,29 +425,57 @@ async def send_post_newsletter(
             # only consumes the inline link inside ``html`` so the
             # token's already baked in there.
             if provider == "resend":
-                success = await _send_via_resend(cfg, sub["email"], subject, html)
+                success, error = await _send_via_resend(
+                    cfg, from_header, sub["email"], subject, html
+                )
             else:
-                success = await _send_via_smtp(
-                    cfg, sub["email"], subject, html,
+                success, error = await _send_via_smtp(
+                    cfg, from_header, sub["email"], subject, html,
                     unsubscribe_token=token,
                     site_config=site_config,
                 )
 
             if success:
                 result["sent"] += 1
-                await _log_send(pool, sub["id"], subject, "delivered")
+                await _log_send(pool, sub["id"], campaign, subject, "delivered")
             else:
                 result["failed"] += 1
-                await _log_send(pool, sub["id"], subject, "failed", "send_error")
+                last_error = (error or "send_error")[:300]
+                await _log_send(
+                    pool, sub["id"], campaign, subject, "failed", last_error
+                )
 
         # Respect rate limits between batches
         if i + batch_size < len(subscribers):
             await asyncio.sleep(batch_delay)
 
     logger.info(
-        "[NEWSLETTER] Done: %d sent, %d failed, %d total",
-        result["sent"], result["failed"], result["total_subscribers"],
+        "[NEWSLETTER] Done: %d sent, %d failed, %d skipped, %d total",
+        result["sent"], result["failed"], result["skipped"],
+        result["total_subscribers"],
     )
+
+    if result["failed"] > 0 and result["sent"] == 0:
+        # Every attempted send failed — that's a campaign outage, not
+        # per-recipient noise. One finding per post (dedup on slug).
+        from utils.findings import emit_finding
+        emit_finding(
+            source="newsletter_service",
+            kind="newsletter_campaign_failed",
+            severity="warn",
+            title=f"Newsletter campaign failed for every subscriber: {slug}",
+            body=(
+                f"0/{result['failed']} sends succeeded for `{slug}` via "
+                f"{provider}.\n\nLast provider error:\n```\n{last_error}\n```"
+            ),
+            dedup_key=f"newsletter_campaign_failed:{slug}",
+            extra={
+                "slug": slug,
+                "provider": provider,
+                "failed": result["failed"],
+                "last_error": last_error,
+            },
+        )
     return result
 
 

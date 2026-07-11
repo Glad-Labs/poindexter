@@ -796,7 +796,7 @@ async def _promote_or_skip_existing(
     """
     _task_suffix = task_id[:8]
     existing = await pool.fetchrow(
-        "SELECT id, slug, title, status FROM posts WHERE slug LIKE '%' || $1",
+        "SELECT id, slug, title, status, excerpt FROM posts WHERE slug LIKE '%' || $1",
         _task_suffix,
     )
     if not existing:
@@ -874,6 +874,24 @@ async def _promote_or_skip_existing(
         promote_revalidation_success = await _revalidate_isr(
             existing["slug"], site_config,
         )
+        # Newsletter announce — the promote UPDATE above is the moment
+        # this post goes public, so the subscriber email fires HERE. The
+        # phase-11f hook on the immediate-publish tail is unreachable
+        # from this short-circuit, which is how the approve→stage→promote
+        # flow silently stopped announcing posts after ~2026-06-24.
+        # send_post_newsletter dedups per (slug, subscriber), so a
+        # re-promotion can't double-mail.
+        if _should_run_post_publish_hooks():
+            _spawn_background(
+                _send_post_newsletter_bg(
+                    pool,
+                    site_config,
+                    existing.get("title", topic),
+                    existing.get("excerpt") or "",
+                    existing["slug"],
+                ),
+                name=f"send_newsletter({existing['slug']})",
+            )
         return PublishResult(
             success=True,
             post_id=str(existing["id"]),
@@ -1126,16 +1144,35 @@ async def _upload_media_to_r2_bg(site_config: SiteConfig, post_id: str) -> None:
 
 
 async def _send_post_newsletter_bg(
-    db_service,
+    pool_or_db,
     site_config: SiteConfig,
     title: str,
     excerpt: str,
     slug: str,
 ) -> None:
-    """Phase 11f (fire-and-forget) — email the new post to subscribers."""
+    """Fire-and-forget — email the new post to subscribers.
+
+    Fires from every seam where a post actually goes public: the
+    immediate-publish tail (phase 11f), the promote-existing-approved
+    short-circuit, ``fire_post_distribution_hooks`` (gate-clear),
+    ``publish_now``, and the ``scheduled_publisher`` promote loop.
+    Until 2026-07-10 only the immediate tail fired it — the approve→
+    stage→promote flow that became the default around 06-24 never
+    announced anything, so subscribers silently stopped hearing about
+    posts. ``send_post_newsletter`` dedups per (slug, subscriber), so
+    overlapping seams can't double-mail.
+
+    ``pool_or_db`` accepts an asyncpg pool directly or anything carrying
+    ``.cloud_pool`` / ``.pool`` (db_service) — the promote seams only
+    have a pool in scope.
+    """
     try:
         from services.newsletter_service import send_post_newsletter
-        _pool = getattr(db_service, "cloud_pool", None) or db_service.pool
+        _pool = (
+            getattr(pool_or_db, "cloud_pool", None)
+            or getattr(pool_or_db, "pool", None)
+            or pool_or_db
+        )
         # #272 Phase-2b/2g: newsletter_service requires a site_config — pass the
         # run-bound instance threaded from publish_post_from_task.
         result = await send_post_newsletter(
@@ -1963,6 +2000,25 @@ async def fire_post_distribution_hooks(
     except Exception as e:
         logger.warning("[SEO] Failed in re-trigger (non-fatal): %s", e)
 
+    # 3b. Newsletter — gate-clear is a go-live moment, so subscribers get
+    # the announce here too (2026-07-10: this seam previously skipped the
+    # newsletter entirely). Idempotent per (slug, subscriber) inside
+    # send_post_newsletter, so re-triggering hooks can't double-mail.
+    try:
+        _spawn_background(
+            _send_post_newsletter_bg(
+                db_service,
+                _sc,
+                post_row["title"] or slug,
+                post_row["excerpt"] or "",
+                slug,
+            ),
+            name=f"send_newsletter({slug})",
+        )
+        fired["hooks"].append("newsletter")
+    except Exception as e:
+        logger.warning("[NEWSLETTER] Failed in re-trigger (non-fatal): %s", e)
+
     # 4. Per-medium generation — REMOVED (Glad-Labs/poindexter#24).
     # Media is no longer generated on the publish path. It's produced by the
     # Stage-2 `media_pipeline` lane: dispatched once a task clears its approval
@@ -2103,6 +2159,25 @@ async def publish_now(
         fired["hooks"].append("search_engines")
     except Exception as e:
         logger.warning("[SEO] publish_now search ping failed (non-fatal): %s", e)
+
+    # Newsletter — publish_now takes the post live, so the subscriber
+    # announce fires here (2026-07-10: previously only the immediate-
+    # publish tail fired it, which `tasks publish` never reaches).
+    # Idempotent per (slug, subscriber) inside send_post_newsletter.
+    try:
+        _spawn_background(
+            _send_post_newsletter_bg(
+                pool,
+                _sc,
+                post_row["title"] or slug,
+                post_row["excerpt"] or "",
+                slug,
+            ),
+            name=f"send_newsletter({slug})",
+        )
+        fired["hooks"].append("newsletter")
+    except Exception as e:
+        logger.warning("[NEWSLETTER] publish_now newsletter failed (non-fatal): %s", e)
 
     logger.info(
         "[publish_service] publish_now fired %d distribution hook(s) for post %s: %s",
