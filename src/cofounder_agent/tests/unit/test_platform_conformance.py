@@ -15,7 +15,7 @@ import asyncio
 
 import pytest
 
-from plugins.fake_platform import FakePlatform
+from tests.unit._fake_platform import FakePlatform
 from plugins.kernel_platform import KernelPlatform
 from plugins.platform import Capability, CapabilityError, Platform, ScopedPlatform
 

@@ -29,12 +29,6 @@ from services.prompt_manager import UnifiedPromptManager
 _PATCH_TARGET = "services.prompt_manager.get_prompt_manager"
 
 
-def _critic():
-    from modules.content.atoms import review_with_critic as m
-
-    return m._resolve_system_prompt()
-
-
 def _qa_rewrite():
     from modules.content.atoms import qa_rewrite as m
 
@@ -118,7 +112,6 @@ def _retention_summarize():
 
 # (name, skill_key, resolver_callable)
 _CASES = [
-    ("review_with_critic", "atoms.review_with_critic.system_prompt", _critic),
     ("qa_rewrite", "atoms.qa_rewrite.revise_prompt", _qa_rewrite),
     ("quality", "qa.quality_evaluation_llm_rubric", _quality),
     ("narrate_bundle", "atoms.narrate_bundle.system_prompt", _narrate),

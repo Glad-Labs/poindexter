@@ -62,9 +62,9 @@ _REVISE_PROMPT_FALLBACK = (
 
 def _resolve_prompt(key: str, *, fallback: str, **kwargs: Any) -> str:
     """Pull a prompt via UnifiedPromptManager; format the inline fallback
-    if the manager is unreachable. Mirrors the
-    ``atoms/review_with_critic._resolve_system_prompt`` pattern so
-    operator-edited prompts in Langfuse win without forcing a restart.
+    if the manager is unreachable. Mirrors the standard resolve-then-fallback
+    prompt pattern so operator-edited prompts in Langfuse win without forcing
+    a restart.
     """
     try:
         from services.prompt_manager import get_prompt_manager

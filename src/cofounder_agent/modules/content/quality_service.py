@@ -111,7 +111,7 @@ _QUALITY_EVAL_PROMPT_FALLBACK = (
 def _resolve_quality_prompt(key: str, **kwargs: Any) -> str:
     """Fetch a QA prompt via UnifiedPromptManager with inline fallback.
 
-    Mirrors the resolver pattern from ``atoms/review_with_critic`` per
+    Mirrors the standard resolve-then-fallback prompt pattern per
     ``feedback_prompts_must_be_db_configurable``.
     """
     try:

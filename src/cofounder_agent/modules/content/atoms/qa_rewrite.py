@@ -101,8 +101,8 @@ ORIGINAL DRAFT:
 
 def _resolve_revise_prompt(*, content: str, feedback: str) -> str:
     """Pull the revise prompt via UnifiedPromptManager (Langfuse/DB override
-    surface), falling back to the inline constant. Mirrors review_with_critic.
-    Per feedback_prompts_must_be_db_configurable."""
+    surface), falling back to the inline constant, per
+    feedback_prompts_must_be_db_configurable."""
     try:
         from services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(

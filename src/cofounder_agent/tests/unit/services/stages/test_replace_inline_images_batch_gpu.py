@@ -32,7 +32,7 @@ from modules.content.stages.replace_inline_images import (
     ReplaceInlineImagesStage,
     _batch_generate_all_images,
 )
-from plugins.fake_platform import FakePlatform
+from tests.unit._fake_platform import FakePlatform
 
 # ---------------------------------------------------------------------------
 # Shared helpers

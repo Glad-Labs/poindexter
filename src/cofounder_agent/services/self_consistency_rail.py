@@ -72,9 +72,9 @@ _SUMMARY_PROMPT_KEY = "qa.self_consistency.summarize"
 
 def _resolve_summary_prompt(*, topic: str, content: str) -> str:
     """Fetch the summary prompt via UnifiedPromptManager, fall back to
-    the inline constant if the manager isn't reachable. Mirrors the
-    ``atoms/review_with_critic._resolve_system_prompt`` pattern so
-    operator-edited prompts in Langfuse win without a restart."""
+    the inline constant if the manager isn't reachable. Mirrors the standard
+    resolve-then-fallback prompt pattern so operator-edited prompts in Langfuse
+    win without a restart."""
     try:
         from services.prompt_manager import get_prompt_manager
         return get_prompt_manager().get_prompt(

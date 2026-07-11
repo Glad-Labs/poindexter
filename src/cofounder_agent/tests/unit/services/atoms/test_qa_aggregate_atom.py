@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from modules.content.atoms import qa_aggregate
-from plugins.fake_platform import FakePlatform
+from tests.unit._fake_platform import FakePlatform
 
 
 @pytest.mark.unit

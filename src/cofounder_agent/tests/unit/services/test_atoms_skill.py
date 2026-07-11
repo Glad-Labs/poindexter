@@ -10,7 +10,7 @@ reaches the model (the operator brand used to be hardcoded "Glad Labs" /
 
 These tests pin:
 
-1. that all three atom keys still resolve from the skill (migration didn't
+1. that both atom keys still resolve from the skill (migration didn't
    drop them),
 2. that each template ends with a single trailing newline (YAML ``|`` clip
    semantics — byte-identical to the old YAML),
@@ -28,7 +28,6 @@ from services.prompt_manager import UnifiedPromptManager
 
 _ATOM_KEYS = (
     "atoms.narrate_bundle.system_prompt",
-    "atoms.review_with_critic.system_prompt",
     "atoms.pipeline_architect.system_prompt",
 )
 
@@ -43,7 +42,7 @@ _SITE_URL = "https://gladlabs.io"
 
 
 def test_atom_keys_resolve_from_skill() -> None:
-    """All three atom keys must load from skills/content/atoms/SKILL.md."""
+    """Both atom keys must load from skills/content/atoms/SKILL.md."""
     pm = UnifiedPromptManager()
     for key in _ATOM_KEYS:
         assert key in pm.prompts, f"{key} did not load from the atoms skill"
@@ -86,13 +85,3 @@ def test_narrate_bundle_renders_site_url() -> None:
     assert "{site_url}" in template
     rendered = template.format(site_name=_SITE_NAME, site_url=_SITE_URL)
     assert _SITE_URL in rendered
-
-
-def test_review_with_critic_has_no_brand_token() -> None:
-    """The critic prompt carries no operator brand — no placeholders to render."""
-    pm = UnifiedPromptManager()
-    template = pm.prompts["atoms.review_with_critic.system_prompt"]["template"]
-    assert "{site_name}" not in template
-    assert "{site_url}" not in template
-    # The JSON schema braces survive extraction escaped as {{ }}.
-    assert '"factual_accuracy"' in template

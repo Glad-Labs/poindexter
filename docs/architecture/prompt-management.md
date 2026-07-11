@@ -59,7 +59,7 @@ Each `SKILL.md` pack declares the keys it provides in its frontmatter `metadata.
 | `content/seo-metadata`                                        | seo_metadata        | `seo.*` title / description / keywords / excerpt / category / tags                                                  |
 | `content/social-media`                                        | social              | trend research + post creation                                                                                      |
 | `content/podcast`, `content/video`, `content/video-director`  | media               | media-script and shot-list prompts                                                                                  |
-| `content/atoms`                                               | content             | `atoms.*` system prompts (narrate_bundle, review_with_critic, pipeline_architect)                                   |
+| `content/atoms`                                               | content             | `atoms.*` system prompts (narrate_bundle, pipeline_architect)                                                       |
 | `content/utility`                                             | utility             | content summarization / JSON conversion helpers                                                                     |
 | `ops/automation`, `ops/business`, `ops/triage`, `ops/hygiene` | ops                 | `task.*` business/automation/ops prompts + the retention/memory-hygiene summarizers                                 |
 | `voice/agent`                                                 | voice               | `voice.*` system prompts — Emma persona + Claude-bridge TTS override (`{surface}`)                                  |

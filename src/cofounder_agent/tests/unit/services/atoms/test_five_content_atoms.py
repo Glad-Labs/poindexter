@@ -462,7 +462,7 @@ class TestContentEvaluateAutoPublish:
     async def test_platform_audit_written_on_success(self, monkeypatch):
         """When platform is provided, audit.write_bg is called with gate decision."""
         from modules.content.atoms import content_evaluate_auto_publish as atom
-        from plugins.fake_platform import FakePlatform
+        from tests.unit._fake_platform import FakePlatform
 
         gate_decision = _make_gate_decision(would_fire=False, gate_state="disabled")
         monkeypatch.setattr(

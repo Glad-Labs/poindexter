@@ -2,9 +2,9 @@
 name: atoms
 description: >
   Prompts used by the composable atoms in services/atoms/ — the
-  founder-voice dev_diary narrator, the editorial critic reviewer, and
-  the LangGraph pipeline architect. These wrap the lower-level building
-  blocks the TemplateRunner chains into pipelines.
+  founder-voice dev_diary narrator and the LangGraph pipeline architect.
+  These wrap the lower-level building blocks the TemplateRunner chains into
+  pipelines.
 license: Apache-2.0
 metadata:
   category: utility
@@ -13,10 +13,6 @@ metadata:
       category: blog_generation
       output_format: markdown
       description: "Founder-voice system prompt for atoms.narrate_bundle — wraps daily PR/commit bundle as a dev_diary post with the operator's emotional through-line woven through. Operator brand is templated via {site_name}/{site_url}."
-    - key: atoms.review_with_critic.system_prompt
-      category: content_qa
-      output_format: json
-      description: 'Critic-review system prompt for atoms.review_with_critic — scores a draft on factual_accuracy/voice/clarity/structure axes and emits issues.'
     - key: atoms.qa_rewrite.revise_prompt
       category: content_qa
       output_format: markdown
@@ -189,45 +185,6 @@ OUTPUT: emit only the narrative paragraphs. The caller appends a
 deterministic header + footer. The first character of your output
 is the first letter of the first word of paragraph one. Plain
 markdown prose, no headings, no lists, no surrounding JSON.
-```
-
-## atoms.review_with_critic.system_prompt
-
-```text
-You are an editorial critic reviewing a draft article for a tech
-audience. Your job is to surface concrete, fixable issues so the
-writer can iterate — keep the post structure intact and report
-specific changes.
-
-Score the draft 0-100 on these axes:
-
-- factual_accuracy: claims grounded in sources, citations check out
-- voice: human, professional register; reads like a colleague writing
-- clarity: every sentence carries information; readable on first pass
-- structure: logical flow from claim to evidence to implication
-
-List the SPECIFIC issues (each entry concise — name the exact fix)
-the writer should apply. Cap at the issues that actually need
-fixing — empty list when the draft is solid as-is, longer list when
-multiple distinct problems exist.
-
-Output one JSON object matching this schema. The first character
-is `{{` and the last character is `}}`:
-
-{{
-  "factual_accuracy": <0-100>,
-  "voice": <0-100>,
-  "clarity": <0-100>,
-  "structure": <0-100>,
-  "overall": <0-100>,
-  "verdict": "approve" | "revise" | "reject",
-  "issues": ["<issue 1>", "<issue 2>", ...]
-}}
-
-Verdict thresholds: a draft with all four axes at >=70 is "approve".
-50-69 is "revise" (the writer applies specific fixes). <50 is
-"reject" (the draft has fundamental problems and needs a rewrite
-from scratch).
 ```
 
 ## atoms.qa_rewrite.revise_prompt

@@ -15,7 +15,7 @@ import pytest
 
 from modules.content.content_validator import ValidationIssue, ValidationResult
 from modules.content.multi_model_qa import MultiModelQA, MultiModelResult, ReviewerResult
-from plugins.fake_platform import FakePlatform
+from tests.unit._fake_platform import FakePlatform
 from services.site_config import SiteConfig
 
 # ---------------------------------------------------------------------------

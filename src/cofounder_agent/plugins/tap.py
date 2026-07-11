@@ -8,10 +8,10 @@ Two flavors of implementation:
 
 - **Native Python Taps** for internal sources (memory files, posts we
   own, audit log, brain tables). Fast, no subprocess overhead.
-- **SingerTap wrapper** (see :class:`SingerTap`) wraps any Singer binary
-  and streams its JSON-lines output into Documents. Unlocks the whole
-  Singer catalog: ``tap-github``, ``tap-slack``, ``tap-gmail``,
-  ``tap-google-analytics``, etc.
+- **Singer subprocess wrapper** (the ``tap.singer_subprocess`` handler)
+  wraps any Singer binary and streams its JSON-lines output into
+  Documents. Unlocks the whole Singer catalog: ``tap-github``,
+  ``tap-slack``, ``tap-gmail``, ``tap-google-analytics``, etc.
 
 Register a Tap via ``pyproject.toml``:
 

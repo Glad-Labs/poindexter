@@ -7,10 +7,12 @@ instead of standing up the real kernel. The conformance test
 against the fake behaves the same against the real kernel — the fake-kernel-drift
 guard.
 
-Importable from non-test code on purpose: any module's test suite can
-``from plugins.fake_platform import FakePlatform``. Each capability records its
-calls so a test can assert on them (e.g. ``fake.audit.writes``,
-``fake.log.calls``).
+Lives under ``tests/`` (moved out of ``plugins/`` in the 2026-07-10 tech-debt
+sweep so it no longer ships in the worker image). Any test imports it via
+``from tests.unit._fake_platform import FakePlatform`` — the underscore prefix
+keeps pytest from collecting it as a test module (same idiom as
+``tests/unit/services/_gate_fakes.py``). Each capability records its calls so a
+test can assert on them (e.g. ``fake.audit.writes``, ``fake.log.calls``).
 """
 
 from __future__ import annotations

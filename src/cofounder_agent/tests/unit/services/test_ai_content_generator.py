@@ -23,7 +23,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from modules.content.ai_content_generator import AIContentGenerator, ContentValidationResult
-from plugins.fake_platform import FakePlatform
+from tests.unit._fake_platform import FakePlatform
 
 # ---------------------------------------------------------------------------
 # Helpers

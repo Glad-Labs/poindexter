@@ -26,7 +26,7 @@ from modules.content.stages.replace_inline_images import (
     ReplaceInlineImagesStage,
     _try_image_gen,
 )
-from plugins.fake_platform import FakePlatform
+from tests.unit._fake_platform import FakePlatform
 
 # Mirrors the fake used in test_remaining_stages_smoke.py.
 _FAKE_SITE_CONFIG = SimpleNamespace(
