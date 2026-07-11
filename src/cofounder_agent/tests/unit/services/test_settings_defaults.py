@@ -79,6 +79,18 @@ def test_external_grounding_defaults_present():
         assert METADATA[key]["value_type"] == vtype
 
 
+def test_writer_internal_grounding_default_present():
+    """Writer-side prior-work anchor (poindexter#822 consumer half): the master
+    switch seeds on-by-default as a boolean, owned by two_pass_writer and
+    independent of the discovery-side niche_external_grounding_enabled."""
+    from services.settings_defaults import DEFAULTS, METADATA
+
+    assert DEFAULTS["writer_internal_grounding_enabled"] == "true"
+    meta = METADATA["writer_internal_grounding_enabled"]
+    assert meta["value_type"] == "boolean"
+    assert meta["owner"] == "two_pass_writer"
+
+
 def test_media_layer2_defaults_seeded():
     """Media Quality Layer 2 (spec 2026-07-09) tunables seed with sane defaults.
 

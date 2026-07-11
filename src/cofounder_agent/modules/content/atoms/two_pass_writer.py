@@ -274,6 +274,14 @@ class _State(TypedDict, total=False):
     # before this, the niche writer got no length signal and every post
     # came out ~600 words regardless of the requested length.
     target_length: int
+    # Prior-work anchor (#822) — the internal match threaded from
+    # generate_content.py via run(). {source_table, source_id, preview,
+    # similarity} or empty. Plain dict → msgpack-clean for the checkpointer.
+    internal_grounding: dict[str, Any]
+    # Observability set by _draft_node: did an anchor actually reach the prompt,
+    # and from which corpus type. Surfaced up through run() to the caller stage.
+    internal_grounding_injected: bool
+    internal_grounding_source_table: str | None
 
 
 # Content-bearing source_tables the writer may ground a draft in when the
@@ -598,6 +606,18 @@ async def _draft_node(state: _State) -> _State:
         )
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
     pool = _POOL_REGISTRY.get(state["pool_thread"])
+    # Prior-work anchor (#822) — optional soft framing section appended AFTER
+    # the SOURCES block. Fail-open: any issue → no section, prompt unchanged.
+    ig = state.get("internal_grounding") or {}
+    ig_injected = False
+    ig_source_table: str | None = None
+    if _internal_grounding_enabled(site_config) and ig:
+        section, ig_source_table = await _build_internal_grounding_section(
+            ig, site_config=site_config, pool=pool,
+        )
+        if section:
+            instruction = f"{instruction}\n\n---\n\n{section}"
+            ig_injected = True
     draft = await generate_with_context(
         topic=state["topic"], angle=state["angle"],
         snippets=state["snippets"], extra_instructions=instruction,
@@ -609,7 +629,12 @@ async def _draft_node(state: _State) -> _State:
         # truncate the visible draft. 2026-07-06 investigation.
         think=_resolve_writer_think(site_config),
     )
-    return {**state, "draft": draft}
+    return {
+        **state,
+        "draft": draft,
+        "internal_grounding_injected": ig_injected,
+        "internal_grounding_source_table": ig_source_table,
+    }
 
 
 def _format_bundle_for_prompt(bundle: dict[str, Any]) -> str:
@@ -1050,6 +1075,119 @@ def _resolve_writer_think(site_config: Any = None) -> bool | None:
         # silent-ok: optional feature flag — default to disabling thinking
         # (the safe writer default) when a stubbed site_config raises.
         return False
+
+
+# ---------------------------------------------------------------------------
+# Prior-work anchor (#822 writer-consumer half).
+#
+# The discovery-side ranker (topic_batch_service, #2266) threads the single
+# most-related internal item for a grounded external topic into the task
+# metadata as {source_table, source_id, preview, similarity}. _draft_node turns
+# it into an OPTIONAL soft "PRIOR WORK" section — a framing anchor, never a
+# forced source. Fail-open at every step (→ no section); scrub FAIL-CLOSED (the
+# grounding corpus includes non-publishable memory / claude_sessions rows).
+
+
+def _internal_grounding_enabled(site_config: Any = None) -> bool:
+    """Master switch for the writer-side prior-work anchor
+    (``writer_internal_grounding_enabled``, default true). Off → no anchor.
+    Mirrors ``_expansion_enabled``'s fail-safe default-on posture."""
+    if site_config is None:
+        return True
+    try:
+        raw = site_config.get("writer_internal_grounding_enabled", "true")
+        return str(raw).lower() in ("true", "1", "yes")
+    except Exception:  # noqa: BLE001 — defensive against test stubs
+        # silent-ok: optional feature flag — default the anchor ON when a
+        # stubbed site_config raises (matches _expansion_enabled).
+        return True
+
+
+async def _resolve_post_url(pool: Any, post_id: str, site_config: Any) -> str | None:
+    """Resolve a published post's public URL from its id.
+
+    Returns ``{site_url}/posts/{slug}`` (the form ai_content_generator uses to
+    present internal links to this same writer), falling back to the relative
+    ``/posts/{slug}`` when ``site_url`` is unset. None on any failure (blank id,
+    no pool, no row, query error) → the caller uses the framing-only variant.
+    ``embeddings.source_id`` for a post is ``str(posts.id)``, so the lookup
+    casts ``id::text`` to stay type-safe for any posts.id column type. Never
+    raises."""
+    if not post_id or pool is None:
+        return None
+    try:
+        async with pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT slug FROM posts WHERE id::text = $1", post_id,
+            )
+    except Exception as exc:  # noqa: BLE001 — URL is best-effort, never fatal
+        logger.warning("[two_pass] post-url lookup failed (%s) — framing-only", exc)
+        return None
+    slug = (row.get("slug") if row else None) or ""
+    if not slug:
+        return None
+    try:
+        site_url = (site_config.get("site_url", "") if site_config else "") or ""
+    except Exception:  # noqa: BLE001
+        site_url = ""
+    site_url = site_url.rstrip("/")
+    return f"{site_url}/posts/{slug}" if site_url else f"/posts/{slug}"
+
+
+async def _build_internal_grounding_section(
+    ig: dict[str, Any], *, site_config: Any, pool: Any,
+) -> tuple[str, str | None]:
+    """Compose the optional "PRIOR WORK" prompt section from a grounding match.
+
+    Returns ``(section_text, source_table)`` when an anchor is injected, else
+    ``("", None)``. Additive and non-raising: every failing check returns
+    ``("", None)``.
+
+    Order: eligibility (source_table ∈ writer_rag_source_filter) → scrub
+    FAIL-CLOSED → post-URL resolution (posts only) → compose linkable /
+    non-linkable variant.
+    """
+    source_table = str(ig.get("source_table") or "")
+    if not source_table:
+        return "", None
+    # Eligibility rides the writer's existing corpus allowlist (default
+    # ('posts',)) so ops content stays out of the public writer prompt unless
+    # the operator broadens writer_rag_source_filter to include it.
+    if source_table not in _resolve_snippet_source_filter(site_config):
+        return "", None
+    # Scrub FAIL-CLOSED — never inject unscrubbed operator text.
+    from services.rag_scrub import scrub_rag_text
+    try:
+        preview = scrub_rag_text(str(ig.get("preview") or "")).strip()
+    except Exception as exc:  # noqa: BLE001 — leak-safe: drop the anchor
+        logger.warning(
+            "[two_pass] internal_grounding preview scrub failed (%s) — no anchor", exc,
+        )
+        return "", None
+    if not preview:
+        return "", None
+    url = None
+    if source_table == "posts":
+        url = await _resolve_post_url(pool, str(ig.get("source_id") or ""), site_config)
+    if url:
+        section = (
+            "PRIOR WORK (something we've already published that this topic "
+            "connects to — if there's a genuine throughline, open on it or weave "
+            "the connection into your take in our own voice, and link it inline "
+            "using the exact URL below. If the connection is thin, ignore this "
+            "entirely: do NOT force it, and never copy the text below verbatim):"
+            f"\n\n\"{preview}\"\n{url}"
+        )
+    else:
+        section = (
+            "PRIOR WORK (an internal note or past experience of ours that this "
+            "topic connects to — if there's a genuine throughline, draw on it to "
+            "ground your take in first-hand experience, in our own voice. Don't "
+            "quote it, don't force the connection, and don't name internal tools "
+            "or systems. If the connection is thin, ignore this entirely):"
+            f"\n\n\"{preview}\""
+        )
+    return section, source_table
 
 
 # ---------------------------------------------------------------------------
@@ -1733,6 +1871,9 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
       now uses ``narrate_bundle`` directly so this is effectively
       dormant for live traffic), the writer includes a GROUND TRUTH
       section in the prompt with structured facts.
+    - ``internal_grounding`` — the {source_table, source_id, preview,
+      similarity} match threaded from generate_content.py (#822). When set
+      and eligible, _draft_node appends a soft "PRIOR WORK" anchor section.
     - ``writer_model_override`` — Phase 1 lab harness. When set
       (string), the writer's ``_revise_node`` uses this model exactly
       instead of resolving from app_settings. Routed via
@@ -1768,6 +1909,10 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
             "research_context": str(kw.get("research_context") or ""),
             "task_id": task_id,
             "target_length": int(kw.get("target_length") or 1200),
+            "internal_grounding": (
+                kw.get("internal_grounding")
+                if isinstance(kw.get("internal_grounding"), dict) else {}
+            ),
         }
         config = {"configurable": {"thread_id": thread_id}}
         final = await _GRAPH.ainvoke(initial, config=config)
@@ -1859,6 +2004,14 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
             # provenance the same way.
             "prompt_template_key": final.get("prompt_template_key"),
             "prompt_template_version": final.get("prompt_template_version"),
+            # Prior-work anchor observability (#822) — did an anchor reach the
+            # draft prompt this run, and from which corpus type (None = no anchor).
+            "internal_grounding_anchor_injected": bool(
+                final.get("internal_grounding_injected", False)
+            ),
+            "internal_grounding_source_table": final.get(
+                "internal_grounding_source_table"
+            ),
         }
     finally:
         _POOL_REGISTRY.pop(thread_id, None)

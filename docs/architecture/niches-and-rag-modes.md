@@ -107,7 +107,7 @@ The sweep:
 
 ### External-candidate internal grounding (#822)
 
-External sources (hackernews / devto / web_search) are a **popularity signal**
+External sources (hackernews / devto / `web_search`) are a **popularity signal**
 — but a popular headline with no first-party angle produces a zero-new-value
 rewrite. So during **step 4**, each _external_ candidate's pre-rank score is
 additionally weighted by whether the operator's own corpus already covers the
@@ -129,11 +129,25 @@ any error or empty corpus, so it never sinks a sweep. Master switch:
 
 The matched internal snippet is persisted on the winning row
 (`topic_candidates.grounding_ref`) and threaded into the task handoff metadata
-(`metadata.internal_grounding`) as a **data-only** anchor for a future
-writer-prompt hook. Penalized candidates emit an advisory
+(`metadata.internal_grounding`), which the writer then opens on (see
+**Writer consumer** below). Penalized candidates emit an advisory
 `external_topic_ungrounded` finding (visible on the Findings board plus a
 dedicated Pipeline-board panel). Full design:
 [`2026-07-10-822-external-internal-grounding-design.md`](../superpowers/specs/2026-07-10-822-external-internal-grounding-design.md).
+
+**Writer consumer (#822 half 2).** When a grounded external topic reaches the
+`canonical_blog` writer, `GenerateContentStage._read_internal_grounding` reads
+the threaded match from `stage_data.metadata.internal_grounding` and passes it
+into `two_pass_writer.run(internal_grounding=…)`. `_draft_node` renders it as a
+soft **PRIOR WORK** section appended after the `SOURCES` block — a framing
+anchor the writer is told to use only where there's a genuine throughline, in
+our own voice, and never to parrot. Eligibility rides the writer's existing
+`writer_rag_source_filter` (default `posts`-only, so ops content stays out of
+the public prompt unless opted in); a `posts` match gets an inline
+`/posts/<slug>` link. Governed by `writer_internal_grounding_enabled` (default
+`true`); fail-open (no match / disabled / ineligible / scrub failure →
+byte-identical prompt) and scrub fail-closed on the preview. Full design:
+[`2026-07-10-822-writer-internal-grounding-design.md`](../superpowers/specs/2026-07-10-822-writer-internal-grounding-design.md).
 
 > This is the complementary half of #820 (`internal_rag` storyworthiness):
 > #820 makes the _internal_ source pick material worth writing; #822 makes

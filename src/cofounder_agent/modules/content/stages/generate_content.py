@@ -697,6 +697,67 @@ class GenerateContentStage:
             )
             return None
 
+    async def _read_internal_grounding(
+        self, database_service: Any, task_id: str,
+    ) -> dict[str, Any] | None:
+        """Pull ``stage_data.metadata.internal_grounding`` from the version-1 row.
+
+        Set by ``topic_batch_service._handoff_to_pipeline`` on grounded external
+        winners (#822 discovery half) — the single most-related internal item
+        for the topic, shape ``{source_table, source_id, preview, similarity}``.
+        None for internal / ungrounded winners, manual tasks, and dev_diary.
+
+        Reads the raw version-1 ``pipeline_versions.stage_data`` directly (not
+        via ``get_task()``, whose ModelConverter can reshape ``metadata``),
+        mirroring ``_read_context_bundle``. ``metadata`` is one of the keys the
+        content_tasks_update_redirect trigger JSONB-merges, so it survives the
+        writer's later upsert. Fail-open: any error → None (no anchor).
+        """
+        try:
+            pool = getattr(database_service, "pool", None)
+            if pool is None:
+                return None
+            import json as _json
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT stage_data FROM pipeline_versions "
+                    "WHERE task_id = $1 ORDER BY version ASC LIMIT 1",
+                    str(task_id),
+                )
+            if not row:
+                return None
+            sd = row["stage_data"]
+            if isinstance(sd, str):
+                try:
+                    sd = _json.loads(sd)
+                except Exception:
+                    # silent-ok: malformed stage_data JSON → no anchor (fail-open)
+                    return None
+            if not isinstance(sd, dict):
+                return None
+            meta = sd.get("metadata") or {}
+            if isinstance(meta, str):
+                try:
+                    meta = _json.loads(meta)
+                except Exception:
+                    # silent-ok: malformed metadata JSON → no anchor (fail-open)
+                    return None
+            ig = meta.get("internal_grounding") if isinstance(meta, dict) else None
+            if isinstance(ig, str):
+                try:
+                    ig = _json.loads(ig)
+                except Exception:
+                    # silent-ok: malformed internal_grounding JSON → no anchor (fail-open)
+                    return None
+            return ig if isinstance(ig, dict) else None
+        except Exception as e:
+            logger.warning(
+                "Failed to read internal_grounding for task %s: %s — "
+                "falling back to no anchor",
+                task_id, e,
+            )
+            return None
+
     async def _read_writer_prompt_override(
         self, database_service: Any, task_id: str,
     ) -> str | None:
@@ -854,6 +915,13 @@ class GenerateContentStage:
             database_service, task_id,
         )
 
+        # Prior-work anchor (#822) — the internal match the discovery ranker
+        # threaded onto this task. None for internal/ungrounded/manual tasks.
+        # Threaded to the writer so _draft_node can open on it (soft, fail-open).
+        internal_grounding = await self._read_internal_grounding(
+            database_service, task_id,
+        )
+
         # 2026-05-12 (poindexter#485): the GPU-scheduler lock label and
         # the "model_used" attribution fallback both used to bake
         # ``glm-4.7-5090:latest`` — Matt's specific model — into a
@@ -891,6 +959,7 @@ class GenerateContentStage:
                 target_length=target_length,
                 writer_prompt_override=writer_prompt_override,
                 context_bundle=context_bundle,
+                internal_grounding=internal_grounding,
                 # Pre-collected external research corpus — threaded so the
                 # niche writer grounds + cites against the same SOURCES the
                 # QA critic grades against. Without this the niche path
@@ -930,6 +999,16 @@ class GenerateContentStage:
         for k in ("external_lookups", "revision_loops", "loop_capped"):
             if k in result:
                 metrics[k] = result[k]
+        # Prior-work anchor observability (#822) — surface whether the writer
+        # actually opened on a grounded internal thread, and from which source
+        # type, so the #822 pair is measurable end to end.
+        if result.get("internal_grounding_anchor_injected") is not None:
+            metrics["internal_grounding_anchor_injected"] = result.get(
+                "internal_grounding_anchor_injected"
+            )
+            metrics["internal_grounding_source_table"] = result.get(
+                "internal_grounding_source_table"
+            )
         # Phase 0 lab observability (2026-05-28) — propagate the prompt
         # resolution provenance the writer captured into metrics so the
         # caller (this stage's execute()) can forward them into the

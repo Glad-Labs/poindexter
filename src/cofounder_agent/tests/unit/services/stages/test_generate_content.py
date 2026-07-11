@@ -603,3 +603,62 @@ class TestRegenSteeringInExecute:
         assert captured_style, "generate_blog_post was never called"
         assert "IMPORTANT" not in captured_style[0]
         assert captured_style[0] == "casual"
+
+
+# ---------------------------------------------------------------------------
+# _read_internal_grounding — the #822 writer-consumer read helper
+# ---------------------------------------------------------------------------
+
+_RAISE = object()
+
+
+class _GroundingReadPoolConn:
+    def __init__(self, stage_data):
+        self._stage_data = stage_data
+
+    async def fetchrow(self, *_args):
+        if self._stage_data is _RAISE:
+            raise RuntimeError("db down")
+        return (
+            {"stage_data": self._stage_data}
+            if self._stage_data is not None else None
+        )
+
+
+class _GroundingReadPool:
+    def __init__(self, stage_data):
+        self._stage_data = stage_data
+
+    def acquire(self):
+        sd = self._stage_data
+
+        class _Ctx:
+            async def __aenter__(self):
+                return _GroundingReadPoolConn(sd)
+
+            async def __aexit__(self, *_exc):
+                return None
+
+        return _Ctx()
+
+
+class _GroundingReadDb:
+    def __init__(self, stage_data):
+        self.pool = _GroundingReadPool(stage_data)
+
+
+async def test_read_internal_grounding_returns_match():
+    match = {"source_table": "posts", "source_id": "42", "preview": "p", "similarity": 0.7}
+    db = _GroundingReadDb({"metadata": {"internal_grounding": match}})
+    got = await GenerateContentStage()._read_internal_grounding(db, "task-1")
+    assert got == match
+
+
+async def test_read_internal_grounding_none_when_absent():
+    db = _GroundingReadDb({"metadata": {"angle": "x"}})  # no internal_grounding key
+    assert await GenerateContentStage()._read_internal_grounding(db, "task-1") is None
+
+
+async def test_read_internal_grounding_none_on_error():
+    db = _GroundingReadDb(_RAISE)
+    assert await GenerateContentStage()._read_internal_grounding(db, "task-1") is None

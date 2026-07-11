@@ -64,6 +64,218 @@ def _fake_pool_with_no_snippets():
     return pool
 
 
+def _grounding_site_config(*, enabled="true", source_filter="", site_url=""):
+    """SiteConfig stub for the prior-work anchor (#822) tests.
+
+    Supplies get_int/get_float (the graph's snippet-fetch node reads them) and
+    forces the keep-best expansion pass OFF so run() doesn't make an unpatched
+    LLM call, mirroring _fake_site_config."""
+    sc = MagicMock()
+    values = {
+        "writer_internal_grounding_enabled": enabled,
+        "writer_rag_source_filter": source_filter,
+        "rag_source_filter": "",
+        "site_url": site_url,
+        "pipeline_writer_model": "glm-4.7-5090:latest",
+        "writer_length_expansion_enabled": "false",
+    }
+    sc.get = MagicMock(side_effect=lambda key, default="": values.get(key, default))
+    sc.get_int = MagicMock(side_effect=lambda key, default=0: default)
+    sc.get_float = MagicMock(side_effect=lambda key, default=0.0: default)
+    return sc
+
+
+def _grounding_pool(*, post_row=None):
+    """Pool whose conn.fetchrow returns post_row (for the posts URL lookup)."""
+    pool = MagicMock()
+    conn = AsyncMock()
+    conn.fetchrow = AsyncMock(return_value=post_row)
+    ctx = AsyncMock()
+    ctx.__aenter__ = AsyncMock(return_value=conn)
+    ctx.__aexit__ = AsyncMock(return_value=False)
+    pool.acquire = MagicMock(return_value=ctx)
+    return pool
+
+
+async def test_grounding_section_post_eligible_has_preview_and_url(monkeypatch):
+    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    ig = {"source_table": "posts", "source_id": "42",
+          "preview": "How we cut VRAM spill on a single GPU.", "similarity": 0.71}
+    section, src = await two_pass._build_internal_grounding_section(
+        ig, site_config=_grounding_site_config(site_url="https://www.gladlabs.io"),
+        pool=_grounding_pool(post_row={"slug": "vram-spill"}),
+    )
+    assert src == "posts"
+    assert "PRIOR WORK" in section
+    assert "How we cut VRAM spill on a single GPU." in section
+    assert "https://www.gladlabs.io/posts/vram-spill" in section
+
+
+async def test_grounding_section_ineligible_source_returns_empty(monkeypatch):
+    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    ig = {"source_table": "memory", "source_id": "9", "preview": "ops note", "similarity": 0.8}
+    section, src = await two_pass._build_internal_grounding_section(
+        ig, site_config=_grounding_site_config(),  # default filter = posts only
+        pool=_grounding_pool(),
+    )
+    assert section == ""
+    assert src is None
+
+
+async def test_grounding_section_nonpost_eligible_is_framing_only(monkeypatch):
+    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    ig = {"source_table": "claude_sessions", "source_id": "s1",
+          "preview": "we debugged the checkpoint poisoning", "similarity": 0.66}
+    section, src = await two_pass._build_internal_grounding_section(
+        ig, site_config=_grounding_site_config(source_filter="posts,claude_sessions"),
+        pool=_grounding_pool(),
+    )
+    assert src == "claude_sessions"
+    assert "PRIOR WORK" in section
+    assert "we debugged the checkpoint poisoning" in section
+    assert "/posts/" not in section  # no link for a non-post source
+
+
+async def test_grounding_section_scrub_failure_returns_empty(monkeypatch):
+    def _boom(_t):
+        raise RuntimeError("scrub down")
+    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", _boom)
+    ig = {"source_table": "posts", "source_id": "42", "preview": "x", "similarity": 0.9}
+    section, src = await two_pass._build_internal_grounding_section(
+        ig, site_config=_grounding_site_config(),
+        pool=_grounding_pool(post_row={"slug": "s"}),
+    )
+    assert section == ""
+    assert src is None
+
+
+async def test_grounding_section_post_url_relative_when_no_site_url(monkeypatch):
+    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    ig = {"source_table": "posts", "source_id": "7", "preview": "prev", "similarity": 0.7}
+    section, src = await two_pass._build_internal_grounding_section(
+        ig, site_config=_grounding_site_config(site_url=""),
+        pool=_grounding_pool(post_row={"slug": "rel-slug"}),
+    )
+    assert "/posts/rel-slug" in section
+    assert "http" not in section
+
+
+async def test_grounding_section_empty_preview_returns_empty(monkeypatch):
+    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+    ig = {"source_table": "posts", "source_id": "42", "preview": "   ", "similarity": 0.9}
+    section, src = await two_pass._build_internal_grounding_section(
+        ig, site_config=_grounding_site_config(), pool=_grounding_pool(post_row={"slug": "s"}),
+    )
+    assert section == ""
+    assert src is None
+
+
+def test_internal_grounding_enabled_flag():
+    assert two_pass._internal_grounding_enabled(_grounding_site_config(enabled="false")) is False
+    assert two_pass._internal_grounding_enabled(_grounding_site_config(enabled="true")) is True
+    assert two_pass._internal_grounding_enabled(None) is True
+
+
+async def test_internal_grounding_post_injected_into_draft_prompt(monkeypatch):
+    """A grounded post match reaches the writer's draft prompt as a PRIOR WORK
+    section, after SOURCES, with the resolved /posts/<slug> link."""
+    captured: dict[str, str] = {}
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        captured["instructions"] = extra_instructions or ""
+        return "A clean first draft with no markers."
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_grounding_pool(post_row={"slug": "vram-spill"}),
+        site_config=_grounding_site_config(site_url="https://www.gladlabs.io"),
+        research_context="Source A: something (https://example.com).",
+        internal_grounding={"source_table": "posts", "source_id": "42",
+                            "preview": "How we cut VRAM spill.", "similarity": 0.7},
+    )
+    instr = captured["instructions"]
+    assert "PRIOR WORK" in instr
+    assert "How we cut VRAM spill." in instr
+    assert "https://www.gladlabs.io/posts/vram-spill" in instr
+    # Appended AFTER the SOURCES section.
+    assert instr.index("SOURCES") < instr.index("PRIOR WORK")
+    assert result["internal_grounding_anchor_injected"] is True
+    assert result["internal_grounding_source_table"] == "posts"
+
+
+async def test_internal_grounding_absent_leaves_prompt_unchanged(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        captured["instructions"] = extra_instructions or ""
+        return "A clean first draft with no markers."
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_grounding_pool(), site_config=_grounding_site_config(),
+    )
+    assert "PRIOR WORK" not in captured["instructions"]
+    assert result["internal_grounding_anchor_injected"] is False
+
+
+async def test_internal_grounding_disabled_flag_no_section(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        captured["instructions"] = extra_instructions or ""
+        return "draft"
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_grounding_pool(post_row={"slug": "s"}),
+        site_config=_grounding_site_config(enabled="false", site_url="https://x.io"),
+        internal_grounding={"source_table": "posts", "source_id": "1",
+                            "preview": "p", "similarity": 0.9},
+    )
+    assert "PRIOR WORK" not in captured["instructions"]
+    assert result["internal_grounding_anchor_injected"] is False
+
+
+async def test_internal_grounding_ineligible_source_no_section(monkeypatch):
+    captured: dict[str, str] = {}
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        captured["instructions"] = extra_instructions or ""
+        return "draft"
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_grounding_pool(), site_config=_grounding_site_config(),  # posts-only
+        internal_grounding={"source_table": "memory", "source_id": "9",
+                            "preview": "ops", "similarity": 0.9},
+    )
+    assert "PRIOR WORK" not in captured["instructions"]
+    assert result["internal_grounding_anchor_injected"] is False
+
+
 async def test_no_external_needed_returns_pass1_draft(monkeypatch):
     """First draft has no [EXTERNAL_NEEDED] markers → graph short-circuits, no revise."""
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):

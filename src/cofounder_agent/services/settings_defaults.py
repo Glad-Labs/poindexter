@@ -634,6 +634,11 @@ DEFAULTS: dict[str, str] = {
     # harmless no-op on a non-thinking writer model. Set false only to
     # deliberately let a reasoning writer chain-of-think in the draft channel.
     'writer_disable_thinking': 'true',
+    # Writer-side prior-work anchor (#822 consumer half): inject a grounded
+    # external topic's internal match into the draft prompt as a soft "PRIOR
+    # WORK" section. Independent of the discovery-side
+    # niche_external_grounding_enabled; eligibility rides writer_rag_source_filter.
+    'writer_internal_grounding_enabled': 'true',
     'writer_rag_context_snippet_max_chars': '500',
     'writer_rag_research_topic_max_sources': '2',
     'writer_rag_two_pass_research_max_sources': '2',
@@ -2126,6 +2131,9 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     },
     'niche_external_grounding_penalty_factor': {
         'owner': 'topic_grounding', 'value_type': 'float',
+    },
+    'writer_internal_grounding_enabled': {
+        'owner': 'two_pass_writer', 'value_type': 'boolean',
     },
     'rag_hybrid_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
     'rag_rerank_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
