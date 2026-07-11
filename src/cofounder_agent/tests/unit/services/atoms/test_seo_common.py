@@ -10,12 +10,21 @@ from modules.content.atoms import _seo_common as sc
 # sync tests here, emitting a PytestWarning (Glad-Labs/glad-labs-stack#997).
 
 
+def _site_config(settings: dict | None = None) -> MagicMock:
+    """Key-aware SiteConfig fake — unknown keys resolve to the default, so
+    ``run_seo_llm`` sees ``pipeline_seo_model`` as unset unless a test opts in."""
+    cfg = MagicMock()
+    data = settings or {}
+    cfg.get.side_effect = lambda key, default="": data.get(key, default)
+    return cfg
+
+
 def _state(**over):
     s = {
         "content": "We shipped a regex fix for the validator. It fired 8x per post.",
         "topic": "regex validator bug",
         "title": "The Regex Validator Bug",
-        "site_config": MagicMock(),
+        "site_config": _site_config(),
         "database_service": None,
     }
     s.update(over)
@@ -56,6 +65,28 @@ async def test_run_seo_llm_returns_text(monkeypatch):
     monkeypatch.setattr(sc, "get_prompt_manager", lambda: MagicMock(get_prompt=lambda key, **k: "PROMPT"))
     out = await sc.run_seo_llm(_state(), "atoms.seo.generate_title", topic="x")
     assert out == "Best Title"
+
+
+async def test_run_seo_llm_uses_seo_pin_when_set(monkeypatch):
+    """``pipeline_seo_model`` (when set) is passed as the concrete model —
+    the knob that keeps a cloud writer canary from billing the SEO step."""
+    chat = AsyncMock(return_value="T")
+    monkeypatch.setattr(sc, "ollama_chat_text", chat)
+    monkeypatch.setattr(sc, "get_prompt_manager", lambda: MagicMock(get_prompt=lambda key, **k: "P"))
+    state = _state(site_config=_site_config({"pipeline_seo_model": "ollama/qwen3:8b"}))
+    await sc.run_seo_llm(state, "atoms.seo.generate_title", topic="x")
+    assert chat.await_args.kwargs["model"] == "ollama/qwen3:8b"
+
+
+async def test_run_seo_llm_empty_pin_follows_writer(monkeypatch):
+    """EMPTY ``pipeline_seo_model`` → ``model=None`` so ``ollama_chat_text``
+    resolves ``pipeline_writer_model`` — the pre-pin behavior, unchanged."""
+    chat = AsyncMock(return_value="T")
+    monkeypatch.setattr(sc, "ollama_chat_text", chat)
+    monkeypatch.setattr(sc, "get_prompt_manager", lambda: MagicMock(get_prompt=lambda key, **k: "P"))
+    state = _state(site_config=_site_config({"pipeline_seo_model": "  "}))
+    await sc.run_seo_llm(state, "atoms.seo.generate_title", topic="x")
+    assert chat.await_args.kwargs["model"] is None
 
 
 async def test_run_seo_llm_retries_then_raises(monkeypatch):

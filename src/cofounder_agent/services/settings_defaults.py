@@ -266,6 +266,16 @@ DEFAULTS: dict[str, str] = {
     # rescue reviser (qa_rewrite_model) also defaults to this writer as of
     # 2026-06-28 (was glm — reverted for VRAM thrash; see that key). Tune live.
     'pipeline_writer_model': 'ollama/gemma3:27b',
+    # Per-step pins for the writer-adjacent steps. EMPTY = follow the writer
+    # (pipeline_writer_model) — the historical behavior, kept as the default
+    # so existing installs see no change. Split out (2026-07-11) because a
+    # cloud writer canary billed every step riding the writer pin: SEO
+    # metadata is structured, formulaic copy a budget local model handles
+    # well (pin it local to keep a paid writer from billing it); a title is
+    # user-facing writer-grade copy that SHOULD track the writer — pin it
+    # only to decouple titles from a writer experiment.
+    'pipeline_seo_model': '',
+    'pipeline_title_model': '',
     # Adversarial critic — must be a DIFFERENT model family from the writer and
     # reviser so biases don't cancel (cross-model QA principle). phi4:14b is fast,
     # reliable at JSON output, and distinct from Gemma (writer) and GLM (reviser).

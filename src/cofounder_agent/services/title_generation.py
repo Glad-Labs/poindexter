@@ -634,16 +634,20 @@ async def generate_canonical_title(
                 "Your title must be DISTINCTLY DIFFERENT in structure and wording."
             )
 
-        # Per-step pin — title regen reuses the writer model
-        # (pipeline_writer_model). Empty → page the operator and abort the
-        # regen (no silent default). The cost_tier.standard.model indirection
-        # was removed.
-        model = (_sc.get("pipeline_writer_model") or "").removeprefix("ollama/")
+        # Per-step pin — ``pipeline_title_model`` when set; EMPTY = reuse the
+        # writer model (pipeline_writer_model) so the title tracks the writer
+        # (a title is user-facing, writer-grade copy). Pin it only to decouple
+        # titles from a writer experiment. Both empty → page the operator and
+        # abort the regen (no silent default). The cost_tier.standard.model
+        # indirection was removed.
+        model = (_sc.get("pipeline_title_model") or "").strip().removeprefix("ollama/")
+        if not model:
+            model = (_sc.get("pipeline_writer_model") or "").removeprefix("ollama/")
         if not model:
             from services.integrations.operator_notify import notify_operator
             await notify_operator(
-                "title_generation: pipeline_writer_model is empty — "
-                "title regen aborted",
+                "title_generation: pipeline_title_model and "
+                "pipeline_writer_model are both empty — title regen aborted",
                 critical=False,
                 site_config=_sc,
             )

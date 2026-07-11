@@ -171,10 +171,17 @@
     },
     {
       key: 'pipeline_seo_model',
-      value: 'ollama/qwen3:8b',
+      value: '',
       category: 'models',
       type: 'text',
-      description: 'SEO title/description generation (smaller, faster)',
+      description: 'SEO metadata model; empty = follow pipeline_writer_model',
+    },
+    {
+      key: 'pipeline_title_model',
+      value: '',
+      category: 'models',
+      type: 'text',
+      description: 'Title model; empty = follow pipeline_writer_model',
     },
     {
       key: 'cloud_api_mode',

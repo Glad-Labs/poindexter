@@ -100,12 +100,20 @@ async def run_seo_llm(
     prompt = get_prompt_manager().get_prompt(prompt_key, **prompt_vars)
     site_config = state.get("site_config")
     pool = getattr(state.get("database_service"), "pool", None)
+    # Per-step pin: ``pipeline_seo_model`` when set; EMPTY = follow the writer
+    # (``pipeline_writer_model``), the pre-pin behavior. SEO metadata is
+    # structured, formulaic copy a budget local model handles — the pin exists
+    # so a cloud writer canary doesn't silently bill this step (the 2026-07-07
+    # Sonnet canary put every ``phase="seo"`` call on Anthropic).
+    model: str | None = None
+    if site_config is not None:
+        model = (site_config.get("pipeline_seo_model", "") or "").strip() or None
     last_exc: Exception | None = None
     for attempt in range(1, max_attempts + 1):
         try:
             text = await ollama_chat_text(
-                prompt, site_config=site_config, pool=pool, tier=_SEO_TIER,
-                task_id=state.get("task_id"), phase="seo",
+                prompt, model=model, site_config=site_config, pool=pool,
+                tier=_SEO_TIER, task_id=state.get("task_id"), phase="seo",
             )
             return (text or "").strip()
         except Exception as exc:  # noqa: BLE001 — retry any transient transport error

@@ -48,11 +48,16 @@ def _make_local_provider(returns: str) -> MagicMock:
     return provider
 
 
-def _sc(writer_model: str) -> MagicMock:
+def _sc(writer_model: str, title_model: str = "") -> MagicMock:
     sc = MagicMock()
-    # ``_sc.get`` is only consulted for ``pipeline_writer_model`` in
-    # generate_canonical_title; a single return value is sufficient.
-    sc.get.return_value = writer_model
+    # generate_canonical_title consults ``pipeline_title_model`` first (empty =
+    # follow the writer), then ``pipeline_writer_model`` — key-aware so the
+    # existing writer-model tests exercise the empty-pin fallback for free.
+    data = {
+        "pipeline_title_model": title_model,
+        "pipeline_writer_model": writer_model,
+    }
+    sc.get.side_effect = lambda key, default=None: data.get(key, default)
     sc.get_int.return_value = 4000
     return sc
 
@@ -152,3 +157,35 @@ async def test_no_pool_falls_back_to_local_ollama_provider():
     assert lkwargs["model"] == "gemma3:27b"
     assert lkwargs["think"] is False
     dispatch.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_title_pin_overrides_writer_model():
+    """``pipeline_title_model`` (when set) wins over ``pipeline_writer_model``
+    — the decouple-titles-from-a-writer-experiment knob. The ``ollama/``
+    prefix is stripped exactly like the writer path."""
+    dispatch = AsyncMock(return_value=_result('{"title": "Pinned Title"}'))
+    local = _make_local_provider('{"title": "SHOULD NOT BE USED"}')
+
+    with patch(
+             "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+         ), \
+         patch(
+             "plugins.registry.get_all_llm_providers", return_value=[local],
+         ), \
+         patch("services.prompt_manager.get_prompt_manager") as pm:
+        pm.return_value.get_prompt.return_value = "PROMPT"
+        out = await generate_canonical_title(
+            topic="AI", primary_keyword="AI", content_excerpt="x",
+            site_config=_sc(
+                "anthropic/claude-sonnet-5", title_model="ollama/gemma3:27b",
+            ),
+            pool=object(),
+        )
+
+    assert out == "Pinned Title"
+    dispatch.assert_awaited_once()
+    assert dispatch.await_args.args[2] == "gemma3:27b", (
+        "the title pin must be forwarded (ollama/ stripped), not the writer"
+    )
+    local.complete.assert_not_awaited()
