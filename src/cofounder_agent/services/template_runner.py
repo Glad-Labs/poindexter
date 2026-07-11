@@ -1137,6 +1137,59 @@ async def _discard_thread_checkpoints(pool: Any, thread_id: str) -> int:
         return 0
 
 
+def _content_heartbeat_interval_seconds(site_config: Any) -> float:
+    """Heartbeat cadence (seconds) for the content-run live_activity row.
+
+    From ``live_activity_heartbeat_seconds`` (default 30). MUST be shorter than
+    ``live_activity_freshness_seconds`` so a single node longer than the
+    freshness window (a full writer draft, an image-gen call) doesn't let the
+    row go stale mid-node and get hidden from the pulse.
+    """
+    default = 30.0
+    if site_config is None:
+        return default
+    try:
+        return float(site_config.get("live_activity_heartbeat_seconds", default))
+    except (TypeError, ValueError):
+        return default
+
+
+async def _ainvoke_with_content_heartbeat(
+    compiled: Any,
+    invoke_input: Any,
+    config: Any,
+    *,
+    pool: Any,
+    activity_id: int | None,
+    interval_seconds: float,
+) -> Any:
+    """Run the compiled graph, keeping the content live_activity row fresh with
+    a sidecar heartbeat for the whole ``ainvoke``.
+
+    The per-node ``_persist_record`` callback only bumps ``updated_at`` as each
+    node COMPLETES, so a single node longer than the freshness window would let
+    the row go stale mid-node and be hidden even though the run is still going.
+    The sidecar bumps it on an interval; the ``finally`` tears it down on every
+    exit path (success, exception, cancellation) so it never outlives the run.
+    """
+    hb = None
+    if activity_id is not None:
+        hb = asyncio.create_task(
+            live_activity.heartbeat(
+                pool, activity_id, interval_seconds=interval_seconds
+            )
+        )
+    try:
+        return await compiled.ainvoke(invoke_input, config)
+    finally:
+        if hb is not None:
+            hb.cancel()
+            try:
+                await hb
+            except asyncio.CancelledError:
+                pass  # silent-ok: expected — we cancelled the heartbeat ourselves
+
+
 # ---------------------------------------------------------------------------
 # Runner
 # ---------------------------------------------------------------------------
@@ -1475,7 +1528,16 @@ class TemplateRunner:
                     Command(resume=resume_value) if resume else data_state
                 )
                 try:
-                    final_state = await compiled.ainvoke(invoke_input, config)  # type: ignore[call-overload]
+                    final_state = await _ainvoke_with_content_heartbeat(
+                        compiled,
+                        invoke_input,
+                        config,
+                        pool=self._pool,
+                        activity_id=_content_aid,
+                        interval_seconds=_content_heartbeat_interval_seconds(
+                            self._site_config
+                        ),
+                    )
                 except Exception as exc:
                     await live_activity.finish(
                         self._pool, _content_aid, status="fail"
