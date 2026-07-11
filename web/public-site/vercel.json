@@ -4,6 +4,7 @@
   "devCommand": "npm run dev",
   "installCommand": "npm install",
   "framework": "nextjs",
+  "ignoreCommand": "git diff --quiet HEAD^ HEAD -- :/web/public-site :/packages/brand :/package.json :/package-lock.json",
   "cleanUrls": true,
   "trailingSlash": false,
   "headers": [
