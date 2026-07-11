@@ -62,6 +62,35 @@ groups:
             One or more alert rules contain bad PromQL or reference missing
             metrics. Check Prometheus UI → Status → Rules for the failing group.
 
+      # Config reload failing — rendered rule changes (RenderPrometheusRulesJob
+      # writes rules/dynamic.yml then POSTs /-/reload) sit on disk but never
+      # take effect. Observed 2026-07-11: a deploy sync replaced prometheus.yml
+      # on the host, the container's single-file bind mount went stale (open
+      # /etc/prometheus/prometheus.yml: no such file or directory inside the
+      # container), and every reload 500'd for ~100 minutes with no alert
+      # anywhere. The gauge flips to 0 on the first failed attempt and holds
+      # until a reload succeeds. Static (not DB-rendered) on purpose: the
+      # failure mode is "rendered rule changes don't take effect", so this
+      # alert must not depend on that pipeline.
+      - alert: PrometheusConfigReloadFailed
+        expr: prometheus_config_last_reload_successful == 0
+        for: 10m
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "Prometheus config reload is failing — rendered rule changes are not live"
+          description: |
+            The last prometheus.yml/rules reload attempt failed and has not
+            recovered for 10+ minutes. Rule updates rendered by
+            RenderPrometheusRulesJob are written to disk but NOT being served.
+            Most common cause on Windows/Docker Desktop: the host
+            prometheus.yml was replaced (deploy-checkout sync) and the
+            container's single-file bind mount went stale — the container
+            log shows "no such file or directory" for prometheus.yml.
+            Fix: `docker restart poindexter-prometheus`, then confirm
+            prometheus_config_last_reload_successful == 1.
+
       # Alertmanager notification failures — routes are reachable but sends
       # are failing (bad webhook URL, Telegram bot token revoked, etc.).
       - alert: AlertmanagerNotificationErrors

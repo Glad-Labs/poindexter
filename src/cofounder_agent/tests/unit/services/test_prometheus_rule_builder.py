@@ -629,6 +629,81 @@ class TestWindowsExporterDownStaticRule:
 
 
 # ---------------------------------------------------------------------------
+# PrometheusConfigReloadFailed — static prometheus-alertmanager.yml
+# ---------------------------------------------------------------------------
+
+
+class TestPrometheusConfigReloadFailedStaticRule:
+    """A failing ``/-/reload`` must page. Observed 2026-07-11: the deploy sync
+    replaced ``prometheus.yml`` on the host, the container's single-file bind
+    mount went stale (ENOENT inside the container), and every reload 500'd for
+    ~100 minutes — freshly rendered rule changes sat on disk, unloaded, with
+    no alert anywhere. ``prometheus_config_last_reload_successful`` flips to 0
+    on the first failed attempt and holds until a reload succeeds, so a static
+    rule on it catches every future variant of this failure. Static file (not
+    DB-rendered) on purpose: the failure mode is "rendered rule changes don't
+    take effect", so the alert covering it must not depend on that pipeline."""
+
+    @pytest.fixture
+    def self_monitoring_rules(self) -> list[dict]:
+        import pathlib
+
+        import yaml
+
+        alerts_path = (
+            pathlib.Path(__file__).parents[5]
+            / "infrastructure"
+            / "prometheus"
+            / "alerts"
+            / "prometheus-alertmanager.yml"
+        )
+        doc = yaml.safe_load(alerts_path.read_text())
+        return [rule for group in doc["groups"] for rule in group.get("rules", [])]
+
+    def test_rule_is_present(self, self_monitoring_rules):
+        names = [r.get("alert") for r in self_monitoring_rules]
+        assert "PrometheusConfigReloadFailed" in names
+
+    def test_expr_targets_the_reload_gauge(self, self_monitoring_rules):
+        rule = next(
+            r
+            for r in self_monitoring_rules
+            if r.get("alert") == "PrometheusConfigReloadFailed"
+        )
+        assert rule["expr"].strip() == "prometheus_config_last_reload_successful == 0"
+
+    def test_warning_severity_with_sustained_for(self, self_monitoring_rules):
+        """Warning → Discord (self-healable via container restart, not a 2am
+        page), and a sustained ``for:`` so one transient flaky reload attempt
+        doesn't fire."""
+        import re
+
+        rule = next(
+            r
+            for r in self_monitoring_rules
+            if r.get("alert") == "PrometheusConfigReloadFailed"
+        )
+        assert rule["labels"]["severity"] == "warning"
+        m = re.match(r"(\d+)m", rule.get("for", "0m"))
+        assert m is not None and int(m.group(1)) >= 5
+
+    def test_description_names_the_stale_bind_mount_remediation(
+        self, self_monitoring_rules
+    ):
+        """Every alert carries its remediation path: the known cause is a stale
+        single-file bind mount after the host file is replaced, and the fix is
+        a container restart."""
+        rule = next(
+            r
+            for r in self_monitoring_rules
+            if r.get("alert") == "PrometheusConfigReloadFailed"
+        )
+        desc = rule["annotations"]["description"].lower()
+        assert "bind mount" in desc
+        assert "docker restart poindexter-prometheus" in desc
+
+
+# ---------------------------------------------------------------------------
 # OllamaNoModelsLoaded — must not false-fire on a transient /api/tags timeout
 # ---------------------------------------------------------------------------
 
