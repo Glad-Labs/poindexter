@@ -138,15 +138,26 @@ class TestCounting:
 
 
 class TestBaselineRatchet:
-    def test_known_violators_present_in_tree(self):
-        """The two grandfathered fossils must still be detected — a guard against
-        the lint silently going blind (e.g. a scan-root typo)."""
-        counts = LINT.compute_counts()
-        keys = set(counts)
-        # content_generate_draft is the last remaining baselined fossil (the
-        # image_helpers → stage one burned down when the helper web moved into
-        # atoms/_image_helpers.py, 2026-07).
-        assert any(k.endswith("content_generate_draft.py") for k in keys), counts
+    def test_scan_root_resolves_to_the_atom_tree(self):
+        """Guard against the lint silently going blind (e.g. a scan-root typo).
+
+        Both grandfathered fossils burned down in 2026-07 (image → the helper
+        web moved to ``atoms/_image_helpers.py``; writer → ``GenerateContentStage``
+        moved to the module-root ``modules/content/writer_core.py``), so the
+        baseline is empty and there is no known violator left to assert on.
+        Instead assert the scan root resolves and discovers the atom package —
+        exactly what a scan-root typo would break.
+        """
+        names = {p.name for p in LINT._atom_files()}
+        assert "content_generate_draft.py" in names, names
+        assert len(names) > 20, len(names)  # the atom package is substantial
+
+    def test_baseline_is_empty_after_burndown(self):
+        """Zero grandfathered violations is the intended steady state. Pins it so
+        a re-introduced atom→stage / atom→atom import (which would appear in
+        ``compute_counts`` above the empty baseline) can't be quietly
+        re-baselined back to green."""
+        assert LINT.load_baseline() == {}
 
     def test_real_tree_matches_baseline(self):
         """The committed baseline must satisfy the live tree (no drift).

@@ -83,7 +83,7 @@ class TestContentGenerateDraft:
         mock_stage = MagicMock()
         mock_stage.execute = AsyncMock(return_value=fake_result)
 
-        import modules.content.stages.generate_content as gc_mod
+        import modules.content.writer_core as gc_mod
         monkeypatch.setattr(
             gc_mod, "GenerateContentStage", lambda: mock_stage,
         )
@@ -104,7 +104,7 @@ class TestContentGenerateDraft:
         mock_stage = MagicMock()
         mock_stage.execute = AsyncMock(return_value=fail_result)
 
-        import modules.content.stages.generate_content as gc_mod
+        import modules.content.writer_core as gc_mod
         monkeypatch.setattr(gc_mod, "GenerateContentStage", lambda: mock_stage)
 
         with pytest.raises(RuntimeError, match="content.generate_draft failed"):

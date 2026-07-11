@@ -1,7 +1,11 @@
 """content.generate_draft — generate the blog post body via the configured LLM.
 
-Extracted from GenerateContentStage as a thin atom that calls the same
-helpers. The stage file is preserved for the dev_diary legacy path.
+Thin atom over the writer orchestrator (``GenerateContentStage``), which lives
+in the module-root ``modules.content.writer_core`` library. Importing a
+module-root lib (not a stage) keeps this graph node atom-independent — an
+architect LLM can place ``content.generate_draft`` on a graph and the writer
+implementation stays a library detail. (Relocated 2026-07; the old
+``stages/generate_content.py`` path is now a back-compat re-export shim.)
 
 Produces: content, research_context, model_used, models_used_by_phase,
           generate_metrics, niche_slug.
@@ -56,8 +60,8 @@ ATOM_META = AtomMeta(
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
-    """Delegate to GenerateContentStage._run_core_generation."""
-    from modules.content.stages.generate_content import GenerateContentStage
+    """Delegate to the writer orchestrator in modules.content.writer_core."""
+    from modules.content.writer_core import GenerateContentStage
     from plugins.stage import StageResult
 
     stage = GenerateContentStage()

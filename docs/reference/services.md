@@ -35,9 +35,9 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 - [`services/tts_providers/`](#servicesttsproviders) (2 files)
 - [`services/video_providers/`](#servicesvideoproviders) (2 files)
 - [`services/video_renderers/`](#servicesvideorenderers) (3 files)
-- [`modules/content/`](#modulescontent) (14 files)
+- [`modules/content/`](#modulescontent) (15 files)
 - [`modules/content/atoms/`](#modulescontentatoms) (63 files)
-- [`modules/content/stages/`](#modulescontentstages) (18 files)
+- [`modules/content/stages/`](#modulescontentstages) (17 files)
 
 ## services/ (top-level)
 
@@ -515,6 +515,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `posts_service.py` | PostsService — single SQL owner for posts, categories, and tags. |
 | `quality_service.py` | Unified Quality Assessment Service |
 | `task_metadata.py` | Single source of truth for the finalize ``task_metadata`` blob. |
+| `writer_core.py` | writer_core — the blog-body writer library behind ``content.generate_draft``. |
 
 ## modules/content/atoms/
 
@@ -593,7 +594,6 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `caption_images.py` | CaptionImagesStage — re-caption inline + featured images with vision. |
 | `capture_training_data.py` | CaptureTrainingDataStage — stage 6 of the content pipeline. |
 | `finalize_task.py` | FinalizeTaskStage — stage 7 of the content pipeline. |
-| `generate_content.py` | GenerateContentStage — stage 2 of the content pipeline. |
 | `generate_media_scripts.py` | GenerateMediaScriptsStage — stage 4B of the content pipeline. |
 | `generate_seo_metadata.py` | GenerateSeoMetadataStage — stage 4 of the content pipeline. |
 | `generate_video_shot_list.py` | GenerateVideoShotListStage — director output for the post's video. |
