@@ -27,7 +27,7 @@ test authors the cleaner patch path.
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any
 from uuid import UUID
@@ -47,6 +47,7 @@ from services.topic_sanity import (
     evaluate_topic_sanity,
     resolve_min_alpha_words,
 )
+from services.topic_grounding import internal_grounding
 from utils.findings import emit_finding
 
 # #272 Phase-2d: the module-level ``site_config`` global + ``set_site_config``
@@ -90,6 +91,9 @@ class CandidateView:
     operator_edited_topic: str | None
     operator_edited_angle: str | None
     score_breakdown: dict[str, float]
+    # The internal-corpus match that grounded an external candidate
+    # (poindexter#822); None for internal / ungrounded winners.
+    grounding_ref: dict | None = None
 
 
 @dataclass
@@ -677,18 +681,31 @@ class TopicBatchService:
             for g in goals
         }
 
-        async def score_one(text: str, decay: float) -> tuple[float, dict[str, float]]:
+        # External-candidate internal grounding (poindexter#822). Read once
+        # per sweep; applied only in the external branch below (internal
+        # candidates come FROM the corpus, so grounding is tautological).
+        grounding_enabled = self._site_config.get_bool(
+            "niche_external_grounding_enabled", True,
+        )
+        penalty_factor = self._site_config.get_float(
+            "niche_external_grounding_penalty_factor", 0.6,
+        )
+
+        async def score_one(
+            text: str, decay: float,
+        ) -> tuple[float, dict[str, float], list[float]]:
             # Ollama refuses to embed empty input — return a zero score so
             # the candidate sinks to the bottom of the rank rather than
             # crashing the entire sweep. Caller already populates a
             # placeholder title so the candidate row stays valid for the
-            # operator to see + reject.
+            # operator to see + reject. Empty vec → grounding is skipped.
             if not text or not text.strip():
-                return 0.0, {g.goal_type: 0.0 for g in goals}
+                return 0.0, {g.goal_type: 0.0 for g in goals}, []
             vec = await embed_text(text, site_config=self._site_config)
             raw, breakdown = weighted_cosine_score(vec, goal_vecs, goals)
-            return apply_decay(score=raw, decay_factor=decay), breakdown
+            return apply_decay(score=raw, decay_factor=decay), breakdown, vec
 
+        penalized: list[tuple[str, float]] = []  # (title, similarity)
         ext_scored: list[ScoredCandidate] = []
         for item in external:
             # External candidates arrive in three shapes:
@@ -704,7 +721,26 @@ class TopicBatchService:
             assert row is not None
             text = (row.get("title") or "") + " " + (row.get("summary") or "")
             decay = item.get("decay_factor", 1.0) if isinstance(item, dict) else 1.0
-            score, breakdown = await score_one(text, decay)
+            score, breakdown, vec = await score_one(text, decay)
+
+            grounding_match = None
+            if grounding_enabled and vec:
+                g = await internal_grounding(
+                    self._pool, vec, site_config=self._site_config,
+                )
+                if not g.grounded:
+                    score *= penalty_factor
+                    penalized.append(
+                        (row.get("title") or "Untitled", g.similarity or 0.0),
+                    )
+                # Record the similarity for observability (score_breakdown is
+                # persisted to topic_candidates). Fail-open (similarity=None)
+                # records 1.0 — we couldn't check, so treat as grounded.
+                breakdown["_grounding"] = (
+                    g.similarity if g.similarity is not None else 1.0
+                )
+                grounding_match = g.match
+
             ext_scored.append(
                 ScoredCandidate(
                     id=str(row.get("id") or row.get("source_ref") or text[:40]),
@@ -712,6 +748,7 @@ class TopicBatchService:
                     summary=row.get("summary"),
                     embedding_score=score,
                     score_breakdown=breakdown,
+                    grounding_match=grounding_match,
                 )
             )
 
@@ -733,7 +770,8 @@ class TopicBatchService:
             topic = _field("distilled_topic", "")
             angle = _field("distilled_angle", "")
             text = (topic + " " + angle).strip()
-            score, breakdown = await score_one(text, decay)
+            # Internal candidates are grounded by definition — ignore the vec.
+            score, breakdown, _ = await score_one(text, decay)
 
             primary_ref = _field("primary_ref", text[:40])
             int_scored.append(
@@ -744,6 +782,34 @@ class TopicBatchService:
                     embedding_score=score,
                     score_breakdown=breakdown,
                 )
+            )
+
+        if penalized:
+            # Advisory (severity=info): visible on the Findings board, below
+            # the alert-route watermark so it never pages. A niche whose
+            # external feed is all-ungrounded is a corpus-coverage gap worth
+            # seeing, not an incident.
+            emit_finding(
+                source="topic_batch_service",
+                kind="external_topic_ungrounded",
+                title=(
+                    f"{len(penalized)} external candidate(s) penalized for "
+                    f"missing internal grounding (niche {niche.slug})"
+                ),
+                body="\n".join(
+                    f"- {title!r}: similarity={sim:.3f}"
+                    for title, sim in penalized
+                ),
+                severity="info",
+                dedup_key=f"external-grounding:{niche.slug}",
+                extra={
+                    "stage": "pre_rank",
+                    "niche_slug": niche.slug,
+                    "penalized": [
+                        {"title": t[:200], "similarity": s}
+                        for t, s in penalized
+                    ],
+                },
             )
 
         ext_scored.sort(key=lambda c: -c.embedding_score)
@@ -816,8 +882,9 @@ class TopicBatchService:
                             """
                             INSERT INTO topic_candidates
                               (batch_id, niche_id, source_name, source_ref, title, summary,
-                               score, score_breakdown, rank_in_batch, decay_factor)
-                            VALUES ($1, $2, 'external', $3, $4, $5, $6, $7::jsonb, $8, $9)
+                               score, score_breakdown, rank_in_batch, decay_factor,
+                               grounding_ref)
+                            VALUES ($1, $2, 'external', $3, $4, $5, $6, $7::jsonb, $8, $9, $10::jsonb)
                             """,
                             batch_row["id"],
                             niche.id,
@@ -828,6 +895,8 @@ class TopicBatchService:
                             _json(c.score_breakdown or {}),
                             rank_in_batch,
                             1.0,
+                            _json(asdict(c.grounding_match))
+                            if c.grounding_match else None,
                         )
 
         return BatchSnapshot(
@@ -893,6 +962,7 @@ class TopicBatchService:
                     operator_edited_topic=r["operator_edited_topic"],
                     operator_edited_angle=r["operator_edited_angle"],
                     score_breakdown=_loads(r["score_breakdown"]) or {},
+                    grounding_ref=_loads(r["grounding_ref"]),
                 )
             )
         for r in int_rows:
@@ -1183,6 +1253,10 @@ class TopicBatchService:
                 # batch. See Glad-Labs/poindexter#351.
                 "discovered_by": "topic_batch",
                 "niche_slug": niche.slug,
+                # The internal match that justified a grounded external topic
+                # (poindexter#822). Data-only: a follow-up wires the writer
+                # prompt to open on it. None for internal / ungrounded winners.
+                "internal_grounding": winner.grounding_ref,
             }
         }
         # Resolve template_slug per the shared policy: niche

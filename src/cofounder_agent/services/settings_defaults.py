@@ -558,6 +558,21 @@ DEFAULTS: dict[str, str] = {
         '{"decision_log": 1.5, "memory_file": 1.5, "claude_session": 1.0, '
         '"post_history": 1.0, "audit_event": 0.5, "brain_knowledge": 0.5}'
     ),
+    # External-candidate internal grounding (poindexter#822): softly
+    # penalize a popular external topic that has no first-party material in
+    # our own corpus, so it can't win a batch slot on popularity alone.
+    'niche_external_grounding_enabled': 'true',
+    # Content-bearing corpus only — a status/ops row must never manufacture
+    # grounding. Kinds map to embeddings.source_table via topic_grounding.
+    'niche_external_grounding_source_kinds': (
+        'post_history,decision_log,memory_file,claude_session'
+    ),
+    # Cosine similarity >= this counts as grounded. PROVISIONAL — calibrate
+    # from a real sweep's logged _grounding distribution before trusting it.
+    'niche_external_grounding_threshold': '0.55',
+    # Soft-penalty multiplier applied to an ungrounded external candidate's
+    # pre-rank score (1.0 = no penalty).
+    'niche_external_grounding_penalty_factor': '0.6',
     'rag_default_top_k': '5',
     'rag_embed_retry_attempts': '3',
     'rag_embed_retry_base_delay_seconds': '0.25',
@@ -2097,6 +2112,18 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     },
     'niche_internal_rag_kind_weights': {
         'owner': 'internal_rag_source', 'value_type': 'string',
+    },
+    'niche_external_grounding_enabled': {
+        'owner': 'topic_grounding', 'value_type': 'boolean',
+    },
+    'niche_external_grounding_source_kinds': {
+        'owner': 'topic_grounding', 'value_type': 'csv',
+    },
+    'niche_external_grounding_threshold': {
+        'owner': 'topic_grounding', 'value_type': 'float',
+    },
+    'niche_external_grounding_penalty_factor': {
+        'owner': 'topic_grounding', 'value_type': 'float',
     },
     'rag_hybrid_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},
     'rag_rerank_enabled': {'owner': 'rag_engine', 'value_type': 'boolean'},

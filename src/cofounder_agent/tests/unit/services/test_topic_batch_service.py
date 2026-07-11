@@ -1295,3 +1295,195 @@ class TestHandoffTargetLength:
         )
 
         assert seen["site_config"] is sc
+
+
+# ---------------------------------------------------------------------------
+# External-candidate internal grounding (poindexter#822)
+# ---------------------------------------------------------------------------
+
+
+def _grounding_cfg(**over):
+    base = {
+        "niche_external_grounding_enabled": "true",
+        "niche_external_grounding_penalty_factor": "0.5",
+        "niche_top_n_per_pool": "5",
+    }
+    base.update(over)
+    return SiteConfig(initial_config=base)
+
+
+async def _grounding_niche(db_pool, slug):
+    nsvc = NicheService(db_pool)
+    n = await nsvc.create(slug=slug, name="G", batch_size=3)
+    await nsvc.set_goals(n.id, [NicheGoal("TRAFFIC", 100)])
+    return n
+
+
+async def test_ungrounded_external_gets_penalty(db_pool, monkeypatch):
+    """An ungrounded external candidate's pre-rank score is multiplied by the
+    penalty factor, the similarity is recorded, and a finding is emitted."""
+    from services import topic_batch_service as tbs
+    from services.topic_grounding import GroundingResult
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.1] * 768
+
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("services.topic_ranking._embed_text_cached", fake_embed)
+
+    grounded_flag = {"grounded": True}
+
+    async def fake_grounding(pool, vec, *, site_config):
+        return GroundingResult(
+            similarity=0.1, grounded=grounded_flag["grounded"], match=None,
+        )
+
+    monkeypatch.setattr(tbs, "internal_grounding", fake_grounding)
+    findings: list[dict] = []
+    monkeypatch.setattr(tbs, "emit_finding", lambda **kw: findings.append(kw))
+
+    n = await _grounding_niche(db_pool, "grounding-penalty")
+    svc = TopicBatchService(db_pool, site_config=_grounding_cfg())
+    item = {"data": {"id": "e1", "title": "Popular Thing", "summary": "s"}}
+
+    # Control run: grounded -> no penalty -> baseline score.
+    grounded_flag["grounded"] = True
+    ctrl, _ = await svc._embed_and_pre_rank(n, [dict(item)], [])
+    base = ctrl[0].embedding_score
+
+    # Penalized run: ungrounded -> score * 0.5.
+    grounded_flag["grounded"] = False
+    pen, _ = await svc._embed_and_pre_rank(n, [dict(item)], [])
+
+    assert pen[0].embedding_score == pytest.approx(base * 0.5)
+    assert pen[0].score_breakdown["_grounding"] == pytest.approx(0.1)
+    assert pen[0].grounding_match is None
+    assert any(f["kind"] == "external_topic_ungrounded" for f in findings)
+
+
+async def test_grounded_external_no_penalty_and_match_stashed(db_pool, monkeypatch):
+    from services import topic_batch_service as tbs
+    from services.topic_grounding import GroundingMatch, GroundingResult
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.1] * 768
+
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("services.topic_ranking._embed_text_cached", fake_embed)
+
+    match = GroundingMatch("posts", "p1", "we shipped X", 0.9)
+
+    async def fake_grounding(pool, vec, *, site_config):
+        return GroundingResult(similarity=0.9, grounded=True, match=match)
+
+    monkeypatch.setattr(tbs, "internal_grounding", fake_grounding)
+
+    n = await _grounding_niche(db_pool, "grounding-stash")
+    svc = TopicBatchService(db_pool, site_config=_grounding_cfg())
+    ext, _ = await svc._embed_and_pre_rank(
+        n, [{"data": {"id": "e1", "title": "Grounded Thing", "summary": "s"}}], [],
+    )
+    assert ext[0].grounding_match is match
+    assert ext[0].score_breakdown["_grounding"] == pytest.approx(0.9)
+
+
+async def test_grounding_disabled_is_noop(db_pool, monkeypatch):
+    from services import topic_batch_service as tbs
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.1] * 768
+
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("services.topic_ranking._embed_text_cached", fake_embed)
+
+    async def fake_grounding(pool, vec, *, site_config):
+        raise AssertionError("must not be called when disabled")
+
+    monkeypatch.setattr(tbs, "internal_grounding", fake_grounding)
+
+    n = await _grounding_niche(db_pool, "grounding-disabled")
+    svc = TopicBatchService(
+        db_pool, site_config=_grounding_cfg(niche_external_grounding_enabled="false"),
+    )
+    ext, _ = await svc._embed_and_pre_rank(
+        n, [{"data": {"id": "e1", "title": "Thing Here", "summary": "s"}}], [],
+    )
+    assert "_grounding" not in ext[0].score_breakdown
+
+
+async def test_internal_candidates_never_grounding_penalized(db_pool, monkeypatch):
+    from services import topic_batch_service as tbs
+
+    async def fake_embed(text, *, site_config=None):
+        return [0.1] * 768
+
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("services.topic_ranking._embed_text_cached", fake_embed)
+
+    async def fake_grounding(pool, vec, *, site_config):
+        raise AssertionError("grounding must not run for internal candidates")
+
+    monkeypatch.setattr(tbs, "internal_grounding", fake_grounding)
+
+    n = await _grounding_niche(db_pool, "grounding-internal")
+    svc = TopicBatchService(db_pool, site_config=_grounding_cfg())
+    _ext, intr = await svc._embed_and_pre_rank(
+        n, [], [{"data": {"distilled_topic": "Our Retro",
+                          "distilled_angle": "why we did it",
+                          "primary_ref": "r1"}}],
+    )
+    assert intr and "_grounding" not in intr[0].score_breakdown
+
+
+def _captured_stage_data(seen):
+    """Parse the stage_data JSON from the captured pipeline_versions INSERT."""
+    import json as _json_mod
+    args = next(a for sql, a in seen if "pipeline_versions" in sql)
+    return _json_mod.loads(args[2])  # $3 positional = json.dumps(stage_data)
+
+
+async def test_handoff_threads_internal_grounding_metadata():
+    """A grounded external winner threads its match into
+    stage_data.metadata.internal_grounding (data-only, #822)."""
+    seen: list[tuple] = []
+
+    async def _capture(sql, *args, **kwargs):
+        seen.append((sql, args))
+        return "INSERT 0 1"
+
+    pool, _conn = _make_mock_pool(execute_side_effect=_capture)
+    svc = TopicBatchService(pool, site_config=SiteConfig())
+    winner = _make_candidate()
+    winner.grounding_ref = {
+        "source_table": "posts", "source_id": "p1",
+        "preview": "we shipped X", "similarity": 0.9,
+    }
+
+    await svc._handoff_to_pipeline(
+        winner=winner, niche=_make_niche(), batch_id=uuid4(),
+    )
+
+    stage_data = _captured_stage_data(seen)
+    assert stage_data["metadata"]["internal_grounding"] == {
+        "source_table": "posts", "source_id": "p1",
+        "preview": "we shipped X", "similarity": 0.9,
+    }
+
+
+async def test_handoff_internal_grounding_none_when_absent():
+    """An internal / ungrounded winner threads internal_grounding=None."""
+    seen: list[tuple] = []
+
+    async def _capture(sql, *args, **kwargs):
+        seen.append((sql, args))
+        return "INSERT 0 1"
+
+    pool, _conn = _make_mock_pool(execute_side_effect=_capture)
+    svc = TopicBatchService(pool, site_config=SiteConfig())
+
+    await svc._handoff_to_pipeline(
+        winner=_make_candidate(), niche=_make_niche(), batch_id=uuid4(),
+    )
+
+    stage_data = _captured_stage_data(seen)
+    assert stage_data["metadata"]["internal_grounding"] is None

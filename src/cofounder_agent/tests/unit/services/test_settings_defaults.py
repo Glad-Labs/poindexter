@@ -55,6 +55,30 @@ def test_image_direction_defaults_present():
     assert METADATA["model_role_image_decision"]["value_type"] == "model"
 
 
+def test_external_grounding_defaults_present():
+    """External-candidate internal grounding (poindexter#822) tunables seed
+    with sane defaults: soft-penalty on by default, content-bearing corpus,
+    provisional 0.55 threshold, 0.6 penalty multiplier."""
+    from services.settings_defaults import DEFAULTS, METADATA
+
+    assert DEFAULTS["niche_external_grounding_enabled"] == "true"
+    assert (
+        DEFAULTS["niche_external_grounding_source_kinds"]
+        == "post_history,decision_log,memory_file,claude_session"
+    )
+    assert DEFAULTS["niche_external_grounding_threshold"] == "0.55"
+    assert DEFAULTS["niche_external_grounding_penalty_factor"] == "0.6"
+
+    for key, vtype in [
+        ("niche_external_grounding_enabled", "boolean"),
+        ("niche_external_grounding_source_kinds", "csv"),
+        ("niche_external_grounding_threshold", "float"),
+        ("niche_external_grounding_penalty_factor", "float"),
+    ]:
+        assert METADATA[key]["owner"] == "topic_grounding"
+        assert METADATA[key]["value_type"] == vtype
+
+
 def test_media_layer2_defaults_seeded():
     """Media Quality Layer 2 (spec 2026-07-09) tunables seed with sane defaults.
 
@@ -478,12 +502,13 @@ class TestGroupingMakesSense:
         # / qa_flag_instead_of_reject). The slack accommodates that ~210-line gap
         # plus the non-qa keys that legitimately live in it (e.g. the writer_*
         # block — writer_length_expansion_enabled / writer_min_length_ratio, the
-        # RAG section's niche_internal_rag_* storyworthy-selection keys,
-        # writer_rag_source_filter, and the plugin.llm_provider.litellm.* provider
-        # flags — allow_paid_base_url / disable_aiohttp_transport /
-        # anthropic_prompt_caching); a genuinely new far-flung qa_ section (keys
-        # hundreds of lines from the cluster) would still overshoot it.
-        assert span < 300, (
+        # RAG section's niche_internal_rag_* storyworthy-selection keys and the
+        # niche_external_grounding_* keys (#822), writer_rag_source_filter, and
+        # the plugin.llm_provider.litellm.* provider flags — allow_paid_base_url
+        # / disable_aiohttp_transport / anthropic_prompt_caching); a genuinely
+        # new far-flung qa_ section (keys hundreds of lines from the cluster)
+        # would still overshoot it.
+        assert span < 315, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

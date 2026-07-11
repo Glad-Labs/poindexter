@@ -105,6 +105,40 @@ The sweep:
    the existing `topic_decision` gate flags "operator action needed."
 7. The run is logged to `discovery_runs` for observability.
 
+### External-candidate internal grounding (#822)
+
+External sources (hackernews / devto / web_search) are a **popularity signal**
+— but a popular headline with no first-party angle produces a zero-new-value
+rewrite. So during **step 4**, each _external_ candidate's pre-rank score is
+additionally weighted by whether the operator's own corpus already covers the
+topic. `services/topic_grounding.py` runs one pgvector nearest-neighbor query
+for the candidate's (already-computed) embedding against the **content-bearing**
+corpus — posts + memory (`decision_log` / `memory_file`) + `claude_sessions`,
+tunable via `niche_external_grounding_source_kinds`. Ops-noise kinds (`audit`,
+`brain`) are deliberately excluded so a status row can't manufacture grounding.
+
+If the best cosine similarity is below `niche_external_grounding_threshold`
+(default `0.55`, **provisional** — calibrate from a real sweep's logged
+`_grounding` distribution), the score is multiplied by
+`niche_external_grounding_penalty_factor` (default `0.6`). This is a **soft**
+penalty: a highly popular ungrounded topic can still win, but a grounded one of
+similar popularity is preferred. **Internal candidates come _from_ the corpus
+and are never penalized.** The lookup **fails open** (treated as grounded) on
+any error or empty corpus, so it never sinks a sweep. Master switch:
+`niche_external_grounding_enabled` (default `true`).
+
+The matched internal snippet is persisted on the winning row
+(`topic_candidates.grounding_ref`) and threaded into the task handoff metadata
+(`metadata.internal_grounding`) as a **data-only** anchor for a future
+writer-prompt hook. Penalized candidates emit an advisory
+`external_topic_ungrounded` finding (visible on the Findings board plus a
+dedicated Pipeline-board panel). Full design:
+[`2026-07-10-822-external-internal-grounding-design.md`](../superpowers/specs/2026-07-10-822-external-internal-grounding-design.md).
+
+> This is the complementary half of #820 (`internal_rag` storyworthiness):
+> #820 makes the _internal_ source pick material worth writing; #822 makes
+> _external_ sources bend toward what the operator already knows.
+
 ## Writer RAG modes
 
 Set per niche on `niches.writer_rag_mode`. Tasks without a

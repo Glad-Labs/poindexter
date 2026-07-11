@@ -158,6 +158,8 @@ def weighted_cosine_score(
 
 from dataclasses import dataclass
 
+from services.topic_grounding import GroundingMatch
+
 
 @dataclass
 class ScoredCandidate:
@@ -167,6 +169,10 @@ class ScoredCandidate:
     embedding_score: float
     llm_score: float | None = None
     score_breakdown: dict[str, float] | None = None
+    # The internal-corpus match that grounded an external candidate
+    # (poindexter#822). None for internal candidates and ungrounded /
+    # fail-open external candidates.
+    grounding_match: GroundingMatch | None = None
 
 
 from services.langfuse_shim import langfuse_context, observe
