@@ -377,7 +377,7 @@ class TestReplaceInlineImagesRecordsAsset:
         }
         recorder = AsyncMock(return_value="asset-uuid")
         with patch(
-            "modules.content.stages.replace_inline_images._try_image_gen",
+            "modules.content.atoms._image_helpers._try_image_gen",
             AsyncMock(return_value="https://r2.example/inline-1.png"),
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -415,7 +415,7 @@ class TestReplaceInlineImagesRecordsAsset:
         }
         recorder = AsyncMock(return_value="asset-uuid")
         with patch(
-            "modules.content.stages.replace_inline_images._try_image_gen",
+            "modules.content.atoms._image_helpers._try_image_gen",
             AsyncMock(return_value=None),  # image-gen fails → falls through to Pexels
         ), patch(
             "services.media_asset_recorder.record_media_asset",
@@ -448,7 +448,7 @@ class TestReplaceInlineImagesRecordsAsset:
         }
         recorder = AsyncMock()
         with patch(
-            "modules.content.stages.replace_inline_images._try_image_gen",
+            "modules.content.atoms._image_helpers._try_image_gen",
             AsyncMock(return_value="https://r2.example/x.png"),
         ), patch(
             "services.media_asset_recorder.record_media_asset",

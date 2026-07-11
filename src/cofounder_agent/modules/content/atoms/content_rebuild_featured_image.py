@@ -56,7 +56,7 @@ ATOM_META = AtomMeta(
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
-    from modules.content.image_helpers import try_image_gen, try_pexels
+    from modules.content.atoms._image_helpers import try_image_gen, try_pexels
 
     topic = state.get("topic", "") or ""
     plan = state.get("featured_image_plan")

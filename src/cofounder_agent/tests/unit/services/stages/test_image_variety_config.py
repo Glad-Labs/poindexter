@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import pytest
 
-from modules.content.stages.replace_inline_images import (
+from modules.content.atoms._image_helpers import (
     INLINE_STYLES,
     _build_inline_prompt_instruction,
     _load_inline_styles,

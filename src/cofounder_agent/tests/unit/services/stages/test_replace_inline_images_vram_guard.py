@@ -72,7 +72,7 @@ async def test_stage_invokes_writer_unload_at_entry():
         "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
         new=unload_mock,
     ), patch(
-        "modules.content.stages.replace_inline_images._try_image_gen",
+        "modules.content.atoms._image_helpers._try_image_gen",
         new=AsyncMock(return_value=None),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -112,7 +112,7 @@ async def test_stage_unloads_before_calling_try_image_gen():
         "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
         new=AsyncMock(side_effect=record_unload),
     ), patch(
-        "modules.content.stages.replace_inline_images._try_image_gen",
+        "modules.content.atoms._image_helpers._try_image_gen",
         new=AsyncMock(side_effect=record_image_gen),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -161,7 +161,7 @@ async def test_stage_threads_site_config_with_gate_off():
         "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
         new=unload_mock,
     ), patch(
-        "modules.content.stages.replace_inline_images._try_image_gen",
+        "modules.content.atoms._image_helpers._try_image_gen",
         new=AsyncMock(return_value=None),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,

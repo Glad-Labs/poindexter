@@ -22,10 +22,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.stages.replace_inline_images import (
-    ReplaceInlineImagesStage,
-    _try_image_gen,
-)
+from modules.content.atoms._image_helpers import _try_image_gen
+from modules.content.stages.replace_inline_images import ReplaceInlineImagesStage
 from tests.unit._fake_platform import FakePlatform
 
 # Mirrors the fake used in test_remaining_stages_smoke.py.
@@ -90,17 +88,17 @@ async def test_try_image_gen_threads_task_id_to_both_gpu_locks():
     )
 
     with patch(
-        "modules.content.stages.replace_inline_images.gpu", recorder, create=True,
+        "modules.content.atoms._image_helpers.gpu", recorder, create=True,
     ), patch(
         "services.gpu_scheduler.gpu", recorder,
     ), patch(
-        "modules.content.stages.replace_inline_images.httpx.AsyncClient",
+        "modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.stages.replace_inline_images._resolve_gen_response",
+        "modules.content.atoms._image_helpers._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/glad-labs-generated-images/x.png"),
     ), patch(
-        "modules.content.stages.replace_inline_images._upload_to_r2_with_fallback",
+        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/x.png"),
     ):
         result = await _try_image_gen(
@@ -154,7 +152,7 @@ async def test_stage_propagates_task_id_into_try_image_gen():
     }
 
     with patch(
-        "modules.content.stages.replace_inline_images._try_image_gen",
+        "modules.content.atoms._image_helpers._try_image_gen",
         new=AsyncMock(side_effect=fake_try_image_gen),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -174,7 +172,7 @@ async def test_image_gen_prompt_in_placeholder_does_not_leak_to_alt():
     and the image-gen render succeeds, the rendered ``<img alt="...">`` must
     show the topic-derived fallback, not the raw imperative-mood prompt.
     """
-    from modules.content.stages.replace_inline_images import _resolve_one_placeholder
+    from modules.content.atoms._image_helpers import _resolve_one_placeholder
 
     # The exact poisoned descriptor shape from the bug report.
     poisoned_desc = (
@@ -187,10 +185,10 @@ async def test_image_gen_prompt_in_placeholder_does_not_leak_to_alt():
 
     # image-gen path succeeds — returns a URL we can assert on.
     with patch(
-        "modules.content.stages.replace_inline_images._try_image_gen",
+        "modules.content.atoms._image_helpers._try_image_gen",
         new=AsyncMock(return_value="https://r2.example/inline-1.png"),
     ), patch(
-        "modules.content.stages.replace_inline_images._record_inline_image_asset",
+        "modules.content.atoms._image_helpers._record_inline_image_asset",
         new=AsyncMock(return_value=None),
     ):
         result = await _resolve_one_placeholder(
@@ -224,16 +222,16 @@ async def test_real_human_alt_in_placeholder_passes_through():
     word "macro" appears in our INLINE_STYLES rotation but here it's
     used as a noun-modifier in natural prose.
     """
-    from modules.content.stages.replace_inline_images import _resolve_one_placeholder
+    from modules.content.atoms._image_helpers import _resolve_one_placeholder
 
     clean_desc = "A close-up macro photo of a circuit board with red LEDs"
     content_text = f"Intro\n\n[IMAGE-1: {clean_desc}]\n\nOutro"
 
     with patch(
-        "modules.content.stages.replace_inline_images._try_image_gen",
+        "modules.content.atoms._image_helpers._try_image_gen",
         new=AsyncMock(return_value="https://r2.example/inline-1.png"),
     ), patch(
-        "modules.content.stages.replace_inline_images._record_inline_image_asset",
+        "modules.content.atoms._image_helpers._record_inline_image_asset",
         new=AsyncMock(return_value=None),
     ):
         result = await _resolve_one_placeholder(

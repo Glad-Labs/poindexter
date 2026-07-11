@@ -30,7 +30,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from modules.content.stages.replace_inline_images import (
+from modules.content.atoms._image_helpers import (
     _resolve_gen_response,
 )
 from modules.content.stages.source_featured_image import (
@@ -94,10 +94,10 @@ class TestInlineResolverFetchesViaHttp:
         client = _get_client_returning(200, content=b"\x89PNG\r\n\x1a\n--bytes--")
 
         with patch(
-            "modules.content.stages.replace_inline_images.httpx.AsyncClient",
+            "modules.content.atoms._image_helpers.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "modules.content.stages.replace_inline_images._generated_images_dir",
+            "modules.content.atoms._image_helpers._generated_images_dir",
             return_value=str(tmp_path),
         ):
             result = await _resolve_gen_response(
@@ -131,10 +131,10 @@ class TestInlineResolverFetchesViaHttp:
         client = _get_client_returning(200, content=b"bytes")
 
         with patch(
-            "modules.content.stages.replace_inline_images.httpx.AsyncClient",
+            "modules.content.atoms._image_helpers.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "modules.content.stages.replace_inline_images._generated_images_dir",
+            "modules.content.atoms._image_helpers._generated_images_dir",
             return_value=str(tmp_path),
         ):
             await _resolve_gen_response(
@@ -156,7 +156,7 @@ class TestInlineResolverFetchesViaHttp:
         client = _get_client_returning(404)
 
         with patch(
-            "modules.content.stages.replace_inline_images.httpx.AsyncClient",
+            "modules.content.atoms._image_helpers.httpx.AsyncClient",
             return_value=client,
         ):
             with pytest.raises(RuntimeError, match="404"):
@@ -190,10 +190,10 @@ class TestInlineResolverFetchesViaHttp:
         client = _get_client_returning(200, content=b"x")
 
         with patch(
-            "modules.content.stages.replace_inline_images.httpx.AsyncClient",
+            "modules.content.atoms._image_helpers.httpx.AsyncClient",
             return_value=client,
         ), patch(
-            "modules.content.stages.replace_inline_images._generated_images_dir",
+            "modules.content.atoms._image_helpers._generated_images_dir",
             return_value=str(tmp_path),
         ):
             await _resolve_gen_response(
@@ -214,7 +214,7 @@ class TestInlineResolverFetchesViaHttp:
         resp = _bytes_resp(b"\x89PNG-direct-bytes")
 
         with patch(
-            "modules.content.stages.replace_inline_images._generated_images_dir",
+            "modules.content.atoms._image_helpers._generated_images_dir",
             return_value=str(tmp_path),
         ):
             result = await _resolve_gen_response(

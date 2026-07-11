@@ -92,7 +92,7 @@ async def test_featured_prefers_image_gen(monkeypatch):
         return "https://r2/hero.webp"
 
     monkeypatch.setattr(
-        "modules.content.image_helpers.try_image_gen", fake_try_image_gen,
+        "modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen,
     )
     out = await content_rebuild_featured_image.run(
         {"topic": "GPU VRAM budgets",
@@ -110,8 +110,8 @@ async def test_featured_falls_back_to_pexels(monkeypatch):
     async def fake_try_pexels(desc, topic, image_service):
         return ("https://pexels/p.jpg", "Ada")
 
-    monkeypatch.setattr("modules.content.image_helpers.try_image_gen", fake_try_image_gen)
-    monkeypatch.setattr("modules.content.image_helpers.try_pexels", fake_try_pexels)
+    monkeypatch.setattr("modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen)
+    monkeypatch.setattr("modules.content.atoms._image_helpers.try_pexels", fake_try_pexels)
     out = await content_rebuild_featured_image.run(
         {"topic": "GPU VRAM budgets", "image_service": object()}
     )
@@ -126,8 +126,8 @@ async def test_featured_reports_none_without_raising(monkeypatch):
     async def fake_try_pexels(*a, **kw):
         return None
 
-    monkeypatch.setattr("modules.content.image_helpers.try_image_gen", fake_try_image_gen)
-    monkeypatch.setattr("modules.content.image_helpers.try_pexels", fake_try_pexels)
+    monkeypatch.setattr("modules.content.atoms._image_helpers.try_image_gen", fake_try_image_gen)
+    monkeypatch.setattr("modules.content.atoms._image_helpers.try_pexels", fake_try_pexels)
     out = await content_rebuild_featured_image.run(
         {"topic": "GPU VRAM budgets", "image_service": object()}
     )

@@ -50,7 +50,7 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Inject images and clean up the content."""
-    from modules.content.image_helpers import (
+    from modules.content.atoms._image_helpers import (
         cleanup_leaked_descriptions,
         inject_html_image,
         normalize_from_router,

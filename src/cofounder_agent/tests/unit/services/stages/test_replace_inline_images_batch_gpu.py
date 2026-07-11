@@ -28,10 +28,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.stages.replace_inline_images import (
-    ReplaceInlineImagesStage,
-    _batch_generate_all_images,
-)
+from modules.content.atoms._image_helpers import _batch_generate_all_images
+from modules.content.stages.replace_inline_images import ReplaceInlineImagesStage
 from tests.unit._fake_platform import FakePlatform
 
 # ---------------------------------------------------------------------------
@@ -108,13 +106,13 @@ async def test_batch_makes_exactly_two_gpu_locks_for_three_images():
     with patch(
         "services.gpu_scheduler.gpu", recorder,
     ), patch(
-        "modules.content.stages.replace_inline_images.httpx.AsyncClient",
+        "modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.stages.replace_inline_images._resolve_gen_response",
+        "modules.content.atoms._image_helpers._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/glad-labs-generated-images/test.png"),
     ), patch(
-        "modules.content.stages.replace_inline_images._upload_to_r2_with_fallback",
+        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/img.png"),
     ):
         urls = await _batch_generate_all_images(
@@ -158,13 +156,13 @@ async def test_batch_task_id_forwarded_to_both_locks():
     with patch(
         "services.gpu_scheduler.gpu", recorder,
     ), patch(
-        "modules.content.stages.replace_inline_images.httpx.AsyncClient",
+        "modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.stages.replace_inline_images._resolve_gen_response",
+        "modules.content.atoms._image_helpers._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/test.png"),
     ), patch(
-        "modules.content.stages.replace_inline_images._upload_to_r2_with_fallback",
+        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/img.png"),
     ):
         await _batch_generate_all_images(
@@ -218,13 +216,13 @@ async def test_batch_one_prompt_failure_does_not_abort_batch():
     with patch(
         "services.gpu_scheduler.gpu", recorder,
     ), patch(
-        "modules.content.stages.replace_inline_images.httpx.AsyncClient",
+        "modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.stages.replace_inline_images._resolve_gen_response",
+        "modules.content.atoms._image_helpers._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/test.png"),
     ), patch(
-        "modules.content.stages.replace_inline_images._upload_to_r2_with_fallback",
+        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/ok.png"),
     ):
         urls = await _batch_generate_all_images(
@@ -272,13 +270,13 @@ async def test_batch_one_image_gen_render_failure_does_not_abort_batch():
     with patch(
         "services.gpu_scheduler.gpu", recorder,
     ), patch(
-        "modules.content.stages.replace_inline_images.httpx.AsyncClient",
+        "modules.content.atoms._image_helpers.httpx.AsyncClient",
         return_value=mock_client,
     ), patch(
-        "modules.content.stages.replace_inline_images._resolve_gen_response",
+        "modules.content.atoms._image_helpers._resolve_gen_response",
         new=AsyncMock(return_value="/tmp/test.png"),
     ), patch(
-        "modules.content.stages.replace_inline_images._upload_to_r2_with_fallback",
+        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
         new=AsyncMock(return_value="https://r2.example/img.png"),
     ):
         urls = await _batch_generate_all_images(
@@ -431,10 +429,10 @@ async def test_stage_execute_uses_batch_path():
         "modules.content.stages.replace_inline_images._batch_generate_all_images",
         new=AsyncMock(side_effect=fake_batch),
     ), patch(
-        "modules.content.stages.replace_inline_images._try_image_gen",
+        "modules.content.atoms._image_helpers._try_image_gen",
         new=AsyncMock(side_effect=fake_try_image_gen),
     ), patch(
-        "modules.content.stages.replace_inline_images._record_inline_image_asset",
+        "modules.content.atoms._image_helpers._record_inline_image_asset",
         new=AsyncMock(return_value=None),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -490,7 +488,7 @@ async def test_stage_falls_back_to_pexels_when_batch_returns_none():
         "modules.content.stages.replace_inline_images._batch_generate_all_images",
         new=AsyncMock(side_effect=fake_batch),
     ), patch(
-        "modules.content.stages.replace_inline_images._record_inline_image_asset",
+        "modules.content.atoms._image_helpers._record_inline_image_asset",
         new=AsyncMock(return_value=None),
     ), patch(
         "services.text_utils.normalize_text", side_effect=lambda x: x,

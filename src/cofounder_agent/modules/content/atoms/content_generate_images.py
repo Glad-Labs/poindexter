@@ -52,7 +52,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not image_plans:
         return {"image_results": []}
 
-    from modules.content.image_helpers import (
+    from modules.content.atoms._image_helpers import (
         record_inline_image_asset,
         try_image_gen,
         try_pexels,

@@ -154,7 +154,7 @@ class TestTryImageGenDispatch:
 
     @pytest.mark.asyncio
     async def test_uses_platform_dispatch_when_set(self):
-        from modules.content.stages.replace_inline_images import _try_image_gen
+        from modules.content.atoms._image_helpers import _try_image_gen
 
         # Short prompt → function returns None after dispatch; no image-gen HTTP call.
         result_obj = MagicMock(text="short")
@@ -163,7 +163,7 @@ class TestTryImageGenDispatch:
 
         # gpu is a local import inside _try_image_gen — create=True is required.
         with patch(
-            "modules.content.stages.replace_inline_images.gpu",
+            "modules.content.atoms._image_helpers.gpu",
             gpu_mock,
             create=True,
         ):
@@ -183,12 +183,12 @@ class TestTryImageGenDispatch:
     async def test_raises_when_no_platform(self):
         """Wave 3f (#667): platform=None raises RuntimeError; _try_image_gen catches
         it and returns None (non-critical path — image is skipped, not fatal)."""
-        from modules.content.stages.replace_inline_images import _try_image_gen
+        from modules.content.atoms._image_helpers import _try_image_gen
 
         gpu_mock = MagicMock(lock=_noop_gpu_lock)
 
         with patch(
-            "modules.content.stages.replace_inline_images.gpu",
+            "modules.content.atoms._image_helpers.gpu",
             gpu_mock,
             create=True,
         ):
@@ -208,7 +208,7 @@ class TestTryImageGenDispatch:
     @pytest.mark.asyncio
     async def test_no_pool_returns_none_without_dispatch(self):
         """No DB pool → returns None immediately; no dispatch on either path."""
-        from modules.content.stages.replace_inline_images import _try_image_gen
+        from modules.content.atoms._image_helpers import _try_image_gen
 
         platform = FakePlatform()
 

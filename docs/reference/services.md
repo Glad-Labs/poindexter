@@ -35,8 +35,8 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 - [`services/tts_providers/`](#servicesttsproviders) (2 files)
 - [`services/video_providers/`](#servicesvideoproviders) (2 files)
 - [`services/video_renderers/`](#servicesvideorenderers) (3 files)
-- [`modules/content/`](#modulescontent) (15 files)
-- [`modules/content/atoms/`](#modulescontentatoms) (62 files)
+- [`modules/content/`](#modulescontent) (14 files)
+- [`modules/content/atoms/`](#modulescontentatoms) (63 files)
 - [`modules/content/stages/`](#modulescontentstages) (18 files)
 
 ## services/ (top-level)
@@ -508,7 +508,6 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `auto_publish_gate.py` | ``auto_publish_gate`` — observe-only auto-publish decision logger. |
 | `content_module.py` | ``ContentModule`` — Glad Labs' blog publishing Module. |
 | `content_validator.py` | Content Validator — programmatic quality gate for AI-generated content. |
-| `image_helpers.py` | Sanctioned import seam for the content module's image helpers. |
 | `image_rebuild_service.py` | Enqueue an image_rebuild pipeline task for an awaiting_approval draft. |
 | `internal_link_coherence.py` | Internal-link recommendation coherence gate. |
 | `multi_model_qa.py` | Multi-Model QA — adversarial review using different LLM providers. |
@@ -523,6 +522,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | --- | --- |
 | `__init__.py` | Atoms — atomic, single-action building blocks for pipeline templates. |
 | `_citation_match.py` | Pure citation-matching core shared by the citation rail atoms. |
+| `_image_helpers.py` | Inline-image helper library — owns the image-gen / Pexels / injection logic. |
 | `_media_render.py` | Shared render helper for the Stage-2 media render atoms (Plan 4). |
 | `_narration_render.py` | Shared narration-TTS helper for the Stage-2 media render atoms (#689). |
 | `_qa_persist.py` | QA-decision persistence for qa.aggregate (atom-cutover Plan 5, #355). |
@@ -598,7 +598,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `generate_seo_metadata.py` | GenerateSeoMetadataStage — stage 4 of the content pipeline. |
 | `generate_video_shot_list.py` | GenerateVideoShotListStage — director output for the post's video. |
 | `quality_evaluation.py` | QualityEvaluationStage — stage 2B of the content pipeline. |
-| `replace_inline_images.py` | ReplaceInlineImagesStage — stage 2C of the content pipeline. |
+| `replace_inline_images.py` | ReplaceInlineImagesStage — legacy zombie stage (kept, not on any graph). |
 | `resolve_internal_link_placeholders.py` | ResolveInternalLinkPlaceholdersStage — convert ``[posts/<slug>]`` |
 | `review_video_shot_list.py` | ReviewVideoShotListStage — director self-critique of the video shot list. |
 | `source_featured_image.py` | SourceFeaturedImageStage — stage 3 of the content pipeline. |

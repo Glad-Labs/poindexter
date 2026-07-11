@@ -94,8 +94,9 @@ class TestAllowedDependencies:
         assert _count(src) == 0
 
     def test_module_root_library_not_flagged(self):
-        # image_helpers is a content-module library (not a stage, not an atom).
-        src = "from modules.content.image_helpers import try_image_gen, try_pexels\n"
+        # A module-root content file (not a stage, not a sibling atom) is a
+        # library an atom may import — e.g. the module's api boundary.
+        src = "from modules.content.api import build_topic_decision_artifact\n"
         assert _count(src) == 0
 
     def test_substrate_import_not_flagged(self):
@@ -142,8 +143,10 @@ class TestBaselineRatchet:
         the lint silently going blind (e.g. a scan-root typo)."""
         counts = LINT.compute_counts()
         keys = set(counts)
+        # content_generate_draft is the last remaining baselined fossil (the
+        # image_helpers → stage one burned down when the helper web moved into
+        # atoms/_image_helpers.py, 2026-07).
         assert any(k.endswith("content_generate_draft.py") for k in keys), counts
-        assert any(k.endswith("image_helpers.py") for k in keys), counts
 
     def test_real_tree_matches_baseline(self):
         """The committed baseline must satisfy the live tree (no drift).

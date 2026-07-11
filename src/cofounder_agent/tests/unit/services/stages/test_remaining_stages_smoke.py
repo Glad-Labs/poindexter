@@ -506,7 +506,7 @@ class TestReplaceInlineImagesAdapter:
 
         # Stage calls _normalize_text via lazy import into content_router_service
         with patch(
-            "modules.content.stages.replace_inline_images._try_image_gen",
+            "modules.content.atoms._image_helpers._try_image_gen",
             AsyncMock(return_value=None),
         ), patch(
             "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -531,7 +531,7 @@ class TestReplaceInlineImagesAdapter:
             "database_service": db, "image_service": image_service,
         }
         with patch(
-            "modules.content.stages.replace_inline_images._try_image_gen",
+            "modules.content.atoms._image_helpers._try_image_gen",
             AsyncMock(return_value=None),
         ), patch(
             "services.text_utils.normalize_text", side_effect=lambda x: x,
@@ -545,7 +545,7 @@ class TestReplaceInlineImagesAdapter:
 
 class TestReplaceInlineImagesPureHelpers:
     def test_cleanup_leaked_descriptions_strips_italic_scene(self):
-        from modules.content.stages.replace_inline_images import _cleanup_leaked_descriptions
+        from modules.content.atoms._image_helpers import _cleanup_leaked_descriptions
         body = (
             "<img src='x' />\n"
             "\n*An editorial illustration of a mountain range stretching into horizon*\n"
@@ -556,14 +556,14 @@ class TestReplaceInlineImagesPureHelpers:
         assert "Real paragraph." in out
 
     def test_cleanup_strips_photo_attribution_lines(self):
-        from modules.content.stages.replace_inline_images import _cleanup_leaked_descriptions
+        from modules.content.atoms._image_helpers import _cleanup_leaked_descriptions
         body = "Hi\n\n*Photo by Jane on Pexels*\n\nMore."
         out = _cleanup_leaked_descriptions(body)
         assert "Photo by Jane" not in out
         assert "More." in out
 
     def test_inject_html_image_substitutes_exactly_one(self):
-        from modules.content.stages.replace_inline_images import _inject_html_image
+        from modules.content.atoms._image_helpers import _inject_html_image
         body = "Start [IMAGE-1: desc] middle [IMAGE-1: other] end"
         out = _inject_html_image(body, "1", "http://img", "alt", width=100, height=100)
         # Only the first should be replaced
@@ -589,7 +589,7 @@ class TestReplaceInlineImagesAltTextScrub:
             "database_service": db, "image_service": image_service,
         }
         with patch(
-            "modules.content.stages.replace_inline_images._try_image_gen",
+            "modules.content.atoms._image_helpers._try_image_gen",
             AsyncMock(return_value=None),
         ), patch(
             "services.text_utils.normalize_text", side_effect=lambda x: x,

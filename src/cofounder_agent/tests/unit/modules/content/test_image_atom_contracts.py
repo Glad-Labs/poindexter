@@ -3,7 +3,7 @@
 The image_rebuild template re-drives the image pipeline through
 ``content.plan_image_markers`` / ``content.generate_images`` /
 ``content.inject_images`` plus the ``try_image_gen`` / ``try_pexels`` helpers
-(via the sanctioned ``modules.content.image_helpers`` seam), and its fail-loud
+(via the sanctioned ``modules.content.atoms._image_helpers`` seam), and its fail-loud
 gate atom keys on ``source == "image_gen"``. These tests pin those signatures +
 result shapes so a future edit to the image path can't silently break the
 rebuild consumer.
@@ -20,7 +20,7 @@ from services.site_config import SiteConfig
 
 @pytest.mark.unit
 def test_try_image_gen_signature_stable():
-    from modules.content.image_helpers import try_image_gen, try_pexels
+    from modules.content.atoms._image_helpers import try_image_gen, try_pexels
 
     p = inspect.signature(try_image_gen).parameters
     assert list(p)[:3] == ["num", "search_query", "topic"]
