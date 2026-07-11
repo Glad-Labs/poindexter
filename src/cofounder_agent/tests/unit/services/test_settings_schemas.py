@@ -9,7 +9,6 @@ from pydantic import ValidationError
 
 from schemas.settings_schemas import (
     SettingBulkUpdateRequest,
-    SettingCategoryEnum,
     SettingCreate,
     SettingDataTypeEnum,
     SettingEnvironmentEnum,
@@ -31,12 +30,13 @@ class TestSettingEnums:
         assert SettingDataTypeEnum.BOOL == "bool"
         assert SettingDataTypeEnum.JSON == "json"
 
-    def test_category_enum(self):
-        assert SettingCategoryEnum.GENERAL == "general"
-        assert SettingCategoryEnum.API == "api"
-        assert SettingCategoryEnum.DATABASE == "database"
-        assert SettingCategoryEnum.SECURITY == "security"
-        assert SettingCategoryEnum.FEATURE_FLAGS == "feature_flags"
+    def test_setting_create_accepts_canonical_category(self):
+        # category is a free-form string validated against the canonical
+        # taxonomy at the route layer (services.settings_categories.CATEGORY_IDS),
+        # not a strict enum — the old SettingCategoryEnum was dead (the list
+        # route already bypassed it to accept raw strings).
+        s = SettingCreate(key="x_probe", value="1", category="observability")
+        assert s.category == "observability"
 
     def test_environment_enum(self):
         assert SettingEnvironmentEnum.ALL == "all"

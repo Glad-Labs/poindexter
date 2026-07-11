@@ -49,6 +49,10 @@ def _make_fake_pool(*, before_count: int, after_count: int) -> MagicMock:
 
     fake_conn = MagicMock()
     fake_conn.execute = AsyncMock(return_value=None)
+    # seed_all_defaults' category-reconcile pass reads every row then batches
+    # UPDATEs; an empty read means zero updates (steady-state no-op).
+    fake_conn.fetch = AsyncMock(return_value=[])
+    fake_conn.executemany = AsyncMock(return_value=None)
     # First COUNT(*) is "before", second is "after".
     fake_conn.fetchval = AsyncMock(side_effect=[before_count, after_count])
 
@@ -71,6 +75,10 @@ def _make_empty_db_pool(after_count: int) -> MagicMock:
 
     fake_conn = MagicMock()
     fake_conn.execute = AsyncMock(return_value=None)
+    # seed_all_defaults' category-reconcile pass reads every row then batches
+    # UPDATEs; an empty read means zero updates (steady-state no-op).
+    fake_conn.fetch = AsyncMock(return_value=[])
+    fake_conn.executemany = AsyncMock(return_value=None)
     # First call raises (table missing), second returns the after-count.
     fake_conn.fetchval = AsyncMock(
         side_effect=[

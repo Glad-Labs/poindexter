@@ -436,12 +436,14 @@
   }
 
   // Derive the category sidebar from the distinct categories actually present.
-  // Reuse the curated mock labels where known; else Title-Case the raw id.
+  // Reuse the curated labels + canonical order from PX_SETTINGS.categories
+  // (mirror of services/settings_categories.py); Title-Case any unknown id and
+  // sink it to the end.
   function deriveCategories(rows) {
+    const canon = (window.PX_SETTINGS && window.PX_SETTINGS.categories) || [];
     const known = {};
-    ((window.PX_SETTINGS && window.PX_SETTINGS.categories) || []).forEach(
-      (c) => (known[c.id] = c.label)
-    );
+    canon.forEach((c) => (known[c.id] = c.label));
+    const order = canon.map((c) => c.id);
     const seen = {};
     const out = [];
     rows.forEach((r) => {
@@ -456,7 +458,12 @@
             .replace(/\b\w/g, (m) => m.toUpperCase()),
       });
     });
-    out.sort((a, b) => a.label.localeCompare(b.label));
+    // Canonical sidebar order; unknown ids (not in the taxonomy) sort last.
+    out.sort((a, b) => {
+      const ia = order.indexOf(a.id);
+      const ib = order.indexOf(b.id);
+      return (ia < 0 ? 1e9 : ia) - (ib < 0 ? 1e9 : ib);
+    });
     return out;
   }
 

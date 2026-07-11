@@ -17,7 +17,6 @@ from fastapi import APIRouter, Body, Depends, HTTPException, Path, Query, status
 
 from middleware.api_token_auth import verify_api_token
 from schemas.settings_schemas import (
-    SettingCategoryEnum,
     SettingCreate,
     SettingDataTypeEnum,
     SettingEnvironmentEnum,
@@ -27,6 +26,7 @@ from schemas.settings_schemas import (
 )
 from services.database_service import DatabaseService
 from services.logger_config import get_logger
+from services.settings_categories import CATEGORY_IDS
 from services.site_config import SiteConfig
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
@@ -66,11 +66,11 @@ router = APIRouter(
     },
 )
 async def list_settings(
-    # Accept raw strings — the DB has many categories beyond the original
-    # enum (pipeline, quality, models, content, tokens, identity, etc.) and
-    # locking this to SettingCategoryEnum rejects every real-world filter.
-    # Same pattern as SettingResponse.category which overrides the strict
-    # enum for the same reason.
+    # Accept raw strings — categories are the canonical taxonomy in
+    # services.settings_categories (pipeline, quality, models, content,
+    # identity, etc.). Filtering is free-form so a caller can also probe
+    # legacy/pre-reconcile values; create-time validation against
+    # CATEGORY_IDS is what enforces the taxonomy on writes.
     category: str | None = Query(None, description="Filter by category"),
     environment: SettingEnvironmentEnum | None = Query(
         None, description="Filter by environment"
@@ -125,7 +125,7 @@ async def list_settings(
                     key=_setting_attr(setting, "key", ""),
                     value=value,
                     data_type=_setting_attr(setting, "data_type", SettingDataTypeEnum.STRING),
-                    category=_setting_attr(setting, "category", SettingCategoryEnum.DATABASE),
+                    category=_setting_attr(setting, "category", "general"),
                     environment=_setting_attr(
                         setting, "environment", SettingEnvironmentEnum.PRODUCTION
                     ),
@@ -178,7 +178,7 @@ async def get_setting(
             key=_setting_attr(setting, "key", setting_id),
             value=_setting_attr(setting, "value", ""),
             data_type=_setting_attr(setting, "data_type", SettingDataTypeEnum.STRING),
-            category=_setting_attr(setting, "category", SettingCategoryEnum.DATABASE),
+            category=_setting_attr(setting, "category", "general"),
             environment=_setting_attr(setting, "environment", SettingEnvironmentEnum.PRODUCTION),
             description=_setting_attr(setting, "description", ""),
             is_encrypted=_setting_attr(setting, "is_encrypted", False),
@@ -221,6 +221,19 @@ async def create_setting(
         if not setting_data.key:
             raise HTTPException(status_code=400, detail="Setting key is required")
 
+        # Reject a non-canonical category up front. When category is omitted,
+        # admin_db.set_setting defers to resolve_category(key) so the row still
+        # lands in the right bucket — only an explicit off-taxonomy value is a
+        # client error worth a 400.
+        if setting_data.category and setting_data.category not in CATEGORY_IDS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"Unknown category '{setting_data.category}'. "
+                    f"Valid categories: {', '.join(sorted(CATEGORY_IDS))}"
+                ),
+            )
+
         # Check if setting already exists
         existing = await db_service.setting_exists(setting_data.key)
         if existing:
@@ -228,11 +241,12 @@ async def create_setting(
                 status_code=409, detail=f"Setting key '{setting_data.key}' already exists"
             )
 
-        # Create setting in database
+        # Create setting in database. category may be None here — admin_db
+        # resolves it deterministically from the key via resolve_category().
         success = await db_service.set_setting(
             key=setting_data.key,
             value=setting_data.value or "default",
-            category=setting_data.category.value if setting_data.category else None,
+            category=setting_data.category,
             display_name=setting_data.key,
             description=setting_data.description or f"Setting: {setting_data.key}",
         )
@@ -248,7 +262,9 @@ async def create_setting(
             key=_setting_attr(created_setting, "key", setting_data.key),
             value=_setting_attr(created_setting, "value", ""),
             data_type=setting_data.data_type or SettingDataTypeEnum.STRING,
-            category=setting_data.category or SettingCategoryEnum.GENERAL,
+            # Echo the category the DB actually stored — admin_db resolved it
+            # from the key when the request omitted one.
+            category=_setting_attr(created_setting, "category", "general"),
             environment=setting_data.environment or SettingEnvironmentEnum.PRODUCTION,
             description=_setting_attr(created_setting, "description", ""),
             is_encrypted=False,
@@ -338,7 +354,7 @@ async def update_setting(
             key=_setting_attr(updated, "key", setting_id),
             value=_setting_attr(updated, "value", ""),
             data_type=_setting_attr(updated, "data_type", SettingDataTypeEnum.STRING),
-            category=_setting_attr(updated, "category", SettingCategoryEnum.DATABASE),
+            category=_setting_attr(updated, "category", "general"),
             environment=_setting_attr(updated, "environment", SettingEnvironmentEnum.PRODUCTION),
             description=_setting_attr(updated, "description", ""),
             is_encrypted=_setting_attr(updated, "is_encrypted", False),

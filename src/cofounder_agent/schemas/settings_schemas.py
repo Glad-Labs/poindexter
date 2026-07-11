@@ -21,19 +21,6 @@ class SettingDataTypeEnum(str, Enum):
     JSON = "json"
 
 
-class SettingCategoryEnum(str, Enum):
-    """Setting category"""
-
-    GENERAL = "general"
-    API = "api"
-    DATABASE = "database"
-    SECURITY = "security"
-    FEATURE_FLAGS = "feature_flags"
-    PERFORMANCE = "performance"
-    LOGGING = "logging"
-    INTEGRATION = "integration"
-
-
 class SettingEnvironmentEnum(str, Enum):
     """Environment scope"""
 
@@ -51,7 +38,11 @@ class SettingBase(BaseModel):
     data_type: SettingDataTypeEnum = Field(
         default=SettingDataTypeEnum.STRING, description="Data type of value"
     )
-    category: SettingCategoryEnum = Field(..., description="Setting category for organization")
+    # Free-form string validated against the canonical taxonomy at the route
+    # layer (services.settings_categories.CATEGORY_IDS). The old strict
+    # SettingCategoryEnum was retired — the DB long outgrew its 8 values, and
+    # SettingResponse already overrode it to a plain string for the same reason.
+    category: str = Field(..., description="Setting category for organization")
     environment: SettingEnvironmentEnum = Field(
         default=SettingEnvironmentEnum.ALL, description="Environment applicability"
     )
@@ -75,7 +66,7 @@ class SettingCreate(BaseModel):
     data_type: SettingDataTypeEnum | None = Field(
         default=SettingDataTypeEnum.STRING, description="Data type of value"
     )
-    category: SettingCategoryEnum | None = Field(
+    category: str | None = Field(
         None, description="Setting category for organization"
     )
     environment: SettingEnvironmentEnum | None = Field(
@@ -124,7 +115,8 @@ class SettingUpdate(BaseModel):
 class SettingResponse(SettingBase):
     """Model for returning setting data"""
 
-    # Override strict enum — DB has many categories beyond the original enum
+    # Relax the required base field to optional+nullable for read responses:
+    # legacy rows may carry a NULL category before the boot reconcile stamps them.
     category: str | None = Field(None, description="Setting category for organization")  # type: ignore[assignment]
     id: int = Field(..., description="Setting database ID")
     created_at: datetime = Field(..., description="Creation timestamp")

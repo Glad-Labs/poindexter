@@ -217,7 +217,7 @@ class TestCreateSetting:
     VALID_PAYLOAD = {
         "key": "new_setting_key",
         "value": "new_value",
-        "category": "logging",
+        "category": "observability",
         "description": "A new test setting",
     }
 
@@ -244,6 +244,27 @@ class TestCreateSetting:
         resp = client.post("/api/settings", json={"value": "some_value"})
         # No key → 400
         assert resp.status_code == 400
+
+    def test_create_noncanonical_category_returns_400(self):
+        """An explicit off-taxonomy category is a client error. Validated
+        against services.settings_categories.CATEGORY_IDS before the
+        existence check, so it 400s even for a brand-new key."""
+        client = TestClient(_build_app())
+        resp = client.post(
+            "/api/settings",
+            json={"key": "new_setting_key", "value": "v", "category": "bogus_bucket"},
+        )
+        assert resp.status_code == 400
+        assert "bogus_bucket" in resp.json()["detail"]
+
+    def test_create_omitted_category_defers_to_resolver(self):
+        """Omitting category is fine — admin_db.set_setting resolves it from
+        the key via resolve_category(), so the create still succeeds (201)."""
+        client = TestClient(_build_app())
+        resp = client.post(
+            "/api/settings", json={"key": "new_setting_key", "value": "v"}
+        )
+        assert resp.status_code == 201
 
     def test_db_set_failure_returns_500(self):
         mock_db = _make_settings_db()

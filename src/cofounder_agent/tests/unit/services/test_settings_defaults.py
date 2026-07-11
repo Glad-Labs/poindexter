@@ -824,3 +824,92 @@ def test_rebuild_images_timeout_default_present():
     from services.settings_defaults import DEFAULTS
 
     assert DEFAULTS["post_edit_rebuild_images_timeout_s"] == "600"
+
+
+def test_seed_insert_binds_resolved_category(monkeypatch):
+    """The seed INSERT must bind resolve_category(key), never a literal
+    'general'. Otherwise every seeded key piles into the 'general' bucket
+    (the mess this whole taxonomy work fixes)."""
+    import services.settings_defaults as sd
+
+    captured: dict = {}
+
+    class _FakeConn:
+        async def execute(self, sql, *args):
+            if "INSERT INTO app_settings" in sql and "category" in sql:
+                captured["sql"] = sql
+                captured["args"] = args
+            return "INSERT 0 1"
+
+        # fetch/executemany stubbed so this test survives the boot-reconcile
+        # pass (which runs on the same connection).
+        async def fetch(self, sql, *args):
+            return []
+
+        async def executemany(self, sql, args):
+            return None
+
+    class _FakeAcquire:
+        async def __aenter__(self):
+            return _FakeConn()
+
+        async def __aexit__(self, *a):
+            return False
+
+    class _FakePool:
+        def acquire(self):
+            return _FakeAcquire()
+
+    # findings_alert_route_watermark resolves to 'observability'.
+    monkeypatch.setattr(sd, "DEFAULTS", {"findings_alert_route_watermark": "0.5"})
+    monkeypatch.setattr(sd, "METADATA", {})
+    _run(sd.seed_all_defaults(_FakePool()))
+
+    assert "'general'" not in captured["sql"]
+    assert "observability" in captured["args"]
+
+
+def test_boot_reconcile_restamps_only_wrong_categories(monkeypatch):
+    """seed_all_defaults re-stamps rows whose category != resolve_category(key)
+    and leaves already-correct rows untouched (0 writes in steady state)."""
+    import services.settings_defaults as sd
+
+    planted = [
+        {"key": "findings_alert_route_watermark", "category": "general"},  # -> observability
+        {"key": "qa_pass_threshold", "category": "quality"},  # already correct
+        {"key": "monthly_spend_limit_usd", "category": "general"},  # -> cost
+    ]
+    captured: dict = {}
+
+    class _FakeConn:
+        async def execute(self, sql, *args):
+            return "INSERT 0 0"
+
+        async def fetch(self, sql, *args):
+            return [dict(r) for r in planted]
+
+        async def executemany(self, sql, args):
+            captured["updates"] = list(args)
+
+    class _FakeAcquire:
+        async def __aenter__(self):
+            return _FakeConn()
+
+        async def __aexit__(self, *a):
+            return False
+
+    class _FakePool:
+        def acquire(self):
+            return _FakeAcquire()
+
+    monkeypatch.setattr(sd, "DEFAULTS", {})
+    monkeypatch.setattr(sd, "METADATA", {})
+    _run(sd.seed_all_defaults(_FakePool()))
+
+    updates = {key: cat for (cat, key) in captured["updates"]}
+    assert updates == {
+        "findings_alert_route_watermark": "observability",
+        "monthly_spend_limit_usd": "cost",
+    }
+    # the already-correct row is NOT rewritten
+    assert "qa_pass_threshold" not in updates

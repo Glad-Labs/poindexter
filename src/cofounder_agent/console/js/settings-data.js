@@ -6,18 +6,21 @@
    ────────────────────────────────────────────────────────────── */
 (function () {
   // category → friendly label + accent
+  // Mirror of services/settings_categories.py CATEGORIES (id + label, in order).
+  // Guarded by console/js/__tests__/api.categories.test.js against drift.
   const CATEGORIES = [
-    { id: 'identity', label: 'Identity' },
+    { id: 'identity', label: 'Identity & Site' },
     { id: 'pipeline', label: 'Pipeline' },
-    { id: 'models', label: 'Models' },
-    { id: 'model_roles', label: 'Model Roles' },
+    { id: 'content', label: 'Content & Knowledge' },
     { id: 'quality', label: 'Quality / QA' },
-    { id: 'content', label: 'Content' },
-    { id: 'cost', label: 'Cost Guard' },
-    { id: 'image', label: 'Imagery' },
-    { id: 'features', label: 'Features' },
+    { id: 'models', label: 'Models & LLM' },
+    { id: 'media', label: 'Media' },
+    { id: 'distribution', label: 'Distribution' },
+    { id: 'cost', label: 'Cost & Finance' },
     { id: 'observability', label: 'Observability' },
-    { id: 'prometheus', label: 'Prometheus' },
+    { id: 'self_healing', label: 'Brain & Self-Healing' },
+    { id: 'plugins', label: 'Plugins' },
+    { id: 'integrations', label: 'Integrations' },
     { id: 'infrastructure', label: 'Infrastructure' },
   ];
 
@@ -203,21 +206,21 @@
     {
       key: 'model_role_writer',
       value: 'ollama/glm-4.7-50b',
-      category: 'model_roles',
+      category: 'models',
       type: 'text',
       description: 'Writer role model',
     },
     {
       key: 'model_role_critic',
       value: 'ollama/glm-4.7-50b',
-      category: 'model_roles',
+      category: 'models',
       type: 'text',
       description: 'Quality scoring / structured JSON output',
     },
     {
       key: 'model_role_image_prompt',
       value: 'ollama/qwen3:8b',
-      category: 'model_roles',
+      category: 'models',
       type: 'text',
       description: 'Generates AI image prompts from post content',
     },
@@ -323,7 +326,7 @@
     {
       key: 'image_primary_source',
       value: 'ai_generation',
-      category: 'image',
+      category: 'media',
       type: 'select',
       options: ['pexels', 'ai_generation'],
       description: 'Primary image source',
@@ -331,14 +334,14 @@
     {
       key: 'enable_featured_image',
       value: 'true',
-      category: 'image',
+      category: 'media',
       type: 'bool',
       description: 'Generate featured images for posts',
     },
     {
       key: 'image_generation_model',
       value: 'sdxl_lightning',
-      category: 'image',
+      category: 'media',
       type: 'text',
       description: 'AI image generation model',
     },
@@ -346,7 +349,7 @@
       key: 'image_style_default',
       value:
         'professional digital art, abstract technology concept, blue and cyan color scheme, clean modern aesthetic, no people, no text',
-      category: 'image',
+      category: 'media',
       type: 'textarea',
       description: 'Default image-gen style for uncategorized posts',
     },
@@ -355,28 +358,28 @@
     {
       key: 'enable_memory_system',
       value: 'true',
-      category: 'features',
+      category: 'content',
       type: 'bool',
       description: 'Enable agent memory (pgvector)',
     },
     {
       key: 'enable_mcp_server',
       value: 'true',
-      category: 'features',
+      category: 'integrations',
       type: 'bool',
       description: 'Enable Model Context Protocol server',
     },
     {
       key: 'enable_training_capture',
       value: 'false',
-      category: 'features',
+      category: 'pipeline',
       type: 'bool',
       description: 'Capture training data from pipeline runs',
     },
     {
       key: 'redis_enabled',
       value: 'false',
-      category: 'features',
+      category: 'infrastructure',
       type: 'bool',
       description: 'Enable Redis for caching and pub/sub',
     },
@@ -423,7 +426,7 @@
     {
       key: 'prometheus.threshold.embeddings_stale_seconds',
       value: '21600',
-      category: 'prometheus',
+      category: 'observability',
       type: 'int',
       description:
         'Seconds without embeddings change before EmbeddingsStale fires (default 6h)',
@@ -431,14 +434,14 @@
     {
       key: 'prometheus.threshold.daily_spend_warning_usd',
       value: '4.0',
-      category: 'prometheus',
+      category: 'observability',
       type: 'float',
       description: 'Daily LLM spend (USD) that triggers a warning alert',
     },
     {
       key: 'prometheus.threshold.daily_spend_critical_usd',
       value: '5.0',
-      category: 'prometheus',
+      category: 'observability',
       type: 'float',
       description: 'Daily LLM spend (USD) that triggers a critical alert',
     },

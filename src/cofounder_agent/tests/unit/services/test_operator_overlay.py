@@ -22,6 +22,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from services import settings_defaults as _sd
+from services.settings_categories import resolve_category
 from services.settings_defaults import (
     DEFAULTS,
     NICHE_OVERRIDE_COLUMNS,
@@ -127,11 +128,13 @@ async def test_apply_compares_against_oss_default_and_counts_changes():
     # CRUD state, never overlay-seeded (test_apply_does_not_seed_remediation_rules).
     assert not [q for q, _ in calls if "remediation_rules" in q]
     assert len(calls) == len(setting_calls) + len(niche_calls)
-    for _query, (key, value, _desc, oss_default) in setting_calls:
+    for _query, (key, value, _desc, oss_default, category) in setting_calls:
         # The overlay only overwrites the public OSS default for that key...
         assert oss_default == DEFAULTS.get(key)
         # ...with the operator's private value.
         assert value == overrides[key]
+        # ...and stamps the resolver's canonical category (bound as $5).
+        assert category == resolve_category(key)
     assert applied == sum(1 for i in range(1, len(calls) + 1) if i % 2)
 
 

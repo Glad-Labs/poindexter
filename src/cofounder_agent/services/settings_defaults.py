@@ -59,6 +59,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.settings_categories import resolve_category
+
 # Every value is stored as `str` because `app_settings.value` is a TEXT
 # column. Numeric / bool consumers parse via `site_config.get_int()`,
 # `get_float()`, `get_bool()` etc.
@@ -2248,13 +2250,14 @@ async def seed_all_defaults(pool: Any) -> int:
                 INSERT INTO app_settings
                     (key, value, category, description, is_secret, is_active, updated_at)
                 VALUES
-                    ($1, $2, 'general',
+                    ($1, $2, $3,
                      'Auto-seeded by services.settings_defaults (#379)',
                      FALSE, TRUE, NOW())
                 ON CONFLICT (key) DO NOTHING
                 """,
                 key,
                 value,
+                resolve_category(key),
             )
             try:
                 # Status looks like "INSERT 0 N"
@@ -2291,6 +2294,22 @@ async def seed_all_defaults(pool: Any) -> int:
                 )
         except Exception:  # silent-ok: lifecycle columns absent (pre-20260618 schema); INSERT pass ran, metadata deferred until migration runs
             pass
+
+        # Category reconcile: converge every row's category onto the resolver's
+        # canonical answer. Converges prod's 698-in-'general' pile on the first
+        # boot and self-heals any future drift (steady-state writes 0 rows).
+        # category is display-only, so overwriting is safe. Single source of
+        # truth: services.settings_categories.resolve_category.
+        cat_rows = await conn.fetch("SELECT key, category FROM app_settings")
+        cat_updates = [
+            (resolve_category(r["key"]), r["key"])
+            for r in cat_rows
+            if r["category"] != resolve_category(r["key"])
+        ]
+        if cat_updates:
+            await conn.executemany(
+                "UPDATE app_settings SET category = $1 WHERE key = $2", cat_updates
+            )
 
     return inserted
 
@@ -2355,7 +2374,7 @@ async def apply_operator_overrides(pool: Any) -> int:
                 """
                 INSERT INTO app_settings
                     (key, value, category, description, is_secret, is_active, updated_at)
-                VALUES ($1, $2, 'general', $3, FALSE, TRUE, NOW())
+                VALUES ($1, $2, $5, $3, FALSE, TRUE, NOW())
                 ON CONFLICT (key) DO UPDATE
                     SET value = EXCLUDED.value, updated_at = NOW()
                     WHERE app_settings.value = $4
@@ -2365,6 +2384,7 @@ async def apply_operator_overrides(pool: Any) -> int:
                 operator_value,
                 _OPERATOR_OVERLAY_DESC,
                 oss_default,
+                resolve_category(key),
             )
             if applied_key is not None:
                 applied += 1

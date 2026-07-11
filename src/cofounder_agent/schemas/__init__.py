@@ -33,7 +33,6 @@ from .model_converter import ModelConverter
 from .settings_schemas import (
     SettingBase,
     SettingBulkUpdateRequest,
-    SettingCategoryEnum,
     SettingCreate,
     SettingDataTypeEnum,
     SettingEnvironmentEnum,
@@ -88,7 +87,6 @@ __all__ = [
     "ProgressInfo",
     # Settings
     "SettingDataTypeEnum",
-    "SettingCategoryEnum",
     "SettingEnvironmentEnum",
     "SettingBase",
     "SettingCreate",

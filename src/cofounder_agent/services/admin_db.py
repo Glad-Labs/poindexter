@@ -23,6 +23,7 @@ from schemas.database_response_models import (
 )
 from schemas.model_converter import ModelConverter
 from services.logger_config import get_logger
+from services.settings_categories import resolve_category
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
@@ -491,6 +492,12 @@ class AdminDatabase(DatabaseServiceMixin):
         del display_name
         try:
             value_str = json.dumps(value) if isinstance(value, (dict, list)) else str(value)
+            # Close the third category writer: an ad-hoc set_setting with no
+            # category previously defaulted to 'general' (and, on UPDATE, could
+            # clobber a good category back to 'general'). Defer to the resolver
+            # so every writer agrees. See services.settings_categories.
+            if category is None:
+                category = resolve_category(key)
 
             async with self.pool.acquire() as conn:
                 await conn.execute(
