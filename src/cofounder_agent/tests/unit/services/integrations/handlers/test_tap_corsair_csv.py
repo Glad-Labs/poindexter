@@ -531,3 +531,68 @@ class TestCorsairCsvHandler:
         assert result["records"] == 0
         assert result["reason"] == "no new bytes"
         conn.executemany.assert_not_called()
+
+    async def test_fan_rpm_columns_ingest(self, tmp_path: Path):
+        """Consolidation contract: iCUE case/PSU fan-RPM columns flow into
+        ``fan_*`` samples through the generic metrics map.
+
+        This is the ingest path that replaces HWiNFO's ``hwinfo_fan_rpm``
+        as the fan source on the Hardware & Power dashboard once HWiNFO is
+        dropped (it destabilises the HX1500i when iCUE also owns the USB
+        HID). The tap itself is column-agnostic; this pins two real-world
+        details the fan mapping depends on:
+
+        * The **HX1500i PSU fan is semi-passive** and idles at ``0RPM``
+          under low load. ``_parse_value("0RPM")`` returns ``0.0`` (not
+          ``None``), so the zero must ingest — dropping it would blank the
+          PSU-fan panel and read as "sensor missing".
+        * iCUE emits **leading-space header keys** (``" iCUE LINK QX RGB
+          #2: Fan"``). ``csv.reader`` preserves the space, so the seed's
+          metric key must include it for an exact match — this test would
+          fail if the space were ever trimmed on either side.
+        """
+        # Header mirrors the live CSV: "HX1500i Fan" sits flush after its
+        # comma (no leading space); the QX/roof fans carry iCUE's leading
+        # space. Splitting on "," reproduces the exact seed keys.
+        header = "Timestamp,HX1500i Fan, iCUE LINK QX RGB #2: Fan, Roof Rear QX: Fan\n"
+        rows = (
+            "12/5/2026 09:00:00 AM,0RPM,623RPM,630RPM\n"
+            "12/5/2026 09:00:30 AM,0RPM,619RPM,631RPM\n"
+        )
+        _write_csv(tmp_path, "corsair_cue_20260512_090000.csv", header + rows)
+        pool, conn = _make_pool()
+        config = {
+            "directory": str(tmp_path),
+            "filename_glob": "corsair_cue_*.csv",
+            "poll_interval_minutes": 0,
+            "max_rows_per_run": 10000,
+            "metrics": {
+                "HX1500i Fan": {"name": "fan_psu_rpm", "unit": "rpm"},
+                " iCUE LINK QX RGB #2: Fan": {
+                    "name": "fan_qx_rgb_2_rpm", "unit": "rpm",
+                },
+                " Roof Rear QX: Fan": {"name": "fan_roof_rear_rpm", "unit": "rpm"},
+            },
+        }
+        row = {"id": "r1", "config": config, "state": {}}
+
+        result = await corsair_csv(None, site_config=None, row=row, pool=pool)
+
+        assert result["records"] == 6  # 3 fans × 2 rows
+        assert result["rows_parsed"] == 2
+        samples = conn.executemany.await_args.args[1]
+        # (source, metric_name, value, unit, sampled_at)
+        assert {s[0] for s in samples} == {"corsair_csv"}
+        assert {s[1] for s in samples} == {
+            "fan_psu_rpm", "fan_qx_rgb_2_rpm", "fan_roof_rear_rpm",
+        }
+        assert {s[3] for s in samples} == {"rpm"}
+        # Semi-passive PSU fan: both rows read 0RPM → 0.0, not dropped.
+        psu = [s for s in samples if s[1] == "fan_psu_rpm"]
+        assert len(psu) == 2
+        assert all(s[2] == 0.0 for s in psu)
+        # A spinning case fan parses its RPM value cleanly.
+        qx = sorted(
+            (s for s in samples if s[1] == "fan_qx_rgb_2_rpm"), key=lambda s: s[4],
+        )
+        assert [s[2] for s in qx] == [623.0, 619.0]

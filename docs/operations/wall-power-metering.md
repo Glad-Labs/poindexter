@@ -3,18 +3,27 @@
 The Hardware & Power dashboard's `psu_total_power_watts` panel and the brain's
 electricity-cost calc want **true wall power** — the AC watts actually pulled
 from the outlet. The Corsair HX1500i reports this over USB, but only iCUE can
-own that USB HID (it drives the pump and fans), and any second reader (HWiNFO,
-AIDA64, liquidctl) contends with iCUE and crashes it. The robust,
-contention-free source is a smart plug that meters the outlet directly.
+own that USB HID (it drives the pump and fans). Any second process that reaches
+for the **HX1500i itself** contends with iCUE and crashes its PSU sensor — that's
+why HWiNFO64 was retired (2026-07-10): it read the HXi over the same HID and
+destabilised iCUE unless the Corsair integration was disabled. **AIDA64 is safe
+to run alongside iCUE** precisely because it does _not_ read the HX1500i — it
+reads the CPU/GPU/motherboard sensors over other interfaces and never touches the
+contended HID. (The flip side: AIDA64 exposes no Corsair PSU sensor, so it cannot
+populate `psu_total_power_watts` either.) The robust, contention-free source of
+true wall power is a smart plug that meters the outlet directly.
 
 ## Source priority
 
 `brain/psu_power.py::select_power_source` picks, best → worst:
 
-1. **`psu_total_power_watts`** — real metered wall power (a Shelly outlet plug,
-   or HWiNFO reading the HXi where that happens to coexist with iCUE). Primary.
+1. **`psu_total_power_watts`** — real metered wall power from a Shelly outlet
+   plug (`shelly_psu_url`). Primary. _(Before the HWiNFO64 retirement this metric
+   could also come from HWiNFO reading the HXi; that path is gone — see above.)_
 2. **iCUE CSV tap** — `sensor_samples.psu_power_in`, the always-on fallback
-   (`tap.corsair_csv`). Used when the primary metric is absent.
+   (`tap.corsair_csv`). This is the live PSU source today until a Shelly plug is
+   wired, and the same tap now also feeds the Wall/DC Output and Fan panels. Used
+   when the primary metric is absent.
 3. **`system_total_power_estimate_watts`** — CPU + GPU + overhead software
    estimate. Degraded; the brain pages the operator when it falls to this.
 
@@ -26,6 +35,27 @@ fight iCUE, cannot be crashed by it, and measures the true metered draw
 (including PSU conversion loss) — the number the utility actually bills. It is
 also reboot-proof: no software toggle can silently stop it the way iCUE's CSV
 logging does.
+
+## Sensor sources after the HWiNFO64 retirement
+
+With HWiNFO64 dropped (2026-07-10), the live hardware telemetry splits cleanly by
+interface and nothing contends with iCUE for the HX1500i:
+
+| Signal                       | Source               | Path                                                                    | Dashboard panel                    |
+| ---------------------------- | -------------------- | ----------------------------------------------------------------------- | ---------------------------------- |
+| CPU / GPU / board **temps**  | AIDA64 shared memory | Prometheus `aida64_temperature_celsius`                                 | Temperatures (AIDA64)              |
+| Rail + core **voltages**     | AIDA64 shared memory | Prometheus `aida64_voltage_volts`                                       | Voltages (AIDA64)                  |
+| CPU package + GPU **power**  | AIDA64 shared memory | Prometheus `aida64_power_watts`                                         | Component Power — live (AIDA64)    |
+| **PSU** wall / DC power      | Corsair iCUE CSV     | `sensor_samples` (`source=corsair_csv`, `psu_power_in`/`psu_power_out`) | Wall Power / DC Output (HX1500i)   |
+| Case + PSU **fan RPMs**      | Corsair iCUE CSV     | `sensor_samples` (`source=corsair_csv`, `fan_*`)                        | Fans (iCUE)                        |
+| True **wall power** (billed) | Shelly smart plug    | Prometheus `psu_total_power_watts`                                      | Power Over Time / Electricity Cost |
+
+AIDA64 owns everything it can read over SMBus/PCIe; the iCUE CSV owns everything
+behind the Corsair USB HID (the PSU rails and the LINK fan controller — neither
+of which AIDA64 can see). The exporter's HWiNFO reader (`get_hwinfo_metrics` in
+`scripts/nvidia-smi-exporter.py`) stays as a no-op when the shared memory is
+absent, so an operator who runs HWiNFO _without_ the Corsair integration can opt
+back in — it just isn't part of the default Glad Labs sensor set anymore.
 
 ## Setup
 

@@ -21,7 +21,7 @@
   "tags": ["hardware", "gpu", "power", "infra"],
   "title": "Hardware & Power",
   "uid": "hardware-power",
-  "version": 3,
+  "version": 4,
   "panels": [
     {
       "type": "row",
@@ -976,7 +976,7 @@
     {
       "id": 50,
       "type": "row",
-      "title": "Sensors — HWiNFO / AIDA64 (Prometheus)",
+      "title": "Sensors — AIDA64 + iCUE (live)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -988,7 +988,8 @@
     {
       "id": 51,
       "type": "timeseries",
-      "title": "Temperatures (HWiNFO)",
+      "title": "Temperatures (AIDA64)",
+      "description": "Live temps from AIDA64 shared memory (Prometheus aida64_temperature_celsius). Labels are AIDA64 passthrough — adjust the regex if your sensor set differs.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1001,7 +1002,7 @@
       },
       "targets": [
         {
-          "expr": "hwinfo_temperature_celsius{label=~\"CPU Package|CPU .Tctl/Tdie.|GPU Temperature|GPU Memory Junction Temperature|PSU Temperature|Drive Temperature\"}",
+          "expr": "aida64_temperature_celsius{label=~\"CPU Package|CPU Diode|CCD #1|CCD #2|VRM|GPU1|GPU1 Memory|Motherboard|DIMM2|DIMM4\"}",
           "legendFormat": "{{label}}",
           "refId": "A"
         }
@@ -1016,10 +1017,11 @@
     {
       "id": 52,
       "type": "timeseries",
-      "title": "Fans (HWiNFO)",
+      "title": "Fans (iCUE)",
+      "description": "Case + PSU fan RPMs from the Corsair iCUE LINK CSV (sensor_samples, source=corsair_csv, fan_* metrics). AIDA64/HWiNFO can't see the iCUE fan controller, so this reads the same CSV tap that feeds PSU power. Empty until the corsair_csv tap config maps the fan_* columns.",
       "datasource": {
-        "type": "prometheus",
-        "uid": "local-prometheus"
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
       },
       "gridPos": {
         "h": 8,
@@ -1029,8 +1031,13 @@
       },
       "targets": [
         {
-          "expr": "hwinfo_fan_rpm{label=~\"PSU Fan|GPU Fan1|GPU Fan2|Fan 2|Fan 3|Fan 4|Fan 5|Fan 6|Fan 7\"}",
-          "legendFormat": "{{label}}",
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT sampled_at AS time, metric_name AS metric, metric_value AS value FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name LIKE 'fan_%' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
           "refId": "A"
         }
       ],
@@ -1072,7 +1079,8 @@
     {
       "id": 54,
       "type": "timeseries",
-      "title": "PSU Power — live (HWiNFO)",
+      "title": "Component Power — live (AIDA64)",
+      "description": "CPU package + GPU board power from AIDA64 (Prometheus aida64_power_watts). AIDA64 does not expose the Corsair PSU, so PSU wall/DC power lives on the Power row above (sourced from the iCUE CSV).",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1085,19 +1093,9 @@
       },
       "targets": [
         {
-          "expr": "hwinfo_power_watts{label=\"PSU Power In (est)\"}",
-          "legendFormat": "Wall In (est)",
+          "expr": "aida64_power_watts{label=~\"CPU Package|GPU1\"}",
+          "legendFormat": "{{label}}",
           "refId": "A"
-        },
-        {
-          "expr": "hwinfo_power_watts{label=\"PSU Power Out\"}",
-          "legendFormat": "DC Out",
-          "refId": "B"
-        },
-        {
-          "expr": "psu_total_power_watts",
-          "legendFormat": "Canonical (cost)",
-          "refId": "C"
         }
       ],
       "fieldConfig": {
@@ -1110,7 +1108,8 @@
     {
       "id": 55,
       "type": "timeseries",
-      "title": "Voltages (HWiNFO)",
+      "title": "Voltages (AIDA64)",
+      "description": "Live rail + core voltages from AIDA64 shared memory (Prometheus aida64_voltage_volts). The .12 V / .5 V / .3.3 V patterns match AIDA64's +-prefixed rail labels.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1123,7 +1122,7 @@
       },
       "targets": [
         {
-          "expr": "hwinfo_voltage_volts{label=~\"Vcore|.12V|.5V|.3.3V\"}",
+          "expr": "aida64_voltage_volts{label=~\"CPU Core|SoC|VDDIO|.12 V|.5 V|.3.3 V\"}",
           "legendFormat": "{{label}}",
           "refId": "A"
         }
