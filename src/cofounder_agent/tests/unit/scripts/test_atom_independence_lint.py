@@ -49,7 +49,7 @@ class TestStageImportFlagged:
         assert _count(src) == 1
 
     def test_plain_import_of_stage_is_flagged(self):
-        src = "import modules.content.stages.replace_inline_images\n"
+        src = "import modules.content.stages.url_validation\n"
         assert _count(src) == 1
 
     def test_lazy_function_local_stage_import_is_flagged(self):
@@ -114,7 +114,7 @@ class TestSiblingAtomRuleScope:
         # so a sibling-atom import isn't its concern — but a STAGE import still is.
         src = (
             "from modules.content.atoms import two_pass_writer\n"
-            "from modules.content.stages.replace_inline_images import _try_image_gen\n"
+            "from modules.content.stages.url_validation import UrlValidationStage\n"
         )
         assert _count(src, check_sibling_atoms=False) == 1
 

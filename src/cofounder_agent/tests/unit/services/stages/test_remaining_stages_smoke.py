@@ -1,14 +1,17 @@
 """Smoke tests for the rest of the Phase E stages.
 
 Each new Stage gets a thorough test suite OR a full-port one;
-replace_inline_images + source_featured_image are thin wrappers over
-legacy functions, so their tests focus on the adapter contract (stage
-conforms to Protocol, context-to-legacy-args shape, legacy-result-to-
-context-updates mapping) rather than re-testing the legacy bodies.
+source_featured_image is a thin wrapper over legacy functions, so its
+tests focus on the adapter contract (stage conforms to Protocol,
+context-to-legacy-args shape, legacy-result-to-context-updates mapping)
+rather than re-testing the legacy bodies.
 
 For the ported stages (generate_seo_metadata, generate_media_scripts,
 capture_training_data, finalize_task), we cover the full happy path +
-a couple of edge cases per stage.
+a couple of edge cases per stage. ``TestInlineImageHelpersPure`` keeps a
+few direct unit tests for the shared ``atoms/_image_helpers`` pure
+functions (cleanup + HTML injection) that the deleted
+``ReplaceInlineImagesStage`` used to exercise.
 """
 
 from __future__ import annotations
@@ -30,17 +33,15 @@ from modules.content.stages.generate_seo_metadata import (
     GenerateSeoMetadataStage,
     _normalize_keywords,
 )
-from modules.content.stages.replace_inline_images import ReplaceInlineImagesStage
 from modules.content.stages.source_featured_image import SourceFeaturedImageStage
 from plugins.stage import Stage
 
 # ---------------------------------------------------------------------------
-# Protocol conformance — all six new stages in one sweep.
+# Protocol conformance — all five new stages in one sweep.
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.parametrize("stage_cls,expected_name,expected_halts", [
-    (ReplaceInlineImagesStage, "replace_inline_images", False),
     (SourceFeaturedImageStage, "source_featured_image", False),
     (GenerateSeoMetadataStage, "generate_seo_metadata", True),
     (GenerateMediaScriptsStage, "generate_media_scripts", False),
@@ -446,104 +447,7 @@ class TestFinalizeTask:
         assert len(db.update_task_calls) == 1
 
 
-# ---------------------------------------------------------------------------
-# Wrapper stages — adapter contract only
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-class TestReplaceInlineImagesAdapter:
-    """Direct-port behavior tests. Mocks are at the external-dep boundary."""
-
-    async def test_empty_content_skipped(self):
-        result = await ReplaceInlineImagesStage().execute(
-            {"content": "", "task_id": "t", "database_service": MagicMock()}, {},
-        )
-        assert result.ok is True
-        assert result.metrics.get("skipped") is True
-
-    async def test_missing_task_id_returns_not_ok(self):
-        result = await ReplaceInlineImagesStage().execute(
-            {"content": "body"}, {},
-        )
-        assert result.ok is False
-        assert "task_id" in result.detail
-
-    async def test_no_placeholders_and_no_agent_plan_leaves_content_alone(self):
-
-        # Agent returns no suggestions → placeholders remain empty
-        async def no_plan(*_a, **_kw):
-            return SimpleNamespace(images=[], featured_image=None)
-
-        db = MagicMock()
-        db.update_task = AsyncMock()
-        ctx: dict[str, Any] = {
-            "task_id": "t1", "topic": "T", "content": "no placeholders here",
-            "database_service": db, "image_service": MagicMock(),
-        }
-        with patch(
-            "services.image_decision_agent.plan_images",
-            new=AsyncMock(side_effect=no_plan),
-        ):
-            result = await ReplaceInlineImagesStage().execute(ctx, {})
-        assert result.ok is True
-        assert result.context_updates["stages"]["2c_inline_images_replaced"] is False
-        # db.update_task not called — no content change
-        db.update_task.assert_not_called()
-
-    async def test_placeholder_gets_replaced_via_pexels_fallback(self):
-        # Force image-gen to fail (by making the helper return None), verify
-        # Pexels fallback takes over and the placeholder becomes an <img>.
-        img_obj = SimpleNamespace(url="https://pexels.example/cat.jpg", photographer="Jane")
-        image_service = SimpleNamespace(search_featured_image=AsyncMock(return_value=img_obj))
-
-        db = MagicMock()
-        db.update_task = AsyncMock()
-        ctx: dict[str, Any] = {
-            "task_id": "t1", "topic": "Cats", "content": "Intro\n\n[IMAGE-1: cat]\n\nOutro",
-            "database_service": db, "image_service": image_service,
-        }
-
-        # Stage calls _normalize_text via lazy import into content_router_service
-        with patch(
-            "modules.content.atoms._image_helpers._try_image_gen",
-            AsyncMock(return_value=None),
-        ), patch(
-            "services.text_utils.normalize_text", side_effect=lambda x: x,
-        ):
-            result = await ReplaceInlineImagesStage().execute(ctx, {})
-        assert result.ok is True
-        body = result.context_updates["content"]
-        assert "pexels.example/cat.jpg" in body
-        assert "Jane" in body
-        assert "[IMAGE-1" not in body
-        assert result.context_updates["inline_images_replaced"] == 1
-
-    async def test_placeholder_stripped_when_both_strategies_fail(self):
-        db = MagicMock()
-        db.update_task = AsyncMock()
-        image_service = SimpleNamespace(
-            search_featured_image=AsyncMock(return_value=None),
-        )
-        ctx: dict[str, Any] = {
-            "task_id": "t1", "topic": "X",
-            "content": "Intro [IMAGE-1: something] outro.",
-            "database_service": db, "image_service": image_service,
-        }
-        with patch(
-            "modules.content.atoms._image_helpers._try_image_gen",
-            AsyncMock(return_value=None),
-        ), patch(
-            "services.text_utils.normalize_text", side_effect=lambda x: x,
-        ):
-            result = await ReplaceInlineImagesStage().execute(ctx, {})
-        assert result.ok is True
-        body = result.context_updates["content"]
-        assert "[IMAGE-1" not in body
-        assert result.context_updates["inline_images_replaced"] == 0
-
-
-class TestReplaceInlineImagesPureHelpers:
+class TestInlineImageHelpersPure:
     def test_cleanup_leaked_descriptions_strips_italic_scene(self):
         from modules.content.atoms._image_helpers import _cleanup_leaked_descriptions
         body = (
@@ -569,51 +473,6 @@ class TestReplaceInlineImagesPureHelpers:
         # Only the first should be replaced
         assert out.count("<img") == 1
         assert "[IMAGE-1: other]" in out
-
-
-@pytest.mark.asyncio
-class TestReplaceInlineImagesAltTextScrub:
-    """Gitea #240 — alt text must not leak the ``||source:style||`` planner hint."""
-
-    async def _run_with_pexels(self, desc: str) -> str:
-        """Drive one placeholder through the Pexels fallback, return the rendered alt."""
-        pexels_img = SimpleNamespace(url="https://pex.example/x.jpg", photographer="Jane")
-        image_service = SimpleNamespace(
-            search_featured_image=AsyncMock(return_value=pexels_img),
-        )
-        db = MagicMock()
-        db.update_task = AsyncMock()
-        ctx: dict[str, Any] = {
-            "task_id": "t1", "topic": "X",
-            "content": f"Intro [IMAGE-1: {desc}] outro.",
-            "database_service": db, "image_service": image_service,
-        }
-        with patch(
-            "modules.content.atoms._image_helpers._try_image_gen",
-            AsyncMock(return_value=None),
-        ), patch(
-            "services.text_utils.normalize_text", side_effect=lambda x: x,
-        ):
-            result = await ReplaceInlineImagesStage().execute(ctx, {})
-        body = result.context_updates["content"]
-        # Extract alt="..." value
-        import re as _re
-        m = _re.search(r'alt="([^"]*)"', body)
-        return m.group(1) if m else ""
-
-    async def test_strips_trailing_source_hint(self):
-        alt = await self._run_with_pexels("A server room. ||pexels:real-world objects||")
-        assert "pexels" not in alt.lower()
-        assert "A server room." in alt
-
-    async def test_strips_image_gen_hint_too(self):
-        alt = await self._run_with_pexels("Cinematic blueprint ||image_gen:editorial||")
-        assert "image_gen" not in alt.lower()
-        assert "Cinematic blueprint" in alt
-
-    async def test_preserves_normal_alt(self):
-        alt = await self._run_with_pexels("Just a simple description")
-        assert alt == "Just a simple description"
 
 
 @pytest.mark.asyncio

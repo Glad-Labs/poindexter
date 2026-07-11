@@ -891,7 +891,6 @@ def get_core_samples() -> dict[str, list[Any]]:
         ),
         ("stages", "modules.content.stages.quality_evaluation", "QualityEvaluationStage"),
         ("stages", "modules.content.stages.url_validation", "UrlValidationStage"),
-        ("stages", "modules.content.stages.replace_inline_images", "ReplaceInlineImagesStage"),
         ("stages", "modules.content.stages.source_featured_image", "SourceFeaturedImageStage"),
         ("stages", "modules.content.stages.caption_images", "CaptionImagesStage"),
         ("stages", "modules.content.stages.generate_seo_metadata", "GenerateSeoMetadataStage"),

@@ -1,0 +1,254 @@
+"""Live-path behavior tests for the image atoms.
+
+These pin behaviors that used to be tested through ``ReplaceInlineImagesStage``
+(a zombie stage deleted 2026-07 once its helper web moved into
+``atoms/_image_helpers.py``). The behaviors are LIVE on the graph_def path via
+the ``content.plan_image_markers`` / ``content.generate_images`` atoms, so the
+coverage moves onto the atoms that actually run:
+
+* VRAM guard — ``content.plan_image_markers`` unloads the writer LLM before the
+  image-gen phase (2026-05-19 jank-audit #4). The ordering guarantee (unload
+  before any ``try_image_gen``) is now structural: ``plan_image_markers`` is a
+  distinct graph node that precedes ``generate_images``, so it can't race the
+  render within one method the way the monolithic stage could.
+* media_assets producer hook — ``content.generate_images`` records a
+  ``media_assets`` row for every successful inline image (GH#161), on both the
+  image-gen and Pexels branches.
+* task_id attribution — the originating pipeline ``task_id`` threads from the
+  atom state into ``try_image_gen`` so ``gpu_task_sessions`` / cost_logs roll up
+  per task (Glad-Labs/poindexter#157).
+"""
+
+from __future__ import annotations
+
+from types import SimpleNamespace
+from typing import Any
+from unittest.mock import AsyncMock, patch
+
+import pytest
+
+from modules.content.atoms import content_generate_images, content_plan_image_markers
+
+
+def _site_config(unload_enabled: bool = True) -> Any:
+    return SimpleNamespace(
+        get=lambda key, default="": default,
+        get_int=lambda key, default=0: default,
+        get_float=lambda key, default=0.0: default,
+        get_bool=lambda key, default=False: (
+            unload_enabled
+            if key == "pipeline_writer_unload_before_image_gen"
+            else default
+        ),
+    )
+
+
+# ---------------------------------------------------------------------------
+# VRAM guard — content.plan_image_markers
+# ---------------------------------------------------------------------------
+
+
+class TestPlanImageMarkersVramGuard:
+    @pytest.mark.asyncio
+    async def test_unloads_writer_with_site_config_and_atom_label(self):
+        """The atom unloads the writer once, threading the DI site_config and
+        its own node label (so the log marker points at the atom, not the
+        deleted stage)."""
+        sc = _site_config()
+        unload_mock = AsyncMock(return_value=["gemma3:27b"])
+
+        with patch(
+            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+            new=unload_mock,
+        ):
+            result = await content_plan_image_markers.run({
+                "content": "Intro\n\n[IMAGE-1: cat]\n\nOutro",
+                "topic": "Cats",
+                "site_config": sc,
+            })
+
+        unload_mock.assert_awaited_once()
+        kwargs = unload_mock.await_args.kwargs
+        assert kwargs["site_config"] is sc
+        assert kwargs["stage_label"] == "content.plan_image_markers"
+        # Existing marker was parsed into an image_plan (no decision-agent call).
+        assert result["image_plans"] == [{"num": "1", "desc": "cat"}]
+
+    @pytest.mark.asyncio
+    async def test_skips_unload_when_no_content(self):
+        """Empty content short-circuits before the unload sweep — the ~3-5 s
+        unload tax is wasted if there's no image-gen work coming."""
+        unload_mock = AsyncMock(return_value=[])
+
+        with patch(
+            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+            new=unload_mock,
+        ):
+            result = await content_plan_image_markers.run({
+                "content": "",
+                "topic": "Cats",
+                "site_config": _site_config(),
+            })
+
+        assert result == {}
+        unload_mock.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_hands_gate_off_site_config_through_to_helper(self):
+        """The atom never second-guesses the gate — the per-operator decision
+        lives in app_settings; the atom always hands the SiteConfig through and
+        lets ``maybe_unload_writer_before_image_gen`` no-op internally."""
+        sc = _site_config(unload_enabled=False)
+        unload_mock = AsyncMock(return_value=[])
+
+        with patch(
+            "services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen",
+            new=unload_mock,
+        ):
+            await content_plan_image_markers.run({
+                "content": "Intro\n\n[IMAGE-1: cat]\n\nOutro",
+                "topic": "Cats",
+                "site_config": sc,
+            })
+
+        unload_mock.assert_awaited_once()
+        assert unload_mock.await_args.kwargs["site_config"] is sc
+
+
+# ---------------------------------------------------------------------------
+# media_assets producer hook + task_id — content.generate_images
+# ---------------------------------------------------------------------------
+
+
+class TestGenerateImagesProducerHook:
+    def _state(self, **over: Any) -> dict[str, Any]:
+        base: dict[str, Any] = {
+            "image_plans": [{"num": "1", "desc": "a cat on a sofa"}],
+            "topic": "Cats",
+            "task_id": "task-abc-123",
+            "post_id": "post-1",
+            "site_config": _site_config(),
+            "image_service": SimpleNamespace(),
+        }
+        base.update(over)
+        return base
+
+    @pytest.mark.asyncio
+    async def test_image_gen_success_records_media_asset(self):
+        """A successful image-gen render records a media_assets row tagged with
+        the image.image_gen provider + the placeholder number + task_id."""
+        record_mock = AsyncMock(return_value=None)
+
+        with patch(
+            "modules.content.atoms._image_helpers.try_image_gen",
+            new=AsyncMock(return_value="https://r2.example/gen-1.png"),
+        ), patch(
+            "modules.content.atoms._image_helpers.record_inline_image_asset",
+            new=record_mock,
+        ):
+            result = await content_generate_images.run(self._state())
+
+        record_mock.assert_awaited_once()
+        kwargs = record_mock.await_args.kwargs
+        assert kwargs["public_url"] == "https://r2.example/gen-1.png"
+        assert kwargs["provider_plugin"] == "image.image_gen"
+        assert kwargs["metadata"]["placeholder_num"] == "1"
+        assert kwargs["metadata"]["task_id"] == "task-abc-123"
+        assert result["image_results"][0]["source"] == "image_gen"
+
+    @pytest.mark.asyncio
+    async def test_pexels_fallback_records_media_asset(self):
+        """When image-gen yields nothing, the Pexels fallback still records a
+        media_assets row (image.pexels provider)."""
+        record_mock = AsyncMock(return_value=None)
+
+        with patch(
+            "modules.content.atoms._image_helpers.try_image_gen",
+            new=AsyncMock(return_value=None),
+        ), patch(
+            "modules.content.atoms._image_helpers.try_pexels",
+            new=AsyncMock(return_value=("https://pexels.example/cat.jpg", "Jane")),
+        ), patch(
+            "modules.content.atoms._image_helpers.record_inline_image_asset",
+            new=record_mock,
+        ):
+            result = await content_generate_images.run(self._state())
+
+        record_mock.assert_awaited_once()
+        assert record_mock.await_args.kwargs["provider_plugin"] == "image.pexels"
+        assert result["image_results"][0]["source"] == "pexels"
+
+    @pytest.mark.asyncio
+    async def test_threads_task_id_into_try_image_gen(self):
+        """The originating task_id reaches ``try_image_gen`` so the GPU session
+        rows attribute to the pipeline task (Glad-Labs/poindexter#157)."""
+        captured: dict[str, Any] = {}
+
+        async def fake_try_image_gen(num, search_query, topic, *, site_config, task_id, platform=None):
+            captured["task_id"] = task_id
+            captured["num"] = num
+            return None  # force Pexels fallback so the rest of the atom runs
+
+        with patch(
+            "modules.content.atoms._image_helpers.try_image_gen",
+            new=AsyncMock(side_effect=fake_try_image_gen),
+        ), patch(
+            "modules.content.atoms._image_helpers.try_pexels",
+            new=AsyncMock(return_value=None),
+        ):
+            await content_generate_images.run(self._state(task_id="task-xyz-789"))
+
+        assert captured["task_id"] == "task-xyz-789"
+        assert captured["num"] == "1"
+
+
+# ---------------------------------------------------------------------------
+# media_assets recorder contract — record_inline_image_asset (GH#161)
+# ---------------------------------------------------------------------------
+#
+# These pin the recorder call shape + the no-post_id skip directly on the shared
+# helper (its proper home), migrated off the deleted ReplaceInlineImagesStage
+# that used to drive them. Both image atoms call this helper, so the contract is
+# covered once here rather than per-caller.
+
+
+class TestRecordInlineImageAssetContract:
+    @pytest.mark.asyncio
+    async def test_records_inline_image_row_with_provider_and_type(self):
+        from modules.content.atoms._image_helpers import record_inline_image_asset
+
+        recorder = AsyncMock(return_value="asset-uuid")
+        with patch("services.media_asset_recorder.record_media_asset", recorder):
+            await record_inline_image_asset(
+                site_config=SimpleNamespace(_pool=object()),
+                post_id="post-uuid-1",
+                public_url="https://r2.example/inline-1.png",
+                provider_plugin="image.image_gen",
+                width=1024, height=1024, mime_type="image/webp",
+                metadata={"placeholder_num": "1"},
+            )
+
+        recorder.assert_awaited_once()
+        kwargs = recorder.await_args.kwargs
+        assert kwargs["asset_type"] == "inline_image"
+        assert kwargs["post_id"] == "post-uuid-1"
+        assert kwargs["public_url"] == "https://r2.example/inline-1.png"
+        assert kwargs["provider_plugin"] == "image.image_gen"
+
+    @pytest.mark.asyncio
+    async def test_no_post_id_skips_recording(self):
+        """Early-pipeline runs before the post row exists skip the insert."""
+        from modules.content.atoms._image_helpers import record_inline_image_asset
+
+        recorder = AsyncMock()
+        with patch("services.media_asset_recorder.record_media_asset", recorder):
+            await record_inline_image_asset(
+                site_config=SimpleNamespace(_pool=object()),
+                post_id=None,
+                public_url="https://r2.example/x.png",
+                provider_plugin="image.image_gen",
+                width=1024, height=1024, mime_type="image/webp",
+                metadata={},
+            )
+
+        recorder.assert_not_awaited()

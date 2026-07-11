@@ -1,9 +1,11 @@
-"""Tests for the ``media_assets`` producer hooks added by GH#161.
+"""Tests for the ``source_featured_image`` ``media_assets`` producer hook (GH#161).
 
-Pre-fix, ``source_featured_image``, ``replace_inline_images``, and
-``PodcastService.generate_episode`` all produced files but skipped the
-``media_assets`` INSERT. This module asserts that the
-hooks now fire for every successful production path.
+GH#161 made every image producer land a ``media_assets`` row. This module pins
+the featured-image producer's call shape. The inline-image producer's hook moved
+with the atom-cutover: it now lives on ``content.generate_images`` /
+``record_inline_image_asset`` and is covered by
+``tests/unit/modules/content/atoms/test_image_atom_behaviors.py`` (the
+``ReplaceInlineImagesStage`` that used to drive it here was deleted 2026-07).
 
 The recorder itself is mocked — these tests verify the *call shape*
 the producers send into the recorder, not the SQL the recorder
@@ -18,7 +20,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from modules.content.stages.replace_inline_images import ReplaceInlineImagesStage
 from modules.content.stages.source_featured_image import (
     GeneratedImage,
     SourceFeaturedImageStage,
@@ -350,110 +351,3 @@ class TestFeaturedImageDataContextUpdates:
         }
         result = await SourceFeaturedImageStage().execute(ctx, {})
         assert "featured_image_data" not in result.context_updates
-
-
-# ---------------------------------------------------------------------------
-# replace_inline_images — image-gen + Pexels both record per placeholder
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-class TestReplaceInlineImagesRecordsAsset:
-    async def test_image_gen_inline_success_records(self):
-        sc = _fake_site_config(pool=MagicMock())
-        ctx: dict[str, Any] = {
-            "task_id": "t1",
-            "post_id": "post-uuid-1",
-            "topic": "AI",
-            "content": "Body before.\n\n[IMAGE-1]\n\nBody after.",
-            "category": "technology",
-            "site_config": sc,
-            "image_service": SimpleNamespace(
-                search_featured_image=AsyncMock(return_value=None),
-            ),
-            "database_service": SimpleNamespace(
-                update_task=AsyncMock(),
-            ),
-        }
-        recorder = AsyncMock(return_value="asset-uuid")
-        with patch(
-            "modules.content.atoms._image_helpers._try_image_gen",
-            AsyncMock(return_value="https://r2.example/inline-1.png"),
-        ), patch(
-            "services.media_asset_recorder.record_media_asset",
-            recorder,
-        ):
-            result = await ReplaceInlineImagesStage().execute(ctx, {})
-
-        assert result.ok is True
-        # One placeholder → one recorder call
-        assert recorder.await_count == 1
-        kwargs = recorder.await_args.kwargs
-        assert kwargs["asset_type"] == "inline_image"
-        assert kwargs["post_id"] == "post-uuid-1"
-        assert kwargs["public_url"] == "https://r2.example/inline-1.png"
-        assert kwargs["provider_plugin"] == "image.image_gen"
-
-    async def test_pexels_inline_success_records(self):
-        sc = _fake_site_config(pool=MagicMock())
-        pexels_img = SimpleNamespace(
-            url="https://pex.example/p.jpg", photographer="Sam",
-        )
-        ctx: dict[str, Any] = {
-            "task_id": "t1",
-            "post_id": "post-uuid-2",
-            "topic": "AI",
-            "content": "Body.\n\n[IMAGE-1]\n\nMore body.",
-            "category": "technology",
-            "site_config": sc,
-            "image_service": SimpleNamespace(
-                search_featured_image=AsyncMock(return_value=pexels_img),
-            ),
-            "database_service": SimpleNamespace(
-                update_task=AsyncMock(),
-            ),
-        }
-        recorder = AsyncMock(return_value="asset-uuid")
-        with patch(
-            "modules.content.atoms._image_helpers._try_image_gen",
-            AsyncMock(return_value=None),  # image-gen fails → falls through to Pexels
-        ), patch(
-            "services.media_asset_recorder.record_media_asset",
-            recorder,
-        ):
-            await ReplaceInlineImagesStage().execute(ctx, {})
-
-        assert recorder.await_count == 1
-        kwargs = recorder.await_args.kwargs
-        assert kwargs["asset_type"] == "inline_image"
-        assert kwargs["public_url"] == "https://pex.example/p.jpg"
-        assert kwargs["provider_plugin"] == "image.pexels"
-
-    async def test_no_post_id_skips_recording(self):
-        # Early-pipeline runs before post_id is known should not record.
-        sc = _fake_site_config(pool=MagicMock())
-        ctx: dict[str, Any] = {
-            "task_id": "t1",
-            # no post_id
-            "topic": "AI",
-            "content": "Body.\n\n[IMAGE-1]\n\nMore body.",
-            "category": "technology",
-            "site_config": sc,
-            "image_service": SimpleNamespace(
-                search_featured_image=AsyncMock(return_value=None),
-            ),
-            "database_service": SimpleNamespace(
-                update_task=AsyncMock(),
-            ),
-        }
-        recorder = AsyncMock()
-        with patch(
-            "modules.content.atoms._image_helpers._try_image_gen",
-            AsyncMock(return_value="https://r2.example/x.png"),
-        ), patch(
-            "services.media_asset_recorder.record_media_asset",
-            recorder,
-        ):
-            await ReplaceInlineImagesStage().execute(ctx, {})
-
-        recorder.assert_not_awaited()

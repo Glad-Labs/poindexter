@@ -1,5 +1,5 @@
 """Contract test for the 2026-05-27 bold-text heading fallback in
-``modules.content.stages.replace_inline_images._plan_and_inject_placeholders``.
+``modules.content.atoms._image_helpers._plan_and_inject_placeholders``.
 
 Pins the fix for the production observation: 12 consecutive published
 canonical_blog posts had 0 inline images because the writer emitted

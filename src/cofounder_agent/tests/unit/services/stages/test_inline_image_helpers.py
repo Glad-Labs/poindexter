@@ -1,11 +1,12 @@
-"""Regression tests for Glad-Labs/poindexter#157.
+"""Regression tests for the inline-image helper library (Glad-Labs/poindexter#157).
 
-The inline-image phase (``ReplaceInlineImagesStage``) takes the GPU
-lock twice — once for the Ollama prompt build, once for the image-gen
-render. Pre-#157 the lock calls didn't carry ``task_id`` / ``phase``,
-so ``gpu_task_sessions`` (and downstream ``cost_logs`` rows) ended up
-unattributed — the kWh + electricity-cost metrics couldn't be rolled
-up per pipeline task.
+The inline-image render path — ``modules/content/atoms/_image_helpers``,
+driven live by the ``content.generate_images`` atom — takes the GPU lock
+twice, once for the Ollama prompt build and once for the image-gen render.
+Pre-#157 the lock calls didn't carry ``task_id`` / ``phase``, so
+``gpu_task_sessions`` (and downstream ``cost_logs`` rows) ended up
+unattributed — the kWh + electricity-cost metrics couldn't be rolled up
+per pipeline task.
 
 These tests pin the contract: when ``_try_image_gen`` runs, both
 ``gpu.lock`` calls receive the originating ``task_id`` plus a phase
@@ -23,7 +24,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from modules.content.atoms._image_helpers import _try_image_gen
-from modules.content.stages.replace_inline_images import ReplaceInlineImagesStage
 from tests.unit._fake_platform import FakePlatform
 
 # Mirrors the fake used in test_remaining_stages_smoke.py.
@@ -121,47 +121,6 @@ async def test_try_image_gen_threads_task_id_to_both_gpu_locks():
     assert gen_call["owner"] == "image_gen"
     assert gen_call["task_id"] == "task-abc-123"
     assert gen_call["phase"] == "inline_image"
-
-
-@pytest.mark.asyncio
-async def test_stage_propagates_task_id_into_try_image_gen():
-    """End-to-end through the Stage: task_id from context reaches _try_image_gen."""
-    captured: dict[str, Any] = {}
-
-    async def fake_try_image_gen(num, search_query, topic, *, site_config, task_id, platform=None):
-        captured["task_id"] = task_id
-        captured["num"] = num
-        return None  # force Pexels fallback so the rest of the stage runs
-
-    img_obj = SimpleNamespace(
-        url="https://pexels.example/cat.jpg", photographer="Jane",
-    )
-    image_service = SimpleNamespace(
-        search_featured_image=AsyncMock(return_value=img_obj),
-    )
-
-    db = MagicMock()
-    db.update_task = AsyncMock()
-    ctx: dict[str, Any] = {
-        "task_id": "task-xyz-789",
-        "topic": "Cats",
-        "content": "Intro\n\n[IMAGE-1: cat]\n\nOutro",
-        "database_service": db,
-        "image_service": image_service,
-        "site_config": _FAKE_SITE_CONFIG,
-    }
-
-    with patch(
-        "modules.content.atoms._image_helpers._try_image_gen",
-        new=AsyncMock(side_effect=fake_try_image_gen),
-    ), patch(
-        "services.text_utils.normalize_text", side_effect=lambda x: x,
-    ):
-        result = await ReplaceInlineImagesStage().execute(ctx, {})
-
-    assert result.ok is True
-    assert captured["task_id"] == "task-xyz-789"
-    assert captured["num"] == "1"
 
 
 @pytest.mark.asyncio

@@ -7,16 +7,14 @@ image-gen prompt build + render, Pexels fallback, R2 upload, and HTML injection.
 
 The three inline-image atoms (``content.plan_image_markers`` /
 ``content.generate_images`` / ``content.inject_images``) and the image-rebuild
-atoms import the public-named helpers from here. The legacy
-``ReplaceInlineImagesStage`` (a zombie stage — decomposed into those atoms by
-#362, referenced by no graph_def) still lives in
-``modules/content/stages/replace_inline_images.py`` and imports the same helpers
-from here.
+atoms import the public-named helpers from here.
 
 The bodies moved here (``git mv`` of ``stages/replace_inline_images.py``, then
 the class carved back out) as the 2026-07 image half of the atom-independence
 burn-down — so ``modules/content/image_helpers.py`` no longer needs to reach
-into a stage to re-export them (baseline ``image_helpers.py`` 7 → gone).
+into a stage to re-export them (baseline ``image_helpers.py`` 7 → gone). The
+legacy ``ReplaceInlineImagesStage`` that used to delegate to these helpers was
+a decomposed-by-#362 zombie (on no graph_def) and was deleted 2026-07.
 
 ## Strategy (per placeholder)
 
@@ -167,9 +165,9 @@ def _build_inline_prompt_instruction(
 def _normalize_from_router(text: str) -> str:
     """Proxy to :func:`services.text_utils.normalize_text`.
 
-    Kept as a local helper so the call site in :meth:`ReplaceInlineImagesStage.execute`
-    stays readable (``_normalize_from_router(content_text)``); lazy import
-    preserves lock-free startup.
+    Kept as a local helper so the inline-image atom call sites stay readable
+    (``_normalize_from_router(content_text)``); lazy import preserves lock-free
+    startup.
     """
     from services.text_utils import normalize_text
     return normalize_text(text)

@@ -280,9 +280,9 @@ jobs:
       # ad-hoc graphs, so it must NOT import a stage or a sibling atom — only
       # utilities/libraries (an atoms/_helper, a module-root lib, services.*).
       # Otherwise placing the atom on a graph silently runs code the graph_def
-      # can't see. Existing fossils (generate_content + replace_inline_images
-      # via image_helpers) are baselined (atom_independence_baseline.json,
-      # ratchet-only-shrinks). Pure-Python AST scan, no deps beyond stdlib.
+      # can't see. The writer + image fossils were burned down 2026-07, so the
+      # baseline (atom_independence_baseline.json) is now empty — the ratchet
+      # only shrinks, holding it at zero. Pure-Python AST scan, no deps beyond stdlib.
       - name: Atom-independence lint (tech-debt audit)
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/atom_independence_lint.py
