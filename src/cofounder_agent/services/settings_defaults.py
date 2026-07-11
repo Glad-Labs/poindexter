@@ -82,6 +82,12 @@ DEFAULTS: dict[str, str] = {
     # (updated_at) is within this window — filters out orphaned rows whose
     # producer died mid-run before the reaper marks them stale.
     "live_activity_freshness_seconds": "120",
+    # Sidecar-heartbeat cadence: long-running producers (jobs, and the content
+    # graph run) bump updated_at this often so a multi-minute run stays inside
+    # the freshness window above instead of being hidden as "idle". MUST be
+    # shorter than the freshness window (a live producer misses ~4 beats before
+    # it would be hidden).
+    "live_activity_heartbeat_seconds": "30",
     # Running rows with no heartbeat past this get marked 'stale' by the reaper.
     "live_activity_reaper_seconds": "300",
     # Size of the "Just Happened" recent-trail rail on the console band.

@@ -5,6 +5,7 @@ minimal-dependency brain daemon can both use it (the live_activity seam).
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -80,6 +81,36 @@ async def finish(
         # silent-ok: best-effort pulse heartbeat; a failed ledger write must
         # never break the caller (observability, not control flow).
         logger.debug("live_activity.finish swallowed: %s", exc)
+
+
+async def heartbeat(
+    pool: Any, activity_id: int | None, *, interval_seconds: float = 30.0
+) -> None:
+    """Keep a long-running producer's row fresh while it runs.
+
+    A producer that only calls begin/finish leaves ``updated_at`` frozen at
+    ``started_at`` for its whole duration, so ``get_live_activity``'s freshness
+    window hides it after ``live_activity_freshness_seconds`` even though it is
+    still running (the pulse-goes-blank-during-a-topic-sweep bug). The producer
+    seam launches this as a sidecar task right after ``begin`` and cancels it in
+    a ``finally``; it bumps ``updated_at`` every ``interval_seconds`` (which
+    MUST be shorter than the freshness window) so a live job stays visible.
+
+    No-op on a None id. Best-effort: a failed bump never kills the loop, and
+    ``CancelledError`` propagates so the caller's cancel tears it down cleanly.
+    """
+    if activity_id is None:
+        return
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            await update(pool, activity_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # silent-ok: best-effort heartbeat; a failed bump must never kill
+            # the loop or the producer it shadows.
+            logger.debug("live_activity.heartbeat swallowed: %s", exc)
 
 
 async def get_live_activity(
