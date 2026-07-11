@@ -1544,7 +1544,21 @@ function TracesPanel({ traces, fresh }) {
           no traces — set langfuse keys or widen the window
         </div>
       ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 6,
+            // Cap the height so a full 50-trace window scrolls inside the card
+            // instead of stretching the Telemetry tab. overflowX MUST be
+            // explicit: a lone overflowY:auto makes overflowX compute to 'auto'
+            // too (CSS visible→auto quirk), which reintroduces the dual-axis
+            // scrollbar thrash the pulse band hit (#2285).
+            maxHeight: 320,
+            overflowY: 'auto',
+            overflowX: 'hidden',
+          }}
+        >
           {rows.map((t) => (
             <div
               className="traceRow"
