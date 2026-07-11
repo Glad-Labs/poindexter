@@ -439,21 +439,22 @@ docker logs poindexter-worker 2>&1 | grep "Wan21Provider" | tail -20
 
 ## Worker OOMs on 24 GB cards at the inline-image stage (writer + image-gen collide)
 
-**Symptom.** On a 24 GB card (RTX 3090 / 4090) the worker crashes with `CUDA out of memory` somewhere between `quality_evaluation` (stage 5) finishing and `replace_inline_images` (stage 7) starting. On a 32 GB card (RTX 5090) the same boundary briefly hits ~98% VRAM (32003 MiB / 32607 MiB, ~604 MB headroom) and survives, but is a single Chrome tab away from OOMing. Discord/Telegram alerts may fire on `nvidia_gpu_memory_used_bytes` between the two stages.
+**Symptom.** On a 24 GB card (RTX 3090 / 4090) the worker crashes with `CUDA out of memory` at the boundary where `content.generate_images` loads the image model while the writer LLM is still resident from the earlier writer / QA nodes (`content.generate_draft` … `quality_evaluation`). On a 32 GB card (RTX 5090) the same boundary briefly hits ~98% VRAM (32003 MiB / 32607 MiB, ~604 MB headroom) and survives, but is a single Chrome tab away from OOMing. Discord/Telegram alerts may fire on `nvidia_gpu_memory_used_bytes` between the two stages.
 
 **Root cause.** The writer LLM (~20 GB for `gemma3:27b`) stays resident from the preceding LLM stages because Ollama's default `keep_alive` is 5 minutes. Stable Diffusion XL Lightning then loads ~12 GB on top before the writer has been evicted. `services/gpu_scheduler` already calls `_unload_ollama_models()` when `gpu.lock("image_gen", ...)` acquires, but Ollama treats `keep_alive: 0` as fire-and-forget — the API call returns immediately and the actual VRAM release is asynchronous. A `/generate` request issued seconds later (the inline-image prompt build) can land before the prior unload has finished. See 2026-05-19 jank-audit finding #4.
 
 **Detection.**
 
 ```bash
-# Sample VRAM at the transition. Run while a task is in stages 5-7:
+# Sample VRAM at the transition. Run while a task is in the writer → inline-image nodes:
 watch -n 0.5 'nvidia-smi --query-gpu=memory.used,memory.free,memory.total --format=csv,noheader'
 
-# Confirm both models were resident at once:
-docker logs poindexter-worker 2>&1 | grep -E "(generate_content|replace_inline_images).*GPU acquired" | tail -10
+# Confirm both models were resident at once: look for an `owner=image_gen` GPU
+# acquire with no `Unloaded writer model` line before it (the writer never evicted).
+docker logs poindexter-worker 2>&1 | grep -E "GPU acquired|Unloaded writer model" | tail -20
 ```
 
-**Fix.** Default-on as of 2026-05-19: `replace_inline_images.execute()` now calls `services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen()` at stage entry, which:
+**Fix.** Default-on as of 2026-05-19 (relocated onto the `content.plan_image_markers` atom in the #362 atom-cutover): that node calls `services.llm_providers.ollama_unload.maybe_unload_writer_before_image_gen()` before the image-gen nodes, which:
 
 1. Walks `/api/ps` to find currently-loaded models.
 2. Issues `POST /api/generate` with `keep_alive: 0` for each.
@@ -462,7 +463,7 @@ docker logs poindexter-worker 2>&1 | grep -E "(generate_content|replace_inline_i
 The log marker to confirm the guard is active:
 
 ```
-[REPLACE_INLINE_IMAGES] Unloaded writer model gemma3:27b before image-gen phase (grace=2.0s)
+[content.plan_image_markers] Unloaded writer model gemma3:27b before image-gen phase (grace=2.0s)
 ```
 
 **Tunables.** Both via `app_settings`:
