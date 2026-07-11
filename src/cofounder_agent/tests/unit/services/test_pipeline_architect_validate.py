@@ -213,3 +213,56 @@ def test_loop_edge_does_not_drop_downstream_require_check():
         ok, errors = pipeline_architect._validate_spec(spec, seed_keys=set())
     assert ok is False
     assert any("nc" in e and "k" in e for e in errors), errors
+
+
+# ---------------------------------------------------------------------------
+# The architect system prompt names atoms in prose (COMPOSITION HEURISTICS).
+# Those names must track the live registry or compose() grounds the LLM on
+# atoms that build_graph_from_spec then rejects. #355 renamed the QA atoms and
+# #2278 deleted atoms.review_with_critic, but the prompt lagged — this guard
+# makes the next such drift fail loud in CI instead of in a live architect run.
+# ---------------------------------------------------------------------------
+
+
+def test_architect_prompt_references_only_live_atoms():
+    """Every atom the architect system prompt names must exist in the registry.
+
+    Two complementary checks, applied to BOTH copies of the prompt — the inline
+    fallback (what compose() actually feeds the LLM, because _resolve_system_prompt
+    falls back when get_prompt can't render the {site_name} required var) and the
+    SKILL.md source of truth:
+
+      (1) every *namespaced* atom token (atoms./qa./stage./content./seo./media./
+          podcast./social.) must resolve — namespaces are derived from the live
+          catalog so the check can't rot; and
+      (2) the pre-#355 *bare* names (aggregate_reviews / review_with_critic) must
+          be gone — they carry no namespace prefix, so check (1) can't see them.
+    """
+    import re
+
+    from services import atom_registry
+    from services.prompt_manager import UnifiedPromptManager
+
+    atom_registry.discover()  # idempotent
+    live = atom_registry.list_atoms()
+    namespaces = sorted({a.name.split(".", 1)[0] for a in live if "." in a.name})
+    assert namespaces, "atom registry surfaced no namespaced atoms"
+
+    # A literal "qa.*" / "atoms.*" wildcard in the prose is not a reference:
+    # \w+ won't match "*", so those are skipped by construction.
+    pattern = r"\b(?:" + "|".join(map(re.escape, namespaces)) + r")\.\w+"
+
+    sources = {
+        "inline_fallback": pipeline_architect._resolve_system_prompt(),
+        "skill_md": UnifiedPromptManager().prompts[
+            "atoms.pipeline_architect.system_prompt"
+        ]["template"],
+    }
+    for label, prompt in sources.items():
+        referenced = set(re.findall(pattern, prompt))
+        missing = sorted(n for n in referenced if atom_registry.get_atom_meta(n) is None)
+        assert not missing, f"{label}: architect prompt names nonexistent atom(s): {missing}"
+        for dead in ("aggregate_reviews", "review_with_critic"):
+            assert dead not in prompt, (
+                f"{label}: architect prompt still references renamed/deleted atom {dead!r}"
+            )

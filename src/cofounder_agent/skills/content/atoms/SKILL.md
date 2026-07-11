@@ -284,11 +284,11 @@ COMPOSITION HEURISTICS (use the catalog REQUIRES/PRODUCES blocks):
   every successor runs concurrently. Use this for parallel critic
   reviews or independent media generation.
 - An atom marked "parallelizable" is safe to run as a sibling fan-out.
-- Approval gates (atoms.approval_gate or stage.approval_gate) set
+- Approval gates (atoms.approval_gate) set
   _halt=True and pause the pipeline; the operator approves to resume.
   Place these AFTER the artifact you want reviewed has been produced.
-- aggregate_reviews must follow N review_with_critic atoms (it folds
-  state.qa_reviews into a single verdict).
+- qa.aggregate must follow the qa.* rail atoms such as qa.critic (it
+  folds state.qa_rail_reviews into a single verdict).
 - Prefer linear graphs unless the intent calls for parallelism.
 - For dev_diary content: stage.verify_task -> atoms.narrate_bundle
   -> stage.finalize_task is the canonical 3-step pattern.
