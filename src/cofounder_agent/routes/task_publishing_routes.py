@@ -463,11 +463,11 @@ async def approve_task(
                 "[approve_task] mark_model_performance_outcome failed: %s", mp_err,
             )
 
-        # NOTE: staging_mode is still present in app_settings but no longer
-        # gates publish — approval now goes live immediately. The setting is
-        # reserved for a future scheduling / release-time-optimization feature
-        # that will honor pacing and scheduled slots instead of the previous
-        # "create a draft and wait for a second publish step" semantics.
+        # NOTE: the legacy staging_mode setting (draft + wait for a second
+        # publish step) was retired as a zero-reader orphan (2026-07-11) —
+        # approval goes live immediately. A future scheduling / release-time-
+        # optimization feature that honors pacing and scheduled slots will
+        # define its own key rather than resurrect this one.
 
         # Scheduled publish: write publish_at to scheduled_at, skip immediate publish
         if approved and publish_at:

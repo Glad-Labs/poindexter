@@ -26,18 +26,6 @@
       "description": "Full production URL with protocol"
     },
     {
-      "key": "site_description",
-      "value": "AI-powered content platform",
-      "category": "identity",
-      "description": "Longer site description used in meta tags"
-    },
-    {
-      "key": "site_tagline",
-      "value": "Technology & Innovation",
-      "category": "identity",
-      "description": "Short tagline used in metadata"
-    },
-    {
       "key": "company_name",
       "value": "My Company",
       "category": "identity",
@@ -174,12 +162,6 @@
       "value": "true",
       "category": "pipeline",
       "description": "All publishes require human approval"
-    },
-    {
-      "key": "staging_mode",
-      "value": "true",
-      "category": "pipeline",
-      "description": "Posts go to draft + preview token instead of publishing"
     },
     {
       "key": "min_curation_score",

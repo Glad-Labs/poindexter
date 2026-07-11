@@ -34,12 +34,16 @@ from datetime import datetime, timezone
 from typing import Any
 
 from plugins.job import JobResult
+from services.settings_read_sink import record_read
 
 logger = logging.getLogger(__name__)
 
 
 async def _get_setting(pool: Any, key: str, default: str) -> str:
     """Read an app_setting with fallback."""
+    # read-telemetry: raw-SQL read bypasses SiteConfig; stamp the sink so the
+    # zero-reader probe doesn't flag the key as an orphan (poindexter#756).
+    record_read(key)
     try:
         row = await pool.fetchrow(
             "SELECT value FROM app_settings WHERE key = $1", key,

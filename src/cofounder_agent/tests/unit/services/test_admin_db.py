@@ -487,6 +487,47 @@ class TestGetSetting:
         result = await db.get_setting("any_key")
         assert result is None
 
+    @pytest.mark.asyncio
+    async def test_records_read_in_settings_sink(self):
+        """get_setting stamps the read sink so FlushSettingsReadTelemetryJob
+        can mark app_settings.last_read_at.
+
+        Closes the telemetry blind spot for the DatabaseService.get_setting_value
+        read path: those raw-SQL reads never reached SiteConfig / SettingsService,
+        so live keys (max_posts_per_day, daily_post_limit, …) looked unread to
+        the zero-reader probe. Mirrors SettingsService.get's record_read.
+        """
+        from services import settings_read_sink
+
+        settings_read_sink.drain_read_keys()  # clear any prior state
+        pool = _make_pool(fetchrow_result=object())
+        db = _make_db(pool)
+        with patch(
+            f"{_CONVERTER}.to_setting_response",
+            return_value=_make_setting_sentinel(),
+        ):
+            await db.get_setting("max_posts_per_day")
+
+        assert "max_posts_per_day" in settings_read_sink.drain_read_keys()
+
+    @pytest.mark.asyncio
+    async def test_records_read_even_on_cache_hit(self):
+        """The ask is recorded regardless of where the value resolves — a
+        cache hit still stamps last_read_at, mirroring SettingsService.get
+        (which records before consulting its cache)."""
+        from services import settings_read_sink
+
+        settings_read_sink.drain_read_keys()
+        pool = _make_pool()
+        db = _make_db(pool)
+        db._settings_cache["cached_key|False"] = {
+            "value": _make_setting_sentinel(),
+            "ts": time.monotonic(),
+        }
+        await db.get_setting("cached_key")
+
+        assert "cached_key" in settings_read_sink.drain_read_keys()
+
 
 # ---------------------------------------------------------------------------
 # get_all_settings

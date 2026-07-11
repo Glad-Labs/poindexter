@@ -81,6 +81,7 @@ from typing import Any
 from uuid import UUID
 
 from plugins.job import JobResult
+from services.settings_read_sink import record_read
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -276,6 +277,9 @@ def _finding_body(
 
 async def _read_setting(pool, key: str, default: str) -> str:
     """Fetch a plaintext app_settings value, or default if missing/empty."""
+    # read-telemetry: raw-SQL read bypasses SiteConfig; stamp the sink so the
+    # zero-reader probe doesn't flag the key as an orphan (poindexter#756).
+    record_read(key)
     row = await pool.fetchrow(
         "SELECT value FROM app_settings WHERE key = $1", key,
     )

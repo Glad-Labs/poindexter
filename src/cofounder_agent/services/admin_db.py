@@ -24,6 +24,7 @@ from schemas.database_response_models import (
 from schemas.model_converter import ModelConverter
 from services.logger_config import get_logger
 from services.settings_categories import resolve_category
+from services.settings_read_sink import record_read
 
 from .database_mixin import DatabaseServiceMixin
 from .decorators import log_query_performance
@@ -408,6 +409,15 @@ class AdminDatabase(DatabaseServiceMixin):
         soft-deleted rows are hidden. Pass `include_inactive=True` for admin
         or debug workflows that need to see disabled keys.
         """
+        # Read-telemetry: record the ask so FlushSettingsReadTelemetryJob can
+        # stamp app_settings.last_read_at. This is the DatabaseService.
+        # get_setting_value read path — raw-SQL reads that never reach
+        # SiteConfig / SettingsService, so without this the zero-reader probe
+        # flags live keys (max_posts_per_day, daily_post_limit, …) as orphans
+        # (poindexter#756 follow-up). Recorded before the cache check so a
+        # cache hit still counts as a read, mirroring SettingsService.get.
+        record_read(key)
+
         cache_key = f"{key}|{include_inactive}"
         cached = self._settings_cache.get(cache_key)
         if cached and (time.monotonic() - cached["ts"]) < self._SETTINGS_CACHE_TTL:

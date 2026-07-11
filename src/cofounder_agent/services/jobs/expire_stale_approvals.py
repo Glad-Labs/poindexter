@@ -15,6 +15,7 @@ import logging
 from typing import Any
 
 from plugins.job import JobResult
+from services.settings_read_sink import record_read
 
 logger = logging.getLogger(__name__)
 
@@ -32,6 +33,9 @@ class ExpireStaleApprovalsJob:
             # `approval_ttl_days` key. A failure here just means we fall
             # through to the hard-coded 7-day default.
             try:
+                # read-telemetry: stamp the legacy key so the zero-reader probe
+                # doesn't flag it as an orphan (poindexter#756).
+                record_read("approval_ttl_days")
                 async with pool.acquire() as conn:
                     raw = await conn.fetchval(
                         "SELECT value FROM app_settings WHERE key = 'approval_ttl_days'"

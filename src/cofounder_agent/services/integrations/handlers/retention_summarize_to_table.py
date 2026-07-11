@@ -84,6 +84,7 @@ from services.integrations.handlers.retention_embeddings_collapse import (
 )
 from services.integrations.operator_notify import notify_operator
 from services.integrations.registry import register_handler
+from services.settings_read_sink import record_read
 
 logger = logging.getLogger(__name__)
 
@@ -128,6 +129,9 @@ def _validate_identifier_list(values: Sequence[str], field_name: str) -> list[st
 async def _get_setting(pool: Any, key: str, default: str) -> str:
     """Read a string value from app_settings with a fallback (same shape
     as services.jobs.collapse_old_embeddings._get_setting)."""
+    # read-telemetry: raw-SQL read bypasses SiteConfig; stamp the sink so the
+    # zero-reader probe doesn't flag the key as an orphan (poindexter#756).
+    record_read(key)
     try:
         row = await pool.fetchrow(
             "SELECT value FROM app_settings WHERE key = $1", key,
