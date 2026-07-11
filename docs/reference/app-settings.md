@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-07-10.**  
+> **Auto-generated from live `app_settings` table on 2026-07-11.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 720 active rows across 58 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 14 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 694 active rows across 57 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -34,18 +34,18 @@ The worker re-reads on every poll; no restart needed.
 - [brain-probes](#brain-probes) (7 keys)
 - [cli](#cli) (5 keys)
 - [cloudflare](#cloudflare) (2 keys)
-- [content](#content) (17 keys)
+- [content](#content) (14 keys)
 - [content_qa](#content-qa) (4 keys)
 - [cors](#cors) (1 key)
-- [cost](#cost) (8 keys)
+- [cost](#cost) (7 keys)
 - [experiments](#experiments) (4 keys)
-- [features](#features) (7 keys)
+- [features](#features) (4 keys)
 - [firefighter](#firefighter) (7 keys)
 - [gates](#gates) (3 keys)
-- [general](#general) (315 keys)
+- [general](#general) (314 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
-- [image](#image) (5 keys)
+- [image](#image) (2 keys)
 - [infrastructure](#infrastructure) (1 key)
 - [integration](#integration) (2 keys)
 - [integrations](#integrations) (9 keys)
@@ -55,7 +55,7 @@ The worker re-reads on every poll; no restart needed.
 - [memory_alerts](#memory-alerts) (3 keys)
 - [memory_compression](#memory-compression) (3 keys)
 - [model_roles](#model-roles) (4 keys)
-- [models](#models) (4 keys)
+- [models](#models) (2 keys)
 - [monitoring](#monitoring) (45 keys)
 - [newsletter](#newsletter) (3 keys)
 - [niche_pivot](#niche-pivot) (8 keys)
@@ -64,15 +64,14 @@ The worker re-reads on every poll; no restart needed.
 - [ops-triage](#ops-triage) (1 key)
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
-- [pipeline](#pipeline) (34 keys)
+- [pipeline](#pipeline) (28 keys)
 - [plugins](#plugins) (38 keys)
 - [plugin_telemetry](#plugin-telemetry) (1 key)
 - [podcast](#podcast) (2 keys)
 - [prometheus](#prometheus) (5 keys)
 - [publishing](#publishing) (5 keys)
 - [qa](#qa) (8 keys)
-- [qa_workflows](#qa-workflows) (3 keys)
-- [quality](#quality) (7 keys)
+- [quality](#quality) (5 keys)
 - [rag](#rag) (1 key)
 - [scheduling](#scheduling) (1 key)
 - [security](#security) (1 key)
@@ -80,7 +79,7 @@ The worker re-reads on every poll; no restart needed.
 - [skills](#skills) (1 key)
 - [social](#social) (3 keys)
 - [system](#system) (2 keys)
-- [tokens](#tokens) (5 keys)
+- [tokens](#tokens) (3 keys)
 - [voice](#voice) (22 keys)
 - [voice_agent](#voice-agent) (2 keys)
 - [webhooks](#webhooks) (1 key)
@@ -196,9 +195,6 @@ The worker re-reads on every poll; no restart needed.
 | `code_density_min_blocks_per_700w` | `1` |  | GH-234: minimum fenced code blocks expected per 700 prose words in a tech post. The check skips posts under 200 prose... |
 | `code_density_min_line_ratio_pct` | `20` |  | GH-234: minimum percentage of non-empty content lines that must live inside a fenced code block, applied only to post... |
 | `code_density_tag_filter` | `technical,ai,programming,ml,python,ja...` |  | GH-234: comma-separated list of tag/topic tokens that qualify a post as 'tech' for the code-block density rule. Match... |
-| `content_max_refinement_attempts` | `3` |  | Max attempts to refine content quality |
-| `content_min_word_count` | `800` |  | Minimum word count for blog posts |
-| `content_target_word_count` | `1500` |  | Target word count for blog posts |
 | `default_ollama_model` | `auto` |  | Default Ollama model for LLM calls. "auto" → OllamaClient picks the first available pulled model. Override with a spe... |
 | `local_llm_api_url` | `http://host.docker.internal:11434` |  | Ollama API base URL for local LLM calls (e.g. http://localhost:11434). Empty value means 'Ollama not configured' — ca... |
 | `title_originality_cache_ttl_hours` | `24` |  | GH-87: TTL (hours) for the in-process cache that dedupes repeated DuckDuckGo queries for the same title. DDG rate-lim... |
@@ -233,7 +229,6 @@ The worker re-reads on every poll; no restart needed.
 | `gpu_inference_watts` | `400` |  | GPU average inference power draw in watts |
 | `monthly_spend_limit` | `20.00` |  | Hard cap on monthly AI spend in USD |
 | `monthly_spend_limit_usd` | `10.0` |  | Maximum monthly AI spend in USD (read by services/cost_guard.py) |
-| `ollama_electricity_cost_per_1k_tokens` | `0.000256` |  | Ollama electricity cost per 1K tokens (USD) |
 
 ## experiments
 
@@ -248,9 +243,6 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `enable_mcp_server` | `true` |  | Enable Model Context Protocol server |
-| `enable_memory_system` | `true` |  | Enable agent memory system |
-| `enable_training_capture` | `true` |  | Enable training data capture from pipeline runs |
 | `redis_enabled` | `false` |  | Enable Redis for caching and pub/sub |
 | `topic_auto_resolve_enabled` | `true` |  | Master switch for topic_auto_resolve job (poindexter#504 follow-up). When true, the job auto-resolves open topic_batc... |
 | `topic_auto_resolve_max_per_cycle` | `1` |  | Max number of topic_batches the auto-resolver promotes per cycle (every 2h). Default 1 — one new pipeline task every ... |
@@ -389,7 +381,6 @@ The worker re-reads on every poll; no restart needed.
 | `grafana_alert_sync_interval_cycles` | `3` |  |  |
 | `grafana_user` | `admin` |  | Grafana admin username |
 | `guardrails_enabled` | `true` |  |  |
-| `hardware_cost_total` | `*(per-operator)*` | per-operator | Total PC build cost for depreciation calculation |
 | `hn_min_score` | `50` |  |  |
 | `hn_top_stories` | `20` |  |  |
 | `host_home` | `` |  | Host home directory for Docker volume mounts |
@@ -407,7 +398,7 @@ The worker re-reads on every poll; no restart needed.
 | `migration_drift_auto_sync_enabled` | `false` |  | When true, the migration-drift probe resyncs the deploy checkout (git reset --hard origin/main + clean -fd) before re... |
 | `migration_drift_deploy_checkout_path` | `/host-deploy` |  | In-brain-container path where the dedicated deploy checkout is mounted RW. The probe runs git here. Nothing else touc... |
 | `migration_drift_recover_max_attempts` | `3` |  | Max consecutive recovery attempts (sync+restart) for one drift episode before the probe gives up, pages once, and sup... |
-| `model_role_image_decision` | `ollama/phi4:14b` |  |  |
+| `model_role_image_decision` | `ollama/gemma3:27b` |  |  |
 | `newsletter_batch_delay_seconds` | `2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `newsletter_batch_size` | `50` |  | Auto-seeded by services.settings_defaults (#379) |
 | `newsletter_email` | `` |  | Newsletter sender email (legacy) |
@@ -627,10 +618,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `enable_featured_image` | `true` |  | Generate/search featured images for posts |
 | `image_negative_prompt` | `text, words, letters, numbers, waterm...` |  | Negative prompt for all AI image generations |
-| `image_primary_source` | `ai_generation` |  | Primary image source: pexels or ai_generation |
-| `image_style_default` | `professional digital art, abstract te...` |  | Default image-gen style for uncategorized posts |
 | `image_styles` | `[     {"name": "flat_vector", "scene"...` |  | JSON array of image styles for AI image generation. Each has name, scene, and tags. |
 
 ## infrastructure
@@ -709,7 +697,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `inline_image_prompt_model` | `llama3:latest` |  | Ollama model used to craft AI image prompts for inline images in blog posts |
+| `inline_image_prompt_model` | `ollama/gemma3:27b` |  | Ollama model used to craft AI image prompts for inline images in blog posts |
 | `podcast_script_model` | `ollama/gemma3:27b` |  | Ollama model used to generate podcast scripts from article content |
 | `qa_fallback_critic_model` | `ollama/qwen2.5:32b` |  | Fallback critic used when pipeline_critic_model (phi4) returns empty or errors. Must be a DIFFERENT family from the g... |
 | `video_scene_model` | `llama3:latest` |  | Ollama model used to generate video scene descriptions from article text |
@@ -718,8 +706,6 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `cloud_api_daily_limit` | `5` |  | Max cloud API calls per day in emergency mode (hard cap) |
-| `cloud_api_mode` | `emergency_only` |  | Cloud API usage mode: disabled, emergency_only, fallback, always |
 | `pipeline_critic_model` | `ollama/phi4:14b` |  | Model for QA/content review |
 | `pipeline_fallback_model` | `ollama/gemma3:27b` |  | Fallback model when primary is unavailable |
 
@@ -849,17 +835,12 @@ The worker re-reads on every poll; no restart needed.
 | `approval_ttl_days` | `7` |  | Days before unapproved posts are auto-expired |
 | `auto_publish_threshold` | `0` |  | Quality score threshold for auto-publishing (0=disabled) |
 | `brain_auto_cancel_grace_minutes` | `10` |  | Extra grace period the brain daemon adds on top of stale_task_timeout_minutes before flipping a stuck task to failed.... |
-| `content_quality_minimum` | `75` |  | Minimum quality score to even queue for approval. Below this = auto-reject. |
-| `content_weekly_cap` | `50` |  | Maximum new posts per week (0=unlimited). Topic discovery respects this. |
 | `create_post_dedup_threshold` | `0.75` |  | Cosine similarity at/above which a caller-supplied topic (create_post MCP tool / POST /api/tasks) is refused as a nea... |
 | `daily_budget_usd` | `1.00` |  | Daily LLM spend budget in USD (ignored if cloud_api_mode=disabled) |
 | `daily_post_limit` | `4` |  | Maximum posts to generate per day |
 | `default_template_slug` | `canonical_blog` |  | Lane C cutover switch: when set, every new pipeline_tasks row without an explicit caller-supplied template_slug gets ... |
 | `max_approval_queue` | `100` |  | Restored 2026-04-24 after backlog cleared |
 | `max_posts_per_day` | `8` |  | Maximum posts to publish per day |
-| `max_task_retries` | `3` |  | Maximum retry attempts for failed tasks |
-| `max_tokens_per_request` | `4000` |  | Maximum output tokens per LLM request |
-| `max_tokens_per_task` | `16000` |  | Maximum total tokens (input+output) per content task |
 | `min_curation_score` | `75` |  | Minimum QA score to surface for human review (below this = auto-reject) |
 | `pipeline_architect_model` | `ollama/gemma3:27b` |  | Local Ollama model the architect-LLM uses to compose pipelines from intent + atom catalog. Cloud models are opt-in on... |
 | `pipeline_architect_timeout_seconds` | `120.0` |  | Max seconds to wait for the architect LLM to emit its JSON graph spec before timing out and falling back to a default... |
@@ -874,7 +855,6 @@ The worker re-reads on every poll; no restart needed.
 | `seed_url_user_agent` | `Mozilla/5.0 (Windows NT 10.0; Win64; ...` |  | URL-based topic seeding: User-Agent header for the seed_url fetch. Chrome-ish by default because many news/publisher ... |
 | `staging_mode` | `false` |  | When true, posts go to draft with preview token instead of publishing |
 | `stale_task_timeout_minutes` | `180` |  | Minutes before a running task is considered stale |
-| `task_sweep_interval_seconds` | `300` |  | Seconds between stale task sweeps |
 | `template_runner_progress_streaming` | `true` |  | When on, TemplateRunner emits per-node progress to Discord (NOT Telegram) via notify_operator(critical=False). Defaul... |
 | `template_runner_use_postgres_checkpointer` | `true` |  | When true, services/template_runner.py compiles each LangGraph with an AsyncPostgresSaver checkpointer (durable state... |
 | `topic_dedup_existing_threshold` | `0.7` |  | Word-overlap ratio above which a candidate topic is treated as a duplicate of an existing published post or in-flight... |
@@ -906,7 +886,7 @@ The worker re-reads on every poll; no restart needed.
 | `plugin.job.render_alertmanager_config` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderAlertmanagerConfigJob (#524) — renders alertmanager.yml.tmpl with telegram_chat_id and reloads Alert... |
 | `plugin.job.render_prometheus_rules` | `{"enabled": true, "interval_seconds":...` |  | Config for RenderPrometheusRulesJob |
 | `plugin.job.rollup_post_performance` | `{"enabled": true, "interval_seconds":...` |  | Config for job rollup_post_performance — tune cadence via config.schedule |
-| `plugin.job.run_dev_diary_post` | `{"enabled": true, "interval_seconds":...` |  | Config for job run_dev_diary_post — tune cadence via config.schedule |
+| `plugin.job.run_dev_diary_post` | `{"config": {"schedule": "0 9 * * *"},...` |  | Config for job run_dev_diary_post — tune cadence via config.schedule |
 | `plugin.job.run_niche_topic_sweep` | `{"enabled": true, "interval_seconds":...` |  | Config for job run_niche_topic_sweep — tune cadence via config.schedule |
 | `plugin.job.run_retention` | `{"enabled": true, "interval_seconds":...` |  | Config for job run_retention — tune cadence via config.schedule |
 | `plugin.job.run_taps` | `{"enabled": true, "interval_seconds":...` |  | Config for job run_taps — tune cadence via config.schedule |
@@ -970,24 +950,14 @@ The worker re-reads on every poll; no restart needed.
 | `self_consistency_sample_count` | `3` |  | Number of summary samples for the self-consistency rail. Higher = more accurate signal, higher Ollama cost. Default 3. |
 | `self_consistency_threshold` | `0.55` |  | Minimum mean pairwise cosine similarity to pass the self-consistency rail. Range [0, 1]. Default 0.55. |
 
-## qa_workflows
-
-| Key | Default | Classification | Description |
-| --- | --- | --- | --- |
-| `qa_workflow_blog_content` | `{"reviewers": ["programmatic_validato...` |  | Blog content QA workflow chain |
-| `qa_workflow_premium_content` | `{"reviewers": ["programmatic_validato...` |  | Premium QA with LLM critic - all reviewers must pass |
-| `qa_workflow_quick_check` | `{"reviewers": ["programmatic_validato...` |  | Fast validation for bulk content |
-
 ## quality
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `content_validator_warning_qa_penalty` | `3` |  | Points subtracted from final QA score per validator warning (GH-91) |
 | `qa_allow_first_person_niches` | `dev_diary,starter-blog` |  | Comma-separated list of niche slugs that bypass the first_person_claims validator in quality_scorers.py. Per the oper... |
-| `qa_critical_dimension_floor` | `50` |  | Minimum score on any single quality dimension |
 | `qa_critic_weight` | `0.6` |  | Weight for LLM critic in final score |
 | `qa_final_score_threshold` | `80` |  | Multi-model QA final approval score threshold |
-| `qa_overall_score_threshold` | `80` |  | Minimum overall quality score to pass QA (0-100) |
 | `qa_validator_weight` | `0.4` |  | Weight for programmatic validator in final score |
 
 ## rag
@@ -1040,8 +1010,6 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `content_temperature` | `0.7` |  | Temperature for content generation |
-| `max_tokens_default` | `800` |  | Default max tokens for general tasks |
 | `qa_standard_max_tokens` | `1500` |  | Max tokens for standard models in QA |
 | `qa_temperature` | `0.3` |  | Temperature for QA review generation |
 | `qa_thinking_model_max_tokens` | `8000` |  | Max tokens for thinking models (qwen3.5, glm-4.7) in QA |
