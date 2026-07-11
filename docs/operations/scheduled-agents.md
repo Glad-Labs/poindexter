@@ -2,7 +2,7 @@
 
 Autonomous maintenance sessions that run on the operator's PC via Windows Task
 Scheduler, defined in [`scripts/claude-sessions.ps1`](../../scripts/claude-sessions.ps1).
-They open PRs against `Glad-Labs/glad-labs-stack` (the code source of truth;
+They open PRs against `Glad-Labs/poindexter` (the code source of truth;
 poindexter is a force-rebuilt mirror that can't take code) and never commit to
 `main` directly. Issues they file are content-routed (OSS → poindexter,
 business/internal → glad-labs-stack).
