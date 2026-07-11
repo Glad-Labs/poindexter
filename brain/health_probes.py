@@ -58,6 +58,17 @@ async def _maybe_await(value: Any) -> Any:
     return value
 
 
+def _is_missing_relation(exc: Exception) -> bool:
+    """True only for a missing table/view (postgres: ``relation "x" does
+    not exist``) — the benign not-bootstrapped-yet state. A missing
+    *column* (``column "y" does not exist``) is schema drift in probe SQL
+    and must fail loud, not be masked as bootstrap (2026-07-11 incident:
+    two probes reported green for weeks on drifted column names).
+    """
+    message = str(exc)
+    return 'relation "' in message and "does not exist" in message
+
+
 # OpenTelemetry is optional — health probes work with or without it.
 # When the opentelemetry SDK isn't installed, ``_tracer`` is a no-op
 # implementation that matches the real API's ``start_as_current_span``
@@ -1216,14 +1227,15 @@ async def probe_podcast_health(pool) -> dict:
 async def probe_newsletter_health(pool) -> dict:
     """Probe: Check newsletter delivery is working if subscribers exist."""
     try:
-        # Check subscriber count
+        # Check subscriber count — same active-subscriber predicate as
+        # newsletter_service._get_active_subscribers (the send path).
         sub_row = await pool.fetchrow("""
             SELECT COUNT(*) as c FROM newsletter_subscribers
-            WHERE confirmed = true
+            WHERE unsubscribed_at IS NULL AND verified = TRUE
         """)
         subs = sub_row["c"] if sub_row else 0
         if subs == 0:
-            return {"ok": True, "subscribers": 0, "detail": "no confirmed subscribers yet"}
+            return {"ok": True, "subscribers": 0, "detail": "no verified subscribers yet"}
 
         # Check last send
         send_row = await pool.fetchrow("""
@@ -1248,8 +1260,7 @@ async def probe_newsletter_health(pool) -> dict:
             "detail": f"{subs} subs, last send {age_days:.1f}d ago" + (" — overdue" if stale else ""),
         }
     except Exception as e:
-        # Table might not exist yet
-        if "does not exist" in str(e):
+        if _is_missing_relation(e):
             return {"ok": True, "detail": "newsletter tables not created yet"}
         return {"ok": False, "detail": str(e)[:200]}
 
@@ -1265,7 +1276,7 @@ async def probe_embeddings_freshness(pool) -> dict:
         row = await pool.fetchrow("""
             SELECT
                 (SELECT COUNT(*) FROM posts WHERE status = 'published') as total_posts,
-                (SELECT COUNT(DISTINCT source_id) FROM embeddings WHERE source_type = 'post') as embedded_posts,
+                (SELECT COUNT(DISTINCT source_id) FROM embeddings WHERE source_table = 'posts') as embedded_posts,
                 (SELECT MAX(created_at) FROM embeddings) as last_embedding
         """)
         total = row["total_posts"] if row else 0
@@ -1290,7 +1301,7 @@ async def probe_embeddings_freshness(pool) -> dict:
             "detail": detail,
         }
     except Exception as e:
-        if "does not exist" in str(e):
+        if _is_missing_relation(e):
             return {"ok": True, "detail": "embeddings table not created yet"}
         return {"ok": False, "detail": str(e)[:200]}
 
