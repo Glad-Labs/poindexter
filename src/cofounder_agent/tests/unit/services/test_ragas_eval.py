@@ -109,14 +109,58 @@ class TestEvaluateSampleGuards:
 
     @pytest.mark.asyncio
     async def test_ragas_failure_returns_minus_one_no_raise(self):
+        # Fake the ragas/datasets modules so the lazy imports succeed even
+        # where ragas isn't importable — this test exercises the RUNTIME
+        # failure path (backend down → sentinels), not import breakage
+        # (which now fails loud by design — poindexter#839).
         with patch(
             "services.ragas_eval._build_ragas_models",
             side_effect=Exception("ollama down"),
-        ):
+        ), _inject_fake_modules({
+            "datasets": MagicMock(),
+            "ragas": MagicMock(),
+            "ragas.metrics": MagicMock(),
+        }):
             result = await evaluate_sample(
                 topic="Topic", generated_content="content",
             )
         assert all(v == -1.0 for v in result.values())
+
+
+# ---------------------------------------------------------------------------
+# evaluate_sample — import breakage fails LOUD (poindexter#839)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestEvaluateSampleImportError:
+    """A missing/broken ragas dependency is a deployment regression, not a
+    transient eval failure. Swallowing it into all -1.0 sentinels made the
+    2026-06-29→07-11 dead rail read as 'judge or embedding backend likely
+    unreachable' for 12 days (ragas 0.4.3 imports
+    langchain_community.chat_models.vertexai, removed in langchain-community
+    0.4.2). evaluate_sample must re-raise ImportError so the caller can
+    surface the true cause."""
+
+    @pytest.mark.asyncio
+    async def test_import_error_propagates(self):
+        # Fake ragas/datasets so the lazy `from ragas import evaluate`
+        # succeeds regardless of the local install, making the patched
+        # _build_ragas_models raise the ONE ImportError under test.
+        with patch(
+            "services.ragas_eval._build_ragas_models",
+            side_effect=ModuleNotFoundError(
+                "No module named 'langchain_community.chat_models.vertexai'"
+            ),
+        ), _inject_fake_modules({
+            "datasets": MagicMock(),
+            "ragas": MagicMock(),
+            "ragas.metrics": MagicMock(),
+        }):
+            with pytest.raises(
+                ImportError, match="langchain_community.chat_models.vertexai",
+            ):
+                await evaluate_sample(topic="T", generated_content="c")
 
 
 # ---------------------------------------------------------------------------

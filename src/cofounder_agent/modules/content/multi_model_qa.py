@@ -1829,7 +1829,10 @@ class MultiModelQA:
         Returns ``None`` when:
         - ragas_enabled=false
         - research_sources is empty (Ragas needs context to evaluate)
-        - Ragas itself errors (judge unreachable, ImportError, etc)
+        - the ragas import chain is broken (surfaced as a misconfig skip
+          naming the dependency incompat — poindexter#839)
+        - Ragas itself errors (judge unreachable, etc — surfaced as a
+          qa_reviewer_failure)
         """
         try:
             from services import ragas_eval
@@ -1886,6 +1889,18 @@ class MultiModelQA:
                 site_config=self._site_config,
                 pool=self.pool,
             )
+        except ImportError as exc:
+            # poindexter#839: ragas 0.4.3 + langchain-community 0.4.2 broke
+            # the ragas import chain for 12 days and the failure surfaced as
+            # the misleading all-sentinel "judge or embedding backend likely
+            # unreachable" skip. Name the true cause; the default misconfig
+            # skip_type keeps it counting toward the QaRailFullySkipped
+            # ratio so a dead import chain pages instead of idling as noise.
+            self._surface_reviewer_skip(
+                "ragas_eval",
+                f"ragas import broken (dependency incompat): {str(exc)[:200]}",
+            )
+            return None
         except Exception as exc:
             self._surface_reviewer_failure("ragas_eval", exc)
             return None

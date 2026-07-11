@@ -453,6 +453,18 @@ class TestQaRailFullySkippedRule:
         assert "judge" in desc
         assert "/d/qa-rails" in rule["description"]
 
+    def test_expr_rides_through_worker_restart_gaps(self):
+        """poindexter#839 alert audit: the exporter lives in the worker, and
+        every deploy restart blanks the series for a scrape or two. With a
+        raw-gauge expr those gaps reset the `for:` clock, so on active days
+        (8-45 worker restarts/day observed 2026-06/07) the alert flapped
+        fire→resolve→fire, then sat in `pending` forever from 07-05 onward
+        and never paged while the ragas rail was 100%-skipped. max_over_time
+        holds the last observed ratio across the gap."""
+        rule = rb.DEFAULT_RULES["QaRailFullySkipped"]
+        assert rule["expr"].startswith("max_over_time(")
+        assert "[1h]" in rule["expr"]
+
     @pytest.mark.asyncio
     async def test_rule_renders_with_threshold_substituted(self):
         """build_current with no DB overrides must render the alert into the
@@ -462,7 +474,7 @@ class TestQaRailFullySkippedRule:
         out = await rb.build_current(pool)
         assert "alert: QaRailFullySkipped" in out
         # Threshold placeholder substituted to the default "1".
-        assert "poindexter_qa_rail_skip_ratio >= 1" in out
+        assert "max_over_time(poindexter_qa_rail_skip_ratio[1h]) >= 1" in out
         # No unsubstituted placeholder leaks into the rendered YAML.
         assert "{threshold." not in out.split("QaRailFullySkipped", 1)[1][:400]
 
@@ -474,7 +486,7 @@ class TestQaRailFullySkippedRule:
             {"key": "prometheus.threshold.qa_rail_skip_ratio", "value": "0.9"},
         ])
         out = await rb.build_current(pool)
-        assert "poindexter_qa_rail_skip_ratio >= 0.9" in out
+        assert "max_over_time(poindexter_qa_rail_skip_ratio[1h]) >= 0.9" in out
 
 
 # ---------------------------------------------------------------------------

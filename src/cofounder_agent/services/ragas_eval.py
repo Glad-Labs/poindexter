@@ -364,8 +364,14 @@ async def evaluate_sample(
 
     Returns ``{"faithfulness": 0-1, "answer_relevancy": 0-1, "context_precision": 0-1}``.
 
-    Never raises — Ragas errors (Ollama down, judge model not pulled,
-    etc) are caught and surfaced as ``-1.0`` for the affected metric.
+    Never raises for eval failures — Ragas errors (Ollama down, judge
+    model not pulled, etc) are caught and surfaced as ``-1.0`` for the
+    affected metric. ``ImportError`` is the deliberate exception: a
+    missing/broken ragas dependency is a deployment regression, not a
+    transient eval failure, and it propagates so the caller can surface
+    the true cause (poindexter#839 — the ragas 0.4.x /
+    langchain-community 0.4.2 incompat read as "judge or embedding
+    backend likely unreachable" for 12 days).
     Caller correlates scores with audit_log for trend analysis.
 
     Side effect: on a successful run (>=1 non-sentinel metric) writes
@@ -415,6 +421,18 @@ async def evaluate_sample(
         }
         _emit_ragas_score_audit(scores, topic, task_id)
         return scores
+    except ImportError:
+        # A broken ragas import chain (e.g. ragas 0.4.x importing
+        # langchain_community.chat_models.vertexai, removed in
+        # langchain-community 0.4.2 — poindexter#839) is a deployment
+        # regression. Swallowing it into sentinels made a 12-day outage
+        # read as a backend hiccup; log the truth, then fail loud so the
+        # caller surfaces an accurate misconfig skip.
+        logger.warning(
+            "[ragas] ragas import chain broken (dependency incompat?) — "
+            "failing loud", exc_info=True,
+        )
+        raise
     except Exception as e:
         logger.warning("[ragas] evaluate_sample failed: %s", e, exc_info=True)
         return {

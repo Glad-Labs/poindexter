@@ -27,8 +27,8 @@ from modules.content.multi_model_qa import (
     SKIP_TYPE_MISCONFIG,
     MultiModelQA,
 )
-from tests.unit._fake_platform import FakePlatform
 from services.site_config import SiteConfig
+from tests.unit._fake_platform import FakePlatform
 
 
 @pytest.mark.unit
@@ -202,3 +202,59 @@ class TestReviewerSkipWiredIntoRails:
         surface_mock.assert_called_once()
         assert surface_mock.call_args.args[0] == "ragas_eval"
         assert "research_sources empty" in surface_mock.call_args.args[1]
+
+
+@pytest.mark.unit
+class TestRagasImportBreakageSurfacing:
+    """poindexter#839: ragas 0.4.3 + langchain-community 0.4.2 broke the
+    ragas import chain for 12 days (2026-06-29→07-11) and the failure
+    surfaced as the misleading all-sentinel skip ("judge or embedding
+    backend likely unreachable"). An ImportError escaping evaluate_sample
+    must surface as a misconfig-type skip naming the true cause — still
+    counting toward the QaRailFullySkipped ratio so the outage pages —
+    while non-import failures keep the qa_reviewer_failure surface."""
+
+    @pytest.mark.asyncio
+    async def test_import_error_surfaces_accurate_misconfig_skip(self):
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
+        with patch(
+            "services.ragas_eval.is_enabled", return_value=True,
+        ), patch(
+            "services.ragas_eval.evaluate_sample",
+            side_effect=ModuleNotFoundError(
+                "No module named 'langchain_community.chat_models.vertexai'"
+            ),
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_skip",
+        ) as surface_mock:
+            result = await qa._check_ragas_eval("body", "topic", "research ctx")
+        assert result is None
+        surface_mock.assert_called_once()
+        assert surface_mock.call_args.args[0] == "ragas_eval"
+        reason = surface_mock.call_args.args[1]
+        assert "import broken" in reason
+        assert "langchain_community.chat_models.vertexai" in reason
+        # NOT the misleading backend-blame message.
+        assert "backend" not in reason
+        # Default skip_type (misconfig) so it counts toward the
+        # QaRailFullySkipped ratio — no explicit intentional-skip override.
+        assert surface_mock.call_args.kwargs.get("skip_type") is None
+
+    @pytest.mark.asyncio
+    async def test_non_import_failure_still_surfaces_reviewer_failure(self):
+        qa = MultiModelQA(pool=None, settings_service=None, site_config=SiteConfig())
+        with patch(
+            "services.ragas_eval.is_enabled", return_value=True,
+        ), patch(
+            "services.ragas_eval.evaluate_sample",
+            side_effect=RuntimeError("judge 502"),
+        ), patch.object(
+            MultiModelQA, "_surface_reviewer_failure",
+        ) as failure_mock, patch.object(
+            MultiModelQA, "_surface_reviewer_skip",
+        ) as skip_mock:
+            result = await qa._check_ragas_eval("body", "topic", "research ctx")
+        assert result is None
+        failure_mock.assert_called_once()
+        assert failure_mock.call_args.args[0] == "ragas_eval"
+        skip_mock.assert_not_called()

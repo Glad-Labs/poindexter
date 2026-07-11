@@ -186,7 +186,17 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         # last N QA passes the rail was skipped (exporter caps it at 1.0).
         # >= 1 means a TOTAL blackout for that rail. Per-reviewer label, so
         # the firing alert names the offending rail.
-        "expr": "poindexter_qa_rail_skip_ratio >= {threshold.qa_rail_skip_ratio}",
+        #
+        # max_over_time rides through short series gaps: the exporter lives
+        # in the worker, and every deploy restart blanks the metric for a
+        # scrape or two. With the raw gauge those gaps reset the `for:`
+        # clock, so on active days (8-45 worker restarts/day observed
+        # 2026-06/07) the alert flapped fire→resolve→fire, then sat in
+        # `pending` forever and never paged during poindexter#839's 12-day
+        # ragas blackout. The 1h lookback holds the last observed ratio
+        # across a restart; trade-off is resolve lags up to 1h after the
+        # rail recovers.
+        "expr": "max_over_time(poindexter_qa_rail_skip_ratio[1h]) >= {threshold.qa_rail_skip_ratio}",
         "for": "30m",
         "severity": "warning",
         "category": "content",
@@ -202,6 +212,8 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
             "(2) disabled master flag — ragas_enabled / deepeval_enabled / "
             "guardrails_enabled is false in app_settings. (3) unresolvable "
             "judge model — fix deepeval_judge_model or ragas_judge_model. "
+            "(4) broken rail dependency import — the qa_reviewer_skipped "
+            "reason in audit_log names the incompat (poindexter#839). "
             "Inspect per-rail on the QA Rails "
             "dashboard /d/qa-rails. If the rail is intentionally off, lower or "
             "disable this alert via prometheus.rule.QaRailFullySkipped."
