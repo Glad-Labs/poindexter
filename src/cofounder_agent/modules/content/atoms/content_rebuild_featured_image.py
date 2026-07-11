@@ -3,7 +3,7 @@
 Faithful port of ``ImageRebuildService._gen_featured`` (the synchronous
 image-rebuild path this graph replaces): the same two-strategy as inline
 slots — image-gen primary, Pexels fallback — via the sanctioned
-``modules.content.image_helpers`` seam. ``try_image_gen`` returns an
+``modules.content.atoms._image_helpers`` seam. ``try_image_gen`` returns an
 already-uploaded R2 URL, so no separate upload step is needed.
 
 The prompt prefers the Image Decision Agent's ``featured_image_plan`` (a

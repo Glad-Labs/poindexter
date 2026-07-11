@@ -24,7 +24,7 @@ enforced: a non-underscore module with ``ATOM_META`` is a *node*; a
 reuses that contract:
 
   ALLOWED   from modules.content.atoms._qa_rail_common import reviewer_to_dict
-  ALLOWED   from modules.content.image_helpers import try_image_gen   (module-root lib)
+  ALLOWED   from modules.content.multi_model_qa import MultiModelQA    (module-root lib)
   ALLOWED   from services.image_service import get_image_service       (substrate)
   VIOLATION from modules.content.stages.generate_content import GenerateContentStage
   VIOLATION from modules.content.atoms import two_pass_writer          (sibling node)
@@ -34,7 +34,7 @@ Scan set
 - Every ``*.py`` under ``modules/content/atoms/`` (the node package), checked for
   BOTH rules.
 - Plus each module-root library an atom imports (``modules.content.<name>`` —
-  e.g. ``image_helpers``), checked for the STAGE rule only. This catches an atom
+  e.g. ``multi_model_qa``), checked for the STAGE rule only. This catches an atom
   reaching a stage *through* a thin library seam, without pulling in the
   module's substrate-facing boundary (``modules/content/api.py``), which no atom
   imports.
@@ -165,7 +165,7 @@ def _atom_imported_local_libs() -> set[Path]:
     """Module-root ``modules/content/<name>.py`` files imported by some atom.
 
     These are the library seams an atom may legitimately import (e.g.
-    ``image_helpers``); scanning them for the stage rule catches an atom reaching
+    ``multi_model_qa``); scanning them for the stage rule catches an atom reaching
     a stage *through* the seam. ``atoms`` / ``stages`` subpackages and the
     substrate-facing ``api`` boundary (which no atom imports) are excluded.
     """

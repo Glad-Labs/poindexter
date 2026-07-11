@@ -10,7 +10,7 @@ composition.
 The registry already enforces the node/library split at discovery time
 (``atom_registry`` skips ``_``-prefixed modules), so this lint reuses the same
 contract: importing an ``atoms/_helper`` (library) or a module-root helper
-(``modules.content.image_helpers``) or substrate (``services.*``) is fine;
+(``modules.content.api``) or substrate (``services.*``) is fine;
 importing ``modules.content.stages.*`` or a non-underscore sibling atom is a
 violation. A ``# noqa: atom-independence-ok`` marker exempts an intentional
 case. Existing violations are grandfathered in ``atom_independence_baseline.json``
