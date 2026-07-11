@@ -12,6 +12,7 @@ from services.podcast_service import (
     PodcastService,
     _estimate_duration_from_text,
     _resolve_voice_pool,
+    _select_voice,
     _strip_markdown,
 )
 from services.podcast_service import (
@@ -984,12 +985,12 @@ class TestNarrationSibling:
 
 
 class TestResolveVoicePool:
-    """DB-configurable voice-rotation pool (Plan 7, #689).
+    """DB-configurable voice pool (Plan 7, #689).
 
     Lifts the hardcoded ``VOICE_POOL`` to operator-tunable app_settings
-    (``tts_voice_rotation_enabled`` / ``tts_voice_pool``). Behavior MUST be
-    unchanged when unset — a disabled flag or an empty pool falls back to the
-    module constant, so existing installs rotate exactly as before.
+    (``tts_voice_rotation_enabled`` / ``tts_voice_pool``). This resolves the
+    *pool*; the rotate-vs-pin decision is ``_select_voice``'s job (see
+    ``TestSelectVoice``).
     """
 
     def test_disabled_falls_back_to_constant(self):
@@ -1018,6 +1019,44 @@ class TestResolveVoicePool:
 
     def test_none_site_config_falls_back_to_constant(self):
         assert _resolve_voice_pool(None) == list(VOICE_POOL)
+
+
+class TestSelectVoice:
+    """``_select_voice`` honors ``tts_voice_rotation_enabled`` — rotation is OPT-IN.
+
+    Regression for the flag-that-lied bug: the voice was hash-rotated for every
+    episode regardless of the flag, so ``podcast_tts_voice`` was dead and the
+    podcast (and the video narration that reuses it) rotated unconditionally.
+    """
+
+    def test_rotation_off_pins_the_fixed_voice_for_every_key(self):
+        # Flag false → the single ``podcast_tts_voice`` for every rotation key.
+        sc = SiteConfig(initial_config={
+            "tts_voice_rotation_enabled": "false",
+            "podcast_tts_voice": "bf_isabella",
+        })
+        picks = {_select_voice(sc, key) for key in ("post-1", "post-2", "post-3", "zzz")}
+        assert picks == {"bf_isabella"}  # no rotation — one voice, always
+
+    def test_rotation_is_off_by_default(self):
+        # No flag at all → rotation is opt-in, so still one fixed voice.
+        sc = SiteConfig(initial_config={"podcast_tts_voice": "am_michael"})
+        picks = {_select_voice(sc, k) for k in ("a", "b", "c", "d", "e")}
+        assert picks == {"am_michael"}
+
+    def test_rotation_off_defaults_to_pool_head_when_voice_unset(self):
+        sc = SiteConfig(initial_config={"tts_voice_rotation_enabled": "false"})
+        assert _select_voice(sc, "anything") == VOICE_POOL[0]
+
+    def test_rotation_on_actually_rotates_across_the_pool(self):
+        sc = SiteConfig(initial_config={"tts_voice_rotation_enabled": "true"})
+        picks = {_select_voice(sc, f"post-{i}") for i in range(50)}
+        assert len(picks) > 1              # it really rotates
+        assert picks <= set(VOICE_POOL)    # ...within the pool
+
+    def test_rotation_on_is_deterministic_per_key(self):
+        sc = SiteConfig(initial_config={"tts_voice_rotation_enabled": "true"})
+        assert _select_voice(sc, "post-1") == _select_voice(sc, "post-1")
 
 
 class TestScaffoldDumpGuard:

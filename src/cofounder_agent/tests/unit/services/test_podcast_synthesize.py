@@ -85,6 +85,35 @@ async def test_synthesize_raises_when_all_voices_fail(tmp_path: Path) -> None:
             await svc.synthesize(_SCRIPT, output_path=tmp_path / "x.mp3", key="t1")
 
 
+@pytest.mark.asyncio
+async def test_synthesize_pins_voice_when_rotation_disabled(tmp_path: Path) -> None:
+    """Rotation off (the default) → every key uses the single ``podcast_tts_voice``,
+    with no hash-rotation. Regression for the flag-that-lied bug that rotated the
+    podcast (and the video narration reusing it) regardless of the setting.
+    """
+    sc = SiteConfig(initial_config={
+        "podcast_name": "Test Show",
+        "site_domain": "test.io",
+        "tts_voice_rotation_enabled": "false",
+        "podcast_tts_voice": "bf_emma",
+    })
+    svc = PodcastService(output_dir=tmp_path, site_config=sc)
+    used: list[str] = []
+
+    async def fake_gen(script: str, voice: str, output_path: Path) -> EpisodeResult:
+        used.append(voice)
+        Path(output_path).write_bytes(b"audio")
+        return EpisodeResult(
+            success=True, file_path=str(output_path), duration_seconds=10,
+        )
+
+    with patch.object(svc, "_generate_with_voice", side_effect=fake_gen):
+        for key in ("post-a", "post-b", "post-c"):
+            await svc.synthesize(_SCRIPT, output_path=tmp_path / f"{key}.mp3", key=key)
+
+    assert used == ["bf_emma", "bf_emma", "bf_emma"]  # pinned, not rotated
+
+
 def test_pronunciation_map_includes_memory_acronyms() -> None:
     """VRAM/SRAM/DRAM are spelled out so TTS says "Vee RAM" not "vram".
 

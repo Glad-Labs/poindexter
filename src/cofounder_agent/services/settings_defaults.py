@@ -1171,10 +1171,12 @@ DEFAULTS: dict[str, str] = {
     # render boundary — it can't corrupt body words like "audio". Add niche
     # TLDs as needed, e.g. '{"io": "eye oh", "ai": "A I", "gg": "G G"}'.
     'tts_domain_tld_pronunciations': '{"io": "eye oh"}',
-    # Voice-rotation pool (#689 Plan 7) — DB-configurable override of the
-    # podcast_service VOICE_POOL constant. Default-off / empty falls back to
-    # the constant (zero behavior change); an operator supplies engine-
-    # appropriate, comma-separated voice names to customise rotation.
+    # Voice selection (#689 Plan 7). Rotation is OPT-IN: when
+    # tts_voice_rotation_enabled is false (the default), narration uses the
+    # single `podcast_tts_voice`; when true it hash-rotates the pool
+    # (`tts_voice_pool`, or the podcast_service VOICE_POOL constant when empty)
+    # by post_id for variety. Podcast and video (which reuses the podcast
+    # narration voice) both honor this via podcast_service._select_voice.
     'tts_voice_pool': '',
     'tts_voice_rotation_enabled': 'false',
     'video_compositor': '',

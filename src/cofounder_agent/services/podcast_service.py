@@ -27,6 +27,7 @@ Usage:
     # result = {"file_path": "~/.poindexter/podcast/abc123.mp3", "duration_seconds": 312}
 """
 
+import hashlib
 import os
 import re
 from dataclasses import dataclass
@@ -93,10 +94,11 @@ def _resolve_voice_pool(site_config: "SiteConfig | None") -> list[str]:
     - ``tts_voice_rotation_enabled`` (default ``false``) — master switch.
     - ``tts_voice_pool`` (default ``''``) — comma-separated voice names.
 
-    Behavior is UNCHANGED when unset: a disabled flag OR an empty
-    ``tts_voice_pool`` falls through to the module ``VOICE_POOL`` constant, so
-    existing installs rotate exactly as before. An operator supplies
-    engine-appropriate voice names via ``tts_voice_pool`` without touching code.
+    A disabled flag OR an empty ``tts_voice_pool`` falls through to the module
+    ``VOICE_POOL`` constant. This resolves *which* pool to use; whether to rotate
+    over it or pin the single ``podcast_tts_voice`` is decided by
+    ``_select_voice`` (rotation is opt-in). An operator supplies engine-
+    appropriate voice names via ``tts_voice_pool`` without touching code.
     """
     if site_config is None:
         return list(VOICE_POOL)
@@ -112,6 +114,46 @@ def _resolve_voice_pool(site_config: "SiteConfig | None") -> list[str]:
         raw = ""
     pool = [v.strip() for v in raw.split(",") if v.strip()]
     return pool or list(VOICE_POOL)
+
+
+def _select_voice(site_config: "SiteConfig | None", rotation_key: str) -> str:
+    """Pick the narration voice. **Rotation is opt-in.**
+
+    ``tts_voice_rotation_enabled`` (default ``false``) is the master switch:
+
+    - disabled (the default) → the single ``podcast_tts_voice`` (falling back to
+      the first pool entry when unset). No rotation — one stable brand voice.
+    - enabled → deterministically hash-rotate ``rotation_key`` over
+      ``_resolve_voice_pool`` for variety across episodes.
+
+    This is the seam that makes ``podcast_tts_voice`` actually take effect. The
+    callers pass the returned voice explicitly to ``_generate_with_voice``, so
+    before this helper a *disabled* flag still rotated — the flag only ever gated
+    the pool *source* (``_resolve_voice_pool``), never the rotation itself, and
+    ``podcast_tts_voice`` was dead config. The video narration reuses the podcast
+    voice, so honoring the flag here fixes both surfaces.
+    """
+    rotate = False
+    fixed = VOICE_POOL[0]
+    if site_config is not None:
+        try:
+            rotate = bool(site_config.get_bool("tts_voice_rotation_enabled", False))
+        except Exception:  # noqa: BLE001 — defensive; any read failure → no rotation
+            rotate = False
+        if not rotate:
+            try:
+                fixed = str(site_config.get("podcast_tts_voice", "") or "").strip() or VOICE_POOL[0]
+            except Exception:  # noqa: BLE001
+                fixed = VOICE_POOL[0]
+    if not rotate:
+        return fixed
+    pool = _resolve_voice_pool(site_config)
+    # usedforsecurity=False — MD5 here picks a stable index from rotation_key,
+    # not an integrity check; bandit B324 is a false positive on this path.
+    index = int(
+        hashlib.md5(rotation_key.encode(), usedforsecurity=False).hexdigest(), 16,
+    ) % len(pool)
+    return pool[index]
 
 
 # ---------------------------------------------------------------------------
@@ -775,7 +817,6 @@ class PodcastService:
         deterministically from ``key`` (e.g. ``task_id``) so a re-render of the
         same task is stable ("calculated, not generated", #689).
         """
-        import hashlib
         import tempfile
 
         if not script or not script.strip():
@@ -790,11 +831,7 @@ class PodcastService:
             out.parent.mkdir(parents=True, exist_ok=True)
 
         voice_pool = _resolve_voice_pool(self._site_config)
-        rotation_key = key or script
-        voice_index = int(
-            hashlib.md5(rotation_key.encode(), usedforsecurity=False).hexdigest(), 16,
-        ) % len(voice_pool)
-        selected = voice_pool[voice_index]
+        selected = _select_voice(self._site_config, key or script)
         voices_to_try = [
             selected,
             *[v for v in voice_pool if v != selected],
@@ -880,22 +917,18 @@ class PodcastService:
             len(script),
         )
 
-        # Rotate voice based on post_id hash for variety across episodes.
-        # usedforsecurity=False — MD5 here is "pick a stable index from this
-        # post_id", not an integrity check; bandit's B324 (weak-hash-for-
-        # security) is a false positive on this path.
-        import hashlib
+        # Voice selection honors tts_voice_rotation_enabled (opt-in): off (the
+        # default) pins the single podcast_tts_voice; on hash-rotates the pool by
+        # post_id for variety. The narration sibling below reuses selected_voice,
+        # so the video narration follows the same choice.
         voice_pool = _resolve_voice_pool(self._site_config)
-        voice_index = int(
-            hashlib.md5(post_id.encode(), usedforsecurity=False).hexdigest(), 16,
-        ) % len(voice_pool)
-        selected_voice = voice_pool[voice_index]
+        selected_voice = _select_voice(self._site_config, post_id)
         # Try selected voice first, then remaining pool voices, then fallbacks
         remaining_pool = [v for v in voice_pool if v != selected_voice]
         voices_to_try = [selected_voice, *remaining_pool, *VOICE_FALLBACKS]
         last_error = None
-        logger.info("[PODCAST] Voice rotation: selected '%s' (index %d) for post %s",
-                    selected_voice, voice_index, post_id[:12])
+        logger.info("[PODCAST] Voice selected '%s' for post %s",
+                    selected_voice, post_id[:12])
 
         for voice in voices_to_try:
             try:
