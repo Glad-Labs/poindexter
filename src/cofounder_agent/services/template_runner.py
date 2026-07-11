@@ -404,6 +404,18 @@ class PipelineState(TypedDict, total=False):
     # Always present at task entry:
     task_id: str
     topic: str
+    # niche_slug (RCA 2026-07-11): the durable routing seam
+    # (``pipeline_tasks.niche_slug``), seeded onto the initial context by
+    # ``content_router_service`` since 2026-05-28. Previously undeclared →
+    # LangGraph dropped it at ainvoke input-mapping on BOTH template paths,
+    # so ``finalize_task`` / ``content.evaluate_auto_publish`` passed
+    # ``niche_slug=None`` to the auto-publish gate and it returned
+    # ``disabled: "niche_slug missing"`` on every run — dev_diary never
+    # auto-published despite the operator opt-in. Consumers:
+    # ``modules/content/stages/finalize_task.py``,
+    # ``modules/content/atoms/content_evaluate_auto_publish.py``,
+    # ``modules/content/stages/generate_content.py`` (niche metrics).
+    niche_slug: str
 
     # Graph identity for checkpoint compatibility (poindexter#755). Seeded by
     # TemplateRunner.run on the graph_def path so a checkpoint records which

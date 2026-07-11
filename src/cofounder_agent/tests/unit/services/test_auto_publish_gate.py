@@ -40,10 +40,20 @@ def _make_platform(settings: dict[str, Any]) -> Any:
     return p
 
 
-def _make_pool(rows: list[dict[str, Any]] | None = None) -> Any:
-    """asyncpg pool double — supplies ``conn.fetch`` with caller-controlled rows."""
+def _make_pool(
+    rows: list[dict[str, Any]] | None = None,
+    *,
+    task_niche: str | None = None,
+) -> Any:
+    """asyncpg pool double — supplies ``conn.fetch`` with caller-controlled rows.
+
+    ``task_niche`` backs ``conn.fetchval`` — the gate's defense-in-depth
+    lookup of ``pipeline_tasks.niche_slug`` when the caller passed no
+    niche (RCA 2026-07-11). Default ``None`` = the task row has no niche.
+    """
     conn = MagicMock()
     conn.fetch = AsyncMock(return_value=rows or [])
+    conn.fetchval = AsyncMock(return_value=task_niche)
 
     pool = MagicMock()
 
@@ -175,8 +185,10 @@ async def test_glad_labs_opts_in_via_its_own_keys() -> None:
 
 @pytest.mark.asyncio
 async def test_missing_niche_slug_returns_disabled() -> None:
-    """``feedback_no_silent_defaults``: a task without a niche cannot
-    auto-publish. The gate must NOT pick an arbitrary fallback niche."""
+    """``feedback_no_silent_defaults``: a task without a niche ANYWHERE —
+    neither passed by the caller nor on its own ``pipeline_tasks`` row
+    (``_make_pool`` defaults ``task_niche=None``) — cannot auto-publish.
+    The gate must NOT pick an arbitrary fallback niche."""
     from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
@@ -191,6 +203,89 @@ async def test_missing_niche_slug_returns_disabled() -> None:
         category="technology",
         quality_score=92.0,
         platform=site_config,
+    )
+
+    assert decision.would_fire is False
+    assert decision.gate_state == "disabled"
+    assert "niche_slug missing" in decision.reason
+
+
+@pytest.mark.asyncio
+async def test_none_niche_slug_falls_back_to_pipeline_tasks_lookup() -> None:
+    """RCA 2026-07-11 defense-in-depth: when the caller passes
+    ``niche_slug=None`` (the PipelineState channel was undeclared from
+    2026-05-28 to 2026-07-11, so every stage read None), the gate resolves
+    the task's OWN niche from ``pipeline_tasks`` instead of returning
+    ``disabled``. The DB row is the durable seam — a state-plumbing
+    regression must never silently disable an opted-in niche again.
+
+    This is a same-task lookup, NOT a cross-niche fallback: the resolved
+    niche still has to carry its own opt-in keys."""
+    from modules.content.auto_publish_gate import evaluate
+
+    platform = _make_platform({
+        "dev_diary_auto_publish_threshold": "69",
+        "dev_diary_auto_publish_dry_run": "false",
+        "dev_diary_auto_publish_min_clean_runs": "3",
+        "dev_diary_auto_publish_max_edit_distance": "50",
+    })
+
+    pool = _make_pool(
+        [
+            {"char_diff_count": 0},
+            {"char_diff_count": 0},
+            {"char_diff_count": 0},
+        ],
+        task_niche="dev_diary",
+    )
+
+    decision = await evaluate(
+        pool,
+        task_id="135b5783-21db-4ee6-a6cc-6d1c0d1e2d8d",
+        niche_slug=None,
+        category=None,
+        quality_score=70.0,
+        platform=platform,
+    )
+
+    assert decision.gate_state == "pass", (
+        f"gate did not resolve niche from the task row — "
+        f"gate_state={decision.gate_state}, reason={decision.reason}"
+    )
+    assert decision.would_fire is True
+    assert decision.dry_run is False
+
+
+@pytest.mark.asyncio
+async def test_niche_fallback_lookup_error_stays_disabled() -> None:
+    """Fail-closed: if the ``pipeline_tasks`` fallback lookup itself errors,
+    the gate returns ``disabled`` — never raises, never guesses a niche."""
+    from modules.content.auto_publish_gate import evaluate
+
+    platform = _make_platform({
+        "dev_diary_auto_publish_threshold": "69",
+        "dev_diary_auto_publish_dry_run": "false",
+    })
+
+    conn = MagicMock()
+    conn.fetch = AsyncMock(return_value=[])
+    conn.fetchval = AsyncMock(side_effect=RuntimeError("db down"))
+
+    pool = MagicMock()
+
+    @asynccontextmanager
+    async def _acquire():
+        yield conn
+
+    pool.acquire = _acquire
+
+    decision = await evaluate(
+        pool,
+        task_id="t1",
+        niche_slug=None,
+        category=None,
+        quality_score=99.0,
+        platform=platform,
     )
 
     assert decision.would_fire is False
@@ -390,11 +485,15 @@ async def test_dry_run_true_marks_decision_dry_run_even_when_would_fire() -> Non
 
 
 # ---------------------------------------------------------------------------
-# History-query shape — the niche-OR-category filter (#647)
+# History-query shape — NICHE-ONLY matching (RCA 2026-07-11)
 # ---------------------------------------------------------------------------
 
 
-def _make_capturing_pool(rows: list[dict[str, Any]] | None = None):
+def _make_capturing_pool(
+    rows: list[dict[str, Any]] | None = None,
+    *,
+    task_niche: str | None = None,
+):
     """asyncpg pool double that captures the SQL + bound args of the
     history ``conn.fetch`` so the query shape can be asserted."""
     captured: dict[str, Any] = {}
@@ -406,6 +505,7 @@ def _make_capturing_pool(rows: list[dict[str, Any]] | None = None):
 
     conn = MagicMock()
     conn.fetch = AsyncMock(side_effect=_fetch)
+    conn.fetchval = AsyncMock(return_value=task_niche)
 
     pool = MagicMock()
 
@@ -418,17 +518,19 @@ def _make_capturing_pool(rows: list[dict[str, Any]] | None = None):
 
 
 @pytest.mark.asyncio
-async def test_history_query_filters_on_niche_OR_category() -> None:
-    """Pin the trailing-clean-run history query (lines ~187-197).
+async def test_history_query_filters_on_niche_only() -> None:
+    """Pin the trailing-clean-run history query: NICHE-ONLY matching.
 
-    The ``WHERE COALESCE(niche_slug,'')=$1 OR COALESCE(category,'')=$2``
-    filter is an OR — so a row matching EITHER the niche OR the category
-    is counted. That OR-bleed is intentional (a niche with no history of
-    its own can borrow its category's track record), but it MUST stay
-    visible: a category shared across niches means one niche's edit
-    history can influence another's gate. This test makes the OR
-    explicit so a refactor to AND (or a hardcoded niche) is caught, and
-    confirms BOTH niche_slug ($1) and category ($2) are bound."""
+    The pre-2026-07-11 query was ``niche_slug=$1 OR category=$2``. Once
+    the Phase F squash retired ``pipeline_tasks.category`` (2026-06-22),
+    every flow task's context category defaulted to ``"technology"`` — so
+    the OR pulled OTHER niches' rows (glad-labs' 124-char-diff edit of
+    2026-06-23) into dev_diary's trailing window and returned
+    ``block_unclean`` for a niche whose own history was spotless. That is
+    cross-niche pollution, the same bug class as the 2026-05-26 incident
+    the niche-prefix fix (#598) closed. The clean-run track record must be
+    scoped to the niche that opted in, full stop — ``category`` must not
+    appear in the filter at all."""
     from modules.content.auto_publish_gate import evaluate
 
     site_config = _make_platform({
@@ -448,26 +550,65 @@ async def test_history_query_filters_on_niche_OR_category() -> None:
         pool,
         task_id="t1",
         niche_slug="dev_diary",
-        category="engineering",
+        category="technology",
         quality_score=92.0,
         platform=site_config,
     )
 
     sql = " ".join(captured["sql"].split())  # collapse whitespace
     assert "published_post_edit_metrics" in sql
-    # The OR-bleed: niche_slug OR category. Guard both halves + the OR.
     assert "niche_slug" in sql
-    assert "category" in sql
-    assert " OR " in sql, (
-        "history query must keep the niche-OR-category filter — "
-        f"got: {sql}"
+    assert " OR " not in sql, (
+        "history query re-grew the OR-category clause — one niche's edit "
+        f"history would pollute another's gate window again. Got: {sql}"
     )
-    # Both filter values are bound: $1=niche_slug, $2=category, $3=limit.
+    assert "category" not in sql, (
+        f"category must not participate in history matching — got: {sql}"
+    )
+    # Bound args: $1=niche_slug, $2=limit (max(min_clean, 1) = 3).
     args = captured["args"]
     assert args[0] == "dev_diary"
-    assert args[1] == "engineering"
-    # LIMIT is max(min_clean, 1) = 3.
-    assert args[2] == 3
+    assert args[1] == 3
+    assert len(args) == 2
+
+
+@pytest.mark.asyncio
+async def test_history_window_not_polluted_by_shared_category() -> None:
+    """Behavioral form of the niche-only contract: rows from ANOTHER niche
+    sharing the evaluation-time category must not enter the trailing
+    window. With niche-only matching the double's rows (all clean, all
+    this niche) produce ``pass`` even though the caller's category is the
+    post-Phase-F default ``"technology"`` that other niches also carry."""
+    from modules.content.auto_publish_gate import evaluate
+
+    site_config = _make_platform({
+        "dev_diary_auto_publish_threshold": "69",
+        "dev_diary_auto_publish_dry_run": "false",
+        "dev_diary_auto_publish_min_clean_runs": "3",
+        "dev_diary_auto_publish_max_edit_distance": "50",
+    })
+
+    # The pool returns what the (niche-only) query matches: dev_diary's own
+    # spotless history. Under the old OR-category query the window would
+    # have been [0, 124, 0] (glad-labs' technology rows interleaved) and
+    # the gate would block_unclean at 2/3.
+    pool = _make_pool([
+        {"char_diff_count": 0},
+        {"char_diff_count": 0},
+        {"char_diff_count": 0},
+    ])
+
+    decision = await evaluate(
+        pool,
+        task_id="t1",
+        niche_slug="dev_diary",
+        category="technology",
+        quality_score=70.0,
+        platform=site_config,
+    )
+
+    assert decision.gate_state == "pass"
+    assert decision.would_fire is True
 
 
 # ---------------------------------------------------------------------------

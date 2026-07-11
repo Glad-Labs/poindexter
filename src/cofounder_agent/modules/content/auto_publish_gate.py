@@ -24,11 +24,18 @@ Flow:
    - ``{niche}_auto_publish_dry_run`` (default true = log-only)
    - ``{niche}_auto_publish_min_clean_runs`` (default 3)
    - ``{niche}_auto_publish_max_edit_distance`` (default 50)
-   If ``niche_slug`` is None/empty, the gate returns disabled — every
-   niche must explicitly opt in via its own threshold key.
+   If the caller passes no ``niche_slug``, evaluate resolves the task's
+   OWN niche from ``pipeline_tasks`` (defense-in-depth, RCA 2026-07-11 —
+   the state channel was undeclared for six weeks and the gate sat
+   silently disabled). If no niche exists anywhere, the gate returns
+   disabled — every niche must explicitly opt in via its own threshold
+   key; there is never a cross-niche fallback.
 3. Reads the trailing N rows from ``published_post_edit_metrics``
-   for this niche; "clean" means char_diff_count <
-   max_edit_distance.
+   for this niche — niche-only matching; ``category`` no longer
+   participates (2026-07-11: the OR-category clause let another niche's
+   edit rows pollute this niche's window once every flow task's category
+   defaulted to "technology" post-Phase-F). "clean" means
+   char_diff_count < max_edit_distance.
 4. Returns AutoPublishDecision: would_fire (bool) + reason (str) +
    gate_state (str: 'pass' | 'block_threshold' | 'block_unclean' |
    'disabled' | 'dry_run').
@@ -226,7 +233,36 @@ async def evaluate(
     # 2026-05-27 niche-leak fix: every key is now niche-prefixed. A
     # missing niche_slug returns disabled per
     # ``feedback_no_silent_defaults`` — no implicit cross-niche fallback.
+    #
+    # RCA 2026-07-11 defense-in-depth: when the CALLER couldn't supply the
+    # niche (the ``PipelineState`` channel was undeclared 2026-05-28 →
+    # 2026-07-11, so every stage read None and the gate sat disabled for
+    # six weeks while the operator hand-approved daily), resolve the
+    # task's OWN niche from the durable seam — the ``pipeline_tasks`` row.
+    # This is a same-task lookup, NOT a cross-niche fallback: a task with
+    # no niche anywhere still returns disabled, and the resolved niche
+    # still has to carry its own opt-in keys.
     niche = (niche_slug or "").strip()
+    if not niche and pool is not None and task_id:
+        try:
+            async with pool.acquire() as conn:
+                raw = await conn.fetchval(
+                    "SELECT niche_slug FROM pipeline_tasks WHERE task_id = $1",
+                    str(task_id),
+                )
+            if isinstance(raw, str) and raw.strip():
+                niche = raw.strip()
+                logger.info(
+                    "[auto_publish_gate] caller passed no niche_slug — "
+                    "resolved %r from pipeline_tasks for task %s",
+                    niche, task_id,
+                )
+        except Exception as exc:  # noqa: BLE001 — fail-closed to 'disabled'
+            logger.warning(
+                "[auto_publish_gate] niche_slug fallback lookup failed for "
+                "task %s (gate stays disabled): %s",
+                task_id, exc,
+            )
     if not niche:
         logger.debug(
             "[auto_publish_gate] no niche_slug — gate disabled (no cross-niche fallback)"
@@ -296,7 +332,19 @@ async def evaluate(
             base.reason = struct_reason
             return base
 
-    # Gate condition 3: trailing clean-run count for this niche.
+    # Gate condition 3: trailing clean-run count for this niche — and ONLY
+    # this niche. The pre-2026-07-11 query also matched ``OR category=$2``;
+    # once the Phase F squash retired ``pipeline_tasks.category``
+    # (2026-06-22) every flow task's category defaulted to "technology",
+    # so the OR pulled OTHER niches' edit rows into this niche's trailing
+    # window (glad-labs' 124-char edit would have blocked dev_diary as
+    # ``block_unclean``). Cross-niche pollution is the same bug class the
+    # 2026-05-27 niche-prefix fix closed — the track record a niche earns
+    # is the track record its gate reads. ``category`` is still accepted
+    # by this function (call-site backcompat + recorded on write) but no
+    # longer participates in matching. Note $1 binds the RESOLVED niche
+    # (which may have come from the pipeline_tasks fallback above), not
+    # the raw ``niche_slug`` argument.
     clean_runs = 0
     last_n_diffs: list[int] = []
     try:
@@ -305,12 +353,11 @@ async def evaluate(
                 """
                 SELECT char_diff_count
                   FROM published_post_edit_metrics
-                 WHERE COALESCE(niche_slug, '') = COALESCE($1, '')
-                    OR COALESCE(category, '')   = COALESCE($2, '')
+                 WHERE COALESCE(niche_slug, '') = $1
                  ORDER BY approved_at DESC
-                 LIMIT $3
+                 LIMIT $2
                 """,
-                niche_slug, category, max(min_clean, 1),
+                niche, max(min_clean, 1),
             )
             last_n_diffs = [int(r["char_diff_count"]) for r in rows]
     except Exception as exc:  # noqa: BLE001
