@@ -407,6 +407,103 @@ class TestRagExtrasFlagsRead:
         assert await client._rag_extras_flags() == (False, False)
 
 
+# ---------------------------------------------------------------------------
+# 2026-07-11 — embed base_url propagation
+#
+# Background: the 2026-05-27 fix (above) recovered hybrid+rerank from the
+# retriever's "no site_config" branch but missed `base_url`. That branch
+# hardcodes `http://localhost:11434`, which inside the worker container has
+# no Ollama (it runs on host.docker.internal:11434 — the `local_llm_api_url`
+# value). So every `_search_via_rag_engine` embed failed ("Failed to connect
+# to Ollama") and find_similar_posts returned zero hits — the internal-linking
+# RAG layer + the pre-generation semantic-dedup check were both silently dead
+# (~1 RAG injection in 27 runs). Same read-from-pool-and-pass fix as the flags.
+# ---------------------------------------------------------------------------
+
+
+class _FakePoolWithNamedSetting:
+    """Returns a single app_settings value when the SELECT names ``key``.
+
+    Used to exercise ``_rag_embed_base_url`` (reads ``local_llm_api_url``).
+    ``fetch`` returns [] so ``_rag_extras_flags`` co-reads degrade to False.
+    """
+
+    def __init__(self, key: str, value: str | None):
+        self._key = key
+        self._value = value
+
+    def acquire(self):
+        outer = self
+
+        class _Conn:
+            async def __aenter__(self_inner):
+                return self_inner
+
+            async def __aexit__(self_inner, *_a):
+                return False
+
+            async def fetchrow(self_inner, sql, *_args):
+                if outer._key in sql:
+                    return {"value": outer._value} if outer._value is not None else None
+                return None
+
+            async def fetch(self_inner, *_a, **_k):
+                return []
+
+        return _Conn()
+
+
+@pytest.mark.unit
+class TestRagEmbedBaseUrlRead:
+    """`_rag_embed_base_url` returns local_llm_api_url from app_settings, or
+    None when unset/blank so the retriever keeps its localhost default."""
+
+    @pytest.mark.asyncio
+    async def test_returns_configured_url(self):
+        client = _make_client_with_pool(
+            _FakePoolWithNamedSetting(
+                "local_llm_api_url", "http://host.docker.internal:11434"
+            )
+        )
+        assert (
+            await client._rag_embed_base_url() == "http://host.docker.internal:11434"
+        )
+
+    @pytest.mark.asyncio
+    async def test_none_when_unset(self):
+        client = _make_client_with_pool(
+            _FakePoolWithNamedSetting("local_llm_api_url", None)
+        )
+        assert await client._rag_embed_base_url() is None
+
+    @pytest.mark.asyncio
+    async def test_blank_value_returns_none(self):
+        client = _make_client_with_pool(
+            _FakePoolWithNamedSetting("local_llm_api_url", "   ")
+        )
+        assert await client._rag_embed_base_url() is None
+
+    @pytest.mark.asyncio
+    async def test_search_via_rag_engine_passes_embed_base_url(self):
+        """The resolved URL must reach get_rag_retriever as embed_base_url —
+        this is the actual wiring the dead-RAG bug was missing."""
+        client = _make_client_with_pool(
+            _FakePoolWithNamedSetting(
+                "local_llm_api_url", "http://host.docker.internal:11434"
+            )
+        )
+        retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[]))
+        get_mock = AsyncMock(return_value=retriever)
+        with patch("services.rag_engine.get_rag_retriever", new=get_mock):
+            await client._search_via_rag_engine(
+                "query", source_table="posts", min_similarity=0.3, limit=5,
+            )
+        assert (
+            get_mock.call_args.kwargs["embed_base_url"]
+            == "http://host.docker.internal:11434"
+        )
+
+
 @pytest.mark.unit
 class TestExtrasFlagsThreadedIntoRetriever:
     """End-to-end: when prod has all three RAG flags on, the retriever

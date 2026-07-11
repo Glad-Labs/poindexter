@@ -34,6 +34,19 @@ Routing into Path B happens transparently at
   has no writer-filter parameter today; writer-filtered queries
   always run Path A)
 
+**Embed endpoint (standalone caller).** `MemoryClient` has no `SiteConfig`,
+so `_search_via_rag_engine` reads `local_llm_api_url` from the pool
+(`_rag_embed_base_url`) and passes it to `get_rag_retriever` as
+`embed_base_url`. Without it the retriever's no-`site_config` branch defaults
+the query-embedder to `http://localhost:11434`, which inside the worker
+container has no Ollama (it runs on `host.docker.internal:11434`) — so every
+embed fails. The failure mode is **quiet**: the retriever catches the embed
+`ConnectionError` and returns an _empty_ result instead of raising, so it does
+**not** trip the loud Path-A fallback below — it just yields zero hits. That is
+how a mis-pointed endpoint stayed hidden (≈1 RAG injection in 27 runs) until the
+2026-07-11 fix. (Making embed-connection failures raise so the fallback fires is
+a tracked follow-up.)
+
 If `get_rag_retriever` raises for any reason — llama-index not
 installed, embedding model not pulled, query embedding fails —
 `MemoryClient.search` catches the exception and falls back to

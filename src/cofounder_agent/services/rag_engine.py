@@ -325,11 +325,19 @@ async def get_rag_retriever(
     source_filter: list[str] | None = None,
     hybrid: bool | None = None,
     rerank: bool | None = None,
+    embed_base_url: str | None = None,
 ) -> Any:
     """Return a LlamaIndex retriever wired to our pgvector schema.
 
     All parameters fall back to ``app_settings`` when omitted. Callers
     pass site_config to enable runtime tuning without code changes.
+
+    ``embed_base_url`` is the Ollama HTTP endpoint for the query-embedding
+    model. When provided it wins over both the ``local_llm_api_url`` setting
+    and the localhost default — it's how a site_config-less caller (e.g.
+    ``MemoryClient._search_via_rag_engine``, which reads the URL from the pool)
+    points the embedder at ``host.docker.internal:11434`` instead of the
+    container-local ``localhost:11434`` where no Ollama is listening.
 
     Phase C extensions:
     - ``hybrid=True`` (or ``rag_hybrid_enabled`` setting) — wraps the
@@ -356,7 +364,7 @@ async def get_rag_retriever(
         # OLLAMA_BASE_URL directly was the legacy env-var bypass we're
         # retiring with this sweep — see `feedback_no_silent_defaults`
         # and `feedback_no_env_vars`.
-        base_url = (
+        base_url = embed_base_url or (
             site_config.get("local_llm_api_url", "") or "http://localhost:11434"
         )
         retry_attempts = int(
@@ -387,7 +395,11 @@ async def get_rag_retriever(
         top_k = top_k if top_k is not None else 5
         min_similarity = min_similarity if min_similarity is not None else 0.3
         model_name = "nomic-embed-text"
-        base_url = "http://localhost:11434"
+        # embed_base_url (when a site_config-less caller resolved it from the
+        # pool) wins over the localhost default — see the docstring. Without an
+        # override this stays localhost so tests/bootstrap don't reach a real
+        # Ollama on host.docker.internal.
+        base_url = embed_base_url or "http://localhost:11434"
         retry_attempts = _DEFAULT_EMBED_RETRY_ATTEMPTS
         retry_base_delay = _DEFAULT_EMBED_RETRY_BASE_DELAY
         if hybrid is None:

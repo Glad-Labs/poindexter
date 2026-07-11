@@ -110,6 +110,31 @@ class TestFactoryDefaults:
         assert retriever._base_url == "http://localhost:11434"
 
     @pytest.mark.asyncio
+    async def test_embed_base_url_overrides_localhost_default(self):
+        """A site_config-less caller (MemoryClient._search_via_rag_engine)
+        resolves the Ollama endpoint from the pool and passes it as
+        `embed_base_url`. It must beat the localhost default — otherwise the
+        embed query hits container-local :11434 (no Ollama) and every RAG
+        lookup returns zero hits. Regression guard for the 2026-07-11 fix."""
+        retriever = await get_rag_retriever(
+            pool=MagicMock(),
+            embed_base_url="http://host.docker.internal:11434",
+        )
+        assert retriever._base_url == "http://host.docker.internal:11434"
+
+    @pytest.mark.asyncio
+    async def test_embed_base_url_wins_over_site_config(self):
+        """When both are present the explicit override wins — the caller has
+        the authoritative endpoint."""
+        sc = _site_config({"local_llm_api_url": "http://from-db:11434"})
+        retriever = await get_rag_retriever(
+            pool=MagicMock(),
+            site_config=sc,
+            embed_base_url="http://host.docker.internal:11434",
+        )
+        assert retriever._base_url == "http://host.docker.internal:11434"
+
+    @pytest.mark.asyncio
     async def test_base_url_passed_into_embed_model(self, monkeypatch):
         """Retriever's stored base_url flows through to `_get_embed_model`
         with no env-var read involved. Smoke-test the wiring."""

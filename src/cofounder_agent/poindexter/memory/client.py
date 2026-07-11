@@ -807,6 +807,43 @@ class MemoryClient:
             values.get("rag_rerank_enabled", "") in truthy,
         )
 
+    async def _rag_embed_base_url(self) -> str | None:
+        """Return the Ollama embed endpoint (``local_llm_api_url``) from
+        app_settings, or ``None`` when unset.
+
+        2026-07-11 — the companion to ``_rag_extras_flags``. Because
+        ``_search_via_rag_engine`` calls ``get_rag_retriever`` WITHOUT a
+        ``site_config`` (MemoryClient is standalone), the retriever fell into
+        its "no site_config" branch where the query-embedding ``base_url`` was
+        hardcoded to ``http://localhost:11434``. Inside the worker container
+        Ollama isn't on localhost — it's on ``host.docker.internal:11434`` (the
+        ``local_llm_api_url`` value) — so every embed failed ("Failed to
+        connect to Ollama") and ``find_similar_posts`` returned zero hits: the
+        internal-linking RAG layer AND the pre-generation semantic-dedup check
+        were both silently dead in prod (~1 injection in 27 runs). The
+        2026-05-27 fix recovered ``hybrid``/``rerank`` from the same branch this
+        way but missed ``base_url``.
+
+        Read directly through the pool (same shape as ``_rag_engine_enabled``)
+        so MemoryClient stays standalone. Returns ``None`` when unset/blank so
+        the retriever keeps its localhost default — the test/bootstrap-safe
+        behavior that avoids reaching a real host Ollama.
+        """
+        try:
+            pool = await self._require_pool()
+            async with pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT value FROM app_settings "
+                    "WHERE key = 'local_llm_api_url' AND is_active = true "
+                    "LIMIT 1"
+                )
+        except Exception:  # silent-ok: best-effort settings read; on failure fall back to the retriever's localhost default — a DB-read failure here coincides with broader DB unavailability where RAG is moot (mirrors _rag_engine_enabled / _rag_extras_flags)
+            return None
+        if not row:
+            return None
+        value = str(row["value"] or "").strip()
+        return value or None
+
     async def _search_via_rag_engine(
         self,
         query: str,
@@ -833,6 +870,12 @@ class MemoryClient:
         # instantiate. The wrappers themselves have been wired since
         # 2026-05-10; only this call site was missing the flag pass.
         hybrid, rerank = await self._rag_extras_flags()
+        # 2026-07-11: also resolve the Ollama embed endpoint from the pool and
+        # pass it explicitly. Without this the retriever's "no site_config"
+        # branch hardcodes localhost:11434, which has no Ollama inside the
+        # worker container — the embed fails and every RAG query returns zero
+        # hits. Same read-from-pool-and-pass pattern as hybrid/rerank above.
+        embed_base_url = await self._rag_embed_base_url()
         retriever = await get_rag_retriever(
             pool,
             top_k=limit,
@@ -840,6 +883,7 @@ class MemoryClient:
             source_filter=[source_table] if source_table else None,
             hybrid=hybrid,
             rerank=rerank,
+            embed_base_url=embed_base_url,
         )
         nodes = await retriever.aretrieve(query)
 
