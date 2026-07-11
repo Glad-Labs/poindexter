@@ -117,6 +117,74 @@ class TestAuditLoggerLog:
 
 
 # ---------------------------------------------------------------------------
+# Non-finite floats in details (NaN / ±inf) — the ragas_score row loss.
+# json.dumps defaults to allow_nan=True and emits the literal ``NaN``, which
+# Postgres's ::jsonb cast rejects (InvalidTextRepresentationError: Token "NaN"
+# is invalid) — losing the whole row. Loki showed 40+ such drops from
+# event=ragas_score source=ragas_eval across 2026-06-18→06-28. The logger must
+# replace non-finite floats with null so the row still lands.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestNonFiniteDetails:
+    @pytest.mark.asyncio
+    async def test_nan_in_details_still_lands_row_as_null(self):
+        pool = _make_pool()
+        audit = AuditLogger(pool)
+
+        await audit.log(
+            "ragas_score", "ragas_eval",
+            {"score": 0.7415, "answer_relevancy": float("nan"), "topic": "t"},
+        )
+
+        pool.execute.assert_awaited_once()
+        raw = pool.execute.call_args[0][4]
+        # Postgres jsonb rejects the NaN literal — it must not appear.
+        # (json.loads would happily re-parse it, so check the raw string.)
+        assert "NaN" not in raw
+        parsed = json.loads(raw)
+        assert parsed["score"] == 0.7415
+        assert parsed["answer_relevancy"] is None
+        assert parsed["topic"] == "t"
+
+    @pytest.mark.asyncio
+    async def test_inf_and_nested_non_finite_sanitized(self):
+        pool = _make_pool()
+        audit = AuditLogger(pool)
+
+        await audit.log(
+            "evt", "src",
+            {
+                "up": float("inf"),
+                "down": float("-inf"),
+                "nested": {"bad": float("nan"), "ok": 1.5},
+                "listed": [float("nan"), 2.0, {"deep": float("inf")}],
+            },
+        )
+
+        pool.execute.assert_awaited_once()
+        raw = pool.execute.call_args[0][4]
+        assert "NaN" not in raw
+        assert "Infinity" not in raw
+        parsed = json.loads(raw)
+        assert parsed["up"] is None
+        assert parsed["down"] is None
+        assert parsed["nested"] == {"bad": None, "ok": 1.5}
+        assert parsed["listed"] == [None, 2.0, {"deep": None}]
+
+    @pytest.mark.asyncio
+    async def test_finite_details_are_not_rewritten(self):
+        pool = _make_pool()
+        audit = AuditLogger(pool)
+
+        await audit.log("evt", "src", {"score": 0.9999, "count": 3, "flag": True})
+
+        parsed = json.loads(pool.execute.call_args[0][4])
+        assert parsed == {"score": 0.9999, "count": 3, "flag": True}
+
+
+# ---------------------------------------------------------------------------
 # AuditLogger.query
 # ---------------------------------------------------------------------------
 

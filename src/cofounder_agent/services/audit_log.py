@@ -18,6 +18,7 @@ Usage:
 
 import asyncio
 import functools
+import math
 from datetime import datetime
 from typing import Any, Optional
 
@@ -174,6 +175,25 @@ async def drain_pending_writes(timeout: float = 5.0) -> None:
         task.cancel()
 
 
+def _null_non_finite(value: Any) -> Any:
+    """Recursively replace non-finite floats (NaN / ±inf) with None.
+
+    ``json.dumps`` defaults to ``allow_nan=True`` and emits the literals
+    ``NaN`` / ``Infinity`` — valid Python, invalid JSON (RFC 8259) — which
+    Postgres's ``::jsonb`` cast rejects with InvalidTextRepresentationError,
+    losing the whole audit row (the ragas_score write failures). ``None``
+    serializes as JSON ``null``, which jsonb accepts and downstream
+    ``(details->>'key')::float`` reads surface as SQL NULL.
+    """
+    if isinstance(value, float) and not math.isfinite(value):
+        return None
+    if isinstance(value, dict):
+        return {k: _null_non_finite(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_null_non_finite(v) for v in value]
+    return value
+
+
 # ---------------------------------------------------------------------------
 # Core AuditLogger class
 # ---------------------------------------------------------------------------
@@ -206,7 +226,20 @@ class AuditLogger:
         """
         import json
 
-        details_json = json.dumps(details or {})
+        try:
+            details_json = json.dumps(details or {}, allow_nan=False)
+        except ValueError:
+            # Non-finite floats (NaN/±inf) are legal Python but illegal JSON —
+            # without allow_nan=False, json.dumps emits the literal ``NaN``
+            # and Postgres's ::jsonb cast rejects the whole row. Degrade the
+            # bad leaves to null so the event still lands, and say so: the
+            # emitter has a bug worth fixing at the source.
+            logger.warning(
+                "audit details for event=%s source=%s contained non-finite "
+                "floats — sanitized to null",
+                event_type, source,
+            )
+            details_json = json.dumps(_null_non_finite(details or {}), allow_nan=False)
         try:
             await self.pool.execute(
                 self.INSERT_SQL,

@@ -4,12 +4,15 @@ The guard tests stub out the underlying Ragas + Ollama calls so the
 suite stays fast (no judge-LLM round-trips, no model downloads). The
 stubbed-happy-path case below relies on the ``ragas`` SDK being
 importable (so ``patch('ragas.evaluate', ...)`` can resolve the target);
-it is skipped when Ragas is not installed (CI default — Ragas is
-opt-in via ``app_settings.ragas_enabled`` and not pinned in pyproject).
+it is skipped when Ragas is not importable — pyproject pins
+``ragas = ">=0.2,<0.5"`` nowadays, but ragas 0.4.x has broken transitive
+deps against langchain-community >=0.4.2 (see ``_ragas_importable``), so
+the guard still earns its keep.
 """
 
 from __future__ import annotations
 
+import json
 import sys
 from contextlib import contextmanager
 from importlib.util import find_spec
@@ -114,6 +117,51 @@ class TestEvaluateSampleGuards:
                 topic="Topic", generated_content="content",
             )
         assert all(v == -1.0 for v in result.values())
+
+
+# ---------------------------------------------------------------------------
+# _coerce_metric — the -1.0-sentinel boundary for raw Ragas metric values.
+# The old expression ``float(scores_raw.get(k, -1.0) or -1.0)`` had two
+# falsy-logic bugs: NaN is truthy (Ragas reports failed metrics as NaN under
+# raise_exceptions=False, and the NaN sailed through into the ragas_score
+# audit details, where json.dumps emitted the literal ``NaN`` that Postgres
+# jsonb rejects — losing the row), and 0.0 is falsy (a genuine hard-zero
+# score was silently replaced by the failure sentinel).
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCoerceMetric:
+    def test_nan_becomes_sentinel(self):
+        from services.ragas_eval import _coerce_metric
+
+        assert _coerce_metric(float("nan")) == -1.0
+
+    def test_infinities_become_sentinel(self):
+        from services.ragas_eval import _coerce_metric
+
+        assert _coerce_metric(float("inf")) == -1.0
+        assert _coerce_metric(float("-inf")) == -1.0
+
+    def test_none_becomes_sentinel(self):
+        from services.ragas_eval import _coerce_metric
+
+        assert _coerce_metric(None) == -1.0
+
+    def test_unparseable_becomes_sentinel(self):
+        from services.ragas_eval import _coerce_metric
+
+        assert _coerce_metric("not-a-number") == -1.0
+
+    def test_zero_is_a_real_score_not_a_sentinel(self):
+        from services.ragas_eval import _coerce_metric
+
+        assert _coerce_metric(0.0) == 0.0
+
+    def test_normal_score_passes_through(self):
+        from services.ragas_eval import _coerce_metric
+
+        assert _coerce_metric(0.85) == 0.85
 
 
 # ---------------------------------------------------------------------------
@@ -372,3 +420,64 @@ class TestEvaluateSampleStubbed:
         assert result["faithfulness"] == 0.85
         assert result["answer_relevancy"] == 0.91
         assert result["context_precision"] == 0.72
+
+
+# ---------------------------------------------------------------------------
+# evaluate_sample — NaN metric handling (fake-module stubbed so it runs even
+# where ragas is not installed, unlike the requires_ragas-guarded class above)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestEvaluateSampleNonFinite:
+    @pytest.mark.asyncio
+    async def test_nan_metric_coerced_to_sentinel_and_kept_out_of_audit(self):
+        """Ragas (raise_exceptions=False) reports a failed metric as NaN.
+        NaN is truthy, so the old ``or -1.0`` guard let it through — and
+        the ragas_score audit write died on Postgres jsonb rejecting the
+        NaN literal (Loki: 'Failed to write audit log event=ragas_score',
+        40+ drops 2026-06-18→06-28). NaN must collapse to the documented
+        -1.0 sentinel at the evaluate_sample boundary, and the audit
+        emission must stay JSON-compliant."""
+        fake_result = MagicMock()
+        fake_result.scores = [{
+            "faithfulness": 0.85,
+            "answer_relevancy": float("nan"),
+            "context_precision": 0.72,
+        }]
+        fake_ragas = MagicMock()
+        fake_ragas.evaluate = MagicMock(return_value=fake_result)
+        fake_datasets = MagicMock()
+        fake_datasets.Dataset.from_dict = MagicMock(return_value=MagicMock())
+
+        with (
+            patch(
+                "services.ragas_eval._build_ragas_models",
+                return_value=(MagicMock(), MagicMock()),
+            ),
+            _inject_fake_modules({
+                "datasets": fake_datasets,
+                "ragas": fake_ragas,
+                "ragas.metrics": MagicMock(),
+            }),
+            patch("services.audit_log.audit_log_bg") as mock_bg,
+        ):
+            result = await evaluate_sample(
+                topic="Topic",
+                generated_content="content",
+                retrieved_contexts=["ctx"],
+            )
+
+        assert result["faithfulness"] == 0.85
+        assert result["answer_relevancy"] == -1.0
+        assert result["context_precision"] == 0.72
+
+        # The failed metric is a sentinel (excluded from the average), and
+        # the details dict json-serializes under RFC-compliant rules — the
+        # exact property whose absence killed the Postgres insert.
+        assert mock_bg.call_count == 1
+        details = mock_bg.call_args[0][2]
+        json.dumps(details, allow_nan=False)  # raises ValueError on NaN/inf
+        assert details["answer_relevancy"] == -1.0
+        assert details["metric_count"] == 2
+        assert details["score"] == pytest.approx((0.85 + 0.72) / 2, abs=1e-4)

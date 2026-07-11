@@ -31,6 +31,7 @@ automatically. No new table.
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 from services.logger_config import get_logger
@@ -281,6 +282,27 @@ async def _build_ragas_models(
 # ---------------------------------------------------------------------------
 
 
+def _coerce_metric(value: Any) -> float:
+    """Collapse a raw Ragas metric value onto the -1.0-sentinel contract.
+
+    Ragas under ``raise_exceptions=False`` reports a failed metric as
+    ``float('nan')`` — which is truthy, so the previous ``or -1.0`` guard
+    passed it straight through into the ragas_score audit details, where
+    ``json.dumps`` emitted the literal ``NaN`` that Postgres jsonb rejects
+    (the whole row was lost; Loki 'Failed to write audit log
+    event=ragas_score'). Missing / None / unparseable / non-finite values
+    all collapse to the documented -1.0 sentinel. A genuine 0.0 score is
+    preserved — the old falsy check silently replaced it with the sentinel.
+    """
+    if value is None:
+        return -1.0
+    try:
+        score = float(value)
+    except (TypeError, ValueError):
+        return -1.0
+    return score if math.isfinite(score) else -1.0
+
+
 def _emit_ragas_score_audit(
     scores: dict[str, float],
     topic: str,
@@ -387,9 +409,9 @@ async def evaluate_sample(
         )
         scores_raw = result.scores[0] if result.scores else {}  # type: ignore[union-attr]
         scores = {
-            "faithfulness": float(scores_raw.get("faithfulness", -1.0) or -1.0),
-            "answer_relevancy": float(scores_raw.get("answer_relevancy", -1.0) or -1.0),
-            "context_precision": float(scores_raw.get("context_precision", -1.0) or -1.0),
+            "faithfulness": _coerce_metric(scores_raw.get("faithfulness")),
+            "answer_relevancy": _coerce_metric(scores_raw.get("answer_relevancy")),
+            "context_precision": _coerce_metric(scores_raw.get("context_precision")),
         }
         _emit_ragas_score_audit(scores, topic, task_id)
         return scores
