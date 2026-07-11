@@ -162,7 +162,10 @@ def _patch_guard_block():
     async def _fake(title, *, site_config=None, force=False, **_kw):
         captured["title"] = title
         match = types.SimpleNamespace(
-            similarity=0.82,
+            # A raw cross-encoder rerank logit (the prod RAG path), NOT a
+            # 0–1 cosine — the guard blocks on it because the base pgvector
+            # floor already proved cosine ≥ threshold.
+            similarity=-3.4,
             metadata={"title": "The VRAM Currency Problem"},
             source_id="post/bb10de87",
         )
@@ -423,6 +426,9 @@ class TestDedup:
         combined = (result.output or "") + str(result.exception or "")
         assert "VRAM Currency Problem" in combined
         assert "--force" in combined
+        # The rerank logit must not leak into the operator message as a bogus
+        # "cosine −3.40 ≥ 0.75" — only the cleared dedup threshold is shown.
+        assert "-3.4" not in combined
         # Dedup ran against the resolved TITLE, not the raw body.
         assert captured.get("title") == "Quantization and VRAM"
         assert fake_asyncpg["conn"].fetchrow.await_count == 0

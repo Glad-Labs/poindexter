@@ -106,6 +106,57 @@ async def test_duplicate_topic_raises():
     assert "force" in str(err).lower()
 
 
+@pytest.mark.parametrize("rerank_logit", [-10.21, -3.4, 0.0, 0.3, 0.74])
+async def test_rerank_logit_below_cosine_threshold_still_blocks(rerank_logit):
+    """A near-duplicate must block even when its ``.similarity`` is a low
+    or negative cross-encoder rerank logit.
+
+    Regression for the silent under-block: with the RAG reranker on (the
+    prod default), ``find_similar_posts`` applies ``min_similarity`` as a
+    TRUE cosine floor at the base pgvector level, then the cross-encoder
+    OVERWRITES ``MemoryHit.similarity`` with a raw logit (unbounded,
+    routinely negative). So every hit the search returns is already
+    cosine ≥ threshold — but re-checking ``.similarity >= threshold``
+    compares a logit against a cosine floor and lets a genuine duplicate
+    through. The guard must trust the floor and block on any returned hit.
+    """
+    # cosine ≥ 0.75 is already guaranteed by the search floor; the hit
+    # surfaces with a sub-threshold rerank logit as its ``.similarity``.
+    mem = _FakeMemoryClient(hits=[_hit(rerank_logit)])
+
+    with pytest.raises(DuplicateTopicError):
+        await assert_topic_not_duplicate(
+            "Quantization and VRAM: how to fit a large language model",
+            site_config=_site_config(),
+            memory_client=mem,
+        )
+
+
+def test_duplicate_error_message_coherent_for_negative_rerank_logit():
+    """The operator-facing message stays coherent when ``.similarity`` is a
+    negative rerank logit (the prod rerank path).
+
+    It must name the colliding post and the dedup threshold it cleared, keep
+    the force remediation, and NOT label the surfaced score as a cosine or
+    render a self-contradictory ``score ≥ threshold`` inequality like
+    "cosine −3.40 ≥ threshold 0.75".
+    """
+    err = DuplicateTopicError(
+        topic="Quantization and VRAM",
+        match=_hit(-3.4),  # cross-encoder logit, not a cosine
+        threshold=0.75,
+    )
+    msg = str(err)
+    assert "The VRAM Currency Problem" in msg  # names the offending post
+    assert "0.75" in msg  # names the threshold it cleared
+    assert "force" in msg.lower()  # remediation preserved
+    # The raw per-hit score is a rerank logit here — it must NOT leak into
+    # the message, where pairing it with the threshold produced the
+    # "cosine −3.40 ≥ 0.75" contradiction. Only the (true cosine) threshold
+    # the match provably cleared is surfaced.
+    assert "-3.4" not in msg
+
+
 async def test_distinct_topic_passes():
     """A topic with no near-duplicate is allowed through (no raise)."""
     mem = _FakeMemoryClient(hits=[])  # nothing at/above threshold

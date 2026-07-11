@@ -72,8 +72,11 @@ class MemoryHit:
     # rerank path — see `_search_via_rag_engine` — where `.similarity` is a raw
     # cross-encoder logit (unbounded, routinely negative) rather than a cosine.
     # `None` everywhere else; consumers fall back to `.similarity`. Kept
-    # deliberately separate from `.similarity` so threshold consumers (e.g.
-    # `topic_dedup_guard`'s `>= 0.75` re-check) see the unchanged raw score.
+    # deliberately separate so ordering + raw-score consumers see the
+    # unchanged rerank logit while human/LLM surfaces render the 0-1 form.
+    # Don't threshold `.similarity` against a cosine cutoff — it's a logit,
+    # not a cosine; `topic_dedup_guard` trusts the base pgvector cosine floor
+    # (`find_similar_posts(min_similarity=…)`) instead of re-checking here.
     display_similarity: float | None = None
 
     def __str__(self) -> str:

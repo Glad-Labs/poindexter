@@ -685,11 +685,18 @@ def post_create(
                         resolved_title, site_config=site_cfg
                     )
                 except DuplicateTopicError as dup:
+                    # Surface the dedup threshold the match cleared, not
+                    # dup.similarity — on the RAG rerank path (prod default)
+                    # that field is a raw cross-encoder logit, not a cosine,
+                    # so "cosine {logit} ≥ {thr}" could render a nonsensical
+                    # "cosine −3.40 ≥ 0.75". The base pgvector floor already
+                    # guarantees the match's cosine ≥ threshold.
                     raise RuntimeError(
                         f"{dup.topic!r} is too similar to published post "
-                        f"{dup.match_title!r} ({dup.match_post_id}) — cosine "
-                        f"{dup.similarity:.2f} ≥ {dup.threshold:.2f}. Refusing to "
-                        "create a near-duplicate; re-run with --force to override."
+                        f"{dup.match_title!r} ({dup.match_post_id}) — its cosine "
+                        f"similarity clears the dedup threshold "
+                        f"({dup.threshold:.2f}). Refusing to create a "
+                        "near-duplicate; re-run with --force to override."
                     ) from dup
 
             # --- Niche → metadata.niche_slug (warn when omitted) --------

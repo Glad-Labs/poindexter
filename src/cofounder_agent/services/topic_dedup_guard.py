@@ -64,10 +64,17 @@ class DuplicateTopicError(Exception):
         super().__init__(self._message())
 
     def _message(self) -> str:
+        # Report the cosine dedup THRESHOLD the match cleared, not
+        # ``self.similarity``. With the RAG reranker on (the prod default)
+        # that value is a raw cross-encoder logit (unbounded, often
+        # negative), not a 0–1 cosine — printing "cosine {logit} ≥ threshold"
+        # would render a self-contradictory line like "cosine −3.40 ≥ 0.75".
+        # The base pgvector floor already guarantees the closest published
+        # post's cosine ≥ threshold, so that's the fact worth surfacing.
         return (
             f"Topic {self.topic!r} is too similar to already-published post "
-            f"{self.match_title!r} ({self.match_post_id}) — cosine "
-            f"{self.similarity:.2f} ≥ threshold {self.threshold:.2f}. "
+            f"{self.match_title!r} ({self.match_post_id}) — its cosine "
+            f"similarity clears the dedup threshold ({self.threshold:.2f}). "
             "Refusing to enqueue a near-duplicate. If this is intentional, "
             'retry with force=true (create_post) / "force": true '
             "(POST /api/tasks), or lower app_settings."
@@ -121,12 +128,22 @@ async def _closest_published_post(
 
     if not hits:
         return None
-    best = hits[0]
-    # ``find_similar_posts`` already filters by min_similarity, but
-    # re-check defensively so a lenient backend can't slip a low hit past.
-    if float(getattr(best, "similarity", 0.0) or 0.0) >= threshold:
-        return best
-    return None
+    # ``find_similar_posts`` applied ``min_similarity=threshold`` as a TRUE
+    # cosine floor at the base pgvector SQL level (see
+    # ``services.rag_engine`` PoindexterPGVectorRetriever._aretrieve and
+    # ``MemoryClient.search``), so any hit it returns is already
+    # cosine ≥ threshold — a genuine near-duplicate.
+    #
+    # Deliberately DON'T re-check ``hits[0].similarity`` against the
+    # threshold here. With the cross-encoder reranker on (the prod default:
+    # ``rag_engine_enabled`` + ``rag_rerank_enabled``), ``MemoryHit.similarity``
+    # is a raw rerank logit (unbounded, routinely negative — live samples
+    # span +6.22 … −10.21), NOT a 0–1 cosine. Comparing that logit to the
+    # cosine ``threshold`` would silently drop real duplicates whose rerank
+    # score lands below 0.75 — the exact under-block this guard exists to
+    # prevent. The base floor already guarantees the invariant the old
+    # "lenient backend" re-check was reaching for.
+    return hits[0]
 
 
 async def assert_topic_not_duplicate(
