@@ -127,29 +127,56 @@ def _span_wrap(
 # Prompt key in UnifiedPromptManager + prompt_templates table. The
 # default lives at skills/content/atoms/SKILL.md; runtime overrides come
 # from the prompt_templates DB row. Per feedback_prompts_must_be_db_configurable.
-# The {site_name} placeholder is rendered from site_config by compose().
+# The {site_name} placeholder is rendered from the run-bound site_config by
+# _resolve_system_prompt (single .format pass).
 _PROMPT_KEY = "atoms.pipeline_architect.system_prompt"
 
 
-def _resolve_system_prompt() -> str:
-    """Pull the architect system prompt via UnifiedPromptManager."""
+def _resolve_system_prompt(site_config: SiteConfig | None) -> str:
+    """Return the fully-rendered architect system prompt.
+
+    The template carries the operator brand as a ``{site_name}`` placeholder
+    (alongside escaped ``{{ }}`` JSON-schema literals). Both are rendered here
+    in a SINGLE ``str.format`` pass — registry-up through ``get_prompt``'s
+    format pass, registry-down through the inline fallback's own ``.format`` —
+    so the caller receives ready-to-use text and MUST NOT format it again (a
+    second pass would choke on the now-single JSON braces). This is why the
+    architect renders here rather than mirroring ``narrate_bundle``'s
+    render-then-caller-reformats pattern: that prompt is brace-free, the
+    architect's JSON schema is not.
+
+    Threading ``site_name``/``site_url`` into ``get_prompt`` is what makes the
+    SKILL.md copy resolvable at all — the previous no-kwargs call raised
+    ``KeyError`` on the required ``{site_name}`` var and silently fell back to
+    the inline constant on every call (so the SKILL.md prompt was dead code).
+    """
+    site_name = (site_config.get("site_name") if site_config else "") or ""
+    site_url = (site_config.get("site_url") if site_config else "") or ""
     try:
         from services.prompt_manager import get_prompt_manager
-        return get_prompt_manager().get_prompt(_PROMPT_KEY)
+        return get_prompt_manager().get_prompt(
+            _PROMPT_KEY, site_name=site_name, site_url=site_url,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.error(
             "[pipeline_architect] prompt_manager lookup for %r failed (%s) — "
             "using inline fallback",
             _PROMPT_KEY, exc,
         )
-        return _ARCHITECT_SYSTEM_PROMPT_FALLBACK
+        return _ARCHITECT_SYSTEM_PROMPT_FALLBACK.format(
+            site_name=site_name, site_url=site_url,
+        )
 
 
-# The {site_name} placeholder is rendered from the run-bound site_config
-# by compose() (see the .format() call). The JSON-schema braces are
-# escaped as {{ / }} so .format() leaves them as literal single braces.
+# Inline fallback for when the prompt registry is unreachable. The {site_name}
+# placeholder is rendered from the run-bound site_config by
+# _resolve_system_prompt (single .format pass); the JSON-schema braces are
+# escaped as {{ / }} so that same pass leaves them as literal single braces.
+# Keep this byte-identical to the SKILL.md default
+# (skills/content/atoms/SKILL.md :: atoms.pipeline_architect.system_prompt) —
+# test_prompt_fallback_drift renders both and asserts they match.
 _ARCHITECT_SYSTEM_PROMPT_FALLBACK = """\
-You are the {{site_name}} pipeline architect. Given an INTENT (high-level
+You are the {site_name} pipeline architect. Given an INTENT (high-level
 request) and an ATOM CATALOG (one bullet line per atom, with PURPOSE
 / INPUTS / OUTPUTS / REQUIRES / PRODUCES blocks), produce a JSON
 object describing a LangGraph pipeline that satisfies the intent.
@@ -296,13 +323,11 @@ async def compose(
         model = resolve_local_model(site_config=_sc)
 
     # The migrated prompt carries the operator persona as a {site_name}
-    # placeholder (was hardcoded "Glad Labs"). Render it once from the
-    # run-bound site_config before the loop. Empty string when unset so
-    # .format never raises on a missing key.
-    system_prompt = _resolve_system_prompt().format(
-        site_name=(_sc.get("site_name") if _sc else "") or "",
-        site_url=(_sc.get("site_url") if _sc else "") or "",
-    )
+    # placeholder (was hardcoded "Glad Labs"). _resolve_system_prompt renders
+    # it (and the escaped JSON braces) from the run-bound site_config in a
+    # single .format pass — do NOT re-format here: the JSON schema is now
+    # single-brace and a second pass would raise.
+    system_prompt = _resolve_system_prompt(_sc)
 
     base_user_prompt = f"INTENT: {intent}\n\n"
     if context:

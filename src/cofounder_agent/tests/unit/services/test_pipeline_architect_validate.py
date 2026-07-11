@@ -228,9 +228,9 @@ def test_architect_prompt_references_only_live_atoms():
     """Every atom the architect system prompt names must exist in the registry.
 
     Two complementary checks, applied to BOTH copies of the prompt — the inline
-    fallback (what compose() actually feeds the LLM, because _resolve_system_prompt
-    falls back when get_prompt can't render the {site_name} required var) and the
-    SKILL.md source of truth:
+    fallback constant (the last-resort text served when the prompt registry is
+    unreachable) and the SKILL.md source of truth (what _resolve_system_prompt
+    serves on the happy path):
 
       (1) every *namespaced* atom token (atoms./qa./stage./content./seo./media./
           podcast./social.) must resolve — namespaces are derived from the live
@@ -253,7 +253,7 @@ def test_architect_prompt_references_only_live_atoms():
     pattern = r"\b(?:" + "|".join(map(re.escape, namespaces)) + r")\.\w+"
 
     sources = {
-        "inline_fallback": pipeline_architect._resolve_system_prompt(),
+        "inline_fallback": pipeline_architect._ARCHITECT_SYSTEM_PROMPT_FALLBACK,
         "skill_md": UnifiedPromptManager().prompts[
             "atoms.pipeline_architect.system_prompt"
         ]["template"],
@@ -266,3 +266,53 @@ def test_architect_prompt_references_only_live_atoms():
             assert dead not in prompt, (
                 f"{label}: architect prompt still references renamed/deleted atom {dead!r}"
             )
+
+
+def test_resolve_system_prompt_renders_site_name_registry_up():
+    """The resolved architect prompt injects the brand from site_config.
+
+    Regression guard for the double-brace fallback bug (#2284 follow-up):
+    ``_resolve_system_prompt`` used to call ``get_prompt`` with no kwargs, so
+    the required ``{site_name}`` var raised KeyError and every call fell back to
+    the inline constant — whose ``{{site_name}}`` then rendered as a *literal*
+    ``{site_name}`` in compose(). The registry-up path must serve the SKILL.md
+    copy with the real brand substituted and no placeholder or escaped brace
+    left behind.
+    """
+    from services.site_config import SiteConfig
+
+    sc = SiteConfig(
+        initial_config={"site_name": "Glad Labs", "site_url": "https://gladlabs.io"}
+    )
+    rendered = pipeline_architect._resolve_system_prompt(sc)
+
+    assert "Glad Labs" in rendered, "brand was not injected into the architect prompt"
+    assert "{site_name}" not in rendered, "left a literal {site_name} placeholder"
+    assert "{{" not in rendered, "JSON-schema braces were not rendered to single braces"
+    # The JSON schema block must survive as valid single-brace text.
+    assert '"name":' in rendered
+
+
+def test_resolve_system_prompt_renders_site_name_registry_down():
+    """Same brand-render guarantee on the inline-fallback path.
+
+    When the prompt registry is unreachable the resolver renders the inline
+    fallback constant itself (single ``.format`` pass), so it must produce the
+    same fully-rendered shape — brand present, no literal ``{site_name}``, JSON
+    braces collapsed — never the raw ``{{site_name}}`` / ``{{`` template.
+    """
+    from services.site_config import SiteConfig
+
+    sc = SiteConfig(
+        initial_config={"site_name": "Glad Labs", "site_url": "https://gladlabs.io"}
+    )
+    with patch(
+        "services.prompt_manager.get_prompt_manager",
+        side_effect=RuntimeError("registry down"),
+    ):
+        rendered = pipeline_architect._resolve_system_prompt(sc)
+
+    assert "Glad Labs" in rendered, "brand was not injected into the fallback prompt"
+    assert "{site_name}" not in rendered, "left a literal {site_name} placeholder"
+    assert "{{" not in rendered, "fallback JSON-schema braces were not rendered"
+    assert '"name":' in rendered

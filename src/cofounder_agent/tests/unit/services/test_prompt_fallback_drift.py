@@ -57,7 +57,15 @@ def _narrate():
 def _architect():
     from services import pipeline_architect as m
 
-    return m._resolve_system_prompt()
+    # _resolve_system_prompt(site_config) renders the {site_name} placeholder in
+    # a SINGLE .format pass (registry up: get_prompt's format pass; registry
+    # down: the inline fallback's own .format), so — unlike _narrate — the
+    # caller does NOT re-format (the architect prompt's JSON braces are single
+    # after that pass). Pass None → site_name/site_url render to "" on both
+    # paths, so the drift comparison is on the final rendered string. This makes
+    # the case non-vacuous: registry-up returns the rendered SKILL.md copy while
+    # registry-down returns the rendered inline fallback, and they must match.
+    return m._resolve_system_prompt(None)
 
 
 def _social_twitter():
