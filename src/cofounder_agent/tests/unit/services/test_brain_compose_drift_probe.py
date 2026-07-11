@@ -137,7 +137,7 @@ class TestNoDrift:
             inspect_fn=lambda _name: _matching_inspect(),
             recreate_fn=fake_recreate,
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["ok"] is True
@@ -167,7 +167,7 @@ class TestNoDrift:
             inspect_fn=lambda _name: _matching_inspect(),
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert cdp._last_notified_drifted == frozenset()
@@ -201,7 +201,7 @@ class TestDriftAutoRecoverDisabled:
             inspect_fn=lambda _name: _matching_inspect(mount_targets=()),
             recreate_fn=fake_recreate,
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["ok"] is False
@@ -230,7 +230,7 @@ class TestDriftAutoRecoverDisabled:
             inspect_fn=lambda _name: _matching_inspect(env_keys=("PORT",)),
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["status"] == "drift_detected_no_recover"
@@ -252,7 +252,7 @@ class TestDriftAutoRecoverDisabled:
             ),
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["status"] == "drift_detected_no_recover"
@@ -269,7 +269,7 @@ class TestDriftAutoRecoverDisabled:
             inspect_fn=lambda _name: _matching_inspect(mount_targets=()),
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         events = [
@@ -305,7 +305,7 @@ class TestDriftAutoRecoverDisabled:
             inspect_fn=lambda _name: _matching_inspect(env_keys=("PORT",)),
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=yaml_with_secret,
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         for call in pool.execute.call_args_list:
@@ -358,7 +358,7 @@ class TestDriftAutoRecoverEnabled:
             inspect_fn=fake_inspect,
             recreate_fn=fake_recreate,
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda s: sleep_calls.append(s),
+            sleep_fn=AsyncMock(side_effect=sleep_calls.append),
         )
 
         assert summary["ok"] is True
@@ -395,7 +395,7 @@ class TestDriftAutoRecoverEnabled:
                 False, "docker socket permission denied"
             ),
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda s: sleep_calls.append(s),
+            sleep_fn=AsyncMock(side_effect=sleep_calls.append),
         )
 
         assert summary["ok"] is False
@@ -423,7 +423,7 @@ class TestDriftAutoRecoverEnabled:
             inspect_fn=lambda _name: _matching_inspect(mount_targets=()),
             recreate_fn=lambda _p, _s: (True, "Recreated"),
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["ok"] is False
@@ -449,7 +449,7 @@ class TestDriftAutoRecoverEnabled:
             inspect_fn=lambda _name: _matching_inspect(mount_targets=()),
             recreate_fn=lambda _p, _s: (True, recreate_msg),
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["status"] == "recover_drift_persists"
@@ -479,7 +479,7 @@ class TestDedupe:
                 inspect_fn=lambda _name: _matching_inspect(mount_targets=()),
                 recreate_fn=lambda _p, _s: (True, ""),
                 yaml_loader=lambda _p: _compose_spec(),
-                sleep_fn=lambda _s: None,
+                sleep_fn=AsyncMock(),
             )
 
         await cycle()
@@ -522,7 +522,7 @@ class TestDedupe:
             inspect_fn=lambda _name: _matching_inspect(mount_targets=()),
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: spec_one_service,
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
         await cdp.run_compose_drift_probe(
             pool,
@@ -530,7 +530,7 @@ class TestDedupe:
             inspect_fn=lambda _name: _matching_inspect(mount_targets=()),
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: spec_two_services,
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert len(notifies) == 2
@@ -558,7 +558,7 @@ class TestEdgeCases:
             inspect_fn=lambda _name: _matching_inspect(),
             recreate_fn=lambda _p, _s: (recreate_calls.append(None) or (True, "")),
             yaml_loader=lambda _p: None,
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["ok"] is True  # not OUR failure to surface
@@ -576,7 +576,7 @@ class TestEdgeCases:
             inspect_fn=lambda _name: _matching_inspect(),
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: {"version": "3"},  # no services:
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["status"] == "unknown"
@@ -615,7 +615,7 @@ class TestEdgeCases:
             inspect_fn=fake_inspect,
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: spec,
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
             # Pre-flight reports docker unreachable.
             docker_reachable_fn=lambda: (
                 False, "permission denied connecting to docker socket"
@@ -660,7 +660,7 @@ class TestEdgeCases:
             inspect_fn=fake_inspect,
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["status"] == "no_drift"
@@ -679,7 +679,7 @@ class TestEdgeCases:
             inspect_fn=lambda _name: None,
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["ok"] is False
@@ -702,7 +702,7 @@ class TestEdgeCases:
             inspect_fn=lambda _name: _matching_inspect(mount_targets=()),
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["status"] == "no_drift"
@@ -730,7 +730,7 @@ class TestEdgeCases:
             inspect_fn=lambda name: (inspect_calls.append(name) or _matching_inspect()),
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: spec,
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert inspect_calls == []  # never inspected
@@ -747,7 +747,7 @@ class TestEdgeCases:
             inspect_fn=lambda _name: _matching_inspect(),
             recreate_fn=lambda _p, _s: (True, ""),
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["status"] == "no_drift"
@@ -766,7 +766,7 @@ class TestEdgeCases:
             inspect_fn=lambda _name: _matching_inspect(mount_targets=()),
             recreate_fn=lambda _p, _s: (recreate_calls.append(None) or (True, "")),
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert recreate_calls == []
@@ -1316,7 +1316,7 @@ class TestProjectDirectoryWiring:
             inspect_fn=fake_inspect,
             # No recreate_fn → exercise the default-bound lambda path.
             yaml_loader=lambda _p: _compose_spec(),
-            sleep_fn=lambda _s: None,
+            sleep_fn=AsyncMock(),
         )
 
         assert summary["status"] == "recovered"

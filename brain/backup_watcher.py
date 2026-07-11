@@ -48,12 +48,13 @@ audit trail.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
 import subprocess
 import time
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import Any
 
@@ -765,7 +766,7 @@ async def _check_one_tier(
     config: dict[str, Any],
     stat_fn: Callable[[str, str], float | None],
     restart_fn: Callable[[str], tuple[bool, str]],
-    sleep_fn: Callable[[float], None],
+    sleep_fn: Callable[[float], Awaitable[None]],
     notify_fn: Callable[..., None],
 ) -> dict[str, Any]:
     """Run the freshness → retry → escalate flow for one backup tier.
@@ -869,7 +870,7 @@ async def _check_one_tier(
         tier, f"{age:.0f}s" if age is not None else "missing",
         max_age_seconds, _retry_state[tier], max_retries, container,
     )
-    restart_ok, restart_msg = restart_fn(container)
+    restart_ok, restart_msg = await asyncio.to_thread(restart_fn, container)
     if not restart_ok:
         detail = (
             f"Backup tier={tier} stale and docker restart failed: "
@@ -919,7 +920,7 @@ async def _check_one_tier(
 
     # 2b) Restart accepted — give the container time to spin up and
     # produce a fresh dump, then re-stat.
-    sleep_fn(retry_delay)
+    await sleep_fn(retry_delay)
     post_age = stat_fn(backup_dir, tier)
     if post_age is not None and post_age <= max_age_seconds:
         # Recovery! Write the resolved row (if a firing alert is open)
@@ -1001,7 +1002,7 @@ async def run_backup_watcher_probe(
     *,
     stat_fn: Callable[[str, str], float | None] | None = None,
     restart_fn: Callable[[str], tuple[bool, str]] | None = None,
-    sleep_fn: Callable[[float], None] | None = None,
+    sleep_fn: Callable[[float], Awaitable[None]] | None = None,
     notify_fn: Callable[..., None] | None = None,
     scan_sentinels_fn: Callable[[str], list[tuple[str, Path, dict[str, str]]]] | None = None,
 ) -> dict[str, Any]:
@@ -1013,8 +1014,9 @@ async def run_backup_watcher_probe(
             to filesystem stat. Tests inject canned ages.
         restart_fn: ``(container) -> (ok, msg)`` — defaults to the
             real ``docker restart``. Tests inject a stub.
-        sleep_fn: ``(seconds) -> None`` — defaults to ``time.sleep``.
-            Tests inject a no-op so they don't wait two minutes.
+        sleep_fn: ``async (seconds) -> None`` — defaults to ``asyncio.sleep``
+            so the between-retry wait yields the brain loop instead of
+            freezing it. Tests inject an async no-op so they don't wait.
         notify_fn: operator notifier callable. Defaults to
             :func:`brain.operator_notifier.notify_operator`. Used for
             the "docker is broken" surface AND the sentinel-found
@@ -1029,7 +1031,7 @@ async def run_backup_watcher_probe(
     """
     stat_fn = stat_fn or _latest_dump_age_seconds
     restart_fn = restart_fn or _restart_backup_container
-    sleep_fn = sleep_fn or time.sleep
+    sleep_fn = sleep_fn or asyncio.sleep
     notify_fn = notify_fn or notify_operator
     scan_sentinels_fn = scan_sentinels_fn or _scan_sentinel_dir
 

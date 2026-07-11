@@ -22,6 +22,7 @@ import asyncio
 
 import pytest
 
+from poindexter.cli import _event_loop as el
 from poindexter.cli import pipeline as pl
 
 
@@ -35,7 +36,7 @@ class TestSelectorEventLoopSwitch:
             pass
 
         captured: list[object] = []
-        monkeypatch.setattr(pl.sys, "platform", "win32")
+        monkeypatch.setattr(el.sys, "platform", "win32")
         monkeypatch.setattr(
             asyncio, "WindowsSelectorEventLoopPolicy", _FakeSelectorPolicy, raising=False
         )
@@ -43,7 +44,7 @@ class TestSelectorEventLoopSwitch:
             asyncio, "set_event_loop_policy", lambda p: captured.append(p)
         )
 
-        pl._ensure_selector_event_loop_on_windows()
+        el.ensure_selector_event_loop_on_windows()
 
         assert len(captured) == 1
         assert isinstance(captured[0], _FakeSelectorPolicy)
@@ -54,12 +55,12 @@ class TestSelectorEventLoopSwitch:
         # break a sibling command that relies on the default loop) and must
         # not reference the Windows-only policy symbol.
         called: list[object] = []
-        monkeypatch.setattr(pl.sys, "platform", "linux")
+        monkeypatch.setattr(el.sys, "platform", "linux")
         monkeypatch.setattr(
             asyncio, "set_event_loop_policy", lambda p: called.append(p)
         )
 
-        pl._ensure_selector_event_loop_on_windows()
+        el.ensure_selector_event_loop_on_windows()
 
         assert called == []
 
@@ -89,3 +90,32 @@ class TestRunAppliesSwitchBeforeRunning:
 
         assert result == "result"
         assert order == ["ensure", "run"]
+
+
+@pytest.mark.unit
+class TestCliRootAppliesSwitch:
+    def test_root_group_applies_selector_loop(self, monkeypatch):
+        # The whole point of centralizing the switch: EVERY subcommand inherits
+        # it because the root group callback (`app.main`) applies it before it
+        # dispatches — not just the handful that remembered to call it. Invoking
+        # any `<group> --help` still runs the root callback, then prints subhelp.
+        from click.testing import CliRunner
+
+        from poindexter.cli import app as app_mod
+
+        called: list[bool] = []
+        monkeypatch.setattr(
+            app_mod,
+            "ensure_selector_event_loop_on_windows",
+            lambda: called.append(True),
+        )
+        # ensure_secret_key is a best-effort bootstrap read main() also does;
+        # isolate it so this test doesn't depend on a bootstrap.toml on disk.
+        monkeypatch.setattr(
+            "poindexter.cli._bootstrap.ensure_secret_key", lambda: None
+        )
+
+        result = CliRunner().invoke(app_mod.main, ["costs", "--help"])
+
+        assert result.exit_code == 0, result.output
+        assert called == [True]

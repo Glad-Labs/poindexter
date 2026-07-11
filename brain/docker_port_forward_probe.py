@@ -75,6 +75,7 @@ Design parity with ``brain/backup_watcher.py`` and
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -84,7 +85,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 try:  # Flat import when brain/ is on sys.path (container runtime).
@@ -893,7 +894,7 @@ async def _check_one_service(
     pg_probe_fn: Callable[[str, int, float], bool],
     container_exists_fn: Callable[[str], bool],
     restart_fn: Callable[[str], tuple[bool, str]],
-    sleep_fn: Callable[[float], None],
+    sleep_fn: Callable[[float], Awaitable[None]],
     notify_fn: Callable[..., None],
     now_fn: Callable[[], float],
 ) -> dict[str, Any]:
@@ -1106,7 +1107,7 @@ async def _check_one_service(
         container, internal_url, external_url,
     )
     restart_started = now_fn()
-    restart_ok, restart_msg = restart_fn(container)
+    restart_ok, restart_msg = await asyncio.to_thread(restart_fn, container)
     _record_restart(container, now=restart_started)
     retried_n = len(_restart_state.get(container, []))
 
@@ -1155,7 +1156,7 @@ async def _check_one_service(
     # 6) Wait briefly, then re-probe to confirm recovery. Uses the
     # probe_type-aware external closure so a postgres entry re-checks via
     # the pg probe, not an HTTP GET.
-    sleep_fn(recovery_wait)
+    await sleep_fn(recovery_wait)
     recovered = _probe_external()
     recovery_ms = int((now_fn() - restart_started) * 1000)
 
@@ -1254,7 +1255,7 @@ async def run_docker_port_forward_probe(
     pg_probe_fn: Callable[[str, int, float], bool] | None = None,
     container_exists_fn: Callable[[str], bool] | None = None,
     restart_fn: Callable[[str], tuple[bool, str]] | None = None,
-    sleep_fn: Callable[[float], None] | None = None,
+    sleep_fn: Callable[[float], Awaitable[None]] | None = None,
     notify_fn: Callable[..., None] | None = None,
     now_fn: Callable[[], float] | None = None,
 ) -> dict[str, Any]:
@@ -1268,8 +1269,9 @@ async def run_docker_port_forward_probe(
             ``docker inspect``. Tests inject a stub.
         restart_fn: ``(container) -> (ok, msg)`` — defaults to the
             real ``docker restart``. Tests inject a stub.
-        sleep_fn: ``(seconds) -> None`` — defaults to ``time.sleep``.
-            Tests inject a no-op so they don't wait.
+        sleep_fn: ``async (seconds) -> None`` — defaults to ``asyncio.sleep``
+            so the recovery wait yields the brain loop instead of freezing
+            it. Tests inject an async no-op so they don't wait.
         notify_fn: operator notifier callable. Defaults to
             :func:`brain.operator_notifier.notify_operator`. Used for
             cap-fired and docker-broken paths only.
@@ -1282,7 +1284,7 @@ async def run_docker_port_forward_probe(
     pg_probe_fn = pg_probe_fn or _pg_probe
     container_exists_fn = container_exists_fn or _container_exists
     restart_fn = restart_fn or _restart_container
-    sleep_fn = sleep_fn or time.sleep
+    sleep_fn = sleep_fn or asyncio.sleep
     notify_fn = notify_fn or notify_operator
     now_fn = now_fn or time.time
 

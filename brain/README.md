@@ -1,6 +1,6 @@
 # Brain Daemon
 
-**Last Updated:** 2026-06-29
+**Last Updated:** 2026-07-11
 
 The brain daemon is the always-on supervisor for a Poindexter install.
 It runs alongside the worker (`poindexter-brain-daemon` container)
@@ -62,6 +62,35 @@ out-of-loop diagnostics cover that:
   ```bash
   docker exec poindexter-brain-daemon py-spy dump --pid 1
   ```
+
+### Never block the loop — offload sync work (the async-safety rule)
+
+The guards above catch a hang _after_ it happens. The cheaper win is not
+freezing the loop in the first place. The daemon awaits **every probe
+sequentially on one event loop** (`run_cycle` → `await run_*_probe(pool)`), so a
+_synchronous_ blocking call executed directly inside an `async def` freezes the
+entire watchdog for its whole duration — a `docker restart` (30 s) or a
+`time.sleep(120)` retry wait is enough to stall the heartbeat and trip the
+brain's own stale detector.
+
+The rule: **inside an `async def`, never call a blocking primitive directly.**
+
+| Blocking work                        | Do this instead                                |
+| ------------------------------------ | ---------------------------------------------- |
+| `subprocess.run(...)` (docker/git/…) | `await asyncio.to_thread(subprocess.run, ...)` |
+| a sync helper that shells out        | `await asyncio.to_thread(helper, ...)`         |
+| a `urllib` / `requests` call         | `await asyncio.to_thread(fetch, ...)`          |
+| a retry / recovery wait              | `await asyncio.sleep(seconds)`                 |
+
+For an injectable wait seam (`sleep_fn`), default it to `asyncio.sleep` and
+`await` it — mirror `alert_dispatcher.py`, not the pre-2026-07 watch probes that
+defaulted `sleep_fn` to `time.sleep`. `subprocess.Popen` (fire-and-forget, no
+`.wait()` / `.communicate()`) returns immediately and does **not** block, so it
+stays as-is.
+
+Enforced by [`scripts/ci/brain_async_safety_lint.py`](../scripts/ci/brain_async_safety_lint.py)
+— a fail-on-any AST scan (`Popen`, sync helpers, and lambdas are exempt; escape
+hatch `# async-safety-ok: <reason>`).
 
 ## Operator URL probe
 

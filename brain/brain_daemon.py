@@ -1671,13 +1671,15 @@ async def docker_restart_container(container: str, *, pool=None) -> tuple[bool, 
     if not IS_DOCKER:
         return (False, "not running in docker; no container-restart path")
     try:
-        inspect = subprocess.run(
+        inspect = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "inspect", "--format", "{{.State.Status}}", container],
             capture_output=True, text=True, timeout=10,
         )
         if inspect.returncode != 0:
             return (False, f"container {container} not found (likely mid-recreate)")
-        result = subprocess.run(
+        result = await asyncio.to_thread(
+            subprocess.run,
             ["docker", "restart", container],
             capture_output=True, text=True, timeout=30,
         )
@@ -1717,7 +1719,8 @@ async def restart_service(name: str, *, pool=None):
                 # next cycle will see the same state and the upstream
                 # health probe (not this restart helper) is the right
                 # surface to escalate it.
-                inspect = subprocess.run(
+                inspect = await asyncio.to_thread(
+                    subprocess.run,
                     ["docker", "inspect", "--format", "{{.State.Status}}", container],
                     capture_output=True, text=True, timeout=10,
                 )
@@ -1728,7 +1731,8 @@ async def restart_service(name: str, *, pool=None):
                     )
                     return
 
-                result = subprocess.run(
+                result = await asyncio.to_thread(
+                    subprocess.run,
                     ["docker", "restart", container],
                     capture_output=True, text=True, timeout=30,
                 )
@@ -1932,7 +1936,9 @@ async def monitor_services(pool) -> list:
     # Run openclaw doctor every 15 minutes to heal degraded channels
     # (Telegram 409 conflicts, WhatsApp disconnects) that appear "up" to HTTP checks
     if time.time() - _last_openclaw_doctor > 900:
-        _run_openclaw_doctor()
+        # Offloaded: `openclaw doctor --fix` is a blocking subprocess (30 s
+        # timeout); running it inline would freeze the brain loop.
+        await asyncio.to_thread(_run_openclaw_doctor)
 
     return issues
 

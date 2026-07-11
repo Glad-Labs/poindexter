@@ -405,7 +405,7 @@ async def _run_drift(pool, *, host_recover_fn, notify_fn=None):
         inspect_fn=lambda name: None,  # container missing → drift (worker not on-demand)
         yaml_loader=lambda path: spec,
         host_recover_fn=host_recover_fn,
-        sleep_fn=lambda s: None,
+        sleep_fn=AsyncMock(),
     )
 
 

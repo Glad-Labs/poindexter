@@ -75,7 +75,7 @@ def test_fresh_heartbeat_is_ok_no_restart():
             pool,
             age_fn=AsyncMock(return_value=600.0),  # 10 min < 26h
             restart_fn=restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
         )
     )
     assert summary["ok"] is True
@@ -90,7 +90,7 @@ def test_stale_triggers_restart_then_recovers():
     restart = MagicMock(return_value=(True, "Restarted"))
     summary = __import__("asyncio").run(
         ow.run_offsite_backup_watch_probe(
-            pool, age_fn=age_fn, restart_fn=restart, sleep_fn=lambda s: None,
+            pool, age_fn=age_fn, restart_fn=restart, sleep_fn=AsyncMock(),
         )
     )
     restart.assert_called_once_with(ow._CONTAINER)
@@ -107,7 +107,7 @@ def test_escalate_emits_firing_alert_after_max_retries():
     def run():
         return __import__("asyncio").run(
             ow.run_offsite_backup_watch_probe(
-                pool, age_fn=age_fn, restart_fn=restart, sleep_fn=lambda s: None,
+                pool, age_fn=age_fn, restart_fn=restart, sleep_fn=AsyncMock(),
             )
         )
 

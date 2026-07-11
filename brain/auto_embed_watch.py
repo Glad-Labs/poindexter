@@ -32,6 +32,7 @@ wrapper for the registry.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -251,7 +252,7 @@ async def run_auto_embed_watch_probe(
     *,
     age_fn: Callable[[], Awaitable[float | None]] | None = None,
     restart_fn: Callable[[str], tuple[bool, str]] | None = None,
-    sleep_fn: Callable[[float], None] | None = None,
+    sleep_fn: Callable[[float], Awaitable[None]] | None = None,
     notify_fn: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     """Single cycle of the auto-embed liveness watch.
@@ -261,8 +262,10 @@ async def run_auto_embed_watch_probe(
         age_fn: ``() -> age_seconds | None`` — defaults to the audit_log
             heartbeat read. Tests inject canned ages.
         restart_fn: ``(container) -> (ok, msg)`` — defaults to the real
-            ``docker restart``.
-        sleep_fn: ``(seconds) -> None`` — defaults to ``time.sleep``.
+            ``docker restart``. The (blocking) restart is offloaded via
+            ``asyncio.to_thread`` so it never stalls the brain event loop.
+        sleep_fn: ``async (seconds) -> None`` — defaults to ``asyncio.sleep``
+            so the between-retry wait yields the loop instead of freezing it.
         notify_fn: operator notifier — defaults to
             :func:`brain.operator_notifier.notify_operator`, used only for the
             "docker is unreachable" surface.
@@ -270,7 +273,7 @@ async def run_auto_embed_watch_probe(
     global _retry_count
     age_fn = age_fn or (lambda: _seconds_since_heartbeat(pool))
     restart_fn = restart_fn or _restart_auto_embed_container
-    sleep_fn = sleep_fn or time.sleep
+    sleep_fn = sleep_fn or asyncio.sleep
     _notify: Callable[..., Any] = notify_fn or notify_operator
 
     config = await _read_config(pool)
@@ -338,7 +341,7 @@ async def run_auto_embed_watch_probe(
         max_retries,
         _CONTAINER,
     )
-    ok, msg = restart_fn(_CONTAINER)
+    ok, msg = await asyncio.to_thread(restart_fn, _CONTAINER)
     if not ok:
         detail = (
             f"Auto-embed stale and docker restart failed: {msg} "
@@ -364,7 +367,7 @@ async def run_auto_embed_watch_probe(
         return {"ok": False, "status": "restart_failed", "retries_used": _retry_count}
 
     # 2b) Wait + re-read.
-    sleep_fn(retry_delay)
+    await sleep_fn(retry_delay)
     post_age = await age_fn()
     if post_age is not None and post_age <= max_age_seconds:
         _retry_count = 0

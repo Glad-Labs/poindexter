@@ -1929,11 +1929,11 @@ async def _try_remediation(probe_name: str, result: dict, notify_fn=None, *, poo
     action_type = action.get("type")
 
     if action_type == "restart_container":
-        ok, msg = _restart_container(action["container"])
+        ok, msg = await asyncio.to_thread(_restart_container, action["container"])
     elif action_type == "restart_multiple":
         msgs = []
         for container in action["containers"]:
-            c_ok, c_msg = _restart_container(container)
+            c_ok, c_msg = await asyncio.to_thread(_restart_container, container)
             msgs.append(c_msg)
             ok = ok or c_ok
         msg = "; ".join(msgs)

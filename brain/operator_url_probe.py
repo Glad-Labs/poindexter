@@ -305,7 +305,7 @@ async def detect_tailscale_drift(pool) -> list[dict[str, str]]:
     when there's no drift, when tailscale isn't installed, or when the
     system_devices table doesn't exist (fresh install).
     """
-    live = _run_tailscale_status()
+    live = await asyncio.to_thread(_run_tailscale_status)
     if live is None:
         return []
 

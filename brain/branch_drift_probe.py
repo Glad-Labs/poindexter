@@ -34,6 +34,7 @@ plus a ``_reset_state()`` test hook.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -442,7 +443,7 @@ async def run_branch_drift_probe(
 
     # Local HEAD (mounted .git, no network).
     try:
-        local_head, branch = git_runner(config["git_dir"])
+        local_head, branch = await asyncio.to_thread(git_runner, config["git_dir"])
     except Exception as exc:  # noqa: BLE001
         return await _fail(
             f"could not read local HEAD from {config['git_dir']}: {exc}", page=True

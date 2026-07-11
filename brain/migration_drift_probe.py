@@ -39,6 +39,7 @@ without new infrastructure.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -749,7 +750,9 @@ async def run_migration_drift_probe(
     sync_fn = sync_fn or _sync_deploy_checkout
 
     # ---- 1) Initial drift check via worker /api/health ----------------------
-    health = health_fetcher()
+    # Offloaded: _fetch_health does a blocking urllib GET; on the brain's
+    # single event loop that would stall every other probe for the timeout.
+    health = await asyncio.to_thread(health_fetcher)
     drift = _drift_from_health(health)
 
     if not drift["ok"]:
@@ -1051,7 +1054,7 @@ async def run_migration_drift_probe(
         deploy_path = await _read_str_setting(
             pool, DEPLOY_CHECKOUT_PATH_SETTING_KEY, _DEFAULT_DEPLOY_PATH
         )
-        sync_ok, sync_msg = sync_fn(deploy_path)
+        sync_ok, sync_msg = await asyncio.to_thread(sync_fn, deploy_path)
         logger.info(
             "[MIGRATION_DRIFT] deploy resync ok=%s (%s): %s",
             sync_ok, deploy_path, sync_msg,
@@ -1067,7 +1070,7 @@ async def run_migration_drift_probe(
     logger.info(
         "[MIGRATION_DRIFT] Restarting %s to apply migrations", WORKER_CONTAINER,
     )
-    restart_ok, restart_msg = restart_fn()
+    restart_ok, restart_msg = await asyncio.to_thread(restart_fn)
     if not restart_ok:
         # Restart itself failed — escalate immediately. We don't want
         # to silently fall through and pretend recovery worked.
@@ -1102,7 +1105,7 @@ async def run_migration_drift_probe(
         }
 
     # Wait for the worker to come back healthy.
-    healthy, post_health = wait_fn()
+    healthy, post_health = await asyncio.to_thread(wait_fn)
     if not healthy:
         try:
             notify_fn(

@@ -287,6 +287,17 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/atom_independence_lint.py
 
+      # Brain async-safety guard (sync-CLI-in-async fix): brain/ is a
+      # single-event-loop asyncio daemon that awaits every probe sequentially,
+      # so a blocking subprocess.run / time.sleep / os.system directly in an
+      # `async def` freezes the whole watchdog (a docker restart or a
+      # time.sleep(120) retry wait trips the brain's own stale detector).
+      # Fail-on-any AST scan — Popen (fire-and-forget), sync helpers, and
+      # lambdas are exempt; escape hatch `# async-safety-ok`. Stdlib only.
+      - name: Brain async-safety lint (no blocking calls on the loop)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/brain_async_safety_lint.py
+
       # Information-disclosure guard (security audit L2, #724): no
       # HTTPException whose detail= echoes a caught exception to the client
       # (resolved IPs from an httpx ConnectError, which JWT claim failed...).
@@ -557,6 +568,8 @@ jobs:
         run: python scripts/ci/adapter_purity_lint.py
       - name: Atom-independence lint (tech-debt audit)
         run: python scripts/ci/atom_independence_lint.py
+      - name: Brain async-safety lint (no blocking calls on the loop)
+        run: python scripts/ci/brain_async_safety_lint.py
       - name: HTTP detail-leak lint (security #724)
         run: python scripts/ci/lint_http_detail_leak.py
       - name: Services os.getenv lint (DB-first config, GH#93)

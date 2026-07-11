@@ -105,7 +105,7 @@ def test_unconfigured_key_is_a_noop():
             pool,
             check_fn=AsyncMock(side_effect=AssertionError("must not be called")),
             restart_fn=restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
         )
     )
     assert summary["ok"] is True
@@ -121,7 +121,7 @@ def test_clean_queue_no_restart():
             pool,
             check_fn=AsyncMock(return_value=_clean()),
             restart_fn=restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
         )
     )
     assert summary == {"ok": True, "status": "clean", "overdue": 0, "retries_used": 0}
@@ -136,7 +136,7 @@ def test_clean_queue_auto_resolves_firing_alert():
             pool,
             check_fn=AsyncMock(return_value=_clean()),
             restart_fn=MagicMock(),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
         )
     )
     assert summary["status"] == "auto_resolved"
@@ -153,7 +153,8 @@ def test_wedged_restart_recovers():
     slept = []
     summary = asyncio.run(
         pz.run_postiz_queue_watch_probe(
-            pool, check_fn=check, restart_fn=restart, sleep_fn=slept.append,
+            pool, check_fn=check, restart_fn=restart,
+            sleep_fn=AsyncMock(side_effect=slept.append),
         )
     )
     assert summary["ok"] is True
@@ -169,7 +170,7 @@ def test_api_unreachable_counts_as_wedged():
     check = AsyncMock(side_effect=[None, _clean()])
     summary = asyncio.run(
         pz.run_postiz_queue_watch_probe(
-            pool, check_fn=check, restart_fn=restart, sleep_fn=lambda s: None,
+            pool, check_fn=check, restart_fn=restart, sleep_fn=AsyncMock(),
         )
     )
     assert summary["status"] == "recovered"
@@ -188,7 +189,7 @@ def test_escalates_with_warning_alert_after_max_retries():
                 pool,
                 check_fn=AsyncMock(return_value=_wedged()),
                 restart_fn=restart,
-                sleep_fn=lambda s: None,
+                sleep_fn=AsyncMock(),
             )
         )
         assert summary["status"] == "retry_failed"
@@ -200,7 +201,7 @@ def test_escalates_with_warning_alert_after_max_retries():
             pool,
             check_fn=AsyncMock(return_value=_wedged()),
             restart_fn=restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
         )
     )
     assert summary["ok"] is False
@@ -227,7 +228,7 @@ def test_restart_failure_is_surfaced_not_swallowed():
             pool,
             check_fn=AsyncMock(return_value=_wedged()),
             restart_fn=restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=notify,
         )
     )
@@ -259,7 +260,7 @@ def test_escalate_detail_includes_sample_json():
             pool,
             check_fn=AsyncMock(return_value=_wedged(1)),
             restart_fn=MagicMock(),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
         )
     )
     firing = [a for q, a in executed if "alert_events" in q and "firing" in a]

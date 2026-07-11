@@ -57,6 +57,7 @@ registry without new infrastructure.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -1002,7 +1003,7 @@ async def run_compose_drift_probe(
     inspect_fn=None,
     recreate_fn=None,
     yaml_loader=None,
-    sleep_fn=time.sleep,
+    sleep_fn=asyncio.sleep,
     docker_reachable_fn=None,
     host_recover_fn=None,
 ) -> dict[str, Any]:
@@ -1018,8 +1019,11 @@ async def run_compose_drift_probe(
             to :func:`_recreate_services`.
         yaml_loader: ``path -> dict | None``. Defaults to
             :func:`_load_compose_yaml`.
-        sleep_fn: callable used to wait between recreate and re-probe so
-            tests can substitute a no-op.
+        sleep_fn: async callable used to wait between recreate and re-probe
+            (defaults to ``asyncio.sleep`` so the wait yields the brain loop);
+            tests substitute an async no-op. The blocking docker seams
+            (reachability / inspect / recreate) are offloaded via
+            ``asyncio.to_thread`` for the same reason.
 
     Returns a summary dict for storage in brain_decisions /
     probe_results.
@@ -1060,7 +1064,7 @@ async def run_compose_drift_probe(
     # `docker inspect` return None, which the diff treats as "container
     # missing" and writes one audit_log row per service per cycle. Matt's
     # prod hit 2117 such rows in 6h before this guard.
-    docker_ok, docker_reason = docker_reachable_fn()
+    docker_ok, docker_reason = await asyncio.to_thread(docker_reachable_fn)
     if not docker_ok:
         detail = (
             f"Docker daemon unreachable from brain — can't check drift. "
@@ -1143,7 +1147,7 @@ async def run_compose_drift_probe(
                 "skipping (would need to guess project prefix)", svc_name,
             )
             continue
-        inspect = inspect_fn(container_name)
+        inspect = await asyncio.to_thread(inspect_fn, container_name)
         inspected_count += 1
         diff = _diff_service(svc_block, inspect)
         # Suppress `container_missing` (only) for services that are EXPECTED to
@@ -1396,7 +1400,9 @@ async def run_compose_drift_probe(
         "[COMPOSE_DRIFT] Auto-recover enabled — recreating %s",
         ", ".join(sorted(drifted)),
     )
-    recreate_ok, recreate_msg = _effective_recreate_fn(compose_path, sorted(drifted))
+    recreate_ok, recreate_msg = await asyncio.to_thread(
+        _effective_recreate_fn, compose_path, sorted(drifted)
+    )
     if not recreate_ok:
         try:
             notify_fn(
@@ -1434,10 +1440,10 @@ async def run_compose_drift_probe(
         }
 
     # Wait for the containers to settle, then re-probe.
-    sleep_fn(RECOVER_WAIT_SECONDS)
+    await sleep_fn(RECOVER_WAIT_SECONDS)
     post_drifted: dict[str, dict[str, Any]] = {}
     for svc_name, info in drifted.items():
-        post_inspect = inspect_fn(info["container"])
+        post_inspect = await asyncio.to_thread(inspect_fn, info["container"])
         post_diff = _diff_service(services.get(svc_name) or {}, post_inspect)
         if post_diff["drifted"]:
             post_drifted[svc_name] = {

@@ -75,7 +75,7 @@ def test_fresh_heartbeat_is_ok_no_restart():
             pool,
             age_fn=AsyncMock(return_value=600.0),  # 10 min < 6h
             restart_fn=restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
         )
     )
     assert summary["ok"] is True
@@ -90,7 +90,7 @@ def test_stale_triggers_restart_then_recovers():
     restart = MagicMock(return_value=(True, "Restarted"))
     summary = __import__("asyncio").run(
         ae.run_auto_embed_watch_probe(
-            pool, age_fn=age_fn, restart_fn=restart, sleep_fn=lambda s: None,
+            pool, age_fn=age_fn, restart_fn=restart, sleep_fn=AsyncMock(),
         )
     )
     restart.assert_called_once_with(ae._CONTAINER)
@@ -107,7 +107,7 @@ def test_escalate_emits_firing_alert_after_max_retries():
     def run():
         return __import__("asyncio").run(
             ae.run_auto_embed_watch_probe(
-                pool, age_fn=age_fn, restart_fn=restart, sleep_fn=lambda s: None,
+                pool, age_fn=age_fn, restart_fn=restart, sleep_fn=AsyncMock(),
             )
         )
 
@@ -123,6 +123,56 @@ def test_escalate_emits_firing_alert_after_max_retries():
     )
 
 
+def test_retry_sleep_does_not_block_event_loop():
+    """The between-retry wait must yield to the loop, not freeze it.
+
+    The brain runs every probe by awaiting it sequentially on a single event
+    loop (brain_daemon.py). A blocking ``time.sleep(retry_delay)`` here froze
+    the whole watchdog — no other probe, heartbeat, or queue work ran for up to
+    ``retry_delay`` seconds. Drive stale -> restart -> wait -> recover with the
+    REAL default sleep seam and assert a co-scheduled 10 ms ticker never saw a
+    large gap (which would mean the loop was blocked).
+    """
+    import asyncio
+
+    pool = _make_pool(setting_values={ae.RETRY_DELAY_KEY: "1"})
+    ages = iter([6 * 3600 + 100, 30.0])  # stale, then fresh after restart
+    age_fn = AsyncMock(side_effect=lambda: next(ages))
+    restart = MagicMock(return_value=(True, "Restarted"))
+
+    async def scenario():
+        loop = asyncio.get_running_loop()
+        stamps: list[float] = []
+        running = True
+
+        async def ticker():
+            while running:
+                stamps.append(loop.time())
+                await asyncio.sleep(0.01)
+
+        t = asyncio.create_task(ticker())
+        # No sleep_fn injected: exercise the real default seam.
+        summary = await ae.run_auto_embed_watch_probe(
+            pool, age_fn=age_fn, restart_fn=restart,
+        )
+        running = False
+        await t
+        return summary, stamps
+
+    summary, stamps = asyncio.run(scenario())
+    assert summary["status"] == "recovered"
+    # A blocking sleep on the brain loop starves the ticker entirely; an
+    # awaitable asyncio.sleep lets it tick ~100x during the 1 s wait.
+    assert len(stamps) > 5, (
+        "event loop was starved during the retry wait — a synchronous sleep is "
+        "running on the brain loop"
+    )
+    gaps = [b - a for a, b in zip(stamps, stamps[1:])]
+    assert max(gaps) < 0.5, (
+        f"event loop blocked ~{max(gaps):.2f}s during the retry wait"
+    )
+
+
 def test_escalate_alert_severity_is_warning():
     """auto_embed escalation is `warning` (Discord), not `critical` — stale
     embeddings degrade search/memory but don't block the pipeline or risk data
@@ -135,7 +185,7 @@ def test_escalate_alert_severity_is_warning():
     def run():
         return __import__("asyncio").run(
             ae.run_auto_embed_watch_probe(
-                pool, age_fn=age_fn, restart_fn=restart, sleep_fn=lambda s: None,
+                pool, age_fn=age_fn, restart_fn=restart, sleep_fn=AsyncMock(),
             )
         )
 

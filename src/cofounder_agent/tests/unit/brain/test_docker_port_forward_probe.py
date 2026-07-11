@@ -175,7 +175,7 @@ class TestHappyPath:
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
             restart_fn=fake_restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
         )
@@ -226,7 +226,7 @@ class TestStuckPortForwardRecovers:
 
         sleeps: list[float] = []
 
-        def fake_sleep(seconds):
+        async def fake_sleep(seconds):
             sleeps.append(seconds)
 
         # Monotonically advance ``now`` so recovery_ms is positive.
@@ -299,7 +299,7 @@ class TestRecoveryFailedPagesOperator:
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
             restart_fn=lambda c: (True, f"Restarted {c}"),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
         )
@@ -347,7 +347,7 @@ class TestServiceDownIsNotPortForwardBug:
             http_probe_fn=lambda url, t: False,  # both fail
             container_exists_fn=lambda c: True,
             restart_fn=fake_restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
         )
@@ -393,7 +393,7 @@ class TestUnwatchedContainerSkipsCleanly:
             http_probe_fn=fake_http,
             container_exists_fn=fake_exists,
             restart_fn=lambda c: (True, ""),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
         )
@@ -455,7 +455,7 @@ class TestRestartCapEnforced:
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
             restart_fn=fake_restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: now,
         )
@@ -465,7 +465,7 @@ class TestRestartCapEnforced:
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
             restart_fn=fake_restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: now + 1.0,
         )
@@ -482,7 +482,7 @@ class TestRestartCapEnforced:
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
             restart_fn=fake_restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=fake_notify,
             now_fn=lambda: now + 2.0,
         )
@@ -525,7 +525,7 @@ class TestPerServiceExceptionIsolation:
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
             restart_fn=lambda c: (True, ""),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
         )
@@ -563,7 +563,7 @@ class TestDisabledShortCircuits:
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
             restart_fn=fake_restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
         )
@@ -604,7 +604,7 @@ class TestInverseInternalOnlyDownDoesNotRestart:
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
             restart_fn=fake_restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
         )
@@ -664,7 +664,7 @@ class TestExternalUrlUsesHostPort:
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
             restart_fn=lambda c: (True, ""),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
         )
@@ -1211,7 +1211,7 @@ class TestPostgresWatchEntry:
             pg_probe_fn=fake_pg,
             container_exists_fn=lambda c: True,
             restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: notify_calls.append(k),
             now_fn=lambda: 1_000_000.0,
         )
@@ -1258,7 +1258,7 @@ class TestPostgresWatchEntry:
             pg_probe_fn=fake_pg,
             container_exists_fn=lambda c: True,
             restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
         )
@@ -1278,7 +1278,7 @@ class TestPostgresWatchEntry:
             pg_probe_fn=lambda h, p, t: False,  # both down
             container_exists_fn=lambda c: True,
             restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
         )
@@ -1296,7 +1296,7 @@ class TestPostgresWatchEntry:
             pg_probe_fn=lambda h, p, t: True,
             container_exists_fn=lambda c: True,
             restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: 1_000_000.0,
         )
@@ -1347,7 +1347,7 @@ class TestAdaptiveGiveUp:
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
             restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: now,
         )
@@ -1360,7 +1360,7 @@ class TestAdaptiveGiveUp:
             http_probe_fn=fake_http,
             container_exists_fn=lambda c: True,
             restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
             now_fn=lambda: now + 60.0,  # 1 min later — within the 60-min backoff
         )
@@ -1388,7 +1388,7 @@ class TestAdaptiveGiveUp:
                 pg_probe_fn=fake_pg,
                 container_exists_fn=lambda c: True,
                 restart_fn=lambda c: (True, "ok"),
-                sleep_fn=lambda s: None,
+                sleep_fn=AsyncMock(),
                 notify_fn=lambda **k: None,
                 now_fn=lambda: 1_000_000.0 + i,
             )
@@ -1421,7 +1421,7 @@ class TestAdaptiveGiveUp:
                 http_probe_fn=fake_http,
                 container_exists_fn=lambda c: True,
                 restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
-                sleep_fn=lambda s: None,
+                sleep_fn=AsyncMock(),
                 notify_fn=lambda **k: None,
                 now_fn=lambda: t,
             )
@@ -1463,7 +1463,7 @@ class TestAdaptiveGiveUp:
                 http_probe_fn=fake_http,
                 container_exists_fn=lambda c: True,
                 restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
-                sleep_fn=lambda s: None,
+                sleep_fn=AsyncMock(),
                 notify_fn=lambda **k: None,
                 now_fn=lambda: t,
             )

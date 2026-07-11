@@ -7,6 +7,7 @@ import os
 
 import click
 
+from ._event_loop import ensure_selector_event_loop_on_windows
 from .approval import APPROVAL_FLAT_ALIASES, gates_group
 from .auth import auth_group
 from .auto_publish import auto_publish_group
@@ -57,6 +58,12 @@ logging.basicConfig(level=logging.WARNING, format="%(message)s")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging.")
 @click.pass_context
 def main(ctx: click.Context, verbose: bool) -> None:
+    # Force the Windows SelectorEventLoop for the WHOLE CLI before any
+    # subcommand's asyncio.run creates a loop — psycopg3 (the LangGraph
+    # checkpointer behind `pipeline resume`) raises InterfaceError on the
+    # default ProactorEventLoop, and asyncpg runs on either, so this is safe
+    # for every command. See poindexter/cli/_event_loop.py.
+    ensure_selector_event_loop_on_windows()
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
     # Stamp LOG_LEVEL into the environment NOW, before any lazy `from

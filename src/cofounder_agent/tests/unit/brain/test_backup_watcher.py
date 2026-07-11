@@ -184,7 +184,7 @@ class TestKillRestartResolves:
 
         sleeps: list[float] = []
 
-        def fake_sleep(seconds):
+        async def fake_sleep(seconds):
             sleeps.append(seconds)
 
         notify_calls: list[dict] = []
@@ -258,7 +258,7 @@ class TestKillRestartResolves:
             pool,
             stat_fn=fake_stat,
             restart_fn=lambda c: (True, f"Restarted {c}"),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
 
@@ -315,7 +315,7 @@ class TestPersistentFailureEscalates:
             pool,
             stat_fn=fake_stat,
             restart_fn=fake_restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
         assert s1["tiers"]["hourly"]["status"] == "retry_failed"
@@ -327,7 +327,7 @@ class TestPersistentFailureEscalates:
             pool,
             stat_fn=fake_stat,
             restart_fn=fake_restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
         assert s2["tiers"]["hourly"]["status"] == "retry_failed"
@@ -343,7 +343,7 @@ class TestPersistentFailureEscalates:
             pool,
             stat_fn=fake_stat,
             restart_fn=fake_restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
         assert s3["tiers"]["hourly"]["status"] == "escalated"
@@ -398,7 +398,7 @@ class TestEdgeCases:
             pool,
             stat_fn=fake_stat,
             restart_fn=fake_restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
 
@@ -423,7 +423,7 @@ class TestEdgeCases:
             pool,
             stat_fn=lambda d, t: 30.0,  # would be fresh, but we never get there
             restart_fn=lambda c: (True, ""),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=fake_notify,
         )
 
@@ -468,7 +468,7 @@ class TestEdgeCases:
             pool,
             stat_fn=fake_stat,
             restart_fn=fake_restart,
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=fake_notify,
         )
 
@@ -502,7 +502,7 @@ class TestEdgeCases:
             pool,
             stat_fn=fake_stat,
             restart_fn=lambda c: (True, ""),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
 
@@ -700,7 +700,7 @@ class TestSentinelAlertEmission:
             pool,
             stat_fn=lambda d, t: 60.0,
             restart_fn=lambda c: (True, ""),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=fake_notify,
         )
 
@@ -751,7 +751,7 @@ class TestSentinelAlertEmission:
             pool,
             stat_fn=lambda d, t: 60.0,
             restart_fn=lambda c: (True, ""),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
 
@@ -781,7 +781,7 @@ class TestSentinelAlertEmission:
             pool,
             stat_fn=lambda d, t: 60.0,
             restart_fn=lambda c: (True, ""),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
 
@@ -809,7 +809,7 @@ class TestSentinelAlertEmission:
             pool,
             stat_fn=lambda d, t: 60.0,
             restart_fn=lambda c: (True, ""),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
 
@@ -849,7 +849,7 @@ class TestSentinelAlertEmission:
             pool,
             stat_fn=lambda d, t: 60.0,
             restart_fn=lambda c: (True, ""),
-            sleep_fn=lambda s: None,
+            sleep_fn=AsyncMock(),
             notify_fn=lambda **k: None,
         )
 

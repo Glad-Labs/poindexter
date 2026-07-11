@@ -33,6 +33,7 @@ for unit tests, module-level cumulative retry counter, Probe-Protocol wrapper.
 """
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -328,7 +329,7 @@ async def run_postiz_queue_watch_probe(
     *,
     check_fn: Callable[[], Awaitable[dict[str, Any] | None]] | None = None,
     restart_fn: Callable[[str], tuple[bool, str]] | None = None,
-    sleep_fn: Callable[[float], None] | None = None,
+    sleep_fn: Callable[[float], Awaitable[None]] | None = None,
     notify_fn: Callable[..., Any] | None = None,
 ) -> dict[str, Any]:
     """Single cycle of the Postiz queue-wedge watch.
@@ -339,15 +340,17 @@ async def run_postiz_queue_watch_probe(
             to the live Postiz API read. Tests inject canned states; None
             means "API unreachable" and is treated as wedged.
         restart_fn: ``(container) -> (ok, msg)`` — defaults to the real
-            ``docker restart``.
-        sleep_fn: ``(seconds) -> None`` — defaults to ``time.sleep``.
+            ``docker restart``. Offloaded via ``asyncio.to_thread`` so the
+            blocking restart never stalls the brain event loop.
+        sleep_fn: ``async (seconds) -> None`` — defaults to ``asyncio.sleep``
+            so the between-retry wait yields the loop instead of freezing it.
         notify_fn: operator notifier — defaults to
             :func:`brain.operator_notifier.notify_operator`, used only for
             the "docker is unreachable" surface.
     """
     global _retry_count
     restart_fn = restart_fn or _restart_postiz_container
-    sleep_fn = sleep_fn or time.sleep
+    sleep_fn = sleep_fn or asyncio.sleep
     _notify: Callable[..., Any] = notify_fn or notify_operator
 
     config = await _read_config(pool)
@@ -428,7 +431,7 @@ async def run_postiz_queue_watch_probe(
         "[POSTIZ_WATCH] wedged (%s) — restart %d/%d on %s",
         stuck_detail, _retry_count, max_retries, _CONTAINER,
     )
-    ok, msg = restart_fn(_CONTAINER)
+    ok, msg = await asyncio.to_thread(restart_fn, _CONTAINER)
     if not ok:
         detail = (
             f"Postiz queue wedged and docker restart failed: {msg} "
@@ -454,7 +457,7 @@ async def run_postiz_queue_watch_probe(
         return {"ok": False, "status": "restart_failed", "retries_used": _retry_count}
 
     # 2b) Wait + re-check.
-    sleep_fn(retry_delay)
+    await sleep_fn(retry_delay)
     post_state = await check_fn()
     post_overdue = None if post_state is None else int(post_state.get("overdue", 0))
     if post_overdue == 0:
