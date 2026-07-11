@@ -526,9 +526,33 @@ class GenerateContentStage:
         except Exception as e:
             logger.debug("Failed to load task research_context: %s", e)
 
+        # Re-run de-duplication. A caller-attached research_context that ALREADY
+        # contains a build_context render is THIS task's own research being read
+        # back on a re-run (a stalled/retried task — get_task surfaces
+        # content_tasks.task_metadata.research_context). Appending freshly-built
+        # ResearchService + RAG renders on top would DUPLICATE the whole SOURCES
+        # block in the writer prompt: observed on task f7a9ce17, whose
+        # 2026-07-11 re-run shipped two ~4.2K-char renders => a ~9K-char research
+        # block, ~half redundant. When the render sentinel is present the caller
+        # blob is already a complete render, so return it as-is. A genuine caller
+        # attachment (the seed-URL "Source article:" block from
+        # routes/task_routes.py) carries no sentinel, so first-run seed-URL and
+        # niche tasks still get fresh research layered on below.
+        from services.research_service import (
+            RESEARCH_RENDER_SENTINEL,
+            ResearchService,
+        )
+        if RESEARCH_RENDER_SENTINEL in research_context:
+            logger.info(
+                "Caller research already contains a build_context render "
+                "(%d chars) — skipping duplicate ResearchService + RAG rebuild "
+                "(task re-run read-back)",
+                len(research_context),
+            )
+            return research_context
+
         # 2. ResearchService auto-built context.
         try:
-            from services.research_service import ResearchService
             research_svc = ResearchService(
                 pool=database_service.pool if database_service else None,
                 site_config=site_config,

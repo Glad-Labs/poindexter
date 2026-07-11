@@ -209,6 +209,92 @@ def _patch_everything():
 
 
 @pytest.mark.asyncio
+class TestCollectResearchContextDedup:
+    """``_collect_research_context`` must not stack a fresh render on top of a
+    caller blob that is already a build_context render.
+
+    Regression for the task-re-run duplication: a stalled task persists its
+    ``research_context``; on the next attempt ``get_task`` surfaces it as
+    caller-attached research (Layer 1), and the old code appended a freshly
+    built ResearchService + RAG render on top — doubling the SOURCES block in
+    the writer prompt (task f7a9ce17: two ~4.2K-char renders => ~9K chars, half
+    redundant).
+    """
+
+    async def test_skips_rebuild_when_caller_research_is_already_a_render(self):
+        from services.research_service import RESEARCH_RENDER_SENTINEL
+
+        prior_render = (
+            "EXISTING POSTS ON OUR SITE (link to these where relevant):\n"
+            "- [Some Post](/posts/some-post)\n\n"
+            "RECENT WEB SOURCES (cite if relevant):\n"
+            "- [A Source](https://example.com): a snippet\n\n"
+            f"{RESEARCH_RENDER_SENTINEL}\n"
+            "- Link to the reference URLs above when discussing those tools"
+        )
+        db = _FakeDb(task_row={"research_context": prior_render})
+        with patch("services.research_service.ResearchService") as rs_ctor, \
+             patch(
+                 "services.research_context.build_rag_context",
+                 AsyncMock(return_value="rag context"),
+             ) as rag:
+            out = await GenerateContentStage()._collect_research_context(
+                db, "t1", "Some Topic", site_config=None,
+            )
+
+        # Caller render returned verbatim — no second render stacked on top.
+        assert out == prior_render
+        assert out.count(RESEARCH_RENDER_SENTINEL) == 1
+        # The duplicate-producing layers never ran.
+        rs_ctor.assert_not_called()
+        rag.assert_not_called()
+
+    async def test_builds_fresh_layers_when_caller_has_no_render(self):
+        # A genuine seed-URL "Source article:" attachment carries no render
+        # sentinel, so fresh ResearchService + RAG still layer on as intended.
+        db = _FakeDb(
+            task_row={"research_context": "Source article: [X](https://x.example)"}
+        )
+        research_svc = SimpleNamespace(
+            build_context=AsyncMock(return_value="auto research"),
+        )
+        with patch(
+            "services.research_service.ResearchService",
+            return_value=research_svc,
+        ), patch(
+            "services.research_context.build_rag_context",
+            AsyncMock(return_value="rag context"),
+        ):
+            out = await GenerateContentStage()._collect_research_context(
+                db, "t1", "Some Topic", site_config=None,
+            )
+
+        assert "Source article: [X](https://x.example)" in out
+        assert "auto research" in out
+        assert "rag context" in out
+        research_svc.build_context.assert_awaited_once()
+
+    async def test_first_run_empty_caller_builds_fresh(self):
+        db = _FakeDb(task_row={})  # niche first run — no caller research
+        research_svc = SimpleNamespace(
+            build_context=AsyncMock(return_value="auto research"),
+        )
+        with patch(
+            "services.research_service.ResearchService",
+            return_value=research_svc,
+        ), patch(
+            "services.research_context.build_rag_context",
+            AsyncMock(return_value="rag context"),
+        ):
+            out = await GenerateContentStage()._collect_research_context(
+                db, "t1", "Some Topic", site_config=None,
+            )
+
+        assert "auto research" in out
+        assert "rag context" in out
+
+
+@pytest.mark.asyncio
 class TestGenerateContentStageExecute:
     async def test_populates_context_and_persists(self):
         db = _FakeDb(task_row={"research_context": "caller-supplied"})

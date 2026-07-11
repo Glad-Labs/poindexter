@@ -24,6 +24,15 @@ from services.site_config import SiteConfig
 
 logger = get_logger(__name__)
 
+# Structural sentinel emitted at the tail of every non-empty
+# ``ResearchService.build_context`` render (the CITATION GUIDANCE header).
+# ``modules.content.stages.generate_content._collect_research_context`` keys on
+# it to detect that a caller-attached ``research_context`` is a *read-back of a
+# prior render* on a task re-run, so it can skip appending a duplicate render
+# into the writer prompt. Keep this in lockstep with the CITATION GUIDANCE block
+# in ``build_context`` below.
+RESEARCH_RENDER_SENTINEL = "CITATION GUIDANCE:"
+
 # Verified reference links — official documentation that won't go stale.
 # These are real URLs to real documentation. NO fabricated links.
 #
@@ -235,7 +244,7 @@ class ResearchService:
         # 4. Add writing guidance based on available sources
         if sections:
             sections.append(
-                "CITATION GUIDANCE:\n"
+                f"{RESEARCH_RENDER_SENTINEL}\n"
                 "- Link to the reference URLs above when discussing those tools/concepts\n"
                 "- Use format: [Tool Name](url) for inline links\n"
                 "- Attribute facts to their source: 'According to the [official docs](url)...'\n"

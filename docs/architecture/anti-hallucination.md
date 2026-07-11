@@ -216,6 +216,20 @@ facts/numbers, so two settings govern how much real text it carries:
 `Source text:` excerpt per source, so the writer sees a titled, summarised, and
 substantiated source rather than a bare link.
 
+**Re-run de-duplication.** `_collect_research_context` layers three sources in
+order: caller-attached research (`_extract_caller_research`, e.g. the seed-URL
+`Source article:` block), the fresh `ResearchService.build_context` render, and
+pgvector RAG. A stalled/retried task persists its `research_context`, and on the
+next attempt `get_task` surfaces it as caller-attached research — so blindly
+appending a fresh render on top **duplicated the entire SOURCES block** in the
+writer prompt (task `f7a9ce17`: two ~4.2 KB renders ⇒ a ~9 KB research block,
+~half redundant). Guard: when the caller blob already contains the
+`RESEARCH_RENDER_SENTINEL` (the `CITATION GUIDANCE:` header every non-empty
+`build_context` render ends with), the blob is already a complete render, so it
+is returned as-is and the fresh `ResearchService` + RAG layers are skipped. A
+genuine seed-URL attachment carries no sentinel, so first-run seed-URL and niche
+tasks still get fresh research layered on.
+
 #### Assembling the draft: the canonical_blog writer prompt must carry structure
 
 Good grounding (above) is necessary but not sufficient: a local writer model
