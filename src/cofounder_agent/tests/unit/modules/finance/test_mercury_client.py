@@ -151,14 +151,29 @@ async def test_list_transactions_parses_response():
 @pytest.mark.unit
 async def test_401_raises_auth_error():
     """A 401 from Mercury must surface as MercuryAuthError so the
-    operator sees a real "token revoked" alert instead of a silent
-    drop to zero balance."""
+    operator gets a real alert instead of a silent drop to zero balance."""
     def handler(_req: httpx.Request) -> httpx.Response:
         return httpx.Response(401, content=b'{"error":"unauthorized"}')
 
     async with MercuryClient(token="bad") as m:
         _install_mock(m, _mock_transport(handler))
         with pytest.raises(MercuryAuthError, match="401"):
+            await m.list_accounts()
+
+
+@pytest.mark.unit
+async def test_401_message_names_ip_allowlist_first():
+    """A Mercury 401 is almost always the source IP falling off the token's
+    allowlist (the residential IP rotates via DHCP), NOT a revoked token. The
+    error text lands in finance_poll_runs.error_message + dashboards, so it must
+    surface the IP-allowlist hypothesis first — otherwise the operator wastes
+    time re-minting a perfectly good token."""
+    def handler(_req: httpx.Request) -> httpx.Response:
+        return httpx.Response(401, content=b'{"error":"unauthorized"}')
+
+    async with MercuryClient(token="bad") as m:
+        _install_mock(m, _mock_transport(handler))
+        with pytest.raises(MercuryAuthError, match="allowlist"):
             await m.list_accounts()
 
 

@@ -137,7 +137,9 @@ class MercuryClient:
         resp = await self._client.get(path, params=params or {})
         if resp.status_code in (401, 403):
             raise MercuryAuthError(
-                f"Mercury auth failed ({resp.status_code}) — "
+                f"Mercury auth failed ({resp.status_code}) — usually the "
+                "source IP isn't in the token's allowlist (the residential IP "
+                "rotated off it); if the IP is already allowlisted, then the "
                 "token may be revoked or wrong scope"
             )
         if resp.status_code >= 400:

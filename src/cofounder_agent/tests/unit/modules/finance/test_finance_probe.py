@@ -18,8 +18,10 @@ records audit_log inserts. ``notify_fn`` is a spy so no network is touched.
 
 from __future__ import annotations
 
+import httpx
 import pytest
 
+from modules.finance import probes as _probes_mod
 from modules.finance.probes import (
     ENABLED_KEY,
     POLL_INTERVAL_SECONDS_KEY,
@@ -331,3 +333,182 @@ async def test_probe_protocol_adapter_severity_mapping():
     assert probe.name == "poll_staleness"
     assert probe.interval_seconds == 300
     assert "stall" in probe.description.lower()
+
+
+# ---------------------------------------------------------------------------
+# Self-diagnosing auth-lost alert — embed the current egress IP so the fix is a
+# one-tap paste into Mercury's allowlist (2026-07-11). The residential IPv4 the
+# worker egresses to Mercury rotates via DHCP; a 401 is almost always that IP
+# falling off the token allowlist, NOT a bad token.
+# ---------------------------------------------------------------------------
+
+
+class _IPFetchSpy:
+    """Injectable stand-in for the egress-IP lookup — records calls and can
+    return a value, return None (lookup failed), or raise (must fail open)."""
+
+    def __init__(self, result: str | None = "203.0.113.9", raises: bool = False):
+        self._result = result
+        self._raises = raises
+        self.calls = 0
+
+    async def __call__(self, pool) -> str | None:
+        self.calls += 1
+        if self._raises:
+            raise RuntimeError("simulated ipify failure")
+        return self._result
+
+
+@pytest.mark.unit
+async def test_auth_lost_alert_embeds_egress_ip_and_leads_with_allowlist():
+    """The auth-lost page names the current egress IP and leads with the
+    IP-allowlist cause, demoting the token-revoked theory to a fallback."""
+    spy = _NotifySpy()
+    ip = _IPFetchSpy(result="203.0.113.9")
+    pool = _FakePool(
+        settings=_enabled_settings(),
+        last_success_epoch=_NOW - 1800.0,  # recent success — NOT stale
+        latest_status="auth_failed",
+    )
+
+    summary = await run_finance_poll_staleness_probe(
+        pool, notify_fn=spy, now_epoch_fn=lambda: _NOW, ip_fetch_fn=ip,
+    )
+
+    assert summary["auth_lost"] is True
+    detail = spy.calls[0]["detail"]
+    # embeds the current egress IP so the operator can paste it straight in
+    assert "203.0.113.9" in detail
+    # leads with the allowlist cause; the token re-mint step comes AFTER
+    lower = detail.lower()
+    assert "allowlist" in lower
+    assert lower.index("allowlist") < lower.index("re-mint")
+    # audit trail records the auth-lost event
+    assert pool.audit_rows[0][0] == "finance.poll_auth_lost"
+
+
+@pytest.mark.unit
+async def test_auth_lost_alert_fails_open_when_ip_unavailable():
+    """If the egress-IP lookup returns nothing, the page STILL fires (critical)
+    with a manual-lookup fallback — the lookup is a convenience, never a gate."""
+    spy = _NotifySpy()
+    ip = _IPFetchSpy(result=None)
+    pool = _FakePool(
+        settings=_enabled_settings(),
+        last_success_epoch=_NOW - 1800.0,
+        latest_status="auth_failed",
+    )
+
+    summary = await run_finance_poll_staleness_probe(
+        pool, notify_fn=spy, now_epoch_fn=lambda: _NOW, ip_fetch_fn=ip,
+    )
+
+    assert summary["paged"] is True
+    assert summary["auth_lost"] is True
+    assert spy.calls[0]["severity"] == "critical"
+    # fallback carries the manual command to discover the IP by hand
+    assert "docker exec" in spy.calls[0]["detail"]
+
+
+@pytest.mark.unit
+async def test_auth_lost_alert_survives_ip_fetch_error():
+    """A raising egress-IP lookup must NOT propagate — the page still goes out
+    with the manual fallback (fail-open)."""
+    spy = _NotifySpy()
+    ip = _IPFetchSpy(raises=True)
+    pool = _FakePool(
+        settings=_enabled_settings(),
+        last_success_epoch=_NOW - 1800.0,
+        latest_status="auth_failed",
+    )
+
+    summary = await run_finance_poll_staleness_probe(
+        pool, notify_fn=spy, now_epoch_fn=lambda: _NOW, ip_fetch_fn=ip,
+    )
+
+    assert summary["paged"] is True
+    assert "docker exec" in spy.calls[0]["detail"]
+
+
+@pytest.mark.unit
+async def test_egress_ip_lookup_only_runs_on_auth_lost():
+    """The egress lookup is scoped to the auth-lost branch — a plain stale
+    poll never pays for it."""
+    spy = _NotifySpy()
+    ip = _IPFetchSpy()
+    pool = _FakePool(
+        settings=_enabled_settings(),
+        last_success_epoch=_NOW - 5 * 3600.0,  # stale, but latest run is 'ok'
+        latest_status="ok",
+    )
+
+    await run_finance_poll_staleness_probe(
+        pool, notify_fn=spy, now_epoch_fn=lambda: _NOW, ip_fetch_fn=ip,
+    )
+
+    assert ip.calls == 0
+
+
+@pytest.mark.unit
+async def test_default_egress_ip_fetch_reads_configured_url_and_strips(monkeypatch):
+    """The default fetch reads finance_egress_ip_echo_url and returns the
+    trimmed body (the public egress IPv4 the reflector echoes back)."""
+    captured: dict[str, str] = {}
+
+    class _FakeResp:
+        text = "198.51.100.7\n"
+
+        def raise_for_status(self) -> None:
+            return None
+
+    class _FakeClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, url):
+            captured["url"] = url
+            return _FakeResp()
+
+    monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+    pool = _FakePool(
+        settings={"finance_egress_ip_echo_url": "https://echo.example/ip"},
+        last_success_epoch=None,
+        latest_status=None,
+    )
+
+    ip = await _probes_mod._default_egress_ip_fetch(pool)
+
+    assert ip == "198.51.100.7"
+    assert captured["url"] == "https://echo.example/ip"
+
+
+@pytest.mark.unit
+async def test_default_egress_ip_fetch_returns_none_on_error(monkeypatch):
+    """A network failure in the reflector call returns None (never raises), so
+    the alert falls back cleanly instead of crashing the probe."""
+
+    class _BoomClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, url):
+            raise RuntimeError("network down")
+
+    monkeypatch.setattr(httpx, "AsyncClient", _BoomClient)
+    pool = _FakePool(settings={}, last_success_epoch=None, latest_status=None)
+
+    ip = await _probes_mod._default_egress_ip_fetch(pool)
+
+    assert ip is None

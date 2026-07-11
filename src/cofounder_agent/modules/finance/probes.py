@@ -47,7 +47,7 @@ from __future__ import annotations
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Awaitable, Callable
 from typing import Any
 
 logger = logging.getLogger("finance.poll_staleness_probe")
@@ -70,6 +70,14 @@ DEFAULT_STALE_MULTIPLIER = 3.0  # tolerate up to 3 missed hourly ticks
 
 # Same 5-minute cadence as the sibling brain probes.
 PROBE_INTERVAL_SECONDS = 300
+
+# Egress-IP reflector — queried ONLY on the auth-lost branch to tell the
+# operator which source IP to add to Mercury's token allowlist. The worker's
+# residential IPv4 rotates via DHCP, so a 401 is almost always that IP falling
+# off the allowlist (not a bad token); naming it turns the fix into a one-tap
+# paste. DB-tunable so an operator behind a different reflector can repoint it.
+EGRESS_IP_ECHO_URL_KEY = "finance_egress_ip_echo_url"
+DEFAULT_EGRESS_IP_ECHO_URL = "https://api.ipify.org"
 
 
 _TRUTHY = {"true", "1", "yes", "on"}
@@ -125,6 +133,35 @@ async def _mercury_enabled(pool: Any) -> bool:
     return raw in _TRUTHY
 
 
+async def _default_egress_ip_fetch(pool: Any) -> str | None:
+    """Return the worker container's current public egress IPv4 — the address
+    Mercury's token allowlist actually sees — or ``None`` if it can't be
+    determined.
+
+    Best-effort by contract: the auth-lost page must fire even when this lookup
+    fails, so every failure path (missing httpx, network error, non-2xx, empty
+    body) collapses to ``None`` and the caller substitutes a manual fallback.
+    The reflector URL is DB-tunable via ``finance_egress_ip_echo_url``.
+
+    ``httpx`` is imported lazily so the probe stays importable in the
+    brain-daemon context (Python + asyncpg only), where httpx may be absent —
+    an ImportError just degrades to ``None`` like any other failure.
+    """
+    url = await _read_setting(
+        pool, EGRESS_IP_ECHO_URL_KEY, DEFAULT_EGRESS_IP_ECHO_URL
+    )
+    try:
+        import httpx
+
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(url)
+        resp.raise_for_status()
+        return resp.text.strip() or None
+    except Exception as exc:  # noqa: BLE001
+        logger.debug("[FINANCE_POLL] egress IP lookup failed: %s", exc)
+        return None
+
+
 async def _emit_audit_event(
     pool: Any,
     event_type: str,
@@ -148,6 +185,10 @@ async def _emit_audit_event(
 
 
 NotifyFn = Callable[..., Any]
+
+# Async ``pool -> egress IPv4 | None`` — injectable so tests exercise the
+# alert wording without a live reflector call (mirrors the notify_fn seam).
+IPFetchFn = Callable[[Any], Awaitable[str | None]]
 
 
 def _default_notify_fn() -> NotifyFn | None:
@@ -177,6 +218,7 @@ async def run_finance_poll_staleness_probe(
     *,
     notify_fn: NotifyFn | None = None,
     now_epoch_fn: Callable[[], float] | None = None,
+    ip_fetch_fn: IPFetchFn | None = None,
 ) -> dict[str, Any]:
     """Single execution of the finance poll-staleness probe.
 
@@ -189,6 +231,11 @@ async def run_finance_poll_staleness_probe(
             still writes the audit row + logs — it just can't page.
         now_epoch_fn: ``() -> unix epoch float`` — defaults to wall clock.
             Tests inject a fixed clock so staleness math is deterministic.
+        ip_fetch_fn: async ``pool -> egress IPv4 | None`` used only on the
+            auth-lost branch to name the IP the operator must allowlist.
+            Defaults to :func:`_default_egress_ip_fetch`; tests inject a stub.
+            Best-effort — a ``None``/raising result degrades to a manual
+            fallback line, never blocking the page.
 
     Returns a structured summary suitable for a brain ``probe_results`` map.
     """
@@ -275,17 +322,44 @@ async def run_finance_poll_staleness_probe(
     paged = False
     if stale or auth_lost:
         if auth_lost:
+            # Name the current egress IP so the fix is a one-tap paste into
+            # Mercury's allowlist. Fail-open: a raising/None lookup must never
+            # block the page — we just fall back to a manual-lookup line.
+            effective_ip_fetch = (
+                ip_fetch_fn if ip_fetch_fn is not None else _default_egress_ip_fetch
+            )
+            try:
+                egress_ip = await effective_ip_fetch(pool)
+            except Exception as exc:  # noqa: BLE001
+                logger.debug("[FINANCE_POLL] egress IP fetch raised: %s", exc)
+                egress_ip = None
+
+            if egress_ip:
+                ip_line = (
+                    f"Current worker egress IPv4: {egress_ip}. Add it at "
+                    "Mercury → Settings → API → IP allowlist; the poll clears "
+                    "on the next hourly tick."
+                )
+            else:
+                ip_line = (
+                    "Couldn't auto-detect the egress IP — run `docker exec "
+                    'poindexter-worker python -c "import httpx; '
+                    "print(httpx.get('https://api.ipify.org').text)\"` and add "
+                    "that IPv4 at Mercury → Settings → API → IP allowlist."
+                )
+
             severity = "critical"
-            title = "Mercury finance poll: auth lost"
+            title = "Mercury poll: auth lost (likely IP-allowlist miss)"
             detail = (
-                "The most recent Mercury poll terminated auth_failed — the "
-                "Read-Only API token is likely revoked or expired. Balances + "
-                "transactions are going stale. Re-mint at Mercury dashboard → "
-                "Settings → API and run `poindexter settings set "
-                "mercury_api_token <token> --secret`."
+                "The most recent Mercury poll got a 401. This is almost always "
+                "the residential IP rotating off Mercury's token allowlist — "
+                f"not a bad token. {ip_line} If that IP is already allowlisted, "
+                "then suspect the token: re-mint at Mercury → Settings → API "
+                "and run `poindexter settings set mercury_api_token <token> "
+                "--secret`."
             )
             event_type = "finance.poll_auth_lost"
-            payload = {"latest_status": latest_status}
+            payload = {"latest_status": latest_status, "egress_ip": egress_ip}
         else:
             severity = "warning"
             if age_seconds is None:
@@ -426,5 +500,6 @@ __all__ = [
     "ENABLED_KEY",
     "POLL_INTERVAL_SECONDS_KEY",
     "STALE_MULTIPLIER_KEY",
+    "EGRESS_IP_ECHO_URL_KEY",
     "PROBE_INTERVAL_SECONDS",
 ]
