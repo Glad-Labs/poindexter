@@ -275,6 +275,18 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/adapter_purity_lint.py
 
+      # Atom-independence guard (tech-debt audit 2026-07): an atom
+      # (modules/content/atoms/) is a graph node an architect LLM composes into
+      # ad-hoc graphs, so it must NOT import a stage or a sibling atom — only
+      # utilities/libraries (an atoms/_helper, a module-root lib, services.*).
+      # Otherwise placing the atom on a graph silently runs code the graph_def
+      # can't see. Existing fossils (generate_content + replace_inline_images
+      # via image_helpers) are baselined (atom_independence_baseline.json,
+      # ratchet-only-shrinks). Pure-Python AST scan, no deps beyond stdlib.
+      - name: Atom-independence lint (tech-debt audit)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/atom_independence_lint.py
+
       # Information-disclosure guard (security audit L2, #724): no
       # HTTPException whose detail= echoes a caught exception to the client
       # (resolved IPs from an httpx ConnectError, which JWT claim failed...).
@@ -543,6 +555,8 @@ jobs:
         run: python scripts/ci/lint_silent_excepts.py
       - name: Adapter-purity lint (transport contract #1344)
         run: python scripts/ci/adapter_purity_lint.py
+      - name: Atom-independence lint (tech-debt audit)
+        run: python scripts/ci/atom_independence_lint.py
       - name: HTTP detail-leak lint (security #724)
         run: python scripts/ci/lint_http_detail_leak.py
       - name: Services os.getenv lint (DB-first config, GH#93)
@@ -562,7 +576,7 @@ jobs:
             --repo "${{ github.repository }}" \
             --title "⚠️ main fails a ratchet lint (run ${{ github.run_id }})" \
             --label "bug" \
-            --body "A pure-AST ratchet lint (silent-except / module-purity / kernel-purity / adapter-purity / services-os.getenv) failed on the push to **main**.
+            --body "A pure-AST ratchet lint (silent-except / module-purity / kernel-purity / adapter-purity / atom-independence / services-os.getenv) failed on the push to **main**.
 
           **Run:** ${RUN_URL}
           **Commit:** \`${{ github.sha }}\`
