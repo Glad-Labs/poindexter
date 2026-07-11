@@ -5,13 +5,13 @@
 README.md
 .env.example
 .env.local
-.env._.example
+.env.*.example
 node_modules
 .next
 .swc
 .pytest_cache
-**tests**
+__tests__
 jest.config.js
 jest.setup.js
-_.test.js
-.docker\*
+*.test.js
+.docker*
