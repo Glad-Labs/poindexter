@@ -26,7 +26,6 @@ Design:
 
 from __future__ import annotations
 
-import asyncio
 import hashlib
 import logging
 import re
@@ -164,22 +163,13 @@ class PluginScheduler:
 
     @staticmethod
     def _heartbeat_interval_seconds(cfg: dict) -> float:
-        """Heartbeat cadence (seconds) for long-job liveness.
-
-        Read off the dispatcher-seeded ``_site_config`` in the job's cfg
-        (``live_activity_heartbeat_seconds``, default 30). MUST be shorter than
-        ``live_activity_freshness_seconds`` so a still-running long job is never
-        hidden by ``get_live_activity``'s freshness window. Falls back to the
-        default when no site_config is present or the value is unparseable.
+        """Heartbeat cadence (seconds) for long-job liveness, read off the
+        dispatcher-seeded ``_site_config`` in the job's cfg. Delegates to
+        ``live_activity.resolve_heartbeat_seconds`` so the default + parse rule
+        live in one place (the Phase-2 media producers resolve the same way).
         """
-        default = 30.0
         sc = cfg.get("_site_config") if isinstance(cfg, dict) else None
-        if sc is None:
-            return default
-        try:
-            return float(sc.get("live_activity_heartbeat_seconds", default))
-        except (TypeError, ValueError):
-            return default
+        return live_activity.resolve_heartbeat_seconds(sc)
 
     @staticmethod
     async def _invoke_job_with_activity(*, pool: Any, job: Any, cfg: dict) -> Any:
@@ -190,45 +180,26 @@ class PluginScheduler:
         exception path: begin/finish swallow their own errors, and
         finish(None) is a no-op when the row couldn't open.
 
-        A sidecar heartbeat task bumps the row's ``updated_at`` on an interval
-        for the whole duration of the run, so a multi-minute job (an LLM topic
-        sweep, a media render) stays visible in the pulse instead of being
-        hidden by the read's freshness window after ~2 minutes. It's torn down
-        in the ``finally`` on every exit path (success, failure, cancel).
+        Rents the shared ``live_activity.track()`` bracket: begin + sidecar
+        heartbeat (so a multi-minute job — an LLM topic sweep, a media render —
+        stays visible past the read's freshness window instead of being hidden
+        after ~2 minutes) + finish on every exit path (success, failure,
+        cancel). The ledger writes never affect the job's own result or
+        exception path.
         """
-        aid = None
-        if not getattr(job, "activity_silent", False):
-            aid = await live_activity.begin(
-                pool,
-                kind="job",
-                ref_id=job.name,
-                title=getattr(job, "description", None) or job.name,
-            )
-        hb_task = None
-        if aid is not None:
-            hb_task = asyncio.create_task(
-                live_activity.heartbeat(
-                    pool,
-                    aid,
-                    interval_seconds=PluginScheduler._heartbeat_interval_seconds(cfg),
-                )
-            )
-        try:
+        if getattr(job, "activity_silent", False):
+            return await job.run(pool, cfg)
+        async with live_activity.track(
+            pool,
+            kind="job",
+            ref_id=job.name,
+            title=getattr(job, "description", None) or job.name,
+            heartbeat_seconds=PluginScheduler._heartbeat_interval_seconds(cfg),
+        ) as act:
             result = await job.run(pool, cfg)
-            await live_activity.finish(
-                pool, aid, status="ok" if result.ok else "fail"
-            )
+            if not result.ok:
+                act.fail()
             return result
-        except Exception:
-            await live_activity.finish(pool, aid, status="fail")
-            raise
-        finally:
-            if hb_task is not None:
-                hb_task.cancel()
-                try:
-                    await hb_task
-                except asyncio.CancelledError:
-                    pass  # silent-ok: expected — we cancelled the heartbeat ourselves
 
     async def register_job(self, job: Any) -> bool:
         """Add a single Job to the schedule.

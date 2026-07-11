@@ -31,6 +31,7 @@ from datetime import datetime, timezone
 from enum import Enum
 from typing import TYPE_CHECKING, Any
 
+from services import live_activity
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
@@ -1002,6 +1003,48 @@ class ImageService:
     # =========================================================================
 
     async def generate_image(
+        self,
+        prompt: str,
+        output_path: str,
+        negative_prompt: str | None = None,
+        num_inference_steps: int | None = None,
+        guidance_scale: float | None = None,
+        task_id: str | None = None,
+        model: ImageModel | None = None,
+    ) -> bool:
+        """Generate an image, bracketed by a best-effort ``kind='media'``
+        live_activity row so the Z-Image ``:9836`` render (a ~5-70s GPU burn,
+        cold model load included) shows in the console SYSTEM PULSE instead of
+        being invisible. Liveness-only — a single blocking render exposes no
+        mid-progress, so we never fabricate a pct (``feedback_no_dummy_data``).
+        Delegates the real work to ``_generate_image_impl`` unchanged; the
+        ledger never alters its bool result.
+        """
+        pool = getattr(self._site_config, "_pool", None)
+        _prompt = (prompt or "").strip()
+        async with live_activity.track(
+            pool,
+            kind="media",
+            ref_id=str(task_id) if task_id else None,
+            title=f"Image · {_prompt[:60]}" if _prompt else "Image",
+            detail={"medium": "image", "provider": "image_gen"},
+            heartbeat_seconds=live_activity.resolve_heartbeat_seconds(self._site_config),
+        ) as act:
+            await act.update(step="generating")
+            ok = await self._generate_image_impl(
+                prompt,
+                output_path,
+                negative_prompt=negative_prompt,
+                num_inference_steps=num_inference_steps,
+                guidance_scale=guidance_scale,
+                task_id=task_id,
+                model=model,
+            )
+            if not ok:
+                act.fail()
+            return ok
+
+    async def _generate_image_impl(
         self,
         prompt: str,
         output_path: str,

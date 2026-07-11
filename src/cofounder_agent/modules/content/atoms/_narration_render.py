@@ -16,6 +16,8 @@ import logging
 import re
 from typing import Any
 
+from services import live_activity
+
 logger = logging.getLogger(__name__)
 
 
@@ -120,10 +122,24 @@ async def render_narration(
 
     from services.podcast_service import PodcastService
 
+    # Best-effort live-activity: surface the TTS synth as a kind='media' row in
+    # the console pulse (podcast + long/short video narration all reach here).
+    # The ledger never affects the render — a None id (begin swallowed) makes
+    # the whole bracket a silent no-op, and a synth failure still fail-softs.
+    pool = getattr(site_config, "_pool", None)
     try:
-        path, _duration = await PodcastService(site_config=site_config).synthesize(
-            text, key=key,
-        )
+        async with live_activity.track(
+            pool,
+            kind="media",
+            ref_id=str(task_id) if task_id else None,
+            title=f"Narration · {key}",
+            detail={"medium": "audio", "cta_key": cta_key},
+            heartbeat_seconds=live_activity.resolve_heartbeat_seconds(site_config),
+        ) as act:
+            await act.update(step="synthesizing narration")
+            path, _duration = await PodcastService(site_config=site_config).synthesize(
+                text, key=key,
+            )
     except Exception as exc:  # noqa: BLE001 — TTS failure must not halt the graph
         logger.warning(
             "[_narration_render] synthesis failed (key=%s, task=%s): %s",

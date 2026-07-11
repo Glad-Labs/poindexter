@@ -6,8 +6,10 @@ minimal-dependency brain daemon can both use it (the live_activity seam).
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
+from collections.abc import AsyncIterator
 from typing import Any
 
 logger = logging.getLogger(__name__)
@@ -169,3 +171,85 @@ async def reap_stale(pool: Any, *, reaper_seconds: int) -> int:
     except Exception as exc:  # noqa: BLE001
         logger.debug("live_activity.reap_stale swallowed: %s", exc)
         return 0
+
+
+def resolve_heartbeat_seconds(site_config: Any, *, default: float = 30.0) -> float:
+    """Heartbeat cadence (seconds) for a producer's ``track()`` row, read off
+    the ``site_config`` DI seam (``live_activity_heartbeat_seconds``). MUST stay
+    shorter than ``live_activity_freshness_seconds`` so a still-running
+    multi-minute render is never hidden by ``get_live_activity``'s freshness
+    window. Falls back to ``default`` when site_config is absent/unparseable.
+    """
+    if site_config is None:
+        return default
+    try:
+        return float(site_config.get("live_activity_heartbeat_seconds", default))
+    except (TypeError, ValueError):
+        return default
+
+
+class ActivityHandle:
+    """Mutable handle yielded by ``track()``. Lets a producer push progress
+    (``update``) and mark a returned-failure (``fail``) on the row it brackets.
+    Best-effort throughout: ``update`` delegates to the swallowing module helper
+    and no-ops on a None id (begin failed).
+    """
+
+    def __init__(self, pool: Any, activity_id: int | None) -> None:
+        self._pool = pool
+        self.activity_id = activity_id
+        self.status = "ok"
+
+    async def update(self, *, step: str | None = None, pct: int | None = None) -> None:
+        await update(self._pool, self.activity_id, step=step, pct=pct)
+
+    def fail(self) -> None:
+        """Mark the row to finish 'fail' without raising — for a producer that
+        returns a failure result (e.g. render success=False) rather than
+        throwing.
+        """
+        self.status = "fail"
+
+
+@contextlib.asynccontextmanager
+async def track(
+    pool: Any,
+    *,
+    kind: str,
+    ref_id: str | None,
+    title: str,
+    detail: dict | None = None,
+    heartbeat_seconds: float = 30.0,
+) -> AsyncIterator[ActivityHandle]:
+    """Bracket a long-running producer with a best-effort live_activity row.
+
+    Opens the row (``begin``), launches a sidecar ``heartbeat`` that keeps
+    ``updated_at`` fresh for the whole body (so the read's freshness window
+    never hides a still-running multi-minute render), and closes the row
+    (``finish``) on EVERY exit path — clean success ('ok'), a returned-failure
+    the caller flags via ``handle.fail()``, or an exception ('fail', then
+    re-raise). The heartbeat is always torn down in the ``finally``.
+
+    Best-effort: a failed ``begin`` yields a handle whose ``activity_id`` is
+    None, so ``update``/``finish`` no-op and no heartbeat spins — the producer
+    runs exactly as before, just invisible in the pulse. This is observability;
+    it must never break the render it shadows.
+    """
+    aid = await begin(pool, kind=kind, ref_id=ref_id, title=title, detail=detail)
+    handle = ActivityHandle(pool, aid)
+    hb_task = (
+        asyncio.create_task(heartbeat(pool, aid, interval_seconds=heartbeat_seconds))
+        if aid is not None
+        else None
+    )
+    try:
+        yield handle
+    except BaseException:
+        handle.status = "fail"
+        raise
+    finally:
+        if hb_task is not None:
+            hb_task.cancel()
+            with contextlib.suppress(asyncio.CancelledError):
+                await hb_task
+        await finish(pool, handle.activity_id, status=handle.status)

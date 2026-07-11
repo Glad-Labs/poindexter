@@ -39,6 +39,7 @@ import json
 import logging
 import os
 import tempfile
+from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -49,6 +50,12 @@ from services.video_renderers.shot_vision_qa import ShotQAResult, score_shot_fra
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
+
+# A caller-supplied per-shot progress callback: ``(step, pct) -> awaitable``.
+# The Plan-4 media atom wires this to a live_activity ``media`` row so the
+# console pulse shows real per-shot render progress; ``None`` (the default, and
+# the legacy caller) renders silently.
+ProgressCb = Callable[[str, "int | None"], Awaitable[None]]
 
 
 # Wan2.1 clip-duration cap. Artifacts beyond ~6s show seams in the
@@ -536,10 +543,28 @@ async def _render_one_shot(
     )
 
 
+async def _safe_progress(
+    progress_cb: ProgressCb | None, step: str, pct: int | None
+) -> None:
+    """Fire a caller-supplied progress callback, swallowing any error. The
+    callback is a live-activity heartbeat — an observability write that must
+    never take the render down.
+    """
+    if progress_cb is None:
+        return
+    try:
+        await progress_cb(step, pct)
+    except Exception as exc:  # noqa: BLE001 — best-effort progress, never fatal
+        # silent-ok: a progress callback is an observability heartbeat for the
+        # live_activity pulse; its failure must never take the render down.
+        logger.debug("[SHOT_LIST] progress_cb swallowed: %s", exc)
+
+
 async def _render_pass(
     shots: list[Shot],
     *,
     render_kwargs: dict[str, Any],
+    progress_cb: ProgressCb | None = None,
 ) -> list[_ShotState]:
     """Render every shot once, with the image model resident across the pass.
 
@@ -552,10 +577,17 @@ async def _render_pass(
     ``is_reused`` flags a shot whose result reused the prior clip (a holdover,
     or a pexels miss that held over) — those are never scored (the prior clip
     was already vetted) and get re-pointed to the post-QA prior in finalize.
+
+    ``progress_cb`` (best-effort) fires ``("shot i/N", pct)`` at the top of each
+    shot, where ``pct`` is honest shot POSITION (``i/total``), capped 1..99 —
+    the media pulse row's real per-shot progress.
     """
     states: list[_ShotState] = []
     render_prior: str | None = None
-    for shot in shots:
+    total = len(shots)
+    for i, shot in enumerate(shots, start=1):
+        pct = min(99, max(1, round(100 * i / total))) if total else None
+        await _safe_progress(progress_cb, f"shot {i}/{total}", pct)
         result = await _render_one_shot(shot, prior_clip=render_prior, **render_kwargs)
         is_reused = bool(
             result.success and result.clip_path
@@ -846,6 +878,7 @@ async def render_shot_list(
     height: int = 1080,
     ambient_path: str | None = None,
     caption_path: str | None = None,
+    progress_cb: ProgressCb | None = None,
 ) -> ShotListRenderResult:
     """Render a full video from a shot list.
 
@@ -880,6 +913,12 @@ async def render_shot_list(
             caller and the Plan-4 render path render without captions).
             When set, it's threaded to ``CompositionRequest.caption_track_path``
             and the compositor burns the subtitles in.
+        progress_cb: Optional async callback ``(step: str, pct: int | None)``
+            fired once per shot as it renders (``"shot i/N"`` + honest
+            position-pct, 1..99). Best-effort — a raising callback never fails
+            the render. The Plan-4 media atom wires this to a live_activity
+            ``media`` row so the console pulse shows real per-shot progress;
+            ``None`` (the default, and the legacy caller) renders silently.
 
     Returns:
         ``ShotListRenderResult`` with file path on success.
@@ -934,7 +973,9 @@ async def render_shot_list(
     )
     capped_shots = _cap_hero_shots(list(shot_list.shots), max_hero)
 
-    states = await _render_pass(capped_shots, render_kwargs=render_kwargs)
+    states = await _render_pass(
+        capped_shots, render_kwargs=render_kwargs, progress_cb=progress_cb,
+    )
     await _score_pass(
         states, qa=qa, site_config=site_config, pool=pool,
     )

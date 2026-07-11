@@ -150,11 +150,25 @@ Phase 1 alone gives the full picture, and media already shows up as
 **"`dispatch_media_pipeline` · running 3m"** (job-level liveness) — honest and
 already better than digging logs.
 
-**Phase 2 — media depth (the instrumentation):**
+**Phase 2 — media depth (the instrumentation): SHIPPED 2026-07-10.**
 
-- **Media (progress)** — the `media_pipeline` render atoms emit
-  `update(step="shot 6/9", pct=…)` as shots render / audio mixes. Video gets
-  per-shot; podcast gets stage-level.
+The GPU-heavy render chokepoints now emit `kind='media'` rows via a shared
+`live_activity.track()` async-context-manager bracket (begin → sidecar
+heartbeat → finish, best-effort; a failed `begin` yields a None id and the
+whole bracket is a silent no-op):
+
+- **Image** — `image_service.generate_image` (Z-Image `:9836`): liveness
+  (`step="generating"`, no fabricated pct — a single blocking render exposes no
+  mid-progress).
+- **Media / video (progress)** — `_media_render.render_from_state` wraps the
+  render and threads a `progress_cb` into `render_shot_list`, so the row shows
+  real per-shot `update(step="shot 6/9", pct=…)` (honest shot position).
+- **Audio (stage-level)** — `_narration_render.render_narration` (podcast +
+  long/short video narration all share it): `step="synthesizing narration"`.
+
+The shipped scheduler seam was refactored to rent the same `track()`, so there
+is one bracket implementation, not several. Still deferred: the WALL pulse +
+persistent strip (console consumers) and Approach C (Prefect consolidation).
 
 **Phase 3 = the C follow-up** — jobs migrate onto Prefect, which writes the same
 `job` rows (or a thin Prefect→ledger bridge). Console untouched.
@@ -254,8 +268,10 @@ from a `PX.activity` seed (zero-backend, like the rest of the console).
   brain) + `GET /api/activity` + **CONSOLE band**. The pulse ships; media is
   job-level liveness.
 - **Phase 1.5** — **persistent strip** (all modes). Cheap; same data.
-- **Phase 2** — **WALL pulse** enhancement + **media render progress**
-  instrumentation.
+- **Phase 2** — **media render progress** instrumentation ✅ **shipped
+  2026-07-10** (image liveness + video per-shot + audio stage-level, via the
+  shared `live_activity.track()` bracket); **WALL pulse** enhancement still
+  deferred.
 - **Phase 3** — **C consolidation**: migrate APScheduler jobs onto Prefect; it
   writes the same `job` rows. Console unchanged.
 
