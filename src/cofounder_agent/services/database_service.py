@@ -19,6 +19,7 @@ All existing methods are delegated to appropriate modules.
 """
 
 import os
+import sys
 from typing import Any
 
 import asyncpg
@@ -325,6 +326,25 @@ class DatabaseService:
 
     async def close(self) -> None:
         """Close all connection pools."""
+        # Flush in-flight publish-tail fire-and-forget tasks (newsletter /
+        # R2 upload / search-engine ping) FIRST: a short-lived owner (the
+        # Prefect auto-publish flow subprocess, the CLI publish paths)
+        # reaches close() while they are still running, and the newsletter
+        # only *schedules* its newsletter_campaign_sent audit row once the
+        # send completes — so it must finish before the audit drain below,
+        # all while the pools are still open (GlitchTip #863 root cause B).
+        # Resolved via sys.modules so a process that never imported the
+        # (heavy) publish module doesn't pay the import at shutdown — if it
+        # was never imported, nothing was spawned.
+        publish_service = sys.modules.get("services.publish_service")
+        if publish_service is not None:
+            try:
+                await publish_service.drain_background_tasks()
+            except Exception:
+                logger.warning(
+                    "Draining publish background tasks raised during close",
+                    exc_info=True,
+                )
         # Flush in-flight fire-and-forget audit writes (audit_log_bg) before
         # closing the pool they run against. Without this, a warn/critical
         # finding emitted moments earlier — e.g. the spend-throttle engage

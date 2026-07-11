@@ -186,6 +186,36 @@ def _spawn_background(coro, name: str | None = None) -> asyncio.Task:
     return task
 
 
+async def drain_background_tasks(timeout: float = 30.0) -> None:
+    """Flush in-flight fire-and-forget publish tasks before pool teardown.
+
+    The publish tail spawns its side effects fire-and-forget (newsletter,
+    R2 media upload, search-engine ping, cloud sync) — safe in the
+    long-lived worker, but a short-lived pool owner (the Prefect flow
+    subprocess that builds+closes its own ``DatabaseService`` per run on
+    the auto-publish path, or the CLI publish commands) reaches teardown
+    while they are still running. The newsletter task in particular only
+    *schedules* its ``newsletter_campaign_sent`` audit row (via
+    ``audit_log_bg``) after the send completes — close the pools first and
+    the send dies mid-flight on a closed pool and the row is never written
+    (GlitchTip #863's root cause B; root cause A — already-scheduled audit
+    writes — is ``audit_log.drain_pending_writes``).
+
+    ``DatabaseService.close`` calls this BEFORE ``drain_pending_writes``
+    so tasks finish → schedule their audit writes → the audit drain
+    flushes them, all while the pools are still open. Best-effort and
+    bounded: waits up to ``timeout`` seconds, then cancels stragglers so
+    teardown never hangs on a wedged send. Never raises — task exceptions
+    are retrieved by ``_spawn_background``'s done-callback.
+    """
+    pending = [t for t in _background_tasks if not t.done()]
+    if not pending:
+        return
+    _, still_pending = await asyncio.wait(pending, timeout=timeout)
+    for task in still_pending:
+        task.cancel()
+
+
 def _write_text_file(path: str, content: str) -> None:
     """Small sync file-write suitable for ``asyncio.to_thread``. Avoids
     blocking the event loop on RSS feed regeneration in publish hot
