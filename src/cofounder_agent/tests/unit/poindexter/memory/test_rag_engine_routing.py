@@ -667,3 +667,155 @@ class TestRerankDisplaySimilarity:
         h = hits[0]
         assert h.similarity == pytest.approx(0.87)
         assert h.display_similarity is None
+
+
+# ---------------------------------------------------------------------------
+# 2026-07-11 — embed-FAILURE is loud, empty-corpus is quiet
+#
+# Background: the retriever used to swallow a failed query-embedding and
+# return [] (same as "no similar posts"). That made an unreachable embed
+# endpoint indistinguishable from an empty result, so ``search`` never
+# entered its except-branch — the three ``rag_engine_fallback`` surfaces
+# never fired and it never degraded to Path A. That is exactly how the
+# localhost-embed misconfig (#2303) hid in prod for weeks. The retriever
+# now RAISES on embed failure; these tests pin the resulting contract at
+# the ``MemoryClient.search`` seam: a connection failure is loud AND
+# recovers via Path A, while a genuinely empty corpus stays silent.
+# ---------------------------------------------------------------------------
+
+
+_PATH_A_ROW = {
+    "source_table": "posts",
+    "source_id": "recovered-1",
+    "text_preview": "Recovered via Path A",
+    "metadata": {},
+    "writer": "worker",
+    "origin_path": "/posts/recovered-1",
+    "similarity": 0.81,
+}
+
+
+class _FakePoolRagOnPathARow:
+    """rag_engine on; extras read → [] (both off); the Path-A embeddings
+    SELECT returns the configured rows so a test can prove the legacy
+    path recovered. ``local_llm_api_url`` is unset (fetchrow → None), so
+    ``_rag_embed_base_url`` returns None and the retriever keeps its
+    default — irrelevant here because the embed model is patched.
+    """
+
+    def __init__(self, path_a_rows: list[dict]):
+        self._path_a_rows = path_a_rows
+
+    def acquire(self):
+        outer = self
+
+        class _Conn:
+            async def __aenter__(self_inner):
+                return self_inner
+
+            async def __aexit__(self_inner, *_a):
+                return False
+
+            async def fetchrow(self_inner, sql, *_args):
+                if "rag_engine_enabled" in sql:
+                    return {"value": "true"}
+                return None  # local_llm_api_url unset
+
+            async def fetch(self_inner, sql, *_args):
+                # Path-A pgvector SELECT vs the extras-flags read.
+                if "FROM embeddings" in sql:
+                    return outer._path_a_rows
+                return []  # rag_hybrid_enabled / rag_rerank_enabled → off
+
+        return _Conn()
+
+
+@pytest.mark.unit
+class TestEmbedFailureTripsFallback:
+    """A retriever embed FAILURE trips the loud fallback + Path-A
+    recovery; a legitimately empty corpus does not. This is the whole
+    point of making the retriever raise instead of returning [] (#2303).
+    """
+
+    @pytest.mark.asyncio
+    async def test_retriever_connectionerror_trips_fallback_and_recovers_via_path_a(self):
+        """The #2303 failure mode: the retriever's query-embed endpoint is
+        unreachable (ConnectionError). ``search`` must fire the surfaces
+        AND still return results via Path A (which embeds through the
+        independent, correctly-configured dispatcher). Stubs the retriever
+        so this runs without llama-index in default CI."""
+        client = _make_client_with_pool(_FakePoolRagOnPathARow([_PATH_A_ROW]))
+        notify_mock = AsyncMock()
+        raising_retriever = SimpleNamespace(
+            aretrieve=AsyncMock(
+                side_effect=ConnectionError("Failed to connect to Ollama")
+            )
+        )
+        with patch(
+            "services.rag_engine.get_rag_retriever",
+            new=AsyncMock(return_value=raising_retriever),
+        ), patch.object(
+            client, "embed", new=AsyncMock(return_value=[0.1] * 768),
+        ), patch(
+            "services.audit_log.audit_log_bg",
+        ) as audit_mock, patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=notify_mock,
+        ):
+            result = await client.search("query", source_table="posts", limit=5)
+
+        # Recovered via Path A — search still returns results.
+        assert [h.source_id for h in result] == ["recovered-1"]
+        # Surface 2: audit_log fired, connection failure classified.
+        audit_mock.assert_called_once()
+        args, kwargs = audit_mock.call_args
+        assert args[0] == "rag_engine_fallback"
+        assert args[2]["exception_type"] == "ConnectionError"
+        assert kwargs.get("severity") == "warning"
+        # Surface 3: operator notified (non-critical).
+        notify_mock.assert_called_once()
+        assert notify_mock.call_args.kwargs.get("critical") is False
+
+    @pytest.mark.asyncio
+    async def test_empty_corpus_does_not_trip_fallback(self):
+        """A genuinely empty result (embed succeeded, zero matching rows)
+        must NOT be treated as a failure: no surface fires, and search
+        returns [] without falling through to Path A."""
+        client = _make_client_with_pool(_FakePoolRagOnPathARow([]))
+        notify_mock = AsyncMock()
+        empty_retriever = SimpleNamespace(aretrieve=AsyncMock(return_value=[]))
+        with patch(
+            "services.rag_engine.get_rag_retriever",
+            new=AsyncMock(return_value=empty_retriever),
+        ), patch(
+            "services.audit_log.audit_log_bg",
+        ) as audit_mock, patch(
+            "services.integrations.operator_notify.notify_operator",
+            new=notify_mock,
+        ):
+            result = await client.search("query", source_table="posts", limit=5)
+
+        assert result == []
+        audit_mock.assert_not_called()
+        notify_mock.assert_not_called()
+
+    # NOTE: the *real*-retriever end-to-end (construct a live
+    # ``get_rag_retriever`` and watch a genuine embed failure propagate
+    # through LlamaIndex's ``aretrieve`` wrapper → fallback → Path A) is
+    # deliberately NOT a test in THIS file. This module stubs the retriever
+    # and does not import ``llama_index`` at module scope, so building the
+    # real retriever here happens as a fresh deep ``llama_index`` import
+    # inside a forked child under CI's ``pytest-forked`` runner — which
+    # trips a native (PyO3) "cannot load module more than once per process"
+    # error before the embed is even reached (and can't be reproduced on
+    # Windows, which has no ``os.fork``). The two halves are covered
+    # fork-safely instead:
+    #   * retriever raises through the public ``aretrieve`` wrapper —
+    #     tests/unit/services/test_rag_engine.py::
+    #     test_embedding_failure_propagates_through_public_aretrieve
+    #     (that file imports llama_index at module scope → parent-loaded).
+    #   * ``search`` turns that raise into fallback + Path-A recovery —
+    #     test_retriever_connectionerror_trips_fallback_and_recovers_via_path_a
+    #     above.
+    # The full real chain was also verified live against a dead embed port
+    # during the #2314 change.

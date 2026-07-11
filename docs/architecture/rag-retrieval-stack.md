@@ -40,12 +40,23 @@ so `_search_via_rag_engine` reads `local_llm_api_url` from the pool
 `embed_base_url`. Without it the retriever's no-`site_config` branch defaults
 the query-embedder to `http://localhost:11434`, which inside the worker
 container has no Ollama (it runs on `host.docker.internal:11434`) — so every
-embed fails. The failure mode is **quiet**: the retriever catches the embed
-`ConnectionError` and returns an _empty_ result instead of raising, so it does
-**not** trip the loud Path-A fallback below — it just yields zero hits. That is
-how a mis-pointed endpoint stayed hidden (≈1 RAG injection in 27 runs) until the
-2026-07-11 fix. (Making embed-connection failures raise so the fallback fires is
-a tracked follow-up.)
+embed fails. That mis-pointed endpoint once stayed hidden (≈1 RAG injection in
+27 runs) because the retriever **swallowed** the embed `ConnectionError` and
+returned an _empty_ result — indistinguishable from "no similar posts", so it
+never tripped the loud Path-A fallback below.
+
+**As of 2026-07-11 the retriever RAISES on an embed failure instead** (after
+exhausting the retry budget). A failed query-embedding is a rail _failure_, not
+an empty corpus, so it propagates out of `_aretrieve` to `MemoryClient.search`,
+trips all three surfaces below, **and** degrades to Path A — whose embed runs
+through the independently-configured dispatcher and often still succeeds,
+recovering real hits even while Path B's endpoint is mis-pointed (exactly the
+#2303 shape). A genuinely empty corpus stays quiet: the embed succeeds, the
+pgvector query runs, and zero matching rows return an empty result without
+raising. (The retriever's _pgvector-query_ failure is a deliberately separate
+path that still returns empty rather than raising: Path A shares the same DB
+pool, so a raise there couldn't unlock any recovery the way a diverging embed
+endpoint can.)
 
 If `get_rag_retriever` raises for any reason — llama-index not
 installed, embedding model not pulled, query embedding fails —

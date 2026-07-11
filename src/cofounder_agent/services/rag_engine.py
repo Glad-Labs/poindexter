@@ -242,11 +242,30 @@ def _build_retriever_class():
                     base_delay=self._retry_base_delay,
                 )
             except Exception as e:
+                # A failed query-embedding is a rail FAILURE, not an empty
+                # result — RE-RAISE instead of returning []. Returning []
+                # here made an unreachable/misconfigured embed endpoint
+                # (e.g. this retriever's base_url pinned to localhost while
+                # Path A embeds via the correctly-configured dispatcher,
+                # #2303) indistinguishable from "no similar posts", so
+                # MemoryClient.search never entered its except-branch: none
+                # of the three loud rag_engine_fallback surfaces (WARNING +
+                # audit_log + notify_operator) fired, and search never
+                # degraded to the legacy Path-A query. That let a fully-dead
+                # RAG layer hide in prod for weeks (~1 injection in 27 runs).
+                # Raising lets the caller surface the failure AND recover via
+                # Path A. A genuinely empty corpus never reaches here: the
+                # embed succeeds, the pgvector query runs, and zero matching
+                # rows return [] below. The retry budget (glad-labs-stack#876)
+                # is already spent by _aembed_query_with_retry, so this is a
+                # persistent failure, not a transient blip.
                 logger.warning(
-                    "[rag] embedding query failed after %d attempt(s): %s",
+                    "[rag] embedding query failed after %d attempt(s): %s — "
+                    "re-raising so MemoryClient.search fires its loud fallback "
+                    "and degrades to the legacy Path-A pgvector query",
                     self._retry_attempts, e,
                 )
-                return []
+                raise
 
             vec_str = "[" + ",".join(str(v) for v in vec) + "]"
 

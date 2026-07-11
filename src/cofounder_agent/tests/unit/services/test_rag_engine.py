@@ -207,22 +207,56 @@ class TestRetrieverQuery:
         assert results == []
 
     @pytest.mark.asyncio
-    async def test_embedding_failure_returns_empty(self):
+    async def test_embedding_failure_raises_after_retry_budget(self):
+        """An embed FAILURE is a rail failure, not an empty corpus — the
+        retriever RAISES (after exhausting the retry budget) instead of
+        returning []. Returning [] made a dead/misconfigured embed
+        endpoint look identical to "no similar posts", so
+        ``MemoryClient.search`` never hit its loud fallback + Path-A
+        recovery — that's how the localhost-embed misconfig (#2303) hid
+        in prod for weeks (~1 RAG injection in 27 runs). The raise is
+        what trips the three observability surfaces upstream.
+        """
         from llama_index.core.schema import QueryBundle
 
         embed = MagicMock()
-        embed.aget_query_embedding = AsyncMock(side_effect=Exception("ollama down"))
+        embed.aget_query_embedding = AsyncMock(
+            side_effect=ConnectionError("Failed to connect to Ollama")
+        )
 
         pool = MagicMock()
+        pool.fetch = AsyncMock()  # must never be awaited — embed fails first
         retriever = await get_rag_retriever(pool=pool)
         # Patch sleep so the retry budget (glad-labs-stack#876) doesn't add
         # real backoff delay to the test.
         with patch("services.rag_engine._get_embed_model", return_value=embed), \
                 patch("asyncio.sleep", new_callable=AsyncMock):
-            results = await retriever._aretrieve(QueryBundle(query_str="x"))
-        assert results == []
-        # Degrades to [] only after exhausting the default retry budget (3).
+            with pytest.raises(ConnectionError, match="Failed to connect to Ollama"):
+                await retriever._aretrieve(QueryBundle(query_str="x"))
+        # Still exhausts the default retry budget (3) before giving up.
         assert embed.aget_query_embedding.await_count == 3
+        # The pgvector query is never attempted once embedding fails.
+        pool.fetch.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_embedding_failure_propagates_through_public_aretrieve(self):
+        """The raise must survive LlamaIndex's ``BaseRetriever.aretrieve``
+        wrapper (callback managers / tracing) — that public method is
+        what ``MemoryClient._search_via_rag_engine`` actually calls. If
+        the wrapper swallowed the exception, the loud fallback would
+        never fire and we'd be back to the silent-zero-hits bug.
+        """
+        embed = MagicMock()
+        embed.aget_query_embedding = AsyncMock(
+            side_effect=ConnectionError("Failed to connect to Ollama")
+        )
+
+        pool = MagicMock()
+        retriever = await get_rag_retriever(pool=pool)
+        with patch("services.rag_engine._get_embed_model", return_value=embed), \
+                patch("asyncio.sleep", new_callable=AsyncMock):
+            with pytest.raises(ConnectionError):
+                await retriever.aretrieve("x")
 
     @pytest.mark.asyncio
     async def test_embedding_transient_failure_is_retried(self):
@@ -582,7 +616,7 @@ def test_reranker_constructs_on_configured_device(monkeypatch):
             return [0.0 for _ in pairs]
 
     fake_st = types.ModuleType("sentence_transformers")
-    setattr(fake_st, "CrossEncoder", _FakeCrossEncoder)
+    fake_st.CrossEncoder = _FakeCrossEncoder
     monkeypatch.setitem(sys.modules, "sentence_transformers", fake_st)
 
     rag._RERANKER_CACHE.clear()
