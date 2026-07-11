@@ -58,6 +58,19 @@ It does **not** distribute anything. `generate_social_posts` returns
   both — no separate prompt or extra LLM call. The `social.generate_drafts`
   atom filters the returned list down to whatever `social_draft_platforms`
   actually requests.
+- **Draft creation is idempotent per `(pipeline_task_id, platform,
+subreddit)`** (poindexter#833). Finalize re-runs (preview_gate regen loops,
+  checkpoint restore, task retry) used to stack a fresh draft per platform on
+  every pass — one task posted the same Bluesky promo three times. Now the
+  `social.generate_drafts` atom pre-filters keys that already carry an active
+  (`pending`/`failed`) or `posted` draft before generating any copy (a replay
+  spends zero LLM calls), and `SocialDraftsService.create_draft` enforces the
+  same rule DB-side: a `NOT EXISTS` guarded insert with the
+  `ux_social_post_drafts_active_key` partial unique index (active rows only)
+  as the race backstop, returning the existing draft's id on skip. A
+  `rejected`-only key deliberately inserts fresh — reject + regen means "offer
+  new copy". `RetryFailedSocialDraftsJob` is untouched: the index spans
+  `pending`+`failed` together, so its failed→pending reset never collides.
 - **Per-call config reads.** Every tunable (`social_twitter_char_limit`,
   `social_linkedin_char_limit`, `social_poster_max_tokens`, the model) is read
   at call time from the injected `SiteConfig`, so a `poindexter settings set`

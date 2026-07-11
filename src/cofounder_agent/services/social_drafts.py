@@ -102,22 +102,96 @@ class SocialDraftsService:
         platform_config: dict[str, Any],
         pool: Any,
     ) -> str:
-        """Insert a pending draft. Returns the new UUID string."""
+        """Insert a pending draft, idempotent per (task, platform, subreddit).
+
+        Finalize re-runs (preview_gate regen loops, checkpoint restore, task
+        retry) call this again for keys that already have a draft; a bare
+        INSERT stacked duplicates and the same promo got posted three times
+        (poindexter#833). The guarded insert skips when the key already has an
+        active (``pending``/``failed``) or ``posted`` draft — returning the
+        existing row's id — with the ``ux_social_post_drafts_active_key``
+        partial unique index as the ON CONFLICT race backstop. A ``rejected``-
+        only key inserts fresh: an operator reject followed by a regen loop
+        legitimately produces new copy to review.
+
+        Returns the new draft UUID, or the existing draft's UUID when deduped.
+        """
+        subreddit_key = str((platform_config or {}).get("subreddit") or "")
         async with pool.acquire() as conn:
-            new_id: str = await conn.fetchval(
+            new_id: str | None = await conn.fetchval(
                 """
                 INSERT INTO social_post_drafts
                     (pipeline_task_id, platform, content, platform_config)
-                VALUES ($1, $2, $3, $4)
+                SELECT $1::text, $2::text, $3::text, $4::jsonb
+                WHERE NOT EXISTS (
+                    SELECT 1 FROM social_post_drafts
+                    WHERE pipeline_task_id = $1
+                      AND platform = $2
+                      AND COALESCE(platform_config->>'subreddit', '') = $5
+                      AND status IN ('pending', 'failed', 'posted')
+                )
+                ON CONFLICT (
+                    pipeline_task_id, platform,
+                    (COALESCE(platform_config->>'subreddit', ''))
+                ) WHERE status IN ('pending', 'failed')
+                DO NOTHING
                 RETURNING id::text
                 """,
                 pipeline_task_id,
                 platform,
                 content,
                 json.dumps(platform_config),
+                subreddit_key,
             )
+            if new_id is None:
+                existing_id: str | None = await conn.fetchval(
+                    """
+                    SELECT id::text FROM social_post_drafts
+                    WHERE pipeline_task_id = $1
+                      AND platform = $2
+                      AND COALESCE(platform_config->>'subreddit', '') = $3
+                      AND status IN ('pending', 'failed', 'posted')
+                    ORDER BY created_at DESC
+                    LIMIT 1
+                    """,
+                    pipeline_task_id,
+                    platform,
+                    subreddit_key,
+                )
+                logger.info(
+                    "[social_drafts] draft for task %s platform=%s%s already "
+                    "exists (%s) — skipping duplicate create",
+                    pipeline_task_id[:8],
+                    platform,
+                    f" subreddit={subreddit_key}" if subreddit_key else "",
+                    (existing_id or "?")[:8],
+                )
+                return existing_id or ""
         SOCIAL_DRAFT_CREATED_TOTAL.labels(platform=platform).inc()
         return new_id
+
+    async def existing_draft_keys(
+        self, pipeline_task_id: str, pool: Any
+    ) -> set[tuple[str, str]]:
+        """(platform, subreddit-or-'') keys that already carry a draft.
+
+        The generate atom consults this before spending LLM calls: keys with
+        an active (``pending``/``failed``) or ``posted`` draft are skipped on
+        re-runs. ``rejected`` drafts don't count — rejection is per-copy, and
+        a regen loop after a reject should offer fresh copy.
+        """
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT platform,
+                       COALESCE(platform_config->>'subreddit', '') AS subreddit
+                FROM social_post_drafts
+                WHERE pipeline_task_id = $1
+                  AND status IN ('pending', 'failed', 'posted')
+                """,
+                pipeline_task_id,
+            )
+        return {(r["platform"], r["subreddit"]) for r in rows}
 
     async def approve_draft(
         self,

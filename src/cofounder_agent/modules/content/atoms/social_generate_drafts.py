@@ -87,8 +87,27 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not platforms:
         return {}
 
+    # Idempotency pre-filter (poindexter#833): finalize re-runs (preview_gate
+    # regen loops, checkpoint restore, task retry) must not stack duplicate
+    # drafts — task 511012cc posted the same Bluesky promo three times. Keys
+    # that already carry an active (pending/failed) or posted draft are
+    # dropped BEFORE any copy is generated, so a replay spends zero LLM calls;
+    # create_draft enforces the same rule DB-side (partial unique index +
+    # NOT EXISTS guard) as the backstop.
+    taken = await _svc.existing_draft_keys(pipeline_task_id, pool)
+    if taken:
+        logger.info(
+            "[social.generate_drafts] task %s already has drafts for %s — "
+            "generating only missing platforms",
+            pipeline_task_id[:8],
+            sorted(f"{p}/{s}" if s else p for p, s in taken),
+        )
+
     text_platforms = [
-        p for p in platforms if p in ("twitter", "linkedin", "mastodon", "bluesky")
+        p
+        for p in platforms
+        if p in ("twitter", "linkedin", "mastodon", "bluesky")
+        and (p, "") not in taken
     ]
     if text_platforms:
         try:
@@ -113,7 +132,11 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     if "reddit" in platforms:
         subreddits_raw = site_config.get("social_reddit_subreddits", "")
-        subreddits = [s.strip() for s in subreddits_raw.split(",") if s.strip()]
+        subreddits = [
+            s.strip()
+            for s in subreddits_raw.split(",")
+            if s.strip() and ("reddit", s.strip()) not in taken
+        ]
         for subreddit in subreddits:
             try:
                 copy = await _generate_reddit_copy(

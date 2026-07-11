@@ -8,7 +8,6 @@ import pytest
 
 from services.social_drafts import SocialDraftsService
 
-
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -89,6 +88,110 @@ async def test_create_draft_serialises_platform_config():
     # 4th positional arg is the serialised config
     passed_config = call_args[0][4]
     assert json.loads(passed_config) == config
+
+
+# ---------------------------------------------------------------------------
+# create_draft — idempotency per (pipeline_task_id, platform, subreddit).
+# Regression (poindexter#833): finalize re-runs (preview_gate regen loops,
+# checkpoint restore, task retry) re-inserted a fresh draft per platform on
+# every pass — task 511012cc stacked 3 identical Bluesky drafts and all three
+# were posted. create_draft must skip when an active (pending/failed) or
+# already-posted draft exists for the key, returning the existing id.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_create_draft_skips_when_active_or_posted_draft_exists():
+    """Guarded insert returns no id (key already taken) → create_draft fetches
+    and returns the existing draft's id instead of stacking a duplicate."""
+    pool, conn = _make_pool()
+    conn.fetchval.side_effect = [None, "existing-1"]
+    with patch("services.social_drafts.SOCIAL_DRAFT_CREATED_TOTAL") as metric:
+        svc = SocialDraftsService()
+        result = await svc.create_draft(
+            pipeline_task_id="task-1",
+            platform="bluesky",
+            content="same promo again",
+            platform_config={},
+            pool=pool,
+        )
+    assert result == "existing-1"
+    assert conn.fetchval.call_count == 2
+    metric.labels.assert_not_called()  # nothing was created
+
+
+@pytest.mark.asyncio
+async def test_create_draft_increments_metric_only_on_real_insert():
+    pool, conn = _make_pool(fetchval="new-1")
+    with patch("services.social_drafts.SOCIAL_DRAFT_CREATED_TOTAL") as metric:
+        svc = SocialDraftsService()
+        result = await svc.create_draft(
+            pipeline_task_id="task-1",
+            platform="twitter",
+            content="fresh copy",
+            platform_config={},
+            pool=pool,
+        )
+    assert result == "new-1"
+    conn.fetchval.assert_called_once()
+    metric.labels.assert_called_once_with(platform="twitter")
+
+
+@pytest.mark.asyncio
+async def test_create_draft_sql_dedups_on_task_platform_subreddit():
+    """The INSERT carries the dedup guard: NOT EXISTS over
+    pending/failed/posted rows for the natural key, with the partial-index
+    ON CONFLICT backstop, and the subreddit key as its own parameter."""
+    pool, conn = _make_pool(fetchval="id-1")
+    svc = SocialDraftsService()
+    await svc.create_draft(
+        pipeline_task_id="task-2",
+        platform="reddit",
+        content="reddit copy",
+        platform_config={"subreddit": "r/LocalLLaMA"},
+        pool=pool,
+    )
+    sql = conn.fetchval.call_args[0][0].lower()
+    assert "not exists" in sql
+    assert "'pending'" in sql and "'failed'" in sql and "'posted'" in sql
+    assert "on conflict" in sql and "do nothing" in sql
+    assert "coalesce(platform_config->>'subreddit', '')" in sql
+    # Subreddit key rides as the 5th parameter ($5); '' for non-reddit drafts.
+    assert conn.fetchval.call_args[0][5] == "r/LocalLLaMA"
+
+
+@pytest.mark.asyncio
+async def test_create_draft_subreddit_key_empty_for_text_platforms():
+    pool, conn = _make_pool(fetchval="id-2")
+    svc = SocialDraftsService()
+    await svc.create_draft(
+        pipeline_task_id="task-3",
+        platform="twitter",
+        content="tweet",
+        platform_config={},
+        pool=pool,
+    )
+    assert conn.fetchval.call_args[0][5] == ""
+
+
+# ---------------------------------------------------------------------------
+# existing_draft_keys — the atom's pre-LLM filter seam
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_existing_draft_keys_returns_platform_subreddit_tuples():
+    pool, conn = _make_pool()
+    conn.fetch.return_value = [
+        {"platform": "twitter", "subreddit": ""},
+        {"platform": "reddit", "subreddit": "r/LocalLLaMA"},
+    ]
+    svc = SocialDraftsService()
+    keys = await svc.existing_draft_keys("task-1", pool)
+    assert keys == {("twitter", ""), ("reddit", "r/LocalLLaMA")}
+    sql = conn.fetch.call_args[0][0].lower()
+    # Active + posted drafts block re-creation; rejected ones do not (an
+    # operator reject followed by a regen loop legitimately gets fresh copy).
+    assert "'pending'" in sql and "'failed'" in sql and "'posted'" in sql
+    assert "'rejected'" not in sql
 
 
 # ---------------------------------------------------------------------------
