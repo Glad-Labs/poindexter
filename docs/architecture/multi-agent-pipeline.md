@@ -18,7 +18,7 @@ inference backends. All current and future pipeline work is documented
 in:
 
 - **[Template Runner](./services/template_runner)** — the authoritative
-  description of the LangGraph orchestrator that drives the 39-node
+  description of the LangGraph orchestrator that drives the 42-node
   `canonical_blog` graph_def (and the 5-node `dev_diary` template) that
   runs every content task today. Covers node behavior and halt semantics.
 - **[Plugin architecture](./plugin-architecture)** — the evolution
