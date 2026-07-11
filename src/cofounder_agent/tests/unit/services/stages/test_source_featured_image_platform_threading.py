@@ -19,8 +19,8 @@ without ``platform=``. The default ``platform=None`` then raised inside
 subject-specific.
 
 This is the #667 Seam 1 Wave 3f ("platform handle for dispatch.complete")
-pattern, mirroring how ``replace_inline_images`` already threads
-``context.get("platform")`` into ``_try_image_gen`` / ``_batch_generate_all_images``.
+pattern, mirroring how the ``content.generate_images`` atom already threads
+``state.get("platform")`` into ``_try_image_gen``.
 """
 
 from __future__ import annotations

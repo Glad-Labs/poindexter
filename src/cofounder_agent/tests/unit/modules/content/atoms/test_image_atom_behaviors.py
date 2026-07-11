@@ -203,6 +203,82 @@ class TestGenerateImagesProducerHook:
 
 
 # ---------------------------------------------------------------------------
+# alt-text leak guard — content.generate_images (Glad-Labs/poindexter#469)
+# ---------------------------------------------------------------------------
+#
+# Migrated here from the deleted ``_resolve_one_placeholder`` helper tests in
+# test_inline_image_helpers.py — that helper (and the ReplaceInlineImagesStage
+# it served) no longer runs in prod. The #469 guard lives on the LIVE atom
+# path: ``content.generate_images.run() -> _build_alt_text -> sanitize_alt_text``.
+# These pin that an image-gen-prompt-shaped descriptor lands a topic-derived
+# alt (never the raw imperative prompt) in image_results[i]["alt_text"], and
+# that a genuine human descriptor still flows through unchanged. The pure
+# looks_like_image_gen_prompt / sanitize_alt_text logic is unit-tested in
+# services/test_alt_text.py; this is the atom-path integration.
+
+
+class TestGenerateImagesAltTextLeakGuard:
+    def _state(self, desc: str, topic: str) -> dict[str, Any]:
+        return {
+            "image_plans": [{"num": "1", "desc": desc}],
+            "topic": topic,
+            "task_id": "task-469",
+            "post_id": None,
+            "site_config": _site_config(),
+            "image_service": SimpleNamespace(),
+        }
+
+    @pytest.mark.asyncio
+    async def test_image_gen_prompt_descriptor_does_not_leak_to_alt(self):
+        """An image-gen-prompt-shaped descriptor → topic fallback alt, never the
+        raw imperative prompt. The exact poisoned shape from issue #469."""
+        poisoned_desc = (
+            "An isometric diagram of a simplified SDXL architecture. "
+            "Show the key components (encoder, decoder, refiner) with arrows, "
+            "no text, no faces"
+        )
+        topic = "Stable Diffusion XL on a Single RTX 5090"
+
+        with patch(
+            "modules.content.atoms._image_helpers.try_image_gen",
+            new=AsyncMock(return_value="https://r2.example/inline-1.png"),
+        ), patch(
+            "modules.content.atoms._image_helpers.record_inline_image_asset",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await content_generate_images.run(self._state(poisoned_desc, topic))
+
+        alt = result["image_results"][0]["alt_text"]
+        # The raw image-gen prompt must NOT reach the alt attribute.
+        assert "Show the key components" not in alt
+        assert "no text" not in alt
+        assert "no faces" not in alt
+        # The topic-derived fallback must.
+        assert topic in alt
+        # And the image still rendered on the image-gen branch.
+        assert result["image_results"][0]["source"] == "image_gen"
+        assert result["image_results"][0]["url"] == "https://r2.example/inline-1.png"
+
+    @pytest.mark.asyncio
+    async def test_real_human_descriptor_passes_through_to_alt(self):
+        """Negative case — a legitimate descriptor flows into alt unchanged.
+        "macro" appears (an INLINE_STYLES word) but as natural prose, so the
+        #469 heuristic must NOT drop it."""
+        clean_desc = "A close-up macro photo of a circuit board with red LEDs"
+
+        with patch(
+            "modules.content.atoms._image_helpers.try_image_gen",
+            new=AsyncMock(return_value="https://r2.example/inline-1.png"),
+        ), patch(
+            "modules.content.atoms._image_helpers.record_inline_image_asset",
+            new=AsyncMock(return_value=None),
+        ):
+            result = await content_generate_images.run(self._state(clean_desc, "Electronics"))
+
+        assert result["image_results"][0]["alt_text"] == clean_desc
+
+
+# ---------------------------------------------------------------------------
 # media_assets recorder contract — record_inline_image_asset (GH#161)
 # ---------------------------------------------------------------------------
 #

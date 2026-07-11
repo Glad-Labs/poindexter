@@ -463,7 +463,7 @@ docker logs poindexter-worker 2>&1 | grep -E "GPU acquired|Unloaded writer model
 The log marker to confirm the guard is active:
 
 ```
-[content.plan_image_markers] Unloaded writer model gemma3:27b before image-gen phase (grace=2.0s)
+[CONTENT.PLAN_IMAGE_MARKERS] Unloaded writer model gemma3:27b before image-gen phase (grace=2.0s)
 ```
 
 **Tunables.** Both via `app_settings`:

@@ -26,14 +26,6 @@ import pytest
 from modules.content.atoms._image_helpers import _try_image_gen
 from tests.unit._fake_platform import FakePlatform
 
-# Mirrors the fake used in test_remaining_stages_smoke.py.
-_FAKE_SITE_CONFIG = SimpleNamespace(
-    get=lambda _k, _d=None: _d if _d is not None else "",
-    get_int=lambda _k, _d=0: _d,
-    get_float=lambda _k, _d=0.0: _d,
-    get_bool=lambda _k, _d=False: _d,
-)
-
 
 class _LockRecorder:
     """Minimal stand-in for ``services.gpu_scheduler.gpu``.
@@ -121,92 +113,6 @@ async def test_try_image_gen_threads_task_id_to_both_gpu_locks():
     assert gen_call["owner"] == "image_gen"
     assert gen_call["task_id"] == "task-abc-123"
     assert gen_call["phase"] == "inline_image"
-
-
-@pytest.mark.asyncio
-async def test_image_gen_prompt_in_placeholder_does_not_leak_to_alt():
-    """Glad-Labs/poindexter#469 — image-gen-shaped descriptor → topic fallback alt.
-
-    When the Image Decision Agent injects ``[IMAGE-N: <image-gen-prompt>]``
-    and the image-gen render succeeds, the rendered ``<img alt="...">`` must
-    show the topic-derived fallback, not the raw imperative-mood prompt.
-    """
-    from modules.content.atoms._image_helpers import _resolve_one_placeholder
-
-    # The exact poisoned descriptor shape from the bug report.
-    poisoned_desc = (
-        "An isometric diagram of a simplified SDXL architecture. "
-        "Show the key components (encoder, decoder, refiner) with arrows, "
-        "no text, no faces"
-    )
-    topic = "Stable Diffusion XL on a Single RTX 5090"
-    content_text = f"Intro\n\n[IMAGE-1: {poisoned_desc}]\n\nOutro"
-
-    # image-gen path succeeds — returns a URL we can assert on.
-    with patch(
-        "modules.content.atoms._image_helpers._try_image_gen",
-        new=AsyncMock(return_value="https://r2.example/inline-1.png"),
-    ), patch(
-        "modules.content.atoms._image_helpers._record_inline_image_asset",
-        new=AsyncMock(return_value=None),
-    ):
-        result = await _resolve_one_placeholder(
-            num="1",
-            desc=poisoned_desc,
-            topic=topic,
-            content_text=content_text,
-            image_service=SimpleNamespace(),
-            used_image_ids=set(),
-            site_config=_FAKE_SITE_CONFIG,
-            task_id="task-469-repro",
-            post_id=None,
-        )
-
-    # The raw image-gen prompt must NOT appear in the alt attribute.
-    assert "Show the key components" not in result
-    assert "no text" not in result
-    assert "no faces" not in result
-    # And the topic-derived fallback must.
-    assert "Stable Diffusion XL on a Single RTX 5090" in result
-    # Sanity-check the image src is the image-gen URL.
-    assert 'src="https://r2.example/inline-1.png"' in result
-
-
-@pytest.mark.asyncio
-async def test_real_human_alt_in_placeholder_passes_through():
-    """Negative case — a legitimate descriptor flows into alt unchanged.
-
-    Protects against the heuristic going overboard and dropping
-    real alts. "A close-up macro photo..." is a normal alt — the
-    word "macro" appears in our INLINE_STYLES rotation but here it's
-    used as a noun-modifier in natural prose.
-    """
-    from modules.content.atoms._image_helpers import _resolve_one_placeholder
-
-    clean_desc = "A close-up macro photo of a circuit board with red LEDs"
-    content_text = f"Intro\n\n[IMAGE-1: {clean_desc}]\n\nOutro"
-
-    with patch(
-        "modules.content.atoms._image_helpers._try_image_gen",
-        new=AsyncMock(return_value="https://r2.example/inline-1.png"),
-    ), patch(
-        "modules.content.atoms._image_helpers._record_inline_image_asset",
-        new=AsyncMock(return_value=None),
-    ):
-        result = await _resolve_one_placeholder(
-            num="1",
-            desc=clean_desc,
-            topic="Electronics",
-            content_text=content_text,
-            image_service=SimpleNamespace(),
-            used_image_ids=set(),
-            site_config=_FAKE_SITE_CONFIG,
-            task_id="task-clean",
-            post_id=None,
-        )
-
-    # Real alt passes through.
-    assert f'alt="{clean_desc}"' in result
 
 
 @pytest.mark.asyncio
