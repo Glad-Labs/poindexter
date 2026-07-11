@@ -2,7 +2,7 @@
 
 Takes content + image_results (from content.generate_images) and replaces
 each [IMAGE-N] placeholder with the appropriate HTML <img> tag.
-Runs _cleanup_leaked_descriptions + _normalize_from_router afterward.
+Runs cleanup_leaked_descriptions + normalize_from_router afterward.
 Writes stages["2c_inline_images_replaced"] to DB via database_service.
 
 Produces: content (with images injected), inline_images_replaced (count).
@@ -50,10 +50,10 @@ ATOM_META = AtomMeta(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     """Inject images and clean up the content."""
-    from modules.content.stages.replace_inline_images import (
-        _cleanup_leaked_descriptions,
-        _inject_html_image,
-        _normalize_from_router,
+    from modules.content.image_helpers import (
+        cleanup_leaked_descriptions,
+        inject_html_image,
+        normalize_from_router,
     )
 
     content_text = state.get("content") or ""
@@ -74,7 +74,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             continue
 
         if source == "image_gen":
-            content_text = _inject_html_image(
+            content_text = inject_html_image(
                 content_text, num, img_url, alt_text, width=1024, height=1024,
             )
             replaced_count += 1
@@ -95,8 +95,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             # Strip unresolved placeholder.
             content_text = re.sub(rf"\[IMAGE-{num}[^\]]*\]", "", content_text, count=1)
 
-    content_text = _cleanup_leaked_descriptions(content_text)
-    content_text = _normalize_from_router(content_text)
+    content_text = cleanup_leaked_descriptions(content_text)
+    content_text = normalize_from_router(content_text)
 
     # Persist image-populated content to DB.
     if task_id and database_service is not None:

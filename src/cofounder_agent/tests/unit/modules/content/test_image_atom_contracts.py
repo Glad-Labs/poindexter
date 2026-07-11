@@ -1,11 +1,12 @@
-"""Contract guard for the image atoms consumed by ImageRebuildService.
+"""Contract guard for the image atoms + helpers behind the image_rebuild graph.
 
-ImageRebuildService (the draft image-regeneration feature) re-drives the image
-pipeline by calling ``content.plan_image_markers`` / ``content.generate_images``
-/ ``content.inject_images`` plus the ``_try_image_gen`` / ``_try_pexels``
-helpers directly, and its fail-loud gate keys on ``source == "image_gen"``. These
-tests pin those signatures + result shapes so a future edit to the image path
-can't silently break the rebuild consumer.
+The image_rebuild template re-drives the image pipeline through
+``content.plan_image_markers`` / ``content.generate_images`` /
+``content.inject_images`` plus the ``try_image_gen`` / ``try_pexels`` helpers
+(via the sanctioned ``modules.content.image_helpers`` seam), and its fail-loud
+gate atom keys on ``source == "image_gen"``. These tests pin those signatures +
+result shapes so a future edit to the image path can't silently break the
+rebuild consumer.
 """
 
 from __future__ import annotations
@@ -19,12 +20,12 @@ from services.site_config import SiteConfig
 
 @pytest.mark.unit
 def test_try_image_gen_signature_stable():
-    from modules.content.stages.replace_inline_images import _try_image_gen, _try_pexels
+    from modules.content.image_helpers import try_image_gen, try_pexels
 
-    p = inspect.signature(_try_image_gen).parameters
+    p = inspect.signature(try_image_gen).parameters
     assert list(p)[:3] == ["num", "search_query", "topic"]
     assert {"site_config", "task_id", "platform"} <= set(p)
-    assert list(inspect.signature(_try_pexels).parameters)[:3] == [
+    assert list(inspect.signature(try_pexels).parameters)[:3] == [
         "search_query",
         "topic",
         "image_service",

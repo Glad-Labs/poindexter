@@ -290,7 +290,7 @@ class TestContentPlanImageMarkers:
             return injected, None
 
         monkeypatch.setattr(
-            "modules.content.stages.replace_inline_images._plan_and_inject_placeholders",
+            "modules.content.image_helpers.plan_and_inject_placeholders",
             _fake_plan,
         )
         with patch(

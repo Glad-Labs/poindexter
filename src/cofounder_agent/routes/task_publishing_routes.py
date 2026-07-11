@@ -21,7 +21,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, R
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
-from modules.content.api import EditResult, ImageRebuildService, PostEditService
+from modules.content.api import EditResult, PostEditService, enqueue_image_rebuild
 from schemas.model_converter import ModelConverter
 from schemas.unified_task_response import UnifiedTaskResponse
 from services.database_service import DatabaseService
@@ -1362,18 +1362,6 @@ def _edit_result_json(res: EditResult) -> dict[str, Any]:
     }
 
 
-def _rebuild_result_json(res) -> dict[str, Any]:
-    return {
-        "ok": res.ok,
-        "task_id": res.task_id,
-        "detail": res.detail,
-        "inline_total": res.inline_total,
-        "inline_generated": res.inline_generated,
-        "featured_source": res.featured_source,
-        "stock_slots": res.stock_slots,
-    }
-
-
 @publishing_router.post("/{task_id}/edit-body", summary="Edit an awaiting_approval draft's body")
 async def edit_task_body(
     task_id: str,
@@ -1446,32 +1434,30 @@ async def regen_task_image(
     return _edit_result_json(res)
 
 
-@publishing_router.post("/{task_id}/rebuild-images", summary="Rebuild all images on a draft")
+@publishing_router.post("/{task_id}/rebuild-images", summary="Queue an image rebuild for a draft")
 async def rebuild_task_images(
     task_id: str,
     body: RebuildImagesRequest,
-    request: Request,
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
-    site_config_dep=Depends(get_site_config_dependency),
 ):
-    """Rebuild every image (featured + inline) on an awaiting_approval draft by
-    re-planning from the article text. Fail-loud on stock fallback unless allow_stock."""
+    """Queue an image_rebuild pipeline task that regenerates every image
+    (featured + inline) on an awaiting_approval draft by re-planning from the
+    article text. Returns immediately with the queued task id; the graph's
+    gate atom fails the rebuild loud on stock fallback unless allow_stock."""
     full_id = await _resolve_full_task_id(db_service, task_id)
-    from services.image_service import get_image_service
     try:
-        image_service = get_image_service(site_config=site_config_dep)
-    except Exception as e:  # noqa: BLE001 — mirror _build_edit_service's need_image 503
-        logger.warning("rebuild-images: image service unavailable: %s", e)
-        raise HTTPException(status_code=503, detail="image service unavailable") from e
-    svc = ImageRebuildService(
-        pool=db_service.pool, site_config=site_config_dep, image_service=image_service,
-        database_service=db_service, platform=getattr(request.app.state, "kernel_platform", None),
-    )
-    try:
-        res = await svc.rebuild_all_images(full_id, allow_stock=body.allow_stock)
+        rebuild_task_id = await enqueue_image_rebuild(
+            db_service.pool, full_id, allow_stock=body.allow_stock,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
-    except RuntimeError as e:
-        raise HTTPException(status_code=503, detail=str(e)) from e
-    return _rebuild_result_json(res)
+    return {
+        "ok": True,
+        "task_id": rebuild_task_id,
+        "target_task_id": full_id,
+        "detail": (
+            f"image rebuild queued as task {rebuild_task_id}; "
+            f"watch with: poindexter tasks show {rebuild_task_id}"
+        ),
+    }

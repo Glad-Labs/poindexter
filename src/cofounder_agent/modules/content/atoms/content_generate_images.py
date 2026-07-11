@@ -52,10 +52,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not image_plans:
         return {"image_results": []}
 
-    from modules.content.stages.replace_inline_images import (
-        _record_inline_image_asset,
-        _try_pexels,
-        _try_image_gen,
+    from modules.content.image_helpers import (
+        record_inline_image_asset,
+        try_image_gen,
+        try_pexels,
     )
     from services.image_service import get_image_service
 
@@ -79,7 +79,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         source = "none"
 
         # Strategy 1: image-gen.
-        image_gen_url = await _try_image_gen(
+        image_gen_url = await try_image_gen(
             num, search_query, topic,
             site_config=site_config,
             task_id=task_id,
@@ -89,7 +89,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             used_image_ids.add(image_gen_url)
             img_url = image_gen_url
             source = "image_gen"
-            await _record_inline_image_asset(
+            await record_inline_image_asset(
                 site_config=site_config,
                 post_id=post_id,
                 public_url=image_gen_url,
@@ -106,7 +106,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
         if img_url is None:
             # Strategy 2: Pexels.
-            pexels = await _try_pexels(search_query, topic, image_service)
+            pexels = await try_pexels(search_query, topic, image_service)
             if pexels is not None:
                 pexels_url, photographer = pexels
                 if pexels_url not in used_image_ids:
@@ -114,7 +114,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                     img_url = pexels_url
                     source = "pexels"
                     alt_text = f"Photo by {photographer}"
-                    await _record_inline_image_asset(
+                    await record_inline_image_asset(
                         site_config=site_config,
                         post_id=post_id,
                         public_url=pexels_url,

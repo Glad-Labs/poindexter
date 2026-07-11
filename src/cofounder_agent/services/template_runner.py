@@ -658,6 +658,16 @@ class PipelineState(TypedDict, total=False):
     seo_opportunity_id: str      # seo_opportunities.id (uuid) — stamped on republish for outcome tracking
     seo_refresh_scope: str       # 'meta_only' | 'meta_and_intro' | 'full' (default meta_only)
 
+    # image_rebuild graph: the entry atom hydrates these from the target
+    # awaiting_approval draft (target_task_id + allow_stock arrive via the
+    # rebuild task's metadata, flattened onto initial state by
+    # content_router_service — the same seam seo_refresh's post_id uses).
+    # Declared for the #753 schema gate, same as the seo_refresh block above.
+    target_task_id: str          # pipeline_tasks.task_id of the draft being rebuilt
+    target_version: int          # pipeline_versions.version the rebuild writes back to
+    allow_stock: bool            # operator opt-in to Pexels stock fallback slots
+    featured_source: str         # content.rebuild_featured_image: image_gen | pexels | none
+
 
 # ---------------------------------------------------------------------------
 # Run record types — mirror StageRunRecord/StageRunSummary so callers that

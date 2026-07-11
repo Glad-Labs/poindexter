@@ -95,10 +95,7 @@ from modules.content.content_validator import (
 # image_rebuild_service
 # ---------------------------------------------------------------------------
 from modules.content.image_rebuild_service import (
-    ImageRebuildService as ImageRebuildService,
-)
-from modules.content.image_rebuild_service import (
-    RebuildResult as RebuildResult,
+    enqueue_image_rebuild as enqueue_image_rebuild,
 )
 
 # ---------------------------------------------------------------------------
@@ -191,6 +188,5 @@ __all__ = [
     "PostEditService",
     "EditResult",
     # image_rebuild_service
-    "ImageRebuildService",
-    "RebuildResult",
+    "enqueue_image_rebuild",
 ]

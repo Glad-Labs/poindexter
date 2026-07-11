@@ -61,8 +61,9 @@ def test_regen_image_posts_payload(runner):
 
 def test_rebuild_images_posts_payload(runner):
     client = _fake_client(
-        {"ok": True, "detail": "rebuilt 2 inline + featured", "inline_generated": 2,
-         "inline_total": 2, "featured_source": "image_gen", "stock_slots": []},
+        {"ok": True, "task_id": "rebuild-task-123", "target_task_id": "abc123",
+         "detail": "image rebuild queued as task rebuild-task-123; "
+                   "watch with: poindexter tasks show rebuild-task-123"},
     )
     with patch("poindexter.cli.tasks.WorkerClient", return_value=client):
         result = runner.invoke(tasks_group, ["rebuild-images", "abc123", "--allow-stock"])
@@ -70,17 +71,18 @@ def test_rebuild_images_posts_payload(runner):
     args, kwargs = client.post.call_args
     assert args[0] == "/api/tasks/abc123/rebuild-images"
     assert kwargs["json"] == {"allow_stock": True}
+    assert "rebuild-task-123" in result.output
 
 
-def test_rebuild_images_abort_exits_nonzero(runner):
+def test_rebuild_images_not_queued_exits_nonzero(runner):
     client = _fake_client(
-        {"ok": False, "detail": "image-gen unavailable for 1 slot(s): featured.",
-         "stock_slots": ["featured"]},
+        {"ok": False,
+         "detail": "rebuild-images requires an awaiting_approval draft; task abc123 is 'approved'"},
     )
     with patch("poindexter.cli.tasks.WorkerClient", return_value=client):
         result = runner.invoke(tasks_group, ["rebuild-images", "abc123"])
     assert result.exit_code == 1
-    assert "image-gen unavailable" in result.output
+    assert "awaiting_approval" in result.output
 
 
 def test_edit_body_find_replace_posts_payload(runner):

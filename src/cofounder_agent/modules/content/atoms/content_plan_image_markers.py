@@ -91,8 +91,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     if not placeholders:
         # Ask the Image Decision Agent to plan + inject.
-        from modules.content.stages.replace_inline_images import _plan_and_inject_placeholders
-        content_text, plan = await _plan_and_inject_placeholders(
+        from modules.content.image_helpers import plan_and_inject_placeholders
+        content_text, plan = await plan_and_inject_placeholders(
             content_text, topic, category, site_config=site_config,
         )
         if plan is not None and plan.get("agent_error"):

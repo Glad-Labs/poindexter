@@ -507,7 +507,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `auto_publish_gate.py` | ``auto_publish_gate`` — observe-only auto-publish decision logger. |
 | `content_module.py` | ``ContentModule`` — Glad Labs' blog publishing Module. |
 | `content_validator.py` | Content Validator — programmatic quality gate for AI-generated content. |
-| `image_rebuild_service.py` | Bulk image rebuild for awaiting_approval drafts (spec 2026-07-09). |
+| `image_rebuild_service.py` | Enqueue an image_rebuild pipeline task for an awaiting_approval draft. |
 | `internal_link_coherence.py` | Internal-link recommendation coherence gate. |
 | `multi_model_qa.py` | Multi-Model QA — adversarial review using different LLM providers. |
 | `post_edit_service.py` | Operator-grade draft editing — body + images — for awaiting_approval tasks. |
