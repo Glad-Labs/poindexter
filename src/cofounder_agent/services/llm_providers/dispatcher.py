@@ -48,6 +48,7 @@ flow:
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import TYPE_CHECKING, Any
@@ -475,6 +476,35 @@ async def get_provider_config(pool: Any, provider_name: str) -> dict[str, Any]:
     return config
 
 
+# Safety cap on a captured I/O payload. Bounds a pathological blob — chiefly the
+# base64 image data-URLs the vision rail routes through dispatch_complete
+# (multi_model_qa._vision_complete) — from bloating the trace store. Text prompts
+# fit with wide headroom (the largest writer draft seen is ~24K chars), so only
+# runaway payloads are truncated.
+_MAX_SPAN_IO_CHARS = 200_000
+
+
+def _set_span_io(span: Any, key: str, value: Any) -> None:
+    """Best-effort stamp of a reserved Langfuse I/O attribute (input/output).
+
+    Strings pass through unchanged (matches langfuse ``_serialize``); other
+    values are JSON-serialized so a ``messages`` list renders as a chat array in
+    the trace. Oversize payloads are truncated to ``_MAX_SPAN_IO_CHARS`` with a
+    visible marker. Empty values are skipped, and this NEVER raises — an
+    observability write must never break the dispatch it is observing.
+    """
+    try:
+        if value is None or value == "":
+            return
+        payload = value if isinstance(value, str) else json.dumps(value, default=str)
+        if len(payload) > _MAX_SPAN_IO_CHARS:
+            dropped = len(payload) - _MAX_SPAN_IO_CHARS
+            payload = f"{payload[:_MAX_SPAN_IO_CHARS]}…[truncated {dropped} chars]"
+        span.set_attribute(key, payload)
+    except Exception:  # noqa: BLE001  # silent-ok: an observability attribute write must never break the dispatch it observes; a lost span attr is not page-worthy
+        pass
+
+
 async def dispatch_complete(
     pool: Any,
     messages: list[dict[str, str]],
@@ -518,6 +548,13 @@ async def dispatch_complete(
         # flattens ``langfuse.observation.metadata.<key>`` back into the
         # observation's metadata dict (attributes._flatten_and_serialize_metadata).
         span.set_attribute("langfuse.observation.metadata.phase", phase)
+        # Capture the prompt on the span so EVERY dispatch — including direct
+        # callers that never go through the ollama_chat_text wrapper (QA rails,
+        # citation repair, media scripts, …) — carries its input in Langfuse, not
+        # just token counts (the 2026-07-10 finding: llm.dispatch_complete had
+        # usage but 0/4073 input). Set BEFORE the call so a failed dispatch still
+        # records what was sent. Reserved key OBSERVATION_INPUT.
+        _set_span_io(span, "langfuse.observation.input", messages)
         started = time.monotonic()
         provider = None
         provider_config: dict[str, Any] | None = None
@@ -579,6 +616,13 @@ async def dispatch_complete(
             finish = getattr(result, "finish_reason", "")
             if finish:
                 span.set_attribute("llm.finish_reason", finish)
+            # Completion text on the span (reserved key OBSERVATION_OUTPUT) so the
+            # trace shows what the model returned, matching the input captured
+            # above — same coverage the ollama_chat_text wrapper gave the writer,
+            # now for every direct dispatch caller too.
+            _set_span_io(
+                span, "langfuse.observation.output", getattr(result, "text", "") or "",
+            )
             duration_ms = int((time.monotonic() - started) * 1000)
             await _record_dispatch_cost(
                 pool=pool,

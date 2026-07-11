@@ -160,6 +160,7 @@ def _install_recording_dispatch(monkeypatch, d, recorded):
         prompt_tokens = 10
         completion_tokens = 5
         finish_reason = "stop"
+        text = "the drafted body"
 
     class _FakeProvider:
         name = "fake"
@@ -223,3 +224,65 @@ async def test_dispatch_complete_omits_session_when_no_task_id(monkeypatch):
 
     # No task context -> no session stamp (never mint an orphan empty session).
     assert not any(key == "session.id" for key, _ in recorded)
+
+
+async def test_dispatch_complete_captures_prompt_and_completion(monkeypatch):
+    """Every dispatch call must record its prompt + completion on the span, not
+    just token counts. Direct callers (QA rails, etc.) don't go through the
+    ollama_chat_text wrapper that captured I/O, so before this the raw
+    llm.dispatch_complete span held usage but 0 input/0 output (the 2026-07-10
+    finding). Uses the reserved Langfuse attributes so the prompt is visible in
+    the trace regardless of caller."""
+    import json
+
+    import services.llm_providers.dispatcher as d
+
+    recorded: list[tuple[str, object]] = []
+    _install_recording_dispatch(monkeypatch, d, recorded)
+
+    await d.dispatch_complete(
+        pool=object(),
+        messages=[
+            {"role": "system", "content": "you are a writer"},
+            {"role": "user", "content": "UNIQUE_PROMPT_MARKER_42"},
+        ],
+        model="ollama/gemma-4-31B-it-qat:latest",
+        tier="standard",
+        num_ctx=8192,
+    )
+
+    rec = dict(recorded)
+    # Input: the full messages payload, JSON-serialized so Langfuse renders it
+    # as a chat array (matches _serialize -> json.dumps).
+    assert "langfuse.observation.input" in rec
+    parsed_input = json.loads(rec["langfuse.observation.input"])
+    assert parsed_input == [
+        {"role": "system", "content": "you are a writer"},
+        {"role": "user", "content": "UNIQUE_PROMPT_MARKER_42"},
+    ]
+    # Output: the completion text (a string is passed through verbatim).
+    assert rec.get("langfuse.observation.output") == "the drafted body"
+
+
+async def test_dispatch_complete_caps_oversize_span_io(monkeypatch):
+    """A pathological payload must not bloat the trace store. The vision rail
+    routes base64 image data-URLs through dispatch_complete (multi_model_qa
+    _vision_complete), so an uncapped capture would store multi-MB blobs per
+    call. _set_span_io truncates the serialized value with a visible marker."""
+    import services.llm_providers.dispatcher as d
+
+    recorded: list[tuple[str, object]] = []
+    _install_recording_dispatch(monkeypatch, d, recorded)
+
+    big = "A" * 500_000  # stand-in for a base64 image blob
+    await d.dispatch_complete(
+        pool=object(),
+        messages=[{"role": "user", "content": big}],
+        model="ollama/gemma-4-31B-it-qat:latest",
+        tier="standard",
+        num_ctx=8192,
+    )
+
+    inp = dict(recorded)["langfuse.observation.input"]
+    assert len(inp) < 500_000  # oversize payload capped, not stored whole
+    assert "truncated" in inp
