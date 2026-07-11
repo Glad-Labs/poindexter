@@ -1550,11 +1550,14 @@ function TracesPanel({ traces, fresh }) {
             flexDirection: 'column',
             gap: 6,
             // Cap the height so a full 50-trace window scrolls inside the card
-            // instead of stretching the Telemetry tab. overflowX MUST be
-            // explicit: a lone overflowY:auto makes overflowX compute to 'auto'
-            // too (CSS visible→auto quirk), which reintroduces the dual-axis
-            // scrollbar thrash the pulse band hit (#2285).
-            maxHeight: 320,
+            // instead of stretching the Telemetry tab. Matches .logfeed's 460px
+            // so the two Telemetry list-cards (LOGS + LLM TRACES) are the same
+            // height — the columns:3 masonry balancer packs them evenly instead
+            // of leaving one column short. overflowX MUST be explicit: a lone
+            // overflowY:auto makes overflowX compute to 'auto' too (CSS
+            // visible→auto quirk) — the dual-axis scrollbar thrash the pulse
+            // band hit (#2285); .logfeed clips x for the same reason.
+            maxHeight: 460,
             overflowY: 'auto',
             overflowX: 'hidden',
           }}
