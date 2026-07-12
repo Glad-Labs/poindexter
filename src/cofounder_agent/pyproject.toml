@@ -124,6 +124,17 @@ torch = { version = ">=2.7,<2.12", source = "pytorch-cpu", optional = true }
 # Floor at 5.3.0 closes CVE-2026-4372 (HIGH) + CVE-2026-1839 (RCE via
 # malicious checkpoint / Text2Text pipeline). The 5.x line requires the
 # sentence-transformers >=5.6 bump below (3.x hard-caps transformers <5).
+#
+# huggingface-hub coupling — do NOT "fix" a hub-1.x lock by pinning hub <1.0.
+# The transformers 5.x line REQUIRES huggingface-hub>=1.5.0,<2.0 (its
+# dependency_versions_table, enforced at import via require_version), so the
+# transitively-locked hub 1.x is CORRECT. The `>=0.34.0,<1.0` cap belongs to
+# the retired 4.x line; a stale env that pairs an old transformers with a fresh
+# hub is what emits "huggingface-hub>=0.34.0,<1.0 is required ... found 1.x".
+# Pinning hub <1.0 would make this uninstallable (or force a 4.x downgrade that
+# re-degrades the cross-encoder reranker to passthrough and reopens the CVEs).
+# A dependency re-lock is verified by the rerank-import-guard workflow, which
+# imports the real stack at PR time (mirror of Dockerfile:73's build assertion).
 transformers = { version = ">=5.13.0", optional = true }
 # `accelerate` removed — zero imports in tracked code. Was optional ml extra.
 
@@ -283,6 +294,10 @@ llama-index-embeddings-ollama = "^0.9.0"
 # default install skip the ~2.5GB cu128 wheel on GPU-less runners. The
 # worker + OSS standalone images opt back in via --extras rerank; host
 # dev via bootstrap.sh. See docs/superpowers/specs/2026-06-23-ci-rerank-extra-design.md.
+# Import-guarded on every poetry.lock change by .github/workflows/rerank-import-guard.yml
+# (the real `from sentence_transformers import CrossEncoder` that rag_engine uses),
+# so a version-skew re-lock fails loud at PR time instead of silently degrading
+# rerank -> passthrough at the next worker-image rebuild.
 sentence-transformers = { version = "^5.6", optional = true }
 # Pinned to match the server-side image (``prefecthq/prefect:3.6.29``)
 # below in docker-compose.local.yml. Client/server version drift kills
@@ -601,6 +616,11 @@ markers = [
     # `--strict-markers` collection still passes when the plugin isn't
     # installed (e.g. a slim worktree without the dev deps). #994.
     "timeout: per-test wall-clock timeout (pytest-timeout)",
+    # Real-import guard for the opt-in sentence-transformers `rerank` extra.
+    # Self-skips where the extra isn't installed (default CI, slim worktree);
+    # runs + fails loud where it is (host dev, worker image, the
+    # rerank-import-guard workflow).
+    "rerank: real cross-encoder / sentence-transformers import guard (opt-in `rerank` extra)",
 ]
 filterwarnings = [
     "ignore::DeprecationWarning",

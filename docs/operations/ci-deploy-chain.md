@@ -24,7 +24,9 @@ Glad-Labs/glad-labs-stack (private GitHub, source of truth)
     │       push to main (expensive steps short-circuit on docs-only or
     │       unrelated changes — see "CI minutes / cost discipline" below)
     │       non-required, paths-gated: playwright-e2e.yml (frontend
-    │       E2E), security.yml, grafana-panels-lint.yml
+    │       E2E), security.yml, grafana-panels-lint.yml,
+    │       rerank-import-guard.yml (real sentence-transformers import
+    │       on pyproject/poetry.lock changes)
     │
     ├─→ Vercel (auto-deploy on push to main)
     │       └─→ www.gladlabs.io
@@ -135,6 +137,14 @@ decorators in `test_database_service.py` and
 - `.github/workflows/security.yml` / `grafana-panels-lint.yml` —
   non-required scans: gitleaks / trivy / sbom + path-specific lints,
   and the paths-gated Grafana panel lint, respectively.
+- `.github/workflows/rerank-import-guard.yml` — non-required, paths-gated
+  to `src/cofounder_agent/{pyproject.toml,poetry.lock}`. Installs
+  `--extras rerank` and imports the real cross-encoder stack
+  (`from sentence_transformers import CrossEncoder`, what `rag_engine.py`
+  uses) so a version-skew re-lock that would silently degrade the reranker
+  to passthrough reddens the PR instead. Shifts the worker image's
+  build-time assertion (`src/cofounder_agent/Dockerfile:73`) left to PR
+  time — the `dependency-review` auto-merge path never builds the image.
 - `.github/workflows/sync-to-public-poindexter.yml` — auto-mirror
   from glad-labs-stack to poindexter on every push to main.
 - `scripts/sync-to-github.sh` — filter that runs inside the sync

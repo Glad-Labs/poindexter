@@ -240,6 +240,63 @@ jobs:
           poetry config virtualenvs.create false
           poetry install --no-root --no-interaction
 
+      # Prune stale optional/orphaned packages (self-hosted-runner drift).
+      #
+      # unit-tests moved to a PERSISTENT self-hosted runner (docs/operations/
+      # self-hosted-ci-runner.md, 2026-07-06). `poetry install` above has no
+      # `--sync`, so on an ephemeral ubuntu-latest VM that's harmless (thrown
+      # away every run) but on THIS persistent box it means every package any
+      # PAST PR/job ever installed via `--extras ml`/`--extras rerank` — or
+      # that pyproject.toml has since stopped declaring entirely — just stays
+      # forever, since plain `poetry install` only adds/upgrades what's IN
+      # scope for the current invocation and never touches what's out of it.
+      # Discovered 2026-07-12 (glad-labs-stack#2370) when a leftover, un-
+      # reconciled `transformers` paired with a freshly-bumped `huggingface-
+      # hub` to reproduce the exact version-skew ImportError the rerank-
+      # import-guard test exists to catch — on a install that never requested
+      # the `rerank` extra at all.
+      #
+      # `poetry install --sync` (or `poetry sync`) is the textbook fix but is
+      # UNSAFE here: `virtualenvs.create false` means the poetry TOOL itself
+      # (installed by the separate `pip install poetry==2.2.1` step above)
+      # shares this exact site-packages with the PROJECT's dependencies, and
+      # `--sync` cannot tell "poetry's own runtime" from "orphaned project
+      # cruft" — a dry-run confirmed it would remove `poetry`/`poetry-core`
+      # themselves mid-job. So this step targets ONLY the specific packages a
+      # `--dry-run --sync` confirmed are safe: the ml/rerank-extra family
+      # (torch + its CUDA/triton/sympy closure, transformers, sentence-
+      # transformers, safetensors, scikit-learn + threadpoolctl) plus
+      # confirmed-dead legacy deps (black/isort/pylint + their sub-deps,
+      # mastodon-py, rapidfuzz, narwhals — none appear in pyproject.toml
+      # anymore). Deliberately EXCLUDES huggingface-hub and tokenizers: the
+      # same dry-run showed those ARE still required (by other non-optional
+      # deps) and already correctly resolved — uninstalling them would trade
+      # this bug for a new one. Also excludes poetry's own tooling closure
+      # (build/cleo/keyring/jaraco-*/etc.) for the reason above — do not add
+      # `poetry`/`poetry-core`/their deps to this list.
+      #
+      # `pip uninstall` exits non-zero for any name that isn't installed
+      # without skipping the rest of the list, so `|| true` makes the whole
+      # step idempotent (no-op on a clean/hosted runner where none of this
+      # is present).
+      - name: Prune stale optional packages (self-hosted runner drift)
+        if: steps.changes.outputs.needs_tests == 'true'
+        working-directory: src/cofounder_agent
+        run: |
+          pip uninstall -y \
+            transformers sentence-transformers torch \
+            triton sympy mpmath safetensors \
+            nvidia-cublas-cu12 nvidia-cuda-cupti-cu12 nvidia-cuda-nvrtc-cu12 \
+            nvidia-cuda-runtime-cu12 nvidia-cudnn-cu12 nvidia-cufft-cu12 \
+            nvidia-cufile-cu12 nvidia-curand-cu12 nvidia-cusolver-cu12 \
+            nvidia-cusparse-cu12 nvidia-cusparselt-cu12 nvidia-nccl-cu12 \
+            nvidia-nvjitlink-cu12 nvidia-nvshmem-cu12 nvidia-nvtx-cu12 \
+            cuda-bindings cuda-pathfinder cuda-toolkit \
+            scikit-learn threadpoolctl \
+            black isort pylint astroid mccabe \
+            mastodon-py rapidfuzz narwhals \
+            2>/dev/null || true
+
       # Seam 1 Wave 4 (#667): module-purity guard — modules/content/ must not
       # import kernel service internals directly (site_config / audit_log /
       # dispatch_complete). Pure-Python AST scan, no deps beyond stdlib.

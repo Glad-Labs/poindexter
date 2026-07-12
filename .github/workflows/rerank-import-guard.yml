@@ -1,0 +1,96 @@
+# PR-time guard that the sentence-transformers `rerank` extra still imports.
+#
+# services/rag_engine.py::CrossEncoderRerankRetriever imports the real
+# `sentence_transformers` at runtime; on failure the reranker silently degrades
+# to passthrough (`rag_rerank_enabled=true` on prod). sentence-transformers is
+# an opt-in `rerank` extra (2026-06-23 CI torch-trim), so the default unit-tests
+# install (`poetry install --no-root`, no extras) never imports it, and the
+# rerank/dedup unit suites *stub* it. The only place the real transitive ML
+# stack (transformers / huggingface-hub / tokenizers) was exercised was the
+# worker IMAGE build (src/cofounder_agent/Dockerfile:73) — which runs locally at
+# rebuild time, AFTER merge. The `dependency-review` session auto-merges green
+# patch bumps without building the image, so a version-skew re-lock (e.g. an old
+# transformers whose `huggingface-hub<1.0` cap rejects a locked hub 1.x) could
+# merge and sit on main until the next manual rebuild.
+#
+# This job shifts that detection LEFT: on any change to pyproject.toml /
+# poetry.lock it installs `--extras rerank` (the same lean `--only main` install
+# the worker image uses) and imports the exact stack rag_engine imports. A bad
+# re-lock reddens the PR instead of silently degrading rerank in prod.
+#
+# NOT a required check (mirrors ports-lint / grafana-panels-lint): paths-gated so
+# it only spends minutes when deps actually change, and source-repo-only — the
+# public mirror is force-pushed (its checks gate nothing) and a FORK still runs
+# it. Promote to a required check via branch protection if you want it to block
+# the dependabot auto-merge path.
+name: rerank-import-guard
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'src/cofounder_agent/pyproject.toml'
+      - 'src/cofounder_agent/poetry.lock'
+      - 'src/cofounder_agent/tests/unit/services/test_rerank_import_guard.py'
+      - '.github/workflows/rerank-import-guard.yml'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'src/cofounder_agent/pyproject.toml'
+      - 'src/cofounder_agent/poetry.lock'
+      - 'src/cofounder_agent/tests/unit/services/test_rerank_import_guard.py'
+      - '.github/workflows/rerank-import-guard.yml'
+  workflow_dispatch:
+
+# Cancel older in-progress runs of the same ref/PR — saves Actions minutes when
+# multiple commits land back-to-back on the same PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+# Least-privilege GITHUB_TOKEN — a read-only checkout is all this needs.
+permissions:
+  contents: read
+
+jobs:
+  rerank-import-guard:
+    # Source-repo only — same rationale as ports-lint.yml. The public mirror is
+    # force-pushed (checks gate nothing) and this isn't a required check there;
+    # re-installing torch to re-import the same public deps buys nothing. A FORK
+    # (repo name != Glad-Labs/poindexter) still runs it.
+    if: github.repository != 'Glad-Labs/poindexter'
+    # runs-on seam — self-hosted labels when CI_RUNNER is set (private source),
+    # else ubuntu-latest (public mirror / forks). Same seam as unit-tests.yml.
+    runs-on: ${{ vars.CI_RUNNER && fromJSON(vars.CI_RUNNER) || 'ubuntu-latest' }}
+    # The CPU torch wheel dominates the install; 15 min is generous headroom.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v4.3.1 as of 2026-05-12
+        with:
+          fetch-depth: 1
+
+      - name: Set up Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v5.6.0 as of 2026-05-12
+        with:
+          python-version: '3.13'
+          cache: 'pip'
+
+      - name: Install Poetry
+        run: pip install "poetry==2.2.1"
+
+      # Mirror of src/cofounder_agent/Dockerfile:62-63 — the same lean
+      # `--only main --extras rerank` install the worker image uses, so this
+      # guard verifies exactly what production installs.
+      - name: Install main deps + rerank extra (CPU torch)
+        working-directory: src/cofounder_agent
+        run: |
+          poetry config virtualenvs.create false
+          poetry install --no-root --only main --no-interaction --no-ansi --extras "rerank"
+
+      # The real import rag_engine does. A huggingface-hub / transformers version
+      # skew raises ImportError here and reddens the job (mirror of Dockerfile:73,
+      # without the CPU-torch assertion which that build-only concern owns).
+      - name: Import the real cross-encoder stack (fail loud on version skew)
+        working-directory: src/cofounder_agent
+        run: |
+          python -c "import huggingface_hub, tokenizers, transformers, sentence_transformers; from sentence_transformers import CrossEncoder; assert isinstance(CrossEncoder, type); print('[GUARD] rerank stack imports cleanly:', 'transformers', transformers.__version__, '| huggingface-hub', huggingface_hub.__version__, '| tokenizers', tokenizers.__version__, '| sentence-transformers', sentence_transformers.__version__)"
