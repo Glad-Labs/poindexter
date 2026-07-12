@@ -27,6 +27,7 @@ Telegram/Discord "social post ready" notifications) was retired 2026-06-29 when
 Postiz became the distribution mechanism.
 """
 
+import re
 from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
@@ -217,6 +218,81 @@ def _build_linkedin_prompt(
     )
 
 
+# ---------------------------------------------------------------------------
+# Deterministic copy repair
+# ---------------------------------------------------------------------------
+#
+# The prompt asks the model for clean, under-limit copy that carries the post
+# URL, but a weak model can still ignore that: it trails off with a dangling
+# ellipsis (the artifact the 3B fallback produced before the gemma-4-31B bump)
+# or drops the link. These helpers are the deterministic net applied to every
+# generated draft so neither reaches the operator's pre-approval preview.
+
+# A run of >=2 ASCII dots or the unicode ellipsis (U+2026) left dangling at
+# the end of the copy — filler the model appends when it runs out of thought.
+_TRAILING_ELLIPSIS_RE = re.compile(r"\s*(?:\.{2,}|…)+\s*$")
+
+
+def _strip_trailing_ellipsis(text: str) -> str:
+    """Drop a dangling ellipsis / dot-run trail-off from the end of *text*."""
+    return _TRAILING_ELLIPSIS_RE.sub("", text).rstrip()
+
+
+def _fit_prose(text: str, limit: int) -> str:
+    """Trim *text* to <= *limit* chars at a word boundary — no trail-off marker.
+
+    Unlike the old truncation net (which appended ``"..."`` and so manufactured
+    the very trail-off we now strip), this cuts cleanly at the last whole word
+    and re-strips any ellipsis the cut exposed, so shortening copy never trades
+    one trail-off for another.
+    """
+    if limit <= 0:
+        return ""
+    if len(text) <= limit:
+        return text
+    cut = text[:limit].rstrip()
+    if " " in cut:
+        cut = cut.rsplit(" ", 1)[0]
+    return _strip_trailing_ellipsis(cut)
+
+
+def _polish_social_copy(text: str, *, post_url: str, char_limit: int) -> str:
+    """Repair one generated social draft deterministically.
+
+    1. Strip a trailing ellipsis trail-off (``…`` / ``..`` / ``...``) — it reads
+       as broken, half-finished copy.
+    2. Guarantee an absolute post URL is present so the operator's draft preview
+       is complete and the promo carries its link. ``approve_draft`` →
+       ``_ensure_post_url`` is still the final backstop (it rewrites to the real
+       canonical slug at post time, correcting any predicted-slug drift), but
+       appending here keeps the pre-approval preview honest and protects the
+       link from step 3.
+    3. Fit to ``char_limit`` by trimming PROSE, never the URL — a long draft
+       loses filler, not its link.
+
+    ``post_url`` is honored only when absolute (``http(s)://``); an empty or
+    relative value (``site_url`` unset -> ``/posts/slug``) is treated as
+    "no URL" so a broken link is never injected. The model is handed the exact
+    URL in the prompt, so an exact-substring presence check aligns with what a
+    compliant model emits; a paraphrased duplicate is deduped by the canonical
+    rewrite in ``_ensure_post_url`` at approve.
+    """
+    text = _strip_trailing_ellipsis(text.strip())
+    if not text:
+        return text
+
+    url = post_url.strip()
+    if url.startswith(("http://", "https://")) and url not in text:
+        # Reserve room for " {url}" and trim the (URL-free) prose to fit, then
+        # append the link last so it can never be truncated mid-URL.
+        text = _fit_prose(text, char_limit - len(url) - 1)
+        text = f"{text} {url}".strip() if text else url
+    else:
+        # URL already inline, or unconfigured — just enforce the platform limit.
+        text = _fit_prose(text, char_limit)
+    return text
+
+
 async def _generate_social_text(
     prompt: str,
     char_limit: int,
@@ -224,6 +300,7 @@ async def _generate_social_text(
     ollama: OllamaClient | None = None,
     *,
     site_config: SiteConfig,
+    post_url: str = "",
 ) -> str:
     """Call the LLM and return the generated text, trimmed to limit.
 
@@ -301,14 +378,16 @@ async def _generate_social_text(
         if text.startswith('"') and text.endswith('"'):
             text = text[1:-1].strip()
 
-        # Hard-truncate as a safety net (should rarely trigger with good prompts)
         if len(text) > char_limit:
-            text = text[: char_limit - 3].rsplit(" ", 1)[0] + "..."
             logger.warning(
-                "[social_poster] %s text exceeded %d chars, truncated", platform, char_limit
+                "[social_poster] %s text exceeded %d chars, trimming", platform, char_limit
             )
 
-        return text
+        # Deterministic copy repair: strip a trailing ellipsis trail-off,
+        # guarantee the post URL is present, and fit to the platform limit by
+        # trimming prose (never the link). Fixes the "…"-trail-off and the
+        # dropped/mangled URL a weak model can still emit despite the prompt.
+        return _polish_social_copy(text, post_url=post_url, char_limit=char_limit)
 
     except Exception as e:
         logger.error("[social_poster] LLM generation failed for %s: %s", platform, e, exc_info=True)
@@ -353,7 +432,12 @@ async def generate_social_posts(
     # --- Twitter ---
     twitter_prompt = _build_twitter_prompt(title, slug, excerpt, keywords, site_config=_sc)
     twitter_text = await _generate_social_text(
-        twitter_prompt, _twitter_char_limit(site_config=_sc), "twitter", ollama, site_config=_sc
+        twitter_prompt,
+        _twitter_char_limit(site_config=_sc),
+        "twitter",
+        ollama,
+        site_config=_sc,
+        post_url=post_url,
     )
     if twitter_text:
         posts.append(SocialPost(platform="twitter", text=twitter_text, post_url=post_url))
@@ -370,7 +454,12 @@ async def generate_social_posts(
     # --- LinkedIn ---
     linkedin_prompt = _build_linkedin_prompt(title, slug, excerpt, keywords, site_config=_sc)
     linkedin_text = await _generate_social_text(
-        linkedin_prompt, _linkedin_char_limit(site_config=_sc), "linkedin", ollama, site_config=_sc
+        linkedin_prompt,
+        _linkedin_char_limit(site_config=_sc),
+        "linkedin",
+        ollama,
+        site_config=_sc,
+        post_url=post_url,
     )
     if linkedin_text:
         posts.append(SocialPost(platform="linkedin", text=linkedin_text, post_url=post_url))

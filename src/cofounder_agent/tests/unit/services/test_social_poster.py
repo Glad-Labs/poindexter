@@ -16,8 +16,11 @@ from services.social_poster import (
     SocialPost,
     _build_linkedin_prompt,
     _build_twitter_prompt,
+    _fit_prose,
     _generate_social_text,
     _linkedin_char_limit,
+    _polish_social_copy,
+    _strip_trailing_ellipsis,
     _twitter_char_limit,
     generate_social_posts,
 )
@@ -163,7 +166,10 @@ class TestGenerateSocialText:
         ollama = _make_ollama_mock(long_text)
         result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
         assert len(result) <= TWITTER_CHAR_LIMIT
-        assert result.endswith("...")
+        # Trimmed at a word boundary with NO "..." trail-off — the guard
+        # strips dangling ellipses rather than manufacturing one.
+        assert not result.endswith("...")
+        assert result.endswith("word")
 
     @pytest.mark.asyncio
     async def test_truncates_linkedin_over_limit(self):
@@ -171,7 +177,8 @@ class TestGenerateSocialText:
         ollama = _make_ollama_mock(long_text)
         result = await _generate_social_text("prompt", LINKEDIN_CHAR_LIMIT, "linkedin", ollama, site_config=_TEST_SC)
         assert len(result) <= LINKEDIN_CHAR_LIMIT
-        assert result.endswith("...")
+        assert not result.endswith("...")
+        assert result.endswith("word")
 
     @pytest.mark.asyncio
     async def test_disables_thinking_for_social_copy(self):
@@ -224,6 +231,135 @@ class TestGenerateSocialText:
         ollama = _make_ollama_mock("  padded text  ")
         result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
         assert result == "padded text"
+
+    @pytest.mark.asyncio
+    async def test_strips_trailing_ellipsis_trail_off(self):
+        """A weak model can emit copy that trails off with a dangling
+        ellipsis — the exact artifact behind the drawer preview '...'. The
+        guard strips it so the draft never reads as broken."""
+        ollama = _make_ollama_mock("Local LLMs beat cloud APIs on cost and privacy…")
+        result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
+        assert result == "Local LLMs beat cloud APIs on cost and privacy"
+
+    @pytest.mark.asyncio
+    async def test_appends_post_url_when_model_drops_it(self):
+        """The prompt asks for the link but a weak model can omit it. When an
+        absolute post_url is threaded in, the guard appends it so the promo
+        (and the operator's preview) carries the call-to-action."""
+        ollama = _make_ollama_mock("Great read on self-hosting LLMs #AI")
+        result = await _generate_social_text(
+            "prompt",
+            TWITTER_CHAR_LIMIT,
+            "twitter",
+            ollama,
+            site_config=_TEST_SC,
+            post_url="https://gladlabs.io/posts/local-llms",
+        )
+        assert result == "Great read on self-hosting LLMs #AI https://gladlabs.io/posts/local-llms"
+
+    @pytest.mark.asyncio
+    async def test_does_not_duplicate_present_post_url(self):
+        """When the model already included the exact URL, the guard leaves it
+        alone rather than appending a second copy."""
+        url = "https://gladlabs.io/posts/local-llms"
+        ollama = _make_ollama_mock(f"Great read #AI {url}")
+        result = await _generate_social_text(
+            "prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC, post_url=url
+        )
+        assert result.count(url) == 1
+
+
+# ---------------------------------------------------------------------------
+# Deterministic copy repair (_polish_social_copy + helpers)
+# ---------------------------------------------------------------------------
+
+
+class TestStripTrailingEllipsis:
+    """The trail-off stripper — pure, no LLM."""
+
+    def test_strips_unicode_ellipsis(self):
+        assert _strip_trailing_ellipsis("Copy that trails off…") == "Copy that trails off"
+
+    def test_strips_ascii_dot_run(self):
+        assert _strip_trailing_ellipsis("Copy that trails off...") == "Copy that trails off"
+
+    def test_strips_two_dots(self):
+        assert _strip_trailing_ellipsis("Almost done..") == "Almost done"
+
+    def test_strips_trailing_whitespace_around_ellipsis(self):
+        assert _strip_trailing_ellipsis("Copy  …  ") == "Copy"
+
+    def test_leaves_single_period_sentence(self):
+        # A normal full stop is not a trail-off.
+        assert _strip_trailing_ellipsis("A complete sentence.") == "A complete sentence."
+
+    def test_leaves_clean_text_unchanged(self):
+        assert _strip_trailing_ellipsis("Punchy tweet #AI") == "Punchy tweet #AI"
+
+
+class TestFitProse:
+    """Word-boundary trimming with no manufactured trail-off."""
+
+    def test_under_limit_unchanged(self):
+        assert _fit_prose("short copy", 280) == "short copy"
+
+    def test_trims_at_word_boundary(self):
+        result = _fit_prose("word " * 100, 50)
+        assert len(result) <= 50
+        assert result.endswith("word")
+        assert not result.endswith("...")
+
+    def test_re_strips_exposed_ellipsis(self):
+        # When the word-boundary cut leaves a word with an attached ellipsis
+        # as the final token, the re-strip drops it (no new trail-off).
+        result = _fit_prose("Done thinking… more text", 17)
+        assert not result.endswith("…")
+        assert result == "Done thinking"
+
+    def test_zero_limit_returns_empty(self):
+        assert _fit_prose("anything", 0) == ""
+
+
+class TestPolishSocialCopy:
+    """The full generation-time guard: strip trail-off, ensure URL, fit limit."""
+
+    URL = "https://gladlabs.io/posts/why-local-llms"
+
+    def test_strips_trail_off_and_keeps_clean_copy(self):
+        assert (
+            _polish_social_copy("Local LLMs win on cost…", post_url="", char_limit=280)
+            == "Local LLMs win on cost"
+        )
+
+    def test_appends_absolute_url_when_absent(self):
+        result = _polish_social_copy("Punchy tweet #AI", post_url=self.URL, char_limit=280)
+        assert result == f"Punchy tweet #AI {self.URL}"
+
+    def test_does_not_duplicate_existing_url(self):
+        text = f"Read more #AI {self.URL}"
+        result = _polish_social_copy(text, post_url=self.URL, char_limit=280)
+        assert result.count(self.URL) == 1
+
+    def test_ignores_relative_url(self):
+        # site_url unset -> "/posts/slug"; never inject a broken relative link.
+        result = _polish_social_copy("Punchy tweet #AI", post_url="/posts/foo", char_limit=280)
+        assert result == "Punchy tweet #AI"
+        assert "/posts/foo" not in result
+
+    def test_ignores_empty_url(self):
+        assert _polish_social_copy("Punchy tweet", post_url="", char_limit=280) == "Punchy tweet"
+
+    def test_trims_prose_not_url_when_over_limit(self):
+        # Prose long enough to force a trim; the URL must survive intact and
+        # the whole thing must fit the limit.
+        prose = "word " * 60  # 300 chars, over a 100-char limit
+        result = _polish_social_copy(prose, post_url=self.URL, char_limit=100)
+        assert len(result) <= 100
+        assert result.endswith(self.URL)
+        assert not result.replace(self.URL, "").strip().endswith("...")
+
+    def test_empty_text_stays_empty(self):
+        assert _polish_social_copy("   ", post_url=self.URL, char_limit=280) == ""
 
 
 # ---------------------------------------------------------------------------
@@ -374,7 +510,9 @@ class TestCharacterLimitsAndHashtags:
         ollama = _make_ollama_mock(over_text)
         result = await _generate_social_text("prompt", TWITTER_CHAR_LIMIT, "twitter", ollama, site_config=_TEST_SC)
         assert len(result) <= TWITTER_CHAR_LIMIT
-        assert result.endswith("...")
+        # Word-boundary trim, no manufactured "..." trail-off.
+        assert not result.endswith("...")
+        assert result.endswith("x")
 
 
 # ---------------------------------------------------------------------------
