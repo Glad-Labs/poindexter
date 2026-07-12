@@ -436,7 +436,13 @@ function Drawer({ entity, onClose, actions }) {
           eyebrow = `SOCIAL · ${String(
             draft.platform || 'draft'
           ).toUpperCase()} · AWAITING APPROVAL`;
-          title = e.title || `${draft.platform || 'Social'} draft`;
+          // A clean, non-truncated header. The inbox row's `e.title` is a
+          // `trunc(content, 60)` label for the narrow list — reusing it here
+          // showed a clipped "…" in a drawer that has room for the full copy
+          // (which the preview below renders in full).
+          title = `${String(draft.platform || 'social').replace(/^./, (c) =>
+            c.toUpperCase()
+          )} promo`;
           body = (
             <>
               <div className="section-label">Post preview</div>
