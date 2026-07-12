@@ -453,8 +453,19 @@ async def _lookup_latest_capability_outcome(
             "prompt_template_version": row["prompt_template_version"],
         }
     except Exception as exc:  # noqa: BLE001
-        logger.debug(
-            "[auto_publish_gate] capability_outcomes lookup failed: %s", exc,
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="auto_publish_gate",
+            kind="capability_outcomes_lookup_failed",
+            title="capability_outcomes lookup failed at approve time",
+            body=(
+                f"lookup failed for task {task_id}: {exc}. The approve-time "
+                "edit metric row won't be cross-stamped with the writer's "
+                "model/prompt-template provenance (lab-view attribution gap "
+                "for this one approval; non-blocking)."
+            ),
+            dedup_key="capability_outcomes_lookup_failed",
         )
         return None
 

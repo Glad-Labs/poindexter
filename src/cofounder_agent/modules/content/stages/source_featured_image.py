@@ -489,8 +489,18 @@ async def _record_featured_image_asset(
     try:
         from services.media_asset_recorder import record_media_asset
     except Exception as exc:  # noqa: BLE001 — defensive import guard
-        logger.debug(
-            "[STAGE3] media_asset_recorder unavailable: %s", exc,
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="stages.source_featured_image",
+            kind="media_asset_recorder_unavailable",
+            title="media_asset_recorder import failed — featured image not recorded",
+            body=(
+                "Deferred import of services.media_asset_recorder failed: "
+                f"{exc}. The featured image is not tracked in media_assets "
+                "(cleanup / retention / cost-attribution can't see it)."
+            ),
+            dedup_key="media_asset_recorder_unavailable",
         )
         return
     pool = getattr(site_config, "_pool", None)

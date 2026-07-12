@@ -199,7 +199,20 @@ async def count_inbound_links_to_slug(pool, slug: str) -> int:
         count = sum(1 for r in rows if pattern.search(r.get("content") or ""))
         return count
     except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("[LINK_COHERENCE] inbound count failed for %s: %s", slug, exc)
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="internal_link_coherence",
+            kind="inbound_link_count_failed",
+            title="Inbound-link count failed — single-target cap not enforced",
+            body=(
+                f"count_inbound_links_to_slug failed for {slug!r}: {exc}. "
+                "Returns 0, so the single-target recommendation cap can't "
+                "see this slug's existing inbound links this run (may "
+                "under-cap, i.e. recommend it more than intended)."
+            ),
+            dedup_key=f"inbound_link_count_failed:{slug}",
+        )
         return 0
 
 

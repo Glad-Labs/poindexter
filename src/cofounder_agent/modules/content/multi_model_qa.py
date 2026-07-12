@@ -2576,7 +2576,19 @@ class MultiModelQA:
         try:
             from services.preview_screenshot import capture_preview_screenshot
         except Exception as e:
-            logger.debug("[PREVIEW_QA] screenshot service import failed: %s", e)
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="multi_model_qa",
+                kind="preview_screenshot_service_unavailable",
+                title="Preview-screenshot service import failed — vision QA skipped",
+                body=(
+                    f"services.preview_screenshot import failed: {e}. Preview "
+                    "screenshot QA is skipped for this task (returns None, "
+                    "non-blocking)."
+                ),
+                dedup_key="preview_screenshot_service_unavailable",
+            )
             return None
 
         png_bytes = await capture_preview_screenshot(
