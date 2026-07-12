@@ -2,6 +2,70 @@
 
 ## Unreleased
 
+## [0.101.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.100.0...v0.101.0) (2026-07-12)
+
+
+### Features
+
+* **affiliate:** curated link injection + /go click tracking ([#2324](https://github.com/Glad-Labs/glad-labs-stack/issues/2324)) ([3d59737](https://github.com/Glad-Labs/glad-labs-stack/commit/3d59737a0f5ac5d098ae63d78e569b07517cba3d))
+* **affiliate:** public /referrals page ([#2361](https://github.com/Glad-Labs/glad-labs-stack/issues/2361)) ([918a634](https://github.com/Glad-Labs/glad-labs-stack/commit/918a634e111606cc5ec962795297a333f5989a0b))
+* **alerts:** PrometheusConfigReloadFailed — page when /-/reload is broken ([#2342](https://github.com/Glad-Labs/glad-labs-stack/issues/2342)) ([314ff71](https://github.com/Glad-Labs/glad-labs-stack/commit/314ff71a7dabe77f129165bcd50f900c1ad7141d))
+* **content:** wire writing_style_reference into the writer ([#2335](https://github.com/Glad-Labs/glad-labs-stack/issues/2335)) ([5a42cd0](https://github.com/Glad-Labs/glad-labs-stack/commit/5a42cd085b1e668aed3a4210946177e8ff95e4d3))
+* **finance:** self-diagnosing Mercury auth-lost alert (embed egress IP) ([#2328](https://github.com/Glad-Labs/glad-labs-stack/issues/2328)) ([b47305e](https://github.com/Glad-Labs/glad-labs-stack/commit/b47305e461a2f76d04c6a6d049235c668afebfe6))
+* **pipeline:** per-step model pins for SEO metadata + title generation (poindexter[#835](https://github.com/Glad-Labs/glad-labs-stack/issues/835)) ([#2306](https://github.com/Glad-Labs/glad-labs-stack/issues/2306)) ([135b3f2](https://github.com/Glad-Labs/glad-labs-stack/commit/135b3f2a934c11bc68f1ad498d6bb747c36ae34e))
+* **qa:** content_originality rail — whole-post RAG self-echo detection (WS2) ([#2375](https://github.com/Glad-Labs/glad-labs-stack/issues/2375)) ([e38b886](https://github.com/Glad-Labs/glad-labs-stack/commit/e38b88689ddbd3f72cd747fc2d0287641422f334))
+* **storage:** R2 media orphan-reaper ([#2337](https://github.com/Glad-Labs/glad-labs-stack/issues/2337)) ([0eb0963](https://github.com/Glad-Labs/glad-labs-stack/commit/0eb09632dd2d4a81e12c42aa76f7a129d73ca8be))
+* **topic-dedup:** content-embedding dedup engine as default ([711f7bc](https://github.com/Glad-Labs/glad-labs-stack/commit/711f7bc430193344c0823fedc01a5d30b35d1013))
+* **tts:** cut over podcast pipeline to Chatterbox voice cloning ([#2346](https://github.com/Glad-Labs/glad-labs-stack/issues/2346)) ([f05ad9e](https://github.com/Glad-Labs/glad-labs-stack/commit/f05ad9e163e0bbc5e9da2caec36627945ea55b73))
+
+
+### Bug Fixes
+
+* **affiliate:** make the disclosure banner Amazon Associates compliant ([#2347](https://github.com/Glad-Labs/glad-labs-stack/issues/2347)) ([93d06d3](https://github.com/Glad-Labs/glad-labs-stack/commit/93d06d33888d7b7b61722fa91b13527758b1f809))
+* **alerts:** restart-proof long-for worker-gauge rules via last_over_time ([#2339](https://github.com/Glad-Labs/glad-labs-stack/issues/2339)) ([b3758b7](https://github.com/Glad-Labs/glad-labs-stack/commit/b3758b72f6c18f41da8e019603903ba2df1030e8))
+* **architect:** render {site_name} in the pipeline-architect prompt (serve SKILL.md, not the dead fallback) ([#2289](https://github.com/Glad-Labs/glad-labs-stack/issues/2289)) ([3b7bb4a](https://github.com/Glad-Labs/glad-labs-stack/commit/3b7bb4a615897dac6b5f495a72c88f6ccee7a6f9))
+* **auto-publish:** thread niche_slug into pipeline state + niche-only gate history (poindexter[#836](https://github.com/Glad-Labs/glad-labs-stack/issues/836)) ([#2308](https://github.com/Glad-Labs/glad-labs-stack/issues/2308)) ([7d7e883](https://github.com/Glad-Labs/glad-labs-stack/commit/7d7e883e4597aed149dfaad3f41cb73f27a3b016))
+* **backups:** stream the offsite-setup wizard's acceptance gate so the runner dedupes against it ([#2317](https://github.com/Glad-Labs/glad-labs-stack/issues/2317) follow-up) ([#2321](https://github.com/Glad-Labs/glad-labs-stack/issues/2321)) ([b17be90](https://github.com/Glad-Labs/glad-labs-stack/commit/b17be9051d599197c090386e6256229a1add210b))
+* **backups:** stream uncompressed pg_dump into restic so offsite dedup works ([#2317](https://github.com/Glad-Labs/glad-labs-stack/issues/2317)) ([3f9032a](https://github.com/Glad-Labs/glad-labs-stack/commit/3f9032a6b05b12e7dc6498f7139b4105f45c39a0))
+* **brain:** align newsletter + embeddings probe SQL with real schema (poindexter[#837](https://github.com/Glad-Labs/glad-labs-stack/issues/837)) ([#2311](https://github.com/Glad-Labs/glad-labs-stack/issues/2311)) ([3a85690](https://github.com/Glad-Labs/glad-labs-stack/commit/3a8569012a6c197ebfba6fded8c747ed6e46f612))
+* **build:** de-mangle web/public-site/.vercelignore glob patterns ([#2341](https://github.com/Glad-Labs/glad-labs-stack/issues/2341)) ([a180fd1](https://github.com/Glad-Labs/glad-labs-stack/commit/a180fd1c2ae221852220cb5eac191d31323bf9d9))
+* **build:** stop .vercelignore deleting .git so the site-skip ignoreCommand works ([#2338](https://github.com/Glad-Labs/glad-labs-stack/issues/2338)) ([79e1c2b](https://github.com/Glad-Labs/glad-labs-stack/commit/79e1c2bfceb563d3a500493660dfa6c6f3bf1d45))
+* **cli:** point image-rebuild watch hint at `tasks get`, not nonexistent `tasks show` ([#2362](https://github.com/Glad-Labs/glad-labs-stack/issues/2362)) ([b1c00c8](https://github.com/Glad-Labs/glad-labs-stack/commit/b1c00c86e7c6ec5b104718c2921be694367b4698))
+* **console:** cap the LLM TRACES card height, scroll the trace list ([#2304](https://github.com/Glad-Labs/glad-labs-stack/issues/2304)) ([6bab826](https://github.com/Glad-Labs/glad-labs-stack/commit/6bab8269c84207081ba217cf1e10043c3c977a0e))
+* **console:** match LLM TRACES card height to LOGS so masonry columns balance ([#2307](https://github.com/Glad-Labs/glad-labs-stack/issues/2307)) ([600e58a](https://github.com/Glad-Labs/glad-labs-stack/commit/600e58a63825ccfc240e4dff09cff2bf738ff75b))
+* **console:** preview social drafts in the action-inbox drawer ([#2363](https://github.com/Glad-Labs/glad-labs-stack/issues/2363)) ([164f197](https://github.com/Glad-Labs/glad-labs-stack/commit/164f1974634e0b3de7d728d32d38ffc4e6961a51))
+* **dedup:** trust the cosine floor in the create_post dedup guard ([#2318](https://github.com/Glad-Labs/glad-labs-stack/issues/2318)) ([67af5bb](https://github.com/Glad-Labs/glad-labs-stack/commit/67af5bb17728d6b5dbabe4678c726b1e29da2113))
+* **deps:** pin langchain-community &lt;0.4.2 so the Ragas rail imports again ([#2327](https://github.com/Glad-Labs/glad-labs-stack/issues/2327)) ([baf3da0](https://github.com/Glad-Labs/glad-labs-stack/commit/baf3da0b4e20f03f20c24708936efb23bf8bc092))
+* **newsletter:** announce at every go-live seam + parse the From mailbox (poindexter[#834](https://github.com/Glad-Labs/glad-labs-stack/issues/834)) ([#2305](https://github.com/Glad-Labs/glad-labs-stack/issues/2305)) ([dddbf2a](https://github.com/Glad-Labs/glad-labs-stack/commit/dddbf2adce9e1c9ed503834d1592709faf01d8d7))
+* **ops:** dedup alert-triage probe-bug issue filing ([#2358](https://github.com/Glad-Labs/glad-labs-stack/issues/2358)) ([8821ba7](https://github.com/Glad-Labs/glad-labs-stack/commit/8821ba79bd0845003b11768455254084a96f54bf))
+* **pipeline:** image_rebuild halted at entry — hydration seam dropped target_task_id ([#2357](https://github.com/Glad-Labs/glad-labs-stack/issues/2357)) ([3d44fec](https://github.com/Glad-Labs/glad-labs-stack/commit/3d44fec050dca42de1314995e47ad8c67153f45c))
+* **power:** don't let the nvidia-smi watchdog kill the exporter (regression from [#2371](https://github.com/Glad-Labs/glad-labs-stack/issues/2371)) ([#2374](https://github.com/Glad-Labs/glad-labs-stack/issues/2374)) ([ac7cb23](https://github.com/Glad-Labs/glad-labs-stack/commit/ac7cb23a2b367a32f1c8263faa2bed39cce67fa5))
+* **power:** stop false PSU-floor alert storm — constant-time exporter + watchdog debounce ([#2371](https://github.com/Glad-Labs/glad-labs-stack/issues/2371)) ([3daf853](https://github.com/Glad-Labs/glad-labs-stack/commit/3daf8531796f001915fe93af74e903e7085715d7))
+* **publish:** drain publish-tail background tasks before pool teardown (poindexter[#838](https://github.com/Glad-Labs/glad-labs-stack/issues/838)) ([#2312](https://github.com/Glad-Labs/glad-labs-stack/issues/2312)) ([8de66fb](https://github.com/Glad-Labs/glad-labs-stack/commit/8de66fbd086e525f1f97bf7c6b58986693e42b1c))
+* **publish:** record edit-distance metrics at the approve seam (unfreezes published_post_edit_metrics) ([#2309](https://github.com/Glad-Labs/glad-labs-stack/issues/2309)) ([2f91794](https://github.com/Glad-Labs/glad-labs-stack/commit/2f917948a9d4d3e78b3b2ffe1efeb30027d94af2))
+* **qa:** fail loud on broken ragas imports + restart-proof QaRailFullySkipped ([#2330](https://github.com/Glad-Labs/glad-labs-stack/issues/2330)) ([d81a7e0](https://github.com/Glad-Labs/glad-labs-stack/commit/d81a7e02d687effaab6ddb35b2351a6b55843bc7))
+* **qa:** qa.vision fail-open stops mispaging a healthy vision model as unavailable ([#2364](https://github.com/Glad-Labs/glad-labs-stack/issues/2364)) ([96b02e4](https://github.com/Glad-Labs/glad-labs-stack/commit/96b02e48b4326275b971e3e64a1ef3fb381d230e))
+* **qa:** sanitize non-finite floats so ragas_score audit rows land ([#2319](https://github.com/Glad-Labs/glad-labs-stack/issues/2319)) ([1dd8623](https://github.com/Glad-Labs/glad-labs-stack/commit/1dd8623be68e8ea9f71d814e7011702de1eaa5b4))
+* **qa:** vision false-page is a thinking-budget truncation, not a dead pool ([#2369](https://github.com/Glad-Labs/glad-labs-stack/issues/2369)) ([5605d51](https://github.com/Glad-Labs/glad-labs-stack/commit/5605d519f9c7425743a29cc2b854f170b87346af))
+* **rag:** normalize rerank cross-encoder logits for display (no more negative "similarity") ([#2313](https://github.com/Glad-Labs/glad-labs-stack/issues/2313)) ([c2825e9](https://github.com/Glad-Labs/glad-labs-stack/commit/c2825e9dd359bf17d61a72761b7c57f639cde5a4))
+* **rag:** point MemoryClient's RAG embed at the configured Ollama, not localhost ([#2303](https://github.com/Glad-Labs/glad-labs-stack/issues/2303)) ([6f0d664](https://github.com/Glad-Labs/glad-labs-stack/commit/6f0d664a7e762c267d5d0ab9dbaa9716701541e1))
+* **rag:** raise on retriever embed failure so the loud fallback fires ([#2303](https://github.com/Glad-Labs/glad-labs-stack/issues/2303) follow-up) ([63cf8aa](https://github.com/Glad-Labs/glad-labs-stack/commit/63cf8aaba5f57e18d019d93c1b87e252005814ce))
+* **settings:** make the zero-reader probe honest + retire 6 more orphan keys ([#2332](https://github.com/Glad-Labs/glad-labs-stack/issues/2332)) ([5dd9ab8](https://github.com/Glad-Labs/glad-labs-stack/commit/5dd9ab8432d171cdcf682bd4f2d183bd687d3b6c))
+* **settings:** route affiliate_* keys to the cost category ([#2360](https://github.com/Glad-Labs/glad-labs-stack/issues/2360)) ([41bd7af](https://github.com/Glad-Labs/glad-labs-stack/commit/41bd7af116e2507b38473f9e1cf270924efc6cb5))
+* **social:** idempotent draft creation per (task, platform, subreddit) (poindexter[#833](https://github.com/Glad-Labs/glad-labs-stack/issues/833)) ([#2288](https://github.com/Glad-Labs/glad-labs-stack/issues/2288)) ([9611a5e](https://github.com/Glad-Labs/glad-labs-stack/commit/9611a5ebc66712d561fbc0338e9e3599aed0fce7))
+* **social:** reap orphaned social drafts when content is rejected ([#2366](https://github.com/Glad-Labs/glad-labs-stack/issues/2366)) ([198ce57](https://github.com/Glad-Labs/glad-labs-stack/commit/198ce57b8c0358b28b0730e8198b155ad0443af7))
+* stop synchronous work from stalling async event loops (brain + CLI) ([#2336](https://github.com/Glad-Labs/glad-labs-stack/issues/2336)) ([6de4d9a](https://github.com/Glad-Labs/glad-labs-stack/commit/6de4d9a5fd96e774ba742005c2f5bc3f32594472))
+* **tts:** chatterbox sidecar crashes on first request (numba cache + GPU mismatch) ([#2348](https://github.com/Glad-Labs/glad-labs-stack/issues/2348)) ([6f81e8f](https://github.com/Glad-Labs/glad-labs-stack/commit/6f81e8f32f40e9c28831647dcfaf3305d06c2261))
+* **tts:** dangling stock_speaker_16k.wav reference in sidecar README ([#2356](https://github.com/Glad-Labs/glad-labs-stack/issues/2356)) ([226ff0d](https://github.com/Glad-Labs/glad-labs-stack/commit/226ff0d637d4ee95bf2fc115b88cbaa9c3979169))
+* **tts:** honor tts_voice_rotation_enabled — rotation is now opt-in ([#2333](https://github.com/Glad-Labs/glad-labs-stack/issues/2333)) ([66f9aa9](https://github.com/Glad-Labs/glad-labs-stack/commit/66f9aa90482f09bfc7b8aee47d06c9eed526efc3))
+
+
+### Performance Improvements
+
+* **build:** skip site rebuilds when the frontend didn't change ([#2310](https://github.com/Glad-Labs/glad-labs-stack/issues/2310)) ([9668f72](https://github.com/Glad-Labs/glad-labs-stack/commit/9668f722fca737e078f24bc8514d227f0f9fc28c))
+* **build:** skip storefront rebuilds when the frontend didn't change ([#2315](https://github.com/Glad-Labs/glad-labs-stack/issues/2315)) ([94dc5b7](https://github.com/Glad-Labs/glad-labs-stack/commit/94dc5b781ed6a4751a3e5de11558c3e8cab80614))
+* **content:** re-apply [#733](https://github.com/Glad-Labs/glad-labs-stack/issues/733) two-phase GPU batching to content.generate_images ([#2345](https://github.com/Glad-Labs/glad-labs-stack/issues/2345)) ([f284c2b](https://github.com/Glad-Labs/glad-labs-stack/commit/f284c2b089a79e3fd054274c5127890d1f7c37f7))
+
 ## [0.100.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.99.0...v0.100.0) (2026-07-11)
 
 
