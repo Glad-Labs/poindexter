@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-07-11.**  
+> **Auto-generated from live `app_settings` table on 2026-07-12.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 694 active rows across 57 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 688 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -42,7 +42,7 @@ The worker re-reads on every poll; no restart needed.
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (7 keys)
 - [gates](#gates) (3 keys)
-- [general](#general) (314 keys)
+- [general](#general) (311 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (2 keys)
@@ -64,7 +64,7 @@ The worker re-reads on every poll; no restart needed.
 - [ops-triage](#ops-triage) (1 key)
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
-- [pipeline](#pipeline) (28 keys)
+- [pipeline](#pipeline) (27 keys)
 - [plugins](#plugins) (38 keys)
 - [plugin_telemetry](#plugin-telemetry) (1 key)
 - [podcast](#podcast) (2 keys)
@@ -78,7 +78,6 @@ The worker re-reads on every poll; no restart needed.
 - [site](#site) (2 keys)
 - [skills](#skills) (1 key)
 - [social](#social) (3 keys)
-- [system](#system) (2 keys)
 - [tokens](#tokens) (3 keys)
 - [voice](#voice) (22 keys)
 - [voice_agent](#voice-agent) (2 keys)
@@ -401,7 +400,6 @@ The worker re-reads on every poll; no restart needed.
 | `model_role_image_decision` | `ollama/gemma3:27b` |  |  |
 | `newsletter_batch_delay_seconds` | `2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `newsletter_batch_size` | `50` |  | Auto-seeded by services.settings_defaults (#379) |
-| `newsletter_email` | `` |  | Newsletter sender email (legacy) |
 | `nvidia_exporter_url` | `http://poindexter-gpu-exporter:9835/m...` |  | DEPRECATED (PR #1827) — superseded by gpu_metrics_prometheus_url. gpu_scheduler now reads GPU metrics from Prometheus... |
 | `ollama_base_url` | `http://host.docker.internal:11434` |  | Ollama API endpoint |
 | `ollama_client_timeout_seconds` | `1500` |  |  |
@@ -542,8 +540,6 @@ The worker re-reads on every poll; no restart needed.
 | `shared_http_client_max_keepalive` | `20` |  | Auto-seeded by services.settings_defaults (#379) |
 | `shared_http_client_timeout_seconds` | `30.0` |  | Auto-seeded by services.settings_defaults (#379) |
 | `short_video_post_publish_delay_seconds` | `180` |  | Wait this many seconds after a post publishes before kicking off short-video generation (lets podcast finish first) |
-| `site_description` | `AI-powered content platform` |  | Longer site description |
-| `site_tagline` | `Technology & Innovation` |  | Short tagline used in metadata |
 | `smtp_host` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `smtp_port` | `587` |  | Auto-seeded by services.settings_defaults (#379) |
 | `smtp_use_tls` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -853,7 +849,6 @@ The worker re-reads on every poll; no restart needed.
 | `seed_url_fetch_timeout_seconds` | `10` |  | URL-based topic seeding: total HTTP timeout (seconds) for the seed_url fetch on POST /api/tasks. Short by design — if... |
 | `seed_url_max_bytes` | `1048576` |  | URL-based topic seeding: hard cap (bytes) on the decoded response body. Guards against pathological pages that would ... |
 | `seed_url_user_agent` | `Mozilla/5.0 (Windows NT 10.0; Win64; ...` |  | URL-based topic seeding: User-Agent header for the seed_url fetch. Chrome-ish by default because many news/publisher ... |
-| `staging_mode` | `false` |  | When true, posts go to draft with preview token instead of publishing |
 | `stale_task_timeout_minutes` | `180` |  | Minutes before a running task is considered stale |
 | `template_runner_progress_streaming` | `true` |  | When on, TemplateRunner emits per-node progress to Discord (NOT Telegram) via notify_operator(critical=False). Defaul... |
 | `template_runner_use_postgres_checkpointer` | `true` |  | When true, services/template_runner.py compiles each LangGraph with an AsyncPostgresSaver checkpointer (durable state... |
@@ -998,13 +993,6 @@ The worker re-reads on every poll; no restart needed.
 | `social_linkedin_url` | `*(per-operator)*` | per-operator | LinkedIn profile URL |
 | `social_x_handle` | `*(per-operator)*` | per-operator | X/Twitter handle |
 | `social_x_url` | `*(per-operator)*` | per-operator | X/Twitter profile URL |
-
-## system
-
-| Key | Default | Classification | Description |
-| --- | --- | --- | --- |
-| `local_database_url` | `postgresql://poindexter:poindexter-br...` |  | Local brain DB connection string (Docker internal) |
-| `repo_root` | `/app` |  | Root path of the codebase (for running scripts inside container) |
 
 ## tokens
 
