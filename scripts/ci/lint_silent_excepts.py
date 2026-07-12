@@ -99,6 +99,12 @@ _BROAD_EXCEPTION_NAMES = {"Exception", "BaseException"}
 # one of these never pages — both sit below the operator's alerting bar.
 _LOW_VISIBILITY_LOG_METHODS = {"debug", "info"}
 
+# Zero-arg calls to these builtins are the call-form spelling of an empty
+# collection literal — ``return set()`` is the same sentinel swallow as
+# ``return []`` / ``return {}``, just spelled as a constructor call (``set``
+# has no empty-literal syntax at all — ``{}`` is a dict).
+_EMPTY_COLLECTION_CTORS = {"set", "dict", "list", "tuple", "frozenset"}
+
 
 def _is_low_visibility_log_call(stmt: ast.stmt) -> bool:
     """True if stmt is a bare ``<anything>.debug(...)`` / ``.info(...)`` call."""
@@ -153,9 +159,11 @@ def _is_broad_except(handler: ast.ExceptHandler) -> bool:
 
 def _is_sentinel_return(stmt: ast.stmt) -> bool:
     """True if stmt returns a sentinel — bare ``return``, a constant (None /
-    bool / number / str / bytes), or an empty collection literal. Returning a
-    named value or a non-empty literal is a meaningful fallback, not a
-    sentinel, and is NOT flagged."""
+    bool / number / str / bytes), an empty collection literal, or a zero-arg
+    call to an empty-collection constructor (``set()`` / ``dict()`` /
+    ``list()`` / ``tuple()`` / ``frozenset()``). Returning a named value, a
+    non-empty literal, or a call carrying an argument/keyword is a meaningful
+    fallback, not a sentinel, and is NOT flagged."""
     if not isinstance(stmt, ast.Return):
         return False
     val = stmt.value
@@ -167,6 +175,14 @@ def _is_sentinel_return(stmt: ast.stmt) -> bool:
         return len(val.elts) == 0
     if isinstance(val, ast.Dict):
         return len(val.keys) == 0
+    if (
+        isinstance(val, ast.Call)
+        and isinstance(val.func, ast.Name)
+        and val.func.id in _EMPTY_COLLECTION_CTORS
+        and not val.args
+        and not val.keywords
+    ):
+        return True
     return False
 
 

@@ -299,6 +299,93 @@ class TestBroadExceptReturnSentinel:
         assert _scan_src(tmp_path, src) == 0
 
 
+class TestSentinelReturnCallForms:
+    """``_is_sentinel_return`` also treats a zero-arg empty-constructor call —
+    ``return set()`` / ``dict()`` / ``list()`` / ``tuple()`` / ``frozenset()``
+    — as a sentinel: identical in silence to ``return []`` / ``return {}``,
+    just spelled as a call instead of a literal. A call carrying an argument
+    or keyword returns a meaningful (non-empty, or side-effecting) value and
+    is deliberately NOT flagged."""
+
+    def test_broad_except_return_set_call_is_silent(self, tmp_path):
+        src = (
+            "def f():\n"
+            "    try:\n        return g()\n"
+            "    except Exception:\n        return set()\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_broad_except_return_dict_call_is_silent(self, tmp_path):
+        src = (
+            "def f():\n"
+            "    try:\n        return g()\n"
+            "    except Exception:\n        return dict()\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_broad_except_return_list_call_is_silent(self, tmp_path):
+        src = (
+            "def f():\n"
+            "    try:\n        return g()\n"
+            "    except Exception:\n        return list()\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_broad_except_return_tuple_call_is_silent(self, tmp_path):
+        src = (
+            "def f():\n"
+            "    try:\n        return g()\n"
+            "    except Exception:\n        return tuple()\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_broad_except_return_frozenset_call_is_silent(self, tmp_path):
+        src = (
+            "def f():\n"
+            "    try:\n        return g()\n"
+            "    except Exception:\n        return frozenset()\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_broad_except_return_set_with_arg_is_not_silent(self, tmp_path):
+        # A non-empty constructor call returns a meaningful value, not a
+        # sentinel — same rule as the ``return [1, 2]`` literal case.
+        src = (
+            "def f():\n"
+            "    try:\n        return g()\n"
+            "    except Exception:\n        return set(x)\n"
+        )
+        assert _scan_src(tmp_path, src) == 0
+
+    def test_broad_except_return_dict_with_kwarg_is_not_silent(self, tmp_path):
+        src = (
+            "def f():\n"
+            "    try:\n        return g()\n"
+            "    except Exception:\n        return dict(a=1)\n"
+        )
+        assert _scan_src(tmp_path, src) == 0
+
+    def test_broad_except_return_non_ctor_call_is_not_silent(self, tmp_path):
+        # A zero-arg call to something other than the recognized empty-
+        # collection constructors is a real fallback, not a sentinel.
+        src = (
+            "def f():\n"
+            "    try:\n        return g()\n"
+            "    except Exception:\n        return build_default()\n"
+        )
+        assert _scan_src(tmp_path, src) == 0
+
+    def test_narrow_except_return_set_call_is_not_silent(self, tmp_path):
+        # Consistent with the existing narrow-except rule: deliberate control
+        # flow, not a swallow.
+        src = (
+            "def f():\n"
+            "    try:\n        return g()\n"
+            "    except ValueError:\n        return set()\n"
+        )
+        assert _scan_src(tmp_path, src) == 0
+
+
 class TestBaselineRatchet:
     def test_real_tree_matches_baseline(self):
         """The committed baseline must satisfy the live tree (no drift).
