@@ -39,8 +39,33 @@ import httpx
 
 from plugins.topic_source import DiscoveredTopic
 from utils.crawler_ua import build_crawler_ua
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
+
+
+def _emit_context_source_failed(source_name: str, exc: Exception) -> None:
+    """Record a best-effort dev-diary context-source failure as a
+    non-paging finding.
+
+    Each ``_collect_*`` / ``_fetch_*`` helper degrades gracefully — it
+    returns an empty fallback so the daily post still ships. But a
+    swallowed DB/secret error was previously logged at ``debug`` (below
+    the prod log level) and so vanished, contradicting this module's own
+    "non-fatal but LOUD" contract that the GitHub-fetch path already
+    honours at ``warning``. Emitting an ``info`` finding makes "a source
+    came up empty because it *failed*" distinguishable from "a source was
+    legitimately quiet" — visible on the Findings dashboard, deduped per
+    source, never routed/paged (``info`` is below the router's severity
+    floor), and never blocking. Convention: ``utils/findings.py``.
+    """
+    emit_finding(
+        source="dev_diary_source",
+        kind="dev_diary_context_source_failed",
+        title=f"Dev-diary context source '{source_name}' failed",
+        body=f"{source_name} fetch failed: {exc}",
+        dedup_key=f"dev_diary_context_source_failed:{source_name}",
+    )
 
 
 # Default lookback window. Override per call via ``hours_lookback`` kwarg
@@ -443,7 +468,7 @@ async def _collect_brain_decisions(
             hours, confidence_floor,
         )
     except Exception as exc:
-        logger.debug("DevDiarySource: brain_decisions fetch failed: %s", exc)
+        _emit_context_source_failed("brain_decisions", exc)
         return []
     return [
         {
@@ -498,7 +523,7 @@ async def _collect_audit_resolved(pool: Any, hours: int) -> list[dict[str, Any]]
             hours,
         )
     except Exception as exc:
-        logger.debug("DevDiarySource: audit_log fetch failed: %s", exc)
+        _emit_context_source_failed("audit_log", exc)
         return []
     return [
         {
@@ -536,7 +561,7 @@ async def _collect_recent_posts(pool: Any, hours: int) -> list[dict[str, Any]]:
             hours,
         )
     except Exception as exc:
-        logger.debug("DevDiarySource: posts fetch failed: %s", exc)
+        _emit_context_source_failed("posts", exc)
         return []
     return [
         {
@@ -568,7 +593,7 @@ async def _collect_cost_summary(pool: Any, hours: int) -> dict[str, Any]:
             hours,
         )
     except Exception as exc:
-        logger.debug("DevDiarySource: cost_logs fetch failed: %s", exc)
+        _emit_context_source_failed("cost_logs", exc)
         return {"total_usd": 0.0, "total_inferences": 0, "by_model": []}
 
     by_model = [
@@ -614,7 +639,7 @@ async def _collect_operator_notes(
             niche_slug,
         )
     except Exception as exc:
-        logger.debug("DevDiarySource: operator_notes fetch failed: %s", exc)
+        _emit_context_source_failed("operator_notes", exc)
         return []
     return [
         {
@@ -649,7 +674,7 @@ async def _fetch_gh_token(pool: Any) -> str:
             value = await get_secret(conn, "gh_token")
         return value or ""
     except Exception as exc:
-        logger.debug("DevDiarySource: gh_token fetch failed: %s", exc)
+        _emit_context_source_failed("gh_token", exc)
         return ""
 
 
@@ -670,7 +695,7 @@ async def _fetch_gh_repo(pool: Any) -> str:
             )
         return value or ""
     except Exception as exc:
-        logger.debug("DevDiarySource: gh_repo fetch failed: %s", exc)
+        _emit_context_source_failed("gh_repo", exc)
         return ""
 
 

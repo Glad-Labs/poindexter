@@ -34,8 +34,15 @@ from services.topic_sources.dev_diary_source import (
     _NOTABLE_COMMIT_PREFIXES,
     DevDiaryContext,
     DevDiarySource,
+    _collect_audit_resolved,
+    _collect_brain_decisions,
+    _collect_cost_summary,
     _collect_merged_prs,
     _collect_notable_commits,
+    _collect_operator_notes,
+    _collect_recent_posts,
+    _fetch_gh_repo,
+    _fetch_gh_token,
 )
 
 # ---------------------------------------------------------------------------
@@ -1108,3 +1115,124 @@ def test_dict_output_is_json_serializable():
     blob = json.dumps(ctx.to_dict())
     assert "feat: x" in blob
     assert "abc12345" in blob
+
+
+# ---------------------------------------------------------------------------
+# Best-effort context-source failure visibility (gap-site burn-down)
+# ---------------------------------------------------------------------------
+
+
+class _FetchRaisingPool:
+    """A pool whose ``fetch`` always raises — drives the ``_collect_*``
+    helpers into their broad-except fallback branch."""
+
+    async def fetch(self, *args, **kwargs):
+        raise RuntimeError("simulated DB failure")
+
+
+class _AcquireRaisingPool:
+    """A pool whose ``acquire`` raises synchronously — drives the
+    ``_fetch_gh_*`` helpers (which use ``async with pool.acquire()``)
+    into their broad-except fallback branch."""
+
+    def acquire(self):
+        raise RuntimeError("simulated pool.acquire failure")
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestContextSourceFailureVisibility:
+    """A best-effort dev-diary context-source failure must surface as a
+    non-paging ``info`` finding (kind=``dev_diary_context_source_failed``,
+    deduped per source) while the helper still returns its empty fallback
+    so the daily post is never blocked.
+
+    Pre-burn-down these swallowed at ``logger.debug`` (below the prod log
+    level and below GlitchTip's ERROR gate), so a diary source that came
+    up empty because it *failed* was indistinguishable from one that was
+    legitimately quiet. This pins the convention from
+    ``utils/findings.py``: visible, deduped, non-paging, non-blocking.
+    """
+
+    @pytest.mark.parametrize(
+        "source_name, invoke, expected",
+        [
+            ("brain_decisions",
+             lambda p: _collect_brain_decisions(p, 24, 0.7), []),
+            ("audit_log",
+             lambda p: _collect_audit_resolved(p, 24), []),
+            ("posts",
+             lambda p: _collect_recent_posts(p, 24), []),
+            ("cost_logs",
+             lambda p: _collect_cost_summary(p, 24),
+             {"total_usd": 0.0, "total_inferences": 0, "by_model": []}),
+            ("operator_notes",
+             lambda p: _collect_operator_notes(p, "dev_diary"), []),
+        ],
+    )
+    async def test_fetch_helper_failure_emits_finding_and_returns_fallback(
+        self, monkeypatch, source_name, invoke, expected,
+    ):
+        calls: list[dict] = []
+        monkeypatch.setattr(
+            "services.topic_sources.dev_diary_source.emit_finding",
+            lambda **kw: calls.append(kw),
+        )
+
+        result = await invoke(_FetchRaisingPool())
+
+        # Non-blocking: the empty fallback still flows out.
+        assert result == expected
+        # Visible: exactly one finding, correctly typed + deduped per source.
+        assert len(calls) == 1, f"expected one finding, got {calls}"
+        assert calls[0]["source"] == "dev_diary_source"
+        assert calls[0]["kind"] == "dev_diary_context_source_failed"
+        assert calls[0]["dedup_key"] == (
+            f"dev_diary_context_source_failed:{source_name}"
+        )
+        assert source_name in calls[0]["title"]
+        assert "simulated DB failure" in calls[0]["body"]
+        # Non-paging: severity is left at emit_finding's ``info`` default,
+        # which sits below the findings router's severity floor.
+        assert calls[0].get("severity", "info") == "info"
+
+    @pytest.mark.parametrize("source_name, invoke", [
+        ("gh_token", _fetch_gh_token),
+        ("gh_repo", _fetch_gh_repo),
+    ])
+    async def test_secret_fetch_failure_emits_finding_and_returns_fallback(
+        self, monkeypatch, source_name, invoke,
+    ):
+        calls: list[dict] = []
+        monkeypatch.setattr(
+            "services.topic_sources.dev_diary_source.emit_finding",
+            lambda **kw: calls.append(kw),
+        )
+
+        result = await invoke(_AcquireRaisingPool())
+
+        # Non-blocking: empty-string fallback (caller treats as "use default").
+        assert result == ""
+        assert len(calls) == 1, f"expected one finding, got {calls}"
+        assert calls[0]["kind"] == "dev_diary_context_source_failed"
+        assert calls[0]["dedup_key"] == (
+            f"dev_diary_context_source_failed:{source_name}"
+        )
+        assert calls[0].get("severity", "info") == "info"
+
+    async def test_pool_none_short_circuit_emits_no_finding(self, monkeypatch):
+        """The ``pool is None`` guard returns the fallback *before* the
+        try — an early-boot / unit-test no-pool call is legitimately quiet,
+        not a failure, so it must NOT emit a finding."""
+        calls: list[dict] = []
+        monkeypatch.setattr(
+            "services.topic_sources.dev_diary_source.emit_finding",
+            lambda **kw: calls.append(kw),
+        )
+
+        assert await _collect_brain_decisions(None, 24, 0.7) == []
+        assert await _collect_recent_posts(None, 24) == []
+        assert await _fetch_gh_token(None) == ""
+        assert await _fetch_gh_repo(None) == ""
+
+        assert calls == [], "no-pool short-circuit must not emit findings"
