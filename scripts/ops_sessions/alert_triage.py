@@ -48,6 +48,26 @@ def _probe_source(root: Path, alertname: str) -> str:
     return ""
 
 
+def _has_open_probe_issue(alertname: str) -> bool:
+    """True if an OPEN probe-bug issue already tracks this alert.
+
+    Fail-safe: any error checking (gh failure, unparseable output) returns
+    True so a transient hiccup skips filing rather than resuming the old
+    every-run duplicate-issue spam — the cron retries daily regardless.
+    """
+    proc = c.gh(
+        "issue", "list", "--repo", REPO, "--state", "open",
+        "--search", f'"probe bug: {alertname}" in:title',
+        "--json", "number", "--limit", "1",
+    )
+    if proc.returncode != 0:
+        return True
+    try:
+        return bool(json.loads(proc.stdout or "[]"))
+    except json.JSONDecodeError:
+        return True
+
+
 async def _noisy_alerts() -> list[dict]:
     # NOISE_THRESHOLD / WINDOW are module constants, not user input — safe to inline.
     rows = await c.fetch_all(
@@ -71,9 +91,14 @@ def main() -> int:
         c.notify_fail("alert-triage DB error", str(exc)[:400], "alert_triage")
         return 1
     filed = 0
+    skipped = 0
     for a in alerts:
-        probe = _probe_source(root, a["alertname"])
-        prompt = build_classification_prompt(a["alertname"], a.get("dispatch_result") or "", probe)
+        alertname = a["alertname"]
+        if _has_open_probe_issue(alertname):
+            skipped += 1
+            continue
+        probe = _probe_source(root, alertname)
+        prompt = build_classification_prompt(alertname, a.get("dispatch_result") or "", probe)
         try:
             raw = c.ollama_chat(prompt, model=c.MODEL_TRIAGE, system=_SYSTEM, as_json=True)
         except c.OllamaUnavailable as exc:
@@ -82,11 +107,11 @@ def main() -> int:
         verdict = parse_classification(raw)
         if verdict["classification"] == "probe_bug":
             c.gh("issue", "create", "--repo", REPO, "--label", "bug",
-                 "--title", f"probe bug: {a['alertname']} firing {a['n']}x/24h",
+                 "--title", f"probe bug: {alertname} firing {a['n']}x/24h",
                  "--body", f"{verdict['reason']}\n\nSuspect: `{verdict['suspect_file']}`\n\n"
                            f"_Filed by the alert-triage ops session (local-model triage)._")
             filed += 1
-    log.info("alerts=%d filed=%d", len(alerts), filed)
+    log.info("alerts=%d filed=%d skipped_already_tracked=%d", len(alerts), filed, skipped)
     return 0
 
 
