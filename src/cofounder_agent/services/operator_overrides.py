@@ -94,9 +94,18 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     "video_feed_name": "Glad Labs Video",
     # Branded FTC affiliate-disclosure copy. The OSS seed ships a generic
     # "we may earn" version; this restores the Glad Labs wording on the rig.
+    # Amazon Associates' operating agreement requires the "As an Amazon
+    # Associate I earn from qualifying purchases" phrase wherever affiliate
+    # links appear. The banner is one sitewide flag (any /go/ link triggers
+    # it, not per-program), so this is phrased as a general site policy
+    # statement ("may contain... including") rather than a per-post factual
+    # claim — it stays truthful even on a post that only carries a
+    # non-Amazon (e.g. Mercury) link.
     "affiliate_disclosure_text": (
-        "Some links in this article are affiliate links — if you sign up "
-        "through them, Glad Labs may earn a commission at no extra cost to you."
+        "This post may contain affiliate links, including Amazon Associate "
+        "links — as an Amazon Associate, Glad Labs earns from qualifying "
+        "purchases. If you buy something through one of these links, we may "
+        "earn a commission at no extra cost to you."
     ),
     "social_x_handle": "@_gladlabs",
     "social_x_url": "https://x.com/_gladlabs",
