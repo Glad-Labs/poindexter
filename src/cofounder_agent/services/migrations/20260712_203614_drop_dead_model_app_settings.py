@@ -29,10 +29,13 @@ seed source (``baseline.seeds.sql`` / ``brain/seed_app_settings.json``) and
 from ``settings_defaults.DEFAULTS``, so nothing re-seeds them on boot and the
 removal sticks (guarded by ``scripts/ci/settings_seed_drift_lint.py``).
 
-NOTE: ``scripts/ci/migrations_smoke.py`` runs the real runner against the
-live prod DB in CI (bootstrap DSN = prod, no throwaway), so this DELETE
-executes against prod at CI time, not only at worker boot. That is
-intentional and safe for a scoped, idempotent dead-key removal.
+APPLY PATH: like every migration, this reaches prod when the worker next
+runs the runner at boot/deploy (``StartupManager._run_migrations``). CI's
+``migrations-smoke`` job validates it against a throwaway ``pgvector``
+service container (``.github/workflows/migrations-smoke.yml``), NOT prod —
+so a green CI run does not mean prod is already updated. The DELETE is
+idempotent (a no-op where the rows are already absent), so applying via any
+path — worker boot or a re-run — is safe.
 """
 
 from __future__ import annotations
