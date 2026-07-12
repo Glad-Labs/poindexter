@@ -196,7 +196,16 @@ async def _detect_silences(
         )
         err = run_result[2]
     except Exception as exc:  # noqa: BLE001 — fail-soft
-        logger.debug("[qa.audio] silencedetect failed: %s", exc)
+        emit_finding(
+            source="qa.audio",
+            kind="audio_qa_measurement_failed",
+            title="Audio QA silencedetect measurement failed",
+            body=(
+                f"ffmpeg silencedetect failed for {audio_path!r}: {exc}. The "
+                "silence check is recorded as unavailable (non-blocking)."
+            ),
+            dedup_key="audio_qa_measurement_failed:silencedetect",
+        )
         return None
 
     # Parse matched pairs:
@@ -234,7 +243,16 @@ async def _measure_volume(audio_path: str) -> dict[str, float] | None:
         )
         err = run_result[2]
     except Exception as exc:  # noqa: BLE001 — fail-soft
-        logger.debug("[qa.audio] volumedetect failed: %s", exc)
+        emit_finding(
+            source="qa.audio",
+            kind="audio_qa_measurement_failed",
+            title="Audio QA volumedetect measurement failed",
+            body=(
+                f"ffmpeg volumedetect failed for {audio_path!r}: {exc}. The "
+                "volume check is recorded as unavailable (non-blocking)."
+            ),
+            dedup_key="audio_qa_measurement_failed:volumedetect",
+        )
         return None
 
     mean_m = re.search(r"mean_volume:\s*([-\d.]+)\s*dB", err)

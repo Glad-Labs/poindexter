@@ -48,6 +48,7 @@ from typing import Any
 from langgraph.types import interrupt
 
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -378,7 +379,17 @@ async def _gate_decision(pool: Any, task_id: str, gate_name: str) -> str | None:
             return None
         return "approved"
     except Exception as exc:  # noqa: BLE001
-        logger.debug("[atoms.approval_gate] gate-decision check failed: %s", exc)
+        emit_finding(
+            source="atoms.approval_gate",
+            kind="approval_gate_read_failed",
+            title="approval-gate decision check failed — re-pausing for review",
+            body=(
+                f"gate-decision check failed: {exc}. Fail-safe: returns None so "
+                "the task re-pauses for review rather than passing unreviewed "
+                "content forward."
+            ),
+            dedup_key="approval_gate_read_failed:gate_decision",
+        )
         return None
 
 
@@ -429,7 +440,17 @@ async def _pending_regen(pool: Any, task_id: str) -> str | None:
             return "text"
         return None
     except Exception as exc:  # noqa: BLE001 — missing columns / bad id → no regen
-        logger.debug("[atoms.approval_gate] pending-regen check failed: %s", exc)
+        emit_finding(
+            source="atoms.approval_gate",
+            kind="approval_gate_read_failed",
+            title="pending-regen check failed — treating as no regen",
+            body=(
+                f"pending-regen check failed: {exc}. Returns None (normal pause). "
+                "If this persists an operator regen request may be silently "
+                "dropped (e.g. pre-migration columns absent)."
+            ),
+            dedup_key="approval_gate_read_failed:pending_regen",
+        )
         return None
 
 

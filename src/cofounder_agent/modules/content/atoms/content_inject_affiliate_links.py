@@ -12,6 +12,7 @@ import logging
 from typing import Any
 
 from plugins.atom import AtomMeta, FieldSpec
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -67,13 +68,24 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         return {}
 
     from modules.content.affiliate_links import (
-        inject_affiliate_links, list_active, load_link_last_used,
+        inject_affiliate_links,
+        list_active,
+        load_link_last_used,
     )
 
     try:
         links = await list_active(pool)
     except Exception as exc:  # noqa: BLE001 — DB blip → pass content through
-        logger.debug("[content.inject_affiliate_links] list_active failed: %s", exc)
+        emit_finding(
+            source="content.inject_affiliate_links",
+            kind="affiliate_links_read_failed",
+            title="affiliate list_active read failed — no links injected this run",
+            body=(
+                f"list_active failed: {exc}. The atom passes the content through "
+                "unmodified (no affiliate links injected for this post)."
+            ),
+            dedup_key="affiliate_links_read_failed:list_active",
+        )
         return {}
     if not links:
         return {}

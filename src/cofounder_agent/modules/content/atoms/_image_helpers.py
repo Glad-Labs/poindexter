@@ -45,6 +45,8 @@ from typing import Any
 
 import httpx
 
+from utils.findings import emit_finding
+
 logger = logging.getLogger(__name__)
 
 
@@ -299,7 +301,18 @@ async def _record_inline_image_asset(
     try:
         from services.media_asset_recorder import record_media_asset
     except Exception as exc:  # noqa: BLE001 — defensive import guard
-        logger.debug("[STAGE2C] media_asset_recorder unavailable: %s", exc)
+        emit_finding(
+            source="content.image_helpers",
+            kind="media_asset_recorder_unavailable",
+            title="media_asset_recorder import failed — inline image not recorded",
+            body=(
+                "Deferred import of services.media_asset_recorder failed: "
+                f"{exc}. The inline image is not tracked in media_assets "
+                "(cleanup / retention / cost-attribution can't see it); the "
+                "rendered-HTML backfill is the fallback."
+            ),
+            dedup_key="media_asset_recorder_unavailable",
+        )
         return
     pool = getattr(site_config, "_pool", None)
     storage_provider = (
