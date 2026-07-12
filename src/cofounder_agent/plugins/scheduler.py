@@ -160,6 +160,11 @@ class PluginScheduler:
         # Per-job last-failure-notify timestamps for the direct-notify
         # (circular-safe) escalation path's cooldown. See _escalate_job_failure.
         self._last_failure_notify: dict[str, datetime] = {}
+        # Per-job consecutive-failure streak for the circular-safe direct-page
+        # path's "exhaust before paging" tolerance (#831). Reset to 0 on any
+        # successful tick (see _reset_circular_failure_streak); a page fires
+        # only once the streak reaches scheduler_circular_job_page_threshold.
+        self._consecutive_circular_failures: dict[str, int] = {}
 
     @staticmethod
     def _heartbeat_interval_seconds(cfg: dict) -> float:
@@ -263,6 +268,7 @@ class PluginScheduler:
                 )
                 if bool(result.ok):
                     self._jobs_succeeded += 1
+                    self._reset_circular_failure_streak(job.name)
                 else:
                     self._jobs_failed += 1
                     await self._escalate_job_failure(job.name, result.detail or "ok=False")
@@ -480,7 +486,11 @@ class PluginScheduler:
           cooldown needed here).
         - Jobs that ARE the alert-delivery path (``_CIRCULAR_SAFE_JOBS``) can't
           route their own failure through findings, so they escalate via a
-          direct ``notify_operator`` (critical) with a per-job cooldown.
+          direct ``notify_operator`` (critical) with a per-job cooldown — but
+          only after ``scheduler_circular_job_page_threshold`` (default 2)
+          *consecutive* failed ticks, so a transient deploy race self-heals
+          without paging ("exhaust before paging", #831). A successful tick
+          resets the streak (``_reset_circular_failure_streak``).
 
         DB-configurable master switch ``scheduler_alert_on_job_failure``
         (default on). Best-effort: never raises into the scheduler loop.
@@ -495,6 +505,35 @@ class PluginScheduler:
                 return
 
             if job_name in _CIRCULAR_SAFE_JOBS:
+                # "Exhaust before paging" (#831). A single failed tick on an
+                # alerting-infra job is usually a transient deploy race — e.g.
+                # render_alertmanager_config's single-file bind mount briefly
+                # orphaned by an inode-replacing `git reset --hard`, which the
+                # next tick (after the worker restart re-resolves the mount)
+                # clears on its own. Require the failure to persist across
+                # `threshold` consecutive ticks before the direct critical page
+                # fires. The last-good rendered config stays live throughout the
+                # window, so delaying detection by a tick is safe; a genuinely
+                # persistent failure still pages ~one interval later.
+                threshold = 2
+                if self._site_config is not None:
+                    threshold = max(
+                        1,
+                        self._site_config.get_int(
+                            "scheduler_circular_job_page_threshold", 2
+                        ),
+                    )
+                streak = self._consecutive_circular_failures.get(job_name, 0) + 1
+                self._consecutive_circular_failures[job_name] = streak
+                if streak < threshold:
+                    logger.warning(
+                        "scheduler: circular-safe job %r failed (%d/%d "
+                        "consecutive) — holding critical page, awaiting next "
+                        "tick: %s",
+                        job_name, streak, threshold, detail[:200],
+                    )
+                    return
+
                 now = datetime.now(timezone.utc)
                 last = self._last_failure_notify.get(job_name)
                 if last is not None and (
@@ -505,7 +544,8 @@ class PluginScheduler:
                 from services.integrations.operator_notify import notify_operator
                 await notify_operator(
                     f"🔴 Alerting-infra job '{job_name}' FAILED — the alert "
-                    f"delivery path itself is degraded: {detail[:300]}",
+                    f"delivery path itself is degraded ({streak} consecutive "
+                    f"failed ticks): {detail[:300]}",
                     critical=True,
                 )
             else:
@@ -523,6 +563,18 @@ class PluginScheduler:
                 "scheduler: failed to escalate job-failure for %r: %s",
                 job_name, e,
             )
+
+    def _reset_circular_failure_streak(self, job_name: str) -> None:
+        """Clear a circular-safe job's consecutive-failure streak after success.
+
+        The other half of the "exhaust before paging" tolerance (#831): a page
+        fires only after N *consecutive* failed ticks, so any successful tick
+        must reset the streak — otherwise lone transient failures spread across
+        unrelated deploys would eventually accumulate to the threshold and page
+        on a job that is actually healthy. Cheap no-op for non-circular jobs
+        (they never populate the dict).
+        """
+        self._consecutive_circular_failures.pop(job_name, None)
 
     async def _record_last_run(self, name: str, ok: bool) -> None:
         """Stamp ``job_run_state`` with this job's last-run time + status.

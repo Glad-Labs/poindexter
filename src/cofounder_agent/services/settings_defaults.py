@@ -1514,6 +1514,15 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # finding (most jobs) or directly notifies the operator (alert-delivery
     # jobs). Master switch; default on so failures are never silently swallowed.
     'scheduler_alert_on_job_failure': 'true',
+    # Consecutive failed ticks before an alert-delivery ("circular-safe") job
+    # fires its direct critical page ("exhaust before paging", #831). A lone
+    # failure on these jobs is usually a transient deploy race that the next
+    # tick clears (e.g. render_alertmanager_config's single-file bind mount
+    # briefly orphaned by an inode-replacing `git reset`); the last-good config
+    # stays live meanwhile. 2 = ride out one transient tick, still page on a
+    # genuinely persistent failure ~one interval later. 1 restores immediate
+    # paging. Only affects the three jobs in scheduler._CIRCULAR_SAFE_JOBS.
+    'scheduler_circular_job_page_threshold': '2',
 
     # ----- Findings daily digest (job findings_daily_digest, #549) -----
     # Once-a-day Discord rollup of audit_log findings (by kind + delivery
