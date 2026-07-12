@@ -75,22 +75,29 @@ class TestRun:
         assert out.read_text() == "groups: []\n"
         assert "prometheus reloaded" in result.detail
 
-    async def test_no_change_is_noop(self, tmp_path, monkeypatch):
+    async def test_no_change_is_noop_when_reload_healthy(self, tmp_path, monkeypatch):
         out = tmp_path / "dynamic.yml"
         out.write_text("groups: []\n")
 
         async def fake_build(_pool):
             return "groups: []\n"
 
-        # Should never be called
+        # Should never be called: content unchanged AND Prometheus reports its
+        # last reload succeeded, so the rules it serves already match disk.
         async def boom_reload(_url):
-            raise AssertionError("reload should not run when content unchanged")
+            raise AssertionError("reload should not run when content unchanged + healthy")
+
+        async def healthy(_url):
+            return True
 
         monkeypatch.setattr(
             "services.jobs.render_prometheus_rules.build_current", fake_build
         )
         monkeypatch.setattr(
             "services.jobs.render_prometheus_rules._reload_prometheus", boom_reload
+        )
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules._prometheus_reload_healthy", healthy
         )
 
         result = await RenderPrometheusRulesJob().run(
@@ -101,6 +108,145 @@ class TestRun:
         assert result.ok is True
         assert result.changes_made == 0
         assert result.detail == "rules unchanged"
+
+    async def test_no_change_retries_reload_when_last_reload_failed(
+        self, tmp_path, monkeypatch
+    ):
+        """#842: a no-change pass must still retry the reload when Prometheus
+        reports its last /-/reload FAILED — otherwise a transient failure is
+        masked green forever and the served rules stay diverged from disk."""
+        out = tmp_path / "dynamic.yml"
+        out.write_text("groups: []\n")
+        reload_calls: list[str] = []
+
+        async def fake_build(_pool):
+            return "groups: []\n"  # byte-identical → no content change
+
+        async def recovering_reload(url):
+            reload_calls.append(url)
+            return (True, "prometheus reloaded")
+
+        async def last_reload_failed(_url):
+            return False  # serving config is stale
+
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules.build_current", fake_build
+        )
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules._reload_prometheus", recovering_reload
+        )
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules._prometheus_reload_healthy",
+            last_reload_failed,
+        )
+
+        result = await RenderPrometheusRulesJob().run(
+            pool=None,
+            config={"output_path": str(out), "reload_on_change": True},
+        )
+
+        assert reload_calls == ["http://prometheus:9090"]  # reload WAS retried
+        assert result.ok is True  # retry succeeded
+        assert result.changes_made == 0  # no content change this pass
+
+    async def test_no_change_stale_retry_still_failing_reports_not_ok(
+        self, tmp_path, monkeypatch
+    ):
+        """If the retried reload still fails, the pass must report ok=False
+        instead of the old masking 'rules unchanged' green."""
+        out = tmp_path / "dynamic.yml"
+        out.write_text("groups: []\n")
+
+        async def fake_build(_pool):
+            return "groups: []\n"
+
+        async def still_failing_reload(_url):
+            return (False, "reload returned 500 (config NOT live)")
+
+        async def last_reload_failed(_url):
+            return False
+
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules.build_current", fake_build
+        )
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules._reload_prometheus", still_failing_reload
+        )
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules._prometheus_reload_healthy",
+            last_reload_failed,
+        )
+
+        result = await RenderPrometheusRulesJob().run(
+            pool=None,
+            config={"output_path": str(out), "reload_on_change": True},
+        )
+
+        assert result.ok is False
+        assert "500" in result.detail
+
+    async def test_no_change_health_unknown_stays_noop(self, tmp_path, monkeypatch):
+        """When Prometheus is unreachable (health unknown → None) we don't
+        fabricate staleness — a separate 'Prometheus down' alert owns that
+        case, and reloading would fail anyway. Stay a noop, don't reload."""
+        out = tmp_path / "dynamic.yml"
+        out.write_text("groups: []\n")
+
+        async def fake_build(_pool):
+            return "groups: []\n"
+
+        async def boom_reload(_url):
+            raise AssertionError("reload should not run when health is unknown")
+
+        async def unknown(_url):
+            return None
+
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules.build_current", fake_build
+        )
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules._reload_prometheus", boom_reload
+        )
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules._prometheus_reload_healthy", unknown
+        )
+
+        result = await RenderPrometheusRulesJob().run(
+            pool=None,
+            config={"output_path": str(out), "reload_on_change": True},
+        )
+
+        assert result.ok is True
+        assert result.changes_made == 0
+        assert result.detail == "rules unchanged"
+
+    async def test_no_change_skips_health_check_when_reload_disabled(
+        self, tmp_path, monkeypatch
+    ):
+        """reload_on_change=False must not even consult Prometheus health."""
+        out = tmp_path / "dynamic.yml"
+        out.write_text("groups: []\n")
+
+        async def fake_build(_pool):
+            return "groups: []\n"
+
+        async def boom_health(_url):
+            raise AssertionError("health check should not run when reload disabled")
+
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules.build_current", fake_build
+        )
+        monkeypatch.setattr(
+            "services.jobs.render_prometheus_rules._prometheus_reload_healthy", boom_health
+        )
+
+        result = await RenderPrometheusRulesJob().run(
+            pool=None,
+            config={"output_path": str(out), "reload_on_change": False},
+        )
+
+        assert result.ok is True
+        assert result.changes_made == 0
 
     async def test_reload_skipped_when_disabled(self, tmp_path, monkeypatch):
         out = tmp_path / "dynamic.yml"

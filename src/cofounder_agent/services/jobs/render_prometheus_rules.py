@@ -8,6 +8,10 @@ Every 5 minutes (default), this job:
 4. If anything changed and ``reload_on_change`` is true, POSTs
    ``/-/reload`` to Prometheus so new rules take effect without a
    container restart
+5. Even on a *no-change* pass, if Prometheus reports its last ``/-/reload``
+   failed (``prometheus_config_last_reload_successful == 0``), retries the
+   reload — so a transient reload failure self-heals and is reported truthfully
+   instead of being masked green by the next unchanged pass (#842)
 
 The output path and the Prometheus URL are both plugin config — see
 ``brain/seed_app_settings.json`` for the default seed. The rules file
@@ -62,40 +66,112 @@ class RenderPrometheusRulesJob:
         except OSError as e:
             logger.warning("render_prometheus_rules: could not read %s: %s", output_path, e)
 
-        if existing == rendered:
+        changed = existing != rendered
+
+        if changed:
+            try:
+                output_path.parent.mkdir(parents=True, exist_ok=True)
+                output_path.write_text(rendered, encoding="utf-8")
+            except OSError as e:
+                logger.exception("render_prometheus_rules: write failed: %s", e)
+                return JobResult(
+                    ok=False, detail=f"write failed: {e}", changes_made=0
+                )
+
+        # Reloading disabled → we're only responsible for the on-disk file;
+        # don't reload and don't probe Prometheus health.
+        if not reload_on_change:
             return JobResult(
                 ok=True,
-                detail="rules unchanged",
-                changes_made=0,
+                detail=(
+                    "rules updated; written (reload skipped)"
+                    if changed
+                    else "rules unchanged"
+                ),
+                changes_made=1 if changed else 0,
                 metrics={"bytes": len(rendered)},
             )
 
-        try:
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_text(rendered, encoding="utf-8")
-        except OSError as e:
-            logger.exception("render_prometheus_rules: write failed: %s", e)
-            return JobResult(
-                ok=False, detail=f"write failed: {e}", changes_made=0
-            )
+        # Decide whether a /-/reload is needed this pass:
+        #   * content changed → always reload (write it and make it live).
+        #   * no change → only when Prometheus reports its LAST /-/reload
+        #     FAILED, i.e. the rules it is serving are stale versus what we
+        #     already wrote. Without this retry a transient reload failure is
+        #     masked green by the very next no-change pass — the file on disk
+        #     and the rules Prometheus serves stay diverged with last_status=ok
+        #     (#842; observed diverged ~25 min until a human intervened).
+        #   `None` health (Prometheus unreachable) is NOT treated as stale — a
+        #   liveness alert owns "Prometheus down", and reloading it would fail
+        #   anyway; failing safe avoids a reload storm on an unreachable probe.
+        stale_retry = False
+        if not changed:
+            stale_retry = await _prometheus_reload_healthy(prometheus_url) is False
+            if not stale_retry:
+                return JobResult(
+                    ok=True,
+                    detail="rules unchanged",
+                    changes_made=0,
+                    metrics={"bytes": len(rendered)},
+                )
 
-        reload_ok = True
-        reload_detail = "written (reload skipped)"
-        if reload_on_change:
-            reload_ok, reload_detail = await _reload_prometheus(prometheus_url)
+        reload_ok, reload_detail = await _reload_prometheus(prometheus_url)
 
-        # A failed reload means the new rules were written to disk but are NOT
-        # live — Prometheus is still serving the old rules, so updated alert
-        # thresholds silently never deploy. Surface ok=False so the scheduler
-        # escalates (this job is in _CIRCULAR_SAFE_JOBS → direct critical page),
-        # matching the render_alertmanager_config sibling. The write still
-        # happened (changes_made=1) so the next run won't re-write. (audit M3)
+        # A failed reload means the rules on disk are NOT live — Prometheus is
+        # still serving the old rules, so updated alert thresholds silently
+        # never deploy. Surface ok=False so the scheduler escalates (this job is
+        # in _CIRCULAR_SAFE_JOBS → direct critical page after the
+        # consecutive-failure threshold, #831), matching render_alertmanager_config.
+        # On a content-change pass the write happened (changes_made=1) so the
+        # next run won't re-write; a stale-retry pass wrote nothing (0). (audit M3)
         return JobResult(
             ok=reload_ok,
-            detail=f"rules updated; {reload_detail}",
-            changes_made=1,
+            detail=(
+                f"rules updated; {reload_detail}"
+                if changed
+                else f"serving config stale — reload retried; {reload_detail}"
+            ),
+            changes_made=1 if changed else 0,
             metrics={"bytes": len(rendered)},
         )
+
+
+async def _prometheus_reload_healthy(base_url: str) -> bool | None:
+    """Ask Prometheus whether its last ``/-/reload`` succeeded.
+
+    Truth-based staleness probe for #842 — no persisted flag, survives worker
+    restarts. Reads the ``prometheus_config_last_reload_successful`` gauge via
+    the instant-query API.
+
+    Returns:
+      * ``True``  — last reload succeeded; the rules Prometheus serves are
+        current with what we wrote, so a no-change pass can stay a noop.
+      * ``False`` — last reload FAILED; the served rules are stale versus disk
+        and the caller should retry the reload.
+      * ``None``  — the metric can't be read (Prometheus unreachable / query
+        error). Deliberately NOT treated as stale: a Prometheus-down condition
+        is owned by a separate liveness alert, and reloading a down Prometheus
+        would fail regardless. Failing safe avoids a reload storm when only the
+        query endpoint is transiently unreachable.
+    """
+    url = f"{base_url}/api/v1/query"
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as http:
+            resp = await http.get(
+                url,
+                params={"query": "prometheus_config_last_reload_successful"},
+            )
+        if resp.status_code != 200:
+            return None
+        result = resp.json().get("data", {}).get("result", [])
+        if not result:
+            return None
+        # instant-vector sample shape: {"value": [<unix_ts>, "<value>"]}
+        return float(result[0]["value"][1]) == 1.0
+    except (httpx.HTTPError, ValueError, KeyError, IndexError, TypeError) as e:
+        logger.warning(
+            "render_prometheus_rules: reload-health query failed: %s", e
+        )
+        return None
 
 
 async def _reload_prometheus(base_url: str) -> tuple[bool, str]:
