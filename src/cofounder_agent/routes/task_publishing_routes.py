@@ -1458,6 +1458,6 @@ async def rebuild_task_images(
         "target_task_id": full_id,
         "detail": (
             f"image rebuild queued as task {rebuild_task_id}; "
-            f"watch with: poindexter tasks show {rebuild_task_id}"
+            f"watch with: poindexter tasks get {rebuild_task_id}"
         ),
     }

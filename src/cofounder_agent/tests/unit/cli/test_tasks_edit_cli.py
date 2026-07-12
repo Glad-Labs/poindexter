@@ -63,7 +63,7 @@ def test_rebuild_images_posts_payload(runner):
     client = _fake_client(
         {"ok": True, "task_id": "rebuild-task-123", "target_task_id": "abc123",
          "detail": "image rebuild queued as task rebuild-task-123; "
-                   "watch with: poindexter tasks show rebuild-task-123"},
+                   "watch with: poindexter tasks get rebuild-task-123"},
     )
     with patch("poindexter.cli.tasks.WorkerClient", return_value=client):
         result = runner.invoke(tasks_group, ["rebuild-images", "abc123", "--allow-stock"])
@@ -72,6 +72,9 @@ def test_rebuild_images_posts_payload(runner):
     assert args[0] == "/api/tasks/abc123/rebuild-images"
     assert kwargs["json"] == {"allow_stock": True}
     assert "rebuild-task-123" in result.output
+    # The CLI's own extra hint line must also name a real subcommand.
+    assert "poindexter tasks show" not in result.output
+    assert "poindexter tasks get rebuild-task-123" in result.output
 
 
 def test_rebuild_images_not_queued_exits_nonzero(runner):

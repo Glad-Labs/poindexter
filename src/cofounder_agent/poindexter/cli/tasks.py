@@ -747,7 +747,7 @@ def _emit_rebuild_result(data: dict) -> None:
         click.secho(f"✅ {data.get('detail', 'image rebuild queued')}", fg="green")
         if data.get("task_id"):
             click.secho(
-                f"   watch: poindexter tasks show {data['task_id']}", fg="cyan",
+                f"   watch: poindexter tasks get {data['task_id']}", fg="cyan",
             )
     else:
         click.secho(f"✋ {data.get('detail', 'rebuild not queued')}", fg="red")

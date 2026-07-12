@@ -9,7 +9,7 @@ Faithful port of ``ImageRebuildService._gate`` semantics:
   from the rebuild task's metadata by the entry atom).
 
 On violation it RAISES, which fails the rebuild task with the exact
-operator-facing detail (`poindexter tasks show <id>` surfaces it) and — the
+operator-facing detail (`poindexter tasks get <id>` surfaces it) and — the
 load-bearing property — leaves the target draft byte-for-byte unchanged,
 because ``content.persist_draft_images`` (the only writer) never runs.
 """

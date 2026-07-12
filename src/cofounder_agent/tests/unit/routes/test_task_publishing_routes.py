@@ -264,6 +264,9 @@ class TestDraftEditingRoutes:
         assert body["task_id"] == "rebuild-task-123"
         assert body["target_task_id"] == VALID_TASK_ID
         assert "rebuild-task-123" in body["detail"]
+        # The hint must name a real subcommand — `tasks get`, not `tasks show`
+        # (which doesn't exist).
+        assert "poindexter tasks get rebuild-task-123" in body["detail"]
         tid, kw = calls["enqueue_image_rebuild"]
         assert tid == VALID_TASK_ID and kw == {"allow_stock": False}
 
