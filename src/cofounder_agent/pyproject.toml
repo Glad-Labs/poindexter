@@ -420,6 +420,7 @@ detect_anomalies = "cofounder_agent.services.jobs.detect_anomalies:DetectAnomali
 check_memory_staleness = "cofounder_agent.services.jobs.check_memory_staleness:CheckMemoryStalenessJob"
 morning_brief = "cofounder_agent.services.jobs.morning_brief:MorningBriefJob"
 run_taps = "cofounder_agent.services.jobs.run_taps:RunTapsJob"
+ingest_corsair_csv = "cofounder_agent.services.jobs.ingest_corsair_csv:IngestCorsairCsvJob"
 run_retention = "cofounder_agent.services.jobs.run_retention:RunRetentionJob"
 
 [project.entry-points."poindexter.topic_sources"]

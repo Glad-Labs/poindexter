@@ -122,5 +122,30 @@ curl http://<plug-ip>/rpc/Switch.GetStatus?id=0
 ## Staleness watchdog
 
 `brain/data_freshness_probe.py` watches the feeds behind these panels and emits
-a `data_feed_stale` finding (→ Discord) when a producer goes dark, so a stale
-wall-power number can never silently masquerade as a live one.
+an edge-triggered `data_feed_stale` finding (→ Discord) when a producer goes
+dark, so a stale wall-power number can never silently masquerade as a live one.
+
+### iCUE CSV feed — fast detection, best-effort recovery
+
+The `corsair_csv` feed is the one that goes dark on a reboot: iCUE's CSV
+data-logging is a manual toggle that does **not** auto-resume after an iCUE
+restart / PC reboot, and there is no clean programmatic re-enable — the iCUE SDK
+is lighting-only (no sensor telemetry), and the only direct-sensor path contends
+with iCUE the way HWiNFO did. So the watchdog is tuned to surface a drop fast:
+
+- **Ingest cadence.** `IngestCorsairCsvJob` (`services/jobs/ingest_corsair_csv.py`)
+  re-ingests `corsair_csv` every **5 min** via `tap_runner.run_all(only_names=…)`.
+  Without it the feed rode only the hourly `RunTapsJob`, so `sensor_samples` sat
+  up to ~60 min stale even while iCUE logging was healthy. Other taps stay on the
+  hourly walk; the corsair handler is idempotent, so the two paths don't collide.
+- **Threshold.** `data_freshness_feeds` sets the `corsair_csv` threshold to
+  **30 min** (was 120 min under hourly ingest). With the feed now ~5-10 min
+  fresh, 30 min pages on a genuinely dead sampler while still clearing a missed
+  tick or a short worker restart — net detection latency ~30-35 min.
+
+**Detection ≠ recovery.** This is a Discord heads-up (routine), not a Telegram
+page: the alerting-critical wall-power number comes from the Shelly plug, which
+is reboot-proof and never needs this feed. A drop that happens overnight still
+stays dark until the operator re-enables iCUE logging by hand — only auto-recovery
+would close that gap, and iCUE offers no reliable hook for it. Tune or disable the
+feed via `app_settings.data_freshness_feeds`.

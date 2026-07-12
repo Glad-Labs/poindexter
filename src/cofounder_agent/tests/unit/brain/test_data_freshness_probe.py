@@ -175,9 +175,11 @@ def test_corsair_feed_rides_the_default_list():
     assert corsair["column"] == "sampled_at"
     assert corsair["filter_column"] == "source"
     assert corsair["filter_value"] == "corsair_csv"
-    # Hourly ingest with up to ~60-90m batch lag — 120m pages on a dead
-    # sampler, not on import lag.
-    assert corsair["threshold_minutes"] == 120
+    # Fast-cadence ingest (IngestCorsairCsvJob, every 5m) keeps this feed
+    # ~5-10m fresh, so 30m pages on a genuinely dead sampler while still
+    # clearing a missed tick / short worker blip. Was 120m back when corsair
+    # only rode the hourly RunTapsJob.
+    assert corsair["threshold_minutes"] == 30
 
 
 def test_seeded_default_matches_in_code_fallback():

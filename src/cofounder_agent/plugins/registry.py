@@ -799,6 +799,15 @@ def get_core_samples() -> dict[str, list[Any]]:
         # hackernews tap's "every 1 hour" floor); RunRetentionJob fires
         # every 6 hours (retention is a sweep-everything operation).
         ("jobs", "services.jobs.run_taps", "RunTapsJob"),
+        # The local iCUE sensor feed (corsair_csv) needs a faster cadence than
+        # the hourly RunTapsJob: iCUE rewrites the CSV every 30s, so hourly
+        # ingest leaves sensor_samples up to ~60m stale even when healthy —
+        # which forced the data_freshness_probe corsair threshold to 120m.
+        # This scoped job re-ingests corsair_csv every 5m (run_all(only_names))
+        # so the feed stays ~5-10m fresh and the threshold can drop to 30m.
+        # Other taps stay on the hourly walk; the corsair handler is idempotent
+        # so the two paths don't collide.
+        ("jobs", "services.jobs.ingest_corsair_csv", "IngestCorsairCsvJob"),
         ("jobs", "services.jobs.run_retention", "RunRetentionJob"),
         # Memory + embedding hygiene — registered 2026-05-09 after the
         # deletion-candidates audit found these had pyproject.toml

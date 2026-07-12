@@ -63,8 +63,11 @@ _STATE_ENTITY_PREFIX = "data_freshness_watchdog"
 # from the always-on host gpu-scraper daemon; atom_runs goes quiet only
 # when the content pipeline is dark for half a day; page_views can be
 # legitimately quiet, so only a 2-day silence is worth a look; the
-# corsair_csv iCUE tap ingests hourly with up to ~60-90 min batch lag,
-# so 120m pages on a dead sampler, not on import lag.
+# corsair_csv iCUE feed is re-ingested every 5 min by IngestCorsairCsvJob
+# (a local CSV that iCUE rewrites every 30s), so it stays ~5-10m fresh and
+# 30m pages on a genuinely dead sampler while still clearing a missed tick
+# or short worker blip. (Was 120m when corsair only rode the hourly
+# RunTapsJob — an hourly ingest legitimately looks ~60m stale.)
 DEFAULT_FEEDS: list[dict[str, Any]] = [
     {"name": "cost_logs", "table": "cost_logs", "column": "created_at",
      "threshold_minutes": 180},
@@ -75,7 +78,7 @@ DEFAULT_FEEDS: list[dict[str, Any]] = [
     {"name": "page_views", "table": "page_views", "column": "created_at",
      "threshold_minutes": 2880},
     {"name": "corsair_csv", "table": "sensor_samples", "column": "sampled_at",
-     "threshold_minutes": 120,
+     "threshold_minutes": 30,
      "filter_column": "source", "filter_value": "corsair_csv"},
 ]
 

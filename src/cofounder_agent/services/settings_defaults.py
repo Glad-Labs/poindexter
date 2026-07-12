@@ -1779,8 +1779,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # validated as SQL identifiers; a feed with zero rows is not assessed.
     # The corsair_csv sensor feed (iCUE PSU wall-power, #868) is a filtered
     # feed here — its dedicated corsair_feed_probe was retired 2026-07-02.
-    # 120m threshold: the tap ingests hourly with up to ~60-90 min batch
-    # lag, so anything under ~2h is import lag, not a dead sampler.
+    # 30m threshold: IngestCorsairCsvJob re-ingests this local feed every 5m
+    # (iCUE rewrites the CSV every 30s), so it stays ~5-10m fresh and 30m
+    # pages on a dead sampler while clearing a missed tick / short worker
+    # blip. Was 120m when corsair only rode the hourly RunTapsJob.
     'data_freshness_probe_enabled': 'true',
     'data_freshness_feeds': (
         '[{"name": "cost_logs", "table": "cost_logs", "column": "created_at",'
@@ -1792,7 +1794,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
         ' {"name": "page_views", "table": "page_views", "column": "created_at",'
         ' "threshold_minutes": 2880},'
         ' {"name": "corsair_csv", "table": "sensor_samples",'
-        ' "column": "sampled_at", "threshold_minutes": 120,'
+        ' "column": "sampled_at", "threshold_minutes": 30,'
         ' "filter_column": "source", "filter_value": "corsair_csv"}]'
     ),
 
