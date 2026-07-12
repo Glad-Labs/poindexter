@@ -52,6 +52,9 @@ def test_thirteen_canonical_categories():
         ("vision_alt_model", "media"),
         ("site_name", "identity"),
         ("company_name", "identity"),
+        ("affiliate_injection_enabled", "cost"),  # affiliate = monetization
+        ("affiliate_redirect_base_url", "cost"),
+        ("affiliate_clicks_last_sync", "cost"),  # runtime watermark, not in DEFAULTS
     ],
 )
 def test_anchor_mappings(key, expected):
