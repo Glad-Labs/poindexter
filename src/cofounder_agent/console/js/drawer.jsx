@@ -426,6 +426,101 @@ function Drawer({ entity, onClose, actions }) {
               </button>
             </>
           );
+        } else if (e.kind === 'social') {
+          const draft = d.draft || {};
+          const pcfg = draft.platform_config || {};
+          const pcfgRows = Object.entries(pcfg).map(([k, v]) => [
+            k,
+            typeof v === 'object' ? JSON.stringify(v) : String(v),
+          ]);
+          eyebrow = `SOCIAL · ${String(
+            draft.platform || 'draft'
+          ).toUpperCase()} · AWAITING APPROVAL`;
+          title = e.title || `${draft.platform || 'Social'} draft`;
+          body = (
+            <>
+              <div className="section-label">Post preview</div>
+              <div
+                className="preview"
+                style={{ borderLeftColor: 'var(--gl-amber)' }}
+              >
+                {draft.content ? (
+                  <p
+                    style={{
+                      margin: 0,
+                      whiteSpace: 'pre-wrap',
+                      lineHeight: 1.5,
+                    }}
+                  >
+                    {draft.content}
+                  </p>
+                ) : (
+                  <p className="c-dim" style={{ margin: 0 }}>
+                    No content on this draft.
+                  </p>
+                )}
+              </div>
+              {pcfgRows.length ? (
+                <>
+                  <div className="section-label">Platform options</div>
+                  <DL rows={pcfgRows} />
+                </>
+              ) : null}
+              <div className="section-label">Routing</div>
+              <DL
+                rows={[
+                  ['Platform', draft.platform || '—'],
+                  ['Status', draft.status || 'pending'],
+                  [
+                    'Linked post',
+                    draft.post_id ? String(draft.post_id).slice(0, 8) : '—',
+                  ],
+                  ['Retries', String(draft.retry_count ?? 0)],
+                  ['Queued', e.age || '—'],
+                ]}
+              />
+              {draft.error ? (
+                <>
+                  <div className="section-label">Last error</div>
+                  <div
+                    className="preview"
+                    style={{ borderLeftColor: 'var(--gl-red)' }}
+                  >
+                    <p
+                      className="mono c-dim"
+                      style={{ margin: 0, fontSize: 11 }}
+                    >
+                      {draft.error}
+                    </p>
+                  </div>
+                </>
+              ) : null}
+            </>
+          );
+          // Approve → queue the draft to Postiz; reject → mark it rejected. Both
+          // handlers accept the inbox item (they unwrap detail.draft), close the
+          // drawer, and roll the optimistic removal back on failure.
+          foot = (
+            <>
+              <button
+                className="mbtn mbtn--primary"
+                style={{ flex: 1, justifyContent: 'center', padding: '10px' }}
+                title="Approve — queues this draft for posting via Postiz"
+                onClick={() => actions.socialApproveDraft(e)}
+              >
+                <Icon name="check" size={13} />
+                Post · queue for Postiz
+              </button>
+              <button
+                className="mbtn mbtn--danger mbtn--ghost"
+                style={{ padding: '10px 14px' }}
+                onClick={() => actions.socialRejectDraft(e)}
+              >
+                <Icon name="x" size={13} />
+                Reject
+              </button>
+            </>
+          );
         }
         break;
       }
