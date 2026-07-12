@@ -138,6 +138,19 @@ timed out after 5s`. Watch the `critic_fallback` audit event for
   `approved=False, score=max(0, 100 - 20*dead_count)`. Hard-blocks publish.
 - **Vision model OOM / timeout** — gates return `None`, no veto
   applied. Increase `qa_gate_timeout_seconds` or disable the gate.
+- **Vision gate "passed open" (`vision_scorer_unavailable` finding)** —
+  the `qa.vision` atom failed open (didn't block) because neither the
+  image-relevance nor the rendered-preview leg produced a verdict. This
+  does **not** by itself mean the vision model is down — it captions the
+  same images seconds earlier on the `caption_images` path. Every
+  no-verdict path now logs a specific `[VISION_QA] …` **WARNING** (shipped
+  to Loki) naming the real cause: an unreachable model, an unparseable
+  response, unreadable images, or a missing dispatch handle. The pool
+  handle used for cost-logging falls back to `site_config._pool` (the same
+  handle `caption_images` uses) when the threaded `database_service`
+  carries no live pool, so a handle gap no longer self-disables the gate
+  (vision_scorer_unavailable RCA 2026-07-12). Triage: read the
+  `[VISION_QA]` WARNING for the run, not just the page.
 - **Web fact-check rate-limited** — DuckDuckGo errors are caught and
   logged as `[WEB_FACTCHECK] Failed (non-fatal)`. Reviewer skipped.
 

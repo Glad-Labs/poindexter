@@ -279,3 +279,63 @@ class TestQaVisionAtom:
             r["reviewer"] == "image_relevance" for r in out["qa_rail_reviews"]
         )
         assert not findings
+
+    async def test_pool_falls_back_to_site_config_pool(self, monkeypatch):
+        """Robustness (vision_scorer_unavailable RCA, 2026-07-12): on some runs
+        the threaded ``database_service`` carries no live ``.pool`` (its value is
+        None even though the KEY is present), which silently short-circuited
+        ``_vision_complete``'s pool guard and mis-paged as 'vision model
+        unavailable'. ``caption_images`` never hit this because it sources its
+        pool from ``site_config._pool``. qa.vision now falls back to the SAME
+        handle, so the vision dispatch runs (and stays cost-logged) instead of
+        self-disabling the gate."""
+        captured = {}
+        real_init = MultiModelQA.__init__
+
+        def capture_init(self, *a, **kw):
+            captured["pool"] = kw.get("pool")
+            real_init(self, *a, **kw)
+
+        monkeypatch.setattr(MultiModelQA, "__init__", capture_init)
+
+        async def img(self, title, topic, content, featured_image_url=None):
+            return ReviewerResult("image_relevance", True, 88.0, "ok", "vision_gate")
+        monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
+
+        sentinel_pool = object()
+        cfg = _Cfg()
+        cfg._pool = sentinel_pool
+
+        class _DBNoPool:
+            pool = None  # the failing-run shape: handle present, pool None
+
+        await qa_vision.run(_state(site_config=cfg, database_service=_DBNoPool()))
+        assert captured["pool"] is sentinel_pool
+
+    async def test_pass_open_page_is_honest_about_cause(self, monkeypatch):
+        """Honest alert (RCA 2026-07-12): the pass-open page must NOT assert the
+        vision model is down as the sole cause — the model is frequently healthy
+        and the real reason (missing dispatch handle / unparseable response) is
+        in the worker logs. The page enumerates the possible causes and points
+        at the shippable [VISION_QA] breadcrumb rather than sending the operator
+        to check a model that is fine."""
+        async def img(self, title, topic, content, featured_image_url=None):
+            return None  # no verdict, for whatever reason
+        monkeypatch.setattr(MultiModelQA, "_check_image_relevance", img)
+
+        notified = {}
+
+        async def fake_notify(message, *, critical=False, site_config=None):
+            notified["message"] = message
+        monkeypatch.setattr(
+            "services.integrations.operator_notify.notify_operator", fake_notify,
+        )
+        monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: None)
+
+        body = 'Body.\n<img src="https://r2.dev/x.webp" alt="x" width="1024" />\nmore'
+        await qa_vision.run(_state(content=body, task_id="def456"))
+        msg = notified["message"].lower()
+        # points at the shippable worker-log breadcrumb
+        assert "[vision_qa]" in msg
+        # enumerates causes rather than asserting the model is down
+        assert "unreachable" in msg and "dispatch" in msg

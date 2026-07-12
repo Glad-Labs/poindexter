@@ -2180,8 +2180,18 @@ class MultiModelQA:
         vision-QA infra miss must never block a pipeline run).
         """
         if self.pool is None or self._platform is None:
-            logger.debug(
-                "[VISION_QA] no pool/platform handle — cannot dispatch vision call",
+            # Shippable (WARNING, not DEBUG): if we reached a vision dispatch the
+            # caller already decided to score real images, so a missing dispatch
+            # handle is operator-actionable — and the old DEBUG line never
+            # reached Loki, which made this exact failure invisible and let the
+            # atom mis-page it as "vision model unavailable"
+            # (vision_scorer_unavailable RCA 2026-07-12). Name the absent handle
+            # so the page's "check [VISION_QA] logs" lands on a specific cause.
+            missing = "pool" if self.pool is None else "platform"
+            logger.warning(
+                "[VISION_QA] cannot dispatch vision call for phase=%s: %s handle "
+                "is None (dispatch seam not threaded to this run)",
+                phase, missing,
             )
             return None
 
@@ -2338,10 +2348,14 @@ class MultiModelQA:
                 ) as client:
                     await _download_loop(client)
         except Exception as e:
-            logger.debug("[VISION_QA] httpx client error: %s", e)
+            logger.warning("[VISION_QA] image download client error: %s", e)
             return None
 
         if not encoded_images:
+            logger.warning(
+                "[VISION_QA] no images could be fetched/decoded from %d url(s) "
+                "— no image-relevance verdict", len(urls),
+            )
             return None
 
         # Build a context snippet from the content (first ~1500 chars + title).
@@ -2366,6 +2380,11 @@ class MultiModelQA:
             mime="image/jpeg",
         )
         if not text:
+            logger.warning(
+                "[VISION_QA] vision model returned empty text for "
+                "image-relevance — no verdict (see the dispatch warning above "
+                "for the underlying cause)",
+            )
             return None
 
         # Parse JSON response
@@ -2390,6 +2409,10 @@ class MultiModelQA:
         reasons_list = parsed.get("reasons") or []
         overall = parsed.get("overall")
         if not isinstance(scores_list, list) or not scores_list:
+            logger.warning(
+                "[VISION_QA] vision response parsed but had no usable 'scores' "
+                "array (keys=%s) — no verdict", sorted(parsed.keys()),
+            )
             return None
         try:
             score_values = [float(s) for s in scores_list if isinstance(s, (int, float))]
@@ -2397,6 +2420,10 @@ class MultiModelQA:
             logger.warning("[VISION_QA] score coercion failed; skipping vision verdict: %s", exc)
             return None
         if not score_values:
+            logger.warning(
+                "[VISION_QA] vision 'scores' array held no numeric values "
+                "(%r) — no verdict", scores_list,
+            )
             return None
         avg_score = sum(score_values) / len(score_values)
         if overall is None or not isinstance(overall, (int, float)):

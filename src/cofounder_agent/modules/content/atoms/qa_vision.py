@@ -153,13 +153,22 @@ async def _emit_deliberate_pass(
     page_msg = ""
     if image_urls:
         reason = (
-            f"could not assess {len(image_urls)} inline image(s) — vision "
-            "model/infra unavailable; passing open"
+            f"could not assess {len(image_urls)} inline image(s) — no vision "
+            "verdict returned; passing open"
         )
+        # Honest page: do NOT assert the model is down as the sole cause — it is
+        # frequently healthy (it captions the same images seconds earlier) and
+        # the real reason was previously logged only at DEBUG, which the worker
+        # doesn't ship to Loki, so the operator was sent to check a model that
+        # was fine. Enumerate the causes and point at the shippable [VISION_QA]
+        # breadcrumb (now WARNING) that names the specific one
+        # (vision_scorer_unavailable RCA 2026-07-12).
         page_msg = (
-            f"qa.vision (task {task_id}): {reason}. The image-relevance check "
-            "returned no result — confirm the vision model (qa_vision_model) is "
-            "loaded and reachable on the worker."
+            f"qa.vision (task {task_id}): {reason}. The image-relevance vision "
+            "call returned no usable result. The cause is one of: the vision "
+            "model (qa_vision_model) is unreachable, a transient worker "
+            "dispatch/handle gap, or an unparseable model response — check the "
+            "worker logs for [VISION_QA] to see the specific reason."
         )
         # Typed finding so the pass-open is VISIBLE on the Findings surfaces
         # (dashboard panel + per-kind delivery policy) instead of living only
@@ -229,7 +238,17 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     title = state.get("seo_title") or state.get("title") or state.get("topic") or ""
     topic = state.get("topic") or ""
-    pool = getattr(state.get("database_service"), "pool", None)
+    # Pool feeds cost-logging inside _vision_complete's dispatch. On some runs
+    # the threaded database_service carries no live .pool (its VALUE is None even
+    # though the KEY is present) — which short-circuited _vision_complete's pool
+    # guard and mis-paged as "vision model unavailable" while the model was
+    # actually healthy. caption_images never hit this because it sources its pool
+    # from site_config._pool. Fall back to that SAME handle (present on those
+    # runs) so the vision gate stays live + cost-logged instead of self-disabling
+    # (vision_scorer_unavailable RCA 2026-07-12).
+    pool = getattr(state.get("database_service"), "pool", None) or getattr(
+        site_config, "_pool", None
+    )
     settings_service = state.get("settings_service")
 
     from modules.content.multi_model_qa import MultiModelQA
