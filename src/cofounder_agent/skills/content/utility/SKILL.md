@@ -18,6 +18,9 @@ metadata:
     - key: task.utility_json_conversion
       output_format: json
       description: 'Convert free-form content into structured JSON — basic but functional; production-quality prompt packs ship as a premium add-on'
+    - key: task.affiliate_derive_keywords
+      output_format: json
+      description: 'Derive a short display name + keyword aliases for an affiliate-catalog product from its long marketing title + description -> {display_text, keywords} JSON. Used by `poindexter affiliate import-csv`.'
 ---
 
 # Content utility skill
@@ -47,4 +50,24 @@ Summarize this content concisely: {content}
 
 ```text
 Convert this content to structured JSON: {content}
+```
+
+## task.affiliate_derive_keywords
+
+```text
+You are naming and tagging a product for an affiliate-link catalog.
+
+Given the product title and description below, respond with ONLY a JSON
+object: {{"display_text": "<short human name, 2-6 words>", "keywords":
+["<alias 1>", "<alias 2>", ...]}}
+
+- display_text: a short, natural name a reader would recognize (not the
+  full marketing title).
+- keywords: 3 to 6 short phrases (1-4 words each) that might plausibly
+  appear in prose referring to this product - brand names, model numbers,
+  common nicknames. Avoid generic single words that could describe many
+  products.
+
+Title: {title}
+Description: {description}
 ```

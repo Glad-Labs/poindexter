@@ -23,7 +23,12 @@ poindexter affiliate add \
   --code mercury \
   --keyword Mercury \
   --url "https://mercury.com/r/<your-referral>" \
-  --program "Mercury Referral"
+  --program "Mercury Referral" \
+  --category service \
+  --description "Business banking we use daily."
+
+# Pass --keyword multiple times for aliases (e.g. a product with several names):
+#   --keyword "RTX 5090" --keyword "ASUS ROG Astral" --keyword "5090 GPU"
 
 # 2. Review what's live:
 poindexter affiliate list
@@ -38,17 +43,22 @@ starts accruing clicks.
 
 ### CLI reference
 
-| Command                                                                        | Effect                                                                                |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `poindexter affiliate add --code --keyword --url [--display-text] [--program]` | Add or update a link (idempotent on `code`).                                          |
-| `poindexter affiliate list`                                                    | List active links (`code  keyword → url`).                                            |
-| `poindexter affiliate enable <code>`                                           | Re-activate a disabled link.                                                          |
-| `poindexter affiliate disable <code>`                                          | Deactivate without deleting (stops new injections + drops it from the published map). |
-| `poindexter affiliate rm <code>`                                               | Delete a link.                                                                        |
+| Command                                                                                                                  | Effect                                                                                                       |
+| ------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------ |
+| `poindexter affiliate add --code --keyword ... --url --category --description [--display-text] [--program] [--platform]` | Add or update a link (idempotent on `code`). `--keyword` is repeatable — pass it multiple times for aliases. |
+| `poindexter affiliate list [--all]`                                                                                      | List links (active only by default; `--all` includes inactive).                                              |
+| `poindexter affiliate enable <code> \| --all`                                                                            | Re-activate one link, or every inactive link at once.                                                        |
+| `poindexter affiliate disable <code>`                                                                                    | Deactivate without deleting (stops new injections + drops it from the published map).                        |
+| `poindexter affiliate rm <code>`                                                                                         | Delete a link.                                                                                               |
+| `poindexter affiliate import-csv <path> [--force]`                                                                       | Bulk-import from a spreadsheet export (see "Bulk import" below).                                             |
 
-`--keyword` is the exact word matched in body prose (case-sensitive on the first
-letter as written). `--code` is the stable slug used in `/go/<code>` and as the
-click-tracking key — keep it short and URL-safe.
+`--keyword` is a phrase matched in body prose (case-sensitive on the first
+letter as written) — pass it multiple times on one `add` call to give a
+link several aliases; different links can share a keyword (see "How
+injection works" below for how that's resolved). `--code` is the stable
+slug used in `/go/<code>` and as the click-tracking key — keep it short and
+URL-safe. `--platform` is a free-text label (e.g. `Amazon`, `direct`) for
+your own tracking, not used by the matcher.
 
 ## How injection works
 
@@ -61,6 +71,16 @@ the same review the prose gets. For each active link it:
   `[display_text](/go/<code>)` (`display_text` defaults to the keyword);
 - skips fenced/inline code, headings, and text already inside a link;
 - caps the whole post at `affiliate_max_links_per_post` links (default 3).
+
+When a link's keyword is shared with another active link (e.g. "Corsair" on
+several different Corsair products), the matcher resolves which one wins a
+given mention in two steps, both free and deterministic: first, does one of
+the tied candidates have another of _its own_ keywords also present
+elsewhere in the same post (e.g. the post also says "HX1500i" — that
+candidate wins)? If that doesn't disambiguate, it rotates to whichever
+candidate was least-recently linked into a published post, so exposure
+spreads across your catalog instead of one product always winning a generic
+mention.
 
 It is deterministic (no LLM) and **fails open**: any config/DB read error leaves
 the content untouched rather than breaking the pipeline. When
@@ -130,12 +150,49 @@ Pick one when you deploy the Worker:
 
 ## Data model
 
-- `affiliate_links` — `id, code (UNIQUE), keyword (UNIQUE), url, display_text,
-program, is_active, clicks, created_at, updated_at`. The published map and the
-  injector both read `WHERE is_active = true`.
+- `affiliate_links` — `id, code (UNIQUE), url, display_text, program,
+is_active, clicks, created_at, updated_at, description, category, platform`.
+  The published map and the injector both read `WHERE is_active = true`.
+- `affiliate_link_keywords` — `id, link_id (FK -> affiliate_links, ON DELETE
+CASCADE), keyword, created_at`, `UNIQUE(link_id, keyword)` — one row per
+  keyword/alias a link matches on. Uniqueness is scoped per-link, not
+  global: different links CAN share a keyword string.
 - `affiliate_link_clicks` — `id, code, post_slug, referrer, country, user_agent,
 created_at`. One row per synced click; `post_slug` is derived from the
   referrer.
+
+## Bulk import from a spreadsheet
+
+`poindexter affiliate import-csv <path> [--force]` reads a CSV export with
+these columns: `Status, Product Name, Category, Platform, Commission Rate,
+Affiliate Link, Description, Promo Code` (`Commission Rate` and `Promo Code`
+are read but not stored).
+
+For each row:
+
+- `code` is derived deterministically from `Product Name` (never
+  LLM-touched, so re-running the import on an unchanged sheet always maps
+  to the same code).
+- If that `code` already exists, the row is **skipped** unless `--force` is
+  passed — this protects hand-curated rows (e.g. a real description you
+  wrote) from being blanked out by a re-import.
+- `display_text` and a keyword list are proposed by a local LLM from the
+  title + description (`task.affiliate_derive_keywords`). On any LLM/JSON
+  error the row still gets created, falling back to the product name itself
+  as both the display text and sole keyword — nothing is silently dropped.
+- `is_active` is set directly from the CSV's own `Status` column
+  (`"Active"`, case-insensitive → active; anything else → inactive).
+- `Category` maps to `service`/`product` (`"Service"` → `service`,
+  everything else, including `"Hardware"` → `product`). `Platform` is
+  copied verbatim into the new `platform` column.
+
+Review the printed summary, then approve what you're happy with:
+
+```bash
+poindexter affiliate list --all       # review anything that landed inactive
+poindexter affiliate enable --all     # approve everything at once, or...
+poindexter affiliate enable <code>    # ...one at a time
+```
 
 ## Rollout checklist
 

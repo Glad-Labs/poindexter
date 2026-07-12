@@ -941,6 +941,12 @@ DEFAULTS: dict[str, str] = {
     # affiliate_link_clicks every 5 min (mirrors sync_cloudflare_analytics).
     'plugin.job.sync_affiliate_clicks.enabled': 'true',
     'plugin.job.sync_affiliate_clicks.interval_seconds': '300',
+    # Model pin for the CSV-import keyword/display-text derivation
+    # (task.affiliate_derive_keywords). why: empty -> structured_extraction_model
+    # (a JSON-reliable instruct model). Local by default.
+    'affiliate_import_llm_model': '',
+    # why: per-row timeout for the derivation call (keep short — one row at a time).
+    'affiliate_import_llm_timeout_seconds': '60',
     # Citation reconciliation + advisory unlinked-attribution rail (#765).
     # why: deterministic repair that re-links named sources the writer dropped
     # the URL for, matched against the research corpus by domain handle — free,

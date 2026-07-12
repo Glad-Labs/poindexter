@@ -35,7 +35,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 - [`services/tts_providers/`](#servicesttsproviders) (4 files)
 - [`services/video_providers/`](#servicesvideoproviders) (2 files)
 - [`services/video_renderers/`](#servicesvideorenderers) (3 files)
-- [`modules/content/`](#modulescontent) (16 files)
+- [`modules/content/`](#modulescontent) (17 files)
 - [`modules/content/atoms/`](#modulescontentatoms) (66 files)
 - [`modules/content/stages/`](#modulescontentstages) (17 files)
 
@@ -510,6 +510,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | File | Summary |
 | --- | --- |
 | `__init__.py` | ``content`` business module — blog publishing workflow. |
+| `affiliate_import.py` | CSV bulk-import for affiliate_links (poindexter affiliate import-csv). |
 | `affiliate_links.py` | Affiliate-link service — the pure keyword matcher + DB CRUD + click rollup. |
 | `ai_content_generator.py` | Unified AI Content Generator Service |
 | `api.py` | Public surface of the ``content`` module. |

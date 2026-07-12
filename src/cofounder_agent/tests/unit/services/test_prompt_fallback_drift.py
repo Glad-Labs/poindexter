@@ -118,6 +118,12 @@ def _retention_summarize():
     return m._resolve_summary_prompt_template()
 
 
+def _affiliate_derive_keywords():
+    from modules.content import affiliate_import as m
+
+    return m._resolve_prompt(title="Widget Pro 9000", description="A great widget.")
+
+
 # (name, skill_key, resolver_callable)
 _CASES = [
     ("qa_rewrite", "atoms.qa_rewrite.revise_prompt", _qa_rewrite),
@@ -134,6 +140,7 @@ _CASES = [
     ("deepeval_g_eval_criterion", "qa.deepeval_g_eval_criterion", _g_eval_criterion),
     ("collapse", "memory.collapse_old_embeddings.summary", _collapse),
     ("retention_summarize", "ops.retention.summarize_to_table", _retention_summarize),
+    ("affiliate_derive_keywords", "task.affiliate_derive_keywords", _affiliate_derive_keywords),
 ]
 
 _IDS = [c[0] for c in _CASES]

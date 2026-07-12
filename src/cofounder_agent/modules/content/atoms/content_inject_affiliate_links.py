@@ -66,7 +66,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if pool is None:
         return {}
 
-    from modules.content.affiliate_links import inject_affiliate_links, list_active
+    from modules.content.affiliate_links import (
+        inject_affiliate_links, list_active, load_link_last_used,
+    )
 
     try:
         links = await list_active(pool)
@@ -76,7 +78,16 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not links:
         return {}
 
-    new_content, injected = inject_affiliate_links(content, links, base=base, cap=cap)
+    last_used: dict[str, str] = {}
+    if len(links) >= 2:
+        try:
+            last_used = await load_link_last_used(pool)
+        except Exception as exc:  # noqa: BLE001  # silent-ok: LRU signal is best-effort — a fetch failure just skips tie-breaking, never fails the atom
+            logger.debug("[content.inject_affiliate_links] load_link_last_used failed: %s", exc)
+
+    new_content, injected = inject_affiliate_links(
+        content, links, base=base, cap=cap, last_used=last_used,
+    )
     if not injected:
         return {}
     logger.info(

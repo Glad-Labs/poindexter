@@ -30,9 +30,11 @@ async def _columns(pool, table: str) -> set[str]:
 async def test_affiliate_links_columns(test_pool):
     cols = await _columns(test_pool, "affiliate_links")
     assert {
-        "id", "code", "keyword", "url", "display_text",
+        "id", "code", "url", "display_text",
         "program", "is_active", "clicks", "created_at", "updated_at",
+        "description", "category", "platform",
     } <= cols
+    assert "keyword" not in cols
 
 
 async def test_affiliate_link_clicks_columns(test_pool):
@@ -50,16 +52,61 @@ async def test_affiliate_links_ship_empty(test_pool):
     assert n == 0
 
 
-async def test_affiliate_links_new_columns(test_pool):
-    cols = await _columns(test_pool, "affiliate_links")
-    assert {"description", "category"} <= cols
-
-
 async def test_affiliate_links_category_check_constraint(test_pool):
     async with test_pool.acquire() as conn:
         with pytest.raises(Exception):
             async with conn.transaction():
                 await conn.execute(
-                    "INSERT INTO affiliate_links (code, keyword, url, category) "
-                    "VALUES ('bad-cat-test', 'BadCat', 'https://x', 'bogus')"
+                    "INSERT INTO affiliate_links (code, url, category) "
+                    "VALUES ('bad-cat-test', 'https://x', 'bogus')"
+                )
+
+
+async def test_affiliate_link_keywords_columns(test_pool):
+    cols = await _columns(test_pool, "affiliate_link_keywords")
+    assert {"id", "link_id", "keyword", "created_at"} <= cols
+
+
+async def test_affiliate_link_keywords_allows_shared_keyword_across_links(test_pool):
+    """Different links CAN share a keyword — uniqueness is scoped
+    UNIQUE(link_id, keyword), not global. See the design spec's "Shared
+    keywords" section."""
+    async with test_pool.acquire() as conn:
+        with pytest.raises(RuntimeError, match="rollback-for-test-isolation"):
+            async with conn.transaction():
+                link_a = await conn.fetchval(
+                    "INSERT INTO affiliate_links (code, url) VALUES ($1, $2) RETURNING id",
+                    "shared-kw-test-a", "https://x",
+                )
+                link_b = await conn.fetchval(
+                    "INSERT INTO affiliate_links (code, url) VALUES ($1, $2) RETURNING id",
+                    "shared-kw-test-b", "https://y",
+                )
+                await conn.execute(
+                    "INSERT INTO affiliate_link_keywords (link_id, keyword) VALUES ($1, $2)",
+                    link_a, "SharedKeyword",
+                )
+                await conn.execute(
+                    "INSERT INTO affiliate_link_keywords (link_id, keyword) VALUES ($1, $2)",
+                    link_b, "SharedKeyword",
+                )
+                # Force rollback so this test data never persists in the shared pool.
+                raise RuntimeError("rollback-for-test-isolation")
+
+
+async def test_affiliate_link_keywords_rejects_duplicate_within_same_link(test_pool):
+    async with test_pool.acquire() as conn:
+        with pytest.raises(Exception):
+            async with conn.transaction():
+                link_id = await conn.fetchval(
+                    "INSERT INTO affiliate_links (code, url) VALUES ($1, $2) RETURNING id",
+                    "dup-kw-test", "https://x",
+                )
+                await conn.execute(
+                    "INSERT INTO affiliate_link_keywords (link_id, keyword) VALUES ($1, $2)",
+                    link_id, "DupKeyword",
+                )
+                await conn.execute(
+                    "INSERT INTO affiliate_link_keywords (link_id, keyword) VALUES ($1, $2)",
+                    link_id, "DupKeyword",
                 )

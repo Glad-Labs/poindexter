@@ -1,8 +1,8 @@
 """`poindexter affiliate` — manage affiliate-link rows (DB-only real URLs).
 
-Thin adapter over ``modules.content.affiliate_links`` (no inline SQL here, per
-the transport-adapter-contract ADR). Real referral URLs never live in source;
-operators add them here.
+Thin adapter over ``modules.content.affiliate_links`` / ``affiliate_import``
+(no inline SQL here, per the transport-adapter-contract ADR). Real referral
+URLs never live in source; operators add them here.
 """
 from __future__ import annotations
 
@@ -21,6 +21,19 @@ async def _connect():
     return await asyncpg.create_pool(dsn, min_size=1, max_size=2, timeout=8)
 
 
+async def _make_site_config(pool):
+    from services.site_config import SiteConfig
+
+    site_config = SiteConfig(pool=pool)
+    try:
+        await site_config.load(pool)
+    except Exception:
+        # silent-ok: best-effort settings load — callers still work pool-only
+        # (just without DB-loaded settings) if this fails.
+        pass
+    return site_config
+
+
 async def _republish(pool) -> None:
     """Republish both affiliate JSON exports + bust the referrals ISR tag.
 
@@ -29,18 +42,10 @@ async def _republish(pool) -> None:
     export self-heals on the next publish or on-demand rebuild).
     """
     from services.revalidation_service import trigger_nextjs_revalidation
-    from services.site_config import SiteConfig
     from services.static_export_service import republish_affiliate_exports
 
     try:
-        site_config = SiteConfig(pool=pool)
-        try:
-            await site_config.load(pool)
-        except Exception:
-            # silent-ok: best-effort settings load — the outer try/except
-            # already reports a republish failure, and site_config still
-            # works pool-only (just without DB-loaded settings) if this fails.
-            pass
+        site_config = await _make_site_config(pool)
         await republish_affiliate_exports(pool, site_config=site_config)
         await trigger_nextjs_revalidation(tags=["referrals"], site_config=site_config)
     except Exception as e:  # noqa: BLE001 — never fail the CLI write over a republish hiccup
@@ -49,27 +54,25 @@ async def _republish(pool) -> None:
 
 @click.group(name="affiliate")
 def affiliate_group() -> None:
-    """Manage affiliate links (add/list/enable/disable/rm)."""
+    """Manage affiliate links (add/list/enable/disable/rm/import-csv)."""
 
 
 @affiliate_group.command(name="add")
 @click.option("--code", required=True, help="Stable slug for /go/<code> (e.g. mercury).")
-@click.option("--keyword", required=True, help="Body keyword to match (e.g. Mercury).")
+@click.option(
+    "--keyword", "keywords", required=True, multiple=True,
+    help="Body phrase to match (repeatable — pass multiple times for aliases).",
+)
 @click.option("--url", required=True, help="Real merchant/referral URL.")
-@click.option("--display-text", default="", help="Link text (defaults to keyword).")
+@click.option("--display-text", default="", help="Link text (defaults to the matched keyword).")
 @click.option("--program", default="", help="Program label (e.g. 'Mercury Referral').")
 @click.option(
-    "--category",
-    required=True,
-    type=click.Choice(["service", "product"]),
+    "--category", required=True, type=click.Choice(["service", "product"]),
     help="Section this link appears in on /referrals.",
 )
-@click.option(
-    "--description",
-    required=True,
-    help="Reader-facing description shown on /referrals.",
-)
-def add_cmd(code, keyword, url, display_text, program, category, description):
+@click.option("--description", required=True, help="Reader-facing description shown on /referrals.")
+@click.option("--platform", default="", help="Free-text tracking label (e.g. Amazon, direct).")
+def add_cmd(code, keywords, url, display_text, program, category, description, platform):
     """Add or update an affiliate link."""
     from modules.content.affiliate_links import add_link
 
@@ -77,9 +80,9 @@ def add_cmd(code, keyword, url, display_text, program, category, description):
         pool = await _connect()
         try:
             await add_link(
-                pool, code=code, keyword=keyword, url=url,
+                pool, code=code, keywords=list(keywords), url=url,
                 display_text=display_text, program=program,
-                description=description, category=category,
+                description=description, category=category, platform=platform,
             )
             await _republish(pool)
         finally:
@@ -90,30 +93,43 @@ def add_cmd(code, keyword, url, display_text, program, category, description):
 
 
 @affiliate_group.command(name="list")
-def list_cmd():
-    """List active affiliate links."""
-    from modules.content.affiliate_links import list_active
+@click.option("--all", "show_all", is_flag=True, help="Include inactive links.")
+def list_cmd(show_all):
+    """List affiliate links (active only, unless --all)."""
+    from modules.content.affiliate_links import list_active, list_all
 
     async def _go():
         pool = await _connect()
         try:
-            return await list_active(pool)
+            return await (list_all(pool) if show_all else list_active(pool))
         finally:
             await pool.close()
 
     links = asyncio.run(_go())
     if not links:
-        click.echo("No active affiliate links.")
+        click.echo("No affiliate links." if show_all else "No active affiliate links.")
         return
     for lk in links:
-        click.echo(f"  {lk.code:16} {lk.keyword:16} → {lk.url}")
+        kw = ", ".join(lk.keywords)
+        platform = f" [{lk.platform}]" if lk.platform else ""
+        click.echo(f"  {lk.code:16} {kw:40}{platform} → {lk.url}")
+
+
+def _validate_enable_args(code, enable_all) -> None:
+    if enable_all == bool(code):
+        raise click.UsageError("Provide exactly one of CODE or --all.")
 
 
 @affiliate_group.command(name="enable")
-@click.argument("code")
-def enable_cmd(code):
-    """Enable (activate) an affiliate link."""
-    _set_active(code, True)
+@click.argument("code", required=False)
+@click.option("--all", "enable_all", is_flag=True, help="Enable every currently-inactive link.")
+def enable_cmd(code, enable_all):
+    """Enable (activate) one link, or every inactive link with --all."""
+    _validate_enable_args(code, enable_all)
+    if enable_all:
+        _set_active_all(True)
+    else:
+        _set_active(code, True)
 
 
 @affiliate_group.command(name="disable")
@@ -142,6 +158,31 @@ def _set_active(code, active):
     click.secho(f"{'Enabled' if active else 'Disabled'} '{code}'.", fg="green")
 
 
+def _set_active_all(active: bool):
+    from modules.content.affiliate_links import list_all, set_active
+
+    async def _go():
+        pool = await _connect()
+        try:
+            targets = await list_all(pool)
+            changed = []
+            for lk in targets:
+                if await set_active(pool, lk.code, active):
+                    changed.append(lk.code)
+            if changed:
+                await _republish(pool)
+            return changed
+        finally:
+            await pool.close()
+
+    changed = asyncio.run(_go())
+    click.secho(
+        f"{'Enabled' if active else 'Disabled'} {len(changed)} link(s): "
+        f"{', '.join(changed) or '(none)'}",
+        fg="green",
+    )
+
+
 @affiliate_group.command(name="rm")
 @click.argument("code")
 def rm_cmd(code):
@@ -162,6 +203,39 @@ def rm_cmd(code):
     if not ok:
         raise click.ClickException(f"No affiliate link with code '{code}'.")
     click.secho(f"Removed '{code}'.", fg="green")
+
+
+@affiliate_group.command(name="import-csv")
+@click.argument("csv_path", type=click.Path(exists=True, dir_okay=False))
+@click.option("--force", is_flag=True, help="Overwrite existing rows instead of skipping them.")
+def import_csv_cmd(csv_path, force):
+    """Bulk-import affiliate links from a spreadsheet export."""
+    from modules.content.affiliate_import import import_csv
+
+    async def _go():
+        pool = await _connect()
+        try:
+            site_config = await _make_site_config(pool)
+            report = await import_csv(pool, csv_path, site_config=site_config, force=force)
+            if report.created:
+                await _republish(pool)
+            return report
+        finally:
+            await pool.close()
+
+    report = asyncio.run(_go())
+    for r in report.rows:
+        if r.status == "created":
+            kw = ", ".join(r.keywords)
+            click.secho(f"  created  {r.code:24} {r.display_text} [{kw}]", fg="green")
+        elif r.status == "skipped_exists":
+            click.secho(f"  skipped  {r.code:24} (already exists — use --force to overwrite)", fg="yellow")
+        else:
+            click.secho(f"  error    {r.code:24} {r.detail}", fg="red")
+    click.echo(
+        f"\n{len(report.created)} created, {len(report.skipped)} skipped, "
+        f"{len(report.errors)} errors."
+    )
 
 
 __all__ = ["affiliate_group"]
