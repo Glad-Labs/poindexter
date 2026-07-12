@@ -20,7 +20,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 - [`services/image_providers/`](#servicesimageproviders) (6 files)
 - [`services/integrations/`](#servicesintegrations) (10 files)
 - [`services/integrations/handlers/`](#servicesintegrationshandlers) (16 files)
-- [`services/jobs/`](#servicesjobs) (57 files)
+- [`services/jobs/`](#servicesjobs) (58 files)
 - [`services/llm_providers/`](#servicesllmproviders) (7 files)
 - [`services/media_compositors/`](#servicesmediacompositors) (2 files)
 - [`services/model_eval/`](#servicesmodeleval) (7 files)
@@ -322,6 +322,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `analyze_topic_gaps.py` | AnalyzeTopicGapsJob — flag empty / low-coverage / stale categories. |
 | `audit_published_quality.py` | AuditPublishedQualityJob — periodic quality re-check of published posts. |
 | `backfill_post_performance_gsc.py` | BackfillPostPerformanceGscJob — retro-populate google_* columns on existing snapshots. |
+| `cancel_orphaned_social_drafts.py` | CancelOrphanedSocialDraftsJob — cancel social drafts for rejected content. |
 | `check_memory_staleness.py` | CheckMemoryStalenessJob — alert when a pgvector writer goes silent. |
 | `check_published_links.py` | CheckPublishedLinksJob — sample published posts for broken URLs. |
 | `crosspost_to_devto.py` | CrosspostToDevtoJob — syndicate published posts to Dev.to. |

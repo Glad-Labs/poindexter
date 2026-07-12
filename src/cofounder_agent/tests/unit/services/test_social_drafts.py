@@ -209,6 +209,47 @@ async def test_reject_draft_sets_status():
 
 
 # ---------------------------------------------------------------------------
+# cancel_orphaned_for_rejected_tasks — the reject → social-draft cascade reaper
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_cancel_orphaned_returns_rowcount_from_command_tag():
+    pool, _conn = _make_pool(execute="UPDATE 2")
+    svc = SocialDraftsService()
+    n = await svc.cancel_orphaned_for_rejected_tasks(pool)
+    assert n == 2
+
+
+@pytest.mark.asyncio
+async def test_cancel_orphaned_zero_on_empty_tag():
+    # No rows matched → asyncpg tag "UPDATE 0" → 0 cancelled.
+    pool, _conn = _make_pool(execute="UPDATE 0")
+    svc = SocialDraftsService()
+    assert await svc.cancel_orphaned_for_rejected_tasks(pool) == 0
+
+
+@pytest.mark.asyncio
+async def test_cancel_orphaned_targets_pending_failed_and_terminal_only():
+    # The reaper must only touch pending/failed drafts of terminally-rejected
+    # tasks — never 'posted' drafts (Case-2 live posts) and never valid
+    # 'approved'/'awaiting_approval' content awaiting publish.
+    pool, _conn = _make_pool(execute="UPDATE 0")
+    svc = SocialDraftsService()
+    await svc.cancel_orphaned_for_rejected_tasks(pool)
+    _conn.execute.assert_called_once()
+    sql = _conn.execute.call_args[0][0].lower()
+    statuses = _conn.execute.call_args[0][1]
+    assert "set status = 'rejected'" in sql
+    assert "d.status in ('pending', 'failed')" in sql
+    assert "posted" not in sql  # posted drafts are never cancelled
+    # terminal-reject task statuses passed as the bound array; excludes
+    # rejected_retry (re-runs) and approved/awaiting_approval (awaiting publish).
+    assert set(statuses) == {"rejected_final", "rejected", "dismissed"}
+    assert "rejected_retry" not in statuses
+    assert "approved" not in statuses
+
+
+# ---------------------------------------------------------------------------
 # approve_draft — row not found
 # ---------------------------------------------------------------------------
 

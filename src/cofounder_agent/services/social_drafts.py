@@ -74,6 +74,19 @@ _INTEGRATION_KEY: dict[str, str] = {
     "instagram_reels": "postiz_integration_id_instagram",
 }
 
+# Task statuses where the content will never go live, so its still-pending
+# social promos must be cancelled. Social drafts are generated speculatively at
+# pipeline finalize (BEFORE operator sign-off — a QA-flagged post rides through
+# to awaiting_approval), so a post rejected afterward strands its promos in
+# 'pending' (visible in the action inbox). EXCLUDED (not terminal-dead):
+# ``rejected_retry`` re-runs and refreshes its own drafts; ``approved`` /
+# ``awaiting_approval`` are valid and awaiting publish.
+_TERMINAL_REJECT_TASK_STATUSES: tuple[str, ...] = (
+    "rejected_final",
+    "rejected",
+    "dismissed",
+)
+
 
 @dataclass
 class SocialDraftRow:
@@ -399,6 +412,34 @@ class SocialDraftsService:
                 post_id,
             )
 
+    async def cancel_orphaned_for_rejected_tasks(self, pool: Any) -> int:
+        """Cancel pending/failed drafts whose content task was terminally rejected.
+
+        Path-independent reaper. Social drafts are generated speculatively at
+        pipeline finalize — before operator sign-off — so a post rejected
+        afterward via ANY path (operator gate reject, max-retry fail, QA
+        terminal) strands its promos in ``pending``. Keying off the task's
+        terminal-reject status (see ``_TERMINAL_REJECT_TASK_STATUSES``) rather
+        than hooking one reject entry point catches every path AND back-fills
+        historical orphans on first run. Already-``posted`` drafts are left
+        untouched — retracting a live social post is a separate concern.
+
+        Returns the number of drafts cancelled (``status`` → ``rejected``).
+        """
+        async with pool.acquire() as conn:
+            command_tag = await conn.execute(
+                """
+                UPDATE social_post_drafts d
+                SET status = 'rejected'
+                FROM pipeline_tasks t
+                WHERE d.pipeline_task_id = t.task_id
+                  AND d.status IN ('pending', 'failed')
+                  AND t.status = ANY($1::text[])
+                """,
+                list(_TERMINAL_REJECT_TASK_STATUSES),
+            )
+        return _pg_command_rowcount(command_tag)
+
 
 async def _resolve_post(draft_row: Any, pool: Any) -> Any:
     """Resolve the posts row a draft promotes.
@@ -470,6 +511,18 @@ async def _mark_failed(draft_id: str, error: str, pool: Any) -> None:
             draft_id,
             error,
         )
+
+
+def _pg_command_rowcount(command_tag: Any) -> int:
+    """Affected-row count from an asyncpg command tag like ``'UPDATE 3'``.
+
+    Returns 0 on any unexpected shape (empty tag, non-numeric suffix) rather
+    than raising — the caller only needs it for logging/telemetry.
+    """
+    try:
+        return int(str(command_tag).split()[-1])
+    except (ValueError, IndexError):
+        return 0
 
 
 def _parse_jsonb(value: Any) -> dict[str, Any]:
