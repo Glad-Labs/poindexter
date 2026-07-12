@@ -681,6 +681,16 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.media_reconciliation",
             "MediaReconciliationJob",
         ),
+        # Media orphan sweep — reaps unreferenced images/video/podcast objects
+        # from R2 that pile up because image/video keys are UUID-per-regen and
+        # nothing else deletes them. Dry-run unless media_orphan_sweep_armed=true;
+        # keep-set = non-terminal posts + media_assets + feed XML. Design spec
+        # 2026-07-11-r2-media-reaper-design.md.
+        (
+            "jobs",
+            "services.jobs.media_orphan_sweep",
+            "MediaOrphanSweepJob",
+        ),
         ("jobs", "services.jobs.crosspost_to_devto", "CrosspostToDevtoJob"),
         ("jobs", "services.jobs.retry_failed_social_drafts", "RetryFailedSocialDraftsJob"),
         ("jobs", "services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),

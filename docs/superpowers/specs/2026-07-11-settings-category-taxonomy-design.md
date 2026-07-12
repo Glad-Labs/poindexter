@@ -150,12 +150,9 @@ implementer completes the tail against the completeness test):
 | `integration`, `mcp`, `webhook`, `cloudflare`, `cloudinary`, `storage`, `resend`, `smtp`, `google`, `tap`, `external_tap`, `discord`, `telegram`, `notion`, `openclaw`, `gh`, `github`                                                                                                                                                            | `integrations`   |                              |
 | `infrastructure`, `system`, `gpu`, `ollama`, `docker`, `compose`, `restore`, `backup`, `migration`, `clock`, `rate`, `cli`, `shared_http`, `prefect_worker`, `redis`, `scripts`, `revalidate`, `settings`, `operator`, `auth`, `oauth`, `cors`, `jwt`, `secret`, `api_token`, `api_key`                                                           | `infrastructure` | incl. app auth/access config |
 
-_(Ambiguity resolutions verified against live keys: `compose_*` is
-docker-compose → `infrastructure` (NOT media); `mcp_http_probe_*` →
-`self_healing` while `mcp_oauth_*` (the MCP server's own OAuth creds) →
-`integrations`; `vision_alt_*` → `media`; `self_consistency_*` →
-`quality`; `data_fabric_*` → `observability`. The 68 `is_secret` keys
-scatter to their subsystems by these same prefixes.)_
+_(Ambiguity resolutions verified against live keys: `compose__`is
+docker-compose →`infrastructure`(NOT media);`mcp*http_probe*_`→`self*healing`while`mcp_oauth*_`(the MCP server's own OAuth creds) →`integrations`; `vision*alt*_`→`media`; `self*consistency*_`→`quality`; `data*fabric*_`→`observability`. The 68 `is*secret` keys
+scatter to their subsystems by these same prefixes.)*
 
 ### 2. Seeder rewire
 

@@ -377,6 +377,61 @@ class R2UploadService:
             logger.warning("[STORAGE] get_json failed for %s: %s", r2_key, e)
             return None
 
+    async def list_objects(self, prefix: str) -> list[dict]:
+        """List objects under ``prefix`` with size + last_modified (paginated).
+
+        Returns ``[{"key": str, "size": int, "last_modified": datetime|None}]``.
+        Fail-soft: returns ``[]`` on error or missing config, same contract as
+        ``list_keys`` — callers treat ``[]`` as "nothing to do".
+        """
+        s3, bucket = await self._s3_client_and_bucket()
+        if not s3:
+            return []
+        out: list[dict] = []
+        try:
+            token: str | None = None
+            while True:
+                kwargs: dict = {"Bucket": bucket, "Prefix": prefix}
+                if token:
+                    kwargs["ContinuationToken"] = token
+                resp = s3.list_objects_v2(**kwargs)
+                for obj in resp.get("Contents") or []:
+                    out.append(
+                        {
+                            "key": obj["Key"],
+                            "size": int(obj.get("Size", 0)),
+                            "last_modified": obj.get("LastModified"),
+                        },
+                    )
+                if resp.get("IsTruncated") and resp.get("NextContinuationToken"):
+                    token = resp["NextContinuationToken"]
+                else:
+                    break
+            return out
+        except Exception as e:
+            logger.exception(
+                "[STORAGE] list_objects failed for prefix %s: %s", prefix, e,
+            )
+            return []
+
+    async def get_object_text(self, r2_key: str) -> str | None:
+        """Download an object and return its decoded text (utf-8, replace).
+
+        Returns ``None`` when creds/config are missing, the key is absent, or any
+        error occurs. Used to read feed XML for the media reaper's keep-set.
+        """
+        s3, bucket = await self._s3_client_and_bucket()
+        if not s3:
+            return None
+        try:
+            resp = s3.get_object(Bucket=bucket, Key=r2_key)
+            return resp["Body"].read().decode("utf-8", "replace")
+        except Exception as e:
+            logger.warning(
+                "[STORAGE] get_object_text failed for %s: %s", r2_key, e,
+            )
+            return None
+
     async def upload_podcast_episode(self, post_id: str) -> str | None:
         """Upload a podcast episode MP3 to R2. Returns public URL or None.
 

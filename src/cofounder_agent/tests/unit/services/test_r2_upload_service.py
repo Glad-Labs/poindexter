@@ -12,6 +12,7 @@ gone. Tests now construct ``R2UploadService(site_config=stub)``
 directly and call methods on it.
 """
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -466,3 +467,65 @@ class TestImagePublicUrlBase:
     def test_returns_empty_when_neither_set(self):
         svc = _make_service({})
         assert svc._image_public_url_base() == ""  # noqa: SLF001
+
+
+class TestListObjectsAndGetObjectText:
+    """list_objects / get_object_text — media orphan-reaper seams."""
+
+    @pytest.mark.asyncio
+    async def test_list_objects_paginates_and_maps_size_and_mtime(self):
+        svc = _make_service({})
+        dt = datetime(2026, 7, 1, tzinfo=timezone.utc)
+        fake_s3 = MagicMock()
+        fake_s3.list_objects_v2.side_effect = [
+            {
+                "Contents": [{"Key": "images/a.webp", "Size": 10, "LastModified": dt}],
+                "IsTruncated": True,
+                "NextContinuationToken": "t1",
+            },
+            {
+                "Contents": [{"Key": "images/b.webp", "Size": 20, "LastModified": dt}],
+                "IsTruncated": False,
+            },
+        ]
+        with patch.object(
+            R2UploadService, "_s3_client_and_bucket",
+            AsyncMock(return_value=(fake_s3, "bucket")),
+        ):
+            objs = await svc.list_objects("images/")
+        assert [o["key"] for o in objs] == ["images/a.webp", "images/b.webp"]
+        assert objs[0]["size"] == 10
+        assert objs[1]["last_modified"] == dt
+
+    @pytest.mark.asyncio
+    async def test_list_objects_returns_empty_when_no_client(self):
+        svc = _make_service({})
+        with patch.object(
+            R2UploadService, "_s3_client_and_bucket",
+            AsyncMock(return_value=(None, None)),
+        ):
+            assert await svc.list_objects("images/") == []
+
+    @pytest.mark.asyncio
+    async def test_get_object_text_decodes_body(self):
+        svc = _make_service({})
+        fake_s3 = MagicMock()
+        body = MagicMock()
+        body.read.return_value = b"<rss>hi</rss>"
+        fake_s3.get_object.return_value = {"Body": body}
+        with patch.object(
+            R2UploadService, "_s3_client_and_bucket",
+            AsyncMock(return_value=(fake_s3, "bucket")),
+        ):
+            assert await svc.get_object_text("podcast/feed.xml") == "<rss>hi</rss>"
+
+    @pytest.mark.asyncio
+    async def test_get_object_text_none_on_error(self):
+        svc = _make_service({})
+        fake_s3 = MagicMock()
+        fake_s3.get_object.side_effect = RuntimeError("nosuchkey")
+        with patch.object(
+            R2UploadService, "_s3_client_and_bucket",
+            AsyncMock(return_value=(fake_s3, "bucket")),
+        ):
+            assert await svc.get_object_text("podcast/feed.xml") is None

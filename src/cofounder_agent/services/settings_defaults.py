@@ -2011,6 +2011,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # `schedule` class attribute (plugin.job.<name>), not seeded here.
     'seo.refresh.max_per_run': '3',
 
+    # ----- R2 media orphan-reaper (design 2026-07-11) -----
+    # Dry-run by default: computes + reports orphans but deletes NOTHING until an
+    # operator flips _armed=true after reviewing a dry-run cycle. Keep-set =
+    # non-terminal posts + media_assets + feed XML. Grace window protects
+    # just-uploaded, not-yet-linked objects; the cap bounds blast radius.
+    'media_orphan_sweep_armed': 'false',
+    'media_orphan_sweep_grace_days': '14',
+    'media_orphan_sweep_max_deletes_per_run': '500',
+    'media_orphan_sweep_prefixes': 'images/,video/,podcast/',
+
     # ----- Cloudflare page-views beacon outage probe -----
     # URL of the Cloudflare Worker that the public-site ViewTracker beacon
     # POSTs page-view pings to (infrastructure/cloudflare/page-views-beacon).
@@ -2232,6 +2242,12 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'media_infra_dns_canary_host': {'owner': 'media_infra_health', 'value_type': 'string'},
     'media_redispatch_cap_reset_enabled': {'owner': 'media_reconciliation', 'value_type': 'boolean'},
     'media_redispatch_cap_reset_cooldown_hours': {'owner': 'media_reconciliation', 'value_type': 'integer'},
+
+    # ----- R2 media orphan-reaper (design 2026-07-11) -----
+    'media_orphan_sweep_armed': {'owner': 'media_orphan_sweep', 'value_type': 'boolean'},
+    'media_orphan_sweep_grace_days': {'owner': 'media_orphan_sweep', 'value_type': 'integer'},
+    'media_orphan_sweep_max_deletes_per_run': {'owner': 'media_orphan_sweep', 'value_type': 'integer'},
+    'media_orphan_sweep_prefixes': {'owner': 'media_orphan_sweep', 'value_type': 'string'},
 
     # ----- Content pipeline behaviour -----
     'content_flow_stale_inprogress_minutes': {'owner': 'content_generation_flow', 'value_type': 'integer'},
