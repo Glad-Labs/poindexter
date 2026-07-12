@@ -44,6 +44,15 @@ describe('TopNavigation', () => {
     expect(screen.getByRole('link', { name: 'Explore' })).toBeInTheDocument();
   });
 
+  it('renders Referrals link', () => {
+    render(<TopNavigation />);
+    const referralsLinks = screen.getAllByRole('link', { name: 'Referrals' });
+    expect(referralsLinks.length).toBeGreaterThan(0);
+    referralsLinks.forEach((link) =>
+      expect(link).toHaveAttribute('href', '/referrals')
+    );
+  });
+
   it('renders the Poindexter store cross-link to gladlabs.ai', () => {
     render(<TopNavigation />);
     const storeLinks = screen.getAllByRole('link', { name: /Poindexter/i });

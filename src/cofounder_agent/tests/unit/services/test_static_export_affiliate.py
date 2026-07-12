@@ -122,3 +122,60 @@ async def test_export_affiliate_links_fails_open_on_db_error(monkeypatch):
     # Must not raise — the export continues even if the affiliate map fails.
     await ses._export_affiliate_links(pool, site_config=SiteConfig(initial_config={}))
     assert uploads == []
+
+
+async def test_export_affiliate_referrals_uploads_display_fields(monkeypatch):
+    captured: dict = {}
+
+    async def _fake_upload(key, data, content_type="application/json", *, site_config=None):
+        captured["key"] = key
+        captured["data"] = data
+        return f"https://cdn.example/{key}"
+
+    monkeypatch.setattr(ses, "_upload_json", _fake_upload)
+
+    pool = _FakePool(rows=[
+        {"code": "mercury", "name": "Mercury", "description": "Business banking.", "category": "service"},
+        {"code": "prime-gaming", "name": "Prime Gaming", "description": "Free games monthly.", "category": "product"},
+    ])
+    await ses._export_affiliate_referrals(pool, site_config=SiteConfig(initial_config={}))
+
+    assert captured["key"] == "affiliate-referrals.json"
+    referrals = json.loads(captured["data"])
+    assert referrals == [
+        {"code": "mercury", "name": "Mercury", "description": "Business banking.", "category": "service"},
+        {"code": "prime-gaming", "name": "Prime Gaming", "description": "Free games monthly.", "category": "product"},
+    ]
+
+
+async def test_export_affiliate_referrals_fails_open_on_db_error(monkeypatch):
+    uploads: list = []
+
+    async def _fake_upload(key, data, content_type="application/json", *, site_config=None):
+        uploads.append(key)
+        return "x"
+
+    monkeypatch.setattr(ses, "_upload_json", _fake_upload)
+
+    pool = _FakePool(raise_exc=RuntimeError("affiliate_links table missing"))
+    # Must not raise — the export continues even if the referrals data fails.
+    await ses._export_affiliate_referrals(pool, site_config=SiteConfig(initial_config={}))
+    assert uploads == []
+
+
+async def test_republish_affiliate_exports_uploads_both_files(monkeypatch):
+    uploaded_keys: list = []
+
+    async def _fake_upload(key, data, content_type="application/json", *, site_config=None):
+        uploaded_keys.append(key)
+        return f"https://cdn.example/{key}"
+
+    monkeypatch.setattr(ses, "_upload_json", _fake_upload)
+
+    pool = _FakePool(rows=[
+        {"code": "mercury", "url": "https://mercury.com/r/glad-labs",
+         "name": "Mercury", "description": "Business banking.", "category": "service"},
+    ])
+    await ses.republish_affiliate_exports(pool, site_config=SiteConfig(initial_config={}))
+
+    assert uploaded_keys == ["affiliate-links.json", "affiliate-referrals.json"]

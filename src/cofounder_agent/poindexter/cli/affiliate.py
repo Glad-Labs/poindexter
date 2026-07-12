@@ -18,7 +18,33 @@ async def _connect():
     dsn = bootstrap.resolve_database_url()
     if not dsn:
         raise click.ClickException("No database_url — run `poindexter setup` first.")
-    return await asyncpg.connect(dsn, timeout=8)
+    return await asyncpg.create_pool(dsn, min_size=1, max_size=2, timeout=8)
+
+
+async def _republish(pool) -> None:
+    """Republish both affiliate JSON exports + bust the referrals ISR tag.
+
+    Best-effort: a republish failure must not fail the CLI command that
+    already wrote the DB row (the row is the source of truth; a stale
+    export self-heals on the next publish or on-demand rebuild).
+    """
+    from services.revalidation_service import trigger_nextjs_revalidation
+    from services.site_config import SiteConfig
+    from services.static_export_service import republish_affiliate_exports
+
+    try:
+        site_config = SiteConfig(pool=pool)
+        try:
+            await site_config.load(pool)
+        except Exception:
+            # silent-ok: best-effort settings load — the outer try/except
+            # already reports a republish failure, and site_config still
+            # works pool-only (just without DB-loaded settings) if this fails.
+            pass
+        await republish_affiliate_exports(pool, site_config=site_config)
+        await trigger_nextjs_revalidation(tags=["referrals"], site_config=site_config)
+    except Exception as e:  # noqa: BLE001 — never fail the CLI write over a republish hiccup
+        click.secho(f"  (warning: republish failed: {e})", fg="yellow")
 
 
 @click.group(name="affiliate")
@@ -32,19 +58,32 @@ def affiliate_group() -> None:
 @click.option("--url", required=True, help="Real merchant/referral URL.")
 @click.option("--display-text", default="", help="Link text (defaults to keyword).")
 @click.option("--program", default="", help="Program label (e.g. 'Mercury Referral').")
-def add_cmd(code, keyword, url, display_text, program):
+@click.option(
+    "--category",
+    required=True,
+    type=click.Choice(["service", "product"]),
+    help="Section this link appears in on /referrals.",
+)
+@click.option(
+    "--description",
+    required=True,
+    help="Reader-facing description shown on /referrals.",
+)
+def add_cmd(code, keyword, url, display_text, program, category, description):
     """Add or update an affiliate link."""
     from modules.content.affiliate_links import add_link
 
     async def _go():
-        conn = await _connect()
+        pool = await _connect()
         try:
             await add_link(
-                conn, code=code, keyword=keyword, url=url,
+                pool, code=code, keyword=keyword, url=url,
                 display_text=display_text, program=program,
+                description=description, category=category,
             )
+            await _republish(pool)
         finally:
-            await conn.close()
+            await pool.close()
 
     asyncio.run(_go())
     click.secho(f"Added/updated affiliate link '{code}'.", fg="green")
@@ -56,11 +95,11 @@ def list_cmd():
     from modules.content.affiliate_links import list_active
 
     async def _go():
-        conn = await _connect()
+        pool = await _connect()
         try:
-            return await list_active(conn)
+            return await list_active(pool)
         finally:
-            await conn.close()
+            await pool.close()
 
     links = asyncio.run(_go())
     if not links:
@@ -88,11 +127,14 @@ def _set_active(code, active):
     from modules.content.affiliate_links import set_active
 
     async def _go():
-        conn = await _connect()
+        pool = await _connect()
         try:
-            return await set_active(conn, code, active)
+            ok = await set_active(pool, code, active)
+            if ok:
+                await _republish(pool)
+            return ok
         finally:
-            await conn.close()
+            await pool.close()
 
     ok = asyncio.run(_go())
     if not ok:
@@ -107,11 +149,14 @@ def rm_cmd(code):
     from modules.content.affiliate_links import remove_link
 
     async def _go():
-        conn = await _connect()
+        pool = await _connect()
         try:
-            return await remove_link(conn, code)
+            ok = await remove_link(pool, code)
+            if ok:
+                await _republish(pool)
+            return ok
         finally:
-            await conn.close()
+            await pool.close()
 
     ok = asyncio.run(_go())
     if not ok:

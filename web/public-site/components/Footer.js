@@ -80,6 +80,9 @@ const Footer = () => {
               <Link href="/about" className={FOOTER_LINK_CLASS}>
                 About
               </Link>
+              <Link href="/referrals" className={FOOTER_LINK_CLASS}>
+                Referrals
+              </Link>
             </nav>
           </div>
 

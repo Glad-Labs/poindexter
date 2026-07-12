@@ -48,3 +48,18 @@ async def test_affiliate_links_ship_empty(test_pool):
     async with test_pool.acquire() as conn:
         n = await conn.fetchval("SELECT COUNT(*) FROM affiliate_links")
     assert n == 0
+
+
+async def test_affiliate_links_new_columns(test_pool):
+    cols = await _columns(test_pool, "affiliate_links")
+    assert {"description", "category"} <= cols
+
+
+async def test_affiliate_links_category_check_constraint(test_pool):
+    async with test_pool.acquire() as conn:
+        with pytest.raises(Exception):
+            async with conn.transaction():
+                await conn.execute(
+                    "INSERT INTO affiliate_links (code, keyword, url, category) "
+                    "VALUES ('bad-cat-test', 'BadCat', 'https://x', 'bogus')"
+                )

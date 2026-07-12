@@ -140,6 +140,9 @@ export default function TopNavigation() {
             <Link href="/about" className="gl-focus-ring gl-nav-link">
               About
             </Link>
+            <Link href="/referrals" className="gl-focus-ring gl-nav-link">
+              Referrals
+            </Link>
             <a
               href="https://www.gladlabs.ai"
               target="_blank"
@@ -288,6 +291,13 @@ export default function TopNavigation() {
                   style={{ borderBottom: '1px solid var(--gl-hairline)' }}
                 >
                   About
+                </Link>
+                <Link
+                  href="/referrals"
+                  className="gl-focus-ring gl-nav-link py-3"
+                  style={{ borderBottom: '1px solid var(--gl-hairline)' }}
+                >
+                  Referrals
                 </Link>
                 <a
                   href="https://www.gladlabs.ai"

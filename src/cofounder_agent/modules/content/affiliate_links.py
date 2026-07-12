@@ -105,14 +105,18 @@ async def list_active(pool: Any) -> list[AffiliateLink]:
 async def add_link(
     pool: Any, *, code: str, keyword: str, url: str,
     display_text: str = "", program: str = "",
+    description: str = "", category: str = "product",
 ) -> None:
     await pool.execute(
-        "INSERT INTO affiliate_links (code, keyword, url, display_text, program) "
-        "VALUES ($1, $2, $3, $4, $5) "
+        "INSERT INTO affiliate_links "
+        "(code, keyword, url, display_text, program, description, category) "
+        "VALUES ($1, $2, $3, $4, $5, $6, $7) "
         "ON CONFLICT (code) DO UPDATE SET keyword = EXCLUDED.keyword, "
         "url = EXCLUDED.url, display_text = EXCLUDED.display_text, "
-        "program = EXCLUDED.program, updated_at = now()",
+        "program = EXCLUDED.program, description = EXCLUDED.description, "
+        "category = EXCLUDED.category, updated_at = now()",
         code, keyword, url, display_text or None, program or None,
+        description, category,
     )
 
 

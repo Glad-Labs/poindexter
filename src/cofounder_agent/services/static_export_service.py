@@ -256,6 +256,48 @@ async def _export_affiliate_links(pool, *, site_config: SiteConfig) -> None:
     await _upload_json("affiliate-links.json", _to_json(mapping), site_config=site_config)
 
 
+async def _export_affiliate_referrals(pool, *, site_config: SiteConfig) -> None:
+    """Upload static/affiliate-referrals.json — display fields for the /referrals page.
+
+    Deliberately excludes the real merchant ``url`` — the page always links
+    through ``/go/<code>``, so raw URLs never need to reach the frontend for
+    this purpose. A separate R2 object from affiliate-links.json, so the
+    Worker's redirect hot path never grows because a description got longer.
+    """
+    try:
+        rows = await pool.fetch(
+            "SELECT code, COALESCE(NULLIF(display_text, ''), keyword) AS name, "
+            "description, category FROM affiliate_links "
+            "WHERE is_active = true ORDER BY id"
+        )
+    except Exception as e:  # noqa: BLE001 — never fail the export on the referrals page data
+        logger.warning("[STATIC_EXPORT] affiliate-referrals fetch failed: %s", e)
+        return
+    referrals = [
+        {
+            "code": r["code"],
+            "name": r["name"],
+            "description": r["description"],
+            "category": r["category"],
+        }
+        for r in rows
+    ]
+    await _upload_json(
+        "affiliate-referrals.json", _to_json(referrals), site_config=site_config
+    )
+
+
+async def republish_affiliate_exports(pool, *, site_config: SiteConfig) -> None:
+    """Republish both affiliate JSON exports.
+
+    Called by the ``poindexter affiliate`` CLI after add/enable/disable/rm so
+    a DB change reaches R2 immediately, without paying for a full site
+    rebuild (``export_full_rebuild``) just to refresh two small objects.
+    """
+    await _export_affiliate_links(pool, site_config=site_config)
+    await _export_affiliate_referrals(pool, site_config=site_config)
+
+
 def _build_json_feed(posts: list[dict], site_url: str, site_title: str) -> dict:
     """Build a JSON Feed 1.1 compliant feed.
 

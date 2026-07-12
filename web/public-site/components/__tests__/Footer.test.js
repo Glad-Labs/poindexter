@@ -42,6 +42,13 @@ describe('Footer Component', () => {
     expect(aboutLink).toBeInTheDocument();
   });
 
+  it('should display Referrals link', () => {
+    render(<Footer />);
+    const referralsLink = screen.getByRole('link', { name: /referrals/i });
+    expect(referralsLink).toBeInTheDocument();
+    expect(referralsLink).toHaveAttribute('href', '/referrals');
+  });
+
   it('should display the "published by Poindexter" proof link to gladlabs.ai', () => {
     render(<Footer />);
     const proofLink = screen.getByRole('link', { name: /Poindexter/i });
