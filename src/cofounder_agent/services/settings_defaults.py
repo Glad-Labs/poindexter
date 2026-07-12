@@ -192,6 +192,17 @@ DEFAULTS: dict[str, str] = {
     'auto_embed_watch_max_retries': '2',
     'auto_embed_watch_retry_delay_seconds': '120',
 
+    # brain branch_drift_probe — minimum commits-behind before prod-is-behind
+    # PAGES. A continuously-deploying prod sits perpetually 1-2 commits behind
+    # origin/main (auto-deploy trails merges by minutes); that transient lag is
+    # healthy steady state, not drift, and each deploy churned the per-head
+    # fingerprint so it never deduped (#2295: 69 alerts/7d, 57 just "1 behind").
+    # Below this the probe logs the lag but never pages; a genuinely stuck prod
+    # accrues a bigger backlog fast (main advances several times/day). The other
+    # branch_drift_* keys seed via baseline.seeds.sql; this go-forward key seeds
+    # here (the code default in brain/branch_drift_probe.py is the backstop).
+    'branch_drift_min_commits_behind': '3',
+
     # Postiz queue-wedge watch (brain/postiz_queue_watch.py) — detects posts
     # stuck in QUEUE/ERROR past their publishDate via the Postiz API (the
     # Temporal-restart wedge: our social_post_drafts rows read 'posted' but

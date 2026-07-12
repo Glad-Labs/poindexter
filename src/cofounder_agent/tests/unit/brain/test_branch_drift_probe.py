@@ -189,6 +189,108 @@ async def test_behind_main_emits_one_alert_then_dedupes():
 
 
 @pytest.mark.asyncio
+async def test_small_lag_below_threshold_does_not_alert():
+    """#2295: a 1-2 commit lag is the normal steady state of a continuously
+    deploying prod (auto-deploy trails merges by minutes) — not drift. Below
+    branch_drift_min_commits_behind (default 3) the probe logs but never pages,
+    so it stops minting a fresh un-dedupable alert on every deploy."""
+    bdp._reset_state()
+    pool = _make_pool()
+    routes = {
+        "/commits/main": _FakeResponse(200, {"sha": _MAIN_SHA}),
+        "/compare/": _FakeResponse(200, {"status": "diverged", "ahead_by": 2}),
+    }
+    summary = await bdp.run_branch_drift_probe(
+        pool,
+        now_fn=_now_fn,
+        http_client_factory=_client_factory(routes),
+        git_runner=_git_runner_ok(),
+        notify_fn=MagicMock(),
+    )
+    assert summary["ok"] is True
+    assert summary["status"] == "within_deploy_lag"
+    assert summary["behind"] == 2
+    assert summary["alert_emitted"] is False
+    assert _executes_to(pool, "alert_events") == []
+
+
+@pytest.mark.asyncio
+async def test_backlog_at_threshold_alerts():
+    """At/above branch_drift_min_commits_behind the backlog signals a genuinely
+    stuck or forgotten deploy — page once (dedup still applies)."""
+    bdp._reset_state()
+    pool = _make_pool()
+    routes = {
+        "/commits/main": _FakeResponse(200, {"sha": _MAIN_SHA}),
+        "/compare/": _FakeResponse(200, {"status": "diverged", "ahead_by": 3}),
+    }
+    summary = await bdp.run_branch_drift_probe(
+        pool,
+        now_fn=_now_fn,
+        http_client_factory=_client_factory(routes),
+        git_runner=_git_runner_ok(),
+        notify_fn=MagicMock(),
+    )
+    assert summary["ok"] is False
+    assert summary["status"] == "drift_detected"
+    assert summary["behind"] == 3
+    assert summary["alert_emitted"] is True
+    assert len(_executes_to(pool, "alert_events")) == 1
+
+
+@pytest.mark.asyncio
+async def test_min_commits_behind_is_configurable():
+    """Operators can raise the threshold; below it stays log-only, no page."""
+    bdp._reset_state()
+    pool = _make_pool(setting_values={bdp.MIN_COMMITS_BEHIND_KEY: "5"})
+    routes = {
+        "/commits/main": _FakeResponse(200, {"sha": _MAIN_SHA}),
+        "/compare/": _FakeResponse(200, {"status": "diverged", "ahead_by": 4}),
+    }
+    summary = await bdp.run_branch_drift_probe(
+        pool,
+        now_fn=_now_fn,
+        http_client_factory=_client_factory(routes),
+        git_runner=_git_runner_ok(),
+        notify_fn=MagicMock(),
+    )
+    assert summary["status"] == "within_deploy_lag"  # 4 < 5
+    assert summary["alert_emitted"] is False
+    assert _executes_to(pool, "alert_events") == []
+
+
+def test_min_commits_behind_default_is_seeded():
+    """The go-forward default ships in settings_defaults (every-tunable-in-
+    app_settings rule); the probe's code default is the backstop."""
+    from services.settings_defaults import DEFAULTS
+
+    assert DEFAULTS["branch_drift_min_commits_behind"] == "3"
+    assert int(DEFAULTS["branch_drift_min_commits_behind"]) == bdp.DEFAULT_MIN_COMMITS_BEHIND
+
+
+@pytest.mark.asyncio
+async def test_unpushed_head_alerts_regardless_of_threshold():
+    """An uncomputable behind (compare 404 — HEAD not on origin) is real drift,
+    not a small lag, so it must page even though behind is None."""
+    bdp._reset_state()
+    pool = _make_pool()
+    routes = {
+        "/commits/main": _FakeResponse(200, {"sha": _MAIN_SHA}),
+        "/compare/": _FakeResponse(404, {"message": "Not Found"}),
+    }
+    summary = await bdp.run_branch_drift_probe(
+        pool,
+        now_fn=_now_fn,
+        http_client_factory=_client_factory(routes),
+        git_runner=_git_runner_ok(),
+        notify_fn=MagicMock(),
+    )
+    assert summary["behind"] is None
+    assert summary["alert_emitted"] is True
+    assert len(_executes_to(pool, "alert_events")) == 1
+
+
+@pytest.mark.asyncio
 async def test_advancing_main_does_not_defeat_dedup():
     """Regression for Glad-Labs/glad-labs-stack#1105.
 

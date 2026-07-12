@@ -71,6 +71,7 @@ POLL_INTERVAL_MINUTES_KEY = "branch_drift_poll_interval_minutes"
 REPO_KEY = "branch_drift_repo"
 DEDUP_HOURS_KEY = "branch_drift_dedup_hours"
 GIT_DIR_KEY = "branch_drift_git_dir"
+MIN_COMMITS_BEHIND_KEY = "branch_drift_min_commits_behind"
 
 TOKEN_SETTING_KEY = "gh_token"
 
@@ -78,6 +79,14 @@ DEFAULT_ENABLED = True
 DEFAULT_POLL_INTERVAL_MINUTES = 15
 DEFAULT_REPO = "Glad-Labs/glad-labs-stack"
 DEFAULT_DEDUP_HOURS = 6
+# Minimum commits-behind before a drift PAGES. A continuously-deploying prod is
+# perpetually 1-2 commits behind origin/main (auto-deploy trails merges by
+# minutes) — that transient lag is healthy steady state, not drift, and each
+# deploy moved local_head so the per-head fingerprint churned and never
+# deduped (#2295: 69 alerts/7d, 57 of them just "1 behind"). Only a meaningful
+# backlog (>= this) signals a stuck / forgotten deploy; a genuinely stuck prod
+# freezes local_head, so its fingerprint IS stable and dedup works as intended.
+DEFAULT_MIN_COMMITS_BEHIND = 3
 DEFAULT_GIT_DIR = "/host-git"
 
 PROBE_INTERVAL_SECONDS = 5 * 60
@@ -146,12 +155,17 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         await _read_setting(pool, DEDUP_HOURS_KEY, DEFAULT_DEDUP_HOURS),
         DEFAULT_DEDUP_HOURS,
     )
+    min_commits_behind = _coerce_int(
+        await _read_setting(pool, MIN_COMMITS_BEHIND_KEY, DEFAULT_MIN_COMMITS_BEHIND),
+        DEFAULT_MIN_COMMITS_BEHIND,
+    )
     repo = str(await _read_setting(pool, REPO_KEY, DEFAULT_REPO)).strip() or DEFAULT_REPO
     git_dir = str(await _read_setting(pool, GIT_DIR_KEY, DEFAULT_GIT_DIR)).strip() or DEFAULT_GIT_DIR
     return {
         "enabled": enabled,
         "poll_interval_minutes": poll_interval_minutes,
         "dedup_hours": dedup_hours,
+        "min_commits_behind": max(1, min_commits_behind),
         "repo": repo,
         "git_dir": git_dir,
     }
@@ -244,13 +258,24 @@ async def _compare_commits(client: Any, repo: str, base: str, head: str) -> dict
     return data if isinstance(data, dict) else None
 
 
-def _classify_drift(local_head: str, main_sha: str, compare: dict[str, Any] | None) -> dict[str, Any]:
+def _classify_drift(
+    local_head: str,
+    main_sha: str,
+    compare: dict[str, Any] | None,
+    *,
+    min_behind: int = 1,
+) -> dict[str, Any]:
     """Decide whether prod is behind origin/main.
 
     compare is GET /compare/{local_head}...{main_sha}: its ``ahead_by`` is
     the number of commits main has that local_head lacks = the behind count.
     None means GitHub couldn't resolve the pair (unpushed HEAD) -> drifted
-    with an uncomputable count.
+    with an uncomputable count (real drift — pages regardless of ``min_behind``).
+
+    ``min_behind`` (default 1 = page on any lag; prod default 3) is the smallest
+    computable backlog that counts as drift. A smaller lag is reported as
+    ``branch_status="within_deploy_lag"`` (``drifted=False``) so the probe logs
+    it but never pages — see DEFAULT_MIN_COMMITS_BEHIND / #2295.
     """
     if local_head == main_sha:
         return {"drifted": False, "behind": 0, "branch_status": "on_main"}
@@ -258,8 +283,11 @@ def _classify_drift(local_head: str, main_sha: str, compare: dict[str, Any] | No
         return {"drifted": True, "behind": None, "branch_status": "unknown_head"}
     behind = compare.get("ahead_by")
     behind = int(behind) if isinstance(behind, int) else 0
-    if behind > 0:
+    if behind >= max(1, min_behind):
         return {"drifted": True, "behind": behind, "branch_status": compare.get("status", "diverged")}
+    if behind > 0:
+        # A small lag: prod is catching up (auto-deploy trails merges). Log, don't page.
+        return {"drifted": False, "behind": behind, "branch_status": "within_deploy_lag"}
     # Differing SHAs but main is not ahead -> prod is ahead (unmerged local
     # work) or identical. Not "behind" — don't page.
     return {"drifted": False, "behind": 0, "branch_status": compare.get("status", "ahead")}
@@ -462,8 +490,23 @@ async def run_branch_drift_probe(
     except Exception as exc:  # noqa: BLE001
         return await _fail(f"GitHub API error for {config['repo']}: {exc}")
 
-    verdict = _classify_drift(local_head, main_sha, compare)
+    verdict = _classify_drift(
+        local_head, main_sha, compare, min_behind=config["min_commits_behind"]
+    )
     if not verdict["drifted"]:
+        if verdict["branch_status"] == "within_deploy_lag":
+            # Below the paging threshold — a transient deploy lag, not drift.
+            # Log it (so the lag is visible in audit_log / dashboards) but never
+            # page and never write an alert_events row (#2295).
+            await _emit_audit_event(
+                pool, "probe.branch_drift_ok",
+                f"within deploy lag: HEAD {local_head[:9]} is {verdict['behind']} "
+                f"behind origin/main {main_sha[:9]} "
+                f"(< {config['min_commits_behind']} min_commits_behind — not paging)",
+            )
+            return {"ok": True, "status": "within_deploy_lag", "behind": verdict["behind"],
+                    "alert_emitted": False, "branch": branch, "local_head": local_head,
+                    "main_sha": main_sha, "detail": "within deploy lag — not paging"}
         await _emit_audit_event(
             pool, "probe.branch_drift_ok",
             f"on main: HEAD {local_head[:9]} == origin/main {main_sha[:9]}",
