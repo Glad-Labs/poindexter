@@ -31,6 +31,11 @@ live-activity visibility the in-request path never had.
       → persist (content.persist_draft_images) — write content + featured back
                                                  to the TARGET draft, bump
                                                  regen_images_attempts, audit
+      → finalize (atoms.set_task_status)       — flip THIS rebuild job row to
+                                                 'completed' (the target draft
+                                                 stays awaiting_approval); without
+                                                 it the job strands in_progress and
+                                                 the stale-sweep re-runs it
 
 Why no approval gate: the target draft is already ``awaiting_approval`` — the
 operator's normal approve/reject decision on the draft (with its fresh images)
@@ -57,6 +62,15 @@ IMAGE_REBUILD_GRAPH_DEF: dict[str, Any] = {
         {"id": "gate", "atom": "content.image_rebuild_gate"},
         {"id": "inject", "atom": "content.inject_images"},
         {"id": "persist", "atom": "content.persist_draft_images"},
+        {
+            "id": "finalize",
+            "atom": "atoms.set_task_status",
+            # The rebuild JOB row is otherwise orphaned at in_progress (the target
+            # draft stays awaiting_approval, untouched by persist). 'completed' is
+            # terminal, keeps the job out of the claim/stale-sweep/approval queries,
+            # and post_pipeline_actions treats it as decided.
+            "config": {"target_status": "completed", "percentage": 100},
+        },
     ],
     "edges": [
         {"from": "load_draft", "to": "plan"},
@@ -65,7 +79,8 @@ IMAGE_REBUILD_GRAPH_DEF: dict[str, Any] = {
         {"from": "featured", "to": "gate"},
         {"from": "gate", "to": "inject"},
         {"from": "inject", "to": "persist"},
-        {"from": "persist", "to": "END"},
+        {"from": "persist", "to": "finalize"},
+        {"from": "finalize", "to": "END"},
     ],
 }
 

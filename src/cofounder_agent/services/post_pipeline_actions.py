@@ -80,7 +80,11 @@ logger = logging.getLogger(__name__)
 # auto-publish, awaiting-approval ping) must NOT run. ``rejected`` is handled
 # separately — it earns a routine operator notice rather than a silent skip.
 _DECIDED_NON_REJECTED_STATUSES = frozenset(
-    {"failed", "cancelled", "canceled", "published", "approved"}
+    # 'completed' is the terminal a utility/rebuild graph sets on its own job row
+    # (atoms.set_task_status). Recognizing it here keeps the success-path
+    # side-effects (webhook / auto-publish / awaiting-approval ping) off a job
+    # that has no post. Also covers seo_refresh's 'completed' rows.
+    {"failed", "cancelled", "canceled", "published", "approved", "completed"}
 )
 
 

@@ -1,5 +1,6 @@
 {
   "atoms.approval_gate": "862af9959ab9",
+  "atoms.set_task_status": "d67baff9cbc2",
   "content.check_title_originality": "b9fa11e26645",
   "content.compile_meta": "72f9955b5d55",
   "content.evaluate_auto_publish": "022f5e76065b",

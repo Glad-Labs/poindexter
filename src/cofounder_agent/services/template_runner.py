@@ -680,6 +680,12 @@ class PipelineState(TypedDict, total=False):
     allow_stock: bool            # operator opt-in to Pexels stock fallback slots
     featured_source: str         # content.rebuild_featured_image: image_gen | pexels | none
 
+    # atoms.set_task_status config (generic status-mutation node; image_rebuild's
+    # `finalize` node seeds target_status='completed'). Declared for the #753
+    # schema gate — atoms.set_task_status.requires includes target_status, so an
+    # undeclared key would raise ValueError at seed time.
+    target_status: str           # atoms.set_task_status: status to transition the running task to
+
 
 # ---------------------------------------------------------------------------
 # Run record types — mirror StageRunRecord/StageRunSummary so callers that

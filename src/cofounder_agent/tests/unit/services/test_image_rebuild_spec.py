@@ -52,6 +52,10 @@ def test_gate_runs_before_any_write():
     assert ("gate", "inject") in edges and ("inject", "persist") in edges
 
 
-def test_persist_is_terminal():
+def test_finalize_is_terminal():
+    """persist writes the draft, then finalize (atoms.set_task_status) closes out
+    the rebuild JOB row — see test_image_rebuild_terminal_contract.py for the
+    regression guard on *why* (the in_progress-stranding loop)."""
     edges = {(e["from"], e["to"]) for e in IMAGE_REBUILD_GRAPH_DEF["edges"]}
-    assert ("persist", "END") in edges
+    assert ("persist", "finalize") in edges
+    assert ("finalize", "END") in edges

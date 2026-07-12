@@ -813,6 +813,40 @@ class TestRejectedTaskGuard:
         assert "task.completed" not in events
 
     @pytest.mark.asyncio
+    async def test_already_completed_task_skips_all_side_effects(self):
+        """A utility job finalized to 'completed' (e.g. image_rebuild) must not
+        trigger the success-path webhook / auto-publish / awaiting-approval ping."""
+        from services.post_pipeline_actions import run_post_pipeline_actions
+
+        pool, _ = _make_pool(
+            fetchrow_return={"status": "completed", "error_message": None},
+        )
+        db = _make_db_service(pool=pool)
+        site = _make_site_config()
+        settings = _make_settings_service(values={"min_curation_score": "70"})
+
+        emit_mock = AsyncMock()
+        notify_mock = AsyncMock()
+        with patch(
+            "services.post_pipeline_actions.emit_webhook_event", emit_mock,
+        ), patch(
+            "services.integrations.operator_notify.notify_operator",
+            notify_mock,
+        ):
+            await run_post_pipeline_actions(
+                database_service=db,
+                task_id="t-completed",
+                topic="Image rebuild job",
+                result=_result(score=0),
+                site_config=site,
+                settings_service=settings,
+            )
+
+        notify_mock.assert_not_awaited()
+        events = [c.args[1] for c in emit_mock.call_args_list]
+        assert "task.completed" not in events
+
+    @pytest.mark.asyncio
     async def test_awaiting_approval_still_sends_awaiting_notice(self):
         """Regression guard: a genuinely awaiting task is unaffected by the
         new terminal-status guard — it still gets the 'Awaiting approval'
