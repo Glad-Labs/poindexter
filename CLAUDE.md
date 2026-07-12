@@ -393,6 +393,7 @@ Backend + brain run locally on Matt's PC; Vercel only handles the static/SSR fro
 - **Self-healing:** Brain daemon monitors and restarts services autonomously
 - **Model router first:** Use cost tiers (`free`/`budget`/`standard`/`premium`) not hardcoded model names
 - **Revenue-aware:** Content decisions informed by what generates traffic and money
+- **No subagent delegation:** Subagents/Task-tool dispatch are disabled — Anthropic bills them at full metered API rates, separate from the Max subscription. Never propose or ask about delegating to a subagent (including when a skill like `dispatching-parallel-agents` or `subagent-driven-development` would normally suggest it) — do the work inline in the same conversation, sequentially if needed.
 - **Matt's preferences:** Autonomous work (don't ask "what's next"), minimize env vars, manage from phone via Telegram/Grafana, no client/agency work — fully automated passive income. "Think 5 years down the road if this is a SaaS product" — EVERY tunable goes in app_settings, not code.
 
 ## Monitoring
