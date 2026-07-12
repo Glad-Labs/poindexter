@@ -5,22 +5,17 @@
 were set in the seed but read by no production code path (vestiges of the
 deleted 6-stage StageRunner flow, the unread ``model_role_*`` scheme, and a
 global cost-tier knob that was never wired — declined in favour of granular
-per-step ``*_model`` pins). Migration
-``20260623_202131_drop_dead_model_settings`` deletes them from existing installs
-and the baseline seed no longer emits them.
+per-step ``*_model`` pins). Existing installs dropped them via the 2026-06-23
+cleanup (now folded into the Phase G baseline squash); the baseline seed no
+longer emits them.
 
-This test pins both halves so a future baseline regen can't silently
-re-introduce the dead rows:
-
-  * the five keys are absent from ``0000_baseline.seeds.sql`` (fresh installs
-    never get them), and
-  * the migration's ``_DEAD_KEYS`` is exactly that set (the delete and the seed
-    stay in lockstep).
+This test pins that a future baseline regen can't silently re-introduce the
+dead rows: the five keys are absent from ``0000_baseline.seeds.sql``, so fresh
+installs never get them.
 """
 
 from __future__ import annotations
 
-import importlib.util
 import re
 from pathlib import Path
 
@@ -39,16 +34,6 @@ _DEAD_KEYS = (
 @pytest.fixture(scope="module")
 def baseline_seeds_text() -> str:
     return (_MIGRATIONS_DIR / "0000_baseline.seeds.sql").read_text(encoding="utf-8")
-
-
-@pytest.fixture(scope="module")
-def migration_module():
-    path = _MIGRATIONS_DIR / "20260623_202131_drop_dead_model_settings.py"
-    spec = importlib.util.spec_from_file_location("_drop_dead_model_settings", path)
-    assert spec and spec.loader, "could not load the drop_dead_model_settings migration"
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
 
 def _seeds_key(seeds_text: str, key: str) -> bool:
@@ -81,13 +66,3 @@ def test_live_neighbour_keys_still_seeded(baseline_seeds_text: str) -> None:
         "model_role_image_decision",
     ):
         assert _seeds_key(baseline_seeds_text, key), f"live key {key!r} lost from seed"
-
-
-def test_migration_targets_exactly_the_dead_keys(migration_module) -> None:
-    """The delete set and this test's expectation stay in lockstep."""
-    assert tuple(migration_module._DEAD_KEYS) == _DEAD_KEYS
-
-
-def test_migration_exposes_runner_interface(migration_module) -> None:
-    assert callable(migration_module.up)
-    assert callable(migration_module.down)

@@ -3,17 +3,16 @@
 ``ProbeZeroReaderSettingsJob`` flagged 50 app_settings keys with NULL
 ``last_read_at`` past the grace window. A full-repo grep confirmed 26 of them
 are read by nothing (superseded token/QA/content/image/cloud knobs + unwired
-feature flags). Migration ``20260711_013742_drop_zero_reader_orphan_settings``
-deletes them from existing installs, and all three every-boot / drift-checked
-seed sources no longer emit them.
+feature flags). Existing installs dropped them via the 2026-07-11 cleanup (now
+folded into the Phase G baseline squash), and all three every-boot /
+drift-checked seed sources no longer emit them.
 
 This test pins every scrub surface so a future baseline regen (or a brain-seed
 edit) can't silently re-introduce a dead row:
 
   * absent from ``0000_baseline.seeds.sql`` (re-applied every boot),
   * absent from ``brain/seed_app_settings.json`` (brain first-boot seed),
-  * absent from ``settings_defaults.DEFAULTS`` (``seed_all_defaults`` every boot),
-  * the migration's ``_DEAD_KEYS`` is exactly that set, and
+  * absent from ``settings_defaults.DEFAULTS`` (``seed_all_defaults`` every boot), and
   * the live blind-spot / intentional-keep keys that these sat among are
     untouched (fat-finger floor).
 """
@@ -21,7 +20,6 @@ edit) can't silently re-introduce a dead row:
 from __future__ import annotations
 
 import ast
-import importlib.util
 import json
 import re
 from pathlib import Path
@@ -123,16 +121,6 @@ def defaults_keys() -> set[str]:
     raise AssertionError("DEFAULTS dict not found in settings_defaults.py")
 
 
-@pytest.fixture(scope="module")
-def migration_module():
-    path = _MIGRATIONS_DIR / "20260711_013742_drop_zero_reader_orphan_settings.py"
-    spec = importlib.util.spec_from_file_location("_drop_zero_reader_orphan_settings", path)
-    assert spec and spec.loader, "could not load the drop_zero_reader_orphan_settings migration"
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def _seeds_key(seeds_text: str, key: str) -> bool:
     return re.search(rf"VALUES \('{re.escape(key)}',", seeds_text) is not None
 
@@ -179,16 +167,6 @@ def test_live_keep_keys_still_seeded(baseline_seeds_text: str, key: str) -> None
     )
 
 
-def test_migration_targets_exactly_the_dead_keys(migration_module) -> None:
-    """The delete set and this test's expectation stay in lockstep."""
-    assert tuple(migration_module._DEAD_KEYS) == _DEAD_KEYS
-
-
 def test_no_overlap_between_dead_and_keep() -> None:
     """A key can't be both retired and kept — catches a classification typo."""
     assert not (set(_DEAD_KEYS) & set(_KEEP_KEYS))
-
-
-def test_migration_exposes_runner_interface(migration_module) -> None:
-    assert callable(migration_module.up)
-    assert callable(migration_module.down)

@@ -1,71 +1,70 @@
-"""Baseline migration — schema + seed data as of the Phase F squash.
+"""Baseline migration — schema + seed data as of the Phase G squash.
 
-This single migration replaces all prior migration files. **Phase F squash,
-2026-06-22** (under Glad-Labs/glad-labs-stack). It supersedes:
+This single migration replaces all prior migration files. **Phase G squash,
+2026-07-11** (under Glad-Labs/glad-labs-stack). It supersedes:
 
-- The 0000_baseline.py that captured the Phase E squash (2026-06-06,
-  Glad-Labs/poindexter#1194, which absorbed the Phase D baseline +
-  55 migrations through 20260606_233518_*).
-- All 73 timestamped migrations from 20260607_* through 20260622_* that
-  accumulated after the Phase E squash — including the
-  ``pipeline_tasks.category`` add/drop/re-add churn (20260622_032938 dropped
-  it via view shims, 20260622_055500 re-added the base column to unbreak the
-  claim path, #1867 reconciled it base-table-only). That churn collapses to
-  nothing here: the new schema simply omits ``category``.
+- The 0000_baseline.py that captured the Phase F squash (2026-06-22, which
+  absorbed the Phase E baseline + 73 migrations through 20260622_* and retired
+  ``pipeline_tasks.category``).
+- All 42 timestamped migrations from 20260622_200222_* through
+  20260711_202250_* that accumulated after the Phase F squash.
 
-Key schema deltas since Phase E:
-- ``pipeline_tasks.category`` **retired** (superseded by ``niche_slug``, #796;
-  0 of 1,830 prod rows were ever non-NULL). The ``content_tasks`` /
-  ``pipeline_tasks_view`` views keep a literal ``NULL::character varying AS
-  category`` shim, so ``SELECT *`` / ``TaskRecord.category`` / ``?category=``
-  readers are unaffected. See the surviving drop migration below.
-- ``pipeline_tasks`` regen counters + pending flags, ``media_pipeline_redispatch_count``;
-  ``job_run_state`` table; ``topic_pool`` table + ``external_taps.niche_id``;
-  ``agent_permissions`` + ``approval_queue`` tables; ``app_settings`` lifecycle
-  metadata columns (owner / value_type / deprecated / superseded_by) + the
-  value-write ``updated_at`` trigger; ``pipeline_tasks.status`` 15-value CHECK.
+**True baseline-only — no surviving post-baseline migration.** Phase F had to
+keep ``20260622_200222_drop_pipeline_tasks_category.py`` as a convergence step
+(a baseline only ``CREATE TABLE IF NOT EXISTS``, so it can add but never drop a
+column that prod still carried). By Phase G, prod is verified current through
+20260711_202250_* (``schema_migrations`` carries every folded file), so the
+column is already dropped everywhere and the new schema simply omits it — the
+survivor folds away. Orphan ``schema_migrations`` rows for the 42 deleted files
+are harmless (the runner skips by filename and never reconciles in reverse).
 
-Key seed deltas since Phase E (fold-forward from the chain, not a prod re-dump):
-- ``pipeline_templates`` 2 -> 5: ``canonical_blog`` v6 (39 nodes — preview_gate),
-  ``dev_diary``, plus the migration-seeded ``media_pipeline`` / ``podcast_pipeline``
-  / ``seo_refresh`` graph_defs.
-- ``retention_policies`` 5 -> 23 (retention-summary + sensor-downsample batch).
-- ``external_taps`` 6 -> 1: the 5 dead global ``builtin_topic_source`` taps were
-  retired by 20260615_033048 (topic sourcing moved to niche-bound taps); only
-  ``corsair_csv`` survives on a seed-only DB. Fresh installs land in the same
-  state the chain produced.
-- ``app_settings`` 741 -> 761 (net, after retirements); ``qa_gates`` 14 -> 16
-  (qa.self_consistency, citation reconciliation rails).
+Key schema deltas folded in since Phase F:
+- New tables: ``clock_skew_samples``, ``live_activity``, ``social_post_drafts``,
+  ``remediation_rules``, ``affiliate_links``, ``affiliate_link_clicks``.
+- ``page_views`` bot-flag columns (``is_bot`` / ``bot_reason`` / ``flagged_at``)
+  + the ``page_views_human`` view; ``lab_outcomes_v1`` repointed onto it.
+- ``audit_log.source`` widened ``character varying(50)`` -> ``text``.
+- ``pipeline_tasks`` ``trace_context`` + ``podcast_redispatch_count`` +
+  ``media_pipeline_cap_reset_at``; ``atom_runs.output_preview`` + run_id seq
+  uniqueness; ``app_settings.last_read_at`` read-telemetry column;
+  ``topic_candidates.grounding_ref``.
+
+Key seed deltas folded in (fold-forward from the chain, not a prod re-dump):
+- ``pipeline_templates`` 5 -> 6: adds the ``image_rebuild`` graph_def
+  (20260711_024500); media/podcast graph_defs re-stamped to current contracts;
+  canonical_blog graph_def reseeded with the ``inject_affiliate_links`` node
+  (20260711_202250).
+- ``app_settings`` nets to 691 non-secret rows: the sdxl -> image_gen rename
+  plus the dead-model and two zero-reader orphan sweeps (incl. batch2's 6 keys
+  — staging_mode / newsletter_email / local_database_url / repo_root /
+  site_description / site_tagline) outweigh the additions.
+- ``qa_gates`` stays 18 (opening_originality + citation_grounding already
+  seeded); ``retention_policies`` stays 31; the ``glad_labs_claim`` validator
+  rule is seeded as ``company_claim``.
 
 Why:
 - Fresh-DB setup time grows linearly with migration count; CI migrations-smoke
-  was applying 74 files in series.
+  was applying 42 files in series.
 - A stale column reference in any one timestamped migration can crash the
   db_pool fixture and silently break every db-backed test.
-- The category add/drop/re-add churn was pure wasted motion (#1867 follow-up).
 
 Two sibling files carry the actual SQL, regenerated from a throwaway DB that
 ran the full pre-squash chain (correct-by-construction; verified byte-for-byte
-against a chain pg_dump):
+against a chain pg_dump — schema identical + all 11 seed tables md5-identical):
 
 - ``0000_baseline.schema.sql`` — pg_dump --schema-only sanitized to idempotent
   form (``CREATE TABLE -> CREATE TABLE IF NOT EXISTS``, ``CREATE FUNCTION ->
   CREATE OR REPLACE FUNCTION``, ``CREATE INDEX -> ... IF NOT EXISTS``). No-ops
   on Matt's prod; bootstraps a fresh DB.
-- ``0000_baseline.seeds.sql`` — non-secret ``app_settings`` (is_secret = false)
-  plus ``qa_gates``, ``content_validator_rules``, ``niches``, ``niche_goals``,
+- ``0000_baseline.seeds.sql`` — the 691 non-secret ``app_settings`` defaults
+  plus 2 empty-valued secret placeholders (``cloudflare_analytics_api_token``,
+  ``mcp_http_probe_recovery_token`` — seeded so those keys exist for the
+  operator to fill; no secret value ever ships), plus ``qa_gates``,
+  ``content_validator_rules``, ``niches``, ``niche_goals``,
   ``pipeline_templates``, ``external_taps``, ``publishing_adapters``,
-  ``webhook_endpoints``, ``retention_policies``, ``fact_overrides``. Secrets +
-  operator identity stay out; ``poindexter setup`` writes per-operator config.
-
-**One post-baseline migration survives the squash:**
-``20260622_200222_drop_pipeline_tasks_category.py`` =
-``ALTER TABLE pipeline_tasks DROP COLUMN IF EXISTS category``. A baseline only
-``CREATE TABLE IF NOT EXISTS`` — a no-op on prod, which still carries the column
-from 20260622_055500 — so a baseline that merely omits ``category`` would leave
-prod/fresh schema-drifted. That migration is the convergence step: a no-op on
-fresh installs (the column is absent), the real drop on prod. Phase G can fold
-it away once every install has dropped it.
+  ``webhook_endpoints``, ``retention_policies``, ``fact_overrides``. Secret
+  values + operator identity stay out; ``poindexter setup`` writes per-operator
+  config.
 
 New schema changes from here on go in fresh timestamped migrations
 (``YYYYMMDD_HHMMSS_<slug>.py``) — same convention; the runner sorts

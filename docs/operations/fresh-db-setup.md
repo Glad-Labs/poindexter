@@ -1,7 +1,7 @@
 # Fresh DB Setup — End-to-End Walkthrough
 
-**Last Updated:** 2026-06-22
-**Verified Against:** Glad-Labs/poindexter Phase F squash (0000_baseline.py + 20260622_200222_drop_pipeline_tasks_category.py)
+**Last Updated:** 2026-07-11
+**Verified Against:** Glad-Labs/poindexter Phase G squash (0000_baseline.py — true baseline-only, no post-baseline migrations)
 **Verifier:** dispatched code-writing agent (#378), refreshed 2026-05-23; Phase F counts updated 2026-06-22
 
 This doc walks through standing up Poindexter against a fresh,
@@ -99,12 +99,12 @@ DATABASE_URL=postgres://postgres:postgres@localhost:5433/poindexter_brain \
 
 The migration history is squashed into a single
 `0000_baseline.py` (plus `0000_baseline.schema.sql` +
-`0000_baseline.seeds.sql`) — re-rolled most recently by the Phase F
-squash (2026-06-22), which folded the Phase E baseline + its 73
-post-baseline migrations and retired `pipeline_tasks.category` — so the
-post-baseline count is now just **2** (the baseline + the one surviving
-`drop_pipeline_tasks_category` convergence migration). Derive the
-expected count dynamically — the `-1` subtracts `__init__.py`:
+`0000_baseline.seeds.sql`) — re-rolled most recently by the Phase G
+squash (2026-07-11), which folded the Phase F baseline + its 42
+post-baseline migrations into a fresh baseline — true baseline-only, so the
+migration tree is now a single file (`0000_baseline.py` alone; **zero**
+post-baseline migrations, no surviving convergence step). Derive the expected
+count dynamically — the `-1` subtracts `__init__.py`:
 
 ```bash
 python -c "from pathlib import Path; n=len(list(Path('src/cofounder_agent/services/migrations').glob('*.py')))-1; print(f'expect ~{n} migrations applied')"
@@ -150,18 +150,21 @@ SELECT
 "
 ```
 
-**Expected (verified 2026-06-22 against the Phase F baseline):**
+**Expected (verified 2026-07-11 against the Phase G baseline):**
 
 ```
  migrations | app_settings_seeded | qa_gates_seeded | niches_seeded | oauth_clients_seeded | tables
 ------------+---------------------+-----------------+---------------+----------------------+--------
-          2 |                 761 |              16 |             2 |                    0 |     94
+          1 |                 693 |              18 |             2 |                    0 |    108
 ```
 
-Note: `app_settings_seeded = 761` is the **full non-secret set** —
-since the Phase E/F baselines are generated fold-forward from real DB
-state, `0000_baseline.seeds.sql` now ships every `is_secret = false`
-key (no longer just a minimal migration-seeded subset). Secret keys and
+Note: `app_settings_seeded = 693` = the full 691-key `is_secret = false`
+default set **plus 2 empty-valued secret placeholders**
+(`cloudflare_analytics_api_token`, `mcp_http_probe_recovery_token`) — those
+keys are seeded so the operator can fill them, but no secret _value_ ever
+ships. Since the Phase F/G baselines are generated fold-forward from real
+DB state, `0000_baseline.seeds.sql` ships every non-secret default (no
+longer just a minimal migration-seeded subset). Other secret keys and
 per-operator identity are NOT seeded; `poindexter setup` writes those.
 `settings_defaults.py` still runs `seed_all_defaults()` at every boot as
 an idempotent backstop, but on a fresh install the seeds file has
@@ -358,7 +361,7 @@ filed as separate issues — they don't block this PR but improve the
 fresh-DB experience.
 
 - ~~**Lazy `app_settings` seeding.**~~ **Resolved (Phase F squash, 2026-06-22).**
-  The Phase F baseline (`0000_baseline.seeds.sql`) now seeds all 761 non-secret
+  The baseline (`0000_baseline.seeds.sql`) now seeds all 691 non-secret
   `app_settings` keys generated fold-forward from real DB state, so a fresh
   install immediately has the full non-secret default set after step 2 — no
   lazy-load gap. `services/settings_defaults.py::seed_all_defaults()` (run by

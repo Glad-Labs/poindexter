@@ -1,6 +1,6 @@
 # Database Migrations
 
-**Last Updated:** 2026-05-23
+**Last Updated:** 2026-07-11
 **Owner:** Glad-Labs/poindexter#378
 **Runner:** `src/cofounder_agent/services/migrations/__init__.py`
 
@@ -13,28 +13,31 @@ migrations in Poindexter. If you are adding a migration, read sections
 
 - **The migration history is squashed into `0000_baseline.py`** (+
   `0000_baseline.schema.sql` + `0000_baseline.seeds.sql`). The baseline has
-  been re-rolled as the tree grew — most recently the **Phase F squash
-  (2026-06-22)**, which folds in every migration through `20260622_*` (73
-  files; superseding the 2026-06-06 Phase E #1194, 2026-05-29 Phase D, and
-  the original 2026-05-08 squashes) **and retires the `pipeline_tasks.category`
-  column**; the docstring lists what each generation absorbed. That single
+  been re-rolled as the tree grew — most recently the **Phase G squash
+  (2026-07-11)**, which folds in every migration through `20260711_*` (the
+  Phase F baseline + 42 post-baseline files; Phase F itself superseded the
+  2026-06-06 Phase E #1194, 2026-05-29 Phase D, and the original 2026-05-08
+  squashes); the docstring lists what each generation absorbed. That single
   file captures the whole pre-squash schema and seeds. The runner sorts
   lexically so `0000_baseline.py` runs first (`0` < `2`); on Matt's prod
   where the schema is already in place every `CREATE TABLE IF NOT EXISTS`
   no-ops and every seed `INSERT ... ON CONFLICT DO NOTHING` no-ops, leaving
   only the row recording the baseline as applied. New migrations use the
   timestamp convention.
-- **A squash can't drop a column — one migration survives each squash.**
+- **A squash can't drop a column — so a destructive migration may have to
+  survive until prod catches up.**
   A baseline only ever `CREATE TABLE IF NOT EXISTS`, which no-ops on installs
   that already have the table (prod), so a baseline that merely _omits_ a
-  column would leave prod schema-drifted from fresh installs. Phase F
-  therefore ships exactly one surviving post-baseline migration —
+  column would leave prod schema-drifted from fresh installs. Phase F therefore
+  had to keep one surviving post-baseline migration —
   `20260622_200222_drop_pipeline_tasks_category.py`
-  (`ALTER TABLE pipeline_tasks DROP COLUMN IF EXISTS category`): a no-op on
-  fresh installs (the baseline omits the column), the real drop on prod. The
-  next squash (Phase G) can fold it away once every install has dropped it.
-  Orphan `schema_migrations` rows for the 73 deleted files are harmless — the
-  runner skips by filename and never reconciles the reverse direction.
+  (`ALTER TABLE pipeline_tasks DROP COLUMN IF EXISTS category`). **Phase G
+  (2026-07-11) folded it away**: once prod is verified current on the drop
+  (every install has applied it — checked against `schema_migrations`), the new
+  baseline simply omits the column with no survivor, so Phase G is true
+  baseline-only. Orphan `schema_migrations` rows for the deleted files are
+  harmless — the runner skips by filename and never reconciles the reverse
+  direction.
 - **New migrations use a UTC timestamp prefix:** `YYYYMMDD_HHMMSS_<slug>.py`
 - `0000_baseline.py` is the only legacy 4-digit file left in tree —
   renaming it would invalidate the `schema_migrations` rows of every

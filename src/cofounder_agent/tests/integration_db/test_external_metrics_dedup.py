@@ -23,29 +23,11 @@ These tests drive that behavior:
 
 from __future__ import annotations
 
-import importlib.util
-from pathlib import Path
-
 import pytest
 
 from services.integrations.handlers.tap_external_metrics_writer import (
     external_metrics_writer,
 )
-
-_MIGRATION = (
-    Path(__file__).resolve().parents[2]
-    / "services"
-    / "migrations"
-    / "20260704_033500_dedup_external_metrics_natural_key.py"
-)
-
-
-def _load_migration():
-    spec = importlib.util.spec_from_file_location("_dedup_migration", _MIGRATION)
-    assert spec is not None and spec.loader is not None
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
 
 pytestmark = [
     pytest.mark.integration_db,
@@ -198,24 +180,3 @@ async def test_natural_key_unique_index_present(test_pool):
     assert "UNIQUE" in blob, "external_metrics has no unique index"
     for col in ("source", "metric_name", "date", "slug", "dimensions"):
         assert col in blob, f"unique index missing key column {col!r}"
-
-
-async def test_migration_up_is_idempotent(test_pool):
-    # The migration already ran once via the chain. Re-running up() must be a
-    # safe no-op: DELETE finds no dupes, CREATE UNIQUE INDEX IF NOT EXISTS
-    # no-ops — the migration runner relies on this if a file is ever re-applied.
-    migration = _load_migration()
-    async with test_pool.acquire() as conn:
-        before = await conn.fetchval("SELECT count(*) FROM external_metrics")
-
-    await migration.up(test_pool)  # must not raise
-
-    async with test_pool.acquire() as conn:
-        after = await conn.fetchval("SELECT count(*) FROM external_metrics")
-        has_index = await conn.fetchval(
-            "SELECT 1 FROM pg_indexes "
-            "WHERE tablename = 'external_metrics' "
-            "AND indexname = 'ux_external_metrics_natural_key'"
-        )
-    assert after == before, "re-running the migration changed row count"
-    assert has_index == 1, "unique index missing after re-run"

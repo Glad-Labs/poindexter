@@ -277,6 +277,78 @@ CREATE OR REPLACE FUNCTION public.webhook_endpoints_touch_updated_at() RETURNS t
 
 
 --
+-- Name: affiliate_link_clicks; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.affiliate_link_clicks (
+    id bigint NOT NULL,
+    code character varying(64) NOT NULL,
+    post_slug text,
+    referrer text,
+    country character varying(8),
+    user_agent text,
+    created_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: affiliate_link_clicks_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.affiliate_link_clicks_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: affiliate_link_clicks_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.affiliate_link_clicks_id_seq OWNED BY public.affiliate_link_clicks.id;
+
+
+--
+-- Name: affiliate_links; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.affiliate_links (
+    id integer NOT NULL,
+    code character varying(64) NOT NULL,
+    keyword character varying(100) NOT NULL,
+    url text NOT NULL,
+    display_text character varying(200),
+    program character varying(100),
+    is_active boolean DEFAULT true NOT NULL,
+    clicks integer DEFAULT 0 NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL
+);
+
+
+--
+-- Name: affiliate_links_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.affiliate_links_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: affiliate_links_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.affiliate_links_id_seq OWNED BY public.affiliate_links.id;
+
+
+--
 -- Name: agent_permissions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -459,6 +531,7 @@ CREATE TABLE IF NOT EXISTS public.app_settings (
     value_type text,
     deprecated boolean DEFAULT false NOT NULL,
     superseded_by text,
+    last_read_at timestamp with time zone,
     CONSTRAINT app_settings_value_type_check CHECK ((value_type = ANY (ARRAY['string'::text, 'boolean'::text, 'integer'::text, 'float'::text, 'url'::text, 'model'::text, 'csv'::text, 'json'::text, 'duration'::text])))
 );
 
@@ -558,7 +631,8 @@ CREATE TABLE IF NOT EXISTS public.atom_runs (
     decision text,
     quality_score numeric(5,2),
     edit_distance integer,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    output_preview text
 );
 
 
@@ -589,7 +663,7 @@ CREATE TABLE IF NOT EXISTS public.audit_log (
     id bigint NOT NULL,
     "timestamp" timestamp with time zone DEFAULT now(),
     event_type character varying(50) NOT NULL,
-    source character varying(50) NOT NULL,
+    source text NOT NULL,
     task_id character varying(255),
     details jsonb DEFAULT '{}'::jsonb,
     severity character varying(10) DEFAULT 'info'::character varying
@@ -988,6 +1062,38 @@ CREATE TABLE IF NOT EXISTS public.checkpoints (
 
 
 --
+-- Name: clock_skew_samples; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.clock_skew_samples (
+    id bigint NOT NULL,
+    sampled_at timestamp with time zone DEFAULT now() NOT NULL,
+    skew_seconds double precision,
+    reference_url text,
+    status text NOT NULL
+);
+
+
+--
+-- Name: clock_skew_samples_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.clock_skew_samples_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: clock_skew_samples_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.clock_skew_samples_id_seq OWNED BY public.clock_skew_samples.id;
+
+
+--
 -- Name: content_revisions; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -1087,6 +1193,9 @@ CREATE TABLE IF NOT EXISTS public.pipeline_tasks (
     regen_images_pending boolean DEFAULT false NOT NULL,
     regen_text_attempts integer DEFAULT 0 NOT NULL,
     regen_text_pending boolean DEFAULT false NOT NULL,
+    podcast_redispatch_count integer DEFAULT 0 NOT NULL,
+    trace_context jsonb,
+    media_pipeline_cap_reset_at timestamp with time zone,
     CONSTRAINT pipeline_tasks_status_check CHECK (status IN ('pending', 'in_progress', 'approved', 'awaiting_approval', 'awaiting_gate', 'rejected', 'rejected_retry', 'rejected_final', 'failed', 'completed', 'published', 'cancelled', 'dry_run', 'superseded', 'archived'))
 );
 
@@ -1421,8 +1530,26 @@ CREATE TABLE IF NOT EXISTS public.page_views (
     slug character varying(500),
     referrer character varying(1000),
     user_agent text,
-    created_at timestamp with time zone DEFAULT now()
+    created_at timestamp with time zone DEFAULT now(),
+    is_bot boolean DEFAULT false NOT NULL,
+    bot_reason text,
+    flagged_at timestamp with time zone
 );
+
+
+--
+-- Name: page_views_human; Type: VIEW; Schema: public; Owner: -
+--
+
+CREATE OR REPLACE VIEW public.page_views_human AS
+ SELECT id,
+    path,
+    slug,
+    referrer,
+    user_agent,
+    created_at
+   FROM public.page_views
+  WHERE (is_bot = false);
 
 
 --
@@ -1557,7 +1684,7 @@ CREATE OR REPLACE VIEW public.lab_outcomes_v1 AS
      LEFT JOIN public.published_post_edit_metrics pem ON ((pem.task_id = co.task_id)))
      LEFT JOIN LATERAL ( SELECT count(*) FILTER (WHERE ((pv.created_at >= pem.approved_at) AND (pv.created_at <= (pem.approved_at + '24:00:00'::interval)))) AS views_24h,
             count(*) FILTER (WHERE ((pv.created_at >= pem.approved_at) AND (pv.created_at <= (pem.approved_at + '7 days'::interval)))) AS views_7d
-           FROM (public.page_views pv
+           FROM (public.page_views_human pv
              JOIN public.posts p ON (((p.slug)::text = (pv.slug)::text)))
           WHERE ((pem.approved_at IS NOT NULL) AND ((p.metadata ->> 'pipeline_task_id'::text) = co.task_id))) pv_count ON (true))
      LEFT JOIN public.experiment_variants ev ON ((ev.id = co.variant_id)))
@@ -1909,6 +2036,44 @@ CREATE TABLE IF NOT EXISTS public.jwt_blocklist (
     expires_at timestamp with time zone NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL
 );
+
+
+--
+-- Name: live_activity; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.live_activity (
+    id bigint NOT NULL,
+    kind text NOT NULL,
+    ref_id text,
+    title text NOT NULL,
+    status text DEFAULT 'running'::text NOT NULL,
+    step text,
+    progress_pct smallint,
+    detail jsonb DEFAULT '{}'::jsonb NOT NULL,
+    started_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    finished_at timestamp with time zone
+);
+
+
+--
+-- Name: live_activity_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.live_activity_id_seq
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: live_activity_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.live_activity_id_seq OWNED BY public.live_activity.id;
 
 
 --
@@ -2695,6 +2860,47 @@ ALTER TABLE public.quality_evaluations ALTER COLUMN id ADD GENERATED BY DEFAULT 
 
 
 --
+-- Name: remediation_rules; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.remediation_rules (
+    id integer NOT NULL,
+    alertname text,
+    match_regex text,
+    action_name text NOT NULL,
+    params jsonb DEFAULT '{}'::jsonb NOT NULL,
+    enabled boolean DEFAULT true NOT NULL,
+    max_attempts_per_window integer,
+    window_minutes integer,
+    verify_after_seconds integer,
+    description text DEFAULT ''::text NOT NULL,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT remediation_rules_match_present CHECK (((alertname IS NOT NULL) OR (match_regex IS NOT NULL)))
+);
+
+
+--
+-- Name: remediation_rules_id_seq; Type: SEQUENCE; Schema: public; Owner: -
+--
+
+CREATE SEQUENCE IF NOT EXISTS public.remediation_rules_id_seq
+    AS integer
+    START WITH 1
+    INCREMENT BY 1
+    NO MINVALUE
+    NO MAXVALUE
+    CACHE 1;
+
+
+--
+-- Name: remediation_rules_id_seq; Type: SEQUENCE OWNED BY; Schema: public; Owner: -
+--
+
+ALTER SEQUENCE public.remediation_rules_id_seq OWNED BY public.remediation_rules.id;
+
+
+--
 -- Name: retention_policies; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -2929,6 +3135,28 @@ CREATE TABLE IF NOT EXISTS public.skill_catalog (
 
 
 --
+-- Name: social_post_drafts; Type: TABLE; Schema: public; Owner: -
+--
+
+CREATE TABLE IF NOT EXISTS public.social_post_drafts (
+    id uuid DEFAULT gen_random_uuid() NOT NULL,
+    pipeline_task_id text NOT NULL,
+    post_id uuid,
+    platform text NOT NULL,
+    content text NOT NULL,
+    platform_config jsonb DEFAULT '{}'::jsonb NOT NULL,
+    status text DEFAULT 'pending'::text NOT NULL,
+    postiz_post_id text,
+    error text,
+    retry_count integer DEFAULT 0 NOT NULL,
+    last_retry_at timestamp with time zone,
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    approved_at timestamp with time zone,
+    posted_at timestamp with time zone
+);
+
+
+--
 -- Name: subscriber_events; Type: TABLE; Schema: public; Owner: -
 --
 
@@ -3074,7 +3302,8 @@ CREATE TABLE IF NOT EXISTS public.topic_candidates (
     operator_edited_angle text,
     decay_factor numeric DEFAULT 1.0 NOT NULL,
     carried_from_batch_id uuid,
-    created_at timestamp with time zone DEFAULT now() NOT NULL
+    created_at timestamp with time zone DEFAULT now() NOT NULL,
+    grounding_ref jsonb
 );
 
 
@@ -3217,6 +3446,20 @@ ALTER SEQUENCE public.writing_samples_id_seq OWNED BY public.writing_samples.id;
 
 
 --
+-- Name: affiliate_link_clicks id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.affiliate_link_clicks ALTER COLUMN id SET DEFAULT nextval('public.affiliate_link_clicks_id_seq'::regclass);
+
+
+--
+-- Name: affiliate_links id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.affiliate_links ALTER COLUMN id SET DEFAULT nextval('public.affiliate_links_id_seq'::regclass);
+
+
+--
 -- Name: agent_permissions id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3308,6 +3551,13 @@ ALTER TABLE ONLY public.capability_outcomes ALTER COLUMN id SET DEFAULT nextval(
 
 
 --
+-- Name: clock_skew_samples id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.clock_skew_samples ALTER COLUMN id SET DEFAULT nextval('public.clock_skew_samples_id_seq'::regclass);
+
+
+--
 -- Name: electricity_costs id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3347,6 +3597,13 @@ ALTER TABLE ONLY public.financial_entries ALTER COLUMN id SET DEFAULT nextval('p
 --
 
 ALTER TABLE ONLY public.gpu_metrics ALTER COLUMN id SET DEFAULT nextval('public.gpu_metrics_id_seq'::regclass);
+
+
+--
+-- Name: live_activity id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.live_activity ALTER COLUMN id SET DEFAULT nextval('public.live_activity_id_seq'::regclass);
 
 
 --
@@ -3427,6 +3684,13 @@ ALTER TABLE ONLY public.published_post_edit_metrics ALTER COLUMN id SET DEFAULT 
 
 
 --
+-- Name: remediation_rules id; Type: DEFAULT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remediation_rules ALTER COLUMN id SET DEFAULT nextval('public.remediation_rules_id_seq'::regclass);
+
+
+--
 -- Name: schema_migrations id; Type: DEFAULT; Schema: public; Owner: -
 --
 
@@ -3459,6 +3723,38 @@ ALTER TABLE ONLY public.sync_metrics ALTER COLUMN id SET DEFAULT nextval('public
 --
 
 ALTER TABLE ONLY public.writing_samples ALTER COLUMN id SET DEFAULT nextval('public.writing_samples_id_seq'::regclass);
+
+
+--
+-- Name: affiliate_link_clicks affiliate_link_clicks_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.affiliate_link_clicks
+    ADD CONSTRAINT affiliate_link_clicks_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: affiliate_links affiliate_links_code_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.affiliate_links
+    ADD CONSTRAINT affiliate_links_code_key UNIQUE (code);
+
+
+--
+-- Name: affiliate_links affiliate_links_keyword_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.affiliate_links
+    ADD CONSTRAINT affiliate_links_keyword_key UNIQUE (keyword);
+
+
+--
+-- Name: affiliate_links affiliate_links_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.affiliate_links
+    ADD CONSTRAINT affiliate_links_pkey PRIMARY KEY (id);
 
 
 --
@@ -3555,6 +3851,14 @@ ALTER TABLE ONLY public.approval_queue
 
 ALTER TABLE ONLY public.atom_runs
     ADD CONSTRAINT atom_runs_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: atom_runs atom_runs_run_id_seq_key; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.atom_runs
+    ADD CONSTRAINT atom_runs_run_id_seq_key UNIQUE (run_id, seq);
 
 
 --
@@ -3691,6 +3995,14 @@ ALTER TABLE ONLY public.checkpoint_writes
 
 ALTER TABLE ONLY public.checkpoints
     ADD CONSTRAINT checkpoints_pkey PRIMARY KEY (thread_id, checkpoint_ns, checkpoint_id);
+
+
+--
+-- Name: clock_skew_samples clock_skew_samples_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.clock_skew_samples
+    ADD CONSTRAINT clock_skew_samples_pkey PRIMARY KEY (id);
 
 
 --
@@ -3907,6 +4219,14 @@ ALTER TABLE ONLY public.job_run_state
 
 ALTER TABLE ONLY public.jwt_blocklist
     ADD CONSTRAINT jwt_blocklist_pkey PRIMARY KEY (jti);
+
+
+--
+-- Name: live_activity live_activity_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.live_activity
+    ADD CONSTRAINT live_activity_pkey PRIMARY KEY (id);
 
 
 --
@@ -4222,6 +4542,14 @@ ALTER TABLE ONLY public.quality_evaluations
 
 
 --
+-- Name: remediation_rules remediation_rules_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.remediation_rules
+    ADD CONSTRAINT remediation_rules_pkey PRIMARY KEY (id);
+
+
+--
 -- Name: retention_policies retention_policies_name_key; Type: CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -4315,6 +4643,14 @@ ALTER TABLE ONLY public.skill_catalog
 
 ALTER TABLE ONLY public.skill_catalog
     ADD CONSTRAINT skill_catalog_pkey PRIMARY KEY (id);
+
+
+--
+-- Name: social_post_drafts social_post_drafts_pkey; Type: CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.social_post_drafts
+    ADD CONSTRAINT social_post_drafts_pkey PRIMARY KEY (id);
 
 
 --
@@ -4508,6 +4844,27 @@ CREATE INDEX IF NOT EXISTS finance_transactions_account_idx ON public.finance_tr
 --
 
 CREATE INDEX IF NOT EXISTS finance_transactions_posted_at_idx ON public.finance_transactions USING btree (posted_at DESC);
+
+
+--
+-- Name: idx_affiliate_link_clicks_code; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_affiliate_link_clicks_code ON public.affiliate_link_clicks USING btree (code);
+
+
+--
+-- Name: idx_affiliate_link_clicks_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_affiliate_link_clicks_created ON public.affiliate_link_clicks USING btree (created_at);
+
+
+--
+-- Name: idx_affiliate_links_active; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_affiliate_links_active ON public.affiliate_links USING btree (is_active);
 
 
 --
@@ -4725,6 +5082,13 @@ CREATE INDEX IF NOT EXISTS idx_capability_registry_status ON public.capability_r
 --
 
 CREATE INDEX IF NOT EXISTS idx_capability_registry_type ON public.capability_registry USING btree (entity_type);
+
+
+--
+-- Name: idx_clock_skew_samples_sampled_at; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_clock_skew_samples_sampled_at ON public.clock_skew_samples USING btree (sampled_at DESC);
 
 
 --
@@ -4959,6 +5323,20 @@ CREATE INDEX IF NOT EXISTS idx_jwt_blocklist_expires_at ON public.jwt_blocklist 
 
 
 --
+-- Name: idx_live_activity_recent; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_live_activity_recent ON public.live_activity USING btree (finished_at DESC) WHERE (finished_at IS NOT NULL);
+
+
+--
+-- Name: idx_live_activity_running; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_live_activity_running ON public.live_activity USING btree (started_at DESC) WHERE (finished_at IS NULL);
+
+
+--
 -- Name: idx_media_assets_kind_created; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5075,6 +5453,20 @@ CREATE INDEX IF NOT EXISTS idx_operator_notes_niche_date ON public.operator_note
 --
 
 CREATE INDEX IF NOT EXISTS idx_page_views_created ON public.page_views USING btree (created_at);
+
+
+--
+-- Name: idx_page_views_human_created; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_page_views_human_created ON public.page_views USING btree (created_at) WHERE (is_bot = false);
+
+
+--
+-- Name: idx_page_views_human_slug; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_page_views_human_slug ON public.page_views USING btree (slug) WHERE (is_bot = false);
 
 
 --
@@ -5358,6 +5750,20 @@ CREATE INDEX IF NOT EXISTS idx_quality_evaluations_task_id ON public.quality_eva
 
 
 --
+-- Name: idx_remediation_rules_alertname; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_remediation_rules_alertname ON public.remediation_rules USING btree (alertname) WHERE (alertname IS NOT NULL);
+
+
+--
+-- Name: idx_remediation_rules_enabled; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_remediation_rules_enabled ON public.remediation_rules USING btree (enabled) WHERE enabled;
+
+
+--
 -- Name: idx_retention_policies_enabled; Type: INDEX; Schema: public; Owner: -
 --
 
@@ -5439,6 +5845,27 @@ CREATE INDEX IF NOT EXISTS idx_seo_opportunities_tier ON public.seo_opportunitie
 --
 
 CREATE INDEX IF NOT EXISTS idx_skill_catalog_pack ON public.skill_catalog USING btree (pack);
+
+
+--
+-- Name: idx_social_post_drafts_pipeline_task_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_social_post_drafts_pipeline_task_id ON public.social_post_drafts USING btree (pipeline_task_id);
+
+
+--
+-- Name: idx_social_post_drafts_post_id; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_social_post_drafts_post_id ON public.social_post_drafts USING btree (post_id);
+
+
+--
+-- Name: idx_social_post_drafts_status; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE INDEX IF NOT EXISTS idx_social_post_drafts_status ON public.social_post_drafts USING btree (status);
 
 
 --
@@ -5628,6 +6055,20 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_seo_opportunities_post_query ON public.seo_
 --
 
 CREATE UNIQUE INDEX IF NOT EXISTS uq_topic_pool_niche_dedup ON public.topic_pool USING btree (niche_id, dedup_key);
+
+
+--
+-- Name: ux_external_metrics_natural_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_external_metrics_natural_key ON public.external_metrics USING btree (source, metric_name, date, slug, dimensions) NULLS NOT DISTINCT;
+
+
+--
+-- Name: ux_social_post_drafts_active_key; Type: INDEX; Schema: public; Owner: -
+--
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_social_post_drafts_active_key ON public.social_post_drafts USING btree (pipeline_task_id, platform, COALESCE((platform_config ->> 'subreddit'::text), ''::text)) WHERE (status = ANY (ARRAY['pending'::text, 'failed'::text]));
 
 
 --
@@ -5884,6 +6325,22 @@ ALTER TABLE ONLY public.post_tags
 
 
 --
+-- Name: social_post_drafts social_post_drafts_pipeline_task_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.social_post_drafts
+    ADD CONSTRAINT social_post_drafts_pipeline_task_id_fkey FOREIGN KEY (pipeline_task_id) REFERENCES public.pipeline_tasks(task_id);
+
+
+--
+-- Name: social_post_drafts social_post_drafts_post_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
+--
+
+ALTER TABLE ONLY public.social_post_drafts
+    ADD CONSTRAINT social_post_drafts_post_id_fkey FOREIGN KEY (post_id) REFERENCES public.posts(id);
+
+
+--
 -- Name: topic_batches topic_batches_niche_id_fkey; Type: FK CONSTRAINT; Schema: public; Owner: -
 --
 
@@ -5924,5 +6381,4 @@ ALTER TABLE ONLY public.topic_pool
 
 
 --
--- PostgreSQL database dump complete
 --

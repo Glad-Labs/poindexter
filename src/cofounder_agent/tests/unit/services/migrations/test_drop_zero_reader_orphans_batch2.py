@@ -20,15 +20,15 @@ raw-SQL / brain readers:
     the Next.js frontend reads them from app_settings (the frontend renders its
     own metadata).
 
-Migration ``20260711_193000_drop_zero_reader_orphan_settings_batch2`` deletes them
-from existing installs; this test pins every every-boot / drift-checked seed
-source so a baseline regen or brain-seed edit can't silently resurrect a dead row.
+Existing installs dropped them via the 2026-07-11 batch-2 cleanup (now folded
+into the Phase G baseline squash); this test pins each every-boot / drift-checked
+seed source so a baseline regen or brain-seed edit can't silently resurrect a
+dead row.
 """
 
 from __future__ import annotations
 
 import ast
-import importlib.util
 import json
 import re
 from pathlib import Path
@@ -95,16 +95,6 @@ def defaults_keys() -> set[str]:
     raise AssertionError("DEFAULTS dict not found in settings_defaults.py")
 
 
-@pytest.fixture(scope="module")
-def migration_module():
-    path = _MIGRATIONS_DIR / "20260711_193000_drop_zero_reader_orphan_settings_batch2.py"
-    spec = importlib.util.spec_from_file_location("_drop_zero_reader_orphans_batch2", path)
-    assert spec and spec.loader, "could not load the batch-2 drop migration"
-    mod = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(mod)
-    return mod
-
-
 def _seeds_key(seeds_text: str, key: str) -> bool:
     return re.search(rf"VALUES \('{re.escape(key)}',", seeds_text) is not None
 
@@ -140,14 +130,5 @@ def test_live_keep_keys_still_seeded(baseline_seeds_text: str, key: str) -> None
     )
 
 
-def test_migration_targets_exactly_the_dead_keys(migration_module) -> None:
-    assert tuple(migration_module._DEAD_KEYS) == _DEAD_KEYS
-
-
 def test_no_overlap_between_dead_and_keep() -> None:
     assert not (set(_DEAD_KEYS) & set(_KEEP_KEYS))
-
-
-def test_migration_exposes_runner_interface(migration_module) -> None:
-    assert callable(migration_module.up)
-    assert callable(migration_module.down)
