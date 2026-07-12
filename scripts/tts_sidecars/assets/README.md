@@ -68,3 +68,23 @@ a host-mounted operator asset, kept out of git entirely (like `bootstrap.toml`).
 
 Verify with `poindexter media tts-bakeoff --engines chatterbox` — the
 rendered take should carry your reference voice's identity.
+
+## Multi-GPU hosts: pinning which card Chatterbox uses (optional)
+
+The chatterbox sidecar requests one GPU without specifying which — Docker
+hands it whatever it enumerates as device 0. On a host with more than one
+GPU, that's not necessarily the GPU you want: if device 0 is newer than the
+installed torch build has compiled kernels for, model load fails with
+
+    RuntimeError: CUDA error: no kernel image is available for execution on the device
+
+If you hit this, add to `~/.poindexter/bootstrap.toml`:
+
+    chatterbox_gpu_device_id = "1"   # whichever index nvidia-smi shows as compatible
+
+then recreate the sidecar:
+
+    docker compose --profile tts-hq up -d --force-recreate chatterbox
+
+`nvidia-smi --query-gpu=index,name,compute_cap --format=csv` lists each
+GPU's index and compute capability — pick one your torch version supports.

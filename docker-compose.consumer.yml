@@ -751,6 +751,13 @@ services:
       TTS_DEVICE: "cuda"
       # Bounds torch's CPU thread pool if it ever falls back to TTS_DEVICE=cpu.
       OMP_NUM_THREADS: "8"
+      # Belt-and-suspenders GPU pin alongside the device_ids reservation below:
+      # under Docker Desktop/WSL2 GPU passthrough, device_ids doesn't actually
+      # mask nvidia-smi visibility inside the container (both GPUs stay
+      # visible), so CUDA_VISIBLE_DEVICES is what actually restricts which
+      # GPU torch initializes on — the CUDA runtime itself honors it
+      # regardless of container-level device filtering.
+      CUDA_VISIBLE_DEVICES: "${CHATTERBOX_GPU_DEVICE_ID:-0}"
     volumes:
       - ${USERPROFILE:-.}/.cache/huggingface:/home/appuser/.cache/huggingface
       # Optional voice-clone reference(s). Empty/absent dir = harmless no-op
@@ -768,7 +775,13 @@ services:
         reservations:
           devices:
             - driver: nvidia
-              count: 1
+              # Defaults to GPU 0 (fine for single-GPU hosts). On a multi-GPU
+              # host where GPU 0 is newer than the installed torch build
+              # supports kernels for, model load fails with "CUDA error: no
+              # kernel image is available for execution on the device" —
+              # override CHATTERBOX_GPU_DEVICE_ID in bootstrap.toml to pin a
+              # compatible GPU instead (see scripts/tts_sidecars/assets/README.md).
+              device_ids: ["${CHATTERBOX_GPU_DEVICE_ID:-0}"]
               capabilities: [gpu]
     healthcheck:
       test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8000/health"]

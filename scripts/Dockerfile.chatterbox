@@ -12,6 +12,17 @@ RUN pip install --no-cache-dir \
 RUN useradd -m appuser
 USER appuser
 WORKDIR /app
+
+# librosa (a chatterbox-tts dependency) JIT-compiles a numba function on first
+# import. Numba's cache locator needs to write next to the source file it's
+# caching — impossible under the root-owned site-packages appuser runs as,
+# so it hard-fails with "cannot cache function ... no locator available"
+# instead of silently skipping the cache. Redirect the cache to /tmp rather
+# than under ~/.cache: the huggingface volume mount below causes Docker to
+# auto-create ~/.cache itself as root (bind-mount parent dirs are created
+# before the container's USER applies), so appuser can't write a sibling
+# dir there either — /tmp is always world-writable regardless of mounts.
+ENV NUMBA_CACHE_DIR=/tmp/numba_cache
 COPY --chown=appuser tts_sidecars/text_chunking.py /app/text_chunking.py
 COPY --chown=appuser tts_sidecars/chatterbox_server.py /app/server.py
 
