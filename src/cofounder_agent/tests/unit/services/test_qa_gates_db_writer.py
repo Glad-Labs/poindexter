@@ -251,6 +251,12 @@ def test_alias_table_covers_every_known_inline_reviewer():
         # "citation_grounding" review when it detects ungrounded named sources;
         # its gate row is seeded in 20260708_034620_add_citation_grounding_qa_gate.
         "citation_grounding",
+        # content_originality (renamed from opening_originality, 2026-07-12) —
+        # advisory RAG self-echo rail, gate row seeded in 0000_baseline. It emits
+        # a ReviewerResult on every canonical_blog QA pass; without the alias its
+        # counter froze at total_runs=0 (the FIFTH alias-drop — this one slipped
+        # past this guard too, because the name was never listed here).
+        "content_originality",
     }
     missing = must_be_documented - documented
     assert not missing, (

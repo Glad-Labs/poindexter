@@ -21,26 +21,31 @@ to the LLM and HTTP reviewers.
 `src/cofounder_agent/modules/content/atoms/` — `qa.programmatic` → `qa.critic` →
 `qa.deepeval` → `qa.ragas` → `qa.vision` →
 `qa.topic_delivery` → `qa.citations` → `qa.unlinked_attribution` →
-`qa.consistency` → `qa.self_consistency` → `qa.opening_originality` →
+`qa.consistency` → `qa.self_consistency` → `qa.content_originality` →
 `qa.web_factcheck` → `qa.aggregate`.
 Each rail atom delegates to the matching `MultiModelQA` rail methods (the
 `_review_with_cloud_model` critic plus the per-rail DeepEval, Ragas, vision,
 topic-delivery, citation, consistency, self-consistency, and web-factcheck
 checks) and appends its `ReviewerResult` to the `qa_rail_reviews` state channel.
-`qa.opening_originality` is the exception — it delegates to no `MultiModelQA`
-method. It is self-contained: it embeds the draft's opening and flags a
-near-duplicate of an existing published post (the RAG self-echo class — the
+`qa.content_originality` is the exception — it delegates to no `MultiModelQA`
+method. It is self-contained: it chunks the whole draft (paragraph-merged,
+section-windowed), embeds each chunk, and flags the draft when its worst chunk
+near-duplicates an existing published post (the RAG self-echo class — the
 two_pass writer grounds each draft on prior posts, so a dense topic cluster
 makes every new post paraphrase the sibling it retrieved; the 2026-06 "VRAM is
-the only currency that matters" cluster is the exemplar). Advisory-first via
-`qa_gates.opening_originality` (scores on every run, visible on the QA Rails
-dashboard); graduate it to a hard veto with `required_to_pass=true` — but only
-after excluding same-niche/series posts from the comparison, since the recurring
-`dev_diary` "what-we-shipped" logs share an opening cadence by template and would
-otherwise be false-vetoed. The default ceiling is `0.83`, calibrated against the
-live published corpus (2026-07-07): the rail's real opening-vs-stored similarity
-runs a median of ~0.73 and p95 ~0.83, so the prior `0.90` sat near p99 and
-caught only one of the four exemplar VRAM-cluster echoes.
+the only currency that matters" cluster is the exemplar, and the echo can land
+anywhere in the body, not just the opening). Advisory-first via
+`qa_gates.content_originality` (scores on every run, visible on the QA Rails
+dashboard); graduate it to a hard veto with `required_to_pass=true`. Graduation
+is guarded by `content_originality_excluded_series` (CSV of `template_slug`),
+which downgrades the hard veto back to advisory for recurring series like the
+`dev_diary` "what-we-shipped" logs that share an opening cadence by template and
+would otherwise be false-vetoed (future-defensive: `dev_diary` runs no `qa.*`
+atoms today). The default ceiling is `0.83`, inherited from the opening-only
+calibration (2026-07-07: opening-vs-stored median ~0.73, p95 ~0.83) and
+provisional for the broadened whole-post scan — max-over-chunks shifts the
+distribution up, so recalibrate with
+`scripts/calibrate_content_originality_threshold.py` before graduating.
 `qa.aggregate` combines them into the gate decision and halts the graph
 on reject. `multi_model_qa.py` stays as the rail library the (other) atoms
 delegate to.

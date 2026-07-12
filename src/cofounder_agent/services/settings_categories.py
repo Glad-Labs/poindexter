@@ -151,7 +151,7 @@ _PREFIX_RULES_RAW: list[tuple[str, str]] = [
     ("research", "content"),
     ("hn_", "content"),
     ("devto", "content"),
-    ("opening_originality", "content"),
+    ("content_originality", "content"),
     ("url_scraper", "content"),
     ("seed_url", "content"),
     ("trusted_source", "content"),

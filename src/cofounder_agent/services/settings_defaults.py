@@ -894,18 +894,30 @@ DEFAULTS: dict[str, str] = {
     'self_consistency_enabled': 'false',
     'self_consistency_sample_count': '3',
     'self_consistency_threshold': '0.7',
-    # Opening-originality rail — flags a draft whose OPENING near-duplicates an
+    # Content-originality rail (renamed from opening_originality 2026-07-12) —
+    # flags a draft whose CONTENT near-duplicates an
     # existing published post (RAG self-echo). The two_pass writer grounds each
     # draft in the nearest posts, so a dense topic cluster makes every new post
     # paraphrase the sibling it retrieved (the 2026-06 "VRAM is the only currency
     # that matters" cluster: 4 posts opened near-verbatim). Advisory-first via
-    # qa_gates.opening_originality — SCORES on every run (QA Rails dashboard) but
+    # qa_gates.content_originality — SCORES on every run (QA Rails dashboard) but
     # does not veto until graduated. max_similarity is the cosine ceiling above
-    # which the opening counts as a near-copy of its nearest published neighbor.
+    # which a draft chunk counts as a near-copy of its nearest published neighbor.
     # 0.83 calibrated 2026-07-07 against the published corpus (rail median 0.73,
     # p95 0.83); the prior 0.90 sat near p99 and caught 1 of 4 exemplar echoes.
-    'opening_originality_enabled': 'true',
-    'opening_originality_max_similarity': '0.83',
+    'content_originality_enabled': 'true',
+    'content_originality_max_similarity': '0.83',
+    # Whole-post chunking floors for the max-over-chunks scan. min merges tiny
+    # paragraphs into a meaningful vector; max windows a long section so it stays
+    # focused (mirrors the granularity the embeddings table stores post chunks at).
+    'content_originality_chunk_min_chars': '200',
+    'content_originality_chunk_max_chars': '600',
+    # Templated recurring series exempt from the content_originality HARD veto
+    # (they still score/flag). dev_diary/narrate_bundle share a by-template
+    # opening cadence — graduating the rail without this would false-veto every
+    # shipping log. CSV of template_slug values. Future-defensive: dev_diary runs
+    # no qa.* atoms today, so this only bites after a graduation to a hard gate.
+    'content_originality_excluded_series': 'dev_diary,narrate_bundle',
     # --- Affiliate-link injection (rebuild 2026-07-11) -----------------------
     # Dark-launched: the content.inject_affiliate_links atom no-ops until this
     # flips true. Real referral rows are added out-of-band via
@@ -2136,8 +2148,11 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'writer_max_inline_images': {'owner': 'plan_image_markers', 'value_type': 'integer'},
     'image_decision_section_body_chars': {'owner': 'image_decision_agent', 'value_type': 'integer'},
     'pipeline_critic_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
-    'opening_originality_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
-    'opening_originality_max_similarity': {'owner': 'multi_model_qa', 'value_type': 'float'},
+    'content_originality_enabled': {'owner': 'multi_model_qa', 'value_type': 'boolean'},
+    'content_originality_max_similarity': {'owner': 'multi_model_qa', 'value_type': 'float'},
+    'content_originality_chunk_min_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'content_originality_chunk_max_chars': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'content_originality_excluded_series': {'owner': 'multi_model_qa', 'value_type': 'string'},
     'video_director_model': {'owner': 'video_director', 'value_type': 'model'},
     'video_director_timeout_seconds': {'owner': 'video_director', 'value_type': 'integer'},
     'video_director_disable_thinking': {'owner': 'video_director', 'value_type': 'boolean'},

@@ -26,7 +26,7 @@ class TestCanonicalBlogSpec:
         # guardrails_enabled=false, and the atom was a dead no-op.
         assert {"qa.programmatic", "qa.critic", "qa.deepeval",
                 "qa.ragas", "qa.vision", "qa.topic_delivery", "qa.citations",
-                "qa.consistency", "qa.self_consistency", "qa.opening_originality",
+                "qa.consistency", "qa.self_consistency", "qa.content_originality",
                 "qa.web_factcheck", "qa.aggregate"} <= node_atoms
         assert "qa.guardrails" not in node_atoms
         # The three serial seo.* atoms were collapsed into one structured call
@@ -108,10 +108,10 @@ class TestCanonicalBlogSpec:
         assert ("qa_citations", "qa_consistency") not in edges
         # qa_self_consistency is inserted between consistency and web_factcheck
         assert ("qa_consistency", "qa_self_consistency") in edges
-        # qa_opening_originality (RAG self-echo net) is inserted between
+        # qa_content_originality (RAG self-echo net) is inserted between
         # qa_self_consistency and qa_web_factcheck.
-        assert ("qa_self_consistency", "qa_opening_originality") in edges
-        assert ("qa_opening_originality", "qa_web_factcheck") in edges
+        assert ("qa_self_consistency", "qa_content_originality") in edges
+        assert ("qa_content_originality", "qa_web_factcheck") in edges
         assert ("qa_self_consistency", "qa_web_factcheck") not in edges
         assert ("qa_web_factcheck", "qa_aggregate") in edges
         # The old direct qa_vision → qa_aggregate edge must be gone (re-routed).
@@ -209,7 +209,7 @@ class TestCanonicalBlogSpec:
 
     def test_node_count_is_43(self):
         # 38 + preview_gate (component-scoped regen gate, seeded disabled)
-        # + social.generate_drafts + qa.opening_originality (RAG self-echo net)
+        # + social.generate_drafts + qa.content_originality (RAG self-echo net)
         # + content.llm_reconcile_citations (grounded-LLM citation tail, #765)
         # + content.inject_affiliate_links (curated affiliate-link injection)
         assert len(CANONICAL_BLOG_GRAPH_DEF["nodes"]) == 43

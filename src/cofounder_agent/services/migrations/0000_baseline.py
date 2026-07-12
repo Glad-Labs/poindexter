@@ -38,7 +38,7 @@ Key seed deltas folded in (fold-forward from the chain, not a prod re-dump):
   plus the dead-model and two zero-reader orphan sweeps (incl. batch2's 6 keys
   — staging_mode / newsletter_email / local_database_url / repo_root /
   site_description / site_tagline) outweigh the additions.
-- ``qa_gates`` stays 18 (opening_originality + citation_grounding already
+- ``qa_gates`` stays 18 (content_originality + citation_grounding already
   seeded); ``retention_policies`` stays 31; the ``glad_labs_claim`` validator
   rule is seeded as ``company_claim``.
 

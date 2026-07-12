@@ -576,9 +576,9 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `qa_audio.py` | qa.audio — Stage-2 narration audio QA atom (#1193, Phase 2; dual-lane #689). |
 | `qa_citation.py` | qa.citations — the dead-link / minimum-citation gate as a rail atom. |
 | `qa_consistency.py` | qa.consistency — the internal self-contradiction gate as a rail atom. |
+| `qa_content_originality.py` | qa.content_originality — flag drafts whose content near-duplicates a |
 | `qa_critic.py` | qa.critic — the legacy adversarial LLM critic as a composable atom. |
 | `qa_deepeval.py` | qa.deepeval — the DeepEval rail family as one composable atom. |
-| `qa_opening_originality.py` | qa.opening_originality — flag drafts whose opening near-duplicates a |
 | `qa_programmatic.py` | qa.programmatic — the programmatic ContentValidator as a composable QA rail. |
 | `qa_ragas.py` | qa.ragas — the Ragas rail as one composable atom. |
 | `qa_rewrite.py` | qa.rewrite — one bounded revision pass for a critic-vetoed draft. |
@@ -651,7 +651,7 @@ Rendered in execution order from `services/canonical_blog_spec.py::CANONICAL_BLO
 26. `qa_unlinked_attribution` → `qa.unlinked_attribution`
 27. `qa_consistency` → `qa.consistency`
 28. `qa_self_consistency` → `qa.self_consistency`
-29. `qa_opening_originality` → `qa.opening_originality`
+29. `qa_content_originality` → `qa.content_originality`
 30. `qa_web_factcheck` → `qa.web_factcheck`
 31. `qa_aggregate` → `qa.aggregate`
 32. `qa_rewrite` → `qa.rewrite`

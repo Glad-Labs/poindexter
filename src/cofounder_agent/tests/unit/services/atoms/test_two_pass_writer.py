@@ -1966,7 +1966,7 @@ async def test_run_omits_think_when_switch_off(monkeypatch):
 # For a topic in a dense cluster the #1 neighbor is a SIBLING post, and 3-4 of
 # the top slots are the same echo cluster restating the same opening — so the
 # writer parrots it (the 2026-06 "VRAM is the only currency" 4-post echo).
-# qa.opening_originality (#2182) flags it post-hoc; this is the retrieval-side
+# qa.content_originality (#2182) flags it post-hoc; this is the retrieval-side
 # root fix: oversample candidates, drop near-identical priors (fail-open), then
 # MMR-select for diversity so an echo cluster collapses to ONE representative.
 # memory: project_rag_corpus_pollution (the INVERSE self-echo failure).

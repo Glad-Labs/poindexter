@@ -168,8 +168,9 @@ topic are the same _sibling_ posts restating the same opening, and the writer
 self-echo** failure — the 2026-06 "VRAM is the only currency" cluster where
 four published posts opened near-identically, each echoing the last. Every
 per-post QA rail scores a draft in isolation, so nothing catches it;
-`qa.opening_originality` flags it advisorily post-hoc, and this is the
-retrieval-side root fix.
+`qa.content_originality` flags it advisorily post-hoc (whole-post chunked scan,
+so a self-echo anywhere in the body — not just the opening — is caught), and
+this is the retrieval-side root fix.
 
 `_embed_and_fetch_snippets` now selects a **diverse** grounding set from an
 oversampled candidate pool rather than taking the raw top-N:

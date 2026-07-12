@@ -92,6 +92,13 @@ _REVIEWER_TO_GATE: dict[str, str] = {
     # guard prevents). Gate row seeded in
     # 20260708_034620_add_citation_grounding_qa_gate.
     "citation_grounding": "citation_grounding",
+    # content_originality (renamed from opening_originality, 2026-07-12) — the
+    # advisory RAG self-echo rail. Identity alias: the reviewer string and the
+    # qa_gates row name are both 'content_originality'. Without this,
+    # record_chain_run() drops the UPDATE and /d/qa-rails shows total_runs=0 —
+    # the exact evidence gap that blocks graduating it to a hard veto (the fifth
+    # recurrence of the alias-drop class; opening_originality was never aliased).
+    "content_originality": "content_originality",
     # Aliases — the inline reviewer name and the gate-row name diverged
     # historically; preserve both rather than rename either side.
     "image_relevance": "vision_gate",
