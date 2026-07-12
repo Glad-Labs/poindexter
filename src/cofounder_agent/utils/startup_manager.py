@@ -793,6 +793,8 @@ class StartupManager:
             "<start_of_turn>", "<|im_start|>", "[INST]", "<|user|>"
         )
 
+        template_fetch_failures: list[str] = []
+
         async def _fetch_template(model_name: str):
             """Return the raw Modelfile template string for an installed model."""
             show_url = f"{ollama_base_url}/api/show"
@@ -810,6 +812,7 @@ class StartupManager:
                 logger.debug(
                     "[model_validator] /api/show failed for %r: %s", model_name, te
                 )
+                template_fetch_failures.append(f"{model_name}: {te}")
                 return None
 
         # ------------------------------------------------------------------ #
@@ -866,6 +869,24 @@ class StartupManager:
                         "[model_validator] SUSPECT TEMPLATE: key=%r model=%r -- %s",
                         key, model_name, reason,
                     )
+
+        if template_fetch_failures:
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="startup_manager",
+                kind="model_template_fetch_failed",
+                title=(
+                    f"Chat-template fetch failed for "
+                    f"{len(template_fetch_failures)} installed model(s)"
+                ),
+                body=(
+                    f"_fetch_template: {template_fetch_failures}. Those "
+                    "models skipped chat-template validation this boot — "
+                    "a stale/mismatched template wouldn't be caught."
+                ),
+                dedup_key="model_template_fetch_failed",
+            )
 
         # ------------------------------------------------------------------ #
         # Notify operator if anything is wrong                                #

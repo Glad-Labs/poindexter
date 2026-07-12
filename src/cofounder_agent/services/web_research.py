@@ -80,9 +80,12 @@ class WebResearcher:
 
         # Step 2: Fetch and extract content from top results (concurrent)
         sem = asyncio.Semaphore(self._web_research_int("max_concurrent", MAX_CONCURRENT))
+        extract_failures: list[str] = []
         async def fetch_one(result):
             async with sem:
-                content = await self._extract_content(result["url"])
+                content = await self._extract_content(
+                    result["url"], failures=extract_failures,
+                )
                 result["content"] = content
                 return result
 
@@ -95,6 +98,25 @@ class WebResearcher:
                 logger.warning("[RESEARCH] Web fetch failed (non-fatal): %s", r)
             elif isinstance(r, dict) and r.get("url"):
                 results.append(r)
+
+        if extract_failures:
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="web_research",
+                kind="web_research_extract_failed",
+                title=(
+                    f"Content extraction failed for {len(extract_failures)} "
+                    f"of {len(search_results)} search result(s)"
+                ),
+                body=(
+                    f"search(query={query[:50]!r}): {extract_failures}. "
+                    "Those results were kept with empty content — the "
+                    "writer sees a title/snippet but no extracted text "
+                    "for them."
+                ),
+                dedup_key="web_research_extract_failed",
+            )
 
         logger.info("[RESEARCH] Web search: %d results for '%s'", len(results), query[:50])
         return results
@@ -174,8 +196,15 @@ class WebResearcher:
         )
         return []
 
-    async def _extract_content(self, url: str) -> str:
+    async def _extract_content(
+        self, url: str, *, failures: list[str] | None = None,
+    ) -> str:
         """Fetch a URL and extract clean text content.
+
+        ``failures``, when provided, collects one entry per failed fetch/
+        extraction so a caller iterating multiple URLs (``search()``) can
+        emit a single aggregate finding after the batch completes instead
+        of one per URL.
 
         Fetches go through the shared SSRF guard (``url_scraper._safe_get``):
         redirects are followed manually with an IP-denylist re-check on every
@@ -240,6 +269,8 @@ class WebResearcher:
             return ""
         except Exception as e:
             logger.debug("[RESEARCH] Content extraction failed for %s: %s", url[:50], e)
+            if failures is not None:
+                failures.append(f"{url[:80]}: {e}")
             return ""
 
     def format_for_prompt(self, results: list[dict[str, str]], max_chars: int = 3000) -> str:

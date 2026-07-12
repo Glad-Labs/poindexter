@@ -234,4 +234,20 @@ async def build_rag_context(
 
     except Exception as e:
         logger.debug("RAG context build failed (non-fatal): %s", e)
+        # Outer catch-all — distinct from the inner dropped_db_error/
+        # coherence-filter findings above, this covers anything else in
+        # the function (e.g. MemoryClient construction itself failing).
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="research_context",
+            kind="rag_context_build_failed",
+            title=f"RAG context build failed for topic {topic[:50]!r}",
+            body=(
+                f"build_rag_context: {e}. The writer got zero related-"
+                "posts context for this topic — no internal-linking "
+                "candidates at all this run."
+            ),
+            dedup_key="rag_context_build_failed",
+        )
         return None

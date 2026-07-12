@@ -173,6 +173,20 @@ async def _weighted_selection_enabled(conn: Any) -> bool:
             "defaulting to uniform",
             exc,
         )
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="experiment_runner",
+            kind="weighted_selection_flag_read_failed",
+            title="Could not read experiment_weighted_selection_enabled",
+            body=(
+                f"_weighted_selection_enabled: {exc}. Defaulted to "
+                "uniform allocation — if the operator actually opted "
+                "into weighted selection, this run silently used "
+                "Phase-1 uniform behavior instead."
+            ),
+            dedup_key="weighted_selection_flag_read_failed",
+        )
         return False
     return _truthy(raw)
 

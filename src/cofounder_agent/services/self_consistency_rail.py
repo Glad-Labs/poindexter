@@ -177,6 +177,8 @@ async def _sample_summaries(
     from services.llm_text import resolve_local_model
     writer_model = resolve_local_model(site_config=site_config)
 
+    sample_failures: list[str] = []
+
     async def _one_sample(idx: int) -> str:
         try:
             result = await dispatch_complete(
@@ -190,9 +192,29 @@ async def _sample_summaries(
             return (getattr(result, "text", "") or "").strip()
         except Exception as e:
             logger.debug("[self_consistency] sample %d failed: %s", idx, e)
+            sample_failures.append(f"sample {idx}: {e}")
             return ""
 
     samples = await asyncio.gather(*[_one_sample(i) for i in range(n)])
+
+    if sample_failures:
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="self_consistency_rail",
+            kind="self_consistency_sample_failed",
+            title=(
+                f"{len(sample_failures)} of {n} self-consistency sample(s) "
+                "failed"
+            ),
+            body=(
+                f"_sample_summaries: {sample_failures}. Fewer samples than "
+                "requested feed the self-consistency score — the rail "
+                "still runs, just with a smaller sample."
+            ),
+            dedup_key="self_consistency_sample_failed",
+        )
+
     return [s for s in samples if s]
 
 

@@ -160,6 +160,20 @@ async def get_tag_slugs_for_post(
         return {r["slug"] for r in rows if r.get("slug")}
     except Exception as exc:  # pragma: no cover - defensive
         logger.debug("[LINK_COHERENCE] tag lookup failed: %s", exc)
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="internal_link_coherence",
+            kind="link_coherence_tag_lookup_failed",
+            title="Tag lookup failed for internal-link coherence filter",
+            body=(
+                f"_tags_for_post(post_id={post_id!r}, slug={slug!r}): {exc}. "
+                "Treated as 'no tags known' for this post — the coherence "
+                "filter can't verify whether a candidate link actually "
+                "matches this post's topic."
+            ),
+            dedup_key="link_coherence_tag_lookup_failed",
+        )
         return set()
 
 

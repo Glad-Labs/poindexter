@@ -126,6 +126,21 @@ async def load_enabled_publishers(
         logger.debug(
             "publishing_adapters lookup failed (%s) — distribution disabled", exc,
         )
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="publishing_adapters_db",
+            kind="publishing_adapters_lookup_failed",
+            title="publishing_adapters lookup failed — distribution disabled",
+            body=(
+                f"load_enabled_publishers(surface={surface!r}): {exc}. "
+                "Zero adapters loaded for this run — social/newsletter/"
+                "other distribution surfaces got nothing to publish to. "
+                "Benign on a fresh install before migrations create the "
+                "table; a real problem if it recurs on an established one."
+            ),
+            dedup_key="publishing_adapters_lookup_failed",
+        )
         return []
 
     out: list[PublishingAdapterRow] = []

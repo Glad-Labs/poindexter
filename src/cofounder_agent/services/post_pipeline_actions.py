@@ -560,6 +560,9 @@ async def _maybe_run_preview_qa(
             title=topic, topic=topic, preview_url=internal_preview_url,
         )
     except Exception as exc:  # noqa: BLE001
+        # silent-ok: already explicitly non-critical per the log message —
+        # one advisory visual-QA note among several QA rails, not a gate
+        # or a control. Worst case is one fewer note on the gate history.
         logger.debug("[PREVIEW_QA] skipped (non-critical): %s", exc)
         return ""
 

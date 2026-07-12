@@ -1095,6 +1095,18 @@ class PodcastService:
             from services import media_asset_recorder
         except Exception as exc:  # noqa: BLE001 — defensive import guard
             logger.debug("[PODCAST] media_asset_recorder unavailable: %s", exc)
+            # Same guard as _image_helpers._record_inline_image_asset and
+            # source_featured_image._record_featured_image_asset — shared
+            # dedup_key, one cooldown for one underlying import break.
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="podcast_service",
+                kind="media_asset_recorder_unavailable",
+                title="media_asset_recorder unavailable — podcast asset not recorded",
+                body=f"_record_episode_asset: {exc}. This podcast episode's media row was never persisted.",
+                dedup_key="media_asset_recorder_unavailable",
+            )
             return
         pool = getattr(self._site_config, "_pool", None)
         try:

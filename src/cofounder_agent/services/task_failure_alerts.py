@@ -152,6 +152,21 @@ async def _persistent_check_and_record(
             "[task_failure_alerts] persistent dedup check failed (non-fatal): %s",
             e,
         )
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="task_failure_alerts",
+            kind="task_failure_dedup_check_failed",
+            title=f"Alert-dedup check failed for task {task_id}",
+            body=(
+                f"_persistent_check_and_record: {e}. Fails open (lets the alert "
+                "through) — the immediate consequence is a possible "
+                "duplicate notification, not a suppressed one, but a "
+                "sustained failure here means the dedup window stops "
+                "working at all."
+            ),
+            dedup_key="task_failure_dedup_check_failed",
+        )
         return False
 
 

@@ -250,7 +250,7 @@ class TestSearchFullPipeline:
                 {"title": "B", "url": "https://b.example", "snippet": "snip b", "content": ""},
             ]
 
-        async def fake_extract(url):
+        async def fake_extract(url, **_kwargs):
             return f"content from {url}"
 
         with patch.object(WebResearcher, "_ddg_search", side_effect=fake_ddg), \
@@ -281,7 +281,7 @@ class TestSearchFullPipeline:
                 {"title": "Bad", "url": "https://bad.example", "snippet": "boom", "content": ""},
             ]
 
-        async def fake_extract(url):
+        async def fake_extract(url, **_kwargs):
             if "bad" in url:
                 raise RuntimeError("fetch failed")
             return "good content"

@@ -72,6 +72,19 @@ def setup_pyroscope(
             from services.site_config import SiteConfig
         except Exception as e:
             logger.debug("[PYROSCOPE] site_config unavailable: %s — skipping", e)
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="profiling",
+                kind="pyroscope_site_config_import_failed",
+                title=f"SiteConfig import failed while configuring Pyroscope for {service_name}",
+                body=(
+                    f"setup_pyroscope: {e}. Continuous profiling is "
+                    f"disabled for this process ({service_name}) — no "
+                    "flame graphs will ship to Pyroscope."
+                ),
+                dedup_key="pyroscope_site_config_import_failed",
+            )
             return
         cfg = SiteConfig()
 

@@ -284,6 +284,20 @@ async def _cost_guard_check(site_config: SiteConfig) -> None:
         )
     except Exception as exc:  # noqa: BLE001
         logger.debug("[triage] cost_guard module unavailable: %s — skipping check", exc)
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="triage_routes",
+            kind="cost_guard_module_unavailable",
+            title="cost_guard module unavailable — ops_triage spend check skipped",
+            body=(
+                f"_cost_guard_check: {exc}. Deliberately fails open (a "
+                "broken cost_guard must never block triage), but this "
+                "means NO spend-limit check ran for this call — worth "
+                "knowing if ops_triage ever points at a paid tier."
+            ),
+            dedup_key="cost_guard_module_unavailable",
+        )
         return
 
     base_url = site_config.get("local_llm_api_url", "")

@@ -902,6 +902,20 @@ class TasksDatabase(DatabaseServiceMixin):
             # a transient DB blip doesn't spam WARN, but surface the
             # reason for test assertions + debugging.
             logger.debug("heartbeat_task(%s) failed: %s", task_id, e)
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="tasks_db",
+                kind="task_heartbeat_failed",
+                title=f"Heartbeat update failed for task {task_id}",
+                body=(
+                    f"heartbeat_task: {e}. updated_at wasn't refreshed — "
+                    "if this keeps failing, the stale-run sweep "
+                    "(reclaim_stale_inprogress_tasks) may wrongly reclaim "
+                    "a task that's actually still healthy and running."
+                ),
+                dedup_key="task_heartbeat_failed",
+            )
             return False
 
     @log_query_performance(operation="update_task_status_guarded", category="task_write")

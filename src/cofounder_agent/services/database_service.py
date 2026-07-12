@@ -223,6 +223,12 @@ class DatabaseService:
                 await conn.close()
             return {r["key"]: r["value"] for r in rows}
         except Exception as e:  # noqa: BLE001 — pre-read is best-effort
+            # silent-ok: this runs BEFORE the connection pool (and this
+            # service's own init) exists — a fresh install genuinely has
+            # no app_settings table yet, and if the DB is truly down the
+            # very next step (actual pool creation) already fails loud.
+            # Nothing new to surface: emit_finding's own audit_log_bg
+            # write would need a pool that doesn't exist at this point.
             logger.info(
                 "Pool-size pre-read unavailable (%s) — using defaults", e
             )

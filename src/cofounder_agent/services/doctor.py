@@ -311,6 +311,13 @@ def _load_remediation_keys() -> frozenset[str]:
 
         return frozenset(REMEDIATIONS.keys())
     except Exception:  # noqa: BLE001 — brain not on path is fine
+        # silent-ok: this module has no logger and imports nothing beyond
+        # stdlib/dataclasses by design — `poindexter doctor` is itself a
+        # diagnostic tool that must keep working in stripped/minimal
+        # environments, so it shouldn't depend on the DB-backed findings
+        # infra it might be called on to diagnose. The docstring above
+        # already frames this as expected ("the doctor still works,
+        # --fix just has nothing to offer").
         return frozenset()
 
 

@@ -208,6 +208,19 @@ class GeminiProvider:
             # Defensive — SiteConfig.get is sync and reads from cache.
             # DEBUG so a misbehaving cache surfaces in dev.
             logger.debug("[gemini] site_config.get(enabled) failed: %s", e)
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="llm_providers.gemini",
+                kind="gemini_enabled_flag_read_failed",
+                title="Could not read plugin.llm_provider.gemini.enabled",
+                body=(
+                    f"_is_enabled: {e}. Gemini reads as disabled for this "
+                    "call even if the operator actually enabled it — a "
+                    "SiteConfig cache read failure, not a real opt-out."
+                ),
+                dedup_key="gemini_enabled_flag_read_failed",
+            )
             return False
         return str(raw).strip().lower() in ("true", "1", "yes", "on")
 

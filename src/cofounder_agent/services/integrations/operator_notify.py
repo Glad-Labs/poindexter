@@ -137,6 +137,24 @@ def _resolve_site_config() -> Any | None:
         return get_site_config()
     except Exception as exc:  # noqa: BLE001 — best effort
         logger.debug("[notify_operator] get_site_config() raised: %s", exc)
+        # Not circular: emit_finding writes to audit_log independently of
+        # the notify_operator path this function feeds — it stays visible
+        # even when notify_operator's own site_config resolution is what
+        # broke.
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="operator_notify",
+            kind="notify_site_config_resolve_failed",
+            title="notify_operator's get_site_config() raised",
+            body=(
+                f"_resolve_site_config: {exc}. Operator notifications on "
+                "this path will short-circuit at secret_resolver — the "
+                "same failure mode the shared_context import-failure "
+                "branch above already warns loudly about."
+            ),
+            dedup_key="notify_site_config_resolve_failed",
+        )
         return None
 
 

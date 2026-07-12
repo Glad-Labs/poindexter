@@ -74,4 +74,18 @@ async def log_revision(
             return int(next_rev)
     except Exception as e:
         logger.debug("[content_revisions] log_revision failed: %s", e)
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="content_revisions_logger",
+            kind="content_revision_log_failed",
+            title=f"Failed to log a content revision for task {task_id}",
+            body=(
+                f"log_revision: {e}. This revision is missing from "
+                "content_revisions — the edit-distance auto-publish gate "
+                "reads this history, so a gap here can skew its "
+                "trailing-N clean-run calculation."
+            ),
+            dedup_key="content_revision_log_failed",
+        )
         return None

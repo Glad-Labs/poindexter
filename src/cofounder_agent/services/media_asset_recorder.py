@@ -265,6 +265,9 @@ async def media_asset_exists(
             )
             return bool(row)
     except Exception as exc:
+        # silent-ok: per this function's own docstring, the worst case on
+        # failure is a duplicate row, not data loss — a bounded, benign
+        # consequence already reasoned about here, not worth a finding.
         logger.debug(
             "[media_assets] dedupe check failed (post_id=%s type=%s): %s",
             post_id, asset_type, exc,

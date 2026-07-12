@@ -431,6 +431,10 @@ class OllamaClient:
             response = await self.client.get(f"{self.base_url}/api/tags", timeout=5.0)
             return response.status_code == 200
         except Exception as e:
+            # silent-ok: per this function's own docstring, an unreachable
+            # Ollama is a normal state (callers fall back to other
+            # providers), not an error — a finding here would fire on
+            # every poll of an intentionally-off local Ollama.
             logger.debug("[check_health] Ollama unreachable at %s: %s", self.base_url, e)
             return False
 

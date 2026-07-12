@@ -183,6 +183,19 @@ async def _get_last_run_date(pool: Any) -> str | None:
         )
     except Exception as exc:
         logger.debug("[dev-diary] last-run-date fetch failed: %s", exc)
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="jobs.run_dev_diary_post",
+            kind="dev_diary_last_run_read_failed",
+            title="Could not read dev-diary's last-run-date marker",
+            body=(
+                f"_get_last_run_date: {exc}. Treated as 'never run' — if "
+                "dev_diary already posted today, this raises the risk of "
+                "a duplicate run on the same day."
+            ),
+            dedup_key="dev_diary_last_run_read_failed",
+        )
         return None
 
 

@@ -403,6 +403,20 @@ class PluginScheduler:
             logger.debug(
                 "scheduler: last-run lookup failed for %r: %s", job_name, e
             )
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="scheduler",
+                kind="scheduler_last_run_lookup_failed",
+                title=f"Last-run lookup failed for job {job_name!r}",
+                body=(
+                    f"_persisted_last_run_epoch: {e}. Treated as 'never "
+                    "run' — this job's first-fire timing resets to the "
+                    "staggered startup delay instead of anchoring off its "
+                    "actual last run, even though it has run before."
+                ),
+                dedup_key="scheduler_last_run_lookup_failed",
+            )
             return None
 
     async def register_all(self, jobs: list[Any]) -> list[str]:

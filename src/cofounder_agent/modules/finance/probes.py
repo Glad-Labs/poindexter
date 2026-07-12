@@ -159,6 +159,19 @@ async def _default_egress_ip_fetch(pool: Any) -> str | None:
         return resp.text.strip() or None
     except Exception as exc:  # noqa: BLE001
         logger.debug("[FINANCE_POLL] egress IP lookup failed: %s", exc)
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="finance.probes",
+            kind="finance_egress_ip_lookup_failed",
+            title="Could not determine worker's public egress IP",
+            body=(
+                f"_default_egress_ip_fetch: {exc}. The auth-lost page falls "
+                "back to a manual IP hint instead of the actual address "
+                "Mercury's token allowlist sees."
+            ),
+            dedup_key="finance_egress_ip_lookup_failed",
+        )
         return None
 
 
