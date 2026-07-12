@@ -285,10 +285,24 @@ DEFAULT_HOST_RECOVER_WINDOW_MINUTES = 60
 # restart cap). Pruned to the window each cycle.
 _host_recover_attempts: list[float] = []
 
+# Dedup state for the host-recover branch's OWN pages (cap-reached /
+# POST-failed) — kept SEPARATE from `_last_notified_drifted`/`_last_notified_at`
+# (the legacy 5a/5b paths' state) per the "isolated branch" design intent
+# (docs/superpowers/plans/2026-06-21-host-routed-compose-drift-self-heal.md).
+# Without this, a persisting drift re-pages CRITICAL on every single 5-min
+# probe cycle forever once the cap is first hit — confirmed 2026-07-12: one
+# stuck service (cosyvoice2) paged Telegram/Discord 15 times in ~90 minutes
+# for an unchanged condition before the underlying compose spec was fixed.
+_host_recover_last_notified: frozenset[str] = frozenset()
+_host_recover_last_notified_at: float = 0.0
+
 
 def _reset_host_recover_state() -> None:
     """Test hook — drop the host-recover rolling-window cap state."""
+    global _host_recover_last_notified, _host_recover_last_notified_at
     _host_recover_attempts.clear()
+    _host_recover_last_notified = frozenset()
+    _host_recover_last_notified_at = 0.0
 
 
 # ---------------------------------------------------------------------------
@@ -1028,7 +1042,7 @@ async def run_compose_drift_probe(
     Returns a summary dict for storage in brain_decisions /
     probe_results.
     """
-    global _last_notified_drifted
+    global _last_notified_drifted, _host_recover_last_notified, _host_recover_last_notified_at
 
     notify_fn = notify_fn or notify_operator
     inspect_fn = inspect_fn or _docker_inspect
@@ -1187,6 +1201,8 @@ async def run_compose_drift_probe(
                 len(_last_notified_drifted),
             )
             _last_notified_drifted = frozenset()
+        _host_recover_last_notified = frozenset()
+        _host_recover_last_notified_at = 0.0
         await _emit_audit_event(
             pool,
             "probe.compose_drift_ok",
@@ -1257,18 +1273,39 @@ async def run_compose_drift_probe(
                 f"giving up this window; investigate why the reapply isn't "
                 f"clearing it (see ~/.poindexter/logs/recovery-agent.log)."
             )
-            try:
-                notify_fn(
-                    title=(
-                        f"Compose drift PERSISTS — host-recover cap reached "
-                        f"({len(drifted)} service(s))"
-                    ),
-                    detail=cap_detail,
-                    source="brain.compose_drift_probe",
-                    severity="critical",
+            # Dedup: without this, an unchanged persisting drift re-pages
+            # CRITICAL on every probe cycle (~5min) forever — confirmed
+            # 2026-07-12 (15 pages in ~90min for one stuck service). Same
+            # set-changed-or-time-elapsed gate the 5a notify-only path uses.
+            notify_now_ts = time.time()
+            set_changed = drifted_names != _host_recover_last_notified
+            time_elapsed = (
+                notify_now_ts - _host_recover_last_notified_at
+            ) >= _RENOTIFY_AFTER_SECONDS
+            if set_changed or time_elapsed:
+                try:
+                    notify_fn(
+                        title=(
+                            f"Compose drift PERSISTS — host-recover cap reached "
+                            f"({len(drifted)} service(s))"
+                        ),
+                        detail=cap_detail,
+                        source="brain.compose_drift_probe",
+                        severity="critical",
+                    )
+                except Exception as exc:
+                    logger.warning("[COMPOSE_DRIFT] notify_fn failed: %s", exc)
+                _host_recover_last_notified = drifted_names
+                _host_recover_last_notified_at = notify_now_ts
+            else:
+                logger.debug(
+                    "[COMPOSE_DRIFT] host-recover cap still reached for "
+                    "unchanged %d service(s) within renotify window — "
+                    "skipping duplicate page",
+                    len(drifted),
                 )
-            except Exception as exc:
-                logger.warning("[COMPOSE_DRIFT] notify_fn failed: %s", exc)
+            # Audit trail stays unconditional every cycle (Findings dashboard
+            # visibility) — only the actual page is deduped above.
             await _emit_audit_event(
                 pool,
                 "probe.compose_drift_host_recover_cap_reached",
@@ -1310,24 +1347,33 @@ async def run_compose_drift_probe(
             logger.info("[COMPOSE_DRIFT] host-recover dispatched: %s", recover_msg)
         else:
             # The POST itself failed (agent down/unreachable) — page warning so
-            # the broken recovery path is visible; it cannot self-heal.
-            try:
-                notify_fn(
-                    title=(
-                        f"Compose drift — host-recover POST failed "
-                        f"({len(drifted)} service(s))"
-                    ),
-                    detail=(
-                        f"{detected_summary}\n\nPOST to the host Recovery Agent "
-                        f"failed: {recover_msg}\n\nConfirm the agent is running "
-                        f"(GET {recovery_url.rsplit('/', 1)[0]}/healthz) and that "
-                        f"{HOST_RECOVER_TOKEN_KEY} matches the agent's token."
-                    ),
-                    source="brain.compose_drift_probe",
-                    severity="warning",
-                )
-            except Exception as exc:
-                logger.warning("[COMPOSE_DRIFT] notify_fn failed: %s", exc)
+            # the broken recovery path is visible; it cannot self-heal. Same
+            # dedup gate as the cap-reached branch above.
+            notify_now_ts = time.time()
+            set_changed = drifted_names != _host_recover_last_notified
+            time_elapsed = (
+                notify_now_ts - _host_recover_last_notified_at
+            ) >= _RENOTIFY_AFTER_SECONDS
+            if set_changed or time_elapsed:
+                try:
+                    notify_fn(
+                        title=(
+                            f"Compose drift — host-recover POST failed "
+                            f"({len(drifted)} service(s))"
+                        ),
+                        detail=(
+                            f"{detected_summary}\n\nPOST to the host Recovery Agent "
+                            f"failed: {recover_msg}\n\nConfirm the agent is running "
+                            f"(GET {recovery_url.rsplit('/', 1)[0]}/healthz) and that "
+                            f"{HOST_RECOVER_TOKEN_KEY} matches the agent's token."
+                        ),
+                        source="brain.compose_drift_probe",
+                        severity="warning",
+                    )
+                except Exception as exc:
+                    logger.warning("[COMPOSE_DRIFT] notify_fn failed: %s", exc)
+                _host_recover_last_notified = drifted_names
+                _host_recover_last_notified_at = notify_now_ts
         _last_notified_drifted = drifted_names
         return {
             "ok": ok_recover,

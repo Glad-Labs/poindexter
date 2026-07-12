@@ -497,6 +497,14 @@ containerised brain it heals the drift through the host Recovery Agent:
    persists despite repeated reapplies, so a human is needed.
 5. **POST failed** (agent down) → warning page: the recovery path itself is
    broken.
+6. **Paging is deduped** — the cap-reached/POST-failed page only fires when the
+   drifted-service set changes or an hour has passed since the last page
+   (mirrors the notify-only path below). The per-cycle `audit_log` row from
+   step 1 keeps recording every cycle regardless, so the Findings dashboard
+   still shows the full timeline; only the Telegram/Discord page is throttled.
+   Before this (fixed 2026-07-12), an unchanged persisting drift re-paged
+   critical on every 5-min cycle indefinitely — one stuck service paged 15
+   times in ~90 minutes.
 
 **Opt-in services are exempt from the missing-container check.** Two classes of
 service are legitimately not running, so a missing container for them is never

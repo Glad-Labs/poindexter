@@ -507,3 +507,122 @@ async def test_host_recover_post_failure_pages_warning(monkeypatch):
     notify.assert_called_once()
     assert notify.call_args.kwargs.get("severity") == "warning"
     assert "probe.compose_drift_host_recover_failed" in _audit_event_types(pool)
+
+
+# ---------------------------------------------------------------------------
+# Host-recover page dedup (regression, 2026-07-12). Incident: cosyvoice2
+# drift stayed uncleared by repeated start-stack reapplies and paged
+# CRITICAL to Telegram/Discord on every ~5-min probe cycle — 15 pages in
+# ~90 minutes for an unchanged condition — because the cap-reached and
+# POST-failed branches called notify_fn() unconditionally on every cycle,
+# unlike the 5a notify-only path which already gates on
+# set-changed-or-time-elapsed. The audit_log trail (per-cycle visibility)
+# must stay unconditional; only the actual page needs dedup.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_host_recover_cap_reached_does_not_repage_unchanged_drift(monkeypatch):
+    cd._reset_host_recover_state()
+    _seed_recovery(monkeypatch)
+    pool = _make_pool(setting_values={cd.HOST_RECOVER_CAP_KEY: "1"})
+    notify = MagicMock()
+
+    async def fake_recover(url, token):
+        return True, "dispatched"
+
+    await _run_drift(pool, host_recover_fn=fake_recover, notify_fn=notify)  # attempt 1: dispatch, no page
+    s2 = await _run_drift(pool, host_recover_fn=fake_recover, notify_fn=notify)  # cap reached, pages
+    s3 = await _run_drift(pool, host_recover_fn=fake_recover, notify_fn=notify)  # still capped, same set
+    s4 = await _run_drift(pool, host_recover_fn=fake_recover, notify_fn=notify)  # still capped, same set
+
+    assert s2["status"] == s3["status"] == s4["status"] == "host_recover_cap_reached"
+    # Only the FIRST cap-reached cycle pages — the next two, with an
+    # unchanged drifted-service set inside the renotify window, don't.
+    notify.assert_called_once()
+    # But the audit trail keeps recording every cycle (operator visibility
+    # in the Findings dashboard shouldn't be gated by the page dedup).
+    assert _audit_event_types(pool).count(
+        "probe.compose_drift_host_recover_cap_reached"
+    ) == 3
+
+
+@pytest.mark.asyncio
+async def test_host_recover_cap_reached_repages_on_new_drift_set(monkeypatch):
+    cd._reset_host_recover_state()
+    _seed_recovery(monkeypatch)
+    pool = _make_pool(setting_values={cd.HOST_RECOVER_CAP_KEY: "1"})
+    notify = MagicMock()
+
+    async def fake_recover(url, token):
+        return True, "dispatched"
+
+    async def run_for(service):
+        spec = _spec({service: {"container_name": f"poindexter-{service}"}})
+        return await cd.run_compose_drift_probe(
+            pool,
+            notify_fn=notify,
+            inspect_fn=lambda _name: None,
+            yaml_loader=lambda _path: spec,
+            host_recover_fn=fake_recover,
+            sleep_fn=AsyncMock(),
+        )
+
+    await run_for("svc-a")  # dispatch (0 < 1)
+    s2 = await run_for("svc-a")  # cap reached (1 >= 1) → pages
+    s3 = await run_for("svc-b")  # still capped, but a NEW service → pages again
+
+    assert s2["status"] == "host_recover_cap_reached"
+    assert s3["status"] == "host_recover_cap_reached"
+    assert notify.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_host_recover_post_failure_does_not_repage_unchanged_drift(monkeypatch):
+    cd._reset_host_recover_state()
+    _seed_recovery(monkeypatch)
+    pool = _make_pool()  # default cap=3, so 2 failed POSTs stay under cap
+    notify = MagicMock()
+
+    async def fake_recover(url, token):
+        return False, "connection refused"
+
+    s1 = await _run_drift(pool, host_recover_fn=fake_recover, notify_fn=notify)
+    s2 = await _run_drift(pool, host_recover_fn=fake_recover, notify_fn=notify)
+
+    assert s1["status"] == s2["status"] == "host_recover_post_failed"
+    notify.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_host_recover_notify_state_resets_when_drift_clears(monkeypatch):
+    cd._reset_host_recover_state()
+    _seed_recovery(monkeypatch)
+    pool = _make_pool(setting_values={cd.HOST_RECOVER_CAP_KEY: "1"})
+    notify = MagicMock()
+
+    async def fake_recover(url, token):
+        return True, "dispatched"
+
+    await _run_drift(pool, host_recover_fn=fake_recover, notify_fn=notify)  # dispatch
+    await _run_drift(pool, host_recover_fn=fake_recover, notify_fn=notify)  # cap reached, pages
+    assert cd._host_recover_last_notified  # non-empty after paging
+
+    spec = _spec({"worker": {"container_name": "poindexter-worker"}})
+    ok_inspect = {
+        "Config": {"Env": [], "Image": ""},
+        "HostConfig": {"Binds": [], "PortBindings": {}},
+        "Mounts": [],
+    }
+    result = await cd.run_compose_drift_probe(
+        pool,
+        notify_fn=notify,
+        inspect_fn=lambda _name: ok_inspect,
+        yaml_loader=lambda _path: spec,
+        host_recover_fn=fake_recover,
+        sleep_fn=AsyncMock(),
+    )
+
+    assert result["status"] == "no_drift"
+    assert cd._host_recover_last_notified == frozenset()
+    assert cd._host_recover_last_notified_at == 0.0
