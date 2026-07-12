@@ -87,6 +87,11 @@ Gates (mostly opt-in):
 - `qa_vision_model` (default `qwen3-vl:30b`).
 - `qa_vision_max_images` (default `3`).
 - `qa_vision_pass_threshold` (default `60`).
+- `qa_vision_num_predict` (default `1024`) — output-token budget for the
+  vision legs (shared by image-relevance + rendered-preview).
+- `qa_vision_thinking_num_predict` (default `8000`) — the larger budget a
+  _thinking_ vision model (e.g. `qwen3-vl`) gets so its `<think>` trace does
+  not exhaust the budget before the JSON scores are emitted.
 - `qa_preview_screenshot_enabled` (default `false`) — full-page
   screenshot via Playwright + vision review.
 - `qa_preview_vision_model` (default `qwen3-vl:30b`).
@@ -140,17 +145,24 @@ timed out after 5s`. Watch the `critic_fallback` audit event for
   applied. Increase `qa_gate_timeout_seconds` or disable the gate.
 - **Vision gate "passed open" (`vision_scorer_unavailable` finding)** —
   the `qa.vision` atom failed open (didn't block) because neither the
-  image-relevance nor the rendered-preview leg produced a verdict. This
-  does **not** by itself mean the vision model is down — it captions the
-  same images seconds earlier on the `caption_images` path. Every
-  no-verdict path now logs a specific `[VISION_QA] …` **WARNING** (shipped
-  to Loki) naming the real cause: an unreachable model, an unparseable
-  response, unreadable images, or a missing dispatch handle. The pool
-  handle used for cost-logging falls back to `site_config._pool` (the same
-  handle `caption_images` uses) when the threaded `database_service`
-  carries no live pool, so a handle gap no longer self-disables the gate
-  (vision_scorer_unavailable RCA 2026-07-12). Triage: read the
-  `[VISION_QA]` WARNING for the run, not just the page.
+  image-relevance nor the rendered-preview leg produced a _scoreable_
+  verdict. This does **not** mean the vision model is down: on the observed
+  runs (2026-07-12) it acquired the GPU and spent thousands of tokens, then
+  the leg still returned no scores. **Root cause:** `qwen3-vl` is a _thinking_
+  model whose `<think>` trace shares the `num_predict` budget with the JSON
+  answer; at the 1024 base the trace exhausts the budget before the scores
+  are emitted, so the leg returns `None`. Fixed by
+  `_maybe_bump_vision_thinking_budget`, which raises the budget to
+  `qa_vision_thinking_num_predict` (default 8000) for thinking vision models,
+  mirroring the text critic. Every no-verdict path also logs a specific
+  `[VISION_QA] …` **WARNING** (shipped to Loki) naming the cause (unreachable
+  model, unparseable/empty response, unreadable images, missing handle).
+  Defense-in-depth: the cost-logging pool falls back to `site_config._pool`
+  via the shared `resolve_pool` helper (with a loud `[POOL]` warning) when the
+  threaded `database_service` carries no live pool — so a genuine handle gap is
+  caught, not silent. NB: the earlier "pool is None" diagnosis was a
+  `cost_logs` NULL-`task_id` artifact (the dispatch did happen). Triage: read
+  the `[VISION_QA]` / `[POOL]` WARNING for the run, not just the page.
 - **Web fact-check rate-limited** — DuckDuckGo errors are caught and
   logged as `[WEB_FACTCHECK] Failed (non-fatal)`. Reviewer skipped.
 

@@ -30,6 +30,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
 from plugins.atom import AtomMeta, FieldSpec
 
@@ -131,7 +132,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         provider="unlinked_attribution",
     )
 
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="qa.unlinked_attribution")
     settings_service = state.get("settings_service")
     qa = MultiModelQA(
         pool=pool, settings_service=settings_service,

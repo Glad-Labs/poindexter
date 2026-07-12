@@ -34,6 +34,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from plugins.atom import AtomMeta, FieldSpec
 
 logger = logging.getLogger(__name__)
@@ -186,7 +187,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     reviews = state.get("qa_rail_reviews") or []
     feedback = _failing_review_feedback(reviews)
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="qa.rewrite")
     task_id = state.get("task_id")
     # Cross-model revision: route the revise step to a DIFFERENT model than the
     # writer (qa_rewrite_model). Default gemma — it's instruct-tuned (follows

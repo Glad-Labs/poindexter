@@ -44,6 +44,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
 from plugins.atom import AtomMeta, FieldSpec
 
@@ -98,7 +99,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     title = state.get("seo_title") or state.get("title") or state.get("topic") or ""
     topic = state.get("topic") or ""
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="qa.web_factcheck")
     settings_service = state.get("settings_service")
 
     # Reviews accumulated by the upstream qa.* rails (operator.add channel) —

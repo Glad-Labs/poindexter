@@ -2148,6 +2148,44 @@ class MultiModelQA:
             prompt, reviewer_name="internal_consistency", pass_key="consistent"
         )
 
+    async def _maybe_bump_vision_thinking_budget(self, model: str, base: int) -> int:
+        """Raise the vision output-token budget for thinking vision models.
+
+        qwen3-vl (and kin) emit a long ``<think>`` trace that shares the
+        ``num_predict`` budget with the JSON scores. At the 1024 base the trace
+        exhausts the budget before the scores are emitted, so
+        ``_check_image_relevance`` / ``_check_rendered_preview`` return ``None``
+        and ``qa.vision`` falsely pages "vision model unavailable" — even though
+        the model ran fine (it acquired the GPU and spent thousands of tokens;
+        vision_scorer_unavailable RCA 2026-07-12). Mirror the text critic's
+        thinking-aware budget: a thinking vision model gets at least
+        ``qa_vision_thinking_num_predict`` (default 8000) output tokens.
+        Non-thinking vision models keep ``base``; an already-larger ``base`` is
+        never lowered (``max``).
+        """
+        from services.llm_providers.thinking_models import (
+            is_thinking_model,
+            resolve_thinking_substrings,
+        )
+
+        if not is_thinking_model(
+            model, substrings=resolve_thinking_substrings(self._site_config)
+        ):
+            return base
+        thinking = 8000
+        if self.settings:
+            try:
+                thinking = int(
+                    await self.settings.get("qa_vision_thinking_num_predict") or 8000
+                )
+            except Exception as exc:  # noqa: BLE001 — degrade to default, never raise
+                logger.warning(
+                    "[multi_model_qa] qa_vision_thinking_num_predict read failed "
+                    "(%s: %s) — using default %d",
+                    type(exc).__name__, exc, thinking,
+                )
+        return max(base, thinking)
+
     async def _vision_complete(
         self,
         *,
@@ -2371,6 +2409,10 @@ class MultiModelQA:
         # normalized to JPEG above). One message carries the prompt + every
         # image; dispatch_complete handles cost logging, Langfuse tracing, the
         # GPU-pinned api_base override, and the gpu.lock serialisation.
+        # qwen3-vl's <think> trace shares num_predict with the JSON scores;
+        # give thinking vision models a larger budget so the scores survive
+        # instead of being truncated into a false "unavailable" (RCA 2026-07-12).
+        num_predict = await self._maybe_bump_vision_thinking_budget(model, num_predict)
         text = await self._vision_complete(
             prompt=prompt,
             images_b64=[b64 for _u, b64 in encoded_images],
@@ -2557,6 +2599,9 @@ class MultiModelQA:
         # Preview screenshot (PNG) scored via the LiteLLM dispatcher — same
         # cost/trace/GPU-lock/api_base-override benefits as the image-relevance
         # leg. Longer timeout: a full-page screenshot is a heavier prompt.
+        # Same thinking-budget headroom as the image-relevance leg — qwen3-vl's
+        # <think> trace would otherwise truncate the JSON verdict (RCA 2026-07-12).
+        num_predict = await self._maybe_bump_vision_thinking_budget(model, num_predict)
         text = await self._vision_complete(
             prompt=prompt,
             images_b64=[b64],

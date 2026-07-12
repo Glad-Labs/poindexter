@@ -29,6 +29,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
 from plugins.atom import AtomMeta, FieldSpec
 
@@ -145,7 +146,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             provider="programmatic",
         )
 
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="qa.programmatic")
     settings_service = state.get("settings_service")
     qa = MultiModelQA(pool=pool, settings_service=settings_service, site_config=site_config, platform=state.get("platform"))
     gate_states = await resolve_gate_states(qa)

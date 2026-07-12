@@ -490,6 +490,11 @@ DEFAULTS: dict[str, str] = {
     'qa_preview_vision_model': 'ollama/qwen3-vl:30b',
     'qa_vision_model': 'ollama/qwen3-vl:30b',
     'qa_vision_num_predict': '1024',  # #563: room for qwen3-vl <think> + JSON verdict
+    # Thinking vision models (qwen3-vl) need a bigger budget than the 1024 base —
+    # the <think> trace shares num_predict with the JSON scores and truncates them
+    # at 1024, so the vision leg returns None and qa.vision false-pages the model
+    # as "unavailable" though it ran fine (vision_scorer_unavailable RCA 2026-07-12).
+    'qa_vision_thinking_num_predict': '8000',
     # why: structured-JSON extraction calls (topic discovery distill +
     # candidate ranking) need a JSON-reliable INSTRUCT model. The writer
     # model (pipeline_writer_model) may be a reasoning model that returns
@@ -2159,6 +2164,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'qa_vision_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'qa_preview_vision_model': {'owner': 'multi_model_qa', 'value_type': 'model'},
     'qa_vision_num_predict': {'owner': 'multi_model_qa', 'value_type': 'integer'},
+    'qa_vision_thinking_num_predict': {'owner': 'multi_model_qa', 'value_type': 'integer'},
     'vision_alt_model': {'owner': 'image_service', 'value_type': 'model'},
     'rag_rerank_model': {'owner': 'rag_engine', 'value_type': 'model'},
     'rag_rerank_device': {'owner': 'rag_engine', 'value_type': 'string'},

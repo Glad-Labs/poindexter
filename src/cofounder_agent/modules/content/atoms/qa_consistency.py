@@ -38,6 +38,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
 from plugins.atom import AtomMeta, FieldSpec
 
@@ -68,7 +69,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not content or site_config is None:
         return {}
 
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="qa.consistency")
     settings_service = state.get("settings_service")
 
     from modules.content.multi_model_qa import MultiModelQA

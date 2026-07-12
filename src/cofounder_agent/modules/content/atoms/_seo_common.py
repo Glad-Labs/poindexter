@@ -13,6 +13,7 @@ import logging
 import re
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from services.llm_text import ollama_chat_text
 from services.prompt_manager import get_prompt_manager
 from utils.text_utils import extract_keywords_from_text
@@ -99,7 +100,7 @@ async def run_seo_llm(
     and degrades to a programmatic fallback)."""
     prompt = get_prompt_manager().get_prompt(prompt_key, **prompt_vars)
     site_config = state.get("site_config")
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="seo")
     # Per-step pin: ``pipeline_seo_model`` when set; EMPTY = follow the writer
     # (``pipeline_writer_model``), the pre-pin behavior. SEO metadata is
     # structured, formulaic copy a budget local model handles — the pin exists

@@ -35,6 +35,7 @@ import logging
 import re
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
 from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 from plugins.atom import AtomMeta, FieldSpec
@@ -211,7 +212,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not _is_enabled(site_config):
         return {}
 
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="qa.opening_originality")
     try:
         passed, score, reason = await _evaluate(
             content=content, site_config=site_config, pool=pool,

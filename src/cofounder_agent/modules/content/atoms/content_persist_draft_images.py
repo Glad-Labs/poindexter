@@ -17,6 +17,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 logger = logging.getLogger(__name__)
@@ -65,7 +66,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     content = state.get("content") or ""
     target_task_id = state.get("target_task_id")
     target_version = state.get("target_version")
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="content.persist_draft_images")
     if not content or not target_task_id or target_version is None or pool is None:
         raise RuntimeError(
             "content.persist_draft_images: content + target_task_id + target_version "

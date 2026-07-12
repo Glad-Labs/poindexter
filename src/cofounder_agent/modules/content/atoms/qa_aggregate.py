@@ -20,6 +20,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from modules.content.atoms._qa_rail_common import (
     GateStatesUnavailable,
     aggregate_rail_reviews,
@@ -106,7 +107,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # Vacuous-pass guard (poindexter#680): a required rail that emits NO review
     # still passes silently because aggregate_rail_reviews sees nothing to veto.
     # Load gate states and fail closed when any required-to-pass rail is absent.
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="qa.aggregate")
     site_config = state.get("site_config")
     settings_service = state.get("settings_service")
     if pool is not None and site_config is not None and approved:
@@ -421,7 +422,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # (poindexter#553). Fire it here so the counters reflect every
     # qa.aggregate pass (approve and reject). Best-effort — a telemetry
     # write must never break the pipeline.
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="qa.aggregate")
     if pool is not None:
         try:
             from services.qa_gates_db_writer import record_chain_run

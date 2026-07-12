@@ -18,6 +18,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
 from modules.content.multi_model_qa import MultiModelQA, ReviewerResult
 from plugins.atom import AtomMeta, FieldSpec
@@ -100,7 +101,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # So without this call a FAILING run hard-vetoes the post even though the
     # gate is seeded advisory (required_to_pass=false) — the exact bug this
     # restores. required_to_pass=true leaves it a real veto.
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="qa.self_consistency")
     settings_service = state.get("settings_service")
     qa = MultiModelQA(
         pool=pool,

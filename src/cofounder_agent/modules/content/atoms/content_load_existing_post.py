@@ -13,6 +13,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 logger = logging.getLogger(__name__)
@@ -69,7 +70,7 @@ SELECT id, target_query, current_position, ctr
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     post_id = state.get("post_id")
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="content.load_existing_post")
     if not post_id or pool is None:
         raise RuntimeError(
             "content.load_existing_post: post_id + database_service are required "

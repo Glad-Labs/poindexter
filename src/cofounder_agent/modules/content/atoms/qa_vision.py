@@ -41,6 +41,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from modules.content.atoms._qa_rail_common import resolve_gate_states, reviewer_to_dict
 from plugins.atom import AtomMeta, FieldSpec
 from services.logger_config import get_logger
@@ -238,17 +239,16 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     title = state.get("seo_title") or state.get("title") or state.get("topic") or ""
     topic = state.get("topic") or ""
-    # Pool feeds cost-logging inside _vision_complete's dispatch. On some runs
-    # the threaded database_service carries no live .pool (its VALUE is None even
-    # though the KEY is present) — which short-circuited _vision_complete's pool
-    # guard and mis-paged as "vision model unavailable" while the model was
-    # actually healthy. caption_images never hit this because it sources its pool
-    # from site_config._pool. Fall back to that SAME handle (present on those
-    # runs) so the vision gate stays live + cost-logged instead of self-disabling
-    # (vision_scorer_unavailable RCA 2026-07-12).
-    pool = getattr(state.get("database_service"), "pool", None) or getattr(
-        site_config, "_pool", None
-    )
+    # Pool feeds cost-logging inside _vision_complete's dispatch. The shared
+    # resolver prefers database_service.pool and falls back to site_config._pool
+    # (the same live handle caption_images uses), logging a loud [POOL] warning if
+    # the fallback ever engages. NB: the false "vision unavailable" pages this
+    # rail emitted were NOT a dead pool — the model ran fine (GPU + thousands of
+    # tokens spent); the real cause was qwen3-vl's <think> trace truncating the
+    # JSON scores under a too-small num_predict, fixed in _maybe_bump_vision_
+    # thinking_budget. This resolver is defense-in-depth (vision_scorer_unavailable
+    # RCA + follow-up 2026-07-12).
+    pool = resolve_pool(state, atom="qa.vision")
     settings_service = state.get("settings_service")
 
     from modules.content.multi_model_qa import MultiModelQA

@@ -22,6 +22,7 @@ import logging
 import re
 from typing import Any
 
+from modules.content.atoms._pool import resolve_pool
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 
 logger = logging.getLogger(__name__)
@@ -71,7 +72,7 @@ _IMG_BLOCK_RE = re.compile(
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
     target_task_id = state.get("target_task_id")
-    pool = getattr(state.get("database_service"), "pool", None)
+    pool = resolve_pool(state, atom="content.load_draft_for_image_rebuild")
     if not target_task_id or pool is None:
         raise RuntimeError(
             "content.load_draft_for_image_rebuild: target_task_id + database_service "

@@ -32,6 +32,7 @@ from modules.content.atoms._citation_match import (
     _overlaps,
     parse_corpus,
 )
+from modules.content.atoms._pool import resolve_pool
 from plugins.atom import AtomMeta, FieldSpec
 from services.llm_text import ollama_chat_text, resolve_structured_model
 from utils.findings import emit_finding
@@ -257,7 +258,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             prompt,
             model=model,
             site_config=site_config,
-            pool=getattr(state.get("database_service"), "pool", None),
+            pool=resolve_pool(state, atom="content.llm_reconcile_citations"),
             tier="budget",
             timeout_setting="citation_reconcile_llm_timeout_seconds",
             timeout_default=60.0,
