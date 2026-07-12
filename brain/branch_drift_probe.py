@@ -318,7 +318,11 @@ async def _is_deduped(pool: Any, *, fingerprint: str, now_utc: datetime, dedup_h
             fingerprint,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.debug("[BRANCH_DRIFT] dedup lookup failed for %s: %s", fingerprint, exc)
+        logger.warning(
+            "[BRANCH_DRIFT] dedup lookup failed for %s: %s — treating as not "
+            "deduped (branch-drift alert may re-fire)",
+            fingerprint, exc,
+        )
         return False
     if not row:
         return False

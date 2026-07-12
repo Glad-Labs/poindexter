@@ -401,6 +401,10 @@ def _pg_probe(host: str, port: int, timeout_seconds: float) -> bool:
             reply = sock.recv(1)
             return reply in (b"S", b"N")
     except Exception as exc:  # noqa: BLE001 — any failure = not reachable
+        # silent-ok: the probe's False return IS the signal — the caller folds
+        # it into the probe summary (per-service reachable/unreachable), so a
+        # per-target WARNING on every unreachable host would just duplicate the
+        # summary. Fires per probe cycle; brain can't emit_finding.
         logger.debug("[PORT_FORWARD] pg_probe %s:%s failed: %s", host, port, exc)
         return False
 
@@ -448,6 +452,9 @@ def _http_probe(url: str, timeout_seconds: float) -> bool:
     except Exception as exc:  # noqa: BLE001
         # http.client.RemoteDisconnected ("connection closed unexpectedly")
         # is a subclass of ConnectionError on 3.10+ — caught here.
+        # silent-ok: the probe's False return IS the signal (folded into the
+        # probe summary); a per-target WARNING would duplicate it. Fires per
+        # probe cycle; brain can't emit_finding.
         logger.debug(
             "[PORT_FORWARD] %s on %s: %s",
             type(exc).__name__, url, str(exc)[:160],

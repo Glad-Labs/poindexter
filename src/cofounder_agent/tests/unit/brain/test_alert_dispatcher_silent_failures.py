@@ -14,6 +14,15 @@ A persistent failure in any of these means dedup state is wrong, so the
 operator gets re-paged on every cycle. That is exactly the kind of
 alerting-plane degradation that must NOT be invisible.
 
+The dedup/config READ handlers were escalated the same way (gap-site
+burn-down batch 2) — a swallowed read silently CHANGES behaviour with no
+signal:
+
+* ``_fetch_dedup_state``           — dedup bypassed, repeats re-fire.
+* ``_fetch_correlated_audit_rows`` — summary loses correlated events.
+* ``_read_triage_enabled``         — triage enrichment silently disabled.
+* ``_read_api_base_url``           — triage POSTs silently skipped.
+
 Mirrors the caplog assertion pattern in
 ``tests/unit/services/test_publish_service_bg_exceptions.py``.
 """
@@ -123,3 +132,63 @@ class TestDedupStateWriteFailuresAreVisible:
         warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
         assert warnings, "dedup-state reset failure must be visible at WARNING"
         assert "reset exploded" in " ".join(r.getMessage() for r in warnings)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestReadPathFailuresAreVisible:
+    """The dedup/config READ paths must WARN (not debug) on DB error — a
+    swallowed read silently changes behaviour (dedup bypassed, triage
+    disabled, summary loses correlated events) with no operator signal,
+    while the fail-open/-closed sentinel is still returned (non-blocking)."""
+
+    async def test_fetch_dedup_state_logs_warning_on_db_failure(self, caplog):
+        pool = MagicMock()
+        pool.fetchrow = AsyncMock(side_effect=RuntimeError("dedup read exploded"))
+
+        with caplog.at_level(logging.WARNING, logger=_LOGGER):
+            result = await ad._fetch_dedup_state(pool, "abc123def456")
+
+        assert result is None  # fail-open sentinel preserved
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings, "dedup-state read failure must be visible at WARNING"
+        assert "dedup read exploded" in " ".join(r.getMessage() for r in warnings)
+
+    async def test_fetch_correlated_audit_rows_logs_warning_on_db_failure(self, caplog):
+        pool = MagicMock()
+        pool.fetch = AsyncMock(side_effect=RuntimeError("audit fetch exploded"))
+        now = datetime.now(UTC)
+
+        with caplog.at_level(logging.WARNING, logger=_LOGGER):
+            result = await ad._fetch_correlated_audit_rows(
+                pool, since=now, until=now, limit=20,
+            )
+
+        assert result == []  # best-effort empty preserved
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings, "correlated audit fetch failure must be visible at WARNING"
+        assert "audit fetch exploded" in " ".join(r.getMessage() for r in warnings)
+
+    async def test_read_triage_enabled_logs_warning_on_db_failure(self, caplog):
+        pool = MagicMock()
+        pool.fetchval = AsyncMock(side_effect=RuntimeError("triage flag read exploded"))
+
+        with caplog.at_level(logging.WARNING, logger=_LOGGER):
+            result = await ad._read_triage_enabled(pool)
+
+        assert result is False  # fail-closed sentinel preserved
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings, "triage-enabled read failure must be visible at WARNING"
+        assert "triage flag read exploded" in " ".join(r.getMessage() for r in warnings)
+
+    async def test_read_api_base_url_logs_warning_on_db_failure(self, caplog):
+        pool = MagicMock()
+        pool.fetchval = AsyncMock(side_effect=RuntimeError("base url read exploded"))
+
+        with caplog.at_level(logging.WARNING, logger=_LOGGER):
+            result = await ad._read_api_base_url(pool)
+
+        assert result == ""  # empty-string sentinel preserved
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings, "api_base_url read failure must be visible at WARNING"
+        assert "base url read exploded" in " ".join(r.getMessage() for r in warnings)

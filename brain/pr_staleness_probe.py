@@ -249,7 +249,7 @@ async def _is_pr_deduped(
             fingerprint,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.debug(
+        logger.warning(
             "[PR_STALENESS] alert_dedup_state lookup failed for %s: %s — treating as not deduped",
             fingerprint, exc,
         )

@@ -203,6 +203,10 @@ async def fetch_icue_psu_watts(pool, max_age_minutes: int = 90):
             return float(row["metric_value"])
         return None
     except Exception as exc:  # noqa: BLE001 — fallback must never crash the cycle
+        # silent-ok: this is the DB fallback for the PSU reading; on error it
+        # returns None exactly like a genuine no-data row, so the Grafana power
+        # gap is the visible signal. Fires every 5-min cycle — a WARNING would
+        # spam (see the PSU alert-storm history). Brain can't emit_finding.
         logger.debug(
             "[BRAIN] iCUE PSU fallback query failed (%s: %s)",
             type(exc).__name__, exc,

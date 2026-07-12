@@ -390,9 +390,10 @@ async def _fetch_dedup_state(
             fingerprint,
         )
     except Exception as e:  # noqa: BLE001
-        logger.debug(
+        logger.warning(
             "[alert_dispatcher] alert_dedup_state lookup failed for %s "
-            "(%s) -- treating as first fire",
+            "(%s) -- treating as first fire (dedup bypassed; repeats may "
+            "re-fire until the read recovers)",
             fingerprint[:12], e,
         )
         return None
@@ -1498,8 +1499,9 @@ async def _fetch_correlated_audit_rows(
             since, until, limit,
         )
     except Exception as e:  # noqa: BLE001
-        logger.debug(
-            "[alert_dispatcher] correlated audit_log fetch failed (%s)", e,
+        logger.warning(
+            "[alert_dispatcher] correlated audit_log fetch failed (%s) -- "
+            "summary will show no correlated events even if some exist", e,
         )
         return []
     out: list[dict[str, Any]] = []
@@ -1701,9 +1703,9 @@ async def _read_triage_enabled(pool: Any) -> bool:
             "ops_triage_enabled",
         )
     except Exception as e:  # noqa: BLE001
-        logger.debug(
+        logger.warning(
             "[alert_dispatcher] could not read ops_triage_enabled "
-            "(treating as disabled): %s", e,
+            "(fail-closed -> triage enrichment silently disabled this run): %s", e,
         )
         return False
     if value is None:
@@ -1771,7 +1773,10 @@ async def _read_api_base_url(pool: Any) -> str:
             "api_base_url",
         )
     except Exception as e:  # noqa: BLE001
-        logger.debug("[alert_dispatcher] api_base_url read failed: %s", e)
+        logger.warning(
+            "[alert_dispatcher] api_base_url read failed -> empty base URL, "
+            "triage POSTs will be skipped this run: %s", e,
+        )
         return ""
     return (value or "").strip().rstrip("/")
 

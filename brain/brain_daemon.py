@@ -647,6 +647,10 @@ async def _brain_activity_begin(pool) -> int | None:
             "VALUES ('brain', 'monitor_cycle', 'Brain monitor cycle') RETURNING id"
         )
     except Exception:  # noqa: BLE001  # observability must never break the daemon
+        # silent-ok: cosmetic console-pulse row (live_activity); expected to
+        # fail pre-migration on a fresh deploy and fires every 5-min cycle, so
+        # a WARNING would be pure noise. The missing pulse is self-evident in
+        # the console, and the brain can't emit_finding (no services import).
         logger.debug("[BRAIN] live_activity begin swallowed", exc_info=True)
         return None
 
@@ -1003,7 +1007,7 @@ async def _setup_brain_pyroscope(pool, service_name: str = "poindexter-brain") -
         )
         cfg = {r["key"]: r["value"] for r in rows}
     except Exception as e:  # noqa: BLE001 — DB readiness is the broader concern
-        logger.debug("[PYROSCOPE] could not read app_settings: %s — skipping", e)
+        logger.warning("[PYROSCOPE] could not read app_settings: %s — skipping", e)
         return
 
     enabled = (cfg.get("enable_pyroscope") or "false").lower() == "true"

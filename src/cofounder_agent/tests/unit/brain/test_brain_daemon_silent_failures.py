@@ -232,3 +232,30 @@ class TestNotifyEnvHydrationVisibility:
         ]
         assert skips, "a failed per-key secret read must be visible at WARNING"
         assert "secret backend down" in " ".join(r.getMessage() for r in skips)
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestPyroscopeSetupVisibility:
+    """Profiler setup reads app_settings best-effort. Its own docstring
+    already promised the read failure is "logged at WARNING and swallowed",
+    but the code logged at ``debug`` — so a silently un-profiled daemon was
+    invisible (gap-site burn-down batch 2). The read failure must WARN
+    while startup still proceeds (the daemon must never refuse to start
+    because the profiler couldn't decide whether to run)."""
+
+    async def test_setup_brain_pyroscope_logs_warning_on_settings_read_failure(
+        self, caplog,
+    ):
+        pool = MagicMock()
+        pool.fetch = AsyncMock(side_effect=RuntimeError("app_settings read exploded"))
+
+        with caplog.at_level(logging.WARNING, logger=_LOGGER):
+            # Returns (does not raise) — startup must proceed unprofiled.
+            await bd._setup_brain_pyroscope(pool)
+
+        warnings = [r for r in caplog.records if r.levelno == logging.WARNING]
+        assert warnings, "pyroscope settings-read failure must be visible at WARNING"
+        combined = " ".join(r.getMessage() for r in warnings)
+        assert "PYROSCOPE" in combined
+        assert "app_settings read exploded" in combined

@@ -83,7 +83,11 @@ async def _row_age_days(pool, table: str, column: str = "created_at") -> float |
             f"SELECT MAX({column}) FROM {table}",  # nosec B608
         )
     except Exception as e:
-        logger.debug("[BUSINESS_PROBE] _row_age_days(%s.%s) failed: %s", table, column, e)
+        logger.warning(
+            "[BUSINESS_PROBE] _row_age_days(%s.%s) failed: %s — skipping this "
+            "table's freshness check this run",
+            table, column, e,
+        )
         return None
     if last is None:
         # Empty table — return very-large sentinel so threshold comparison
