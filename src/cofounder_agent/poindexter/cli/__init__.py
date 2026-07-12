@@ -20,6 +20,18 @@ Future subcommand groups (tracked in #191):
     poindexter settings — app_settings get/set
 """
 
+# ── Guarantee UTF-8 output before any CLI submodule loads ────────────────────
+# A plain Windows console (or a container with a non-UTF-8 locale) binds
+# stdout/stderr to a legacy codepage. Any emoji/symbol a subcommand prints
+# (✅ ❌ ⚠ →, ...) then raises UnicodeEncodeError and kills the process
+# mid-command. Reconfiguring here — before any submodule's click.echo/secho
+# can run — covers every subcommand plus `poindexter --help` itself, which
+# main()'s own callback body never runs for (Click intercepts --help before
+# invoking the group callback). See poindexter/cli/_encoding.py.
+from ._encoding import ensure_utf8_streams
+
+ensure_utf8_streams()
+
 # ── Quiet a noisy third-party warning before any CLI submodule loads ─────────
 # langgraph's Postgres checkpointer builds a module-level
 # ``langchain_core.load.Reviver()`` at import time

@@ -7,6 +7,7 @@ import os
 
 import click
 
+from ._encoding import ensure_utf8_streams
 from ._event_loop import ensure_selector_event_loop_on_windows
 from .affiliate import affiliate_group
 from .approval import APPROVAL_FLAT_ALIASES, gates_group
@@ -59,6 +60,10 @@ logging.basicConfig(level=logging.WARNING, format="%(message)s")
 @click.option("-v", "--verbose", is_flag=True, help="Enable verbose logging.")
 @click.pass_context
 def main(ctx: click.Context, verbose: bool) -> None:
+    # Re-assert the UTF-8 stream reconfiguration (the package __init__ already
+    # did this once at import) so every subcommand gets it even if something
+    # re-bound sys.stdout/stderr in between. See poindexter/cli/_encoding.py.
+    ensure_utf8_streams()
     # Force the Windows SelectorEventLoop for the WHOLE CLI before any
     # subcommand's asyncio.run creates a loop — psycopg3 (the LangGraph
     # checkpointer behind `pipeline resume`) raises InterfaceError on the
