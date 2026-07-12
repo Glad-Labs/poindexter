@@ -8,7 +8,7 @@ client, and the DNS canary is patched at ``socket.getaddrinfo``.
 
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -25,6 +25,9 @@ def _sc(**overrides):
         # No canary by default: host unset + storage_public_url unset → skip.
         "media_infra_dns_canary_host": "",
         "storage_public_url": "",
+        # VRAM gate off by default here so the wan/image-gen/DNS probe tests
+        # aren't coupled to a Prometheus read; TestVramGate enables it.
+        "media_render_vram_gate_enabled": "false",
     }
     base.update(overrides)
     return SiteConfig(initial_config=base)
@@ -58,6 +61,76 @@ def _client_factory(
 
 _WAN_HEALTH = "http://wan.test:9840/health"
 _IMAGE_GEN_HEALTH = "http://imagegen.test:9836/health"
+
+
+@pytest.mark.unit
+class TestVramGate:
+    """Render-GPU free-VRAM preflight (2026-07-12 desktop-lockup fix).
+
+    Patches ``render_gpu_free_vram_gb`` at its source module (the health check
+    imports it locally, so the source binding is what's resolved at call time).
+    """
+
+    @pytest.mark.asyncio
+    async def test_insufficient_vram_defers(self):
+        factory = _client_factory({_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200})
+        with patch(
+            "services.render_vram.render_gpu_free_vram_gb",
+            new=AsyncMock(return_value=20.0),
+        ):
+            out = await mih.check_media_infra_health(
+                _sc(
+                    media_render_vram_gate_enabled="true",
+                    media_render_min_free_vram_gb="25",
+                ),
+                http_client_factory=factory,
+            )
+        assert out.healthy is False
+        assert out.vram_insufficient is True
+        assert "VRAM" in out.detail
+
+    @pytest.mark.asyncio
+    async def test_sufficient_vram_is_healthy(self):
+        factory = _client_factory({_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200})
+        with patch(
+            "services.render_vram.render_gpu_free_vram_gb",
+            new=AsyncMock(return_value=27.0),
+        ):
+            out = await mih.check_media_infra_health(
+                _sc(
+                    media_render_vram_gate_enabled="true",
+                    media_render_min_free_vram_gb="25",
+                ),
+                http_client_factory=factory,
+            )
+        assert out.healthy is True
+        assert out.vram_insufficient is False
+
+    @pytest.mark.asyncio
+    async def test_unreadable_vram_fails_closed(self):
+        factory = _client_factory({_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200})
+        with patch(
+            "services.render_vram.render_gpu_free_vram_gb",
+            new=AsyncMock(return_value=None),
+        ):
+            out = await mih.check_media_infra_health(
+                _sc(media_render_vram_gate_enabled="true"),
+                http_client_factory=factory,
+            )
+        assert out.healthy is False
+        assert out.vram_insufficient is True
+
+    @pytest.mark.asyncio
+    async def test_gate_disabled_skips_vram_probe(self):
+        factory = _client_factory({_WAN_HEALTH: 200, _IMAGE_GEN_HEALTH: 200})
+        probe = AsyncMock(return_value=1.0)
+        with patch("services.render_vram.render_gpu_free_vram_gb", new=probe):
+            out = await mih.check_media_infra_health(
+                _sc(media_render_vram_gate_enabled="false"),
+                http_client_factory=factory,
+            )
+        assert out.healthy is True
+        probe.assert_not_called()
 
 
 @pytest.mark.unit

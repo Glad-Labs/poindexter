@@ -372,6 +372,16 @@ DEFAULTS: dict[str, str] = {
     # at-or-above the ratio still ship and still emit the partial_render
     # finding. '0' disables the gate (every partial ships, prior behaviour).
     'video_render_min_shot_ratio': '0.5',
+    # Render-GPU VRAM preflight (2026-07-12 desktop-lockup fix). The Wan render
+    # loads ~24 GB onto pipeline_gpu_index (the RTX 5090 that also drives the
+    # desktop). dispatch_media_pipeline defers the whole cycle unless the card
+    # has at least media_render_min_free_vram_gb free — so a render can never
+    # oversubscribe the 32 GB card and spill WDDM into system RAM (freezing the
+    # desktop). Fail-closed: an unreadable Prometheus VRAM reading defers too.
+    # Read in services/media_infra_health.py::check_media_infra_health via
+    # services/render_vram.py::render_gpu_free_vram_gb.
+    'media_render_vram_gate_enabled': 'true',
+    'media_render_min_free_vram_gb': '25',
     # Caption ASR engine for media.transcribe_narration. Default 'speaches'
     # reuses the already-running Speaches faster-whisper sidecar (narration TTS /
     # voice STT) instead of a second whisper.cpp install. The prior default,

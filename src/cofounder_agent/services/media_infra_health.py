@@ -27,6 +27,11 @@ Probes (all app_settings-tunable, per DB-first config):
   the host from ``storage_public_url``; skip when neither is set). Catches
   the in-container-DNS-broken outage class where the render servers are up
   but uploads/research would fail anyway.
+- **render-GPU VRAM** — free VRAM on ``pipeline_gpu_index`` must be ≥
+  ``media_render_min_free_vram_gb`` (read via Prometheus
+  ``nvidia_gpu_memory_*_mib``). Fail-closed: an unreadable reading defers, so
+  a blind render can't oversubscribe the 32 GB display GPU and freeze WDDM
+  (2026-07-12 desktop-lockup fix).
 
 Settings:
 
@@ -34,6 +39,8 @@ Settings:
   ``false`` short-circuits to healthy (OSS forks without a wan sidecar).
 - ``media_infra_health_timeout_seconds`` (default ``5``) — per-probe timeout.
 - ``media_infra_dns_canary_host`` (default ``''`` = derive / skip).
+- ``media_render_vram_gate_enabled`` (default ``true``) — render-GPU VRAM gate.
+- ``media_render_min_free_vram_gb`` (default ``25``) — min free VRAM to render.
 """
 
 from __future__ import annotations
@@ -60,6 +67,11 @@ class MediaInfraHealth:
 
     healthy: bool
     detail: str = ""
+    # True only when the render-GPU free-VRAM preflight is (a) reason the pass
+    # is unhealthy. Lets dispatch_media_pipeline attempt a VRAM reclaim (evict
+    # Ollama + hard-unload image-gen) before deferring, vs a wan/image-gen
+    # outage where a reclaim would be pointless.
+    vram_insufficient: bool = False
 
 
 def _resolve_wan_health_url(site_config: Any) -> str:
@@ -160,8 +172,39 @@ async def check_media_infra_health(
         if failure:
             failures.append(failure)
 
+    # Render-GPU VRAM preflight: the Wan render loads ~24 GB onto
+    # pipeline_gpu_index (the display GPU); defer unless the card has room, so
+    # it can never oversubscribe the 32 GB card and spill WDDM into system RAM
+    # (which freezes the desktop). Fail-closed: an unreadable reading defers.
+    vram_insufficient = False
+    if site_config.get_bool("media_render_vram_gate_enabled", True):
+        from services.render_vram import render_gpu_free_vram_gb
+
+        min_gb = site_config.get_float("media_render_min_free_vram_gb", 25.0) or 25.0
+        free = await render_gpu_free_vram_gb(
+            site_config, http_client_factory=http_client_factory,
+        )
+        if free is None:
+            vram_insufficient = True
+            failures.append(
+                "render-GPU free VRAM unreadable (Prometheus) — deferring so a "
+                "blind render can't oversubscribe the display GPU and freeze "
+                "the desktop"
+            )
+        elif free < min_gb:
+            vram_insufficient = True
+            failures.append(
+                f"render-GPU free VRAM {free:.1f} GB < {min_gb:.0f} GB required "
+                f"(pipeline_gpu_index) — deferring so the render can't freeze "
+                f"the desktop"
+            )
+
     if failures:
-        return MediaInfraHealth(healthy=False, detail="; ".join(failures))
+        return MediaInfraHealth(
+            healthy=False,
+            detail="; ".join(failures),
+            vram_insufficient=vram_insufficient,
+        )
     return MediaInfraHealth(healthy=True, detail="all render-infra probes passed")
 
 
