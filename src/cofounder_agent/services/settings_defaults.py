@@ -804,9 +804,25 @@ DEFAULTS: dict[str, str] = {
     # the topic_dedup_* engine above; this guards the manual path. force=true
     # overrides. See services/topic_dedup_guard.py.
     'create_post_dedup_threshold': '0.75',
-    'topic_dedup_engine': 'word_overlap',
+    # Topic-dedup engine (auto-discovery path). 'content_embedding' (default) =
+    # compare the candidate against published-post CONTENT via find_similar_posts
+    # — catches re-treads whose TITLE differs (e.g. "GPU VRAM Budgeting…" scored
+    # only 0.55 title-similarity to "The VRAM Currency Problem" but 0.735 on
+    # content). 'semantic' = title-embedding cosine (all-MiniLM); 'word_overlap' =
+    # lexical baseline. Thresholds: *_content for content_embedding, *_semantic
+    # for semantic, bare *_threshold for word_overlap.
+    'topic_dedup_engine': 'content_embedding',
     'topic_dedup_existing_threshold': '0.7',
     'topic_dedup_intra_batch_threshold': '0.65',
+    # Content-embedding dedup threshold (topic_dedup_engine='content_embedding').
+    # Cosine at/above which a candidate topic duplicates a published post's
+    # content. Calibrated 2026-07-12 against the live corpus: the VRAM cluster
+    # scores 0.65-0.735, unrelated controls <=0.60.
+    'topic_dedup_existing_threshold_content': '0.70',
+    # Device for the semantic (title) topic-dedup model (all-MiniLM). Default
+    # 'cpu' so dedup never competes with the inference pipeline for VRAM
+    # (mirrors rag_rerank_device). Set 'cuda' only on a box with spare VRAM.
+    'topic_dedup_device': 'cpu',
     'topic_discovery_length_distribution': '',
     # Topic-sanity gate (services/topic_sanity.py, 2026-06-30 dots-topic
     # incident): minimum count of alphabetic words (letter-runs of >=2

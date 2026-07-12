@@ -222,3 +222,36 @@ class TestSemanticVsExisting:
         # No model load needed because there's nothing to compare against.
         await dedup.mark_against_existing(topics)
         assert topics[0].is_duplicate is False
+
+
+# ---------------------------------------------------------------------------
+# CPU pin — the dedup model must not compete with the pipeline for VRAM
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestCpuPin:
+    def test_get_model_passes_device_to_sentence_transformer(self):
+        import sys
+
+        import services.topic_dedup_semantic as mod
+        mod._model_cache.clear()
+        # _get_model does a function-local `from sentence_transformers import
+        # SentenceTransformer`. Inject a fake module into sys.modules so that
+        # import binds to our stub — patching the real attribute would import
+        # the real package, a heavy optional dep whose import fails under some
+        # CI dependency resolutions (huggingface-hub pin conflict). The model
+        # is never actually loaded in a unit test.
+        fake_st_class = MagicMock()
+        fake_module = MagicMock()
+        fake_module.SentenceTransformer = fake_st_class
+        with patch.dict(sys.modules, {"sentence_transformers": fake_module}):
+            mod._get_model("all-MiniLM-L6-v2", "cpu")
+        fake_st_class.assert_called_once_with("all-MiniLM-L6-v2", device="cpu")
+        mod._model_cache.clear()
+
+    def test_get_device_defaults_to_cpu(self):
+        assert _make_dedup()._get_device() == "cpu"
+
+    def test_get_device_reads_setting(self):
+        assert _make_dedup({"topic_dedup_device": "cuda"})._get_device() == "cuda"

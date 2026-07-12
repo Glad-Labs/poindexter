@@ -42,27 +42,30 @@ logger = logging.getLogger(__name__)
 # is ~3-5 seconds on first call and ~80MB resident; we pay the cost
 # once per worker process and reuse.
 _model_lock = threading.Lock()
-_model_cache: dict[str, Any] = {}
+_model_cache: dict[tuple[str, str], Any] = {}
 
 
-def _get_model(model_name: str) -> Any:
-    """Lazy-load + cache a sentence-transformer model.
+def _get_model(model_name: str, device: str = "cpu") -> Any:
+    """Lazy-load + cache a sentence-transformer model on ``device``.
 
-    Thread-safe: two callers racing on the same name see only one
-    load; subsequent calls skip the lock entirely (fast path).
+    Thread-safe: two callers racing on the same (name, device) see only one
+    load; subsequent calls skip the lock entirely (fast path). Pinned to CPU
+    by default so topic dedup never competes for VRAM with the inference
+    pipeline (mirrors the rag_rerank_device reranker-to-CPU fix).
     """
-    if model_name in _model_cache:
-        return _model_cache[model_name]
+    key = (model_name, device)
+    if key in _model_cache:
+        return _model_cache[key]
     with _model_lock:
-        if model_name not in _model_cache:
+        if key not in _model_cache:
             from sentence_transformers import SentenceTransformer
             logger.info(
-                "[topic_dedup_semantic] Loading sentence-transformer: %s "
+                "[topic_dedup_semantic] Loading sentence-transformer: %s on %s "
                 "(first call — subsequent calls reuse the cached model)",
-                model_name,
+                model_name, device,
             )
-            _model_cache[model_name] = SentenceTransformer(model_name)
-    return _model_cache[model_name]
+            _model_cache[key] = SentenceTransformer(model_name, device=device)
+    return _model_cache[key]
 
 
 class _TopicLike(Protocol):
@@ -92,6 +95,10 @@ class SemanticDeduplicator:
     # Tunable via topic_dedup_*_threshold_semantic in app_settings.
     DEFAULT_EXISTING_THRESHOLD = 0.65
     DEFAULT_INTRA_BATCH_THRESHOLD = 0.65
+    # Named default so the config-read fallback returns a *named* value, not a
+    # bare "cpu" literal (mirrors DEFAULT_MODEL). CPU keeps the dedup embedder
+    # off the inference GPU.
+    DEFAULT_DEVICE = "cpu"
 
     def __init__(self, pool: Any, *, site_config: Any) -> None:
         self.pool = pool
@@ -211,15 +218,13 @@ class SemanticDeduplicator:
     def _embed(self, texts: list[str]) -> Any:
         """Encode texts to a (N, D) numpy array. Synchronous — for internal use only.
         Callers should prefer _embed_async to avoid blocking the event loop."""
-        model_name = self._get_model_name()
-        model = _get_model(model_name)
+        model = _get_model(self._get_model_name(), self._get_device())
         return model.encode(texts, normalize_embeddings=True, show_progress_bar=False)
 
     async def _embed_async(self, texts: list[str]) -> Any:
         """Encode texts via asyncio.to_thread so the blocking sentence-transformers
         call does not freeze the event loop. Returns a (N, D) numpy array."""
-        model_name = self._get_model_name()
-        model = _get_model(model_name)
+        model = _get_model(self._get_model_name(), self._get_device())
         return await asyncio.to_thread(
             model.encode, texts,
             normalize_embeddings=True,
@@ -235,6 +240,17 @@ class SemanticDeduplicator:
             ) or self.DEFAULT_MODEL
         except Exception:
             return self.DEFAULT_MODEL
+
+    def _get_device(self) -> str:
+        """Device for the dedup embedding model. Default 'cpu' so it never
+        competes with the inference pipeline for VRAM."""
+        try:
+            return (
+                self._site_config.get("topic_dedup_device", self.DEFAULT_DEVICE)
+                or self.DEFAULT_DEVICE
+            )
+        except Exception:
+            return self.DEFAULT_DEVICE
 
     def _get_threshold(self, key: str, default: float) -> float:
         try:
@@ -288,17 +304,28 @@ def get_deduplicator(pool: Any, *, site_config: Any) -> Any:
     """Return the operator-selected deduplicator engine.
 
     ``app_settings.topic_dedup_engine`` picks between:
-    - ``word_overlap`` (default) → ``services.topic_dedup.TopicDeduplicator``
-    - ``bertopic`` / ``semantic`` → ``SemanticDeduplicator``
+    - ``content_embedding`` / ``content`` (default) →
+      ``services.topic_dedup_content.ContentEmbeddingDeduplicator`` — compares
+      the candidate against published-post CONTENT (catches re-treads whose
+      title differs).
+    - ``bertopic`` / ``semantic`` → ``SemanticDeduplicator`` (title-embedding).
+    - ``word_overlap`` → ``services.topic_dedup.TopicDeduplicator`` (lexical).
 
-    Either return value satisfies the same ``mark_duplicates`` /
+    Every return value satisfies the same ``mark_duplicates`` /
     ``mark_against_existing`` / ``mark_intra_batch`` API, so callers
-    can swap without conditional logic.
+    can swap without conditional logic. The hardcoded fallback stays
+    ``word_overlap`` (cheapest, no model/DB) for when no setting row exists at
+    all; real installs read ``content_embedding`` from the seeded default.
     """
     try:
         engine = (site_config.get("topic_dedup_engine", "word_overlap") or "word_overlap").lower()
     except Exception:
         engine = "word_overlap"
+
+    if engine in ("content", "content_embedding"):
+        from services.topic_dedup_content import ContentEmbeddingDeduplicator
+
+        return ContentEmbeddingDeduplicator(pool, site_config=site_config)
 
     if engine in ("bertopic", "semantic"):
         return SemanticDeduplicator(pool, site_config=site_config)
