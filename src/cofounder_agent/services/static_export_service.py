@@ -266,9 +266,15 @@ async def _export_affiliate_referrals(pool, *, site_config: SiteConfig) -> None:
     """
     try:
         rows = await pool.fetch(
-            "SELECT code, COALESCE(NULLIF(display_text, ''), keyword) AS name, "
-            "description, category FROM affiliate_links "
-            "WHERE is_active = true ORDER BY id"
+            "SELECT al.code, "
+            "COALESCE(NULLIF(al.display_text, ''), first_kw.keyword, al.code) AS name, "
+            "al.description, al.category "
+            "FROM affiliate_links al "
+            "LEFT JOIN LATERAL ("
+            "  SELECT keyword FROM affiliate_link_keywords"
+            "  WHERE link_id = al.id ORDER BY id LIMIT 1"
+            ") first_kw ON true "
+            "WHERE al.is_active = true ORDER BY al.id"
         )
     except Exception as e:  # noqa: BLE001 — never fail the export on the referrals page data
         logger.warning("[STATIC_EXPORT] affiliate-referrals fetch failed: %s", e)
