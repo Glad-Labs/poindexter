@@ -85,7 +85,12 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     # Distribution brand + operator accounts/infra (generic/empty on OSS).
     "newsletter_from_name": "Glad Labs",
     "podcast_name": "Glad Labs Podcast",
-    "podcast_description": "AI-development audio essays from Glad Labs. Narrated deep-dives on building an autonomous content pipeline, local LLMs, and the solo-founder tech stack.",
+    # Narration-voice credit (2026-07-11): the podcast's voice is cloned from a
+    # Spoken Wikipedia reference clip narrated by JRennocks
+    # (https://en.wikipedia.org/wiki/User:JRennocks), CC BY-SA via Wikimedia
+    # Commons. Attribution lives here (the evergreen RSS <description>, shown
+    # once per feed) rather than per-episode.
+    "podcast_description": "AI-development audio essays from Glad Labs. Narrated deep-dives on building an autonomous content pipeline, local LLMs, and the solo-founder tech stack. Narration voice cloned from a Spoken Wikipedia reading by JRennocks, via Wikimedia Commons.",
     "video_feed_name": "Glad Labs Video",
     # Branded FTC affiliate-disclosure copy. The OSS seed ships a generic
     # "we may earn" version; this restores the Glad Labs wording on the rig.
@@ -107,6 +112,22 @@ OPERATOR_SETTING_OVERRIDES: dict[str, str] = {
     "podcast_spotify_show_id": "033obxyUXdxhXyQ6erC07G",
     "podcast_spotify_url": "https://open.spotify.com/show/033obxyUXdxhXyQ6erC07G",
     "podcast_cover_url": "https://pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev/podcast/cover.jpg",
+    # TTS engine cutover (2026-07-11 bake-off, Glad-Labs/glad-labs-stack#2269):
+    # Chatterbox (voice-cloning) replaces Speaches/Kokoro as the podcast
+    # narration engine. exaggeration/cfg_weight stay at the seeded 0.5/0.5
+    # defaults — that's the take Matt approved. audio_prompt_path is a
+    # container-side path; the real clip lives host-side at
+    # ~/.poindexter/tts-voices/podcast-voice.wav (never committed — see
+    # scripts/tts_sidecars/assets/README.md).
+    #
+    # Voice-clone reference credit: narrated by Spoken Wikipedia contributor
+    # JRennocks (https://en.wikipedia.org/wiki/User:JRennocks), sourced from
+    # Wikimedia Commons under its standard open license (Spoken Wikipedia
+    # recordings share the CC BY-SA license of the underlying article text).
+    # The clip conditions voice CLONING (TTS synthesis of new text), not
+    # redistribution of the original recording.
+    "podcast_tts_engine": "chatterbox",
+    "plugin.tts_provider.chatterbox.audio_prompt_path": "/app/voices/podcast-voice.wav",
     # First-person QA bypass for the branded niche slugs. The OSS seed names
     # the generic starter-blog example; without this override a fresh operator
     # install would rename starter-blog -> glad-labs (below) and the QA rail

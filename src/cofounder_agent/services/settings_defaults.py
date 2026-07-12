@@ -1152,11 +1152,13 @@ DEFAULTS: dict[str, str] = {
     # Output sample rate — loudnorm upsamples to 192 kHz internally, so resample
     # back to a distribution-standard rate (44.1 kHz).
     'podcast_tts_loudnorm_ar': '44100',
-    # --- Bake-off TTS engines (Phase 1, opt-in `tts-hq` compose profile) -------
+    # --- Bake-off TTS engines (opt-in `tts-hq` compose profile) ----------------
     # Emotion-capable challengers to the default Kokoro/Speaches narration,
-    # compared offline via `poindexter media tts-bakeoff`. NOT wired into the
-    # live pipeline — podcast_tts_engine still selects Speaches. Both sidecars
-    # speak the OpenAI /v1/audio/speech contract.
+    # compared offline via `poindexter media tts-bakeoff`. Both sidecars speak
+    # the OpenAI /v1/audio/speech contract. Chatterbox is wired into the LIVE
+    # pipeline (Phase 2, podcast_service._generate_with_chatterbox) when
+    # podcast_tts_engine='chatterbox'; CosyVoice2 stays bake-off-only (rejected
+    # for artifacts — see docs/superpowers/plans/2026-07-10-tts-engine-bakeoff-phase1.md).
     # CosyVoice2-0.5B (Apache-2.0) — instruction-controllable emotion/style.
     'plugin.tts_provider.cosyvoice2.base_url': 'http://cosyvoice2:8000/v1',
     'plugin.tts_provider.cosyvoice2.model': 'cosyvoice2',
@@ -1174,6 +1176,11 @@ DEFAULTS: dict[str, str] = {
     'plugin.tts_provider.chatterbox.cfg_weight': '0.5',
     # Client read-timeout (s) — see cosyvoice2.timeout_s.
     'plugin.tts_provider.chatterbox.timeout_s': '600',
+    # Zero-shot voice-clone reference — a path INSIDE the chatterbox container
+    # (see scripts/tts_sidecars/assets/README.md). Empty = the sidecar's own
+    # built-in voice (OSS default, zero setup). The operator overlay restores
+    # the real pinned voice on the Glad Labs rig.
+    'plugin.tts_provider.chatterbox.audio_prompt_path': '',
     'scheduled_publisher_poll_seconds': '60',
     # TTS pronunciation defaults — JSON objects operators can tune via
     # `poindexter settings set`. The code merges DB values on top of the

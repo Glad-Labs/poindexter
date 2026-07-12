@@ -61,3 +61,36 @@ class TestChatterboxTTSProvider:
         ):
             with pytest.raises(RuntimeError, match="chatterbox"):
                 await ChatterboxTTSProvider().synthesize("hi", tmp_path / "x.mp3")
+
+    async def test_synthesize_forwards_audio_prompt_path(self, tmp_path):
+        """A configured voice-clone reference flows through to the sidecar
+        request so the live pipeline can pin a production voice."""
+        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+
+        with patch(
+            "services.tts_providers.chatterbox.render_openai_tts",
+            new=AsyncMock(return_value=b"CBBYTES"),
+        ) as m:
+            await ChatterboxTTSProvider().synthesize(
+                "Hello", tmp_path / "cb.mp3",
+                config={"audio_prompt_path": "/app/voices/podcast-voice.wav"},
+            )
+        extra = m.await_args.kwargs["extra_body"]
+        assert extra["audio_prompt_path"] == "/app/voices/podcast-voice.wav"
+
+    async def test_synthesize_omits_audio_prompt_path_when_unset(self, tmp_path):
+        """Empty string (the app_settings unset sentinel) must NOT reach the
+        sidecar as a literal '' — that would 400 (chatterbox_server.py checks
+        os.path.exists on any truthy value). Omitting the key falls back to
+        the sidecar's own built-in voice, matching today's zero-config
+        bake-off behavior for OSS installs with no reference clip."""
+        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+
+        with patch(
+            "services.tts_providers.chatterbox.render_openai_tts",
+            new=AsyncMock(return_value=b"X"),
+        ) as m:
+            await ChatterboxTTSProvider().synthesize(
+                "hi", tmp_path / "x.mp3", config={"audio_prompt_path": ""},
+            )
+        assert "audio_prompt_path" not in m.await_args.kwargs["extra_body"]

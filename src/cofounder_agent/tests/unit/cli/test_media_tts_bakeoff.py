@@ -103,3 +103,20 @@ class TestTtsBakeoff:
         assert cfg["exaggeration"] == "0.7"
         # --host override flows through (e.g. a tailnet IP; doc-range IP here).
         assert _bakeoff_base_url("cosyvoice2", "198.51.100.10") == "http://198.51.100.10:8012/v1"
+
+    def test_engine_config_forwards_chatterbox_audio_prompt_path(self):
+        """A pinned voice-clone reference must reach the bake-off render too —
+        the README's ``poindexter media tts-bakeoff --engines chatterbox``
+        verification step is only meaningful if the CLI forwards the same
+        setting the live podcast pipeline reads."""
+        from poindexter.cli.media import _bakeoff_engine_config
+
+        class _SC:
+            def get(self, k, d=None):
+                return {
+                    "plugin.tts_provider.chatterbox.audio_prompt_path":
+                        "/app/voices/podcast-voice.wav",
+                }.get(k, d)
+
+        cfg = _bakeoff_engine_config("chatterbox", _SC(), "localhost")
+        assert cfg["audio_prompt_path"] == "/app/voices/podcast-voice.wav"

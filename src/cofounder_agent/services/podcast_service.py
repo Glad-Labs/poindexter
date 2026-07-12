@@ -1136,7 +1136,12 @@ class PodcastService:
     async def _generate_with_voice(
         self, script: str, voice: str, output_path: Path
     ) -> EpisodeResult:
-        """Generate audio via Speaches/Kokoro TTS with the given voice."""
+        """Generate audio via the configured ``podcast_tts_engine``.
+
+        Default (unset/``speaches``) uses Speaches/Kokoro. ``chatterbox``
+        delegates to :func:`_generate_with_chatterbox` (Phase 2 cutover —
+        the emotion-capable voice-clone engine).
+        """
         from services import tts_service
 
         # Apply DB-configurable pronunciation fixes at the TTS render boundary
@@ -1149,6 +1154,10 @@ class PodcastService:
         # MB) fire only as whole words — never inside "social" or "number".
         for written, spoken in _get_tts_replacements(site_config=self._site_config):
             script = _apply_spoken_replacement(script, written, spoken)
+
+        engine = str(self._site_config.get("podcast_tts_engine", "") or "").strip()
+        if engine == "chatterbox":
+            return await self._generate_with_chatterbox(script, voice, output_path)
 
         audio_bytes = await tts_service.synthesize_speech(
             script,
@@ -1176,6 +1185,53 @@ class PodcastService:
             file_path=str(output_path),
             duration_seconds=duration,
             file_size_bytes=size,
+        )
+
+    async def _generate_with_chatterbox(
+        self, script: str, voice: str, output_path: Path
+    ) -> EpisodeResult:
+        """Generate audio via the Chatterbox sidecar (Phase 2 engine cutover).
+
+        Config comes entirely from ``plugin.tts_provider.chatterbox.*``
+        app_settings — including ``audio_prompt_path``, the zero-shot voice
+        clone pinned by the operator (empty on OSS = the sidecar's own
+        built-in voice). Never raises: a provider failure (sidecar down, bad
+        config) becomes ``EpisodeResult(success=False)``, the same failure
+        contract the Speaches path uses, so ``generate_episode`` doesn't need
+        to know which engine ran.
+        """
+        from services.tts_providers.chatterbox import ChatterboxTTSProvider
+
+        sc = self._site_config
+        config = {
+            "base_url": sc.get(
+                "plugin.tts_provider.chatterbox.base_url",
+                "http://chatterbox:8000/v1",
+            ),
+            "model": sc.get("plugin.tts_provider.chatterbox.model", "chatterbox"),
+            "response_format": sc.get("podcast_tts_format", "mp3") or "mp3",
+            "exaggeration": sc.get("plugin.tts_provider.chatterbox.exaggeration", "0.5"),
+            "cfg_weight": sc.get("plugin.tts_provider.chatterbox.cfg_weight", "0.5"),
+            "timeout_s": sc.get("plugin.tts_provider.chatterbox.timeout_s", "600"),
+            "audio_prompt_path": sc.get(
+                "plugin.tts_provider.chatterbox.audio_prompt_path", "",
+            ),
+        }
+        try:
+            result = await ChatterboxTTSProvider().synthesize(
+                script, output_path, voice=voice, config=config,
+            )
+        except Exception as exc:  # noqa: BLE001 — mirrors the Speaches path's
+            # never-raise failure contract; generate_episode only branches on
+            # EpisodeResult.success, so a raised provider error must convert.
+            logger.warning("[PODCAST] Chatterbox TTS failed: %s", exc)
+            return EpisodeResult(success=False, error=f"Chatterbox TTS failed: {exc}")
+
+        return EpisodeResult(
+            success=True,
+            file_path=str(result.audio_path or output_path),
+            duration_seconds=result.duration_seconds,
+            file_size_bytes=result.file_size_bytes,
         )
 
 

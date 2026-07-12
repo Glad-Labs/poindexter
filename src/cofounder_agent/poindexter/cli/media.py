@@ -414,18 +414,22 @@ async def _make_bakeoff_site_config():
 
 
 def _bakeoff_engine_config(engine: str, site_config: Any, host: str) -> dict[str, Any]:
-    """Build the provider `config`: host base_url + model + emotion knobs.
+    """Build the provider `config`: host base_url + model + engine-specific knobs.
 
-    base_url is the HOST-published URL (`_bakeoff_base_url`); the emotion knobs
-    come from `plugin.tts_provider.<engine>.*` settings (empty = provider default).
+    base_url is the HOST-published URL (`_bakeoff_base_url`); the per-engine knobs
+    (emotion controls, and for chatterbox the pinned `audio_prompt_path` voice
+    clone) come from `plugin.tts_provider.<engine>.*` settings (empty = provider
+    default). Forwarding `audio_prompt_path` here keeps this CLI's render an
+    honest preview of what the live podcast pipeline (`podcast_service`) will
+    actually produce when an operator has pinned a production voice.
     """
     prefix = f"plugin.tts_provider.{engine}."
-    emotion_keys = {
+    engine_keys = {
         "cosyvoice2": ("instruct",),
-        "chatterbox": ("exaggeration", "cfg_weight"),
+        "chatterbox": ("exaggeration", "cfg_weight", "audio_prompt_path"),
     }.get(engine, ())
     cfg: dict[str, Any] = {"base_url": _bakeoff_base_url(engine, host), "model": engine}
-    for k in emotion_keys:
+    for k in engine_keys:
         cfg[k] = site_config.get(prefix + k, "")
     # CPU-only sidecars render a full paragraph in minutes; pass the DB-configured
     # client read-timeout so render_openai_tts waits past its 120s default.

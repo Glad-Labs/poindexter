@@ -6,6 +6,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from plugins.tts_provider import TTSResult
 from services.podcast_service import (
     VOICE_POOL,
     EpisodeResult,
@@ -1057,6 +1058,87 @@ class TestSelectVoice:
     def test_rotation_on_is_deterministic_per_key(self):
         sc = SiteConfig(initial_config={"tts_voice_rotation_enabled": "true"})
         assert _select_voice(sc, "post-1") == _select_voice(sc, "post-1")
+
+
+class TestGenerateWithVoiceEngineDispatch:
+    """``_generate_with_voice`` routes on ``podcast_tts_engine`` (Phase 2 cutover).
+
+    Default/empty stays on the existing Speaches path (regression guard);
+    ``chatterbox`` delegates to ``ChatterboxTTSProvider`` with settings pulled
+    from ``plugin.tts_provider.chatterbox.*``.
+    """
+
+    @pytest.mark.asyncio
+    async def test_default_engine_still_uses_speaches_path(self, tmp_path):
+        sc = SiteConfig(initial_config={})  # podcast_tts_engine unset
+
+        async def _fake_synthesize_speech(text, *, site_config, output_path, voice):
+            Path(output_path).write_bytes(b"KOKORO BYTES")
+            return b"KOKORO BYTES"
+
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        with patch(
+            "services.tts_service.synthesize_speech",
+            new=AsyncMock(side_effect=_fake_synthesize_speech),
+        ) as speaches_mock, patch(
+            "services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
+        ) as chatterbox_mock:
+            out = tmp_path / "ep.mp3"
+            result = await svc._generate_with_voice("hello world", "bf_emma", out)
+        speaches_mock.assert_awaited_once()
+        chatterbox_mock.assert_not_called()
+        assert result.success
+        assert out.read_bytes() == b"KOKORO BYTES"
+
+    @pytest.mark.asyncio
+    async def test_chatterbox_engine_delegates_to_chatterbox_provider(self, tmp_path):
+        sc = SiteConfig(initial_config={
+            "podcast_tts_engine": "chatterbox",
+            "plugin.tts_provider.chatterbox.base_url": "http://chatterbox:8000/v1",
+            "plugin.tts_provider.chatterbox.exaggeration": "0.6",
+            "plugin.tts_provider.chatterbox.cfg_weight": "0.4",
+            "plugin.tts_provider.chatterbox.audio_prompt_path": "/app/voices/podcast-voice.wav",
+        })
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        out = tmp_path / "ep.mp3"
+
+        async def _fake_synthesize(self, text, output_path, *, voice=None, config=None):
+            output_path.write_bytes(b"CHATTERBOX BYTES")
+            return TTSResult(
+                audio_path=output_path, duration_seconds=42,
+                voice=voice or "default", file_size_bytes=17,
+                metadata={"engine": "chatterbox"},
+            )
+
+        with patch(
+            "services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
+            new=_fake_synthesize,
+        ), patch(
+            "services.tts_service.synthesize_speech", new=AsyncMock()
+        ) as speaches_mock:
+            result = await svc._generate_with_voice("hello world", "bf_emma", out)
+
+        speaches_mock.assert_not_called()
+        assert result.success
+        assert result.file_path == str(out)
+        assert result.duration_seconds == 42
+        assert out.read_bytes() == b"CHATTERBOX BYTES"
+
+    @pytest.mark.asyncio
+    async def test_chatterbox_provider_failure_surfaces_as_error_result(self, tmp_path):
+        """A raised provider error becomes EpisodeResult(success=False), never
+        an unhandled exception — matches the Speaches path's failure contract."""
+        sc = SiteConfig(initial_config={"podcast_tts_engine": "chatterbox"})
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        with patch(
+            "services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
+            new=AsyncMock(side_effect=RuntimeError("sidecar down")),
+        ):
+            result = await svc._generate_with_voice(
+                "hello world", "bf_emma", tmp_path / "ep.mp3",
+            )
+        assert not result.success
+        assert "sidecar down" in (result.error or "")
 
 
 class TestScaffoldDumpGuard:

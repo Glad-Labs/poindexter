@@ -1186,6 +1186,11 @@ services:
       OMP_NUM_THREADS: "8"
     volumes:
       - ${USERPROFILE:-.}/.cache/huggingface:/home/appuser/.cache/huggingface
+      # Optional voice-clone reference(s). Empty/absent dir = harmless no-op
+      # (chatterbox's own built-in voice). An operator's real clip goes here
+      # + plugin.tts_provider.chatterbox.audio_prompt_path — see
+      # scripts/tts_sidecars/assets/README.md. Never committed to git.
+      - ${USERPROFILE:-.}/.poindexter/tts-voices:/app/voices:ro
     deploy:
       resources:
         limits:
