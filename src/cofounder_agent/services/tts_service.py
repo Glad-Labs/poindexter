@@ -204,9 +204,9 @@ async def render_openai_tts(
     on any transport/HTTP error (never raises — callers fall back).
 
     ``extra_body`` is merged into the JSON request for non-standard engine
-    knobs (CosyVoice2 ``instruct``; Chatterbox ``exaggeration`` /
-    ``cfg_weight``). The remux + EBU-R128 loudnorm pass is the same one the
-    Speaches path uses (see ``_remux_concatenated_audio``).
+    knobs (Chatterbox ``exaggeration`` / ``cfg_weight``). The remux + EBU-R128
+    loudnorm pass is the same one the Speaches path uses (see
+    ``_remux_concatenated_audio``).
 
     ``read_timeout`` overrides the 120s default read timeout — the bake-off
     sidecars can run on CPU (no spare VRAM), where synthesizing a full

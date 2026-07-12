@@ -45,8 +45,7 @@ table first.**
 | LiveKit RTC TCP     | poindexter-livekit          | **7881**  | 7881           | TCP RTC fallback                                                           |
 | LiveKit RTC TCP alt | poindexter-livekit          | **7882**  | 7882           |                                                                            |
 | Speaches (STT/TTS)  | poindexter-speaches         | **8001**  | 8000           | Warm STT + TTS sidecar (OpenAI-compatible)                                 |
-| Chatterbox (TTS-HQ) | poindexter-chatterbox       | **8011**  | 8000           | Bake-off TTS sidecar — ResembleAI Chatterbox (opt-in: `--profile tts-hq`)  |
-| CosyVoice2 (TTS-HQ) | poindexter-cosyvoice2       | **8012**  | 8000           | Bake-off TTS sidecar — FunAudioLLM CosyVoice2 (opt-in: `--profile tts-hq`) |
+| Chatterbox (TTS-HQ) | poindexter-chatterbox       | **8011**  | 8000           | Live podcast narration — ResembleAI Chatterbox, voice-cloning (opt-in: `--profile tts-hq`) |
 | Worker (FastAPI)    | poindexter-worker           | **8002**  | 8002           | <http://localhost:8002>                                                    |
 | GlitchTip web       | poindexter-glitchtip-web    | **8080**  | 8000           | <http://localhost:8080>                                                    |
 | Prometheus          | poindexter-prometheus       | **9091**  | 9090           | <http://localhost:9091>                                                    |

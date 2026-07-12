@@ -345,8 +345,8 @@ pattern, not a separate code path).
 
 Render one script through multiple engines to compare emotion + naturalness:
 
-    docker compose --profile tts-hq up -d          # start the sidecars
-    poindexter media tts-bakeoff                    # built-in sample, all engines
+    docker compose --profile tts-hq up -d chatterbox  # start the sidecar
+    poindexter media tts-bakeoff                        # built-in sample, all engines
     poindexter media tts-bakeoff --script ep.md --engines speaches,chatterbox
 
 Outputs `<engine>.mp3` + `manifest.json` under
@@ -355,6 +355,7 @@ no publish. Tune emotion via `plugin.tts_provider.<engine>.*` settings between
 runs. All clips get the same EBU-R128 loudnorm as production, so they are
 directly comparable.
 
-The two challengers (`cosyvoice2`, Apache-2.0; `chatterbox`, MIT) run as opt-in
-`tts-hq`-profile sidecars and do **not** affect the live pipeline —
-`podcast_tts_engine` still selects Speaches until a Phase 2 cutover.
+Chatterbox (MIT) won the bake-off against CosyVoice2 (Apache-2.0, rejected for
+audio artifacts, since removed) and is **live**: `podcast_tts_engine=chatterbox`
+runs as an opt-in `tts-hq`-profile sidecar and supports zero-shot voice cloning
+from a pinned reference clip — see `scripts/tts_sidecars/assets/README.md`.

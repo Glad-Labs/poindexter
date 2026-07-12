@@ -21,12 +21,8 @@ def test_sample_script_is_substantial_and_exercises_pronunciation():
 def test_bakeoff_engine_defaults_seeded():
     from services.settings_defaults import DEFAULTS
 
-    assert DEFAULTS["plugin.tts_provider.cosyvoice2.base_url"] == "http://cosyvoice2:8000/v1"
-    assert DEFAULTS["plugin.tts_provider.cosyvoice2.model"] == "cosyvoice2"
     assert DEFAULTS["plugin.tts_provider.chatterbox.base_url"] == "http://chatterbox:8000/v1"
     assert DEFAULTS["plugin.tts_provider.chatterbox.model"] == "chatterbox"
     # Emotion knobs have sane, comparable starting values.
     assert DEFAULTS["plugin.tts_provider.chatterbox.exaggeration"] == "0.5"
     assert DEFAULTS["plugin.tts_provider.chatterbox.cfg_weight"] == "0.5"
-    # instruct is the unset sentinel (neutral) until the operator tunes it.
-    assert DEFAULTS["plugin.tts_provider.cosyvoice2.instruct"] == ""

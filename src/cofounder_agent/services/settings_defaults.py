@@ -1152,21 +1152,14 @@ DEFAULTS: dict[str, str] = {
     # Output sample rate — loudnorm upsamples to 192 kHz internally, so resample
     # back to a distribution-standard rate (44.1 kHz).
     'podcast_tts_loudnorm_ar': '44100',
-    # --- Bake-off TTS engines (opt-in `tts-hq` compose profile) ----------------
-    # Emotion-capable challengers to the default Kokoro/Speaches narration,
-    # compared offline via `poindexter media tts-bakeoff`. Both sidecars speak
-    # the OpenAI /v1/audio/speech contract. Chatterbox is wired into the LIVE
-    # pipeline (Phase 2, podcast_service._generate_with_chatterbox) when
-    # podcast_tts_engine='chatterbox'; CosyVoice2 stays bake-off-only (rejected
-    # for artifacts — see docs/superpowers/plans/2026-07-10-tts-engine-bakeoff-phase1.md).
-    # CosyVoice2-0.5B (Apache-2.0) — instruction-controllable emotion/style.
-    'plugin.tts_provider.cosyvoice2.base_url': 'http://cosyvoice2:8000/v1',
-    'plugin.tts_provider.cosyvoice2.model': 'cosyvoice2',
-    # Natural-language delivery instruction; '' = neutral (unset sentinel).
-    'plugin.tts_provider.cosyvoice2.instruct': '',
-    # Client read-timeout (s). Bake-off sidecars can run CPU-only (no spare
-    # VRAM), where a full paragraph takes minutes — well past the 120s default.
-    'plugin.tts_provider.cosyvoice2.timeout_s': '600',
+    # --- Bake-off TTS engine (opt-in `tts-hq` compose profile) -----------------
+    # Emotion-capable challenger to the default Kokoro/Speaches narration,
+    # compared offline via `poindexter media tts-bakeoff`. Speaks the OpenAI
+    # /v1/audio/speech contract. Wired into the LIVE pipeline (Phase 2,
+    # podcast_service._generate_with_chatterbox) when podcast_tts_engine=
+    # 'chatterbox' — the bake-off winner over CosyVoice2 (rejected for
+    # artifacts, removed entirely — see
+    # docs/superpowers/plans/2026-07-10-tts-engine-bakeoff-phase1.md).
     # Chatterbox (MIT) — emotion via the `exaggeration` dial (0.0-1.0).
     'plugin.tts_provider.chatterbox.base_url': 'http://chatterbox:8000/v1',
     'plugin.tts_provider.chatterbox.model': 'chatterbox',
@@ -1174,7 +1167,8 @@ DEFAULTS: dict[str, str] = {
     'plugin.tts_provider.chatterbox.exaggeration': '0.5',
     # cfg_weight pacing knob; lower = slower/more deliberate delivery.
     'plugin.tts_provider.chatterbox.cfg_weight': '0.5',
-    # Client read-timeout (s) — see cosyvoice2.timeout_s.
+    # Client read-timeout (s). Bake-off sidecars can run CPU-only (no spare
+    # VRAM), where a full paragraph takes minutes — well past the 120s default.
     'plugin.tts_provider.chatterbox.timeout_s': '600',
     # Zero-shot voice-clone reference — a path INSIDE the chatterbox container
     # (see scripts/tts_sidecars/assets/README.md). Empty = the sidecar's own

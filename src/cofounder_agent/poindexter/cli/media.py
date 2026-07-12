@@ -370,7 +370,6 @@ def cmd_open(post_id: str, medium: str):
 _BAKEOFF_PROVIDERS: dict[str, str] = {
     # engine name -> "module:ClassName" (imported lazily so a broken optional
     # provider never breaks `media --help`).
-    "cosyvoice2": "services.tts_providers.cosyvoice2:CosyVoice2TTSProvider",
     "chatterbox": "services.tts_providers.chatterbox:ChatterboxTTSProvider",
 }
 
@@ -380,7 +379,6 @@ _BAKEOFF_PROVIDERS: dict[str, str] = {
 _BAKEOFF_PORTS: dict[str, int] = {
     "speaches": 8001,
     "chatterbox": 8011,
-    "cosyvoice2": 8012,
 }
 
 
@@ -425,7 +423,6 @@ def _bakeoff_engine_config(engine: str, site_config: Any, host: str) -> dict[str
     """
     prefix = f"plugin.tts_provider.{engine}."
     engine_keys = {
-        "cosyvoice2": ("instruct",),
         "chatterbox": ("exaggeration", "cfg_weight", "audio_prompt_path"),
     }.get(engine, ())
     cfg: dict[str, Any] = {"base_url": _bakeoff_base_url(engine, host), "model": engine}
@@ -479,7 +476,7 @@ async def _render_bakeoff_engine(engine, text, voice, out_path, site_config, *, 
 @media_group.command(name="tts-bakeoff")
 @click.option("--script", "script_path", type=click.Path(exists=True, dir_okay=False),
               default=None, help="Script file to render (default: built-in sample).")
-@click.option("--engines", default="speaches,cosyvoice2,chatterbox", show_default=True,
+@click.option("--engines", default="speaches,chatterbox", show_default=True,
               help="Comma-separated engines to render.")
 @click.option("--voice", default=None, help="Voice override (engine-specific).")
 @click.option("--out-dir", "out_dir", type=click.Path(file_okay=False), default=None,
@@ -491,8 +488,8 @@ def cmd_tts_bakeoff(script_path, engines, voice, out_dir, host):
 
     Offline + read-only: writes audio files + a manifest to a scratch dir. Does
     NOT touch the live pipeline or the DB. Needs the `tts-hq` compose profile up
-    for the cosyvoice2 / chatterbox sidecars:
-    `docker compose --profile tts-hq up -d`.
+    for the chatterbox sidecar:
+    `docker compose --profile tts-hq up -d chatterbox`.
     """
     from datetime import datetime
 

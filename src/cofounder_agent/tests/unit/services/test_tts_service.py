@@ -191,19 +191,19 @@ class TestTtsService:
 
         with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
             out = await render_openai_tts(
-                base_url="http://cosyvoice2:8000/v1",
-                model="cosyvoice2",
+                base_url="http://chatterbox:8000/v1",
+                model="chatterbox",
                 voice="stock",
                 text="Hello VRAM",
                 response_format="mp3",
-                extra_body={"instruct": "cheerful"},
+                extra_body={"exaggeration": "0.7"},
             )
 
         assert out == b"NORMALIZED"
-        assert captured["url"] == "http://cosyvoice2:8000/v1/audio/speech"
+        assert captured["url"] == "http://chatterbox:8000/v1/audio/speech"
         assert captured["json"]["input"] == "Hello VRAM"
         assert captured["json"]["response_format"] == "mp3"
-        assert captured["json"]["instruct"] == "cheerful"  # extra_body merged in
+        assert captured["json"]["exaggeration"] == "0.7"  # extra_body merged in
 
     async def test_render_openai_tts_returns_none_on_error(self):
         """A transport error returns None, never raises."""

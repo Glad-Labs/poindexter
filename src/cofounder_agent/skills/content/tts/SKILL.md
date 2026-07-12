@@ -181,17 +181,20 @@ the `CI` inside `CI/CD` and the slash form would no longer match.)
 
 ---
 
-## Bake-off engines (opt-in, Phase 1)
+## Chatterbox narration engine (live, Phase 2)
 
-Beyond the default Kokoro/Speaches narration, two emotion-capable engines can
-be compared offline via `poindexter media tts-bakeoff`:
+Podcast narration is generated via `podcast_tts_engine` — an emotion-capable
+Chatterbox (MIT) sidecar, cut over from the default Kokoro/Speaches baseline
+after a bake-off against CosyVoice2 (rejected for audio artifacts, since
+removed). Chatterbox also supports zero-shot voice cloning from a reference
+clip via `plugin.tts_provider.chatterbox.audio_prompt_path` — see
+`scripts/tts_sidecars/assets/README.md`.
 
 | Engine       | License    | Emotion knob                                        | Sidecar port |
 | ------------ | ---------- | --------------------------------------------------- | ------------ |
 | `speaches`   | Apache-2.0 | — (baseline)                                        | 8001         |
-| `cosyvoice2` | Apache-2.0 | `plugin.tts_provider.cosyvoice2.instruct` (string)  | 8012         |
 | `chatterbox` | MIT        | `plugin.tts_provider.chatterbox.exaggeration` (0-1) | 8011         |
 
-Bring the sidecars up: `docker compose --profile tts-hq up -d`. They are NOT in
-the default stack and do NOT affect the live pipeline — `podcast_tts_engine`
-still selects Speaches. Cutover to a winner is a separate Phase 2 change.
+Bring the sidecar up: `docker compose --profile tts-hq up -d chatterbox`. It
+is NOT in the default stack — compare against the Speaches baseline offline
+via `poindexter media tts-bakeoff --engines speaches,chatterbox`.

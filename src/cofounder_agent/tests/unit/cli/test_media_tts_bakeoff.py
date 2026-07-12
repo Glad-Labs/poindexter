@@ -53,7 +53,7 @@ class TestTtsBakeoff:
         from poindexter.cli import media as media_mod
 
         async def _fake_render_one(engine, text, voice, out_path, site_config, **_):
-            if engine == "cosyvoice2":
+            if engine == "chatterbox":
                 raise RuntimeError("sidecar down")
             out_path.write_bytes(b"ok")
             return {"engine": engine, "path": str(out_path), "bytes": 2, "duration_s": 1}
@@ -64,12 +64,12 @@ class TestTtsBakeoff:
                           new=AsyncMock(return_value=object())):
             runner = CliRunner()
             result = runner.invoke(media_mod.media_group, [
-                "tts-bakeoff", "--engines", "speaches,cosyvoice2", "--out-dir", str(tmp_path),
+                "tts-bakeoff", "--engines", "speaches,chatterbox", "--out-dir", str(tmp_path),
             ])
 
         assert result.exit_code == 0, result.output
         assert (tmp_path / "speaches.mp3").exists()      # good engine still rendered
-        assert not (tmp_path / "cosyvoice2.mp3").exists()  # failed engine skipped
+        assert not (tmp_path / "chatterbox.mp3").exists()  # failed engine skipped
         assert "sidecar down" in result.output              # failure surfaced
 
     def test_make_bakeoff_site_config_falls_back_when_db_unreachable(self):
@@ -101,8 +101,9 @@ class TestTtsBakeoff:
         assert cfg["base_url"] == "http://localhost:8011/v1"  # NOT chatterbox:8000
         assert cfg["model"] == "chatterbox"
         assert cfg["exaggeration"] == "0.7"
-        # --host override flows through (e.g. a tailnet IP; doc-range IP here).
-        assert _bakeoff_base_url("cosyvoice2", "198.51.100.10") == "http://198.51.100.10:8012/v1"
+        # --host override flows through for other registered engines too
+        # (e.g. a tailnet IP; doc-range IP here) — not hardcoded to chatterbox.
+        assert _bakeoff_base_url("speaches", "198.51.100.10") == "http://198.51.100.10:8001/v1"
 
     def test_engine_config_forwards_chatterbox_audio_prompt_path(self):
         """A pinned voice-clone reference must reach the bake-off render too —

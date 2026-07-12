@@ -1,6 +1,6 @@
-"""Sentence-chunking for the TTS bake-off sidecars (stdlib-only).
+"""Sentence-chunking for the TTS bake-off sidecar (stdlib-only).
 
-Neural TTS models (Chatterbox, CosyVoice2) have a hard per-call acoustic-token
+Neural TTS models like Chatterbox have a hard per-call acoustic-token
 budget — roughly 1000 steps / ~40s of audio for Chatterbox. Feeding a full
 ~60s podcast paragraph in one `generate()` call silently truncates the tail.
 Production TTS pipelines avoid this by splitting into sentences, synthesizing
