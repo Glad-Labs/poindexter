@@ -72,11 +72,38 @@ back in — it just isn't part of the default Glad Labs sensor set anymore.
 4. Restart the exporter task so it re-reads bootstrap:
    `scripts/background-services.ps1` service `poindexter-nvidia-smi-exporter`.
 
-The exporter (`scripts/nvidia-smi-exporter.py`) then polls
-`http://<plug>/rpc/Switch.GetStatus?id=0` on every scrape, reads `apower`, and
-emits `psu_total_power_watts` (plus `psu_line_voltage_volts` and
-`psu_line_current_amps`). Prometheus scrapes `:9835`, the Grafana panel
-populates, and the brain promotes the source from `estimate` to primary.
+The exporter (`scripts/nvidia-smi-exporter.py`) polls
+`http://<plug>/rpc/Switch.GetStatus?id=0`, reads `apower`, and emits
+`psu_total_power_watts` (plus `psu_line_voltage_volts` and
+`psu_line_current_amps`). Collection runs in a **background thread** that
+refreshes a cached snapshot every ~10s; every `:9835/metrics` scrape serves that
+snapshot in O(1), so a slow `nvidia-smi`/AIDA read can never blow a scraper's
+timeout (see [Alert debounce](#alert-debounce) below). Prometheus scrapes
+`:9835`, the Grafana panel populates, and the brain promotes the source from
+`estimate` to primary.
+
+## Alert debounce
+
+The brain scrapes `:9835` every 5-min cycle with a 3s timeout to pick the
+electricity-cost power source. Two guards keep a momentary miss from paging a
+false "No real PSU data" alert:
+
+1. **Constant-time scrapes.** The exporter collects off the request path (see
+   above), so producer latency never becomes a scraper timeout. Before this the
+   exporter collected synchronously per request — measured 2.5-6.7s+, with
+   multi-minute wedges — so a slow `nvidia-smi`/AIDA read would exceed the 3s
+   budget and the brain would lose the Shelly reading **and** the software
+   estimate at once, fall to the 150W static floor, and page.
+2. **Watchdog debounce.** A degraded source (software estimate / static floor)
+   must persist for `psu_watchdog_degraded_cycles_before_page` **consecutive**
+   brain cycles (default `3` ≈ 15 min) before it pages Telegram; a one-cycle
+   miss self-heals silently. Logic is in
+   `brain/psu_power.py::psu_watchdog_transition`; the streak is persisted in
+   `brain_knowledge (entity='psu_watchdog', attribute='degraded_streak')` and
+   the threshold is tunable via `app_settings`.
+
+Together these fixed a 2026-07-12 incident where the alert fired ~15×/day (each
+a false alarm) while the plug read ~330W the whole time.
 
 ## Verifying
 

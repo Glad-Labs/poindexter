@@ -213,6 +213,15 @@ DEFAULTS: dict[str, str] = {
     # *_gap_minutes after it; below *_min_coverage_pct of the window => estimated.
     'electricity_measured_min_coverage_pct': '80',
     'electricity_source_gap_minutes': '15',
+    # PSU wall-power watchdog debounce: consecutive 5-min brain cycles the
+    # metered PSU feed (Shelly outlet meter → iCUE tap) must be unavailable —
+    # cost fallen back to the software estimate / static floor — before it pages
+    # Telegram. A single slow exporter scrape self-heals next cycle; only a
+    # sustained outage (default 3 cycles ≈ 15 min) is a critical page. See
+    # brain/psu_power.py::psu_watchdog_transition. (incident 2026-07-12:
+    # per-request exporter slowness blew the brain's 3s scrape and paged
+    # ~15×/day on 1-cycle blips.)
+    'psu_watchdog_degraded_cycles_before_page': '3',
 
     # ----- Spend throttle (P3) — defer NEW work when total_usd (paid API +
     # measured electricity) crosses a soft budget. Consulted at the
@@ -2113,6 +2122,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'monthly_spend_limit_usd': {'owner': 'cost_guard', 'value_type': 'float'},
     'electricity_measured_min_coverage_pct': {'owner': 'cost_ledger', 'value_type': 'float'},
     'electricity_source_gap_minutes': {'owner': 'cost_ledger', 'value_type': 'integer'},
+    'psu_watchdog_degraded_cycles_before_page': {'owner': 'brain_psu_watchdog', 'value_type': 'integer'},
     'cost_throttle_enabled': {'owner': 'spend_throttle', 'value_type': 'boolean'},
     'cost_throttle_daily_budget_usd': {'owner': 'spend_throttle', 'value_type': 'float'},
     'cost_throttle_monthly_budget_usd': {'owner': 'spend_throttle', 'value_type': 'float'},

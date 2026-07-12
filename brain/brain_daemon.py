@@ -2432,9 +2432,8 @@ async def log_electricity_cost(pool):
     """Log electricity cost for this 5-minute cycle based on real power data or estimates."""
     try:
         # Real wall power, in priority order (see brain/psu_power.py):
-        #   1. HWiNFO HX1500i read (psu_total_power_watts) — primary
-        #   2. always-on iCUE CSV tap — fallback when HWiNFO drops the PSU
-        #      over the contended SMBus/USB-HID (the monitors fight)
+        #   1. Shelly outlet meter (psu_total_power_watts) — primary, true wall power
+        #   2. always-on iCUE CSV tap — fallback when the meter reading is absent
         #   3. system software estimate (CPU+GPU+overhead)
         #   4. static 150W floor
         psu_watts = None
@@ -2459,7 +2458,7 @@ async def log_electricity_cost(pool):
                 type(exc).__name__, exc,
             )
 
-        # Only hit the DB for the iCUE fallback when HWiNFO didn't give us a
+        # Only hit the DB for the iCUE fallback when the meter didn't give us a
         # real reading — keeps the steady-state cycle query-free.
         icue_watts = None
         if not psu_watts:
@@ -2521,16 +2520,40 @@ async def log_electricity_cost(pool):
         logger.debug("[BRAIN] Electricity: %.0fW (%s), %.4f kWh, $%.6f (%s)",
                      watts, power_source, kwh, cost_usd, cost_type)
 
-        # PSU sensor watchdog — graduated alerting on power-source changes.
-        # primary (HWiNFO) -> fallback (iCUE) is a Discord heads-up; losing
-        # both real sources to the estimate pages Telegram. See psu_power.
+        # PSU sensor watchdog — graduated, flap-suppressed alerting on
+        # power-source changes. primary (Shelly meter) -> fallback (iCUE) is a
+        # Discord heads-up; losing both real sources to the estimate/floor pages
+        # Telegram, but only after the degraded state persists
+        # `psu_watchdog_degraded_cycles_before_page` consecutive cycles (a
+        # momentary exporter-scrape miss self-heals silently). See psu_power.
         try:
             prev = await pool.fetchrow(
                 "SELECT value FROM brain_knowledge WHERE entity = 'psu_watchdog' AND attribute = 'last_source'"
             )
             prev_source = prev["value"] if prev else None
 
-            for _note in psu_watchdog_transition(prev_source, power_source, watts):
+            # Durable consecutive-degraded counter that drives the debounce.
+            streak_row = await pool.fetchrow(
+                "SELECT value FROM brain_knowledge WHERE entity = 'psu_watchdog' AND attribute = 'degraded_streak'"
+            )
+            try:
+                degraded_streak = (
+                    int(streak_row["value"])
+                    if streak_row and streak_row["value"] is not None
+                    else 0
+                )
+            except (ValueError, TypeError):
+                degraded_streak = 0
+            cycles_before_page = await _setting_int(
+                pool, "psu_watchdog_degraded_cycles_before_page", 3
+            )
+
+            notes, new_streak = psu_watchdog_transition(
+                prev_source, power_source, watts,
+                degraded_streak=degraded_streak,
+                degraded_cycles_before_page=cycles_before_page,
+            )
+            for _note in notes:
                 if _note["severity"] == "critical":
                     await notify(_note["message"], pool=pool)        # Telegram + Discord
                 else:
@@ -2541,6 +2564,11 @@ async def log_electricity_cost(pool):
                 VALUES ('psu_watchdog', 'last_source', $1, 1.0, 'brain_daemon')
                 ON CONFLICT (entity, attribute) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
             """, power_source)
+            await pool.execute("""
+                INSERT INTO brain_knowledge (entity, attribute, value, confidence, source)
+                VALUES ('psu_watchdog', 'degraded_streak', $1, 1.0, 'brain_daemon')
+                ON CONFLICT (entity, attribute) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW()
+            """, str(new_streak))
         except Exception as exc:
             # poindexter#455 — the watchdog's state-transition
             # Telegram/Discord notifications above already fired; this is

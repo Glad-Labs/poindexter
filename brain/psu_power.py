@@ -2,17 +2,26 @@
 electricity-cost calc.
 
 Extracted from ``brain_daemon.log_electricity_cost`` so the priority chain
-(HWiNFO HX1500i → always-on iCUE CSV tap → software estimate → static
-floor) and the graduated alert transitions are unit-testable without
-importing the whole daemon. The daemon owns the I/O (exporter scrape,
-Telegram/Discord); this module owns the decision logic plus the one DB
-read for the iCUE fallback.
+(Shelly outlet meter → always-on iCUE CSV tap → software estimate → static
+floor) and the graduated, flap-suppressed alert transitions are unit-testable
+without importing the whole daemon. The daemon owns the I/O (exporter scrape,
+Telegram/Discord, the durable degraded-streak counter); this module owns the
+decision logic plus the one DB read for the iCUE fallback.
 
-Background: HWiNFO, AIDA64, and iCUE all poll overlapping hardware and
-contend over the SMBus/USB-HID, so HWiNFO intermittently loses the
-Corsair PSU read. iCUE is always on and keeps logging through the fight
-(its CSV is ingested by ``tap.corsair_csv`` into ``sensor_samples``), so
-it is the reliable fallback before we resort to a software estimate.
+Background: true wall power is now metered by a **Shelly smart plug** on the
+outlet (emitted as ``psu_total_power_watts`` by the host exporter). It replaced
+HWiNFO's HX1500i USB read, which was retired 2026-07-10 because it contended
+with iCUE over the Corsair USB-HID. iCUE's own CSV export (``tap.corsair_csv``
+→ ``sensor_samples``) is the always-on fallback before we resort to a software
+estimate.
+
+Debounce (2026-07-12): the host exporter collects ``/metrics`` on a background
+cadence and serves a cached snapshot, but a genuinely brief outage can still
+drop a single cycle. So a degraded source must persist for
+``degraded_cycles_before_page`` consecutive brain cycles before it pages — a
+one-cycle scrape miss self-heals silently instead of paging Telegram. (Before
+this, per-request exporter slowness blowing the brain's 3s scrape timeout paged
+~15×/day on transient blips.)
 """
 
 from __future__ import annotations
@@ -25,13 +34,15 @@ logger = logging.getLogger(__name__)
 # local PC idles around here.
 STATIC_DEFAULT_WATTS = 150.0
 
-# Wall-power source labels, best → worst, with a quality tier each. The
-# tier drives graduated alerting: dropping from the primary HWiNFO read to
-# the always-on iCUE tap is a Discord heads-up (cost stays accurate);
-# losing BOTH and falling to the software estimate is a Telegram page
-# (cost is now guesswork).
+# Wall-power source labels, best → worst, with a quality tier each. The tier
+# drives graduated alerting: dropping from the primary Shelly meter to the
+# always-on iCUE tap is a Discord heads-up (cost stays accurate); losing BOTH
+# and falling to the software estimate / static floor is a Telegram page (cost
+# is now guesswork) — but only after the debounce window (see
+# ``psu_watchdog_transition``).
 SOURCE_QUALITY = {
-    "hx1500i": "primary",    # HWiNFO reading the HX1500i directly
+    "shelly": "primary",     # Shelly outlet meter (psu_total_power_watts) — true wall power
+    "hx1500i": "primary",    # legacy alias: pre-2026-07 HWiNFO HX1500i read of the same metric
     "icue": "fallback",      # iCUE CSV tap (always-on backup-of-record)
     "estimate": "degraded",  # CPU+GPU+overhead software estimate
     "default": "degraded",   # static floor, no signal at all
@@ -41,14 +52,17 @@ SOURCE_QUALITY = {
 def select_power_source(psu_watts, icue_watts, estimate_watts):
     """Pick wall-power watts + a source label by priority.
 
-    HWiNFO PSU (primary) → iCUE tap PSU (fallback) → software estimate →
-    static floor. A ``0``/``None`` reading is treated as absent so a
+    Shelly outlet meter (primary) → iCUE tap PSU (fallback) → software
+    estimate → static floor. A ``0``/``None`` reading is treated as absent so a
     dropped sensor never pins cost at zero.
+
+    ``psu_watts`` is whatever the exporter published as ``psu_total_power_watts``
+    (the Shelly outlet meter today; historically HWiNFO's HX1500i read).
 
     Returns ``(watts: float, source: str)``.
     """
     if psu_watts:
-        return float(psu_watts), "hx1500i"
+        return float(psu_watts), "shelly"
     if icue_watts:
         return float(icue_watts), "icue"
     if estimate_watts:
@@ -56,59 +70,101 @@ def select_power_source(psu_watts, icue_watts, estimate_watts):
     return STATIC_DEFAULT_WATTS, "default"
 
 
-def psu_watchdog_transition(prev_source, new_source, watts):
-    """Notifications to emit on a PSU power-source change.
+def psu_watchdog_transition(
+    prev_source,
+    new_source,
+    watts,
+    *,
+    degraded_streak: int = 0,
+    degraded_cycles_before_page: int = 3,
+):
+    """Notifications to emit on a PSU power-source change, with flap-suppression.
 
-    Returns a list of ``{"severity": "critical"|"info", "message": str}``.
-    ``critical`` → page (Telegram + Discord); ``info`` → Discord-only
-    heads-up. Fires only on quality-tier changes (so ``estimate``↔
-    ``default`` is silent), and never on the first observation
+    Returns ``(notes, new_degraded_streak)`` where ``notes`` is a list of
+    ``{"severity": "critical"|"info", "message": str}`` and
+    ``new_degraded_streak`` is the updated consecutive-degraded-cycle counter
+    the caller must persist and feed back next cycle.
+
+    ``critical`` → page (Telegram + Discord); ``info`` → Discord-only heads-up.
+
+    Debounce: a *degraded* source (software estimate / static floor) pages
+    exactly once — on the cycle its consecutive streak reaches
+    ``degraded_cycles_before_page`` — never before (a transient scrape miss in
+    the grace window) and never again after (no per-cycle spam). A degraded
+    blip that never crosses the threshold recovers silently, so the recovery
+    note is suppressed too. Never fires on the first observation
     (``prev_source is None``) so a fresh daemon doesn't false-alarm.
     """
-    if prev_source is None or prev_source == new_source:
-        return []
-
-    prev_q = SOURCE_QUALITY.get(prev_source)
     new_q = SOURCE_QUALITY.get(new_source, "degraded")
-    if prev_q == new_q:
-        return []
+    new_streak = degraded_streak + 1 if new_q == "degraded" else 0
 
     w = f"{watts:.0f}W"
+
+    # No alarm on the very first observation, but start the degraded counter so
+    # a box that boots already-degraded still pages after the debounce window
+    # rather than never.
+    if prev_source is None:
+        return [], new_streak
+
+    prev_q = SOURCE_QUALITY.get(prev_source)
+
+    if new_q == "degraded":
+        # Page once, exactly when the streak crosses the threshold. Below it
+        # we're in the grace window (a momentary scrape miss that self-heals);
+        # at/above it after the crossing we've already paged and stay silent.
+        if new_streak == degraded_cycles_before_page:
+            if new_source == "estimate":
+                fallback_desc = "the CPU+GPU software estimate"
+            else:
+                fallback_desc = f"the static {STATIC_DEFAULT_WATTS:.0f}W floor"
+            return [{
+                "severity": "critical",
+                "message": (
+                    f"🚨 No metered PSU power for {new_streak} straight cycles — "
+                    f"the Shelly outlet meter and the iCUE tap are both "
+                    f"unavailable, so electricity cost has fallen back to "
+                    f"{fallback_desc} ({w}). Check the Shelly plug (powered + on "
+                    f"the network) and that iCUE CSV logging is running."
+                ),
+            }], new_streak
+        return [], new_streak
+
     if new_q == "primary":
-        return [{
-            "severity": "info",
-            "message": (
-                f"✅ PSU primary recovered — HWiNFO is reading the HX1500i "
-                f"directly again ({w} wall)."
-            ),
-        }]
-    if new_q == "fallback":
-        if prev_q == "primary":
+        # Meter is (back as) primary. Only announce a recovery if we had
+        # actually paged — a degraded blip that never crossed the threshold
+        # heals silently, so there's no recovery spam to match a page we never
+        # sent.
+        if degraded_streak >= degraded_cycles_before_page:
             return [{
                 "severity": "info",
                 "message": (
-                    f"⚠️ HWiNFO lost the HX1500i read — covering with the "
-                    f"always-on iCUE tap ({w} wall). Electricity cost stays "
-                    f"accurate; the sensor monitors are likely fighting over "
-                    f"the SMBus/USB-HID."
+                    f"✅ PSU wall-power recovered — the Shelly outlet meter is "
+                    f"reporting again ({w} wall)."
                 ),
-            }]
+            }], new_streak
+        return [], new_streak
+
+    # new_q == "fallback" (iCUE tap covering)
+    if degraded_streak >= degraded_cycles_before_page:
+        # Recovering from a sustained outage, but only as far as the fallback.
         return [{
             "severity": "info",
             "message": (
-                f"↗️ PSU partial recovery — iCUE tap covering ({w} wall); "
-                f"HWiNFO still down."
+                f"↗️ PSU partial recovery — the iCUE tap is covering ({w} wall); "
+                f"the Shelly meter is still down."
             ),
-        }]
-    # new_q == "degraded"
-    return [{
-        "severity": "critical",
-        "message": (
-            f"🚨 No real PSU data — HWiNFO and the iCUE tap are BOTH "
-            f"unavailable. Electricity cost is on the {new_source} estimate "
-            f"({w}). Check that iCUE and HWiNFO are running."
-        ),
-    }]
+        }], new_streak
+    if prev_q == "primary":
+        # Meter just dropped to the always-on iCUE tap. Cost stays accurate, so
+        # this is a Discord heads-up, never a Telegram page.
+        return [{
+            "severity": "info",
+            "message": (
+                f"⚠️ Shelly meter dropped — covering with the always-on iCUE tap "
+                f"({w} wall). Electricity cost stays accurate."
+            ),
+        }], new_streak
+    return [], new_streak
 
 
 async def fetch_icue_psu_watts(pool, max_age_minutes: int = 90):
@@ -118,8 +174,8 @@ async def fetch_icue_psu_watts(pool, max_age_minutes: int = 90):
     The iCUE LINK tap (handler ``tap.corsair_csv`` → ``sensor_samples``,
     source ``corsair_csv``) keeps logging while HWiNFO fights iCUE over the
     bus, so it is the reliable fallback. ``psu_power_in`` is the AC wall
-    draw — the same quantity HWiNFO exposes as ``psu_total_power_watts``
-    (PSU Power In).
+    draw — the same quantity the Shelly outlet meter exposes as
+    ``psu_total_power_watts``.
 
     The window default is 90 min, NOT a few minutes: the tap is ingested by
     the worker's ``run_taps`` job, which fires hourly, so ``sensor_samples``

@@ -18,6 +18,7 @@ These tests pin the multi-GPU contract on the pure helpers:
 from __future__ import annotations
 
 import sys
+import threading
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
 
@@ -190,3 +191,71 @@ def test_dedupe_is_noop_for_single_source():
     out = EXPORTER._dedupe_psu_metric(single)
     assert out.count("# TYPE psu_total_power_watts gauge") == 1
     assert _series(out)["psu_total_power_watts"] == "342.00"
+
+
+# ---------------------------------------------------------------------------
+# Background collector — /metrics serves a CACHED snapshot refreshed off the
+# request path, so a slow nvidia-smi/AIDA read can never blow a scraper's
+# timeout (incident 2026-07-12: per-request collection intermittently took
+# 2.5-6.7s+, exceeding the brain's 3s scrape timeout → false 150W-floor pages).
+# ---------------------------------------------------------------------------
+def test_refresh_snapshot_caches_body_for_read():
+    """The collector writes the snapshot; a scrape reads it back verbatim,
+    with no metric collection on the read path."""
+    body = b"# cached\npsu_total_power_watts 321.0\n"
+    EXPORTER._refresh_snapshot(_collect=lambda: body)
+    assert EXPORTER._read_snapshot() == body
+
+
+def test_collector_loop_refreshes_then_stops():
+    """One refresh per iteration; a set stop-event ends the loop cleanly."""
+    stop = threading.Event()
+    calls = []
+
+    def fake_refresh():
+        calls.append(1)
+        stop.set()  # end after a single iteration
+
+    EXPORTER._collector_loop(
+        0.0, _refresh=fake_refresh, _sleep=lambda _: None, _stop=stop
+    )
+    assert len(calls) == 1
+
+
+def test_collector_loop_swallows_cycle_error_and_keeps_looping():
+    """A per-cycle collector exception is logged, not fatal — the snapshot just
+    goes stale for a cycle rather than killing the refresh thread."""
+    stop = threading.Event()
+    calls = []
+
+    def fake_refresh():
+        calls.append(1)
+        stop.set()
+        raise RuntimeError("collector boom")
+
+    # Must return normally (no exception propagates out of the loop).
+    EXPORTER._collector_loop(
+        0.0, _refresh=fake_refresh, _sleep=lambda _: None, _stop=stop
+    )
+    assert len(calls) == 1
+
+
+def test_collector_loop_escalates_systemexit_to_hard_exit():
+    """The nvidia-smi watchdog raises SystemExit from get_gpu_metrics. In this
+    non-main thread that would silently kill just the collector (leaving a
+    frozen snapshot), so it must escalate to a real process exit for the host
+    service manager to restart a clean instance."""
+    stop = threading.Event()
+    exits = []
+
+    def fake_refresh():
+        raise SystemExit(1)
+
+    EXPORTER._collector_loop(
+        0.0,
+        _refresh=fake_refresh,
+        _sleep=lambda _: None,
+        _stop=stop,
+        _hard_exit=lambda code: exits.append(code),
+    )
+    assert exits == [1]

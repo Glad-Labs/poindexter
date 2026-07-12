@@ -14,16 +14,27 @@ Metrics:
   - psu_* — Corsair HXi PSU metrics (via liquidctl or AIDA64)
   - lm_sensors_* — Linux hardware sensors (temps, voltages, fans)
 
-Reliability (issue #319):
-  - ThreadingHTTPServer so a slow scrape doesn't block other requests.
-  - Watchdog: if nvidia-smi takes >2× its timeout three times in a row, the
-    process exits so docker's restart policy brings it back. Pairs with the
-    HEALTHCHECK in docker-compose.local.yml.
+Reliability:
+  - Metrics are gathered by a background thread into a cached snapshot every
+    ``_COLLECT_INTERVAL_SEC``; every ``/metrics`` scrape serves that snapshot in
+    O(1), so a slow nvidia-smi/AIDA read can never become a scraper's timeout.
+    (Before this, per-request collection intermittently took 2.5-6.7s+ and blew
+    the brain's 3s electricity-cost scrape, paging a false 150W-floor alert
+    ~15×/day — see brain/psu_power.py. Scrapes now get data at most one interval
+    stale, which is fine for power/thermal gauges.)
+  - ThreadingHTTPServer so concurrent scrapes never queue behind each other.
+  - Watchdog (issue #319): if nvidia-smi takes >2× its timeout three times in a
+    row, the process hard-exits so the host service manager
+    (``scripts/background-services.ps1``) restarts a clean instance. The exit is
+    raised inside the collector thread and escalated via ``os._exit`` — see
+    ``_collector_loop``.
 """
 import logging
+import os
 import re
 import subprocess
 import sys
+import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
@@ -776,22 +787,96 @@ def get_lm_sensors_metrics():
         return ""
 
 
+# ---------------------------------------------------------------------------
+# Background collector — /metrics serves a cached snapshot refreshed off the
+# request path (2026-07-12). Per-request collection intermittently took
+# 2.5-6.7s+ (Prometheus saw multi-minute wedges), blowing the brain's 3s
+# electricity-cost scrape timeout: it then lost BOTH the Shelly reading and the
+# software estimate at once, fell to the 150W floor, and paged ~15×/day on
+# transient blips. Collecting off the request path makes a scrape O(1), so a
+# slow producer can never become a scraper timeout.
+_COLLECT_INTERVAL_SEC = 10
+
+_snapshot_lock = threading.Lock()
+_snapshot_body: bytes = b"# nvidia-smi exporter warming up\n"
+
+
+def _collect_all_metrics() -> bytes:
+    """Gather every source once and return deduped Prometheus exposition bytes.
+
+    Shelly (outlet meter) is concatenated first so it wins ``psu_total_power_watts``
+    de-duplication (highest-priority source). AIDA64/HWiNFO/lm-sensors complement
+    each other. liquidctl was removed: it fought iCUE/AIDA64 for the Corsair USB.
+    Runs in the background collector thread, never on the request path.
+    """
+    gpu = get_gpu_metrics()
+    cpu = get_cpu_power_metrics()
+    shelly = get_shelly_psu_metrics()
+    aida = get_aida64_metrics()
+    hwinfo = get_hwinfo_metrics()
+    lm = get_lm_sensors_metrics()
+    total = get_total_power_metrics(gpu, cpu)
+    combined = gpu + cpu + shelly + aida + hwinfo + lm + total
+    return _dedupe_psu_metric(combined).encode()
+
+
+def _refresh_snapshot(*, _collect=_collect_all_metrics) -> None:
+    """Collect once and atomically swap the cached snapshot."""
+    global _snapshot_body
+    body = _collect()
+    with _snapshot_lock:
+        _snapshot_body = body
+
+
+def _read_snapshot() -> bytes:
+    """Return the cached snapshot bytes — what every scrape serves."""
+    with _snapshot_lock:
+        return _snapshot_body
+
+
+def _collector_loop(
+    interval: float = _COLLECT_INTERVAL_SEC,
+    *,
+    _refresh=_refresh_snapshot,
+    _sleep=time.sleep,
+    _stop=None,
+    _hard_exit=os._exit,
+) -> None:
+    """Refresh the cached snapshot forever (background thread).
+
+    Resilient by design: a per-cycle collector error is logged and retried next
+    cycle — one bad read must not kill the refresh thread and freeze the
+    snapshot. A tripped nvidia-smi watchdog surfaces here as ``SystemExit``; in
+    a non-main thread that would silently kill only this thread, so it is
+    escalated to a hard process exit for the host service manager to restart.
+    """
+    while _stop is None or not _stop.is_set():
+        try:
+            _refresh()
+        except SystemExit:
+            logger.error(
+                "collector: nvidia-smi watchdog tripped — hard-exiting so the "
+                "host service manager restarts a clean instance"
+            )
+            _hard_exit(1)
+            return
+        except Exception as exc:  # noqa: BLE001 — one bad cycle must not stop refresh
+            logger.warning(
+                "collector cycle failed (%s: %s) — snapshot stale this cycle",
+                type(exc).__name__, exc,
+            )
+        if _stop is not None:
+            _stop.wait(interval)
+        else:
+            _sleep(interval)
+
+
 class MetricsHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/metrics":
-            gpu = get_gpu_metrics()
-            cpu = get_cpu_power_metrics()
-            shelly = get_shelly_psu_metrics()
-            aida = get_aida64_metrics()
-            hwinfo = get_hwinfo_metrics()
-            lm = get_lm_sensors_metrics()
-            total = get_total_power_metrics(gpu, cpu)
-            # Combine all sources — AIDA64/HWiNFO/lm-sensors complement each other.
-            # liquidctl removed: fights iCUE/AIDA64 for Corsair USB; HWiNFO covers PSU via shared memory.
-            # Shelly (outlet meter) is the preferred psu_total_power_watts source so it goes
-            # first; _dedupe_psu_metric keeps the first block when >1 source reports a PSU.
-            combined = gpu + cpu + shelly + aida + hwinfo + lm + total
-            body = _dedupe_psu_metric(combined).encode()
+            # Serve the cached snapshot — collection happens off-request in
+            # _collector_loop, so this stays O(1) regardless of producer latency.
+            body = _read_snapshot()
             self.send_response(200)
             self.send_header("Content-Type", "text/plain; version=0.0.4")
             self.send_header("Content-Length", str(len(body)))
@@ -832,5 +917,14 @@ if __name__ == "__main__":
             PORT, exc,
         )
         sys.exit(1)
-    logger.info("nvidia-smi exporter listening on :%d/metrics", PORT)
+    # Prime the cache synchronously so the first scrape gets real data (not the
+    # "warming up" placeholder), then refresh it off the request path forever.
+    _refresh_snapshot()
+    threading.Thread(
+        target=_collector_loop, name="metrics-collector", daemon=True
+    ).start()
+    logger.info(
+        "nvidia-smi exporter listening on :%d/metrics (background collector "
+        "refreshing every %ds)", PORT, _COLLECT_INTERVAL_SEC,
+    )
     server.serve_forever()
