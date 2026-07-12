@@ -72,6 +72,7 @@ async def build_rag_context(
         resolved: list[dict[str, Any]] = []
         dropped_non_published = 0
         dropped_self = 0
+        dropped_db_error = 0
         normalized_current_post_id = (
             current_post_id.removeprefix("post/") if current_post_id else None
         )
@@ -120,6 +121,7 @@ async def build_rag_context(
                     # DB error fetching the row — be defensive and skip
                     # this candidate rather than emitting an unverified
                     # link to the writer.
+                    dropped_db_error += 1
                     continue
             resolved.append({
                 "post_id": post_id,
@@ -140,6 +142,30 @@ async def build_rag_context(
                 dropped_non_published,
                 dropped_self,
                 len(similar_posts),
+            )
+
+        if dropped_db_error:
+            # Distinct from the routine-filtering log above: this is a real
+            # infra failure, not intentional filtering, so it gets its own
+            # non-paging finding rather than being buried in the info log.
+            # One finding per call (never per-candidate).
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="research_context",
+                kind="rag_context_slug_lookup_failed",
+                title=(
+                    f"Slug/excerpt lookup failed for {dropped_db_error} "
+                    "RAG candidate(s)"
+                ),
+                body=(
+                    f"build_rag_context: {dropped_db_error} of "
+                    f"{len(similar_posts)} similarity hit(s) were dropped "
+                    "because the posts-table slug/excerpt lookup raised. "
+                    "Those candidates never reach the coherence filter or "
+                    "the writer prompt this run."
+                ),
+                dedup_key="rag_context_slug_lookup_failed",
             )
 
         # GH-88: apply the coherence filter if we have source context + a DB.

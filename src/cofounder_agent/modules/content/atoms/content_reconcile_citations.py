@@ -209,6 +209,7 @@ async def _resolve_youtube_authors(
             timeout = 8.0
 
     authors: dict[str, str] = {}
+    failed_urls: list[str] = []
     try:
         async with httpx.AsyncClient(
             timeout=httpx.Timeout(timeout, connect=4.0),
@@ -224,9 +225,30 @@ async def _resolve_youtube_authors(
                         if author:
                             authors[url] = author
                 except Exception:  # noqa: BLE001 — fail-soft per URL
+                    failed_urls.append(url)
                     continue
     except Exception:  # noqa: BLE001 — never break the pipeline on transport setup
         return {}
+    if failed_urls:
+        # A 404/private-video response never reaches here (status_code != 200
+        # just skips silently, by design) — only genuine network/parse errors
+        # do. A run of these suggests the oEmbed endpoint itself is degraded,
+        # not that the cited videos don't exist. One aggregate finding per
+        # call (never per-URL) keeps this non-spammy.
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="content.reconcile_citations",
+            kind="youtube_oembed_resolve_failed",
+            title=f"YouTube oEmbed resolution failed for {len(failed_urls)} URL(s)",
+            body=(
+                f"{len(failed_urls)} of {len(urls)} YouTube URL(s) failed "
+                "oEmbed resolution (network/parse error, not a 404): "
+                f"{failed_urls}. Those citations keep their plain [text] form "
+                "instead of a [Channel](url) attribution."
+            ),
+            dedup_key="youtube_oembed_resolve_failed",
+        )
     return authors
 
 

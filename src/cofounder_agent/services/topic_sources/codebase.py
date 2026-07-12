@@ -166,6 +166,7 @@ class CodebaseSource:
 
         topics: list[DiscoveredTopic] = []
         seen_source_ids: set[str] = set()
+        embed_failures: list[str] = []
 
         async def _run_query(query: str) -> list[tuple[str, DiscoveredTopic]]:
             """Embed one seed query and return (source_id, topic) pairs."""
@@ -178,9 +179,7 @@ class CodebaseSource:
 
                 embedding = await dispatch_embed(pool, query, embed_model)
             except Exception as e:  # noqa: BLE001 — advisory source; fail-soft per query
-                logger.debug(
-                    "CodebaseSource: embed dispatch failed for %r: %s", query[:30], e,
-                )
+                embed_failures.append(f"{query[:30]!r}: {e}")
                 return []
 
             if not embedding:
@@ -244,6 +243,31 @@ class CodebaseSource:
                 if source_id not in seen_source_ids:
                     seen_source_ids.add(source_id)
                     topics.append(topic)
+
+        if embed_failures:
+            # embed_failures covers a different failure mode than the
+            # isinstance(batch, BaseException) branch above: dispatch_embed
+            # failures are caught INSIDE _run_query and return [] (a normal
+            # result, not an exception), so gather() never sees them as
+            # BaseException — they'd otherwise look identical to "this
+            # query legitimately matched nothing". One aggregate finding
+            # per extract() call, never per-query.
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="topic_sources.codebase",
+                kind="codebase_seed_query_embed_failed",
+                title=(
+                    f"Embed dispatch failed for {len(embed_failures)} of "
+                    f"{len(seed_queries)} seed queries"
+                ),
+                body=(
+                    "CodebaseSource seed-query embedding failed: "
+                    f"{embed_failures}. Those queries contributed zero "
+                    "topic candidates this run."
+                ),
+                dedup_key="codebase_seed_query_embed_failed",
+            )
 
         logger.info(
             "CodebaseSource: %d topics from %d seed queries (threshold=%.2f)",

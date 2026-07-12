@@ -707,6 +707,13 @@ class GeminiProvider:
                     if isinstance(result, dict):
                         return result
                 except Exception:
+                    # silent-ok: trying the next SDK-serialization shortcut.
+                    # Either dumper succeeding or both failing produces an
+                    # equally-good raw dict (the manual snapshot below covers
+                    # the same finish_reason/usage_metadata fields) — no
+                    # operational difference, so no signal is lost by staying
+                    # quiet here. Runs once per completion; a finding would
+                    # be pure noise for zero actionable delta.
                     continue
         return {
             "finish_reason": GeminiProvider._extract_finish_reason(response),

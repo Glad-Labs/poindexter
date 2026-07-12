@@ -212,28 +212,56 @@ class OpenAICompatProvider:
                 headers=self._headers(cfg["api_key"]),
             ) as resp:
                 resp.raise_for_status()
-                async for raw_line in resp.aiter_lines():
-                    if not raw_line:
-                        continue
-                    # Server-Sent Events format: "data: {...}"
-                    if raw_line.startswith("data: "):
-                        raw_line = raw_line[len("data: "):]
-                    if raw_line.strip() == "[DONE]":
-                        yield Token(text="", finish_reason="stop")
-                        return
-                    try:
-                        import json as _json
-                        chunk = _json.loads(raw_line)
-                    except Exception:
-                        continue
-                    choices = chunk.get("choices") or []
-                    if not choices:
-                        continue
-                    delta = choices[0].get("delta") or {}
-                    text = delta.get("content", "")
-                    finish = choices[0].get("finish_reason")
-                    if text or finish:
-                        yield Token(text=text, finish_reason=finish, raw=chunk)
+                malformed_lines = 0
+                try:
+                    async for raw_line in resp.aiter_lines():
+                        if not raw_line:
+                            continue
+                        # Server-Sent Events format: "data: {...}"
+                        if raw_line.startswith("data: "):
+                            raw_line = raw_line[len("data: "):]
+                        if raw_line.strip() == "[DONE]":
+                            yield Token(text="", finish_reason="stop")
+                            return
+                        try:
+                            import json as _json
+                            chunk = _json.loads(raw_line)
+                        except Exception:
+                            malformed_lines += 1
+                            continue
+                        choices = chunk.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta") or {}
+                        text = delta.get("content", "")
+                        finish = choices[0].get("finish_reason")
+                        if text or finish:
+                            yield Token(text=text, finish_reason=finish, raw=chunk)
+                finally:
+                    # try/finally so the aggregate finding fires on every
+                    # generator exit path (the [DONE] early return, the
+                    # stream ending naturally, or the caller closing early)
+                    # — one finding per stream call, never per malformed line.
+                    if malformed_lines:
+                        from utils.findings import emit_finding
+
+                        emit_finding(
+                            source="llm_providers.openai_compat",
+                            kind="stream_malformed_sse_lines",
+                            title=(
+                                f"{malformed_lines} malformed SSE line(s) in "
+                                f"{model} stream"
+                            ),
+                            body=(
+                                f"model={model}, base_url={cfg['base_url']}: "
+                                f"{malformed_lines} server-sent-event line(s) "
+                                "failed JSON parsing mid-stream and were "
+                                "skipped. The stream still completed; if this "
+                                "recurs the vendor's SSE framing may have "
+                                "changed."
+                            ),
+                            dedup_key=f"stream_malformed_sse_lines:{cfg['base_url']}",
+                        )
 
     async def embed(self, text: str, model: str, **kwargs: Any) -> list[float]:
         """Embed via the OpenAI-compat /v1/embeddings endpoint.

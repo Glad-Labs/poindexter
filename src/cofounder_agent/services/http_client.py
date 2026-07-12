@@ -149,19 +149,41 @@ def wire_http_client_modules(client: httpx.AsyncClient | None) -> int:
     import importlib
 
     wired = 0
+    failures: list[str] = []
     for modname in WIRED_HTTP_CLIENT_MODULES:
         try:
             mod = importlib.import_module(modname)
-        except Exception:  # noqa: BLE001 — optional / lazy module
+        except Exception as exc:  # noqa: BLE001 — optional / lazy module
+            failures.append(f"{modname} (import: {exc})")
             continue
         setter = getattr(mod, "set_http_client", None)
         if callable(setter):
             try:
                 setter(client)
                 wired += 1
-            except Exception:  # noqa: BLE001 — defensive: never crash lifespan
+            except Exception as exc:  # noqa: BLE001 — defensive: never crash lifespan
+                failures.append(f"{modname} (set_http_client: {exc})")
                 continue
     # Always update the module-local ``http_client`` so
     # ``get_shared_http_client()`` works for non-wired callers too.
     set_http_client(client)
+    if failures:
+        # One process-lifetime finding covering every module that failed to
+        # wire, rather than one per module — this runs once at lifespan
+        # startup/shutdown, not per-request.
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="http_client",
+            kind="http_client_wiring_failed",
+            title=f"Shared httpx client wiring failed for {len(failures)} module(s)",
+            body=(
+                "wire_http_client_modules could not wire the shared client for: "
+                + "; ".join(failures)
+                + ". Those modules fall back to creating their own "
+                "httpx.AsyncClient instead of reusing the lifespan-shared "
+                "one (extra connection pool, no shared connection reuse)."
+            ),
+            dedup_key="http_client_wiring_failed",
+        )
     return wired

@@ -330,7 +330,8 @@ async def remove_skill(name: str, *, pool: Any = None) -> dict:
     """
     # Find the skill on disk (search all packs)
     skill_file: Path | None = None
-    for candidate in _skills_dir().rglob("SKILL.md"):
+    parse_failures: list[str] = []
+    for candidate in sorted(_skills_dir().rglob("SKILL.md")):
         # Parse name from frontmatter to match
         try:
             raw = candidate.read_bytes()
@@ -339,7 +340,26 @@ async def remove_skill(name: str, *, pool: Any = None) -> dict:
                 skill_file = candidate
                 break
         except Exception:  # noqa: BLE001
+            parse_failures.append(str(candidate))
             continue
+
+    if parse_failures:
+        # A skill living in one of these unparseable files would otherwise
+        # silently report as "not installed" — one aggregate finding per
+        # call (never per-file) explains why.
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="skill_importer",
+            kind="skill_frontmatter_parse_failed",
+            title=f"{len(parse_failures)} SKILL.md file(s) failed frontmatter parsing",
+            body=(
+                f"remove_skill({name!r}) scan hit unparseable frontmatter in: "
+                f"{parse_failures}. If the target skill lives in one of "
+                "these files, it may incorrectly report as not installed."
+            ),
+            dedup_key="skill_frontmatter_parse_failed",
+        )
 
     if skill_file is None:
         raise SkillImportError(

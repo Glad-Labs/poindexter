@@ -74,7 +74,9 @@ KERNEL_PURITY_BASELINE = {
     # cause B — publish-tail drain added above it).
     "services/publish_service.py:1251",
     # research_context calls internal_link_coherence lazily.
-    "services/research_context.py:151",
+    # Line shifted 151 -> 177 by the 2026-07-12 dropped_db_error aggregate
+    # finding (silent-excepts burn-down batch 5) added above it.
+    "services/research_context.py:177",
     # topic_proposal_service calls build_topic_decision_artifact lazily
     # (moved from top-level to lazy in poindexter#666 — the top-level
     # import was the Direction-B violation that warranted the immediate fix;
