@@ -408,6 +408,66 @@
       ]
     },
     {
+      "id": 65,
+      "type": "stat",
+      "title": "Render VRAM gate — free (render GPU)",
+      "description": "Free VRAM on the render/display GPU (pipeline_gpu_index=0, the 5090) right now. Below media_render_min_free_vram_gb (default 25 GB → red) the media dispatch gate DEFERS video renders so a ~24 GB Wan render can't oversubscribe the card and spill WDDM into system RAM (the desktop freeze). Green (≥25 GB) → a render may proceed. Source: services/render_vram.py + the media_infra_health VRAM preflight (#2394). Video staying quiet during active desktop use is EXPECTED here until the VRAM-reclaim + idle-WSL-reset follow-up lands. If you retune pipeline_gpu_index, update the gpu filter in this query.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 6,
+        "x": 10,
+        "y": 1
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "decgbytes",
+          "decimals": 1,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "green",
+                "value": 25
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "background",
+        "graphMode": "area",
+        "textMode": "value_and_name"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "(nvidia_gpu_memory_total_mib{gpu=\"0\"} - nvidia_gpu_memory_used_mib{gpu=\"0\"}) / 1024",
+          "legendFormat": "free",
+          "refId": "A"
+        }
+      ]
+    },
+    {
       "type": "row",
       "title": "Power — PSU / wall / CPU",
       "collapsed": false,

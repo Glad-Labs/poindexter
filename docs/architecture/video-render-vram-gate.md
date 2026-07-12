@@ -34,7 +34,9 @@ Root-cause investigation (2026-07-12): the scheduler's pre-render eviction only 
 
 ## Observability
 
-Free VRAM on `pipeline_gpu_index` is already charted on the **Hardware & Power** dashboard (`nvidia_gpu_memory_used_mib` / `nvidia_gpu_memory_total_mib`). A deferral is visible as a `dispatch_media_pipeline` scheduler log `detail='deferred — render infra unhealthy: … render-GPU free VRAM … < 25 GB required …'`.
+The **Hardware & Power** dashboard carries a dedicated **"Render VRAM gate — free (render GPU)"** stat panel (`gpu="0"` free VRAM in GB, background red below the 25 GB gate / green at or above) — the at-a-glance "is video gated right now?" signal, so a quiet video lane during desktop use reads as _expected deferral_, not a failure. The broader per-GPU trend stays on the adjacent "VRAM headroom" panel (`nvidia_gpu_memory_used_mib` / `nvidia_gpu_memory_total_mib`). A deferral is also visible as a `dispatch_media_pipeline` scheduler log `detail='… render-GPU free VRAM … < 25 GB required …'`.
+
+> The panel's `gpu="0"` filter mirrors the `pipeline_gpu_index` default; a static dashboard can't read `app_settings`, so if you retune `pipeline_gpu_index`, update the panel query to match.
 
 ## What this does and doesn't do
 
