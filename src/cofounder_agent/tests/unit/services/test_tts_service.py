@@ -158,6 +158,104 @@ class TestTtsService:
 
         assert result is None
 
+    # ---- render_openai_tts shared helper (engine-agnostic core) ----
+
+    async def test_render_openai_tts_posts_and_normalizes(self, monkeypatch):
+        """render_openai_tts POSTs the OpenAI body (with extra_body merged) and
+        returns the normalized bytes."""
+        import services.tts_service as mod
+        from services.tts_service import render_openai_tts
+
+        captured = {}
+
+        async def _fake_remux(audio_bytes, fmt, **kwargs):
+            captured["remux"] = (audio_bytes, fmt, kwargs)
+            return b"NORMALIZED"
+
+        monkeypatch.setattr(mod, "_remux_concatenated_audio", _fake_remux)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"RAW-audio"
+
+        async def _post(url, **kwargs):
+            captured["url"] = url
+            captured["json"] = kwargs.get("json")
+            captured["headers"] = kwargs.get("headers")
+            return mock_response
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=_post)
+
+        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+            out = await render_openai_tts(
+                base_url="http://cosyvoice2:8000/v1",
+                model="cosyvoice2",
+                voice="stock",
+                text="Hello VRAM",
+                response_format="mp3",
+                extra_body={"instruct": "cheerful"},
+            )
+
+        assert out == b"NORMALIZED"
+        assert captured["url"] == "http://cosyvoice2:8000/v1/audio/speech"
+        assert captured["json"]["input"] == "Hello VRAM"
+        assert captured["json"]["response_format"] == "mp3"
+        assert captured["json"]["instruct"] == "cheerful"  # extra_body merged in
+
+    async def test_render_openai_tts_returns_none_on_error(self):
+        """A transport error returns None, never raises."""
+        from services.tts_service import render_openai_tts
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(side_effect=ConnectionError("down"))
+
+        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+            out = await render_openai_tts(
+                base_url="http://x:8000/v1", model="m", voice="v", text="hi",
+            )
+        assert out is None
+
+    async def test_render_openai_tts_read_timeout_overrides_default(self, monkeypatch):
+        """read_timeout raises the httpx read timeout above the 120s default so a
+        slow CPU bake-off sidecar isn't cut off mid-generation; the default is
+        preserved when the arg is omitted."""
+        import services.tts_service as mod
+        from services.tts_service import render_openai_tts
+
+        async def _fake_remux(audio_bytes, fmt, **kwargs):
+            return b"NORMALIZED"
+
+        monkeypatch.setattr(mod, "_remux_concatenated_audio", _fake_remux)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"RAW"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch("services.tts_service.httpx.AsyncClient",
+                   return_value=mock_client) as ctor:
+            await render_openai_tts(
+                base_url="http://chatterbox:8000/v1", model="chatterbox",
+                voice="default", text="hi", read_timeout=600.0,
+            )
+        assert ctor.call_args.kwargs["timeout"].read == 600.0
+
+        with patch("services.tts_service.httpx.AsyncClient",
+                   return_value=mock_client) as ctor_default:
+            await render_openai_tts(
+                base_url="http://x:8000/v1", model="m", voice="v", text="hi",
+            )
+        assert ctor_default.call_args.kwargs["timeout"].read == 120.0
+
     # ---- duration-header remux (Speaches byte-concatenation fix) ----
 
     async def test_remux_skips_non_self_syncing_format(self):

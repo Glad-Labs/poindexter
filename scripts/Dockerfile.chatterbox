@@ -1,0 +1,19 @@
+# TTS bake-off sidecar — ResembleAI Chatterbox (MIT), OpenAI-compatible shim.
+# Build/verify is hardware-gated (GPU + first-run model download):
+#   docker compose --profile tts-hq up -d chatterbox
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ffmpeg wget && rm -rf /var/lib/apt/lists/*
+
+RUN pip install --no-cache-dir \
+    chatterbox-tts fastapi "uvicorn[standard]" soundfile
+
+RUN useradd -m appuser
+USER appuser
+WORKDIR /app
+COPY --chown=appuser tts_sidecars/text_chunking.py /app/text_chunking.py
+COPY --chown=appuser tts_sidecars/chatterbox_server.py /app/server.py
+
+EXPOSE 8000
+CMD ["uvicorn", "server:app", "--host", "0.0.0.0", "--port", "8000"]

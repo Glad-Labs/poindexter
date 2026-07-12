@@ -340,3 +340,21 @@ pattern, not a separate code path).
   `LIVEKIT_KEYS`. As of #1000 (2026-06-04) they can also be stored encrypted
   in `app_settings` (empty there = fall back to env), collapsing the
   scattered env/file copies behind a single rotation point.
+
+## TTS engine bake-off (`poindexter media tts-bakeoff`)
+
+Render one script through multiple engines to compare emotion + naturalness:
+
+    docker compose --profile tts-hq up -d          # start the sidecars
+    poindexter media tts-bakeoff                    # built-in sample, all engines
+    poindexter media tts-bakeoff --script ep.md --engines speaches,chatterbox
+
+Outputs `<engine>.mp3` + `manifest.json` under
+`~/.poindexter/tts-bakeoff/<timestamp>/`. Offline and read-only — no DB writes,
+no publish. Tune emotion via `plugin.tts_provider.<engine>.*` settings between
+runs. All clips get the same EBU-R128 loudnorm as production, so they are
+directly comparable.
+
+The two challengers (`cosyvoice2`, Apache-2.0; `chatterbox`, MIT) run as opt-in
+`tts-hq`-profile sidecars and do **not** affect the live pipeline —
+`podcast_tts_engine` still selects Speaches until a Phase 2 cutover.

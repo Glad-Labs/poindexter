@@ -361,3 +361,162 @@ def cmd_open(post_id: str, medium: str):
 
     _open_with_default_app(path)
     click.secho(f"Opened {medium} for post {resolved[:8]}: {path}", fg="cyan")
+
+
+# ---------------------------------------------------------------------------
+# ``tts-bakeoff`` — render one script through multiple TTS engines to compare
+# ---------------------------------------------------------------------------
+
+_BAKEOFF_PROVIDERS: dict[str, str] = {
+    # engine name -> "module:ClassName" (imported lazily so a broken optional
+    # provider never breaks `media --help`).
+    "cosyvoice2": "services.tts_providers.cosyvoice2:CosyVoice2TTSProvider",
+    "chatterbox": "services.tts_providers.chatterbox:ChatterboxTTSProvider",
+}
+
+# The bake-off runs on the HOST, so it reaches each engine at its published host
+# port (NOT the docker-internal `<service>:8000` the in-container pipeline uses).
+# `--host` overrides the hostname (e.g. a tailnet IP).
+_BAKEOFF_PORTS: dict[str, int] = {
+    "speaches": 8001,
+    "chatterbox": 8011,
+    "cosyvoice2": 8012,
+}
+
+
+def _bakeoff_base_url(engine: str, host: str) -> str:
+    return f"http://{host}:{_BAKEOFF_PORTS.get(engine, 8000)}/v1"
+
+
+async def _make_bakeoff_site_config():
+    """Load a SiteConfig if the DB is reachable; else fall back to defaults.
+
+    The bake-off is offline + read-only (see ``cmd_tts_bakeoff``), so a
+    down/absent DB must NOT abort it: every setting it reads
+    (``plugin.tts_provider.<engine>.*`` emotion knobs, ``podcast_tts_*``)
+    carries an inline default at the call site. Connecting is best-effort —
+    it just lets an operator's tuned settings flow into the render.
+    """
+    from services.site_config import SiteConfig
+
+    try:
+        pool = await _make_pool()
+    except Exception as e:  # noqa: BLE001 — offline bake-off: DB is optional
+        logger.warning(
+            "tts-bakeoff: DB unreachable (%s) — rendering with default engine "
+            "settings; app_settings emotion knobs won't apply.", e,
+        )
+        return SiteConfig(initial_config={})
+    try:
+        return await _make_site_config(pool)
+    finally:
+        await pool.close()
+
+
+def _bakeoff_engine_config(engine: str, site_config: Any, host: str) -> dict[str, Any]:
+    """Build the provider `config`: host base_url + model + emotion knobs.
+
+    base_url is the HOST-published URL (`_bakeoff_base_url`); the emotion knobs
+    come from `plugin.tts_provider.<engine>.*` settings (empty = provider default).
+    """
+    prefix = f"plugin.tts_provider.{engine}."
+    emotion_keys = {
+        "cosyvoice2": ("instruct",),
+        "chatterbox": ("exaggeration", "cfg_weight"),
+    }.get(engine, ())
+    cfg: dict[str, Any] = {"base_url": _bakeoff_base_url(engine, host), "model": engine}
+    for k in emotion_keys:
+        cfg[k] = site_config.get(prefix + k, "")
+    # CPU-only sidecars render a full paragraph in minutes; pass the DB-configured
+    # client read-timeout so render_openai_tts waits past its 120s default.
+    cfg["timeout_s"] = site_config.get(prefix + "timeout_s", "600")
+    return cfg
+
+
+async def _render_bakeoff_engine(engine, text, voice, out_path, site_config, *, host="localhost"):
+    """Render `text` through one engine -> `out_path`; return a manifest row."""
+    from services import tts_service
+
+    if engine == "speaches":
+        # Current-prod baseline (Kokoro via Speaches) reached at its HOST port.
+        audio = await tts_service.render_openai_tts(
+            base_url=_bakeoff_base_url("speaches", host),
+            model=site_config.get("podcast_tts_model", "speaches-ai/Kokoro-82M-v1.0-ONNX"),
+            voice=voice or site_config.get("podcast_tts_voice", "bf_emma"),
+            text=text, response_format="mp3",
+        )
+        if audio is None:
+            raise RuntimeError(
+                "speaches baseline returned no audio — is poindexter-speaches up on "
+                f"{_bakeoff_base_url('speaches', host)}?"
+            )
+        out_path.parent.mkdir(parents=True, exist_ok=True)
+        out_path.write_bytes(audio)
+        return {"engine": engine, "path": str(out_path),
+                "bytes": out_path.stat().st_size,
+                "duration_s": max(1, len(text.split()) * 60 // 150)}
+
+    target = _BAKEOFF_PROVIDERS.get(engine)
+    if target is None:
+        raise click.UsageError(
+            f"unknown engine {engine!r}; known: speaches,{','.join(_BAKEOFF_PROVIDERS)}"
+        )
+    mod_name, cls_name = target.split(":")
+    import importlib
+    provider = getattr(importlib.import_module(mod_name), cls_name)()
+    result = await provider.synthesize(
+        text, out_path, voice=voice or None,
+        config=_bakeoff_engine_config(engine, site_config, host),
+    )
+    return {"engine": engine, "path": str(result.audio_path),
+            "bytes": result.file_size_bytes, "duration_s": result.duration_seconds}
+
+
+@media_group.command(name="tts-bakeoff")
+@click.option("--script", "script_path", type=click.Path(exists=True, dir_okay=False),
+              default=None, help="Script file to render (default: built-in sample).")
+@click.option("--engines", default="speaches,cosyvoice2,chatterbox", show_default=True,
+              help="Comma-separated engines to render.")
+@click.option("--voice", default=None, help="Voice override (engine-specific).")
+@click.option("--out-dir", "out_dir", type=click.Path(file_okay=False), default=None,
+              help="Output dir (default: ~/.poindexter/tts-bakeoff/<timestamp>).")
+@click.option("--host", default="localhost", show_default=True,
+              help="Host the published sidecar ports are reachable on (e.g. a tailnet IP).")
+def cmd_tts_bakeoff(script_path, engines, voice, out_dir, host):
+    """Render one script through multiple TTS engines for an A/B listen.
+
+    Offline + read-only: writes audio files + a manifest to a scratch dir. Does
+    NOT touch the live pipeline or the DB. Needs the `tts-hq` compose profile up
+    for the cosyvoice2 / chatterbox sidecars:
+    `docker compose --profile tts-hq up -d`.
+    """
+    from datetime import datetime
+
+    from services.tts_providers.bakeoff_sample import SAMPLE_SCRIPT
+
+    text = Path(script_path).read_text(encoding="utf-8") if script_path else SAMPLE_SCRIPT
+    engine_list = [e.strip() for e in engines.split(",") if e.strip()]
+    if out_dir is None:
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        out_dir = str(_HOST_POINDEXTER / "tts-bakeoff" / stamp)
+    out_root = Path(out_dir)
+    out_root.mkdir(parents=True, exist_ok=True)
+
+    async def _go():
+        site_config = await _make_bakeoff_site_config()
+        rows: list[dict[str, Any]] = []
+        for engine in engine_list:
+            out_path = out_root / f"{engine}.mp3"
+            try:
+                rows.append(await _render_bakeoff_engine(
+                    engine, text, voice, out_path, site_config, host=host,
+                ))
+                click.secho(f"  [ok]   {engine:<12} -> {out_path}", fg="green")
+            except Exception as exc:  # noqa: BLE001 — one dead engine must not abort others
+                click.secho(f"  [FAIL] {engine:<12} {exc}", fg="red")
+        return rows
+
+    rows = _run(_go())
+    (out_root / "manifest.json").write_text(json.dumps(rows, indent=2))
+    click.secho(f"\n{len(rows)} engine(s) rendered -> {out_root}", fg="cyan", bold=True)
+    click.echo("Listen and compare, then set the winner as podcast_tts_engine (Phase 2).")

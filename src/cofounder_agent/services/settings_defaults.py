@@ -1152,6 +1152,28 @@ DEFAULTS: dict[str, str] = {
     # Output sample rate — loudnorm upsamples to 192 kHz internally, so resample
     # back to a distribution-standard rate (44.1 kHz).
     'podcast_tts_loudnorm_ar': '44100',
+    # --- Bake-off TTS engines (Phase 1, opt-in `tts-hq` compose profile) -------
+    # Emotion-capable challengers to the default Kokoro/Speaches narration,
+    # compared offline via `poindexter media tts-bakeoff`. NOT wired into the
+    # live pipeline — podcast_tts_engine still selects Speaches. Both sidecars
+    # speak the OpenAI /v1/audio/speech contract.
+    # CosyVoice2-0.5B (Apache-2.0) — instruction-controllable emotion/style.
+    'plugin.tts_provider.cosyvoice2.base_url': 'http://cosyvoice2:8000/v1',
+    'plugin.tts_provider.cosyvoice2.model': 'cosyvoice2',
+    # Natural-language delivery instruction; '' = neutral (unset sentinel).
+    'plugin.tts_provider.cosyvoice2.instruct': '',
+    # Client read-timeout (s). Bake-off sidecars can run CPU-only (no spare
+    # VRAM), where a full paragraph takes minutes — well past the 120s default.
+    'plugin.tts_provider.cosyvoice2.timeout_s': '600',
+    # Chatterbox (MIT) — emotion via the `exaggeration` dial (0.0-1.0).
+    'plugin.tts_provider.chatterbox.base_url': 'http://chatterbox:8000/v1',
+    'plugin.tts_provider.chatterbox.model': 'chatterbox',
+    # 0.5 is the upstream-recommended neutral default; raise for more emotion.
+    'plugin.tts_provider.chatterbox.exaggeration': '0.5',
+    # cfg_weight pacing knob; lower = slower/more deliberate delivery.
+    'plugin.tts_provider.chatterbox.cfg_weight': '0.5',
+    # Client read-timeout (s) — see cosyvoice2.timeout_s.
+    'plugin.tts_provider.chatterbox.timeout_s': '600',
     'scheduled_publisher_poll_seconds': '60',
     # TTS pronunciation defaults — JSON objects operators can tune via
     # `poindexter settings set`. The code merges DB values on top of the

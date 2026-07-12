@@ -178,6 +178,91 @@ def _resolve_numeric_str(site_config: Any, key: str, default: str) -> str:
         return default
 
 
+async def render_openai_tts(
+    *,
+    base_url: str,
+    model: str,
+    voice: str,
+    text: str,
+    response_format: str = _DEFAULT_FORMAT,
+    api_key: str = "speaches",
+    extra_body: dict[str, Any] | None = None,
+    read_timeout: float | None = None,
+    remux_enabled: bool = True,
+    remux_mode: str = _DEFAULT_REMUX_MODE,
+    remux_bitrate: str = _DEFAULT_REMUX_BITRATE,
+    loudnorm_enabled: bool = True,
+    loudnorm_i: str = _DEFAULT_LOUDNORM_I,
+    loudnorm_tp: str = _DEFAULT_LOUDNORM_TP,
+    loudnorm_lra: str = _DEFAULT_LOUDNORM_LRA,
+    loudnorm_ar: str = _DEFAULT_LOUDNORM_AR,
+) -> bytes | None:
+    """POST to an OpenAI-compatible /audio/speech endpoint and normalize.
+
+    Engine-agnostic core shared by ``synthesize_speech`` (Speaches) and the
+    bake-off TTSProvider plugins. Returns normalized audio bytes, or ``None``
+    on any transport/HTTP error (never raises — callers fall back).
+
+    ``extra_body`` is merged into the JSON request for non-standard engine
+    knobs (CosyVoice2 ``instruct``; Chatterbox ``exaggeration`` /
+    ``cfg_weight``). The remux + EBU-R128 loudnorm pass is the same one the
+    Speaches path uses (see ``_remux_concatenated_audio``).
+
+    ``read_timeout`` overrides the 120s default read timeout — the bake-off
+    sidecars can run on CPU (no spare VRAM), where synthesizing a full
+    paragraph legitimately takes minutes, so the provider passes a generous
+    per-engine ``timeout_s``. Speaches (fast, GPU) keeps the default.
+    """
+    base_url = (base_url or "").rstrip("/")
+    fmt = (response_format or _DEFAULT_FORMAT).lower()
+    body: dict[str, Any] = {
+        "model": model,
+        "voice": voice,
+        "input": text,
+        "response_format": fmt,
+    }
+    if extra_body:
+        body.update(extra_body)
+
+    timeout = (
+        _HTTP_TIMEOUT if read_timeout is None
+        else httpx.Timeout(read_timeout, connect=5.0)
+    )
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            resp = await client.post(
+                f"{base_url}/audio/speech",
+                headers={"Authorization": f"Bearer {api_key}"},
+                json=body,
+            )
+    except Exception as exc:
+        logger.warning(
+            "[tts_service] TTS endpoint unreachable at %s: %s", base_url, exc,
+        )
+        return None
+
+    if resp.status_code != 200:
+        logger.warning(
+            "[tts_service] TTS endpoint returned %d: %s",
+            resp.status_code, (getattr(resp, "text", "") or "")[:200],
+        )
+        return None
+
+    audio_bytes = resp.content
+    if not audio_bytes:
+        logger.warning("[tts_service] TTS endpoint returned empty body")
+        return None
+
+    if remux_enabled or loudnorm_enabled:
+        audio_bytes = await _remux_concatenated_audio(
+            audio_bytes, fmt, mode=remux_mode, bitrate=remux_bitrate,
+            loudnorm=loudnorm_enabled,
+            loudnorm_i=loudnorm_i, loudnorm_tp=loudnorm_tp,
+            loudnorm_lra=loudnorm_lra, loudnorm_ar=loudnorm_ar,
+        )
+    return audio_bytes
+
+
 async def synthesize_speech(
     text: str,
     *,
@@ -207,77 +292,42 @@ async def synthesize_speech(
     if not text:
         return None
 
-    base_url = _resolve(site_config, "podcast_tts_base_url", _DEFAULT_BASE_URL).rstrip("/")
+    base_url = _resolve(site_config, "podcast_tts_base_url", _DEFAULT_BASE_URL)
     voice = voice or _resolve(site_config, "podcast_tts_voice", _DEFAULT_VOICE)
     model = _resolve(site_config, "podcast_tts_model", _DEFAULT_MODEL)
     fmt = _resolve(site_config, "podcast_tts_format", _DEFAULT_FORMAT).lower()
 
-    try:
-        async with httpx.AsyncClient(timeout=_HTTP_TIMEOUT) as client:
-            resp = await client.post(
-                f"{base_url}/audio/speech",
-                headers={"Authorization": "Bearer speaches"},
-                json={
-                    "model": model,
-                    "voice": voice,
-                    "input": text,
-                    "response_format": fmt,
-                },
-            )
-    except Exception as exc:
-        logger.warning(
-            "[tts_service] Speaches unreachable at %s: %s — "
-            "podcast audio skipped. Check poindexter-speaches container.",
-            base_url, exc,
-        )
-        return None
-
-    if resp.status_code != 200:
-        logger.warning(
-            "[tts_service] Speaches returned %d: %s",
-            resp.status_code, (resp.text or "")[:200],
-        )
-        return None
-
-    audio_bytes = resp.content
-    if not audio_bytes:
-        logger.warning("[tts_service] Speaches returned empty body")
-        return None
-
-    # Two post-processing concerns share a single ffmpeg pass at this one TTS
-    # boundary (→ podcast AND both video lanes covered):
-    #   1. Remux — Speaches byte-concatenates its internal segments, leaving N
-    #      embedded per-segment headers and only segment 1's duration in the
-    #      stream header; re-encode collapses them into one clean stream so
-    #      players don't cut off mid-episode.
-    #   2. loudnorm — Kokoro emits full-scale audio (peak ~0.0 dBFS); EBU R128
-    #      normalization caps the true peak (headroom) and hits the podcast
-    #      loudness target, fixing the qa.audio audio_clipping finding.
-    # Loudness normalization runs even when remux is off — disabling the header
-    # repair must not silently re-introduce clipping.
-    remux_enabled = _resolve_bool(site_config, "podcast_tts_remux_enabled", True)
-    loudnorm_enabled = _resolve_bool(site_config, "podcast_tts_loudnorm_enabled", True)
-    if remux_enabled or loudnorm_enabled:
-        mode = _resolve(site_config, "podcast_tts_remux_mode", _DEFAULT_REMUX_MODE)
-        bitrate = _resolve(
+    # Delegate the OpenAI POST + remux/loudnorm normalization to the shared,
+    # engine-agnostic helper (the same one the bake-off TTSProvider plugins use).
+    audio_bytes = await render_openai_tts(
+        base_url=base_url,
+        model=model,
+        voice=voice,
+        text=text,
+        response_format=fmt,
+        remux_enabled=_resolve_bool(site_config, "podcast_tts_remux_enabled", True),
+        remux_mode=_resolve(site_config, "podcast_tts_remux_mode", _DEFAULT_REMUX_MODE),
+        remux_bitrate=_resolve(
             site_config, "podcast_tts_remux_bitrate", _DEFAULT_REMUX_BITRATE
-        )
-        audio_bytes = await _remux_concatenated_audio(
-            audio_bytes, fmt, mode=mode, bitrate=bitrate,
-            loudnorm=loudnorm_enabled,
-            loudnorm_i=_resolve_numeric_str(
-                site_config, "podcast_tts_loudnorm_i", _DEFAULT_LOUDNORM_I
-            ),
-            loudnorm_tp=_resolve_numeric_str(
-                site_config, "podcast_tts_loudnorm_tp", _DEFAULT_LOUDNORM_TP
-            ),
-            loudnorm_lra=_resolve_numeric_str(
-                site_config, "podcast_tts_loudnorm_lra", _DEFAULT_LOUDNORM_LRA
-            ),
-            loudnorm_ar=_resolve_numeric_str(
-                site_config, "podcast_tts_loudnorm_ar", _DEFAULT_LOUDNORM_AR
-            ),
-        )
+        ),
+        loudnorm_enabled=_resolve_bool(
+            site_config, "podcast_tts_loudnorm_enabled", True
+        ),
+        loudnorm_i=_resolve_numeric_str(
+            site_config, "podcast_tts_loudnorm_i", _DEFAULT_LOUDNORM_I
+        ),
+        loudnorm_tp=_resolve_numeric_str(
+            site_config, "podcast_tts_loudnorm_tp", _DEFAULT_LOUDNORM_TP
+        ),
+        loudnorm_lra=_resolve_numeric_str(
+            site_config, "podcast_tts_loudnorm_lra", _DEFAULT_LOUDNORM_LRA
+        ),
+        loudnorm_ar=_resolve_numeric_str(
+            site_config, "podcast_tts_loudnorm_ar", _DEFAULT_LOUDNORM_AR
+        ),
+    )
+    if audio_bytes is None:
+        return None
 
     logger.info(
         "[tts_service] TTS synthesized: %d bytes (voice=%s, fmt=%s)",

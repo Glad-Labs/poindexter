@@ -1169,6 +1169,74 @@ services:
       retries: 5
       start_period: 120s
 
+  # Chatterbox TTS bake-off sidecar (opt-in). MIT; emotion via `exaggeration`.
+  # Start: docker compose --profile tts-hq up -d chatterbox
+  chatterbox:
+    profiles: ["tts-hq"]
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.chatterbox
+    container_name: poindexter-chatterbox
+    restart: unless-stopped
+    ports:
+      - "8011:8000"
+    environment:
+      TTS_DEVICE: "cuda"
+      # Bounds torch's CPU thread pool if it ever falls back to TTS_DEVICE=cpu.
+      OMP_NUM_THREADS: "8"
+    volumes:
+      - ${USERPROFILE:-.}/.cache/huggingface:/home/appuser/.cache/huggingface
+    deploy:
+      resources:
+        limits:
+          # Hard cap so a CPU-only run (no spare VRAM) can't saturate the WSL2
+          # VM's vCPUs and starve the rest of the stack (torch CPU inference will
+          # otherwise grab every core). Harmless on the GPU path.
+          cpus: "8"
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # CosyVoice2 TTS bake-off sidecar (opt-in). Apache-2.0; emotion via `instruct`.
+  # Start: docker compose --profile tts-hq up -d cosyvoice2
+  cosyvoice2:
+    profiles: ["tts-hq"]
+    build:
+      context: ./scripts
+      dockerfile: Dockerfile.cosyvoice2
+    container_name: poindexter-cosyvoice2
+    restart: unless-stopped
+    ports:
+      - "8012:8000"
+    environment:
+      # Bounds torch's CPU thread pool if it ever falls back to a CPU-only run.
+      OMP_NUM_THREADS: "8"
+    volumes:
+      - ${USERPROFILE:-.}/.cache/huggingface:/home/appuser/.cache/huggingface
+    deploy:
+      resources:
+        limits:
+          # Hard cap so a CPU-only run can't saturate the WSL2 VM's vCPUs and
+          # starve the rest of the stack. Harmless on the GPU path.
+          cpus: "8"
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO /dev/null http://localhost:8000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   # ===========================================
   # pgAdmin — PostgreSQL web UI
   # ===========================================
