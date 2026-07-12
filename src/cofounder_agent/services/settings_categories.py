@@ -43,7 +43,6 @@ _OVERRIDES: dict[str, str] = {
     "default_media_to_generate": "media",
     "default_ollama_model": "content",
     "default_template_slug": "pipeline",
-    "default_model_tier": "pipeline",
     "default_workflow_gates": "pipeline",
     "preferred_ai_video_style": "media",
     "preferred_ollama_model": "models",
