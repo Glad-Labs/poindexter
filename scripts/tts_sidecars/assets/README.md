@@ -7,9 +7,9 @@ leave it unset and every render uses Chatterbox's own built-in default voice.
 Pin one only if you want a specific voice identity for the live podcast
 pipeline (`podcast_tts_engine=chatterbox`).
 
-The reference clip is **never committed** here either — same reasoning as
-`stock_speaker_16k.wav` above, and it doesn't even live in this directory: it's
-a host-mounted operator asset, kept out of git entirely (like `bootstrap.toml`).
+The reference clip is **never committed** — it's an audio asset, and the right
+clip is an operator choice. It doesn't even live in this directory: it's a
+host-mounted operator asset, kept out of git entirely (like `bootstrap.toml`).
 
 1. Convert your clip to a clean mono reference (24 kHz suits Chatterbox's
    native sample rate; 7–10s is the sweet spot):
