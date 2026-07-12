@@ -240,22 +240,43 @@ def test_collector_loop_swallows_cycle_error_and_keeps_looping():
     assert len(calls) == 1
 
 
-def test_collector_loop_escalates_systemexit_to_hard_exit():
-    """The nvidia-smi watchdog raises SystemExit from get_gpu_metrics. In this
-    non-main thread that would silently kill just the collector (leaving a
-    frozen snapshot), so it must escalate to a real process exit for the host
-    service manager to restart a clean instance."""
+def test_collector_loop_swallows_watchdog_systemexit_and_keeps_looping():
+    """The #319 nvidia-smi watchdog raises SystemExit on repeated nvidia-smi
+    timeouts. That watchdog existed to kill a process whose *request thread* was
+    wedged on a stuck nvidia-smi — but collection is off the request path now, so
+    a hung nvidia-smi only makes GPU metrics briefly stale while psu/estimate/AIDA
+    keep serving the cached snapshot. Hard-exiting there dropped ALL metrics over a
+    transient GPU-busy spell (2026-07-12 regression), so the collector must swallow
+    it and keep looping."""
     stop = threading.Event()
-    exits = []
+    calls = []
 
     def fake_refresh():
+        calls.append(1)
+        stop.set()  # end after this one iteration
         raise SystemExit(1)
 
+    # Must return normally — NOT propagate SystemExit, NOT exit the process.
     EXPORTER._collector_loop(
-        0.0,
-        _refresh=fake_refresh,
-        _sleep=lambda _: None,
-        _stop=stop,
-        _hard_exit=lambda code: exits.append(code),
+        0.0, _refresh=fake_refresh, _sleep=lambda _: None, _stop=stop
     )
-    assert exits == [1]
+    assert len(calls) == 1
+
+
+def test_collector_loop_continues_to_next_cycle_after_watchdog_systemexit():
+    """A watchdog SystemExit on one cycle must not end the loop — the next cycle
+    still runs, so GPU metrics recover on their own once nvidia-smi is responsive
+    again (rather than the whole exporter dying)."""
+    stop = threading.Event()
+    calls = []
+
+    def fake_refresh():
+        calls.append(1)
+        if len(calls) == 1:
+            raise SystemExit(1)  # watchdog trip on cycle 1
+        stop.set()               # cycle 2 runs, then stop
+
+    EXPORTER._collector_loop(
+        0.0, _refresh=fake_refresh, _sleep=lambda _: None, _stop=stop
+    )
+    assert len(calls) == 2

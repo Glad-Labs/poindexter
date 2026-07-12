@@ -23,14 +23,14 @@ Reliability:
     ~15×/day — see brain/psu_power.py. Scrapes now get data at most one interval
     stale, which is fine for power/thermal gauges.)
   - ThreadingHTTPServer so concurrent scrapes never queue behind each other.
-  - Watchdog (issue #319): if nvidia-smi takes >2× its timeout three times in a
-    row, the process hard-exits so the host service manager
-    (``scripts/background-services.ps1``) restarts a clean instance. The exit is
-    raised inside the collector thread and escalated via ``os._exit`` — see
-    ``_collector_loop``.
+  - The #319 nvidia-smi watchdog (which killed the process on repeated nvidia-smi
+    timeouts) is obsolete now that collection is off the request path: a hung
+    nvidia-smi can't block a scrape, it only makes GPU metrics briefly stale, so
+    the collector swallows the watchdog's SystemExit and keeps serving (see
+    ``_collector_loop``). Genuine crashes are still caught by the host service
+    manager's restart policy.
 """
 import logging
-import os
 import re
 import subprocess
 import sys
@@ -840,26 +840,28 @@ def _collector_loop(
     _refresh=_refresh_snapshot,
     _sleep=time.sleep,
     _stop=None,
-    _hard_exit=os._exit,
 ) -> None:
     """Refresh the cached snapshot forever (background thread).
 
     Resilient by design: a per-cycle collector error is logged and retried next
     cycle — one bad read must not kill the refresh thread and freeze the
-    snapshot. A tripped nvidia-smi watchdog surfaces here as ``SystemExit``; in
-    a non-main thread that would silently kill only this thread, so it is
-    escalated to a hard process exit for the host service manager to restart.
+    snapshot. The #319 nvidia-smi watchdog raises ``SystemExit`` after repeated
+    nvidia-smi timeouts; that watchdog existed to kill a process whose *request
+    thread* was wedged on a stuck nvidia-smi, but collection is off the request
+    path now — a hung nvidia-smi only makes GPU metrics briefly stale while
+    psu/estimate/AIDA keep serving from the cached snapshot. Exiting there
+    dropped ALL metrics over a transient GPU-busy spell (2026-07-12), so the
+    watchdog's exit is swallowed and the loop keeps collecting.
     """
     while _stop is None or not _stop.is_set():
         try:
             _refresh()
         except SystemExit:
-            logger.error(
-                "collector: nvidia-smi watchdog tripped — hard-exiting so the "
-                "host service manager restarts a clean instance"
+            logger.warning(
+                "collector: nvidia-smi watchdog tripped (repeated nvidia-smi "
+                "timeouts) — ignoring; GPU metrics stale this cycle, other "
+                "sources unaffected"
             )
-            _hard_exit(1)
-            return
         except Exception as exc:  # noqa: BLE001 — one bad cycle must not stop refresh
             logger.warning(
                 "collector cycle failed (%s: %s) — snapshot stale this cycle",
