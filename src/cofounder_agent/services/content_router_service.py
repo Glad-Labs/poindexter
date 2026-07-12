@@ -76,6 +76,7 @@ See also
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 from services.logger_config import get_logger
@@ -157,21 +158,104 @@ async def _load_niche_slug(
     return None
 
 
+def _graph_hydration_keys(
+    graph_def: dict[str, Any] | None,
+    get_meta: Callable[[str], Any],
+) -> set[str]:
+    """Keys the active graph must receive from initial state (``task_metadata``).
+
+    A hydration key is a declared ``PipelineState`` channel that some atom
+    *consumes* (via ``requires`` or a declared input) BEFORE any atom
+    *produces* it — walking the nodes in topological order. Produced-then-
+    consumed channels (``content`` / ``quality_score`` / ``seo_title`` / …) are
+    NOT hydration keys; excluding them is what stops a ``canonical_blog``
+    rejected→rewrite re-run — whose ``task_metadata`` carries the prior draft's
+    body and scores — from leaking them onto the fresh run's initial state.
+
+    Order-sensitive so an entry atom that both consumes and re-emits an
+    optional input — e.g. ``image_rebuild``'s ``allow_stock`` (read at entry,
+    normalised, re-produced) — is still recognised as needing to arrive from
+    metadata. An order-insensitive ``requires - produces`` would silently drop
+    it, ignoring the operator's opt-in.
+
+    ``get_meta`` maps an atom name to its ``AtomMeta`` (``.requires`` /
+    ``.produces`` / ``.inputs``); injected so the walk is unit-testable without
+    the atom registry.
+    """
+    if not isinstance(graph_def, dict):
+        return set()
+    nodes = [
+        n for n in (graph_def.get("nodes") or [])
+        if isinstance(n, dict) and isinstance(n.get("id"), str)
+    ]
+    if not nodes:
+        return set()
+    node_by_id = {n["id"]: n for n in nodes}
+    ids = set(node_by_id)
+
+    # Topological order via Kahn's algorithm, mirroring pipeline_architect's
+    # build-time walk: skip designated rescue back-edges (``loop``) so the
+    # loopback target's indegree can still reach 0, and ignore edges to END.
+    indeg = dict.fromkeys(ids, 0)
+    adj: dict[str, list[str]] = {nid: [] for nid in ids}
+    for e in graph_def.get("edges") or []:
+        if not isinstance(e, dict) or e.get("loop"):
+            continue
+        src, dst = e.get("from"), e.get("to")
+        if isinstance(src, str) and isinstance(dst, str) and dst != "END" and src in ids and dst in ids:
+            adj[src].append(dst)
+            indeg[dst] += 1
+    ready = [nid for nid in ids if indeg[nid] == 0]
+    order: list[str] = []
+    while ready:
+        cur = ready.pop(0)
+        order.append(cur)
+        for nxt in adj[cur]:
+            indeg[nxt] -= 1
+            if indeg[nxt] == 0:
+                ready.append(nxt)
+    # Any nodes a cycle left out (a valid DAG has none): append them so their
+    # contracts still count — conservative, never surfaces fewer keys.
+    order.extend(nid for nid in ids if nid not in order)
+
+    from services.template_runner import PipelineState  # lazy: import cycle
+
+    declared = set(PipelineState.__annotations__)
+    produced: set[str] = set()
+    hydration: set[str] = set()
+    for nid in order:
+        meta = get_meta(node_by_id[nid].get("atom", ""))
+        if meta is None:
+            continue
+        consumed = set(meta.requires) | {f.name for f in meta.inputs}
+        hydration |= (consumed & declared) - produced
+        produced |= set(meta.produces)
+    return hydration
+
+
 async def _load_task_metadata(
-    database_service: DatabaseService, task_id: str,
+    database_service: DatabaseService,
+    task_id: str,
+    template_slug: str | None,
+    *,
+    graph_loader: Callable[..., Any] | None = None,
+    get_meta: Callable[[str], Any] | None = None,
 ) -> dict[str, Any]:
     """Surface per-task hydration metadata for graph templates that start from
-    an existing row instead of a topic (``seo_refresh`` and future kin).
+    an existing row instead of a topic (``seo_refresh`` / ``image_rebuild`` /
+    future kin).
 
     Reads ``pipeline_versions.stage_data -> 'task_metadata'`` — where
     ``tasks_db.add_task`` persists a task's metadata at version 1 — and returns
-    only the hydration keys the ``seo_refresh`` graph needs (``post_id`` /
-    ``seo_opportunity_id`` / ``target_query`` / ``seo_refresh_scope``). Returns
-    ``{}`` on miss so the ``canonical_blog`` path — which carries none of these
-    — is completely unaffected. Mirrors ``_load_template_slug`` /
-    ``_load_niche_slug``.
+    only the keys the *active graph* actually needs from initial state (see
+    :func:`_graph_hydration_keys`, which derives them from the atoms'
+    ``requires`` / ``produces`` contracts rather than a hardcoded per-template
+    allowlist). Returns ``{}`` on miss, and for ``canonical_blog`` / ``dev_diary``
+    (no external hydration inputs), so those paths are unaffected.
+
+    ``graph_loader`` / ``get_meta`` are injected for testability; production
+    resolves the real ``load_active_graph_def`` / ``get_atom_meta``.
     """
-    keys = ("post_id", "seo_opportunity_id", "target_query", "seo_refresh_scope")
     try:
         async with database_service.pool.acquire() as conn:
             raw = await conn.fetchval(
@@ -193,8 +277,22 @@ async def _load_task_metadata(
             return {}
     data = raw if isinstance(raw, dict) else {}
     meta = data.get("task_metadata")
-    if not isinstance(meta, dict):
+    if not isinstance(meta, dict) or not meta:
         return {}
+
+    if graph_loader is None:
+        from services.pipeline_templates import load_active_graph_def
+        graph_loader = load_active_graph_def
+    if get_meta is None:
+        from services.atom_registry import get_atom_meta
+        get_meta = get_atom_meta
+
+    graph_def = await graph_loader(getattr(database_service, "pool", None), template_slug or "")
+    keys = _graph_hydration_keys(graph_def, get_meta)
+    # Narrow the candidate channels to those actually present in this task's
+    # metadata. Injected-service / context channels (database_service,
+    # image_service, …) are declared channels the router seeds directly, so
+    # they appear in ``keys`` but never in ``meta`` — this filter drops them.
     return {k: meta[k] for k in keys if meta.get(k) not in (None, "")}
 
 
@@ -406,13 +504,17 @@ async def process_content_generation_task(
     if niche_slug:
         result["niche_slug"] = niche_slug
 
-    # seo_refresh (and future graph templates that hydrate from an existing
-    # row) carry their inputs — post_id, target_query, … — in the task's
-    # metadata rather than as topic/style args. Surface those onto the initial
-    # state so the entry atom (content.load_existing_post) can read post_id.
-    # Empty for canonical_blog, so that path is unaffected.
-    for _k, _v in (await _load_task_metadata(database_service, task_id)).items():
-        result[_k] = _v
+    # Graph templates that hydrate from an existing row (seo_refresh's post_id,
+    # image_rebuild's target_task_id/allow_stock, …) carry their inputs in the
+    # task's metadata rather than as topic/style args. Surface exactly the keys
+    # the active graph needs from initial state (derived from atom contracts —
+    # see _load_task_metadata) so the entry atom can read them. ``setdefault``
+    # so metadata never clobbers a freshly-seeded context value; empty for
+    # canonical_blog / dev_diary, so those paths are unaffected.
+    for _k, _v in (
+        await _load_task_metadata(database_service, task_id, template_slug)
+    ).items():
+        result.setdefault(_k, _v)
 
     # Per ``feedback_no_silent_defaults``: a missing slug is a config
     # error, not a fallback. The legacy chunked StageRunner flow was
