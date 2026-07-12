@@ -36,14 +36,24 @@ import pytest
 # plugin.caption_provider.speaches.base_url routes to speaches /health like the
 # other three speaches-backed keys; without it the operator-url probe HEADs the
 # bare /v1 base path (404) and false-pages on a healthy caption sidecar.
+# api_base_url / grafana_url / internal_api_base_url /
+# plugin.tts_provider.chatterbox.base_url (glad-labs-stack#2395/#2397) route to
+# each service's compose-DNS /health endpoint instead of a host-published port
+# (localhost:3000, localhost:8002) that wedges from inside the brain container
+# even when the backend is healthy on the compose net — the dominant operator
+# pager-fatigue source found 2026-07-12 (178 Telegram + 178 Discord pages/24h).
 EXPECTED_OVERRIDE_KEYS = {
+    "api_base_url",
     "cloudflare_beacon_url",
     "data_fabric_loki_url",
     "data_fabric_tempo_url",
     "google_sitemap_ping_url",
+    "grafana_url",
     "indexnow_ping_url",
+    "internal_api_base_url",
     "mcp_http_probe_recovery_url",
     "plugin.caption_provider.speaches.base_url",
+    "plugin.tts_provider.chatterbox.base_url",
     "podcast_tts_base_url",
     "storage_public_url",
     "voice_agent_claude_code_host_brain_url",
@@ -198,6 +208,44 @@ def test_speaches_backed_overrides_probe_health(baseline_seeds_text: str) -> Non
         assert entry.get("probe_url") == "http://speaches:8000/health", (
             f"{key} must probe speaches /health (200), got {entry.get('probe_url')!r}. "
             "The bare /v1 base path 404s and false-pages the operator-url probe."
+        )
+
+
+def test_service_base_overrides_probe_compose_dns_health(baseline_seeds_text: str) -> None:
+    """chatterbox / grafana / worker API-base overrides must probe the
+    compose-network service name's health endpoint, not localhost /
+    host.docker.internal (glad-labs-stack#2395/#2397).
+
+    These app_settings hold host-published-port URLs (``localhost:3000``,
+    ``localhost:8002``) that wedge intermittently from inside the brain
+    container (``RemoteProtocolError: server disconnected`` / ``ConnectError``)
+    even though the backend is healthy on the compose net — this was the
+    dominant operator pager-fatigue source (178 Telegram + 178 Discord
+    deliveries/24h, 2026-07-12). chatterbox's OpenAI-compat ``/v1`` base also
+    has no GET handler (bare HEAD/GET 404s). Regression guard: same shape as
+    the data_fabric/speaches overrides above — if this baseline entry is ever
+    dropped or repointed at a host-published port, the false-page class
+    reopens.
+    """
+    overrides = _overrides(baseline_seeds_text)
+    expected_probe_urls = {
+        "plugin.tts_provider.chatterbox.base_url": "http://chatterbox:8000/health",
+        "grafana_url": "http://grafana:3000/api/health",
+        "api_base_url": "http://worker:8002/api/health",
+        "internal_api_base_url": "http://worker:8002/api/health",
+    }
+    for key, want in expected_probe_urls.items():
+        entry = overrides.get(key)
+        assert entry is not None, f"{key} override missing from baseline"
+        got = entry.get("probe_url")
+        assert got == want, (
+            f"{key} probe_url must be {want!r} (compose DNS), got {got!r}. "
+            "localhost / host.docker.internal routes the probe through the "
+            "host-published-port proxy, which false-pages when only that proxy "
+            "is wedged while the backend is healthy on the compose net."
+        )
+        assert "localhost" not in got and "host.docker.internal" not in got, (
+            f"{key} probe_url must not target the host-port path: {got!r}"
         )
 
 
