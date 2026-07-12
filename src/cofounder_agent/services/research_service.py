@@ -308,6 +308,19 @@ class ResearchService:
             return [{"title": r["title"], "slug": r["slug"]} for r in rows]
         except Exception as e:
             logger.debug("[RESEARCH] Internal link search failed: %s", e)
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="research_service",
+                kind="internal_link_search_failed",
+                title=f"Internal link search failed for topic {topic[:50]!r}",
+                body=(
+                    f"_find_internal_links: {e}. The writer got zero "
+                    "internal-link candidates for this topic from this "
+                    "path (a DB error, not 'no matches found')."
+                ),
+                dedup_key="internal_link_search_failed",
+            )
             return []
 
     async def _web_search(self, topic: str) -> list[dict[str, str]]:
@@ -334,6 +347,19 @@ class ResearchService:
             return await researcher.search_simple(topic, num_results=5)
         except Exception as e:
             logger.debug("[RESEARCH] Web search failed: %s", e)
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="research_service",
+                kind="web_search_failed",
+                title=f"Web search failed for topic {topic[:50]!r}",
+                body=(
+                    f"_web_search: {e}. The writer got zero external "
+                    "sources for this topic — no sourced facts/numbers "
+                    "to draw on, just the pipeline's own knowledge."
+                ),
+                dedup_key="web_search_failed",
+            )
             return []
 
 

@@ -601,6 +601,27 @@ class UnifiedPromptManager:
             logger.debug("[prompt_manager] Langfuse lookup for %r failed: %s", key, exc)
         return None
 
+    def _emit_langfuse_init_finding(self, reason: str, exc: Exception) -> None:
+        """One shared finding for _init_langfuse_client's two failure points.
+
+        Both mean the same thing operationally — Langfuse client init
+        aborted and the caller falls back to DB+YAML for this lookup —
+        so they share one kind/dedup_key rather than paging separately.
+        """
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="prompt_manager",
+            kind="langfuse_client_init_failed",
+            title="Langfuse client init aborted before host/key check",
+            body=(
+                f"_init_langfuse_client: {reason}: {exc}. Falls back to "
+                "DB+YAML for this prompt lookup — Langfuse 'production' "
+                "versions are silently ignored while this persists."
+            ),
+            dedup_key="langfuse_client_init_failed",
+        )
+
     def _init_langfuse_client(self):
         """Build the Langfuse client lazily on first use.
 
@@ -635,6 +656,7 @@ class UnifiedPromptManager:
                 site_config = _sc()
             except Exception as exc:  # noqa: BLE001
                 logger.debug("[prompt_manager] site_config unavailable: %s", exc)
+                self._emit_langfuse_init_finding("site_config unavailable", exc)
                 return None
 
         try:
@@ -645,6 +667,7 @@ class UnifiedPromptManager:
             secret_key = self._langfuse_secret_key
         except Exception as exc:  # noqa: BLE001
             logger.debug("[prompt_manager] site_config read failed: %s", exc)
+            self._emit_langfuse_init_finding("site_config read failed", exc)
             return None
 
         host = (host or "").strip()

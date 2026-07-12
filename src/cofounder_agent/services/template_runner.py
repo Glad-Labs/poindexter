@@ -1121,6 +1121,12 @@ async def has_resumable_checkpoint(pool: Any, thread_id: str) -> bool:
                 )
             )
     except Exception as exc:  # noqa: BLE001
+        # silent-ok: per this function's own docstring, this only gates an
+        # extra recovery convenience (resume vs restart-from-scratch) and
+        # must never break the at-gate resume path. Worst case on failure
+        # is a redundant from-scratch run, not lost data or a correctness
+        # issue — and if the checkpoints table itself is broken, that
+        # surfaces separately via the checkpointer's own write path.
         logger.debug(
             "[template_runner] has_resumable_checkpoint(%s) failed: %s",
             thread_id, exc,
@@ -1821,6 +1827,21 @@ class TemplateRunner:
             logger.debug(
                 "[template_runner] could not read flag, defaulting to "
                 "MemorySaver: %s", exc,
+            )
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="template_runner",
+                kind="postgres_checkpointer_flag_read_failed",
+                title="Could not read template_runner_use_postgres_checkpointer",
+                body=(
+                    f"_postgres_enabled: {exc}. Defaulted to MemorySaver "
+                    "for this run — if the operator actually enabled "
+                    "Postgres-backed checkpointing, this run silently "
+                    "used the non-persistent in-process saver instead, "
+                    "losing resume-across-restart capability."
+                ),
+                dedup_key="postgres_checkpointer_flag_read_failed",
             )
             return False
 

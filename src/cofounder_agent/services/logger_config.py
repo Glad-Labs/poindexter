@@ -403,6 +403,11 @@ def configure_structlog() -> bool:
         )
         return True
     except Exception as e:
+        # silent-ok: this runs DURING logging bootstrap — the logger isn't
+        # configured yet (that's what just failed), so print-to-stderr is
+        # the only signal available. emit_finding needs a working audit-log
+        # path this early in startup isn't guaranteed to have; using it here
+        # risks masking the real structlog-config error with a second one.
         print(f"Warning: Failed to configure structlog: {e}", file=sys.stderr)
         return False
 
@@ -485,6 +490,11 @@ def configure_standard_logging() -> None:
             )
             handlers.append(file_handler)
         except Exception as e:
+            # silent-ok: same bootstrap-ordering reason as the structlog
+            # branch above — this IS the logging setup, so it can't log
+            # its own failure through the thing it's still configuring.
+            # The stderr handler (added just above) still gets wired even
+            # when file logging fails, so this isn't a total blackout.
             print(f"Warning: Failed to configure rotating file logging: {e}", file=sys.stderr)
 
     # Apply the request-ID-aware formatter to every handler. Also attach

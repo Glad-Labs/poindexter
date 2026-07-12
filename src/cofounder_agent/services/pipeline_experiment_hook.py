@@ -72,6 +72,20 @@ async def _resolve_active_experiment_key(database_service: Any) -> str | None:
             "[experiment_hook] could not read %s from app_settings: %s",
             _ACTIVE_EXPERIMENT_SETTING, e,
         )
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="pipeline_experiment_hook",
+            kind="experiment_active_key_read_failed",
+            title="Could not read active_pipeline_experiment_key from app_settings",
+            body=(
+                f"_resolve_active_experiment_key: {e}. This task ran with "
+                "no experiment assigned even if one is actually configured "
+                "active — indistinguishable at this call site from the "
+                "normal 'no experiment running' case."
+            ),
+            dedup_key="experiment_active_key_read_failed",
+        )
         return None
     if value is None:
         return None
@@ -102,6 +116,21 @@ async def _get_variant_config(
         logger.debug(
             "[experiment_hook] could not load variants for %r: %s",
             experiment_key, e,
+        )
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="pipeline_experiment_hook",
+            kind="experiment_variant_config_load_failed",
+            title=f"Could not load Langfuse dataset for experiment {experiment_key!r}",
+            body=(
+                f"_get_variant_config: {e}. The task was already assigned "
+                "a variant (recorded in Langfuse), but its config — "
+                "including any writer_model override — never applied, so "
+                "it ran on default config instead of its arm's config. "
+                "This corrupts the A/B comparison for this experiment."
+            ),
+            dedup_key=f"experiment_variant_config_load_failed:{experiment_key}",
         )
         return {}
 
@@ -163,6 +192,20 @@ async def assign_pipeline_variant(
         )
     except Exception as e:
         logger.debug("[experiment_hook] ExperimentService import failed: %s", e)
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="pipeline_experiment_hook",
+            kind="experiment_service_import_failed",
+            title="LangfuseExperimentService import failed",
+            body=(
+                f"assign_pipeline_variant: {e}. An experiment is active "
+                "(active_pipeline_experiment_key is set) but no task can "
+                "be assigned to a variant — every task runs unassigned "
+                "until this import works again."
+            ),
+            dedup_key="experiment_service_import_failed",
+        )
         return no_op
 
     try:
@@ -248,6 +291,20 @@ async def record_pipeline_outcome(
         )
     except Exception as e:
         logger.debug("[experiment_hook] ExperimentService import failed: %s", e)
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="pipeline_experiment_hook",
+            kind="experiment_service_import_failed",
+            title="LangfuseExperimentService import failed",
+            body=(
+                f"record_pipeline_outcome: {e}. Task {task_id} was assigned "
+                f"to experiment {experiment_key!r} but its outcome metrics "
+                "were never recorded — this run is invisible to the "
+                "experiment's scoring."
+            ),
+            dedup_key="experiment_service_import_failed",
+        )
         return
 
     try:

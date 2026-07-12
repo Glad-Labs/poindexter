@@ -36,6 +36,23 @@ async def begin(
             )
     except Exception as exc:  # noqa: BLE001 — never break the caller
         logger.debug("live_activity.begin swallowed: %s", exc)
+        # Unlike update/finish/heartbeat below (silent-ok: the row already
+        # exists, so a lapsed heartbeat still shows up via reap_stale), a
+        # failed begin means the row never exists at all — no fallback
+        # signal, total blackout for this job in the live pulse.
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="live_activity",
+            kind="live_activity_begin_failed",
+            title=f"live_activity row could not be created for {kind}/{ref_id}",
+            body=(
+                f"begin(kind={kind!r}, ref_id={ref_id!r}, title={title!r}): "
+                f"{exc}. This job/render will not appear in the live pulse "
+                "at all — no row exists to later show as stale."
+            ),
+            dedup_key="live_activity_begin_failed",
+        )
         return None
 
 
@@ -170,6 +187,19 @@ async def reap_stale(pool: Any, *, reaper_seconds: int) -> int:
         return int(str(res).split()[-1]) if str(res).startswith("UPDATE") else 0
     except Exception as exc:  # noqa: BLE001
         logger.debug("live_activity.reap_stale swallowed: %s", exc)
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="live_activity",
+            kind="live_activity_reap_stale_failed",
+            title="live_activity stale-row reaper failed",
+            body=(
+                f"reap_stale: {exc}. Orphaned rows from dead producers "
+                "keep showing as 'running' in the live pulse until this "
+                "sweep succeeds again."
+            ),
+            dedup_key="live_activity_reap_stale_failed",
+        )
         return 0
 
 
