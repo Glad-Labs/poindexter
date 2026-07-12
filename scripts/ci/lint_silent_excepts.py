@@ -14,6 +14,22 @@ the operator when a single-statement handler records the failure with *only*:
     no re-raise. A *narrow* except returning a sentinel
     (``except ValueError: return None``) is a deliberate fallback, left alone.
 
+Two-statement and control-flow swallows count too — a *broad* handler whose
+whole body is low-visibility is silent even when spread across statements:
+
+  - ``<logger>.debug(...)`` then ``return <sentinel>`` — the two-statement
+    form of the same swallow
+  - ``continue`` / ``break`` in a loop (skips the failure with no record)
+  - a bare ``...`` (pass-equivalent) or a ``print(...)`` (stdout only, never
+    a logging event — reaches neither GlitchTip nor a board)
+
+A handler is VISIBLE (not counted) the moment any statement is a real signal:
+an ``emit_finding(...)`` call, a ``warning``+/``error``/``exception``/
+``critical`` log, or a ``raise``. That is the bar — surface a best-effort
+failure as an info-severity finding (Findings dashboard, deduped, non-paging)
+or a warning+; ``debug``/``info`` alone is below it. In a loop, count the
+failures and emit ONE finding after the loop, never one per iteration.
+
 …or when a whole block is wrapped in broad ``contextlib.suppress(Exception)``
 (an ``ast.With`` node, not an ``ExceptHandler``, so the handler scan alone
 never sees it).
@@ -95,6 +111,26 @@ def _is_low_visibility_log_call(stmt: ast.stmt) -> bool:
     return isinstance(func, ast.Attribute) and func.attr in _LOW_VISIBILITY_LOG_METHODS
 
 
+def _is_ellipsis_expr(stmt: ast.stmt) -> bool:
+    """True if stmt is a bare ``...`` (Ellipsis) — a pass-equivalent no-op body."""
+    return (
+        isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Constant)
+        and stmt.value.value is Ellipsis
+    )
+
+
+def _is_print_call(stmt: ast.stmt) -> bool:
+    """True if stmt is a bare ``print(...)`` call — stdout only, never a logging
+    event, so it reaches neither GlitchTip nor a surfaced board."""
+    return (
+        isinstance(stmt, ast.Expr)
+        and isinstance(stmt.value, ast.Call)
+        and isinstance(stmt.value.func, ast.Name)
+        and stmt.value.func.id == "print"
+    )
+
+
 def _is_broad_except(handler: ast.ExceptHandler) -> bool:
     """True if the ``except`` clause catches everything — bare ``except:`` or
     ``except Exception`` / ``except BaseException`` (alone or in a tuple)."""
@@ -134,24 +170,43 @@ def _is_sentinel_return(stmt: ast.stmt) -> bool:
     return False
 
 
-def _handler_is_silent(handler: ast.ExceptHandler) -> bool:
-    """True if a single-statement handler swallows below operator visibility.
+def _stmt_is_low_visibility(stmt: ast.stmt, *, broad: bool) -> bool:
+    """True if one handler-body statement is below the operator's alerting bar.
 
-    The lone statement is one of: ``pass``; a ``<logger>.debug/info(...)`` call
-    (below the alerting bar); or — under a *broad* except — a ``return`` of a
-    sentinel (None / constant / empty collection), which swallows anything and
-    reports "empty". A *narrow* except returning a sentinel
-    (``except ValueError: return None``) is a deliberate fallback, not a
-    swallow. A handler with any second statement (a finding emit, a re-raise, a
-    state mutation, a higher-severity log) is NOT silent.
+    Always low-visibility (any breadth): ``pass``, ``...``, a
+    ``<logger>.debug/info(...)`` call, a ``print(...)``.
+    Low-visibility ONLY under a *broad* except (a narrow except names its
+    exception, making these deliberate control flow): ``continue`` / ``break``
+    and a sentinel ``return`` (bare / constant / empty collection).
+    Anything else — a ``warning``+/``error``/``exception``/``critical`` log, an
+    ``emit_finding(...)`` call, a ``raise``, an assignment, any real call — is a
+    visibility signal.
     """
-    body = handler.body
-    if len(body) != 1:
-        return False
-    only = body[0]
-    if isinstance(only, ast.Pass) or _is_low_visibility_log_call(only):
+    if isinstance(stmt, ast.Pass) or _is_ellipsis_expr(stmt):
         return True
-    return _is_broad_except(handler) and _is_sentinel_return(only)
+    if _is_low_visibility_log_call(stmt) or _is_print_call(stmt):
+        return True
+    if broad and isinstance(stmt, (ast.Continue, ast.Break)):
+        return True
+    if broad and _is_sentinel_return(stmt):
+        return True
+    return False
+
+
+def _handler_is_silent(handler: ast.ExceptHandler) -> bool:
+    """True if EVERY statement in the handler body is below operator visibility —
+    the failure is recorded nowhere an operator will see it (no finding, no
+    warning+, no re-raise).
+
+    Covers the single ``pass`` / ``<logger>.debug(...)`` handler AND its
+    multi-statement forms — a broad ``except`` whose whole body is
+    ``<logger>.debug(...)`` then ``return None`` (or ``continue`` in a loop) is
+    the same swallow. Any visibility signal anywhere in the body — an
+    ``emit_finding(...)`` call, a ``warning``+ log, a ``raise`` — makes it NOT
+    silent.
+    """
+    broad = _is_broad_except(handler)
+    return all(_stmt_is_low_visibility(s, broad=broad) for s in handler.body)
 
 
 def _node_has_override(node: ast.AST, lines: list[str]) -> bool:

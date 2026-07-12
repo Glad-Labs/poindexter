@@ -75,6 +75,27 @@ def _parse_iso(value: str) -> datetime:
     return datetime.fromisoformat(value)
 
 
+def _emit_bad_timestamp_finding(skipped: int) -> None:
+    """Emit ONE aggregate finding when a batch skipped rows with unparseable
+    timestamps. No-op when nothing was skipped (per-row skips stay debug-level)."""
+    if not skipped:
+        return
+    emit_finding(
+        source="sync_cloudflare_analytics",
+        kind="analytics_row_parse_skipped",
+        title=f"{skipped} analytics row(s) skipped — unparseable timestamp",
+        body=(
+            f"sync_cloudflare_analytics skipped {skipped} row(s) this batch because "
+            "created_at did not match the expected format. A systematic skip means "
+            "Cloudflare Analytics Engine changed its timestamp format and page-view "
+            "counts are under-reporting — check the CF AE SQL response shape."
+        ),
+        severity="info",
+        dedup_key="analytics_row_parse_skipped",
+        extra={"skipped": skipped},
+    )
+
+
 class SyncCloudflareAnalyticsJob:
     name = "sync_cloudflare_analytics"
     description = (
@@ -275,6 +296,7 @@ class SyncCloudflareAnalyticsJob:
         # ------------------------------------------------------------------
         try:
             inserted = 0
+            skipped_bad_ts = 0
             seen_slugs: dict[str, int] = {}
             max_ts: datetime | None = None
 
@@ -304,6 +326,7 @@ class SyncCloudflareAnalyticsJob:
                             try:
                                 ts = _parse_iso(ts_raw)
                             except Exception:
+                                skipped_bad_ts += 1
                                 logger.debug(
                                     "[SYNC_CF_AE] skipping row with bad timestamp %r",
                                     ts_raw,
@@ -354,6 +377,8 @@ class SyncCloudflareAnalyticsJob:
             # even if the watermark write somehow rolls back).
             if max_ts is not None:
                 await self._update_high_water_mark(pool, max_ts.isoformat())
+
+            _emit_bad_timestamp_finding(skipped_bad_ts)
 
             return JobResult(
                 ok=True,

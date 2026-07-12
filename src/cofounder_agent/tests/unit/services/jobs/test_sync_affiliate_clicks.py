@@ -49,3 +49,19 @@ def test_row_to_click_empty_optional_fields_become_none():
     assert c["country"] is None
     assert c["user_agent"] is None
     assert c["post_slug"] is None
+
+
+def test_emit_bad_timestamp_finding_aggregates(monkeypatch):
+    from services.jobs import sync_affiliate_clicks as m
+
+    calls = []
+    monkeypatch.setattr(m, "emit_finding", lambda **kw: calls.append(kw))
+
+    m._emit_bad_timestamp_finding(0)
+    assert calls == []
+
+    m._emit_bad_timestamp_finding(2)
+    assert len(calls) == 1
+    assert calls[0]["kind"] == "affiliate_click_parse_skipped"
+    assert calls[0]["severity"] == "info"
+    assert calls[0]["extra"]["skipped"] == 2

@@ -31,6 +31,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from plugins.job import JobResult
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +84,27 @@ def _row_to_click(raw: dict[str, Any]) -> dict[str, Any] | None:
         "user_agent": (raw.get("user_agent") or "")[:500] or None,
         "created_at_raw": raw.get("created_at") or "",
     }
+
+
+def _emit_bad_timestamp_finding(skipped: int) -> None:
+    """Emit ONE aggregate finding when a batch skipped affiliate-click rows with
+    unparseable timestamps. No-op when nothing was skipped."""
+    if not skipped:
+        return
+    emit_finding(
+        source="sync_affiliate_clicks",
+        kind="affiliate_click_parse_skipped",
+        title=f"{skipped} affiliate-click row(s) skipped — unparseable timestamp",
+        body=(
+            f"sync_affiliate_clicks skipped {skipped} row(s) this batch because "
+            "created_at did not match the expected format. A systematic skip means "
+            "the click-beacon timestamp format drifted and click counts are "
+            "under-reporting — check the CF AE SQL response shape."
+        ),
+        severity="info",
+        dedup_key="affiliate_click_parse_skipped",
+        extra={"skipped": skipped},
+    )
 
 
 class SyncAffiliateClicksJob:
@@ -206,6 +228,7 @@ class SyncAffiliateClicksJob:
         # ------------------------------------------------------------------
         try:
             inserted = 0
+            skipped_bad_ts = 0
             max_ts: datetime | None = None
             async with pool.acquire() as conn:
                 async with conn.transaction():
@@ -221,6 +244,7 @@ class SyncAffiliateClicksJob:
                             try:
                                 ts = _parse_iso(c["created_at_raw"])
                             except Exception:
+                                skipped_bad_ts += 1
                                 logger.debug(
                                     "[SYNC_AFFILIATE] skipping row with bad timestamp %r",
                                     c["created_at_raw"],
@@ -264,6 +288,8 @@ class SyncAffiliateClicksJob:
                 await self._rollup_clicks(pool)
             if max_ts is not None:
                 await self._update_high_water_mark(pool, max_ts.isoformat())
+
+            _emit_bad_timestamp_finding(skipped_bad_ts)
 
             return JobResult(
                 ok=True,

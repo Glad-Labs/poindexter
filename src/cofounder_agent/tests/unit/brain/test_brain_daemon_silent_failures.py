@@ -205,3 +205,30 @@ class TestSendDiscordFailureCapturesTraceback:
             "send_discord failure must log WITH exc_info so the traceback is "
             "captured (poindexter#711 item 3) — a bare message is undiagnosable"
         )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestNotifyEnvHydrationVisibility:
+    """A failed per-key secret read during notify-env hydration must be visible
+    at WARNING — the brain tree can't emit_finding, so warning is the bar."""
+
+    async def test_hydrate_skip_logs_warning_on_read_failure(self, caplog, monkeypatch):
+        async def _boom(pool, key, default=""):
+            raise RuntimeError("secret backend down")
+
+        # The function does `from brain.secret_reader import read_app_setting`
+        # at call time, so patching the module attribute intercepts it.
+        monkeypatch.setattr("brain.secret_reader.read_app_setting", _boom)
+
+        with caplog.at_level(logging.WARNING, logger=_LOGGER):
+            # object() is a truthy sentinel pool; read_app_setting is stubbed.
+            await bd._hydrate_notify_env_from_settings(pool=object())
+
+        skips = [
+            r for r in caplog.records
+            if r.levelno == logging.WARNING
+            and "notify-env hydrate skipped" in r.getMessage()
+        ]
+        assert skips, "a failed per-key secret read must be visible at WARNING"
+        assert "secret backend down" in " ".join(r.getMessage() for r in skips)

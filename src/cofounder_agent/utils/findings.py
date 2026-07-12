@@ -25,6 +25,16 @@ Why this shape (and not a direct Gitea→GitHub rewire):
   The 8-day silent-failure regression is not repeatable.
 - Per-kind delivery policy can land later, configurable via
   ``app_settings`` (matches ``feedback_db_first_config``).
+
+Best-effort exception swallows use this too: when a broad ``except`` swallows a
+non-fatal failure and returns a fallback, record it here —
+``emit_finding(severity="info", dedup_key=...)`` — so the failure is visible on
+the Findings dashboard without paging or blocking. ``info`` never pages: the
+findings router's fetch floor (``_ROUTABLE_SEVERITIES`` = warn/warning/critical)
+never selects ``info`` rows, so an ``info`` finding is dashboard-visible but
+never routed. In a loop, count failures and emit ONE finding after the loop
+(never one per iteration). This is the convention enforced by
+``scripts/ci/lint_silent_excepts.py``.
 """
 
 from __future__ import annotations

@@ -71,7 +71,21 @@ def _convert_to_webp(path: Path) -> "io.BytesIO | None":
             buf.seek(0)
             return buf
     except Exception as exc:  # noqa: BLE001 — conversion is best-effort
+        from utils.findings import emit_finding
+
         logger.debug("[STORAGE] WebP conversion failed for %s: %s", path.name, exc)
+        emit_finding(
+            source="r2_upload_service",
+            kind="webp_conversion_fallback",
+            title=f"WebP conversion fell back to original for {path.name}",
+            body=(
+                f"Pillow WebP conversion failed for {path.name}: {exc}. Uploaded "
+                "the original file instead — non-blocking, but a systematic "
+                "failure means every image ships un-optimised."
+            ),
+            severity="info",
+            dedup_key=f"webp_conversion_fallback:{path.suffix}",
+        )
         return None
 
 

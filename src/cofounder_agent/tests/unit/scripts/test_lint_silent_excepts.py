@@ -316,3 +316,104 @@ class TestBaselineRatchet:
             if n > baseline.get(rel, 0)
         }
         assert offenders == {}, f"silent-except baseline drift: {offenders}"
+
+
+class TestMultiStatementAndControlFlowSilence:
+    """The linter's original matcher only saw single-statement handlers. A broad
+    handler whose whole body is low-visibility is the same swallow spread over
+    multiple statements, or hidden behind loop control flow."""
+
+    def test_broad_except_debug_then_return_none_is_silent(self, tmp_path):
+        src = (
+            "def f():\n"
+            "    try:\n        return g()\n"
+            "    except Exception as e:\n"
+            "        logger.debug('x: %s', e)\n"
+            "        return None\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_broad_except_info_then_return_empty_is_silent(self, tmp_path):
+        src = (
+            "def f():\n"
+            "    try:\n        return g()\n"
+            "    except Exception as e:\n"
+            "        logger.info('x: %s', e)\n"
+            "        return []\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_broad_except_continue_is_silent(self, tmp_path):
+        src = (
+            "def f(items):\n"
+            "    for i in items:\n"
+            "        try:\n            work(i)\n"
+            "        except Exception:\n            continue\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_broad_except_debug_then_continue_is_silent(self, tmp_path):
+        src = (
+            "def f(items):\n"
+            "    for i in items:\n"
+            "        try:\n            work(i)\n"
+            "        except Exception as e:\n"
+            "            logger.debug('skip %s: %s', i, e)\n"
+            "            continue\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_broad_except_break_is_silent(self, tmp_path):
+        src = (
+            "def f(items):\n"
+            "    for i in items:\n"
+            "        try:\n            work(i)\n"
+            "        except Exception:\n            break\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_broad_except_ellipsis_is_silent(self, tmp_path):
+        src = (
+            "def f():\n"
+            "    try:\n        x()\n"
+            "    except Exception:\n        ...\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_broad_except_print_is_silent(self, tmp_path):
+        src = (
+            "def f():\n"
+            "    try:\n        x()\n"
+            "    except Exception as e:\n        print('broke', e)\n"
+        )
+        assert _scan_src(tmp_path, src) == 1
+
+    def test_narrow_except_continue_is_not_silent(self, tmp_path):
+        src = (
+            "def f(items):\n"
+            "    for i in items:\n"
+            "        try:\n            work(i)\n"
+            "        except ValueError:\n            continue\n"
+        )
+        assert _scan_src(tmp_path, src) == 0
+
+    def test_debug_then_warning_is_not_silent(self, tmp_path):
+        src = (
+            "def f():\n"
+            "    try:\n        x()\n"
+            "    except Exception as e:\n"
+            "        logger.debug('d: %s', e)\n"
+            "        logger.warning('w: %s', e)\n"
+        )
+        assert _scan_src(tmp_path, src) == 0
+
+    def test_debug_then_emit_finding_then_return_none_is_not_silent(self, tmp_path):
+        src = (
+            "def f():\n"
+            "    try:\n        return g()\n"
+            "    except Exception as e:\n"
+            "        logger.debug('d: %s', e)\n"
+            "        emit_finding(source='s', kind='k', title='t', body='b')\n"
+            "        return None\n"
+        )
+        assert _scan_src(tmp_path, src) == 0

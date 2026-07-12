@@ -529,3 +529,19 @@ class TestListObjectsAndGetObjectText:
             AsyncMock(return_value=(fake_s3, "bucket")),
         ):
             assert await svc.get_object_text("podcast/feed.xml") is None
+
+
+def test_convert_to_webp_emits_finding_on_failure(tmp_path, monkeypatch):
+    from services import r2_upload_service
+
+    calls = []
+    monkeypatch.setattr("utils.findings.emit_finding", lambda **kw: calls.append(kw))
+    bad = tmp_path / "not-an-image.txt"
+    bad.write_text("garbage", encoding="utf-8")
+
+    result = r2_upload_service._convert_to_webp(bad)
+
+    assert result is None  # non-blocking: caller falls back to the original
+    assert calls, "expected an emit_finding call on conversion failure"
+    assert calls[0]["kind"] == "webp_conversion_fallback"
+    assert calls[0]["severity"] == "info"

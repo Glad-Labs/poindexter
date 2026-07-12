@@ -958,7 +958,7 @@ async def _hydrate_notify_env_from_settings(pool) -> None:
         try:
             value = await read_app_setting(pool, setting_key, "")
         except Exception as e:  # noqa: BLE001 — hydration is best-effort
-            logger.debug(
+            logger.warning(
                 "[BRAIN] notify-env hydrate skipped %s: %s",
                 setting_key, e,
             )
