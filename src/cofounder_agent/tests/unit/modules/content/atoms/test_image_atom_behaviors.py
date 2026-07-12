@@ -140,8 +140,8 @@ class TestGenerateImagesProducerHook:
         record_mock = AsyncMock(return_value=None)
 
         with patch(
-            "modules.content.atoms._image_helpers.try_image_gen",
-            new=AsyncMock(return_value="https://r2.example/gen-1.png"),
+            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            new=AsyncMock(return_value=["https://r2.example/gen-1.png"]),
         ), patch(
             "modules.content.atoms._image_helpers.record_inline_image_asset",
             new=record_mock,
@@ -163,8 +163,8 @@ class TestGenerateImagesProducerHook:
         record_mock = AsyncMock(return_value=None)
 
         with patch(
-            "modules.content.atoms._image_helpers.try_image_gen",
-            new=AsyncMock(return_value=None),
+            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            new=AsyncMock(return_value=[None]),
         ), patch(
             "modules.content.atoms._image_helpers.try_pexels",
             new=AsyncMock(return_value=("https://pexels.example/cat.jpg", "Jane")),
@@ -179,19 +179,20 @@ class TestGenerateImagesProducerHook:
         assert result["image_results"][0]["source"] == "pexels"
 
     @pytest.mark.asyncio
-    async def test_threads_task_id_into_try_image_gen(self):
-        """The originating task_id reaches ``try_image_gen`` so the GPU session
-        rows attribute to the pipeline task (Glad-Labs/poindexter#157)."""
+    async def test_threads_task_id_into_batch_helper(self):
+        """The originating task_id reaches ``batch_generate_inline_image_urls``
+        so the GPU session rows attribute to the pipeline task
+        (Glad-Labs/poindexter#157), preserved across the #841 batching move."""
         captured: dict[str, Any] = {}
 
-        async def fake_try_image_gen(num, search_query, topic, *, site_config, task_id, platform=None):
+        async def fake_batch(placeholders, topic, *, site_config, task_id, platform=None):
             captured["task_id"] = task_id
-            captured["num"] = num
-            return None  # force Pexels fallback so the rest of the atom runs
+            captured["placeholders"] = placeholders
+            return [None] * len(placeholders)  # force Pexels fallback so the rest of the atom runs
 
         with patch(
-            "modules.content.atoms._image_helpers.try_image_gen",
-            new=AsyncMock(side_effect=fake_try_image_gen),
+            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            new=AsyncMock(side_effect=fake_batch),
         ), patch(
             "modules.content.atoms._image_helpers.try_pexels",
             new=AsyncMock(return_value=None),
@@ -199,7 +200,7 @@ class TestGenerateImagesProducerHook:
             await content_generate_images.run(self._state(task_id="task-xyz-789"))
 
         assert captured["task_id"] == "task-xyz-789"
-        assert captured["num"] == "1"
+        assert captured["placeholders"] == [("1", "a cat on a sofa")]
 
 
 # ---------------------------------------------------------------------------
@@ -240,8 +241,8 @@ class TestGenerateImagesAltTextLeakGuard:
         topic = "Stable Diffusion XL on a Single RTX 5090"
 
         with patch(
-            "modules.content.atoms._image_helpers.try_image_gen",
-            new=AsyncMock(return_value="https://r2.example/inline-1.png"),
+            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            new=AsyncMock(return_value=["https://r2.example/inline-1.png"]),
         ), patch(
             "modules.content.atoms._image_helpers.record_inline_image_asset",
             new=AsyncMock(return_value=None),
@@ -267,8 +268,8 @@ class TestGenerateImagesAltTextLeakGuard:
         clean_desc = "A close-up macro photo of a circuit board with red LEDs"
 
         with patch(
-            "modules.content.atoms._image_helpers.try_image_gen",
-            new=AsyncMock(return_value="https://r2.example/inline-1.png"),
+            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            new=AsyncMock(return_value=["https://r2.example/inline-1.png"]),
         ), patch(
             "modules.content.atoms._image_helpers.record_inline_image_asset",
             new=AsyncMock(return_value=None),

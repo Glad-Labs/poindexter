@@ -513,8 +513,8 @@ class TestContentGenerateImages:
         image_gen_url = "https://r2.example.com/img-001.png"
 
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.try_image_gen",
-            AsyncMock(return_value=image_gen_url),
+            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            AsyncMock(return_value=[image_gen_url]),
         )
         monkeypatch.setattr(
             "modules.content.atoms._image_helpers.try_pexels",
@@ -554,8 +554,8 @@ class TestContentGenerateImages:
         photographer = "Jane Doe"
 
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.try_image_gen",
-            AsyncMock(return_value=None),
+            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            AsyncMock(return_value=[None]),
         )
         monkeypatch.setattr(
             "modules.content.atoms._image_helpers.try_pexels",
@@ -591,8 +591,8 @@ class TestContentGenerateImages:
         from modules.content.atoms import content_generate_images as atom
 
         monkeypatch.setattr(
-            "modules.content.atoms._image_helpers.try_image_gen",
-            AsyncMock(return_value=None),
+            "modules.content.atoms._image_helpers.batch_generate_inline_image_urls",
+            AsyncMock(return_value=[None]),
         )
         monkeypatch.setattr(
             "modules.content.atoms._image_helpers.try_pexels",
@@ -627,12 +627,11 @@ class TestContentGenerateImages:
         from modules.content.atoms import content_generate_images as atom
 
         urls = ["https://r2.example.com/a.png", "https://r2.example.com/b.png"]
-        url_iter = iter(urls)
 
-        async def _image_gen(num, query, topic, *, site_config, task_id, platform):
-            return next(url_iter, None)
+        async def _batch(placeholders, topic, *, site_config, task_id, platform):
+            return list(urls)
 
-        monkeypatch.setattr("modules.content.atoms._image_helpers.try_image_gen", _image_gen)
+        monkeypatch.setattr("modules.content.atoms._image_helpers.batch_generate_inline_image_urls", _batch)
         monkeypatch.setattr("modules.content.atoms._image_helpers.try_pexels", AsyncMock(return_value=None))
         monkeypatch.setattr("modules.content.atoms._image_helpers.record_inline_image_asset", AsyncMock())
         monkeypatch.setattr("services.image_service.get_image_service", MagicMock(return_value=MagicMock()))

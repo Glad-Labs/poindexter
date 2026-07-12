@@ -5,6 +5,10 @@ image per plan: image-gen primary, Pexels fallback. Records media_assets rows.
 
 Produces: image_results (list of {num, url, alt_text, source}).
 
+Image-gen generation is batched across ALL plans in one call (one Ollama lock
++ one image-gen lock total, not per-plan) — poindexter#733 / poindexter#841.
+Pexels fallback stays per-image since it's a single HTTP call, not GPU-locked.
+
 Issue: Glad-Labs/poindexter#362.
 """
 from __future__ import annotations
@@ -53,8 +57,8 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         return {"image_results": []}
 
     from modules.content.atoms._image_helpers import (
+        batch_generate_inline_image_urls,
         record_inline_image_asset,
-        try_image_gen,
         try_pexels,
     )
     from services.image_service import get_image_service
@@ -66,10 +70,21 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     platform = state.get("platform")
     image_service = state.get("image_service") or get_image_service(site_config=site_config)  # type: ignore[arg-type]
 
+    # poindexter#733 / poindexter#841 — one Ollama lock + one image-gen lock
+    # for ALL plans in this call, instead of 2N per-plan lock acquisitions.
+    placeholders = [
+        (str(plan.get("num", "")), (plan.get("desc") or "").strip())
+        for plan in image_plans
+    ]
+    image_gen_urls = await batch_generate_inline_image_urls(
+        placeholders, topic,
+        site_config=site_config, task_id=task_id, platform=platform,
+    )
+
     used_image_ids: set[str] = set()
     image_results: list[dict[str, Any]] = []
 
-    for plan in image_plans:
+    for plan, image_gen_url in zip(image_plans, image_gen_urls, strict=True):
         num = str(plan.get("num", ""))
         desc = (plan.get("desc") or "").strip()
         search_query = desc if desc else topic
@@ -78,13 +93,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         img_url: str | None = None
         source = "none"
 
-        # Strategy 1: image-gen.
-        image_gen_url = await try_image_gen(
-            num, search_query, topic,
-            site_config=site_config,
-            task_id=task_id,
-            platform=platform,
-        )
+        # Strategy 1: the batched image-gen result for this plan.
         if image_gen_url and image_gen_url not in used_image_ids:
             used_image_ids.add(image_gen_url)
             img_url = image_gen_url

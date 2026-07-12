@@ -116,6 +116,146 @@ async def test_try_image_gen_threads_task_id_to_both_gpu_locks():
 
 
 @pytest.mark.asyncio
+async def test_batch_generate_inline_image_urls_uses_two_locks_for_n_images():
+    """N inline images acquire the ollama lock ONCE and the image_gen lock ONCE.
+
+    The #733 / poindexter#841 batching contract: the per-plan path took the GPU
+    2N times (Ollama prompt + image-gen render per image, model-swapping between
+    each); the batched two-phase path takes it exactly twice regardless of N —
+    Phase 1 builds every prompt under one ``ollama`` lock, Phase 2 renders every
+    image under one ``image_gen`` lock. Both locks still carry ``task_id`` so
+    ``gpu_task_sessions`` cost attribution survives (#157).
+    """
+    from modules.content.atoms._image_helpers import batch_generate_inline_image_urls
+
+    recorder = _LockRecorder()
+
+    completion = MagicMock()
+    completion.text = "a serene server room with cyan accents"
+    platform = FakePlatform(dispatch_response=completion)
+
+    gen_resp = MagicMock()
+    gen_resp.status_code = 200
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.post = AsyncMock(return_value=gen_resp)
+
+    site_config = SimpleNamespace(
+        get=lambda _k, _d=None: _d if _d is not None else "",
+        get_int=lambda _k, _d=0: _d,
+        get_float=lambda _k, _d=0.0: _d,
+        get_bool=lambda _k, _d=False: _d,
+        _pool=MagicMock(),
+    )
+
+    placeholders = [
+        ("1", "server racks"),
+        ("2", "code on screens"),
+        ("3", "a GPU die shot"),
+    ]
+
+    with patch(
+        "modules.content.atoms._image_helpers.gpu", recorder, create=True,
+    ), patch(
+        "services.gpu_scheduler.gpu", recorder,
+    ), patch(
+        "modules.content.atoms._image_helpers.httpx.AsyncClient",
+        return_value=mock_client,
+    ), patch(
+        "modules.content.atoms._image_helpers._resolve_gen_response",
+        new=AsyncMock(return_value="/tmp/glad-labs-generated-images/x.png"),
+    ), patch(
+        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
+        new=AsyncMock(side_effect=[
+            "https://r2.example/1.png",
+            "https://r2.example/2.png",
+            "https://r2.example/3.png",
+        ]),
+    ):
+        urls = await batch_generate_inline_image_urls(
+            placeholders,
+            "Database performance",
+            site_config=site_config,
+            task_id="task-batch-777",
+            platform=platform,
+        )
+
+    # Exactly two GPU acquisitions total, regardless of N=3 images.
+    assert len(recorder.calls) == 2
+    ollama_call, gen_call = recorder.calls
+    assert ollama_call["owner"] == "ollama"
+    assert ollama_call["task_id"] == "task-batch-777"
+    assert ollama_call["phase"] == "inline_image_prompt_batch"
+    assert gen_call["owner"] == "image_gen"
+    assert gen_call["task_id"] == "task-batch-777"
+    assert gen_call["phase"] == "inline_image_batch"
+
+    # One URL per placeholder, in order.
+    assert urls == [
+        "https://r2.example/1.png",
+        "https://r2.example/2.png",
+        "https://r2.example/3.png",
+    ]
+
+
+@pytest.mark.asyncio
+async def test_batch_generate_inline_image_urls_per_image_failure_is_isolated():
+    """A single render failure yields None for that index without aborting the
+    rest — run() then Pexels-falls-back only the failed image."""
+    from modules.content.atoms._image_helpers import batch_generate_inline_image_urls
+
+    recorder = _LockRecorder()
+    completion = MagicMock()
+    completion.text = "a serene server room with cyan accents"
+    platform = FakePlatform(dispatch_response=completion)
+
+    ok_resp = MagicMock()
+    ok_resp.status_code = 200
+    bad_resp = MagicMock()
+    bad_resp.status_code = 500
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    # image 1 renders, image 2 returns HTTP 500, image 3 renders.
+    mock_client.post = AsyncMock(side_effect=[ok_resp, bad_resp, ok_resp])
+
+    site_config = SimpleNamespace(
+        get=lambda _k, _d=None: _d if _d is not None else "",
+        get_int=lambda _k, _d=0: _d,
+        get_float=lambda _k, _d=0.0: _d,
+        get_bool=lambda _k, _d=False: _d,
+        _pool=MagicMock(),
+    )
+
+    with patch(
+        "modules.content.atoms._image_helpers.gpu", recorder, create=True,
+    ), patch(
+        "services.gpu_scheduler.gpu", recorder,
+    ), patch(
+        "modules.content.atoms._image_helpers.httpx.AsyncClient",
+        return_value=mock_client,
+    ), patch(
+        "modules.content.atoms._image_helpers._resolve_gen_response",
+        new=AsyncMock(return_value="/tmp/glad-labs-generated-images/x.png"),
+    ), patch(
+        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
+        new=AsyncMock(side_effect=["https://r2.example/1.png", "https://r2.example/3.png"]),
+    ):
+        urls = await batch_generate_inline_image_urls(
+            [("1", "a"), ("2", "b"), ("3", "c")],
+            "Topic",
+            site_config=site_config,
+            task_id="task-iso",
+            platform=platform,
+        )
+
+    # Still two locks total; the middle image is None, the others survive.
+    assert len(recorder.calls) == 2
+    assert urls == ["https://r2.example/1.png", None, "https://r2.example/3.png"]
+
+
+@pytest.mark.asyncio
 async def test_gpu_task_session_recorded_with_task_id():
     """``gpu_scheduler._record_task_session`` writes the task_id to the DB.
 

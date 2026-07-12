@@ -420,6 +420,145 @@ async def _try_image_gen(
         return None
 
 
+async def _batch_generate_inline_image_urls(
+    placeholders: list[tuple[str, str]],
+    topic: str,
+    *,
+    site_config: Any,
+    task_id: str | None,
+    platform: Any,
+) -> list[str | None]:
+    """Render image-gen images for ALL placeholders using two batched GPU locks.
+
+    poindexter#733 / poindexter#841 — kills the per-placeholder Ollama↔image-gen
+    swap churn on multi-image posts. The per-plan path (one ``_try_image_gen``
+    call each) took the GPU ``2N`` times — one ``ollama`` lock for the prompt +
+    one ``image_gen`` lock for the render, per image, reloading the model between
+    each (~95 s/stage of churn). This takes it exactly twice regardless of N:
+
+    * Phase 1 (one ``ollama`` lock): build ALL image-gen prompts sequentially.
+    * Phase 2 (one ``image_gen`` lock): render ALL images sequentially.
+
+    Returns a URL (or ``None`` on failure) per entry, in ``placeholders`` order.
+    A per-image failure never stops the others — a ``None`` triggers the Pexels
+    fallback in the caller (``content.generate_images``). Both locks carry
+    ``task_id`` so ``gpu_task_sessions`` cost attribution survives (#157).
+
+    Returns all-``None`` when the batch can't run at all: no DB pool (tests /
+    bootstrap), no platform handle, or either GPU lock acquisition fails — the
+    caller then Pexels-falls-back every image.
+    """
+    from services.gpu_scheduler import gpu
+
+    n = len(placeholders)
+    if n == 0:
+        return []
+
+    pool = getattr(site_config, "_pool", None) if site_config is not None else None
+    if pool is None:
+        logger.debug("[IMAGE-BATCH] no DB pool — skipping batched image-gen generation")
+        return [None] * n
+
+    if platform is None:
+        logger.debug("[IMAGE-BATCH] no platform handle — skipping batched image-gen generation")
+        return [None] * n
+
+    image_gen_url = site_config.get("image_gen_server_url", "http://image-gen-server:9836")
+    model = site_config.get("inline_image_prompt_model", "llama3:latest")
+    neg_prompt = _get_image_gen_negative_prompt(site_config)
+
+    # ------------------------------------------------------------------ #
+    # Phase 1: build ALL prompts under a single Ollama lock              #
+    # ------------------------------------------------------------------ #
+    img_gen_prompts: list[str | None] = []
+    try:
+        async with gpu.lock(
+            "ollama", model=model, task_id=task_id, phase="inline_image_prompt_batch",
+        ):
+            for num, desc in placeholders:
+                search_query = desc.strip() if desc else topic
+                inline_style = random.choice(_load_inline_styles(site_config))
+                img_prompt_req = _build_inline_prompt_instruction(
+                    search_query, topic, inline_style,
+                )
+                try:
+                    result = await platform.dispatch.complete(
+                        pool=pool,
+                        messages=[{"role": "user", "content": img_prompt_req}],
+                        model=model,
+                        tier="standard",
+                        timeout_s=site_config.get_int("image_prompt_timeout_seconds", 90),
+                        temperature=site_config.get_float("image_prompt_temperature", 0.8),
+                        max_tokens=site_config.get_int("image_prompt_max_tokens", 150),
+                    )
+                    img_gen_prompt = (getattr(result, "text", "") or "").strip().strip('"')
+                    img_gen_prompt = _apply_base_style(img_gen_prompt, site_config)
+                    if img_gen_prompt and len(img_gen_prompt) > 20:
+                        logger.info(
+                            "  [IMAGE-%s] image-gen prompt (batch): %s...",
+                            num, img_gen_prompt[:60],
+                        )
+                        img_gen_prompts.append(img_gen_prompt)
+                    else:
+                        logger.warning(
+                            "  [IMAGE-%s] image-gen prompt too short/empty — Pexels fallback", num,
+                        )
+                        img_gen_prompts.append(None)
+                except Exception as err:
+                    logger.warning("  [IMAGE-%s] image-gen prompt generation failed: %s", num, err)
+                    img_gen_prompts.append(None)
+    except Exception as err:
+        logger.warning("[IMAGE-BATCH] Ollama lock acquire failed: %s — falling back per-image", err)
+        return [None] * n
+
+    # ------------------------------------------------------------------ #
+    # Phase 2: render ALL images under a single image-gen lock           #
+    # ------------------------------------------------------------------ #
+    image_gen_urls: list[str | None] = []
+    render_timeout = site_config.get_int("image_render_timeout_seconds", 90)
+    gpu_model_label = site_config.get("image_generation_model", "image_gen")
+    try:
+        async with gpu.lock(
+            "image_gen", model=gpu_model_label, task_id=task_id, phase="inline_image_batch",
+        ):
+            async with httpx.AsyncClient(
+                timeout=httpx.Timeout(render_timeout, connect=5.0),
+            ) as client:
+                for (num, _desc), img_gen_prompt in zip(
+                    placeholders, img_gen_prompts, strict=False,
+                ):
+                    if img_gen_prompt is None:
+                        image_gen_urls.append(None)
+                        continue
+                    try:
+                        img_resp = await client.post(
+                            f"{image_gen_url}/generate",
+                            json={"prompt": img_gen_prompt, "negative_prompt": neg_prompt},
+                            timeout=render_timeout,
+                        )
+                        if img_resp.status_code != 200:
+                            logger.warning(
+                                "  [IMAGE-%s] image-gen returned %s (batch)",
+                                num, img_resp.status_code,
+                            )
+                            image_gen_urls.append(None)
+                            continue
+                        tmp_path = await _resolve_gen_response(img_resp, image_gen_url=image_gen_url)
+                        img_url = await _upload_to_r2_with_fallback(tmp_path, site_config=site_config)
+                        logger.info("  [IMAGE-%s] image-gen generated + uploaded (batch)", num)
+                        image_gen_urls.append(img_url)
+                    except Exception as err:
+                        logger.warning("  [IMAGE-%s] image-gen render failed (batch): %s", num, err)
+                        image_gen_urls.append(None)
+    except Exception as err:
+        logger.warning(
+            "[IMAGE-BATCH] image-gen lock acquire failed: %s — no image-gen images this run", err,
+        )
+        return [None] * n
+
+    return image_gen_urls
+
+
 async def _resolve_gen_response(
     img_resp: httpx.Response, *, image_gen_url: str,
 ) -> str:
@@ -601,6 +740,7 @@ def _cleanup_leaked_descriptions(content_text: str) -> str:
 # originals stay for the legacy stage + the existing test patch targets).
 # ---------------------------------------------------------------------------
 
+batch_generate_inline_image_urls = _batch_generate_inline_image_urls
 cleanup_leaked_descriptions = _cleanup_leaked_descriptions
 inject_html_image = _inject_html_image
 normalize_from_router = _normalize_from_router
@@ -610,6 +750,7 @@ try_image_gen = _try_image_gen
 try_pexels = _try_pexels
 
 __all__ = [
+    "batch_generate_inline_image_urls",
     "cleanup_leaked_descriptions",
     "inject_html_image",
     "normalize_from_router",
