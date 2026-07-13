@@ -168,7 +168,7 @@ apscheduler = "^3.11.3"
 # resolved in poetry.lock at 1.11.0 via Prefect's dependency tree;
 # declared directly here so the outbound notify path owns its floor
 # instead of riding a transitive pin. BSD-2-Clause (permissive).
-apprise = ">=1.11,<2.0"
+apprise = ">=1.12.0,<2.0"
 prometheus-client = "^0.25.0"
 # Continuous profiling — LGTM+P stack (GH #75). Opt-in via app_settings
 # enable_pyroscope; services/profiling.py configures the agent.
