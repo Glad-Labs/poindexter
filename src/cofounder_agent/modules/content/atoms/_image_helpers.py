@@ -415,6 +415,7 @@ async def _try_image_gen(
                         # steps / guidance_scale omitted — the image-gen server's
                         # per-model registry drives them (see featured-image
                         # stage). #image-zimage-and-variety.
+                        "task_id": str(task_id) if task_id else None,
                     },
                     timeout=render_timeout,
                 )
@@ -546,7 +547,11 @@ async def _batch_generate_inline_image_urls(
                     try:
                         img_resp = await client.post(
                             f"{image_gen_url}/generate",
-                            json={"prompt": img_gen_prompt, "negative_prompt": neg_prompt},
+                            json={
+                                "prompt": img_gen_prompt,
+                                "negative_prompt": neg_prompt,
+                                "task_id": str(task_id) if task_id else None,
+                            },
                             timeout=render_timeout,
                         )
                         if img_resp.status_code != 200:

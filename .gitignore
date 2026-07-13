@@ -28,6 +28,10 @@ yarn-error.log*
 # ============================================================
 # Python
 # ============================================================
+
+# Image-model bake-off (throwaway harness — isolated venv + generated results)
+.venv-bakeoff/
+scripts/image_bakeoff_results/
 __pycache__/
 *.pyc
 .venv/

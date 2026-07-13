@@ -786,8 +786,11 @@ class TestConfigExternalisationAuditKeys:
         # Image-style rotation window (services/image_style_rotation.py)
         "image_style_history_size": "10",
         "image_style_history_ttl_seconds": "3600",
-        # Local GPU render timeouts (image / audio providers)
-        "image_render_timeout_seconds": "240",
+        # Local GPU render timeouts (image / audio providers).
+        # image_render_timeout_seconds is NOT in this audit list: its default
+        # was deliberately bumped 240->300 on 2026-07-13 for the OCR gate's
+        # retry budget (see settings_defaults.py), so it's no longer tracking
+        # a behaviour-preserving cutover of an old in-code literal.
         "audio_render_timeout_seconds": "180",
         # Worker heartbeat cadence (services/worker_service.py)
         "worker_heartbeat_interval_seconds": "30",

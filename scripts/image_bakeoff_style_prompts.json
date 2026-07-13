@@ -1,0 +1,74 @@
+[
+  {
+    "id": "ai_isometric",
+    "text": "a glowing neural network node cluster processing streams of data, isometric 3D illustration, clean vector style, soft shadows"
+  },
+  {
+    "id": "ai_flatvector",
+    "text": "a glowing neural network node cluster processing streams of data, flat vector illustration, bold geometric shapes, limited palette"
+  },
+  {
+    "id": "ai_linework",
+    "text": "a glowing neural network node cluster processing streams of data, thin line art on a dark background, technical schematic feel"
+  },
+  {
+    "id": "ai_lowpoly",
+    "text": "a glowing neural network node cluster processing streams of data, low-poly 3D geometric render, faceted surfaces"
+  },
+  {
+    "id": "ai_celshaded",
+    "text": "a glowing neural network node cluster processing streams of data, cel-shaded digital illustration, crisp clean outlines"
+  },
+  {
+    "id": "ai_silhouette",
+    "text": "a glowing neural network node cluster processing streams of data, dramatic silhouette composition, single accent color"
+  },
+  {
+    "id": "gaming_isometric",
+    "text": "a retro arcade cabinet with a joystick and glowing screen, isometric 3D illustration, clean vector style, soft shadows"
+  },
+  {
+    "id": "gaming_flatvector",
+    "text": "a retro arcade cabinet with a joystick and glowing screen, flat vector illustration, bold geometric shapes, limited palette"
+  },
+  {
+    "id": "gaming_linework",
+    "text": "a retro arcade cabinet with a joystick and glowing screen, thin line art on a dark background, technical schematic feel"
+  },
+  {
+    "id": "gaming_lowpoly",
+    "text": "a retro arcade cabinet with a joystick and glowing screen, low-poly 3D geometric render, faceted surfaces"
+  },
+  {
+    "id": "gaming_celshaded",
+    "text": "a retro arcade cabinet with a joystick and glowing screen, cel-shaded digital illustration, crisp clean outlines"
+  },
+  {
+    "id": "gaming_silhouette",
+    "text": "a retro arcade cabinet with a joystick and glowing screen, dramatic silhouette composition, single accent color"
+  },
+  {
+    "id": "hw_isometric",
+    "text": "a high-end graphics card with an elaborate multi-fan cooling shroud, isometric 3D illustration, clean vector style, soft shadows"
+  },
+  {
+    "id": "hw_flatvector",
+    "text": "a high-end graphics card with an elaborate multi-fan cooling shroud, flat vector illustration, bold geometric shapes, limited palette"
+  },
+  {
+    "id": "hw_linework",
+    "text": "a high-end graphics card with an elaborate multi-fan cooling shroud, thin line art on a dark background, technical schematic feel"
+  },
+  {
+    "id": "hw_lowpoly",
+    "text": "a high-end graphics card with an elaborate multi-fan cooling shroud, low-poly 3D geometric render, faceted surfaces"
+  },
+  {
+    "id": "hw_celshaded",
+    "text": "a high-end graphics card with an elaborate multi-fan cooling shroud, cel-shaded digital illustration, crisp clean outlines"
+  },
+  {
+    "id": "hw_silhouette",
+    "text": "a high-end graphics card with an elaborate multi-fan cooling shroud, dramatic silhouette composition, single accent color"
+  }
+]

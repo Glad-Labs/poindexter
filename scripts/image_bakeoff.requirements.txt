@@ -1,0 +1,18 @@
+# Image-model bake-off harness deps (isolated .venv-bakeoff).
+#
+# torch + torchvision are installed SEPARATELY from the cu128 index first —
+# the RTX 5090 is Blackwell (sm_120) and needs a CUDA 12.8+ build:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu128
+#
+# diffusers from git main because FLUX.2 / Chroma1 / CogView4 / Lumina2 / Krea2
+# pipelines may not be in the latest release.
+diffusers @ git+https://github.com/huggingface/diffusers.git
+transformers
+accelerate
+sentencepiece
+protobuf
+Pillow
+easyocr
+pytest
+peft
+

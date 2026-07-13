@@ -953,6 +953,7 @@ async def _render_image_gen(
                     # (sdxl_lightning=4/0, z_image_turbo=9/0). Hardcoding them
                     # here forced wrong values on a model swap (and was already
                     # clamped away for Lightning). #image-zimage-and-variety.
+                    "task_id": str(task_id) if task_id else None,
                 },
                 timeout=timeout_seconds,
             )

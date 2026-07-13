@@ -12,9 +12,20 @@ model load failure) the server enters DEGRADED state — /generate returns 503,
 when the underlying issue is fixed (e.g., DB comes back, setting is corrected).
 The pipeline never crashes the post pipeline; callers fall back to Pexels.
 
+OCR text-leakage gate (2026-07-13): guidance-distilled models (Z-Image-Turbo)
+run at guidance_scale=0, where negative_prompt has no effect — the 2026-07
+bake-off (glad-labs-stack#2386) measured z_image_turbo leaking ~57x more
+readable text into images than the best-scoring alternative even with a
+textless-composition clause in the positive prompt. Since Matt's call was to
+keep z_image_turbo for its aesthetic (chroma1_flash reads as more obviously
+AI-generated), /generate now OCR-scans every render and retries with a fresh
+seed (bounded, keep-best) when leaked text exceeds a threshold — deterministic
+check-and-retry, not a model swap. Tunable via app_settings (image_ocr_gate_*);
+see settings_defaults.py.
+
 Endpoints:
-    GET  /health              — status, model, degradation reason
-    POST /generate            — generate image from prompt
+    GET  /health              — status, model, degradation reason, gate config
+    POST /generate            — generate image from prompt (OCR-gated, see above)
     POST /reload              — re-read DB config (call after changing setting)
     POST /unload              — free VRAM (called by GPU scheduler)
     GET  /images/{filename}   — serve generated image
@@ -22,11 +33,13 @@ Endpoints:
 import argparse
 import asyncio
 import gc
+import json
 import logging
 import os
 import sys
 import time
 import uuid
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -162,6 +175,200 @@ REGISTRY: dict[str, ModelConfig] = {
 
 
 # ============================================================================
+# OCR TEXT-LEAKAGE GATE
+# Deterministic check-and-retry, not a model swap — see module docstring.
+# ============================================================================
+
+@dataclass(frozen=True)
+class OcrGateConfig:
+    enabled: bool = True
+    max_chars: int = 6
+    max_attempts: int = 3
+    min_confidence: float = 0.3
+
+
+DEFAULT_OCR_GATE_CONFIG = OcrGateConfig()
+
+OCR_GATE_SETTING_KEYS = (
+    "image_ocr_gate_enabled",
+    "image_ocr_gate_max_chars",
+    "image_ocr_gate_max_attempts",
+    "image_ocr_gate_min_confidence",
+)
+
+
+@dataclass
+class GenAttempt:
+    seed: int
+    text_chars: int
+    path: Path
+
+
+def pick_best_attempt(attempts: list[GenAttempt]) -> GenAttempt:
+    """Lowest leaked-text-char count wins; earliest attempt breaks ties.
+
+    ``min()`` is stable — the first element with the minimum key wins on a
+    tie, so the caller's requested/derived seed (attempt 1) is preferred
+    over a later re-roll when both score identically (usually both zero).
+    """
+    return min(attempts, key=lambda a: a.text_chars)
+
+
+def count_leaked_text_chars(image_path: Path | str, reader: Any, *, min_confidence: float) -> int:
+    """Sum character counts of confident OCR text detections in one image.
+
+    Same methodology as ``scripts/image_bakeoff.py::count_text_chars``, so
+    the numbers this gate logs stay comparable to the 2026-07 bake-off
+    results (chroma1_flash 0.44, z_image_turbo 25.33 avg chars/image).
+    Synchronous/CPU-bound — callers must run it off the event loop
+    (``asyncio.to_thread``).
+    """
+    detections = reader.readtext(str(image_path), detail=1)
+    return sum(len(text) for _box, text, conf in detections if conf >= min_confidence)
+
+
+def _parse_ocr_gate_config(rows: dict[str, str]) -> OcrGateConfig:
+    """Parse the OCR-gate app_settings rows, falling back per-field on any
+    missing/malformed value so one bad setting degrades that field only,
+    never the whole gate."""
+
+    def _bool(key: str, default: bool) -> bool:
+        raw = rows.get(key)
+        if not raw:
+            return default
+        return raw.strip().lower() in ("1", "true", "yes", "on")
+
+    def _int(key: str, default: int) -> int:
+        raw = rows.get(key)
+        try:
+            return int(raw) if raw else default
+        except (TypeError, ValueError):
+            return default
+
+    def _float(key: str, default: float) -> float:
+        raw = rows.get(key)
+        try:
+            return float(raw) if raw else default
+        except (TypeError, ValueError):
+            return default
+
+    return OcrGateConfig(
+        enabled=_bool("image_ocr_gate_enabled", DEFAULT_OCR_GATE_CONFIG.enabled),
+        max_chars=max(0, _int("image_ocr_gate_max_chars", DEFAULT_OCR_GATE_CONFIG.max_chars)),
+        max_attempts=max(
+            1, _int("image_ocr_gate_max_attempts", DEFAULT_OCR_GATE_CONFIG.max_attempts),
+        ),
+        min_confidence=max(
+            0.0, min(1.0, _float(
+                "image_ocr_gate_min_confidence", DEFAULT_OCR_GATE_CONFIG.min_confidence,
+            )),
+        ),
+    )
+
+
+async def read_ocr_gate_settings() -> dict[str, str]:
+    """Best-effort read of the OCR-gate app_settings rows.
+
+    Returns {} on any DB failure — reload_ocr_gate_config() then falls back
+    to DEFAULT_OCR_GATE_CONFIG, so a transient DB hiccup degrades to "gate
+    runs at defaults", never to "gate silently disabled" or a crash. Kept as
+    its own connection (separate from read_model_setting()) rather than a
+    combined query so the two settle independently and existing tests that
+    patch read_model_setting in isolation keep working.
+    """
+    try:
+        conn = await asyncpg.connect(HOST_DB_URL, timeout=5)
+    except Exception as e:
+        logger.warning("[OCR-GATE] settings read failed (DB connect): %s — using defaults", e)
+        return {}
+    try:
+        rows = await conn.fetch(
+            "SELECT key, value FROM app_settings WHERE key = ANY($1::text[])",
+            list(OCR_GATE_SETTING_KEYS),
+        )
+    except Exception as e:
+        logger.warning("[OCR-GATE] settings read failed (query): %s — using defaults", e)
+        return {}
+    finally:
+        await conn.close()
+    return {r["key"]: r["value"] for r in rows if r["value"] is not None}
+
+
+async def reload_ocr_gate_config() -> None:
+    """Re-read + re-parse the OCR-gate settings into state.ocr_gate."""
+    raw = await read_ocr_gate_settings()
+    state.ocr_gate = _parse_ocr_gate_config(raw)
+    logger.info(
+        "[OCR-GATE] config: enabled=%s max_chars=%d max_attempts=%d min_confidence=%.2f",
+        state.ocr_gate.enabled, state.ocr_gate.max_chars,
+        state.ocr_gate.max_attempts, state.ocr_gate.min_confidence,
+    )
+
+
+_ocr_reader_lock = asyncio.Lock()
+
+
+async def ensure_ocr_reader() -> Any:
+    """Lazy-load the singleton EasyOCR reader.
+
+    CPU-only (``gpu=False``) deliberately — VRAM here belongs to the
+    diffusion pipeline, and this gate must never compete with it for GPU
+    memory. A 1024x1024 scan is ~1-2s on CPU, acceptable next to the
+    multi-second diffusion render it's checking. Model weights persist in
+    the mounted ~/.EasyOCR cache dir (see docker-compose.local.yml), so this
+    download only happens once across container restarts.
+    """
+    if state.ocr_reader is not None:
+        return state.ocr_reader
+    async with _ocr_reader_lock:
+        if state.ocr_reader is None:
+            import easyocr
+
+            logger.info("[OCR-GATE] loading EasyOCR reader (first use)...")
+            state.ocr_reader = await asyncio.to_thread(
+                easyocr.Reader, ["en"], gpu=False, verbose=False,
+            )
+            logger.info("[OCR-GATE] EasyOCR reader ready")
+    return state.ocr_reader
+
+
+async def write_ocr_gate_audit_log(
+    *, model: str, task_id: str | None, attempts: list[GenAttempt],
+    best: GenAttempt, threshold: int, gate_passed: bool,
+) -> None:
+    """Best-effort audit_log row per gated generation.
+
+    Powers a Pipeline-dashboard panel the same way multi_model_qa's
+    qa_pass_completed rows power the QA Rails board (audit_log WHERE
+    event_type=...). Never raises — a telemetry hiccup must not fail the
+    image response the pipeline is waiting on.
+    """
+    try:
+        conn = await asyncpg.connect(HOST_DB_URL, timeout=5)
+        try:
+            await conn.execute(
+                "INSERT INTO audit_log (event_type, source, task_id, details, severity) "
+                "VALUES ($1, $2, $3, $4::jsonb, $5)",
+                "image_ocr_gate_result",
+                "image_gen_server",
+                str(task_id) if task_id else None,
+                json.dumps({
+                    "model": model,
+                    "text_chars": best.text_chars,
+                    "threshold": threshold,
+                    "attempts": len(attempts),
+                    "attempt_scores": [a.text_chars for a in attempts],
+                    "passed": gate_passed,
+                }),
+                "info" if gate_passed else "warning",
+            )
+        finally:
+            await conn.close()
+    except Exception as e:
+        logger.warning("[OCR-GATE] audit_log write skipped: %s", e)
+
+
+# ============================================================================
 # SERVER STATE
 # ============================================================================
 
@@ -172,6 +379,8 @@ class ServerState:
         self.last_used: float = 0.0
         self.degraded: bool = False
         self.degraded_reason: str | None = None
+        self.ocr_gate: OcrGateConfig = DEFAULT_OCR_GATE_CONFIG
+        self.ocr_reader: Any | None = None
 
     def mark_degraded(self, reason: str):
         self.degraded = True
@@ -377,6 +586,11 @@ class GenerateRequest(BaseModel):
     steps: int | None = Field(default=None, ge=1, le=50)
     guidance_scale: float | None = Field(default=None, ge=0, le=20)
     seed: int = Field(default=-1)
+    task_id: str | None = Field(
+        default=None,
+        description="Originating pipeline_tasks id, threaded through to the "
+                     "image_ocr_gate_result audit_log row for correlation.",
+    )
 
 
 class GenerateResponse(BaseModel):
@@ -387,6 +601,9 @@ class GenerateResponse(BaseModel):
     model: str
     generation_time_ms: int
     seed: int
+    ocr_text_chars: int = 0
+    ocr_gate_attempts: int = 1
+    ocr_gate_passed: bool = True
 
 
 class UnloadRequest(BaseModel):
@@ -459,6 +676,7 @@ async def degraded_watchdog() -> None:
 async def startup():
     logger.info("image-gen server starting — DB: %s", HOST_DB_URL.split("@")[-1])
     await reload_config()
+    await reload_ocr_gate_config()
     if state.degraded:
         logger.warning(
             "Started DEGRADED: %s. /generate returns 503 until /reload succeeds.",
@@ -473,6 +691,10 @@ async def startup():
             await asyncio.sleep(60)
             if state.pipeline is not None and (time.time() - state.last_used) > IDLE_TIMEOUT:
                 unload_pipeline()
+            # Piggyback the OCR-gate settings refresh on this existing 60s
+            # tick — mirrors the main app's reload_site_config cadence
+            # (also ~1 min) without a dedicated background task.
+            await reload_ocr_gate_config()
     asyncio.create_task(idle_unloader())
     asyncio.create_task(degraded_watchdog())
 
@@ -503,13 +725,18 @@ async def health():
             if gpu_ok else 0
         ),
         "gpu_available": gpu_ok,
+        "ocr_gate_enabled": state.ocr_gate.enabled,
+        "ocr_gate_max_chars": state.ocr_gate.max_chars,
+        "ocr_gate_max_attempts": state.ocr_gate.max_attempts,
     }
 
 
 @app.post("/reload")
 async def reload():
-    """Re-read DB config. Call after changing image_generation_model."""
+    """Re-read DB config. Call after changing image_generation_model or an
+    image_ocr_gate_* setting."""
     await reload_config()
+    await reload_ocr_gate_config()
     return await health()
 
 
@@ -561,43 +788,120 @@ async def generate(req: GenerateRequest):
                         guidance_scale)
             guidance_scale = 0.0
 
-    seed = req.seed if req.seed >= 0 else int(torch.randint(0, 2**32, (1,)).item())
-    generator = torch.Generator(device="cuda").manual_seed(seed)
-    filename = f"img_{uuid.uuid4().hex[:8]}.png"
-    output_path = OUTPUT_DIR / filename
+    base_seed = req.seed if req.seed >= 0 else int(torch.randint(0, 2**32, (1,)).item())
+    gate = state.ocr_gate
+    max_attempts = gate.max_attempts if gate.enabled else 1
 
     logger.info(
-        "Generating: %s... (%dx%d, %d steps, cfg=%.1f, model=%s)",
+        "Generating: %s... (%dx%d, %d steps, cfg=%.1f, model=%s, ocr_gate=%s)",
         # Scrub newlines so a request prompt can't forge extra log lines.
         req.prompt[:60].replace("\r", " ").replace("\n", " "),
         int(req.width), int(req.height), steps, guidance_scale,
-        config.friendly_name,
+        config.friendly_name, "on" if gate.enabled else "off",
     )
+
+    attempts: list[GenAttempt] = []
     start = time.time()
-    try:
-        gen_kwargs: dict[str, Any] = dict(
-            prompt=req.prompt,
-            width=req.width,
-            height=req.height,
-            num_inference_steps=steps,
-            guidance_scale=guidance_scale,
-            generator=generator,
+    for attempt_num in range(1, max_attempts + 1):
+        # Re-roll the seed on every retry — a fresh seed samples a different
+        # specific output, which is the whole point of the retry (the
+        # positive-prompt "textless" clause alone doesn't move z_image_turbo's
+        # leakage rate, see module docstring).
+        seed = base_seed if attempt_num == 1 else int(torch.randint(0, 2**32, (1,)).item())
+        generator = torch.Generator(device="cuda").manual_seed(seed)
+        attempt_filename = f"img_{uuid.uuid4().hex[:8]}.png"
+        attempt_path = OUTPUT_DIR / attempt_filename
+        try:
+            gen_kwargs: dict[str, Any] = dict(
+                prompt=req.prompt,
+                width=req.width,
+                height=req.height,
+                num_inference_steps=steps,
+                guidance_scale=guidance_scale,
+                generator=generator,
+            )
+            # Guidance-distilled models (Z-Image) run at CFG 0, where a negative
+            # prompt has no effect and the pipeline doesn't accept the kwarg.
+            if config.supports_negative_prompt:
+                gen_kwargs["negative_prompt"] = req.negative_prompt
+            result = pipe(**gen_kwargs)
+            result.images[0].save(str(attempt_path))
+        except torch.cuda.OutOfMemoryError as e:
+            torch.cuda.empty_cache()
+            if not attempts:
+                # No usable image at all yet — this is a hard failure.
+                raise HTTPException(status_code=503, detail="GPU OOM") from e
+            # A retry is a bonus, not a requirement — keep the best attempt
+            # already in hand rather than failing a request that already
+            # produced a usable (if imperfect) image.
+            logger.warning(
+                "[OCR-GATE] retry attempt %d/%d hit GPU OOM — keeping best-so-far",
+                attempt_num, max_attempts,
+            )
+            break
+        except Exception as e:
+            if not attempts:
+                logger.error(
+                    "Generation failed (attempt %d/%d): %s", attempt_num, max_attempts, e,
+                    exc_info=True,
+                )
+                raise HTTPException(status_code=500, detail=str(e)) from e
+            logger.warning(
+                "[OCR-GATE] retry attempt %d/%d failed (%s) — keeping best-so-far",
+                attempt_num, max_attempts, e,
+            )
+            break
+
+        text_chars = 0
+        if gate.enabled:
+            try:
+                reader = await ensure_ocr_reader()
+                text_chars = await asyncio.to_thread(
+                    count_leaked_text_chars, attempt_path, reader,
+                    min_confidence=gate.min_confidence,
+                )
+            except Exception as e:
+                # OCR failure must never block the image the pipeline is
+                # waiting on — treat as "can't verify", not "leaked text".
+                logger.warning("[OCR-GATE] scoring failed (attempt %d): %s", attempt_num, e)
+                text_chars = 0
+
+        attempts.append(GenAttempt(seed=seed, text_chars=text_chars, path=attempt_path))
+        logger.info(
+            "  [OCR-GATE] attempt %d/%d: seed=%d text_chars=%d (threshold=%d)",
+            attempt_num, max_attempts, seed, text_chars, gate.max_chars,
         )
-        # Guidance-distilled models (Z-Image) run at CFG 0, where a negative
-        # prompt has no effect and the pipeline doesn't accept the kwarg.
-        if config.supports_negative_prompt:
-            gen_kwargs["negative_prompt"] = req.negative_prompt
-        result = pipe(**gen_kwargs)
-        result.images[0].save(str(output_path))
-    except torch.cuda.OutOfMemoryError as e:
-        torch.cuda.empty_cache()
-        raise HTTPException(status_code=503, detail="GPU OOM") from e
-    except Exception as e:
-        logger.error("Generation failed: %s", e, exc_info=True)
-        raise HTTPException(status_code=500, detail=str(e)) from e
+        if not gate.enabled or text_chars <= gate.max_chars:
+            break
+
+    best = pick_best_attempt(attempts)
+    for a in attempts:
+        if a is not best:
+            with suppress(OSError):
+                a.path.unlink()
+    filename = best.path.name
+    output_path = best.path
+    seed = best.seed
+    gate_passed = (not gate.enabled) or (best.text_chars <= gate.max_chars)
 
     elapsed_ms = int((time.time() - start) * 1000)
-    logger.info("Generated: %s (%d ms)", filename, elapsed_ms)
+    logger.info(
+        "Generated: %s (%d ms, %d attempt(s), ocr_text_chars=%d, gate_passed=%s)",
+        filename, elapsed_ms, len(attempts), best.text_chars, gate_passed,
+    )
+    if gate.enabled and (len(attempts) > 1 or not gate_passed):
+        logger.warning(
+            "[OCR-GATE] %s: best of %d attempt(s) had %d leaked chars (threshold %d) — %s",
+            config.friendly_name, len(attempts), best.text_chars, gate.max_chars,
+            "passed after retry" if gate_passed else "still over threshold, returning best effort",
+        )
+
+    if gate.enabled:
+        await write_ocr_gate_audit_log(
+            model=config.friendly_name, task_id=req.task_id, attempts=attempts,
+            best=best, threshold=gate.max_chars, gate_passed=gate_passed,
+        )
+
     return GenerateResponse(
         image_path=str(output_path),
         filename=filename,
@@ -606,6 +910,9 @@ async def generate(req: GenerateRequest):
         model=config.friendly_name,
         generation_time_ms=elapsed_ms,
         seed=seed,
+        ocr_text_chars=best.text_chars,
+        ocr_gate_attempts=len(attempts),
+        ocr_gate_passed=gate_passed,
     )
 
 

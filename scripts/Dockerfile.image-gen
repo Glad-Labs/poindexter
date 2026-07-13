@@ -16,6 +16,9 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # Python deps
+# easyocr: powers the OCR text-leakage gate in /generate (2026-07-13) — CPU-only
+# (reuses the torchvision already required above), so it doesn't compete with
+# the diffusion pipeline for VRAM.
 RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
     fastapi \
     uvicorn[standard] \
@@ -29,7 +32,8 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
     httpx \
     xformers \
     invisible-watermark \
-    peft
+    peft \
+    easyocr
 
 COPY image-gen-server.py /app/server.py
 

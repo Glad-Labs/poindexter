@@ -1,0 +1,38 @@
+[
+  {
+    "id": "hw_gpu_build",
+    "text": "an isometric 3D illustration of a high-end gaming PC build with a glowing graphics card and a liquid cooling loop, clean vector style, soft shadows"
+  },
+  {
+    "id": "ai_training_run",
+    "text": "a stylized illustration of an AI model training across a cluster of servers, glowing data streams flowing between GPUs, cel-shaded digital art"
+  },
+  {
+    "id": "cpu_benchmark_chart",
+    "text": "a flat vector illustration of a CPU performance benchmark with comparison bars and a scoreboard, limited color palette"
+  },
+  {
+    "id": "monitoring_dashboard",
+    "text": "a stylized illustration of a hardware monitoring dashboard with temperature gauges and usage graphs, flat vector art"
+  },
+  {
+    "id": "gpu_cutaway_diagram",
+    "text": "a clean line-art technical cutaway of a graphics card showing its cooler, PCB, and memory modules, with callouts"
+  },
+  {
+    "id": "code_on_monitor",
+    "text": "a retro pixel-art illustration of a desktop monitor showing a code editor with a configuration file open"
+  },
+  {
+    "id": "neutral_server_room",
+    "text": "an isometric 3D illustration of a futuristic server room with rows of glowing racks, soft shadows"
+  },
+  {
+    "id": "neutral_dataflow",
+    "text": "an abstract illustration of glowing data packets flowing between network nodes, cel-shaded, dark background"
+  },
+  {
+    "id": "neutral_setup_silhouette",
+    "text": "a dramatic silhouette of a gaming battlestation at night, single neon-purple accent color"
+  }
+]

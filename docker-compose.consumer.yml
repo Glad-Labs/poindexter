@@ -716,6 +716,9 @@ services:
     volumes:
       - ${USERPROFILE:-.}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
       - ${USERPROFILE:-.}/.cache/huggingface:/home/appuser/.cache/huggingface
+      # OCR text-leakage gate's EasyOCR model weights (~100MB) — mounted so
+      # they survive container recreates instead of re-downloading.
+      - ${USERPROFILE:-.}/.EasyOCR:/home/appuser/.EasyOCR
     deploy:
       resources:
         reservations:

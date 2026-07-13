@@ -1100,11 +1100,12 @@ DEFAULTS: dict[str, str] = {
     # (image-gen / FLUX / Z-Image `/generate`) to render one image. Must cover a
     # COLD model load: the image-gen server unloads after 60s idle (so Ollama can
     # use the GPU) and is re-evicted on every Ollama call, so most renders pay
-    # the reload. Measured cold-load for Z-Image-Turbo (6B) is ~133s + render;
-    # 90s was too tight and silently fell back to Pexels / failed the shot.
-    # 240 gives headroom while still bounding a genuinely hung GPU server.
-    # Wired into the featured + inline + video render calls. #image-zimage-and-variety.
-    'image_render_timeout_seconds': '240',
+    # the reload. Measured cold-load for Z-Image-Turbo (6B) is ~133s + render.
+    # 300 gives headroom for the OCR gate's worst case (cold load + up to
+    # image_ocr_gate_max_attempts renders, each a few seconds) while still
+    # bounding a genuinely hung GPU server. Wired into the featured + inline +
+    # video render calls. #image-zimage-and-variety.
+    'image_render_timeout_seconds': '300',
     # LLM params for the image-PROMPT generation step — the small model that
     # writes the image-gen prompt from the topic + chosen style (NOT the image
     # render itself). Externalised so prompt creativity / length / patience are
@@ -1112,6 +1113,21 @@ DEFAULTS: dict[str, str] = {
     'image_prompt_temperature': '0.8',
     'image_prompt_max_tokens': '150',
     'image_prompt_timeout_seconds': '90',
+    # OCR text-leakage gate (2026-07-13): scripts/image-gen-server.py OCR-scans
+    # every /generate render and retries with a fresh seed when leaked text
+    # exceeds max_chars, keeping the best-scoring attempt. Deterministic
+    # check-and-retry, not a model swap — guidance-distilled models (Z-Image)
+    # ignore negative_prompt entirely, and the 2026-07 bake-off
+    # (glad-labs-stack#2386) showed a positive-prompt "textless" clause alone
+    # doesn't fix it (z_image_turbo still averaged 25.33 leaked chars/image
+    # with that clause applied). max_chars=6 sits comfortably above the noise
+    # floor of a stray 1-2 char OCR misread on non-text imagery but well below
+    # a genuinely mangled label. Read directly by image-gen-server.py via
+    # asyncpg (it has no SiteConfig), refreshed every ~60s + on POST /reload.
+    'image_ocr_gate_enabled': 'true',
+    'image_ocr_gate_max_chars': '6',
+    'image_ocr_gate_max_attempts': '3',
+    'image_ocr_gate_min_confidence': '0.3',
 
     # ----- Video / podcast / TTS -----
     'audio_gen_engine': '',
