@@ -216,6 +216,26 @@ const Footer = () => {
                   />
                 </svg>
               </a>
+              <a
+                href="https://www.youtube.com/@GladLabs"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Watch Glad Labs on YouTube"
+                className="gl-focus-ring p-1 transition-colors hover:text-[color:var(--gl-cyan)]"
+                style={{ color: 'var(--gl-text-muted)' }}
+              >
+                <svg
+                  className="w-5 h-5"
+                  fill="currentColor"
+                  viewBox="0 0 24 24"
+                  aria-hidden="true"
+                >
+                  <path
+                    fillRule="evenodd"
+                    d="M7 4h10a6 6 0 0 1 6 6v4a6 6 0 0 1-6 6H7a6 6 0 0 1-6-6v-4a6 6 0 0 1 6-6Zm2.5 4.5v7l6-3.5Z"
+                  />
+                </svg>
+              </a>
             </nav>
           </div>
         </div>
