@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { useState } from 'react';
 import { Button, Eyebrow, Logo } from '@glad-labs/brand';
 import NewsletterModal from './NewsletterModal';
-import { SITE_NAME } from '@/lib/site.config';
+import { SITE_NAME, SUPPORT_EMAIL } from '@/lib/site.config';
 
 const FOOTER_LINK_CLASS = 'gl-footer-link gl-focus-ring inline-block py-1';
 
@@ -83,6 +83,9 @@ const Footer = () => {
               <Link href="/referrals" className={FOOTER_LINK_CLASS}>
                 Referrals
               </Link>
+              <a href={`mailto:${SUPPORT_EMAIL}`} className={FOOTER_LINK_CLASS}>
+                Contact
+              </a>
             </nav>
           </div>
 
