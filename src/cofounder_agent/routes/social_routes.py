@@ -7,7 +7,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
 
 from middleware.api_token_auth import verify_api_token
@@ -47,7 +47,16 @@ async def approve_draft(
     db_service: DatabaseService = Depends(get_database_dependency),
     site_config: Any = Depends(get_site_config_dependency),
 ) -> dict[str, Any]:
-    return await _svc.approve_draft(draft_id, db_service.pool, site_config)
+    result = await _svc.approve_draft(draft_id, db_service.pool, site_config)
+    if not result.get("success"):
+        # Blocked (post not live yet, no integration UUID, Postiz call
+        # failed, ...) must surface as a non-2xx status — the console's
+        # error handling only inspects the HTTP status code (same contract
+        # approval_routes.py uses, poindexter#743), so a 200 body here reads
+        # as a silent success and the operator never learns the draft never
+        # went out.
+        raise HTTPException(status_code=409, detail=result.get("error"))
+    return result
 
 
 @router.post("/drafts/{draft_id}/reject")

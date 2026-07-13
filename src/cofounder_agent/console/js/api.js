@@ -180,8 +180,25 @@
       _tok = { value: '', exp: 0 };
       res = await doFetch();
     }
-    if (!res.ok)
-      throw new Error(`${method} ${path} → ${res.status} ${res.statusText}`);
+    if (!res.ok) {
+      // Surface the response body's detail (FastAPI's HTTPException shape:
+      // {detail: "..."}, or this app's own {error: "..."}) so a toast shows
+      // the actual reason instead of a bare "409 Conflict". One read of the
+      // body via text() — calling json() first and falling back to text()
+      // on parse failure isn't safe, the stream can only be consumed once.
+      const bodyText = await res.text().catch(() => '');
+      let detail = bodyText;
+      try {
+        const body = JSON.parse(bodyText);
+        const d = body && (body.detail ?? body.error);
+        if (d != null) detail = typeof d === 'string' ? d : JSON.stringify(d);
+      } catch {
+        // Not JSON — use the raw body text as-is.
+      }
+      throw new Error(
+        `${method} ${path} → ${res.status} ${res.statusText}${detail ? ' — ' + detail : ''}`
+      );
+    }
     return res.status === 204 ? null : res.json();
   }
 

@@ -61,3 +61,54 @@ test('http() aborts and rejects when a request exceeds the timeout', async () =>
 
   await assert.rejects(api.posts(), /timed out/);
 });
+
+// Regression: http() only surfaced `${status} ${statusText}` on failure —
+// e.g. "409 Conflict" — dropping the FastAPI error body's `detail` text
+// entirely. Every console action handler shows `err.message` in its toast,
+// so operators saw a bare status code instead of the actual reason (see the
+// social-drafts approve endpoint, poindexter social-post-approvals-bug fix).
+test('http() includes the response body detail in the thrown error', async () => {
+  const fetchStub = (url, _opts) => {
+    if (String(url).endsWith('/token')) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ access_token: 'jwt', expires_in: 3600 }),
+      });
+    }
+    return Promise.resolve({
+      ok: false,
+      status: 409,
+      statusText: 'Conflict',
+      json: async () => ({
+        detail: 'no posts row for task xyz — publish the blog post first',
+      }),
+      text: async () =>
+        '{"detail":"no posts row for task xyz — publish the blog post first"}',
+    });
+  };
+
+  const sandbox = {
+    console,
+    setTimeout,
+    clearTimeout,
+    URLSearchParams,
+    AbortController,
+    performance,
+    fetch: fetchStub,
+    PX_API_LIVE: true,
+  };
+  sandbox.window = sandbox;
+  sandbox.localStorage = makeLocalStorage();
+  vm.createContext(sandbox);
+  vm.runInContext(SOURCE, sandbox);
+
+  const api = sandbox.PX.api;
+  api.setClient('cid', 'secret');
+  api.setLive(true);
+
+  await assert.rejects(
+    api.socialDraftAction('draft-1', 'approve'),
+    /publish the blog post first/
+  );
+});
