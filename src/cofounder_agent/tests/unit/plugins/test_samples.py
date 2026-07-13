@@ -10,6 +10,9 @@ not just mocks. Each sample:
 
 from __future__ import annotations
 
+import importlib
+from unittest.mock import patch
+
 import pytest
 
 from plugins import (
@@ -19,6 +22,7 @@ from plugins import (
     Tap,
     get_core_samples,
 )
+from plugins.registry import clear_registry_cache
 
 
 class TestHelloTap:
@@ -126,3 +130,40 @@ class TestCoreSamplesDiscovery:
         # stages: Phase E migration in progress. At least verify_task exists.
         stage_names = {s.name for s in samples["stages"]}
         assert "verify_task" in stage_names
+
+
+class TestCoreSamplesCaching:
+    """poindexter#851: ``get_core_samples()`` must run its ~40-entry import
+    list at most once per process lifetime, not once per call.
+
+    The embed path (``dispatch_embed`` → ``get_provider`` →
+    ``get_all_llm_providers``) calls this once per document; on a large
+    tap backlog an uncached version re-ran (and, in slim sidecar images,
+    re-failed) every entry per document — a CPU storm.
+    """
+
+    def setup_method(self):
+        clear_registry_cache()
+
+    def teardown_method(self):
+        clear_registry_cache()
+
+    def test_second_call_does_not_reimport(self):
+        get_core_samples()  # warm the cache
+
+        with patch.object(
+            importlib, "import_module", wraps=importlib.import_module
+        ) as spy:
+            get_core_samples()
+            spy.assert_not_called()
+
+    def test_returns_same_cached_instance(self):
+        first = get_core_samples()
+        second = get_core_samples()
+        assert first is second
+
+    def test_clear_registry_cache_invalidates(self):
+        first = get_core_samples()
+        clear_registry_cache()
+        second = get_core_samples()
+        assert first is not second

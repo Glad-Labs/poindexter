@@ -535,6 +535,7 @@ def get_modules() -> list[Any]:
 # ---------------------------------------------------------------------------
 
 
+@cache
 def get_core_samples() -> dict[str, list[Any]]:
     """Discover sample plugins shipped under ``plugins.samples.*``.
 
@@ -545,6 +546,19 @@ def get_core_samples() -> dict[str, list[Any]]:
 
     Import failures are logged + skipped per the same policy as
     ``_load_group()``.
+
+    ``@cache`` (poindexter#851): this runs the full ~40-entry ``_SAMPLES``
+    list plus a directory walk (``_scan_intree_modules``) on every call,
+    regardless of which single ``group_key`` the caller wants. Every
+    embed goes through ``dispatch_embed`` → ``get_provider`` →
+    ``get_all_llm_providers`` → here, so an uncached version reran the
+    whole list once per *document* — on a large tap backlog that's
+    thousands of full rescans, each re-attempting (and re-failing, in
+    slimmer sidecar images) every entry, which CPU-storms the caller.
+    Callers only ever read the returned dict (``.get()`` / iteration /
+    ``list()``-copy), never mutate it in place, so sharing one cached
+    instance for the process lifetime is safe. Invalidated alongside
+    ``_cached`` by :func:`clear_registry_cache`.
     """
     samples: dict[str, list[Any]] = {k: [] for k in ENTRY_POINT_GROUPS}
 
@@ -960,3 +974,4 @@ def clear_registry_cache() -> None:
     and container restarts pick up newly-installed plugins.
     """
     _cached.cache_clear()
+    get_core_samples.cache_clear()
