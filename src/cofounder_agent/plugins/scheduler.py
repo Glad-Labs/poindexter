@@ -259,9 +259,11 @@ class PluginScheduler:
             if self._site_config is not None and "_site_config" not in live_cfg.config:
                 live_cfg.config["_site_config"] = self._site_config
             try:
+                _started = _time.perf_counter()
                 result = await PluginScheduler._invoke_job_with_activity(
                     pool=self._pool, job=job, cfg=live_cfg.config,
                 )
+                _duration_ms = int((_time.perf_counter() - _started) * 1000)
                 logger.info(
                     "scheduler: job %r ran ok=%s detail=%r changes=%d",
                     job.name, result.ok, result.detail, result.changes_made,
@@ -273,6 +275,7 @@ class PluginScheduler:
                     self._jobs_failed += 1
                     await self._escalate_job_failure(job.name, result.detail or "ok=False")
                 await self._record_last_run(job.name, ok=bool(result.ok))
+                await self._capture_job_metrics(job.name, result, _duration_ms)
             except Exception as e:
                 logger.exception("scheduler: job %r raised: %s", job.name, e)
                 self._jobs_failed += 1
@@ -620,4 +623,56 @@ class PluginScheduler:
         except Exception as e:
             logger.warning(
                 "scheduler: last-run telemetry write failed for %r: %s", name, e
+            )
+
+    async def _capture_job_metrics(
+        self, job_name: str, result: Any, duration_ms: int
+    ) -> None:
+        """Persist a metrics-emitting job fire as an ``audit_log`` ``job_run``
+        row so a Grafana panel can read its custom ``JobResult.metrics`` via the
+        Postgres datasource (Glad-Labs/poindexter#853).
+
+        The scheduler consumes every job's ``JobResult`` but historically only
+        logged ``ok``/``detail``/``changes_made`` and UPSERTed ``job_run_state``;
+        ``result.metrics`` was discarded, so no job's custom metrics reached a
+        dashboard. This generic sink closes that gap for the whole job fleet.
+
+        Only *metrics-emitting* fires are recorded — a metric-less job already
+        has its last-run in ``job_run_state`` and its failures escalated by
+        ``_escalate_job_failure``, so writing those fires would only bloat the
+        canonical audit trail. The gate is on ``result.metrics`` alone, so an
+        ``ok=False`` fire that still produced telemetry is captured.
+
+        ``severity='info'`` keeps these rows below the ``findings_alert_router``
+        waterline (it consumes only warn/critical), so telemetry never pages —
+        job *failures* are escalated separately by ``_escalate_job_failure``.
+        Job-emitted keys are namespaced under ``details.metrics`` so they can't
+        shadow the ``ok``/``changes_made``/``duration_ms`` envelope fields.
+
+        Gated by ``scheduler_job_metrics_capture_enabled`` (default on),
+        mirroring ``atom_runs_capture_enabled``. Best-effort: never raises into
+        the scheduler loop (same discipline as ``_record_last_run``).
+        """
+        metrics = getattr(result, "metrics", None) or {}
+        if not metrics:
+            return
+        if self._site_config is not None and not self._site_config.get_bool(
+            "scheduler_job_metrics_capture_enabled", True
+        ):
+            return
+        try:
+            from services.audit_log import AuditLogger
+
+            details = {
+                "ok": bool(result.ok),
+                "changes_made": int(getattr(result, "changes_made", 0) or 0),
+                "duration_ms": int(duration_ms),
+                "metrics": dict(metrics),
+            }
+            await AuditLogger(self._pool).log(
+                "job_run", job_name, details, severity="info"
+            )
+        except Exception as e:  # noqa: BLE001 — telemetry must never crash the loop
+            logger.warning(
+                "scheduler: job-metrics capture failed for %r: %s", job_name, e
             )

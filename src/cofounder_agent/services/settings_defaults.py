@@ -1572,6 +1572,16 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # paging. Only affects the three jobs in scheduler._CIRCULAR_SAFE_JOBS.
     'scheduler_circular_job_page_threshold': '2',
 
+    # ----- Scheduler job-metrics sink (Glad-Labs/poindexter#853) -----
+    # Persist every metrics-emitting job fire as an audit_log 'job_run' row
+    # (source=job_name, severity=info, details={ok, changes_made, duration_ms,
+    # metrics}) so a Grafana panel can read a job's custom JobResult.metrics via
+    # the Postgres datasource. Metric-less fires are skipped (job_run_state +
+    # failure escalation already cover them). Master switch; default on. Turn
+    # off to cut audit_log volume if the 'job_run' rows ever grow too large
+    # (they inherit audit_log's existing summarize_to_table retention).
+    'scheduler_job_metrics_capture_enabled': 'true',
+
     # ----- Findings daily digest (job findings_daily_digest, #549) -----
     # Once-a-day Discord rollup of audit_log findings (by kind + delivery
     # policy + pending-delivery backlog). Routine, so Discord, never Telegram.
