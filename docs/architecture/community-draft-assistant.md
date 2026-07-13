@@ -62,10 +62,17 @@ compare_, not a duplicate to suppress.
 
 `services/community_drafts.py::generate_reddit_draft` loads the published post
 (title + content) and its content-type labels, loads the target profile, renders
-the SKILL.md prompt, calls the local writer model for the prose body, and stores
-a draft. Two things are computed **deterministically** rather than left to the
+the SKILL.md prompt, calls the local writer model for the post, and stores a
+draft. Three things are computed **deterministically** rather than left to the
 LLM, which keeps them testable and predictable:
 
+- **Title / body split** (`split_title_and_body`) — a Reddit post has two fields,
+  so the prompt has the model lead with a `Title:` line; the parse lifts that
+  into the draft's `title` column and strips it from the body, giving the
+  operator two clean, ready-to-paste fields instead of a title buried in the
+  body. Falls back to the source post's title (body untouched) when the model
+  emits no recognizable title line, so a genuine first line of prose is never
+  eaten.
 - **Warnings** (`compute_warnings`) — derived from the profile:
   `self_promo=strict` → "post as native text, no blog link"; a set `flair` →
   "set flair: …"; `min_karma` / `min_account_age_days` → gate reminders;
@@ -73,8 +80,8 @@ LLM, which keeps them testable and predictable:
 - **Blog link** (`maybe_append_blog_link`) — the canonical post URL is appended
   **only** when the subreddit's `post_type` is `link`/`either` **and** a base
   URL is configured. In a text-only sub it is never added, and an unconfigured
-  base URL never produces a broken link. The LLM is instructed to write only the
-  body, never a URL.
+  base URL never produces a broken link. The LLM is instructed to lead with a
+  `Title:` line then the body, and never to write a URL.
 
 - **Model:** the local writer model (prose, so writer-grade — not the
   structured-extraction model). Pin an override with `community_draft_model`.

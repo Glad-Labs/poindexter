@@ -307,6 +307,7 @@ def draft_reddit(post, subreddit):
         click.secho("  warnings:", fg="yellow")
         for w in draft.warnings:
             click.secho(f"    - {w}", fg="yellow")
+    click.secho(f"\nTitle: {draft.title}", bold=True)
     click.echo("\n" + draft.body)
 
 

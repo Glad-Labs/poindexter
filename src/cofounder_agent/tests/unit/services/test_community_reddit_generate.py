@@ -9,6 +9,7 @@ from services.community_drafts import (
     SubredditProfile,
     compute_warnings,
     maybe_append_blog_link,
+    split_title_and_body,
 )
 from services.site_config import SiteConfig
 
@@ -43,6 +44,48 @@ def test_link_never_broken_when_base_unset():
     sc = SiteConfig(initial_config={"site_url": ""})
     out = maybe_append_blog_link("body", post_type="link", slug="my-post", site_config=sc)
     assert out == "body"      # no base configured → never emit a broken link
+
+
+# --- split_title_and_body: lift the model's title line into its own field ---
+def test_split_title_lifts_title_prefix_line():
+    title, body = split_title_and_body(
+        "Title: Speculative decoding: 2x-3x speedups\n\nThe real body here.",
+        fallback_title="Blog Post Title",
+    )
+    assert title == "Speculative decoding: 2x-3x speedups"   # inner colon preserved
+    assert body == "The real body here."                     # title line dropped
+
+
+def test_split_title_handles_markdown_heading():
+    title, body = split_title_and_body("# My Reddit Title\n\nBody line.",
+                                       fallback_title="fallback")
+    assert title == "My Reddit Title" and body == "Body line."
+
+
+def test_split_title_handles_bold_and_case():
+    title, body = split_title_and_body("**title: Bold Title**\n\nBody.",
+                                       fallback_title="fallback")
+    assert title == "Bold Title" and body == "Body."
+
+
+def test_split_title_falls_back_when_no_title_line():
+    # A normal body whose first line is prose → keep the source-post title,
+    # leave the body untouched (never eat a real first line).
+    title, body = split_title_and_body("If you've solved VRAM, compute is next.\nMore.",
+                                       fallback_title="Source Post Title")
+    assert title == "Source Post Title"
+    assert body == "If you've solved VRAM, compute is next.\nMore."
+
+
+def test_split_title_falls_back_when_body_empty():
+    # Degenerate: model emitted only a title line → don't strand an empty body;
+    # treat the whole thing as body under the fallback title.
+    title, body = split_title_and_body("Title: Only a title", fallback_title="Fallback")
+    assert title == "Fallback" and body == "Title: Only a title"
+
+
+def test_split_title_empty_input():
+    assert split_title_and_body("   ", fallback_title="Fallback") == ("Fallback", "")
 
 
 # --- generate_reddit_draft orchestration (stub LLM + prompt + fake pool) ---
@@ -101,9 +144,33 @@ async def test_generate_reddit_draft_stores_body_and_warnings(monkeypatch):
 
     assert draft.target == "reddit:LocalLLaMA"
     assert pool.created["body"] == "Native value post body."   # stripped, no link (text)
+    # no Title: line in the LLM output → title falls back to the source post title
+    assert pool.created["title"] == "RTX 5090 inference"
     assert "set flair: Discussion" in pool.created["warnings"]
     assert pool.created["model"] == "gemma-4-31B"
     assert pool.created["source_post_id"] == "p1"
+
+
+async def test_generate_reddit_draft_lifts_llm_title(monkeypatch):
+    # The model leads with a Title: line → it becomes the draft's title field
+    # and is stripped from the body (so the operator gets two clean fields).
+    monkeypatch.setattr(cd, "_resolve_reddit_prompt", lambda **k: "PROMPT")
+
+    async def _fake_llm(prompt, **kw):
+        return "Title: Getting 2x speedups on a 5090\n\nHere is the real post body."
+    monkeypatch.setattr(cd, "ollama_chat_text", _fake_llm)
+
+    pool = _GenPool(
+        profile_row=_profile_row(),
+        post_row={"title": "RTX 5090 inference", "content": "the source", "slug": "rtx-5090"},
+        ctype_rows=[{"content_type": "ai-ml"}],
+    )
+    sc = SiteConfig(initial_config={"site_url": "https://example.test",
+                                    "pipeline_writer_model": "gemma-4-31B"})
+    await cd.generate_reddit_draft(pool, post_id="p1", subreddit="LocalLLaMA", site_config=sc)
+
+    assert pool.created["title"] == "Getting 2x speedups on a 5090"   # LLM title preferred
+    assert pool.created["body"] == "Here is the real post body."       # Title: line dropped
 
 
 async def test_generate_reddit_draft_appends_link_for_either(monkeypatch):

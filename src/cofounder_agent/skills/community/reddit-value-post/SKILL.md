@@ -58,6 +58,9 @@ WRITE THE POST
   one. Avoid the words delve, tapestry, testament, realm, and the
   "it's not just X, it's Y" construction.
 
-Output only the post body (and, if the subreddit expects one, a first line that
-reads as the title). No preamble, no meta-commentary.
+FORMAT — begin with a single line in exactly this form:
+Title: <a specific, non-clickbait title a longtime member of this subreddit would upvote>
+Then one blank line, then the post body. Write nothing before the Title line and
+no preamble or meta-commentary after the body. Write the body itself; do not
+write a URL — if a link belongs here, the system appends it.
 ```

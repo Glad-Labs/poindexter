@@ -8,6 +8,7 @@ docs/superpowers/specs/2026-07-13-community-draft-assistant-design.md.
 """
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field, replace
 from typing import Any
 
@@ -274,6 +275,43 @@ def maybe_append_blog_link(body: str, *, post_type: str, slug: str,
     return f"{body}\n\n---\nFull write-up: {base}/posts/{slug}"
 
 
+# Reddit's title and body are two separate fields; the prompt asks the model to
+# lead with a ``Title:`` line so we can lift it here. Tolerates leading markdown
+# emphasis/heading markers and a ``Title:`` or ``Title -`` label (any case).
+_TITLE_PREFIX = re.compile(
+    r"^\s*[*_#>\s]*title\s*[:\-]\s*(.+?)\s*[*_]*\s*$", re.IGNORECASE
+)
+_HEADING = re.compile(r"^\s*#{1,6}\s+(.+?)\s*#*\s*$")
+
+
+def split_title_and_body(raw: str, *, fallback_title: str) -> tuple[str, str]:
+    """Split an LLM post into ``(title, body)``.
+
+    The Reddit prompt asks the model to lead with a ``Title:`` line (or a
+    markdown ``# heading``); we lift that into the draft's dedicated title
+    field and drop it from the body, so the operator gets two clean,
+    ready-to-paste fields instead of a title buried in the body under a
+    ``Title:`` label. Falls back to ``fallback_title`` (the source post title)
+    with the body untouched when the model emitted no recognizable title line —
+    so a genuine first line of prose is never eaten. Deterministic + pure so the
+    parse is unit-tested independently of the (nondeterministic) generation."""
+    lines = raw.splitlines()
+    idx = next((i for i, ln in enumerate(lines) if ln.strip()), None)
+    if idx is None:
+        return fallback_title, raw.strip()
+    m = _TITLE_PREFIX.match(lines[idx]) or _HEADING.match(lines[idx])
+    if not m:
+        return fallback_title, raw.strip()
+    title = m.group(1).strip().strip("*_").strip()
+    body = "\n".join(lines[idx + 1:]).strip()
+    if not title or not body:
+        # A title with no body after it isn't a real split — keep the whole
+        # thing as the body under the fallback title rather than strand an
+        # empty body.
+        return fallback_title, raw.strip()
+    return title, body
+
+
 def _resolve_reddit_prompt(**kwargs: Any) -> str:
     from services.prompt_manager import get_prompt_manager
     return get_prompt_manager().get_prompt(_REDDIT_PROMPT_KEY, **kwargs)
@@ -312,12 +350,13 @@ async def generate_reddit_draft(pool: Any, *, post_id: str, subreddit: str,
         timeout_setting="community_draft_timeout_seconds", timeout_default=180.0,
         think=False,
     )
+    title, body_text = split_title_and_body(raw.strip(), fallback_title=post["title"])
     body = maybe_append_blog_link(
-        raw.strip(), post_type=profile.post_type, slug=post["slug"],
+        body_text, post_type=profile.post_type, slug=post["slug"],
         site_config=site_config,
     )
     draft_id = await create_draft(
-        pool, target=f"reddit:{subreddit}", body=body, title=post["title"],
+        pool, target=f"reddit:{subreddit}", body=body, title=title,
         post_type=profile.post_type, source_post_id=post_id,
         warnings=compute_warnings(profile), model=model,
     )
