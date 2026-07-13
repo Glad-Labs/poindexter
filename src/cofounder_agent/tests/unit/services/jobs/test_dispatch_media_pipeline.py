@@ -279,6 +279,112 @@ async def test_infra_fast_fail_unclaims_and_stops_without_finding():
 
 
 @pytest.mark.asyncio
+async def test_attempt_vram_reclaim_calls_ollama_evict_and_hard_image_gen_unload():
+    """_attempt_vram_reclaim must evict Ollama then hard-unload image-gen
+    (PR 2, 2026-07-12) — the two reclaimable VRAM sources identified in the
+    root-cause investigation."""
+    from services.gpu_scheduler import gpu as real_gpu
+
+    ollama_mock = AsyncMock()
+    image_gen_mock = AsyncMock()
+    with patch.object(real_gpu, "_unload_ollama_models", ollama_mock), \
+         patch.object(real_gpu, "_unload_image_gen", image_gen_mock):
+        await dmp._attempt_vram_reclaim(_sc_gated())
+    ollama_mock.assert_awaited_once()
+    image_gen_mock.assert_awaited_once_with(hard=True)
+
+
+@pytest.mark.asyncio
+async def test_vram_insufficient_triggers_reclaim_then_healthy_reprobe_dispatches():
+    """VRAM-only unhealthy first probe -> reclaim attempted -> a healthy
+    re-probe -> the cycle proceeds and dispatches this cycle (PR 2)."""
+    job = DispatchMediaPipelineJob()
+    pool = _FakePool([{"task_id": "t1"}], claim="UPDATE 1")
+    run_mock = AsyncMock()
+    reclaim_mock = AsyncMock()
+    health = AsyncMock(
+        side_effect=[
+            MediaInfraHealth(False, "render-GPU free VRAM 20.0 GB < 25 GB", vram_insufficient=True),
+            MediaInfraHealth(True, "ok"),
+        ]
+    )
+    with patch.object(dmp, "_run_media_pipeline", run_mock), \
+         patch.object(dmp, "check_media_infra_health", health), \
+         patch.object(dmp, "_attempt_vram_reclaim", reclaim_mock), \
+         patch.object(dmp.asyncio, "sleep", AsyncMock()):
+        out = await job.run(pool, {"_site_config": _sc_gated()})
+    reclaim_mock.assert_awaited_once()
+    assert health.await_count == 2
+    assert out.changes_made == 1
+    run_mock.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_vram_insufficient_reclaim_still_unhealthy_defers():
+    """Reclaim attempted but the re-probe is still unhealthy -> defers as
+    normal, exactly one reclaim attempt (bounded, not looped)."""
+    job = DispatchMediaPipelineJob()
+    pool = _FakePool([{"task_id": "t1"}])
+    run_mock = AsyncMock()
+    reclaim_mock = AsyncMock()
+    health = AsyncMock(
+        side_effect=[
+            MediaInfraHealth(False, "render-GPU free VRAM 15.0 GB < 25 GB", vram_insufficient=True),
+            MediaInfraHealth(False, "render-GPU free VRAM 16.0 GB < 25 GB", vram_insufficient=True),
+        ]
+    )
+    with patch.object(dmp, "_run_media_pipeline", run_mock), \
+         patch.object(dmp, "check_media_infra_health", health), \
+         patch.object(dmp, "_attempt_vram_reclaim", reclaim_mock), \
+         patch.object(dmp.asyncio, "sleep", AsyncMock()):
+        out = await job.run(pool, {"_site_config": _sc_gated()})
+    reclaim_mock.assert_awaited_once()
+    assert health.await_count == 2
+    assert out.changes_made == 0
+    assert "unhealthy" in out.detail
+    run_mock.assert_not_awaited()
+    pool.execute.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_non_vram_outage_never_attempts_reclaim():
+    """A wan-server/image-gen/DNS outage (vram_insufficient=False) must NOT
+    trigger a reclaim — restarting image-gen mid-outage is pointless. Single
+    probe, defer, exactly as before PR 2."""
+    job = DispatchMediaPipelineJob()
+    pool = _FakePool([{"task_id": "t1"}])
+    reclaim_mock = AsyncMock()
+    health = AsyncMock(return_value=MediaInfraHealth(False, "wan-server down"))
+    with patch.object(dmp, "check_media_infra_health", health), \
+         patch.object(dmp, "_attempt_vram_reclaim", reclaim_mock):
+        out = await job.run(pool, {"_site_config": _sc_gated()})
+    reclaim_mock.assert_not_awaited()
+    assert health.await_count == 1
+    assert out.changes_made == 0
+
+
+@pytest.mark.asyncio
+async def test_reclaim_disabled_setting_skips_reclaim():
+    """media_render_reclaim_enabled=false -> defer immediately on a
+    VRAM-only unhealthy probe, no reclaim attempted even though
+    vram_insufficient=True."""
+    job = DispatchMediaPipelineJob()
+    pool = _FakePool([{"task_id": "t1"}])
+    reclaim_mock = AsyncMock()
+    health = AsyncMock(
+        return_value=MediaInfraHealth(False, "vram low", vram_insufficient=True)
+    )
+    with patch.object(dmp, "check_media_infra_health", health), \
+         patch.object(dmp, "_attempt_vram_reclaim", reclaim_mock):
+        out = await job.run(
+            pool, {"_site_config": _sc_gated(media_render_reclaim_enabled="false")}
+        )
+    reclaim_mock.assert_not_awaited()
+    assert health.await_count == 1
+    assert out.changes_made == 0
+
+
+@pytest.mark.asyncio
 async def test_genuine_failure_on_healthy_infra_still_emits_finding():
     """Run fails but infra is healthy → the existing behaviour: marker stays
     set, a media_dispatch_failed finding fires, and the watchdog owns retry."""

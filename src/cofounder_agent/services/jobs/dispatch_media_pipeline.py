@@ -42,6 +42,7 @@ with the source ``canonical_blog`` run's thread.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -122,6 +123,24 @@ async def _run_media_pipeline(pool: Any, site_config: Any, task_id: str) -> None
     )
 
 
+async def _attempt_vram_reclaim(site_config: Any) -> None:
+    """Bounded, best-effort VRAM reclaim before the gate re-probe (PR 2,
+    2026-07-12 desktop-lockup fix): evict Ollama (~0.3 GB) + hard-unload
+    image-gen (~7 GB — exits its process so the CUDA context actually
+    returns to the host; ``torch.cuda.empty_cache()`` alone doesn't under
+    WSL2). Docker's ``restart: unless-stopped`` brings image-gen back; it
+    lazy-loads on the next ``/generate``.
+
+    Both callees already catch their own exceptions (best-effort by design),
+    so this never raises and never blocks the cycle — a reclaim that does
+    nothing just means the re-probe still fails and the cycle defers as normal.
+    """
+    from services.gpu_scheduler import gpu
+
+    await gpu._unload_ollama_models()
+    await gpu._unload_image_gen(hard=True)
+
+
 def _max_per_cycle(site_config: Any) -> int:
     """GPU-bound cap on media renders kicked off per cycle (default 1)."""
     try:
@@ -175,6 +194,31 @@ class DispatchMediaPipelineJob:
         # by the first healthy cycle.
         if rows:
             health = await check_media_infra_health(sc)
+            # Reclaim (PR 2, 2026-07-12): only when the gate failed
+            # SPECIFICALLY on VRAM — a wan/image-gen/DNS outage makes a
+            # reclaim pointless (restarting image-gen mid-outage doesn't fix
+            # a dead wan-server). Bounded to one attempt: reclaim, settle,
+            # re-probe once, then fall through to the existing defer path
+            # either way.
+            if (
+                not health.healthy
+                and health.vram_insufficient
+                and sc.get_bool("media_render_reclaim_enabled", True)
+            ):
+                logger.info(
+                    "[DISPATCH_MEDIA] render-GPU VRAM insufficient — "
+                    "attempting a bounded reclaim (evict Ollama + hard-"
+                    "unload image-gen) before deferring: %s", health.detail,
+                )
+                await _attempt_vram_reclaim(sc)
+                settle = sc.get_float("media_render_reclaim_settle_seconds", 8.0) or 8.0
+                await asyncio.sleep(settle)
+                health = await check_media_infra_health(sc)
+                if health.healthy:
+                    logger.info(
+                        "[DISPATCH_MEDIA] reclaim freed enough VRAM — "
+                        "proceeding with dispatch this cycle"
+                    )
             if not health.healthy:
                 logger.warning(
                     "[DISPATCH_MEDIA] render infra unhealthy — deferring %d "

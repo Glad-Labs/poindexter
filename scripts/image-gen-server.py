@@ -389,6 +389,10 @@ class GenerateResponse(BaseModel):
     seed: int
 
 
+class UnloadRequest(BaseModel):
+    hard: bool = False
+
+
 # ============================================================================
 # SELF-HEAL WATCHDOG
 # ============================================================================
@@ -606,8 +610,37 @@ async def generate(req: GenerateRequest):
 
 
 @app.post("/unload")
-async def unload():
-    """Explicit VRAM free, called by the GPU scheduler when switching to Ollama."""
+async def unload(req: UnloadRequest | None = None):
+    """Explicit VRAM free, called by the GPU scheduler.
+
+    Soft (default, no body or ``{"hard": false}``): drop the pipeline +
+    ``torch.cuda.empty_cache()`` — the pre-existing behavior, used when
+    switching the GPU over to Ollama.
+
+    Hard (``{"hard": true}``): also exit the process. ``empty_cache()`` does
+    NOT return the CUDA context/reserved pool to the host under WSL2
+    (confirmed 2026-07-12: soft /unload freed 0 GB; a container restart freed
+    ~7 GB) — only a process exit does. Docker's ``restart: unless-stopped``
+    on ``poindexter-image-gen-server`` brings it back; it lazy-loads on the
+    next /generate. Used by the render-GPU VRAM reclaim path
+    (``dispatch_media_pipeline``) before a video dispatch. Exits even if
+    ``state.pipeline`` is already None — the idle unloader may have already
+    dropped the pipeline object while the CUDA context itself (which is what
+    actually holds the reserved pool) is still live.
+    """
+    if req and req.hard:
+        unload_pipeline()
+        vram_used_mb = torch.cuda.memory_allocated(0) // 1024 // 1024
+        logger.warning(
+            "[HARD UNLOAD] exiting process to return the CUDA context to the "
+            "host (vram_used=%d MB); Docker restart policy brings it back",
+            vram_used_mb,
+        )
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(0)
+        return {"status": "exiting"}  # unreachable outside tests
+
     if state.pipeline is None:
         return {"status": "already_unloaded"}
     unload_pipeline()

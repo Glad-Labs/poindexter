@@ -1,6 +1,6 @@
-# Video-render VRAM gate
+# Video-render VRAM gate + reclaim
 
-**Status:** live (PR 1, 2026-07-12). **Related:** [`video-pipeline-redesign.md`](video-pipeline-redesign.md), the reclaim + idle-WSL-reset follow-up (PR 2), plan `docs/superpowers/plans/2026-07-12-video-render-vram-gate-reclaim.md`.
+**Status:** gate live (PR 1, 2026-07-12). Reclaim live (PR 2, 2026-07-12) — the idle-WSL-reset half of PR 2 ships disabled pending a supervised live run (see below). **Related:** [`video-pipeline-redesign.md`](video-pipeline-redesign.md), plan `docs/superpowers/plans/2026-07-12-video-render-vram-gate-reclaim.md`.
 
 ## Problem
 
@@ -38,7 +38,32 @@ The **Hardware & Power** dashboard carries a dedicated **"Render VRAM gate — f
 
 > The panel's `gpu="0"` filter mirrors the `pipeline_gpu_index` default; a static dashboard can't read `app_settings`, so if you retune `pipeline_gpu_index`, update the panel query to match.
 
+## Reclaim (PR 2, 2026-07-12)
+
+The gate alone only _prevents_ the lockup — it doesn't free anything, so with the WSL GPU baseline high, renders would mostly just **defer forever**. PR 2 adds an active, bounded reclaim before giving up:
+
+1. **Hard image-gen unload** — `POST /unload {"hard": true}` (`scripts/image-gen-server.py`) now unloads the pipeline _and exits the process_. `torch.cuda.empty_cache()` alone does **not** return the CUDA context/reserved pool to the host under WSL2 (confirmed 2026-07-12: soft `/unload` freed 0 GB; a container restart freed ~7 GB) — only a process exit does. Docker's `restart: unless-stopped` on `poindexter-image-gen-server` brings it back; it lazy-loads on the next `/generate`. The pre-existing soft `/unload` (no body) is unchanged — the GPU scheduler's `prepare_mode('ollama'/'idle')` callers still get the old behavior.
+2. **`gpu_scheduler._unload_image_gen(hard: bool = False)`** — the scheduler's existing eviction helper gained the `hard` param; it POSTs `{"hard": true}` when set. A hard call's HTTP response commonly reads as a connection error (the process exits before uvicorn can flush the response) — that's the reclaim _working_, not a failure; logged at debug, distinct from the "server likely offline" case.
+3. **`services/jobs/dispatch_media_pipeline.py::_attempt_vram_reclaim`** — when the gate's pre-dispatch probe is unhealthy **specifically because `vram_insufficient=True`** (never for a wan/image-gen/DNS outage — restarting image-gen mid-outage is pointless), the job: evicts Ollama (`gpu._unload_ollama_models()`, ~0.3 GB) → hard-unloads image-gen (~7 GB) → sleeps `media_render_reclaim_settle_seconds` (default `8`, lets the freed VRAM show up in the next Prometheus scrape) → re-probes the gate **once**. A healthy re-probe lets the cycle dispatch immediately; still-unhealthy falls through to the pre-existing defer path unchanged. Bounded to one reclaim attempt per cycle — never a retry loop.
+
+This closes the ~7 GB image-gen slice of the deficit. The remaining ~8.6 GB stuck in WSL2's `vmwp`/`vmmemWSL` (stale Docker GPU retention that outlives any container restart) needs a host-side `wsl --shutdown` + Docker Desktop restart — that's the idle-only WSL reset below.
+
+### Settings (`settings_defaults.py`)
+
+| Key                                   | Default | Meaning                                                                   |
+| ------------------------------------- | ------- | ------------------------------------------------------------------------- |
+| `media_render_reclaim_enabled`        | `true`  | Master switch for the reclaim-then-reprobe attempt.                       |
+| `media_render_reclaim_settle_seconds` | `8`     | Delay between the reclaim and the re-probe, so Prometheus has re-scraped. |
+
+## Idle-only WSL/Docker reset (PR 2, host-side — build shipped, registration deferred)
+
+The ~8.6 GB `vmwp`/`vmmemWSL` retention only returns to the host on `wsl --shutdown` + a Docker Desktop restart — a container restart doesn't touch it, and `wsl --shutdown` alone breaks GPU passthrough until Docker restarts too. The containerized worker runs _inside_ WSL and cannot reset it; this has to be a Windows host task.
+
+`scripts/idle-wsl-gpu-reset.ps1` acts only when **all** hold: the user has been idle ≥ `idle_wsl_reset_min_idle_minutes` minutes (`GetLastInputInfo`), no `pipeline_tasks` are `in_progress`/`claimed` and no media dispatch is in flight, render-GPU free VRAM is below `idle_wsl_reset_trigger_free_vram_gb` AND GPU utilization is low (not gaming), and the last reset was ≥ `idle_wsl_reset_cooldown_hours` ago. `-DryRun` evaluates every condition and prints the decision without resetting anything.
+
+`scripts/register-idle-wsl-reset.ps1` registers the Windows Scheduled Task — **shipped but not yet run against this machine.** Per `feedback_rebuild_authority` / the explicit-permission tier for persistent host configuration, actually registering the task (even disabled) and running the first live reset are held for a session with Matt at the keyboard: `-DryRun` gets validated against live state first, then the task registers **disabled**, then one **supervised** live reset confirms the stack bounces cleanly and self-heals before it's ever enabled to run unattended. Runbook: [`docs/operations/idle-wsl-gpu-reset.md`](../operations/idle-wsl-gpu-reset.md).
+
 ## What this does and doesn't do
 
-- **Does:** guarantee a video render never oversubscribes the display GPU → **no more desktop freezes.**
-- **Doesn't:** free VRAM. With the desktop active and the WSL GPU baseline high, free VRAM rarely reaches 25 GB, so renders will mostly **defer** until the card is clear (fresh boot / idle). Restoring render throughput is PR 2's job: tier‑1 reclaim (hard-restart image-gen to return its ~7 GB CUDA context) + an idle-only WSL/Docker reset to clear the stubborn ~8.6 GB WSL retention.
+- **Does:** guarantee a video render never oversubscribes the display GPU → **no more desktop freezes.** Actively reclaims the ~7 GB image-gen slice before giving up on a cycle.
+- **Doesn't (yet):** touch the ~8.6 GB WSL2 retention — that needs the idle-only host reset, which is built but not yet enabled on this machine (supervised activation pending).

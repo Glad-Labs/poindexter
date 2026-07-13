@@ -924,23 +924,44 @@ class GPUScheduler:
             await self._unload_image_gen()
             logger.info("[GPU] All models unloaded — VRAM freed")
 
-    async def _unload_image_gen(self):
-        """Tell the image-gen server to unload its model and free VRAM immediately."""
+    async def _unload_image_gen(self, hard: bool = False):
+        """Tell the image-gen server to unload its model and free VRAM immediately.
+
+        ``hard=True`` (the render-GPU VRAM reclaim path — 2026-07-12
+        desktop-lockup fix, PR 2) asks the server to exit its process after
+        unloading, since ``torch.cuda.empty_cache()`` alone does not return
+        the CUDA context to the host under WSL2. Docker's
+        ``restart: unless-stopped`` brings it back; it lazy-loads on the next
+        ``/generate``. Default stays soft (no body) for the pre-existing
+        ``prepare_mode('ollama'/'idle')`` callers.
+        """
         from services.bootstrap_defaults import DEFAULT_IMAGE_GEN_URL
         image_gen_url = _sc_get("image_gen_server_url", DEFAULT_IMAGE_GEN_URL)
         try:
             client = self._get_http_client()
-            resp = await client.post(f"{image_gen_url}/unload", timeout=10)
+            kwargs: dict = {"timeout": 10}
+            if hard:
+                kwargs["json"] = {"hard": True}
+            resp = await client.post(f"{image_gen_url}/unload", **kwargs)
             if resp.status_code == 200:
-                logger.info("[GPU] image-gen model unloaded via /unload endpoint")
+                logger.info(
+                    "[GPU] image-gen model unloaded via /unload endpoint%s",
+                    " (hard)" if hard else "",
+                )
         except Exception as exc:
             # poindexter#455 — used to be `except: pass`. Log at debug
             # because the image-gen server being offline is the common case
             # (it's only running when image-gen phase is active), not a
             # genuine bug. A persistent failure would surface via the
             # nvidia-exporter finding when image-gen is supposed to be up.
+            #
+            # For hard=True this exception is the EXPECTED path: os._exit(0)
+            # kills the process before uvicorn can flush the response, so the
+            # connection resets — that's the reclaim working, not a failure.
             logger.debug(
-                "[GPU] image-gen /unload call failed (server likely offline): %s: %s",
+                "[GPU] image-gen /unload call failed (%s): %s: %s",
+                "expected — hard unload exits before responding" if hard
+                else "server likely offline",
                 type(exc).__name__, exc,
             )
 

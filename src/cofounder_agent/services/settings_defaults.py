@@ -382,6 +382,27 @@ DEFAULTS: dict[str, str] = {
     # services/render_vram.py::render_gpu_free_vram_gb.
     'media_render_vram_gate_enabled': 'true',
     'media_render_min_free_vram_gb': '25',
+    # VRAM reclaim (PR 2, 2026-07-12): when the gate fails specifically on
+    # VRAM (not a wan/image-gen/DNS outage), dispatch_media_pipeline attempts
+    # ONE bounded reclaim — evict Ollama + hard-unload image-gen (exits its
+    # process so the CUDA context actually returns; empty_cache() alone
+    # doesn't under WSL2) — then re-probes once before deferring. Settle
+    # gives the freed VRAM time to actually show up in the next Prometheus
+    # scrape before the re-probe reads it.
+    'media_render_reclaim_enabled': 'true',
+    'media_render_reclaim_settle_seconds': '8',
+    # Idle-only host-side WSL/Docker GPU reset (PR 2, 2026-07-12). Read by
+    # scripts/idle_wsl_gpu_reset_check.py (invoked by the host-side
+    # scripts/idle-wsl-gpu-reset.ps1 Scheduled Task) to clear the ~8.6 GB of
+    # stale vmwp/vmmemWSL GPU retention that survives any container restart —
+    # only wsl --shutdown + a Docker Desktop restart returns it. Default OFF:
+    # this bounces the whole Docker stack, so it stays opt-in until a
+    # supervised live run confirms the stack self-heals cleanly.
+    'idle_wsl_reset_enabled': 'false',
+    'idle_wsl_reset_min_idle_minutes': '20',
+    'idle_wsl_reset_trigger_free_vram_gb': '22',
+    'idle_wsl_reset_cooldown_hours': '6',
+    'idle_wsl_reset_inflight_grace_minutes': '15',
     # Caption ASR engine for media.transcribe_narration. Default 'speaches'
     # reuses the already-running Speaches faster-whisper sidecar (narration TTS /
     # voice STT) instead of a second whisper.cpp install. The prior default,

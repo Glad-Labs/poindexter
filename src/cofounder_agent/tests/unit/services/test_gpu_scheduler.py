@@ -606,6 +606,55 @@ class TestUnloadImageGen:
             # Should not raise
             await scheduler._unload_image_gen()
 
+    @pytest.mark.asyncio
+    async def test_default_call_posts_no_hard_body(self):
+        """The pre-existing (soft) callers — prepare_mode('ollama'/'idle') —
+        must keep getting the pre-existing no-body POST; hard is opt-in."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
+            await scheduler._unload_image_gen()
+
+        _, kwargs = mock_client.post.await_args
+        assert "json" not in kwargs
+
+    @pytest.mark.asyncio
+    async def test_hard_true_posts_hard_body(self):
+        """hard=True (the VRAM-reclaim path) must POST {"hard": true} so the
+        image-gen server exits the process and actually returns the CUDA
+        context (2026-07-12 desktop-lockup fix, PR 2)."""
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from services.gpu_scheduler import GPUScheduler
+
+        scheduler = GPUScheduler()
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        with patch("httpx.AsyncClient", return_value=mock_client), \
+             patch("services.gpu_scheduler._sc_get", return_value="http://localhost:9836"):
+            await scheduler._unload_image_gen(hard=True)
+
+        mock_client.post.assert_awaited_once()
+        args, kwargs = mock_client.post.await_args
+        assert "/unload" in args[0]
+        assert kwargs.get("json") == {"hard": True}
+
 
 # ===========================================================================
 # Properties and config helpers
