@@ -10,6 +10,7 @@ import click
 from ._encoding import ensure_utf8_streams
 from ._event_loop import ensure_selector_event_loop_on_windows
 from .affiliate import affiliate_group
+from .alerts import alerts_group
 from .approval import APPROVAL_FLAT_ALIASES, gates_group
 from .auth import auth_group
 from .auto_publish import auto_publish_group
@@ -138,6 +139,7 @@ main.add_command(taps_group, name="taps")
 main.add_command(retention_group, name="retention")
 main.add_command(webhooks_group, name="webhooks")
 main.add_command(qa_gates_group, name="qa-gates")
+main.add_command(alerts_group, name="alerts")
 main.add_command(stores_group, name="stores")
 main.add_command(schedule_group, name="schedule")
 main.add_command(migrate_group, name="migrate")

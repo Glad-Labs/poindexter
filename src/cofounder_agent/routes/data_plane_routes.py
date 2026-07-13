@@ -1,11 +1,13 @@
 """Declarative data-plane CRUD routes — HTTP mirror of
 ``declarative_config_service`` (#1522, epic #1340).
 
-Closes the last HTTP-coverage gap (Category C): the 5 declarative data-plane
-tables (taps / retention / webhooks / publishers / qa-gates) were previously
-reachable only through the CLI's raw SQL. These thin, OAuth-protected routes
-mirror the service so a remote / cloud-coordinator / SaaS consumer reaches the
-same surface. Every handler delegates to the service — no logic, no SQL here.
+Closes the last HTTP-coverage gap (Category C): the declarative data-plane
+tables (taps / retention / webhooks / publishers / qa-gates / alerts) were
+previously reachable only through the CLI's raw SQL. These thin, OAuth-protected
+routes mirror the service so a remote / cloud-coordinator / SaaS consumer reaches
+the same surface — new surfaces (e.g. ``alerts``, poindexter#848) need zero
+route changes here, since ``{surface}`` is resolved generically via the
+registry. Every handler delegates to the service — no logic, no SQL here.
 
 - ``GET    /api/data-plane/{surface}``       → list every row
 - ``GET    /api/data-plane/{surface}/{key}`` → one row (404 if missing)
@@ -44,7 +46,7 @@ async def list_surface(
     db_service: DatabaseService = Depends(get_database_dependency),
 ) -> DataPlaneRowListResponse:
     """Return all rows for ``surface`` (taps / retention / webhooks /
-    publishers / qa-gates) as the canonical ``{items, total, limit, offset}``
+    publishers / qa-gates / alerts) as the canonical ``{items, total, limit, offset}``
     envelope (poindexter#745)."""
     from services.declarative_config_service import UnknownSurfaceError, list_rows
 

@@ -1,9 +1,10 @@
 """Unit tests for ``services.declarative_config_service`` (#1522).
 
 The generic declarative-config service is the single owner of CRUD over the
-5 data-plane tables (external_taps / retention_policies / webhook_endpoints /
-publishing_adapters / qa_gates). These tests pin the registry invariants and
-the CRUD behavior (read path, upsert whitelisting + jsonb handling +
+6 data-plane tables (external_taps / retention_policies / webhook_endpoints /
+publishing_adapters / qa_gates / alert_rules — the last joined 2026-07-13,
+poindexter#848). These tests pin the registry invariants and the CRUD
+behavior (read path, upsert whitelisting + jsonb handling +
 injection-safety, delete) against a fake asyncpg pool — no live DB.
 """
 
@@ -45,8 +46,10 @@ def _make_pool(*, fetch=None, fetchrow=None, execute=None):
     return pool, conn
 
 
-def test_all_five_surfaces_registered():
-    assert set(_SURFACES) == {"taps", "retention", "webhooks", "publishers", "qa-gates"}
+def test_all_six_surfaces_registered():
+    assert set(_SURFACES) == {
+        "taps", "retention", "webhooks", "publishers", "qa-gates", "alerts",
+    }
 
 
 def test_resolve_surface_returns_spec():
@@ -54,6 +57,13 @@ def test_resolve_surface_returns_spec():
     assert isinstance(spec, SurfaceSpec)
     assert spec.table == "external_taps"
     assert spec.key_column == "name"
+
+
+def test_alerts_surface_targets_alert_rules_table():
+    spec = resolve_surface("alerts")
+    assert spec.table == "alert_rules"
+    assert spec.key_column == "name"
+    assert spec.json_columns == {"labels_json", "annotations_json"}
 
 
 def test_resolve_unknown_surface_raises():
