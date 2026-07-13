@@ -25,7 +25,7 @@ Poindexter is built and maintained by [Glad Labs LLC](https://www.gladlabs.io). 
 
 ### Paid (sold by Glad Labs LLC)
 
-- **Pro ($9/month or $89/year — 7-day free trial)** — premium prompts (Matt's full production library), premium seeding scripts (industry-niche packs, advanced operator setups), 5 premium Grafana dashboards (Cost Analytics, Content Quality, Infrastructure, Approval Queue, Link Registry), anti-hallucination fact_overrides database, 200+ tuned app_settings, VIP Discord, and the full Poindexter book. Continuous updates as Matt tunes the live system. Cancel anytime — you keep everything you downloaded.
+- **Pro ($19/month or $180/year, Founding Member rate)** — premium prompts (Matt's full production library, exported from Langfuse), a 300+-key tuned `app_settings` seed, 5 premium Grafana dashboards (Pipeline, QA Rails, Cost & Analytics, Revenue, Observability), VIP Discord, and the full Poindexter book. Continuous updates as Matt tunes the live system — the subscription buys freshness, not gated features; the engine itself stays fully functional under Apache 2.0. Cancel anytime — you keep everything you downloaded.
 - **Custom development and consulting** — for organizations that want a Glad Labs-staffed integration. Inquire at sales@gladlabs.io.
 
 The free version is fully functional. Pro exists because Matt runs Poindexter as his own content business daily — the subscription gives you continuous access to his production tuning. The engine improves as a side effect of running the business, and subscribers get those improvements automatically.
@@ -58,7 +58,7 @@ Before opening an issue, the highest-leverage things to check:
 1. **Re-read the README quickstart.** A surprising number of issues are "I skipped step 3 of the bootstrap." This is true even when the person opening the issue is technical.
 2. **Check `docker compose ps` for unhealthy containers.** Most "the worker isn't doing anything" reports are actually a stopped or unhealthy `poindexter-worker` or `poindexter-postgres-local`.
 3. **Tail the worker logs.** `docker logs -f poindexter-worker` will tell you what the pipeline thinks it's doing in plain text. Most pipeline issues are visible in the worker logs before they show up in the database.
-4. **Check the Grafana dashboards.** If you have the included dashboards loaded, the "Pipeline Operations" board shows you task throughput, error rates, and stage durations at a glance.
+4. **Check the Grafana dashboards.** If you have the included dashboards loaded, the "Pipeline" board shows you task throughput, error rates, and stage durations at a glance.
 5. **Search closed GitHub issues.** A lot of common gotchas are documented in already-closed issues even if they're not in the README.
 
 ## Contributing

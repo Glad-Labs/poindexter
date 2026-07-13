@@ -135,7 +135,7 @@ Full diagram and design rationale in [`docs/architecture/`](docs/architecture/).
 | **Self-healing**             | Brain daemon monitors all services, restarts failures, alerts via Telegram/Discord           |
 | **Production observability** | Grafana, Prometheus, Loki, Pyroscope (CPU profiling), Sentry/GlitchTip                       |
 | **OAuth 2.1 throughout**     | Every consumer (CLI, MCP, brain, scripts) mints scoped JWTs. No static API keys.             |
-| **10,000+ tests**            | Unit coverage across all services, smoke tests on migrations, link-rot CI                    |
+| **11,000+ tests**            | Unit coverage across all services, smoke tests on migrations, link-rot CI                    |
 
 ## Stack
 
@@ -151,7 +151,7 @@ Full diagram and design rationale in [`docs/architecture/`](docs/architecture/).
 - **Voice (optional):** LiveKit + Whisper (STT) + Kokoro (TTS)
 - **Storage:** any S3-compatible (Cloudflare R2, AWS S3, Backblaze B2, MinIO)
 - **CI/CD:** GitHub Actions
-- **Infrastructure:** Docker Compose (~32 containers including the full observability + voice + image-gen sidecars; a minimal worker-only deploy needs ~8)
+- **Infrastructure:** Docker Compose — 45 containers for the full operator stack (`docker-compose.local.yml`: observability + voice + image-gen + Postiz sidecars), 23 for the consumer/minimal variant (`docker-compose.consumer.yml`, 8-16 GB VRAM hardware), 4 for the bare OSS default (`docker-compose.yml`)
 
 ## Configuration
 
@@ -190,7 +190,7 @@ Poindexter is built on a small extension framework. Eighteen plugin types let yo
 | **PublishAdapter** | Where finished posts go (S3-compatible, Discord, custom CMS, etc.)                     |
 | **Module**         | Bundles the above + migrations + routes into a versioned business function (Module v1) |
 
-The full set also includes Reviewers, Adapters, Packs, AudioGenProviders, VideoProviders, TTSProviders, CaptionProviders, and MediaCompositors. See `plugins/registry.py::ENTRY_POINT_GROUPS` for the canonical list.
+The full set also includes Reviewers, Adapters, Providers (generic), Packs, AudioGenProviders, VideoProviders, TTSProviders, CaptionProviders, and MediaCompositors. See `plugins/registry.py::ENTRY_POINT_GROUPS` for the canonical list.
 
 Each plugin lives in its own pip package and registers via setuptools `entry_points`.
 
@@ -266,7 +266,7 @@ The engine is free and open-source under Apache 2.0. **Pro** is a subscription f
 
 | Tier     | Price                                      | What you get                                                                                                                                                                         |
 | -------- | ------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **Free** | $0                                         | Full pipeline engine, baseline prompts, 1 Grafana dashboard (Pipeline Operations), GitHub issues support                                                                             |
+| **Free** | $0                                         | Full pipeline engine, baseline prompts, 1 Grafana dashboard (Pipeline), GitHub issues support                                                                                        |
 | **Pro**  | See [gladlabs.ai](https://www.gladlabs.ai) | Production-tuned prompt packs exported from the live system, additional Grafana dashboards, prompt refreshes as the system is tuned, private VIP Discord, the Poindexter book (perk) |
 
 Pro exists for the obvious case: you've installed the OSS, you've seen output that's _almost_ there, and you want the version that's actually shipping content on gladlabs.io daily. Pro gives you the months of prompt tuning in a single install.

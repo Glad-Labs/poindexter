@@ -8,7 +8,7 @@ Thanks for your interest in contributing. Poindexter is built by Glad Labs LLC a
 2. Clone your fork: `git clone https://github.com/YOUR_USERNAME/poindexter.git`
 3. Run the bootstrap: `poindexter setup` — this creates `bootstrap.toml` with auto-generated secrets, starts the local Postgres + Grafana, installs dependencies, and pulls the minimum required Ollama models.
 4. Bring up the full stack: `bash scripts/start-stack.sh`
-5. Run tests: `cd src/cofounder_agent && python -m pytest tests/unit/ -q`
+5. Run tests: `cd src/cofounder_agent && poetry run pytest tests/unit/ -q`
 
 ## Development Workflow
 
@@ -16,7 +16,7 @@ Thanks for your interest in contributing. Poindexter is built by Glad Labs LLC a
 2. Install the pre-commit hooks once per clone: `pip install pre-commit && pre-commit install` — this wires up `gitleaks` (secret scan) and a few formatting checks so commits are blocked before anything sensitive lands in history.
 3. Turn on commit signing: `bash scripts/setup-git-signing.sh` — see [Signed commits](#signed-commits) below.
 4. Make your changes
-5. Run tests and ensure they pass: `python -m pytest tests/unit/ -q`
+5. Run tests and ensure they pass: `poetry run pytest tests/unit/ -q`
 6. Run linting: `npm run lint`
 7. Commit with a clear message describing what and why
 8. Open a pull request against `main`

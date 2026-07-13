@@ -88,8 +88,8 @@ curl -X POST http://localhost:8002/token \
 Tokens are short-lived (default 1 hour) and per-consumer-scoped — a
 brain-scoped JWT cannot mint posts; a CLI-scoped JWT cannot reach
 operator-only routes. Consumer wiring lives in
-`src/cofounder_agent/services/oauth_client_service.py` and
-`src/cofounder_agent/cli/auth_commands.py`.
+`src/cofounder_agent/services/auth/oauth_client.py` and
+`src/cofounder_agent/poindexter/cli/auth.py`.
 
 ### Production-mode enforcement
 
