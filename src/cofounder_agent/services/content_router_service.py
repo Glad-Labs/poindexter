@@ -656,7 +656,28 @@ async def process_content_generation_task(
         except Exception as _dry_exc:
             logger.debug("[BG-TASK] dry-run severity-demote check failed: %s", _dry_exc)
 
-        if _is_dry_run_halt:
+        # poindexter#846: content.load_draft_for_image_rebuild raises this
+        # exact marker when the target draft was approved/rejected/published
+        # in the queue gap before the rebuild task claimed it — an expected,
+        # non-actionable race (the operator already made the call), not a
+        # bug. Same demotion shape as _is_dry_run_halt above, but this case
+        # also gets a terminal status='cancelled' below (the task can never
+        # succeed on retry — the target will never return to
+        # awaiting_approval) instead of 'failed' (which reads as "needs
+        # investigation" and would otherwise sit in the failed-tasks queue
+        # forever for something no retry can fix).
+        _is_image_rebuild_target_moved_on = "target draft moved on" in str(exc)
+
+        if _is_image_rebuild_target_moved_on:
+            audit_log_bg(
+                "image_rebuild_target_moved_on", "content_router",
+                {
+                    "error": str(exc)[:500],
+                    "reason": "target draft was approved/rejected/published before the rebuild task claimed it",
+                },
+                task_id=task_id, severity="info",
+            )
+        elif _is_dry_run_halt:
             audit_log_bg(
                 "dry_run_halt", "content_router",
                 {
@@ -702,29 +723,34 @@ async def process_content_generation_task(
             }
             failure_metadata = {k: v for k, v in failure_metadata.items() if v is not None}
 
+            _final_status = "cancelled" if _is_image_rebuild_target_moved_on else "failed"
             await database_service.update_task(
                 task_id=task_id,
                 updates={
-                    "status": "failed",
+                    "status": _final_status,
                     "error_message": str(exc),
                     "task_metadata": failure_metadata,
                 },
             )
 
-            try:
-                await emit_webhook_event(database_service.pool, "task.failed", {
-                    "task_id": task_id, "topic": topic, "error": str(exc)[:200],
-                })
-            except Exception:
-                logger.warning(
-                    "[WEBHOOK] Failed to emit task.failed event from pipeline",
-                    exc_info=True,
-                )
+            # A cancelled-due-to-race task isn't a failure — skip the
+            # task.failed webhook so OpenClaw/Discord don't page on
+            # something no retry could ever fix.
+            if not _is_image_rebuild_target_moved_on:
+                try:
+                    await emit_webhook_event(database_service.pool, "task.failed", {
+                        "task_id": task_id, "topic": topic, "error": str(exc)[:200],
+                    })
+                except Exception:
+                    logger.warning(
+                        "[WEBHOOK] Failed to emit task.failed event from pipeline",
+                        exc_info=True,
+                    )
         except Exception as db_error:
             logger.error(
                 "[BG-TASK] Failed to update task status: %s", db_error, exc_info=True,
             )
 
-        result["status"] = "failed"
+        result["status"] = "cancelled" if _is_image_rebuild_target_moved_on else "failed"
         result["error"] = str(exc)
         return result

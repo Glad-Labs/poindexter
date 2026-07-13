@@ -66,11 +66,33 @@ async def test_load_draft_strips_img_blocks_and_hydrates():
 
 @pytest.mark.asyncio
 async def test_load_draft_rejects_non_awaiting_target():
-    pool = FakePool(status="approved")
+    """A genuinely unexpected target status (task mid-flight, on hold,
+    etc.) — NOT one of the benign "operator already moved on" statuses
+    below — stays a plain fail-loud RuntimeError."""
+    pool = FakePool(status="in_progress")
     with pytest.raises(RuntimeError, match="awaiting_approval"):
         await content_load_draft_for_image_rebuild.run(
             {"target_task_id": "draft-1", "database_service": FakeDb(pool)}
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", ["approved", "rejected", "published"])
+async def test_load_draft_flags_benign_race_for_moved_on_target(status):
+    """poindexter#846: when the operator approved/rejected/published the
+    draft in the queue gap before the rebuild task claimed it, the atom
+    still raises (the graph must halt) but tags the message with the
+    stable "target draft moved on" marker content_router_service matches
+    to record status='cancelled'/severity='info' instead of a real
+    failure — this is not the same RuntimeError as a genuinely broken
+    target."""
+    pool = FakePool(status=status)
+    with pytest.raises(RuntimeError, match="target draft moved on") as exc_info:
+        await content_load_draft_for_image_rebuild.run(
+            {"target_task_id": "draft-1", "database_service": FakeDb(pool)}
+        )
+    assert status in str(exc_info.value)
+    assert "awaiting_approval" not in str(exc_info.value)
 
 
 @pytest.mark.asyncio

@@ -524,6 +524,58 @@ async def test_dry_run_halt_logs_at_info_severity_not_error():
 
 
 # ---------------------------------------------------------------------------
+# image_rebuild benign target-moved-on race (poindexter#846)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_image_rebuild_target_moved_on_cancels_instead_of_failing():
+    """When content.load_draft_for_image_rebuild raises its 'target draft
+    moved on' marker (operator approved/rejected/published the draft
+    before the rebuild task claimed it), the task must land as
+    status='cancelled' with an 'info'-severity finding, NOT 'failed' with
+    an 'error' — this race can never succeed on retry, so 'failed' would
+    misrepresent it as something needing investigation."""
+    from services.content_router_service import process_content_generation_task
+
+    db = _make_db()
+    overrides, _runner, site_config_obj = _patch_externals(
+        template_raises=RuntimeError(
+            "content.load_draft_for_image_rebuild: target draft moved on "
+            "before rebuild claimed it (target_task_id='draft-1' is now "
+            "'approved') — not a bug, the rebuild request is moot"
+        ),
+    )
+
+    with _ImportPatchContext(overrides, site_config_obj) as ctx:
+        result = await process_content_generation_task(
+            topic="t", style="s", tone="t", target_length=500,
+            database_service=db, task_id="rebuild-race-task",
+            site_config=site_config_obj,
+        )
+
+    assert result["status"] == "cancelled"
+    assert "target draft moved on" in result["error"]
+
+    # update_task was called with status='cancelled', not 'failed'.
+    db.update_task.assert_awaited()
+    update_call = db.update_task.call_args
+    assert update_call.kwargs["updates"]["status"] == "cancelled"
+
+    # Audit row is the dedicated event at severity='info'.
+    audit_calls = ctx._audit_mock.call_args_list
+    moved_on_calls = [
+        c for c in audit_calls if c.args and c.args[0] == "image_rebuild_target_moved_on"
+    ]
+    assert len(moved_on_calls) == 1
+    assert moved_on_calls[0].kwargs.get("severity") == "info"
+
+    # No task.failed webhook — this isn't a failure needing operator attention.
+    ctx._webhook_mock.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
 # Experiment hook failure is swallowed
 # ---------------------------------------------------------------------------
 

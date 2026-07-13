@@ -63,6 +63,15 @@ _LATEST_SQL = (
     "SELECT content, version FROM pipeline_versions "
     "WHERE task_id = $1 ORDER BY version DESC LIMIT 1"
 )
+# Statuses meaning "an operator (or a downstream system) already acted on
+# this draft" — the benign, expected race this module's docstring describes.
+# Anything else that isn't awaiting_approval (pending/in_progress/on_hold/
+# None/a task that doesn't exist) is a genuinely unexpected state, not this
+# race — those stay a plain fail-loud RuntimeError. The marker phrase below
+# ("target draft moved on") is matched by content_router_service to record
+# status='cancelled' + severity='info' instead of 'failed'/severity='error'
+# (poindexter#846) — mirrors the pipeline_dry_run_mode halt-demotion.
+_TARGET_MOVED_ON_STATUSES = frozenset({"approved", "rejected", "published"})
 # An <img ...> tag plus an optional trailing <figcaption>…</figcaption> (Pexels).
 _IMG_BLOCK_RE = re.compile(
     r"<img\b[^>]*>\s*(?:<figcaption>.*?</figcaption>)?",
@@ -81,6 +90,12 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     status = await pool.fetchval(_STATUS_SQL, str(target_task_id))
     if status != "awaiting_approval":
+        if status in _TARGET_MOVED_ON_STATUSES:
+            raise RuntimeError(
+                "content.load_draft_for_image_rebuild: target draft moved on "
+                f"before rebuild claimed it (target_task_id={target_task_id!r} "
+                f"is now {status!r}) — not a bug, the rebuild request is moot"
+            )
         raise RuntimeError(
             "content.load_draft_for_image_rebuild: image rebuild requires an "
             f"awaiting_approval draft; task {target_task_id} is {status!r}"
