@@ -2,7 +2,7 @@
 
 Pool + DevToCrossPostService mocked. Focus: API-key-missing skip,
 no-candidates path, mixed success/failure across the batch, fetch
-failure, Gitea opt-in/opt-out.
+failure, Gitea opt-in/opt-out, and the content-type+quality syndication gate.
 """
 
 from __future__ import annotations
@@ -12,7 +12,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from services.jobs.crosspost_to_devto import CrosspostToDevtoJob
+from services.jobs.crosspost_to_devto import (
+    CrosspostToDevtoJob,
+    _parse_content_types,
+    _parse_min_quality,
+)
 
 
 def _make_pool(
@@ -24,6 +28,9 @@ def _make_pool(
         conn.fetch = AsyncMock(side_effect=fetch_raises)
     else:
         conn.fetch = AsyncMock(return_value=rows or [])
+    # Gate-throughput counts default to 0 (int) so run()'s int()/arithmetic
+    # doesn't choke on an un-stubbed MagicMock; tests that care override this.
+    conn.fetchval = AsyncMock(return_value=0)
     ctx = AsyncMock()
     ctx.__aenter__ = AsyncMock(return_value=conn)
     ctx.__aexit__ = AsyncMock(return_value=False)
@@ -55,6 +62,28 @@ def _patched_svc(
 
     svc.cross_post_by_post_id = AsyncMock(side_effect=_cross_post)
     return svc
+
+
+class _FakeSiteConfig:
+    def __init__(self, values: dict[str, str]):
+        self._v = values
+
+    def get(self, key, default=None):
+        return self._v.get(key, default)
+
+
+def _cfg(content_types: str = "ai-ml,dev_diary", min_quality: str = "0", **extra):
+    """Config dict with a site_config that PERMITS the fetch (non-empty
+    allowlist, floor 0). Extra kwargs merge into the top-level job config."""
+    return {
+        "_site_config": _FakeSiteConfig(
+            {
+                "devto_syndicate_content_types": content_types,
+                "devto_syndicate_min_quality": min_quality,
+            }
+        ),
+        **extra,
+    }
 
 
 class TestContract:
@@ -104,7 +133,7 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, _cfg())
         assert result.ok is True
         assert result.changes_made == 0
         assert "already on Dev.to" in result.detail
@@ -126,7 +155,7 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, _cfg())
         assert result.ok is True
         assert result.changes_made == 2
         assert result.metrics["posts_crossposted"] == 2
@@ -152,7 +181,7 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, _cfg())
         assert result.ok is True
         assert result.changes_made == 1
         assert result.metrics["errors"] == 2
@@ -166,7 +195,7 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            await job.run(pool, {"batch_size": 10})
+            await job.run(pool, _cfg(batch_size=10))
         args = conn.fetch.call_args.args
         assert args[1] == 10
 
@@ -178,7 +207,7 @@ class TestRun:
         svc = _patched_svc(
             post_return_map={"p1": RuntimeError("500 at dev.to")},
         )
-        mock_gitea = AsyncMock(return_value=True)
+        mock_gitea = MagicMock(return_value=None)  # emit_finding is sync
         with patch(
             "services.devto_service.DevToCrossPostService",
             return_value=svc,
@@ -187,7 +216,7 @@ class TestRun:
             new=mock_gitea,
         ):
             job = CrosspostToDevtoJob()
-            await job.run(pool, {"file_gitea_issue": True})
+            await job.run(pool, _cfg(file_gitea_issue=True))
         mock_gitea.assert_called_once()
 
     @pytest.mark.asyncio
@@ -197,7 +226,7 @@ class TestRun:
             {"id": "p1", "title": "T", "slug": "bad"},
         ])
         svc = _patched_svc(post_return_map={"p1": RuntimeError("rate")})
-        mock_gitea = AsyncMock(return_value=True)
+        mock_gitea = MagicMock(return_value=None)  # emit_finding is sync
         with patch(
             "services.devto_service.DevToCrossPostService",
             return_value=svc,
@@ -206,7 +235,7 @@ class TestRun:
             new=mock_gitea,
         ):
             job = CrosspostToDevtoJob()
-            await job.run(pool, {})  # omit file_gitea_issue
+            await job.run(pool, _cfg())  # omit file_gitea_issue
         mock_gitea.assert_not_called()
 
     @pytest.mark.asyncio
@@ -218,7 +247,7 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, _cfg())
         assert result.ok is False
         assert "pool closed" in result.detail
 
@@ -236,7 +265,7 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            await job.run(pool, {})
+            await job.run(pool, _cfg())
         sql = conn.fetch.call_args.args[0]
         # Canonical filters present
         assert "devto_url" in sql
@@ -266,8 +295,81 @@ class TestRun:
             return_value=svc,
         ):
             job = CrosspostToDevtoJob()
-            result = await job.run(pool, {})
+            result = await job.run(pool, _cfg())
         assert result.ok is True
         assert result.changes_made == 1
         assert result.metrics["posts_crossposted"] == 1
         assert result.metrics["errors"] == 0
+
+
+class TestGate:
+    @pytest.mark.asyncio
+    async def test_empty_allowlist_short_circuits_no_fetch(self):
+        pool, conn = _make_pool([])
+        svc = _patched_svc()
+        with patch("services.devto_service.DevToCrossPostService", return_value=svc):
+            job = CrosspostToDevtoJob()
+            result = await job.run(pool, _cfg(content_types=""))
+        assert result.ok is True
+        assert result.changes_made == 0
+        assert "no syndication content-types" in result.detail.lower()
+        conn.fetch.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_gate_sql_and_params(self):
+        pool, conn = _make_pool([])
+        svc = _patched_svc()
+        with patch("services.devto_service.DevToCrossPostService", return_value=svc):
+            job = CrosspostToDevtoJob()
+            await job.run(pool, _cfg(content_types="ai-ml,dev_diary", min_quality="80"))
+        sql = conn.fetch.call_args.args[0]
+        assert "post_content_types" in sql and "content_type" in sql
+        assert "pipeline_versions" in sql and "quality_score" in sql
+        assert conn.fetch.call_args.args[2] == ["ai-ml", "dev_diary"]
+        assert conn.fetch.call_args.args[3] == 80.0
+
+    @pytest.mark.asyncio
+    async def test_bad_min_quality_fails_loud_noop(self):
+        pool, conn = _make_pool([])
+        svc = _patched_svc()
+        emit = MagicMock()
+        with patch(
+            "services.devto_service.DevToCrossPostService", return_value=svc
+        ), patch("services.jobs.crosspost_to_devto.emit_finding", new=emit):
+            job = CrosspostToDevtoJob()
+            result = await job.run(pool, _cfg(min_quality="high"))
+        assert result.ok is True
+        assert result.changes_made == 0
+        conn.fetch.assert_not_awaited()
+        emit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_metrics_include_gate_counts(self):
+        pool, conn = _make_pool([{"id": "p1", "title": "T", "slug": "s"}])
+        # fetchval returns universe (5) then eligible (3) on successive calls.
+        conn.fetchval = AsyncMock(side_effect=[5, 3])
+        svc = _patched_svc(post_return_map={"p1": "https://dev.to/g/s"})
+        with patch("services.devto_service.DevToCrossPostService", return_value=svc):
+            result = await CrosspostToDevtoJob().run(pool, _cfg())
+        assert result.metrics["gate_universe"] == 5
+        assert result.metrics["gate_eligible"] == 3
+        assert result.metrics["posts_skipped_by_gate"] == 2
+
+
+class TestParseHelpers:
+    def test_parse_content_types_splits_strips_lowercases_dedupes(self):
+        assert _parse_content_types(" AI-ML, founder-meta ,ai-ml,, GAMING ") == [
+            "ai-ml", "founder-meta", "gaming",
+        ]
+
+    def test_parse_content_types_empty_is_empty_list(self):
+        assert _parse_content_types("") == []
+        assert _parse_content_types("  ,  , ") == []
+
+    def test_parse_min_quality_ok(self):
+        assert _parse_min_quality("80") == 80.0
+        assert _parse_min_quality("72.5") == 72.5
+
+    def test_parse_min_quality_bad_raises(self):
+        with pytest.raises(ValueError):
+            _parse_min_quality("high")

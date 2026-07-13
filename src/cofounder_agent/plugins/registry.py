@@ -706,6 +706,7 @@ def get_core_samples() -> dict[str, list[Any]]:
             "MediaOrphanSweepJob",
         ),
         ("jobs", "services.jobs.crosspost_to_devto", "CrosspostToDevtoJob"),
+        ("jobs", "services.jobs.classify_content_types", "ClassifyContentTypesJob"),
         ("jobs", "services.jobs.retry_failed_social_drafts", "RetryFailedSocialDraftsJob"),
         (
             "jobs",

@@ -1375,6 +1375,26 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
 
     # ----- Devto / external publishing -----
     'devto_api_base': 'https://dev.to/api',
+    # Selective syndication (spec 2026-07-12, repointed to content-type
+    # 2026-07-13): only posts whose CONTENT-TYPE is in this CSV allowlist AND
+    # whose quality_score >= the floor cross-post to Dev.to. Content-types come
+    # from post_content_types (ClassifyContentTypesJob). OSS default is empty =
+    # syndicate nothing (opt-in); operators set their allowlist via
+    # `poindexter settings set` / the operator overlay (e.g. ai-ml,founder-meta).
+    'devto_syndicate_content_types': '',
+    'devto_syndicate_min_quality': '80',
+    # ----- Content-type classification (spec 2026-07-13) -----
+    # An additive, multi-label content-type axis populated by
+    # ClassifyContentTypesJob into the post_content_types table. The classifier
+    # emits ONLY labels from this set (anything else the model returns is
+    # dropped). Every taxonomy is a DB setting (feedback_db_first_config).
+    'content_type_labels': 'ai-ml,pc-hardware,gaming,software-engineering,founder-meta',
+    # Model pin for the classifier. Empty → falls back to the shared
+    # structured_extraction_model (JSON output must not use a reasoner —
+    # feedback_reasoning_models_empty_json).
+    'content_type_classifier_model': '',
+    # Master switch for the classifier job.
+    'classify_content_types_enabled': 'true',
     # (mastodon_instance_url removed 2026-06-29 — the legacy direct Mastodon
     #  adapter is retired; Mastodon-via-Postiz uses postiz_integration_id_mastodon.)
 

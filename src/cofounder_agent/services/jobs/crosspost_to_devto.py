@@ -30,6 +30,23 @@ untouched so the next tick retries.
   dedup'd issue if any post errored. Default false because Dev.to
   errors are usually transient (rate limits, 5xx) and the job
   retries on its own cadence.
+
+## Selective-syndication gate (app_settings, spec 2026-07-12 → content-type 2026-07-13)
+
+Only posts whose CONTENT-TYPE is on an allowlist AND whose quality score
+clears a floor are crossposted (not every published post):
+
+- ``devto_syndicate_content_types`` (CSV, default ``""``) — content-type
+  allowlist (labels from ``post_content_types``, populated by
+  ClassifyContentTypesJob). **Empty = syndicate nothing** (opt-in). The job
+  short-circuits to a no-op before touching the DB when this is empty.
+- ``devto_syndicate_min_quality`` (default ``80``, 0–100) — the newest
+  ``pipeline_versions.quality_score`` must be ≥ this. Unparseable value fails
+  loud (``emit_finding``) and no-ops instead of syndicating everything.
+
+Posts with no ``post_content_types`` row fail the candidate query's EXISTS
+(fail-closed — we never syndicate a post the classifier hasn't labeled).
+Publish posture (``devto_publish_immediately``) is unchanged.
 """
 
 from __future__ import annotations
@@ -41,6 +58,87 @@ from plugins.job import JobResult
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
+
+
+def _parse_content_types(raw: str) -> list[str]:
+    """Parse the ``devto_syndicate_content_types`` CSV into a normalized list.
+
+    Strips, lowercases, de-dupes (order-preserving). Empty / whitespace-only
+    input yields ``[]`` — the caller treats that as "syndicate nothing".
+    """
+    seen: dict[str, None] = {}
+    for part in (raw or "").split(","):
+        label = part.strip().lower()
+        if label:
+            seen.setdefault(label, None)
+    return list(seen)
+
+
+def _parse_min_quality(raw: str) -> float:
+    """Parse ``devto_syndicate_min_quality`` (0–100). Raises ValueError on junk
+    so the caller can fail loud instead of silently syndicating everything."""
+    return float(raw)
+
+
+# Selective-syndication candidate query (spec 2026-07-12, repointed to
+# content-type 2026-07-13). Filters on the operator's content-type allowlist
+# ($2) via a ``post_content_types`` EXISTS, and on the quality floor ($3) via
+# the newest ``pipeline_versions.quality_score`` reached through the
+# ``posts.metadata->>'pipeline_task_id' = pipeline_versions.task_id`` seam.
+# A post with no content-type row fails the EXISTS (fail-closed — we never
+# syndicate a post the classifier hasn't labeled). The terminal devto_status
+# dedup (#397/#404) is preserved verbatim.
+_CANDIDATE_SQL = """
+    SELECT p.id, p.title, p.slug
+    FROM posts p
+    LEFT JOIN LATERAL (
+        SELECT pv.quality_score
+        FROM pipeline_versions pv
+        WHERE pv.task_id = p.metadata->>'pipeline_task_id'
+        ORDER BY pv.version DESC
+        LIMIT 1
+    ) pv ON TRUE
+    WHERE p.status = 'published'
+      AND (p.metadata IS NULL
+           OR p.metadata->>'devto_url' IS NULL
+           OR p.metadata->>'devto_url' = '')
+      AND COALESCE(p.metadata->>'devto_status', '') NOT IN ('gave_up', 'already_exists')
+      AND EXISTS (
+          SELECT 1 FROM post_content_types pct
+          WHERE pct.post_id = p.id AND pct.content_type = ANY($2::text[])
+      )
+      AND COALESCE(pv.quality_score, 0) >= $3
+    ORDER BY p.published_at DESC
+    LIMIT $1
+"""
+
+# Gate-throughput observability (spec 2026-07-12). The gate filters inside the
+# candidate query, so the job never sees the rejected rows — these two cheap
+# counts make the throughput visible. ``universe`` = published, un-syndicated
+# posts (pre content-type/quality); ``eligible`` = those that pass the full
+# gate (no LIMIT). ``posts_skipped_by_gate`` = universe − eligible.
+_UNIVERSE_COUNT_SQL = """
+    SELECT count(*) FROM posts p
+    WHERE p.status='published'
+      AND (p.metadata IS NULL OR p.metadata->>'devto_url' IS NULL OR p.metadata->>'devto_url'='')
+      AND COALESCE(p.metadata->>'devto_status','') NOT IN ('gave_up','already_exists')
+"""
+
+_ELIGIBLE_COUNT_SQL = """
+    SELECT count(*) FROM posts p
+    LEFT JOIN LATERAL (
+        SELECT pv.quality_score FROM pipeline_versions pv
+        WHERE pv.task_id = p.metadata->>'pipeline_task_id' ORDER BY pv.version DESC LIMIT 1
+    ) pv ON TRUE
+    WHERE p.status='published'
+      AND (p.metadata IS NULL OR p.metadata->>'devto_url' IS NULL OR p.metadata->>'devto_url'='')
+      AND COALESCE(p.metadata->>'devto_status','') NOT IN ('gave_up','already_exists')
+      AND EXISTS (
+          SELECT 1 FROM post_content_types pct
+          WHERE pct.post_id = p.id AND pct.content_type = ANY($1::text[])
+      )
+      AND COALESCE(pv.quality_score,0) >= $2
+"""
 
 
 class CrosspostToDevtoJob:
@@ -76,39 +174,77 @@ class CrosspostToDevtoJob:
                 changes_made=0,
             )
 
+        # Selective-syndication gate (spec 2026-07-12, content-type 2026-07-13).
+        # Read from the DI'd SiteConfig. Empty allowlist = syndicate nothing
+        # (opt-in default) — short-circuit before the DB so logs read clearly.
+        # An unparseable quality floor fails loud rather than silently
+        # syndicating everything.
+        sc = config.get("_site_config")
+        content_types = _parse_content_types(
+            sc.get("devto_syndicate_content_types", "") if sc else ""
+        )
+        if not content_types:
+            return JobResult(
+                ok=True,
+                detail="no syndication content-types configured — skipping",
+                changes_made=0,
+            )
+        try:
+            min_quality = _parse_min_quality(
+                sc.get("devto_syndicate_min_quality", "80") if sc else "80"
+            )
+        except ValueError as e:
+            emit_finding(
+                source="crosspost_to_devto",
+                kind="devto_min_quality_unparseable",
+                severity="warning",
+                title="devto_syndicate_min_quality is not a number — syndication paused",
+                body=(
+                    f"Value {(sc.get('devto_syndicate_min_quality') if sc else None)!r} "
+                    f"is unparseable ({e}); no posts syndicated this tick. Fix the "
+                    "app_settings value to resume Dev.to syndication."
+                ),
+                dedup_key="devto_min_quality_unparseable",
+            )
+            return JobResult(
+                ok=True, detail=f"min_quality unparseable: {e}", changes_made=0,
+            )
+
         try:
             async with pool.acquire() as conn:
                 rows = await conn.fetch(
-                    """
-                    SELECT id, title, slug
-                    FROM posts
-                    WHERE status = 'published'
-                      AND (metadata IS NULL
-                           OR metadata->>'devto_url' IS NULL
-                           OR metadata->>'devto_url' = '')
-                      -- Skip posts in any terminal devto_status: we
-                      -- gave up (permanent non-canonical reject), the
-                      -- canonical URL is already taken on Dev.to
-                      -- (#404 — success-at-destination, no point
-                      -- re-asking), or the post was already crossposted
-                      -- by another path. See services/devto_service.py.
-                      AND COALESCE(metadata->>'devto_status', '') NOT IN (
-                          'gave_up', 'already_exists'
-                      )
-                    ORDER BY published_at DESC
-                    LIMIT $1
-                    """,
-                    batch_size,
+                    _CANDIDATE_SQL, batch_size, content_types, min_quality
+                )
+                # Gate-throughput counts (cheap; runs every 4h). Reported as
+                # metrics + a log line so skipped-by-gate is visible.
+                gate_universe = int(await conn.fetchval(_UNIVERSE_COUNT_SQL) or 0)
+                gate_eligible = int(
+                    await conn.fetchval(
+                        _ELIGIBLE_COUNT_SQL, content_types, min_quality
+                    ) or 0
                 )
         except Exception as e:
             logger.exception("CrosspostToDevtoJob: candidate fetch failed: %s", e)
             return JobResult(ok=False, detail=f"fetch failed: {e}", changes_made=0)
+
+        skipped = max(0, gate_universe - gate_eligible)
+        gate_metrics = {
+            "gate_universe": gate_universe,
+            "gate_eligible": gate_eligible,
+            "posts_skipped_by_gate": skipped,
+        }
+        logger.info(
+            "CrosspostToDevtoJob: %d eligible, %d skipped by content-type/quality gate "
+            "(universe %d)",
+            gate_eligible, skipped, gate_universe,
+        )
 
         if not rows:
             return JobResult(
                 ok=True,
                 detail="all published posts already on Dev.to",
                 changes_made=0,
+                metrics=gate_metrics,
             )
 
         crossposted = 0
@@ -152,6 +288,7 @@ class CrosspostToDevtoJob:
             detail=detail,
             changes_made=crossposted,
             metrics={
+                **gate_metrics,
                 "posts_attempted": len(rows),
                 "posts_crossposted": crossposted,
                 "errors": len(errors),
