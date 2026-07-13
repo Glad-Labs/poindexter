@@ -107,39 +107,68 @@ class ClassifyContentTypesJob:
                 )
 
                 labeled = 0
+                failed = 0
                 for row in rows:
-                    prompt = get_prompt_manager().get_prompt(
-                        "content.classify_content_type",
-                        labels=", ".join(labels),
-                        title=row["title"] or "",
-                        tags=row["tags"] or "",
-                        excerpt=(row["content"] or "")[:excerpt_chars],
-                    )
-                    raw = await ollama_chat_text(
-                        prompt,
-                        model=model,
-                        site_config=sc,
-                        pool=pool,
-                        tier="budget",
-                        phase="classify_content_type",
-                    )
-                    picks = validate_labels(raw, labels)
-                    for label, conf in picks:
-                        await conn.execute(_INSERT_SQL, row["id"], label, conf)
-                    if picks:
-                        labeled += 1
-                    logger.info(
-                        "classify_content_types: %s → %s",
-                        row["id"],
-                        [p[0] for p in picks],
-                    )
+                    # A single post's classification (prompt build, LLM call,
+                    # validation, insert) must not abort the whole batch — a
+                    # transient LLM connection blip (e.g. a stale pooled
+                    # socket to a cold/evicted Ollama model — the sparse
+                    # 6-hourly cadence is exactly the idle window that
+                    # triggers it) would otherwise fail up to `batch_size`
+                    # already-good classifications and page the operator.
+                    # Every sibling LLM-calling job (affiliate_import,
+                    # retention_summarize_to_table, retention_embeddings_
+                    # collapse) already isolates per-item LLM failures this
+                    # way. The skipped post simply stays unlabeled and is
+                    # picked up again by _UNLABELED_SQL on the next run —
+                    # safe because the job is idempotent by design.
+                    try:
+                        prompt = get_prompt_manager().get_prompt(
+                            "content.classify_content_type",
+                            labels=", ".join(labels),
+                            title=row["title"] or "",
+                            tags=row["tags"] or "",
+                            excerpt=(row["content"] or "")[:excerpt_chars],
+                        )
+                        raw = await ollama_chat_text(
+                            prompt,
+                            model=model,
+                            site_config=sc,
+                            pool=pool,
+                            tier="budget",
+                            phase="classify_content_type",
+                        )
+                        picks = validate_labels(raw, labels)
+                        for label, conf in picks:
+                            await conn.execute(_INSERT_SQL, row["id"], label, conf)
+                        if picks:
+                            labeled += 1
+                        logger.info(
+                            "classify_content_types: %s → %s",
+                            row["id"],
+                            [p[0] for p in picks],
+                        )
+                    except Exception as exc:  # noqa: BLE001 — one bad post must not abort the batch
+                        failed += 1
+                        logger.warning(
+                            "classify_content_types: %s failed (%s) — leaving "
+                            "unlabeled for the next run",
+                            row["id"], exc,
+                        )
         except Exception as e:  # noqa: BLE001 — report as a failed JobResult
             logger.exception("ClassifyContentTypesJob failed: %s", e)
             return JobResult(ok=False, detail=f"failed: {e}", changes_made=0)
 
+        detail = f"labeled {labeled} of {len(rows)} post(s)"
+        if failed:
+            detail += f", {failed} failed (retried next run)"
         return JobResult(
             ok=True,
-            detail=f"labeled {labeled} of {len(rows)} post(s)",
+            detail=detail,
             changes_made=labeled,
-            metrics={"posts_seen": len(rows), "posts_labeled": labeled},
+            metrics={
+                "posts_seen": len(rows),
+                "posts_labeled": labeled,
+                "posts_failed": failed,
+            },
         )
