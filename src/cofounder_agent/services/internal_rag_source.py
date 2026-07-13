@@ -410,4 +410,21 @@ class InternalRagSource:
                 "skipping candidate", model,
             )
             return None
-        return topic, str(parsed.get("angle") or "").strip()
+        angle = str(parsed.get("angle") or "").strip()
+        # The distiller occasionally leaks its own task narration into the
+        # topic/angle instead of producing content (poindexter row
+        # 5b662b41-66c0-403f-945a-b750e922340f: "I need to extract the
+        # proposed blog post topic and unique angle from the provided
+        # snippets. 1. Topic: ..."). strip_reasoning_artifacts alone can't
+        # fix this — the surrounding prose IS the leak.
+        from services.topic_sanity import detect_leaked_reasoning
+        for field_name, field_value in (("topic", topic), ("angle", angle)):
+            leak_reason = detect_leaked_reasoning(field_value)
+            if leak_reason:
+                logger.warning(
+                    "[internal_rag] distill %s looks like leaked reasoning "
+                    "(reason=%s, model=%s): %r — skipping candidate",
+                    field_name, leak_reason, model, field_value[:120],
+                )
+                return None
+        return topic, angle

@@ -20,8 +20,11 @@ import pytest
 from services.topic_sanity import (
     DEFAULT_MIN_ALPHA_WORDS,
     MIN_ALPHA_WORDS_KEY,
+    REASON_CONTROL_TOKEN,
+    REASON_META_COMMENTARY,
     TopicSanityError,
     count_alpha_words,
+    detect_leaked_reasoning,
     evaluate_topic_sanity,
     resolve_min_alpha_words,
 )
@@ -237,3 +240,76 @@ class TestTruncatedTitles:
     def test_complete_titles_pass(self, topic):
         verdict = evaluate_topic_sanity(topic)
         assert verdict.ok is True, verdict.detail
+
+
+# ---------------------------------------------------------------------------
+# detect_leaked_reasoning — poindexter row 5b662b41 (2026-07-13)
+# ---------------------------------------------------------------------------
+
+
+# The real distilled_angle from internal_topic_candidates row
+# 5b662b41-66c0-403f-945a-b750e922340f, verbatim — truncated mid-word by
+# the original niche_internal_rag_snippet_max_chars cutoff, exactly as
+# stored in the DB.
+LEAKED_REASONING_ANGLE = (
+    "How conflicting own pull requests can silently stop workflows from "
+    "dispatching, creating a//trap where updates are<|channel>thought: I "
+    "need to extract the proposed blog post topic and unique angle from "
+    "the provided same snippets. 1. Topic: The silent failure/trap of "
+    "conflicting PRs affecting workflo"
+)
+
+
+class TestDetectLeakedReasoning:
+    """poindexter row 5b662b41-66c0-403f-945a-b750e922340f: the distiller's
+    own task narration leaked into distilled_angle instead of real content.
+    strip_reasoning_artifacts alone can't fix this — the surrounding prose
+    IS the leak, not a wrapper around otherwise-clean content."""
+
+    def test_real_incident_row_rejected(self):
+        assert detect_leaked_reasoning(LEAKED_REASONING_ANGLE) == REASON_CONTROL_TOKEN
+
+    def test_clean_angle_passes(self):
+        angle = (
+            "Most teams patch CI around flaky tests instead of fixing the "
+            "root cause, and that habit quietly compounds into an "
+            "unmaintainable suite."
+        )
+        assert detect_leaked_reasoning(angle) is None
+
+    def test_clean_topic_passes(self):
+        assert detect_leaked_reasoning(
+            "Why RTX 5090 thermals matter for small-form-factor builds"
+        ) is None
+
+    def test_dev_diary_first_person_angle_not_false_positive(self):
+        # dev_diary is intentionally founder-voice/first-person
+        # (feedback_content_voice) — a bare "I need to" match would
+        # false-reject genuine content. The compound signal requires
+        # extraction-task vocabulary alongside the opener, which this
+        # angle never uses.
+        angle = "Why I need to rethink our flaky CI before it rots the whole pipeline"
+        assert detect_leaked_reasoning(angle) is None
+
+    def test_numbered_field_echo_alone_rejected(self):
+        # No first-person opener at all — the numbered label echo is
+        # distinctive enough to stand alone.
+        angle = "1. Topic: Understanding container health checks in Kubernetes"
+        assert detect_leaked_reasoning(angle) == REASON_META_COMMENTARY
+
+    def test_token_artifact_alone_rejected(self):
+        # No semantic phrase match at all — Signal 1 fires independently.
+        angle = "The road ahead for solid-state batteries <|im_end|>"
+        assert detect_leaked_reasoning(angle) == REASON_CONTROL_TOKEN
+
+    def test_prose_meta_commentary_without_token_rejected(self):
+        # No control token at all — Signal 2 fires independently.
+        angle = (
+            "Let me extract the topic and angle from the provided "
+            "snippets about GPU thermals"
+        )
+        assert detect_leaked_reasoning(angle) == REASON_META_COMMENTARY
+
+    @pytest.mark.parametrize("text", ["", "   ", None])
+    def test_empty_and_none_pass_through(self, text):
+        assert detect_leaked_reasoning(text) is None

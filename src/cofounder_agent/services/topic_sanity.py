@@ -55,6 +55,7 @@ import re
 from dataclasses import dataclass
 from typing import Any
 
+from services.llm_providers.thinking_models import strip_reasoning_artifacts
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
@@ -77,6 +78,8 @@ REASON_NO_ALPHA = "no_alphabetic_content"
 REASON_TOO_FEW = "too_few_alpha_words"
 REASON_SENTINEL = "failure_sentinel"
 REASON_TRUNCATED = "truncated_title"
+REASON_CONTROL_TOKEN = "control_token_artifact"
+REASON_META_COMMENTARY = "meta_commentary"
 
 # Whole-topic failure sentinels — the bounded set of strings LLM distillers
 # emit INSTEAD of a topic when they fail. Matched against the normalised
@@ -110,6 +113,26 @@ _TRAILING_STOPWORDS = frozenset({
 _TERMINAL_PUNCT = ".!?\"'’”)…"
 
 _TRAILING_NONWORD_RE = re.compile(r"[\W_]+$")
+
+# A first-person/modal opener that only makes sense as the model narrating
+# its OWN next action — never legitimate blog-post topic/angle content.
+_META_OPENER_RE = re.compile(
+    r"\b(I need to|I will|I'll|let me|I should|I'm going to)\b",
+    re.IGNORECASE,
+)
+# Extraction-task vocabulary. Co-occurring with an opener above within 80
+# chars means the model is describing the topic/angle-extraction task
+# itself, not writing a topic/angle — a real angle essentially never talks
+# about "extracting a topic from snippets."
+_META_TASK_VOCAB_RE = re.compile(
+    r"\b(extract|distill|the provided|the following)\b.{0,80}\b(topic|angle|snippet)s?\b"
+    r"|\b(topic|angle)\b.{0,80}\b(extract|distill|snippet)s?\b",
+    re.IGNORECASE,
+)
+# The model echoing its own extraction-schema field labels back
+# ("1. Topic: ...", "2. Angle: ...") — distinctive enough to stand alone,
+# unlike the opener/vocab pair which needs the compound-AND above.
+_NUMBERED_FIELD_ECHO_RE = re.compile(r"\b\d+\.\s*(Topic|Angle)\s*:", re.IGNORECASE)
 
 
 @dataclass(frozen=True)
@@ -223,6 +246,40 @@ def evaluate_topic_sanity(
     )
 
 
+def detect_leaked_reasoning(text: str | None) -> str | None:
+    """Detect a distiller leaking its own task narration into a topic/angle string.
+
+    Two independent signals; either one flags ``text`` as suspect:
+
+    1. A literal reasoning/chat-template control-token artifact survived —
+       ``strip_reasoning_artifacts`` would have changed the string.
+    2. A first-person/modal opener co-occurs with extraction-task
+       vocabulary, or the model echoes its own numbered field labels
+       ("1. Topic:") — the model is narrating the extraction task instead
+       of producing its output.
+
+    Real incident: ``internal_topic_candidates`` row
+    ``5b662b41-66c0-403f-945a-b750e922340f``'s ``distilled_angle`` leaked
+    "I need to extract the proposed blog post topic and unique angle from
+    the provided snippets. 1. Topic: ..." verbatim, mixed in after real
+    content, truncated mid-word.
+
+    Returns the matched reason (``REASON_CONTROL_TOKEN`` /
+    ``REASON_META_COMMENTARY``) when ``text`` is suspect, ``None`` when
+    clean. Pure function — no DB, no LLM, no clock — mirrors
+    :func:`evaluate_topic_sanity`.
+    """
+    if not text:
+        return None
+    if strip_reasoning_artifacts(text) != text:
+        return REASON_CONTROL_TOKEN
+    if _NUMBERED_FIELD_ECHO_RE.search(text):
+        return REASON_META_COMMENTARY
+    if _META_OPENER_RE.search(text) and _META_TASK_VOCAB_RE.search(text):
+        return REASON_META_COMMENTARY
+    return None
+
+
 def resolve_min_alpha_words(site_config: Any) -> int:
     """Read ``topic_sanity_min_alpha_words`` off ``site_config``, defaulting safely.
 
@@ -259,7 +316,9 @@ def resolve_min_alpha_words(site_config: Any) -> int:
 __all__ = [
     "DEFAULT_MIN_ALPHA_WORDS",
     "MIN_ALPHA_WORDS_KEY",
+    "REASON_CONTROL_TOKEN",
     "REASON_EMPTY",
+    "REASON_META_COMMENTARY",
     "REASON_NO_ALPHA",
     "REASON_SENTINEL",
     "REASON_TOO_FEW",
@@ -267,6 +326,7 @@ __all__ = [
     "TopicSanityError",
     "TopicSanityResult",
     "count_alpha_words",
+    "detect_leaked_reasoning",
     "evaluate_topic_sanity",
     "resolve_min_alpha_words",
 ]

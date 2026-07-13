@@ -1,5 +1,6 @@
 """Tests for InternalRagSource — generate candidates from internal corpus."""
 
+import json
 from unittest.mock import AsyncMock
 
 import pytest
@@ -395,6 +396,84 @@ async def test_distill_skips_not_storyworthy_verdict(monkeypatch):
     monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
 
     assert await src._distill_topic_angle(["clean cycle completed"]) is None
+
+
+async def test_distill_rejects_leaked_reasoning_in_angle(monkeypatch):
+    # Real poindexter row 5b662b41-66c0-403f-945a-b750e922340f: the
+    # distiller's own task narration leaked into distilled_angle instead
+    # of real content, truncated mid-word. strip_reasoning_artifacts alone
+    # can't fix this — detect_leaked_reasoning rejects the whole candidate.
+    import services.llm_text as llm_text
+    import services.prompt_manager as pm
+    import services.topic_ranking as tr
+
+    leaked_angle = (
+        "How conflicting own pull requests can silently stop workflows from "
+        "dispatching, creating a//trap where updates are<|channel>thought: I "
+        "need to extract the proposed blog post topic and unique angle from "
+        "the provided same snippets. 1. Topic: The silent failure/trap of "
+        "conflicting PRs affecting workflo"
+    )
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
+    monkeypatch.setattr(
+        tr, "_ollama_chat_json",
+        AsyncMock(return_value=json.dumps(
+            {"topic": "Conflicting PRs stall CI", "angle": leaked_angle}
+        )),
+    )
+    fake_pm = AsyncMock()
+    fake_pm.get_prompt = lambda *a, **k: "prompt"
+    monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
+
+    assert await src._distill_topic_angle(["snippet"]) is None
+
+
+async def test_distill_rejects_leaked_reasoning_in_topic(monkeypatch):
+    # Same guard, but the leak lands in the topic field instead of angle —
+    # both fields go through detect_leaked_reasoning.
+    import services.llm_text as llm_text
+    import services.prompt_manager as pm
+    import services.topic_ranking as tr
+
+    leaked_topic = "1. Topic: Understanding container health checks in Kubernetes"
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
+    monkeypatch.setattr(
+        tr, "_ollama_chat_json",
+        AsyncMock(return_value=json.dumps(
+            {"topic": leaked_topic, "angle": "A clean angle"}
+        )),
+    )
+    fake_pm = AsyncMock()
+    fake_pm.get_prompt = lambda *a, **k: "prompt"
+    monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
+
+    assert await src._distill_topic_angle(["snippet"]) is None
+
+
+async def test_distill_passes_clean_first_person_angle(monkeypatch):
+    # dev_diary is intentionally founder-voice/first-person
+    # (feedback_content_voice) — confirm the guard doesn't false-reject
+    # genuine first-person content that never mentions the extraction task.
+    import services.llm_text as llm_text
+    import services.prompt_manager as pm
+    import services.topic_ranking as tr
+
+    clean_angle = "Why I need to rethink our flaky CI before it rots the whole pipeline"
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
+    monkeypatch.setattr(
+        tr, "_ollama_chat_json",
+        AsyncMock(return_value=json.dumps(
+            {"topic": "Flaky CI", "angle": clean_angle}
+        )),
+    )
+    fake_pm = AsyncMock()
+    fake_pm.get_prompt = lambda *a, **k: "prompt"
+    monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
+
+    assert await src._distill_topic_angle(["snippet"]) == ("Flaky CI", clean_angle)
 
 
 async def test_distill_passes_niche_context_to_prompt(monkeypatch):
