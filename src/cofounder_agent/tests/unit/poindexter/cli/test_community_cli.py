@@ -1,6 +1,7 @@
 """Unit tests for the `poindexter community` CLI (mocked pool + services)."""
 from __future__ import annotations
 
+import click
 import pytest
 from click.testing import CliRunner
 
@@ -97,3 +98,19 @@ def test_profiles_import_csv(runner, monkeypatch, tmp_path):
     f.write_text("subreddit\nLocalLLaMA", encoding="utf-8")
     res = runner.invoke(com.community_group, ["profiles", "import-csv", str(f)])
     assert res.exit_code == 0 and "created" in res.output
+
+
+async def test_make_site_config_fails_loud_on_load_error(monkeypatch):
+    """A settings-load failure surfaces its real cause (draft generation needs
+    settings — there is no pool-only fallback to swallow it for)."""
+    class _BadSiteConfig:
+        def __init__(self, *a, **k):
+            pass
+
+        async def load(self, pool):
+            raise RuntimeError("db boom")
+
+    # _make_site_config imports SiteConfig from services.site_config at call time.
+    monkeypatch.setattr("services.site_config.SiteConfig", _BadSiteConfig)
+    with pytest.raises(click.ClickException, match="failed to load settings"):
+        await com._make_site_config(object())

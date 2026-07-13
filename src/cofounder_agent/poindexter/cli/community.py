@@ -43,13 +43,17 @@ async def _make_site_config(pool):
     from services.site_config import SiteConfig
 
     site_config = SiteConfig(pool=pool)
+    # Fail loud. The only caller is `draft reddit`, which needs the writer model
+    # from settings — there is no pool-only path to protect (unlike
+    # affiliate.py::_make_site_config, whose callers work without settings). A
+    # swallow here would defer a real failure and swap its cause for a misleading
+    # "set pipeline_writer_model" at generation time. Surface the true error.
     try:
         await site_config.load(pool)
-    except Exception:
-        # silent-ok: best-effort settings load — a failure surfaces later at
-        # generation as a clear ValueError from resolve_local_model (which needs
-        # the writer model). Mirrors affiliate.py::_make_site_config.
-        pass
+    except Exception as e:
+        raise click.ClickException(
+            f"failed to load settings from the database: {e}"
+        ) from e
     return site_config
 
 
