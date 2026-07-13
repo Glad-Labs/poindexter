@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-07-12.**  
+> **Auto-generated from live `app_settings` table on 2026-07-13.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 688 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -796,7 +796,7 @@ The worker re-reads on every poll; no restart needed.
 | `enable_tracing` | `true` |  | Master switch for OpenTelemetry tracing. When true, services.tracing.setup_tracing initializes the TracerProvider + O... |
 | `langfuse_host` | `http://langfuse-web:3000` |  | Langfuse base URL for prompt management + tracing. Default empty = Langfuse disabled, prompts resolve via DB+YAML fal... |
 | `langfuse_tracing_enabled` | `true` |  | When true (default), LiteLLMProvider registers Langfuse as a success/failure callback so every LLM call emits a span ... |
-| `operator_url_probe_target_overrides` | `{"indexnow_ping_url": {"method": "HEA...` |  | Per-URL probe behavior overrides for the operator-url probe. JSON map keyed by app_setting key (e.g. 'google_sitemap_... |
+| `operator_url_probe_target_overrides` | `{"plugin.tts_provider.chatterbox.base...` |  | Per-URL probe behavior overrides for the operator-url probe. JSON map keyed by app_setting key (e.g. 'google_sitemap_... |
 | `otel_exporter_otlp_endpoint` | `http://tempo:4318/v1/traces` |  | OTLP gRPC endpoint that the worker pushes spans to. Default points at the docker-compose tempo service on its OTLP gR... |
 | `pyroscope_server_url` | `http://pyroscope:4040` |  | Pyroscope ingestion URL for worker agent |
 | `sentry_profiles_sample_rate` | `0.1` |  | Fraction of transactions to capture as CPU profiles. Default 0.1. Same hardcoding bug as traces sample rate. |
