@@ -12,7 +12,9 @@ RUN pip install --no-cache-dir --upgrade pip && pip install --no-cache-dir \
     pydantic \
     pydantic-settings \
     python-dotenv \
-    apscheduler
+    apscheduler \
+    aiolimiter \
+    tenacity
 
 WORKDIR /app
 
