@@ -2,9 +2,13 @@
 
 The agent runs on the host and turns authenticated ``POST /recover`` requests
 from the brain (a Docker container) into host-level recovery actions:
-Scheduled-Task restarts and a compose reapply. These tests cover the pure
-dispatch + auth seams and the compose-reapply command construction without a
-real socket, Scheduled Task, or docker daemon — so they run on Linux CI too.
+Scheduled-Task restarts and a compose reapply. Most of these tests cover the
+pure dispatch + auth seams and the compose-reapply command construction
+without a real socket, Scheduled Task, or docker daemon — so they run on
+Linux CI too. The "socket-level timeout" section near the bottom spins up a
+real ``ThreadingHTTPServer`` on loopback (no Windows-specific pieces
+involved, so still Linux-CI-safe) to prove request-timeout behavior that
+can't be verified through the pure dispatch functions alone.
 
 The script filename is hyphenated (not an importable module name), so we load
 it by path via importlib, the same way it is deployed and run.
@@ -12,6 +16,9 @@ it by path via importlib, the same way it is deployed and run.
 from __future__ import annotations
 
 import importlib.util
+import socket
+import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -400,3 +407,95 @@ def test_restart_process_reports_subprocess_exception(monkeypatch):
     monkeypatch.setattr(agent.subprocess, "run", boom)
     ok, detail = agent._restart_process("cmd")
     assert ok is False and "OSError" in detail
+
+
+# --- socket-level request timeout -------------------------------------------
+# A client that connects and never sends a complete request line occupies a
+# handler thread forever unless RecoveryHandler bounds the read. These spin up
+# a real ThreadingHTTPServer on loopback (127.0.0.1, OS-assigned port) — no
+# Windows-specific pieces involved, so still safe on Linux CI.
+
+
+def test_handler_ships_a_bounded_default_timeout():
+    """RecoveryHandler must override the stdlib's timeout=None default.
+
+    BaseHTTPRequestHandler.timeout is None unless a subclass sets it, which
+    leaves handle_one_request()'s blocking rfile.readline() unbounded — a
+    client that connects and never completes a request line occupies its
+    handler thread forever. This is the one assertion the fixture-based tests
+    below can't cover, since that fixture monkeypatches timeout to a short
+    value to keep the suite fast (so it'd pass even if the shipped default
+    were still None).
+    """
+    assert agent.RecoveryHandler.timeout is not None
+    assert 0 < agent.RecoveryHandler.timeout <= 60
+
+
+@pytest.fixture
+def running_server(monkeypatch):
+    """Real ThreadingHTTPServer on loopback with a short handler timeout.
+
+    Yields (host, port). Restores the original ``timeout`` class attribute
+    (module-level state) on teardown so this test can't leak into others.
+    """
+    monkeypatch.setattr(agent.RecoveryHandler, "timeout", 0.3)
+    monkeypatch.setattr(agent.RecoveryHandler, "_token", "")
+    server = agent.ThreadingHTTPServer(("127.0.0.1", 0), agent.RecoveryHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield server.server_address
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def _get(host_port: tuple[str, int], path: str = "/healthz", timeout: float = 5.0) -> bytes:
+    with socket.create_connection(host_port, timeout=timeout) as s:
+        s.sendall(f"GET {path} HTTP/1.1\r\nHost: x\r\nConnection: close\r\n\r\n".encode())
+        chunks = []
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            chunks.append(chunk)
+        return b"".join(chunks)
+
+
+def test_silent_connection_is_dropped_after_timeout(running_server):
+    """A client that connects and sends nothing must be dropped, not held forever.
+
+    Without RecoveryHandler.timeout set, this client would occupy its handler
+    thread indefinitely (BaseHTTPRequestHandler.handle_one_request()'s blocking
+    ``rfile.readline()`` has no bound).
+    """
+    with socket.create_connection(running_server, timeout=5) as s:
+        start = time.monotonic()
+        # Never send anything. The server-side read must eventually give up.
+        reply = s.recv(4096)
+        elapsed = time.monotonic() - start
+        # A timed-out handler closes without writing a response: EOF (b"").
+        assert reply == b""
+        # Bounded by the fixture's 0.3s handler timeout, generous margin for
+        # scheduler jitter — must NOT be "forever".
+        assert elapsed < 3.0
+
+
+def test_fresh_request_succeeds_while_another_connection_is_silent(running_server):
+    """A hung connection must not block a concurrent, well-formed request.
+
+    ThreadingHTTPServer dedicates one thread per connection, so this should
+    hold regardless of the timeout fix — locks in the invariant a "wedged
+    handler blocks the whole server" theory would violate.
+    """
+    hangers = [socket.create_connection(running_server, timeout=5) for _ in range(10)]
+    try:
+        start = time.monotonic()
+        reply = _get(running_server, "/healthz", timeout=5)
+        elapsed = time.monotonic() - start
+        assert b"200" in reply
+        assert elapsed < 2.0
+    finally:
+        for s in hangers:
+            s.close()

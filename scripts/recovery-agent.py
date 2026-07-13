@@ -446,6 +446,17 @@ class RecoveryHandler(BaseHTTPRequestHandler):
     # Set at startup; empty string means auth is disabled (dev only).
     _token: str = ""
 
+    # BaseHTTPRequestHandler.timeout defaults to None (unbounded). Without
+    # this, a client that opens a connection and never completes a request
+    # line (or a request whose body never arrives) ties up its handler
+    # thread forever — handle_one_request()'s blocking rfile.readline() has
+    # no bound to give up on. A bare TimeoutError from that read is caught by
+    # handle_one_request() itself (logged via log_error, connection closed
+    # cleanly) — it never reaches serve_forever()'s generic handle_error().
+    # Matches TASK_TIMEOUT_SECONDS so one wait budget covers "how long we'll
+    # wait on a subprocess" and "how long we'll wait on a client."
+    timeout = TASK_TIMEOUT_SECONDS
+
     def do_POST(self) -> None:  # noqa: N802
         if self.path != "/recover":
             self.send_error(404, "Not found")

@@ -304,6 +304,47 @@ immediately, and the calling probe confirms success on its next cycle.
 Bash is resolved from `git`'s own location (never the PATH `bash`, which on
 Windows is WSL and can't see Docker or the `C:\` binds).
 
+### Request timeout
+
+`RecoveryHandler.timeout` is set (matches `TASK_TIMEOUT_SECONDS`, 30s) so a
+client that connects and never completes a request line doesn't occupy its
+handler thread forever — `handle_one_request()`'s blocking read now has a
+bound, catches the resulting `TimeoutError` itself, and closes the connection
+cleanly (logged, not a stack-trace dump). Note this bounds _thread lifetime
+per silent connection_, not overall server responsiveness: `ThreadingHTTPServer`
+already dedicates one thread per connection, so a hung connection was never
+able to block a _concurrent_ request even before this fix — confirmed by
+reproduction (20 simultaneous connect-and-silent clients, a fresh request
+still served in the same call). The real value is preventing unbounded thread
+accumulation under a sustained pattern of incomplete connections (a port
+scanner, a misbehaving health-check client with no timeout of its own).
+
+### Own-liveness watchdog
+
+The "Poindexter Recovery Agent" Scheduled Task triggers **at logon, one-shot,
+non-repeating** — nothing relaunches the agent if it crashes or wedges until
+the next logon/reboot. A service can't reliably report its own liveness for
+the purpose of restarting itself (if it's down, it can't answer the probe that
+would trigger its own recovery), so this needs a genuinely separate process —
+the same reason [`docker-watchdog.ps1`](../../scripts/docker-watchdog.ps1)
+exists for the Docker engine.
+
+`scripts/recovery-agent-watchdog.ps1` mirrors that pattern: a real `GET
+/healthz` (not a port-open or process-alive check — those don't catch "port
+held, TCP accepts, but no HTTP response ever completes"), a confirm-before-recycle
+recheck (`-WedgeConfirmSeconds`, default 30s) so a transient blip doesn't
+trigger an unnecessary restart, and `Stop-ScheduledTask` + `Start-ScheduledTask`
+on the agent's task if still unhealthy. It needs to run **elevated**
+(`-RunLevel Highest`, same as `docker-watchdog.ps1`'s own task) because
+`Stop-ScheduledTask` against the (elevated) Recovery Agent task fails with
+"Access is denied" from a non-elevated caller, even as the same Windows user.
+
+Modes: bare invocation (one-shot check), `-Loop -IntervalSeconds N`, and
+`-Install`/`-Uninstall` to register its own 5-minute repeating Scheduled Task
+(`"Poindexter Recovery Agent Watchdog"`). Installing registers a persistent
+elevated background task — run `-Install` yourself rather than scripting it
+unattended.
+
 ## Liveness probes
 
 The brain runs these every 5-minute cycle. Two patterns:
@@ -652,6 +693,10 @@ The agent is host-local. After changing `scripts/recovery-agent.py` / `.cmd`:
    `Poindexter Recovery Agent,Poindexter MCP HTTP,Poindexter-DeployCheckoutSync,Docker Engine Watchdog`).
    Confirm with an authenticated `GET http://localhost:9841/tasks?name=Poindexter+MCP+HTTP`
    → per-task JSON status.
+5. One-time: install the [own-liveness watchdog](#own-liveness-watchdog) —
+   `.\scripts\recovery-agent-watchdog.ps1 -Install` from an elevated
+   PowerShell prompt — so a crashed or wedged agent recovers within one 5-min
+   cycle instead of waiting for next logon/reboot.
 
 The brain probes are image-baked, so a probe code change needs an image rebuild,
 not just a restart. The 10-min `deploy-checkout-sync.ps1` task does this
