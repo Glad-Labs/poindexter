@@ -313,15 +313,24 @@ _fact_overrides_ts: float = 0.0
 _FACT_OVERRIDES_TTL = 300  # seconds
 
 
-def _load_fact_overrides_sync() -> list[tuple[str, str, str]]:
+def _load_fact_overrides_sync(site_config: Any = None) -> list[tuple[str, str, str]]:
     """Load active fact overrides from DB (sync, cached).
 
     Returns list of (pattern, correct_fact, severity) tuples.
     Falls back to empty list if DB unavailable.
+
+    Only attempts the read when ``site_config`` is a real, DI-provided
+    instance backed by a live pool — mirrors ``SiteConfig.get_secret()``'s
+    own ``if self._pool is not None`` gate. A bare ``SiteConfig()`` (unit
+    tests, scripts with no DB) never reaches the network; it just returns
+    whatever's already cached (empty on a fresh process).
     """
     global _fact_overrides_cache, _fact_overrides_ts
     now = _time.time()
     if _fact_overrides_cache and (now - _fact_overrides_ts) < _FACT_OVERRIDES_TTL:
+        return _fact_overrides_cache
+
+    if site_config is None or getattr(site_config, "_pool", None) is None:
         return _fact_overrides_cache
 
     try:
@@ -1174,7 +1183,7 @@ _HALLUCINATED_REF_PATTERNS = [
 # common acronyms, dev tools, common English nouns the writer uses
 # narratively. Operator can extend at runtime via
 # ``app_settings.hallucination_whitelist_additions`` — see
-# ``_load_hallucination_whitelist_additions_sync`` below.
+# ``_get_hallucination_whitelist`` below.
 _HALLUCINATION_WHITELIST_BASE = {
     # Ambient project-local / generic names we don't want pattern-matching on
     "glad-labs", "poindexter", "ollama",
@@ -1331,95 +1340,32 @@ _HALLUCINATION_WHITELIST_BASE = {
 }
 
 
-# Mutable view of the whitelist — base set + DB-loaded additions. Code
-# reads through ``_get_hallucination_whitelist()`` which merges base +
-# DB. Direct reads of ``_HALLUCINATION_WHITELIST`` are also supported
-# for back-compat (now an alias of the base set).
+# Mutable view of the whitelist — base set + operator-supplied additions.
+# Code reads through ``_get_hallucination_whitelist(site_config)`` which
+# merges base + additions. Direct reads of ``_HALLUCINATION_WHITELIST`` are
+# also supported for back-compat (now an alias of the base set).
 _HALLUCINATION_WHITELIST = _HALLUCINATION_WHITELIST_BASE
 
 
-_whitelist_additions_cache: set[str] = set()
-_whitelist_additions_ts: float = 0.0
-_WHITELIST_ADDITIONS_TTL = 300  # 5-minute cache, mirrors fact_overrides
+def _get_hallucination_whitelist(site_config: Any = None) -> set[str]:
+    """Effective whitelist = static base + operator-supplied additions.
 
+    Additions come from ``app_settings.hallucination_whitelist_additions``
+    (comma-separated), read straight off the injected ``site_config``'s
+    already-loaded settings cache — no ad-hoc DB connection here. Operator
+    workflow is unchanged: insert/update the app_settings row to add new
+    terms when the validator flags something that's legitimately a real
+    name; ``site_config``'s own minute-ly reload picks it up, no code
+    change or restart required.
 
-def _load_hallucination_whitelist_additions_sync() -> set[str]:
-    """Load operator-supplied whitelist additions from
-    ``app_settings.hallucination_whitelist_additions`` (comma-separated).
-    Sync, cached 5 minutes. Mirrors ``_load_fact_overrides_sync`` —
-    same async-from-sync bridge, same fallback-to-cache on DB error.
-
-    Operator workflow: insert/update the app_settings row to add new
-    terms when the validator flags something that's legitimately a
-    real name. No code change, no restart required (TTL <= 5 min)."""
-    global _whitelist_additions_cache, _whitelist_additions_ts
-    now = _time.time()
-    if _whitelist_additions_cache and (now - _whitelist_additions_ts) < _WHITELIST_ADDITIONS_TTL:
-        return _whitelist_additions_cache
-
-    try:
-        import asyncio
-        import sys
-        from pathlib import Path
-        try:
-            _proj = Path(__file__).resolve()
-            for _p in _proj.parents:
-                if (_p / "brain" / "bootstrap.py").is_file():
-                    if str(_p) not in sys.path:
-                        sys.path.insert(0, str(_p))
-                    break
-            from brain.bootstrap import resolve_database_url
-            db_url = resolve_database_url() or ""
-        except Exception:
-            db_url = ""
-        if not db_url:
-            return _whitelist_additions_cache
-
-        async def _fetch():
-            import asyncpg
-            conn = await asyncpg.connect(db_url, timeout=5)
-            try:
-                row = await conn.fetchrow(
-                    "SELECT value FROM app_settings "
-                    "WHERE key = 'hallucination_whitelist_additions'",
-                )
-                if row is None or not row["value"]:
-                    return set()
-                parts = [p.strip().lower() for p in str(row["value"]).split(",")]
-                return {p for p in parts if p}
-            finally:
-                await conn.close()
-
-        try:
-            loop = asyncio.get_running_loop()
-        except RuntimeError:
-            loop = None
-        if loop and loop.is_running():
-            import concurrent.futures
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(asyncio.run, _fetch())
-                result = future.result(timeout=5)
-        else:
-            result = asyncio.run(_fetch())
-
-        _whitelist_additions_cache = result
-        _whitelist_additions_ts = now
-        logger.debug(
-            "[VALIDATOR] Loaded %d hallucination whitelist additions from DB",
-            len(result),
-        )
-    except Exception as e:
-        logger.warning(
-            "[VALIDATOR] hallucination whitelist additions DB load failed "
-            "(using cache): %s", e,
-        )
-    return _whitelist_additions_cache
-
-
-def _get_hallucination_whitelist() -> set[str]:
-    """Effective whitelist = static base + DB-loaded additions. Use this
-    at call sites instead of the raw base set."""
-    return _HALLUCINATION_WHITELIST_BASE | _load_hallucination_whitelist_additions_sync()
+    Returns just the base set when no ``site_config`` is supplied (callers
+    that invoke the free functions directly without threading one through).
+    """
+    if site_config is None:
+        return _HALLUCINATION_WHITELIST_BASE
+    raw = site_config.get("hallucination_whitelist_additions", "")
+    additions = {p.strip().lower() for p in raw.split(",") if p.strip()}
+    return _HALLUCINATION_WHITELIST_BASE | additions
 
 
 # Source / config file extensions. A backtick token ending in one of these
@@ -1467,7 +1413,7 @@ def _looks_like_file_or_path(raw: str) -> bool:
     return raw.rsplit(".", 1)[-1].lower() in _SOURCE_FILE_EXTENSIONS
 
 
-def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
+def _extract_library_candidates(text: str, site_config: Any = None) -> list[tuple[str, str]]:
     """Pull potential library/API references from the text.
 
     Returns list of (matched_raw, normalized_root) tuples. The "root" is
@@ -1479,7 +1425,7 @@ def _extract_library_candidates(text: str) -> list[tuple[str, str]]:
     seen: set[tuple[str, str]] = set()
     out: list[tuple[str, str]] = []
     clean = _strip_html(text or "")
-    whitelist = _get_hallucination_whitelist()
+    whitelist = _get_hallucination_whitelist(site_config)
     for pattern in _HALLUCINATED_REF_PATTERNS:
         for m in pattern.finditer(clean):
             raw = m.group(1)
@@ -1525,6 +1471,7 @@ def _detect_hallucinated_references(
     content: str,
     topic: str,
     tags: list[str] | None = None,
+    site_config: Any = None,
 ) -> list[ValidationIssue]:
     """Flag library/API references that don't match any known source list.
 
@@ -1534,7 +1481,7 @@ def _detect_hallucinated_references(
     whether to upgrade any of them to critical.
     """
     issues: list[ValidationIssue] = []
-    candidates = _extract_library_candidates(f"{title or ''}\n{content or ''}")
+    candidates = _extract_library_candidates(f"{title or ''}\n{content or ''}", site_config=site_config)
     if not candidates:
         return issues
 
@@ -1955,7 +1902,7 @@ def validate_content(
     # to critical if the same category fires > N times (same plumbing as
     # #91's unlinked_citation path).
     if _enabled("hallucinated_reference"):
-        issues.extend(_detect_hallucinated_references(title, content, topic, tags))
+        issues.extend(_detect_hallucinated_references(title, content, topic, tags, site_config=_sc))
 
     # 5d. Code-block density (GH-234). Soft signal -- tech-tagged posts
     # with too little runnable code get a warning (never critical) so
@@ -2115,7 +2062,7 @@ def validate_content(
     # Each row has its own explanation so the rewrite prompt carries the
     # correction, not just "you lied". Manageable via pgAdmin, no redeploy.
     if _enabled("known_wrong_fact"):
-        _fact_overrides = _load_fact_overrides_sync()
+        _fact_overrides = _load_fact_overrides_sync(site_config=_sc)
         clean_full = _strip_html(full_text)
         for _hw_pat, _hw_reason, _hw_sev in _fact_overrides:
             for _hw_line_idx, _hw_line in enumerate(clean_full.split("\n"), 1):

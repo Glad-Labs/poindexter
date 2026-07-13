@@ -213,12 +213,23 @@ def _load_rules_sync() -> dict[str, _ValidatorRule]:
     return out
 
 
-def _get_cached_rules() -> dict[str, _ValidatorRule]:
-    """Return the cached rules dict, refreshing if the TTL has expired."""
+def _get_cached_rules(site_config: Any = None) -> dict[str, _ValidatorRule]:
+    """Return the cached rules dict, refreshing if the TTL has expired.
+
+    Only attempts a fresh DB load when ``site_config`` is a real,
+    DI-provided instance backed by a live pool — mirrors
+    ``SiteConfig.get_secret()``'s own ``if self._pool is not None`` gate,
+    and the same fix applied to ``content_validator._load_fact_overrides_sync``.
+    A bare ``SiteConfig()`` (unit tests, scripts with no DB) never reaches
+    the network; it just returns whatever's already cached (fail-open
+    empty on a fresh process).
+    """
     global _cache, _cache_loaded_at, _cache_load_failed
     now = time.time()
     with _cache_lock:
         if _cache and (now - _cache_loaded_at) < _CACHE_TTL_SECONDS:
+            return _cache
+        if site_config is None or getattr(site_config, "_pool", None) is None:
             return _cache
         rules = _load_rules_sync()
         if rules:
@@ -334,7 +345,7 @@ def is_validator_enabled(
     ):
         return False
 
-    rules = _get_cached_rules()
+    rules = _get_cached_rules(site_config)
     rule = rules.get(name)
     if rule is None:
         return True  # fail open — unknown rule means "no DB row; run it"

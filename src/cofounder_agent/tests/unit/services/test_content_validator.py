@@ -987,7 +987,9 @@ class TestKnownWrongHardwareFacts:
     def _mock_fact_overrides(self, monkeypatch):
         """Inject test patterns without hitting the DB."""
         import modules.content.content_validator as cv
-        monkeypatch.setattr(cv, "_load_fact_overrides_sync", lambda: self._TEST_OVERRIDES)
+        monkeypatch.setattr(
+            cv, "_load_fact_overrides_sync", lambda *_a, **_kw: self._TEST_OVERRIDES
+        )
 
     def test_rtx_5090_24gb_detected(self):
         content = "The NVIDIA GeForce RTX 5090, with its massive VRAM (24GB), allows local inference."
@@ -1279,7 +1281,7 @@ class TestHallucinatedReferenceDetection:
             f"real asyncio APIs should not be flagged, got: {[h.matched_text for h in hallucinated]}"
         )
 
-    def test_quantization_precision_vocab_not_flagged(self, monkeypatch):
+    def test_quantization_precision_vocab_not_flagged(self):
         """Precision / quantization formats (fp16, int8, int4, bf16, qat, gguf,
         gptq, awq) are core AI/ML + hardware vocabulary, not libraries. A
         quantization post — squarely an AI/ML brand niche — was hard-rejected
@@ -1293,12 +1295,9 @@ class TestHallucinatedReferenceDetection:
         (`` `int8` ``, pattern 3) and verb-prefixed uppercase (``use FP16`` —
         the real prod trigger, pattern 5). A naive `` `FP16` `` (backtick-upper)
         matches no pattern and would never reach the whitelist, so it can't
-        guard the fix. DB additions are patched empty so this pins the CODE
-        base list, not an operator override."""
-        import modules.content.content_validator as _cv
-        monkeypatch.setattr(
-            _cv, "_load_hallucination_whitelist_additions_sync", lambda: set()
-        )
+        guard the fix. ``_SC`` has no ``hallucination_whitelist_additions`` key
+        set, so additions are empty here without any patching — this pins the
+        CODE base list, not an operator override."""
         content = (
             "Quantization shrinks models to fit consumer VRAM. Most ship in "
             "`fp16`, and teams adopt `int8` or `int4` to halve or quarter the "

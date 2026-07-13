@@ -423,24 +423,20 @@ class TestExpandedHallucinationWhitelist:
 class TestHallucinationWhitelistAdditions:
     """``app_settings.hallucination_whitelist_additions`` lets the
     operator drop in newly-flagged terms without a code change. Mirrors
-    the ``fact_overrides`` pattern."""
+    the ``fact_overrides`` pattern.
 
-    def setup_method(self):
-        # Clear the 5-minute cache between tests
-        cv._whitelist_additions_cache = set()
-        cv._whitelist_additions_ts = 0.0
-
-    def teardown_method(self):
-        cv._whitelist_additions_cache = set()
-        cv._whitelist_additions_ts = 0.0
+    Additions are read straight off the injected ``site_config``'s
+    already-loaded settings cache (no ad-hoc DB connection), so tests
+    seed a ``SiteConfig(initial_config=...)`` instead of monkeypatching
+    a DB loader.
+    """
 
     def test_get_whitelist_includes_db_additions(self):
         """``_get_hallucination_whitelist()`` merges base + additions."""
-        with patch.object(
-            cv, "_load_hallucination_whitelist_additions_sync",
-            return_value={"acmecorp", "fooframework"},
-        ):
-            effective = cv._get_hallucination_whitelist()
+        sc = SiteConfig(initial_config={
+            "hallucination_whitelist_additions": "acmecorp,fooframework",
+        })
+        effective = cv._get_hallucination_whitelist(sc)
         assert "acmecorp" in effective
         assert "fooframework" in effective
         # Base entries still present
@@ -448,30 +444,22 @@ class TestHallucinationWhitelistAdditions:
 
     def test_db_additions_skip_candidate_extraction(self):
         """A term added via app_settings is NOT flagged as a hallucination."""
-        with patch.object(
-            cv, "_load_hallucination_whitelist_additions_sync",
-            return_value={"madeupframework"},
-        ):
-            result = _extract_library_candidates(
-                "Try `madeupframework` for your next project."
-            )
+        sc = SiteConfig(initial_config={
+            "hallucination_whitelist_additions": "madeupframework",
+        })
+        result = _extract_library_candidates(
+            "Try `madeupframework` for your next project.", site_config=sc,
+        )
         norms = [norm for _raw, norm in result]
         assert "madeupframework" not in norms
 
-    def test_db_load_failure_falls_back_to_cache(self):
-        """If the DB read raises, the cached set is returned — base
-        whitelist still functional, no exception crosses the boundary."""
-        # Seed the cache so we can verify fallback
-        cv._whitelist_additions_cache = {"cachedterm"}
-        cv._whitelist_additions_ts = 0.0  # force re-fetch
-        # Sabotage the DB-URL resolver to simulate failure
-        with patch.object(
-            cv, "_load_hallucination_whitelist_additions_sync",
-            side_effect=lambda: cv._whitelist_additions_cache,
-        ):
-            effective = cv._get_hallucination_whitelist()
-        assert "cachedterm" in effective
-        assert "git" in effective  # base intact
+    def test_no_site_config_returns_base_only(self):
+        """No ``site_config`` (e.g. a caller invoking the free function
+        directly) falls back to the base whitelist — never reaches for
+        a network/DB call."""
+        effective = cv._get_hallucination_whitelist(None)
+        assert "git" in effective
+        assert "acmecorp" not in effective
 
 
 # ---------------------------------------------------------------------------
