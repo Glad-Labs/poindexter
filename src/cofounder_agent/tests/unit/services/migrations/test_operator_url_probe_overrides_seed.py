@@ -42,6 +42,9 @@ import pytest
 # (localhost:3000, localhost:8002) that wedges from inside the brain container
 # even when the backend is healthy on the compose net — the dominant operator
 # pager-fatigue source found 2026-07-12 (178 Telegram + 178 Discord pages/24h).
+# wan_server_url (glad-labs-stack#2395 follow-up) is the same "bare base URL,
+# no root GET handler" bug class as chatterbox — 404s every single cycle
+# (unconditionally, not a flaky wedge) until pointed at /health.
 EXPECTED_OVERRIDE_KEYS = {
     "api_base_url",
     "cloudflare_beacon_url",
@@ -59,6 +62,7 @@ EXPECTED_OVERRIDE_KEYS = {
     "voice_agent_claude_code_host_brain_url",
     "voice_agent_stt_base_url",
     "voice_agent_tts_base_url",
+    "wan_server_url",
 }
 
 
@@ -212,8 +216,8 @@ def test_speaches_backed_overrides_probe_health(baseline_seeds_text: str) -> Non
 
 
 def test_service_base_overrides_probe_compose_dns_health(baseline_seeds_text: str) -> None:
-    """chatterbox / grafana / worker API-base overrides must probe the
-    compose-network service name's health endpoint, not localhost /
+    """chatterbox / grafana / worker API-base / wan-server overrides must probe
+    the compose-network service name's health endpoint, not localhost /
     host.docker.internal (glad-labs-stack#2395/#2397).
 
     These app_settings hold host-published-port URLs (``localhost:3000``,
@@ -221,11 +225,12 @@ def test_service_base_overrides_probe_compose_dns_health(baseline_seeds_text: st
     container (``RemoteProtocolError: server disconnected`` / ``ConnectError``)
     even though the backend is healthy on the compose net — this was the
     dominant operator pager-fatigue source (178 Telegram + 178 Discord
-    deliveries/24h, 2026-07-12). chatterbox's OpenAI-compat ``/v1`` base also
-    has no GET handler (bare HEAD/GET 404s). Regression guard: same shape as
-    the data_fabric/speaches overrides above — if this baseline entry is ever
-    dropped or repointed at a host-published port, the false-page class
-    reopens.
+    deliveries/24h, 2026-07-12). chatterbox's and wan-server's OpenAI-compat-
+    style base paths also have no GET handler (bare HEAD/GET 404s every
+    cycle, unconditionally — not just an intermittent wedge). Regression
+    guard: same shape as the data_fabric/speaches overrides above — if this
+    baseline entry is ever dropped or repointed at a host-published port, the
+    false-page class reopens.
     """
     overrides = _overrides(baseline_seeds_text)
     expected_probe_urls = {
@@ -233,6 +238,7 @@ def test_service_base_overrides_probe_compose_dns_health(baseline_seeds_text: st
         "grafana_url": "http://grafana:3000/api/health",
         "api_base_url": "http://worker:8002/api/health",
         "internal_api_base_url": "http://worker:8002/api/health",
+        "wan_server_url": "http://wan-server:9840/health",
     }
     for key, want in expected_probe_urls.items():
         entry = overrides.get(key)
