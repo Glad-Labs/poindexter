@@ -52,8 +52,17 @@ class TestEmitRagasScoreAudit:
         """A single -1.0 sentinel (one metric judge-LLM hiccupped) must
         NOT drag the aggregate to 0 — the panel's trend line would
         plummet on a transient failure that's already surfaced through
-        the rail's own warning log."""
-        with patch("services.audit_log.audit_log_bg") as mock_bg:
+        the rail's own warning log.
+
+        ``utils.findings.emit_finding`` is also mocked here (poindexter#847
+        fires a ``qa_rail_degraded`` finding alongside the audit write on
+        any sentinel metric — covered separately in
+        ``TestEmitRagasDegradedMetricsFinding``) so this test stays scoped
+        to the ``ragas_score`` write contract only."""
+        with (
+            patch("services.audit_log.audit_log_bg") as mock_bg,
+            patch("utils.findings.emit_finding"),
+        ):
             _emit_ragas_score_audit(
                 {"faithfulness": 0.9, "answer_relevancy": -1.0, "context_precision": 0.7},
                 topic="t",
@@ -72,8 +81,13 @@ class TestEmitRagasScoreAudit:
         """If ALL three metrics returned -1.0, Ragas failed entirely.
         The rail's evaluate_sample already logged a warning — emitting
         a ``score=0`` row here would pollute the Grafana trend line
-        with a hard-zero on each transient outage."""
-        with patch("services.audit_log.audit_log_bg") as mock_bg:
+        with a hard-zero on each transient outage. (The finding fired
+        alongside is covered separately — see
+        ``TestEmitRagasDegradedMetricsFinding.test_full_failure_also_emits_degraded_finding``.)"""
+        with (
+            patch("services.audit_log.audit_log_bg") as mock_bg,
+            patch("utils.findings.emit_finding"),
+        ):
             _emit_ragas_score_audit(
                 {"faithfulness": -1.0, "answer_relevancy": -1.0, "context_precision": -1.0},
                 topic="t",
@@ -129,3 +143,106 @@ class TestEmitRagasScoreAudit:
         details = mock_bg.call_args[0][2]
         # 1/3 averaged = 1/3; rounding to 4dp = 0.3333
         assert details["score"] == pytest.approx(0.3333, abs=1e-4)
+
+
+@pytest.mark.unit
+class TestEmitRagasDegradedMetricsFinding:
+    """poindexter#847: a sentineled metric used to be invisible outside a
+    reduced ``metric_count`` buried in the audit_log JSON. These cover the
+    ``qa_rail_degraded`` finding that now makes it visible."""
+
+    def test_partial_failure_emits_degraded_finding(self):
+        with (
+            patch("services.audit_log.audit_log_bg"),
+            patch("utils.findings.emit_finding") as mock_finding,
+        ):
+            _emit_ragas_score_audit(
+                {"faithfulness": 0.9, "answer_relevancy": -1.0, "context_precision": 0.7},
+                topic="t",
+                task_id="task-1",
+            )
+
+        mock_finding.assert_called_once()
+        kwargs = mock_finding.call_args.kwargs
+        assert kwargs["kind"] == "qa_rail_degraded"
+        assert kwargs["severity"] == "warn"
+        assert kwargs["dedup_key"] == "qa_rail_degraded:ragas:answer_relevancy"
+        assert kwargs["extra"]["failed_metrics"] == ["answer_relevancy"]
+        assert kwargs["extra"]["task_id"] == "task-1"
+
+    def test_full_failure_also_emits_degraded_finding(self):
+        """The audit_log write is skipped on full failure (no average to
+        report), but the finding must still fire — full failure is the
+        MOST degraded case, not an exemption."""
+        with (
+            patch("services.audit_log.audit_log_bg") as mock_bg,
+            patch("utils.findings.emit_finding") as mock_finding,
+        ):
+            _emit_ragas_score_audit(
+                {"faithfulness": -1.0, "answer_relevancy": -1.0, "context_precision": -1.0},
+                topic="t",
+                task_id="task-1",
+            )
+
+        mock_bg.assert_not_called()
+        mock_finding.assert_called_once()
+        kwargs = mock_finding.call_args.kwargs
+        assert kwargs["extra"]["failed_metrics"] == [
+            "answer_relevancy",
+            "context_precision",
+            "faithfulness",
+        ]
+        assert kwargs["dedup_key"] == (
+            "qa_rail_degraded:ragas:answer_relevancy,context_precision,faithfulness"
+        )
+
+    def test_healthy_run_does_not_emit_finding(self):
+        with (
+            patch("services.audit_log.audit_log_bg"),
+            patch("utils.findings.emit_finding") as mock_finding,
+        ):
+            _emit_ragas_score_audit(
+                {"faithfulness": 0.8, "answer_relevancy": 0.9, "context_precision": 0.7},
+                topic="t",
+                task_id=None,
+            )
+        mock_finding.assert_not_called()
+
+    def test_dedup_key_is_metric_based_not_task_scoped(self):
+        """The dedup_key must stay stable across calls with different
+        task_ids — otherwise every post would mint a distinct fingerprint
+        and the alert_dispatcher could never collapse the chronic-failure
+        case down to a single page (findings_alert_router's whole reason
+        for existing)."""
+        with (
+            patch("services.audit_log.audit_log_bg"),
+            patch("utils.findings.emit_finding") as mock_finding,
+        ):
+            _emit_ragas_score_audit(
+                {"faithfulness": 0.9, "answer_relevancy": -1.0, "context_precision": 0.7},
+                topic="t",
+                task_id="task-A",
+            )
+            _emit_ragas_score_audit(
+                {"faithfulness": 0.9, "answer_relevancy": -1.0, "context_precision": 0.7},
+                topic="t",
+                task_id="task-B",
+            )
+        keys = {c.kwargs["dedup_key"] for c in mock_finding.call_args_list}
+        assert keys == {"qa_rail_degraded:ragas:answer_relevancy"}
+
+    def test_finding_emission_failure_does_not_raise(self):
+        """Mirrors the audit_log_bg resilience test — the finding call is
+        also best-effort and must never crash the Ragas caller."""
+        with (
+            patch("services.audit_log.audit_log_bg"),
+            patch(
+                "utils.findings.emit_finding",
+                side_effect=RuntimeError("audit_log unavailable"),
+            ),
+        ):
+            _emit_ragas_score_audit(
+                {"faithfulness": 0.9, "answer_relevancy": -1.0, "context_precision": 0.7},
+                topic="t",
+                task_id=None,
+            )

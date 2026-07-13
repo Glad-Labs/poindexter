@@ -303,6 +303,50 @@ def _coerce_metric(value: Any) -> float:
     return score if math.isfinite(score) else -1.0
 
 
+def _emit_degraded_metrics_finding(failed_metrics: list[str], task_id: str | None) -> None:
+    """Make a silently-sentineled Ragas metric VISIBLE (poindexter#847).
+
+    ``_emit_ragas_score_audit`` used to just quietly drop a -1.0 metric
+    from the averaged ``ragas_score`` audit row, with a reduced
+    ``metric_count`` as the only trace — invisible on any dashboard. The
+    known repeat offender is Ragas 0.4.3's ``ResponseRelevancy.
+    calculate_similarity`` calling the sync ``embed_query``/
+    ``embed_documents`` directly against our async-only
+    ``_DispatcherEmbeddings``, so ``answer_relevancy`` fails on every
+    call — quietly averaging the aggregate score over 2 of 3 dimensions
+    for as long as it goes unnoticed. One finding per distinct
+    failed-metric combination, deduped (not task-scoped) so a chronic
+    per-post failure pages once instead of once per post — the
+    downstream findings_alert_router/alert_dispatcher chain owns
+    collapsing repeat fires, not this call site.
+    """
+    key = ",".join(failed_metrics)
+    try:
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="ragas_eval.evaluate_sample",
+            kind="qa_rail_degraded",
+            severity="warn",
+            title=f"Ragas metric(s) failing: {key}",
+            body=(
+                f"evaluate_sample() collapsed {key} to the -1.0 sentinel "
+                "(Ragas raised or returned a non-finite score under "
+                "raise_exceptions=False). The metric is silently excluded "
+                "from the averaged ragas_score, so the aggregate trend no "
+                "longer reflects all three dimensions. Rail is advisory — "
+                "this does not block publish. See poindexter#847."
+            ),
+            dedup_key=f"qa_rail_degraded:ragas:{key}",
+            extra={"failed_metrics": failed_metrics, "task_id": task_id},
+        )
+    except Exception:  # noqa: BLE001  # silent-ok: emit_finding is fire-and-forget
+        # by contract (utils.findings docstring says it never raises); this only
+        # fires if that contract itself breaks. Mirrors the identical guard in
+        # deepeval_rails._surface_deepeval_degraded.
+        logger.debug("[ragas] degraded-metric finding emit skipped", exc_info=True)
+
+
 def _emit_ragas_score_audit(
     scores: dict[str, float],
     topic: str,
@@ -318,11 +362,16 @@ def _emit_ragas_score_audit(
 
     Only non-sentinel metrics (score >= 0) feed the average — a
     Ragas judge-LLM hiccup on a single metric shouldn't tank the
-    aggregate trend line. Skipped entirely when ALL metrics returned
-    -1.0 (full Ragas failure — already surfaced through the warning
-    log path above).
+    aggregate trend line. Any sentinel metric also raises a
+    ``qa_rail_degraded`` finding (poindexter#847) — the audit row's
+    reduced ``metric_count`` alone was invisible on any dashboard.
+    Skipped entirely when ALL metrics returned -1.0 (full Ragas
+    failure — already surfaced through the warning log path above).
     """
     valid = {k: v for k, v in scores.items() if v >= 0}
+    failed = sorted(k for k, v in scores.items() if v < 0)
+    if failed:
+        _emit_degraded_metrics_finding(failed, task_id)
     if not valid:
         return  # full Ragas failure — nothing useful to record
 
