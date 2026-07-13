@@ -105,9 +105,13 @@ def rewrite_as_blog_topic(title: str) -> str:
     Returns the empty string for titles that should be filtered out —
     caller uses that to decide whether to keep the topic.
 
-    Moved verbatim from ``TopicDiscovery._rewrite_as_blog_topic`` so
-    sources don't have to instantiate the dispatcher just to reach
-    this helper.
+    Originally moved verbatim from ``TopicDiscovery._rewrite_as_blog_topic``.
+    A "strip trailing author name" pass (2026-04-13) was removed here
+    (2026-07-13): it matched any 2-3 Title-Case words preceded by a
+    lowercase character, which is indistinguishable from an ordinary
+    headline ending ("...Are Wearing Us Out") and was silently mangling
+    real titles on every tap run — the single largest source of
+    ``topic_sanity_rejected`` findings across devto/hackernews/web_search.
     """
     # Reject product launches / announcements
     if re.match(r"^(?:Launch|Show|Ask|Tell)\s+HN\b", title, re.IGNORECASE):
@@ -134,14 +138,11 @@ def rewrite_as_blog_topic(title: str) -> str:
     title = re.sub(r"\s*[-–—]\s*\w+\.?\w*$", "", title)
     # Remove leading product-name + colon ("Freestyle: Sandboxes..." → "Sandboxes...")
     title = re.sub(r"^[A-Z][\w]*(?:\s+[A-Z][\w]*)?\s*[:–—]\s*", "", title)
-    # Strip trailing author names when title is long enough
-    if len(title.split()) >= 6:
-        title = re.sub(
-            r"(?<=[a-z.,;:)])\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+){1,2}\s*$",
-            "", title,
-        )
-    # Reject if too short after cleanup
+    # Reject if too short after cleanup — both a character floor (catches
+    # single long words) and a word-count floor (catches short sequences
+    # of short words), since the suffix-strip passes above can legitimately
+    # collapse a "Brand | Tagline"-style title down to just the brand name.
     title = title.strip()
-    if len(title) < 10:
+    if len(title) < 10 or len(title.split()) < 2:
         return ""
     return title

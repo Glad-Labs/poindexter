@@ -77,6 +77,35 @@ class TestRewriteAsBlogTopic:
         out = rewrite_as_blog_topic(title)
         assert out == title
 
+    def test_titlecase_ending_not_mistaken_for_author_byline(self):
+        # Real dev.to article (fetched live 2026-07-13, 27 reactions —
+        # qualifies for DevtoSource). "Wearing Us Out" is ordinary title
+        # content, not an author name, but the old trailing-author-strip
+        # regex deleted it anyway: it only checks that the *character*
+        # before the stripped words is lowercase, which is equally true
+        # of "...Reviews Are Wearing Us Out" (a real headline ending) and
+        # "...by Scott Rose" (an actual glued-on byline). This exact
+        # mangling repeated hourly and was the single largest source of
+        # tap_builtin_topic_source:topic_sanity_rejected findings (226 of
+        # 376 drops / 63 occurrences of this one title over 7 days).
+        title = "Return on Attention: Why AI Code Reviews Are Wearing Us Out"
+        assert rewrite_as_blog_topic(title) == title
+
+    def test_titlecase_ending_not_mistaken_for_author_byline_hackernews(self):
+        # Real HN front-page story (fetched live 2026-07-13, score 76).
+        # Same failure mode via a different source, confirming the bug
+        # is in the shared filter, not source-specific.
+        title = 'Benchmarking 15 "E-Waste" GPUs with Modern Workloads'
+        assert rewrite_as_blog_topic(title) == title
+
+    def test_rejects_when_cleanup_collapses_to_single_word(self):
+        # Site-suffix stripping (the "| Tagline" pass) can legitimately
+        # remove everything after a pipe, but the remainder must still be
+        # a real multi-word topic — not a bare brand name that happens to
+        # clear the character-length floor. Mirrors the "Perplexity"
+        # too_few_alpha_words findings seen in prod from WebSearchSource.
+        assert rewrite_as_blog_topic("Perplexity | Ask Anything, Get Answers") == ""
+
 
 class TestIsNewsOrJunk:
     def test_news_keywords(self):
