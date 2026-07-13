@@ -53,6 +53,21 @@ def _post_row(**overrides) -> dict:
     return row
 
 
+def _list_row(**overrides) -> dict:
+    """A full social_post_drafts row as list_drafts' SELECT d.*, ... returns
+    it — includes every column _row_to_dataclass reads, unlike _draft_row
+    (which only carries approve_draft's narrower first-fetchrow columns)."""
+    row = {
+        "id": "d-1", "pipeline_task_id": "task-1", "post_id": None,
+        "platform": "twitter", "content": "copy", "platform_config": "{}",
+        "status": "pending", "postiz_post_id": None, "error": None,
+        "retry_count": 0, "last_retry_at": None, "created_at": None,
+        "approved_at": None, "posted_at": None, "resolved_post_status": None,
+    }
+    row.update(overrides)
+    return row
+
+
 # ---------------------------------------------------------------------------
 # create_draft
 # ---------------------------------------------------------------------------
@@ -206,6 +221,43 @@ async def test_reject_draft_sets_status():
     _conn.execute.assert_called_once()
     sql = _conn.execute.call_args[0][0]
     assert "rejected" in sql.lower()
+
+
+# ---------------------------------------------------------------------------
+# list_drafts — post_status (resolved via post_id or task metadata), so
+# callers (the console's action inbox) can tell a genuinely-approvable draft
+# from one that would 409 (post not published yet — see approve_draft's
+# post-link gate). Regression: the inbox surfaced drafts as "up for
+# approval" before their post was approved, so every click 409'd.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_list_drafts_includes_resolved_post_status():
+    pool, _conn = _make_pool(fetch=[_list_row(resolved_post_status="published")])
+    svc = SocialDraftsService()
+    drafts = await svc.list_drafts(None, None, None, pool)
+    assert drafts[0].post_status == "published"
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_post_status_none_when_no_post_yet():
+    pool, _conn = _make_pool(fetch=[_list_row(resolved_post_status=None)])
+    svc = SocialDraftsService()
+    drafts = await svc.list_drafts(None, None, None, pool)
+    assert drafts[0].post_status is None
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_query_resolves_post_by_id_or_task_metadata():
+    """The join must resolve the same way approve_draft's own _resolve_post
+    does: post_id when linked, else the latest posts row matching
+    pipeline_task_id metadata — one source of truth for both code paths."""
+    pool, conn = _make_pool(fetch=[])
+    svc = SocialDraftsService()
+    await svc.list_drafts(None, None, None, pool)
+    sql = conn.fetch.call_args[0][0].lower()
+    assert "p.id = d.post_id" in sql
+    assert "metadata->>'pipeline_task_id'" in sql
 
 
 # ---------------------------------------------------------------------------

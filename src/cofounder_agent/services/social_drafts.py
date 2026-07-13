@@ -104,6 +104,7 @@ class SocialDraftRow:
     created_at: datetime
     approved_at: datetime | None
     posted_at: datetime | None
+    post_status: str | None
 
 
 class SocialDraftsService:
@@ -363,19 +364,40 @@ class SocialDraftsService:
         status: str | None,
         pool: Any,
     ) -> list[SocialDraftRow]:
+        """List drafts, each carrying its resolved post_status.
+
+        post_status lets callers (the console's action inbox) distinguish a
+        genuinely-approvable draft from one that would 409 on approve_draft's
+        post-link gate (post not 'published' yet, or no posts row at all) —
+        the same resolution _resolve_post uses: post_id when linked, else the
+        latest posts row matching pipeline_task_id metadata.
+        """
         conditions: list[str] = []
         args: list[Any] = []
         if post_id:
             args.append(post_id)
-            conditions.append(f"post_id = ${len(args)}")
+            conditions.append(f"d.post_id = ${len(args)}")
         if pipeline_task_id:
             args.append(pipeline_task_id)
-            conditions.append(f"pipeline_task_id = ${len(args)}")
+            conditions.append(f"d.pipeline_task_id = ${len(args)}")
         if status:
             args.append(status)
-            conditions.append(f"status = ${len(args)}")
+            conditions.append(f"d.status = ${len(args)}")
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
-        sql = f"SELECT * FROM social_post_drafts {where} ORDER BY created_at DESC"
+        sql = f"""
+            SELECT d.*, rp.status AS resolved_post_status
+            FROM social_post_drafts d
+            LEFT JOIN LATERAL (
+                SELECT p.status
+                FROM posts p
+                WHERE (d.post_id IS NOT NULL AND p.id = d.post_id)
+                   OR (d.post_id IS NULL AND p.metadata->>'pipeline_task_id' = d.pipeline_task_id)
+                ORDER BY p.created_at DESC
+                LIMIT 1
+            ) rp ON true
+            {where}
+            ORDER BY d.created_at DESC
+        """
         async with pool.acquire() as conn:
             rows = await conn.fetch(sql, *args)
         return [_row_to_dataclass(r) for r in rows]
@@ -552,4 +574,5 @@ def _row_to_dataclass(row: Any) -> SocialDraftRow:
         created_at=row["created_at"],
         approved_at=row["approved_at"],
         posted_at=row["posted_at"],
+        post_status=row["resolved_post_status"],
     )

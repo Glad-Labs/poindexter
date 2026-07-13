@@ -483,8 +483,14 @@ function App() {
         const res = await PX.api.socialDrafts('?limit=50');
         if (!alive || !res) return;
         setSocial(res);
+        // Action Inbox is the "act on this now" surface, so it only takes
+        // drafts that would actually succeed — same condition approve_draft's
+        // post-link gate checks server-side (post_status === 'published').
+        // The Social tab keeps showing every draft, gated or not — approving
+        // a not-yet-ready one there still works fine, it just 409s with the
+        // real reason instead of the inbox pretending nothing's queued.
         const pendingDrafts = (res.drafts || []).filter(
-          (d) => d.status === 'pending'
+          (d) => d.status === 'pending' && d.post_status === 'published'
         );
         setInbox((prev) => {
           const nonSocial = prev.filter((i) => i.kind !== 'social');

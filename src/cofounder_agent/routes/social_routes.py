@@ -83,6 +83,7 @@ def _serialize(d: SocialDraftRow) -> dict[str, Any]:
         "id": d.id,
         "pipeline_task_id": d.pipeline_task_id,
         "post_id": d.post_id,
+        "post_status": d.post_status,
         "platform": d.platform,
         "content": d.content,
         "platform_config": d.platform_config,

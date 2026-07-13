@@ -14,6 +14,7 @@ Tests use unit mocks — no real DB or Postiz calls.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -23,6 +24,7 @@ from fastapi.testclient import TestClient
 import routes.social_routes as social_routes_module
 from middleware.api_token_auth import verify_api_token
 from routes.social_routes import router as social_router
+from services.social_drafts import SocialDraftRow
 from tests.unit.routes.conftest import make_mock_db
 from utils.route_utils import get_database_dependency, get_site_config_dependency
 
@@ -107,3 +109,31 @@ class TestApproveDraftWrongState409:
 
         assert resp.status_code == 200
         assert resp.json() == {"ok": True}
+
+
+@pytest.mark.unit
+class TestListDraftsSerialization:
+    """GET /drafts must carry post_status — the console's action inbox uses
+    it to filter out drafts that would 409 (post not published yet)."""
+
+    def test_list_drafts_includes_post_status(self, monkeypatch):
+        mock_svc = MagicMock()
+        mock_svc.list_drafts = AsyncMock(
+            return_value=[
+                SocialDraftRow(
+                    id="draft-1", pipeline_task_id="task-1", post_id=None,
+                    platform="bluesky", content="c", platform_config={},
+                    status="pending", postiz_post_id=None, error=None,
+                    retry_count=0, last_retry_at=None,
+                    created_at=datetime.now(timezone.utc),
+                    approved_at=None, posted_at=None, post_status="published",
+                )
+            ]
+        )
+        monkeypatch.setattr(social_routes_module, "_svc", mock_svc)
+        client = TestClient(_build_social_app())
+
+        resp = client.get("/api/social/drafts")
+
+        assert resp.status_code == 200
+        assert resp.json()["drafts"][0]["post_status"] == "published"
