@@ -989,6 +989,12 @@ DEFAULTS: dict[str, str] = {
     'affiliate_import_llm_model': '',
     # why: per-row timeout for the derivation call (keep short — one row at a time).
     'affiliate_import_llm_timeout_seconds': '60',
+    # Community draft assistant (WS2) — on-demand founder-voice drafts for
+    # Reddit / IndieHackers. why: empty model => the writer model
+    # (pipeline_writer_model); these are prose drafts, so writer-grade not
+    # structured-extraction. Timeout is DB-tunable rather than a hardcoded literal.
+    'community_draft_model': '',
+    'community_draft_timeout_seconds': '180',
     # Citation reconciliation + advisory unlinked-attribution rail (#765).
     # why: deterministic repair that re-links named sources the writer dropped
     # the URL for, matched against the research corpus by domain handle — free,
