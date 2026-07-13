@@ -60,6 +60,26 @@ This probe encodes the detect-and-recover loop:
    which keeps re-wedging. When the cap fires (or a restart is deliberately
    skipped) write an ``alert_events`` row + a routed notify so the operator
    hears about the persistent failure.
+6. **Postgres real-auth tier** (2026-07-13 follow-up). Step 1's SSLRequest
+   check is a single round trip and cannot see a degraded host-port proxy
+   that passes short exchanges cleanly but corrupts the longer,
+   multi-round-trip SCRAM auth handshake — producing a genuine
+   ``asyncpg.InvalidPasswordError`` for real authenticated clients even
+   though the configured password is correct and unchanged. For
+   ``probe_type="postgres"`` entries, once both SSLRequest checks report
+   healthy, a second lightweight tier (:func:`_pg_auth_probe`) attempts one
+   real ``asyncpg.connect()`` against the external host-published port using
+   the brain's own configured credentials
+   (``brain.bootstrap.resolve_database_url()``, host/port swapped to the
+   external target). Only ``InvalidPasswordError`` counts as the wedge
+   signal — a plain refused/timeout/DNS failure here is already the
+   reachability signal the SSLRequest tier covers. Detected → escalates via
+   the SAME alert_only, no-restart path as every other DB wedge signature (a
+   restart cannot fix a host-side proxy fault regardless of which face of it
+   fired) — REGARDLESS of the entry's own ``recovery_action``, since a
+   restart was never a valid remedy for this signature in the first place.
+   Toggle: ``docker_port_forward_pg_auth_check_enabled`` (default true);
+   timeout: ``docker_port_forward_pg_auth_timeout_seconds`` (default 5s).
 
 Design parity with ``brain/backup_watcher.py`` and
 ``brain/smart_monitor.py``:
@@ -84,14 +104,22 @@ import struct
 import subprocess
 import time
 import urllib.error
+import urllib.parse
 import urllib.request
 from collections.abc import Awaitable, Callable
 from typing import Any
+
+import asyncpg
 
 try:  # Flat import when brain/ is on sys.path (container runtime).
     from operator_notifier import notify_operator
 except ImportError:  # pragma: no cover — package-qualified for tests
     from brain.operator_notifier import notify_operator
+
+try:  # Flat import when brain/ is on sys.path (container runtime).
+    from bootstrap import resolve_database_url
+except ImportError:  # pragma: no cover — package-qualified for tests
+    from brain.bootstrap import resolve_database_url
 
 logger = logging.getLogger("brain.docker_port_forward_probe")
 
@@ -116,6 +144,11 @@ RESTART_CAP_WINDOW_MINUTES_KEY = "docker_port_forward_restart_cap_window_minutes
 # container again only churns its consumers.
 MAX_FAILED_RECOVERIES_KEY = "docker_port_forward_max_failed_recoveries_before_alert_only"
 ALERT_ONLY_BACKOFF_MINUTES_KEY = "docker_port_forward_alert_only_backoff_minutes"
+# 2026-07-13 follow-up — SCRAM-corruption auth tier (see _pg_auth_probe).
+# Independently toggleable from the base probe so an operator can disable
+# just this tier without disabling reachability checking entirely.
+PG_AUTH_CHECK_ENABLED_KEY = "docker_port_forward_pg_auth_check_enabled"
+PG_AUTH_TIMEOUT_SECONDS_KEY = "docker_port_forward_pg_auth_timeout_seconds"
 
 DEFAULT_ENABLED = True
 DEFAULT_POLL_INTERVAL_MINUTES = 5
@@ -125,6 +158,8 @@ DEFAULT_RESTART_CAP_PER_WINDOW = 3
 DEFAULT_RESTART_CAP_WINDOW_MINUTES = 60
 DEFAULT_MAX_FAILED_RECOVERIES = 1
 DEFAULT_ALERT_ONLY_BACKOFF_MINUTES = 60
+DEFAULT_PG_AUTH_CHECK_ENABLED = True
+DEFAULT_PG_AUTH_TIMEOUT_SECONDS = 5
 
 # Container-name prefix the brain expects for its docker stack. The
 # internal-DNS hostname is derived by stripping this prefix (per the
@@ -361,6 +396,14 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         await _read_setting(pool, ALERT_ONLY_BACKOFF_MINUTES_KEY, DEFAULT_ALERT_ONLY_BACKOFF_MINUTES),
         DEFAULT_ALERT_ONLY_BACKOFF_MINUTES,
     )
+    pg_auth_check_enabled = _coerce_bool(
+        await _read_setting(pool, PG_AUTH_CHECK_ENABLED_KEY, "true"),
+        DEFAULT_PG_AUTH_CHECK_ENABLED,
+    )
+    pg_auth_timeout_seconds = _coerce_int(
+        await _read_setting(pool, PG_AUTH_TIMEOUT_SECONDS_KEY, DEFAULT_PG_AUTH_TIMEOUT_SECONDS),
+        DEFAULT_PG_AUTH_TIMEOUT_SECONDS,
+    )
 
     return {
         "enabled": enabled,
@@ -372,6 +415,8 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         "restart_cap_window_minutes": restart_cap_window_minutes,
         "max_failed_recoveries_before_alert_only": max_failed_recoveries,
         "alert_only_backoff_minutes": alert_only_backoff_minutes,
+        "pg_auth_check_enabled": pg_auth_check_enabled,
+        "pg_auth_timeout_seconds": pg_auth_timeout_seconds,
     }
 
 
@@ -385,6 +430,12 @@ async def _read_config(pool: Any) -> dict[str, Any]:
 # wedged proxy accepts the TCP connection then drops it (empty recv /
 # reset). Stdlib-only, matching the probe's "reachability, not auth"
 # philosophy.
+#
+# This IS a real limitation, not just a design choice: a single round trip
+# cannot see a host-port proxy that stays healthy for a short exchange but
+# corrupts a longer, multi-round-trip one — the "SCRAM-corruption" wedge face
+# (2026-07-13). :func:`_pg_auth_probe` below is the complementary tier that
+# closes that gap with one real authenticated connection attempt.
 # ---------------------------------------------------------------------------
 
 _PG_SSL_REQUEST = struct.pack("!ii", 8, 80877103)  # length=8, code=80877103
@@ -407,6 +458,86 @@ def _pg_probe(host: str, port: int, timeout_seconds: float) -> bool:
         # summary. Fires per probe cycle; brain can't emit_finding.
         logger.debug("[PORT_FORWARD] pg_probe %s:%s failed: %s", host, port, exc)
         return False
+
+
+# ---------------------------------------------------------------------------
+# Postgres REAL-AUTH probe — the SCRAM-corruption tier (2026-07-13
+# follow-up). _pg_probe above only proves the proxy answers a SINGLE round
+# trip; it stays green even when the SAME proxy corrupts the longer,
+# multi-round-trip SCRAM exchange real clients use — which surfaces to those
+# clients as a genuine ``asyncpg.InvalidPasswordError`` even though the
+# configured password is correct and unchanged (confirmed live 2026-07-13:
+# postgres-local/5433 sat wedged with zero recovery rows while every
+# HTTP-type watched port around it auto-recovered). This tier attempts one
+# real authenticated connection and treats ONLY ``InvalidPasswordError`` as
+# the wedge signal.
+# ---------------------------------------------------------------------------
+
+
+async def _pg_auth_probe(
+    host: str, port: int, timeout_seconds: float,
+) -> tuple[bool, str | None]:
+    """Attempt one real authenticated Postgres connection to (host, port).
+
+    Returns ``(scram_corrupted, detail)``. ``scram_corrupted`` is True ONLY
+    for ``asyncpg.InvalidPasswordError`` — every other outcome (no DSN
+    configured, refused, timeout, DNS failure, or a clean connect) returns
+    ``(False, None)`` and leaves the caller's existing SSLRequest-based
+    classification alone; this tier exists purely to catch the one failure
+    mode that check cannot see.
+
+    Credentials come from :func:`brain.bootstrap.resolve_database_url` — the
+    SAME DSN the brain's own pool connection resolves to. Only host/port are
+    swapped to the external target; user/password/database are shared
+    between the internal (compose-network) and external (host-published)
+    paths to the same Postgres instance.
+    """
+    dsn = resolve_database_url()
+    if not dsn:
+        logger.debug(
+            "[PORT_FORWARD] pg_auth_probe skipped for %s:%s — no database "
+            "URL resolvable (DATABASE_URL / bootstrap.toml unset)",
+            host, port,
+        )
+        return False, None
+
+    parsed = urllib.parse.urlsplit(dsn)
+    user = urllib.parse.unquote(parsed.username) if parsed.username else None
+    password = urllib.parse.unquote(parsed.password) if parsed.password else None
+    database = (parsed.path or "").lstrip("/") or None
+
+    conn = None
+    try:
+        conn = await asyncpg.connect(
+            host=host,
+            port=port,
+            user=user,
+            password=password,
+            database=database,
+            timeout=timeout_seconds,
+        )
+        return False, None
+    except asyncpg.InvalidPasswordError as exc:
+        return True, str(exc)
+    except Exception as exc:  # noqa: BLE001
+        # silent-ok: any non-auth failure (refused/timeout/DNS) is already the
+        # plain-reachability signal _pg_probe's SSLRequest check covers; this
+        # tier exists ONLY to catch InvalidPasswordError specifically, and a
+        # transient blip here self-heals on the next ~5-min cycle same as any
+        # other probe failure in this module.
+        logger.debug(
+            "[PORT_FORWARD] pg_auth_probe %s:%s non-auth failure (not scram "
+            "corruption): %s: %s", host, port, type(exc).__name__, exc,
+        )
+        return False, None
+    finally:
+        if conn is not None:
+            try:
+                await conn.close(timeout=2)
+            except Exception:  # noqa: BLE001
+                # silent-ok: best-effort cleanup of a connection already
+                # discarded either way — its own result was already returned.
+                pass
 
 
 # ---------------------------------------------------------------------------
@@ -764,11 +895,17 @@ async def _escalate_alert_only(
     reason: str,
     config: dict[str, Any],
     notify_fn: Callable[..., None],
+    detail_extra: str | None = None,
 ) -> dict[str, Any]:
-    """Detected a stuck forward but deliberately did NOT restart. Write the
-    ``alert_events`` + ``audit_log`` rows and page the operator once per
-    episode, then return an ``alert_only`` summary. Never restarts the
-    container and never touches the restart cap.
+    """Detected a stuck forward (or, for ``reason="scram_corruption"``, a
+    healthy-looking forward that fails real auth) but deliberately did NOT
+    restart. Write the ``alert_events`` + ``audit_log`` rows and page the
+    operator once per episode, then return an ``alert_only`` summary. Never
+    restarts the container and never touches the restart cap.
+
+    ``detail_extra`` carries a reason-specific extra string (currently only
+    the ``asyncpg`` exception text for ``scram_corruption``) appended into
+    the operator-facing detail message.
     """
     failures = _consecutive_recovery_failures.get(container, 0)
     backoff_minutes = int(config["alert_only_backoff_minutes"])
@@ -786,6 +923,28 @@ async def _escalate_alert_only(
             f"recovery benefit — so no restart was attempted. The host operator "
             f"must clear the proxy: restart Docker Desktop, or `wsl --shutdown` "
             f"then relaunch."
+        )
+    elif reason == "scram_corruption":
+        title = (
+            f"Docker port-forward wedge is corrupting Postgres auth on "
+            f"{container} — operator action needed"
+        )
+        detail = (
+            f"The lightweight SSLRequest reachability check on both "
+            f"{internal_url} and {external_url} passed, but a real "
+            f"authenticated connection through {external_url} raised "
+            f"InvalidPasswordError"
+            + (f" ({detail_extra})" if detail_extra else "")
+            + f". The configured password is correct and unchanged — this is "
+            f"the SCRAM-corruption face of the Docker Desktop / WSL2 NAT "
+            f"host-port proxy wedge: it passes short exchanges (like the "
+            f"SSLRequest probe) cleanly but corrupts the longer, "
+            f"multi-round-trip SCRAM auth handshake real clients use. A "
+            f"`docker restart` of {container} cannot fix a host-side proxy "
+            f"fault and would sever every internal consumer's live connection "
+            f"for zero recovery benefit — so no restart was attempted. The "
+            f"host operator must clear the proxy: restart Docker Desktop, or "
+            f"`wsl --shutdown` then relaunch."
         )
     else:  # restart_ineffective_backoff
         title = (
@@ -899,6 +1058,7 @@ async def _check_one_service(
     config: dict[str, Any],
     http_probe_fn: Callable[[str, float], bool],
     pg_probe_fn: Callable[[str, int, float], bool],
+    pg_auth_probe_fn: Callable[[str, int, float], Awaitable[tuple[bool, str | None]]],
     container_exists_fn: Callable[[str], bool],
     restart_fn: Callable[[str], tuple[bool, str]],
     sleep_fn: Callable[[float], Awaitable[None]],
@@ -960,11 +1120,48 @@ async def _check_one_service(
 
     ok_external = _probe_external()
 
-    # 1) Both ok → happy path. Clear any recovery bookkeeping: a healthy cycle
-    # means the wedge cleared (operator fixed the host proxy, or it was
-    # transient), so a future wedge earns a fresh restart attempt + a fresh
-    # page rather than inheriting a stale backoff.
+    # 1) Both ok → happy path candidate. For postgres entries, this is
+    # exactly the state the SCRAM-corruption wedge hides in: the SSLRequest
+    # check above is a single round trip and cannot see a proxy that passes
+    # short exchanges cleanly but corrupts the longer, multi-round-trip SCRAM
+    # handshake (2026-07-13 follow-up). Run the real-auth tier BEFORE
+    # clearing recovery bookkeeping / declaring victory, so a corrupted
+    # cycle doesn't first reset the alert-only dedup flag and then re-page
+    # every cycle.
     if ok_internal and ok_external:
+        if probe_type == "postgres" and config.get(
+            "pg_auth_check_enabled", DEFAULT_PG_AUTH_CHECK_ENABLED
+        ):
+            auth_timeout = float(
+                config.get("pg_auth_timeout_seconds", DEFAULT_PG_AUTH_TIMEOUT_SECONDS)
+            )
+            scram_corrupted, auth_detail = await pg_auth_probe_fn(
+                "host.docker.internal", host_port, auth_timeout,
+            )
+            if scram_corrupted:
+                logger.warning(
+                    "[PORT_FORWARD] SCRAM auth corruption on %s (%s): "
+                    "SSLRequest reachability passed but a real authenticated "
+                    "connection raised InvalidPasswordError — %s",
+                    container, external_url, auth_detail,
+                )
+                # Always alert-only for this signature, regardless of the
+                # entry's own recovery_action — a restart was never a valid
+                # remedy for a host-side auth-handshake corruption.
+                return await _escalate_alert_only(
+                    pool,
+                    container=container,
+                    internal_url=internal_url,
+                    external_url=external_url,
+                    reason="scram_corruption",
+                    config=config,
+                    notify_fn=notify_fn,
+                    detail_extra=auth_detail,
+                )
+        # Clear any recovery bookkeeping: a healthy cycle means the wedge
+        # cleared (operator fixed the host proxy, or it was transient), so a
+        # future wedge earns a fresh restart attempt + a fresh page rather
+        # than inheriting a stale backoff.
         _consecutive_recovery_failures.pop(container, None)
         _alert_only_until.pop(container, None)
         _alert_only_notified.pop(container, None)
@@ -1260,6 +1457,8 @@ async def run_docker_port_forward_probe(
     *,
     http_probe_fn: Callable[[str, float], bool] | None = None,
     pg_probe_fn: Callable[[str, int, float], bool] | None = None,
+    pg_auth_probe_fn: Callable[[str, int, float], Awaitable[tuple[bool, str | None]]]
+    | None = None,
     container_exists_fn: Callable[[str], bool] | None = None,
     restart_fn: Callable[[str], tuple[bool, str]] | None = None,
     sleep_fn: Callable[[float], Awaitable[None]] | None = None,
@@ -1272,6 +1471,14 @@ async def run_docker_port_forward_probe(
         pool: asyncpg pool for app_settings + alert_events + audit_log.
         http_probe_fn: ``(url, timeout) -> bool`` — defaults to the
             stdlib HTTP probe. Tests inject canned outcomes.
+        pg_probe_fn: ``(host, port, timeout) -> bool`` — defaults to the
+            credential-free SSLRequest reachability check. Tests inject
+            canned outcomes.
+        pg_auth_probe_fn: ``async (host, port, timeout) -> (scram_corrupted,
+            detail)`` — defaults to :func:`_pg_auth_probe`, the real-auth
+            SCRAM-corruption tier. Only runs for ``probe_type="postgres"``
+            entries once the SSLRequest tier reports healthy. Tests inject
+            canned outcomes.
         container_exists_fn: ``(container) -> bool`` — defaults to
             ``docker inspect``. Tests inject a stub.
         restart_fn: ``(container) -> (ok, msg)`` — defaults to the
@@ -1289,6 +1496,7 @@ async def run_docker_port_forward_probe(
     """
     http_probe_fn = http_probe_fn or _http_probe
     pg_probe_fn = pg_probe_fn or _pg_probe
+    pg_auth_probe_fn = pg_auth_probe_fn or _pg_auth_probe
     container_exists_fn = container_exists_fn or _container_exists
     restart_fn = restart_fn or _restart_container
     sleep_fn = sleep_fn or asyncio.sleep
@@ -1329,6 +1537,7 @@ async def run_docker_port_forward_probe(
                 config=config,
                 http_probe_fn=http_probe_fn,
                 pg_probe_fn=pg_probe_fn,
+                pg_auth_probe_fn=pg_auth_probe_fn,
                 container_exists_fn=container_exists_fn,
                 restart_fn=restart_fn,
                 sleep_fn=sleep_fn,

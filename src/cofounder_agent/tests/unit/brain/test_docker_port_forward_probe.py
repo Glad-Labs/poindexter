@@ -1294,6 +1294,7 @@ class TestPostgresWatchEntry:
         summary = await pf.run_docker_port_forward_probe(
             pool,
             pg_probe_fn=lambda h, p, t: True,
+            pg_auth_probe_fn=_ok_pg_auth,
             container_exists_fn=lambda c: True,
             restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
             sleep_fn=AsyncMock(),
@@ -1305,6 +1306,344 @@ class TestPostgresWatchEntry:
         assert svc["status"] == "ok"
         assert svc["external_url"] == "postgres://host.docker.internal:5433"
         assert restart_calls == []
+
+
+# ---------------------------------------------------------------------------
+# SCRAM-corruption auth tier (2026-07-13 follow-up). _pg_probe's SSLRequest
+# check is a single round trip and cannot see a degraded host-port proxy that
+# passes short exchanges cleanly but corrupts the longer, multi-round-trip
+# SCRAM handshake — producing a genuine InvalidPasswordError for real
+# authenticated clients even though the configured password is correct and
+# unchanged. Once both SSLRequest checks report healthy, a second tier
+# attempts one real authenticated connection against the external endpoint
+# and treats InvalidPasswordError specifically as the wedge signal.
+# ---------------------------------------------------------------------------
+
+
+async def _ok_pg_auth(host, port, timeout):
+    """Fake pg_auth_probe_fn: real-auth check always clean."""
+    return False, None
+
+
+@pytest.mark.unit
+class TestScramCorruptionDetection:
+    @pytest.mark.asyncio
+    async def test_scram_corruption_escalates_alert_only_no_restart(self):
+        """Both SSLRequest checks pass (the blind spot), but the real-auth
+        check raises InvalidPasswordError — escalate via alert_only, never
+        restart, even though this entry hasn't opted into recovery_action.
+        """
+        pool = _make_pool(setting_values={pf.WATCH_LIST_KEY: json.dumps([_PG_ENTRY])})
+        auth_calls: list[tuple[str, int, float]] = []
+
+        async def fake_pg_auth(host, port, timeout):
+            auth_calls.append((host, port, timeout))
+            return True, 'password authentication failed for user "poindexter"'
+
+        restart_calls: list[str] = []
+        notify_calls: list[dict] = []
+
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            pg_probe_fn=lambda h, p, t: True,  # SSLRequest tier: both ok
+            pg_auth_probe_fn=fake_pg_auth,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            sleep_fn=AsyncMock(),
+            notify_fn=lambda **k: notify_calls.append(k),
+            now_fn=lambda: 1_000_000.0,
+        )
+
+        svc = summary["services"]["poindexter-postgres-local"]
+        assert svc["status"] == "alert_only", summary
+        assert svc["reason"] == "scram_corruption"
+        assert summary["ok"] is False
+        assert restart_calls == []
+
+        # Real-auth check ran against the EXTERNAL host-published port.
+        assert len(auth_calls) == 1
+        assert auth_calls[0][0] == "host.docker.internal"
+        assert auth_calls[0][1] == 5433
+
+        assert "docker_port_forward_restart_skipped" in _executed_alertnames(pool)
+        skip_payloads = [
+            p for p in _executed_audit_payloads(pool)
+            if p["event"] == "docker_port_forward_restart_skipped"
+        ]
+        assert skip_payloads, _executed_audit_events(pool)
+        assert skip_payloads[0]["payload"]["reason"] == "scram_corruption"
+
+        assert notify_calls, "expected a notify_operator page"
+        guidance = (notify_calls[0].get("detail") or "").lower()
+        assert "invalidpassworderror" in guidance or "password" in guidance
+        assert "docker desktop" in guidance or "wsl" in guidance
+
+    @pytest.mark.asyncio
+    async def test_scram_corruption_escalates_even_with_restart_override(self):
+        """A postgres entry that opted into recovery_action="restart" for the
+        stuck-port-forward signature still gets alert-only (never restart)
+        for the SEPARATE scram-corruption signature — a restart cannot fix a
+        host-side auth-handshake corruption regardless of the entry's
+        stuck-port-forward preference.
+        """
+        entry = {**_PG_ENTRY, "recovery_action": "restart"}
+        pool = _make_pool(setting_values={pf.WATCH_LIST_KEY: json.dumps([entry])})
+
+        async def fake_pg_auth(host, port, timeout):
+            return True, "password authentication failed"
+
+        restart_calls: list[str] = []
+
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            pg_probe_fn=lambda h, p, t: True,
+            pg_auth_probe_fn=fake_pg_auth,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            sleep_fn=AsyncMock(),
+            notify_fn=lambda **k: None,
+            now_fn=lambda: 1_000_000.0,
+        )
+
+        svc = summary["services"]["poindexter-postgres-local"]
+        assert svc["status"] == "alert_only", summary
+        assert restart_calls == []
+
+    @pytest.mark.asyncio
+    async def test_non_auth_failure_does_not_escalate(self):
+        """A plain unreachable/timeout result from the auth probe is NOT the
+        scram signature — the cycle stays "ok", matching the contract that
+        only a True (scram_corrupted) result escalates.
+        """
+        pool = _make_pool(setting_values={pf.WATCH_LIST_KEY: json.dumps([_PG_ENTRY])})
+        restart_calls: list[str] = []
+
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            pg_probe_fn=lambda h, p, t: True,
+            pg_auth_probe_fn=_ok_pg_auth,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (restart_calls.append(c) or (True, "ok")),
+            sleep_fn=AsyncMock(),
+            notify_fn=lambda **k: None,
+            now_fn=lambda: 1_000_000.0,
+        )
+
+        svc = summary["services"]["poindexter-postgres-local"]
+        assert svc["status"] == "ok", summary
+        assert restart_calls == []
+        assert _executed_alertnames(pool) == []
+
+    @pytest.mark.asyncio
+    async def test_http_entries_never_run_auth_probe(self):
+        """The auth tier is gated on probe_type=="postgres" — HTTP entries
+        must never invoke it, matching how they never invoke pg_probe_fn."""
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([
+                {"container": "poindexter-grafana", "port": 3000, "path": "/"},
+            ]),
+        })
+
+        async def fake_pg_auth(host, port, timeout):
+            raise AssertionError("pg_auth_probe_fn must not run for HTTP entries")
+
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            http_probe_fn=lambda url, t: True,
+            pg_auth_probe_fn=fake_pg_auth,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (True, "ok"),
+            sleep_fn=AsyncMock(),
+            notify_fn=lambda **k: None,
+            now_fn=lambda: 1_000_000.0,
+        )
+        assert summary["services"]["poindexter-grafana"]["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_pg_auth_check_disabled_skips_probe(self):
+        """The dedicated kill switch stops the tier from running at all,
+        independent of the base probe's own enabled flag."""
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([_PG_ENTRY]),
+            pf.PG_AUTH_CHECK_ENABLED_KEY: "false",
+        })
+
+        async def fake_pg_auth(host, port, timeout):
+            raise AssertionError("pg_auth_probe_fn must not run when disabled")
+
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            pg_probe_fn=lambda h, p, t: True,
+            pg_auth_probe_fn=fake_pg_auth,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (True, "ok"),
+            sleep_fn=AsyncMock(),
+            notify_fn=lambda **k: None,
+            now_fn=lambda: 1_000_000.0,
+        )
+        assert summary["services"]["poindexter-postgres-local"]["status"] == "ok"
+
+    @pytest.mark.asyncio
+    async def test_scram_corruption_notifies_once_per_episode(self):
+        """Matches the existing alert_only dedup contract: alert_events fires
+        every cycle (stable fingerprint, downstream dedup collapses it), but
+        the direct notify_fn page fires once per ongoing episode."""
+        pool = _make_pool(setting_values={pf.WATCH_LIST_KEY: json.dumps([_PG_ENTRY])})
+
+        async def fake_pg_auth(host, port, timeout):
+            return True, "password authentication failed"
+
+        notify_calls: list[dict] = []
+
+        for i in range(3):
+            await pf.run_docker_port_forward_probe(
+                pool,
+                pg_probe_fn=lambda h, p, t: True,
+                pg_auth_probe_fn=fake_pg_auth,
+                container_exists_fn=lambda c: True,
+                restart_fn=lambda c: (True, "ok"),
+                sleep_fn=AsyncMock(),
+                notify_fn=lambda **k: notify_calls.append(k),
+                now_fn=lambda i=i: 1_000_000.0 + i,
+            )
+
+        assert len(notify_calls) == 1
+        assert _executed_alertnames(pool).count(
+            "docker_port_forward_restart_skipped"
+        ) == 3
+
+    @pytest.mark.asyncio
+    async def test_auth_timeout_setting_is_threaded_through(self):
+        """docker_port_forward_pg_auth_timeout_seconds reaches pg_auth_probe_fn
+        as the third positional value, not the base probe_timeout_seconds."""
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([_PG_ENTRY]),
+            pf.PG_AUTH_TIMEOUT_SECONDS_KEY: "9",
+        })
+        seen_timeouts: list[float] = []
+
+        async def fake_pg_auth(host, port, timeout):
+            seen_timeouts.append(timeout)
+            return False, None
+
+        await pf.run_docker_port_forward_probe(
+            pool,
+            pg_probe_fn=lambda h, p, t: True,
+            pg_auth_probe_fn=fake_pg_auth,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (True, "ok"),
+            sleep_fn=AsyncMock(),
+            notify_fn=lambda **k: None,
+            now_fn=lambda: 1_000_000.0,
+        )
+        assert seen_timeouts == [9.0]
+
+
+# ---------------------------------------------------------------------------
+# _pg_auth_probe — the default real-auth wire check (2026-07-13 follow-up).
+# Mocks asyncpg.connect + resolve_database_url; no real network I/O.
+# ---------------------------------------------------------------------------
+
+
+class _FakeAsyncpgConnection:
+    def __init__(self):
+        self.closed = False
+        self.close_timeout = None
+
+    async def close(self, *, timeout=None):
+        self.closed = True
+        self.close_timeout = timeout
+
+
+@pytest.mark.unit
+class TestPgAuthProbeDefault:
+    @pytest.mark.asyncio
+    async def test_no_dsn_configured_fails_open(self, monkeypatch):
+        monkeypatch.setattr(pf, "resolve_database_url", lambda: None)
+        corrupted, detail = await pf._pg_auth_probe(
+            "host.docker.internal", 5433, 5.0
+        )
+        assert corrupted is False
+        assert detail is None
+
+    @pytest.mark.asyncio
+    async def test_invalid_password_error_reports_corrupted(self, monkeypatch):
+        monkeypatch.setattr(
+            pf, "resolve_database_url",
+            lambda: "postgresql://poindexter:secret@postgres-local:5432/poindexter_brain",
+        )
+
+        async def fake_connect(**kwargs):
+            assert kwargs["host"] == "host.docker.internal"
+            assert kwargs["port"] == 5433
+            assert kwargs["user"] == "poindexter"
+            assert kwargs["password"] == "secret"
+            assert kwargs["database"] == "poindexter_brain"
+            assert kwargs["timeout"] == 5.0
+            raise pf.asyncpg.InvalidPasswordError(
+                'password authentication failed for user "poindexter"'
+            )
+
+        monkeypatch.setattr(pf.asyncpg, "connect", fake_connect)
+        corrupted, detail = await pf._pg_auth_probe(
+            "host.docker.internal", 5433, 5.0
+        )
+        assert corrupted is True
+        assert "poindexter" in (detail or "")
+
+    @pytest.mark.asyncio
+    async def test_successful_connect_closes_and_reports_ok(self, monkeypatch):
+        monkeypatch.setattr(
+            pf, "resolve_database_url",
+            lambda: "postgresql://poindexter:secret@postgres-local:5432/poindexter_brain",
+        )
+        conn = _FakeAsyncpgConnection()
+
+        async def fake_connect(**kwargs):
+            return conn
+
+        monkeypatch.setattr(pf.asyncpg, "connect", fake_connect)
+        corrupted, detail = await pf._pg_auth_probe(
+            "host.docker.internal", 5433, 5.0
+        )
+        assert corrupted is False
+        assert detail is None
+        assert conn.closed is True
+
+    @pytest.mark.asyncio
+    async def test_connection_refused_is_not_scram_corruption(self, monkeypatch):
+        monkeypatch.setattr(
+            pf, "resolve_database_url",
+            lambda: "postgresql://poindexter:secret@postgres-local:5432/poindexter_brain",
+        )
+
+        async def fake_connect(**kwargs):
+            raise ConnectionRefusedError("refused")
+
+        monkeypatch.setattr(pf.asyncpg, "connect", fake_connect)
+        corrupted, detail = await pf._pg_auth_probe(
+            "host.docker.internal", 5433, 5.0
+        )
+        assert corrupted is False
+        assert detail is None
+
+    @pytest.mark.asyncio
+    async def test_percent_encoded_password_is_decoded(self, monkeypatch):
+        monkeypatch.setattr(
+            pf, "resolve_database_url",
+            lambda: "postgresql://poindexter:p%40ss@postgres-local:5432/poindexter_brain",
+        )
+        seen: dict[str, Any] = {}
+
+        async def fake_connect(**kwargs):
+            seen.update(kwargs)
+            return _FakeAsyncpgConnection()
+
+        monkeypatch.setattr(pf.asyncpg, "connect", fake_connect)
+        await pf._pg_auth_probe("host.docker.internal", 5433, 5.0)
+        assert seen["password"] == "p@ss"
+        assert seen["user"] == "poindexter"
+        assert seen["database"] == "poindexter_brain"
 
 
 # ---------------------------------------------------------------------------
@@ -1390,7 +1729,7 @@ class TestAdaptiveGiveUp:
                 restart_fn=lambda c: (True, "ok"),
                 sleep_fn=AsyncMock(),
                 notify_fn=lambda **k: None,
-                now_fn=lambda: 1_000_000.0 + i,
+                now_fn=lambda i=i: 1_000_000.0 + i,
             )
         # No restart timestamps recorded for the DB container.
         assert pf._restart_state.get("poindexter-postgres-local") in (None, [])

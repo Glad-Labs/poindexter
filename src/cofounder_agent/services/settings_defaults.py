@@ -2037,6 +2037,23 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # before the probe is willing to try one more restart. Bounds the churn
     # without disabling recovery forever.
     'docker_port_forward_alert_only_backoff_minutes': '60',
+    # 2026-07-13 follow-up — SCRAM-corruption auth tier. The SSLRequest check
+    # above (probe_type=postgres) is a single round trip and cannot see a
+    # host-port proxy that passes short exchanges cleanly but corrupts the
+    # longer, multi-round-trip SCRAM auth handshake — a real client gets a
+    # genuine InvalidPasswordError even though the configured password is
+    # correct and unchanged. Confirmed live 2026-07-13: postgres-local/5433
+    # sat wedged with zero recovery rows while every HTTP-type watched port
+    # around it auto-recovered. Once the SSLRequest tier reports healthy for
+    # a postgres entry, this second tier attempts one real asyncpg.connect()
+    # against the external host-published port; only InvalidPasswordError
+    # escalates (alert-only, same as every other DB wedge signature — never
+    # restart). Independently toggleable from the base probe.
+    'docker_port_forward_pg_auth_check_enabled': 'true',
+    # Timeout (seconds) for the real-auth connection attempt. Slightly above
+    # docker_port_forward_probe_timeout_seconds because a real auth handshake
+    # is multiple round trips, not one.
+    'docker_port_forward_pg_auth_timeout_seconds': '5',
 
     # ----- API rate limits (slowapi — poindexter#748) -----
     # slowapi limit strings: "<count>/<period>" e.g. "5/minute", "100/hour".

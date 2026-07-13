@@ -351,12 +351,12 @@ The brain runs these every 5-minute cycle. Two patterns:
 
 **HTTP/inspect probes** — actively check a surface, recover, cap, page:
 
-| Probe                                        | Watches                                                                                       | Detect                                                                                                             | Recover                                                                                                                       | Escalate            |
-| -------------------------------------------- | --------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------- | ------------------- |
-| `brain/mcp_http_probe.py`                    | MCP HTTP server (`:8004`)                                                                     | `GET` discovery endpoint                                                                                           | launcher (host process) or host-recover (`mcp-http`)                                                                          | page after cap      |
-| `brain/compose_drift_probe.py`               | container vs compose spec                                                                     | `docker inspect` vs YAML                                                                                           | host-recover (`compose-reapply`) — see below                                                                                  | page after cap      |
-| `brain/health_probes.py` (`scheduled_tasks`) | host self-heal Scheduled Tasks                                                                | `GET /tasks` on the host agent                                                                                     | — (detect-only) — see below                                                                                                   | page after 3 cycles |
-| `brain/docker_port_forward_probe.py`         | published host ports — 12 HTTP sidecars + Postgres `:5433` (`docker_port_forward_watch_list`) | internal-OK + external-FAIL: HTTP `GET`, or a credential-free libpq `SSLRequest` for `probe_type=postgres` entries | HTTP entry: `docker restart` → re-probe. DB entry, or any restart proven ineffective: **alert-only** (no restart) — see below | page after cap      |
+| Probe                                        | Watches                                                                                       | Detect                                                                                                                                                                                                                                                                                                     | Recover                                                                                                                                         | Escalate            |
+| -------------------------------------------- | --------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- | ------------------- |
+| `brain/mcp_http_probe.py`                    | MCP HTTP server (`:8004`)                                                                     | `GET` discovery endpoint                                                                                                                                                                                                                                                                                   | launcher (host process) or host-recover (`mcp-http`)                                                                                            | page after cap      |
+| `brain/compose_drift_probe.py`               | container vs compose spec                                                                     | `docker inspect` vs YAML                                                                                                                                                                                                                                                                                   | host-recover (`compose-reapply`) — see below                                                                                                    | page after cap      |
+| `brain/health_probes.py` (`scheduled_tasks`) | host self-heal Scheduled Tasks                                                                | `GET /tasks` on the host agent                                                                                                                                                                                                                                                                             | — (detect-only) — see below                                                                                                                     | page after 3 cycles |
+| `brain/docker_port_forward_probe.py`         | published host ports — 12 HTTP sidecars + Postgres `:5433` (`docker_port_forward_watch_list`) | internal-OK + external-FAIL: HTTP `GET`, or a credential-free libpq `SSLRequest` for `probe_type=postgres` entries. Postgres entries ALSO get a real-auth tier (one `asyncpg.connect()`) once SSLRequest reports healthy, to catch SCRAM-corrupted proxies the SSLRequest round trip can't see — see below | HTTP entry: `docker restart` → re-probe. DB entry, restart proven ineffective, or scram-corrupted auth: **alert-only** (no restart) — see below | page after cap      |
 
 **Heartbeat/freshness probes** — read the newest success row a service stamps in
 `audit_log`; if it's too old, the service is wedged:
@@ -411,6 +411,48 @@ remedy per situation:
 The rolling restart cap (3 per 60 min) still applies to the case it was built
 for: a **flapping** forward that a restart genuinely recovers each cycle but
 which keeps re-wedging.
+
+### The SCRAM-corruption blind spot — a second, real-auth tier
+
+The `probe_type=postgres` reachability check is a **credential-free
+SSLRequest** — one round trip, matching exactly what a real client's first
+wire step does, then close. That is deliberately cheap, but it has a real
+limitation: it cannot see a degraded host-port proxy that passes a **short**
+exchange cleanly while corrupting a **longer, multi-round-trip** one. SCRAM
+auth is exactly that — several round trips of challenge/response — so a proxy
+in this state answers the SSLRequest probe healthy while a real client's
+login raises a genuine `asyncpg.InvalidPasswordError`, even though the
+configured password is correct and unchanged.
+
+This was confirmed live on **2026-07-13**: during a systemic multi-port
+wedge, six HTTP-type watched ports auto-recovered (`docker_port_forward_recovered`
+rows exist for each), but `postgres-local`/5433 sat wedged the entire time
+with **zero** `docker_port_forward_*` audit rows — the probe reported it
+healthy while host-side scripts using `resolve_database_url()` failed hard
+with `InvalidPasswordError`.
+
+The fix is a second, still-lightweight tier: once the SSLRequest check
+reports both internal and external healthy for a `probe_type=postgres`
+entry, the probe attempts **one real `asyncpg.connect()`** against the
+external host-published port, using the SAME credentials the brain's own
+pool resolves via `resolve_database_url()` (host/port swapped to the
+external target — user/password/database are shared between the internal
+compose-network path and the external host-published path to the same
+Postgres instance). Only `InvalidPasswordError` counts as the wedge signal;
+any other failure (refused, timeout, DNS) is already the plain-reachability
+signal the SSLRequest tier covers, so it's left alone.
+
+Detected → escalates via the exact same `alert_only`, no-restart path as
+every other DB wedge signature (`reason=scram_corruption`) — **regardless**
+of the entry's own `recovery_action`, since a restart was never a valid
+remedy for a host-side auth-handshake corruption in the first place.
+
+- `docker_port_forward_pg_auth_check_enabled` (default **true**) — toggles
+  this tier independently of the base probe.
+- `docker_port_forward_pg_auth_timeout_seconds` (default **5**) — timeout for
+  the real-auth connection attempt (slightly above the base
+  `probe_timeout_seconds` since a real handshake is several round trips, not
+  one).
 
 ## The watchdog's own liveness — cycle timeout + DB command timeout
 
@@ -666,6 +708,8 @@ full incident write-up.
 | `auto_embed_watch_enabled`                                    | `true`                                     | Embedder-freshness probe.                                                                                                 |
 | `docker_port_forward_max_failed_recoveries_before_alert_only` | `1`                                        | Consecutive failed recoveries before a `restart` entry switches to alert-only (adaptive give-up).                         |
 | `docker_port_forward_alert_only_backoff_minutes`              | `60`                                       | Minutes a container stays alert-only after the give-up trips, before one more restart is allowed.                         |
+| `docker_port_forward_pg_auth_check_enabled`                   | `true`                                     | Toggles the real-auth SCRAM-corruption tier for `probe_type=postgres` entries, independent of the base probe.             |
+| `docker_port_forward_pg_auth_timeout_seconds`                 | `5`                                        | Timeout for the real-auth `asyncpg.connect()` attempt (a few round trips, not one — set slightly above the base timeout). |
 | `ops_firefighter_enabled`                                     | `true`                                     | Master switch for the deterministic firefighter. Off = every alert pages the old way.                                     |
 | `ops_firefighter_max_attempts_per_window`                     | `3`                                        | Per-`(fingerprint, action)` circuit-breaker cap; a matched rule may override.                                             |
 | `ops_firefighter_window_minutes`                              | `60`                                       | Circuit-breaker rolling window (minutes); a matched rule may override.                                                    |
