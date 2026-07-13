@@ -2,6 +2,64 @@
 
 ## Unreleased
 
+## [0.102.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.101.0...v0.102.0) (2026-07-13)
+
+
+### Features
+
+* **affiliate:** multi-keyword matching, platform column, CSV bulk-import ([#2382](https://github.com/Glad-Labs/glad-labs-stack/issues/2382)) ([acd36ed](https://github.com/Glad-Labs/glad-labs-stack/commit/acd36edb6a1e68384696de896c7bf00a9da0132b))
+* **brain:** finish GH-28 DB-driven Grafana alert sync — alert_rules table + poindexter alerts CLI ([#2413](https://github.com/Glad-Labs/glad-labs-stack/issues/2413)) ([836b639](https://github.com/Glad-Labs/glad-labs-stack/commit/836b6398a4d6cd38564fcb655511875fa77dc1f3))
+* **devto:** selective syndication + content-type classifier ([#2415](https://github.com/Glad-Labs/glad-labs-stack/issues/2415)) ([0d08867](https://github.com/Glad-Labs/glad-labs-stack/commit/0d08867b299b03bda5be75fd054b054e59a4c888))
+* **footer:** add YouTube link to site footer ([#2434](https://github.com/Glad-Labs/glad-labs-stack/issues/2434)) ([1914191](https://github.com/Glad-Labs/glad-labs-stack/commit/19141916441a229dc8a45c86c531e58b8005058b))
+* **funding:** add GitHub Sponsors button + Buy Me a Coffee footer link ([#2427](https://github.com/Glad-Labs/glad-labs-stack/issues/2427)) ([41bec1f](https://github.com/Glad-Labs/glad-labs-stack/commit/41bec1f4bbdff7d9caec57894fa6459121d2bc28))
+* **grafana:** fill metric-coverage gaps across 7 dashboards (13 panels) ([#2442](https://github.com/Glad-Labs/glad-labs-stack/issues/2442)) ([03de503](https://github.com/Glad-Labs/glad-labs-stack/commit/03de503082a764221d02c34a24b7c442fab86be6))
+* **grafana:** Job Fleet Metrics panels on Integrations & Admin ([#2436](https://github.com/Glad-Labs/glad-labs-stack/issues/2436)) ([cd72ced](https://github.com/Glad-Labs/glad-labs-stack/commit/cd72cedff0db978ac7b6fece0057b7a9b4d30e94))
+* make best-effort failures visible, never silent ([#2372](https://github.com/Glad-Labs/glad-labs-stack/issues/2372)) ([c267e66](https://github.com/Glad-Labs/glad-labs-stack/commit/c267e664c284b4a91905b355f2dd8624d612cd0b))
+* **media:** VRAM preflight gate — stop video renders from freezing the desktop ([#2394](https://github.com/Glad-Labs/glad-labs-stack/issues/2394)) ([86728d8](https://github.com/Glad-Labs/glad-labs-stack/commit/86728d82d8d9652b692e4f1254cf2e5429352332))
+* **media:** VRAM reclaim + idle-only WSL/Docker GPU reset (PR 2) ([#2412](https://github.com/Glad-Labs/glad-labs-stack/issues/2412)) ([5476364](https://github.com/Glad-Labs/glad-labs-stack/commit/5476364e7108ada56afe111908deb4ca1a36a6e5))
+* **observability:** render VRAM gate panel on Hardware & Power ([#2399](https://github.com/Glad-Labs/glad-labs-stack/issues/2399)) ([3b14224](https://github.com/Glad-Labs/glad-labs-stack/commit/3b14224ea64330c260691fe0d2454ca91e8e5330))
+* **scheduler:** surface JobResult.metrics to Grafana via audit_log job_run rows ([#2431](https://github.com/Glad-Labs/glad-labs-stack/issues/2431)) ([53fe260](https://github.com/Glad-Labs/glad-labs-stack/commit/53fe260b8710c1afb26d48072c3504e6588a98ba))
+
+
+### Bug Fixes
+
+* **affiliate:** repair referrals export after keyword column drop ([#2406](https://github.com/Glad-Labs/glad-labs-stack/issues/2406)) ([b28b362](https://github.com/Glad-Labs/glad-labs-stack/commit/b28b362acb21428470b3dcd975878b04f0c9cd8c))
+* **auto-embed:** COPY modules/ + schemas/ into the sidecar image ([#2410](https://github.com/Glad-Labs/glad-labs-stack/issues/2410)) ([6824a38](https://github.com/Glad-Labs/glad-labs-stack/commit/6824a38b75fe9f30e00e4b5597d112b3a8c59095))
+* **auto-embed:** pip-install aiolimiter + tenacity — sidecar's only viable embed provider couldn't import ([#2418](https://github.com/Glad-Labs/glad-labs-stack/issues/2418)) ([a92ba62](https://github.com/Glad-Labs/glad-labs-stack/commit/a92ba6229a2db7b777d135436c56eec4b562c4fc))
+* **brain:** branch-drift probe pages only on a meaningful backlog, not deploy lag ([#2295](https://github.com/Glad-Labs/glad-labs-stack/issues/2295)) ([#2387](https://github.com/Glad-Labs/glad-labs-stack/issues/2387)) ([dc18cb7](https://github.com/Glad-Labs/glad-labs-stack/commit/dc18cb7eefcaa2915f1c3640a31e7fd5647d3af2))
+* **brain:** glitchtip_triage_probe — stop the self-capture double-page loop + fix the silent CancelledError ceiling ([#2402](https://github.com/Glad-Labs/glad-labs-stack/issues/2402)) ([#2403](https://github.com/Glad-Labs/glad-labs-stack/issues/2403)) ([4d8a5ab](https://github.com/Glad-Labs/glad-labs-stack/commit/4d8a5ab66cf0edb88ce2904e1538d6ca1c6ed766))
+* **brain:** operator_url_probe — compose-DNS health overrides for 4 mis-scoped surfaces ([#2395](https://github.com/Glad-Labs/glad-labs-stack/issues/2395)) ([#2397](https://github.com/Glad-Labs/glad-labs-stack/issues/2397)) ([57aea7c](https://github.com/Glad-Labs/glad-labs-stack/commit/57aea7c6dc3e9d73df5187bb07194a8bbb6465d9))
+* **brain:** postgres port-forward probe now catches SCRAM-corrupted proxies ([#2425](https://github.com/Glad-Labs/glad-labs-stack/issues/2425)) ([9f1eecf](https://github.com/Glad-Labs/glad-labs-stack/commit/9f1eecfe6761f406fd96c888acfb2acfc9ac72fc))
+* **brain:** prefect_stuck_flow_probe title reflects the metric that actually triggered ([#2411](https://github.com/Glad-Labs/glad-labs-stack/issues/2411)) ([9c3838b](https://github.com/Glad-Labs/glad-labs-stack/commit/9c3838b132e72ecbd85dd8b79ebb0effb878f1e5))
+* **brain:** surface swallowed dedup/config-read failures in probes + daemon ([#2392](https://github.com/Glad-Labs/glad-labs-stack/issues/2392)) ([c9650b8](https://github.com/Glad-Labs/glad-labs-stack/commit/c9650b877d4f49db9a88b030904469605714da0c))
+* **ci:** match call-form empty-collection sentinel returns in silent-except lint ([#2400](https://github.com/Glad-Labs/glad-labs-stack/issues/2400)) ([4c74466](https://github.com/Glad-Labs/glad-labs-stack/commit/4c744665feb058809fc8f2be079419ccc1550253))
+* **cli:** guarantee UTF-8 stdout/stderr so success/failure glyphs can't crash the CLI ([#2385](https://github.com/Glad-Labs/glad-labs-stack/issues/2385)) ([6397831](https://github.com/Glad-Labs/glad-labs-stack/commit/6397831eb2aad131f98e756bf530cc8442464db4))
+* **console:** clean social-draft drawer title instead of the clipped inbox label ([#2377](https://github.com/Glad-Labs/glad-labs-stack/issues/2377)) ([684efca](https://github.com/Glad-Labs/glad-labs-stack/commit/684efca4f375c775ce5d0bda6c456ffbaca99fc6))
+* **console:** surface blocked social-draft approvals instead of a false success ([#2435](https://github.com/Glad-Labs/glad-labs-stack/issues/2435)) ([181fdb1](https://github.com/Glad-Labs/glad-labs-stack/commit/181fdb1fa52b06db2d6c216d7c5563d94ee34f8e))
+* **content:** surface remaining swallowed best-effort failures as findings ([#2398](https://github.com/Glad-Labs/glad-labs-stack/issues/2398)) ([b29b4fd](https://github.com/Glad-Labs/glad-labs-stack/commit/b29b4fd4b4ad2acb70cd4fd4818f1ccc524f8027))
+* **content:** surface swallowed best-effort failures in content atoms as findings ([#2396](https://github.com/Glad-Labs/glad-labs-stack/issues/2396)) ([6981466](https://github.com/Glad-Labs/glad-labs-stack/commit/69814663ab6b571563febdcb283560d6727b263e))
+* **dev-diary:** surface swallowed context-source failures as findings ([#2390](https://github.com/Glad-Labs/glad-labs-stack/issues/2390)) ([c8c412e](https://github.com/Glad-Labs/glad-labs-stack/commit/c8c412ec9149d7b195396c1a3f9f58e9586eb7c0))
+* **llm:** OllamaNativeProvider.embed() missing **kwargs — TypeError on every dispatch_embed call once litellm is unavailable ([#2414](https://github.com/Glad-Labs/glad-labs-stack/issues/2414)) ([8266e70](https://github.com/Glad-Labs/glad-labs-stack/commit/8266e70f800a2f1a884c25a2d213ebc70741582c))
+* **observability:** retry failed Prometheus /-/reload instead of masking it green ([#842](https://github.com/Glad-Labs/glad-labs-stack/issues/842)) ([#2381](https://github.com/Glad-Labs/glad-labs-stack/issues/2381)) ([667b302](https://github.com/Glad-Labs/glad-labs-stack/commit/667b302e195b04306bc17f6766c31c6c68968929))
+* **observability:** stop operator_url_probe false-paging on wan_server_url ([#2409](https://github.com/Glad-Labs/glad-labs-stack/issues/2409)) ([1ebded6](https://github.com/Glad-Labs/glad-labs-stack/commit/1ebded6349a58ae00dcc3ec9c5dbf153d0850ca0))
+* **ops:** claude-md-sync surfaces DB-stats script failures instead of discarding them ([#2420](https://github.com/Glad-Labs/glad-labs-stack/issues/2420)) ([04780b1](https://github.com/Glad-Labs/glad-labs-stack/commit/04780b1635358b9a07c1c643410737133cb0c0d7))
+* **pipeline:** image_rebuild strands job at in_progress — add atoms.set_task_status terminal node ([#2365](https://github.com/Glad-Labs/glad-labs-stack/issues/2365)) ([3a8dd76](https://github.com/Glad-Labs/glad-labs-stack/commit/3a8dd769389e3df44e0ba3222e31c379d1bceb11))
+* **power:** fast-ingest iCUE CSV feed so a drop surfaces in ~30m not ~120m ([#2383](https://github.com/Glad-Labs/glad-labs-stack/issues/2383)) ([2bba62c](https://github.com/Glad-Labs/glad-labs-stack/commit/2bba62cb501f2278551dc9d103b480a68edb8876))
+* **scheduler:** exhaust before paging for circular-safe jobs ([#831](https://github.com/Glad-Labs/glad-labs-stack/issues/831)) ([#2379](https://github.com/Glad-Labs/glad-labs-stack/issues/2379)) ([e2cd0cf](https://github.com/Glad-Labs/glad-labs-stack/commit/e2cd0cf53a5feb592c6adf214ac3e71673b69ede))
+* **self-heal:** dedup compose-drift host-recover pages on unchanged drift ([#2388](https://github.com/Glad-Labs/glad-labs-stack/issues/2388)) ([fe8fe3f](https://github.com/Glad-Labs/glad-labs-stack/commit/fe8fe3f5ba2dc65a2965dd81d47042bf661af92f))
+* **self-healing:** recovery-agent request timeout + independent liveness watchdog ([#2419](https://github.com/Glad-Labs/glad-labs-stack/issues/2419)) ([679bdb3](https://github.com/Glad-Labs/glad-labs-stack/commit/679bdb3b80ae78440af6b530488a5468efb630ae))
+* **services:** close out remaining gap-silent-except sites (burn-down batch 6b) ([#2407](https://github.com/Glad-Labs/glad-labs-stack/issues/2407)) ([e297baa](https://github.com/Glad-Labs/glad-labs-stack/commit/e297baa21882040caa0db03137968e764f164d82))
+* **services:** surface swallowed per-iteration failures via aggregate findings (burn-down batch 5) ([#2401](https://github.com/Glad-Labs/glad-labs-stack/issues/2401)) ([1beefde](https://github.com/Glad-Labs/glad-labs-stack/commit/1beefde83042219573e4d3b764d0f60ab0e5476a))
+* **services:** surface swallowed singleton failures via findings (burn-down batch 6a) ([#2405](https://github.com/Glad-Labs/glad-labs-stack/issues/2405)) ([3bad2e0](https://github.com/Glad-Labs/glad-labs-stack/commit/3bad2e06e5bdf08f8b24ed1b41bea9a94b62bda8))
+* **social:** strip ellipsis trail-off + guarantee post URL in generated copy ([#2380](https://github.com/Glad-Labs/glad-labs-stack/issues/2380)) ([5a8858c](https://github.com/Glad-Labs/glad-labs-stack/commit/5a8858c716b510502aff593c759d8745991d9c48))
+* **tests:** move private modules.finance import out of public-shipped test file ([#2423](https://github.com/Glad-Labs/glad-labs-stack/issues/2423)) ([5cb069b](https://github.com/Glad-Labs/glad-labs-stack/commit/5cb069b0043f45238f630952855976a573bd9e70))
+* **tts:** drop dead cosyvoice2 app_settings keys from existing installs ([#2393](https://github.com/Glad-Labs/glad-labs-stack/issues/2393)) ([658b470](https://github.com/Glad-Labs/glad-labs-stack/commit/658b470daaae248ebc472e41bcb72d21e63b62d9))
+
+
+### Performance Improvements
+
+* **registry:** cache get_core_samples() — CPU storm on large embed backlogs ([#2416](https://github.com/Glad-Labs/glad-labs-stack/issues/2416)) ([cd581c5](https://github.com/Glad-Labs/glad-labs-stack/commit/cd581c50163e67fa3ddff0d07d816e5174b2a602))
+
 ## [0.101.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.100.0...v0.101.0) (2026-07-12)
 
 
