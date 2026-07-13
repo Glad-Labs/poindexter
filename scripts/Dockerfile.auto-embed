@@ -24,10 +24,18 @@ WORKDIR /app
 #   - the plugins/ package (Protocols, registry, config, secrets)
 #   - the services/taps/ package (the Tap implementations that
 #     register via entry_points)
+#   - modules/ + schemas/ (poindexter#849): plugins.registry.get_core_samples()
+#     unconditionally imports every core-sample entry — including the 14
+#     modules.content.stages.* classes and their schemas.video_shot_list
+#     dependency — even for a caller that only wants get_taps(). Without
+#     these two the sidecar logged a ModuleNotFoundError per stage class
+#     on every hourly run.
 COPY scripts/auto-embed.py /app/auto-embed.py
 COPY src/cofounder_agent/poindexter /app/poindexter
 COPY src/cofounder_agent/plugins /app/plugins
 COPY src/cofounder_agent/services /app/services
+COPY src/cofounder_agent/modules /app/modules
+COPY src/cofounder_agent/schemas /app/schemas
 COPY brain/ /brain/
 
 ENV PYTHONPATH="/app:/"
