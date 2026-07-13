@@ -95,10 +95,13 @@ def strip_think_blocks(text: str) -> str:
 #   "<|channel>thought\n<channel|>"  -> ""   (mangled Harmony)
 #   "<|channel|>analysis<|message|>" -> ""   (proper Harmony)
 # The opener requires a pipe on at least one side (``<|channel>`` / ``<channel|>``
-# / ``<|channel|>``) — a bare ``<channel>`` with no pipe is left alone.
+# / ``<|channel|>``) — a bare ``<channel>`` with no pipe is left alone. Plural
+# forms (``thoughts``, ``analyses``, ...) are matched too — some models emit
+# them, and an unmatched trailing "s" used to dangle onto the next word
+# (2026-07-13 prod scan: "be<|channel>thoughts' ..." -> "bes'").
 _CHANNEL_HEADER_RE = re.compile(
     r"<(?:\|channel\|?|channel\|)>\s*"
-    r"(?:thought|analysis|final|commentary)?\s*"
+    r"(?:thoughts?|analys[ie]s|finals?|commentary|commentaries)?\s*"
     r"(?:<(?:\|(?:message|channel)\|?|(?:message|channel)\|)>)?",
     re.IGNORECASE,
 )

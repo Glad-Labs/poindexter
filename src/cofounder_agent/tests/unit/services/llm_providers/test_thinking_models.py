@@ -253,6 +253,33 @@ class TestStripReasoningArtifacts:
         json.loads succeed on a reasoning model's wrapped graph-spec output)."""
         assert strip_reasoning_artifacts(raw) == expected
 
+    # --- regression cases from the 2026-07-13 internal_topic_candidates scan --
+    #
+    # The channel-label alternation only recognized singular forms
+    # (thought/analysis/final/commentary). Two real prod rows had the model
+    # emit the PLURAL form instead; the unmatched trailing "s" dangled onto
+    # the following word, producing a word-fragment fusion.
+
+    def test_plural_thoughts_no_dangling_s_fused_into_preceding_word(self) -> None:
+        """Prod capture id=9670d6a4-6891-4204-9e31-504c24b0947b: with only the
+        singular alternative, "<|channel>thoughts" matched "thought" and left
+        the "s" behind, fusing onto "be" to produce the fragment "bes'". The
+        plural-aware alternation consumes the whole word "thoughts"."""
+        raw = "...should be<|channel>thoughts' priority shift..."
+        out = strip_reasoning_artifacts(raw)
+        assert "bes'" not in out
+        assert out == "...should be' priority shift..."
+
+    def test_plural_thoughts_with_mangled_closer_no_dangling_s(self) -> None:
+        """Prod capture id=4e5147a7-c269-4430-93be-5b42652e8d35: same plural
+        mismatch produced "thes" (dangling "s" fused onto "the"). The leaked
+        ```json fence-opener that follows is a separate, out-of-scope issue
+        (leaked reasoning-preamble prose) and is left untouched here."""
+        raw = "...for the<|channel>thoughts<channel|>```json"
+        out = strip_reasoning_artifacts(raw)
+        assert "thes" not in out
+        assert out == "...for the```json"
+
 
 class _FakeSiteConfig:
     """Minimal SiteConfig stand-in — only the .get(key, default) seam matters."""
