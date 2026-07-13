@@ -108,7 +108,9 @@ team, a crowd, an audience)?"
 
 3. Otherwise (the default for image_gen / image_kenburns / generative) → pick a
    NON-human subject: servers, code on screens, cityscapes, data flows,
-   hardware close-ups, glowing circuits, stylized diagrams, abstract shapes.
+   hardware close-ups, glowing circuits, abstract shapes. Never ask for a
+   "diagram" or "chart" — diffusion models render those with garbled fake
+   labels; describe the underlying object or scene instead.
 
 Do NOT name a human noun in an image_gen / image_kenburns / generative prompt — not
 "person / people / man / woman / human / hand / hands / finger / fingers /
@@ -254,8 +256,9 @@ stock "query"; never reach for image_kenburns with a person in the prompt. If a
 human MUST be AI-rendered → phrase it as a "faceless silhouette, no
 identifiable face, figure from behind" (the word "silhouette" or "faceless" is
 required). The default image_gen / image_kenburns / generative subject is NON-human:
-servers, code on screens, hardware close-ups, glowing circuits, stylized
-diagrams. Never name a human noun (person / people / man / woman / human /
+servers, code on screens, hardware close-ups, glowing circuits, abstract
+shapes — never a "diagram" or "chart" (diffusion models render those with
+garbled fake labels). Never name a human noun (person / people / man / woman / human /
 hand / hands / developer / engineer / team / crowd …) in an AI prompt — NOT
 EVEN as "no people" / "no humans" (a reviewer flags the word inside a
 negation, and the renderer already strips faces/people/hands for you). Signal

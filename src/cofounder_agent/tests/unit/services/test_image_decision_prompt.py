@@ -54,7 +54,7 @@ SECTIONS (title + a short excerpt of the actual text):
   2. Section Two
 
 AVAILABLE IMAGE SOURCES:
-- "image_gen": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, diagrams, conceptual scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
+- "image_gen": AI-generated images. Best for: abstract concepts, mood imagery, artistic visualizations, conceptual scenes. Styles: blueprint, dramatic, minimal, isometric, macro, editorial.
 - "pexels": Stock photography. Best for: real-world objects, environments, workspaces, hardware close-ups, materials. Avoid shots of people.
 
 RULES:
@@ -62,7 +62,7 @@ RULES:
 2. For each, decide: image_gen or pexels? What style? What specific image?
 3. Also decide on 1 featured image (the hero/header image for the article)
 4. Be specific in your prompts — describe the exact scene, not vague concepts
-5. NEVER depict people, hands, faces, or human figures in ANY image — the brand style is objects, hardware, and environments only. Also never put text, words, or letters in AI-generated images.
+5. NEVER depict people, hands, faces, or human figures in ANY image — the brand style is objects, hardware, and environments only. Also never put text, words, or letters in AI-generated images — and never ask for a "diagram" or "chart" specifically, since diffusion models render those with garbled fake labels; describe the underlying object or scene instead.
 6. Ground each image's subject in the section's excerpt — depict what that section actually discusses, not a generic Test Category image.
 
 Output ONLY valid JSON (no markdown, no explanation):
