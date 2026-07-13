@@ -360,7 +360,7 @@ hypothesis = "^6.0"  # property-based tests for the deterministic quality scorer
 # Code Quality — ruff is the single linter+formatter (supersedes black + isort
 # + pylint; the `I` rule replaces isort, `ruff format` replaces black).
 ruff = "^0.15.20"
-mypy = ">=1,<3"
+mypy = ">=2.3.0,<3"
 bandit = "^1.7"
 
 # Pre-commit
