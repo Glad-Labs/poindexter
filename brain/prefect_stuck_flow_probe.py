@@ -697,16 +697,22 @@ async def run_prefect_stuck_flow_probe(
                     if age < threshold_for_state:
                         continue
 
-                # When the RUNNING run was flagged via the progress-stall rule
-                # (heartbeat present, single holder), surface the stall reason so
-                # the page isn't confusing for a run under the flat age threshold.
-                progress_note = ""
-                if (
+                # Was this RUNNING run flagged via the progress-stall rule
+                # (heartbeat present, single holder) rather than the flat
+                # age-in-state rule? Mirrors the exact condition
+                # _running_is_stuck uses to pick its branch, so it's true iff
+                # that branch — and not the flat-age one — is what matched.
+                stall_rule_triggered = (
                     state_type == "RUNNING"
                     and holder is not None
                     and holder.get("minutes") is not None
                     and running_run_count == 1
-                ):
+                )
+
+                # Surface the stall reason so the page isn't confusing for a
+                # run under the flat age threshold.
+                progress_note = ""
+                if stall_rule_triggered:
                     progress_note = (
                         f" No graph-node progress for {holder['minutes']:.0f}m "
                         f"(stall threshold {progress_stall_minutes}m)."
@@ -749,12 +755,27 @@ async def run_prefect_stuck_flow_probe(
                     },
                 )
 
+                # The title must reflect whichever metric actually triggered
+                # the alert. Prefect can reset the RUNNING state timestamp on
+                # an internal retry/resume, dropping ``age`` back to ~0 even
+                # while the stall-rule metric (holder['minutes']) is well
+                # past its threshold — a title showing "(0m)" then reads as
+                # nothing's wrong. See the 2026-07-12 agile-nyala page
+                # (age=0, holder['minutes']=21, stall threshold 20).
+                if stall_rule_triggered:
+                    title = (
+                        f"Prefect flow stalled (no progress): {name} "
+                        f"({holder['minutes']:.0f}m)"
+                    )
+                else:
+                    title = f"Prefect flow stuck in {state_type}: {name} ({age}m)"
+
                 notify_fn(
-                    title=f"Prefect flow stuck in {state_type}: {name} ({age}m)",
+                    title=title,
                     detail=detail,
                     source="brain.prefect_stuck_flow_probe",
                     severity="warning",
-                    # Stable per-run key — the title embeds the age, so
+                    # Stable per-run key — the title embeds a duration, so
                     # without this every 5-min re-detection of the SAME
                     # stuck run looks novel to the page-cooldown gate.
                     dedup_key=f"prefect_stuck_flow:{run_id}",

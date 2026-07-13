@@ -392,6 +392,40 @@ async def test_running_stuck_via_stall_under_flat_threshold():
 
 
 @pytest.mark.asyncio
+async def test_stall_triggered_title_uses_stall_minutes_not_age():
+    """2026-07-12 clarity bug: when the progress-stall rule (not flat age) is
+    what flags a RUNNING run as stuck, the page title must show the stall
+    minutes, not the flat age. Live example: age=0 (Prefect reset the state
+    timestamp on an internal retry/resume) while the holder hadn't progressed
+    in 21m (>= the 20m stall threshold) — a title of 'Prefect flow stuck in
+    RUNNING: agile-nyala (0m)' looked like nothing was wrong even though the
+    real 21-minute stall was buried in the detail text."""
+    notify = MagicMock()
+    pool = _make_pool(
+        setting_values={
+            "prefect_stuck_flow_threshold_minutes": "30",
+            "prefect_stuck_flow_progress_stall_minutes": "20",
+            "prefect_stuck_flow_auto_crash": "false",
+        },
+        inprogress_row={"task_id": "t1", "last_progress_at": "x", "minutes": 21.0},
+    )
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(
+            200, json_data=[_run(run_id="r1", name="agile-nyala", minutes_ago=0)],
+        ),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["stuck_count"] == 1
+    kwargs = notify.call_args.kwargs
+    title = kwargs["title"]
+    assert "21m" in title
+    assert "(0m)" not in title
+    assert "agile-nyala" in title
+
+
+@pytest.mark.asyncio
 async def test_running_null_heartbeat_uses_legacy_flat_threshold():
     """NULL last_progress_at → legacy flat-threshold path: a 35m RUNNING run is
     stuck (≥30m), preserving today's behaviour for pre-heartbeat tasks."""
