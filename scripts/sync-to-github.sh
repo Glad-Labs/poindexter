@@ -223,13 +223,30 @@ git rm --cached --quiet skills/openclaw/gladlabs-config.json 2>/dev/null || true
 # stack, but the bare quickstart needs this template.)
 git rm --cached --quiet scripts/bootstrap.sh 2>/dev/null || true              # References stripped files (docker-compose.local.yml) and dead Woodpecker CI; poindexter setup --auto covers fresh-install flow
 
-# === Premium Grafana dashboards (Seed Package — keep only pipeline-merged free) ===
-git rm --cached --quiet infrastructure/grafana/dashboards/approval-queue.json 2>/dev/null || true
-git rm --cached --quiet infrastructure/grafana/dashboards/cost-analytics.json 2>/dev/null || true
-git rm --cached --quiet infrastructure/grafana/dashboards/infrastructure-data.json 2>/dev/null || true
-git rm --cached --quiet infrastructure/grafana/dashboards/link-registry.json 2>/dev/null || true
+# === Operator-only Grafana dashboards (privacy strip — NOT monetization) ===
+# Dashboards are not feature-gated for Poindexter Pro. Pro is delivered via a
+# wholly separate, out-of-tree private repo (Glad-Labs/poindexter-pro, built by
+# scripts/build/build_seed.py + build_prompts.py, collaborator-invite delivery)
+# that ships a periodically-refreshed COPY of a curated 5-board set (Pipeline /
+# QA Rails / Cost & Analytics / Revenue / Observability) bundled with premium
+# prompts, a tuned app_settings seed, and the operator book — sold on
+# freshness/curation, not on withholding code. Per SUPPORT.md: "the
+# subscription buys freshness, not gated features; the engine itself stays
+# fully functional under Apache 2.0." So every dashboard in
+# infrastructure/grafana/dashboards/ ships to this OSS mirror EXCEPT the one
+# below, stripped for an unrelated reason — it leaks the operator's own
+# Tailscale hostname, not a monetization boundary.
+#
+# This block used to strip 6 filenames left over from the retired $9/mo "Seed
+# Package" SKU (comment: "keep only pipeline-merged free"). Four no longer
+# existed on disk at all — folded into pipeline-merged.json /
+# system-health-merged.json by the 2026-06-03 dashboard restructuring
+# (poindexter#654) — so their replacement files (incl. qa-rails.json) were
+# shipping unstripped the whole time anyway, while cost-analytics.json (which
+# does still exist and has no independent leak content) was withheld for a
+# monetization model that no longer exists. Trimmed to the one real strip
+# 2026-07-13.
 git rm --cached --quiet infrastructure/grafana/dashboards/mission-control.json 2>/dev/null || true   # embeds operator-only Tailscale Funnel voice URL + Pyroscope/Loki/Tempo links
-git rm --cached --quiet infrastructure/grafana/dashboards/quality-content.json 2>/dev/null || true
 
 # === Gitleaks baseline — SHIPPED to public mirror, NOT stripped ===
 # 2026-05-12: previously this line stripped .gitleaks-baseline.json from

@@ -218,16 +218,14 @@ _STRIP_FILES = (
     "src/cofounder_agent/tests/unit/scripts/test_check_public_mirror_safety_strip_list.py",
     "src/cofounder_agent/tests/unit/scripts/test_regen_app_settings_doc.py",
     "src/cofounder_agent/tests/unit/scripts/test_sync_script_leak_guard_delegation.py",
-    "infrastructure/grafana/dashboards/approval-queue.json",
-    "infrastructure/grafana/dashboards/cost-analytics.json",
-    "infrastructure/grafana/dashboards/infrastructure-data.json",
-    "infrastructure/grafana/dashboards/link-registry.json",
-    # mission-control.json embeds the operator's Tailscale Funnel voice URL +
-    # other operator-specific dashboard links (Pyroscope, Loki, Tempo). It's
-    # the operator's top-level view and not part of the public Poindexter
-    # product surface.
+    # Dashboards are not feature-gated for Poindexter Pro — Pro is a wholly
+    # separate, out-of-tree private repo (Glad-Labs/poindexter-pro) that ships
+    # a refreshed COPY of a curated board set; see the dashboard-strip block
+    # in scripts/sync-to-github.sh for the full rationale. mission-control.json
+    # is the one exception, stripped for privacy, not monetization: it embeds
+    # the operator's Tailscale Funnel voice URL + other operator-specific
+    # dashboard links (Pyroscope, Loki, Tempo).
     "infrastructure/grafana/dashboards/mission-control.json",
-    "infrastructure/grafana/dashboards/quality-content.json",
 )
 
 
@@ -277,6 +275,13 @@ _SHIPS_TO_PUBLIC: tuple[str, ...] = (
     ".gitleaks-baseline.json",
     # Public Mintlify config (rewritten at sync time to drop gladlabs.io URLs).
     "docs.json",
+    # Used to be stripped as a "premium Grafana dashboard" under a retired
+    # $9/mo monetization model. Dashboards aren't feature-gated (Pro ships a
+    # curated copy via the separate Glad-Labs/poindexter-pro repo instead) and
+    # this file has no independent leak content — removed from _STRIP_FILES
+    # 2026-07-13. Listed here so a future reader doesn't re-strip it on sight
+    # of the word "premium" without reading the full rationale.
+    "infrastructure/grafana/dashboards/cost-analytics.json",
 )
 
 

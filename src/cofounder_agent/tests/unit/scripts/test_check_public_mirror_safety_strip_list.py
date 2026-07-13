@@ -541,3 +541,113 @@ def test_no_shipping_test_file_imports_a_stripped_module() -> None:
         "the import inside the test function body if the dependency is "
         "genuinely optional.\n\n" + "\n".join(violations)
     )
+
+
+# ---------------------------------------------------------------------------
+# Grafana dashboard strip drift (2026-07-13) — the "Premium Grafana
+# dashboards" block named 6 filenames under a retired $9/mo monetization
+# model. Four no longer existed on disk at all (folded into
+# pipeline-merged.json / system-health-merged.json by the 2026-06-03
+# dashboard restructuring, poindexter#654); a 5th (cost-analytics.json) had
+# no independent leak reason. A `git rm --cached` on a missing path silently
+# no-ops, so this drifted for weeks unnoticed: qa-rails.json and its
+# replacement-merged siblings shipped un-audited by this list (harmless —
+# dashboards were never meant to be code-gated, see SUPPORT.md: "the
+# subscription buys freshness, not gated features") while cost-analytics.json
+# shipped withheld for a monetization model that no longer exists. Only
+# mission-control.json had a real (privacy, not monetization) leak reason —
+# confirmed via grep against nightrider/taild4f626.ts.net — and stays.
+#
+# This is the SAME failure class as the #1288 / #2200 incidents (two lists,
+# or a list vs. renamed reality, silently falling out of sync) applied to a
+# new axis: does the STRIPPED FILE STILL EXIST. The general tests above this
+# comment (test_every_strip_files_entry_is_stripped_by_sync_script /
+# test_every_strip_dir_prefix_is_stripped_by_sync_script) already guard
+# "is every _STRIP_FILES entry actually git-rm'd" — they do NOT guard "does
+# the named file still exist", which is the gap this section closes.
+# ---------------------------------------------------------------------------
+
+_RETIRED_DASHBOARD_MONETIZATION_STRIPS = (
+    "infrastructure/grafana/dashboards/approval-queue.json",
+    "infrastructure/grafana/dashboards/cost-analytics.json",
+    "infrastructure/grafana/dashboards/infrastructure-data.json",
+    "infrastructure/grafana/dashboards/link-registry.json",
+    "infrastructure/grafana/dashboards/quality-content.json",
+)
+
+
+def test_retired_dashboard_monetization_strips_are_not_reintroduced() -> None:
+    """The 5 filenames from the retired dashboard-monetization strip must stay gone.
+
+    Dashboards are not feature-gated for Poindexter Pro (SUPPORT.md: "the
+    subscription buys freshness, not gated features; the engine itself stays
+    fully functional under Apache 2.0"). Pro ships a curated dashboard COPY
+    via the wholly separate Glad-Labs/poindexter-pro repo, not by withholding
+    files from this OSS mirror. If one of these reappears in _STRIP_FILES,
+    either the monetization model changed back (update this test deliberately)
+    or someone silently reintroduced the drift this section fixed.
+    """
+    reintroduced = [p for p in _RETIRED_DASHBOARD_MONETIZATION_STRIPS if p in CHECK._STRIP_FILES]
+    assert not reintroduced, (
+        f"These dashboard files are back in _STRIP_FILES: {reintroduced}. "
+        "Dashboards ship free in the OSS mirror -- Pro is a separate curated "
+        "repo, not a code-level gate. If this is a genuine new leak concern "
+        "(not monetization), document the specific reason in _STRIP_FILES "
+        "the way mission-control.json's entry does."
+    )
+
+
+_MISSION_CONTROL_DASHBOARD = "infrastructure/grafana/dashboards/mission-control.json"
+
+
+def test_mission_control_dashboard_is_still_stripped_for_privacy() -> None:
+    """mission-control.json must stay in _STRIP_FILES -- a privacy strip, not monetization.
+
+    It embeds the operator's real Tailscale Funnel hostname
+    (nightrider.taild4f626.ts.net) plus Pyroscope/Loki/Tempo deep-links.
+    Unlike the other 5 dashboard filenames this block used to strip, this one
+    has independent leak content and must not be removed just because the
+    monetization rationale for its siblings went away.
+    """
+    assert _MISSION_CONTROL_DASHBOARD in CHECK._STRIP_FILES, (
+        f"{_MISSION_CONTROL_DASHBOARD} is not in _STRIP_FILES. It leaks the "
+        "operator's Tailscale hostname and Pyroscope/Loki/Tempo links -- strip "
+        "it here AND keep the `git rm --cached` line in scripts/sync-to-github.sh."
+    )
+
+
+def test_would_ship_rejects_mission_control_dashboard() -> None:
+    """would_ship() must classify mission-control.json as NOT shipping."""
+    assert not CHECK.would_ship(_MISSION_CONTROL_DASHBOARD), (
+        f"would_ship({_MISSION_CONTROL_DASHBOARD!r}) is True -- it leaks the "
+        "operator's Tailscale hostname and must be stripped."
+    )
+
+
+def test_every_dashboard_strip_entry_exists_on_disk() -> None:
+    """Every infrastructure/grafana/dashboards/ entry in _STRIP_FILES must exist on disk.
+
+    The general safeguard the 2026-07-13 incident was missing: a dashboard
+    strip entry naming a file that no longer exists is a silent no-op -- the
+    guard 'passes' while whatever REPLACED that file (a merge, a rename)
+    ships completely unaudited by this list. This catches the exact failure
+    class before it can recur on a future dashboard restructuring, without
+    the false-positive risk of applying the same check to the whole
+    _STRIP_FILES tuple (several non-dashboard entries -- e.g. the
+    intentionally-transient skills/openclaw/ legacy-path strip -- are allowed
+    to reference files that don't exist on every branch).
+    """
+    repo_root = _repo_root()
+    missing = [
+        entry
+        for entry in CHECK._STRIP_FILES
+        if entry.startswith("infrastructure/grafana/dashboards/")
+        and not (repo_root / entry).exists()
+    ]
+    assert not missing, (
+        f"These _STRIP_FILES dashboard entries name files that no longer "
+        f"exist on disk: {missing}. A dashboard rename/merge has silently "
+        "made this strip a no-op -- either update the entry to the new "
+        "filename (if the leak content moved with it) or remove the stale "
+        "entry (if the leak content is gone, as happened 2026-07-13)."
+    )

@@ -182,8 +182,11 @@ scripts/secrets-to-scrub.txt
 # junk is covered by web/public-site/.gitignore (node_modules, .next, etc.).
 
 
-# Premium Grafana dashboards (kept locally for Matt's Grafana, never committed)
-infrastructure/grafana/dashboards/cost-analytics.json
+# Retired local-only dashboard (folded into system-health-merged.json by the
+# 2026-06-03 restructuring, poindexter#654); rule kept in case a stray copy
+# still exists on a local disk. cost-analytics.json used to be listed here
+# too, but it's actually git-tracked (this rule was a no-op for it) and ships
+# in this repo — see infrastructure/grafana/README.md.
 infrastructure/grafana/dashboards/infrastructure-data.json
 
 # ============================================================

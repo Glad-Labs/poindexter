@@ -1,10 +1,11 @@
 # Grafana Monitoring for Poindexter
 
-**Last Updated:** 2026-04-18
+**Last Updated:** 2026-07-13
 
 Poindexter ships with a self-hosted Grafana instance (Docker container
-on port 3000) and one pre-configured dashboard. Premium dashboards
-are available with the Seed Package.
+on port 3000) and a full set of pre-configured dashboards. Dashboards
+are not feature-gated — the whole monitoring stack is part of the
+free, Apache-2.0 engine.
 
 ## Local Setup (ships out of the box)
 
@@ -18,26 +19,46 @@ setup needed — `bash scripts/start-stack.sh` brings it up.
 
 ## Dashboards
 
-### Free (ships in this repo)
+### Free (ships in this repo, auto-provisioned)
 
-| File                              | Description                                                                         |
-| --------------------------------- | ----------------------------------------------------------------------------------- |
-| `dashboards/pipeline-merged.json` | Approval queue, pipeline operations, QA observability, content quality (merged set) |
+All boards under `dashboards/` ship in this repo and are
+auto-provisioned by the Docker stack on first boot — no import step
+needed.
 
-### Premium (Seed Package — $29)
+| File                        | Description                                                                |
+| --------------------------- | -------------------------------------------------------------------------- |
+| `pipeline-merged.json`      | Pipeline throughput, approval queue, quality/QA rows, media approval queue |
+| `cost-analytics.json`       | LLM spend, model costs, electricity tracking                               |
+| `qa-rails.json`             | Per-reviewer pass-rate, score distribution, latest QA passes               |
+| `observability-merged.json` | Tempo traces, Pyroscope flame graphs, Loki logs, API HTTP RED metrics      |
+| `system-health-merged.json` | Service up/down, scheduled-publish queue, approved-queue                   |
+| `database.json`             | Postgres internals — size, connections, table stats, cache-hit ratio       |
+| `hardware-power.json`       | GPU live metrics, PSU/wall/CPU power sensors + electricity cost            |
+| `integrations-admin.json`   | qa_gates / publishing_adapters / external_taps declarative-config tables   |
+| `experiments-dryrun.json`   | Auto-publish gate dry-run observability + variant experiments              |
+| `findings.json`             | Probe-findings routing — emitted vs. pending-delivery, by kind/severity    |
+| `seo-harvest.json`          | SEO harvest metrics                                                        |
 
-Available in the `glad-labs-prompts` repo after purchase:
+One board is intentionally absent from the public `Glad-Labs/poindexter`
+mirror: `mission-control.json` is the operator's own top-level glance
+and embeds a private Tailscale hostname (see the strip in
+`scripts/sync-to-github.sh`) — it ships in this source repo but not the
+public one, and isn't a useful template to fork anyway. Build your own
+top-level view from the boards above, or start from `pipeline-merged.json`.
 
-| File                       | Description                                  |
-| -------------------------- | -------------------------------------------- |
-| `approval-queue.json`      | Approval workflow + quality distribution     |
-| `cost-analytics.json`      | LLM spend, model costs, electricity tracking |
-| `quality-content.json`     | QA scores, rejection trends, top posts       |
-| `infrastructure-data.json` | GPU, DB, audit logs, hardware monitoring     |
-| `link-registry.json`       | Internal/external link tracking              |
+A `revenue.json` board also exists, parked in `dashboards-parked/`
+until `revenue_events` has real data to show.
 
-To import premium dashboards: **Dashboards > New > Import > Upload JSON**.
-Set the datasource to `Local Brain DB` if prompted.
+### Poindexter Pro
+
+[Poindexter Pro](https://www.gladlabs.ai) is a subscription to Matt's
+continuously-tuned system, delivered via a private collaborator-invite
+repo (`Glad-Labs/poindexter-pro`) — not a code-level unlock. It bundles
+a periodically-refreshed copy of 5 of the boards above (Pipeline, QA
+Rails, Cost & Analytics, Revenue, Observability) alongside premium
+prompts, a tuned `app_settings` seed, and the operator book. You
+already have all of these dashboards for free by running this repo —
+Pro buys freshness and curation, not access.
 
 ## Alerts
 

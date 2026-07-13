@@ -981,7 +981,7 @@ log_fps = [l.split('Fingerprint:',1)[1].strip() for l in log.splitlines() if 'Fi
 
 ## `scripts/sync-to-github.sh` leaves the repo stuck on a `github-sync-temp-*` branch
 
-**Symptom.** You run `bash scripts/sync-to-github.sh` and the GitHub push appears to succeed, but afterwards `git status` shows you on `github-sync-temp-NNN` with dozens of "untracked" files (CLAUDE.md, docs/, web/storefront/, infrastructure/grafana/dashboards/approval-queue.json, etc.). Next `git commit` or `git checkout` fails or behaves oddly. On the next run the script pushes fine again but also leaves you stuck — and now you have two stale temp branches.
+**Symptom.** You run `bash scripts/sync-to-github.sh` and the GitHub push appears to succeed, but afterwards `git status` shows you on `github-sync-temp-NNN` with dozens of "untracked" files (CLAUDE.md, docs/, web/storefront/, infrastructure/grafana/dashboards/mission-control.json, etc.). Next `git commit` or `git checkout` fails or behaves oddly. On the next run the script pushes fine again but also leaves you stuck — and now you have two stale temp branches.
 
 **Root cause.** Historical version of the script ended with `git checkout "$BRANCH" 2>/dev/null && git branch -D "$TEMP_BRANCH" 2>/dev/null`. The temp branch's index has a ton of files removed via `git rm --cached` (they stay on disk — only the index entries were dropped). When the script tries to checkout main, git refuses because main's tree has those files tracked and considers the on-disk copies as "untracked" — refusing to overwrite them on a non-forced checkout. `2>/dev/null` hides the error, `set -e` exits the script, and `git branch -D` never runs. The repo is stranded on the temp.
 
