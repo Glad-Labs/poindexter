@@ -204,14 +204,19 @@ class TestFormatQAFeedbackFromReviews:
         assert "(no feedback)" in out
 
     def test_truncation_applied(self):
+        """A single reviewer's oversized feedback is capped individually
+        (per_reviewer_max_chars), not by the old whole-blob max_chars —
+        the whole-blob cap is a backstop for many reviewers, not the
+        primary truncation mechanism for one verbose reviewer."""
         big = "y" * 8000
         out = format_qa_feedback_from_reviews(
             [{"reviewer": "x", "provider": "p", "score": 80,
               "approved": True, "feedback": big}],
-            max_chars=300,
+            per_reviewer_max_chars=50,
         )
-        assert len(out) <= 300
-        assert "...(truncated)" in out
+        assert "…" in out
+        assert "y" * 51 not in out
+        assert len(out) < 200
 
     def test_default_reviewer_provider(self):
         """Missing keys fall back to 'unknown'/'?'."""
@@ -220,6 +225,85 @@ class TestFormatQAFeedbackFromReviews:
         ])
         assert "unknown" in out
         assert "[?]" in out
+
+    def test_low_score_reviewer_not_dropped_behind_verbose_ones(self):
+        """Regression test for the 2026-07-13 incident: a low-score
+        reviewer's line must survive even when several verbose reviewers
+        ran before it in the pipeline's execution order."""
+        verbose = "v" * 500
+        reviews = [
+            {"reviewer": "ollama_critic", "provider": "ollama", "score": 25,
+             "approved": False, "feedback": verbose},
+            {"reviewer": "deepeval_faithfulness", "provider": "deepeval",
+             "score": 67, "approved": True, "feedback": verbose},
+            {"reviewer": "ragas_eval", "provider": "ragas", "score": 50,
+             "approved": True, "feedback": verbose},
+            {"reviewer": "content_originality",
+             "provider": "content_originality_gate", "score": 13.6,
+             "approved": True,
+             "feedback": (
+                 "content near-duplicate of published post 'x' "
+                 "(worst-chunk cosine 0.86 > 0.83)"
+             )},
+        ]
+        out = format_qa_feedback_from_reviews(reviews, max_chars=1000)
+        assert "content_originality" in out
+        assert "near-duplicate" in out
+
+    def test_reviewers_sorted_by_score_ascending(self):
+        reviews = [
+            {"reviewer": "high", "provider": "p", "score": 90,
+             "approved": True, "feedback": "fine"},
+            {"reviewer": "low", "provider": "p", "score": 10,
+             "approved": False, "feedback": "bad"},
+            {"reviewer": "mid", "provider": "p", "score": 50,
+             "approved": True, "feedback": "meh"},
+        ]
+        out = format_qa_feedback_from_reviews(reviews)
+        assert out.index("low") < out.index("mid") < out.index("high")
+
+    def test_per_reviewer_cap_applies_individually(self):
+        reviews = [
+            {"reviewer": "verbose", "provider": "p", "score": 80,
+             "approved": True, "feedback": "a" * 2000},
+            {"reviewer": "terse", "provider": "p", "score": 85,
+             "approved": True, "feedback": "short"},
+        ]
+        out = format_qa_feedback_from_reviews(reviews, per_reviewer_max_chars=50)
+        assert "a" * 51 not in out
+        assert "…" in out
+        assert "short" in out
+        assert "terse" in out
+
+    def test_advisory_low_score_sorts_by_score_not_approved_flag(self):
+        """Advisory rails report approved=True even when their own verdict
+        failed (the real verdict is embedded in the feedback text) — the
+        sort must use score, not the approved flag, or a failing advisory
+        rail sorts as if it were fine."""
+        reviews = [
+            {"reviewer": "fine_rail", "provider": "p", "score": 95,
+             "approved": True, "feedback": "all good"},
+            {"reviewer": "content_originality",
+             "provider": "content_originality_gate", "score": 13.6,
+             "approved": True,
+             "feedback": "[advisory] (failed, not required_to_pass) near-duplicate"},
+        ]
+        out = format_qa_feedback_from_reviews(reviews)
+        assert out.index("content_originality") < out.index("fine_rail")
+
+    def test_truncation_backstop_still_fires_with_many_reviewers(self):
+        """The whole-blob max_chars backstop still applies when enough
+        reviewers, even after per-reviewer capping, exceed it."""
+        reviews = [
+            {"reviewer": f"r{i}", "provider": "p", "score": 80,
+             "approved": True, "feedback": "z" * 100}
+            for i in range(10)
+        ]
+        out = format_qa_feedback_from_reviews(
+            reviews, max_chars=300, per_reviewer_max_chars=100,
+        )
+        assert len(out) <= 300
+        assert "...(truncated)" in out
 
 
 # ---------------------------------------------------------------------------

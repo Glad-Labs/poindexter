@@ -237,6 +237,7 @@ def format_qa_feedback_from_reviews(
     final_score: float | None = None,
     approved: bool | None = None,
     max_chars: int = 4000,
+    per_reviewer_max_chars: int = 200,
 ) -> str:
     """Format serialized qa_reviews into reviewer-facing text (GH-86).
 
@@ -244,9 +245,30 @@ def format_qa_feedback_from_reviews(
     that only hold the serialized dicts (e.g. when finalize reads the
     ``qa_reviews`` list from context without reconstructing the full
     :class:`MultiModelResult`).
+
+    Reviewers are sorted by ascending ``score`` (not ``approved`` —
+    advisory reviewers always report ``approved=True`` regardless of
+    their own verdict, so score is the only severity signal that works
+    across both hard-gate and advisory reviewers) and each reviewer's
+    feedback text is capped individually at ``per_reviewer_max_chars``,
+    so every reviewer that ran always gets at least a line. A low-scoring
+    reviewer can no longer be silently dropped by a handful of verbose
+    reviewers ahead of it in the whole-blob ``max_chars`` truncation
+    (2026-07-13 incident: ``content_originality`` flagged a near-duplicate
+    post but its line was truncated away behind earlier reviewers).
     """
     if not qa_reviews:
         return ""
+    dict_reviews = [r for r in qa_reviews if isinstance(r, dict)]
+
+    def _score(r: dict) -> float:
+        try:
+            return float(r.get("score", 0))
+        except (TypeError, ValueError):
+            return 0.0
+
+    dict_reviews.sort(key=_score)
+
     lines: list[str] = []
     if final_score is not None:
         status_str = (
@@ -256,17 +278,14 @@ def format_qa_feedback_from_reviews(
         )
         suffix = f" ({status_str})" if status_str else ""
         lines.append(f"Final score: {float(final_score):.0f}/100{suffix}")
-    for r in qa_reviews:
-        if not isinstance(r, dict):
-            continue
+    for r in dict_reviews:
         reviewer = r.get("reviewer", "unknown")
         provider = r.get("provider", "?")
-        try:
-            score = float(r.get("score", 0))
-        except (TypeError, ValueError):
-            score = 0.0
+        score = _score(r)
         status = "pass" if r.get("approved") else "FAIL"
         fb = (r.get("feedback") or "").strip() or "(no feedback)"
+        if len(fb) > per_reviewer_max_chars:
+            fb = fb[:per_reviewer_max_chars].rstrip() + "…"
         lines.append(
             f"- {reviewer} [{provider}] {score:.0f}/100 {status}: {fb}"
         )
