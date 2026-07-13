@@ -10,6 +10,7 @@ live Postgres is available.
 from __future__ import annotations
 
 import json
+from datetime import datetime, timezone
 
 import pytest
 
@@ -172,3 +173,55 @@ async def test_export_affiliate_referrals_runs_against_real_schema(test_pool, mo
     referrals = {r["code"]: r for r in json.loads(uploaded["affiliate-referrals.json"])}
     assert referrals["export-test-named"]["name"] == "Named Link"
     assert referrals["export-test-kwonly"]["name"] == "FirstKeyword"
+
+
+async def test_load_link_last_used_runs_against_real_schema(test_pool):
+    """Regression guard: load_link_last_used' SQL must actually run against the
+    real ``posts`` schema. The posts table has a ``content`` column, NOT
+    ``body`` (verified in 0000_baseline.schema.sql), so a ``p.body`` reference
+    raises UndefinedColumnError at runtime. A fake-pool unit test can't catch a
+    wrong column name — only a real query against the real schema can. Same bug
+    class as test_export_affiliate_referrals_runs_against_real_schema (#2406):
+    the single caller (the content.inject_affiliate_links atom) swallows this
+    error at ``logger.debug``, so a stale column reference silently kills the
+    affiliate LRU tie-break instead of ever surfacing.
+
+    Passes the txn-bound ``conn`` where the function expects a ``pool`` —
+    asyncpg Connection and Pool both expose ``.fetch``, and this keeps the
+    whole test inside the rollback (mirrors the sibling test's
+    ``_export_affiliate_referrals(conn, ...)`` call).
+    """
+    from modules.content.affiliate_links import load_link_last_used
+
+    published_at = datetime(2026, 7, 1, tzinfo=timezone.utc)
+
+    async with test_pool.acquire() as conn:
+        with pytest.raises(RuntimeError, match="rollback-for-test-isolation"):
+            async with conn.transaction():
+                # A link whose /go/<code> redirect URL appears in a PUBLISHED
+                # post -> its published_at should come back as the last-used ts.
+                await conn.execute(
+                    "INSERT INTO affiliate_links (code, url) VALUES ($1, $2)",
+                    "lru-linked-code", "https://example.com/gpu",
+                )
+                await conn.execute(
+                    "INSERT INTO posts (slug, status, content, published_at) "
+                    "VALUES ($1, 'published', $2, $3)",
+                    "lru-linked-post",
+                    "Grab [this GPU](/go/lru-linked-code) before it sells out.",
+                    published_at,
+                )
+                # A second link never mentioned by any post -> LEFT JOIN yields
+                # NULL -> the function maps it to "" (exercises the else branch).
+                await conn.execute(
+                    "INSERT INTO affiliate_links (code, url) VALUES ($1, $2)",
+                    "lru-unlinked-code", "https://example.com/psu",
+                )
+
+                result = await load_link_last_used(conn)
+
+                assert result["lru-linked-code"] == published_at.isoformat()
+                assert result["lru-unlinked-code"] == ""
+
+                # Force rollback so this test data never persists in the pool.
+                raise RuntimeError("rollback-for-test-isolation")

@@ -145,7 +145,7 @@ async def load_link_last_used(pool: Any) -> dict[str, str]:
         "SELECT al.code, MAX(p.published_at) AS last_used "
         "FROM affiliate_links al "
         "LEFT JOIN posts p "
-        "  ON p.body LIKE '%/go/' || al.code || '%' AND p.status = 'published' "
+        "  ON p.content LIKE '%/go/' || al.code || '%' AND p.status = 'published' "
         "GROUP BY al.code"
     )
     return {r["code"]: (r["last_used"].isoformat() if r["last_used"] else "") for r in rows}
