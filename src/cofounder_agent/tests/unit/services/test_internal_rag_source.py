@@ -429,6 +429,41 @@ async def test_distill_rejects_leaked_reasoning_in_angle(monkeypatch):
     assert await src._distill_topic_angle(["snippet"]) is None
 
 
+async def test_distill_rejects_original_reported_leaked_token_in_angle(monkeypatch):
+    # The originally-reported incident (2026-07-13): internal_topic_candidates
+    # id=b6ce9bae-6097-4dff-a20b-b703b8b0e5d0 stored this exact distilled_angle
+    # — a mangled Harmony/gpt-oss channel token leaked mid-sentence — which rode
+    # through to a draft post's framing (topic "The Shift to a Custom Operator
+    # Console", slug the-shift-to-a-custom-operator-console-b1a787c3). Distinct
+    # row from test_distill_rejects_leaked_reasoning_in_angle's (5b662b41) —
+    # locks in the specific string from the original report against
+    # detect_leaked_reasoning's REASON_CONTROL_TOKEN path.
+    import services.llm_text as llm_text
+    import services.prompt_manager as pm
+    import services.topic_ranking as tr
+
+    leaked_angle = (
+        "Moving from generic monitoring tools like Grafana to a "
+        "custom-built internal tool allows for tighter integration and "
+        "native telemetry, removing the rest of the<|channel>thought own "
+        "operating environment."
+    )
+    src = InternalRagSource(_FakePool(), site_config=SiteConfig())
+    monkeypatch.setattr(llm_text, "resolve_structured_model", lambda **kw: "gemma3:27b")
+    monkeypatch.setattr(
+        tr, "_ollama_chat_json",
+        AsyncMock(return_value=json.dumps({
+            "topic": "The Shift to a Custom Operator Console",
+            "angle": leaked_angle,
+        })),
+    )
+    fake_pm = AsyncMock()
+    fake_pm.get_prompt = lambda *a, **k: "prompt"
+    monkeypatch.setattr(pm, "get_prompt_manager", lambda: fake_pm)
+
+    assert await src._distill_topic_angle(["snippet"]) is None
+
+
 async def test_distill_rejects_leaked_reasoning_in_topic(monkeypatch):
     # Same guard, but the leak lands in the topic field instead of angle —
     # both fields go through detect_leaked_reasoning.
