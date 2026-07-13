@@ -1780,6 +1780,91 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "id": 43,
+      "type": "row",
+      "collapsed": false,
+      "title": "Social Distribution Outcomes",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 135
+      },
+      "panels": []
+    },
+    {
+      "id": 44,
+      "type": "timeseries",
+      "title": "Social drafts posted / failed by platform",
+      "description": "Postiz distribution outcomes per platform (cumulative since worker start). Populates as drafts post. gap-fill (poindexter#855): live Prometheus metric that was on no dashboard",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 136
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "auto",
+            "axisPlacement": "auto"
+          },
+          "unit": "short",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "poindexter_social_draft_posted_total",
+          "legendFormat": "posted {{platform}}",
+          "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "poindexter_social_draft_failed_total",
+          "legendFormat": "failed {{platform}}",
+          "refId": "B"
+        }
+      ]
     }
   ],
   "refresh": "30s",

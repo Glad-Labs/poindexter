@@ -1780,6 +1780,83 @@
       ],
       "title": "Shot render-check outcomes per day",
       "type": "timeseries"
+    },
+    {
+      "id": 26,
+      "type": "row",
+      "collapsed": false,
+      "title": "Rail Skip Ratio",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 79
+      },
+      "panels": []
+    },
+    {
+      "id": 27,
+      "type": "timeseries",
+      "title": "QA rail skip ratio by reviewer",
+      "description": "Fraction of the last N passes each rail was SKIPPED (empty research_context / disabled judge / unresolvable). 1.0 = skipping every pass. Only currently-skipping rails emit a series. gap-fill (poindexter#855): live Prometheus metric that was on no dashboard",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 80
+      },
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "auto",
+            "axisPlacement": "auto"
+          },
+          "unit": "percentunit",
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "max": 1
+        },
+        "overrides": []
+      },
+      "options": {
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
+        },
+        "legend": {
+          "displayMode": "list",
+          "placement": "bottom"
+        }
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "poindexter_qa_rail_skip_ratio",
+          "legendFormat": "{{reviewer}}",
+          "refId": "A"
+        }
+      ]
     }
   ],
   "description": "CHARTER: per-reviewer QA behavior — pass rates, score distributions, and what the rails veto. Answers 'are the quality gates doing their job, and which rail is the outlier?'."
