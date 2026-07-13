@@ -309,6 +309,27 @@ class TestOllamaNativeDelegation:
         mock_client.embed.assert_awaited_once()
 
     @pytest.mark.asyncio
+    async def test_embed_accepts_provider_config_kwarg(self):
+        """poindexter#850: dispatcher.dispatch_embed always injects
+        _provider_config; a stale embed(self, text, model) signature (no
+        **kwargs) raised TypeError before Ollama was ever reached — only
+        masked in prod because litellm is normally the resolved provider,
+        surfacing whenever the dispatcher falls back to ollama_native
+        (e.g. poindexter-auto-embed's minimal image, which has no litellm
+        package installed)."""
+        provider = OllamaNativeProvider()
+        mock_client = MagicMock()
+        mock_client.embed = AsyncMock(return_value=[0.1, 0.2])
+        provider._client = mock_client
+
+        vec = await provider.embed(
+            text="some text", model="nomic-embed-text",
+            _provider_config={"base_url": "http://example:11434"},
+        )
+
+        assert vec == [0.1, 0.2]
+
+    @pytest.mark.asyncio
     async def test_complete_forwards_timeout_s_kwarg(self):
         """v2.1: ``timeout_s`` kwarg should flow through to
         OllamaClient.generate(timeout=...) so callers can pin a

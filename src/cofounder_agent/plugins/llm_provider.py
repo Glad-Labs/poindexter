@@ -125,10 +125,20 @@ class LLMProvider(Protocol):
         self,
         text: str,
         model: str,
+        **kwargs: Any,
     ) -> list[float]:
         """Return an embedding vector for ``text``.
 
         Embedding model dimensions depend on the backend. Providers that
         don't support embedding raise ``NotImplementedError``.
+
+        ``**kwargs`` exists so ``services.llm_providers.dispatcher.dispatch_embed``
+        can inject ``_provider_config`` (mirrors ``complete``/``stream``) —
+        implementations that don't need it should still accept and ignore
+        it rather than omitting the parameter (poindexter#850: a stale
+        ``embed(self, text, model)`` signature on ``OllamaNativeProvider``
+        made every dispatched embed call raise ``TypeError`` once that
+        provider was reached, e.g. whenever litellm isn't installed/
+        registered and the dispatcher falls back to it).
         """
         ...

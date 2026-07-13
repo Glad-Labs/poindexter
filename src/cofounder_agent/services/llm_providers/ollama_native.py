@@ -127,8 +127,16 @@ class OllamaNativeProvider:
             else:
                 yield Token(text=str(chunk))
 
-    async def embed(self, text: str, model: str) -> list[float]:
-        """Embed via Ollama's /api/embed."""
+    async def embed(self, text: str, model: str, **kwargs: Any) -> list[float]:
+        """Embed via Ollama's /api/embed.
+
+        ``**kwargs`` absorbs ``_provider_config`` (injected by
+        ``dispatcher.dispatch_embed`` — poindexter#850): this provider's
+        ``OllamaClient`` already resolves its own base_url from settings,
+        so there's nothing to apply from it, but the parameter must exist
+        or the dispatcher's call raises ``TypeError`` before Ollama is
+        ever reached.
+        """
         client = self._get_client()
         return await client.embed(text, model=model or "nomic-embed-text")
 
