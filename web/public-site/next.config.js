@@ -174,6 +174,11 @@ const nextConfig = {
         hostname: 'pub-1432fdefa18e47ad98f213a8a2bf14d5.r2.dev',
         pathname: '/**',
       },
+      {
+        protocol: 'https',
+        hostname: 'startupfa.me',
+        pathname: '/**',
+      },
       // Wildcard pattern covering any *.r2.dev public bucket domain so
       // next/image can optimise images served from any R2 account-hash
       // subdomain (poindexter#732).

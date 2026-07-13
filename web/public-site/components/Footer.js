@@ -1,5 +1,6 @@
 'use client';
 
+import Image from 'next/image';
 import Link from 'next/link';
 import { useState } from 'react';
 import { Button, Eyebrow, Logo } from '@glad-labs/brand';
@@ -62,6 +63,19 @@ const Footer = () => {
             <p className="gl-mono gl-mono--upper gl-mono--label">
               Built for innovation · Powered by AI
             </p>
+            <a
+              href="https://startupfa.me/s/glad-labs?utm_source=gladlabs.io"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="gl-focus-ring inline-block mt-4"
+            >
+              <Image
+                src="https://startupfa.me/badges/featured-badge-small.webp"
+                alt="Glad Labs - Featured on Startup Fame"
+                width={224}
+                height={36}
+              />
+            </a>
           </div>
 
           {/* Explore */}

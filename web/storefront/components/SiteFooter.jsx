@@ -28,6 +28,19 @@ export function SiteFooter() {
             Source ↗
           </Link>
         </div>
+        <a
+          href="https://startupfa.me/s/glad-labs?utm_source=gladlabs.ai"
+          target="_blank"
+          rel="noopener noreferrer"
+        >
+          {/* eslint-disable-next-line @next/next/no-img-element -- static external badge, not app-optimized content */}
+          <img
+            src="https://startupfa.me/badges/featured-badge-small.webp"
+            alt="Glad Labs - Featured on Startup Fame"
+            width="224"
+            height="36"
+          />
+        </a>
       </div>
     </footer>
   );
