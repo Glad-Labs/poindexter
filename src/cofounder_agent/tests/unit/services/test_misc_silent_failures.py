@@ -1,12 +1,19 @@
 """Unit tests — final gap-site burn-down batch (batch 6b).
 
-Fifteen single-shot sites plus three loop-shaped sites across
+Fourteen single-shot sites plus three loop-shaped sites across
 modules/routes/plugins/services/utils, all previously swallowing a
 genuine failure at ``logger.debug`` and returning a sentinel. Each
 single-shot site now fires exactly one ``emit_finding(info)``; the three
 loop-shaped sites (self_consistency_rail, web_research, startup_manager)
 use the aggregate-count pattern established in batch 5 — one finding
 after the batch/gather completes, never per-iteration.
+
+A fifteenth single-shot site (``modules/finance/probes.py``:
+``_default_egress_ip_fetch``) was fixed in this same batch, but its test
+lives in ``tests/unit/modules/finance/test_finance_probe.py`` instead of
+here — that directory is stripped from the public poindexter mirror
+(``scripts/sync-to-github.sh``), whereas this file is not, and
+``modules.finance`` doesn't exist in the public tree.
 
 Five further sites in this same sweep are intentionally left
 ``# silent-ok`` and are not tested here: ``database_service.py`` (runs
@@ -29,7 +36,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from modules.content.internal_link_coherence import get_tag_slugs_for_post
-from modules.finance.probes import _default_egress_ip_fetch
 from plugins.llm_providers.gemini import GeminiProvider
 from plugins.scheduler import PluginScheduler
 from services import content_revisions_logger, experiment_runner, profiling
@@ -75,18 +81,6 @@ async def test_get_tag_slugs_for_post_emits_finding_on_db_error(monkeypatch):
     assert result == set()
     assert len(calls) == 1
     assert calls[0]["kind"] == "link_coherence_tag_lookup_failed"
-
-
-@pytest.mark.asyncio(loop_scope="session")
-async def test_egress_ip_fetch_emits_finding_on_httpx_failure(monkeypatch):
-    calls = _capture(monkeypatch)
-    pool = MagicMock()
-    pool.fetchval = AsyncMock(return_value="https://echo.example/ip")
-    with patch("httpx.AsyncClient", side_effect=RuntimeError("no network")):
-        result = await _default_egress_ip_fetch(pool)
-    assert result is None
-    assert len(calls) == 1
-    assert calls[0]["kind"] == "finance_egress_ip_lookup_failed"
 
 
 def test_gemini_is_enabled_emits_finding_on_site_config_error():

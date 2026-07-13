@@ -19,6 +19,7 @@ assertions stay coupled to the code rather than requiring a live filesystem scan
 
 from __future__ import annotations
 
+import ast
 import sys
 from importlib.util import module_from_spec, spec_from_file_location
 from pathlib import Path
@@ -459,3 +460,84 @@ def test_console_is_scanned_despite_being_stripped() -> None:
             "already strips it (test_sync_script_strips_operator_console) and "
             "scanning it is intentional defense-in-depth."
         )
+
+
+# ---------------------------------------------------------------------------
+# General import-safety invariant: a test file that SHIPS to the public
+# mirror must not have a module-level import that resolves into a STRIPPED
+# tree. Unlike the leak-pattern scan above (which catches operator-private
+# literals), this catches a different failure shape entirely — a plain
+# `from modules.finance.probes import X` at the top of an otherwise public
+# test file. Nothing about that line looks private, so _LEAK_PATTERNS can't
+# flag it; but `modules/finance/` doesn't exist on the mirror, so pytest
+# fails to even COLLECT the file (ModuleNotFoundError), which aborts the
+# entire xdist worker and cascades to skip every later shard in the same CI
+# job. This exact shape shipped in glad-labs-stack#2407 (the silent-excepts
+# burn-down batch 6b test for modules/finance/probes.py landed in the
+# general-purpose tests/unit/services/test_misc_silent_failures.py instead
+# of the stripped tests/unit/modules/finance/ tree) and broke the public
+# poindexter unit-tests job on every push until fixed.
+# ---------------------------------------------------------------------------
+
+_SRC_PREFIX = "src/cofounder_agent/"
+
+
+def _top_level_import_modules(tree: ast.Module) -> list[str]:
+    """Dotted module names imported at module scope (not inside a def/try).
+
+    Deliberately shallow — only ``tree.body`` (top-level statements), so an
+    import guarded inside a function body or a ``try/except ImportError``
+    block is NOT flagged. Those forms only run when the test itself
+    executes, not when pytest merely collects the file, so they can't
+    reproduce the collection-time crash this test guards against.
+    """
+    names: list[str] = []
+    for node in tree.body:
+        if isinstance(node, ast.Import):
+            names.extend(alias.name for alias in node.names)
+        elif isinstance(node, ast.ImportFrom):
+            if node.level:  # relative import — can't reach another top-level package
+                continue
+            if node.module:
+                names.append(node.module)
+    return names
+
+
+def test_no_shipping_test_file_imports_a_stripped_module() -> None:
+    """A public test file's module-level imports must all resolve on the mirror.
+
+    Sweeps every git-tracked ``tests/**/*.py`` file that ``would_ship()``
+    classifies as public, parses its top-level imports, and checks whether
+    any of them translate to a path ``would_ship()`` classifies as
+    STRIPPED. A hit means the file will ImportError at collection time on
+    the public mirror — see the module docstring above for the incident
+    this reproduces (glad-labs-stack#2407).
+    """
+    repo_root = _repo_root()
+    violations: list[str] = []
+    for rel in CHECK._list_tracked_files(repo_root):
+        if not rel.startswith("src/cofounder_agent/tests/") or not rel.endswith(".py"):
+            continue
+        if not CHECK.would_ship(rel):
+            continue  # this test file itself never reaches the mirror
+        try:
+            text = (repo_root / rel).read_text(encoding="utf-8")
+            tree = ast.parse(text, filename=rel)
+        except (OSError, UnicodeDecodeError, SyntaxError):
+            continue  # not this test's concern — collection would fail for other reasons
+        for mod_name in _top_level_import_modules(tree):
+            candidate = f"{_SRC_PREFIX}{mod_name.replace('.', '/')}.py"
+            if not CHECK.would_ship(candidate):
+                violations.append(f"{rel} imports {mod_name!r} (-> {candidate}, stripped)")
+
+    assert not violations, (
+        "The following public test files have a module-level import that "
+        "resolves into a directory stripped from the public poindexter mirror. "
+        "This crashes pytest COLLECTION on the mirror (ModuleNotFoundError), "
+        "which aborts the whole shard and cascades to skip every later shard "
+        "in the same CI job (glad-labs-stack#2407). Fix: move the affected "
+        "test(s) into the matching stripped test tree (e.g. "
+        "tests/unit/modules/finance/ for a modules.finance import), or defer "
+        "the import inside the test function body if the dependency is "
+        "genuinely optional.\n\n" + "\n".join(violations)
+    )

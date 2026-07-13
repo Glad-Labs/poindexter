@@ -512,3 +512,36 @@ async def test_default_egress_ip_fetch_returns_none_on_error(monkeypatch):
     ip = await _probes_mod._default_egress_ip_fetch(pool)
 
     assert ip is None
+
+
+@pytest.mark.unit
+async def test_default_egress_ip_fetch_emits_finding_on_httpx_failure(monkeypatch):
+    """The same network failure also fires a ``finance_egress_ip_lookup_failed``
+    finding rather than swallowing the error silently (gap-site burn-down
+    batch 6b, glad-labs-stack#2407)."""
+    import utils.findings as findings_module
+
+    calls: list[dict] = []
+    monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
+
+    class _BoomClient:
+        def __init__(self, *a, **k):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *a):
+            return None
+
+        async def get(self, url):
+            raise RuntimeError("no network")
+
+    monkeypatch.setattr(httpx, "AsyncClient", _BoomClient)
+    pool = _FakePool(settings={}, last_success_epoch=None, latest_status=None)
+
+    ip = await _probes_mod._default_egress_ip_fetch(pool)
+
+    assert ip is None
+    assert len(calls) == 1
+    assert calls[0]["kind"] == "finance_egress_ip_lookup_failed"
