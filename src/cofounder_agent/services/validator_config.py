@@ -227,7 +227,14 @@ def _get_cached_rules(site_config: Any = None) -> dict[str, _ValidatorRule]:
     global _cache, _cache_loaded_at, _cache_load_failed
     now = time.time()
     with _cache_lock:
-        if _cache and (now - _cache_loaded_at) < _CACHE_TTL_SECONDS:
+        fresh = (now - _cache_loaded_at) < _CACHE_TTL_SECONDS
+        if fresh and (_cache or _cache_load_failed):
+            # Covers both a live cache AND a remembered failure — without
+            # the latter, an unreachable DB gets re-attempted on every
+            # single call within the TTL window instead of once. A single
+            # validate_content() run makes 30+ is_validator_enabled()
+            # calls, so a stuck/slow loader turns one connection timeout
+            # into 30x that duration.
             return _cache
         if site_config is None or getattr(site_config, "_pool", None) is None:
             return _cache

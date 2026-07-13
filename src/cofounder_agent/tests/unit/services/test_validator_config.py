@@ -27,6 +27,16 @@ def _sc(**overrides) -> SiteConfig:
     return sc
 
 
+def _sc_with_pool(**overrides) -> SiteConfig:
+    """SiteConfig with a live-looking ``_pool`` so ``_get_cached_rules``'s
+    pool gate (added by #2464) doesn't short-circuit before reaching the
+    DB-load attempt these cooldown tests exercise. The pool is a bare
+    sentinel — nothing here ever calls into it, only checks it's not None."""
+    sc = _sc(**overrides)
+    sc._pool = object()
+    return sc
+
+
 @pytest.fixture(autouse=True)
 def _reset_validator_cache():
     vc.reset_cache()
@@ -90,6 +100,59 @@ class TestIsValidatorEnabled:
         })
         assert vc.is_validator_enabled("first_person_claims", niche="DEV_DIARY", site_config=_sc()) is True
         assert vc.is_validator_enabled("first_person_claims", niche="Dev_Diary", site_config=_sc()) is True
+
+
+# ---------------------------------------------------------------------------
+# Failed-load cooldown — a DB-unreachable result must be cached for the TTL
+# just like a successful load, or every validator check in validate_content()
+# (30+ per post) re-issues its own DB connection attempt.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestFailedLoadCooldown:
+    """Covers the case #2464's pool-presence gate doesn't: a live pool
+    IS present (production, or these tests' faked pool) but the load
+    itself fails or the DB is slow/unreachable — the original bug this
+    fix targets."""
+
+    def test_repeated_calls_after_failed_load_do_not_reload(self, monkeypatch):
+        calls = {"n": 0}
+
+        def _fake_load_rules_sync():
+            calls["n"] += 1
+            return {}
+
+        monkeypatch.setattr(vc, "_load_rules_sync", _fake_load_rules_sync)
+
+        for _ in range(5):
+            vc.is_validator_enabled("some_rule", site_config=_sc_with_pool())
+
+        assert calls["n"] == 1
+
+    def test_successful_load_after_failure_refreshes_cache(self, monkeypatch):
+        """Sanity check the cooldown doesn't wedge a good load out forever —
+        once _load_rules_sync starts succeeding, the very next call (after
+        the failed attempt) should pick it up rather than staying stuck on
+        the failed-cooldown branch."""
+        rule = vc._ValidatorRule(
+            name="some_rule",
+            enabled=False,
+            severity="warning",
+            threshold={},
+            applies_to_niches=None,
+            description="",
+        )
+        responses = [{}, {"some_rule": rule}]
+
+        def _fake_load_rules_sync():
+            return responses.pop(0) if responses else {"some_rule": rule}
+
+        monkeypatch.setattr(vc, "_load_rules_sync", _fake_load_rules_sync)
+        monkeypatch.setattr(vc, "_CACHE_TTL_SECONDS", 0.0)
+
+        assert vc.is_validator_enabled("some_rule", site_config=_sc_with_pool()) is True
+        assert vc.is_validator_enabled("some_rule", site_config=_sc_with_pool()) is False
 
 
 # ---------------------------------------------------------------------------

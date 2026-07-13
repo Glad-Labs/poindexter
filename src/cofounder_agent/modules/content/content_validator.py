@@ -327,7 +327,11 @@ def _load_fact_overrides_sync(site_config: Any = None) -> list[tuple[str, str, s
     """
     global _fact_overrides_cache, _fact_overrides_ts
     now = _time.time()
-    if _fact_overrides_cache and (now - _fact_overrides_ts) < _FACT_OVERRIDES_TTL:
+    fresh = (now - _fact_overrides_ts) < _FACT_OVERRIDES_TTL
+    if fresh and (_fact_overrides_cache or _fact_overrides_ts):
+        # Covers both a live cache AND a remembered failed/no-DSN attempt —
+        # without the latter, an unreachable DB gets re-attempted on every
+        # single validate_content() call instead of once per TTL window.
         return _fact_overrides_cache
 
     if site_config is None or getattr(site_config, "_pool", None) is None:
@@ -352,6 +356,7 @@ def _load_fact_overrides_sync(site_config: Any = None) -> list[tuple[str, str, s
         except Exception:
             db_url = ""
         if not db_url:
+            _fact_overrides_ts = now
             return _fact_overrides_cache
 
         async def _fetch():
@@ -383,6 +388,7 @@ def _load_fact_overrides_sync(site_config: Any = None) -> list[tuple[str, str, s
         logger.debug("[VALIDATOR] Loaded %d fact overrides from DB", len(result))
     except Exception as e:
         logger.warning("[VALIDATOR] fact_overrides DB load failed (using cache): %s", e)
+        _fact_overrides_ts = now
 
     return _fact_overrides_cache
 
