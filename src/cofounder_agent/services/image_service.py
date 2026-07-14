@@ -1336,33 +1336,6 @@ class ImageService:
         """Generate markdown for image with attribution"""
         return image.to_markdown(caption)
 
-    async def optimize_image_for_web(
-        self,
-        image_url: str,
-        max_width: int = 1200,  # noqa: ARG002 — placeholder, honored once impl lands
-        max_height: int = 630,  # noqa: ARG002 — same
-    ) -> dict[str, Any] | None:
-        """
-        Optimize image for web delivery.
-
-        Args:
-            image_url: URL of image to optimize
-            max_width: Maximum width
-            max_height: Maximum height
-
-        Returns:
-            Optimization result dict or None
-        """
-        # Placeholder for future image optimization
-        # Could integrate with imgix, Cloudinary, or local optimization
-        logger.warning("[image_service] optimize_image called but not implemented — returning unoptimized")
-        logger.info("Image optimization placeholder for %s", image_url)
-        return {
-            "url": image_url,
-            "optimized": False,
-            "note": "Image optimization not yet implemented",
-        }
-
     def get_search_cache(self, query: str) -> list[FeaturedImageMetadata] | None:
         """Get cached search results"""
         return self.search_cache.get(query)

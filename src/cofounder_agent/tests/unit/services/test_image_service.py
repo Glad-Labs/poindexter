@@ -3,7 +3,7 @@ Unit tests for services/image_service.py
 
 Tests FeaturedImageMetadata (to_dict, to_markdown), ImageService initialization,
 search_featured_image, get_images_for_gallery, _pexels_search (mocked httpx),
-generate_image_markdown, optimize_image_for_web, cache helpers, and factory.
+generate_image_markdown, cache helpers, and factory.
 Heavy GPU/image-gen paths are not exercised; they are tested via flag checks only.
 """
 
@@ -350,7 +350,7 @@ class TestPexelsSearch:
 
 
 # ---------------------------------------------------------------------------
-# generate_image_markdown / optimize_image_for_web / cache helpers
+# generate_image_markdown / cache helpers
 # ---------------------------------------------------------------------------
 
 
@@ -361,14 +361,6 @@ class TestImageServiceUtils:
         md = svc.generate_image_markdown(meta, caption="Custom caption")
         assert "Custom caption" in md
         assert "example.com/photo.jpg" in md
-
-    @pytest.mark.asyncio
-    async def test_optimize_image_returns_original_url(self):
-        svc = ImageService(site_config=_test_sc())
-        result = await svc.optimize_image_for_web("https://example.com/image.jpg")
-        assert result is not None
-        assert result["url"] == "https://example.com/image.jpg"
-        assert result["optimized"] is False
 
     def test_cache_get_returns_none_when_empty(self):
         svc = ImageService(site_config=_test_sc())
@@ -1071,7 +1063,7 @@ class TestPexelsResolutionViaSiteConfigDI:
 
 
 # ---------------------------------------------------------------------------
-# get_active_model + list_available_models + optimize_image_for_web
+# get_active_model + list_available_models
 # ---------------------------------------------------------------------------
 
 
@@ -1100,25 +1092,3 @@ class TestModelIntrospection:
             assert "default_steps" in meta
             assert "vram_gb" in meta
             assert "notes" in meta
-
-
-class TestOptimizeImageForWeb:
-    @pytest.mark.asyncio
-    async def test_returns_placeholder_dict(self):
-        svc = ImageService(site_config=_test_sc())
-        result = await svc.optimize_image_for_web("https://cdn.example.com/img.png")
-        assert result is not None
-        assert result["url"] == "https://cdn.example.com/img.png"
-        assert result["optimized"] is False
-        assert "not yet implemented" in result["note"].lower()
-
-    @pytest.mark.asyncio
-    async def test_accepts_size_overrides(self):
-        svc = ImageService(site_config=_test_sc())
-        # Just verify it doesn't raise with width/height overrides
-        result = await svc.optimize_image_for_web(
-            "https://cdn.example.com/x.png",
-            max_width=2000,
-            max_height=1000,
-        )
-        assert result is not None
