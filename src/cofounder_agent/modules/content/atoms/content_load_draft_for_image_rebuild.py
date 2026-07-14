@@ -63,15 +63,24 @@ _LATEST_SQL = (
     "SELECT content, version FROM pipeline_versions "
     "WHERE task_id = $1 ORDER BY version DESC LIMIT 1"
 )
-# Statuses meaning "an operator (or a downstream system) already acted on
-# this draft" — the benign, expected race this module's docstring describes.
-# Anything else that isn't awaiting_approval (pending/in_progress/on_hold/
-# None/a task that doesn't exist) is a genuinely unexpected state, not this
-# race — those stay a plain fail-loud RuntimeError. The marker phrase below
-# ("target draft moved on") is matched by content_router_service to record
-# status='cancelled' + severity='info' instead of 'failed'/severity='error'
-# (poindexter#846) — mirrors the pipeline_dry_run_mode halt-demotion.
-_TARGET_MOVED_ON_STATUSES = frozenset({"approved", "rejected", "published"})
+# Statuses meaning the target draft is still genuinely in flight — a
+# rebuild request naming a task in one of these states (or a task_id with no
+# row at all, i.e. status=None) is a caller/dispatch bug, not the benign
+# "operator already decided" race this module's docstring describes, so it
+# stays a plain fail-loud RuntimeError. Every OTHER status in
+# pipeline_tasks_status_check means an operator or another system already
+# acted on the draft — an exclude-list (rather than an include-list of every
+# "moved on" status) is deliberate: an include-list needs a matching edit
+# every time a new terminal status is added, and missing one is exactly how
+# poindexter#846 happened (the original fix only listed approved/rejected/
+# published, so a target that reached 'rejected_final' kept raising as a
+# genuine crash). The marker phrase below ("target draft moved on") is
+# matched by content_router_service to record status='cancelled' +
+# severity='info' instead of 'failed'/severity='error' — mirrors the
+# pipeline_dry_run_mode halt-demotion.
+_TARGET_STILL_ACTIVE_STATUSES = frozenset({
+    "pending", "in_progress", "awaiting_gate", "on_hold", "dry_run",
+})
 # An <img ...> tag plus an optional trailing <figcaption>…</figcaption> (Pexels).
 _IMG_BLOCK_RE = re.compile(
     r"<img\b[^>]*>\s*(?:<figcaption>.*?</figcaption>)?",
@@ -90,7 +99,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     status = await pool.fetchval(_STATUS_SQL, str(target_task_id))
     if status != "awaiting_approval":
-        if status in _TARGET_MOVED_ON_STATUSES:
+        if status is not None and status not in _TARGET_STILL_ACTIVE_STATUSES:
             raise RuntimeError(
                 "content.load_draft_for_image_rebuild: target draft moved on "
                 f"before rebuild claimed it (target_task_id={target_task_id!r} "

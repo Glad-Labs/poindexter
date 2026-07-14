@@ -16,7 +16,7 @@ import modules.content.atoms.content_rebuild_featured_image as content_rebuild_f
 
 
 class FakePool:
-    def __init__(self, *, status="awaiting_approval", topic="RAG echo chamber",
+    def __init__(self, *, status: str | None = "awaiting_approval", topic="RAG echo chamber",
                  content="body", version=3):
         self._status, self._topic = status, topic
         self._content, self._version = content, version
@@ -65,11 +65,12 @@ async def test_load_draft_strips_img_blocks_and_hydrates():
 
 
 @pytest.mark.asyncio
-async def test_load_draft_rejects_non_awaiting_target():
-    """A genuinely unexpected target status (task mid-flight, on hold,
-    etc.) — NOT one of the benign "operator already moved on" statuses
+@pytest.mark.parametrize("status", ["pending", "in_progress", "awaiting_gate", "on_hold", "dry_run"])
+async def test_load_draft_rejects_non_awaiting_target(status):
+    """A genuinely unexpected target status (task still actively in
+    flight) — NOT one of the benign "operator already moved on" statuses
     below — stays a plain fail-loud RuntimeError."""
-    pool = FakePool(status="in_progress")
+    pool = FakePool(status=status)
     with pytest.raises(RuntimeError, match="awaiting_approval"):
         await content_load_draft_for_image_rebuild.run(
             {"target_task_id": "draft-1", "database_service": FakeDb(pool)}
@@ -77,15 +78,42 @@ async def test_load_draft_rejects_non_awaiting_target():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("status", ["approved", "rejected", "published"])
+async def test_load_draft_rejects_nonexistent_target():
+    """target_task_id naming a task_id with no pipeline_tasks row at all
+    (status=None) is a caller/dispatch bug, not a benign race — must stay
+    the plain fail-loud path, not get swept into "moved on" just because
+    None doesn't match any known still-active status string."""
+    pool = FakePool(status=None)
+    with pytest.raises(RuntimeError, match="awaiting_approval") as exc_info:
+        await content_load_draft_for_image_rebuild.run(
+            {"target_task_id": "draft-1", "database_service": FakeDb(pool)}
+        )
+    assert "moved on" not in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("status", [
+    "approved", "rejected", "rejected_retry", "rejected_final", "published",
+    "cancelled", "completed", "failed", "superseded", "archived",
+])
 async def test_load_draft_flags_benign_race_for_moved_on_target(status):
-    """poindexter#846: when the operator approved/rejected/published the
-    draft in the queue gap before the rebuild task claimed it, the atom
-    still raises (the graph must halt) but tags the message with the
-    stable "target draft moved on" marker content_router_service matches
-    to record status='cancelled'/severity='info' instead of a real
-    failure — this is not the same RuntimeError as a genuinely broken
-    target."""
+    """poindexter#846: when the operator (or another system) already
+    decided the draft's fate in the queue gap before the rebuild task
+    claimed it, the atom still raises (the graph must halt) but tags the
+    message with the stable "target draft moved on" marker
+    content_router_service matches to record
+    status='cancelled'/severity='info' instead of a real failure — this is
+    not the same RuntimeError as a genuinely broken target.
+
+    Covers every status in pipeline_tasks_status_check other than
+    awaiting_approval and the still-actively-in-flight set (see the
+    sibling test above) — deliberately exhaustive: the original
+    poindexter#846 fix (rejected/approved/published only) missed
+    rejected_final, causing repeated real GlitchTip noise for a draft an
+    operator had already finally rejected. An include-list needs a
+    matching edit every time a new terminal status is added; this
+    parametrization is the regression guard against that drift repeating.
+    """
     pool = FakePool(status=status)
     with pytest.raises(RuntimeError, match="target draft moved on") as exc_info:
         await content_load_draft_for_image_rebuild.run(
