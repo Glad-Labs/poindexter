@@ -193,7 +193,7 @@ COMPOSE_PROJECT_NAME_SETTING_KEY = "compose_project_name"
 #
 # The brain bind-mounts ONLY the compose file (at /app/docker-compose.local.yml),
 # not the repo tree. Docker Compose resolves *relative* bind-mount sources
-# (``./infrastructure/prometheus/prometheus.yml``) against the compose file's
+# (``./infrastructure/prometheus/config``) against the compose file's
 # directory as the brain process sees it = ``/app``. It then asks the host
 # daemon to mount ``/app/infrastructure/...`` — a path that doesn't exist on the
 # host, so Docker auto-creates it as an empty directory and silently wipes the

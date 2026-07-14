@@ -11,12 +11,18 @@ alerting:
         - targets: ["alertmanager:9093"]
 
 rule_files:
+  # Absolute paths — deliberately NOT relative to this file. prometheus.yml
+  # lives in its own config/ subdirectory (poindexter#2343: a single-file
+  # bind mount stales after a deploy-checkout git reset on Windows/Docker
+  # Desktop; a directory mount doesn't), so a relative glob would resolve
+  # under config/ instead of the real alerts/rules mount points below.
+  #
   # Static alerts shipped with the repo — safety net if DB seeding is broken.
-  - alerts/*.yml
+  - /etc/prometheus/alerts/*.yml
   # DB-sourced rules rendered by RenderPrometheusRulesJob every 5 min.
   # Volume is shared with the worker; `/-/reload` picks up changes without
   # a container restart (see docker-compose.local.yml prometheus.command).
-  - rules/*.yml
+  - /etc/prometheus/rules/*.yml
 
 scrape_configs:
   # GPU metrics (nvidia_gpu_*) — sourced from the HOST exporter, not the

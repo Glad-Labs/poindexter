@@ -110,11 +110,14 @@ services:
     # Startup sidecar: chmod the shared rules volume world-writable so
     # RenderPrometheusRulesJob (worker uid 1001) can write dynamic.yml.
     user: root
-    entrypoint: ["sh", "-c", "chmod 0777 /etc/prometheus/rules && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles --web.enable-lifecycle --web.enable-remote-write-receiver"]
+    entrypoint: ["sh", "-c", "chmod 0777 /etc/prometheus/rules && exec /bin/prometheus --config.file=/etc/prometheus/config/prometheus.yml --storage.tsdb.path=/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles --web.enable-lifecycle --web.enable-remote-write-receiver"]
     ports:
       - "9091:9090"
     volumes:
-      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Directory mount (poindexter#2343), NOT a single-file mount — see
+      # docker-compose.local.yml's prometheus service for the full staleness
+      # explanation. config/ holds only prometheus.yml.
+      - ./infrastructure/prometheus/config:/etc/prometheus/config:ro
       - ./infrastructure/prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus-rules:/etc/prometheus/rules
       - prometheus-data:/prometheus

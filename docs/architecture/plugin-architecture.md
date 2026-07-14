@@ -174,7 +174,7 @@ Poindexter's rule is "everything in the database," with a practical exception fo
 | Plugin enable / disable / per-install settings | `app_settings` under `plugin.<type>.<name>`                               | Customer-editable at runtime                       |
 | Alert thresholds                               | `infrastructure/prometheus/alerts/*.yml`                                  | Product; CI-validated                              |
 | Grafana dashboards                             | `infrastructure/grafana/provisioning/`                                    | Product                                            |
-| Prometheus scrape targets                      | `infrastructure/prometheus/prometheus.yml`                                | Product                                            |
+| Prometheus scrape targets                      | `infrastructure/prometheus/config/prometheus.yml`                         | Product                                            |
 | Prompt Packs                                   | pypi package; contents loaded into `prompt_templates` DB table on install | Bulk data; user edits individual rows              |
 | Secrets (API keys)                             | `app_settings` with `is_secret=true`                                      | Current pattern; encryption-at-rest is future work |
 | `bootstrap.toml`                               | `~/.poindexter/bootstrap.toml`                                            | Only `DATABASE_URL` — the chicken-and-egg          |

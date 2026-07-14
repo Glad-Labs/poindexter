@@ -88,11 +88,19 @@ services:
     # can drop dynamic.yml into it. Fresh Docker volumes come owned by
     # root with 0755 perms, which would lock the worker out otherwise.
     user: root
-    entrypoint: ["sh", "-c", "chmod 0777 /etc/prometheus/rules && exec /bin/prometheus --config.file=/etc/prometheus/prometheus.yml --storage.tsdb.path=/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles --web.enable-lifecycle --web.enable-remote-write-receiver"]
+    entrypoint: ["sh", "-c", "chmod 0777 /etc/prometheus/rules && exec /bin/prometheus --config.file=/etc/prometheus/config/prometheus.yml --storage.tsdb.path=/prometheus --web.console.libraries=/usr/share/prometheus/console_libraries --web.console.templates=/usr/share/prometheus/consoles --web.enable-lifecycle --web.enable-remote-write-receiver"]
     ports:
       - "9091:9090"
     volumes:
-      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      # Directory mount (poindexter#2343), NOT a single-file mount — a
+      # single-file bind mount points at a specific inode, and a deploy-
+      # checkout git reset replaces that inode even when the file's content
+      # is unchanged (Windows/Docker Desktop). The container then sees
+      # ENOENT and every /-/reload 500s until a manual restart. A directory
+      # bind survives file replacement inside it (same reason ./alerts below
+      # has never staled) — config/ holds only prometheus.yml so the whole
+      # dir can be mounted read-only without exposing anything else.
+      - ./infrastructure/prometheus/config:/etc/prometheus/config:ro
       - ./infrastructure/prometheus/alerts:/etc/prometheus/alerts:ro
       - prometheus-rules:/etc/prometheus/rules
       - prometheus-data:/prometheus
@@ -1369,7 +1377,7 @@ services:
     # `restart: unless-stopped` still recovers crashes; a wedged-but-running
     # promtail (logs silently stop reaching Loki) is caught EXTERNALLY by the
     # PromtailDown Prometheus alert — up{job="promtail"}==0 via the new promtail
-    # scrape job in infrastructure/prometheus/prometheus.yml. Mirrors pyroscope's
+    # scrape job in infrastructure/prometheus/config/prometheus.yml. Mirrors pyroscope's
     # honest-disable above; a perma-"unhealthy" probe would be cosmetic. (#1154)
     healthcheck:
       disable: true
