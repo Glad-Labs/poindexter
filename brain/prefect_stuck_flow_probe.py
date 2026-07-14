@@ -86,6 +86,24 @@ same fallback already trusted for the 2026-07-07 incident, just entered via
 a different door. PENDING is unaffected (nothing was ever forked, so
 there's no subprocess to ask nicely) and still force-CRASHES directly.
 
+Stale SCHEDULED backlog reaping (2026-07-14): the remediations above all
+target the RUNNING/PENDING/CANCELLING run holding the concurrency slot — none
+of them touch the SCHEDULED runs stacked up behind it. Investigating a report
+of the queue-backlog page "chronically firing" found the page was actually
+correct every time it fired (each firing lines up exactly with a stuck-flow
+detection in ``audit_log``), and the progress-aware suppression was already
+correctly silencing it once a healthy run resumed. The real gap: nothing
+ever cancels a SCHEDULED run once its time passes, so ``overdue_scheduled_count``
+only ratchets upward — every resolved incident's backlog survives as
+permanent debt on top of the next one's. 144 overdue SCHEDULED runs were
+still sitting there (one three days stale) after the slot-holder had been
+healthy and progressing for the better part of an hour, because nothing had
+ever swept them. The probe now force-cancels SCHEDULED runs overdue past
+``prefect_stuck_flow_queue_reap_minutes`` (default 60m) as part of the same
+queue-backlog check — see that setting's docstring for the full incident.
+This is cleanup, not an incident in itself, so it logs one summary
+``audit_log`` row per cycle rather than paging.
+
 Why no in-memory dedupe like ``glitchtip_triage_probe``: there should
 never be MORE than one stuck flow run at a time on the
 ``content_generation`` deployment (concurrency=1). If the same run is
@@ -216,6 +234,32 @@ QUEUE_DEPTH_THRESHOLD_DEFAULT = 3
 # strong signal of a held slot.)
 QUEUE_OVERDUE_MIN_MINUTES_SETTING_KEY = "prefect_stuck_flow_queue_overdue_min_minutes"
 QUEUE_OVERDUE_MIN_MINUTES_DEFAULT = 5
+
+# Stale-SCHEDULED reaping (2026-07-14). Nothing in Prefect or this probe ever
+# clears a SCHEDULED run once its scheduled time passes — it just sits
+# SCHEDULED forever, so ``overdue_scheduled_count`` only ever ratchets
+# upward, permanently, across every incident. A SCHEDULED run this far
+# overdue will never usefully dispatch late: the flow is a stateless poller
+# (every tick claims whatever ``pipeline_tasks`` row is pending, if any — see
+# the module docstring), so an ancient tick is pure accounting debt, not real
+# waiting work, and cancelling it never drops anything a fresher tick
+# wouldn't cover just as well. Captured 2026-07-14: after the five-run
+# RUNNING/CANCELLING zombie chain below resolved and a healthy run was
+# actively progressing (confirmed via ``pipeline_tasks.last_progress_at``),
+# 144 SCHEDULED runs remained overdue — including one from 2026-07-11, three
+# days stale — and the backlog page (``dedup_key=prefect_queue_backlog``) had
+# fired 574 times since 2026-05-31 with the count never once resetting. This
+# is what actually made the alert feel chronic: the depth threshold and the
+# progress-aware suppression (below) were both already correct, but the
+# metric they gate on had no way to reflect that a wedge had cleared. Default
+# 60 minutes comfortably exceeds every other threshold in this file (the
+# longest, RUNNING flat-age, is 30m) and the observed healthy backlog
+# self-drain time (~40m during this same incident's 00:03-00:40 UTC window),
+# so it only reaps entries no plausible healthy recovery would still be
+# waiting on. Gated by the same ``AUTO_CRASH_SETTING_KEY`` master switch as
+# the other remediations below.
+QUEUE_REAP_MINUTES_SETTING_KEY = "prefect_stuck_flow_queue_reap_minutes"
+QUEUE_REAP_MINUTES_DEFAULT = 60
 
 # Progress-aware stall threshold. A RUNNING content_generation run with NO
 # graph-node progress (pipeline_tasks.last_progress_at) for this many minutes
@@ -707,6 +751,9 @@ async def run_prefect_stuck_flow_probe(
     queue_overdue_min_minutes = await _read_int(
         pool, QUEUE_OVERDUE_MIN_MINUTES_SETTING_KEY, QUEUE_OVERDUE_MIN_MINUTES_DEFAULT,
     )
+    queue_reap_minutes = await _read_int(
+        pool, QUEUE_REAP_MINUTES_SETTING_KEY, QUEUE_REAP_MINUTES_DEFAULT,
+    )
     progress_stall_minutes = await _read_int(
         pool, PROGRESS_STALL_MINUTES_SETTING_KEY, PROGRESS_STALL_MINUTES_DEFAULT,
     )
@@ -734,6 +781,8 @@ async def run_prefect_stuck_flow_probe(
     cancel_failed: list[dict[str, Any]] = []
     cancel_requested_runs: list[dict[str, Any]] = []
     cancel_request_failed: list[dict[str, Any]] = []
+    reaped_runs: list[dict[str, Any]] = []
+    reap_failed: list[dict[str, Any]] = []
     seen = 0
     overdue_scheduled_count = 0
     queue_backlog_detected = False
@@ -965,10 +1014,17 @@ async def run_prefect_stuck_flow_probe(
                 scheduled = await _fetch_scheduled_runs(
                     client, base_url, flow_names,
                 )
+                oldest_overdue_minutes = 0
+                reap_candidates: list[tuple[dict[str, Any], int]] = []
                 for srun in scheduled:
                     overdue = _scheduled_overdue_minutes(srun)
-                    if overdue is not None and overdue >= queue_overdue_min_minutes:
+                    if overdue is None:
+                        continue
+                    if overdue >= queue_overdue_min_minutes:
                         overdue_scheduled_count += 1
+                        oldest_overdue_minutes = max(oldest_overdue_minutes, overdue)
+                    if overdue >= queue_reap_minutes:
+                        reap_candidates.append((srun, overdue))
 
                 holder_minutes = holder.get("minutes") if holder else None
                 holder_progressing = (
@@ -994,7 +1050,8 @@ async def run_prefect_stuck_flow_probe(
                     backlog_detail = (
                         f"Prefect queue backlog: {overdue_scheduled_count} "
                         f"SCHEDULED {', '.join(flow_names)} run(s) are overdue "
-                        f"(scheduled start in the past) — threshold is "
+                        f"(scheduled start in the past, oldest by "
+                        f"{oldest_overdue_minutes}m) — threshold is "
                         f"{queue_depth_threshold}. The deployment runs "
                         f"concurrency=1, so this strongly indicates the single "
                         f"slot is held by a stuck/PENDING run and scheduled "
@@ -1025,6 +1082,55 @@ async def run_prefect_stuck_flow_probe(
                         # pager in the 2026-07-01 audit (254 fires/week).
                         dedup_key="prefect_queue_backlog",
                     )
+
+                # --- Stale-SCHEDULED reaping (2026-07-14) ---------------
+                # Independent of whether we paged above: any run overdue
+                # past queue_reap_minutes is stale debt no healthy recovery
+                # would still be waiting on (see QUEUE_REAP_MINUTES_SETTING_KEY's
+                # docstring). Reaping keeps overdue_scheduled_count an
+                # accurate reflection of CURRENT backlog instead of an
+                # ever-growing tally of every incident since the last manual
+                # cleanup. Cleanup, not an incident — one summary audit row,
+                # no page.
+                if auto_crash and reap_candidates:
+                    reaped_ids: list[str] = []
+                    for srun, overdue in reap_candidates:
+                        run_id = str(srun.get("id") or "")
+                        if not run_id:
+                            continue
+                        name = srun.get("name") or "(unnamed)"
+                        reaped = await _force_flow_run_state(
+                            client, base_url, run_id,
+                            target_type="CANCELLED", target_name="Cancelled",
+                            message=(
+                                f"Auto-reaped by brain.prefect_stuck_flow_probe — "
+                                f"SCHEDULED run overdue {overdue} minutes "
+                                f"(reap threshold {queue_reap_minutes}m). Stale "
+                                f"scheduling debt, not real waiting work — a "
+                                f"fresh tick already covers the same "
+                                f"pipeline_tasks check."
+                            ),
+                        )
+                        entry = {"id": run_id, "name": name, "overdue_minutes": overdue}
+                        if reaped:
+                            reaped_runs.append(entry)
+                            reaped_ids.append(run_id[:12])
+                        else:
+                            reap_failed.append(entry)
+                    if reaped_runs or reap_failed:
+                        await _emit_audit_event(
+                            pool,
+                            "probe.prefect_stuck_flow_scheduled_reaped",
+                            f"Reaped {len(reaped_runs)} stale SCHEDULED run(s) "
+                            f"overdue >= {queue_reap_minutes}m "
+                            f"({len(reap_failed)} failed)",
+                            payload={
+                                "reaped_count": len(reaped_runs),
+                                "failed_count": len(reap_failed),
+                                "reap_threshold_minutes": queue_reap_minutes,
+                                "run_ids": reaped_ids[:20],
+                            },
+                        )
             except Exception as exc:  # noqa: BLE001 — never abort the cycle
                 logger.warning(
                     "[PREFECT_STUCK_FLOW] queue-backlog check failed "
@@ -1084,7 +1190,10 @@ async def run_prefect_stuck_flow_probe(
             f"{overdue_scheduled_count} overdue scheduled "
             f"(min_overdue={queue_overdue_min_minutes}m, "
             f"depth_threshold={queue_depth_threshold}, "
-            f"backlog={queue_backlog_detected})"
+            f"backlog={queue_backlog_detected}); "
+            f"{len(reaped_runs)} scheduled reaped "
+            f"(reap_threshold={queue_reap_minutes}m); "
+            f"{len(reap_failed)} reap failed"
         ),
         "running_seen": seen,
         "stuck_count": len(stuck_runs),
@@ -1099,6 +1208,10 @@ async def run_prefect_stuck_flow_probe(
         "queue_overdue_min_minutes": queue_overdue_min_minutes,
         "queue_depth_threshold": queue_depth_threshold,
         "queue_backlog_detected": queue_backlog_detected,
+        "queue_reap_minutes": queue_reap_minutes,
+        "reaped_count": len(reaped_runs),
+        "reap_failed_count": len(reap_failed),
+        "reaped_runs": reaped_runs,
         "elapsed_ms": elapsed_ms,
     }
     logger.info("[PREFECT_STUCK_FLOW] %s in %dms", summary["detail"], elapsed_ms)
@@ -1135,7 +1248,11 @@ class PrefectStuckFlowProbe:
         "a DISTINCT signal when overdue SCHEDULED runs "
         "pile up beyond prefect_stuck_flow_queue_depth_threshold (default 3) AND "
         "the slot-holder is not progressing — the queue-backlog symptom of a "
-        "genuinely held slot."
+        "genuinely held slot. Every cycle it also force-cancels (no page — "
+        "cleanup, not an incident) SCHEDULED runs overdue past "
+        "prefect_stuck_flow_queue_reap_minutes (default 60m), so a resolved "
+        "incident doesn't leave permanent debt that inflates "
+        "overdue_scheduled_count long after the slot is free again."
     )
     interval_seconds: int = PROBE_INTERVAL_SECONDS
 
@@ -1162,6 +1279,8 @@ class PrefectStuckFlowProbe:
                     "overdue_scheduled_count",
                     "queue_depth_threshold",
                     "queue_backlog_detected",
+                    "reaped_count",
+                    "reap_failed_count",
                     "elapsed_ms",
                     "status",
                 )

@@ -164,6 +164,7 @@ The worker re-reads on every poll; no restart needed.
 | `prefect_stuck_flow_pending_threshold_minutes` | `5` |  | A flow run that has been PENDING/Submitting longer than this is considered stranded. Captured 2026-05-25: a PENDING r... |
 | `prefect_stuck_flow_probe_enabled` | `true` |  | Master kill switch for brain/prefect_stuck_flow_probe. Set to false to disable detection of stuck Prefect flow runs (... |
 | `prefect_stuck_flow_queue_depth_threshold` | `3` |  | Brain prefect_stuck_flow_probe: page with a distinct probe.prefect_queue_backlog_detected signal when MORE than this ... |
+| `prefect_stuck_flow_queue_reap_minutes` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
 | `prefect_stuck_flow_threshold_minutes` | `30` |  | A content_generation flow run RUNNING longer than this is considered stuck. Default 30m is ~5-6x the typical 5-min du... |
 
 ## cli

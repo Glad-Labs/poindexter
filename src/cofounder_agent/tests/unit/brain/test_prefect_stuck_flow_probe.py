@@ -1396,3 +1396,161 @@ async def test_cancelling_set_state_failure_records_cancel_failed():
     assert summary["stuck_count"] == 1
     assert summary["auto_cancelled_count"] == 0
     assert summary["cancel_failed_count"] == 1
+
+
+# ---------------------------------------------------------------------------
+# Stale-SCHEDULED reaping — 2026-07-14 chronic-backlog investigation
+#
+# Nothing else ever clears a SCHEDULED run once its scheduled time passes,
+# so overdue_scheduled_count only ratchets upward across incidents. These
+# pin the fix: SCHEDULED runs overdue past prefect_stuck_flow_queue_reap_minutes
+# get force-cancelled each cycle, independent of whether the backlog page
+# fires, so the count stays a live reading instead of permanent debt.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stale_scheduled_runs_reaped_past_threshold():
+    """A run overdue past the default 60m reap threshold is force-CANCELLED;
+    one still under the reap threshold (but over the 5m backlog floor) counts
+    toward the backlog but is left alone."""
+    pool = _make_pool()  # default queue_reap_minutes=60
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[]),
+        "/flow_runs/filter?SCHEDULED": _MockResponse(200, json_data=[
+            _scheduled_run(run_id="stale-1", name="content_generation", minutes=90),
+            _scheduled_run(run_id="fresh-1", name="content_generation", minutes=10),
+        ]),
+        "/set_state": _MockResponse(201, json_data={"state": {"type": "CANCELLED"}}),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["overdue_scheduled_count"] == 2  # both still counted
+    assert summary["queue_reap_minutes"] == 60
+    assert summary["reaped_count"] == 1
+    assert summary["reap_failed_count"] == 0
+    assert summary["reaped_runs"][0]["id"] == "stale-1"
+
+    reap_post = next(
+        body for url, body in client.posts
+        if url.endswith("/set_state")
+    )
+    assert reap_post["force"] is True
+    assert reap_post["state"]["type"] == "CANCELLED"
+
+    audit_event_types = [
+        args[0] for query, args in pool._audit_rows if "audit_log" in query
+    ]
+    assert "probe.prefect_stuck_flow_scheduled_reaped" in audit_event_types
+
+
+@pytest.mark.asyncio
+async def test_reap_threshold_setting_respected():
+    """Operator can tune ``prefect_stuck_flow_queue_reap_minutes`` down.
+    Lowering it to 15 makes a 20m-overdue run reap-eligible."""
+    pool = _make_pool(setting_values={
+        "prefect_stuck_flow_queue_reap_minutes": "15",
+    })
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[]),
+        "/flow_runs/filter?SCHEDULED": _MockResponse(200, json_data=[
+            _scheduled_run(run_id="s1", name="content_generation", minutes=20),
+            _scheduled_run(run_id="s2", name="content_generation", minutes=10),
+        ]),
+        "/set_state": _MockResponse(201, json_data={"state": {"type": "CANCELLED"}}),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["queue_reap_minutes"] == 15
+    assert summary["reaped_count"] == 1
+    assert summary["reaped_runs"][0]["id"] == "s1"
+
+
+@pytest.mark.asyncio
+async def test_reap_gated_by_auto_crash_disabled():
+    """An operator who has opted out of auto-remediation
+    (``prefect_stuck_flow_auto_crash=false``) gets NO reaping either — the
+    reap shares the same master switch as the RUNNING/PENDING/CANCELLING
+    remediations. Counting toward the backlog is unaffected."""
+    pool = _make_pool(setting_values={
+        "prefect_stuck_flow_auto_crash": "false",
+    })
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[]),
+        "/flow_runs/filter?SCHEDULED": _MockResponse(200, json_data=[
+            _scheduled_run(run_id="ancient", name="content_generation", minutes=4320),
+        ]),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["overdue_scheduled_count"] == 1
+    assert summary["reaped_count"] == 0
+    assert not any(url.endswith("/set_state") for url, _ in client.posts)
+    audit_event_types = [
+        args[0] for query, args in pool._audit_rows if "audit_log" in query
+    ]
+    assert "probe.prefect_stuck_flow_scheduled_reaped" not in audit_event_types
+
+
+@pytest.mark.asyncio
+async def test_reap_failure_recorded_not_raised():
+    """A rejected reap set_state lands in ``reap_failed_count`` — the cycle
+    still completes ``ok`` and still logs a summary audit row so a batch of
+    all-failed reaps isn't silently invisible."""
+    pool = _make_pool()
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[]),
+        "/flow_runs/filter?SCHEDULED": _MockResponse(200, json_data=[
+            _scheduled_run(run_id="stale-1", name="content_generation", minutes=90),
+        ]),
+        "/set_state": _MockResponse(422, text="state transition rejected"),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["ok"] is True
+    assert summary["reaped_count"] == 0
+    assert summary["reap_failed_count"] == 1
+    audit_event_types = [
+        args[0] for query, args in pool._audit_rows if "audit_log" in query
+    ]
+    assert "probe.prefect_stuck_flow_scheduled_reaped" in audit_event_types
+
+
+@pytest.mark.asyncio
+async def test_reap_independent_of_backlog_page_decision():
+    """Reaping and the backlog page are both driven by the same overdue
+    scan but don't gate each other: a pile of very-overdue runs still pages
+    with the PRE-reap count (an accurate read of what was just observed)
+    AND gets reaped in the same cycle. The page detail surfaces the oldest
+    overdue duration, not just the count."""
+    pool = _make_pool()  # holder=None -> not progressing -> pages
+    notify = MagicMock()
+    client = _MockHttpClient({
+        "/flow_runs/filter": _MockResponse(200, json_data=[]),
+        "/flow_runs/filter?SCHEDULED": _MockResponse(200, json_data=[
+            _scheduled_run(run_id="s1", name="content_generation", minutes=90),
+            _scheduled_run(run_id="s2", name="content_generation", minutes=70),
+            _scheduled_run(run_id="s3", name="content_generation", minutes=65),
+            _scheduled_run(run_id="s4", name="content_generation", minutes=61),
+        ]),
+        "/set_state": _MockResponse(201, json_data={"state": {"type": "CANCELLED"}}),
+    })
+    summary = await psfp.run_prefect_stuck_flow_probe(
+        pool, notify_fn=notify, http_client_factory=lambda: client,
+    )
+    assert summary["overdue_scheduled_count"] == 4  # exceeds default threshold of 3
+    assert summary["queue_backlog_detected"] is True
+    assert summary["reaped_count"] == 4
+
+    notify.assert_called_once()
+    detail = notify.call_args.kwargs["detail"]
+    assert "4" in detail
+    assert "90m" in detail  # oldest overdue surfaced, not just the count

@@ -1850,6 +1850,17 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # backlog symptom of a held concurrency=1 slot.
     'prefect_stuck_flow_queue_depth_threshold': '3',
 
+    # ----- Prefect stuck-flow stale-SCHEDULED reaping (2026-07-14) -----
+    # Nothing else ever clears a SCHEDULED run once its scheduled time
+    # passes, so overdue_scheduled_count only ratchets upward across
+    # incidents (574 backlog pages since 2026-05-31, a 3-day-stale entry
+    # still present at investigation time). Force-cancels SCHEDULED runs
+    # overdue past this many minutes each probe cycle — cleanup, not a
+    # page. Default comfortably exceeds every other threshold in this
+    # probe (longest is the 30m flat RUNNING-age check) and the observed
+    # healthy backlog self-drain time (~40m).
+    'prefect_stuck_flow_queue_reap_minutes': '60',
+
     # ----- Prefect stuck-flow progress-aware detection -----
     # Minutes a RUNNING content_generation run may go with NO graph-node
     # progress (pipeline_tasks.last_progress_at) before the probe treats it as
