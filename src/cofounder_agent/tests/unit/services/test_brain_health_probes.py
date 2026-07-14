@@ -1119,3 +1119,76 @@ class TestOllamaRemediation:
             await hp._try_remediation("ollama_embedding", {"ok": False}, pool=_make_pool())
 
         assert calls == ["ollama"]
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestProbeTrafficAnomaly:
+    """probe_traffic_anomaly must compare a rolling trailing-24h window
+    against the 7-day average, not a partial calendar day since midnight
+    UTC. The calendar-day form mechanically read as a 60-100% "drop" every
+    day until ~10am UTC regardless of real traffic — live audit_log data
+    showed 44 of 45 issue-firings over 14 days landing in the 00:00-06:00
+    UTC hours. This is a different bug than poindexter#1301/#1395's
+    low-traffic minimum-baseline floor (avg < 10), which stays intact.
+    """
+
+    async def _run(self, last_24h, daily_avg):
+        p = _make_pool()
+        p.fetchrow.return_value = {"last_24h": last_24h, "daily_avg": daily_avg}
+        return await hp.probe_traffic_anomaly(p)
+
+    async def test_queries_rolling_24h_window_not_calendar_day(self):
+        """Regression pin: the SQL must key off a rolling interval, not
+        date_trunc('day', ...), so a probe run at 00:05 UTC doesn't see
+        an artificially tiny 'today' count."""
+        p = _make_pool()
+        p.fetchrow.return_value = {"last_24h": 250, "daily_avg": 300.0}
+        await hp.probe_traffic_anomaly(p)
+        query = p.fetchrow.call_args.args[0]
+        assert "INTERVAL '24 hours'" in query
+        assert "date_trunc" not in query
+
+    async def test_normal_traffic_no_anomaly(self):
+        r = await self._run(last_24h=280, daily_avg=300.0)
+        assert r["ok"] is True
+        assert "ANOMALY" not in r["detail"]
+
+    async def test_real_crash_still_flagged(self):
+        """A genuine collapse (beacon broken, site down) must still fire —
+        the fix must not make the probe blind to real anomalies."""
+        r = await self._run(last_24h=20, daily_avg=300.0)
+        assert r["ok"] is False
+        assert "ANOMALY" in r["detail"]
+        assert r["drop_pct"] > 60
+
+    async def test_early_utc_partial_day_no_longer_false_positive(self):
+        """The exact live scenario this bug produced: ~63 views a few
+        hours into the UTC day against a 300/day average. Under the old
+        date_trunc('day', ...) form this was a mechanical false ANOMALY;
+        with a rolling 24h window a comparable trailing-24h count near
+        the average must read healthy."""
+        r = await self._run(last_24h=290, daily_avg=300.0)
+        assert r["ok"] is True
+        assert "ANOMALY" not in r["detail"]
+
+    async def test_low_baseline_floor_from_1301_still_applies(self):
+        """poindexter#1301/#1395's fix (skip when avg < 10) must survive
+        this change untouched."""
+        r = await self._run(last_24h=1, daily_avg=5.0)
+        assert r["ok"] is True
+        assert "not enough history" in r["detail"]
+
+    async def test_result_keys_use_last_24h_not_today(self):
+        """The 'today' key name implied calendar-day semantics that no
+        longer apply — result must expose last_24h instead."""
+        r = await self._run(last_24h=100, daily_avg=300.0)
+        assert "last_24h" in r
+        assert "today" not in r
+
+    async def test_db_error_returns_ok_false_without_raising(self):
+        p = _make_pool()
+        p.fetchrow.side_effect = RuntimeError("connection reset")
+        r = await hp.probe_traffic_anomaly(p)
+        assert r["ok"] is False
+        assert "connection reset" in r["detail"]

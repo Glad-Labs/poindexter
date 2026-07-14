@@ -1343,27 +1343,36 @@ async def probe_r2_connectivity(_pool) -> dict:
 
 
 async def probe_traffic_anomaly(pool) -> dict:
-    """Probe: Alert if daily traffic drops >60% vs 7-day average."""
+    """Probe: Alert if trailing-24h traffic drops >60% vs 7-day average.
+
+    Uses a rolling 24h window, NOT "since midnight UTC" — comparing a
+    partial calendar day against a full-day average mechanically reads as
+    a ~60-100% "drop" every day until ~10am UTC regardless of actual
+    traffic (confirmed live: 44 of 45 issue-firings over a 14d sample
+    landed in the 00:00-06:00 UTC hours). poindexter#1301 fixed a
+    different false positive here (a low-traffic minimum-baseline floor)
+    but left this time-of-day bias live.
+    """
     try:
         row = await pool.fetchrow("""
             SELECT
                 (SELECT COUNT(*) FROM page_views
-                 WHERE created_at >= date_trunc('day', NOW())) as today,
+                 WHERE created_at >= NOW() - INTERVAL '24 hours') as last_24h,
                 (SELECT COUNT(*) / 7.0 FROM page_views
                  WHERE created_at >= NOW() - INTERVAL '7 days') as daily_avg
         """)
-        today = row["today"] if row else 0
+        last_24h = row["last_24h"] if row else 0
         avg = float(row["daily_avg"]) if row and row["daily_avg"] else 0
         if avg < 10:
-            return {"ok": True, "today": today, "avg": round(avg, 1), "detail": "not enough history for anomaly detection"}
-        drop_pct = ((avg - today) / avg * 100) if avg > 0 else 0
+            return {"ok": True, "last_24h": last_24h, "daily_avg": round(avg, 1), "detail": "not enough history for anomaly detection"}
+        drop_pct = ((avg - last_24h) / avg * 100) if avg > 0 else 0
         anomaly = drop_pct > 60
         return {
             "ok": not anomaly,
-            "today": today,
+            "last_24h": last_24h,
             "daily_avg": round(avg, 1),
             "drop_pct": round(drop_pct, 1),
-            "detail": f"{today} views today vs {avg:.0f}/day avg ({drop_pct:.0f}% {'drop — ANOMALY' if anomaly else 'change'})",
+            "detail": f"{last_24h} views in last 24h vs {avg:.0f}/day avg ({drop_pct:.0f}% {'drop — ANOMALY' if anomaly else 'change'})",
         }
     except Exception as e:
         return {"ok": False, "detail": str(e)[:200]}
