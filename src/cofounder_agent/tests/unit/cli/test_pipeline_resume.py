@@ -21,6 +21,7 @@ run.
 
 from __future__ import annotations
 
+import asyncio
 import json
 from contextlib import ExitStack
 from types import SimpleNamespace
@@ -334,6 +335,36 @@ class TestBulkResume:
             result = CliRunner().invoke(resume_command, ["--all"])
 
         assert result.exit_code == 0, result.output
+        assert runner_cls.return_value.run.await_count == 2
+
+    def test_all_targets_run_under_a_single_event_loop(self):
+        """Regression: the batch used to call asyncio.run() once PER TASK,
+        tearing down and rebuilding the event loop between tasks. Any
+        module caching an async resource at process scope on the
+        assumption of one long-lived loop per process (e.g.
+        services.revalidation_service's shared httpx.AsyncClient) breaks
+        the moment a later task's loop replaces the one the resource was
+        born in — RuntimeError: Event loop is closed."""
+        rows = {_TID: _paused_row(), _TID2: _paused_row(task_id=_TID2)}
+        patches, runner_cls = _bulk_patches(rows)
+
+        real_run = asyncio.run
+        call_count = {"n": 0}
+
+        def _counting_run(coro):
+            call_count["n"] += 1
+            return real_run(coro)
+
+        with ExitStack() as stack:
+            for p in patches:
+                stack.enter_context(p)
+            stack.enter_context(
+                patch("poindexter.cli.pipeline.asyncio.run", side_effect=_counting_run)
+            )
+            result = CliRunner().invoke(resume_command, [_TID, _TID2])
+
+        assert result.exit_code == 0, result.output
+        assert call_count["n"] == 1
         assert runner_cls.return_value.run.await_count == 2
 
     def test_all_flag_with_nothing_paused_is_a_no_op(self):

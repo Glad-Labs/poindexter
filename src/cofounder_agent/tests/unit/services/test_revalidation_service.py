@@ -60,8 +60,10 @@ def _reset_shared_http_client():
     silently no-op and the tests hit www.gladlabs.io for real.
     """
     revalidation_service._shared_http_client = None
+    revalidation_service._shared_http_client_loop = None
     yield
     revalidation_service._shared_http_client = None
+    revalidation_service._shared_http_client_loop = None
 
 
 # ---------------------------------------------------------------------------
@@ -93,6 +95,52 @@ def _build_httpx_client(status_code: int = 200, text: str = "ok", headers: dict 
     client.__aexit__ = AsyncMock(return_value=None)
     client.post = AsyncMock(return_value=response)
     return client
+
+
+# ---------------------------------------------------------------------------
+# _get_shared_client — event-loop hygiene (poindexter pipeline resume --all)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSharedClientEventLoopHygiene:
+    """``poindexter pipeline resume --all`` resumes each paused task inside
+    its own ``asyncio.run()`` call — one event loop is created and torn
+    down per task. ``_get_shared_client`` only rebuilt on ``.is_closed``
+    (set by an explicit ``aclose()``, which the CLI never calls), so the
+    client born in task #1's loop kept being handed back to tasks #2..N
+    after their loop replaced it — and httpx's connection pool raised
+    ``RuntimeError: Event loop is closed`` the moment it tried to reuse
+    async primitives (locks) bound to the dead loop.
+    """
+
+    def test_reuses_client_within_the_same_event_loop(self):
+        """Connection-pool reuse across a burst of calls in ONE loop must
+        keep working — this guards the original perf intent (module
+        docstring: 'multi-publish runs ship 5-20 revalidate requests
+        within a second') from an over-correction that rebuilds every call.
+        """
+
+        async def _use_twice():
+            first = revalidation_service._get_shared_client()
+            second = revalidation_service._get_shared_client()
+            return first is second
+
+        assert asyncio.run(_use_twice()) is True
+
+    def test_rebuilds_client_when_the_running_loop_changes(self):
+        """Two separate asyncio.run() calls -> two different event loops
+        -> the shared client must NOT be the same object across them.
+        """
+        seen: list[int] = []
+
+        async def _grab_client_id():
+            seen.append(id(revalidation_service._get_shared_client()))
+
+        asyncio.run(_grab_client_id())
+        asyncio.run(_grab_client_id())
+
+        assert seen[0] != seen[1]
 
 
 # ---------------------------------------------------------------------------

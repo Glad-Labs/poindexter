@@ -633,14 +633,30 @@ def resume_command(
         return
 
     # Bulk path — one task's failure doesn't block the rest of the batch.
-    results: list[dict[str, Any]] = []
-    for tid in targets:
-        try:
-            result = _run(_resume_one(tid, feedback))
-        except Exception as e:
-            result = {"error": f"unexpected: {type(e).__name__}: {e}", "code": 1}
-        result.setdefault("task_id", tid)
-        results.append(result)
+    #
+    # All targets resume inside ONE _run()/asyncio.run() call, not one per
+    # task. Calling asyncio.run() per task tears down and rebuilds the event
+    # loop between tasks; some services cache async resources at process
+    # scope on the assumption of a single long-lived loop per process (true
+    # for the FastAPI worker, false for a per-task loop here) — e.g.
+    # services.revalidation_service's shared httpx.AsyncClient, which used
+    # to raise "RuntimeError: Event loop is closed" for every task after the
+    # first once its birth loop closed. Revalidation swallows that (a
+    # revalidation failure must never block a publish), so the resume itself
+    # never failed — but the ISR cache-bust for every task past #1 silently
+    # never reached Vercel.
+    async def _resume_all(task_ids: tuple[str, ...]) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        for tid in task_ids:
+            try:
+                result = await _resume_one(tid, feedback)
+            except Exception as e:
+                result = {"error": f"unexpected: {type(e).__name__}: {e}", "code": 1}
+            result.setdefault("task_id", tid)
+            out.append(result)
+        return out
+
+    results = _run(_resume_all(tuple(targets)))
 
     if json_output:
         click.echo(json.dumps(results, indent=2, default=str))

@@ -46,6 +46,7 @@ stays module-scoped: it's a process-wide connection pool, not a
 SiteConfig dependency, and ``main.py``'s lifespan shutdown closes it.
 """
 
+import asyncio
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -76,27 +77,50 @@ DEFAULT_REVALIDATE_URL = "https://www.gladlabs.io/api/revalidate"
 # shared client, the underlying connection pool keeps the TLS session warm
 # across the burst. Hot enough to matter — multi-publish runs ship 5-20
 # revalidate requests within a second.
+#
+# This assumes ONE event loop per process (true for the long-lived FastAPI
+# worker, closed only once via ``aclose()`` at lifespan shutdown). A CLI
+# batch command that calls ``asyncio.run()`` per item — e.g.
+# ``poindexter pipeline resume --all`` before it was fixed to run its whole
+# batch under one ``asyncio.run()`` — creates and tears down a fresh loop per
+# item in the SAME process. httpx binds its connection pool's async
+# primitives (locks) to whichever loop is running on first use, so the
+# client born in item #1's loop went on raising ``RuntimeError: Event loop is
+# closed`` for every item after it — ``.is_closed`` only reflects an explicit
+# ``aclose()``, never a dead birth-loop. Track which loop the cached client
+# belongs to and rebuild whenever the running loop differs, as a second line
+# of defense against any future caller reintroducing a multi-loop-per-process
+# pattern.
 # ---------------------------------------------------------------------------
 
 _shared_http_client: httpx.AsyncClient | None = None
+_shared_http_client_loop: asyncio.AbstractEventLoop | None = None
 
 
 def _get_shared_client() -> httpx.AsyncClient:
     """Lazily build the shared client. Per-request timeouts override the
-    conservative module default."""
-    global _shared_http_client
-    if _shared_http_client is None or _shared_http_client.is_closed:
+    conservative module default. Rebuilds if the running loop has changed
+    since the cached client was born (see module comment above)."""
+    global _shared_http_client, _shared_http_client_loop
+    current_loop = asyncio.get_running_loop()
+    if (
+        _shared_http_client is None
+        or _shared_http_client.is_closed
+        or _shared_http_client_loop is not current_loop
+    ):
         _shared_http_client = httpx.AsyncClient(timeout=10)
+        _shared_http_client_loop = current_loop
     return _shared_http_client
 
 
 async def aclose() -> None:
     """Close the shared httpx client. Idempotent. Wired into the FastAPI
     lifespan shutdown so process exit doesn't leak the connection pool."""
-    global _shared_http_client
+    global _shared_http_client, _shared_http_client_loop
     if _shared_http_client is not None and not _shared_http_client.is_closed:
         await _shared_http_client.aclose()
     _shared_http_client = None
+    _shared_http_client_loop = None
 
 
 def _resolve_revalidate_url(site_cfg) -> str:
