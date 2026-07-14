@@ -580,4 +580,27 @@ OPERATOR_SUBREDDIT_PROFILES: tuple[dict, ...] = (
         ),
         "cadence_cap_days": None,
     },
+    {
+        "subreddit": "pcgaming",
+        "enabled": True,
+        "content_types": ["gaming"],
+        "post_type": "text",
+        "self_promo": "strict",
+        "flair": None,
+        "min_karma": None,
+        "min_account_age_days": None,
+        "rules_summary": (
+            "PC-gaming enthusiast community. Substantive discussion and articles "
+            "are welcome, but self-promotion is policed hard (the 9:1 rule) and "
+            "blogspam is removed. The value is in the analysis or hands-on detail: "
+            "hardware, settings, upscaling, frame rates, or a well-argued take. "
+            "Share it as text; do not lead with a blog link."
+        ),
+        "tone_notes": (
+            "PC-gamer peer voice. Concrete and specific: frame rates, settings, "
+            "hardware, real playtime. No marketing tone. A clear opinion backed "
+            "by detail lands; generic hot-takes do not."
+        ),
+        "cadence_cap_days": None,
+    },
 )
