@@ -485,7 +485,40 @@ class TestGetTaskStatusHistory:
             resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history?limit=10")
 
         assert resp.status_code == 200
-        mock_task_db.get_status_history.assert_called_once_with(VALID_TASK_ID, 10)
+        mock_task_db.get_status_history.assert_called_once_with(VALID_TASK_ID, 10, 0)
+
+    def test_custom_offset_param(self):
+        """poindexter#746 — offset threads through to TasksDatabase and
+        back out in the response body so a caller can page."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task())
+        mock_db._pool = MagicMock()
+
+        mock_task_db = AsyncMock()
+        mock_task_db.get_status_history = AsyncMock(return_value=[])
+
+        with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
+            resp = _make_client(mock_db).get(
+                f"/api/tasks/{VALID_TASK_ID}/status-history?limit=10&offset=20"
+            )
+
+        assert resp.status_code == 200
+        mock_task_db.get_status_history.assert_called_once_with(VALID_TASK_ID, 10, 20)
+        assert resp.json()["offset"] == 20
+
+    def test_default_offset_is_zero_in_response(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task())
+        mock_db._pool = MagicMock()
+
+        mock_task_db = AsyncMock()
+        mock_task_db.get_status_history = AsyncMock(return_value=[])
+
+        with patch("services.tasks_db.TasksDatabase", return_value=mock_task_db):
+            resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
+
+        assert resp.status_code == 200
+        assert resp.json()["offset"] == 0
 
     def test_db_error_returns_500(self):
         mock_db = make_mock_db()
@@ -512,7 +545,7 @@ class TestGetTaskStatusHistory:
             resp = _make_client(mock_db).get(f"/api/tasks/{VALID_TASK_ID}/status-history")
 
         assert resp.status_code == 200
-        mock_task_db.get_status_history.assert_called_once_with(VALID_TASK_ID, 50)
+        mock_task_db.get_status_history.assert_called_once_with(VALID_TASK_ID, 50, 0)
 
 
 # ---------------------------------------------------------------------------

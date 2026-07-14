@@ -1271,13 +1271,16 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error("Failed to log status change: %s", e, exc_info=True)
             return False
 
-    async def get_status_history(self, task_id: str, limit: int = 100) -> list[dict[str, Any]]:
+    async def get_status_history(
+        self, task_id: str, limit: int = 100, offset: int = 0
+    ) -> list[dict[str, Any]]:
         """
         Get status change history for a task.
 
         Args:
             task_id: Task ID
             limit: Maximum records to return
+            offset: Records to skip (poindexter#746 — pages past the first `limit`)
 
         Returns:
             List of status change records
@@ -1296,7 +1299,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 FROM task_status_history
                 WHERE task_id = $1
                 ORDER BY created_at DESC
-                LIMIT $2
+                LIMIT $2 OFFSET $3
             """
             # Pre-migration fallback (column still named "timestamp")
             sql_legacy = """
@@ -1305,15 +1308,15 @@ class TasksDatabase(DatabaseServiceMixin):
                 FROM task_status_history
                 WHERE task_id = $1
                 ORDER BY "timestamp" DESC
-                LIMIT $2
+                LIMIT $2 OFFSET $3
             """
 
             async with self.pool.acquire() as conn:
                 try:
-                    rows = await conn.fetch(sql, task_id, limit)
+                    rows = await conn.fetch(sql, task_id, limit, offset)
                 except Exception:
                     # Migration 0031 not yet applied — column is still "timestamp"
-                    rows = await conn.fetch(sql_legacy, task_id, limit)
+                    rows = await conn.fetch(sql_legacy, task_id, limit, offset)
 
                 history = []
                 for row in rows:

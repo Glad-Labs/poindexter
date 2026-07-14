@@ -77,8 +77,19 @@ async def list_settings(
     ),
     tags: str | None = Query(None, description="Comma-separated tag filter"),
     search: str | None = Query(None, description="Search in key and description"),
-    page: int = Query(1, ge=1, description="Page number (1-indexed). Aliased by offset/limit."),
-    per_page: int = Query(20, ge=1, le=100, description="Items per page. Aliased by offset/limit."),
+    page: int = Query(
+        1,
+        ge=1,
+        deprecated=True,
+        description="Page number (1-indexed) — legacy alias, superseded by offset/limit (#635).",
+    ),
+    per_page: int = Query(
+        20,
+        ge=1,
+        le=100,
+        deprecated=True,
+        description="Items per page — legacy alias, superseded by offset/limit (#635).",
+    ),
     offset: int | None = Query(
         None, ge=0, description="Result offset — canonical across the API; overrides page/per_page (#635)."
     ),

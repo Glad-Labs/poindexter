@@ -65,8 +65,9 @@ class VideoEpisodeListResponse(ListResponse[VideoEpisodeItem]):
 
     ``{items, total, limit, offset}`` via ``ListResponse[VideoEpisodeItem]``.
     Replaces the prior untyped body that used ``episodes``/``count`` keys
-    (``count`` is recoverable as ``len(items)``). The endpoint returns the full
-    set unpaginated, so ``offset`` is always 0 and ``limit`` equals ``total``.
+    (``count`` is recoverable as ``len(items)``). Real ``limit``/``offset``
+    pagination (#746) mirrors the podcast endpoint — ``total`` is the full
+    unpaginated count, ``limit``/``offset`` echo the actual query params.
     Public endpoint, but the JSON list has no in-repo consumer — clients use the
     RSS ``video-feed.xml`` and the ``/episodes/{post_id}.mp4`` stream.
     """

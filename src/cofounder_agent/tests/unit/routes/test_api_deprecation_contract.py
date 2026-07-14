@@ -89,6 +89,28 @@ def test_legacy_skip_alias_is_machine_deprecated() -> None:
     )
 
 
+def test_settings_page_per_page_are_machine_deprecated() -> None:
+    """`page`/`per_page` on `GET /api/settings` are superseded by the
+    canonical `offset`/`limit` pair (#635) but were never marked
+    `deprecated=True` on the Query() declarations (poindexter#746 item 2),
+    so OpenAPI/Swagger/codegen presented both systems as equally current."""
+    from routes.settings_routes import router as settings_router
+
+    app = FastAPI()
+    app.include_router(settings_router)
+    schema = app.openapi()
+
+    params = schema["paths"]["/api/settings"]["get"].get("parameters", [])
+    for name in ("page", "per_page"):
+        param = next((p for p in params if p.get("name") == name), None)
+        assert param is not None, f"`{name}` param missing from /api/settings OpenAPI schema"
+        assert param.get("deprecated") is True, (
+            f"the legacy `{name}` alias must be `Query(deprecated=True)` so "
+            "OpenAPI marks it deprecated, not just its description text "
+            "(poindexter#746 item 2)"
+        )
+
+
 class TestDeprecationHeaders:
     """``utils.deprecation.deprecation_headers`` — the reusable RFC 8594 /
     RFC 7234 header mechanism (poindexter#752 item 4). Schema ``deprecated:

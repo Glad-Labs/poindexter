@@ -429,6 +429,7 @@ async def get_task_status_info(
 async def get_task_status_history(
     task_id: str,
     limit: int = Query(50, ge=1, le=200, description="Maximum number of history entries"),
+    offset: int = Query(0, ge=0, description="History entries to skip"),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
 ):
@@ -441,6 +442,7 @@ async def get_task_status_history(
     **Parameters:**
     - task_id: Task UUID
     - limit: Maximum entries to return (default 50, max 200)
+    - offset: Entries to skip, for paging past the first `limit` (poindexter#746)
 
     **Returns:**
     - List of status history entries with timestamps and metadata
@@ -456,6 +458,7 @@ async def get_task_status_history(
     {
       "task_id": "550e8400-e29b-41d4-a716-446655440000",
       "history_count": 3,
+      "offset": 0,
       "history": [
         {
           "id": 1,
@@ -483,11 +486,12 @@ async def get_task_status_history(
         from services.tasks_db import TasksDatabase
 
         task_db = TasksDatabase(db_service.pool)
-        history = await task_db.get_status_history(task_id, limit)
+        history = await task_db.get_status_history(task_id, limit, offset)
 
         return {
             "task_id": task_id,
             "history_count": len(history) if history else 0,
+            "offset": offset,
             "history": history if history else [],
         }
 

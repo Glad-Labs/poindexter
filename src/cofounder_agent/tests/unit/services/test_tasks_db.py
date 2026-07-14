@@ -1143,6 +1143,50 @@ class TestGetStatusHistory:
         result = await db.get_status_history("t-1")
         assert result == []
 
+    @pytest.mark.asyncio
+    async def test_offset_param_passed_to_query(self):
+        """poindexter#746 — offset threads through to the SQL bind params
+        so callers can page past the first `limit` rows."""
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=[])
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+
+        pool.acquire = _acquire
+        db = TasksDatabase(pool=pool)
+
+        await db.get_status_history("t-1", limit=50, offset=20)
+
+        call_args = conn.fetch.await_args
+        sql, task_id, limit, offset = call_args.args
+        assert "OFFSET" in sql.upper()
+        assert task_id == "t-1"
+        assert limit == 50
+        assert offset == 20
+
+    @pytest.mark.asyncio
+    async def test_default_offset_is_zero(self):
+        """Backward compat: callers that don't pass offset get the same
+        first-page behavior as before #746."""
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=[])
+        pool = MagicMock()
+
+        @asynccontextmanager
+        async def _acquire():
+            yield conn
+
+        pool.acquire = _acquire
+        db = TasksDatabase(pool=pool)
+
+        await db.get_status_history("t-1")
+
+        call_args = conn.fetch.await_args
+        assert call_args.args[3] == 0
+
 
 # ---------------------------------------------------------------------------
 # get_tasks_by_ids — bulk fetch
@@ -1653,7 +1697,7 @@ class TestSweepStaleTasks:
         result = await db.sweep_stale_tasks(stale_threshold_minutes=60, max_retries=3)
         assert result == {"reset": 1, "failed": 0, "promoted": 1}
 
-        all_calls = [c for c in conn.execute.await_args_list]
+        all_calls = list(conn.execute.await_args_list)
         promote_calls = [
             c for c in all_calls if "SET status = 'awaiting_approval'" in c.args[0]
         ]
