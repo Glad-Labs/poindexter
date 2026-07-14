@@ -128,12 +128,33 @@ async def probe_webhook_freshness(pool, notify_fn) -> dict:
     subscriber_threshold_days = float(await _read_setting(
         pool, "webhook_freshness_subscriber_threshold_days", "7",
     ) or 7)
+    # Revenue isn't live yet (poindexter#2132) — revenue_events holds a
+    # single 2026-04-25 test-wiring row, so this half of the probe would
+    # otherwise re-fire a misleading "verify your webhook config" alert
+    # every time the threshold is raised far enough to buy a few months
+    # (30d -> 90d already happened once, due again in ~10d as of
+    # 2026-07-14). Mirrors the Revenue Grafana dashboard's own "parked
+    # until real data exists" convention (infrastructure/grafana/
+    # dashboards-parked/README.md) instead of an ever-climbing threshold.
+    # subscriber_events is unaffected — it's getting real fresh writes
+    # and this check is genuinely useful there.
+    revenue_check_enabled = (await _read_setting(
+        pool, "probe_webhook_freshness_revenue_check_enabled", "false",
+    )).lower() not in ("false", "0", "no", "off")
 
-    revenue_age = await _row_age_days(pool, "revenue_events")
+    revenue_age = (
+        await _row_age_days(pool, "revenue_events") if revenue_check_enabled else None
+    )
     subscriber_age = await _row_age_days(pool, "subscriber_events")
 
     alerts: list[str] = []
-    if revenue_age is None:
+    if not revenue_check_enabled:
+        logger.debug(
+            "[BUSINESS_PROBE] revenue_events freshness check disabled "
+            "(probe_webhook_freshness_revenue_check_enabled=false) — "
+            "revenue isn't live yet, set true once real transactions flow"
+        )
+    elif revenue_age is None:
         # Table missing / query error. Don't spam — debug log only.
         logger.debug("[BUSINESS_PROBE] revenue_events not queryable — skipping")
     elif revenue_age >= revenue_threshold_days:

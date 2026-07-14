@@ -119,6 +119,7 @@ class TestProbeWebhookFreshness:
         old = datetime.now(timezone.utc) - timedelta(days=60)
         recent = datetime.now(timezone.utc) - timedelta(days=1)
         pool = _make_pool(
+            settings={"probe_webhook_freshness_revenue_check_enabled": "true"},
             revenue_last=old,
             subscriber_last=recent,
         )
@@ -154,6 +155,7 @@ class TestProbeWebhookFreshness:
         """
         old = datetime.now(timezone.utc) - timedelta(days=60)
         pool = _make_pool(
+            settings={"probe_webhook_freshness_revenue_check_enabled": "true"},
             revenue_last=old,
             subscriber_last=old,
         )
@@ -172,6 +174,7 @@ class TestProbeWebhookFreshness:
         wired webhook with zero rows is a config-failure signal).
         """
         pool = _make_pool(
+            settings={"probe_webhook_freshness_revenue_check_enabled": "true"},
             revenue_last=None,
             subscriber_last=None,
         )
@@ -187,7 +190,10 @@ class TestProbeWebhookFreshness:
         old = datetime.now(timezone.utc) - timedelta(days=2)
         # 2 days old, threshold 1 day → alert.
         pool = _make_pool(
-            settings={"webhook_freshness_revenue_threshold_days": "1"},
+            settings={
+                "probe_webhook_freshness_revenue_check_enabled": "true",
+                "webhook_freshness_revenue_threshold_days": "1",
+            },
             revenue_last=old,
             subscriber_last=datetime.now(timezone.utc),
         )
@@ -204,6 +210,7 @@ class TestProbeWebhookFreshness:
         """
         old = datetime.now(timezone.utc) - timedelta(days=60)
         pool = _make_pool(
+            settings={"probe_webhook_freshness_revenue_check_enabled": "true"},
             revenue_last=old,
             subscriber_last=old,
         )
@@ -221,3 +228,60 @@ class TestProbeWebhookFreshness:
             "If you intentionally changed the call shape, update this "
             "test and double-check no RuntimeWarning fires."
         )
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestRevenueCheckGate:
+    """poindexter#2132: revenue_events holds a single 2026-04-25
+    test-wiring row and real revenue isn't live yet, so the age-based
+    check would otherwise re-fire a misleading "verify your webhook
+    config" alert every time the threshold is raised far enough to buy
+    a few months (30d -> 90d already happened once). This gate defaults
+    the revenue half off while leaving subscriber_events — which sees
+    real regular writes — fully active.
+    """
+
+    async def test_revenue_check_defaults_off_even_when_empty(self):
+        """No probe_webhook_freshness_revenue_check_enabled setting at
+        all (fresh install / not yet configured) — revenue_events being
+        empty must NOT fire an alert."""
+        pool = _make_pool(
+            revenue_last=None,
+            subscriber_last=datetime.now(timezone.utc),
+        )
+        notify = MagicMock()
+        result = await bp.probe_webhook_freshness(pool, notify)
+        assert result["ok"] is True
+        assert "all webhook tables fresh" in result["detail"]
+        notify.assert_not_called()
+
+    async def test_revenue_check_off_even_when_stale_but_subscriber_still_checked(self):
+        """Explicit revenue_check_enabled=false: a very stale
+        revenue_events must stay silent, but a stale subscriber_events
+        must still fire — the gate is scoped to revenue only."""
+        old = datetime.now(timezone.utc) - timedelta(days=400)
+        pool = _make_pool(
+            settings={"probe_webhook_freshness_revenue_check_enabled": "false"},
+            revenue_last=old,
+            subscriber_last=old,
+        )
+        notify = MagicMock()
+        result = await bp.probe_webhook_freshness(pool, notify)
+        assert "fired 1" in result["detail"]
+        body = notify.call_args.args[0]
+        assert "subscriber_events" in body
+        assert "revenue_events" not in body
+
+    async def test_revenue_check_enabled_true_restores_original_behavior(self):
+        old = datetime.now(timezone.utc) - timedelta(days=60)
+        pool = _make_pool(
+            settings={"probe_webhook_freshness_revenue_check_enabled": "true"},
+            revenue_last=old,
+            subscriber_last=datetime.now(timezone.utc),
+        )
+        notify = MagicMock()
+        result = await bp.probe_webhook_freshness(pool, notify)
+        assert "fired 1" in result["detail"]
+        body = notify.call_args.args[0]
+        assert "revenue_events" in body
