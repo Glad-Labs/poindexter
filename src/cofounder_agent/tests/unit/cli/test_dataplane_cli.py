@@ -81,7 +81,7 @@ def test_taps_run_loads_handlers_before_dispatch():
     def _fake_load_all():
         calls.append("load_all")
 
-    async def _fake_run_all(pool, only_names=None):
+    async def _fake_run_all(pool, site_config=None, only_names=None):
         calls.append("run_all")
         from services.integrations.tap_runner import RunSummary
         return RunSummary(taps=[], total_records=0, total_failed=0)
@@ -95,6 +95,34 @@ def test_taps_run_loads_handlers_before_dispatch():
 
     assert result.exit_code == 0
     assert calls == ["load_all", "run_all"]
+
+
+def test_taps_run_passes_site_config_for_secret_resolution():
+    """Regression (#857/#2502 follow-up): tap_singer_subprocess resolves
+    config.secret_fields via site_config.get_secret(), raising ValueError
+    when site_config is None. `poindexter taps run` used to call
+    tap_runner.run_all with no site_config at all, so any tap with
+    secret_fields set (gsc_main, ga4_main) failed every manual CLI run even
+    though the scheduled job path (services/jobs/run_taps.py) worked fine."""
+    from poindexter.cli.taps import taps_group
+    from services.site_config import SiteConfig
+
+    captured: dict = {}
+
+    async def _fake_run_all(pool, site_config=None, only_names=None):
+        captured["site_config"] = site_config
+        from services.integrations.tap_runner import RunSummary
+        return RunSummary(taps=[], total_records=0, total_failed=0)
+
+    with (
+        patch("poindexter.cli.taps.run_service", _fake_run_service),
+        patch("services.integrations.handlers.load_all", lambda: None),
+        patch("services.integrations.tap_runner.run_all", _fake_run_all),
+    ):
+        result = CliRunner().invoke(taps_group, ["run", "gsc_main"])
+
+    assert result.exit_code == 0
+    assert isinstance(captured["site_config"], SiteConfig)
 
 
 def test_taps_enable_existing_upserts_enabled_true():
