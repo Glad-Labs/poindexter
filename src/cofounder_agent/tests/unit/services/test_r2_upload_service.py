@@ -34,6 +34,14 @@ def _make_site_config_mock(values: dict[str, str]):
     mock = MagicMock()
     mock.get.side_effect = lambda k, d="": values.get(k, d)
 
+    def _get_int(k, d=0):
+        try:
+            return int(values.get(k, d))
+        except (TypeError, ValueError):
+            return d
+
+    mock.get_int.side_effect = _get_int
+
     async def _get_secret(k, d=""):
         return values.get(k, d)
 
@@ -329,6 +337,65 @@ class TestConvertToWebp:
         assert data[:4] == b"RIFF"
         assert data[8:12] == b"WEBP"
 
+    def test_downscales_image_larger_than_max_dimensions(self, tmp_path):
+        """Storage-savings lever: an oversized source image is downscaled
+        to fit within (max_width, max_height), aspect ratio preserved."""
+        try:
+            from PIL import Image  # type: ignore[import]
+        except ImportError:
+            pytest.skip("Pillow not installed")
+
+        img = Image.new("RGB", (3000, 2000), (10, 20, 30))
+        png_path = tmp_path / "oversized.png"
+        img.save(str(png_path), format="PNG")
+
+        result = _convert_to_webp(png_path, max_width=1920, max_height=1920)
+        assert result is not None
+        out = Image.open(result)
+        assert out.width <= 1920
+        assert out.height <= 1920
+        # Aspect ratio (3:2) preserved — width is the binding constraint.
+        assert out.width == 1920
+        assert out.height == 1280
+
+    def test_does_not_upscale_image_smaller_than_max_dimensions(self, tmp_path):
+        """A source image already under the cap is left at its original
+        size — this is a downscale-only lever, never an upscale."""
+        try:
+            from PIL import Image  # type: ignore[import]
+        except ImportError:
+            pytest.skip("Pillow not installed")
+
+        img = Image.new("RGB", (100, 50), (10, 20, 30))
+        png_path = tmp_path / "small.png"
+        img.save(str(png_path), format="PNG")
+
+        result = _convert_to_webp(png_path, max_width=1920, max_height=1920)
+        assert result is not None
+        out = Image.open(result)
+        assert (out.width, out.height) == (100, 50)
+
+    def test_default_max_dimensions_match_settings_defaults(self, tmp_path):
+        """Calling with no explicit max_width/max_height (as every
+        pre-existing caller/test in this file does) must still downscale —
+        the function signature's defaults are the same 1920x1920 seeded in
+        services/settings_defaults.py, so an un-configured DB behaves the
+        same as an explicitly-configured one."""
+        try:
+            from PIL import Image  # type: ignore[import]
+        except ImportError:
+            pytest.skip("Pillow not installed")
+
+        img = Image.new("RGB", (4000, 4000), (10, 20, 30))
+        png_path = tmp_path / "huge.png"
+        img.save(str(png_path), format="PNG")
+
+        result = _convert_to_webp(png_path)
+        assert result is not None
+        out = Image.open(result)
+        assert out.width == 1920
+        assert out.height == 1920
+
 
 class TestWebpUploadBehavior:
     """upload_to_r2 WebP conversion and Cache-Control for images (poindexter#732)."""
@@ -420,6 +487,42 @@ class TestWebpUploadBehavior:
 
         # Custom domain used; extension rewritten to .webp
         assert result == "https://images.gladlabs.io/images/featured/t123.webp"
+
+    @pytest.mark.asyncio
+    async def test_reads_configured_max_dimensions_from_site_config(
+        self, tmp_path,
+    ):
+        """upload_to_r2 must resolve storage_image_max_width/height from
+        site_config and thread them into _convert_to_webp — the resize
+        cap is DB-configurable, not hardcoded (feedback_db_first_config)."""
+        img_path = tmp_path / "cfg.png"
+        img_path.write_bytes(b"irrelevant, _convert_to_webp is mocked")
+
+        mock_s3 = MagicMock()
+        mock_boto3 = MagicMock()
+        mock_boto3.client.return_value = mock_s3
+        cfg = {
+            **self._full_config(),
+            "storage_image_max_width": "800",
+            "storage_image_max_height": "600",
+        }
+        svc = _make_service(cfg)
+
+        with (
+            patch.dict("sys.modules", {"boto3": mock_boto3}),
+            patch(
+                "services.r2_upload_service._convert_to_webp",
+                return_value=None,
+            ) as mock_convert,
+        ):
+            await svc.upload_to_r2(
+                str(img_path), "images/inline/cfg.png", content_type="image/png",
+            )
+
+        mock_convert.assert_called_once()
+        _args, kwargs = mock_convert.call_args
+        assert kwargs["max_width"] == 800
+        assert kwargs["max_height"] == 600
 
     @pytest.mark.asyncio
     async def test_pillow_absent_falls_back_to_original_png(self, tmp_path):

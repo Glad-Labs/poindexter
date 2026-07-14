@@ -50,8 +50,17 @@ _CONTENT_TYPES = {
 }
 
 
-def _convert_to_webp(path: Path) -> "io.BytesIO | None":
+def _convert_to_webp(
+    path: Path, *, max_width: int = 1920, max_height: int = 1920,
+) -> "io.BytesIO | None":
     """Convert an image file to WebP at quality 80 and return an in-memory buffer.
+
+    Downscaled to fit within ``(max_width, max_height)`` first if larger —
+    aspect ratio preserved, never upscaled (``Image.thumbnail`` semantics).
+    Defaults (1920x1920) match the largest ``deviceSizes`` entry in the
+    public site's Next.js Image config, so this never discards resolution
+    the responsive image pipeline could actually use (poindexter storage
+    optimization follow-up).
 
     Returns ``None`` when Pillow is not installed or conversion fails —
     callers fall back to uploading the original file.  Never raises.
@@ -60,6 +69,7 @@ def _convert_to_webp(path: Path) -> "io.BytesIO | None":
         from PIL import Image  # type: ignore[import]
 
         with Image.open(path) as img:
+            img.thumbnail((max_width, max_height), Image.Resampling.LANCZOS)
             # Convert palette/P mode images to RGBA first so WebP saves them
             # correctly; convert other non-RGB(A) modes to RGB.
             if img.mode in ("P", "RGBA"):
@@ -210,14 +220,19 @@ class R2UploadService:
                 path.suffix.lower(), "application/octet-stream",
             )
 
-        # Convert PNG/JPEG images to WebP@80 before upload.
+        # Convert PNG/JPEG images to WebP@80 before upload, downscaling
+        # first if they exceed the configured max dimensions.
         # This saves ~60-70% bandwidth vs 1.5–1.7 MB PNGs (poindexter#732).
         upload_path = str(path)
         upload_content_type = content_type
         upload_r2_key = r2_key
         _webp_buf: io.BytesIO | None = None
         if content_type in _CONVERT_TO_WEBP_TYPES:
-            _webp_buf = _convert_to_webp(path)
+            max_width = self._site_config.get_int("storage_image_max_width", 1920)
+            max_height = self._site_config.get_int("storage_image_max_height", 1920)
+            _webp_buf = _convert_to_webp(
+                path, max_width=max_width, max_height=max_height,
+            )
             if _webp_buf is not None:
                 upload_content_type = "image/webp"
                 # Rewrite the R2 key extension so the object has the right

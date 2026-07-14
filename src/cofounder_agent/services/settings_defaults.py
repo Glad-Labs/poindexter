@@ -1450,6 +1450,14 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # public bucket URL. Empty = fall back to storage_public_url (poindexter#732).
     # Configure via: poindexter settings set storage_image_custom_domain https://images.gladlabs.io
     'storage_image_custom_domain': '',
+    # Images wider/taller than this are downscaled (aspect-ratio preserved,
+    # never upscaled) before the WebP conversion above. 1920 matches the
+    # largest entry in the public site's Next.js Image `deviceSizes`
+    # (web/public-site/next.config.js) — the responsive <Image> pipeline
+    # never requests a wider variant, so storing anything larger than this
+    # is pure wasted bucket space with zero possible visual benefit.
+    'storage_image_max_width': '1920',
+    'storage_image_max_height': '1920',
     # Wait this many seconds after a post publishes before uploading
     # podcast/video/short to the object-store CDN — gives generation
     # time to finish. Storage-agnostic rename of the deprecated
