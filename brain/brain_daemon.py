@@ -8,11 +8,10 @@ Runs as its own process. If everything else dies, the brain survives.
 
 Functions:
   1. Monitors all other services (FastAPI, worker, OpenClaw, Vercel)
-  2. Processes its own reasoning queue (brain_queue)
-  3. Self-maintains knowledge graph (expire stale, resolve contradictions)
-  4. Generates proactive insights
-  5. Sends alerts when services are down
-  6. Can trigger restarts of other services
+  2. Self-maintains knowledge graph (expire stale, resolve contradictions)
+  3. Generates proactive insights
+  4. Sends alerts when services are down
+  5. Can trigger restarts of other services
 
 Usage:
     python brain/brain_daemon.py                # Run forever
@@ -1990,158 +1989,6 @@ async def monitor_external_services(pool) -> list:
     return issues
 
 
-async def enqueue_brain_item(pool, item_type: str, content: str, context: dict = None, priority: int = 5):
-    """Put an item into the brain queue. Callable by any service with a pool handle."""
-    await pool.execute("""
-        INSERT INTO brain_queue (item_type, content, context, priority, status)
-        VALUES ($1, $2, $3::jsonb, $4, 'pending')
-    """, item_type, content, json.dumps(context or {}), priority)
-    logger.info("[BRAIN] Enqueued %s item (priority %d): %s", item_type, priority, content[:80])
-
-
-# Brand pillars for topic relevance checks
-BRAND_PILLARS = {"ai", "ml", "machine learning", "artificial intelligence", "hardware",
-                 "gpu", "cpu", "gaming", "pc", "build", "benchmark", "linux", "llm",
-                 "deep learning", "neural", "tech", "automation", "pipeline", "content"}
-
-
-def _is_brand_relevant(text: str) -> bool:
-    """Quick keyword check — does the topic touch at least one brand pillar?"""
-    lower = text.lower()
-    return any(kw in lower for kw in BRAND_PILLARS)
-
-
-async def _handle_topic_suggestion(pool, item):
-    """Validate a suggested topic and queue as content task if on-brand."""
-    topic = item["content"]
-    json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
-
-    if not _is_brand_relevant(topic):
-        logger.info("[BRAIN] Topic rejected (off-brand): %s", topic[:80])
-        return {"action": "rejected", "reason": "off-brand"}
-
-    # Check for duplicate topics already in the pipeline
-    existing = await pool.fetchval(
-        "SELECT COUNT(*) FROM pipeline_tasks_view WHERE topic ILIKE $1 AND status NOT IN ('failed', 'rejected')",
-        f"%{topic[:60]}%",
-    )
-    if existing:
-        logger.info("[BRAIN] Topic rejected (duplicate): %s", topic[:80])
-        return {"action": "rejected", "reason": "duplicate_topic"}
-
-    # Queue as a content task
-    # Resolve template_slug inline — brain daemon is standalone and
-    # cannot import services/, so we replicate the resolver chain
-    # (app_settings → fail loud) here for the niche-less brain-queue
-    # path. Without this populated, content_router_service immediately
-    # failed the queued tasks per feedback_no_silent_defaults
-    # (jank-audit finding #3, 2026-05-19). Brain-queued topics aren't
-    # niche-bound, so we go straight to app_settings.
-    template_slug_row = await pool.fetchrow(
-        "SELECT value FROM app_settings "
-        "WHERE key = 'default_template_slug' AND is_active = true "
-        "LIMIT 1"
-    )
-    template_slug = (
-        str(template_slug_row["value"]).strip()
-        if template_slug_row and template_slug_row["value"]
-        else ""
-    )
-    if not template_slug:
-        logger.error(
-            "[BRAIN] Cannot queue topic — app_settings.default_template_slug "
-            "is unset. Set it or queue tasks via a niche-aware path "
-            "(per feedback_no_silent_defaults)."
-        )
-        return {"action": "rejected", "reason": "no_template_slug"}
-
-    await pool.execute("""
-        INSERT INTO pipeline_tasks (task_id, task_type, topic, status, template_slug)
-        VALUES (gen_random_uuid()::text, 'blog_post', $1::text, 'pending', $2)
-    """, topic, template_slug)
-    logger.info("[BRAIN] Topic accepted and queued: %s", topic[:80])
-    return {"action": "queued_as_content_task"}
-
-
-async def _handle_alert(pool, item):
-    """Forward alert content to Telegram."""
-    ctx = json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
-    severity = ctx.get("severity", "info")
-    source = ctx.get("source", "unknown")
-    await notify(f"[{severity.upper()}] {source}: {item['content']}", pool=pool)
-    return {"action": "forwarded_to_telegram", "severity": severity}
-
-
-async def _handle_config_change(pool, item):
-    """Log a config change into brain_knowledge for audit trail."""
-    ctx = json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
-    key = ctx.get("key", "unknown_key")
-    await pool.execute("""
-        INSERT INTO brain_knowledge (entity, attribute, value, confidence, source, tags)
-        VALUES ($1, 'config_change', $2, 1.0, 'brain_queue', $3)
-        ON CONFLICT (entity, attribute) DO UPDATE SET
-            value = EXCLUDED.value, updated_at = NOW()
-    """, f"config.{key}", item["content"][:500], ["audit", "config"])
-    logger.info("[BRAIN] Config change logged: %s", key)
-    return {"action": "logged_to_knowledge", "key": key}
-
-
-async def _handle_observation(pool, item):
-    """Store an observation as a brain_knowledge fact."""
-    ctx = json.loads(item["context"]) if isinstance(item["context"], str) else (item["context"] or {})
-    entity = ctx.get("entity", "general")
-    await pool.execute("""
-        INSERT INTO brain_knowledge (entity, attribute, value, confidence, source, tags)
-        VALUES ($1, 'observation', $2, $3, 'brain_queue', $4)
-        ON CONFLICT (entity, attribute) DO UPDATE SET
-            value = EXCLUDED.value, updated_at = NOW()
-    """, entity, item["content"][:1000], ctx.get("confidence", 0.7), ctx.get("tags", ["observation"]))
-    logger.info("[BRAIN] Observation stored for entity '%s'", entity)
-    return {"action": "stored_as_knowledge", "entity": entity}
-
-
-_QUEUE_HANDLERS = {
-    "topic_suggestion": _handle_topic_suggestion,
-    "alert": _handle_alert,
-    "config_change": _handle_config_change,
-    "observation": _handle_observation,
-}
-
-
-async def process_queue(pool, max_items: int = 5):
-    """Process pending items in the brain queue."""
-    try:
-        items = await pool.fetch("""
-            SELECT id, item_type, content, context
-            FROM brain_queue WHERE status = 'pending'
-            ORDER BY priority ASC, created_at ASC LIMIT $1
-        """, max_items)
-
-        for item in items:
-            try:
-                handler = _QUEUE_HANDLERS.get(item["item_type"])
-                if handler:
-                    result = await handler(pool, item)
-                else:
-                    logger.info("[BRAIN] Unknown item_type '%s' — marking processed", item["item_type"])
-                    result = {"processed_by": "brain_daemon", "note": "unknown_item_type"}
-
-                await pool.execute(
-                    "UPDATE brain_queue SET status = 'processed', processed_at = NOW(), result = $1 WHERE id = $2",
-                    json.dumps(result), item["id"],
-                )
-            except Exception as e:
-                await pool.execute(
-                    "UPDATE brain_queue SET status = 'failed', result = $1, processed_at = NOW() WHERE id = $2",
-                    str(e)[:500], item["id"],
-                )
-
-        if items:
-            logger.info("[BRAIN] Processed %d queue items", len(items))
-    except Exception as e:
-        logger.error("[BRAIN] Queue processing failed: %s", e, exc_info=True)
-
-
 async def _stamp_auto_cancelled(pool, task_ids: list) -> None:
     """Stamp ``pipeline_tasks.auto_cancelled_at`` for the given rows.
 
@@ -2821,10 +2668,6 @@ async def run_cycle(pool):
     except Exception as exc:
         logger.error("[BRAIN] monitor_external_services failed: %s", exc, exc_info=True)
         ext_issues = []
-    # process_queue is dead since migration 0080 dropped brain_queue
-    # (2026-04-21). Nothing enqueues to it anymore. The handler
-    # functions (enqueue_brain_item, accept_topic, etc.) are kept in
-    # this module pending a fuller cleanup pass — see follow-up issue.
     await auto_remediate(pool)
     await self_maintain(pool)
     await update_system_metrics(pool)
