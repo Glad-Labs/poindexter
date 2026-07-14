@@ -22,13 +22,16 @@ This probe closes that gap. Every brain cycle it queries Prefect for
   1. ``notify_operator()`` paged (Telegram + Discord) with the run id,
      age, and a one-liner fix instruction.
   2. ``audit_log`` row written (``probe.prefect_stuck_flow_detected``).
-  3. Auto-CRASHED via Prefect's ``/set_state`` API — gated behind
+  3. Auto-remediated via Prefect's ``/set_state`` API — gated behind
      ``prefect_stuck_flow_auto_crash`` (default ``"true"`` as of
      Glad-Labs/poindexter#526; the threshold is now tuned across two
      captured incidents — romantic-harrier 35h RUNNING and
      smoky-chowchow 50h PENDING — so hands-off recovery is the default.
      An operator who wants page-only behaviour can set the app_setting
-     back to ``false``).
+     back to ``false``). RUNNING requests CANCELLING (see the
+     2026-07-14 note below); PENDING force-CRASHES (nothing was ever
+     forked); CANCELLING force-CANCELLES (completes an already-hung
+     cancel).
 
 It ALSO detects the *queue-backlog* symptom directly (#526): scheduled
 runs that have piled up behind a held concurrency slot. A SCHEDULED run
@@ -60,6 +63,28 @@ The probe now watches CANCELLING too: a run stuck there past
 force-CANCELLED (completing the hung cancel), which frees the slot — the
 CANCELLING analogue of the RUNNING force-CRASHED path. See
 project_prefect_concurrency_zombie_stall.
+
+Cooperative-cancel-first for RUNNING (2026-07-14): force-CRASHED is a pure
+Prefect-orchestration-database label change — it never signals the worker's
+subprocess. For a ``process``-type work pool that created a split-brain
+zombie: Prefect frees the concurrency slot believing the run is dead, a new
+run dispatches into it, and the ORIGINAL subprocess — never asked to
+stop — keeps running, fighting the new run for the same shared GPU lock.
+Captured live: task 820bedd6's run was auto-crashed at 01:55 UTC, freeing
+the slot for task f9ed9931's run 10 seconds later, while 820bedd6's actual
+process kept executing QA-rail LLM calls until 03:16 — over an hour after
+Prefect had already called it dead; f9ed9931 was itself auto-crashed at
+03:06 for the same reason while still contending with the 820bedd6 zombie,
+and lost a vision-QA verdict entirely to a 900s GPU-lock timeout caused by
+the contention. The RUNNING path now requests CANCELLING instead of
+force-CRASHED — Prefect's native, worker-driven kill signal, which the
+CANCELLING section above already documents as completing "in seconds" for
+a live ``process``-type worker. A dead worker simply leaves the run in
+CANCELLING, where the existing CANCELLING-stall watch (above) forces it
+through after ``prefect_stuck_flow_cancelling_threshold_minutes`` — the
+same fallback already trusted for the 2026-07-07 incident, just entered via
+a different door. PENDING is unaffected (nothing was ever forked, so
+there's no subprocess to ask nicely) and still force-CRASHES directly.
 
 Why no in-memory dedupe like ``glitchtip_triage_probe``: there should
 never be MORE than one stuck flow run at a time on the
@@ -393,11 +418,14 @@ async def _force_flow_run_state(
 async def _crash_flow_run(
     client: Any, base_url: str, run_id: str, age_minutes: int, state_type: str = "RUNNING",
 ) -> bool:
-    """Force-transition a stuck RUNNING/PENDING run to CRASHED. True on 201.
+    """Force-transition a stuck PENDING run to CRASHED. True on 201.
 
     Thin wrapper over :func:`_force_flow_run_state` preserved for the crash
-    path (and any out-of-tree callers). CANCELLING runs take the force-CANCELLED
-    path instead — completing an already-requested cancel rather than crashing.
+    path (and any out-of-tree callers). PENDING has no infrastructure yet
+    (nothing was ever forked), so there's nothing to cooperatively cancel —
+    force-CRASHED is the only option. RUNNING takes the cooperative-cancel
+    path instead (:func:`_request_flow_run_cancellation`); CANCELLING runs
+    take the force-CANCELLED path — completing an already-requested cancel.
     """
     return await _force_flow_run_state(
         client, base_url, run_id,
@@ -406,6 +434,57 @@ async def _crash_flow_run(
             f"Auto-crashed by brain.prefect_stuck_flow_probe — flow run held "
             f"{state_type} for {age_minutes} minutes with no progress, "
             f"blocking subsequent dispatches."
+        ),
+    )
+
+
+async def _request_flow_run_cancellation(
+    client: Any, base_url: str, run_id: str, age_minutes: int,
+) -> bool:
+    """Request cancellation of a stuck RUNNING run. True on 201.
+
+    2026-07-14: a stuck RUNNING run used to be force-CRASHED directly —
+    a pure orchestration-database label change (see
+    :func:`_force_flow_run_state`'s docstring) that never touches the
+    worker's actual subprocess. For a ``process``-type work pool that
+    creates a split-brain zombie: Prefect believes the run is dead and
+    frees its concurrency slot for the next dispatch, but the original
+    subprocess — never asked to stop — keeps right on running, competing
+    with the newly-dispatched run for the same shared GPU lock. Captured
+    live: task 820bedd6 was auto-crashed at 01:55 UTC, freeing the slot
+    for task f9ed9931's run 10 seconds later, while 820bedd6's actual
+    process (PID 143) kept executing QA-rail LLM calls until 03:16 —
+    over an hour after Prefect had already called it dead. f9ed9931 was
+    itself auto-crashed at 03:06 for the same reason, contending with
+    the still-alive 820bedd6 zombie the whole time; a vision-QA rail
+    lost its verdict entirely to a 900s GPU-lock timeout caused by the
+    contention.
+
+    Requesting CANCELLING instead asks the *worker that owns the
+    subprocess* to do the killing — Prefect's native mechanism for
+    ``process``-type pools, which the module docstring's own CANCELLING
+    section already documents as completing "in seconds" for a live
+    worker. If the worker is ALSO dead (the scenario the original
+    force-CRASHED path was built for), the run simply stays in
+    CANCELLING and the existing stuck-CANCELLING watch (this same probe,
+    next cycle, past ``prefect_stuck_flow_cancelling_threshold_minutes``)
+    force-completes it — the fallback this repo already has, tested, and
+    trusts. Net effect: a live-but-slow worker gets a clean, fast, correct
+    reclaim instead of spawning a zombie; a genuinely-dead worker still
+    gets reclaimed, just up to ``cancelling_threshold_min`` minutes later
+    than an immediate crash would have. See ``project_prefect_concurrency
+    _zombie_stall`` — this closes a *different* gap in the same failure
+    class the CANCELLING-stall fix (2026-07-07) addressed.
+    """
+    return await _force_flow_run_state(
+        client, base_url, run_id,
+        target_type="CANCELLING", target_name="Cancelling",
+        message=(
+            f"Cancellation requested by brain.prefect_stuck_flow_probe — "
+            f"flow run held RUNNING for {age_minutes} minutes with no "
+            f"progress. Asking the owning worker to stop its subprocess "
+            f"cleanly; will be force-completed if still CANCELLING past "
+            f"the cancelling-stall threshold."
         ),
     )
 
@@ -653,6 +732,8 @@ async def run_prefect_stuck_flow_probe(
     crash_failed: list[dict[str, Any]] = []
     cancelled_runs: list[dict[str, Any]] = []
     cancel_failed: list[dict[str, Any]] = []
+    cancel_requested_runs: list[dict[str, Any]] = []
+    cancel_request_failed: list[dict[str, Any]] = []
     seen = 0
     overdue_scheduled_count = 0
     queue_backlog_detected = False
@@ -710,21 +791,32 @@ async def run_prefect_stuck_flow_probe(
                 )
 
                 # Surface the stall reason so the page isn't confusing for a
-                # run under the flat age threshold.
+                # run under the flat age threshold. Re-check ``holder is not
+                # None`` at each use site (mypy can't narrow through the
+                # stored ``stall_rule_triggered`` bool) even though it's
+                # already implied by the flag being true.
                 progress_note = ""
-                if stall_rule_triggered:
+                if stall_rule_triggered and holder is not None:
                     progress_note = (
                         f" No graph-node progress for {holder['minutes']:.0f}m "
                         f"(stall threshold {progress_stall_minutes}m)."
                     )
 
-                # RUNNING/PENDING zombies get force-CRASHED; a run wedged in
+                # PENDING zombies (nothing ever forked) get force-CRASHED.
+                # RUNNING zombies get a cooperative CANCELLING request first —
+                # the owning worker kills its own subprocess, avoiding the
+                # split-brain zombie a direct force-CRASH would create (see
+                # _request_flow_run_cancellation). A run already wedged in
                 # CANCELLING (worker dead, cancel can't complete) gets
-                # force-CANCELLED — finishing the already-requested cancel, which
-                # likewise frees the concurrency slot. The manual-unstick hint in
-                # the page mirrors whichever the probe would apply.
-                remediation_type = "CANCELLED" if state_type == "CANCELLING" else "CRASHED"
-                remediation_name = "Cancelled" if state_type == "CANCELLING" else "Crashed"
+                # force-CANCELLED — finishing the already-requested cancel,
+                # which likewise frees the concurrency slot. The manual-unstick
+                # hint in the page mirrors whichever the probe would apply.
+                if state_type == "CANCELLING":
+                    remediation_type, remediation_name = "CANCELLED", "Cancelled"
+                elif state_type == "RUNNING":
+                    remediation_type, remediation_name = "CANCELLING", "Cancelling"
+                else:  # PENDING
+                    remediation_type, remediation_name = "CRASHED", "Crashed"
 
                 # Detail string used in both notify_operator + audit_log.
                 detail = (
@@ -762,7 +854,7 @@ async def run_prefect_stuck_flow_probe(
                 # past its threshold — a title showing "(0m)" then reads as
                 # nothing's wrong. See the 2026-07-12 agile-nyala page
                 # (age=0, holder['minutes']=21, stall threshold 20).
-                if stall_rule_triggered:
+                if stall_rule_triggered and holder is not None:
                     title = (
                         f"Prefect flow stalled (no progress): {name} "
                         f"({holder['minutes']:.0f}m)"
@@ -812,7 +904,35 @@ async def run_prefect_stuck_flow_probe(
                             "id": run_id, "name": name,
                             "state": state_type, "age_minutes": age,
                         })
-                elif auto_crash:
+                elif auto_crash and state_type == "RUNNING":
+                    # Cooperative cancel — see _request_flow_run_cancellation.
+                    # A live worker completes RUNNING→CANCELLING→CANCELLED
+                    # within seconds; a dead one leaves the run in CANCELLING,
+                    # where the branch above force-completes it next cycle.
+                    cancel_requested = await _request_flow_run_cancellation(
+                        client, base_url, run_id, age,
+                    )
+                    if cancel_requested:
+                        cancel_requested_runs.append({
+                            "id": run_id, "name": name,
+                            "state": state_type, "age_minutes": age,
+                        })
+                        await _emit_audit_event(
+                            pool,
+                            "probe.prefect_stuck_flow_cancel_requested",
+                            f"Requested cancellation of {name} ({run_id[:12]}…) "
+                            f"stuck in {state_type} after {age}m",
+                            payload={
+                                "run_id": run_id, "name": name,
+                                "state": state_type, "age_minutes": age,
+                            },
+                        )
+                    else:
+                        cancel_request_failed.append({
+                            "id": run_id, "name": name,
+                            "state": state_type, "age_minutes": age,
+                        })
+                elif auto_crash:  # PENDING — no subprocess exists to cancel.
                     crashed = await _crash_flow_run(
                         client, base_url, run_id, age, state_type,
                     )
@@ -959,6 +1079,8 @@ async def run_prefect_stuck_flow_probe(
             f"{len(crash_failed)} crash failed; "
             f"{len(cancelled_runs)} auto-cancelled; "
             f"{len(cancel_failed)} cancel failed; "
+            f"{len(cancel_requested_runs)} cancel requested; "
+            f"{len(cancel_request_failed)} cancel request failed; "
             f"{overdue_scheduled_count} overdue scheduled "
             f"(min_overdue={queue_overdue_min_minutes}m, "
             f"depth_threshold={queue_depth_threshold}, "
@@ -970,6 +1092,8 @@ async def run_prefect_stuck_flow_probe(
         "crash_failed_count": len(crash_failed),
         "auto_cancelled_count": len(cancelled_runs),
         "cancel_failed_count": len(cancel_failed),
+        "cancel_requested_count": len(cancel_requested_runs),
+        "cancel_request_failed_count": len(cancel_request_failed),
         "stuck_runs": stuck_runs,
         "overdue_scheduled_count": overdue_scheduled_count,
         "queue_overdue_min_minutes": queue_overdue_min_minutes,
@@ -1002,10 +1126,13 @@ class PrefectStuckFlowProbe:
         "CANCELLING runs (worker died mid-cancel, hung holding the slot) are stuck "
         "beyond prefect_stuck_flow_cancelling_threshold_minutes (default 10m). "
         "Pages on every stuck run and auto-remediates by default "
-        "(prefect_stuck_flow_auto_crash, default true): RUNNING/PENDING zombies are "
-        "force-CRASHED, CANCELLING zombies force-CANCELLED — either frees the "
-        "concurrency slot so subsequent dispatches resume without operator "
-        "intervention. Also pages a DISTINCT signal when overdue SCHEDULED runs "
+        "(prefect_stuck_flow_auto_crash, default true): RUNNING zombies get a "
+        "cooperative CANCELLING request (the owning worker kills its own "
+        "subprocess, avoiding a split-brain zombie), PENDING zombies (nothing "
+        "ever forked) are force-CRASHED directly, CANCELLING zombies are "
+        "force-CANCELLED — all three eventually free the concurrency slot so "
+        "subsequent dispatches resume without operator intervention. Also pages "
+        "a DISTINCT signal when overdue SCHEDULED runs "
         "pile up beyond prefect_stuck_flow_queue_depth_threshold (default 3) AND "
         "the slot-holder is not progressing — the queue-backlog symptom of a "
         "genuinely held slot."

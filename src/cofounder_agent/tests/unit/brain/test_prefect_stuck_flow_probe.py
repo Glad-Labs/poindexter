@@ -525,26 +525,35 @@ async def test_running_under_threshold_is_not_stuck():
 
 
 @pytest.mark.asyncio
-async def test_stuck_flow_auto_crashes_by_default_no_setting():
+async def test_stuck_flow_requests_cancellation_by_default_no_setting():
     """Glad-Labs/poindexter#526: auto_crash now DEFAULTS ON. With NO
     ``prefect_stuck_flow_auto_crash`` app_setting present at all, a 35h-old
     RUNNING flow (the captured romantic-harrier regression) is both paged
-    AND force-CRASHED — hands-off recovery is the default after the
-    threshold was tuned across two incidents."""
+    AND has cancellation requested — hands-off recovery is the default
+    after the threshold was tuned across two incidents.
+
+    2026-07-14: RUNNING no longer goes straight to force-CRASHED — that
+    orchestration-only label change left a live worker's subprocess
+    running as an unaccounted zombie (see
+    ``_request_flow_run_cancellation``'s docstring for the captured
+    820bedd6/f9ed9931 incident). It now requests CANCELLING, which a live
+    ``process``-type worker completes on its own within seconds.
+    """
     pool = _make_pool()  # NB: no setting_values — exercises the default
     notify = MagicMock()
     client = _MockHttpClient({
         "/flow_runs/filter": _MockResponse(200, json_data=[
             _run(run_id="019e5cb0", name="romantic-harrier", minutes_ago=2100),
         ]),
-        "/set_state": _MockResponse(201, json_data={"state": {"type": "CRASHED"}}),
+        "/set_state": _MockResponse(201, json_data={"state": {"type": "CANCELLING"}}),
     })
     summary = await psfp.run_prefect_stuck_flow_probe(
         pool, notify_fn=notify, http_client_factory=lambda: client,
     )
     assert summary["stuck_count"] == 1
-    assert summary["auto_crashed_count"] == 1
-    assert summary["crash_failed_count"] == 0
+    assert summary["cancel_requested_count"] == 1
+    assert summary["cancel_request_failed_count"] == 0
+    assert summary["auto_crashed_count"] == 0
 
     notify.assert_called_once()
     kwargs = notify.call_args.kwargs
@@ -552,20 +561,22 @@ async def test_stuck_flow_auto_crashes_by_default_no_setting():
     assert kwargs["severity"] == "warning"
     assert "set_state" in kwargs["detail"]  # manual-unstick hint
 
-    # Both detection AND crash audited because auto_crash defaults true.
+    # Both detection AND the cancel request audited because auto_crash
+    # defaults true.
     audit_event_types = [
         args[0] for query, args in pool._audit_rows
         if "audit_log" in query
     ]
     assert "probe.prefect_stuck_flow_detected" in audit_event_types
-    assert "probe.prefect_stuck_flow_auto_crashed" in audit_event_types
+    assert "probe.prefect_stuck_flow_cancel_requested" in audit_event_types
+    assert "probe.prefect_stuck_flow_auto_crashed" not in audit_event_types
 
     # filter (RUNNING/PENDING) + filter (SCHEDULED queue check) + set_state.
     set_state_body = next(
         body for url, body in client.posts if url.endswith("/set_state")
     )
     assert set_state_body["force"] is True
-    assert set_state_body["state"]["type"] == "CRASHED"
+    assert set_state_body["state"]["type"] == "CANCELLING"
 
 
 @pytest.mark.asyncio
@@ -601,9 +612,10 @@ async def test_stuck_flow_pages_only_when_auto_crash_disabled():
 
 
 @pytest.mark.asyncio
-async def test_stuck_flow_auto_crashes_when_opted_in():
-    """With auto_crash=true the probe issues a force-CRASHED set_state
-    and records both the detection and the crash in audit_log."""
+async def test_stuck_flow_requests_cancellation_when_opted_in():
+    """With auto_crash=true a stuck RUNNING run gets a CANCELLING
+    set_state request (not an immediate force-CRASHED) and records both
+    the detection and the cancel request in audit_log."""
     pool = _make_pool(setting_values={
         "prefect_stuck_flow_auto_crash": "true",
     })
@@ -613,15 +625,16 @@ async def test_stuck_flow_auto_crashes_when_opted_in():
             _run(run_id="abc-123", name="romantic-harrier", minutes_ago=120),
         ]),
         "/set_state": _MockResponse(201, json_data={
-            "state": {"type": "CRASHED"},
+            "state": {"type": "CANCELLING"},
         }),
     })
     summary = await psfp.run_prefect_stuck_flow_probe(
         pool, notify_fn=notify, http_client_factory=lambda: client,
     )
     assert summary["stuck_count"] == 1
-    assert summary["auto_crashed_count"] == 1
-    assert summary["crash_failed_count"] == 0
+    assert summary["cancel_requested_count"] == 1
+    assert summary["cancel_request_failed_count"] == 0
+    assert summary["auto_crashed_count"] == 0
 
     # Two POSTs — filter, then set_state with force=true.
     paths = [p[0].rsplit("/", 1)[-1] for p in client.posts]
@@ -631,21 +644,21 @@ async def test_stuck_flow_auto_crashes_when_opted_in():
         body for url, body in client.posts if url.endswith("/set_state")
     )
     assert set_state_body["force"] is True
-    assert set_state_body["state"]["type"] == "CRASHED"
+    assert set_state_body["state"]["type"] == "CANCELLING"
 
     audit_event_types = [
         args[0] for query, args in pool._audit_rows
         if "audit_log" in query
     ]
     assert "probe.prefect_stuck_flow_detected" in audit_event_types
-    assert "probe.prefect_stuck_flow_auto_crashed" in audit_event_types
+    assert "probe.prefect_stuck_flow_cancel_requested" in audit_event_types
 
 
 @pytest.mark.asyncio
-async def test_set_state_failure_records_crash_failed():
+async def test_set_state_failure_records_cancel_request_failed():
     """If Prefect rejects the set_state (e.g. 422 invalid transition),
     the probe records the failure separately so the operator sees the
-    crash didn't take effect."""
+    cancel request didn't take effect."""
     pool = _make_pool(setting_values={
         "prefect_stuck_flow_auto_crash": "true",
     })
@@ -660,8 +673,10 @@ async def test_set_state_failure_records_crash_failed():
         pool, notify_fn=notify, http_client_factory=lambda: client,
     )
     assert summary["stuck_count"] == 1
+    assert summary["cancel_requested_count"] == 0
+    assert summary["cancel_request_failed_count"] == 1
     assert summary["auto_crashed_count"] == 0
-    assert summary["crash_failed_count"] == 1
+    assert summary["crash_failed_count"] == 0
 
 
 @pytest.mark.asyncio
@@ -1103,7 +1118,7 @@ async def test_queue_backlog_threshold_setting_respected():
 async def test_queue_backlog_check_failure_does_not_abort_stuck_detection():
     """A queue-check failure (the SCHEDULED filter 500s) must NOT abort the
     stuck-run detection that already ran. A stuck run is still detected +
-    auto-crashed even though the backlog query failed."""
+    has cancellation requested even though the backlog query failed."""
     pool = _make_pool()
     notify = MagicMock()
     client = _MockHttpClient({
@@ -1111,15 +1126,15 @@ async def test_queue_backlog_check_failure_does_not_abort_stuck_detection():
             _run(run_id="abc", name="romantic-harrier", minutes_ago=2100),
         ]),
         "/flow_runs/filter?SCHEDULED": _MockResponse(500, text="prefect boom"),
-        "/set_state": _MockResponse(201, json_data={"state": {"type": "CRASHED"}}),
+        "/set_state": _MockResponse(201, json_data={"state": {"type": "CANCELLING"}}),
     })
     summary = await psfp.run_prefect_stuck_flow_probe(
         pool, notify_fn=notify, http_client_factory=lambda: client,
     )
-    # Stuck-run detection + auto-crash unaffected by the failed queue check.
+    # Stuck-run detection + cancel request unaffected by the failed queue check.
     assert summary["ok"] is True
     assert summary["stuck_count"] == 1
-    assert summary["auto_crashed_count"] == 1
+    assert summary["cancel_requested_count"] == 1
     # Queue check degraded gracefully: 0 overdue, no backlog page.
     assert summary["overdue_scheduled_count"] == 0
     assert summary["queue_backlog_detected"] is False
