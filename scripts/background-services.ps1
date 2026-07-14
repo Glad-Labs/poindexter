@@ -14,8 +14,10 @@
 
 .NOTES
     Run Install/Uninstall from an elevated PowerShell terminal.
-    Tasks trigger AtLogon with no execution time limit; they restart
-    automatically up to 3 times (5-min interval) on crash.
+    Tasks trigger AtLogon (immediate start on an interactive session) plus
+    every 5 minutes thereafter (the actual safety net - see Install-Services),
+    with no execution time limit. RestartCount/RestartInterval additionally
+    restart a task up to 3 times (5-min interval) on a nonzero-exit crash.
 
 .EXAMPLE
     .\background-services.ps1 -Install
@@ -65,10 +67,27 @@ function Install-Services {
             -Argument $svc.Argument `
             -WorkingDirectory $svc.WorkDir
 
-        $trigger = New-ScheduledTaskTrigger -AtLogOn
+        # AtLogOn gets the daemon running immediately on an interactive
+        # session; the repeating trigger is the actual safety net. Windows'
+        # RestartCount/RestartInterval below only fires on a NONZERO exit -
+        # a daemon that exits 0 (e.g. `ollama.exe serve` quitting cleanly
+        # during reboot-chaos, poindexter#860 - ollama-vision-gpu1 sat
+        # dead for 24h+ with LastTaskResult=0 and silently starved the
+        # qa.vision QA rail) is invisible to it, and with only AtLogOn the
+        # task then never restarts until the next logon - which on a box
+        # that stays logged in for days can mean "silently dead for days".
+        # MultipleInstances=IgnoreNew (below) makes every repeat a no-op
+        # once the daemon is actually alive, so polling every 5 min costs
+        # nothing when healthy.
+        $logonTrigger = New-ScheduledTaskTrigger -AtLogOn
+        $repeatTrigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
+            -RepetitionInterval (New-TimeSpan -Minutes 5) `
+            -RepetitionDuration (New-TimeSpan -Days 3650)
 
         # No ExecutionTimeLimit - these are persistent daemons, not one-shot jobs.
-        # RestartCount + RestartInterval auto-recover from crashes.
+        # RestartCount + RestartInterval auto-recover from crashes (nonzero
+        # exit); the repeating trigger above covers the clean-exit gap they
+        # can't see.
         $settings = New-ScheduledTaskSettingsSet `
             -ExecutionTimeLimit (New-TimeSpan -Seconds 0) `
             -RestartCount 3 `
@@ -79,14 +98,14 @@ function Install-Services {
         Register-ScheduledTask `
             -TaskName $taskName `
             -Action $action `
-            -Trigger $trigger `
+            -Trigger @($logonTrigger, $repeatTrigger) `
             -Settings $settings `
             -Description $svc.Description `
             -RunLevel Highest `
             -Force | Out-Null
 
         if (Get-ScheduledTask -TaskName $taskName -ErrorAction SilentlyContinue) {
-            Write-Host "Registered: $taskName (AtLogon, no time limit, restart x3)"
+            Write-Host "Registered: $taskName (AtLogon + every 5min, no time limit, restart x3)"
         } else {
             Write-Host "FAILED to register: $taskName"
         }

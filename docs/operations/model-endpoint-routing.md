@@ -107,6 +107,20 @@ evict it because it's a separate server process.
    The instance's `inference compute` / `selecting single GPU` log lines
    are ground truth for which device a model landed on; WDDM memory
    readouts lag and mislead, especially with other GPU consumers active.
+6. **A logon-only trigger doesn't come back from a clean exit.**
+   `background-services.ps1` registers this (and every background
+   service) with both an `AtLogOn` trigger and a repeating 5-min trigger
+   (poindexter#860) specifically because Windows' own
+   `RestartCount`/`RestartInterval` only fires on a _nonzero_ exit code —
+   if `ollama.exe serve` exits 0 (observed during a host crash/reboot
+   sequence), the task just goes quiet and, on a box that stays logged in
+   for days, doesn't come back until the next interactive logon. That
+   left the vision instance dead for 24h+ and starved the `qa.vision` QA
+   rail (advisory-only, so it didn't block publishing, but it also wasn't
+   running — see GlitchTip issue #877). If you ever see connection
+   refusals to `:11435` with sub-10ms latency (an instant refusal, not a
+   slow/contended timeout), check `tasklist | grep ollama` for a missing
+   second process before assuming GPU contention.
 
 ## Verifying a routed model end-to-end
 
