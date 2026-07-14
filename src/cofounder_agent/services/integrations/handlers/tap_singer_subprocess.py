@@ -53,9 +53,17 @@ Each invocation:
       "command": "tap-csv",
       "tap_config": {"files": [{"entity": "page_views", "path": "/data/page_views.csv"}]},
       "streams": ["page_views"],
+      "field_selection": {"page_views": ["country"]},
       "max_records": 100000,
       "timeout_seconds": 1800
     }
+
+``field_selection`` (optional, ``{tap_stream_id: [field, ...]}``) additionally
+marks individual schema fields selected in the generated catalog — needed for
+taps whose dimension/field request is driven by catalog field-selection
+rather than being fixed per stream (e.g. ``tap-google-search-console``'s
+``performance_report_custom`` stream builds its API request's ``dimensions``
+list from exactly this field-selection state).
 
 The ``record_handler`` column on the row names the handler that
 turns Singer records into rows in ``target_table``. For
@@ -135,6 +143,10 @@ async def singer_subprocess(
     if streams_filter and not isinstance(streams_filter, list):
         raise ValueError("tap.singer_subprocess: row.config.streams must be a list")
 
+    field_selection = config.get("field_selection") or {}
+    if field_selection and not isinstance(field_selection, dict):
+        raise ValueError("tap.singer_subprocess: row.config.field_selection must be an object")
+
     max_records = int(config.get("max_records") or _DEFAULT_MAX_RECORDS)
     timeout_s = float(config.get("timeout_seconds") or _DEFAULT_TIMEOUT_S)
 
@@ -171,7 +183,7 @@ async def singer_subprocess(
         if streams_filter:
             catalog_path = os.path.join(tmpdir, "catalog.json")
             await _generate_selected_catalog(
-                command, config_path, streams_filter, catalog_path,
+                command, config_path, streams_filter, catalog_path, field_selection,
             )
 
         argv = shlex.split(command) + [
@@ -292,10 +304,11 @@ async def _generate_selected_catalog(
     config_path: str,
     selected_streams: list[str],
     output_path: str,
+    field_selection: dict[str, list[str]] | None = None,
 ) -> None:
     """Run the tap with ``--discover`` to get its catalog, mark the
-    configured streams as selected, and write the modified catalog to
-    ``output_path``.
+    configured streams (and optionally individual fields) as selected, and
+    write the modified catalog to ``output_path``.
 
     Singer's catalog metadata format: each stream has a ``metadata``
     list of ``{"breadcrumb": [], "metadata": {...}}`` blocks. Setting
@@ -303,6 +316,12 @@ async def _generate_selected_catalog(
     the tap to sync that stream. Some taps additionally require
     ``forced-replication-method`` to be set when no replication-key is
     available.
+
+    ``field_selection`` additionally selects individual schema fields —
+    some taps (e.g. ``tap-google-search-console``'s ``performance_report_custom``
+    stream) only include a dimension in their upstream API request when the
+    catalog marks that field selected; whole-stream selection alone leaves
+    such fields unrequested. See :func:`_apply_field_selection`.
     """
     argv = shlex.split(command) + ["--config", config_path, "--discover"]
     proc = await asyncio.create_subprocess_exec(
@@ -346,8 +365,47 @@ async def _generate_selected_catalog(
             "forced-replication-method", "FULL_TABLE",
         )
 
+    _apply_field_selection(catalog, field_selection or {})
+
     with open(output_path, "w", encoding="utf-8") as fh:
         json.dump(catalog, fh)
+
+
+def _apply_field_selection(
+    catalog: dict[str, Any], field_selection: dict[str, list[str]]
+) -> None:
+    """Mark specific schema fields as selected, in place.
+
+    Complements the whole-stream selection above. Standard Singer field
+    metadata is a ``{"breadcrumb": ["properties", "<field>"], "metadata":
+    {"selected": True}}`` entry in the stream's flat ``metadata`` list —
+    verified against the installed ``tap-google-search-console``'s
+    ``performance_report_custom`` stream, whose ``dimensions`` request
+    payload is built from exactly this field-selection state (see
+    ``streams/abstract.py::set_dimensions_in_payload`` in that package).
+
+    ``field_selection`` maps ``tap_stream_id`` to the schema property names
+    to mark selected. Streams or fields absent from the fetched catalog are
+    silently skipped — tap version drift shouldn't crash a sync.
+    """
+    if not field_selection:
+        return
+    for stream in catalog.get("streams", []):
+        stream_id = stream.get("tap_stream_id")
+        fields = field_selection.get(stream_id)
+        if not fields:
+            continue
+        md_list = stream.setdefault("metadata", [])
+        for field_name in fields:
+            breadcrumb = ["properties", field_name]
+            entry = next(
+                (m for m in md_list if m.get("breadcrumb") == breadcrumb),
+                None,
+            )
+            if entry is None:
+                entry = {"breadcrumb": breadcrumb, "metadata": {}}
+                md_list.append(entry)
+            entry["metadata"]["selected"] = True
 
 
 async def _consume_stdout(

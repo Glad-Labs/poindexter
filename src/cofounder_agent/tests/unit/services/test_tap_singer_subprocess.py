@@ -298,6 +298,54 @@ class TestExternalMetricsWriter:
 
 
 # ---------------------------------------------------------------------------
+# _apply_field_selection unit tests (pure function, no subprocess)
+# ---------------------------------------------------------------------------
+
+
+class TestApplyFieldSelection:
+    def test_marks_named_fields_selected_on_matching_stream(self):
+        catalog = {
+            "streams": [
+                {
+                    "tap_stream_id": "performance_report_custom",
+                    "metadata": [{"breadcrumb": [], "metadata": {"selected": True}}],
+                }
+            ]
+        }
+        tap_singer_subprocess._apply_field_selection(
+            catalog, {"performance_report_custom": ["page", "query"]}
+        )
+        stream = catalog["streams"][0]
+        by_breadcrumb = {tuple(m["breadcrumb"]): m["metadata"] for m in stream["metadata"]}
+        assert by_breadcrumb[("properties", "page")]["selected"] is True
+        assert by_breadcrumb[("properties", "query")]["selected"] is True
+        # Stream-level entry untouched.
+        assert by_breadcrumb[()]["selected"] is True
+
+    def test_ignores_stream_not_present_in_catalog(self):
+        catalog = {"streams": [{"tap_stream_id": "performance_report_page", "metadata": []}]}
+        # Should not raise even though "performance_report_custom" isn't in this catalog.
+        tap_singer_subprocess._apply_field_selection(
+            catalog, {"performance_report_custom": ["page", "query"]}
+        )
+        assert catalog["streams"][0]["metadata"] == []
+
+    def test_noop_on_empty_field_selection(self):
+        catalog = {"streams": [{"tap_stream_id": "x", "metadata": [{"breadcrumb": [], "metadata": {}}]}]}
+        before = json.loads(json.dumps(catalog))
+        tap_singer_subprocess._apply_field_selection(catalog, {})
+        assert catalog == before
+
+    def test_creates_metadata_list_when_stream_has_none(self):
+        catalog: dict[str, Any] = {"streams": [{"tap_stream_id": "performance_report_custom"}]}
+        tap_singer_subprocess._apply_field_selection(
+            catalog, {"performance_report_custom": ["query"]}
+        )
+        entries = catalog["streams"][0]["metadata"]
+        assert {"breadcrumb": ["properties", "query"], "metadata": {"selected": True}} in entries
+
+
+# ---------------------------------------------------------------------------
 # singer_subprocess end-to-end tests with a real subprocess
 # ---------------------------------------------------------------------------
 
@@ -410,3 +458,67 @@ class TestSingerSubprocessEndToEnd:
             await tap_singer_subprocess.singer_subprocess(
                 None, site_config=None, row=row, pool=pool,
             )
+
+    @pytest.mark.asyncio
+    async def test_field_selection_reaches_generated_catalog(self, tmp_path):
+        """The --catalog file the tap actually receives carries the
+        field-level selected=True entries, not just the stream-level one."""
+        lines = [
+            json.dumps({"type": "SCHEMA", "stream": "custom_metrics", "schema": {"properties": {}}}),
+            json.dumps({"type": "RECORD", "stream": "custom_metrics", "record": {
+                "date": "2026-04-24", "impressions": 10, "query": "docker compose",
+            }}),
+        ]
+        # This fake tap ignores --catalog content but we intercept it by
+        # having the script dump whatever catalog.json it was given to a
+        # sentinel file, so the test can assert on it directly.
+        sentinel = tmp_path / "seen_catalog.json"
+        script_body = f"""
+import json
+import sys
+if "--discover" in sys.argv:
+    sys.stdout.write(json.dumps({{"streams": [{{"tap_stream_id": "custom_metrics", "stream": "custom_metrics", "schema": {{"properties": {{}}}}, "metadata": []}}]}}))
+    sys.stdout.flush()
+    sys.exit(0)
+if "--catalog" in sys.argv:
+    catalog_path = sys.argv[sys.argv.index("--catalog") + 1]
+    with open(catalog_path, encoding="utf-8") as f:
+        data = f.read()
+    with open({str(sentinel)!r}, "w", encoding="utf-8") as f:
+        f.write(data)
+for line in {lines!r}:
+    sys.stdout.write(line + "\\n")
+    sys.stdout.flush()
+sys.exit(0)
+"""
+        script_path = tmp_path / "fake_custom_tap.py"
+        script_path.write_text(script_body, encoding="utf-8")
+        command = f'"{sys.executable}" "{script_path}"'
+
+        pool = _FakePool()
+        row = _row(
+            config={
+                "command": command,
+                "streams": ["custom_metrics"],
+                "field_selection": {"custom_metrics": ["page", "query"]},
+                "metrics_mapping": {
+                    "custom_metrics": {
+                        "source": "google_search_console",
+                        "date_field": "date",
+                        "metric_fields": ["impressions"],
+                        "dimension_fields": ["query"],
+                    }
+                },
+                "max_records": 10,
+                "timeout_seconds": 30,
+            },
+        )
+        await tap_singer_subprocess.singer_subprocess(
+            None, site_config=None, row=row, pool=pool,
+        )
+
+        seen_catalog = json.loads(sentinel.read_text(encoding="utf-8"))
+        stream = seen_catalog["streams"][0]
+        by_breadcrumb = {tuple(m["breadcrumb"]): m["metadata"] for m in stream["metadata"]}
+        assert by_breadcrumb[("properties", "page")]["selected"] is True
+        assert by_breadcrumb[("properties", "query")]["selected"] is True

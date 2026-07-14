@@ -131,6 +131,29 @@ async def test_distinct_dimensions_stay_separate(test_pool):
         await _cleanup(test_pool, source)
 
 
+async def test_distinct_query_dimension_stays_separate(test_pool):
+    # Same page, same date, two different search queries: two GSC rows.
+    # A re-emit of one of them must dedup onto itself, not create a third row.
+    source = "test_dedup_query"
+    row = _row(source, dimension_fields=["query"])
+    try:
+        await external_metrics_writer(
+            _payload(slug="my-post", clicks=1.0, dims={"query": "docker compose tutorial"}),
+            site_config=None, row=row, pool=test_pool,
+        )
+        await external_metrics_writer(
+            _payload(slug="my-post", clicks=2.0, dims={"query": "docker compose vs kubernetes"}),
+            site_config=None, row=row, pool=test_pool,
+        )
+        await external_metrics_writer(
+            _payload(slug="my-post", clicks=1.0, dims={"query": "docker compose tutorial"}),
+            site_config=None, row=row, pool=test_pool,
+        )
+        assert await _count(test_pool, source) == 2
+    finally:
+        await _cleanup(test_pool, source)
+
+
 async def test_site_level_null_slug_records_dedup(test_pool):
     # GSC's performance_report_date stream has no post_field, so slug is NULL
     # (site-wide daily aggregate). The NULLS NOT DISTINCT index is what makes
