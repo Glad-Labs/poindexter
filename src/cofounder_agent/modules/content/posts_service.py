@@ -220,23 +220,33 @@ class PostsService:
     async def list_categories(
         self, *, offset: int = 0, limit: int = 100
     ) -> dict[str, Any]:
-        """Paginated category listing. Returns ``{categories, total, offset, limit}``."""
+        """Paginated category listing. Returns ``{categories, total, offset, limit}``.
+
+        LIMIT/OFFSET + COUNT(*) OVER () are pushed into SQL (poindexter#644)
+        — the table used to be fetched in full and sliced in Python.
+        """
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT id, name, slug, description, created_at, updated_at
+            rows = await conn.fetch(
+                """
+                SELECT id, name, slug, description, created_at, updated_at,
+                       COUNT(*) OVER () AS total_count
                 FROM categories
                 ORDER BY name
-            """)
+                LIMIT $1 OFFSET $2
+                """,
+                limit,
+                offset,
+            )
 
-        all_categories: list[dict] = []
-        for row in rows:
-            cat = dict(row)
+        total = int(rows[0]["total_count"]) if rows else 0
+        categories = [
+            {k: v for k, v in dict(row).items() if k != "total_count"} for row in rows
+        ]
+        for cat in categories:
             _format_timestamps(cat)
-            all_categories.append(cat)
 
-        total = len(all_categories)
         return {
-            "categories": all_categories[offset : offset + limit],
+            "categories": categories,
             "total": total,
             "offset": offset,
             "limit": limit,
@@ -247,23 +257,33 @@ class PostsService:
     # ------------------------------------------------------------------
 
     async def list_tags(self, *, offset: int = 0, limit: int = 100) -> dict[str, Any]:
-        """Paginated tag listing. Returns ``{tags, total, offset, limit}``."""
+        """Paginated tag listing. Returns ``{tags, total, offset, limit}``.
+
+        LIMIT/OFFSET + COUNT(*) OVER () are pushed into SQL (poindexter#644)
+        — the table used to be fetched in full and sliced in Python.
+        """
         async with self._pool.acquire() as conn:
-            rows = await conn.fetch("""
-                SELECT id, name, slug, description, created_at, updated_at
+            rows = await conn.fetch(
+                """
+                SELECT id, name, slug, description, created_at, updated_at,
+                       COUNT(*) OVER () AS total_count
                 FROM tags
                 ORDER BY name
-            """)
+                LIMIT $1 OFFSET $2
+                """,
+                limit,
+                offset,
+            )
 
-        all_tags: list[dict] = []
-        for row in rows:
-            tag = dict(row)
+        total = int(rows[0]["total_count"]) if rows else 0
+        tags = [
+            {k: v for k, v in dict(row).items() if k != "total_count"} for row in rows
+        ]
+        for tag in tags:
             _format_timestamps(tag)
-            all_tags.append(tag)
 
-        total = len(all_tags)
         return {
-            "tags": all_tags[offset : offset + limit],
+            "tags": tags,
             "total": total,
             "offset": offset,
             "limit": limit,

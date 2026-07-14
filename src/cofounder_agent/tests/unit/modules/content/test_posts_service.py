@@ -272,18 +272,33 @@ class TestListCategories:
         result = await svc.list_categories()
         assert result == {"categories": [], "total": 0, "offset": 0, "limit": 100}
 
-    async def test_pagination_slices_results(self):
+    async def test_pagination_pushed_into_sql(self):
+        """poindexter#644: LIMIT/OFFSET must be pushed into the query (like
+        list_posts's COUNT(*) OVER() pattern), not fetch-all-then-slice in
+        Python. The mock simulates what the DB itself would return for
+        offset=3/limit=2 over a 5-row table -- exactly 2 rows, each
+        carrying the full-table total_count via the window function.
+        offset != limit so the param-order assertion below is meaningful."""
         cats = [
-            {"id": f"c-{i}", "name": f"Cat {i}", "slug": f"cat-{i}",
-             "description": None, "created_at": NOW, "updated_at": NOW}
-            for i in range(5)
+            {"id": "c-3", "name": "Cat 3", "slug": "cat-3",
+             "description": None, "created_at": NOW, "updated_at": NOW,
+             "total_count": 5},
+            {"id": "c-4", "name": "Cat 4", "slug": "cat-4",
+             "description": None, "created_at": NOW, "updated_at": NOW,
+             "total_count": 5},
         ]
-        pool, _ = _make_pool(fetch_return=cats)
+        pool, conn = _make_pool(fetch_return=cats)
         svc = PostsService(pool=pool)
-        result = await svc.list_categories(offset=2, limit=2)
+        result = await svc.list_categories(offset=3, limit=2)
         assert result["total"] == 5
         assert len(result["categories"]) == 2
-        assert result["categories"][0]["name"] == "Cat 2"
+        assert result["categories"][0]["name"] == "Cat 3"
+        assert "total_count" not in result["categories"][0]
+
+        query = conn.fetch.call_args.args[0]
+        assert "LIMIT" in query and "OFFSET" in query
+        assert "COUNT(*) OVER" in query
+        assert conn.fetch.call_args.args[1:] == (2, 3)  # ($1=limit, $2=offset)
 
 
 # ---------------------------------------------------------------------------
@@ -303,8 +318,34 @@ class TestListTags:
         tag = {
             "id": "t-1", "name": "Python", "slug": "python",
             "description": None, "created_at": NOW, "updated_at": NOW,
+            "total_count": 1,
         }
         pool, _ = _make_pool(fetch_return=[tag])
         svc = PostsService(pool=pool)
         result = await svc.list_tags()
         assert result["tags"][0]["created_at"] == NOW.isoformat()
+        assert "total_count" not in result["tags"][0]
+
+    async def test_pagination_pushed_into_sql(self):
+        """poindexter#644: same SQL-side LIMIT/OFFSET treatment as
+        list_categories, not fetch-all-then-slice in Python. offset !=
+        limit so the param-order assertion below is meaningful."""
+        tags = [
+            {"id": "t-3", "name": "Tag 3", "slug": "tag-3",
+             "description": None, "created_at": NOW, "updated_at": NOW,
+             "total_count": 5},
+            {"id": "t-4", "name": "Tag 4", "slug": "tag-4",
+             "description": None, "created_at": NOW, "updated_at": NOW,
+             "total_count": 5},
+        ]
+        pool, conn = _make_pool(fetch_return=tags)
+        svc = PostsService(pool=pool)
+        result = await svc.list_tags(offset=3, limit=2)
+        assert result["total"] == 5
+        assert len(result["tags"]) == 2
+        assert result["tags"][0]["name"] == "Tag 3"
+
+        query = conn.fetch.call_args.args[0]
+        assert "LIMIT" in query and "OFFSET" in query
+        assert "COUNT(*) OVER" in query
+        assert conn.fetch.call_args.args[1:] == (2, 3)  # ($1=limit, $2=offset)

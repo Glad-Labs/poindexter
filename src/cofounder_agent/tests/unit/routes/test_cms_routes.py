@@ -76,6 +76,8 @@ SAMPLE_CATEGORY_ROW = {
     "description": "Tech articles",
     "created_at": NOW,
     "updated_at": NOW,
+    # poindexter#644: list_categories pushes COUNT(*) OVER () into SQL now.
+    "total_count": 1,
 }
 
 SAMPLE_TAG_ROW = {
@@ -85,6 +87,8 @@ SAMPLE_TAG_ROW = {
     "description": "Python articles",
     "created_at": NOW,
     "updated_at": NOW,
+    # poindexter#644: list_tags pushes COUNT(*) OVER () into SQL now.
+    "total_count": 1,
 }
 
 
