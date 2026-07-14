@@ -239,6 +239,99 @@ class TestRejectTask:
         assert updates["approval_status"] == "rejected"
 
 
+# ---------------------------------------------------------------------------
+# POST /api/tasks/{task_id}/unapprove
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestUnapproveTask:
+    def test_unapprove_approved_task_returns_200_default_target(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=APPROVED_TASK)
+        client = TestClient(_build_app(mock_db))
+
+        with patch(
+            "services.publish_service.unapprove_task",
+            new=AsyncMock(return_value={
+                "ok": True, "new_status": "awaiting_approval",
+                "posts_row_removed": True, "reason": None,
+            }),
+        ):
+            resp = client.post("/api/tasks/task-001/unapprove", json={})
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["status"] == "awaiting_approval"
+        assert data["previous_status"] == "approved"
+        assert data["posts_row_removed"] is True
+
+    def test_unapprove_to_rejected_final_returns_200_and_forwards_args(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=APPROVED_TASK)
+        client = TestClient(_build_app(mock_db))
+
+        with patch(
+            "services.publish_service.unapprove_task",
+            new=AsyncMock(return_value={
+                "ok": True, "new_status": "rejected_final",
+                "posts_row_removed": False, "reason": None,
+            }),
+        ) as mock_unapprove:
+            resp = client.post(
+                "/api/tasks/task-001/unapprove",
+                json={"to": "rejected_final", "feedback": "Off-topic, don't regen"},
+            )
+
+        assert resp.status_code == 200
+        assert resp.json()["status"] == "rejected_final"
+        assert mock_unapprove.await_args.kwargs["target_status"] == "rejected_final"
+        assert mock_unapprove.await_args.kwargs["feedback"] == "Off-topic, don't regen"
+
+    def test_unapprove_rejected_target_without_feedback_returns_422(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=APPROVED_TASK)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post(
+            "/api/tasks/task-001/unapprove", json={"to": "rejected_final"},
+        )
+        assert resp.status_code == 422
+
+    def test_unapprove_wrong_status_returns_409(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=AWAITING_TASK)
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post("/api/tasks/task-001/unapprove", json={})
+        assert resp.status_code == 409
+
+    def test_unapprove_nonexistent_task_returns_404(self):
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=None)
+        _set_pool(mock_db, fetch_rows=[])
+        client = TestClient(_build_app(mock_db))
+
+        resp = client.post("/api/tasks/ghost-task/unapprove", json={})
+        assert resp.status_code == 404
+
+    def test_unapprove_race_condition_reports_409(self):
+        """The service function's own idempotency guard caught a race (task
+        stopped being 'approved' between the route's check and the revert)."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=APPROVED_TASK)
+        client = TestClient(_build_app(mock_db))
+
+        with patch(
+            "services.publish_service.unapprove_task",
+            new=AsyncMock(return_value={
+                "ok": False, "new_status": "awaiting_approval",
+                "posts_row_removed": False, "reason": "not_approved",
+            }),
+        ):
+            resp = client.post("/api/tasks/task-001/unapprove", json={})
+
+        assert resp.status_code == 409
 
 
 # ---------------------------------------------------------------------------

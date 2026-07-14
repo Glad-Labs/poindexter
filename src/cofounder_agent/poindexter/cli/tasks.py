@@ -314,6 +314,51 @@ def tasks_publish(task_id: str) -> None:
     click.secho(f"Published: {task_id}  status={t.get('status', '?')}", fg="green")
 
 
+@tasks_group.command("unapprove")
+@click.argument("task_id")
+@click.option(
+    "--to",
+    type=click.Choice(
+        ["awaiting_approval", "rejected_retry", "rejected_final"], case_sensitive=False,
+    ),
+    default="awaiting_approval",
+    show_default=True,
+    help=(
+        "Target status. 'awaiting_approval' puts the task back in the review "
+        "queue unchanged (undo an accidental approve click). 'rejected_retry' "
+        "/ 'rejected_final' rejects it outright in one step."
+    ),
+)
+@click.option(
+    "--feedback",
+    default="",
+    help="Reason, surfaced on the audit log. Required when --to targets a rejected_* status.",
+)
+def tasks_unapprove(task_id: str, to: str, feedback: str) -> None:
+    """Revert an approved-but-not-yet-published task (full id or 8-char prefix).
+
+    Approve only stages a task — it hasn't published — so this is always
+    safe. Also un-stages any linked draft post and clears any scheduled
+    publish slot the approval created.
+    """
+    if to != "awaiting_approval" and not feedback:
+        click.echo(
+            "Error: --feedback is required when --to targets a rejected_* status.",
+            err=True,
+        )
+        sys.exit(2)
+    payload: dict[str, Any] = {
+        "to": to,
+        "feedback": feedback or "Unapproved by operator",
+    }
+    try:
+        t = _post_action(task_id, "unapprove", payload)
+    except RuntimeError as e:
+        click.echo(f"Error: {e}", err=True)
+        sys.exit(1)
+    click.secho(f"Reverted: {task_id}  status={t.get('status', '?')}", fg="yellow")
+
+
 # ---------------------------------------------------------------------------
 # bulk-ops: reject-batch / approve-batch
 # ---------------------------------------------------------------------------

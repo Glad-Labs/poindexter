@@ -9,12 +9,13 @@ ID fallback.  This module owns rejection and the pending-approval listing.
 
 Endpoints:
 - POST /api/tasks/{task_id}/reject - Reject a task with feedback
+- POST /api/tasks/{task_id}/unapprove - Revert an approved-but-unpublished task
 - GET /api/tasks/pending-approval - List all tasks awaiting approval
 """
 
 import json
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query
 from pydantic import BaseModel
@@ -261,6 +262,107 @@ async def reject_task(
         raise HTTPException(
             status_code=500,
             detail="Failed to reject task",
+        ) from e
+
+
+class UnapproveRequest(BaseModel):
+    """Request body for ``POST /{task_id}/unapprove``."""
+
+    to: Literal["awaiting_approval", "rejected_retry", "rejected_final"] = "awaiting_approval"
+    feedback: str | None = None
+
+
+@router.post(
+    "/{task_id}/unapprove",
+    summary="Revert an approved-but-unpublished task",
+    response_model=dict[str, Any],
+    status_code=200,
+)
+async def unapprove_task_route(
+    task_id: str,
+    request: UnapproveRequest,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+):
+    """Undo an operator approval that hasn't been published yet.
+
+    Only tasks with status 'approved' can be unapproved — approve only
+    stages a task (see ``feedback_approve_does_not_mean_publish``), so this
+    is always safe. Reverts to 'awaiting_approval' by default (back in the
+    review queue, content unchanged), or straight to 'rejected_retry' /
+    'rejected_final' via ``to``. Also un-stages any linked draft ``posts``
+    row and clears any ``scheduled_at`` slot the approval created.
+    """
+    try:
+        operator = get_operator_identity()
+
+        task = await db_service.get_task(task_id)
+        if not task:
+            await resolve_task_id_prefix(db_service.pool, task_id)
+            raise HTTPException(status_code=404, detail=f"Task {task_id} not found")
+
+        full_task_id = str(task.get("task_id") or task.get("id") or task_id)
+
+        current_status = task.get("status")
+        if current_status != "approved":
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot unapprove task with status '{current_status}' — expected 'approved'",
+            )
+
+        if request.to != "awaiting_approval" and not request.feedback:
+            raise HTTPException(
+                status_code=422,
+                detail="feedback is required when 'to' targets a rejected_* status",
+            )
+
+        from services.publish_service import unapprove_task
+
+        result = await unapprove_task(
+            db_service.pool,
+            full_task_id,
+            target_status=request.to,
+            feedback=request.feedback,
+            reviewer_id=operator.get("id"),
+        )
+
+        if not result["ok"]:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Task {full_task_id} was no longer 'approved' when the revert ran",
+            )
+
+        try:
+            await db_service.mark_model_performance_outcome(
+                full_task_id, human_approved=False,
+            )
+        except Exception as mp_err:  # noqa: BLE001  # silent-ok: best-effort learning-signal flip; must not affect the already-successful revert response
+            logger.debug(
+                "[unapprove_task_route] mark_model_performance_outcome failed: %s", mp_err,
+            )
+
+        logger.info(
+            "Task %s unapproved by %s -> %s",
+            full_task_id, operator["id"], result["new_status"],
+        )
+
+        return {
+            "task_id": full_task_id,
+            "status": result["new_status"],
+            "previous_status": "approved",
+            "posts_row_removed": result["posts_row_removed"],
+            "message": f"Task reverted to {result['new_status']}.",
+        }
+
+    except HTTPException:
+        raise
+    except AppError:
+        raise
+    except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
+        logger.error("Failed to unapprove task %s: %s", task_id, e, exc_info=True)
+        raise HTTPException(
+            status_code=500,
+            detail="Failed to unapprove task",
         ) from e
 
 

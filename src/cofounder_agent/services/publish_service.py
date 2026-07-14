@@ -2361,3 +2361,120 @@ async def unpublish_post(
         )
 
     return result
+
+
+async def unapprove_task(
+    pool: Any,
+    task_id: str,
+    *,
+    target_status: str = "awaiting_approval",
+    feedback: str | None = None,
+    reviewer_id: str | None = None,
+) -> dict[str, Any]:
+    """Undo an operator approval that hasn't been published yet.
+
+    Reverses ``approve_task``'s ``stage_only`` side effect: flips
+    ``pipeline_tasks.status`` from ``approved`` to ``target_status``
+    (``awaiting_approval`` | ``rejected_retry`` | ``rejected_final``),
+    clears any ``scheduled_at`` slot, and deletes the staged ``posts`` row
+    (created at ``status='approved'``, never published — nothing external
+    to retire, unlike ``unpublish_post``). Idempotent no-op
+    (``ok=False``) if the task isn't currently 'approved'.
+
+    The primary status/posts revert is one transaction (must not partially
+    apply); the audit-trail writes below are best-effort, individually
+    try/excepted, exactly like ``routes.approval_routes.reject_task`` — a
+    logging hiccup must never mask a status flip that already succeeded.
+    """
+    async with pool.acquire() as conn:
+        async with conn.transaction():
+            update_result = await conn.execute(
+                """
+                UPDATE pipeline_tasks
+                   SET status = $2, scheduled_at = NULL, updated_at = NOW()
+                 WHERE task_id = $1 AND status = 'approved'
+                """,
+                task_id, target_status,
+            )
+            if not update_result.startswith("UPDATE 1"):
+                logger.info(
+                    "[publish_service] unapprove_task: task %s not currently "
+                    "'approved' (%s) — no-op", task_id, update_result,
+                )
+                return {
+                    "ok": False,
+                    "new_status": target_status,
+                    "posts_row_removed": False,
+                    "reason": "not_approved",
+                }
+
+            delete_result = await conn.execute(
+                """
+                DELETE FROM posts
+                 WHERE metadata ->> 'pipeline_task_id' = $1
+                   AND status = 'approved'
+                """,
+                task_id,
+            )
+
+    posts_removed = not delete_result.endswith(" 0")
+    logger.info(
+        "[publish_service] unapprove_task: task %s approved -> %s "
+        "(staged post removed: %s)", task_id, target_status, posts_removed,
+    )
+
+    # Best-effort audit trail — mirrors reject_task exactly. event_kind
+    # reuses the existing 'rejected' taxonomy (the content_tasks view's
+    # scalar subqueries only recognize 'approved'/'rejected'/'rejected_retry'
+    # /'rejected_final'; a novel 'unapproved' value would be silently
+    # invisible to it) even for the plain awaiting_approval revert — the
+    # approval WAS reversed, which the audit trail should reflect.
+    event_kind = target_status if target_status != "awaiting_approval" else "rejected"
+    actor = reviewer_id or "operator"
+
+    try:
+        from services.pipeline_db import PipelineDB
+
+        await PipelineDB(pool).clear_qa_approved_snapshot(task_id)
+    except Exception as marker_err:  # noqa: BLE001
+        logger.warning(
+            "[unapprove_task] clear_qa_approved_snapshot failed for %s: %s",
+            task_id, marker_err,
+        )
+
+    try:
+        await pool.execute(
+            """
+            INSERT INTO pipeline_gate_history
+                (task_id, gate_name, event_kind, feedback, actor, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6::jsonb)
+            """,
+            task_id,
+            "final_approval",
+            event_kind,
+            feedback,
+            actor,
+            json.dumps(
+                {"reviewer": actor, "decision": event_kind, "reversed_from": "approved"},
+                default=str,
+            ),
+        )
+    except Exception as review_err:  # noqa: BLE001
+        logger.warning(
+            "[unapprove_task] pipeline_gate_history write failed for %s: %s",
+            task_id, review_err,
+        )
+
+    try:
+        from services.router_outcome_feedback import record_task_outcome
+
+        await record_task_outcome(pool=pool, task_id=task_id, decision="rejected")
+    except Exception as rfb_err:  # noqa: BLE001  # silent-ok: best-effort learning-signal nudge; the status revert already succeeded and must be reported as such regardless
+        logger.debug("[unapprove_task] router outcome feedback failed: %s", rfb_err)
+
+    return {
+        "ok": True,
+        "new_status": target_status,
+        "posts_row_removed": posts_removed,
+        "reason": None,
+    }

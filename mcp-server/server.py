@@ -454,6 +454,25 @@ async def reject_post(task_id: str, reason: str = "Rejected by reviewer") -> str
 
 
 @mcp.tool()
+async def unapprove_post(
+    task_id: str, to: str = "awaiting_approval", feedback: str = "",
+) -> str:
+    """Revert an approved-but-not-yet-published task (undo an accidental approve).
+
+    ``to`` is "awaiting_approval" (default — puts it back in the review
+    queue, content unchanged), "rejected_retry", or "rejected_final".
+    Feedback is required by the worker API when rejecting outright.
+    """
+    full_id = await _resolve_task_id(task_id)
+    result = await _api("POST", f"/api/tasks/{full_id}/unapprove", data={
+        "to": to,
+        "feedback": feedback or None,
+    })
+    status = result.get("status", result.get("error", "?"))
+    return f"Reverted: {status}"
+
+
+@mcp.tool()
 async def publish_post(task_id: str) -> str:
     """Publish an approved content task to the configured site."""
     full_id = await _resolve_task_id(task_id)
