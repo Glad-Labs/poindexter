@@ -198,3 +198,16 @@ clip via `plugin.tts_provider.chatterbox.audio_prompt_path` — see
 Bring the sidecar up: `docker compose --profile tts-hq up -d chatterbox`. It
 is NOT in the default stack — compare against the Speaches baseline offline
 via `poindexter media tts-bakeoff --engines speaches,chatterbox`.
+
+**Lossless wire format (audio-fidelity fix).** Chatterbox's sidecar
+concatenates raw PCM samples across sentence-chunks before its own single
+ffmpeg encode, so its response is always one valid file — unlike Speaches,
+which byte-concatenates already-encoded segments and would truncate a wav to
+the first RIFF header. The worker therefore always requests wav from the
+Chatterbox sidecar (not `podcast_tts_format`, which still controls the
+_delivery_ format) and does exactly one loudnorm + encode pass to the
+delivery format. Previously the sidecar's own mp3 encode was decoded and
+re-encoded a second time — two compounding lossy passes at a hardcoded
+96 kbps that ignored `podcast_tts_remux_bitrate` entirely. `podcast_tts_remux_bitrate`
+(default `192k`) and `podcast_tts_loudnorm_*` now both reach the Chatterbox
+path the same way they reach Speaches.

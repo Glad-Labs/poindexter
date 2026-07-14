@@ -1125,6 +1125,74 @@ class TestGenerateWithVoiceEngineDispatch:
         assert out.read_bytes() == b"CHATTERBOX BYTES"
 
     @pytest.mark.asyncio
+    async def test_chatterbox_engine_forwards_remux_and_loudnorm_settings(
+        self, tmp_path
+    ):
+        """The wiring-gap fix (audio-fidelity investigation): before this,
+        podcast_tts_remux_bitrate / podcast_tts_loudnorm_* were read for the
+        Speaches path but never forwarded into the Chatterbox provider's
+        config — tuning them had zero effect on the engine that's actually
+        live in production."""
+        sc = SiteConfig(initial_config={
+            "podcast_tts_engine": "chatterbox",
+            "podcast_tts_remux_bitrate": "256k",
+            "podcast_tts_loudnorm_i": "-14",
+            "podcast_tts_loudnorm_tp": "-2.0",
+            "podcast_tts_loudnorm_lra": "9",
+            "podcast_tts_loudnorm_ar": "48000",
+        })
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        out = tmp_path / "ep.mp3"
+        captured = {}
+
+        async def _fake_synthesize(self, text, output_path, *, voice=None, config=None):
+            captured["config"] = config
+            output_path.write_bytes(b"X")
+            return TTSResult(
+                audio_path=output_path, duration_seconds=1, voice=voice or "default",
+                file_size_bytes=1, metadata={"engine": "chatterbox"},
+            )
+
+        with patch(
+            "services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
+            new=_fake_synthesize,
+        ):
+            await svc._generate_with_voice("hello", "bf_emma", out)
+
+        cfg = captured["config"]
+        assert cfg["remux_bitrate"] == "256k"
+        assert cfg["loudnorm_i"] == "-14"
+        assert cfg["loudnorm_tp"] == "-2.0"
+        assert cfg["loudnorm_lra"] == "9"
+        assert cfg["loudnorm_ar"] == "48000"
+
+    @pytest.mark.asyncio
+    async def test_chatterbox_engine_forwards_loudnorm_enabled_false(self, tmp_path):
+        sc = SiteConfig(initial_config={
+            "podcast_tts_engine": "chatterbox",
+            "podcast_tts_loudnorm_enabled": "false",
+        })
+        svc = PodcastService(output_dir=tmp_path, site_config=sc)
+        out = tmp_path / "ep.mp3"
+        captured = {}
+
+        async def _fake_synthesize(self, text, output_path, *, voice=None, config=None):
+            captured["config"] = config
+            output_path.write_bytes(b"X")
+            return TTSResult(
+                audio_path=output_path, duration_seconds=1, voice=voice or "default",
+                file_size_bytes=1, metadata={"engine": "chatterbox"},
+            )
+
+        with patch(
+            "services.tts_providers.chatterbox.ChatterboxTTSProvider.synthesize",
+            new=_fake_synthesize,
+        ):
+            await svc._generate_with_voice("hello", "bf_emma", out)
+
+        assert captured["config"]["loudnorm_enabled"] is False
+
+    @pytest.mark.asyncio
     async def test_chatterbox_provider_failure_surfaces_as_error_result(self, tmp_path):
         """A raised provider error becomes EpisodeResult(success=False), never
         an unhandled exception — matches the Speaches path's failure contract."""

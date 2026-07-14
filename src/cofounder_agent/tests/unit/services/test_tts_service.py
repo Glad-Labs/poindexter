@@ -677,6 +677,188 @@ class TestTtsService:
         assert called.get("ran") is True
         assert called.get("loudnorm") is True
 
+    # ---- wav wire-format -> delivery-format encode (lossless intermediate) ----
+    #
+    # Chatterbox's sidecar concatenates raw PCM samples before its own single
+    # encode (unlike Speaches, which byte-concatenates already-ENCODED
+    # segments and needs the header-collapsing dance above). Its wav response
+    # is therefore always one valid file, so a caller that KNOWS this can opt
+    # in via `encode_format` and get exactly ONE lossy encode (straight to the
+    # delivery format) instead of decoding an already-lossy mp3 and
+    # re-encoding it a second time.
+
+    def test_default_remux_bitrate_is_192k(self):
+        """192k mp3 is effectively transparent for spoken word. The prior 96k
+        default compounded with the sidecar's own encode into an audible
+        double lossy transcode (the audio-fidelity investigation)."""
+        from services.tts_service import _DEFAULT_REMUX_BITRATE
+        assert _DEFAULT_REMUX_BITRATE == "192k"
+
+    async def test_remux_wav_without_encode_format_stays_noop(self):
+        """Regression guard: a bare wav input with no encode_format is left
+        untouched — protects any caller that hasn't verified its wav is a
+        single, unconcatenated file (e.g. Speaches, if ever misconfigured to
+        request wav)."""
+        from services.tts_service import _remux_concatenated_audio
+        raw = b"RIFF....fake-wav-bytes"
+        assert await _remux_concatenated_audio(raw, "wav") == raw
+
+    async def test_remux_wav_with_encode_format_reencodes_to_target(
+        self, monkeypatch
+    ):
+        """A verified single-file wav + encode_format runs ONE ffmpeg encode
+        straight to the delivery format/bitrate."""
+        import services.tts_service as mod
+        monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+        captured = {}
+
+        async def _fake_exec(*args, **_k):
+            captured["argv"] = list(args)
+            mod._write_bytes(args[-1], b"ENCODED-MP3")
+
+            class _Proc:
+                returncode = 0
+
+                async def communicate(self):
+                    return (b"", b"")
+
+            return _Proc()
+
+        monkeypatch.setattr(mod.asyncio, "create_subprocess_exec", _fake_exec)
+        out = await mod._remux_concatenated_audio(
+            b"RIFF-wav-bytes", "wav", encode_format="mp3", bitrate="192k",
+        )
+        assert out == b"ENCODED-MP3"
+        argv = captured["argv"]
+        assert "libmp3lame" in argv
+        assert "192k" in argv
+        assert argv[-1].endswith(".mp3")  # output container matches the target
+
+    async def test_remux_wav_with_loudnorm_and_encode_format_in_one_pass(
+        self, monkeypatch
+    ):
+        """loudnorm + the wav->target encode ride the SAME ffmpeg invocation —
+        exactly one lossy pass total, not a decode-then-normalize-then-encode
+        chain."""
+        import services.tts_service as mod
+        monkeypatch.setattr(mod.shutil, "which", lambda _name: "/usr/bin/ffmpeg")
+        captured = {}
+
+        async def _fake_exec(*args, **_k):
+            captured["argv"] = list(args)
+            mod._write_bytes(args[-1], b"OUT")
+
+            class _Proc:
+                returncode = 0
+
+                async def communicate(self):
+                    return (b"", b"")
+
+            return _Proc()
+
+        monkeypatch.setattr(mod.asyncio, "create_subprocess_exec", _fake_exec)
+        await mod._remux_concatenated_audio(
+            b"RIFF-wav-bytes", "wav", encode_format="mp3",
+            loudnorm=True, loudnorm_i="-16", loudnorm_tp="-1.5",
+            loudnorm_lra="11", loudnorm_ar="44100",
+        )
+        argv = captured["argv"]
+        assert "-af" in argv
+        assert "loudnorm=I=-16:TP=-1.5:LRA=11" in argv[argv.index("-af") + 1]
+        assert "libmp3lame" in argv
+
+    async def test_render_openai_tts_wav_wire_format_forwards_encode_format(
+        self, monkeypatch
+    ):
+        """The Chatterbox call shape: request wav from the engine, ask for an
+        mp3 delivery encode — even with remux/loudnorm both off, the encode
+        must still run since it is the only step that produces the delivery
+        format at all."""
+        import services.tts_service as mod
+        from services.tts_service import render_openai_tts
+
+        captured = {}
+
+        async def _fake_remux(audio_bytes, fmt, **kwargs):
+            captured["fmt"] = fmt
+            captured.update(kwargs)
+            return b"FINAL-MP3"
+
+        monkeypatch.setattr(mod, "_remux_concatenated_audio", _fake_remux)
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"RAW-WAV"
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+            out = await render_openai_tts(
+                base_url="http://chatterbox:8000/v1", model="chatterbox",
+                voice="default", text="hi", response_format="wav",
+                encode_format="mp3", remux_enabled=False, loudnorm_enabled=False,
+            )
+
+        assert out == b"FINAL-MP3"
+        assert captured["fmt"] == "wav"
+        assert captured["encode_format"] == "mp3"
+
+    async def test_render_openai_tts_skips_remux_when_no_encode_target(self):
+        """Without encode_format, a plain wav response with remux/loudnorm off
+        is returned as-is — unchanged legacy behavior."""
+        from services.tts_service import render_openai_tts
+
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.content = b"RAW-WAV"
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=None)
+        mock_client.post = AsyncMock(return_value=mock_response)
+
+        with patch("services.tts_service.httpx.AsyncClient", return_value=mock_client):
+            out = await render_openai_tts(
+                base_url="http://x:8000/v1", model="m", voice="v", text="hi",
+                response_format="wav", remux_enabled=False, loudnorm_enabled=False,
+            )
+        assert out == b"RAW-WAV"
+
+    @pytest.mark.skipif(
+        not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
+        reason="needs ffmpeg + ffprobe on PATH",
+    )
+    async def test_wav_to_mp3_encode_produces_playable_audio_of_full_duration(
+        self, tmp_path
+    ):
+        """End-to-end proof: a real wav (as Chatterbox's sidecar would return)
+        run through the new encode_format path becomes a valid mp3 of the same
+        duration — not truncated, not silently corrupted."""
+        import subprocess
+
+        from services.tts_service import _remux_concatenated_audio
+
+        src = tmp_path / "in.wav"
+        subprocess.run(
+            ["ffmpeg", "-hide_banner", "-loglevel", "error", "-y", "-f", "lavfi",
+             "-i", "sine=frequency=440:duration=3", str(src)],
+            check=True,
+        )
+        out = await _remux_concatenated_audio(
+            src.read_bytes(), "wav", encode_format="mp3", bitrate="192k",
+        )
+        dst = tmp_path / "out.mp3"
+        dst.write_bytes(out)
+
+        r = subprocess.run(
+            ["ffprobe", "-v", "error", "-show_entries", "format=duration",
+             "-of", "default=nokey=1:noprint_wrappers=1", str(dst)],
+            capture_output=True, text=True, check=True,
+        )
+        assert abs(float(r.stdout.strip()) - 3.0) < 0.5
+
     @pytest.mark.skipif(
         not (shutil.which("ffmpeg") and shutil.which("ffprobe")),
         reason="needs ffmpeg + ffprobe on PATH",

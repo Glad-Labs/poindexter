@@ -1211,6 +1211,11 @@ class PodcastService:
         config) becomes ``EpisodeResult(success=False)``, the same failure
         contract the Speaches path uses, so ``generate_episode`` doesn't need
         to know which engine ran.
+
+        Also forwards the shared ``podcast_tts_remux_bitrate`` /
+        ``podcast_tts_loudnorm_*`` settings (audio-fidelity fix) — previously
+        read for the Speaches path only, so tuning them had zero effect on
+        Chatterbox, the engine actually live in production.
         """
         from services.tts_providers.chatterbox import ChatterboxTTSProvider
 
@@ -1228,6 +1233,12 @@ class PodcastService:
             "audio_prompt_path": sc.get(
                 "plugin.tts_provider.chatterbox.audio_prompt_path", "",
             ),
+            "remux_bitrate": sc.get("podcast_tts_remux_bitrate", ""),
+            "loudnorm_enabled": sc.get_bool("podcast_tts_loudnorm_enabled", True),
+            "loudnorm_i": sc.get("podcast_tts_loudnorm_i", ""),
+            "loudnorm_tp": sc.get("podcast_tts_loudnorm_tp", ""),
+            "loudnorm_lra": sc.get("podcast_tts_loudnorm_lra", ""),
+            "loudnorm_ar": sc.get("podcast_tts_loudnorm_ar", ""),
         }
         try:
             result = await ChatterboxTTSProvider().synthesize(

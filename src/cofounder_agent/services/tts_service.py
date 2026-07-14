@@ -33,7 +33,9 @@ Configuration (all in app_settings, default-off):
   re-encodes ONCE to a single clean stream, collapsing the per-segment
   headers (the robust fix); 'copy' is the legacy lossless `-c copy`
   that only rewrites the duration header.
-- podcast_tts_remux_bitrate 96k — output bitrate for re-encode mode.
+- podcast_tts_remux_bitrate 192k — output bitrate for re-encode mode
+  (effectively transparent for spoken word; a lower bitrate here compounds
+  with the TTS engine's own encode into an audible double lossy transcode).
 - podcast_tts_loudnorm_enabled true — EBU R128 loudness normalization
   (the audio_clipping fix). Kokoro emits full-scale audio (peak ~0.0
   dBFS) that trips the qa.audio -0.1 dBFS clip gate and risks true-peak
@@ -89,9 +91,12 @@ _REMUX_FORMATS = frozenset({"mp3", "aac", "opus"})
 #     podcast transcoders can mishandle at segment + tail boundaries.
 #   'copy' — legacy lossless `-c copy`: rewrites the whole-file duration header
 #     but LEAVES the embedded per-segment headers in place.
-# DB-tunable via podcast_tts_remux_mode / podcast_tts_remux_bitrate.
+# DB-tunable via podcast_tts_remux_mode / podcast_tts_remux_bitrate. 192k (not
+# 96k) is the delivery bitrate for spoken word — effectively transparent; 96k
+# was compounding with the TTS sidecar's own lossy encode into an audible
+# double transcode (the audio-fidelity investigation).
 _DEFAULT_REMUX_MODE = "reencode"
-_DEFAULT_REMUX_BITRATE = "96k"
+_DEFAULT_REMUX_BITRATE = "192k"
 # Per-format encoder used in re-encode mode (libmp3lame is universally built in).
 _REENCODE_CODEC = {"mp3": "libmp3lame", "aac": "aac", "opus": "libopus"}
 
@@ -196,6 +201,7 @@ async def render_openai_tts(
     loudnorm_tp: str = _DEFAULT_LOUDNORM_TP,
     loudnorm_lra: str = _DEFAULT_LOUDNORM_LRA,
     loudnorm_ar: str = _DEFAULT_LOUDNORM_AR,
+    encode_format: str | None = None,
 ) -> bytes | None:
     """POST to an OpenAI-compatible /audio/speech endpoint and normalize.
 
@@ -212,6 +218,14 @@ async def render_openai_tts(
     sidecars can run on CPU (no spare VRAM), where synthesizing a full
     paragraph legitimately takes minutes, so the provider passes a generous
     per-engine ``timeout_s``. Speaches (fast, GPU) keeps the default.
+
+    ``encode_format`` names the DELIVERY format wanted back when
+    ``response_format`` is ``"wav"`` — for an engine whose sidecar already
+    concatenates raw samples before its own single encode (Chatterbox), the
+    wav response is always one valid file, so requesting it lossless and
+    encoding to ``encode_format`` here is exactly one lossy pass, instead of
+    decoding an already-lossy mp3/aac/opus response and re-encoding it again.
+    Ignored when ``response_format`` isn't ``"wav"``.
     """
     base_url = (base_url or "").rstrip("/")
     fmt = (response_format or _DEFAULT_FORMAT).lower()
@@ -253,12 +267,17 @@ async def render_openai_tts(
         logger.warning("[tts_service] TTS endpoint returned empty body")
         return None
 
-    if remux_enabled or loudnorm_enabled:
+    # encode_format forces the call even with remux/loudnorm both off: for a
+    # wav wire-format response it's the only step that produces the delivery
+    # format at all (there's no concatenation-header problem to "normalize"
+    # away, unlike the Speaches mp3/aac/opus path).
+    if remux_enabled or loudnorm_enabled or encode_format is not None:
         audio_bytes = await _remux_concatenated_audio(
             audio_bytes, fmt, mode=remux_mode, bitrate=remux_bitrate,
             loudnorm=loudnorm_enabled,
             loudnorm_i=loudnorm_i, loudnorm_tp=loudnorm_tp,
             loudnorm_lra=loudnorm_lra, loudnorm_ar=loudnorm_ar,
+            encode_format=encode_format,
         )
     return audio_bytes
 
@@ -367,8 +386,11 @@ async def _remux_concatenated_audio(
     loudnorm_tp: str = _DEFAULT_LOUDNORM_TP,
     loudnorm_lra: str = _DEFAULT_LOUDNORM_LRA,
     loudnorm_ar: str = _DEFAULT_LOUDNORM_AR,
+    encode_format: str | None = None,
 ) -> bytes:
-    """Normalize Speaches' byte-concatenated multi-segment audio to one stream.
+    """Normalize Speaches' byte-concatenated multi-segment audio to one stream,
+    OR (when ``fmt == "wav"`` and ``encode_format`` is given) encode a verified
+    single-file wav straight to the delivery format.
 
     Speaches splits long input into segments, encodes each to its own MP3, and
     byte-concatenates them — leaving N embedded per-segment Xing/LAME headers
@@ -387,16 +409,27 @@ async def _remux_concatenated_audio(
 
     When ``loudnorm`` is set, an EBU R128 ``loudnorm=I=..:TP=..:LRA=..`` filter
     (plus an ``aresample`` back off loudnorm's internal 192 kHz) is applied — the
-    audio_clipping fix: Kokoro emits full-scale audio (peak ~0.0 dBFS), and
-    capping the true peak to ``loudnorm_tp`` restores the headroom that keeps
+    audio_clipping fix: Kokoro/Chatterbox emit full-scale audio (peak ~0.0 dBFS),
+    and capping the true peak to ``loudnorm_tp`` restores the headroom that keeps
     ``max_volume`` below the qa.audio clip gate while hitting the ``loudnorm_i``
     loudness target. A filter graph cannot ride on ``-c copy``, so ``loudnorm``
     forces a re-encode regardless of ``mode``.
 
-    Fail-soft: returns the original bytes on any error, and is a no-op for non-
-    self-synchronizing formats (a concatenated WAV would truncate to segment 1).
+    ``fmt == "wav"`` is normally left untouched (a byte-concatenated WAV would
+    truncate to its first RIFF chunk, so processing it here would be unsafe
+    without knowing it's a single file). Passing ``encode_format`` is the
+    caller's attestation that this wav IS a single, verified file (e.g.
+    Chatterbox's sidecar, which concatenates raw PCM before its own one encode)
+    — in that case this does exactly ONE ffmpeg pass: decode the lossless wav,
+    optionally apply loudnorm, and encode straight to ``encode_format`` at
+    ``bitrate``. That's one lossy generation total, versus decoding an
+    already-lossy mp3/aac/opus response and re-encoding it a second time.
+
+    Fail-soft: returns the original bytes on any error.
     """
-    if fmt not in _REMUX_FORMATS:
+    if fmt == "wav" and encode_format is None:
+        return audio_bytes
+    if fmt != "wav" and fmt not in _REMUX_FORMATS:
         return audio_bytes
     ffmpeg = shutil.which("ffmpeg")
     if not ffmpeg:
@@ -420,17 +453,28 @@ async def _remux_concatenated_audio(
         filter_args = ["-af", chain]
         mode = "reencode"
 
-    # Re-encode collapses the multi-segment headers; copy is the lossless
-    # header-only repair. libmp3lame is always built into ffmpeg.
-    if mode == "copy":
-        codec_args = ["-c", "copy"]
+    if fmt == "wav":
+        # A verified single-file wav has no concatenation-header problem to
+        # collapse, so `mode`/`-c copy` don't apply — always one clean encode
+        # straight to the delivery format.
+        target_fmt = encode_format or "wav"
+        codec_args = (
+            [] if target_fmt == "wav"
+            else ["-c:a", _REENCODE_CODEC.get(target_fmt, "libmp3lame"), "-b:a", bitrate]
+        )
     else:
-        codec_args = ["-c:a", _REENCODE_CODEC.get(fmt, "libmp3lame"), "-b:a", bitrate]
+        target_fmt = fmt
+        # Re-encode collapses the multi-segment headers; copy is the lossless
+        # header-only repair. libmp3lame is always built into ffmpeg.
+        if mode == "copy":
+            codec_args = ["-c", "copy"]
+        else:
+            codec_args = ["-c:a", _REENCODE_CODEC.get(fmt, "libmp3lame"), "-b:a", bitrate]
 
     tmpdir = tempfile.mkdtemp(prefix="tts-remux-")
     try:
         src = os.path.join(tmpdir, f"in.{fmt}")
-        dst = os.path.join(tmpdir, f"out.{fmt}")
+        dst = os.path.join(tmpdir, f"out.{target_fmt}")
         await asyncio.to_thread(_write_bytes, src, audio_bytes)
         proc = await asyncio.create_subprocess_exec(
             ffmpeg, "-hide_banner", "-loglevel", "error", "-y",
@@ -451,9 +495,8 @@ async def _remux_concatenated_audio(
         if not fixed:
             return audio_bytes
         logger.info(
-            "[tts_service] normalized concatenated %s audio (mode=%s): "
-            "%d → %d bytes",
-            fmt, mode, len(audio_bytes), len(fixed),
+            "[tts_service] normalized %s → %s audio (mode=%s): %d → %d bytes",
+            fmt, target_fmt, mode, len(audio_bytes), len(fixed),
         )
         return fixed
     except Exception as exc:

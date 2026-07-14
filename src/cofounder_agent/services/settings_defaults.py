@@ -1246,8 +1246,11 @@ DEFAULTS: dict[str, str] = {
     # 'reencode' (default) collapses the per-segment Xing/LAME headers into one
     # clean stream; 'copy' is the legacy lossless `-c copy` header-only repair.
     'podcast_tts_remux_mode': 'reencode',
-    # Output bitrate for re-encode mode (mono spoken-word; 96k is ample).
-    'podcast_tts_remux_bitrate': '96k',
+    # Output bitrate for re-encode mode. 192k (not 96k) is the delivery
+    # bitrate for spoken word — effectively transparent; 96k was compounding
+    # with the TTS sidecar's own lossy encode into an audible double
+    # transcode (the audio-fidelity investigation).
+    'podcast_tts_remux_bitrate': '192k',
     # EBU R128 loudness normalization (audio_clipping fix). Kokoro hands the
     # render full-scale audio (peak ~0.0 dBFS), which trips the qa.audio
     # -0.1 dBFS clip gate and risks true-peak distortion after MP3 encode.
