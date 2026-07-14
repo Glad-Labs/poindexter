@@ -54,3 +54,35 @@ class TestValidateLabels:
 
     def test_wrong_shape_returns_empty(self):
         assert validate_labels('{"labels": "ai-ml"}', self.ALLOWED) == []
+
+    # --- real-world model output: reasoning preamble + markdown fence ----------
+    def test_recovers_from_reasoning_preamble_and_markdown_fence(self):
+        """gemma-4-31B (the structured-extraction model) emits a reasoning
+        preamble, then a ```json fence, then a bare object. A bare json.loads of
+        the whole string fails -> [] for every post; the classifier must recover
+        the object. This is the exact shape that silently yielded zero labels
+        across 146 published posts in prod."""
+        raw = (
+            "Goal: label this technical post.\n"
+            "- software-engineering: definitely, it's about API design.\n"
+            "- ai-ml: yes, discusses model routing.\n\n"
+            "```json\n"
+            '{"labels": [{"label": "ai-ml", "confidence": 1.0}, '
+            '{"label": "gaming", "confidence": 0.9}]}\n'
+            "```"
+        )
+        assert validate_labels(raw, self.ALLOWED) == [("ai-ml", 1.0), ("gaming", 0.9)]
+
+    def test_recovers_bare_object_after_prose(self):
+        raw = 'Here is my classification:\n{"labels": [{"label": "pc-hardware"}]}'
+        assert validate_labels(raw, self.ALLOWED) == [("pc-hardware", 1.0)]
+
+    def test_recovers_fenced_bare_array(self):
+        assert validate_labels('```json\n["ai-ml", "nope"]\n```', self.ALLOWED) == [
+            ("ai-ml", 1.0)
+        ]
+
+    def test_prose_without_any_json_still_empty(self):
+        # No recoverable object/array -> still [] (no silent default label).
+        assert validate_labels("I think this is about software engineering.",
+                               self.ALLOWED) == []
