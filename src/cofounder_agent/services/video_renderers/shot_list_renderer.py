@@ -323,6 +323,75 @@ async def _render_pexels_image(
     return os.path.exists(output_path) and os.path.getsize(output_path) > 0
 
 
+async def _render_pexels_video(
+    *,
+    query: str,
+    output_path: str,
+    api_key: str,
+    orientation: str,
+    http_client_factory: Any,
+    candidate_index: int = 0,
+) -> bool:
+    """Fetch a real Pexels stock VIDEO clip and write it to ``output_path``.
+
+    Tried BEFORE the still-photo path in ``_render_one_shot`` — the director
+    prompt has always told the LLM that ``source="pexels"`` shots are "stock
+    video clips" / "real footage", but this renderer only ever wired up
+    still photos until now. Real motion beats a static hold when Pexels
+    actually has footage for the query; ``_render_pexels_image`` remains the
+    fallback for queries with no video match (niche/abstract subjects are
+    more likely to have a photo than a video).
+
+    Same ``candidate_index`` regen convention as the photo path — see
+    ``_render_pexels_image``. Returns True only when an MP4 is on disk;
+    the compositor's existing ``-stream_loop -1`` + ``-t`` handling trims
+    or loops whatever length Pexels returns to the shot's ``duration_s``,
+    so no special duration-matching is needed here.
+    """
+    if not api_key or not query.strip():
+        return False
+
+    import httpx
+
+    from services.image_providers.pexels_video import PexelsVideoProvider
+
+    try:
+        results = await PexelsVideoProvider().fetch(
+            query,
+            {
+                "api_key": api_key,
+                "orientation": orientation,
+                "per_page": candidate_index + 1,
+            },
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[SHOT_LIST] Pexels video search failed for %r: %s", query, exc,
+        )
+        return False
+
+    if not results:
+        return False
+
+    idx = min(candidate_index, len(results) - 1)
+    url = results[idx].file_url
+    try:
+        async with http_client_factory(
+            timeout=httpx.Timeout(30.0, connect=5.0),
+        ) as client:
+            resp = await client.get(url, timeout=30)
+            resp.raise_for_status()
+            with open(output_path, "wb") as fh:
+                fh.write(resp.content)
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[SHOT_LIST] Pexels video download failed for %s: %s", url, exc,
+        )
+        return False
+
+    return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+
+
 async def _render_generative_clip(
     *,
     prompt: str,
@@ -415,8 +484,8 @@ async def _render_one_shot(
     if source == "pexels":
         # Human / real-world subjects route here on purpose (the director's
         # HUMAN-SUBJECT POLICY) — AI faces/hands are the strongest "AI slop"
-        # tell, so we fetch a REAL stock photo instead of image-gen-generating a
-        # person. On any Pexels miss we hold over the prior clip rather than
+        # tell, so we fetch REAL Pexels footage instead of image-gen-generating
+        # a person. On any Pexels miss we hold over the prior clip rather than
         # image-gen-faking the subject (#media-render-fixes: the short video shipped
         # a six-fingered AI human because this branch used to image-gen the query).
         query = (shot.query or shot.prompt or "").strip()
@@ -427,6 +496,38 @@ async def _render_one_shot(
                 success=False,
                 error="pexels shot missing query and prompt",
             )
+
+        # Try a real VIDEO clip first — genuine motion beats a static hold,
+        # and the director prompt already tells the LLM "pexels" IS real
+        # footage/video (see _render_pexels_video's docstring). Gated by
+        # video_pexels_video_enabled (default true) so an operator can drop
+        # straight to the photo path without a code change if needed.
+        video_enabled = True
+        if site_config is not None:
+            video_enabled = str(
+                site_config.get("video_pexels_video_enabled", "true") or "true",
+            ).strip().lower() in ("true", "1", "yes")
+        if video_enabled:
+            video_clip_path = str(work_dir / f"shot_{shot.idx:02d}_pexels.mp4")
+            video_ok = await _render_pexels_video(
+                query=query,
+                output_path=video_clip_path,
+                api_key=pexels_key,
+                orientation=orientation,
+                http_client_factory=http_client_factory,
+                candidate_index=attempt,
+            )
+            if video_ok:
+                return ShotRenderResult(
+                    idx=shot.idx,
+                    source=source,
+                    success=True,
+                    clip_path=video_clip_path,
+                    duration_s=shot.duration_s,
+                )
+
+        # No video match (or the download failed) — fall back to a real
+        # STILL PHOTO, same as before this fix.
         clip_path = str(work_dir / f"shot_{shot.idx:02d}.jpg")
         ok = await _render_pexels_image(
             query=query,
@@ -444,9 +545,10 @@ async def _render_one_shot(
                 clip_path=clip_path,
                 duration_s=shot.duration_s,
             )
-        # Pexels miss (no key / no result / download fail) — NEVER image-gen a
-        # human. Hold over the prior clip if we have one; otherwise this
-        # shot drops out and the rest of the video still renders.
+        # Total Pexels miss — no video AND no photo (no key / no result /
+        # download fail on both) — NEVER image-gen a human. Hold over the
+        # prior clip if we have one; otherwise this shot drops out and the
+        # rest of the video still renders.
         if prior_clip:
             logger.info(
                 "[SHOT_LIST] pexels miss at idx=%d — holding over prior clip "

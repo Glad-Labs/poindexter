@@ -124,6 +124,7 @@ WIRED_HTTP_CLIENT_MODULES: tuple[str, ...] = (
     # (poindexter#706) — the module no longer holds a lifespan http_client.
     "services.image_service",
     "services.image_providers.pexels",
+    "services.image_providers.pexels_video",
     "services.image_providers.flux_schnell",
     "services.image_providers.ai_generation",
     "services.integrations.operator_notify",

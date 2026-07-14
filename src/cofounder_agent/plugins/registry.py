@@ -900,6 +900,10 @@ def get_core_samples() -> dict[str, list[Any]]:
         # Core ImageProviders — Phase G migration. Pexels first (search);
         # image-gen generation provider lands in a follow-up slice.
         ("image_providers", "services.image_providers.pexels", "PexelsProvider"),
+        # Pexels video search — sibling of the photo provider above, same
+        # kind="search" contract; gives video shot-list sources real
+        # stock-footage motion instead of a static photo (2026-07-14).
+        ("image_providers", "services.image_providers.pexels_video", "PexelsVideoProvider"),
         ("image_providers", "services.image_providers.image_gen", "ImageGenProvider"),
         ("image_providers", "services.image_providers.ai_generation", "AIGenerationProvider"),
         # FLUX.1-schnell — second-generation text-to-image alternative to

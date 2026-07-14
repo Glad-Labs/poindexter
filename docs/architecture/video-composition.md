@@ -161,13 +161,13 @@ Output: validated JSON per the schema above.
 
 Each `source` value resolves to one of:
 
-| `source`         | Renderer               | Output            | Notes                                                          |
-| ---------------- | ---------------------- | ----------------- | -------------------------------------------------------------- |
-| `image_gen`      | existing image-gen svc | PNG → static clip | Held for `duration_s` as still frame                           |
-| `image_kenburns` | image-gen + KB wrapper | PNG + Ken Burns   | Today's "Ken Burns slideshow" code, refactored into one plugin |
-| `pexels`         | new — Pexels API       | MP4 clip          | Trim/loop to `duration_s`; respect license                     |
-| `wan21`          | existing wan-server    | MP4 clip          | New schema: send `prompt`, get `duration_s` clip               |
-| `holdover`       | renderer-internal      | fade transition   | No source plugin; renderer cross-fades                         |
+| `source`         | Renderer                                          | Output                        | Notes                                                                                                                                                                                                                                                                                                                                                                  |
+| ---------------- | ------------------------------------------------- | ----------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `image_gen`      | existing image-gen svc                            | PNG → static clip             | Held for `duration_s` as still frame                                                                                                                                                                                                                                                                                                                                   |
+| `image_kenburns` | image-gen + KB wrapper                            | PNG + Ken Burns               | Today's "Ken Burns slideshow" code, refactored into one plugin                                                                                                                                                                                                                                                                                                         |
+| `pexels`         | `PexelsVideoProvider` → `PexelsProvider` fallback | MP4, or JPG if no video match | **Done (2026-07-14).** `shot_list_renderer._render_one_shot` tries a real Pexels VIDEO clip first (`services/image_providers/pexels_video.py`), falling back to a real still photo when no video matches the query. Trim/loop to `duration_s` is free — the compositor already `-stream_loop`s/`-t`s any non-still clip uniformly, no source-specific handling needed. |
+| `wan21`          | existing wan-server                               | MP4 clip                      | New schema: send `prompt`, get `duration_s` clip                                                                                                                                                                                                                                                                                                                       |
+| `holdover`       | renderer-internal                                 | fade transition               | No source plugin; renderer cross-fades                                                                                                                                                                                                                                                                                                                                 |
 
 Each plugin returns a path to a local file. The renderer treats them all the
 same — concat in shot-list order, transition between, overlay narration.
@@ -243,7 +243,15 @@ the matrix is what the director's policy converges toward.
 
 **Scope:**
 
-- New `pexels_video.py` plugin (stock-clip lookup via Pexels API)
+- ~~New `pexels_video.py` plugin (stock-clip lookup via Pexels API)~~ **Done
+  (2026-07-14)** — shipped standalone once the other PR2 items below had
+  already landed via the `media_pipeline` path (see the per-source plugin
+  contract table above). The gap: the director prompt always described
+  `source="pexels"` as "real footage" / "video clip", but the renderer only
+  ever wired up Pexels' still-photo search — found via a live production
+  audit (100% of `shot_quality_fallback` findings in 30 days were pexels
+  shots with no regen path). Video-first, photo-fallback, same `source`
+  value — no schema or prompt change needed.
 - Refactor existing image-gen + Ken Burns logic from `video_service.py` into a
   `image_kenburns` source plugin
 - Fix wan-server schema mismatch — update `video_service.py` to send `prompt`

@@ -17,7 +17,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 - [`services/caption_providers/`](#servicescaptionproviders) (3 files)
 - [`services/data_fabric/`](#servicesdatafabric) (6 files)
 - [`services/flows/`](#servicesflows) (2 files)
-- [`services/image_providers/`](#servicesimageproviders) (6 files)
+- [`services/image_providers/`](#servicesimageproviders) (7 files)
 - [`services/integrations/`](#servicesintegrations) (10 files)
 - [`services/integrations/handlers/`](#servicesintegrationshandlers) (16 files)
 - [`services/jobs/`](#servicesjobs) (61 files)
@@ -280,6 +280,7 @@ A catalog of every service, atom, and stage in `src/cofounder_agent/services/` a
 | `flux_schnell.py` | FluxSchnellProvider — text-to-image via FLUX.1-schnell inference server. |
 | `image_gen.py` | ImageGenProvider — text-to-image via the image-gen sidecar (or in-process diffusers). |
 | `pexels.py` | PexelsProvider — search the free Pexels stock-photo API. |
+| `pexels_video.py` | PexelsVideoProvider — search Pexels' free stock-VIDEO API. |
 
 ## services/integrations/
 

@@ -790,9 +790,13 @@ class TestRenderShotListAspectAndAmbient:
 
 
 class TestPexelsSource:
-    """#media-render-fixes: pexels shots fetch a REAL stock photo and NEVER
-    fall back to image-gen — AI-generated humans (six-fingered hands) are a hard
-    brand no-no. On any Pexels miss the renderer holds over the prior clip.
+    """#media-render-fixes: pexels shots fetch REAL Pexels footage and NEVER
+    fall back to image-gen — AI-generated humans (six-fingered hands) are a
+    hard brand no-no. A genuine VIDEO clip is tried first (the director
+    prompt has always told the LLM "pexels" shots are real footage/video —
+    this closes the gap where the renderer only ever delivered a still); a
+    real STILL PHOTO is the fallback when no video matches; holding over the
+    prior clip is the last resort on a total miss.
     """
 
     def _pexels_shot(self, *, idx=0, offset=0.0):
@@ -805,10 +809,144 @@ class TestPexelsSource:
             narration_offset_s=offset,
         )
 
+    def _no_video_match(self):
+        """Patch context: the Pexels VIDEO search returns nothing, so the
+        pexels branch falls through to the photo path — isolates the
+        pre-existing photo-path tests from the new video-first step."""
+        from services.image_providers import pexels_video as pexels_video_mod
+        return patch.object(
+            pexels_video_mod.PexelsVideoProvider, "fetch",
+            AsyncMock(return_value=[]),
+        )
+
+    @pytest.mark.asyncio
+    async def test_pexels_video_used_when_available(self, tmp_path):
+        """A configured key + a Pexels VIDEO hit writes an .mp4 and never
+        touches the photo path or image-gen — real motion beats a static
+        photo when Pexels actually has footage for the query."""
+        mock_resp = MagicMock()
+        mock_resp.content = b"fake-mp4-bytes"
+        mock_resp.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        def _factory(*args, **kwargs):
+            return mock_client
+
+        from services.image_providers import pexels_video as pexels_video_mod
+
+        async def _fake_video_fetch(self, query, config):
+            return [MagicMock(file_url="https://videos.pexels.com/x/hd.mp4")]
+
+        photo_spy = AsyncMock()
+        image_gen_spy = AsyncMock()
+        with patch.object(pexels_video_mod.PexelsVideoProvider, "fetch",
+                           _fake_video_fetch), \
+             patch(
+                "services.video_renderers.shot_list_renderer._render_pexels_image",
+                photo_spy,
+             ), \
+             patch(
+                "services.video_renderers.shot_list_renderer._render_image_gen_image",
+                image_gen_spy,
+             ):
+            result = await _render_one_shot(
+                self._pexels_shot(),
+                prior_clip=None,
+                work_dir=tmp_path,
+                image_gen_url="http://image-gen:9836",
+                site_config=None,
+                http_client_factory=_factory,
+                pexels_key="PEXELS-KEY",
+                orientation="landscape",
+            )
+
+        assert result.success is True
+        assert result.clip_path is not None
+        assert result.clip_path.endswith(".mp4")
+        photo_spy.assert_not_called()
+        image_gen_spy.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_pexels_video_disabled_via_flag_skips_straight_to_photo(self, tmp_path):
+        """video_pexels_video_enabled=false skips the video attempt entirely
+        — goes straight to the photo path. Deliberately does NOT patch the
+        video provider at all: if the gate ever regresses, this becomes a
+        slow/flaky real-network test instead of silently passing, which is
+        the point (photo_spy succeeding alone doesn't prove video was never
+        tried)."""
+        photo_spy = AsyncMock(return_value=True)
+
+        class _SC:
+            def get(self, k, d=None):
+                return "false" if k == "video_pexels_video_enabled" else d
+
+        with patch(
+            "services.video_renderers.shot_list_renderer._render_pexels_image",
+            photo_spy,
+        ):
+            result = await _render_one_shot(
+                self._pexels_shot(),
+                prior_clip=None,
+                work_dir=tmp_path,
+                image_gen_url="http://image-gen:9836",
+                site_config=_SC(),
+                http_client_factory=AsyncMock,
+                pexels_key="PEXELS-KEY",
+                orientation="landscape",
+            )
+
+        assert result.success is True
+        photo_spy.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_pexels_video_download_failure_falls_back_to_photo(self, tmp_path):
+        """The video SEARCH finds a candidate but the DOWNLOAD fails (dead
+        link, network blip) — falls through to the real-photo path rather
+        than holding over or image-gen-faking the subject."""
+        from services.image_providers import pexels_video as pexels_video_mod
+
+        async def _fake_video_fetch(self, query, config):
+            return [MagicMock(file_url="https://videos.pexels.com/x/hd.mp4")]
+
+        async def _failing_get(url, **kw):
+            raise ConnectionError("simulated download failure")
+
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = _failing_get
+
+        def _factory(*args, **kwargs):
+            return mock_client
+
+        photo_spy = AsyncMock(return_value=True)
+        with patch.object(pexels_video_mod.PexelsVideoProvider, "fetch",
+                           _fake_video_fetch), \
+             patch(
+                "services.video_renderers.shot_list_renderer._render_pexels_image",
+                photo_spy,
+             ):
+            result = await _render_one_shot(
+                self._pexels_shot(),
+                prior_clip=None,
+                work_dir=tmp_path,
+                image_gen_url="http://image-gen:9836",
+                site_config=None,
+                http_client_factory=_factory,
+                pexels_key="PEXELS-KEY",
+                orientation="landscape",
+            )
+
+        assert result.success is True
+        photo_spy.assert_awaited_once()
+
     @pytest.mark.asyncio
     async def test_pexels_fetches_real_photo_not_image_gen(self, tmp_path):
-        """A configured key + a Pexels hit writes a .jpg and never touches
-        image-gen."""
+        """No video match (the common case for niche/abstract queries) →
+        a Pexels PHOTO hit writes a .jpg and never touches image-gen."""
         # Download client returns jpeg bytes.
         mock_resp = MagicMock()
         mock_resp.content = b"\xff\xd8\xff\xe0_fake_jpeg_bytes"
@@ -827,7 +965,8 @@ class TestPexelsSource:
             return [MagicMock(url="https://images.pexels.com/photos/x.jpg")]
 
         image_gen_spy = AsyncMock()
-        with patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch), \
+        with self._no_video_match(), \
+             patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch), \
              patch(
                 "services.video_renderers.shot_list_renderer._render_image_gen_image",
                 image_gen_spy,
@@ -956,7 +1095,7 @@ class TestPexelsSource:
                     duration_s=4.0,
                 )
 
-        with patch(
+        with self._no_video_match(), patch(
             "services.video_renderers.shot_list_renderer._render_pexels_image",
             _fake_pexels,
         ), patch(
@@ -1003,7 +1142,8 @@ class TestPexelsSource:
             captured_config.update(config)
             return [MagicMock(url="https://images.pexels.com/photos/1.jpg")]
 
-        with patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch):
+        with self._no_video_match(), \
+             patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch):
             result = await _render_one_shot(
                 self._pexels_shot(),
                 prior_clip=None,
@@ -1052,7 +1192,8 @@ class TestPexelsSource:
             captured_config.update(config)
             return [MagicMock(url=u) for u in fetched_urls[: config["per_page"]]]
 
-        with patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch):
+        with self._no_video_match(), \
+             patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch):
             result = await _render_one_shot(
                 self._pexels_shot(),
                 prior_clip=None,
@@ -1091,7 +1232,8 @@ class TestPexelsSource:
             # A niche query — only one result exists, regardless of per_page.
             return [MagicMock(url="https://images.pexels.com/photos/only.jpg")]
 
-        with patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch):
+        with self._no_video_match(), \
+             patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch):
             result = await _render_one_shot(
                 self._pexels_shot(),
                 prior_clip=None,

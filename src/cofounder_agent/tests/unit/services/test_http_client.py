@@ -30,6 +30,7 @@ import services.image_decision_agent as image_decision_agent
 import services.image_providers.ai_generation as ai_generation
 import services.image_providers.flux_schnell as flux_schnell
 import services.image_providers.pexels as pexels_provider
+import services.image_providers.pexels_video as pexels_video_provider
 import services.image_service as image_service
 import services.integrations.operator_notify as operator_notify
 import services.metrics_exporter as metrics_exporter
@@ -56,6 +57,7 @@ def _reset_module_attrs():
         image_decision_agent,
         image_service,
         pexels_provider,
+        pexels_video_provider,
         flux_schnell,
         ai_generation,
         operator_notify,
@@ -72,6 +74,7 @@ def _reset_module_attrs():
         image_decision_agent,
         image_service,
         pexels_provider,
+        pexels_video_provider,
         flux_schnell,
         ai_generation,
         operator_notify,

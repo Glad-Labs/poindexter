@@ -356,6 +356,12 @@ DEFAULTS: dict[str, str] = {
     'video_shot_qa_enabled': 'true',
     'video_shot_qa_threshold': '60',
     'video_shot_qa_max_retries': '2',
+    # A "pexels" shot tries a real Pexels VIDEO clip before the still-photo
+    # fallback (shot_list_renderer._render_pexels_video / _render_pexels_image)
+    # — the director prompt has always described this source as real footage.
+    # Kill switch: false skips straight to the photo path (e.g. no egress to
+    # videos.pexels.com, or an operator wants stills-only for brand reasons).
+    'video_pexels_video_enabled': 'true',
     # Video-quality Piece 4 (spec §3.3) — Wan 2.2 TI2V-5B image-to-video hero
     # renderer. ``generative_video_model`` is the swappable model seam (a HF
     # repo id; point at a 14B / LTX checkpoint later with no code change) read
@@ -2297,6 +2303,7 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_shot_qa_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'video_shot_qa_threshold': {'owner': 'video', 'value_type': 'integer'},
     'video_shot_qa_max_retries': {'owner': 'video', 'value_type': 'integer'},
+    'video_pexels_video_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'generative_video_model': {'owner': 'video', 'value_type': 'model'},
     'video_hero_shots_max': {'owner': 'video', 'value_type': 'integer'},
     'video_render_min_shot_ratio': {'owner': 'media_render', 'value_type': 'float'},
