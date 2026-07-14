@@ -23,6 +23,12 @@ def runner(monkeypatch):
     async def _fake_sc(pool):
         return object()
     monkeypatch.setattr(com, "_make_site_config", _fake_sc)
+
+    # By default resolve a post arg to itself (echo the prefix) so draft tests
+    # exercise the command flow without a DB; not-found/ambiguous tests override.
+    async def _fake_resolve(pool, **kw):
+        return kw.get("prefix")
+    monkeypatch.setattr(com, "resolve_uuid_prefix", _fake_resolve)
     return CliRunner()
 
 
@@ -77,6 +83,37 @@ def test_draft_reddit_generates_with_subreddit(runner, monkeypatch):
                         ["draft", "reddit", "some-post", "--subreddit", "LocalLLaMA"])
     assert res.exit_code == 0
     assert "#7" in res.output and "set flair: Discussion" in res.output
+
+
+def test_draft_reddit_resolves_post_prefix(runner, monkeypatch):
+    # An 8-char id prefix is expanded to the full UUID (same as other commands)
+    # and passed on to generation — no more "slug or id" fiction.
+    seen = {}
+
+    async def _resolve(pool, **kw):
+        return "full-uuid-1234"
+
+    async def _gen(pool, *, post_id, subreddit, site_config):
+        seen["post_id"] = post_id
+        return CommunityDraft(id=3, target=f"reddit:{subreddit}", title="T", body="B",
+                              post_type="text", source_post_id=post_id, warnings=[],
+                              status="draft", posted_url=None, model="gemma")
+    monkeypatch.setattr(com, "resolve_uuid_prefix", _resolve)
+    monkeypatch.setattr(com, "generate_reddit_draft", _gen)
+    res = runner.invoke(com.community_group,
+                        ["draft", "reddit", "a1b2c3d4", "--subreddit", "LocalLLaMA"])
+    assert res.exit_code == 0
+    assert seen["post_id"] == "full-uuid-1234"   # resolved, not the raw prefix
+
+
+def test_draft_reddit_unknown_post_errors(runner, monkeypatch):
+    async def _resolve_none(pool, **kw):
+        return None
+    monkeypatch.setattr(com, "resolve_uuid_prefix", _resolve_none)
+    res = runner.invoke(com.community_group,
+                        ["draft", "reddit", "nope", "--subreddit", "LocalLLaMA"])
+    assert res.exit_code != 0
+    assert "no post matching" in res.output
 
 
 def test_drafts_mark_posted(runner, monkeypatch):

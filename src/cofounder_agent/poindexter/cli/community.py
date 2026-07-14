@@ -10,6 +10,7 @@ import asyncio
 
 import click
 
+from poindexter.cli._prefix import AmbiguousPrefixError, resolve_uuid_prefix
 from services.community_drafts import (
     SubredditProfile,
     add_profile,
@@ -269,39 +270,47 @@ def draft_group() -> None:
 @click.argument("post")
 @click.option("--subreddit", help="Target subreddit profile. Omit to see suggestions.")
 def draft_reddit(post, subreddit):
-    """Generate a Reddit value-post for a published POST (slug or id)."""
-    if not subreddit:
-        async def _suggest():
-            pool = await _connect()
-            try:
-                return await suggest_subreddits_for_post(pool, post)
-            finally:
-                await pool.close()
+    """Generate a Reddit value-post for a published POST (id or 8-char prefix).
 
-        subs = asyncio.run(_suggest())
-        if subs:
+    POST is a ``posts.id`` UUID or a unique short prefix — the same identifier
+    the other ``poindexter`` commands accept (resolved via ``resolve_uuid_prefix``).
+    """
+    async def _run():
+        pool = await _connect()
+        try:
+            post_id = await resolve_uuid_prefix(
+                pool, table="posts", column="id", prefix=post, noun="post"
+            )
+            if post_id is None:
+                raise ValueError(f"no post matching {post!r}")
+            if not subreddit:
+                return "suggest", await suggest_subreddits_for_post(pool, post_id)
+            site_config = await _make_site_config(pool)
+            draft = await generate_reddit_draft(
+                pool, post_id=post_id, subreddit=subreddit, site_config=site_config
+            )
+            return "draft", draft
+        finally:
+            await pool.close()
+
+    try:
+        kind, result = asyncio.run(_run())
+    except AmbiguousPrefixError as e:
+        raise click.ClickException(str(e)) from e
+    except (KeyError, ValueError) as e:
+        raise click.ClickException(str(e)) from e
+
+    if kind == "suggest":
+        if result:
             click.echo("Matching subreddits (pass one via --subreddit):")
-            for s in subs:
+            for s in result:
                 click.echo(f"  {s}")
         else:
             click.echo("No matching subreddit profiles (post unclassified?). "
                        "Pass --subreddit explicitly.")
         raise click.ClickException("Choose a subreddit with --subreddit.")
 
-    async def _go():
-        pool = await _connect()
-        try:
-            site_config = await _make_site_config(pool)
-            return await generate_reddit_draft(
-                pool, post_id=post, subreddit=subreddit, site_config=site_config
-            )
-        finally:
-            await pool.close()
-
-    try:
-        draft = asyncio.run(_go())
-    except (KeyError, ValueError) as e:
-        raise click.ClickException(str(e)) from e
+    draft = result
     click.secho(f"Draft #{draft.id} for {draft.target}:", fg="green")
     if draft.warnings:
         click.secho("  warnings:", fg="yellow")
