@@ -98,7 +98,7 @@ async def test_full_loop_promotes_stronger_challenger() -> None:
     assert proposal.kind == "pr"  # no auto_promote opt-in -> PR
     assert proposal.to_model == "chall"
 
-    latest = harness.latest_by_model("rag_rerank_model", "ndcg@10")
+    latest = await harness.latest_by_model("rag_rerank_model", "ndcg@10")
     assert set(latest) == {"champ", "chall"}
     assert latest["chall"] > latest["champ"]
 

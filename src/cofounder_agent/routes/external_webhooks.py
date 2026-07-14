@@ -155,9 +155,12 @@ async def lemon_squeezy_webhook(
         logger.error(
             "[LemonSqueezy] revenue_events write failed: %s", exc, exc_info=True,
         )
-        # 200 OK to prevent Lemon Squeezy retry storms when the DB is down —
-        # the raw payload is preserved in external_data via the retry path
-        # we set up elsewhere. For now, surface as 500 so Matt notices.
+        # 500, not 200 (#2131 — a prior comment here claimed the payload was
+        # preserved elsewhere and so 200 was safe; it wasn't, and there is no
+        # dead-letter capture for a failed revenue_events INSERT — the row
+        # simply never lands). Losing a revenue event silently is worse than
+        # Lemon Squeezy's own bounded retry-with-backoff, so fail loud and
+        # let it retry until the DB recovers.
         raise HTTPException(status_code=500, detail="DB write failed") from exc
 
     logger.info(

@@ -126,7 +126,7 @@ class SentryIntegration:
             return False
 
         # Get configuration from the injected site_config instance.
-        sentry_dsn = (site_config.get("sentry_dsn", "") or "").strip()
+        sentry_dsn = (site_config.get("sentry_dsn", "") or "").strip()  # secret-get-ok: is_secret=false, a DSN identifier not a credential
         sentry_enabled = (
             (site_config.get("sentry_enabled", "true") or "true").lower()
             in ("true", "1", "yes")

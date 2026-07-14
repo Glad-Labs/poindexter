@@ -365,10 +365,12 @@ class TestStdlibFilter:
         assert record.msg == original_msg
         assert record.levelname == original_levelname
 
-    def test_filter_returns_true_even_on_exception(self, monkeypatch, capsys):
-        # Force an internal failure — the filter must still return True
-        # (otherwise the record gets dropped, which is worse than
-        # logging it unredacted).
+    def test_filter_fails_closed_dropping_record_on_exception(self, monkeypatch, capsys):
+        # Force an internal failure — the filter must fail CLOSED (#2131),
+        # mirroring redact_secrets: a mid-loop failure leaves the record
+        # partially redacted at best, so letting it through unredacted
+        # would be the exact leak this filter exists to prevent. Dropping
+        # the record from this handler is safe (visible via stderr).
         def boom(*_a, **_kw):
             raise RuntimeError("synthetic")
 
@@ -376,7 +378,8 @@ class TestStdlibFilter:
         f = lc.SecretRedactionFilter()
         record = self._make_record(payload={"nested": "value"})
         result = f.filter(record)
-        assert result is True
+        assert result is False
+        assert "SecretRedactionFilter failed" in capsys.readouterr().err
 
 
 class TestRedactSecretsFailsClosed:

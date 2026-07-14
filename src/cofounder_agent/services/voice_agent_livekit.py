@@ -901,7 +901,7 @@ def _resolve_token_refresh_interval_s(
     if site_config is not None:
         raw: Any = _DEFAULT_TOKEN_REFRESH_MARGIN_MINUTES
         try:
-            raw = site_config.get(
+            raw = site_config.get(  # secret-get-ok: an int (minutes), not a credential; "token" is a substring hit
                 "voice_agent_token_refresh_margin_minutes",
                 _DEFAULT_TOKEN_REFRESH_MARGIN_MINUTES,
             )
@@ -1343,7 +1343,7 @@ async def run_bot(
             # Auto-reset config (#1006) — token budget + max age, DB-driven
             # with sane defaults and a guard against malformed values.
             token_budget = _coerce_int(
-                site_config.get("voice_agent_claude_code_session_token_budget", "200000"),
+                site_config.get("voice_agent_claude_code_session_token_budget", "200000"),  # secret-get-ok: an int (LLM token count), not a credential; "token" is a substring hit
                 200000,
             )
             max_age_seconds = _coerce_int(

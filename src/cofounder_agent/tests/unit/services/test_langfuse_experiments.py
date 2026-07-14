@@ -12,7 +12,7 @@ the Python math + the client method dispatch shape.
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -26,7 +26,12 @@ def _stub_site_config(creds: dict[str, str] | None = None) -> MagicMock:
     """A site_config double that returns Langfuse creds. ``creds=None``
     yields a fully-configured stub; pass ``{}`` to test the
     creds-missing path (the empty dict is intentional, not a default
-    fallback)."""
+    fallback).
+
+    ``langfuse_secret_key`` is ``is_secret=true`` in production, so
+    ``_get_client`` reads it via ``get_secret`` (#2131) — stub that
+    separately from the sync ``.get`` used for host/public_key.
+    """
     sc = MagicMock()
     if creds is None:
         creds = {
@@ -35,6 +40,9 @@ def _stub_site_config(creds: dict[str, str] | None = None) -> MagicMock:
             "langfuse_secret_key": "sk-test",
         }
     sc.get.side_effect = lambda key, default=None: creds.get(key, default)
+    sc.get_secret = AsyncMock(
+        side_effect=lambda key, default="": creds.get(key, default)
+    )
     return sc
 
 
@@ -133,37 +141,41 @@ class TestClientLifecycle:
     """``_get_client`` builds a Langfuse client lazily + fails loud if
     creds are missing."""
 
-    def test_missing_creds_raises_with_repair_hint(self):
+    @pytest.mark.asyncio
+    async def test_missing_creds_raises_with_repair_hint(self):
         sc = _stub_site_config({})  # all creds empty
         svc = LangfuseExperimentService(site_config=sc, pool=None)
         with pytest.raises(RuntimeError, match="langfuse_host"):
-            svc._get_client()
+            await svc._get_client()
 
-    def test_partial_creds_also_raises(self):
+    @pytest.mark.asyncio
+    async def test_partial_creds_also_raises(self):
         sc = _stub_site_config({"langfuse_host": "http://localhost:3010"})
         svc = LangfuseExperimentService(site_config=sc, pool=None)
         with pytest.raises(RuntimeError, match="langfuse"):
-            svc._get_client()
+            await svc._get_client()
 
-    def test_subsequent_failure_raises_consistently(self):
+    @pytest.mark.asyncio
+    async def test_subsequent_failure_raises_consistently(self):
         """Once creds-missing fires once, subsequent calls also raise —
         avoids spamming the Langfuse host with init attempts on every
         method call."""
         sc = _stub_site_config({})
         svc = LangfuseExperimentService(site_config=sc, pool=None)
         with pytest.raises(RuntimeError):
-            svc._get_client()
+            await svc._get_client()
         with pytest.raises(RuntimeError):
-            svc._get_client()
+            await svc._get_client()
 
-    def test_client_construction_with_full_creds(self):
+    @pytest.mark.asyncio
+    async def test_client_construction_with_full_creds(self):
         sc = _stub_site_config()
         svc = LangfuseExperimentService(site_config=sc, pool=None)
         with patch(
             "services.langfuse_experiments.Langfuse",
             return_value=MagicMock(),
         ) as lf_ctor:
-            client = svc._get_client()
+            client = await svc._get_client()
         assert client is not None
         lf_ctor.assert_called_once()
         ctor_kwargs = lf_ctor.call_args.kwargs

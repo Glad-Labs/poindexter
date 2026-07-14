@@ -232,7 +232,7 @@ async def assign_pipeline_variant(
         cfg = await _get_variant_config(
             experiment_key=experiment_key,
             variant_key=variant_key,
-            client=svc._get_client(),
+            client=await svc._get_client(),
         )
         writer_override = cfg.get("writer_model") if isinstance(cfg, dict) else None
         if writer_override and "writer" not in models_by_phase:

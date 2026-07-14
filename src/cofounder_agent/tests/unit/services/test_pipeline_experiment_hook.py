@@ -94,7 +94,7 @@ def _make_mocked_service(
     Mocks the three call sites the hook touches:
       - ``await svc.assign(experiment_key=, subject_id=)`` → variant_key
       - ``await svc.record_outcome(experiment_key=, subject_id=, metrics=)``
-      - ``svc._get_client().get_dataset(experiment_key).metadata['variants']``
+      - ``(await svc._get_client()).get_dataset(experiment_key).metadata['variants']``
         — read by ``_get_variant_config`` to look up the variant config.
     """
     svc = MagicMock()
@@ -110,7 +110,7 @@ def _make_mocked_service(
     dataset = SimpleNamespace(metadata={"variants": dataset_variants or []})
     client = MagicMock()
     client.get_dataset = MagicMock(return_value=dataset)
-    svc._get_client = MagicMock(return_value=client)
+    svc._get_client = AsyncMock(return_value=client)
     return svc
 
 

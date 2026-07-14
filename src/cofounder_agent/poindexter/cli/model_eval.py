@@ -144,7 +144,7 @@ def model_eval_status(slot: str, json_output: bool) -> None:
         try:
             cfg = await _load_cfg(pool)
             harness = LangfuseEvalHarness(site_config=cfg)
-            return harness.latest_by_model(slot, RerankerScorer.primary_metric)
+            return await harness.latest_by_model(slot, RerankerScorer.primary_metric)
         finally:
             await pool.close()
 

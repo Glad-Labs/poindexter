@@ -30,10 +30,12 @@ import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from fastapi import HTTPException
 
 from routes.external_webhooks import (
     _verify_lemon_squeezy_signature,
     _verify_resend_signature,
+    lemon_squeezy_webhook,
 )
 
 # ---------------------------------------------------------------------------
@@ -147,6 +149,47 @@ class TestLemonSqueezyVerify:
         sc = _mock_sc(lemon_squeezy_secret="real")
         ok = await _verify_lemon_squeezy_signature(b"{}", None, sc)
         assert ok is False
+
+
+class _FakeRequest:
+    """Duck-typed stand-in for fastapi.Request — the route only awaits .body()."""
+
+    def __init__(self, body: bytes):
+        self._body = body
+
+    async def body(self) -> bytes:
+        return self._body
+
+
+class TestLemonSqueezyWebhookRouteDbFailure:
+    """#2131: a prior comment claimed 200 was safe on DB-write failure
+    because the payload was preserved elsewhere. It wasn't (there is no
+    dead-letter capture for a failed revenue_events INSERT), so the route
+    must fail loud with 500 and let Lemon Squeezy's own retry recover the
+    event once the DB is back — never silently swallow to 200.
+    """
+
+    @pytest.mark.asyncio
+    async def test_db_write_failure_raises_500_not_200(self):
+        secret = "real-secret"
+        sc = _mock_sc(lemon_squeezy_secret=secret)
+        body = json.dumps(
+            {"meta": {"event_name": "order_created"}, "data": {"id": "1", "attributes": {}}}
+        ).encode("utf-8")
+        signature = _hmac_hex(secret, body)
+
+        db_service = MagicMock()
+        db_service.pool = AsyncMock()
+        db_service.pool.execute.side_effect = RuntimeError("connection reset")
+
+        with pytest.raises(HTTPException) as exc_info:
+            await lemon_squeezy_webhook(
+                _FakeRequest(body),  # type: ignore[arg-type]
+                x_signature=signature,
+                db_service=db_service,
+                site_config=sc,
+            )
+        assert exc_info.value.status_code == 500
 
 
 # ---------------------------------------------------------------------------

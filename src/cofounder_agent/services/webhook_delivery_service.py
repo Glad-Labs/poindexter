@@ -38,7 +38,7 @@ class WebhookDeliveryService:
         self.pool = pool
         self._site_config = site_config
         # webhook_url is plaintext, captured at init is fine.
-        self.webhook_url = self._site_config.get("openclaw_webhook_url", "")
+        self.webhook_url = self._site_config.get("openclaw_webhook_url", "")  # secret-get-ok: is_secret=false, a plain URL not a credential
         # webhook_token is is_secret=true (#325 bug class) — capturing the
         # sync .get() value at __init__ would store the ciphertext. Read
         # via the async get_secret accessor at delivery time instead.

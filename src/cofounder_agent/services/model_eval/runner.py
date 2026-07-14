@@ -30,7 +30,7 @@ class EvalReport:
     results: list[MetricResult]
 
 
-def run_slot_eval(
+async def run_slot_eval(
     *,
     slot: str,
     champion: str,
@@ -52,7 +52,7 @@ def run_slot_eval(
     by_model: dict[str, MetricResult] = {r.model: r for r in results}
 
     run = run_name or f"{slot}-v{golden_set.version}-{int(time.time())}"
-    harness.record_results(run, results)
+    await harness.record_results(run, results)
 
     champion_score = by_model[champion].value
     metric_name = by_model[champion].metric_name

@@ -37,27 +37,32 @@ _KIND_RUN = "model_eval_run"
 class EvalHarness(Protocol):
     """Stores eval runs + reads back the latest metric per model for a slot."""
 
-    def ensure_dataset(self, golden_set: GoldenSet) -> str: ...
+    async def ensure_dataset(self, golden_set: GoldenSet) -> str: ...
 
-    def record_results(self, run_name: str, results: list[MetricResult]) -> None: ...
+    async def record_results(self, run_name: str, results: list[MetricResult]) -> None: ...
 
-    def latest_by_model(self, slot: str, metric_name: str) -> dict[str, float]: ...
+    async def latest_by_model(self, slot: str, metric_name: str) -> dict[str, float]: ...
 
 
 class InMemoryEvalHarness:
     """Process-local harness — the test double and the Postgres-fallback seam
-    placeholder. ``latest_by_model`` reflects the most recent run's values."""
+    placeholder. ``latest_by_model`` reflects the most recent run's values.
+
+    Methods are ``async`` only to match the ``EvalHarness`` Protocol shape
+    (``LangfuseEvalHarness`` needs the DB round-trip in ``get_secret``) —
+    nothing here actually awaits.
+    """
 
     def __init__(self) -> None:
         self._runs: list[tuple[str, list[MetricResult]]] = []
 
-    def ensure_dataset(self, golden_set: GoldenSet) -> str:
+    async def ensure_dataset(self, golden_set: GoldenSet) -> str:
         return f"{golden_set.name}@{golden_set.version}"
 
-    def record_results(self, run_name: str, results: list[MetricResult]) -> None:
+    async def record_results(self, run_name: str, results: list[MetricResult]) -> None:
         self._runs.append((run_name, list(results)))
 
-    def latest_by_model(self, slot: str, metric_name: str) -> dict[str, float]:
+    async def latest_by_model(self, slot: str, metric_name: str) -> dict[str, float]:
         out: dict[str, float] = {}
         for _run_name, results in self._runs:  # later runs overwrite earlier
             for r in results:
@@ -86,12 +91,14 @@ class LangfuseEvalHarness:
         self._site_config = site_config
         self._client = client
 
-    def _get_client(self) -> Any:
+    async def _get_client(self) -> Any:
         if self._client is not None:
             return self._client
         host = (self._site_config.get("langfuse_host", "") or "").strip()
         public_key = (self._site_config.get("langfuse_public_key", "") or "").strip()
-        secret_key = (self._site_config.get("langfuse_secret_key", "") or "").strip()
+        # is_secret=true — plain .get() returns the enc:v1:... ciphertext
+        # blob, not the plaintext key (#2131 / GH-107). Must use get_secret.
+        secret_key = (await self._site_config.get_secret("langfuse_secret_key", "") or "").strip()
         if not (host and public_key and secret_key):
             raise RuntimeError(
                 "LangfuseEvalHarness requires langfuse_host + langfuse_public_key + "
@@ -107,8 +114,8 @@ class LangfuseEvalHarness:
         logger.info("[model_eval] Langfuse harness client active (host=%s)", host)
         return self._client
 
-    def ensure_dataset(self, golden_set: GoldenSet) -> str:
-        client = self._get_client()
+    async def ensure_dataset(self, golden_set: GoldenSet) -> str:
+        client = await self._get_client()
         name = golden_set.name
         try:
             ds = client.create_dataset(
@@ -130,8 +137,8 @@ class LangfuseEvalHarness:
                 logger.warning("[model_eval] create_dataset_item failed: %s", exc)
         return str(getattr(ds, "id", name))
 
-    def record_results(self, run_name: str, results: list[MetricResult]) -> None:
-        client = self._get_client()
+    async def record_results(self, run_name: str, results: list[MetricResult]) -> None:
+        client = await self._get_client()
         for r in results:
             trace_id = _eval_trace_id(r.slot, r.model, run_name)
             try:
@@ -165,12 +172,12 @@ class LangfuseEvalHarness:
         except Exception as exc:  # noqa: BLE001
             logger.warning("[model_eval] create_score %s failed: %s", name, exc)
 
-    def latest_by_model(self, slot: str, metric_name: str) -> dict[str, float]:
+    async def latest_by_model(self, slot: str, metric_name: str) -> dict[str, float]:
         """Best-effort read-back. Returns ``{}`` when the SDK has no trace
         enumeration — the runner never depends on this (it compares in-memory
         within a run); this powers the CLI ``status`` view + cross-run history.
         """
-        client = self._get_client()
+        client = await self._get_client()
         try:
             api = getattr(client, "api", None)
             if api is None or not hasattr(api, "trace"):
@@ -200,7 +207,7 @@ class LangfuseEvalHarness:
             for s in getattr(tr, "scores", None) or []:
                 if getattr(s, "name", None) == metric_name:
                     try:
-                        out[str(model)] = float(getattr(s, "value"))
+                        out[str(model)] = float(s.value)
                     except (TypeError, ValueError):
                         # silent-ok: skip a non-numeric score value; one bad
                         # row shouldn't drop the whole latest-by-model listing.

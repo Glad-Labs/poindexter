@@ -314,6 +314,13 @@ class SecretRedactionFilter(logging.Filter):
                 )
             except Exception:
                 pass
+            # Fail CLOSED, not open (#2131) — mirrors redact_secrets above.
+            # A mid-loop failure leaves the record in an unknown state
+            # (some attrs/args redacted, some not); letting it through
+            # unredacted is the exact leak this filter exists to prevent.
+            # Dropping the record from this handler is safe: it's still
+            # visible via the stderr warning above.
+            return False
         # Always allow the record through.
         return True
 

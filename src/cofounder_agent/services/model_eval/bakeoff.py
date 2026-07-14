@@ -44,7 +44,7 @@ async def run_reranker_bakeoff(
     used_harness: EvalHarness = harness or LangfuseEvalHarness(site_config=site_config)
     margin = float(site_config.get("model_eval_promotion_margin", "0.02"))
 
-    report = run_slot_eval(
+    report = await run_slot_eval(
         slot=_SLOT,
         champion=champion,
         challengers=list(challengers),

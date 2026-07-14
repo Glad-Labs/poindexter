@@ -99,7 +99,7 @@ class LangfuseExperimentService:
     # Langfuse client lifecycle
     # ------------------------------------------------------------------
 
-    def _get_client(self) -> Any:
+    async def _get_client(self) -> Any:
         """Lazy-build the Langfuse client. Fails loud if creds missing —
         an operator that turned the experiment service on but didn't
         configure Langfuse would otherwise lose every assignment."""
@@ -119,7 +119,9 @@ class LangfuseExperimentService:
 
         host = (self._site_config.get("langfuse_host", "") or "").strip()
         public_key = (self._site_config.get("langfuse_public_key", "") or "").strip()
-        secret_key = (self._site_config.get("langfuse_secret_key", "") or "").strip()
+        # is_secret=true — plain .get() returns the enc:v1:... ciphertext
+        # blob, not the plaintext key (#2131 / GH-107). Must use get_secret.
+        secret_key = (await self._site_config.get_secret("langfuse_secret_key", "") or "").strip()
         if not (host and public_key and secret_key):
             raise RuntimeError(
                 "LangfuseExperimentService requires langfuse_host + "
@@ -236,7 +238,7 @@ class LangfuseExperimentService:
             )
         normalized = self._validate_variants(variants)
 
-        client = self._get_client()
+        client = await self._get_client()
         # Dataset name is the experiment_key. Metadata holds the variants
         # array, status, and assignment_field — Langfuse Datasets are
         # immutable once created, so subsequent status flips (draft →
@@ -277,7 +279,7 @@ class LangfuseExperimentService:
         practice operator dashboards will list a small handful and
         the cost is fine.
         """
-        client = self._get_client()
+        client = await self._get_client()
         # The SDK exposes individual dataset reads; a cross-dataset
         # listing requires the API directly. For now we expect callers
         # to know experiment keys; ``list_running`` returns the empty
@@ -330,7 +332,7 @@ class LangfuseExperimentService:
         assigns never disagree; the Langfuse trace id is also
         deterministic so concurrent writes upsert cleanly.
         """
-        client = self._get_client()
+        client = await self._get_client()
         try:
             ds = client.get_dataset(experiment_key)
         except Exception as exc:  # noqa: BLE001
@@ -398,7 +400,7 @@ class LangfuseExperimentService:
         Returns True on success; False on any error (the legacy
         service had the same fail-soft contract).
         """
-        client = self._get_client()
+        client = await self._get_client()
         trace_id = _trace_id_for(experiment_key, subject_id)
         ok = True
         for name, value in (metrics or {}).items():
@@ -434,7 +436,7 @@ class LangfuseExperimentService:
         operator dashboards already cache; downstream stages don't call
         ``summary`` in their hot path.
         """
-        client = self._get_client()
+        client = await self._get_client()
         try:
             api = getattr(client, "api", None)
             if api is None or not hasattr(api, "trace"):
@@ -500,7 +502,7 @@ class LangfuseExperimentService:
         Langfuse Trace tagged with the dataset name. The summary helper
         + operator dashboards read both signals.
         """
-        client = self._get_client()
+        client = await self._get_client()
         try:
             with client.start_as_current_span(
                 name="experiment_conclude",

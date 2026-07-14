@@ -65,7 +65,7 @@ def _make_mocked_langfuse_service(
 ) -> MagicMock:
     svc = MagicMock()
     svc.assign = AsyncMock(return_value="variant-a")
-    svc._get_client = MagicMock(return_value=MagicMock(
+    svc._get_client = AsyncMock(return_value=MagicMock(
         get_dataset=MagicMock(side_effect=dataset_side_effect),
     ))
     svc.record_outcome = AsyncMock(return_value=True)
