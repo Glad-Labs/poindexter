@@ -64,10 +64,14 @@ ProgressCb = Callable[[str, "int | None"], Awaitable[None]]
 # something through.
 _WAN21_MAX_DURATION_S = 6
 
-# Stochastic sources worth re-rolling on a vision-QA miss — a fresh image-gen/Wan
-# seed yields a different image. Pexels is deterministic (same top result), so
-# it's excluded: a pexels miss falls straight through to the holdover fallback.
-_REGENERABLE_SOURCES = frozenset({"image_gen", "image_kenburns", "wan21", "generative"})
+# Sources worth a second try on a vision-QA miss. image_gen/wan21/generative
+# get a fresh random seed each call; pexels can't reseed a stock search, but
+# CAN ask for the next-ranked result (see ``candidate_index`` on
+# ``_render_pexels_image``) — production data showed 8/8 shot_quality_fallback
+# findings in 30 days were pexels shots with zero retry path, so it's included.
+_REGENERABLE_SOURCES = frozenset(
+    {"image_gen", "image_kenburns", "wan21", "generative", "pexels"},
+)
 
 # Hero sources — generative image-to-video clips. The most expensive +
 # failure-prone source, so the per-video count is capped (spec §3.3).
@@ -256,6 +260,7 @@ async def _render_pexels_image(
     api_key: str,
     orientation: str,
     http_client_factory: Any,
+    candidate_index: int = 0,
 ) -> bool:
     """Fetch a real stock photo from Pexels and write it to ``output_path``.
 
@@ -264,6 +269,16 @@ async def _render_pexels_image(
     "AI slop" tell). This wires the EXISTING ``PexelsProvider`` so those
     shots get actual footage instead of the old behaviour, which ignored the
     configured key and image-gen-generated the human query (six-fingered hands).
+
+    ``candidate_index`` picks WHICH ranked search result to use — 0 (default)
+    is the top result, the common case. A vision-QA regen attempt passes a
+    higher index so the retry is a genuinely different photo rather than
+    re-fetching the same top result (Pexels search is deterministic, so a
+    bare retry with ``candidate_index=0`` would just repeat the miss). Only
+    fetches as many results as needed (``per_page=candidate_index+1``) so the
+    common no-regen path stays a single-result query. Clamped to whatever
+    Pexels actually returns — a thin result set reuses the last candidate
+    rather than raising.
 
     Returns True only when a JPG is on disk. On any miss the caller holds
     over the prior clip rather than image-gen-faking the subject.
@@ -278,7 +293,11 @@ async def _render_pexels_image(
     try:
         results = await PexelsProvider().fetch(
             query,
-            {"api_key": api_key, "orientation": orientation, "per_page": 1},
+            {
+                "api_key": api_key,
+                "orientation": orientation,
+                "per_page": candidate_index + 1,
+            },
         )
     except Exception as exc:  # noqa: BLE001
         logger.warning("[SHOT_LIST] Pexels search failed for %r: %s", query, exc)
@@ -287,7 +306,8 @@ async def _render_pexels_image(
     if not results:
         return False
 
-    url = results[0].url
+    idx = min(candidate_index, len(results) - 1)
+    url = results[idx].url
     try:
         async with http_client_factory(
             timeout=httpx.Timeout(30.0, connect=5.0),
@@ -361,12 +381,18 @@ async def _render_one_shot(
     pexels_key: str = "",
     orientation: str = "landscape",
     post_id: str = "",
+    attempt: int = 0,
 ) -> ShotRenderResult:
     """Produce a clip file for one shot.
 
     Returns a ``ShotRenderResult`` with ``clip_path`` set on success.
     Holdover shots reuse ``prior_clip`` (V1 simplification — a true
     cross-fade is a follow-up).
+
+    ``attempt`` is the regen-round counter from ``_repair_pass`` (0 on the
+    initial render). Only the ``pexels`` branch consumes it today (picks the
+    next-ranked search result — see ``_render_pexels_image``); other sources
+    already get natural diversity from a fresh random seed each call.
     """
     source = shot.source
 
@@ -408,6 +434,7 @@ async def _render_one_shot(
             api_key=pexels_key,
             orientation=orientation,
             http_client_factory=http_client_factory,
+            candidate_index=attempt,
         )
         if ok:
             return ShotRenderResult(
@@ -667,7 +694,9 @@ async def _repair_pass(
         cands: list[tuple[_ShotState, ShotRenderResult]] = []
         for st in pending:
             st.attempts += 1
-            cand = await _render_one_shot(st.shot, prior_clip=None, **render_kwargs)
+            cand = await _render_one_shot(
+                st.shot, prior_clip=None, attempt=st.attempts, **render_kwargs,
+            )
             cands.append((st, cand))
         # Re-score the batch (vision model resident), keep-best per shot.
         for st, cand in cands:

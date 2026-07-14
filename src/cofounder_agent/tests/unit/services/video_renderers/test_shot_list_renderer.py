@@ -361,6 +361,13 @@ class TestRenderOneShot:
         import services.video_renderers.shot_list_renderer as mod
         assert "generative" in mod._REGENERABLE_SOURCES
 
+    def test_pexels_is_regenerable(self):
+        """Pexels gets a real second chance on a QA miss (next search
+        result), not an immediate holdover — see the fix rationale on
+        ``test_pexels_regenerated_with_different_candidate_on_miss``."""
+        import services.video_renderers.shot_list_renderer as mod
+        assert "pexels" in mod._REGENERABLE_SOURCES
+
     @pytest.mark.asyncio
     async def test_holdover_carries_prior_clip(self, tmp_path):
         """Holdover shots reuse the prior clip path — they're pure
@@ -917,6 +924,7 @@ class TestPexelsSource:
 
         async def _fake_pexels(
             *, query, output_path, api_key, orientation, http_client_factory,
+            candidate_index=0,
         ):
             captured["api_key"] = api_key
             captured["orientation"] = orientation
@@ -969,6 +977,134 @@ class TestPexelsSource:
         assert result.success is True
         assert captured["api_key"] == "SEKRIT"
         assert captured["orientation"] == "portrait"  # 9:16 → portrait
+
+    @pytest.mark.asyncio
+    async def test_pexels_first_attempt_fetches_single_candidate(self, tmp_path):
+        """The common case (no QA miss) must not over-fetch — attempt=0 (the
+        default) asks Pexels for exactly one result, same as before this
+        change. Regen diversity only costs extra API calls when actually
+        needed."""
+        mock_resp = MagicMock()
+        mock_resp.content = b"\xff\xd8\xff\xe0_fake_jpeg_bytes"
+        mock_resp.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        def _factory(*args, **kwargs):
+            return mock_client
+
+        from services.image_providers import pexels as pexels_mod
+
+        captured_config: dict = {}
+
+        async def _fake_fetch(self, query, config):
+            captured_config.update(config)
+            return [MagicMock(url="https://images.pexels.com/photos/1.jpg")]
+
+        with patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch):
+            result = await _render_one_shot(
+                self._pexels_shot(),
+                prior_clip=None,
+                work_dir=tmp_path,
+                image_gen_url="http://image-gen:9836",
+                site_config=None,
+                http_client_factory=_factory,
+                pexels_key="PEXELS-KEY",
+                orientation="landscape",
+            )
+
+        assert result.success is True
+        assert captured_config["per_page"] == 1
+
+    @pytest.mark.asyncio
+    async def test_pexels_regen_attempt_fetches_next_ranked_result(self, tmp_path):
+        """A repair-pass regen (attempt=1) must fetch a candidate list long
+        enough to include a second photo, and pick THAT one — not the same
+        top result the first attempt already failed QA on."""
+        mock_resp = MagicMock()
+        mock_resp.content = b"\xff\xd8\xff\xe0_fake_jpeg_bytes"
+        mock_resp.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+
+        downloaded_urls: list[str] = []
+
+        async def _tracking_get(url, **kw):
+            downloaded_urls.append(url)
+            return mock_resp
+        mock_client.get = _tracking_get
+
+        def _factory(*args, **kwargs):
+            return mock_client
+
+        from services.image_providers import pexels as pexels_mod
+
+        captured_config: dict = {}
+        fetched_urls = [
+            "https://images.pexels.com/photos/1.jpg",
+            "https://images.pexels.com/photos/2.jpg",
+        ]
+
+        async def _fake_fetch(self, query, config):
+            captured_config.update(config)
+            return [MagicMock(url=u) for u in fetched_urls[: config["per_page"]]]
+
+        with patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch):
+            result = await _render_one_shot(
+                self._pexels_shot(),
+                prior_clip=None,
+                work_dir=tmp_path,
+                image_gen_url="http://image-gen:9836",
+                site_config=None,
+                http_client_factory=_factory,
+                pexels_key="PEXELS-KEY",
+                orientation="landscape",
+                attempt=1,
+            )
+
+        assert result.success is True
+        assert captured_config["per_page"] == 2
+        assert downloaded_urls == [fetched_urls[1]]  # picked the SECOND result
+
+    @pytest.mark.asyncio
+    async def test_pexels_regen_clamps_to_available_results(self, tmp_path):
+        """If Pexels has fewer results than the attempt index wants (a niche
+        query), clamp to the last available result instead of an
+        IndexError — a thin result set must degrade, never crash."""
+        mock_resp = MagicMock()
+        mock_resp.content = b"\xff\xd8\xff\xe0_fake_jpeg_bytes"
+        mock_resp.raise_for_status = MagicMock()
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.get = AsyncMock(return_value=mock_resp)
+
+        def _factory(*args, **kwargs):
+            return mock_client
+
+        from services.image_providers import pexels as pexels_mod
+
+        async def _fake_fetch(self, query, config):
+            # A niche query — only one result exists, regardless of per_page.
+            return [MagicMock(url="https://images.pexels.com/photos/only.jpg")]
+
+        with patch.object(pexels_mod.PexelsProvider, "fetch", _fake_fetch):
+            result = await _render_one_shot(
+                self._pexels_shot(),
+                prior_clip=None,
+                work_dir=tmp_path,
+                image_gen_url="http://image-gen:9836",
+                site_config=None,
+                http_client_factory=_factory,
+                pexels_key="PEXELS-KEY",
+                orientation="landscape",
+                attempt=2,
+            )
+
+        assert result.success is True  # no IndexError — reuses the only result
 
 
 class _QASC:
@@ -1108,29 +1244,47 @@ class TestRenderCheckLoop:
         scorer.assert_not_awaited()
 
     @pytest.mark.asyncio
-    async def test_pexels_not_regenerated(self, tmp_path):
-        """Pexels is deterministic — a low score falls back without re-fetching."""
+    async def test_pexels_regenerated_with_different_candidate_on_miss(self, tmp_path):
+        """A pexels shot that misses vision-QA gets ONE more real chance — a
+        fresh fetch for the NEXT-ranked search result, not an immediate
+        holdover. Pexels can't reseed like a diffusion model, but it CAN ask
+        for the next result, which is a genuinely different photo (evidenced
+        fix: 8/8 shot_quality_fallback findings in 30 days of production were
+        pexels shots, 0 on regenerable sources — pexels had no retry path)."""
         import services.video_renderers.shot_list_renderer as mod
         from services.video_renderers.shot_vision_qa import ShotQAResult
         shots = [Shot(idx=0, duration_s=3.0, intent="open", source="image_gen",
                       prompt="cyan grid", narration_offset_s=0.0),
                  Shot(idx=1, duration_s=3.0, intent="person", source="pexels",
                       query="developer at desk", narration_offset_s=3.0)]
-        scorer = AsyncMock(side_effect=[ShotQAResult(90.0), ShotQAResult(10.0)])
-        pexels = AsyncMock(return_value=True)
+        # image_gen shot passes; pexels shot fails first, passes on the regen.
+        scorer = AsyncMock(side_effect=[
+            ShotQAResult(90.0), ShotQAResult(10.0), ShotQAResult(75.0),
+        ])
+        candidates_requested: list[int] = []
+
+        async def _fake_pexels(*, query, output_path, api_key, orientation,
+                                http_client_factory, candidate_index=0):
+            candidates_requested.append(candidate_index)
+            with open(output_path, "wb") as f:
+                f.write(f"candidate-{candidate_index}".encode())
+            return True
+
         with patch.object(mod, "score_shot_frame", scorer), \
-             patch.object(mod, "_render_pexels_image", pexels), \
+             patch.object(mod, "_render_pexels_image", _fake_pexels), \
              patch.object(mod, "emit_finding", lambda **kw: None), \
              patch("services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
                    self._mock_compositor()):
-            await render_shot_list(
+            result = await render_shot_list(
                 post_id="p", shot_list=_build_shot_list(shots),
                 audio_path=str(tmp_path / "a.mp3"), output_path=str(tmp_path / "o.mp4"),
                 image_gen_url="http://image-gen:9836", site_config=_QASC(),
                 http_client_factory=self._image_gen_factory())
-        # pexels shot scored once (10 < 60) but NOT re-fetched (deterministic).
-        assert pexels.await_count == 1
-        assert scorer.await_count == 2  # image_gen(1) + pexels(1), no regen
+        assert result.success is True
+        # pexels fetched TWICE — the initial candidate (index 0), then a
+        # genuinely different one (index 1) after the QA miss, not a repeat.
+        assert candidates_requested == [0, 1]
+        assert scorer.await_count == 3  # image_gen(1) + pexels initial(1) + pexels regen(1)
 
     @pytest.mark.asyncio
     async def test_fallback_finding_shape_is_dashboard_ready(self, tmp_path):
