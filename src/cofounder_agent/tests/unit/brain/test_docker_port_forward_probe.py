@@ -1907,3 +1907,98 @@ class TestAdaptiveGiveUp:
         external_ok["val"] = False
         await run_at(1_000_180.0)
         assert restart_calls == ["poindexter-grafana", "poindexter-grafana"]
+
+    @pytest.mark.asyncio
+    async def test_recovery_failed_alert_does_not_repage_across_backoff_retries(self):
+        """glad-labs-stack#2486: a wedge that survives repeated retry-after-
+        backoff attempts must page once per episode, not once per retry.
+
+        Confirmed live: poindexter-pyroscope fired ``docker_port_forward_
+        recovery_failed`` 5x/24h at 60-316min gaps — one page per failed
+        retry each time ``alert_only_backoff_minutes`` elapsed, because the
+        alert_events insert for THIS alertname had no in-probe dedup (unlike
+        the sibling ``_escalate_alert_only`` path's ``_alert_only_notified``
+        guard). Extends ``test_backoff_expires_allows_restart_again`` with a
+        second backoff-expiry retry and asserts the alertname count stays
+        at 1 despite two separate step-7 (recovery_failed) hits.
+        """
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([
+                {"container": "poindexter-grafana", "port": 3000, "path": "/"},
+            ]),
+            pf.MAX_FAILED_RECOVERIES_KEY: "1",
+            pf.ALERT_ONLY_BACKOFF_MINUTES_KEY: "60",
+        })
+
+        def fake_http(url, _t):
+            return "host.docker.internal" not in url  # never recovers
+
+        def run_at(t):
+            return pf.run_docker_port_forward_probe(
+                pool,
+                http_probe_fn=fake_http,
+                container_exists_fn=lambda c: True,
+                restart_fn=lambda c: (True, "ok"),
+                sleep_fn=AsyncMock(),
+                notify_fn=lambda **k: None,
+                now_fn=lambda: t,
+            )
+
+        base = 1_000_000.0
+        s1 = await run_at(base)              # restart #1 → recovery_failed, pages
+        s2 = await run_at(base + 3601.0)     # backoff expired → restart #2 → recovery_failed again
+        s3 = await run_at(base + 7202.0)     # backoff expired again → restart #3 → recovery_failed again
+        assert s1["services"]["poindexter-grafana"]["status"] == "recovery_failed"
+        assert s2["services"]["poindexter-grafana"]["status"] == "recovery_failed"
+        assert s3["services"]["poindexter-grafana"]["status"] == "recovery_failed"
+
+        assert _executed_alertnames(pool).count(
+            "docker_port_forward_recovery_failed"
+        ) == 1
+
+    @pytest.mark.asyncio
+    async def test_recovery_failed_alert_clears_on_healthy_cycle(self):
+        """A fresh wedge episode after a healthy cycle earns a fresh page —
+        the dedup flag must reset, not suppress a container's alerts forever."""
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([
+                {"container": "poindexter-grafana", "port": 3000, "path": "/"},
+            ]),
+            pf.MAX_FAILED_RECOVERIES_KEY: "1",
+            pf.ALERT_ONLY_BACKOFF_MINUTES_KEY: "60",
+        })
+
+        external_ok = {"val": False}
+
+        def fake_http(url, _t):
+            if "host.docker.internal" not in url:
+                return True  # internal always ok
+            return external_ok["val"]
+
+        def run_at(t):
+            return pf.run_docker_port_forward_probe(
+                pool,
+                http_probe_fn=fake_http,
+                container_exists_fn=lambda c: True,
+                restart_fn=lambda c: (True, "ok"),
+                sleep_fn=AsyncMock(),
+                notify_fn=lambda **k: None,
+                now_fn=lambda: t,
+            )
+
+        base = 1_000_000.0
+        await run_at(base)  # restart #1 → recovery_failed, pages once
+        assert _executed_alertnames(pool).count(
+            "docker_port_forward_recovery_failed"
+        ) == 1
+
+        external_ok["val"] = True
+        s2 = await run_at(base + 60.0)  # operator fixed it → healthy → resets dedup
+        assert s2["services"]["poindexter-grafana"]["status"] == "ok"
+
+        external_ok["val"] = False
+        s3 = await run_at(base + 120.0)  # fresh wedge, fresh episode
+        assert s3["services"]["poindexter-grafana"]["status"] == "recovery_failed"
+        assert _executed_alertnames(pool).count(
+            "docker_port_forward_recovery_failed"
+        ) == 2

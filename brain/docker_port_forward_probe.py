@@ -218,6 +218,22 @@ _alert_only_until: dict[str, float] = {}
 # cycle. Cleared on a healthy/recovered cycle (mirrors _cap_alert_emitted).
 _alert_only_notified: dict[str, bool] = {}
 
+# Per-container dedup flag: True once a docker_port_forward_recovery_failed
+# alert_events row has fired for the current failed-recovery episode
+# (glad-labs-stack#2486). Without this, a container whose restart-then-backoff
+# cadence (alert_only_backoff_minutes, default 60m) happens to exceed the
+# dispatcher's suppress_window_minutes re-pages on EVERY retry — confirmed
+# live: poindexter-pyroscope fired this alertname 5x/24h at 60-316min gaps,
+# each with an identical (post-normalization) message, because the probe's
+# own retry cadence kept outrunning the dispatcher's suppression window
+# before each new firing. The underlying condition stays visible either way —
+# the unconditional docker_port_forward_recovered audit_log row (written
+# every cycle regardless of outcome) is what Grafana frequency-tracking reads
+# per this module's docstring point 4; this flag only mutes the redundant
+# re-page for an episode already reported. Cleared on a healthy/recovered
+# cycle (mirrors _alert_only_notified).
+_recovery_failed_notified: dict[str, bool] = {}
+
 
 def _reset_state() -> None:
     """Test helper — wipe the restart bookkeeping."""
@@ -226,6 +242,7 @@ def _reset_state() -> None:
     _consecutive_recovery_failures.clear()
     _alert_only_until.clear()
     _alert_only_notified.clear()
+    _recovery_failed_notified.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -1183,6 +1200,7 @@ async def _check_one_service(
         _consecutive_recovery_failures.pop(container, None)
         _alert_only_until.pop(container, None)
         _alert_only_notified.pop(container, None)
+        _recovery_failed_notified.pop(container, None)
         return {
             "ok": True,
             "status": "ok",
@@ -1421,6 +1439,7 @@ async def _check_one_service(
         _consecutive_recovery_failures.pop(container, None)
         _alert_only_until.pop(container, None)
         _alert_only_notified.pop(container, None)
+        _recovery_failed_notified.pop(container, None)
         return {
             "ok": True,
             "status": "recovered",
@@ -1460,11 +1479,23 @@ async def _check_one_service(
     else:
         detail += " — investigate the container manually."
     logger.warning("[PORT_FORWARD] %s", detail)
-    await _emit_recovery_failed_alert(
-        pool,
-        container=container,
-        detail=detail,
-    )
+    # Page once per still-broken episode (glad-labs-stack#2486). Unlike
+    # _escalate_alert_only (which always writes its alert_events row and
+    # only gates the direct notify), this function's alert_events insert
+    # IS the page — so the gate has to wrap the whole call. Without it, a
+    # container whose restart-then-backoff cadence keeps outrunning the
+    # dispatcher's suppress_window_minutes re-pages on every retry-after-
+    # backoff attempt: confirmed live, poindexter-pyroscope fired this
+    # alertname 5x/24h at 60-316min gaps (one page per failed retry after
+    # each ~60min alert_only_backoff_minutes window elapsed). Cleared on a
+    # healthy/recovered cycle, mirroring _alert_only_notified.
+    if not _recovery_failed_notified.get(container, False):
+        await _emit_recovery_failed_alert(
+            pool,
+            container=container,
+            detail=detail,
+        )
+        _recovery_failed_notified[container] = True
     return {
         "ok": False,
         "status": "recovery_failed",
