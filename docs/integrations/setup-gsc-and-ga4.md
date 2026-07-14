@@ -85,7 +85,9 @@ Verify with `poindexter settings list --search google_oauth`. The two `--secret`
 
 ## Step 4 — Update the tap rows with your specifics
 
-The two rows shipped with empty placeholders. Update each with your real values:
+The two rows shipped with empty placeholders. Update each with your real values.
+
+**The two OAuth secrets you just stored in Step 3 are referenced by key, never pasted in.** `external_taps.config` is a plain (unencrypted) jsonb column — readable by any SQL session, pgAdmin browse, or DB dump — so `client_secret`/`refresh_token` go through `config.secret_fields` instead, which `tap.singer_subprocess` resolves via `site_config.get_secret()` immediately before spawning the tap (see `docs/integrations/tap_singer_subprocess.md`). Only the non-secret `client_id` goes in `tap_config` directly.
 
 ### GSC
 
@@ -94,19 +96,15 @@ UPDATE external_taps
    SET config = jsonb_set(
         jsonb_set(
           jsonb_set(
-            jsonb_set(
-              config,
-              '{tap_config,client_id}',
-              to_jsonb('<your_client_id>'::text)
-            ),
-            '{tap_config,client_secret}',
-            to_jsonb('<your_client_secret>'::text)
+            config,
+            '{tap_config,client_id}',
+            to_jsonb('<your_client_id>'::text)
           ),
-          '{tap_config,refresh_token}',
-          to_jsonb('<your_refresh_token>'::text)
+          '{tap_config,site_urls}',
+          '["https://www.example.com"]'::jsonb
         ),
-        '{tap_config,site_urls}',
-        '["https://www.example.com"]'::jsonb
+        '{secret_fields}',
+        '{"client_secret": "google_oauth_client_secret", "refresh_token": "google_oauth_refresh_token"}'::jsonb
       )
  WHERE name = 'gsc_main';
 ```
@@ -115,26 +113,22 @@ UPDATE external_taps
 
 ### GA4
 
-You'll need your GA4 **property ID** — find it at https://analytics.google.com → Admin → Property → Property details → "Property ID" (a number like `123456789`).
+You'll need your GA4 **property ID** — find it at https://analytics.google.com → Admin → Property → Property details → "Property ID" (a number like `123456789`). Note GA4's tap expects the client id/secret fields named `oauth_client_id`/`oauth_client_secret` rather than GSC's `client_id`/`client_secret`.
 
 ```sql
 UPDATE external_taps
    SET config = jsonb_set(
         jsonb_set(
           jsonb_set(
-            jsonb_set(
-              config,
-              '{tap_config,client_id}',
-              to_jsonb('<your_client_id>'::text)
-            ),
-            '{tap_config,client_secret}',
-            to_jsonb('<your_client_secret>'::text)
+            config,
+            '{tap_config,oauth_client_id}',
+            to_jsonb('<your_client_id>'::text)
           ),
-          '{tap_config,refresh_token}',
-          to_jsonb('<your_refresh_token>'::text)
+          '{tap_config,property_id}',
+          to_jsonb('<your_ga4_property_id>'::text)
         ),
-        '{tap_config,property_id}',
-        to_jsonb('<your_ga4_property_id>'::text)
+        '{secret_fields}',
+        '{"oauth_client_secret": "google_oauth_client_secret", "refresh_token": "google_oauth_refresh_token"}'::jsonb
       )
  WHERE name = 'ga4_main';
 ```
@@ -216,13 +210,13 @@ The schedule is `every 6 hours` for both. Watch the **Integrations & Admin** Gra
 
 ## Troubleshooting
 
-| Symptom                                               | Cause                                                    | Fix                                                                   |
-| ----------------------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------- |
-| `tap exited 1` with "invalid_grant"                   | refresh_token revoked or stale                           | re-run `google-oauth-setup.py`, update the row                        |
-| `tap exited 1` with "Property not found" (GA4)        | wrong property_id                                        | verify in GA Admin → Property details                                 |
-| `tap exited 1` with "User does not have access" (GSC) | OAuth account isn't a verified owner                     | grant the account access in https://search.google.com/search-console  |
-| 0 records returned                                    | `start_date` is in the future, or data hasn't propagated | back the start_date up a week; GSC has 2-3 day lag                    |
-| `tap-google-search-console: command not found`        | tap not on PATH                                          | `docker exec poindexter-worker pip install tap-google-search-console` |
+| Symptom                                               | Cause                                                    | Fix                                                                                                                                                        |
+| ----------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tap exited 1` with "invalid_grant"                   | refresh_token revoked or stale                           | re-run `google-oauth-setup.py`, then `poindexter settings set google_oauth_refresh_token "<new_token>" --secret` (both taps share it — no row edit needed) |
+| `tap exited 1` with "Property not found" (GA4)        | wrong property_id                                        | verify in GA Admin → Property details                                                                                                                      |
+| `tap exited 1` with "User does not have access" (GSC) | OAuth account isn't a verified owner                     | grant the account access in https://search.google.com/search-console                                                                                       |
+| 0 records returned                                    | `start_date` is in the future, or data hasn't propagated | back the start_date up a week; GSC has 2-3 day lag                                                                                                         |
+| `tap-google-search-console: command not found`        | tap not on PATH                                          | `docker exec poindexter-worker pip install tap-google-search-console`                                                                                      |
 
 ## Where data lands
 

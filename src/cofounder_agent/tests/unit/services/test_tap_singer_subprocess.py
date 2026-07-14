@@ -51,6 +51,20 @@ class _FakePool:
         return _FakeConn(self)
 
 
+class _FakeSiteConfig:
+    """Mirrors SiteConfig.get_secret — async, returns None for a missing key.
+
+    Matches the fake used in test_outbound_apprise.py so secret-resolution
+    tests across handlers share one mental model.
+    """
+
+    def __init__(self, secrets: dict[str, str] | None = None):
+        self._secrets = secrets or {}
+
+    async def get_secret(self, key: str, default: str = "") -> str | None:
+        return self._secrets.get(key)
+
+
 def _row(**overrides):
     base = {
         "id": "00000000-0000-0000-0000-000000000033",
@@ -522,3 +536,86 @@ sys.exit(0)
         by_breadcrumb = {tuple(m["breadcrumb"]): m["metadata"] for m in stream["metadata"]}
         assert by_breadcrumb[("properties", "page")]["selected"] is True
         assert by_breadcrumb[("properties", "query")]["selected"] is True
+
+    @pytest.mark.asyncio
+    async def test_secret_fields_resolved_into_config_json(self, tmp_path):
+        """config.secret_fields resolves app_settings secrets into the
+        config.json the tap subprocess actually receives — the DB row's
+        tap_config never has to carry the plaintext secret (pd#857)."""
+        sentinel = tmp_path / "seen_config.json"
+        script_body = f"""
+import json
+import sys
+if "--discover" in sys.argv:
+    sys.stdout.write(json.dumps({{"streams": []}}))
+    sys.stdout.flush()
+    sys.exit(0)
+config_path = sys.argv[sys.argv.index("--config") + 1]
+with open(config_path, encoding="utf-8") as f:
+    data = f.read()
+with open({str(sentinel)!r}, "w", encoding="utf-8") as f:
+    f.write(data)
+sys.exit(0)
+"""
+        script_path = tmp_path / "fake_secret_tap.py"
+        script_path.write_text(script_body, encoding="utf-8")
+        command = f'"{sys.executable}" "{script_path}"'
+
+        pool = _FakePool()
+        row = _row(
+            config={
+                "command": command,
+                "tap_config": {"client_id": "not-secret-id"},
+                "secret_fields": {"client_secret": "google_oauth_client_secret"},
+                "metrics_mapping": {},
+            },
+        )
+        await tap_singer_subprocess.singer_subprocess(
+            None,
+            site_config=_FakeSiteConfig({"google_oauth_client_secret": "sekrit-value"}),
+            row=row,
+            pool=pool,
+        )
+
+        seen_config = json.loads(sentinel.read_text(encoding="utf-8"))
+        assert seen_config["client_secret"] == "sekrit-value"
+        assert seen_config["client_id"] == "not-secret-id"
+
+    @pytest.mark.asyncio
+    async def test_secret_fields_missing_value_raises(self, tmp_path):
+        """A secret_fields entry pointing at an unset app_settings key fails
+        loud before spawning the tap, rather than sending it a blank secret."""
+        pool = _FakePool()
+        command = _make_tap_script(tmp_path, lines=[])
+        row = _row(
+            config={
+                "command": command,
+                "secret_fields": {"client_secret": "google_oauth_client_secret"},
+                "metrics_mapping": {},
+            },
+        )
+        with pytest.raises(ValueError, match="secret_fields"):
+            await tap_singer_subprocess.singer_subprocess(
+                None,
+                site_config=_FakeSiteConfig({}),
+                row=row,
+                pool=pool,
+            )
+
+    @pytest.mark.asyncio
+    async def test_secret_fields_without_site_config_raises(self, tmp_path):
+        """secret_fields present but no site_config in scope fails loud
+        rather than crashing with an unrelated AttributeError."""
+        pool = _FakePool()
+        command = _make_tap_script(tmp_path, lines=[])
+        row = _row(
+            config={
+                "command": command,
+                "secret_fields": {"client_secret": "google_oauth_client_secret"},
+                "metrics_mapping": {},
+            },
+        )
+        with pytest.raises(ValueError, match="secret_fields"):
+            await tap_singer_subprocess.singer_subprocess(
+                None, site_config=None, row=row, pool=pool,
+            )

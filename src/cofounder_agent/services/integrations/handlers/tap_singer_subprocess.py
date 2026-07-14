@@ -54,6 +54,7 @@ Each invocation:
       "tap_config": {"files": [{"entity": "page_views", "path": "/data/page_views.csv"}]},
       "streams": ["page_views"],
       "field_selection": {"page_views": ["country"]},
+      "secret_fields": {"client_secret": "google_oauth_client_secret"},
       "max_records": 100000,
       "timeout_seconds": 1800
     }
@@ -64,6 +65,15 @@ taps whose dimension/field request is driven by catalog field-selection
 rather than being fixed per stream (e.g. ``tap-google-search-console``'s
 ``performance_report_custom`` stream builds its API request's ``dimensions``
 list from exactly this field-selection state).
+
+``secret_fields`` (optional, ``{tap_config_field: app_settings_key}``) keeps
+credentials out of ``external_taps.config`` entirely: each entry names a
+field to inject into ``tap_config`` and the ``app_settings`` key
+(``is_secret=true``) to resolve it from via ``site_config.get_secret()``,
+merged in just before ``config.json`` is written and never persisted back to
+the row. A referenced key that resolves to an empty value — or
+``secret_fields`` set with no ``site_config`` available — fails loud with a
+``ValueError`` rather than sending the tap a blank credential.
 
 The ``record_handler`` column on the row names the handler that
 turns Singer records into rows in ``target_table``. For
@@ -139,6 +149,28 @@ async def singer_subprocess(
         )
 
     tap_config = config.get("tap_config") or {}
+    secret_fields = config.get("secret_fields") or {}
+    if secret_fields:
+        if not isinstance(secret_fields, dict):
+            raise ValueError(
+                "tap.singer_subprocess: row.config.secret_fields must be an object"
+            )
+        if site_config is None:
+            raise ValueError(
+                "tap.singer_subprocess: row.config.secret_fields is set but no "
+                "site_config was provided to resolve it"
+            )
+        resolved_tap_config = dict(tap_config)
+        for field_name, settings_key in secret_fields.items():
+            secret_value = await site_config.get_secret(settings_key)
+            if not secret_value:
+                raise ValueError(
+                    f"tap.singer_subprocess: row.config.secret_fields.{field_name} "
+                    f"references app_settings key {settings_key!r} but no value is set"
+                )
+            resolved_tap_config[field_name] = secret_value
+        tap_config = resolved_tap_config
+
     streams_filter = config.get("streams") or []
     if streams_filter and not isinstance(streams_filter, list):
         raise ValueError("tap.singer_subprocess: row.config.streams must be a list")

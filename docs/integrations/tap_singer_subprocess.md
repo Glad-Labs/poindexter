@@ -16,7 +16,11 @@ record_handler:   registered handler under "tap" surface that consumes RECORDs
 state:            JSONB; tap-managed, written back on success
 config:           {
                     "command": "tap-google-search-console",        # or "python -m tap_csv"
-                    "tap_config": { ... tap-specific JSON ... },
+                    "tap_config": { ... tap-specific JSON ... },    # no live secrets — see secret_fields
+                    "secret_fields": {                              # optional; see below
+                      "client_secret": "google_oauth_client_secret",
+                      "refresh_token": "google_oauth_refresh_token"
+                    },
                     "streams": ["page_metrics"],                    # optional whitelist
                     "max_records": 50000,                           # safety cap, default 50k
                     "timeout_seconds": 600,                         # SIGTERM after this; SIGKILL +5s
@@ -25,10 +29,21 @@ config:           {
 enabled:          false until operator flips on
 ```
 
+`secret_fields` (optional, `{tap_config_field: app_settings_key}`) is how a
+tap gets credentials without them ever sitting in `external_taps.config` in
+plaintext. Each entry names a field to merge into `tap_config` and the
+`app_settings` key (set with `poindexter settings set <key> <value>
+--secret`) to resolve it from — fetched via `site_config.get_secret()`
+immediately before `config.json` is written, and never persisted back to the
+row. A key that resolves empty, or `secret_fields` set with no `site_config`
+in scope, fails loud with a `ValueError` instead of handing the tap a blank
+credential. Fields NOT listed in `secret_fields` are taken verbatim from
+`tap_config` (for non-secret values like `client_id` or `site_urls`).
+
 ## What happens at run time
 
 1. Read `config.command` (shlex-split — no shell expansion, no injection vectors).
-2. Read `config.tap_config` — written to a temp `config.json`.
+2. Read `config.tap_config`, resolve any `config.secret_fields` into it, and write the merged result to a temp `config.json` (see above — the resolved secrets never touch `row.config`).
 3. Read `row.state` — written to a temp `state.json` (incremental bookmark resumption).
 4. Spawn `<command> --config config.json --state state.json`.
 5. Parse stdout line-by-line:
@@ -59,7 +74,14 @@ enabled:          false until operator flips on
 
 2. Build a `tap_config.json` per the tap's documentation. For GSC that's an OAuth token + a list of properties to query.
 
-3. Insert a row:
+3. Store the OAuth credentials as secrets — never paste them into `external_taps.config` (that column is plain jsonb, readable by any SQL session or DB dump):
+
+   ```
+   poindexter settings set google_oauth_client_secret "..." --secret
+   poindexter settings set google_oauth_refresh_token "..." --secret
+   ```
+
+4. Insert a row — non-secret fields go straight in `tap_config`; the two secrets above are referenced by key through `secret_fields` instead:
 
    ```sql
    INSERT INTO external_taps
@@ -76,11 +98,13 @@ enabled:          false until operator flips on
        'command', 'tap-google-search-console',
        'tap_config', '{
          "client_id": "...",
-         "client_secret": "...",
-         "refresh_token": "...",
          "site_urls": ["https://your-site.example.com"],
          "start_date": "2026-04-01"
        }'::jsonb,
+       'secret_fields', jsonb_build_object(
+         'client_secret', 'google_oauth_client_secret',
+         'refresh_token', 'google_oauth_refresh_token'
+       ),
        'streams', jsonb_build_array('performance_report_date'),
        'metrics_mapping', '{
          "performance_report_date": {
@@ -99,25 +123,26 @@ enabled:          false until operator flips on
    );
    ```
 
-4. Test on demand:
+5. Test on demand:
 
    ```
    poindexter taps run gsc_main
    ```
 
-5. Flip on:
+6. Flip on:
    ```
    poindexter taps enable gsc_main
    ```
 
 ### Common failure modes
 
-| Symptom                                         | Likely cause                                       | Fix                                                                      |
-| ----------------------------------------------- | -------------------------------------------------- | ------------------------------------------------------------------------ |
-| `tap exited 1` with auth-related stderr         | OAuth token expired                                | refresh `tap_config.refresh_token`, re-run                               |
-| `RECORD for stream X arrived before its SCHEMA` | tap is non-compliant; emits records before schemas | report upstream; use a different tap                                     |
-| `tap timed out after 600s`                      | tap is slow or stuck                               | bump `timeout_seconds`; consider narrower date range in tap_config       |
-| Records inserted to wrong table                 | `record_handler` mismatch                          | verify the row's `record_handler` matches what your taps' streams expect |
+| Symptom                                                                     | Likely cause                                                                                                           | Fix                                                                      |
+| --------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| `tap exited 1` with auth-related stderr                                     | OAuth token expired                                                                                                    | refresh `tap_config.refresh_token`, re-run                               |
+| `RECORD for stream X arrived before its SCHEMA`                             | tap is non-compliant; emits records before schemas                                                                     | report upstream; use a different tap                                     |
+| `tap timed out after 600s`                                                  | tap is slow or stuck                                                                                                   | bump `timeout_seconds`; consider narrower date range in tap_config       |
+| Records inserted to wrong table                                             | `record_handler` mismatch                                                                                              | verify the row's `record_handler` matches what your taps' streams expect |
+| `secret_fields.<field> references app_settings key ... but no value is set` | the referenced key was never set, or was set without `--secret` and the plaintext `app_settings` seed path filtered it | `poindexter settings set <key> <value> --secret`, then re-run            |
 
 ### Multi-stream taps
 
