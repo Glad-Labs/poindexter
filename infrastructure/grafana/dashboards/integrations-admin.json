@@ -1865,6 +1865,87 @@
           "refId": "B"
         }
       ]
+    },
+    {
+      "id": 45,
+      "type": "row",
+      "collapsed": false,
+      "title": "Disabled Capabilities (#2133)",
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 144
+      },
+      "panels": []
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Live state of a curated list of opt-in capabilities that ship disabled by default (writer self-review, QA self-consistency, video/podcast/newsletter/social). Being 'off' is often correct — this panel exists so that state is always visible instead of silent. Mirrors ProbeDisabledCapabilitiesJob (glad-labs-stack#2133), which additionally pages Discord weekly while any are off.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "left",
+            "cellOptions": {
+              "type": "color-background"
+            }
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "true": { "text": "ON", "color": "green" },
+                "false": { "text": "OFF", "color": "orange" }
+              }
+            }
+          ]
+        },
+        "overrides": [
+          {
+            "matcher": { "id": "byName", "options": "Enabled" },
+            "properties": [
+              {
+                "id": "custom.cellOptions",
+                "value": { "type": "color-background" }
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 24,
+        "x": 0,
+        "y": 145
+      },
+      "id": 46,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": true,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": true
+        },
+        "showHeader": true
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT w.label AS \"Capability\", w.key AS \"Setting Key\", COALESCE(s.value, 'false') AS \"Enabled\" FROM (VALUES ('enable_writer_self_review', 'Writer self-review pass'), ('self_consistency_enabled', 'QA self-consistency rail'), ('media_pipeline_trigger_enabled', 'Video/media pipeline'), ('podcast_pipeline_trigger_enabled', 'Podcast pipeline'), ('podcast_tts_enabled', 'Podcast TTS narration'), ('newsletter_enabled', 'Weekly newsletter digest'), ('social_drafts_enabled', 'Social draft generation (Postiz)')) AS w(key, label) LEFT JOIN app_settings s ON s.key = w.key ORDER BY \"Enabled\" ASC, w.label ASC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Watched capability flags — current state",
+      "type": "table"
     }
   ],
   "refresh": "30s",

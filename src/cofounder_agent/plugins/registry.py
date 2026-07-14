@@ -738,6 +738,12 @@ def get_core_samples() -> dict[str, list[Any]]:
         # window are emitted as an advisory settings_zero_reader_keys finding
         # (orphan candidates -> Discord ops). poindexter#756 item 3.
         ("jobs", "services.jobs.probe_zero_reader_settings", "ProbeZeroReaderSettingsJob"),
+        # ProbeDisabledCapabilitiesJob — daily check of a curated list of
+        # opt-in capability flags (writer self-review, self-consistency QA,
+        # video/podcast/newsletter/social) that ship disabled. Emits an
+        # advisory disabled_capabilities finding so silence never reads as
+        # "working" (glad-labs-stack#2133).
+        ("jobs", "services.jobs.probe_disabled_capabilities", "ProbeDisabledCapabilitiesJob"),
         # SyncPromptCatalogToLangfuseJob — 6-hourly one-way mirror: pushes
         # every SKILL.md prompt-catalog default into Langfuse (production
         # label + skill_sync provenance marker) so the UI shows all live

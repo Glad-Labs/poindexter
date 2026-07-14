@@ -1763,6 +1763,21 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.settings_zero_reader_keys.fallback': 'log_only',
     'findings.settings_zero_reader_keys.cooldown_minutes': '1440',
     'findings.settings_zero_reader_keys.min_severity': 'warn',
+    # Disabled-capabilities visibility (glad-labs-stack#2133). Emitted at
+    # severity='warn' — NOT 'info', even though "off" is often correct —
+    # because findings_alert_router's SQL layer only ever fetches
+    # severity IN ('warn','warning','critical') before min_severity is even
+    # consulted; an info-severity finding can never route regardless of this
+    # policy (findings-delivery-needs-warn-severity memory, glad-labs-stack#1471
+    # precedent: same mistake previously bit topic_gap). cooldown_minutes is
+    # a week (10080), longer than the zero-reader precedent's 24h: this
+    # reports slow-changing operator-toggle state, not an actionable list
+    # that shrinks as items get fixed, so a daily repeat would just be
+    # nagging about unchanged state.
+    'findings.disabled_capabilities.delivery': 'discord',
+    'findings.disabled_capabilities.fallback': 'log_only',
+    'findings.disabled_capabilities.cooldown_minutes': '10080',
+    'findings.disabled_capabilities.min_severity': 'warn',
     # Prompt-catalog drift. SyncPromptCatalogToLangfuseJob emits
     # prompt_catalog_drift (dot-free kind — same 3-segment parser note as
     # above) at severity='warn' for orphaned Langfuse names (key gone from the
@@ -1820,6 +1835,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # than this, so a constantly-read key is written ~1×/hour, not 60×.
     'settings_read_telemetry_min_restamp_seconds': '3600',
     'settings_zero_reader_probe_enabled': 'true',
+    # ProbeDisabledCapabilitiesJob (#2133): daily check of a curated list of
+    # opt-in capability flags (writer self-review, self-consistency QA,
+    # video/podcast/newsletter/social) that ship disabled.
+    'disabled_capabilities_probe_enabled': 'true',
     # Langfuse prompt mirror (SyncPromptCatalogToLangfuseJob): pushes SKILL.md
     # catalog defaults into Langfuse every 6h so the UI shows all production
     # prompts for review. No-ops quietly when Langfuse isn't configured, so
