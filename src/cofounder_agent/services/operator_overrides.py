@@ -45,6 +45,11 @@ OPERATOR_MODEL_PINS: dict[str, str] = {
     "writer_self_review_model": "ollama/gemma-4-31B-it-qat:latest",
     "qa_fallback_writer_model": "ollama/gemma-4-31B-it-qat:latest",
     "podcast_script_model": "ollama/gemma-4-31B-it-qat:latest",
+    # Community draft-assistant (Reddit/IH value-posts). Pinned local so
+    # on-demand drafts stay $0 and DON'T inherit whatever the writer canary
+    # (pipeline_writer_model) happens to be — the OSS default '' would otherwise
+    # fall through to the writer, which on this rig is a cloud canary.
+    "community_draft_model": "ollama/gemma-4-31B-it-qat:latest",
     "preferred_ollama_model": "gemma-4-31B-it-qat:latest",
     # glm-4.7-5090 — custom RTX 5090 fine-tune (pipeline architect).
     "pipeline_architect_model": "ollama/glm-4.7-5090:latest",
@@ -457,5 +462,122 @@ OPERATOR_NICHE_OVERRIDES: tuple[dict, ...] = (
         "match_slug": "dev_diary",
         "expect_writer_prompt_override": _DEV_DIARY_OSS_PROMPT,
         "set": {"writer_prompt_override": _DEV_DIARY_WRITER_PROMPT},
+    },
+)
+
+# --- Community draft-assistant subreddit profiles ----------------------------
+# The operator's curated `subreddit_profiles` rows (WS2 community draft
+# assistant). The public `subreddit_profiles` table ships EMPTY (migration
+# 20260713_010000); these restore Matt's chosen communities + their rules/tone
+# norms on a fresh install. Seeded ONLY when the table is empty, by
+# services.settings_defaults.seed_operator_subreddit_profiles — NOT re-asserted
+# per-row on boot, so a profile removed via `poindexter community profiles
+# remove` never resurrects (same operational-CRUD reasoning as the
+# remediation_rules exclusion). Each dict is the kwargs of a
+# services.community_drafts.SubredditProfile. Mirrors live prod as of
+# 2026-07-13. content_types map onto the post_content_types classifier labels.
+OPERATOR_SUBREDDIT_PROFILES: tuple[dict, ...] = (
+    {
+        "subreddit": "LocalLLaMA",
+        "enabled": True,
+        "content_types": ["ai-ml", "pc-hardware"],
+        "post_type": "text",
+        "self_promo": "strict",
+        "flair": None,
+        "min_karma": None,
+        "min_account_age_days": None,
+        "rules_summary": (
+            "Local-LLM practitioner community. Zero tolerance for blogspam or "
+            "promotion. Rewards concrete hands-on results: benchmarks, "
+            "VRAM/quantization tradeoffs, model comparisons, inference configs. "
+            "Do not link a blog; share the findings as text."
+        ),
+        "tone_notes": (
+            "Technical peers who run models locally. Lead with numbers, hardware, "
+            "and configs. No marketing voice. Assume deep familiarity with "
+            "quantization and GPUs."
+        ),
+        "cadence_cap_days": None,
+    },
+    {
+        "subreddit": "selfhosted",
+        "enabled": True,
+        "content_types": ["ai-ml", "software-engineering"],
+        "post_type": "either",
+        "self_promo": "moderate",
+        "flair": None,
+        "min_karma": None,
+        "min_account_age_days": None,
+        "rules_summary": (
+            "Self-hosting community. Genuinely self-hostable, useful projects are "
+            "welcome with clear authorship disclosure. Must help the reader run "
+            "something themselves, not pitch a product. Link OK when it is the "
+            "actual artifact."
+        ),
+        "tone_notes": (
+            "Practical and reproducible: here is how I run X. Include setup steps, "
+            "resource footprint, and gotchas."
+        ),
+        "cadence_cap_days": None,
+    },
+    {
+        "subreddit": "homelab",
+        "enabled": True,
+        "content_types": ["pc-hardware", "software-engineering"],
+        "post_type": "text",
+        "self_promo": "moderate",
+        "flair": None,
+        "min_karma": None,
+        "min_account_age_days": None,
+        "rules_summary": (
+            "Home-lab builds and experiments. Show the actual setup: hardware, "
+            "topology, config. No pure promotion; the value is in the build "
+            "details."
+        ),
+        "tone_notes": (
+            "Hobbyist-technical build-log voice. Gear lists, config snippets, what "
+            "worked and what did not."
+        ),
+        "cadence_cap_days": None,
+    },
+    {
+        "subreddit": "SideProject",
+        "enabled": True,
+        "content_types": ["founder-meta"],
+        "post_type": "either",
+        "self_promo": "ok",
+        "flair": None,
+        "min_karma": None,
+        "min_account_age_days": None,
+        "rules_summary": (
+            "Community for sharing side projects. Sharing what you built is the "
+            "point, but substance beats a bare pitch: explain the problem, the "
+            "build, and honest results."
+        ),
+        "tone_notes": (
+            "Founder build-in-public voice. Honest about what worked, real "
+            "metrics, lessons learned. First person."
+        ),
+        "cadence_cap_days": None,
+    },
+    {
+        "subreddit": "SaaS",
+        "enabled": True,
+        "content_types": ["founder-meta", "software-engineering"],
+        "post_type": "either",
+        "self_promo": "moderate",
+        "flair": None,
+        "min_karma": None,
+        "min_account_age_days": None,
+        "rules_summary": (
+            "Building and running a SaaS. Share learnings, decisions, and "
+            "tradeoffs, not just a link. Real numbers and specifics land; generic "
+            "advice does not."
+        ),
+        "tone_notes": (
+            "Founder-to-founder. Concrete decisions, costs, tradeoffs, real "
+            "metrics. No hype."
+        ),
+        "cadence_cap_days": None,
     },
 )

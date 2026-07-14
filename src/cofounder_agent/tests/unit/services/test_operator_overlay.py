@@ -310,3 +310,96 @@ def test_remediation_rules_seeded_by_neither_baseline_nor_overlay():
         "the operator overlay must not carry a hardcoded firefighter rule set — "
         "rules live only in the remediation_rules table, managed via CRUD."
     )
+
+
+# --- seed_operator_subreddit_profiles: fresh-install bootstrap of the
+#     operator's community-draft targets (seed-if-EMPTY) -----------------------
+from services.settings_defaults import seed_operator_subreddit_profiles  # noqa: E402
+
+
+class _SeedPool:
+    """Fake pool/conn for the subreddit seeder: COUNT via ``fetchval``, INSERT
+    via ``execute`` (returns ``'INSERT 0 1'`` so ``add_profile`` counts it as
+    created). Usable directly as the ``async with pool.acquire()`` conn."""
+
+    def __init__(self, existing_count: int):
+        self._count = existing_count
+        self.inserted: list[tuple] = []
+
+    def acquire(self):
+        return self
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, *exc):
+        return False
+
+    async def fetchval(self, query, *args):
+        assert "subreddit_profiles" in query
+        return self._count
+
+    async def execute(self, query, *args):
+        self.inserted.append(args)
+        return "INSERT 0 1"
+
+
+@pytest.mark.asyncio
+async def test_seed_subreddit_profiles_noop_for_none_pool():
+    assert await seed_operator_subreddit_profiles(None) == 0
+
+
+@pytest.mark.asyncio
+async def test_seed_subreddit_profiles_noop_when_overlay_absent(monkeypatch):
+    """OSS install: the private overlay is stripped -> nothing seeded."""
+    monkeypatch.setitem(sys.modules, "services.operator_overrides", None)
+    pool = _SeedPool(existing_count=0)
+    assert await seed_operator_subreddit_profiles(pool) == 0
+    assert pool.inserted == []
+
+
+@pytest.mark.asyncio
+async def test_seed_subreddit_profiles_seeds_when_table_empty():
+    """Fresh install / rebuild: the empty table is bootstrapped with every
+    overlay profile."""
+    oo = pytest.importorskip("services.operator_overrides")
+    profiles = getattr(oo, "OPERATOR_SUBREDDIT_PROFILES", ())
+    assert profiles, "operator overlay should carry the operator's subreddit profiles"
+
+    pool = _SeedPool(existing_count=0)
+    seeded = await seed_operator_subreddit_profiles(pool)
+
+    assert seeded == len(profiles)
+    assert len(pool.inserted) == len(profiles)
+    # add_profile binds subreddit as the first INSERT param
+    assert {args[0] for args in pool.inserted} == {p["subreddit"] for p in profiles}
+
+
+@pytest.mark.asyncio
+async def test_seed_subreddit_profiles_skips_when_table_nonempty():
+    """DELETE-safety: once any profile exists the seeder never re-asserts, so a
+    profile removed via ``community profiles remove`` can't resurrect on boot —
+    the same hazard the remediation_rules note guards against. Seed-if-EMPTY,
+    not seed-if-absent-per-row."""
+    pytest.importorskip("services.operator_overrides")
+    pool = _SeedPool(existing_count=3)
+    assert await seed_operator_subreddit_profiles(pool) == 0
+    assert pool.inserted == []
+
+
+def test_operator_subreddit_profiles_have_valid_shape():
+    """Each overlay profile dict must construct a SubredditProfile (valid keys)
+    and carry sane enum values — the data ships in code, so pin it."""
+    oo = pytest.importorskip("services.operator_overrides")
+    from services.community_drafts import SubredditProfile
+
+    profiles = getattr(oo, "OPERATOR_SUBREDDIT_PROFILES", ())
+    assert profiles, "overlay should carry subreddit profiles"
+    seen = set()
+    for prof in profiles:
+        sp = SubredditProfile(**prof)          # raises on unknown/missing keys
+        assert sp.subreddit and sp.subreddit not in seen, "duplicate subreddit"
+        seen.add(sp.subreddit)
+        assert sp.self_promo in {"strict", "moderate", "ok"}
+        assert sp.post_type in {"text", "link", "either"}
+        assert isinstance(sp.content_types, list) and sp.content_types

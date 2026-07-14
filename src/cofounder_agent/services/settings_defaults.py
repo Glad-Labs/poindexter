@@ -2656,7 +2656,56 @@ async def apply_operator_overrides(pool: Any) -> int:
     # are operational CRUD state (added / tuned / retired live in the DB). A
     # seed-if-absent re-assert on boot would resurrect a rule deleted at runtime,
     # breaking DELETE. Guard: test_apply_does_not_seed_remediation_rules.
+    #
+    # subreddit_profiles are seeded by the SEPARATE seed_operator_subreddit_profiles
+    # below (seed-if-EMPTY, not the conditional-UPSERT used here) — kept out of
+    # this function so the per-call fetchval accounting the overlay tests assert
+    # on stays about settings + niches only.
     return applied
+
+
+async def seed_operator_subreddit_profiles(pool: Any) -> int:
+    """Bootstrap the operator's community-draft subreddit profiles on a FRESH
+    install / rebuild.
+
+    OSS installs have no ``services.operator_overrides`` module, so this is a
+    no-op. The Glad Labs overlay ships ``OPERATOR_SUBREDDIT_PROFILES`` — the
+    operator's curated ``subreddit_profiles`` rows (which communities to draft
+    for, plus each one's rules / tone / self-promo norms). The public
+    ``subreddit_profiles`` table ships EMPTY (migration ``20260713_010000``);
+    these restore the operator's targets after a rebuild.
+
+    **Seed-if-EMPTY, not seed-if-absent-per-row.** The profiles are operational
+    CRUD state — added / edited / *removed* live via ``poindexter community
+    profiles`` — so a per-row re-assert on every boot would resurrect a profile
+    the operator deleted at runtime (the same hazard that keeps remediation_rules
+    out of :func:`apply_operator_overrides`). Seeding only while the table is
+    empty gives rebuild-durability while leaving runtime CRUD authoritative the
+    moment any row exists.
+
+    Returns the number of profiles inserted (0 on OSS installs, on a non-empty
+    table, or when a concurrent boot already populated it).
+    """
+    if pool is None:
+        return 0
+    try:
+        from services.operator_overrides import OPERATOR_SUBREDDIT_PROFILES
+    except ImportError:
+        return 0  # OSS install (or an overlay predating this attribute).
+    if not OPERATOR_SUBREDDIT_PROFILES:
+        return 0
+
+    from services.community_drafts import SubredditProfile, add_profile
+
+    seeded = 0
+    async with pool.acquire() as conn:
+        existing = await conn.fetchval("SELECT COUNT(*) FROM subreddit_profiles")
+        if existing:
+            return 0  # runtime CRUD is authoritative once any profile exists.
+        for prof in OPERATOR_SUBREDDIT_PROFILES:
+            if await add_profile(conn, SubredditProfile(**prof)):
+                seeded += 1
+    return seeded
 
 
 def keys() -> list[str]:

@@ -489,6 +489,30 @@ class StartupManager:
                 exc_info=True,
             )
 
+        # Operator overlay — bootstrap the community-draft subreddit profiles on
+        # a FRESH install (seed-if-empty). No-op on OSS (overlay stripped) and
+        # once the table has any row, so runtime `community profiles` CRUD stays
+        # authoritative and a deleted profile never resurrects on boot.
+        try:
+            from services.settings_defaults import (
+                seed_operator_subreddit_profiles,
+            )
+
+            if self.database_service and self.database_service.pool:
+                seeded = await seed_operator_subreddit_profiles(
+                    self.database_service.pool
+                )
+                if seeded:
+                    logger.info(
+                        "   [OK] operator overlay seeded %d subreddit profile(s)",
+                        seeded,
+                    )
+        except Exception as e:
+            logger.warning(
+                f"   [WARNING] operator subreddit-profile seed failed: {e!s}",
+                exc_info=True,
+            )
+
         # Module v1 Phase 2 — per-module migrations. Substrate migrations
         # (including the module_schema_migrations table itself) have
         # already run above; now walk every registered Module and apply
