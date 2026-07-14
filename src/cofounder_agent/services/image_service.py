@@ -1206,12 +1206,6 @@ class ImageService:
                 progress_service = get_progress_service()
                 progress_service.mark_complete(task_id, "Image generation complete")
 
-                # Broadcast via WebSocket
-                from services.progress_broadcaster import broadcast_progress
-
-                progress = progress_service.get_progress(task_id)
-                await broadcast_progress(task_id, progress)
-
             return True
 
         except Exception as e:
@@ -1223,13 +1217,6 @@ class ImageService:
 
                 progress_service = get_progress_service()
                 progress_service.mark_failed(task_id, str(e))
-
-                # Broadcast via WebSocket
-                from services.progress_broadcaster import broadcast_progress
-
-                progress = progress_service.get_progress(task_id)
-                if progress is not None:
-                    await broadcast_progress(task_id, progress)
 
             return False
 

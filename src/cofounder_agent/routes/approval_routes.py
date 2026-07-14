@@ -44,13 +44,6 @@ router = APIRouter(
 )
 
 
-async def broadcast_approval_status(
-    task_id: str, status: str, details: dict | None = None
-) -> None:
-    """No-op stub — websocket routes removed (no connected clients)."""
-    pass
-
-
 # ============================================================================
 # SCHEMAS
 # ============================================================================
@@ -223,22 +216,6 @@ async def reject_task(
             )
 
         logger.info("Task %s rejected by %s: %s", full_task_id, operator['id'], request.reason)
-
-        # Broadcast rejection status to connected WebSocket clients
-        try:
-            await broadcast_approval_status(
-                full_task_id,
-                "rejected",
-                {
-                    "rejected_by": operator["id"],
-                    "reason": request.reason,
-                    "feedback": request.feedback,
-                    "allow_revisions": request.allow_revisions,
-                    "rejection_date": rejection_date.isoformat(),
-                },
-            )
-        except (ValueError, KeyError, AttributeError, TypeError, RuntimeError) as e:
-            logger.warning("Failed to broadcast rejection status: %s", e, exc_info=True)
 
         return {
             "task_id": full_task_id,

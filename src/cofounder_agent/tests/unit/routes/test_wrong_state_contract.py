@@ -19,7 +19,6 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import routes.approval_routes as approval_module
 from middleware.api_token_auth import verify_api_token
 from routes.approval_routes import router as approval_router
 from tests.unit.routes.conftest import make_mock_db
@@ -219,11 +218,10 @@ class TestRejectWrongState409:
         mock_db.get_task = AsyncMock(return_value=_PENDING_TASK)
         client = TestClient(_build_approval_app(mock_db))
 
-        with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):
-            resp = client.post(
-                "/api/tasks/pending-task-001/reject",
-                json={"reason": "test", "feedback": "test"},
-            )
+        resp = client.post(
+            "/api/tasks/pending-task-001/reject",
+            json={"reason": "test", "feedback": "test"},
+        )
         assert resp.status_code == 409, (
             f"Expected 409 for reject on pending task, got {resp.status_code}: {resp.text}"
         )
@@ -233,11 +231,10 @@ class TestRejectWrongState409:
         mock_db.get_task = AsyncMock(return_value=_PUBLISHED_TASK)
         client = TestClient(_build_approval_app(mock_db))
 
-        with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):
-            resp = client.post(
-                "/api/tasks/pub-task-001/reject",
-                json={"reason": "test", "feedback": "test"},
-            )
+        resp = client.post(
+            "/api/tasks/pub-task-001/reject",
+            json={"reason": "test", "feedback": "test"},
+        )
         assert resp.status_code == 409, (
             f"Expected 409 for reject on published task, got {resp.status_code}: {resp.text}"
         )
@@ -248,11 +245,10 @@ class TestRejectWrongState409:
         mock_db.get_task = AsyncMock(return_value=_AWAITING_TASK)
         client = TestClient(_build_approval_app(mock_db))
 
-        with patch.object(approval_module, "broadcast_approval_status", new=AsyncMock()):
-            resp = client.post(
-                "/api/tasks/awaiting-task-001/reject",
-                json={"reason": "quality", "feedback": "needs work"},
-            )
+        resp = client.post(
+            "/api/tasks/awaiting-task-001/reject",
+            json={"reason": "quality", "feedback": "needs work"},
+        )
         assert resp.status_code == 200, (
             f"Expected 200 for reject on awaiting_approval task, got {resp.status_code}"
         )

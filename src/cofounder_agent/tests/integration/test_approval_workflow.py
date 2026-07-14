@@ -163,7 +163,6 @@ REJECT_PAYLOAD = {
 }
 
 # Patch targets
-_BROADCAST_APPROVAL = "routes.approval_routes.broadcast_approval_status"
 _OPERATOR_IDENTITY_APPROVAL = "routes.approval_routes.get_operator_identity"
 _CHECK_OWNERSHIP = "routes.task_publishing_routes._check_task_ownership"
 _REVALIDATION = "routes.revalidate_routes.trigger_nextjs_revalidation"
@@ -176,14 +175,6 @@ def _approve_patches():
         patch(_CHECK_OWNERSHIP),
         patch(_REVALIDATION, new=AsyncMock()),
         patch(_WEBHOOK, new=AsyncMock()),
-    )
-
-
-def _reject_patches():
-    """Context manager stack for reject-endpoint patches."""
-    return (
-        patch(_BROADCAST_APPROVAL, new=AsyncMock()),
-        patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR),
     )
 
 
@@ -297,14 +288,14 @@ class TestRejectTaskFlow:
 
     def test_reject_returns_200(self):
         db = _make_mock_db_for_reject()
-        with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
+        with patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
             resp = self._reject(client)
         assert resp.status_code == 200
 
     def test_reject_response_has_rejected_approval_status(self):
         db = _make_mock_db_for_reject()
-        with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
+        with patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
             data = self._reject(client).json()
         assert data["approval_status"] == "rejected"
@@ -313,7 +304,7 @@ class TestRejectTaskFlow:
     def test_reject_with_allow_revisions_sets_revisions_status(self):
         db = _make_mock_db_for_reject()
         payload = {**REJECT_PAYLOAD, "allow_revisions": True}
-        with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
+        with patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
             data = self._reject(client, payload=payload).json()
         assert data["status"] == "rejected_retry"
@@ -321,7 +312,7 @@ class TestRejectTaskFlow:
     def test_reject_without_revisions_sets_rejected_final_status(self):
         db = _make_mock_db_for_reject()
         payload = {**REJECT_PAYLOAD, "allow_revisions": False}
-        with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
+        with patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
             data = self._reject(client, payload=payload).json()
         # routes/approval_routes.py:95 sets final_status = "rejected_final"
@@ -332,7 +323,7 @@ class TestRejectTaskFlow:
 
     def test_reject_response_includes_feedback(self):
         db = _make_mock_db_for_reject()
-        with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
+        with patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
             data = self._reject(client).json()
         assert data["feedback"] == REJECT_PAYLOAD["feedback"]
@@ -340,7 +331,7 @@ class TestRejectTaskFlow:
 
     def test_reject_stores_feedback_via_update_task(self):
         db = _make_mock_db_for_reject()
-        with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
+        with patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
             self._reject(client)
         db.update_task.assert_awaited_once()
@@ -356,7 +347,7 @@ class TestRejectTaskFlow:
         # short-circuits on the full-UUID shape (no DB round trip), and the
         # handler 404s. Mirrors test_approve_task_not_found_returns_404.
         nonexistent_uuid = "00000000-0000-0000-0000-000000000000"
-        with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
+        with patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
             resp = self._reject(client, task_id=nonexistent_uuid)
         assert resp.status_code == 404
@@ -366,21 +357,10 @@ class TestRejectTaskFlow:
         db = _make_mock_db_for_reject()
         completed_task = {**_make_awaiting_task(), "status": "completed"}
         db.get_task = AsyncMock(return_value=completed_task)
-        with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
+        with patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
             resp = self._reject(client)
         assert resp.status_code == 409
-
-    def test_reject_broadcasts_websocket_event(self):
-        db = _make_mock_db_for_reject()
-        mock_broadcast = AsyncMock()
-        with patch(_BROADCAST_APPROVAL, new=mock_broadcast), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
-            client = TestClient(_build_approval_app(db, for_reject=True))
-            self._reject(client)
-        mock_broadcast.assert_awaited_once()
-        args = mock_broadcast.call_args
-        assert args[0][0] == TASK_ID
-        assert args[0][1] == "rejected"
 
 
 # ---------------------------------------------------------------------------
@@ -477,7 +457,7 @@ class TestApproveRejectLifecycleComposed:
     def test_full_reject_lifecycle(self):
         """Task in awaiting_approval -> reject -> response has rejected status."""
         db = _make_mock_db_for_reject()
-        with patch(_BROADCAST_APPROVAL, new=AsyncMock()), patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
+        with patch(_OPERATOR_IDENTITY_APPROVAL, return_value=TEST_OPERATOR):
             client = TestClient(_build_approval_app(db, for_reject=True))
             resp = client.post(
                 f"/api/tasks/{TASK_ID}/reject",
