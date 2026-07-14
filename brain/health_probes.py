@@ -1550,6 +1550,20 @@ async def probe_cadence_slo(pool) -> dict:
       ``actual < ratio * expected_for_window``.
 
     expected_for_window = expected_posts_per_day * (window_hours / 24)
+
+    Per-niche overrides (poindexter#538)
+    -------------------------------------
+    Purely additive on top of the site-wide check above. Any niche with a
+    non-NULL ``niches.cadence_target_posts_per_day`` (set via
+    ``poindexter topics niche set-cadence``) gets its own check using the
+    same ``window_hours`` / ``shortfall_ratio``, counting only posts whose
+    source task belongs to that niche (via the
+    ``posts.metadata->>'pipeline_task_id'`` → ``pipeline_tasks.niche_slug``
+    seam). A niche without an override isn't checked at all — the
+    site-wide target is the only safety net for it, same as before this
+    existed. Reported per-niche breaches never suppress the overall
+    ``ok`` when healthy; either the global check OR any niche check can
+    fail the probe.
     """
     try:
         # Load the four settings in one round-trip. Missing rows fall back to
@@ -1624,8 +1638,49 @@ async def probe_cadence_slo(pool) -> dict:
                 f"target {expected_per_day:g}/day)"
             )
         )
+
+        # Per-niche overrides (poindexter#538) — additive, see docstring.
+        niche_breaches: list[dict] = []
+        niche_rows = await pool.fetch(
+            "SELECT slug, cadence_target_posts_per_day FROM niches "
+            "WHERE cadence_target_posts_per_day IS NOT NULL"
+        )
+        for n in niche_rows:
+            niche_target = float(n["cadence_target_posts_per_day"])
+            niche_expected_for_window = niche_target * (window_hours / 24.0)
+            niche_threshold = shortfall_ratio * niche_expected_for_window
+            niche_row = await pool.fetchrow(
+                f"""
+                SELECT COUNT(*) AS c
+                FROM posts p
+                JOIN pipeline_tasks pt
+                    ON pt.task_id = (p.metadata ->> 'pipeline_task_id')
+                WHERE pt.niche_slug = $1
+                  AND p.status = 'published'
+                  AND p.published_at >= NOW() - INTERVAL '{window_hours} hours'
+                """,
+                n["slug"],
+            )
+            niche_actual = niche_row["c"] if niche_row else 0
+            if niche_actual < niche_threshold:
+                niche_breaches.append({
+                    "niche": n["slug"],
+                    "actual": niche_actual,
+                    "expected_for_window": round(niche_expected_for_window, 2),
+                    "target_per_day": niche_target,
+                })
+
+        if niche_breaches:
+            niche_detail = "; ".join(
+                f"{b['niche']}: {b['actual']} posts, expected "
+                f"~{b['expected_for_window']:.1f} (target "
+                f"{b['target_per_day']:g}/day)"
+                for b in niche_breaches
+            )
+            detail = f"{detail} | niche cadence breach: {niche_detail}"
+
         return {
-            "ok": not breach,
+            "ok": not breach and not niche_breaches,
             "actual": actual,
             "expected_for_window": round(expected_for_window, 2),
             "expected_posts_per_day": expected_per_day,
@@ -1633,6 +1688,7 @@ async def probe_cadence_slo(pool) -> dict:
             "shortfall_ratio": shortfall_ratio,
             "threshold": round(threshold, 2),
             "last_published": str(last) if last else "never",
+            "niche_breaches": niche_breaches,
             "detail": detail,
         }
     except Exception as e:

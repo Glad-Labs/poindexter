@@ -203,7 +203,17 @@ poindexter settings set <key> <value> --category <category>
 ```
 
 Per-niche columns currently require a SQL `UPDATE niches SET ... WHERE slug=...`
-until the niche edit CLI lands.
+until the niche edit CLI lands — except the cadence target, which has its own
+command:
+
+```bash
+poindexter topics niche set-cadence <slug> <posts-per-day>
+```
+
+Sets `niches.cadence_target_posts_per_day` — a per-niche override that
+`probe_cadence_slo` (`brain/health_probes.py`) checks _in addition to_ the
+site-wide `cadence_slo_expected_posts_per_day` target. A niche without this
+set isn't checked individually; it's only covered by the site-wide check.
 
 ## Troubleshooting
 
@@ -223,7 +233,8 @@ Honest gap list as of 2026-04-30:
 - **No `poindexter niche create / edit / set-goal / enable-source` CLI.**
   New niches and goal/source edits go in via SQL or via the
   `services.niche_service.NicheService` Python API. The CLI subgroup
-  currently exposes only `niche list` and `niche show`.
+  exposes `niche list`, `niche show`, and `niche set-cadence` — everything
+  else still needs SQL.
 - **Writer-mode model selection is hardcoded to `pipeline_writer_model`.**
   Every niche writer mode uses the one writer pin — there's no per-mode
   "a smaller model for the STORY_SPINE outline, a heavier one for the

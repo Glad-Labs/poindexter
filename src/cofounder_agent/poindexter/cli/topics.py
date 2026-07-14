@@ -488,4 +488,39 @@ def niche_show(slug: str) -> None:
     asyncio.run(_impl())
 
 
+@niche_group.command("set-cadence")
+@click.argument("niche")
+@click.argument("target", type=float)
+def niche_set_cadence(niche: str, target: float) -> None:
+    """Set a niche's cadence target (posts/day).
+
+    Read by ``probe_cadence_slo`` (brain/health_probes.py) as a per-niche
+    override of the site-wide ``cadence_slo_expected_posts_per_day``
+    app_setting.
+    """
+    async def _impl():
+        import asyncpg
+
+        from services.niche_service import NicheService
+
+        pool = await asyncpg.create_pool(_dsn(), min_size=1, max_size=2)
+        try:
+            svc = NicheService(pool)
+            n = await svc.get_by_slug(niche)
+            if not n:
+                raise click.ClickException(f"unknown niche: {niche}")
+            try:
+                updated = await svc.set_cadence_target(n.id, target)
+            except ValueError as e:
+                raise click.ClickException(str(e)) from e
+            click.echo(
+                f"Set cadence target for {updated.slug}: "
+                f"{updated.cadence_target_posts_per_day}/day"
+            )
+        finally:
+            await pool.close()
+
+    asyncio.run(_impl())
+
+
 __all__ = ["topics_group"]

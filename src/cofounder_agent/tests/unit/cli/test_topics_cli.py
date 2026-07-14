@@ -526,3 +526,57 @@ class TestNicheShow:
 
         assert result.exit_code != 0
         assert "unknown niche" in result.output.lower()
+
+
+class TestNicheSetCadence:
+    """poindexter#538 — CLI for the per-niche cadence-SLO override."""
+
+    def test_sets_cadence_and_prints_confirmation(self, runner, fake_asyncpg):
+        n = _niche(slug="ai-ml")
+        updated = _niche(slug="ai-ml")
+        updated.cadence_target_posts_per_day = 2.5
+
+        ns_cls = MagicMock()
+        ns_cls.return_value.get_by_slug = AsyncMock(return_value=n)
+        ns_cls.return_value.set_cadence_target = AsyncMock(return_value=updated)
+
+        with patch("services.niche_service.NicheService", ns_cls):
+            result = runner.invoke(
+                topics_group, ["niche", "set-cadence", "ai-ml", "2.5"],
+            )
+
+        assert result.exit_code == 0, result.output
+        assert "ai-ml" in result.output
+        assert "2.5" in result.output
+        ns_cls.return_value.set_cadence_target.assert_awaited_once_with(
+            n.id, 2.5,
+        )
+
+    def test_unknown_niche_returns_clean_error(self, runner, fake_asyncpg):
+        ns_cls = MagicMock()
+        ns_cls.return_value.get_by_slug = AsyncMock(return_value=None)
+
+        with patch("services.niche_service.NicheService", ns_cls):
+            result = runner.invoke(
+                topics_group, ["niche", "set-cadence", "no-such", "1"],
+            )
+
+        assert result.exit_code != 0
+        assert "unknown niche" in result.output.lower()
+        ns_cls.return_value.set_cadence_target.assert_not_called()
+
+    def test_non_positive_target_fails_clean(self, runner, fake_asyncpg):
+        n = _niche(slug="ai-ml")
+        ns_cls = MagicMock()
+        ns_cls.return_value.get_by_slug = AsyncMock(return_value=n)
+        ns_cls.return_value.set_cadence_target = AsyncMock(
+            side_effect=ValueError("cadence target must be positive, got 0.0"),
+        )
+
+        with patch("services.niche_service.NicheService", ns_cls):
+            result = runner.invoke(
+                topics_group, ["niche", "set-cadence", "ai-ml", "0"],
+            )
+
+        assert result.exit_code != 0
+        assert "positive" in result.output.lower()

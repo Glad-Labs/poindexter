@@ -7,6 +7,7 @@ pivot. Glad Labs is the first niche; future operators add their own.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Any
 from uuid import UUID
 
@@ -43,6 +44,11 @@ class Niche:
     # ``app_settings.default_template_slug``. See
     # ``services/template_slug_resolver.py``.
     default_template_slug: str | None = None
+    # Per-niche override for the site-wide ``cadence_slo_expected_posts_per_day``
+    # app_setting. NULL means "no override — rely on the global SLO only".
+    # Set via ``poindexter topics niche set-cadence``; read by
+    # ``brain/health_probes.py::probe_cadence_slo`` (poindexter#538).
+    cadence_target_posts_per_day: float | None = None
 
 
 @dataclass(frozen=True)
@@ -142,6 +148,25 @@ class NicheService:
             )
         return [NicheSource(**dict(r)) for r in rows]
 
+    async def set_cadence_target(self, niche_id: UUID, target: float) -> Niche:
+        """Set this niche's per-niche cadence override (poindexter#538).
+
+        Read by ``brain/health_probes.py::probe_cadence_slo``, which
+        otherwise only checks the site-wide ``cadence_slo_expected_posts_per_day``
+        app_setting.
+        """
+        if target <= 0:
+            raise ValueError(f"cadence target must be positive, got {target}")
+        async with self._pool.acquire() as conn:
+            row = await conn.fetchrow(
+                "UPDATE niches SET cadence_target_posts_per_day = $1 "
+                "WHERE id = $2 RETURNING *",
+                Decimal(str(target)), niche_id,
+            )
+        if row is None:
+            raise ValueError(f"unknown niche_id: {niche_id}")
+        return _row_to_niche(row)
+
 
 def _row_to_niche(row: Any) -> Niche:
     # default_template_slug is keyed defensively — tests + older
@@ -153,6 +178,14 @@ def _row_to_niche(row: Any) -> Niche:
         default_template_slug = row["default_template_slug"]
     except (KeyError, IndexError):
         default_template_slug = None
+    # cadence_target_posts_per_day: same defensive-keying rationale as
+    # default_template_slug above (20260714_181631 migration). asyncpg
+    # returns Decimal for a ``numeric`` column; Niche exposes a plain
+    # float since nothing downstream needs Decimal precision.
+    try:
+        cadence_target = row["cadence_target_posts_per_day"]
+    except (KeyError, IndexError):
+        cadence_target = None
     return Niche(
         id=row["id"], slug=row["slug"], name=row["name"], active=row["active"],
         target_audience_tags=list(row["target_audience_tags"] or []),
@@ -160,6 +193,9 @@ def _row_to_niche(row: Any) -> Niche:
         batch_size=row["batch_size"],
         discovery_cadence_minute_floor=row["discovery_cadence_minute_floor"],
         default_template_slug=default_template_slug,
+        cadence_target_posts_per_day=(
+            float(cadence_target) if cadence_target is not None else None
+        ),
     )
 
 

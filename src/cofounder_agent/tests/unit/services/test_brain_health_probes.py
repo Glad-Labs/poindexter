@@ -575,9 +575,14 @@ class TestProbeCadenceSlo:
             if v is not None
         ]
 
-    def _make_pool_with(self, actual, last=None, **overrides):
+    def _make_pool_with(self, actual, last=None, niche_rows=None, **overrides):
         p = _make_pool()
-        p.fetch.return_value = self._settings_rows(**overrides)
+        # Two distinct ``fetch`` calls now happen in sequence: settings,
+        # then niches with a per-niche cadence override (poindexter#538).
+        # Existing callers that don't pass ``niche_rows`` get an empty
+        # override list — the additive per-niche block finds nothing to
+        # check and behaves exactly as it did before that block existed.
+        p.fetch.side_effect = [self._settings_rows(**overrides), niche_rows or []]
         p.fetchrow.return_value = {"c": actual, "last_published": last}
         return p
 
@@ -626,6 +631,61 @@ class TestProbeCadenceSlo:
         assert r["ok"] is False
         assert r["expected_for_window"] == 3.0
         assert "target 3/day" in r["detail"]
+
+    async def test_no_niche_overrides_leaves_result_unaffected(self):
+        # No niches carry a cadence_target_posts_per_day override — the
+        # additive per-niche block must find nothing and change nothing
+        # (poindexter#538, purely additive over the pre-existing global
+        # check exercised by every test above this one).
+        p = self._make_pool_with(actual=1, last="2026-05-30 09:00:00")
+        r = await hp.probe_cadence_slo(p)
+        assert r["ok"] is True
+        assert r["niche_breaches"] == []
+        p.fetchrow.assert_called_once()
+
+    async def test_niche_override_breach_flagged_even_when_global_healthy(self):
+        # Global check is healthy (actual 1 >= global threshold 0.5), but
+        # a niche with its own 3/day override is starving at 0 posts.
+        p = self._make_pool_with(
+            actual=1, last="2026-05-30 09:00:00",
+            niche_rows=[
+                {"slug": "starving-niche", "cadence_target_posts_per_day": 3.0},
+            ],
+        )
+        p.fetchrow.side_effect = [
+            {"c": 1, "last_published": "2026-05-30 09:00:00"},  # global
+            {"c": 0},  # starving-niche's own count
+        ]
+        r = await hp.probe_cadence_slo(p)
+        assert r["ok"] is False
+        assert len(r["niche_breaches"]) == 1
+        assert r["niche_breaches"][0]["niche"] == "starving-niche"
+        assert "starving-niche" in r["detail"]
+
+    async def test_niche_meeting_its_own_target_does_not_breach(self):
+        p = self._make_pool_with(
+            actual=1, last="2026-05-30 09:00:00",
+            niche_rows=[
+                {"slug": "healthy-niche", "cadence_target_posts_per_day": 1.0},
+            ],
+        )
+        p.fetchrow.side_effect = [
+            {"c": 1, "last_published": "2026-05-30 09:00:00"},  # global
+            {"c": 1},  # healthy-niche meets its own 1/day target
+        ]
+        r = await hp.probe_cadence_slo(p)
+        assert r["ok"] is True
+        assert r["niche_breaches"] == []
+
+    async def test_disabled_skips_niche_check_too(self):
+        # cadence_slo_enabled=false must short-circuit before the
+        # per-niche block runs at all — not just the global one.
+        p = self._make_pool_with(actual=0, enabled="false")
+        r = await hp.probe_cadence_slo(p)
+        assert r["ok"] is True
+        assert r.get("status") == "disabled"
+        # Only the settings fetch happened — no niches query, no counts.
+        assert p.fetch.call_count == 1
 
 
 @pytest.mark.unit

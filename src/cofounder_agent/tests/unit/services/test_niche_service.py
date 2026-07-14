@@ -175,3 +175,33 @@ async def test_get_sources_empty_for_niche_with_none_configured(db_pool):
     svc = NicheService(db_pool)
     n = await svc.create(slug="no-sources", name="No Sources")
     assert await svc.get_sources(n.id) == []
+
+
+async def test_new_niche_has_no_cadence_target_by_default(db_pool):
+    svc = NicheService(db_pool)
+    n = await svc.create(slug="cadence-default", name="Cadence Default")
+    assert n.cadence_target_posts_per_day is None
+
+
+async def test_set_cadence_target_persists_and_returns_updated_niche(db_pool):
+    svc = NicheService(db_pool)
+    n = await svc.create(slug="cadence-set", name="Cadence Set")
+    updated = await svc.set_cadence_target(n.id, 2.5)
+    assert updated.cadence_target_posts_per_day == 2.5
+    fetched = await svc.get_by_slug("cadence-set")
+    assert fetched.cadence_target_posts_per_day == 2.5
+
+
+async def test_set_cadence_target_rejects_non_positive(db_pool):
+    svc = NicheService(db_pool)
+    n = await svc.create(slug="cadence-invalid", name="Cadence Invalid")
+    with pytest.raises(ValueError, match="positive"):
+        await svc.set_cadence_target(n.id, 0)
+    with pytest.raises(ValueError, match="positive"):
+        await svc.set_cadence_target(n.id, -1.0)
+
+
+async def test_set_cadence_target_raises_for_unknown_niche(db_pool):
+    svc = NicheService(db_pool)
+    with pytest.raises(ValueError, match="unknown niche_id"):
+        await svc.set_cadence_target(uuid4(), 1.0)
