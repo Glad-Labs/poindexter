@@ -103,3 +103,21 @@ def test_shared_keyword_lru_tie_breaks_via_injected_rng_when_both_unused():
         "Corsair gear.", [a, b], last_used={}, rng=_FixedRng(),
     )
     assert injected == ["b"]
+
+
+def test_shared_keyword_winner_injects_once_across_its_recurring_keywords():
+    """A multi-keyword link that WINS a shared keyword still injects exactly
+    once, even when the shared keyword and the link's own other keyword recur
+    later in the post. The per-link ``used`` set plus per-keyword
+    ``consumed_keywords`` guarantee one link => one injection across the whole
+    catalog of its keywords; the losing link is never injected."""
+    psu = AffiliateLink(code="psu", keywords=["Corsair", "HX1500i"], url="u1", display_text="PSU")
+    headset = AffiliateLink(code="headset", keywords=["Corsair", "Virtuoso MAX"], url="u2", display_text="Headset")
+    # "Corsair" is shared; psu is corroborated by its own "HX1500i" -> psu wins
+    # the shared keyword. Both "Corsair" and "HX1500i" recur -> still one psu link.
+    md = "My Corsair HX1500i rig. Another Corsair build reuses the HX1500i."
+    out, injected = inject_affiliate_links(md, [psu, headset], cap=3)
+    assert injected == ["psu"]
+    assert out.count("/go/psu") == 1  # first mention only, across all its keywords
+    assert "/go/headset" not in out  # the losing link is never injected
+    assert out.count("[PSU](/go/psu)") == 1
