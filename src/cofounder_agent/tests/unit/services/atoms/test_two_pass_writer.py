@@ -795,6 +795,195 @@ async def test_empty_revise_keeps_prior_draft_when_retry_also_empty(monkeypatch)
 
 
 # ---------------------------------------------------------------------------
+# poindexter#806 — degenerate-draft guards (defense in depth alongside #691).
+#
+# A writer model that burns its generation budget in a hidden reasoning
+# channel can emit a near-empty, NON-blank response — e.g. a handful of
+# ellipsis/dot characters. ``"...".strip()`` is truthy, so the #691
+# empty-only checks let this shape through as a "successful" call. These pin
+# the classifier plus the draft/revise retry-and-recover guards; the
+# keep-best expansion entry guard (which stops the actual observed prod
+# failure — an expand call adopting the dots as its topic) lives in its own
+# section below the expansion tests.
+# ---------------------------------------------------------------------------
+
+
+def test_classify_draft_substance_empty_is_empty():
+    assert two_pass._classify_draft_substance("", min_words=8) == "empty"
+    assert two_pass._classify_draft_substance("   \n\t  ", min_words=8) == "empty"
+
+
+def test_classify_draft_substance_dots_is_degenerate():
+    assert two_pass._classify_draft_substance("... . .. ...", min_words=8) == "degenerate"
+
+
+def test_classify_draft_substance_few_real_words_is_degenerate():
+    assert two_pass._classify_draft_substance("Hi there.", min_words=8) == "degenerate"
+
+
+def test_classify_draft_substance_real_prose_is_ok():
+    text = "This is a perfectly normal opening sentence with real content."
+    assert two_pass._classify_draft_substance(text, min_words=8) == "ok"
+
+
+def test_classify_draft_substance_exactly_at_threshold_is_ok():
+    text = " ".join(f"word{i}" for i in range(8))
+    assert two_pass._classify_draft_substance(text, min_words=8) == "ok"
+
+
+def test_classify_draft_substance_one_below_threshold_is_degenerate():
+    text = " ".join(f"word{i}" for i in range(7))
+    assert two_pass._classify_draft_substance(text, min_words=8) == "degenerate"
+
+
+def test_resolve_min_substance_words_default_when_no_site_config():
+    assert two_pass._resolve_min_substance_words(None) == 2
+
+
+def test_resolve_min_substance_words_reads_setting():
+    sc = MagicMock()
+    sc.get_int = MagicMock(return_value=15)
+    assert two_pass._resolve_min_substance_words(sc) == 15
+    sc.get_int.assert_called_once_with("writer_min_substance_words", 2)
+
+
+async def test_degenerate_first_draft_retries_once_and_recovers(monkeypatch):
+    """A first draft of bare dots/punctuation is retried once; a substantial
+    retry result is used as-is (clean self-heal, no finding)."""
+    calls: list[str] = []
+    drafts = iter([
+        "... . .. ...",  # degenerate: no real words
+        "A real first draft with actual substance in it.",
+    ])
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        calls.append("draft")
+        return next(drafts)
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    findings: list[dict] = []
+    monkeypatch.setattr(
+        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+    )
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
+    assert calls == ["draft", "draft"]
+    assert result["draft"] == "A real first draft with actual substance in it."
+    assert findings == []
+
+
+async def test_degenerate_first_draft_kept_when_retry_also_degenerate(monkeypatch):
+    """When BOTH the first draft and its retry are degenerate, there is no
+    prior draft to fall back to — the writer keeps the degenerate output
+    (never fabricates content) and emits a visibility finding so the
+    upstream producer stays visible."""
+    calls: list[str] = []
+
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        calls.append("draft")
+        return "..."
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    findings: list[dict] = []
+    monkeypatch.setattr(
+        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+    )
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
+    assert calls == ["draft", "draft"]
+    assert result["draft"] == "..."
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "writer_degenerate_draft_kept"
+    assert findings[0]["severity"] == "warn"
+
+
+async def test_degenerate_revise_retries_once_and_recovers(monkeypatch):
+    """Default path: a non-empty-but-degenerate revise response ('...') is
+    retried once with the same model; a substantial retry result is used
+    as-is (clean self-heal, no finding). Extends #691 (which only caught
+    truly-empty output) to the poindexter#806 dots/punctuation shape."""
+    _wire_one_revise(monkeypatch)
+
+    calls: list[str] = []
+
+    async def fake_revise(prompt, *, model=None, **kwargs):
+        calls.append(model)
+        return "... . .." if len(calls) == 1 else "Revised draft after a retry."
+
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+
+    findings: list[dict] = []
+    monkeypatch.setattr(
+        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+    )
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
+
+    assert calls == ["glm-4.7-5090:latest", "glm-4.7-5090:latest"]
+    assert result["draft"] == "Revised draft after a retry."
+    assert findings == []
+
+
+async def test_degenerate_revise_keeps_prior_draft_when_retry_also_degenerate(monkeypatch):
+    """Default path: when BOTH the revise call and its retry return
+    non-empty-but-degenerate output ('...'), the writer must NOT adopt it
+    over the good prior draft — same #691 keep-prior recovery, distinct
+    finding kind so the empty vs degenerate failure shapes stay
+    distinguishable on the Findings dashboard. Pins poindexter#806."""
+    _wire_one_revise(monkeypatch)
+
+    calls: list[str] = []
+
+    async def fake_revise(prompt, *, model=None, **kwargs):
+        calls.append(model)
+        return ". .. ..."  # both the call and its retry come back degenerate
+
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+
+    findings: list[dict] = []
+    monkeypatch.setattr(
+        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+    )
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
+
+    assert calls == ["glm-4.7-5090:latest", "glm-4.7-5090:latest"]
+    assert "First draft with" in result["draft"]
+    assert "EXTERNAL_NEEDED" not in result["draft"]
+    assert len(findings) == 1
+    assert findings[0]["kind"] == "writer_degenerate_draft_kept_prior"
+    assert findings[0]["severity"] == "warn"
+
+
+# ---------------------------------------------------------------------------
 # Length target threading (length-uniformity bug).
 #
 # The niche writer never received the task's ``target_length``: the picked
@@ -1028,6 +1217,96 @@ async def test_expansion_disabled_via_setting(monkeypatch):
     assert called == []
     assert result["draft"].strip() == "tiny"
     assert result["length_expanded"] is False
+
+
+# ---------------------------------------------------------------------------
+# poindexter#806 — degenerate-draft guard at the expand entry.
+#
+# This is the guard that stops the actual observed prod failure: a
+# near-empty draft ('...') reached the keep-best expansion pass, and because
+# the expand prompt (_EXPAND_PROMPT_FALLBACK) includes ONLY the draft text —
+# never the topic/angle — the expand model had nothing to work with but the
+# dots and invented a whole ellipsis-themed article as their "expansion",
+# which then won keep-best (trivially longer than a 3-character original)
+# and got persisted as the post (tasks 9921678f / e46b449c / ecaf0c01).
+# ---------------------------------------------------------------------------
+
+
+async def test_degenerate_draft_skips_expansion_pass(monkeypatch):
+    """The keep-best expansion entry must refuse to hand a degenerate draft
+    to the expand LLM. The draft is left unchanged and the expand model is
+    never called."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **kw):
+        return "..."  # degenerate — far under any length threshold
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    expand_calls: list[str] = []
+
+    async def fake_expand(prompt, **kwargs):
+        expand_calls.append(kwargs.get("phase"))
+        return "word " * 2000  # would win keep-best if it were ever called
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+
+    findings: list[dict] = []
+    monkeypatch.setattr(
+        "utils.findings.emit_finding", lambda **kw: findings.append(kw),
+    )
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_short_draft_site_config(),
+        target_length=2500,
+    )
+    assert expand_calls == []
+    assert result["draft"] == "..."
+    assert result["length_expanded"] is False
+    assert result["degenerate_draft_input"] is True
+    # fake_pass1 unconditionally returns "..." so _draft_node's own
+    # retry-exhausted guard also fires (its own dedicated tests cover that
+    # in isolation) — assert the expand-entry finding is present rather
+    # than assuming it's the only one.
+    expand_findings = [f for f in findings if f["kind"] == "writer_degenerate_draft_input"]
+    assert len(expand_findings) == 1
+    assert expand_findings[0]["severity"] == "warn"
+
+
+async def test_substantial_short_draft_still_triggers_expansion(monkeypatch):
+    """A short-but-substantial draft (real words, just thin) must still
+    trigger the normal expansion pass — the degenerate guard must not
+    over-fire on legitimately thin (but real) content."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **kw):
+        return "A short draft covering the topic in brief but real terms."
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.generate_with_context",
+        fake_pass1, raising=False,
+    )
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    expand_calls: list[str] = []
+
+    async def fake_expand(prompt, **kwargs):
+        expand_calls.append(kwargs.get("phase"))
+        return "word " * 2000
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_expand)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_short_draft_site_config(),
+        target_length=2500,
+    )
+    assert "two_pass_expand" in expand_calls
+    assert result["length_expanded"] is True
+    assert result["degenerate_draft_input"] is False
 
 
 # ---------------------------------------------------------------------------

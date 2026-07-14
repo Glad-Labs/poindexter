@@ -693,6 +693,10 @@ DEFAULTS: dict[str, str] = {
     # is never this short — a sub-threshold draft means the reasoning writer
     # model returned (near-)empty content. poindexter#691.
     'writer_min_draft_chars': '200',
+    # Min real-word count before draft/revise/expand-input counts as
+    # degenerate (e.g. '...') rather than genuine content. Gates
+    # atoms/two_pass_writer.py's "Degenerate-draft guard". #806.
+    'writer_min_substance_words': '2',
     # Keep-best soft expansion (length enforcement): when a niche draft lands
     # under target_length * writer_min_length_ratio, two_pass runs ONE expansion
     # pass and keeps the longer of (original, expanded). Disable via the _enabled key.

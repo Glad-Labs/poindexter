@@ -461,6 +461,212 @@ def _parse_source_caps(site_config: Any = None) -> dict[str, int]:
     return caps
 
 
+# ---------------------------------------------------------------------------
+# Degenerate-draft guard (poindexter#806, defense in depth alongside #691).
+#
+# A writer model that burns its generation budget in a hidden reasoning
+# channel can emit a near-empty, NON-blank response — e.g. a handful of
+# ellipsis/dot characters. ``"...".strip()`` is truthy, so a plain emptiness
+# check (poindexter#691) lets this shape through as a "successful" call.
+# Left unchecked, a degenerate draft reaches the keep-best expansion pass
+# (``_maybe_expand_to_target``): because the expand prompt includes ONLY the
+# draft text — never the topic/angle — a model asked to "expand" a dots-only
+# draft has nothing to work with but the dots and invents a whole
+# ellipsis-themed article as its "expansion", which then wins keep-best
+# (trivially longer than a 3-character original) and gets persisted as the
+# post. Confirmed against three prod tasks (9921678f / e46b449c / ecaf0c01):
+# one had a genuinely degenerate TOPIC upstream (topic generation is a
+# separate bug, out of scope here), the other two had perfectly good topics
+# yet still got hijacked purely because their draft/revise output happened
+# to come out near-empty — the expand prompt's silence on topic/angle means
+# it can't recover the real subject once its only input is degenerate.
+#
+# ``_classify_draft_substance`` is the single check shared by all three
+# guard points below (draft retry, revise retry, expand-entry skip) so the
+# "what counts as degenerate" definition can't drift between them. The
+# default threshold (2 real words) is deliberately low — it catches the
+# confirmed failure shape (0-1 real words: pure punctuation/dots) without
+# false-positiving on legitimately terse-but-real content; tune upward via
+# ``writer_min_substance_words`` if a less obvious degenerate shape is ever
+# observed in production.
+_REAL_WORD_RE = re.compile(r"[A-Za-z]{2,}")
+
+
+def _classify_draft_substance(text: str, *, min_words: int) -> str:
+    """Classify LLM output for the #691/#806 retry-guard family.
+
+    Returns ``"ok"`` when the text clears the substance floor, ``"empty"``
+    when it's blank/whitespace-only, or ``"degenerate"`` when it's non-blank
+    but has fewer than ``min_words`` real (2+ letter alphabetic) words —
+    catches a response dominated by ellipses/punctuation/digits that would
+    pass a plain ``.strip()`` truthiness check.
+    """
+    stripped = (text or "").strip()
+    if not stripped:
+        return "empty"
+    if len(_REAL_WORD_RE.findall(stripped)) < min_words:
+        return "degenerate"
+    return "ok"
+
+
+def _resolve_min_substance_words(site_config: Any = None) -> int:
+    """Minimum real-word count for :func:`_classify_draft_substance`.
+
+    DB-configurable via ``writer_min_substance_words`` (default 2).
+    """
+    if site_config is None:
+        return 2
+    try:
+        return site_config.get_int("writer_min_substance_words", 2)
+    except Exception:  # noqa: BLE001 — defensive against test stubs
+        # silent-ok: optional tuning knob — fall back to the documented
+        # default when a stubbed site_config raises (matches
+        # _resolve_max_revision_loops above).
+        return 2
+
+
+def _emit_degenerate_first_draft_kept_finding(*, task_id: str | None) -> None:
+    """Loud-but-recovered canary: the first-draft call returned degenerate
+    (non-empty, low-substance) output on both the initial attempt and its
+    retry. There is no prior draft to fall back to (this IS the first
+    draft), so the degenerate output is kept as-is. Self-heal is not silent
+    (``feedback_self_heal_not_suppress``): the pipeline keeps producing
+    content while the condition stays visible on the Findings dashboard.
+    ``severity='warn'`` → Discord per the dispatcher policy.
+    """
+    logger.warning(
+        "[two_pass_writer] first-draft call returned degenerate "
+        "(non-empty, low-substance) output twice — kept it as-is; no prior "
+        "draft exists to fall back to. A reasoning writer model "
+        "intermittently emits only ellipses/punctuation; verify model "
+        "health if this recurs. Refs poindexter#806.",
+    )
+    try:
+        from utils.findings import emit_finding
+    except Exception:  # noqa: BLE001 — silent-ok: warning log above already fired; finding is a best-effort supplementary signal
+        return
+    try:
+        emit_finding(
+            source="modules.content.atoms.two_pass_writer",
+            kind="writer_degenerate_draft_kept",
+            title="First draft returned degenerate output — kept as-is",
+            body=(
+                "The first-draft call returned non-empty but low-substance "
+                "content (e.g. dots/punctuation) on both the initial attempt "
+                "and one retry. No prior draft exists at this point in the "
+                "graph, so the degenerate output was kept rather than "
+                "fabricated. A reasoning model that spends its budget in the "
+                "thinking channel returns near-empty content intermittently; "
+                "verify model health if this recurs. Refs poindexter#806."
+            ),
+            severity="warn",
+            dedup_key="writer_degenerate_draft_kept",
+            extra={"task_id": task_id, "reason": "first draft degenerate twice"},
+        )
+    except Exception:  # noqa: BLE001 — silent-ok: warning log above already fired; finding is a best-effort supplementary signal
+        pass
+
+
+def _emit_degenerate_revise_kept_prior_finding(*, model: str) -> None:
+    """Loud-but-recovered canary: the default-path revise returned non-empty
+    but degenerate (low-substance) content on both the initial call and its
+    retry, so the writer kept the prior draft instead of adopting it —
+    extends poindexter#691 (which only caught truly-empty output) to the
+    poindexter#806 dots/punctuation shape. Distinct finding kind from the
+    empty-revise guard so the two failure flavours stay distinguishable on
+    the Findings dashboard. ``severity='warn'`` → Discord per the dispatcher
+    policy.
+    """
+    logger.warning(
+        "[two_pass_writer] default revise model=%r returned degenerate "
+        "(non-empty, low-substance) content twice — kept the prior draft "
+        "instead of adopting it. A reasoning writer model intermittently "
+        "emits only ellipses/punctuation; verify model health if this "
+        "recurs. Refs poindexter#806.",
+        model,
+    )
+    try:
+        from utils.findings import emit_finding
+    except Exception:  # noqa: BLE001 — silent-ok: warning log above already fired; finding is a best-effort supplementary signal
+        return
+    try:
+        emit_finding(
+            source="modules.content.atoms.two_pass_writer",
+            kind="writer_degenerate_draft_kept_prior",
+            title=(
+                f"Default revise model {model!r} returned degenerate "
+                f"output — kept prior draft"
+            ),
+            body=(
+                f"The default-path revise call (model {model!r}) returned "
+                f"non-empty but low-substance content (e.g. dots/punctuation) "
+                f"on both the initial attempt and one retry. The writer kept "
+                f"the pre-revision draft (unresolved [EXTERNAL_NEEDED] "
+                f"markers stripped) so the post is not contaminated with a "
+                f"topic-less expansion. A reasoning model that spends its "
+                f"budget in the thinking channel returns degenerate content "
+                f"intermittently; verify model health if this recurs. "
+                f"Refs poindexter#806."
+            ),
+            severity="warn",
+            dedup_key=f"writer_degenerate_draft_kept_prior:{model}",
+            extra={"model": model, "reason": "revise returned degenerate twice"},
+        )
+    except Exception:  # noqa: BLE001 — silent-ok: warning log above already fired; finding is a best-effort supplementary signal
+        pass
+
+
+def _emit_degenerate_expand_input_finding(
+    *, task_id: str | None, word_count: int,
+) -> None:
+    """Loud-but-recovered canary: the keep-best expansion pass was handed a
+    degenerate (non-empty, low-substance) draft and refused to expand it.
+
+    The expand prompt includes ONLY the draft text — never the topic/angle —
+    so a model asked to "expand" a dots-only draft has nothing to work with
+    but the dots and would invent an unrelated topic (the confirmed prod
+    failure: poindexter#806, tasks 9921678f / e46b449c / ecaf0c01). Skipping
+    the call keeps the draft honestly broken (obvious to downstream QA)
+    instead of laundering it into a plausible-but-wrong article.
+    ``severity='warn'`` → Discord per the dispatcher policy.
+    """
+    logger.warning(
+        "[two_pass_writer] expansion entry received a degenerate draft "
+        "(%d real word(s)) — skipped the expand call rather than risk it "
+        "inventing an unrelated topic from the draft's punctuation alone. "
+        "Refs poindexter#806.",
+        word_count,
+    )
+    try:
+        from utils.findings import emit_finding
+    except Exception:  # noqa: BLE001 — silent-ok: warning log above already fired; finding is a best-effort supplementary signal
+        return
+    try:
+        emit_finding(
+            source="modules.content.atoms.two_pass_writer",
+            kind="writer_degenerate_draft_input",
+            title="Expansion entry skipped a degenerate draft",
+            body=(
+                f"The keep-best expansion pass received a draft with only "
+                f"{word_count} real word(s) — dots/punctuation-dominated. "
+                f"The expand prompt does not restate the topic, so expanding "
+                f"a degenerate draft risks the model inventing an unrelated "
+                f"topic from the punctuation alone (the confirmed prod "
+                f"failure behind poindexter#806). The expand call was "
+                f"skipped and the draft was left unchanged; it will reach "
+                f"QA as-is, which correctly flags severely off-topic/thin "
+                f"content. If this recurs, check the upstream draft/revise "
+                f"producer — the pipeline_writer_model may be stopping "
+                f"early."
+            ),
+            severity="warn",
+            dedup_key="writer_degenerate_draft_input",
+            extra={"task_id": task_id, "word_count": word_count},
+        )
+    except Exception:  # noqa: BLE001 — silent-ok: warning log above already fired; finding is a best-effort supplementary signal
+        pass
+
+
 # -- nodes --
 
 async def _embed_and_fetch_snippets(state: _State) -> _State:
@@ -618,17 +824,34 @@ async def _draft_node(state: _State) -> _State:
         if section:
             instruction = f"{instruction}\n\n---\n\n{section}"
             ig_injected = True
-    draft = await generate_with_context(
-        topic=state["topic"], angle=state["angle"],
-        snippets=state["snippets"], extra_instructions=instruction,
-        site_config=site_config, pool=pool,
-        task_id=state.get("task_id"),
-        target_length=state.get("target_length", 1200),
-        # Disable the writer model's reasoning channel (default) so a
-        # thinking-capable model doesn't burn its budget reasoning and
-        # truncate the visible draft. 2026-07-06 investigation.
-        think=_resolve_writer_think(site_config),
-    )
+    async def _call_draft() -> str:
+        return await generate_with_context(
+            topic=state["topic"], angle=state["angle"],
+            snippets=state["snippets"], extra_instructions=instruction,
+            site_config=site_config, pool=pool,
+            task_id=state.get("task_id"),
+            target_length=state.get("target_length", 1200),
+            # Disable the writer model's reasoning channel (default) so a
+            # thinking-capable model doesn't burn its budget reasoning and
+            # truncate the visible draft. 2026-07-06 investigation.
+            think=_resolve_writer_think(site_config),
+        )
+
+    min_substance_words = _resolve_min_substance_words(site_config)
+    draft = await _call_draft()
+    # poindexter#806 — a writer model that burns its generation budget in a
+    # hidden reasoning channel can emit a near-empty, non-blank response
+    # (e.g. a handful of dots). Retry once before accepting it: a cheap
+    # self-heal that avoids handing a degenerate draft to the rest of the
+    # pipeline (revise/expand/QA/image-gen all run on whatever this
+    # returns). No prior draft exists yet, so a still-degenerate retry is
+    # kept as-is (never fabricated) with a visibility finding.
+    if _classify_draft_substance(draft, min_words=min_substance_words) != "ok":
+        retry_draft = await _call_draft()
+        if _classify_draft_substance(retry_draft, min_words=min_substance_words) == "ok":
+            draft = retry_draft
+        else:
+            _emit_degenerate_first_draft_kept_finding(task_id=state.get("task_id"))
     return {
         **state,
         "draft": draft,
@@ -930,14 +1153,18 @@ async def _revise_node(state: _State) -> _State:
         # model can intermittently return EMPTY content (all tokens spent in
         # the thinking channel). Pre-#691 this path had no empty check, so an
         # empty revise silently OVERWROTE a good prior draft with '' — which
-        # then flowed into QA as a misleading reviewer_count:0 reject. Retry
-        # ONCE with the same model (preserve writer quality — do NOT downgrade
-        # the article body to a weaker model), and if still empty keep the
-        # PRIOR draft instead of zeroing it.
+        # then flowed into QA as a misleading reviewer_count:0 reject.
+        # poindexter#806 extends the check to non-empty-but-degenerate output
+        # (e.g. dots/punctuation) that ``.strip()`` truthiness lets through.
+        # Retry ONCE with the same model (preserve writer quality — do NOT
+        # downgrade the article body to a weaker model), and if still
+        # empty/degenerate keep the PRIOR draft instead of adopting it.
+        min_substance_words = _resolve_min_substance_words(site_config)
         new_draft = await _call(model)
-        if not (new_draft or "").strip():
+        substance = _classify_draft_substance(new_draft, min_words=min_substance_words)
+        if substance != "ok":
             retry = await _call(model)
-            if (retry or "").strip():
+            if _classify_draft_substance(retry, min_words=min_substance_words) == "ok":
                 new_draft = retry
             else:
                 prior = state.get("draft") or ""
@@ -945,7 +1172,10 @@ async def _revise_node(state: _State) -> _State:
                 # terminates the loop (instead of re-looping to the cap on the
                 # same markers) and the markers don't leak into the post.
                 new_draft = _NEED_PATTERN.sub("", prior).strip() or prior
-                _emit_empty_revise_kept_prior_finding(model=model)
+                if substance == "empty":
+                    _emit_empty_revise_kept_prior_finding(model=model)
+                else:
+                    _emit_degenerate_revise_kept_prior_finding(model=model)
     else:
         try:
             new_draft = await _call(model)
@@ -1783,10 +2013,24 @@ async def _maybe_expand_to_target(
         "echo_stripped": 0,
         "planning_stripped": 0,
         "dangling_trimmed": 0,
+        "degenerate_input": False,
     }
     if not (draft or "").strip() or target_length <= 0:
         return draft, meta
     if not _expansion_enabled(site_config):
+        return draft, meta
+    # poindexter#806 — the primary guard. The expand prompt includes ONLY
+    # the draft text, never the topic/angle, so a model asked to "expand" a
+    # degenerate (non-empty, low-substance) draft has nothing to work with
+    # but its punctuation and invents an unrelated topic — the confirmed
+    # prod failure this guard closes (tasks 9921678f / e46b449c /
+    # ecaf0c01). Refuse the call entirely rather than risk laundering junk
+    # into a plausible-but-wrong article; downstream QA correctly flags the
+    # untouched degenerate draft as off-topic/thin.
+    min_substance_words = _resolve_min_substance_words(site_config)
+    if _classify_draft_substance(draft, min_words=min_substance_words) == "degenerate":
+        meta["degenerate_input"] = True
+        _emit_degenerate_expand_input_finding(task_id=task_id, word_count=words_before)
         return draft, meta
     threshold = int(target_length * _resolve_min_length_ratio(site_config))
     if words_before >= threshold:
@@ -1994,6 +2238,11 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
             "length_expanded": expand_meta["expanded"],
             "words_before_expand": expand_meta["words_before"],
             "words_after_expand": expand_meta["words_after"],
+            # Degenerate-draft guard observability (poindexter#806) — did the
+            # expansion entry refuse a non-empty-but-low-substance draft
+            # (0 = clean), counted separately from the other guards so this
+            # failure flavour is its own signal on the Findings dashboard.
+            "degenerate_draft_input": expand_meta.get("degenerate_input", False),
             # Phase 0 lab observability (2026-05-28). When the writer
             # never reached _revise_node (no [EXTERNAL_NEEDED] markers
             # in the draft) these stay None — that's accurate: the

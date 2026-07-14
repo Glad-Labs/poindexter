@@ -318,6 +318,9 @@ Two layers fix it, both before the rails ever see the draft:
   still empty the **prior draft is kept** (unresolved `[EXTERNAL_NEEDED]`
   markers stripped so the loop terminates) rather than zeroed. A
   `writer_empty_draft_kept_prior` finding keeps the self-heal visible.
+  poindexter#806 (below, end of Layer 1.5) extends this same check to a
+  non-empty-but-degenerate response (e.g. `...`) that clears this emptiness
+  check trivially but has no real content.
 - **Fail-loud guard (`GenerateContentStage`):** when the final draft is empty
   or shorter than `writer_min_draft_chars` (default 200 — a real
   canonical*blog post is never a single sentence) the stage does a
@@ -788,6 +791,63 @@ stays silent. Posts replay re-run at introduction: 0 fires across all
 302 `posts` bodies; the extended title screen flagged 21/1664
 `pipeline_versions` titles — every one a genuine planning-note or
 blockquote-prefix leak, zero FPs.
+
+**Third guard — degenerate-draft floor (2026-07-14 follow-up,
+Glad-Labs/poindexter#806):** the echo and planning-dump guards above
+recover a draft that regurgitates its OWN prompt scaffolding — they
+assume real article content sits somewhere underneath the contamination.
+A third failure shape has no article underneath at all: the writer's
+visible output is near-empty (a handful of ellipsis/punctuation
+characters, e.g. `...`), most often when the model burns its whole
+generation budget in a hidden reasoning channel. `.strip()` on `"..."` is
+truthy, so the poindexter#691 empty-only check (above) let this shape
+through as a "successful" call.
+
+Confirmed against the SAME three prod tasks the guards above were built
+to catch (`9921678f` / `e46b449c` / `ecaf0c01`): `9921678f`'s
+`pipeline_tasks.topic` was itself a garbled string of dots (a separate,
+upstream topic-generation bug, out of scope here), while `e46b449c` and
+`ecaf0c01` had perfectly legitimate topics (`Automating Content
+Automation`, `Avoiding AI Hallucinations in Technical Writing`) yet still
+produced ellipsis-themed articles. The common mechanism: the keep-best
+expansion prompt (`_maybe_expand_to_target` → `_resolve_expand_prompt`)
+includes ONLY the draft text — by design, it never restates the
+topic/angle, since expansion is meant to add substance to an
+already-topical draft. Once the incoming draft is degenerate, the expand
+model has nothing to work with but its own punctuation and invents an
+unrelated subject; `9921678f`'s persisted `pipeline_versions` row even
+leaked the expand model's own framing verbatim — `"Expand a draft (which
+was provided as a set of dots/ellipses, but the actual content is found
+in the 'Background Context' and 'Internal Snippets') to approximately
+1954 words..."` — followed by 10K+ characters of confused
+meta-narration. Because keep-best adopts whichever of (original,
+expanded) has more words, and a 3-character original loses to almost
+anything, the contaminated expansion always won.
+
+`_classify_draft_substance` (a real-word floor, DB-tunable via
+`writer_min_substance_words`, default 2) gates three points, all
+following the same retry-once / keep-best / never-zero / loud-finding
+shape as the other guards in this section:
+
+- **First draft** (`_draft_node`): a degenerate first-pass response is
+  retried once; if still degenerate it's kept as-is (no prior draft
+  exists yet) and a `writer_degenerate_draft_kept` finding fires.
+- **Default-path revise** (`_revise_node`): extends the poindexter#691
+  empty-only check — a degenerate (non-empty) response is retried once,
+  and if still degenerate the PRIOR draft is kept (same recovery as the
+  empty case) with a distinct `writer_degenerate_draft_kept_prior`
+  finding, so the empty and degenerate failure shapes stay separable on
+  the Findings dashboard.
+- **Expansion entry** (`_maybe_expand_to_target`) — the guard that
+  actually closes the observed failure: a degenerate draft never reaches
+  the expand LLM call at all. The draft is left unchanged (short,
+  obviously broken) and a `writer_degenerate_draft_input` finding fires.
+  This composes with the existing `writer_min_draft_chars` fail-loud
+  guard (`GenerateContentStage`, described above under poindexter#691):
+  because expansion never inflates the degenerate draft into something
+  long-but-wrong, the final draft stays under the char floor and gets a
+  clean, loud, terminal `status='failed'` instead of silently reaching QA
+  as a plausible-but-wrong article.
 
 ## Layer 2 — Programmatic validator
 

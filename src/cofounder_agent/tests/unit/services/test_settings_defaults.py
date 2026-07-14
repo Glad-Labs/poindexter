@@ -519,8 +519,10 @@ class TestGroupingMakesSense:
         # the plugin.llm_provider.litellm.* provider flags — allow_paid_base_url
         # / disable_aiohttp_transport / anthropic_prompt_caching); a genuinely
         # new far-flung qa_ section (keys hundreds of lines from the cluster)
-        # would still overshoot it.
-        assert span < 315, (
+        # would still overshoot it. Bumped 315→319 for writer_min_substance_words
+        # (poindexter#806), a 4-line sibling of writer_min_draft_chars in the
+        # same already-tolerated writer_* interleave.
+        assert span < 319, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )
