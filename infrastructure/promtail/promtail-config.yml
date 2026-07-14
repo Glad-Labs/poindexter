@@ -57,9 +57,21 @@ scrape_configs:
       # `detected_level` resolves correctly in Grafana, and surface task_id /
       # prefect_run_id as structured_metadata for per-task log retrieval without
       # label-cardinality cost.
+      #
+      # poindexter#709: a leading `multiline` stage merges any line that
+      # doesn't start a fresh JSON object into the prior entry, so a raw
+      # traceback that escapes structlog (an uncaught exception before
+      # logging is configured, or subprocess-inherited stdout) still ships
+      # as one Loki entry instead of shredding across N. structlog's own
+      # `format_exc_info` already folds a *logged* exception's traceback
+      # into a single JSON line, so this is a safety net, not the common
+      # case.
       - match:
           selector: '{container=~"poindexter-(worker|prefect-worker)"}'
           stages:
+            - multiline:
+                firstline: '^\{'
+                max_wait_time: 3s
             - json:
                 expressions:
                   level: level
@@ -71,11 +83,20 @@ scrape_configs:
                 task_id:
                 prefect_run_id:
 
-      # Brain-daemon uses plain stdlib logging (text, not JSON). Extract level
-      # from the formatted line so detected_level works for those logs too.
+      # Brain-daemon uses plain stdlib logging (text, not JSON) — every
+      # uncaught exception (`logging.basicConfig` + `exc_info`) shreds
+      # across dozens of separate lines with no structlog to fold it into
+      # one JSON event. poindexter#709: merge continuation lines (anything
+      # that isn't a fresh `YYYY-MM-DD HH:MM:SS [LEVEL] ...` line — i.e. a
+      # traceback frame or the exception's own message line) into the
+      # entry they belong to, THEN extract level so it's read off the
+      # now-whole entry.
       - match:
           selector: '{container="poindexter-brain-daemon"}'
           stages:
+            - multiline:
+                firstline: '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}'
+                max_wait_time: 3s
             - regex:
                 expression: '\b(?P<level>DEBUG|INFO|WARNING|ERROR|CRITICAL)\b'
             - labels:
