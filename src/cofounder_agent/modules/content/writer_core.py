@@ -83,7 +83,6 @@ class GenerateContentStage:
         # during the Phase E transition.
         from modules.content.ai_content_generator import get_content_generator
         from services.model_preferences import parse_model_preferences as _parse_model_preferences
-        from services.self_review import self_review_and_revise as _self_review_and_revise
         from services.text_utils import normalize_text, scrub_fabricated_links
         from services.title_generation import (
             check_title_originality as _check_title_originality,
@@ -373,44 +372,13 @@ class GenerateContentStage:
         # visual placeholders that we don't want in the body.
         content_text = _strip_leaked_image_prompts(content_text)
 
-        # Writer self-review pass (opt-in via enable_writer_self_review).
-        if _self_review_enabled(context.get("site_config")):
-            try:
-                # Lane B sweep: thread pool for cost-tier model resolution.
-                _sr_pool = getattr(database_service, "pool", None)
-                revised, sr_meta = await _self_review_and_revise(
-                    content_text, title, topic, pool=_sr_pool,
-                    site_config=context.get("site_config"),  # type: ignore[arg-type]
-                )
-                if sr_meta.get("revised"):
-                    logger.info(
-                        "[SELF_REVIEW] Writer revised draft — %d contradictions fixed",
-                        sr_meta.get("contradictions_found", 0),
-                    )
-                    content_text = revised
-                else:
-                    logger.info(
-                        "[SELF_REVIEW] Draft passed self-review (%d chars)",
-                        len(content_text),
-                    )
-                # Seam 1 Wave 3c (#667) — audit through the capability handle.
-                _platform = context.get("platform")
-                if _platform is not None:
-                    _platform.audit.write_bg(
-                        "writer_self_review",
-                        source="content_router",
-                        details={
-                            "contradictions_found": sr_meta.get("contradictions_found", 0),
-                            "revised": sr_meta.get("revised", False),
-                            "skipped": sr_meta.get("skipped", False),
-                            "reason": sr_meta.get("reason"),
-                        },
-                        task_id=task_id,
-                    )
-            except Exception as sr_err:
-                logger.warning(
-                    "[SELF_REVIEW] Self-review pass failed (non-fatal): %s", sr_err,
-                )
+        # NOTE: self-review intentionally does NOT run here. The dedicated
+        # ``writer_self_review`` graph node (stages/writer_self_review.py,
+        # step 7 of CANONICAL_BLOG_GRAPH_DEF) is the single place the
+        # ``enable_writer_self_review`` pass runs — this atom used to also
+        # call ``self_review_and_revise`` inline, so with the flag on the
+        # draft got reviewed twice per post (once here, once at the graph
+        # node) for no added benefit. glad-labs-stack#2133.
 
         # Persist to content_tasks.
         await database_service.update_task(

@@ -657,7 +657,11 @@ DEFAULTS: dict[str, str] = {
     # doesn't evict the ~19 GB writer model from VRAM mid-pipeline.
     # Set to -1 to restore Ollama's default (GPU if available).
     'embed_num_gpu': '0',
-    'rag_hybrid_enabled': 'false',
+    # BM25 tsvector + pgvector RRF fusion — pure SQL, no extra dependency
+    # (unlike rag_rerank_enabled below). Default true: glad-labs-stack#2133
+    # closed the drift between this defaulting false and CLAUDE.md
+    # documenting the three-mode RAG stack as live/stable on prod.
+    'rag_hybrid_enabled': 'true',
     'rag_min_similarity': '0.3',
     'rag_rerank_enabled': 'false',
     'rag_rerank_model': 'cross-encoder/ms-marco-MiniLM-L-6-v2',

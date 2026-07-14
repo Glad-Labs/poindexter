@@ -521,8 +521,10 @@ class TestGroupingMakesSense:
         # new far-flung qa_ section (keys hundreds of lines from the cluster)
         # would still overshoot it. Bumped 315→319 for writer_min_substance_words
         # (poindexter#806), a 4-line sibling of writer_min_draft_chars in the
-        # same already-tolerated writer_* interleave.
-        assert span < 319, (
+        # same already-tolerated writer_* interleave. Bumped 319→323 for a
+        # 3-line comment on rag_hybrid_enabled (glad-labs-stack#2133), same
+        # already-tolerated RAG-section interleave.
+        assert span < 323, (
             f"qa_ keys span {span} lines in DEFAULTS — likely split across "
             "non-adjacent sections (regression in GROUPS classifier)."
         )

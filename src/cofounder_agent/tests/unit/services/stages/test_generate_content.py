@@ -201,8 +201,6 @@ def _patch_everything():
               side_effect=lambda x: x),
         patch("services.text_utils.scrub_fabricated_links",
               side_effect=lambda x, **_kw: x),
-        patch("services.self_review.self_review_and_revise",
-              AsyncMock(return_value=("revised text", {"revised": False, "contradictions_found": 0}))),
         patch("services.gpu_scheduler.gpu",
               SimpleNamespace(lock=_no_gpu_lock)),
         patch("services.research_service.ResearchService",
@@ -345,6 +343,41 @@ class TestGenerateContentStageExecute:
         assert db.updates[0]["status"] == "in_progress"
         assert db.updates[0]["title"] == "Generated Title"
         assert len(db.costs) == 1
+
+    async def test_does_not_invoke_self_review(self):
+        """glad-labs-stack#2133: the writer_self_review graph node (step 7 of
+        CANONICAL_BLOG_GRAPH_DEF) is the single place enable_writer_self_review
+        runs. This stage used to also call self_review_and_revise inline, so
+        with the flag on a draft got reviewed twice per post. Regression guard:
+        this stage must never call it, regardless of the flag's value.
+        """
+        db = _FakeDb(task_row={"research_context": "caller-supplied"})
+        ctx: dict[str, Any] = {
+            "task_id": "t1",
+            "topic": "AI trends",
+            "style": "tech",
+            "tone": "neutral",
+            "target_length": 1200,
+            "tags": ["AI"],
+            "models_by_phase": {"writer": "glm-4.7-5090"},
+            "database_service": db,
+            "site_config": SimpleNamespace(get=lambda _k, _d=None: "true"),
+        }
+        patches = _patch_everything()
+        with patch(
+            "services.self_review.self_review_and_revise",
+            AsyncMock(),
+        ) as self_review_mock:
+            for p in patches:
+                p.start()
+            try:
+                result = await GenerateContentStage().execute(ctx, {})
+            finally:
+                for p in reversed(patches):
+                    p.stop()
+
+        assert result.ok is True
+        self_review_mock.assert_not_called()
 
     async def test_missing_task_id_returns_not_ok(self):
         result = await GenerateContentStage().execute({"database_service": object()}, {})
