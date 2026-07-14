@@ -95,6 +95,23 @@ async def test_classifies_and_inserts_only_valid_labels():
 
 
 @pytest.mark.asyncio
+async def test_classify_call_disables_thinking():
+    """The classify call must pass ``think=False``. gemma-4-31B (the
+    structured-extraction model) otherwise emits a long reasoning preamble and
+    buries/truncates the JSON, so every post validated to [] — the bug that
+    left post_content_types empty across the whole published corpus. Disabling
+    the thinking channel makes it return clean JSON."""
+    pool, _conn = _pool([_row()])
+    llm = AsyncMock(return_value='{"labels":[{"label":"ai-ml"}]}')
+    with patch(f"{_MODULE}.get_prompt_manager") as gpm, patch(
+        f"{_MODULE}.ollama_chat_text", new=llm
+    ):
+        gpm.return_value.get_prompt = MagicMock(return_value="PROMPT")
+        await ClassifyContentTypesJob().run(pool, _cfg())
+    assert llm.await_args.kwargs.get("think") is False
+
+
+@pytest.mark.asyncio
 async def test_multi_label_inserts_each():
     pool, conn = _pool([_row()])
     with patch(f"{_MODULE}.get_prompt_manager") as gpm, patch(

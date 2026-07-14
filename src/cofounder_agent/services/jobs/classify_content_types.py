@@ -137,6 +137,13 @@ class ClassifyContentTypesJob:
                             pool=pool,
                             tier="budget",
                             phase="classify_content_type",
+                            # Disable the thinking channel: gemma-4-31B otherwise
+                            # emits a long reasoning preamble and buries/truncates
+                            # the JSON, so validate_labels sees [] for every post
+                            # (empty post_content_types across the whole corpus).
+                            # This is a structured-extraction call — we want the
+                            # object, not the deliberation.
+                            think=False,
                         )
                         picks = validate_labels(raw, labels)
                         for label, conf in picks:
