@@ -72,6 +72,22 @@ def test_extract_json_object_returns_none_when_no_object() -> None:
     assert _extract_json_object("") is None
 
 
+def test_extract_json_object_survives_embedded_triple_backticks() -> None:
+    """poindexter#643: the old inline fence regex was non-greedy
+    (```(?:json)?\\s*(.*?)\\s*```), so it matched the SHORTEST span
+    between the opening fence and the FIRST later ``` — truncating at an
+    embedded triple-backtick inside a string value instead of the actual
+    closing fence, and losing the rest of the shot list."""
+    text = (
+        '```json\n'
+        '{"shots": [{"note": "wrap code like ```this``` for emphasis"}]}\n'
+        '```'
+    )
+    assert _extract_json_object(text) == (
+        '{"shots": [{"note": "wrap code like ```this``` for emphasis"}]}'
+    )
+
+
 # ---------------------------------------------------------------------------
 # Stage skip conditions — non-critical, halts_on_failure=False
 # ---------------------------------------------------------------------------

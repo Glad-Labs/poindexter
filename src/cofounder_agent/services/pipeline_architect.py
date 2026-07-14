@@ -413,15 +413,13 @@ def _parse_json_spec(raw: str) -> tuple[dict[str, Any], list[str]]:
     if not raw:
         return {}, ["empty response from model"]
 
-    # Strip markdown fences if present.
-    if raw.startswith("```"):
-        # Strip ```json or ``` opening, plus closing ```
-        lines = raw.splitlines()
-        if lines and lines[0].startswith("```"):
-            lines = lines[1:]
-        if lines and lines[-1].strip() == "```":
-            lines = lines[:-1]
-        raw = "\n".join(lines).strip()
+    # Strip markdown fences if present (poindexter#643 — canonical shared
+    # helper; the outermost-{...} scan below is robust to a fence tagged
+    # something other than json/jsonc/json5 that the helper declines to
+    # strip, since fence markers never contain { or }).
+    from services.llm_text import strip_markdown_fence
+
+    raw = strip_markdown_fence(raw)
 
     # Find the outermost {...}.
     start = raw.find("{")

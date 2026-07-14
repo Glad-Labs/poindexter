@@ -38,7 +38,6 @@ from __future__ import annotations
 
 import json
 import logging
-import re
 from datetime import datetime, timezone
 from typing import Any
 
@@ -155,14 +154,15 @@ def _extract_json_object(text: str) -> str | None:
     """
     if not text:
         return None
-    stripped = text.strip()
 
-    # Code-fence strip.
-    fence_match = re.match(
-        r"```(?:json)?\s*(.*?)\s*```", stripped, re.DOTALL,
-    )
-    if fence_match:
-        stripped = fence_match.group(1).strip()
+    # Code-fence strip (poindexter#643 — canonical shared helper). The old
+    # inline regex here was non-greedy, so it matched the SHORTEST span
+    # between the opening fence and the FIRST later ``` — truncating at an
+    # embedded triple-backtick inside a string value instead of the real
+    # closing fence.
+    from services.llm_text import strip_markdown_fence
+
+    stripped = strip_markdown_fence(text.strip())
 
     # Find the first '{' and the matching '}' — naive bracket-counting.
     start = stripped.find("{")

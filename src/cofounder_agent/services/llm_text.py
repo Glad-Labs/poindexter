@@ -318,7 +318,7 @@ _ENVELOPE_PROSE_KEYS: tuple[str, ...] = (
 )
 
 
-def _strip_markdown_fence(s: str) -> str:
+def strip_markdown_fence(s: str) -> str:
     r"""Strip a single outer ```json / ``` fence if present.
 
     The writer prompt forbids fenced JSON envelopes, but local models
@@ -327,6 +327,12 @@ def _strip_markdown_fence(s: str) -> str:
     "```json\n{\"title\": \"...\", \"body\": \"...\"}\n```" shape.
     Bare ``{ ... }`` is already handled by the caller; this helper
     targets the fence-wrapped variant.
+
+    The canonical shared implementation (poindexter#643) — was
+    reimplemented separately in ``pipeline_architect._parse_json_spec``
+    and ``generate_video_shot_list._extract_json_object`` (the latter's
+    non-greedy fence regex truncated at the first embedded ``` inside a
+    string value instead of the real closing fence); both now call this.
     """
     s = s.strip()
     # ``` or ```json (case-insensitive) opening fence
@@ -364,7 +370,7 @@ def maybe_unwrap_json(prose: str) -> str:
 
     if not prose:
         return prose
-    s = _strip_markdown_fence(prose)
+    s = strip_markdown_fence(prose)
     if not (s.startswith("{") and s.endswith("}")):
         return prose
     try:
@@ -384,4 +390,5 @@ __all__ = [
     "maybe_unwrap_json",
     "ollama_chat_text",
     "resolve_local_model",
+    "strip_markdown_fence",
 ]
