@@ -416,6 +416,64 @@ class TestFlowCrashMarksTaskFailed:
             assert task_id == "crash-task-1"
 
     @pytest.mark.asyncio
+    async def test_alert_config_read_failure_logs_and_still_sends_default(self, caplog):
+        """poindexter#2127: the failure-alert's ``get_setting`` closure used
+        to swallow a broken site_config read with zero signal — a crash
+        while handling the ORIGINAL crash went completely dark. It must
+        now log, and still fail open (return the default) rather than
+        blocking the alert entirely — we're already in a crash handler."""
+        from services.flows.content_generation import content_generation_flow
+
+        pool = _make_pool(claim_row=None)
+        db = _make_db_service(pool)
+
+        # Only the probe key raises — every other .get() call the flow
+        # makes before reaching the crash handler (telemetry, langfuse,
+        # etc.) must keep getting its normal default, or this test would
+        # be exercising a dozen unrelated fail-open paths instead of the
+        # one under test.
+        def _flaky_get(key, default=""):
+            if key == "some_alert_setting":
+                raise RuntimeError("settings DB unreachable")
+            return default
+
+        site_config = MagicMock()
+        site_config.get = MagicMock(side_effect=_flaky_get)
+
+        boom = RuntimeError("LLM provider returned 500")
+        pipeline_mock = AsyncMock(side_effect=boom)
+
+        async def _fake_send_failure_alert(*, task_id, topic, error_message, pool, get_setting):
+            value = await get_setting("some_alert_setting", "fallback-value")
+            assert value == "fallback-value"
+
+        with patch(
+            "services.di_wiring.build_and_wire_subprocess_with_container",
+            return_value=(site_config, MagicMock()),
+        ), patch(
+            "services.flows.content_generation.reclaim_stale_inprogress_tasks",
+            new=AsyncMock(return_value={"reset": 0, "failed": 0}),
+        ), patch(
+            "services.content_router_service.process_content_generation_task",
+            new=pipeline_mock,
+        ), patch(
+            "services.task_failure_alerts.send_failure_alert",
+            new=AsyncMock(side_effect=_fake_send_failure_alert),
+        ), caplog.at_level("WARNING"):
+            with pytest.raises(RuntimeError, match="LLM provider returned 500"):
+                await content_generation_flow.fn(
+                    task_id="crash-task-2",
+                    topic="A topic that crashes the pipeline",
+                    database_service=db,
+                )
+
+        assert any(
+            "failure-alert config read failed" in r.message
+            and "some_alert_setting" in r.message
+            for r in caplog.records
+        )
+
+    @pytest.mark.asyncio
     async def test_helper_truncates_error_message(self):
         """The error_message column is bounded; the helper truncates to
         2KB so an attacker-controlled exception text can't bloat the DB."""

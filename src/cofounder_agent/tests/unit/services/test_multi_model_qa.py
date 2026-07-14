@@ -850,11 +850,35 @@ class TestGatePromptBranches:
         assert review.approved is False
         assert review.score == 30
 
-    async def test_empty_generate_response_returns_none(self, raw_qa):
-        with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_text("")):
+    async def test_empty_generate_response_returns_none(self, raw_qa, caplog):
+        """poindexter#2127: a completion that isn't None (dispatch itself
+        already logs on failure) but carries empty text used to vanish with
+        zero signal — a crashed-looking gate was indistinguishable from a
+        cleanly-skipped one. Must now log."""
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_text("")), \
+             caplog.at_level("WARNING"):
             review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
 
         assert review is None
+        assert any(
+            "empty text" in r.message and "topic_delivery" in r.message
+            for r in caplog.records
+        )
+
+    async def test_unparseable_extracted_json_logs_warning(self, raw_qa, caplog):
+        """poindexter#2127: when the regex DOES extract a brace-delimited
+        candidate but it still isn't valid JSON (e.g. unquoted keys), the
+        second parse attempt used to fail completely silently."""
+        malformed = "The model said: {delivers: true, score: 85} — that's it."
+        with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch_text(malformed)), \
+             caplog.at_level("WARNING"):
+            review = await raw_qa._check_topic_delivery(GOOD_TOPIC, GOOD_CONTENT)
+
+        assert review is None
+        assert any(
+            "still unparseable" in r.message and "topic_delivery" in r.message
+            for r in caplog.records
+        )
 
     async def test_generate_timeout_returns_none(self, raw_qa):
         """A timeout escaping the dispatch seam returns None (gate skipped)."""

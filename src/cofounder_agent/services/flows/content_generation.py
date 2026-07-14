@@ -651,8 +651,20 @@ async def _run_content_generation_flow(
                 if _wired_site_config is not None:
                     try:
                         return str(_wired_site_config.get(key, default) or default)
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # poindexter#2127 — used to swallow this with no
+                        # signal. This read feeds the failure-alert's own
+                        # severity routing (Telegram vs Discord), so a
+                        # broken config read silently degraded the alert
+                        # about the ORIGINAL crash — the two-failures-deep
+                        # case operators most need to see. Still fails
+                        # open (default) rather than dropping the alert
+                        # entirely: we're already in a crash handler.
+                        logger.warning(
+                            "[content_generation_flow] failure-alert config "
+                            "read failed for %r: %s: %s — using default %r",
+                            key, type(exc).__name__, exc, default,
+                        )
                 return default
 
             await send_failure_alert(

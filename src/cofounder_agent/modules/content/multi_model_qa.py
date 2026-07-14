@@ -1436,6 +1436,15 @@ class MultiModelQA:
 
             text = getattr(completion, "text", "") or ""
             if not text:
+                # completion itself isn't None (a dispatch failure already
+                # logged inside _dispatch_llm) — this is the model
+                # responding successfully with blank content, a distinct
+                # failure mode with no signal anywhere else (poindexter#2127:
+                # "a crashed gate looks like a disabled/passing gate").
+                logger.warning(
+                    "[MULTI_QA] %s: model returned empty text — gate skipped",
+                    reviewer_name,
+                )
                 return None
 
             json_text = text
@@ -1457,6 +1466,11 @@ class MultiModelQA:
                 try:
                     data = json.loads(m.group(0))
                 except json.JSONDecodeError:
+                    logger.warning(
+                        "[MULTI_QA] %s: extracted JSON candidate still "
+                        "unparseable: %s",
+                        reviewer_name, m.group(0)[:200],
+                    )
                     return None
 
             passed = bool(data.get(pass_key, False))
