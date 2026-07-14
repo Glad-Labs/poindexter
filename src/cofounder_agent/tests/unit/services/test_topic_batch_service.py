@@ -14,7 +14,7 @@ import pytest
 
 from services.niche_service import Niche, NicheGoal, NicheService, NicheSource
 from services.site_config import SiteConfig
-from services.topic_batch_service import CandidateView, TopicBatchService
+from services.topic_batch_service import BatchSnapshot, CandidateView, TopicBatchService
 
 pytestmark = pytest.mark.asyncio(loop_scope="session")
 
@@ -1487,3 +1487,58 @@ async def test_handoff_internal_grounding_none_when_absent():
 
     stage_data = _captured_stage_data(seen)
     assert stage_data["metadata"]["internal_grounding"] is None
+
+
+@pytest.mark.unit
+class TestOpenTopicDecisionGate:
+    """poindexter#862 — the gate-open stub must actually notify the
+    operator, not just log. ``topic_batches.status='open'`` (persisted by
+    ``_write_batch`` before this is called) is already the durable gate
+    state; ``services.approval_service.pause_at_gate`` doesn't apply here
+    (it's ``pipeline_tasks``-specific), so the real gap was purely the
+    missing notification — routine, not critical, so Discord per
+    ``feedback_telegram_vs_discord``.
+    """
+
+    def _make_batch(self, niche_id) -> BatchSnapshot:
+        return BatchSnapshot(
+            id=uuid4(),
+            niche_id=niche_id,
+            status="open",
+            candidate_count=5,
+            expires_at=datetime.now(timezone.utc) + timedelta(days=7),
+        )
+
+    async def test_notifies_operator_as_non_critical(self, monkeypatch):
+        notify_mock = AsyncMock()
+        monkeypatch.setattr(
+            "services.integrations.operator_notify.notify_operator",
+            notify_mock,
+        )
+        niche = _make_niche(slug="test-niche")
+        batch = self._make_batch(niche.id)
+        svc = TopicBatchService(MagicMock(), site_config=SiteConfig())
+
+        await svc._open_topic_decision_gate(batch, niche)
+
+        notify_mock.assert_awaited_once()
+        _args, kwargs = notify_mock.call_args
+        assert kwargs["critical"] is False
+
+    async def test_notification_message_identifies_niche_and_batch(
+        self, monkeypatch,
+    ):
+        notify_mock = AsyncMock()
+        monkeypatch.setattr(
+            "services.integrations.operator_notify.notify_operator",
+            notify_mock,
+        )
+        niche = _make_niche(slug="widget-reviews")
+        batch = self._make_batch(niche.id)
+        svc = TopicBatchService(MagicMock(), site_config=SiteConfig())
+
+        await svc._open_topic_decision_gate(batch, niche)
+
+        message = notify_mock.call_args[0][0]
+        assert "widget-reviews" in message
+        assert str(batch.candidate_count) in message

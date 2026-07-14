@@ -305,7 +305,7 @@ class TopicBatchService:
                     run_id,
                 )
 
-            await self._open_topic_decision_gate(batch)
+            await self._open_topic_decision_gate(batch, niche)
             return batch
         except Exception as exc:
             async with self._pool.acquire() as conn:
@@ -907,14 +907,32 @@ class TopicBatchService:
             expires_at=batch_row["expires_at"],
         )
 
-    async def _open_topic_decision_gate(self, batch: BatchSnapshot) -> None:
+    async def _open_topic_decision_gate(
+        self, batch: BatchSnapshot, niche: Niche,
+    ) -> None:
         """Open the operator approval gate for this new batch.
 
-        TODO(Task 6 follow-up): wire to ``services.approval_service`` once
-        the topic_decision gate API stabilises. Today this is a structured
-        log line so observability picks it up.
+        The durable gate state already exists — ``_write_batch`` persists
+        ``topic_batches.status='open'`` before this runs, and
+        ``show_batch``/``rank_batch``/``resolve_batch``/``reject_batch``
+        already operate on it. ``services.approval_service.pause_at_gate``
+        doesn't apply here (it's ``pipeline_tasks``-specific); the actual
+        gap was purely that nothing told the operator a batch was
+        waiting. Routine, not critical (a batch expires and gets reaped
+        rather than blocking anything), so this routes to Discord per
+        ``feedback_telegram_vs_discord``.
         """
         logger.info("Opened topic_decision gate for batch %s", batch.id)
+
+        from services.integrations.operator_notify import notify_operator
+
+        await notify_operator(
+            f"New topic batch ready for review — {niche.name} "
+            f"({niche.slug}): {batch.candidate_count} candidates. "
+            f"`poindexter topics show-batch --niche {niche.slug}`",
+            critical=False,
+            site_config=self._site_config,
+        )
 
     # ------------------------------------------------------------------
     # Operator interactions (Task 7)

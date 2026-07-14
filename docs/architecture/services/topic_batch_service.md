@@ -129,9 +129,13 @@ not `app_settings`:
 - **Discovery error** — caught, written to `discovery_runs.error`,
   re-raised. The `topic_batches` row is rolled back by the absence of
   the INSERT (it's the LAST step in the try block).
-- **`topic_decision` gate is a stub** — `_open_topic_decision_gate`
-  currently just emits a structured log line. Wiring to
-  `services.approval_service` is a follow-up.
+- **`topic_decision` gate notifies, it doesn't block** — the durable gate
+  state is `topic_batches.status = 'open'`, already written by
+  `_write_batch` before `_open_topic_decision_gate` runs.
+  `services.approval_service.pause_at_gate` doesn't apply here (it's
+  `pipeline_tasks`-specific); `_open_topic_decision_gate` instead calls
+  `notify_operator(..., critical=False)` (Discord, routine not critical)
+  so the operator learns a batch is waiting (poindexter#862).
 
 ## Common ops
 
