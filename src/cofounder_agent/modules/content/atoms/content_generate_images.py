@@ -77,7 +77,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         for plan in image_plans
     ]
     image_gen_urls = await batch_generate_inline_image_urls(
-        placeholders, topic,
+        placeholders,
         site_config=site_config, task_id=task_id, platform=platform,
     )
 

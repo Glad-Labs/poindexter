@@ -57,7 +57,6 @@ Output ONLY the image prompt, 1-2 sentences, nothing else.
 Write a single Stable Diffusion XL image prompt for a blog section illustration.
 
 Section subject: {search_query}
-Article topic: {topic}
 Art style: {style}
 
 Depict a specific, concrete scene for the section subject, rendered fully in the "{style}" art style — commit to that style's medium and palette rather than a generic tech render or screenshot. No people, no identifiable faces, no hands, no text or words. Vary the composition so it doesn't look like every other section image.

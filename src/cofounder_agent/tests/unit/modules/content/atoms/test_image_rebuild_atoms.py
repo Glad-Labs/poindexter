@@ -109,7 +109,7 @@ async def test_load_draft_requires_target_and_db():
 async def test_featured_prefers_image_gen(monkeypatch):
     calls: dict = {}
 
-    async def fake_try_image_gen(num, desc, topic, *, site_config, task_id, platform=None):
+    async def fake_try_image_gen(num, desc, *, site_config, task_id, platform=None):
         calls["desc"] = desc
         return "https://r2/hero.webp"
 

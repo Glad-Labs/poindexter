@@ -70,7 +70,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     task_id = state.get("task_id")
 
     url = await try_image_gen(
-        "featured", desc, topic,
+        "featured", desc,
         site_config=site_config, task_id=task_id, platform=platform,
     )
     if url:

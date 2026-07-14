@@ -628,7 +628,7 @@ class TestContentGenerateImages:
 
         urls = ["https://r2.example.com/a.png", "https://r2.example.com/b.png"]
 
-        async def _batch(placeholders, topic, *, site_config, task_id, platform):
+        async def _batch(placeholders, *, site_config, task_id, platform):
             return list(urls)
 
         monkeypatch.setattr("modules.content.atoms._image_helpers.batch_generate_inline_image_urls", _batch)

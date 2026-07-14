@@ -80,7 +80,7 @@ def test_inline_prompt_instruction_is_style_aware():
     """Whether it resolves via the skill or the fallback, the inline instruction
     carries the chosen art style + section subject and no funnel language."""
     out = _build_inline_prompt_instruction(
-        "a liquid cooling loop", "GPU thermals", "isometric 3D illustration",
+        "a liquid cooling loop", "isometric 3D illustration",
     )
     assert "isometric 3D illustration" in out
     assert "a liquid cooling loop" in out

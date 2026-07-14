@@ -23,7 +23,8 @@ def test_try_image_gen_signature_stable():
     from modules.content.atoms._image_helpers import try_image_gen, try_pexels
 
     p = inspect.signature(try_image_gen).parameters
-    assert list(p)[:3] == ["num", "search_query", "topic"]
+    assert list(p)[:2] == ["num", "search_query"]
+    assert "topic" not in p  # dropped — raw title was leaking into image-gen prompts
     assert {"site_config", "task_id", "platform"} <= set(p)
     assert list(inspect.signature(try_pexels).parameters)[:3] == [
         "search_query",

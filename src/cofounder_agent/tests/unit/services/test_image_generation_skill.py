@@ -51,11 +51,13 @@ def test_image_templates_carry_placeholders() -> None:
     assert "{style}" in featured
     assert "{style_tags}" in featured
 
-    # inline_illustration is the new per-section prompt; carries the section
-    # subject, topic, and the chosen art style.
+    # inline_illustration is the per-section prompt; carries the section
+    # subject and the chosen art style. It deliberately does NOT carry
+    # {topic} — the raw article title was getting echoed into rendered
+    # images as garbled text when it contained a proper noun/product name.
     inline = pm.prompts["image.inline_illustration"]["template"]
     assert "{search_query}" in inline
-    assert "{topic}" in inline
+    assert "{topic}" not in inline
     assert "{style}" in inline
 
     queries = pm.prompts["image.search_queries"]["template"]

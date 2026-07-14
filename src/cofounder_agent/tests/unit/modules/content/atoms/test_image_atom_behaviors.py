@@ -185,7 +185,7 @@ class TestGenerateImagesProducerHook:
         (Glad-Labs/poindexter#157), preserved across the #841 batching move."""
         captured: dict[str, Any] = {}
 
-        async def fake_batch(placeholders, topic, *, site_config, task_id, platform=None):
+        async def fake_batch(placeholders, *, site_config, task_id, platform=None):
             captured["task_id"] = task_id
             captured["placeholders"] = placeholders
             return [None] * len(placeholders)  # force Pexels fallback so the rest of the atom runs

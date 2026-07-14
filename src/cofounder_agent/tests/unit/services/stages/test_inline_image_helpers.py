@@ -96,7 +96,6 @@ async def test_try_image_gen_threads_task_id_to_both_gpu_locks():
         result = await _try_image_gen(
             num="1",
             search_query="server racks",
-            topic="Database performance",
             site_config=site_config,
             task_id="task-abc-123",
             platform=platform,
@@ -175,7 +174,6 @@ async def test_batch_generate_inline_image_urls_uses_two_locks_for_n_images():
     ):
         urls = await batch_generate_inline_image_urls(
             placeholders,
-            "Database performance",
             site_config=site_config,
             task_id="task-batch-777",
             platform=platform,
@@ -244,7 +242,6 @@ async def test_batch_generate_inline_image_urls_per_image_failure_is_isolated():
     ):
         urls = await batch_generate_inline_image_urls(
             [("1", "a"), ("2", "b"), ("3", "c")],
-            "Topic",
             site_config=site_config,
             task_id="task-iso",
             platform=platform,
@@ -253,6 +250,74 @@ async def test_batch_generate_inline_image_urls_per_image_failure_is_isolated():
     # Still two locks total; the middle image is None, the others survive.
     assert len(recorder.calls) == 2
     assert urls == ["https://r2.example/1.png", None, "https://r2.example/3.png"]
+
+
+@pytest.mark.asyncio
+async def test_batch_skips_empty_description_without_using_topic():
+    """A placeholder with no writer-provided description is skipped — never
+    falls back to the raw article topic as the image-gen subject.
+
+    The raw title getting handed to the prompt-building LLM let proper
+    nouns/product names leak into the rendered image as garbled text.
+    The fix: no description → no image-gen attempt for that slot at all
+    (None → the caller's Pexels fallback), and no dispatch call is made.
+    """
+    from modules.content.atoms._image_helpers import batch_generate_inline_image_urls
+
+    recorder = _LockRecorder()
+    completion = MagicMock()
+    completion.text = "a serene server room with cyan accents"
+    platform = FakePlatform(dispatch_response=completion)
+
+    gen_resp = MagicMock()
+    gen_resp.status_code = 200
+    mock_client = AsyncMock()
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+    mock_client.post = AsyncMock(return_value=gen_resp)
+
+    site_config = SimpleNamespace(
+        get=lambda _k, _d=None: _d if _d is not None else "",
+        get_int=lambda _k, _d=0: _d,
+        get_float=lambda _k, _d=0.0: _d,
+        get_bool=lambda _k, _d=False: _d,
+        _pool=MagicMock(),
+    )
+
+    # Placeholder "2" has no description — the writer left an empty
+    # [IMAGE:] marker (or none at all).
+    placeholders = [("1", "server racks"), ("2", ""), ("3", "a GPU die shot")]
+
+    with patch(
+        "modules.content.atoms._image_helpers.gpu", recorder, create=True,
+    ), patch(
+        "services.gpu_scheduler.gpu", recorder,
+    ), patch(
+        "modules.content.atoms._image_helpers.httpx.AsyncClient",
+        return_value=mock_client,
+    ), patch(
+        "modules.content.atoms._image_helpers._resolve_gen_response",
+        new=AsyncMock(return_value="/tmp/glad-labs-generated-images/x.png"),
+    ), patch(
+        "modules.content.atoms._image_helpers._upload_to_r2_with_fallback",
+        new=AsyncMock(side_effect=[
+            "https://r2.example/1.png",
+            "https://r2.example/3.png",
+        ]),
+    ):
+        urls = await batch_generate_inline_image_urls(
+            placeholders,
+            site_config=site_config,
+            task_id="task-empty-desc",
+            platform=platform,
+        )
+
+    # Placeholder "2" got None (Pexels fallback), the other two rendered.
+    assert urls == ["https://r2.example/1.png", None, "https://r2.example/3.png"]
+    # Only 2 dispatch calls (for "1" and "3") — the empty-desc slot never
+    # asked the LLM to build a prompt, so it never had a chance to fall
+    # back to the topic.
+    assert len(platform.dispatch.calls) == 2
 
 
 @pytest.mark.asyncio

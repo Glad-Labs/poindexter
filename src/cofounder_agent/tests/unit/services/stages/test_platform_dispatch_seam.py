@@ -170,7 +170,6 @@ class TestTryImageGenDispatch:
             out = await _try_image_gen(
                 "1",
                 "the query",
-                "the topic",
                 site_config=_site_config(),
                 task_id="task-test",
                 platform=platform,
@@ -195,7 +194,6 @@ class TestTryImageGenDispatch:
             out = await _try_image_gen(
                 "2",
                 "search terms",
-                "article topic",
                 site_config=_site_config(),
                 task_id=None,
                 platform=None,
@@ -215,7 +213,6 @@ class TestTryImageGenDispatch:
         out = await _try_image_gen(
             "3",
             "query",
-            "topic",
             site_config=_site_config(pool=None),
             task_id=None,
             platform=platform,

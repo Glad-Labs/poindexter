@@ -131,7 +131,7 @@ def _load_inline_styles(site_config: Any) -> tuple[str, ...]:
 
 
 def _build_inline_prompt_instruction(
-    search_query: str, topic: str, style: str,
+    search_query: str, style: str,
 ) -> str:
     """LLM instruction for an inline image-gen prompt.
 
@@ -140,20 +140,22 @@ def _build_inline_prompt_instruction(
     tunable without a code edit. Falls back to a de-funnelled instruction that
     demands a concrete scene rendered in the chosen art style (replacing the
     old "describe a specific scene" line that produced literal tech slop).
-    #image-zimage-and-variety.
+    #image-zimage-and-variety. Deliberately takes no ``topic`` — handing the
+    raw article title to this instruction let proper nouns/product names in
+    the title get echoed into the rendered image as garbled text.
     """
     try:
         from services.prompt_manager import get_prompt_manager
 
         return get_prompt_manager().get_prompt(
             "image.inline_illustration",
-            search_query=search_query, topic=topic, style=style,
+            search_query=search_query, style=style,
         )
     except Exception:  # noqa: BLE001 — prompt resolution is best-effort
         return (
             f"Write a Stable Diffusion XL image prompt for a {style} blog "
             f"illustration depicting a concrete, specific scene about: "
-            f"{search_query} (article topic: {topic}). Commit to the named art "
+            f"{search_query}. Commit to the named art "
             "style; no people, no faces, no hands, no text. 1 sentence. "
             "Output ONLY the prompt."
         )
@@ -339,7 +341,6 @@ async def _record_inline_image_asset(
 async def _try_image_gen(
     num: str,
     search_query: str,
-    topic: str,
     *,
     site_config: Any,
     task_id: str | None,
@@ -360,7 +361,7 @@ async def _try_image_gen(
         model = site_config.get("inline_image_prompt_model", "llama3:latest")
         inline_style = random.choice(_load_inline_styles(site_config))
         img_prompt_req = _build_inline_prompt_instruction(
-            search_query, topic, inline_style,
+            search_query, inline_style,
         )
 
         # Step 1: dispatcher generates the image-gen prompt. When no pool is
@@ -436,7 +437,6 @@ async def _try_image_gen(
 
 async def _batch_generate_inline_image_urls(
     placeholders: list[tuple[str, str]],
-    topic: str,
     *,
     site_config: Any,
     task_id: str | None,
@@ -490,10 +490,20 @@ async def _batch_generate_inline_image_urls(
             "ollama", model=model, task_id=task_id, phase="inline_image_prompt_batch",
         ):
             for num, desc in placeholders:
-                search_query = desc.strip() if desc else topic
+                if not desc:
+                    # No writer-provided subject — fall back to Pexels rather
+                    # than handing image-gen the raw article topic. A title
+                    # containing a proper noun/product name gets echoed into
+                    # the rendered image as garbled text.
+                    logger.info(
+                        "  [IMAGE-%s] no writer-provided subject — Pexels fallback", num,
+                    )
+                    img_gen_prompts.append(None)
+                    continue
+                search_query = desc.strip()
                 inline_style = random.choice(_load_inline_styles(site_config))
                 img_prompt_req = _build_inline_prompt_instruction(
-                    search_query, topic, inline_style,
+                    search_query, inline_style,
                 )
                 try:
                     result = await platform.dispatch.complete(
