@@ -1310,6 +1310,16 @@ class RegenImageRequest(BaseModel):
     prompt: str
 
 
+class RemoveImageRequest(BaseModel):
+    which: str  # "featured" | "inline:N"
+
+
+class AddImageRequest(BaseModel):
+    after: str | None = None      # "inline:N"
+    section: str | None = None    # H2-H4 heading text (fuzzy match)
+    prompt: str | None = None     # default: derived from the target heading
+
+
 class RebuildImagesRequest(BaseModel):
     allow_stock: bool = False
 
@@ -1427,6 +1437,58 @@ async def regen_task_image(
     )
     try:
         res = await svc.regen_image(full_id, which=body.which, prompt=body.prompt)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except RuntimeError as e:
+        raise HTTPException(status_code=503, detail=str(e)) from e
+    return _edit_result_json(res)
+
+
+@publishing_router.post("/{task_id}/remove-image", summary="Remove a draft image")
+async def remove_task_image(
+    task_id: str,
+    body: RemoveImageRequest,
+    request: Request,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep=Depends(get_site_config_dependency),
+):
+    """Remove a draft image (drafts only). ``which`` = ``featured`` or ``inline:N``.
+    ``featured`` clears to no-image (no promote-an-inline magic); ``inline:N``
+    strips that ``<img>`` tag — later images renumber naturally."""
+    full_id = await _resolve_full_task_id(db_service, task_id)
+    svc = _build_edit_service(
+        db_service, site_config_dep,
+        platform=getattr(request.app.state, "kernel_platform", None),
+    )
+    try:
+        res = await svc.remove_image(full_id, which=body.which)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    return _edit_result_json(res)
+
+
+@publishing_router.post("/{task_id}/add-image", summary="Generate and insert a new draft image")
+async def add_task_image(
+    task_id: str,
+    body: AddImageRequest,
+    request: Request,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+    site_config_dep=Depends(get_site_config_dependency),
+):
+    """Generate a new image and insert it into a draft (drafts only). Exactly
+    one of ``after`` (``inline:N``) or ``section`` (heading text) positions
+    it; ``prompt`` defaults to the target section's own heading text."""
+    full_id = await _resolve_full_task_id(db_service, task_id)
+    svc = _build_edit_service(
+        db_service, site_config_dep, need_image=True,
+        platform=getattr(request.app.state, "kernel_platform", None),
+    )
+    try:
+        res = await svc.add_image(
+            full_id, after=body.after, section=body.section, prompt=body.prompt,
+        )
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e)) from e
     except RuntimeError as e:

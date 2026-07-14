@@ -38,6 +38,13 @@ _UPDATE_POST_FEATURED_SQL = (
     "WHERE metadata->>'pipeline_task_id' = $2"
 )
 _IMG_TAG_RE = re.compile(r'(<img\b[^>]*?\bsrc=")([^"]*)(")', re.IGNORECASE)
+_IMG_TAG_FULL_RE = re.compile(r"<img\b[^>]*?/?>", re.IGNORECASE)
+# Mirrors modules/content/atoms/_image_helpers.py's heading matchers. Kept as
+# a local copy rather than imported — PostEditService is a plain service, not
+# a pipeline atom, and the atoms/ tree is the pipeline-time layer; importing
+# from it here would run the atom->service dependency direction backwards.
+_HEADING_RE = re.compile(r"^#{2,4}\s+(.+)$", re.MULTILINE)
+_BOLD_HEADING_RE = re.compile(r"^\*\*(.{1,80}?)\*\*\s*$", re.MULTILINE)
 
 
 def _as_dict(value: Any) -> dict:
@@ -170,6 +177,131 @@ class PostEditService:
 
         raise ValueError(f"--which must be 'featured' or 'inline:N', got {which!r}")
 
+    async def remove_image(self, task_id: str, *, which: str) -> EditResult:
+        """Remove a draft image. ``which`` = ``featured`` or ``inline:N`` (1-based).
+
+        ``featured`` clears ``pipeline_versions.featured_image_url`` to NULL
+        (nullable column — no promote-an-inline-image magic; the draft simply
+        has no featured image until an operator sets one). ``inline:N`` strips
+        the whole ``<img>`` tag from the body. Removal doesn't renumber
+        anything on disk — ``inline:N`` is always counted live off the
+        current body, so the next command naturally sees one fewer image.
+        """
+        norm = which.strip().lower()
+        if norm == "featured":
+            _, version = await self._latest(task_id)
+            await self._pool.execute(_UPDATE_FEATURED_SQL, None, task_id, version)
+            await self._sync_task_featured(task_id, None)
+            warnings = await self._sync_published_post_featured(task_id, None)
+            await self._audit("post_image_remove", task_id, {"which": "featured"})
+            return EditResult(task_id, "featured", True, "featured image removed", warnings=warnings)
+
+        if norm.startswith("inline:"):
+            try:
+                n = int(norm.split(":", 1)[1])
+            except ValueError as e:
+                raise ValueError(f"bad inline index in {which!r}") from e
+            content, version = await self._latest(task_id)
+            new_content, found = self._remove_nth_img(content, n)
+            if not found:
+                raise ValueError(f"inline image #{n} not found in draft body")
+            await self._pool.execute(_UPDATE_CONTENT_SQL, new_content, task_id, version)
+            await self._audit("post_image_remove", task_id, {"which": norm})
+            return EditResult(task_id, f"inline:{n}", True, f"inline image #{n} removed")
+
+        raise ValueError(f"--which must be 'featured' or 'inline:N', got {which!r}")
+
+    async def add_image(
+        self,
+        task_id: str,
+        *,
+        after: str | None = None,
+        section: str | None = None,
+        prompt: str | None = None,
+    ) -> EditResult:
+        """Generate a new image and insert it into a draft — the missing
+        counterpart to ``replace_image``/``regen_image``, which can only
+        operate on a slot that already exists (poindexter#2233).
+
+        Exactly one of ``after`` (``inline:N`` — insert right after that
+        existing inline image) or ``section`` (an H2-H4 heading, fuzzy
+        substring match) positions the new image. ``prompt`` is optional:
+        if omitted, it's derived from the target section's own heading text
+        (operator preference: image prompts come from headings, not body
+        prose) — the section the operator named directly for ``section``
+        mode, or the nearest heading before the anchor image for ``after``
+        mode. Raises if neither a prompt nor a derivable heading is
+        available.
+        """
+        if bool(after) == bool(section):
+            raise ValueError("add_image requires exactly one of 'after' or 'section'")
+        if self._image_service is None:
+            raise RuntimeError("image service not available for add-image")
+
+        content, version = await self._latest(task_id)
+
+        if section is not None:
+            pos, resolved_heading = self._find_section_insert_point(content, section)
+            if pos is None:
+                raise ValueError(f"no section heading matching {section!r} found in draft body")
+            anchor_detail = f"section {resolved_heading!r}"
+        else:
+            norm = (after or "").strip().lower()
+            if not norm.startswith("inline:"):
+                raise ValueError(f"--after must be 'inline:N', got {after!r}")
+            try:
+                n = int(norm.split(":", 1)[1])
+            except ValueError as e:
+                raise ValueError(f"bad inline index in {after!r}") from e
+            pos = self._find_nth_img_end(content, n)
+            if pos is None:
+                raise ValueError(f"inline image #{n} not found in draft body")
+            resolved_heading = self._find_preceding_heading(content, pos)
+            anchor_detail = f"inline:{n}"
+
+        final_prompt = prompt or resolved_heading
+        if not final_prompt:
+            raise ValueError(
+                "no --prompt given and no section heading could be found to "
+                "derive one from — pass --prompt explicitly"
+            )
+
+        import os
+        import tempfile
+
+        negative = ""
+        if self._site_config is not None:
+            negative = self._site_config.get("image_negative_prompt", "") or ""
+
+        with tempfile.NamedTemporaryFile(suffix=".png", delete=False) as tmp:
+            out_path = tmp.name
+        try:
+            ok = await self._image_service.generate_image(
+                prompt=final_prompt, output_path=out_path, negative_prompt=negative,
+            )
+            if not ok or not os.path.exists(out_path):
+                raise RuntimeError("image generation produced no output")
+            url = await self._upload_image(out_path, task_id)
+        finally:
+            with suppress(OSError):
+                os.remove(out_path)
+
+        tag = (
+            f'\n\n<img src="{url}" alt="{final_prompt[:200]}" '
+            f'width="1024" height="1024" loading="lazy" />\n\n'
+        )
+        new_content = content[:pos] + tag + content[pos:]
+        new_content = re.sub(r"\n{3,}", "\n\n", new_content)
+        await self._pool.execute(_UPDATE_CONTENT_SQL, new_content, task_id, version)
+        await self._audit(
+            "post_image_add", task_id,
+            {"after": after, "section": section, "prompt": final_prompt[:200], "url": url},
+        )
+        return EditResult(
+            task_id, "inline:new", True, f"added image after {anchor_detail}",
+            new_url=url,
+        )
+
     async def regen_image(self, task_id: str, *, which: str, prompt: str) -> EditResult:
         """Generate a fresh image via the image capability and swap it into the draft.
 
@@ -231,7 +363,77 @@ class PostEditService:
         new = _IMG_TAG_RE.sub(_sub, content)
         return new, counter["i"] >= n
 
-    async def _sync_task_featured(self, task_id: str, url: str) -> None:
+    @staticmethod
+    def _remove_nth_img(content: str, n: int) -> tuple[str, bool]:
+        """Strip the whole n-th ``<img>`` tag (1-based). Returns (new, found).
+
+        Uses ``_IMG_TAG_FULL_RE`` (matches the whole tag) rather than
+        ``_IMG_TAG_RE`` (matches up to ``src="..."`` only) — both match the
+        same set of tags in the same order for every body this codebase
+        generates (every ``<img>`` always carries ``src``), so "n-th image"
+        stays consistent between replace/remove/add.
+        """
+        counter = {"i": 0}
+        removed = {"ok": False}
+
+        def _sub(match: re.Match[str]) -> str:
+            counter["i"] += 1
+            if counter["i"] == n:
+                removed["ok"] = True
+                return ""
+            return match.group(0)
+
+        new = _IMG_TAG_FULL_RE.sub(_sub, content)
+        if removed["ok"]:
+            new = re.sub(r"\n{3,}", "\n\n", new)
+        return new, removed["ok"]
+
+    @staticmethod
+    def _find_nth_img_end(content: str, n: int) -> int | None:
+        """Return the end offset of the n-th (1-based) ``<img>`` tag, or None."""
+        matches = list(_IMG_TAG_FULL_RE.finditer(content))
+        if n < 1 or n > len(matches):
+            return None
+        return matches[n - 1].end()
+
+    @staticmethod
+    def _find_section_insert_point(content: str, section: str) -> tuple[int | None, str | None]:
+        """Fuzzy-match ``section`` against H2-H4 (or bold pseudo-heading) text;
+        anchor at the next paragraph break after the match — the same
+        placement convention ``_plan_and_inject_placeholders`` uses at
+        generation time. Returns (offset, matched_heading_text) or (None, None).
+        """
+        # Compare case-insensitively but return the heading in its original
+        # casing — it doubles as the auto-derived prompt text, and natural
+        # casing ("Cooling Systems") reads better there than a forced-lower
+        # comparison key would. Must match _find_preceding_heading's casing.
+        needle = section.strip().lower()
+        for m in _HEADING_RE.finditer(content):
+            raw_text = re.sub(r"^#+\s*", "", m.group()).strip()
+            if needle in raw_text.lower() or raw_text.lower() in needle:
+                para_end = content.find("\n\n", m.end())
+                return (para_end if para_end >= 0 else len(content)), raw_text
+        for m in _BOLD_HEADING_RE.finditer(content):
+            raw_text = m.group(1).strip()
+            if needle in raw_text.lower() or raw_text.lower() in needle:
+                para_end = content.find("\n\n", m.end())
+                return (para_end if para_end >= 0 else len(content)), raw_text
+        return None, None
+
+    @staticmethod
+    def _find_preceding_heading(content: str, pos: int) -> str | None:
+        """Return the text of the nearest H2-H4 (or bold pseudo-heading) before ``pos``."""
+        best_end = -1
+        best_text: str | None = None
+        for pattern, group in ((_HEADING_RE, 0), (_BOLD_HEADING_RE, 1)):
+            for m in pattern.finditer(content, 0, pos):
+                if m.end() > best_end:
+                    best_end = m.end()
+                    text = m.group() if group == 0 else m.group(1)
+                    best_text = re.sub(r"^#+\s*", "", text).strip()
+        return best_text
+
+    async def _sync_task_featured(self, task_id: str, url: str | None) -> None:
         """Best-effort mirror of the featured URL into ``pipeline_tasks.result`` /
         ``task_metadata`` (matches the generate-image route). Advisory only — the
         canonical field is ``pipeline_versions.featured_image_url``, already written."""
@@ -258,7 +460,7 @@ class PostEditService:
                 "already saved): %s", task_id, e,
             )
 
-    async def _sync_published_post_featured(self, task_id: str, url: str) -> list[str]:
+    async def _sync_published_post_featured(self, task_id: str, url: str | None) -> list[str]:
         """Update posts.featured_image_url and trigger a static rebuild for published tasks.
 
         posts.featured_image_url is what the static-export JSON reads; pipeline_versions

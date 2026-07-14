@@ -206,6 +206,17 @@ class TestDraftEditingRoutes:
                     new_url="https://cdn/new.webp",
                 )
 
+            async def remove_image(self, task_id, **kw):
+                calls["remove_image"] = (task_id, kw)
+                return EditResult(task_id, kw["which"], True, "removed")
+
+            async def add_image(self, task_id, **kw):
+                calls["add_image"] = (task_id, kw)
+                return EditResult(
+                    task_id, "inline:new", True, "added",
+                    new_url="https://cdn/added.webp",
+                )
+
         async def fake_enqueue(pool, task_id, *, allow_stock=False):
             calls["enqueue_image_rebuild"] = (task_id, {"allow_stock": allow_stock})
             return "rebuild-task-123"
@@ -253,6 +264,25 @@ class TestDraftEditingRoutes:
         assert r.status_code == 200, r.text
         assert r.json()["new_url"] == "https://cdn/new.webp"
         assert calls["regen_image"][1] == {"which": "featured", "prompt": "a teal robot"}
+
+    def test_remove_image_routes_to_service(self, monkeypatch):
+        calls: dict = {}
+        client = self._client_with_fake_service(monkeypatch, calls)
+        r = client.post(f"/{VALID_TASK_ID}/remove-image", json={"which": "inline:1"})
+        assert r.status_code == 200, r.text
+        assert r.json()["ok"] is True
+        assert calls["remove_image"][1] == {"which": "inline:1"}
+
+    def test_add_image_routes_to_service(self, monkeypatch):
+        calls: dict = {}
+        client = self._client_with_fake_service(monkeypatch, calls)
+        r = client.post(
+            f"/{VALID_TASK_ID}/add-image",
+            json={"after": None, "section": "Intro", "prompt": None},
+        )
+        assert r.status_code == 200, r.text
+        assert r.json()["new_url"] == "https://cdn/added.webp"
+        assert calls["add_image"][1] == {"after": None, "section": "Intro", "prompt": None}
 
     def test_rebuild_images_enqueues_task(self, monkeypatch):
         calls: dict = {}

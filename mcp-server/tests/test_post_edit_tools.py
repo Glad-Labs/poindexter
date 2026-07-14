@@ -1,8 +1,9 @@
-"""Tests for the draft-editing MCP tools (poindexter#523).
+"""Tests for the draft-editing MCP tools (poindexter#523, poindexter#2233).
 
-``edit_post_body`` / ``replace_post_image`` / ``regen_post_image`` wrap the
-worker-API edit routes. These verify each tool resolves the task id and POSTs
-the right payload; the service logic is covered in the backend test suite.
+``edit_post_body`` / ``replace_post_image`` / ``regen_post_image`` /
+``remove_post_image`` / ``add_post_image`` wrap the worker-API edit routes.
+These verify each tool resolves the task id and POSTs the right payload;
+the service logic is covered in the backend test suite.
 """
 from __future__ import annotations
 
@@ -89,6 +90,71 @@ async def test_regen_post_image_calls_route():
         {"which": "inline:2", "prompt": "a teal robot"},
     )
     assert "regenerated" in out
+
+
+@pytest.mark.asyncio
+async def test_remove_post_image_calls_route():
+    with (
+        patch.object(server, "_resolve_task_id", AsyncMock(return_value="full")),
+        patch.object(
+            server, "_api", AsyncMock(return_value={"detail": "inline image #1 removed"}),
+        ) as api,
+    ):
+        out = await server.remove_post_image("abc1", "inline:1")
+    api.assert_awaited_once_with(
+        "POST", "/api/tasks/full/remove-image", {"which": "inline:1"},
+    )
+    assert "removed" in out
+
+
+@pytest.mark.asyncio
+async def test_add_post_image_section_mode_calls_route():
+    with (
+        patch.object(server, "_resolve_task_id", AsyncMock(return_value="full")),
+        patch.object(
+            server, "_api",
+            AsyncMock(return_value={"detail": "added image after section 'Intro'", "new_url": "u"}),
+        ) as api,
+    ):
+        out = await server.add_post_image("abc1", section="Intro")
+    api.assert_awaited_once_with(
+        "POST", "/api/tasks/full/add-image",
+        {"after": None, "section": "Intro", "prompt": None},
+    )
+    assert "u" in out
+
+
+@pytest.mark.asyncio
+async def test_add_post_image_after_mode_with_prompt_calls_route():
+    with (
+        patch.object(server, "_resolve_task_id", AsyncMock(return_value="full")),
+        patch.object(
+            server, "_api",
+            AsyncMock(return_value={"detail": "added", "new_url": "u"}),
+        ) as api,
+    ):
+        await server.add_post_image("abc1", after="inline:2", prompt="a teal robot")
+    api.assert_awaited_once_with(
+        "POST", "/api/tasks/full/add-image",
+        {"after": "inline:2", "section": None, "prompt": "a teal robot"},
+    )
+
+
+@pytest.mark.asyncio
+async def test_add_post_image_requires_exactly_one_of_after_or_section():
+    """Neither after nor section: clear error, REST not called."""
+    with patch.object(server, "_api", AsyncMock()) as api:
+        out = await server.add_post_image("abc1")
+    assert "Error" in out
+    api.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_add_post_image_rejects_both_after_and_section():
+    with patch.object(server, "_api", AsyncMock()) as api:
+        out = await server.add_post_image("abc1", after="inline:1", section="Intro")
+    assert "Error" in out
+    api.assert_not_called()
 
 
 @pytest.mark.asyncio

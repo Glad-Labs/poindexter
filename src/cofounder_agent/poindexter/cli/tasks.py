@@ -787,6 +787,48 @@ def tasks_regen_image(task_id: str, which: str, prompt: str) -> None:
     )
 
 
+@tasks_group.command("remove-image")
+@click.argument("task_id")
+@click.option("--which", required=True, help="featured | inline:N (1-based)")
+def tasks_remove_image(task_id: str, which: str) -> None:
+    """Remove a draft image (drafts only) — the featured image or the N-th inline <img>.
+
+    Featured removal clears to no-image (no auto-promote of an inline image).
+    Removing an inline image renumbers the rest naturally — index N is always
+    counted live off the current body.
+    """
+    _emit_edit_result(
+        _post_edit(f"/api/tasks/{task_id}/remove-image", {"which": which}),
+    )
+
+
+@tasks_group.command("add-image")
+@click.argument("task_id")
+@click.option("--after", default=None, help="Insert after this existing image: inline:N (1-based).")
+@click.option("--section", default=None, help="Insert after this H2-H4 heading (fuzzy match).")
+@click.option(
+    "--prompt", default=None,
+    help="Image generation prompt. Default: derived from the target section's heading.",
+)
+def tasks_add_image(task_id: str, after: str | None, section: str | None, prompt: str | None) -> None:
+    """Generate a new image and insert it into a draft (drafts only).
+
+    Exactly one of --after or --section positions the new image. Without
+    --prompt, the prompt is derived from the target section's own heading
+    text (operator preference: prompts come from headings, not body prose).
+    """
+    if bool(after) == bool(section):
+        click.echo("Error: pass exactly one of --after or --section", err=True)
+        sys.exit(1)
+    payload: dict[str, Any] = {"after": after, "section": section, "prompt": prompt}
+    _emit_edit_result(
+        _post_edit(
+            f"/api/tasks/{task_id}/add-image", payload,
+            timeout_key="post_edit_regen_image_timeout_s",
+        ),
+    )
+
+
 def _emit_rebuild_result(data: dict) -> None:
     if data.get("ok"):
         click.secho(f"✅ {data.get('detail', 'image rebuild queued')}", fg="green")

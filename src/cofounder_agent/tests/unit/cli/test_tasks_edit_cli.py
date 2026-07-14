@@ -1,4 +1,5 @@
-"""CLI wiring for ``poindexter tasks edit-body|replace-image|regen-image`` (#523).
+"""CLI wiring for ``poindexter tasks edit-body|replace-image|regen-image|
+remove-image|add-image`` (#523, #2233).
 
 Each test mocks ``WorkerClient`` and asserts the command POSTs the right payload
 to the right worker-API route. The service logic itself is covered by
@@ -57,6 +58,71 @@ def test_regen_image_posts_payload(runner):
     args, kwargs = client.post.call_args
     assert args[0] == "/api/tasks/abc123/regen-image"
     assert kwargs["json"] == {"which": "inline:2", "prompt": "a teal robot"}
+
+
+def test_remove_image_posts_payload(runner):
+    client = _fake_client(
+        {"ok": True, "field": "inline:1", "detail": "removed"},
+    )
+    with patch("poindexter.cli.tasks.WorkerClient", return_value=client):
+        result = runner.invoke(
+            tasks_group, ["remove-image", "abc123", "--which", "inline:1"],
+        )
+    assert result.exit_code == 0, result.output
+    args, kwargs = client.post.call_args
+    assert args[0] == "/api/tasks/abc123/remove-image"
+    assert kwargs["json"] == {"which": "inline:1"}
+
+
+def test_add_image_posts_payload_section_mode(runner):
+    client = _fake_client(
+        {"ok": True, "field": "inline:new", "detail": "added", "new_url": "u"},
+    )
+    with patch("poindexter.cli.tasks.WorkerClient", return_value=client):
+        result = runner.invoke(
+            tasks_group, ["add-image", "abc123", "--section", "Intro"],
+        )
+    assert result.exit_code == 0, result.output
+    args, kwargs = client.post.call_args
+    assert args[0] == "/api/tasks/abc123/add-image"
+    assert kwargs["json"] == {"after": None, "section": "Intro", "prompt": None}
+
+
+def test_add_image_posts_payload_after_mode_with_explicit_prompt(runner):
+    client = _fake_client(
+        {"ok": True, "field": "inline:new", "detail": "added", "new_url": "u"},
+    )
+    with patch("poindexter.cli.tasks.WorkerClient", return_value=client):
+        result = runner.invoke(
+            tasks_group,
+            ["add-image", "abc123", "--after", "inline:2", "--prompt", "a teal robot"],
+        )
+    assert result.exit_code == 0, result.output
+    args, kwargs = client.post.call_args
+    assert args[0] == "/api/tasks/abc123/add-image"
+    assert kwargs["json"] == {"after": "inline:2", "section": None, "prompt": "a teal robot"}
+
+
+def test_add_image_requires_exactly_one_of_after_or_section(runner):
+    """Neither --after nor --section given: fail before ever calling the worker."""
+    client = _fake_client({})
+    with patch("poindexter.cli.tasks.WorkerClient", return_value=client):
+        result = runner.invoke(tasks_group, ["add-image", "abc123"])
+    assert result.exit_code == 1
+    assert "exactly one" in result.output
+    client.post.assert_not_called()
+
+
+def test_add_image_rejects_both_after_and_section(runner):
+    client = _fake_client({})
+    with patch("poindexter.cli.tasks.WorkerClient", return_value=client):
+        result = runner.invoke(
+            tasks_group,
+            ["add-image", "abc123", "--after", "inline:1", "--section", "Intro"],
+        )
+    assert result.exit_code == 1
+    assert "exactly one" in result.output
+    client.post.assert_not_called()
 
 
 def test_rebuild_images_posts_payload(runner):

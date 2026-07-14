@@ -67,6 +67,42 @@ no-humans / on-topic negative prompt), uploads it to object storage (R2), and
 swaps it in. Requires the image service to be reachable; otherwise the command
 reports a 503.
 
+### `tasks remove-image`
+
+```bash
+poindexter tasks remove-image <task_id> --which featured
+poindexter tasks remove-image <task_id> --which inline:2
+```
+
+- `--which featured` clears the draft's featured image to none — no
+  auto-promote of an inline image into its place.
+- `--which inline:N` strips that `<img>` tag from the body entirely.
+  Indices aren't stored — `inline:N` is always counted live off the current
+  body, so a later image renumbers down automatically after a removal.
+
+### `tasks add-image`
+
+```bash
+poindexter tasks add-image <task_id> --section "Benchmarks"
+poindexter tasks add-image <task_id> --after inline:2 --prompt "a teal server rack, isometric, no people"
+```
+
+Generates a new image via the image capability and inserts it into the
+draft — the counterpart to `replace-image`/`regen-image`, which can only
+operate on a slot that already exists.
+
+- Exactly one of `--after inline:N` (insert right after that existing
+  image) or `--section <heading>` (insert after that H2-H4 heading's
+  paragraph, fuzzy-matched) positions the new image.
+- `--prompt` is optional. Without it, the prompt is derived from the target
+  section's own heading text — for `--after`, the nearest heading before
+  the anchor image; for `--section`, the heading you named (operator
+  preference: image prompts come from headings, not typed by hand). If
+  neither a prompt nor a derivable heading exists, the command asks for
+  `--prompt` explicitly rather than generating off a blank prompt.
+- Requires the image service to be reachable; otherwise the command
+  reports a 503.
+
 ### `tasks rebuild-images`
 
 ```bash
@@ -95,6 +131,9 @@ The same edits from the bot / Claude surface:
 - `edit_post_body(task_id, find?, replace?, new_content?)`
 - `replace_post_image(task_id, which, url)`
 - `regen_post_image(task_id, which, prompt)`
+- `remove_post_image(task_id, which)`
+- `add_post_image(task_id, after?, section?, prompt?)` — exactly one of
+  `after`/`section` required
 
 (`which` = `featured` or `inline:N`.)
 
@@ -105,8 +144,10 @@ The same edits from the bot / Claude surface:
 - `POST /api/tasks/{task_id}/edit-body` — body `{new_content}` **or** `{find, replace}`
 - `POST /api/tasks/{task_id}/replace-image` — body `{which, url}`
 - `POST /api/tasks/{task_id}/regen-image` — body `{which, prompt}`
+- `POST /api/tasks/{task_id}/remove-image` — body `{which}`
+- `POST /api/tasks/{task_id}/add-image` — body `{after?, section?, prompt?}`
 
-The first three each return `{ok, field, detail, warnings, new_url}`.
+These five each return `{ok, field, detail, warnings, new_url}`.
 
 - `POST /api/tasks/{task_id}/rebuild-images` — body `{allow_stock}` — returns
   `{ok, task_id, detail, inline_total, inline_generated, featured_source, stock_slots}`
@@ -121,6 +162,8 @@ Every edit writes an `audit_log` row so the change is traceable:
 | body edit          | `post_edit_body`      |
 | image URL swap     | `post_image_replace`  |
 | image regenerate   | `post_image_regen`    |
+| image remove       | `post_image_remove`   |
+| image add          | `post_image_add`      |
 | bulk image rebuild | `post_images_rebuild` |
 
 Each row records the `task_id`, the field touched, and (for body edits) the

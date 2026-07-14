@@ -299,3 +299,185 @@ async def test_regen_image_propagates_warnings_from_published_post(monkeypatch):
     assert any("rebuild" in w for w in result.warnings), (
         "rebuild warning should propagate through regen_image → replace_image"
     )
+
+
+# ---------------------------------------------------------------------------
+# remove_image (poindexter#2233)
+# ---------------------------------------------------------------------------
+
+
+async def test_remove_inline_image_strips_nth_tag():
+    body = '<p>a</p>\n\n<img src="one.png">\n\n<p>b</p>\n\n<img src="two.png">\n\n<p>c</p>'
+    pool = FakePool(content=body, version=2)
+    svc = PostEditService(pool=pool)
+
+    result = await svc.remove_image("t1", which="inline:1")
+
+    assert result.ok and result.field == "inline:1"
+    updates = [e for e in pool.executed if "UPDATE pipeline_versions SET content" in e[0]]
+    new_body = updates[0][1][0]
+    assert 'src="one.png"' not in new_body
+    assert 'src="two.png"' in new_body    # untouched, still present
+    assert "\n\n\n" not in new_body       # no leaked blank-line gap
+
+
+async def test_remove_inline_missing_index_raises():
+    pool = FakePool(content='<img src="only.png">', version=1)
+    svc = PostEditService(pool=pool)
+    with pytest.raises(ValueError, match="inline image #3 not found"):
+        await svc.remove_image("t1", which="inline:3")
+
+
+async def test_remove_featured_clears_to_null():
+    pool = FakePool(content="body", version=4)
+    svc = PostEditService(pool=pool)
+
+    result = await svc.remove_image("t1", which="featured")
+
+    assert result.ok and result.field == "featured" and result.new_url is None
+    featured = [e for e in pool.executed if "featured_image_url" in e[0]]
+    assert featured and featured[0][1][0] is None
+
+
+async def test_remove_featured_on_published_task_clears_posts_row():
+    """No promote-an-inline-image magic: a published post's featured image
+    goes to NULL too, and the static export rebuild still fires."""
+    pool = FakePool(content="body", version=1, task_status="published")
+    svc = PostEditService(pool=pool)
+
+    await svc.remove_image("t1", which="featured")
+
+    posts_updates = [e for e in pool.executed if "UPDATE posts" in e[0]]
+    assert posts_updates, "expected UPDATE posts for published task"
+    assert posts_updates[0][1][0] is None
+
+
+async def test_remove_image_bad_which_raises():
+    svc = PostEditService(pool=FakePool())
+    with pytest.raises(ValueError, match="featured.*inline"):
+        await svc.remove_image("t1", which="banner")
+
+
+# ---------------------------------------------------------------------------
+# add_image (poindexter#2233)
+# ---------------------------------------------------------------------------
+
+
+class _RecordingImageSvc:
+    """Like _FakeImageSvc but records every prompt it was called with."""
+
+    def __init__(self, ok: bool = True):
+        self._ok = ok
+        self.prompts: list[str] = []
+
+    async def generate_image(self, *, prompt, output_path, negative_prompt=""):
+        self.prompts.append(prompt)
+        if self._ok:
+            with open(output_path, "wb") as f:
+                f.write(b"PNGDATA")
+        return self._ok
+
+
+def _patch_upload(monkeypatch, url: str = "https://cdn/generated/added.webp") -> None:
+    async def fake_upload(self, path, task_id):
+        return url
+
+    monkeypatch.setattr(PostEditService, "_upload_image", fake_upload, raising=True)
+
+
+async def test_add_image_section_mode_inserts_after_heading_paragraph(monkeypatch):
+    _patch_upload(monkeypatch)
+    body = "## Intro\n\nSome intro text.\n\n## Setup\n\nSetup text."
+    pool = FakePool(content=body, version=1)
+    svc = PostEditService(pool=pool, image_service=_RecordingImageSvc())
+
+    result = await svc.add_image("t1", section="Intro")
+
+    assert result.ok and result.field == "inline:new"
+    assert result.new_url == "https://cdn/generated/added.webp"
+    updates = [e for e in pool.executed if "UPDATE pipeline_versions SET content" in e[0]]
+    new_body = updates[0][1][0]
+    assert new_body.index("<img") < new_body.index("## Setup")
+    assert "Some intro text." in new_body
+
+
+async def test_add_image_no_prompt_derives_from_named_section(monkeypatch):
+    """Operator preference: prompts come from headings, not typed by hand."""
+    _patch_upload(monkeypatch)
+    body = "## Cooling Systems\n\nText about fans."
+    pool = FakePool(content=body, version=1)
+    img_svc = _RecordingImageSvc()
+    svc = PostEditService(pool=pool, image_service=img_svc)
+
+    await svc.add_image("t1", section="cooling")
+
+    assert img_svc.prompts == ["Cooling Systems"]  # original casing preserved
+
+
+async def test_add_image_after_inline_derives_prompt_from_preceding_heading(monkeypatch):
+    _patch_upload(monkeypatch)
+    body = '## Benchmarks\n\nSome text.\n\n<img src="a.png">\n\nMore text.'
+    pool = FakePool(content=body, version=1)
+    img_svc = _RecordingImageSvc()
+    svc = PostEditService(pool=pool, image_service=img_svc)
+
+    result = await svc.add_image("t1", after="inline:1")
+
+    assert result.ok
+    assert img_svc.prompts == ["Benchmarks"]
+
+
+async def test_add_image_explicit_prompt_overrides_derivation(monkeypatch):
+    _patch_upload(monkeypatch)
+    body = "## Intro\n\nText."
+    pool = FakePool(content=body, version=1)
+    img_svc = _RecordingImageSvc()
+    svc = PostEditService(pool=pool, image_service=img_svc)
+
+    await svc.add_image("t1", section="Intro", prompt="a teal robot")
+
+    assert img_svc.prompts == ["a teal robot"]
+
+
+async def test_add_image_requires_exactly_one_of_after_or_section():
+    svc = PostEditService(pool=FakePool(), image_service=_RecordingImageSvc())
+    with pytest.raises(ValueError, match="exactly one of"):
+        await svc.add_image("t1")
+    with pytest.raises(ValueError, match="exactly one of"):
+        await svc.add_image("t1", after="inline:1", section="Intro")
+
+
+async def test_add_image_requires_image_service():
+    svc = PostEditService(pool=FakePool(content="## Intro\n\ntext"))
+    with pytest.raises(RuntimeError, match="image service not available"):
+        await svc.add_image("t1", section="Intro")
+
+
+async def test_add_image_raises_when_generation_fails():
+    body = "## Intro\n\nText."
+    svc = PostEditService(pool=FakePool(content=body), image_service=_RecordingImageSvc(ok=False))
+    with pytest.raises(RuntimeError, match="produced no output"):
+        await svc.add_image("t1", section="Intro")
+
+
+async def test_add_image_unknown_section_raises():
+    svc = PostEditService(
+        pool=FakePool(content="## Real Heading\n\ntext"), image_service=_RecordingImageSvc(),
+    )
+    with pytest.raises(ValueError, match="no section heading matching"):
+        await svc.add_image("t1", section="Nonexistent")
+
+
+async def test_add_image_unknown_inline_index_raises():
+    svc = PostEditService(pool=FakePool(content="no images here"), image_service=_RecordingImageSvc())
+    with pytest.raises(ValueError, match="inline image #1 not found"):
+        await svc.add_image("t1", after="inline:1")
+
+
+async def test_add_image_no_prompt_no_heading_raises():
+    """--after inline:N with no preceding heading and no --prompt must ask
+    for one explicitly rather than silently generating a blank/junk prompt."""
+    body = 'Some text with no heading.\n\n<img src="a.png">\n\nMore text.'
+    svc = PostEditService(pool=FakePool(content=body), image_service=_RecordingImageSvc())
+    with pytest.raises(ValueError, match="pass --prompt explicitly"):
+        await svc.add_image("t1", after="inline:1")

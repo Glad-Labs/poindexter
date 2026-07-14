@@ -540,6 +540,44 @@ async def regen_post_image(task_id: str, which: str, prompt: str) -> str:
 
 
 @mcp.tool()
+async def remove_post_image(task_id: str, which: str) -> str:
+    """Remove a draft image. Drafts only.
+
+    ``which`` = ``featured`` or ``inline:N`` (1-based). Removing the featured
+    image clears it to none (no auto-promote of an inline image); removing
+    an inline image renumbers the rest naturally.
+    """
+    full_id = await _resolve_task_id(task_id)
+    result = await _api("POST", f"/api/tasks/{full_id}/remove-image", {"which": which})
+    if result.get("error"):
+        return f"Error: {result['error']}"
+    return result.get("detail", "removed")
+
+
+@mcp.tool()
+async def add_post_image(
+    task_id: str, after: str = "", section: str = "", prompt: str = "",
+) -> str:
+    """Generate a new image and insert it into a draft. Drafts only.
+
+    Provide exactly one of ``after`` (``inline:N`` — insert right after that
+    existing image) or ``section`` (an H2-H4 heading, fuzzy match) to
+    position it. ``prompt`` is optional — without it, the prompt is derived
+    from the target section's own heading text.
+    """
+    if bool(after) == bool(section):
+        return "Error: provide exactly one of `after` (inline:N) or `section`."
+    full_id = await _resolve_task_id(task_id)
+    result = await _api(
+        "POST", f"/api/tasks/{full_id}/add-image",
+        {"after": after or None, "section": section or None, "prompt": prompt or None},
+    )
+    if result.get("error"):
+        return f"Error: {result['error']}"
+    return f"{result.get('detail', 'added')} → {result.get('new_url')}"
+
+
+@mcp.tool()
 async def get_post_count() -> str:
     """Get the total number of published posts on the configured site."""
     try:
