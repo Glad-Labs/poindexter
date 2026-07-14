@@ -2088,6 +2088,11 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     #     below, rather than burning the restart cap on a proven-ineffective
     #     remedy. Default 1 = give up after the very first failed recovery.
     'docker_port_forward_max_failed_recoveries_before_alert_only': '1',
+    # 2026-07-14 follow-up — the post-restart recovery check polls at this
+    # interval (seconds) up to docker_port_forward_recovery_wait_seconds
+    # total, instead of one fixed sleep. Lets a fast recovery exit early
+    # rather than always waiting out the full window.
+    'docker_port_forward_recovery_poll_interval_seconds': '5',
     # How long (minutes) a container stays alert-only after the give-up trips,
     # before the probe is willing to try one more restart. Bounds the churn
     # without disabling recovery forever.

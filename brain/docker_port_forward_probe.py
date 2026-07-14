@@ -134,6 +134,13 @@ POLL_INTERVAL_MINUTES_KEY = "docker_port_forward_poll_interval_minutes"
 WATCH_LIST_KEY = "docker_port_forward_watch_list"
 PROBE_TIMEOUT_SECONDS_KEY = "docker_port_forward_probe_timeout_seconds"
 RECOVERY_WAIT_SECONDS_KEY = "docker_port_forward_recovery_wait_seconds"
+# 2026-07-14 follow-up — poll instead of one fixed sleep for the post-restart
+# recovery check. A single fixed sleep means recovery_ms is always ~equal to
+# the wait regardless of outcome (uninformative) and a forward that
+# re-establishes quickly still isn't reported until the full window elapses.
+# Polling at this interval up to recovery_wait_seconds total lets a fast
+# recovery exit early and gives recovery_ms real meaning.
+RECOVERY_POLL_INTERVAL_SECONDS_KEY = "docker_port_forward_recovery_poll_interval_seconds"
 RESTART_CAP_PER_WINDOW_KEY = "docker_port_forward_restart_cap_per_window"
 RESTART_CAP_WINDOW_MINUTES_KEY = "docker_port_forward_restart_cap_window_minutes"
 # 2026-06-29 follow-up — adaptive give-up. After this many CONSECUTIVE failed
@@ -154,6 +161,7 @@ DEFAULT_ENABLED = True
 DEFAULT_POLL_INTERVAL_MINUTES = 5
 DEFAULT_PROBE_TIMEOUT_SECONDS = 3
 DEFAULT_RECOVERY_WAIT_SECONDS = 5
+DEFAULT_RECOVERY_POLL_INTERVAL_SECONDS = 5
 DEFAULT_RESTART_CAP_PER_WINDOW = 3
 DEFAULT_RESTART_CAP_WINDOW_MINUTES = 60
 DEFAULT_MAX_FAILED_RECOVERIES = 1
@@ -380,6 +388,12 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         await _read_setting(pool, RECOVERY_WAIT_SECONDS_KEY, DEFAULT_RECOVERY_WAIT_SECONDS),
         DEFAULT_RECOVERY_WAIT_SECONDS,
     )
+    recovery_poll_interval_seconds = _coerce_int(
+        await _read_setting(
+            pool, RECOVERY_POLL_INTERVAL_SECONDS_KEY, DEFAULT_RECOVERY_POLL_INTERVAL_SECONDS
+        ),
+        DEFAULT_RECOVERY_POLL_INTERVAL_SECONDS,
+    )
     restart_cap_per_window = _coerce_int(
         await _read_setting(pool, RESTART_CAP_PER_WINDOW_KEY, DEFAULT_RESTART_CAP_PER_WINDOW),
         DEFAULT_RESTART_CAP_PER_WINDOW,
@@ -411,6 +425,7 @@ async def _read_config(pool: Any) -> dict[str, Any]:
         "watch_list": watch_list,
         "probe_timeout_seconds": probe_timeout_seconds,
         "recovery_wait_seconds": recovery_wait_seconds,
+        "recovery_poll_interval_seconds": recovery_poll_interval_seconds,
         "restart_cap_per_window": restart_cap_per_window,
         "restart_cap_window_minutes": restart_cap_window_minutes,
         "max_failed_recoveries_before_alert_only": max_failed_recoveries,
@@ -1077,6 +1092,9 @@ async def _check_one_service(
     internal_hostname = service["internal_hostname"]
     timeout = float(config["probe_timeout_seconds"])
     recovery_wait = float(config["recovery_wait_seconds"])
+    recovery_poll_interval = float(config["recovery_poll_interval_seconds"])
+    if recovery_poll_interval <= 0:
+        recovery_poll_interval = recovery_wait
     cap = int(config["restart_cap_per_window"])
     window_seconds = float(config["restart_cap_window_minutes"]) * 60.0
 
@@ -1357,11 +1375,23 @@ async def _check_one_service(
             "retried_n": retried_n,
         }
 
-    # 6) Wait briefly, then re-probe to confirm recovery. Uses the
-    # probe_type-aware external closure so a postgres entry re-checks via
-    # the pg probe, not an HTTP GET.
-    await sleep_fn(recovery_wait)
-    recovered = _probe_external()
+    # 6) Poll for recovery instead of one fixed sleep — probes periodically
+    # (using the probe_type-aware external closure, so a postgres entry
+    # re-checks via the pg probe, not an HTTP GET) up to recovery_wait
+    # seconds total, returning as soon as the external probe succeeds. A
+    # forward that re-establishes quickly is reported right away instead of
+    # always waiting out the full window, and recovery_ms now reflects
+    # actual elapsed time rather than landing at ~recovery_wait regardless
+    # of outcome.
+    recovered = False
+    waited = 0.0
+    while waited < recovery_wait:
+        step = min(recovery_poll_interval, recovery_wait - waited)
+        await sleep_fn(step)
+        waited += step
+        recovered = _probe_external()
+        if recovered:
+            break
     recovery_ms = int((now_fn() - restart_started) * 1000)
 
     audit_extra = {

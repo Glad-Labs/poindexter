@@ -423,6 +423,20 @@ class TestThresholdEscalation:
         only_state = next(iter(pool.dedup_state.values()))
         assert only_state["summary_dispatched_at"] is not None
 
+        # The alert_events row for the summary fire (row_id=6, the 7th
+        # fire) carries a distinguishing dispatch_result -- not the bare
+        # 'sent' a plain dispatch uses -- so an operator diffing
+        # timestamps against the suppress window can tell a summary
+        # escalation from an un-suppressed repeat without reconstructing
+        # the dedup math by hand.
+        alert_updates = _alert_event_updates(pool.executes)
+        summary_update = next(u for u in alert_updates if u[1][0] == 6)
+        assert len(summary_update[1]) >= 2, (
+            f"summary dispatch must write a distinguishing dispatch_result, "
+            f"got {summary_update!r}"
+        )
+        assert summary_update[1][1].startswith("sent: summary"), summary_update
+
 
 @pytest.mark.unit
 @pytest.mark.asyncio

@@ -702,6 +702,17 @@ SET dispatched_at = NOW(), dispatch_result = 'sent'
 WHERE id = $1
 """
 
+# Same shape as _MARK_SENT_SQL but with a custom dispatch_result -- used by
+# the AI-summary path so its dispatch_result is distinguishable from a plain
+# dispatch's bare 'sent'. Without this, a summary escalation firing inside
+# the suppress window (the coalescing feature working as designed) reads
+# identically to a suppression failure when eyeballing alert_events.
+_MARK_SENT_DETAIL_SQL = """
+UPDATE alert_events
+SET dispatched_at = NOW(), dispatch_result = $2
+WHERE id = $1
+"""
+
 _MARK_ERROR_SQL = """
 UPDATE alert_events
 SET dispatched_at = NOW(), dispatch_result = $2
@@ -976,7 +987,10 @@ async def _dispatch_one(
                     ),
                     force_channel=force_channel,
                 )
-                await pool.execute(_MARK_SENT_SQL, row_id)
+                await pool.execute(
+                    _MARK_SENT_DETAIL_SQL, row_id,
+                    f"sent: summary (repeat {decision['repeat_count']})",
+                )
                 await _mark_summary_dispatched(
                     pool,
                     fingerprint=decision["fingerprint"],

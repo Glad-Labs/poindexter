@@ -272,6 +272,50 @@ class TestStuckPortForwardRecovers:
         # No alert_events row written — the auto-recovery worked.
         assert _executed_alertnames(pool) == []
 
+    @pytest.mark.asyncio
+    async def test_recovery_polls_and_exits_early_on_success(self):
+        """When the external probe recovers on an early poll, the probe
+        stops polling immediately rather than waiting out the full
+        recovery_wait_seconds window.
+        """
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([
+                {"container": "poindexter-pyroscope", "port": 4040, "path": "/"},
+            ]),
+            pf.RECOVERY_WAIT_SECONDS_KEY: "10",
+            pf.RECOVERY_POLL_INTERVAL_SECONDS_KEY: "2",
+        })
+
+        # Pre-restart check fails once (index 0), then two post-restart
+        # polls fail, the third succeeds -- recovery should be detected
+        # there instead of waiting out the remaining wait budget.
+        external_responses = iter([False, False, False, True])
+
+        def fake_http(url, _timeout):
+            if "host.docker.internal" in url:
+                return next(external_responses)
+            return True
+
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds):
+            sleeps.append(seconds)
+
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            http_probe_fn=fake_http,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (True, f"Restarted {c}"),
+            sleep_fn=fake_sleep,
+            notify_fn=lambda **k: None,
+            now_fn=lambda: 1_000_000.0,
+        )
+
+        svc = summary["services"]["poindexter-pyroscope"]
+        assert svc["status"] == "recovered"
+        # Three 2s polls (2 failures + the success), not one 10s sleep.
+        assert sleeps == [2.0, 2.0, 2.0]
+
 
 # ---------------------------------------------------------------------------
 # Scenario 4 — restart attempted but external still failing → page op
@@ -319,6 +363,48 @@ class TestRecoveryFailedPagesOperator:
         # alert_events row was written so the dispatcher pages.
         alertnames = _executed_alertnames(pool)
         assert "docker_port_forward_recovery_failed" in alertnames
+
+    @pytest.mark.asyncio
+    async def test_recovery_gives_up_after_full_window_of_polls(self):
+        """When the external probe never recovers, the probe polls up to
+        the full recovery_wait_seconds budget (not just one shot) before
+        reporting recovery_failed, and the final poll is clipped to
+        whatever's left of the window rather than overshooting it.
+        """
+        pool = _make_pool(setting_values={
+            pf.WATCH_LIST_KEY: json.dumps([
+                {"container": "poindexter-pyroscope", "port": 4040, "path": "/"},
+            ]),
+            pf.RECOVERY_WAIT_SECONDS_KEY: "7",
+            pf.RECOVERY_POLL_INTERVAL_SECONDS_KEY: "3",
+        })
+
+        def fake_http(url, _timeout):
+            if "host.docker.internal" in url:
+                return False
+            return True
+
+        sleeps: list[float] = []
+
+        async def fake_sleep(seconds):
+            sleeps.append(seconds)
+
+        summary = await pf.run_docker_port_forward_probe(
+            pool,
+            http_probe_fn=fake_http,
+            container_exists_fn=lambda c: True,
+            restart_fn=lambda c: (True, f"Restarted {c}"),
+            sleep_fn=fake_sleep,
+            notify_fn=lambda **k: None,
+            now_fn=lambda: 1_000_000.0,
+        )
+
+        svc = summary["services"]["poindexter-pyroscope"]
+        assert svc["status"] == "recovery_failed"
+        # 3 + 3 + 1 = 7s total -- polls at the configured interval, with
+        # the final step clipped to what's left of the window.
+        assert sleeps == [3.0, 3.0, 1.0]
+        assert sum(sleeps) == 7.0
 
 
 # ---------------------------------------------------------------------------
