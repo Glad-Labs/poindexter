@@ -386,6 +386,22 @@ class TestQaAggregateEmitsPassAudit:
         # Rejected passes are severity=warning (mirrors the legacy stage).
         assert passes[0]["severity"] == "warning"
 
+    async def test_details_are_schema_version_stamped(self):
+        """poindexter#758 — the shape registry stamps schema_version=1 on
+        the validated details before the write."""
+        fake = FakePlatform()
+        state = {
+            "platform": fake,
+            "task_id": "task-abc",
+            "qa_rail_reviews": [
+                {"reviewer": "ollama_critic", "approved": True, "score": 90.0,
+                 "provider": "ollama", "advisory": False, "feedback": "solid"},
+            ],
+        }
+        await qa_aggregate.run(state)
+        passes = self._passes(fake)
+        assert passes[0]["details"]["schema_version"] == 1
+
 
 class _FakeSiteConfig:
     def get(self, key, default=None):

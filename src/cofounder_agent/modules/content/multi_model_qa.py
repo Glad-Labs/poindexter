@@ -27,6 +27,7 @@ from datetime import datetime, timezone
 from typing import TYPE_CHECKING, Any
 
 from modules.content.content_validator import ValidationResult, validate_content
+from services.audit_event_schemas import validate_event_details
 from services.integrations.operator_notify import notify_operator
 from services.langfuse_shim import observe  # type: ignore[attr-defined]
 from services.logger_config import get_logger
@@ -1067,25 +1068,28 @@ class MultiModelQA:
                 self._platform.audit.write_bg(
                     "qa_pass_completed",
                     source="multi_model_qa",
-                    details={
-                        "approved": bool(approved),
-                        "final_score": round(float(final_score), 2),
-                        "approval_threshold": float(approval_threshold),
-                        "reviewer_count": len(reviews),
-                        "reviews": [
-                            {
-                                "reviewer": r.reviewer,
-                                "provider": r.provider,
-                                "approved": bool(r.approved),
-                                "score": round(float(r.score), 2),
-                                "advisory": bool(getattr(r, "advisory", False)),
-                                # First 200 chars of feedback for debugging;
-                                # full feedback stays in process logs.
-                                "feedback_preview": (r.feedback or "")[:200],
-                            }
-                            for r in reviews
-                        ],
-                    },
+                    details=validate_event_details(
+                        "qa_pass_completed",
+                        {
+                            "approved": bool(approved),
+                            "final_score": round(float(final_score), 2),
+                            "approval_threshold": float(approval_threshold),
+                            "reviewer_count": len(reviews),
+                            "reviews": [
+                                {
+                                    "reviewer": r.reviewer,
+                                    "provider": r.provider,
+                                    "approved": bool(r.approved),
+                                    "score": round(float(r.score), 2),
+                                    "advisory": bool(getattr(r, "advisory", False)),
+                                    # First 200 chars of feedback for debugging;
+                                    # full feedback stays in process logs.
+                                    "feedback_preview": (r.feedback or "")[:200],
+                                }
+                                for r in reviews
+                            ],
+                        },
+                    ),
                     severity="info" if approved else "warning",
                 )
         except Exception as exc:  # noqa: BLE001

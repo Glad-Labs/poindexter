@@ -29,6 +29,7 @@ from modules.content.atoms._qa_rail_common import (
     resolve_gate_states,
 )
 from plugins.atom import AtomMeta, FieldSpec
+from services.audit_event_schemas import validate_event_details
 
 logger = logging.getLogger(__name__)
 
@@ -502,7 +503,7 @@ def _emit_qa_pass_event(
         _platform.audit.write_bg(
             "qa_pass_completed",
             source="qa.aggregate",
-            details=details,
+            details=validate_event_details("qa_pass_completed", details),
             task_id=(str(state.get("task_id")) or None) if state.get("task_id") else None,
             severity=severity,
         )

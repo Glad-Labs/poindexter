@@ -15,8 +15,8 @@ import pytest
 
 from modules.content.content_validator import ValidationIssue, ValidationResult
 from modules.content.multi_model_qa import MultiModelQA, MultiModelResult, ReviewerResult
-from tests.unit._fake_platform import FakePlatform
 from services.site_config import SiteConfig
+from tests.unit._fake_platform import FakePlatform
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -2048,6 +2048,33 @@ class TestReviewerFailureWiredIntoRails:
 # ---------------------------------------------------------------------------
 # Wave 3e-4: config reads route through platform.config (Glad-Labs/poindexter#667)
 # ---------------------------------------------------------------------------
+
+
+class TestQaPassCompletedShapeValidation:
+    """poindexter#758 — multi_model_qa.py's inline qa_pass_completed write
+    (the dev_diary legacy-template producer) goes through the same
+    services.audit_event_schemas registry as qa.aggregate's."""
+
+    async def test_details_are_schema_version_stamped(self):
+        async def _skip_gate(*_args, **_kwargs):
+            return None
+
+        fake = FakePlatform()
+        qa = MultiModelQA(
+            pool=None,
+            settings_service=None,
+            site_config=SiteConfig(),
+            platform=fake,
+        )
+        qa._check_topic_delivery = _skip_gate  # type: ignore[method-assign]
+        qa._check_internal_consistency = _skip_gate  # type: ignore[method-assign]
+        with patch("modules.content.multi_model_qa.validate_content", return_value=_passing_validation()):
+            with patch.object(MultiModelQA, "_dispatch_llm", _mock_dispatch(approved=True, score=85.0)):
+                await qa.review(GOOD_TITLE, GOOD_CONTENT, GOOD_TOPIC)
+
+        passes = [w for w in fake.audit.writes_bg if w["event_type"] == "qa_pass_completed"]
+        assert len(passes) == 1
+        assert passes[0]["details"]["schema_version"] == 1
 
 
 class TestPlatformConfigSeam:

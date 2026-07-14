@@ -41,6 +41,7 @@ from __future__ import annotations
 
 from typing import Any
 
+from services.audit_event_schemas import validate_event_details
 from services.audit_log import audit_log_bg
 
 
@@ -99,6 +100,6 @@ def emit_finding(
     audit_log_bg(
         event_type="finding",
         source=source,
-        details=details,
+        details=validate_event_details("finding", details),
         severity=severity,
     )
