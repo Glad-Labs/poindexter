@@ -2,6 +2,71 @@
 
 ## Unreleased
 
+## [0.103.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.102.0...v0.103.0) (2026-07-14)
+
+
+### Features
+
+* **cli:** tasks add-image / remove-image — first-class image add/remove on drafts ([#2233](https://github.com/Glad-Labs/glad-labs-stack/issues/2233)) ([#2503](https://github.com/Glad-Labs/glad-labs-stack/issues/2503)) ([4b84c08](https://github.com/Glad-Labs/glad-labs-stack/commit/4b84c082ed1e897805fecee91ce05f63be9c829b))
+* **community:** add pcgaming subreddit profile to the operator overlay ([#2478](https://github.com/Glad-Labs/glad-labs-stack/issues/2478)) ([39375f1](https://github.com/Glad-Labs/glad-labs-stack/commit/39375f1b4629a80f5638693af5ff3df04c172b3a))
+* **community:** overlay-persist subreddit profiles + pin draft model local ([#2471](https://github.com/Glad-Labs/glad-labs-stack/issues/2471)) ([67f6c6d](https://github.com/Glad-Labs/glad-labs-stack/commit/67f6c6d2bfee8f61e9c9ee922fe7ba02232b9dd5))
+* **community:** Reddit draft assistant — WS2 PR1 ([#2449](https://github.com/Glad-Labs/glad-labs-stack/issues/2449)) ([19a64bd](https://github.com/Glad-Labs/glad-labs-stack/commit/19a64bdf60496c64b64ae1ba5dd9c3d15747bc6e))
+* **footer:** add Contact mailto link ([#2446](https://github.com/Glad-Labs/glad-labs-stack/issues/2446)) ([c2acef5](https://github.com/Glad-Labs/glad-labs-stack/commit/c2acef547f872d588bae47d3a00661b4faee43a6))
+* **footer:** add Startup Fame badge to gladlabs.io and gladlabs.ai ([#2460](https://github.com/Glad-Labs/glad-labs-stack/issues/2460)) ([97bd925](https://github.com/Glad-Labs/glad-labs-stack/commit/97bd925f66a24e172e35ae063e5ec5d293477835))
+* **media:** give pexels video shots real motion, not just a static photo ([#2482](https://github.com/Glad-Labs/glad-labs-stack/issues/2482)) ([3b798fc](https://github.com/Glad-Labs/glad-labs-stack/commit/3b798fc9501f7a95e46c84b4763d97fbf875f60b))
+* **seo:** GSC query-dimension tap infra (poindexter[#764](https://github.com/Glad-Labs/glad-labs-stack/issues/764), part 1/2) ([#2483](https://github.com/Glad-Labs/glad-labs-stack/issues/2483)) ([a2d956b](https://github.com/Glad-Labs/glad-labs-stack/commit/a2d956b93c0854f202844a4349ee226cc9834891))
+* **seo:** GscQueryGapSource -- new-topic proposals from query gaps (poindexter[#764](https://github.com/Glad-Labs/glad-labs-stack/issues/764), part 2/2) ([#2485](https://github.com/Glad-Labs/glad-labs-stack/issues/2485)) ([efca55d](https://github.com/Glad-Labs/glad-labs-stack/commit/efca55dfe63e3ff2b4a4cb43bc2cb4d99f1fef7b))
+* **tasks:** add unapprove path (CLI + REST + MCP) ([#2475](https://github.com/Glad-Labs/glad-labs-stack/issues/2475)) ([1c0f0b3](https://github.com/Glad-Labs/glad-labs-stack/commit/1c0f0b31c91b322c1dcc15f439b0ed7fdfbcd942))
+
+
+### Bug Fixes
+
+* **affiliate:** query posts.content not posts.body in load_link_last_used ([#2466](https://github.com/Glad-Labs/glad-labs-stack/issues/2466)) ([e3b92bc](https://github.com/Glad-Labs/glad-labs-stack/commit/e3b92bc78f2ff146a6eeb322af5c740c2290e81c))
+* **api:** close the remaining [#746](https://github.com/Glad-Labs/glad-labs-stack/issues/746) pagination/deprecation gaps ([#2489](https://github.com/Glad-Labs/glad-labs-stack/issues/2489)) ([04f7141](https://github.com/Glad-Labs/glad-labs-stack/commit/04f7141348aaa041d0961687aedc38f6d746e3d7))
+* **brain:** compare rolling trailing-24h traffic, not partial calendar day (poindexter[#859](https://github.com/Glad-Labs/glad-labs-stack/issues/859)) ([#2498](https://github.com/Glad-Labs/glad-labs-stack/issues/2498)) ([fb44674](https://github.com/Glad-Labs/glad-labs-stack/commit/fb44674ea85051a47c671bd3275a7f7e8fe02fd5))
+* **brain:** distinguish AI-summary dispatch_result + poll for port-forward recovery ([#2488](https://github.com/Glad-Labs/glad-labs-stack/issues/2488)) ([0fa6f1e](https://github.com/Glad-Labs/glad-labs-stack/commit/0fa6f1e933933b3bd6b0048703224eb7172670f5))
+* **brain:** gate the revenue-freshness alert until real revenue exists ([#2132](https://github.com/Glad-Labs/glad-labs-stack/issues/2132)) ([#2494](https://github.com/Glad-Labs/glad-labs-stack/issues/2494)) ([7d26e92](https://github.com/Glad-Labs/glad-labs-stack/commit/7d26e92b91314205783dc956fdb065df80177be5))
+* **brain:** reap stale SCHEDULED Prefect runs so queue-backlog count self-heals (poindexter[#858](https://github.com/Glad-Labs/glad-labs-stack/issues/858)) ([#2496](https://github.com/Glad-Labs/glad-labs-stack/issues/2496)) ([65dca2e](https://github.com/Glad-Labs/glad-labs-stack/commit/65dca2e9d49104598e9a6ff9605a705a627788a2))
+* **brain:** stop force-crashed RUNNING flows from zombie-ing their subprocess ([#2477](https://github.com/Glad-Labs/glad-labs-stack/issues/2477)) ([a9999cf](https://github.com/Glad-Labs/glad-labs-stack/commit/a9999cf1423f257d7627bb58cbc365976cc18e0c))
+* **classifier:** disable the thinking channel on the classify call ([#2474](https://github.com/Glad-Labs/glad-labs-stack/issues/2474)) ([ee15c34](https://github.com/Glad-Labs/glad-labs-stack/commit/ee15c34f5ade3c5e92e9ad65f190fb3168759ba6))
+* **classifier:** recover content-type labels from fenced/prefixed model JSON ([#2472](https://github.com/Glad-Labs/glad-labs-stack/issues/2472)) ([7bc7559](https://github.com/Glad-Labs/glad-labs-stack/commit/7bc7559b4baad28305e507a8364e369ab5beed9c))
+* **community:** fail loud on settings-load failure ([#2465](https://github.com/Glad-Labs/glad-labs-stack/issues/2465)) ([6cb5c49](https://github.com/Glad-Labs/glad-labs-stack/commit/6cb5c497827a8d8ce22854239d43ef8888401674))
+* **community:** lift the model's Title line into the draft's title field ([#2467](https://github.com/Glad-Labs/glad-labs-stack/issues/2467)) ([1a15a8b](https://github.com/Glad-Labs/glad-labs-stack/commit/1a15a8b28cc1daaecab23cd30a0b194ca17b4e56))
+* **community:** resolve `draft reddit` POST by id/prefix, not the "slug" fiction ([#2473](https://github.com/Glad-Labs/glad-labs-stack/issues/2473)) ([3d87bc0](https://github.com/Glad-Labs/glad-labs-stack/commit/3d87bc04b7876798df1bf68aac11e5fe3f7ea112))
+* **console:** don't surface social drafts for approval before their post is live ([#2457](https://github.com/Glad-Labs/glad-labs-stack/issues/2457)) ([14c694c](https://github.com/Glad-Labs/glad-labs-stack/commit/14c694ca5067005a8757c445d58a934872f2b6e6))
+* **content,rag:** fix writer self-review double-execution + reconcile RAG/pyroscope default drift ([#2507](https://github.com/Glad-Labs/glad-labs-stack/issues/2507)) ([2fd2f22](https://github.com/Glad-Labs/glad-labs-stack/commit/2fd2f223bcd45d772ce3e3db14e6bacd47e57be7))
+* **image-gen:** stop feeding the raw article topic into inline-image prompts ([#2470](https://github.com/Glad-Labs/glad-labs-stack/issues/2470)) ([bae568e](https://github.com/Glad-Labs/glad-labs-stack/commit/bae568ecec3b79f308f887d5a5c0b3d36c10e8e8))
+* **infra:** mount prometheus.yml as a directory, not a single file ([#2343](https://github.com/Glad-Labs/glad-labs-stack/issues/2343)) ([#2490](https://github.com/Glad-Labs/glad-labs-stack/issues/2490)) ([20010a3](https://github.com/Glad-Labs/glad-labs-stack/commit/20010a377ad92a84558e120e38fd6e71c09c0020))
+* **jobs:** isolate per-row LLM failures in ClassifyContentTypesJob ([#2455](https://github.com/Glad-Labs/glad-labs-stack/issues/2455)) ([9081172](https://github.com/Glad-Labs/glad-labs-stack/commit/90811729305b2d0daf59df0918c683fb4141eaa0))
+* **llm:** recognize plural channel-label forms in reasoning-artifact stripper ([#2452](https://github.com/Glad-Labs/glad-labs-stack/issues/2452)) ([d3639f2](https://github.com/Glad-Labs/glad-labs-stack/commit/d3639f21f7ca99b5d11b5fe94929f587426fd24b))
+* **media:** give pexels shots a real retry on a vision-QA miss ([#2479](https://github.com/Glad-Labs/glad-labs-stack/issues/2479)) ([0dedabe](https://github.com/Glad-Labs/glad-labs-stack/commit/0dedabec1840dac697b4cc9919db95cc693ef6f6))
+* **mirror-sync:** drop stale dashboard strip list gating nothing real ([#2459](https://github.com/Glad-Labs/glad-labs-stack/issues/2459)) ([b639ccf](https://github.com/Glad-Labs/glad-labs-stack/commit/b639ccfc02034fbe810c0ee5fbc8746e1944afa0))
+* **observability:** add a minimal event-shape registry for audit_log.details ([#2491](https://github.com/Glad-Labs/glad-labs-stack/issues/2491)) ([66cb4f7](https://github.com/Glad-Labs/glad-labs-stack/commit/66cb4f7f27ebd4873540e354af1129a4ce2323b2))
+* **observability:** disable cAdvisor's disk metric collector to stop host CPU contention ([#2450](https://github.com/Glad-Labs/glad-labs-stack/issues/2450)) ([120d653](https://github.com/Glad-Labs/glad-labs-stack/commit/120d65330585df49d27f99046a3b5671a83ecbd5))
+* **obs:** merge shredded Loki tracebacks into one entry per exception ([#2493](https://github.com/Glad-Labs/glad-labs-stack/issues/2493)) ([974b8e8](https://github.com/Glad-Labs/glad-labs-stack/commit/974b8e84f35d35afb50e9198731b5390f91cd22d))
+* **ops:** alert-triage noise detection counts delivered pages, not raw rows ([#2481](https://github.com/Glad-Labs/glad-labs-stack/issues/2481)) ([a5a6207](https://github.com/Glad-Labs/glad-labs-stack/commit/a5a62072218d93357be8d783418685ef9e4e7019))
+* **ops:** repeating trigger for background services so a clean-exit daemon isn't dead until next logon (poindexter[#860](https://github.com/Glad-Labs/glad-labs-stack/issues/860)) ([#2500](https://github.com/Glad-Labs/glad-labs-stack/issues/2500)) ([03e29f2](https://github.com/Glad-Labs/glad-labs-stack/commit/03e29f244d02d5a4db165808e3d9254b39441ade))
+* **pipeline:** dedup markdown-fence stripping onto one canonical helper (poindexter[#643](https://github.com/Glad-Labs/glad-labs-stack/issues/643)) ([#2499](https://github.com/Glad-Labs/glad-labs-stack/issues/2499)) ([2799f54](https://github.com/Glad-Labs/glad-labs-stack/commit/2799f54706e7d944f45c76213bf6d18c12e5cb6a))
+* **pipeline:** image_rebuild benign approve/reject race no longer reads as a failure (poindexter[#846](https://github.com/Glad-Labs/glad-labs-stack/issues/846)) ([#2426](https://github.com/Glad-Labs/glad-labs-stack/issues/2426)) ([74fe852](https://github.com/Glad-Labs/glad-labs-stack/commit/74fe85227910346ebb26cf533c5cd5ae961c3cfb))
+* **pipeline:** run bulk pipeline resume under one event loop ([#2476](https://github.com/Glad-Labs/glad-labs-stack/issues/2476)) ([99176d2](https://github.com/Glad-Labs/glad-labs-stack/commit/99176d2851ac446cd0b755ad9ff3b1bc5d144891))
+* **prompts:** drop "diagram"/"chart" from image-gen subject lists ([#2462](https://github.com/Glad-Labs/glad-labs-stack/issues/2462)) ([b24a0c9](https://github.com/Glad-Labs/glad-labs-stack/commit/b24a0c9d15c1ff8e6f677be9e5030b6f92c2e14d))
+* **qa,pipeline:** close the last two silent-failure sites from [#2127](https://github.com/Glad-Labs/glad-labs-stack/issues/2127) ([#2504](https://github.com/Glad-Labs/glad-labs-stack/issues/2504)) ([15f7442](https://github.com/Glad-Labs/glad-labs-stack/commit/15f7442f7ec10cf131e98ae90894d9704f41b140))
+* **qa:** bridge ragas answer_relevancy's sync embed calls onto the running loop (poindexter[#847](https://github.com/Glad-Labs/glad-labs-stack/issues/847)) ([#2497](https://github.com/Glad-Labs/glad-labs-stack/issues/2497)) ([dacf5f9](https://github.com/Glad-Labs/glad-labs-stack/commit/dacf5f96542bcc1144ba0d5d2d25be5157825e91))
+* **qa:** stop content validator from hanging on ambient DB connections ([#2464](https://github.com/Glad-Labs/glad-labs-stack/issues/2464)) ([3d51960](https://github.com/Glad-Labs/glad-labs-stack/commit/3d519602e1deb86ac562e8d70a58b1a5eea788de))
+* **qa:** stop QA feedback truncation from dropping low-score reviewers ([#2448](https://github.com/Glad-Labs/glad-labs-stack/issues/2448)) ([300ab08](https://github.com/Glad-Labs/glad-labs-stack/commit/300ab081486983970643446d447b6e7ae371075e))
+* **qa:** surface degraded Ragas metrics as a finding instead of silently dropping them (poindexter[#847](https://github.com/Glad-Labs/glad-labs-stack/issues/847)) ([#2424](https://github.com/Glad-Labs/glad-labs-stack/issues/2424)) ([707eef6](https://github.com/Glad-Labs/glad-labs-stack/commit/707eef664af90669f963964c4cecf275b3f309b9))
+* **security:** close secret ciphertext-footgun + fail-open redaction ([#2131](https://github.com/Glad-Labs/glad-labs-stack/issues/2131)) ([#2487](https://github.com/Glad-Labs/glad-labs-stack/issues/2487)) ([675ce33](https://github.com/Glad-Labs/glad-labs-stack/commit/675ce33bcd0832265c1ae98c0145d0a57e5bebf0))
+* **security:** resolve Singer-tap secrets via app_settings, not plaintext config ([#2502](https://github.com/Glad-Labs/glad-labs-stack/issues/2502)) ([751f0f8](https://github.com/Glad-Labs/glad-labs-stack/commit/751f0f8037c42c8ae55911043d1e62d9b37c0ec6))
+* **topics:** stop shared title cleanup from truncating real headlines ([#2458](https://github.com/Glad-Labs/glad-labs-stack/issues/2458)) ([eeffb7f](https://github.com/Glad-Labs/glad-labs-stack/commit/eeffb7f2ce3119f82c06725a7d8d8553468d7c9e))
+* **tts:** stop double lossy MP3 transcode on the Chatterbox narration path ([#2480](https://github.com/Glad-Labs/glad-labs-stack/issues/2480)) ([4746706](https://github.com/Glad-Labs/glad-labs-stack/commit/4746706a3f2f60aa5eef58c53ed281bf12d37ce6))
+* **validator-config:** cache failed DB loads even when a live pool exists ([#2468](https://github.com/Glad-Labs/glad-labs-stack/issues/2468)) ([96f1343](https://github.com/Glad-Labs/glad-labs-stack/commit/96f13439f8765096b811f8648893bacf4e9de31e))
+* **writer:** stop the keep-best expansion pass from adopting a degenerate draft as its topic ([#2484](https://github.com/Glad-Labs/glad-labs-stack/issues/2484)) ([7283e3f](https://github.com/Glad-Labs/glad-labs-stack/commit/7283e3fde167962f0a883f4724df31a8da20a7fe))
+
+
+### Performance Improvements
+
+* **cms:** push categories/tags pagination into SQL (poindexter[#644](https://github.com/Glad-Labs/glad-labs-stack/issues/644)) ([#2501](https://github.com/Glad-Labs/glad-labs-stack/issues/2501)) ([5b7ae07](https://github.com/Glad-Labs/glad-labs-stack/commit/5b7ae07045f5f6d4821eba623be301e08272b1c9))
+
 ## [0.102.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.101.0...v0.102.0) (2026-07-13)
 
 
