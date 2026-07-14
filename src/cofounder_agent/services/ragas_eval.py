@@ -31,12 +31,48 @@ automatically. No new table.
 
 from __future__ import annotations
 
+import asyncio
 import math
 from typing import Any
 
 from services.logger_config import get_logger
 
 logger = get_logger(__name__)
+
+
+def _run_embed_coro(coro: Any) -> Any:
+    """Bridge an embedding coroutine onto whatever loop is calling us.
+
+    Ragas 0.4.x's ``ResponseRelevancy.calculate_similarity`` (the
+    ``answer_relevancy`` metric) calls the LangChain ``Embeddings`` sync
+    interface — ``embed_query``/``embed_documents`` — directly and
+    synchronously from inside its own async ``_ascore``, so this is
+    reached from *within* whatever loop is already running (poindexter#847).
+
+    A fresh thread + new event loop would be the usual sync-from-async
+    bridge, but it's wrong here: ``dispatch_embed`` drives the caller's
+    asyncpg pool, and asyncpg connections are bound to the loop they were
+    created on — handing them to a second loop on another thread raises.
+    So this reuses the CURRENT loop instead. That's safe specifically
+    because Ragas's own ``Executor.results()`` always calls
+    ``nest_asyncio.apply()`` before scoring any metric (see
+    ``ragas/executor.py`` and ``ragas/async_utils.py``), which patches
+    ``asyncio.run`` to re-enter the already-running loop rather than
+    reject it. ``nest_asyncio`` is a direct dependency of ``ragas``
+    itself, so it's guaranteed importable here. Applying it again is a
+    no-op if Ragas already did (``nest_asyncio.apply`` checks
+    ``asyncio._nest_patched`` first) — this makes the bridge correct on
+    its own terms rather than implicitly trusting Ragas's internals to
+    keep doing so.
+    """
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+    import nest_asyncio
+
+    nest_asyncio.apply()
+    return asyncio.run(coro)
 
 
 # ---------------------------------------------------------------------------
@@ -104,10 +140,17 @@ def _build_dispatcher_ragas_wrappers(
     previously ``format="json"``), and an ``Embeddings`` whose async
     methods call ``dispatch_embed``.
 
-    Async-only by design: Ragas 0.4's executor drives the async LangChain
-    surface (``agenerate_prompt`` / ``aembed_*``), and the asyncpg pool is
-    loop-bound so a sync bridge would be a footgun. The sync methods raise
-    loudly instead of silently bypassing the dispatcher.
+    Ragas 0.4's executor drives the async LangChain surface
+    (``agenerate_prompt`` / ``aembed_*``) — except ``answer_relevancy``,
+    whose ``calculate_similarity`` calls the *sync* ``embed_query``/
+    ``embed_documents`` directly from inside its own async ``_ascore``
+    (poindexter#847). The chat model's sync ``_generate`` still raises
+    loudly — Ragas never reaches it. The embeddings' sync methods bridge
+    onto the caller's own loop via ``_run_embed_coro`` rather than
+    raising, because the asyncpg pool ``dispatch_embed`` uses is
+    loop-bound: reusing the current loop (safe here — see
+    ``_run_embed_coro``) avoids the cross-loop footgun a fresh
+    thread+loop bridge would hit.
     """
     from langchain_core.embeddings import Embeddings
     from langchain_core.language_models.chat_models import BaseChatModel
@@ -165,14 +208,10 @@ def _build_dispatcher_ragas_wrappers(
             self._model = model
 
         def embed_documents(self, texts):
-            raise NotImplementedError(
-                "_DispatcherEmbeddings is async-only (poindexter#826)"
-            )
+            return _run_embed_coro(self.aembed_documents(texts))
 
         def embed_query(self, text):
-            raise NotImplementedError(
-                "_DispatcherEmbeddings is async-only (poindexter#826)"
-            )
+            return _run_embed_coro(self.aembed_query(text))
 
         async def aembed_documents(self, texts):
             return [
@@ -309,12 +348,13 @@ def _emit_degraded_metrics_finding(failed_metrics: list[str], task_id: str | Non
     ``_emit_ragas_score_audit`` used to just quietly drop a -1.0 metric
     from the averaged ``ragas_score`` audit row, with a reduced
     ``metric_count`` as the only trace — invisible on any dashboard. The
-    known repeat offender is Ragas 0.4.3's ``ResponseRelevancy.
+    former repeat offender — Ragas 0.4.3's ``ResponseRelevancy.
     calculate_similarity`` calling the sync ``embed_query``/
-    ``embed_documents`` directly against our async-only
-    ``_DispatcherEmbeddings``, so ``answer_relevancy`` fails on every
-    call — quietly averaging the aggregate score over 2 of 3 dimensions
-    for as long as it goes unnoticed. One finding per distinct
+    ``embed_documents`` against our async-only ``_DispatcherEmbeddings``,
+    failing ``answer_relevancy`` on every call — is fixed at the source
+    (``_run_embed_coro``); this stays as the general safety net for any
+    OTHER metric/judge hiccup (Ollama down, judge model unpulled, etc.),
+    so a degraded rail is never silent again. One finding per distinct
     failed-metric combination, deduped (not task-scoped) so a chronic
     per-post failure pages once instead of once per post — the
     downstream findings_alert_router/alert_dispatcher chain owns

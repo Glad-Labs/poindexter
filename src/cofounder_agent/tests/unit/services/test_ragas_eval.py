@@ -408,22 +408,78 @@ class TestDispatcherWrappers:
         assert embed_mock.await_count == 3
 
     @pytest.mark.asyncio
-    async def test_sync_paths_raise(self):
+    async def test_llm_sync_path_raises(self):
+        """Ragas always drives the chat model through _agenerate, never
+        _generate, so this one stays a loud raise (unchanged by #847)."""
         from langchain_core.messages import HumanMessage
 
         from services.ragas_eval import _build_dispatcher_ragas_wrappers
 
         with _inject_fake_modules(_identity_wrapper_modules()):
-            llm, embeddings = _build_dispatcher_ragas_wrappers(
+            llm, _ = _build_dispatcher_ragas_wrappers(
                 pool="POOL", judge_model="phi4:14b", embed_model="nomic-embed-text",
             )
 
         with pytest.raises(NotImplementedError):
             llm._generate([HumanMessage(content="x")])
-        with pytest.raises(NotImplementedError):
-            embeddings.embed_query("x")
-        with pytest.raises(NotImplementedError):
-            embeddings.embed_documents(["x"])
+
+    def test_embed_sync_paths_bridge_with_no_running_loop(self, monkeypatch):
+        """No event loop running (a plain script/CLI call reaching these
+        methods directly) — the sync embed_query/embed_documents must
+        still return real vectors instead of raising (poindexter#847)."""
+        from unittest.mock import AsyncMock
+
+        from services.ragas_eval import _build_dispatcher_ragas_wrappers
+
+        embed_mock = AsyncMock(return_value=[0.1, 0.2])
+        monkeypatch.setattr(
+            "services.llm_providers.dispatcher.dispatch_embed", embed_mock,
+        )
+        with _inject_fake_modules(_identity_wrapper_modules()):
+            _, embeddings = _build_dispatcher_ragas_wrappers(
+                pool="POOL", judge_model="phi4:14b", embed_model="nomic-embed-text",
+            )
+
+        vec = embeddings.embed_query("some text")
+        docs = embeddings.embed_documents(["a", "b"])
+
+        assert vec == [0.1, 0.2]
+        assert docs == [[0.1, 0.2], [0.1, 0.2]]
+
+    def test_embed_sync_paths_bridge_from_inside_ragas_nested_loop(self, monkeypatch):
+        """Reproduces the actual production failure: Ragas 0.4.3's
+        ResponseRelevancy.calculate_similarity (the answer_relevancy
+        metric) calls embed_query/embed_documents SYNCHRONOUSLY from
+        inside its own async _ascore — always after Ragas's own
+        Executor.results() has nest_asyncio-patched the running loop
+        (ragas/executor.py::apply_nest_asyncio). Simulates that exact
+        nesting without needing a real Ragas install, so the test proves
+        the bridge survives the actual call shape, not just the trivial
+        no-loop case above."""
+        import asyncio
+        from unittest.mock import AsyncMock
+
+        from services.ragas_eval import _build_dispatcher_ragas_wrappers
+
+        embed_mock = AsyncMock(return_value=[0.3, 0.4])
+        monkeypatch.setattr(
+            "services.llm_providers.dispatcher.dispatch_embed", embed_mock,
+        )
+        with _inject_fake_modules(_identity_wrapper_modules()):
+            _, embeddings = _build_dispatcher_ragas_wrappers(
+                pool="POOL", judge_model="phi4:14b", embed_model="nomic-embed-text",
+            )
+
+        async def _ragas_like_ascore():
+            import nest_asyncio
+
+            nest_asyncio.apply()
+            # Synchronous call from inside a running (now-patched) loop —
+            # exactly what ResponseRelevancy.calculate_similarity does.
+            return embeddings.embed_query("some text")
+
+        result = asyncio.run(_ragas_like_ascore())
+        assert result == [0.3, 0.4]
 
 
 # ---------------------------------------------------------------------------
@@ -516,11 +572,20 @@ class TestEvaluateSampleNonFinite:
         assert result["answer_relevancy"] == -1.0
         assert result["context_precision"] == 0.72
 
+        # Two audit_log_bg calls: the ragas_score row itself, plus the
+        # qa_rail_degraded finding _emit_degraded_metrics_finding raises for
+        # the failed metric (poindexter#847 Ask #2, PR #2424). Locate by
+        # event_type rather than call count/order — whether utils.findings
+        # happens to already be import-cached from an earlier test in the
+        # same process changes which mock call it resolves against.
+        ragas_score_calls = [
+            c for c in mock_bg.call_args_list if c.args and c.args[0] == "ragas_score"
+        ]
+        assert len(ragas_score_calls) == 1
         # The failed metric is a sentinel (excluded from the average), and
         # the details dict json-serializes under RFC-compliant rules — the
         # exact property whose absence killed the Postgres insert.
-        assert mock_bg.call_count == 1
-        details = mock_bg.call_args[0][2]
+        details = ragas_score_calls[0].args[2]
         json.dumps(details, allow_nan=False)  # raises ValueError on NaN/inf
         assert details["answer_relevancy"] == -1.0
         assert details["metric_count"] == 2
