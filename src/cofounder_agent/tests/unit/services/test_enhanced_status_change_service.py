@@ -245,4 +245,13 @@ class TestGetValidationFailures:
         db = make_db(failures=[])
         svc = EnhancedStatusChangeService(db)
         await svc.get_validation_failures("task-1", limit=25)
-        db.get_validation_failures.assert_awaited_once_with("task-1", 25)
+        db.get_validation_failures.assert_awaited_once_with("task-1", 25, 0)
+
+    @pytest.mark.asyncio
+    async def test_offset_passed_to_db(self):
+        """poindexter#746 — offset threads through so callers can page past
+        the first `limit` failures."""
+        db = make_db(failures=[])
+        svc = EnhancedStatusChangeService(db)
+        await svc.get_validation_failures("task-1", limit=25, offset=10)
+        db.get_validation_failures.assert_awaited_once_with("task-1", 25, 10)

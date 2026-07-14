@@ -668,7 +668,29 @@ class TestGetTaskValidationFailures:
             patcher.stop()
 
         assert resp.status_code == 200
-        svc.get_validation_failures.assert_called_once_with(VALID_TASK_ID, limit=5)
+        svc.get_validation_failures.assert_called_once_with(VALID_TASK_ID, limit=5, offset=0)
+
+    def test_custom_offset_param(self):
+        """poindexter#746 — mirrors status-history's existing offset support
+        so callers can page past the first `limit` failures too."""
+        mock_db = make_mock_db()
+        mock_db.get_task = AsyncMock(return_value=_make_task())
+
+        mock_svc = AsyncMock(spec=EnhancedStatusChangeService)
+        mock_svc.get_validation_failures = AsyncMock(
+            return_value={"task_id": VALID_TASK_ID, "failure_count": 0, "failures": []}
+        )
+
+        client, svc, patcher = _make_client_with_status_svc(mock_db, mock_svc)
+        try:
+            resp = client.get(
+                f"/api/tasks/{VALID_TASK_ID}/status-history/failures?limit=5&offset=10"
+            )
+        finally:
+            patcher.stop()
+
+        assert resp.status_code == 200
+        svc.get_validation_failures.assert_called_once_with(VALID_TASK_ID, limit=5, offset=10)
 
     def test_service_error_returns_500(self):
         mock_db = make_mock_db()
@@ -701,7 +723,7 @@ class TestGetTaskValidationFailures:
             patcher.stop()
 
         assert resp.status_code == 200
-        svc.get_validation_failures.assert_called_once_with(VALID_TASK_ID, limit=50)
+        svc.get_validation_failures.assert_called_once_with(VALID_TASK_ID, limit=50, offset=0)
 
 
 # ---------------------------------------------------------------------------

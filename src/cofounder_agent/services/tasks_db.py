@@ -1340,13 +1340,17 @@ class TasksDatabase(DatabaseServiceMixin):
             logger.error("Failed to get status history: %s", e, exc_info=True)
             return []
 
-    async def get_validation_failures(self, task_id: str, limit: int = 50) -> list[dict[str, Any]]:
+    async def get_validation_failures(
+        self, task_id: str, limit: int = 50, offset: int = 0
+    ) -> list[dict[str, Any]]:
         """
         Get all validation failures for a task by querying status history.
 
         Args:
             task_id: Task ID
             limit: Maximum records to return
+            offset: Records to skip (poindexter#746 — pages past the first `limit`,
+                mirrors get_status_history's existing offset support)
 
         Returns:
             List of validation failure records with details
@@ -1358,7 +1362,7 @@ class TasksDatabase(DatabaseServiceMixin):
                 WHERE task_id = $1
                 AND new_status IN ('validation_failed', 'validation_error')
                 ORDER BY created_at DESC
-                LIMIT $2
+                LIMIT $2 OFFSET $3
             """
             # Pre-migration fallback (column still named "timestamp")
             sql_legacy = """
@@ -1368,15 +1372,15 @@ class TasksDatabase(DatabaseServiceMixin):
                 WHERE task_id = $1
                 AND new_status IN ('validation_failed', 'validation_error')
                 ORDER BY "timestamp" DESC
-                LIMIT $2
+                LIMIT $2 OFFSET $3
             """
 
             async with self.pool.acquire() as conn:
                 try:
-                    rows = await conn.fetch(sql, task_id, limit)
+                    rows = await conn.fetch(sql, task_id, limit, offset)
                 except Exception:
                     # Migration 0031 not yet applied — column is still "timestamp"
-                    rows = await conn.fetch(sql_legacy, task_id, limit)
+                    rows = await conn.fetch(sql_legacy, task_id, limit, offset)
 
                 failures = []
                 for row in rows:

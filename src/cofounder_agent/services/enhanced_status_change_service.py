@@ -151,19 +151,22 @@ class EnhancedStatusChangeService:
             )
             return {"task_id": task_id, "history_count": 0, "history": [], "error": str(e)}
 
-    async def get_validation_failures(self, task_id: str, limit: int = 50) -> dict[str, Any]:
+    async def get_validation_failures(
+        self, task_id: str, limit: int = 50, offset: int = 0
+    ) -> dict[str, Any]:
         """
         Get all validation failures for a task.
 
         Args:
             task_id: Task ID
             limit: Maximum records to return
+            offset: Records to skip (poindexter#746 — pages past the first `limit`)
 
         Returns:
             Dict with validation failure details
         """
         try:
-            failures = await self.db_service.get_validation_failures(task_id, limit)
+            failures = await self.db_service.get_validation_failures(task_id, limit, offset)
 
             return {"task_id": task_id, "failure_count": len(failures), "failures": failures}
         except Exception as e:

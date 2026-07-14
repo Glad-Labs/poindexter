@@ -2376,6 +2376,48 @@ class TestGetValidationFailures:
         assert captured["params"][0] == "t-1"
         assert captured["params"][1] == 25
 
+    @pytest.mark.asyncio
+    async def test_offset_param_passed_to_query(self):
+        """poindexter#746 — mirrors get_status_history's existing offset
+        support so callers can page past the first `limit` failures too."""
+        captured = {}
+
+        async def _capture(sql, *params):
+            captured["sql"] = sql
+            captured["params"] = params
+            return []
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetch = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.get_validation_failures("t-1", limit=25, offset=10)
+
+        assert "OFFSET" in captured["sql"].upper()
+        assert captured["params"][0] == "t-1"
+        assert captured["params"][1] == 25
+        assert captured["params"][2] == 10
+
+    @pytest.mark.asyncio
+    async def test_default_offset_is_zero(self):
+        """Backward compat: callers that don't pass offset get the same
+        first-page behavior as before #746."""
+        captured = {}
+
+        async def _capture(sql, *params):
+            captured["params"] = params
+            return []
+
+        pool = _make_pool()
+        async with pool.acquire() as conn:
+            conn.fetch = AsyncMock(side_effect=_capture)
+        db = _make_db(pool)
+
+        await db.get_validation_failures("t-1")
+
+        assert captured["params"][2] == 0
+
 
 # ---------------------------------------------------------------------------
 # heartbeat_task (GH-90)

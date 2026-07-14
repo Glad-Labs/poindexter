@@ -512,6 +512,7 @@ async def get_task_status_history(
 async def get_task_validation_failures(
     task_id: str,
     limit: int = Query(50, ge=1, le=200, description="Maximum number of failure records"),
+    offset: int = Query(0, ge=0, description="Failure records to skip"),
     token: str = Depends(verify_api_token),
     db_service: DatabaseService = Depends(get_database_dependency),
     status_service: EnhancedStatusChangeService = Depends(
@@ -531,6 +532,7 @@ async def get_task_validation_failures(
     **Parameters:**
     - task_id: Task UUID
     - limit: Maximum failure records (default 50, max 200)
+    - offset: Failure records to skip, for paging past the first `limit` (poindexter#746)
 
     **Returns:**
     - List of validation failure records with error details
@@ -563,7 +565,7 @@ async def get_task_validation_failures(
             _check_task_ownership(task, token)
 
         # Get validation failures
-        failures = await status_service.get_validation_failures(task_id, limit=limit)
+        failures = await status_service.get_validation_failures(task_id, limit=limit, offset=offset)
 
         if not failures.get("failures"):
             logger.info("No validation failures found for task %s", task_id)
