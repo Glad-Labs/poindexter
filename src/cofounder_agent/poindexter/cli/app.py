@@ -8,14 +8,13 @@ import os
 import click
 
 from ._encoding import ensure_utf8_streams
-from ._event_loop import ensure_selector_event_loop_on_windows
 from .affiliate import affiliate_group
-from .community import community_group
 from .alerts import alerts_group
 from .approval import APPROVAL_FLAT_ALIASES, gates_group
 from .auth import auth_group
 from .auto_publish import auto_publish_group
 from .backup import backup_group
+from .community import community_group
 from .costs import costs_group
 from .dev_diary import dev_diary_group
 from .doctor import doctor_group
@@ -66,12 +65,14 @@ def main(ctx: click.Context, verbose: bool) -> None:
     # did this once at import) so every subcommand gets it even if something
     # re-bound sys.stdout/stderr in between. See poindexter/cli/_encoding.py.
     ensure_utf8_streams()
-    # Force the Windows SelectorEventLoop for the WHOLE CLI before any
-    # subcommand's asyncio.run creates a loop — psycopg3 (the LangGraph
-    # checkpointer behind `pipeline resume`) raises InterfaceError on the
-    # default ProactorEventLoop, and asyncpg runs on either, so this is safe
-    # for every command. See poindexter/cli/_event_loop.py.
-    ensure_selector_event_loop_on_windows()
+    # NOTE: the Windows SelectorEventLoop switch psycopg3 needs (LangGraph's
+    # checkpointer behind `pipeline resume`) is intentionally NOT applied here
+    # anymore — it forced Selector for every command, and Selector cannot
+    # spawn subprocesses on Windows at all (asyncio.create_subprocess_exec
+    # raises NotImplementedError), which silently broke `taps run` for any
+    # Singer-tap handler (poindexter#857 follow-up). `pipeline.py`'s own `_run`
+    # applies the switch scoped to just the commands that need it. See
+    # poindexter/cli/_event_loop.py.
     ctx.ensure_object(dict)
     ctx.obj["verbose"] = verbose
     # Stamp LOG_LEVEL into the environment NOW, before any lazy `from

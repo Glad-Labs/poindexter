@@ -11,9 +11,16 @@ thin initial state (no ``post_id``) and ``seo_refresh`` halts at
 ``content.load_existing_post`` with a ``RuntimeError``.
 
 The fix forces a ``SelectorEventLoop`` on Windows before ``asyncio.run``
-(mirroring ``scripts/smoke_371_postgres_checkpointer.py``). These tests pin the
-switch — and its no-op behaviour everywhere else — so a refactor can't
-re-break the resume path on Matt's host.
+(mirroring ``scripts/smoke_371_postgres_checkpointer.py``), scoped to
+``pipeline.py``'s ``_run`` (every ``pipeline`` subcommand routes through it) —
+**not** applied at the CLI root. It used to be CLI-wide, on the theory that
+``asyncpg`` (what most commands use) runs on either loop, so it was "safe
+everywhere" — but Windows' ``SelectorEventLoop`` cannot spawn subprocesses at
+all, which silently broke ``taps run`` for every Singer-tap handler
+(poindexter#857 follow-up). These tests pin the switch, its scoping to
+``pipeline`` commands only, and its no-op behaviour off Windows — so a
+refactor can't re-break the resume path on Matt's host, and can't re-widen the
+switch back to every command either.
 """
 
 from __future__ import annotations
@@ -93,21 +100,26 @@ class TestRunAppliesSwitchBeforeRunning:
 
 
 @pytest.mark.unit
-class TestCliRootAppliesSwitch:
-    def test_root_group_applies_selector_loop(self, monkeypatch):
-        # The whole point of centralizing the switch: EVERY subcommand inherits
-        # it because the root group callback (`app.main`) applies it before it
-        # dispatches — not just the handful that remembered to call it. Invoking
-        # any `<group> --help` still runs the root callback, then prints subhelp.
+class TestCliRootDoesNotApplySwitch:
+    def test_root_group_does_not_import_or_apply_selector_loop(self):
+        # Regression (poindexter#857 follow-up): the root group callback
+        # (`app.main`) used to force SelectorEventLoop for EVERY subcommand,
+        # which broke `taps run` (Selector can't spawn subprocesses on
+        # Windows at all). The switch must now be scoped to `pipeline.py`'s
+        # `_run` only — `app.py` must not even import the helper, so a
+        # future edit can't accidentally re-wire it back in at the root.
+        import poindexter.cli.app as app_mod
+
+        assert not hasattr(app_mod, "ensure_selector_event_loop_on_windows")
+
+    def test_non_pipeline_command_leaves_event_loop_policy_untouched(self, monkeypatch):
         from click.testing import CliRunner
 
         from poindexter.cli import app as app_mod
 
-        called: list[bool] = []
+        called: list[object] = []
         monkeypatch.setattr(
-            app_mod,
-            "ensure_selector_event_loop_on_windows",
-            lambda: called.append(True),
+            asyncio, "set_event_loop_policy", lambda p: called.append(p)
         )
         # ensure_secret_key is a best-effort bootstrap read main() also does;
         # isolate it so this test doesn't depend on a bootstrap.toml on disk.
@@ -118,4 +130,4 @@ class TestCliRootAppliesSwitch:
         result = CliRunner().invoke(app_mod.main, ["costs", "--help"])
 
         assert result.exit_code == 0, result.output
-        assert called == [True]
+        assert called == []

@@ -91,9 +91,11 @@ def _quiet_service_logging() -> None:
 
 
 def _run(coro):
-    # Belt-and-suspenders: app.main already applies this CLI-wide, but a caller
-    # that reaches _run without going through the root group (tests, embedding)
-    # still gets the Windows SelectorEventLoop the psycopg3 checkpointer needs.
+    # This is the ONLY place the Windows SelectorEventLoop switch is applied
+    # (poindexter#857 follow-up moved it off the CLI root, which broke `taps
+    # run` and any other subprocess-spawning command — see _event_loop.py).
+    # Every `pipeline` subcommand routes through this helper, so all of them
+    # still get the SelectorEventLoop the psycopg3 checkpointer needs.
     _ensure_selector_event_loop_on_windows()
     _quiet_service_logging()
     return asyncio.run(coro)
