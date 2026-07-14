@@ -893,6 +893,10 @@ def get_core_samples() -> dict[str, list[Any]]:
         # 20260512_182304 created the app_settings rows but the source
         # was never plugged into the imperative load path.
         ("topic_sources", "services.topic_sources.igdb", "IGDBSource"),
+        # GscQueryGapSource — surfaces high-impression/poor-position GSC
+        # queries as new topic candidates (poindexter#764). Ships inert:
+        # gated on app_settings.seo.query_ingestion.enabled (default false).
+        ("topic_sources", "services.topic_sources.gsc_query_gap", "GscQueryGapSource"),
         # Core ImageProviders — Phase G migration. Pexels first (search);
         # image-gen generation provider lands in a follow-up slice.
         ("image_providers", "services.image_providers.pexels", "PexelsProvider"),

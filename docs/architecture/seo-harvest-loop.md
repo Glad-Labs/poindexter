@@ -142,6 +142,50 @@ needle? — is queryable. This is the empirical proof the loop works and the
 training signal for an eventual successor that learns which refreshes are worth
 doing.
 
+## Query-dimension ingestion (#764)
+
+Phase 1 and Phase 2 both work from **page-level** GSC data — `external_metrics`
+never carried the `query` dimension, so `seo_refresh`'s `target_query` has
+always fallen back to a post's own topic/keyword rather than a real search
+term. Closing that gap is two independent, additive pieces:
+
+**Tap-side:** the installed `tap-google-search-console` package ships a
+`performance_report_custom` stream whose dimension set is driven by Singer
+catalog **field-level** selection (not a fixed per-stream list, unlike every
+other stream it offers). `tap_singer_subprocess.py`'s catalog generator
+gained a `field_selection` config key (`{tap_stream_id: [field, ...]}`) to
+support this — the `gsc_main` `external_taps` row's `performance_report_custom`
+stream requests `page` + `query` via `field_selection`, and
+`tap_external_metrics_writer.py` needed **no changes**: it already bundles
+arbitrary `dimension_fields` into the `dimensions` jsonb and dedups on
+`(source, metric_name, date, slug, dimensions)`, so per-(page, query) rows
+fall out for free. Activation is a one-off script
+(`scripts/enable_gsc_query_dimension.py`) run once against the live tap row,
+separate from the code deploy — mirrors how `seo.refresh.enabled` was flipped
+only after explicit operator sign-off in Milestone B.
+
+**Topic-side:** `GscQueryGapSource`
+([`services/topic_sources/gsc_query_gap.py`](../../src/cofounder_agent/services/topic_sources/gsc_query_gap.py))
+is a new `TopicSource` (same protocol as `devto.py`/`hackernews.py`) that
+reads the newly-ingested per-query rows and surfaces queries with real
+impressions but a poor average position as `DiscoveredTopic`s — a gap in
+_new_ content, distinct from `seo_refresh`'s job of re-optimizing _existing_
+posts' metadata. It feeds the ordinary topic-proposal pipeline
+(`topic_sources/runner.py`), which handles cross-source dedup/ranking the
+same way it already does for every other source.
+
+### Settings (`app_settings`)
+
+| Key                           | Default | Meaning                                                                                                                       |
+| ----------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------- |
+| `seo.query_ingestion.enabled` | `false` | Master switch — gates both the tap-row activation and the gap source. `GscQueryGapSource.extract()` returns `[]` while false. |
+
+`GscQueryGapSource`'s own tuning (`min_impressions`, `min_position`,
+`window_days`, `max_topics`) lives under `plugin.topic_source.gsc_query_gap.config`
+per the standard per-source `TopicSource` convention — no seed row required;
+Python-side defaults apply when the row is absent, same as every other
+topic source.
+
 ## Status
 
 - **Shipped (Phase 1 + Phase 2a):** the analyzer; the `seo_refresh` graph (4
@@ -155,6 +199,12 @@ doing.
   analyzer status-latch (so refreshed opportunities aren't re-opened and
   re-refreshed); and the Grafana refresh-queue + outcome-delta panels. Ships
   inert — `enqueue_seo_refreshes` no-ops until `seo.refresh.enabled=true`.
-- **Next:** Search Console query-dimension ingestion (#764) for sharper query
-  targeting, and auto-publish graduation (republish without sign-off once the
-  edit-distance trust threshold is met).
+- **Shipped (#764 — code, ships inert):** field-level Singer catalog
+  selection in `tap_singer_subprocess.py`; the `GscQueryGapSource` topic
+  source. **Pending operator activation:** run
+  `scripts/enable_gsc_query_dimension.py` against prod, spot-check a tap run,
+  then set `seo.query_ingestion.enabled=true`.
+- **Next:** auto-publish graduation for `seo_refresh` (republish without
+  sign-off once the edit-distance trust threshold is met); once query data has
+  been live a few weeks, consider feeding real per-query `target_query` values
+  into `seo_opportunities` for sharper `seo_refresh` targeting.

@@ -431,6 +431,7 @@ knowledge = "cofounder_agent.services.topic_sources.knowledge:KnowledgeSource"
 codebase = "cofounder_agent.services.topic_sources.codebase:CodebaseSource"
 dev_diary = "cofounder_agent.services.topic_sources.dev_diary_source:DevDiarySource"
 igdb = "cofounder_agent.services.topic_sources.igdb:IGDBSource"
+gsc_query_gap = "cofounder_agent.services.topic_sources.gsc_query_gap:GscQueryGapSource"
 
 [project.entry-points."poindexter.image_providers"]
 pexels = "cofounder_agent.services.image_providers.pexels:PexelsProvider"
