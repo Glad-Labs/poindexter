@@ -1,8 +1,8 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-07-13.**  
+> **Auto-generated from live `app_settings` table on 2026-07-14.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
-> 688 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
+> 689 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
 > Generated values are example/per-operator. Set yours via `poindexter settings set <key> <value>` (add `--secret` to store the value encrypted with `is_secret=true`).
 
@@ -56,7 +56,7 @@ The worker re-reads on every poll; no restart needed.
 - [memory_compression](#memory-compression) (3 keys)
 - [model_roles](#model-roles) (4 keys)
 - [models](#models) (2 keys)
-- [monitoring](#monitoring) (45 keys)
+- [monitoring](#monitoring) (46 keys)
 - [newsletter](#newsletter) (3 keys)
 - [niche_pivot](#niche-pivot) (8 keys)
 - [notifications](#notifications) (3 keys)
@@ -164,7 +164,6 @@ The worker re-reads on every poll; no restart needed.
 | `prefect_stuck_flow_pending_threshold_minutes` | `5` |  | A flow run that has been PENDING/Submitting longer than this is considered stranded. Captured 2026-05-25: a PENDING r... |
 | `prefect_stuck_flow_probe_enabled` | `true` |  | Master kill switch for brain/prefect_stuck_flow_probe. Set to false to disable detection of stuck Prefect flow runs (... |
 | `prefect_stuck_flow_queue_depth_threshold` | `3` |  | Brain prefect_stuck_flow_probe: page with a distinct probe.prefect_queue_backlog_detected signal when MORE than this ... |
-| `prefect_stuck_flow_queue_reap_minutes` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
 | `prefect_stuck_flow_threshold_minutes` | `30` |  | A content_generation flow run RUNNING longer than this is considered stuck. Default 30m is ~5-6x the typical 5-min du... |
 
 ## cli
@@ -738,6 +737,7 @@ The worker re-reads on every poll; no restart needed.
 | `morning_brief_telegram_critical_only` | `true` |  | When true the brief only pings Telegram on critical-severity alerts or failed tasks (Discord still always receives th... |
 | `probe_webhook_freshness_enabled` | `true` |  | Master switch for the brain's webhook-freshness probe. When true, the probe checks revenue_events / subscriber_events... |
 | `probe_webhook_freshness_interval_minutes` | `1440` |  | How often the webhook-freshness probe runs (minutes). Default 1440 = once a day. The probe is cheap (two SELECT MAX q... |
+| `probe_webhook_freshness_revenue_check_enabled` | `false` |  | Narrower sibling of probe_webhook_freshness_enabled (poindexter#2132): gates ONLY the revenue_events half of the webh... |
 | `pr_staleness_dedup_hours` | `12` |  | Quiet period (in hours) after a stale-PR alert fires before the same PR can re-page. Per-PR dedup is anchored on the ... |
 | `pr_staleness_max_prs_per_alert` | `5` |  | Cap on the number of PRs surfaced in a single Discord-ops message body. Keeps the alert under Discord's per-message c... |
 | `pr_staleness_min_hours` | `24` |  | Minimum age (in hours) before an open PR is considered stale by the brain PR staleness probe. PRs younger than this a... |
