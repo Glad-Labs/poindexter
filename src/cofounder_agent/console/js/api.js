@@ -41,6 +41,7 @@
      budget        GET  /api/metrics/costs/budget  (spend vs cap; by-model NOT routed)
      findings      GET  /api/findings  (probe-routing triage, #461; read-only)
      media         GET  /api/media-approval/pending  · POST /{post_id}/{medium}/decide (Gate-2)
+                   · GET /{post_id}/{medium}/preview (raw asset bytes, for the drawer player)
      schedule      GET  /api/scheduling  · PATCH /api/scheduling/shift (reschedule)
      seo           GET  /api/seo  (SEO-refresh queue + outcomes, #1466; read-only)
      social        GET  /api/social/drafts (filterable; per-post per-platform breakdown)
@@ -1013,6 +1014,40 @@
           ),
         () => ({ ok: true, post_id: postId, medium, approved: !!approved })
       );
+    },
+
+    // GET /api/media-approval/{post_id}/{medium}/preview — the on-disk render,
+    // streamed straight from the worker (the asset hasn't reached object
+    // storage yet; Gate-2 is the gate that decides whether it's allowed to).
+    // Bypasses http() (which always calls res.json()) — this needs the raw
+    // bytes as a Blob so the drawer can play it via an inline <video>/<audio>
+    // element. Same OAuth auth + 401-retry-once as http(), kept standalone
+    // rather than refactored out of it (~30 call sites, JSON-only). Mock mode
+    // has no real file to stream, so it rejects with a clear message instead
+    // of fabricating one (feedback_no_dummy_data) — the caller shows that as
+    // an "unavailable" state, not a fake player.
+    async mediaPreviewBlob(postId, medium) {
+      if (!cfg.live)
+        throw new Error('Preview requires a live worker connection.');
+      const path = `/api/media-approval/${encodeURIComponent(postId)}/${encodeURIComponent(medium)}/preview`;
+      const doFetch = async () => {
+        const tok = await getToken();
+        return fetch((cfg.base || '') + path, {
+          headers: { Authorization: 'Bearer ' + tok },
+        });
+      };
+      let res = await doFetch();
+      if (res.status === 401) {
+        _tok = { value: '', exp: 0 };
+        res = await doFetch();
+      }
+      if (!res.ok) {
+        const detail = await res.text().catch(() => '');
+        throw new Error(
+          `GET ${path} → ${res.status} ${res.statusText}${detail ? ' — ' + detail : ''}`
+        );
+      }
+      return res.blob();
     },
 
     // ── scheduled-publish queue (scheduling_routes.py, #1343) ──

@@ -16,6 +16,64 @@ function DL({ rows }) {
   );
 }
 
+// Gate-2 asset preview — the operator's only way to see/hear a pending
+// medium before deciding (the file lives only on local disk until approved,
+// so there's no plain <a href> or <video src> that could reach it without
+// the console's own OAuth token). Fetches the bytes via PX.api.mediaPreviewBlob
+// (authenticated) and plays them from a blob: URL — no server-side Range
+// support needed since the whole (short) file is already in memory.
+function MediaPreviewPlayer({ postId, medium }) {
+  const [state, setState] = useState({ status: 'idle', url: '' });
+  useEffect(() => {
+    let alive = true;
+    let objectUrl = '';
+    if (!window.PX.api.isLive() || !postId || !medium) {
+      setState({ status: 'unavailable', url: '' });
+      return undefined;
+    }
+    setState({ status: 'loading', url: '' });
+    window.PX.api
+      .mediaPreviewBlob(postId, medium)
+      .then((blob) => {
+        if (!alive) return;
+        objectUrl = URL.createObjectURL(blob);
+        setState({ status: 'ready', url: objectUrl });
+      })
+      .catch((err) => {
+        if (alive) setState({ status: 'error', url: '', error: err.message });
+      });
+    return () => {
+      alive = false;
+      if (objectUrl) URL.revokeObjectURL(objectUrl);
+    };
+  }, [postId, medium]);
+
+  const note = (text, cls) => (
+    <p className={`mono ${cls}`} style={{ fontSize: 11, marginTop: 8 }}>
+      {text}
+    </p>
+  );
+  if (state.status === 'unavailable')
+    return note(
+      'Connect to a live worker to preview the rendered file.',
+      'c-dim'
+    );
+  if (state.status === 'loading') return note('Loading preview…', 'c-dim');
+  if (state.status === 'error')
+    return note(`Preview unavailable — ${state.error}`, 'c-red');
+  if (state.status !== 'ready') return null;
+
+  return medium === 'podcast' ? (
+    <audio controls src={state.url} style={{ width: '100%', marginTop: 8 }} />
+  ) : (
+    <video
+      controls
+      src={state.url}
+      style={{ width: '100%', marginTop: 8, borderRadius: 4, maxHeight: 320 }}
+    />
+  );
+}
+
 function Drawer({ entity, onClose, actions }) {
   const open = !!entity;
   // Reject-with-feedback sub-state for the approve drawer. Two-gate model:
@@ -391,6 +449,10 @@ function Drawer({ entity, onClose, actions }) {
                   {e.detail.quality ?? '—'}
                   {e.detail.shots ? ` · ${e.detail.shots} shots` : ''}
                 </p>
+                <MediaPreviewPlayer
+                  postId={e.detail.post_id}
+                  medium={e.detail.medium}
+                />
               </div>
               <div className="section-label">Pipeline</div>
               <DL

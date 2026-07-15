@@ -513,6 +513,25 @@ function App() {
     };
   }, []);
 
+  // ── Live: merge the Gate-2 media queue into the Action Inbox ──
+  // `media` (mediaR, above) already polls GET /api/media-approval/pending on
+  // its own 60s cadence for the MediaPanel card — this closes the gap noted
+  // on the approvals effect ("Other inbox kinds … stay empty … until their
+  // own phases wire them"). Gate-2 items are exactly as operator-actionable
+  // as approvals/social, so mirror them in too — same replace-by-kind merge
+  // as the social-drafts effect above. Purely DERIVED off `media` (no extra
+  // fetch): unlike the social merge, A.mediaApprove/A.mediaReject's optimistic
+  // mediaR.mutate() already updates `media`, so this effect re-fires on its
+  // own — those handlers don't need to also touch `inbox` directly.
+  useE(() => {
+    if (!PX.api.isLive()) return;
+    setInbox((prev) => {
+      const nonMedia = prev.filter((i) => i.kind !== 'media');
+      const queue = (media && media.queue) || [];
+      return [...nonMedia, ...queue.map(mediaToInbox)];
+    });
+  }, [media]);
+
   // ── Live: KPI strip reads (GET /api/posts + /api/analytics/views +
   // GET /api/tasks?status=failed) ──
   // Task 9 exception (stays a bespoke effect): a 3-way Promise.all fan-in
@@ -1463,6 +1482,8 @@ function App() {
                   onFix={A.fix}
                   onSocialApprove={(it) => A.socialApproveDraft(it)}
                   onSocialReject={(it) => A.socialRejectDraft(it)}
+                  onMediaApprove={(it) => A.mediaApprove(it.detail)}
+                  onMediaReject={(it) => A.mediaReject(it.detail)}
                 />
               </div>
               {approved.length > 0 && (
@@ -1769,6 +1790,37 @@ function draftToInbox(d) {
     age: d.created_at ? PX.ago(minsSince(d.created_at)) : '',
     tags: [['amber', 'SOCIAL']],
     detail: { draft: d },
+  };
+}
+
+// Map a MediaPanel queue row (already shaped by PX.api.mediaQueue()) → the
+// Action Inbox item shape (kind='media'). Mirrors draftToInbox — `detail`
+// carries the raw queue row (id/post_id/medium/title/…) plus `stage`, the
+// same shape MediaPanel's own onOpenItem hands the drawer, so one drawer
+// branch serves both entry points.
+const MEDIA_INBOX_TAG = {
+  video: 'cyan',
+  podcast: 'amber',
+  video_short: 'mint',
+};
+function mediaToInbox(m) {
+  return {
+    id: m.id,
+    kind: 'media',
+    priority: 2,
+    title: m.title,
+    sub: [
+      ['QUALITY', m.quality != null ? String(m.quality) : '—'],
+      ['SLUG', m.slug || '—'],
+    ],
+    age: m.age || '',
+    tags: [
+      [
+        MEDIA_INBOX_TAG[m.medium] || 'cyan',
+        (m.medium || 'media').toUpperCase(),
+      ],
+    ],
+    detail: { ...m, stage: 'gate_2_review' },
   };
 }
 

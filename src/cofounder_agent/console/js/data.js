@@ -1116,6 +1116,7 @@
       age: ago(22),
       tags: [['mint', 'RENDERED']],
       detail: {
+        post_id: 'post-318',
         medium: 'video',
         title: 'The 200-Line Supervisor Pattern',
         quality: 86,

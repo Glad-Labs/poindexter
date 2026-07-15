@@ -90,6 +90,8 @@ function ActionInbox({
   onFix,
   onSocialApprove,
   onSocialReject,
+  onMediaApprove,
+  onMediaReject,
   filter,
   setFilter,
 }) {
@@ -262,14 +264,15 @@ function ActionInbox({
                   <>
                     <button
                       className="mbtn mbtn--primary"
-                      onClick={() => onApprove(it)}
+                      onClick={() => onMediaApprove(it)}
+                      title="Approve · clear for dispatch"
                     >
                       <Icon name="check" size={12} />
-                      Publish
+                      Approve
                     </button>
                     <button
                       className="mbtn mbtn--ghost"
-                      onClick={() => onReject(it)}
+                      onClick={() => onMediaReject(it)}
                       title="Reject"
                     >
                       <Icon name="x" size={12} />

@@ -2,13 +2,16 @@
 
 Operator surfaces previously only reachable in-process:
 
-- ``GET  /api/media-approval/pending``                   → list pending media
-- ``POST /api/media-approval/{post_id}/{medium}/decide`` → approve or reject
+- ``GET  /api/media-approval/pending``                    → list pending media
+- ``POST /api/media-approval/{post_id}/{medium}/decide``  → approve or reject
+- ``GET  /api/media-approval/{post_id}/{medium}/preview``  → stream the local render
 """
 
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from middleware.api_token_auth import get_operator_identity, verify_api_token
@@ -111,3 +114,47 @@ async def decide(
         "approved": body.approved,
         "decided_by": decided_by,
     }
+
+
+_PREVIEW_MIME = {
+    "podcast": "audio/mpeg",
+    "video": "video/mp4",
+    "video_short": "video/mp4",
+}
+
+
+@router.get(
+    "/{post_id}/{medium}/preview",
+    summary="Stream the locally-rendered asset so the operator can review it before deciding",
+)
+async def preview(
+    post_id: str,
+    medium: str,
+    token: str = Depends(verify_api_token),
+    db_service: DatabaseService = Depends(get_database_dependency),
+) -> FileResponse:
+    """Stream the on-disk render — the only way to see/hear a Gate-2 item.
+
+    The asset hasn't reached object storage yet: Gate-2 is exactly the gate
+    that decides whether it's allowed to (see the ``media_approval_service``
+    module docstring — "single source of truth for whether a generated
+    podcast / video / short is allowed to leave the operator's machine").
+    This route stays behind the same OAuth auth as every other route on this
+    router, so reviewing a pending asset never requires it to leave the
+    machine to an unauthenticated audience — it's reachable only by an
+    operator already holding a valid token, exactly like approve/reject.
+    """
+    from services.media_approval_service import get_asset_storage_path
+
+    storage_path = await get_asset_storage_path(db_service.pool, post_id, medium)
+    if not storage_path or not Path(storage_path).is_file():
+        raise HTTPException(
+            status_code=404,
+            detail="No rendered asset on disk for this post/medium yet.",
+        )
+
+    return FileResponse(
+        storage_path,
+        media_type=_PREVIEW_MIME.get(medium, "application/octet-stream"),
+        headers={"Cache-Control": "no-store"},
+    )
