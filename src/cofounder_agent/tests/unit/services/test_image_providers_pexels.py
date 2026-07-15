@@ -12,7 +12,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from plugins.image_provider import ImageProvider, ImageResult
-from services.image_providers.pexels import PexelsProvider
+from services.image_providers.pexels import PexelsProvider, build_semantic_pexels_query
 
 
 def _make_pexels_client(photos: list[dict], status: int = 200):
@@ -211,3 +211,139 @@ class TestContract:
     def test_fetch_is_coroutine(self):
         import inspect
         assert inspect.iscoroutinefunction(PexelsProvider.fetch)
+
+
+_QUERY = "data analytics dashboard"
+
+
+def _query_result(text: str) -> MagicMock:
+    """A completion stub exposing ``.text`` (the field the helper reads)."""
+    r = MagicMock()
+    r.text = text
+    return r
+
+
+def _make_local_provider() -> MagicMock:
+    provider = MagicMock()
+    provider.name = "ollama_native"
+    provider.complete = AsyncMock(return_value=_query_result(_QUERY))
+    return provider
+
+
+def _site_config(image_search_query_model: str, *, pool: object | None) -> MagicMock:
+    sc = MagicMock()
+
+    def _get(key: str, default: object = None) -> object:
+        if key == "image_search_query_model":
+            return image_search_query_model
+        return default
+
+    sc.get.side_effect = _get
+    sc.get_int.return_value = 20  # timeouts + max_tokens; value is irrelevant here
+    sc.get_float.return_value = 0.4
+    sc._pool = pool
+    return sc
+
+
+class TestBuildSemanticPexelsQuery:
+    """poindexter#109 — extracted from ``ImageService._llm_semantic_pexels_query``
+    (still delegates through the ImageService method for back-compat; these
+    tests exercise the moved implementation directly at its new home).
+    """
+
+    @pytest.mark.asyncio
+    async def test_cloud_query_model_routes_through_dispatch_not_local_ollama(self):
+        """A CLOUD ``image_search_query_model`` + a pool routes through
+        ``dispatch_complete`` and MUST NOT hit the local ``ollama_native``
+        provider (which 404s on a cloud model name)."""
+        dispatch = AsyncMock(return_value=_query_result(_QUERY))
+        local = _make_local_provider()
+        sc = _site_config("anthropic/claude-sonnet-5", pool=object())
+
+        with patch(
+                 "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             ), \
+             patch(
+                 "plugins.registry.get_all_llm_providers", return_value=[local],
+             ):
+            out = await build_semantic_pexels_query(
+                "Postgres row-level security", site_config=sc,
+            )
+
+        assert out == _QUERY
+        dispatch.assert_awaited_once()
+        call = dispatch.await_args
+        assert call.args[2] == "anthropic/claude-sonnet-5", (
+            "cloud query model must be forwarded verbatim so LiteLLM routes it "
+            "to Anthropic (removeprefix('ollama/') no-ops on 'anthropic/...')"
+        )
+        assert call.kwargs["tier"] == "free"
+        assert call.kwargs["phase"] == "image_search_query"
+        local.complete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_local_query_model_with_pool_also_routes_through_dispatch(self):
+        """A LOCAL ``image_search_query_model`` + a pool still routes through
+        the dispatcher (the ``ollama/`` prefix is stripped so LiteLLM/Ollama
+        see the bare tag), NOT the direct provider."""
+        dispatch = AsyncMock(return_value=_query_result(_QUERY))
+        local = _make_local_provider()
+        sc = _site_config("ollama/gemma3:27b", pool=object())
+
+        with patch(
+                 "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             ), \
+             patch(
+                 "plugins.registry.get_all_llm_providers", return_value=[local],
+             ):
+            out = await build_semantic_pexels_query(
+                "Kubernetes pod lifecycle", site_config=sc,
+            )
+
+        assert out == _QUERY
+        dispatch.assert_awaited_once()
+        assert dispatch.await_args.args[2] == "gemma3:27b"  # ollama/ prefix stripped
+        local.complete.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_no_pool_falls_back_to_local_ollama_provider(self):
+        """No pool (tests / bootstrap) → the legacy local ``ollama_native``
+        provider path is preserved and the dispatcher is NOT consulted."""
+        dispatch = AsyncMock()  # must NOT be called
+        local = _make_local_provider()
+        sc = _site_config("ollama/gemma3:27b", pool=None)
+
+        with patch(
+                 "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             ), \
+             patch(
+                 "plugins.registry.get_all_llm_providers", return_value=[local],
+             ):
+            out = await build_semantic_pexels_query(
+                "Building a FastAPI queue", site_config=sc,
+            )
+
+        assert out == _QUERY
+        local.complete.assert_awaited_once()
+        assert local.complete.await_args.kwargs["model"] == "gemma3:27b"
+        dispatch.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_empty_model_returns_none(self):
+        """An unset ``image_search_query_model`` skips the LLM call entirely
+        and returns None so the caller falls back to the raw topic — this
+        branch had no direct test coverage before the poindexter#109 move."""
+        sc = _site_config("", pool=object())
+        dispatch = AsyncMock()
+
+        with patch(
+                 "services.llm_providers.dispatcher.dispatch_complete", new=dispatch,
+             ), \
+             patch(
+                 "services.integrations.operator_notify.notify_operator",
+                 new=AsyncMock(),
+             ):
+            out = await build_semantic_pexels_query("Any topic", site_config=sc)
+
+        assert out is None
+        dispatch.assert_not_awaited()

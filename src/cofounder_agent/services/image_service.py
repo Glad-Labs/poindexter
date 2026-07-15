@@ -611,141 +611,15 @@ class ImageService:
     async def _llm_semantic_pexels_query(self, topic: str) -> str | None:
         """Ask the LLM for a Pexels-friendly semantic query.
 
-        The raw topic is often a literal keyword match in Pexels that
-        produces terrible featured images: "DuckDB vs Postgres" returns
-        a photo of an actual duck, "Kubernetes pod lifecycle" returns a
-        pea pod, etc. This converts the topic into a concept-level query
-        ("data analytics dashboard", "container orchestration workspace")
-        that retrieves professional stock photos instead of literal
-        keyword matches.
-
-        Returns None if Ollama is unavailable or the response is empty
-        — callers fall back to the raw topic.
+        Thin delegator (poindexter#109) — the implementation moved to
+        ``services.image_providers.pexels.build_semantic_pexels_query``. It
+        only ever touched ``self._site_config``, so it was a pure function
+        of ``(topic, site_config)`` masquerading as a method. Kept as a
+        method here for existing callers/tests.
         """
-        # Migrated v2.2 → dispatcher (glad-labs-stack#2199): the query call
-        # follows the pipeline's provider config on the ``free`` tier
-        # (``plugin.llm_provider.primary.free``) so image_service stays
-        # swap-able across backends (Ollama, vllm, llama.cpp) AND a cloud
-        # ``image_search_query_model`` reaches LiteLLM instead of 404ing
-        # against local Ollama.
-        #
-        # 2026-05-12 fix (still holds): ``asyncio`` is stdlib and must always
-        # resolve; the first-party provider imports must too. Swallowing
-        # ImportError as a "fall back to raw topic" path hid setup-time bugs as
-        # runtime degradation. So the imports below are NOT wrapped — an
-        # ImportError propagates and fails loud rather than silently degrading
-        # featured-image quality. (``get_all_llm_providers`` is imported inside
-        # the no-pool branch because only that fallback needs it.)
-        import asyncio
+        from services.image_providers.pexels import build_semantic_pexels_query
 
-        # Tuning constants via app_settings (#198).
-        _sc = self._site_config
-        _client_timeout = _sc.get_int("image_ollama_client_timeout_seconds", 30)
-        # Per-step model pin (image_search_query_model). Empty → page (advisory)
-        # and return None so the caller falls back to the raw topic.
-        _model = (_sc.get("image_search_query_model") or "").removeprefix("ollama/")
-        if not _model:
-            from services.integrations.operator_notify import notify_operator
-            await notify_operator(
-                "image_service: image_search_query_model is empty — semantic "
-                "Pexels query skipped (falling back to raw topic)",
-                critical=False,
-                site_config=_sc,
-            )
-            return None
-        _max_tokens = _sc.get_int("image_search_query_max_tokens", 30)
-        _temp = _sc.get_float("image_search_query_temperature", 0.4)
-        _generate_timeout = _sc.get_int("image_search_query_timeout_seconds", 20)
-
-        # ImageService already reaches the DB pool via the SiteConfig it was
-        # constructed with (see ``_ensure_pexels_key``'s ``_pool`` guard). With
-        # a pool we defer provider selection to ``dispatch_complete``; the local
-        # ``ollama_native`` provider is resolved ONLY for the no-pool fallback
-        # (tests / bootstrap).
-        _pool = getattr(_sc, "_pool", None)
-        local_provider = None
-        if _pool is None:
-            from plugins.registry import get_all_llm_providers
-            providers = {p.name: p for p in get_all_llm_providers()}
-            local_provider = providers.get("ollama_native")
-            if local_provider is None:
-                logger.debug(
-                    "LLM semantic query: ollama_native provider not registered",
-                )
-                return None
-
-        prompt = (
-            "Convert this blog topic into a 3-5 word Pexels stock photo "
-            "search query that represents the CONCEPT or ABSTRACT IDEA, "
-            "NOT the literal words. Avoid brand names, product names, and "
-            "technical jargon — Pexels doesn't have photos of software.\n\n"
-            "Focus on what the reader cares about: the work being done, "
-            "the problem being solved, the emotion involved, or the "
-            "industry context.\n\n"
-            "Examples:\n"
-            "- Topic: 'Postgres row-level security for multi-tenant SaaS'\n"
-            "  Query: secure database architecture\n"
-            "- Topic: 'When to choose DuckDB over Postgres for analytics'\n"
-            "  Query: data analytics dashboard\n"
-            "- Topic: 'Building a FastAPI background task queue'\n"
-            "  Query: server room infrastructure\n"
-            "- Topic: 'Why local LLMs beat cloud APIs for indie hackers'\n"
-            "  Query: modern developer workspace\n"
-            "- Topic: 'Kubernetes pod lifecycle debugging'\n"
-            "  Query: data center network cables\n\n"
-            f"Topic: {topic}\n\n"
-            "Respond with ONLY the search query (3-5 words, no quotes, no explanation):"
-        )
-
-        messages = [{"role": "user", "content": prompt}]
-        try:
-            if _pool is not None:
-                # Production path — the SAME dispatcher the pipeline's LLM calls
-                # use. A cloud model routes to LiteLLM (cost-tracked +
-                # cost_guard-gated); a local one stays local + free. The old
-                # hardcoded ollama_native call POSTed a cloud model name to
-                # local Ollama and 404'd (the #2199 class).
-                from services.llm_providers.dispatcher import dispatch_complete
-                completion = await asyncio.wait_for(
-                    dispatch_complete(
-                        _pool,
-                        messages,
-                        _model,
-                        tier="free",
-                        phase="image_search_query",
-                        temperature=_temp,
-                        max_tokens=_max_tokens,
-                        timeout_s=_client_timeout,
-                    ),
-                    timeout=_generate_timeout,
-                )
-            else:
-                # No pool (tests / bootstrap): call the local Ollama provider
-                # directly. ``local_provider`` was resolved above (the pool-is-
-                # None branch returns early when ollama_native is missing).
-                if local_provider is None:  # pragma: no cover - resolved above
-                    return None
-                completion = await asyncio.wait_for(
-                    local_provider.complete(
-                        messages=messages,
-                        model=_model,
-                        temperature=_temp,
-                        max_tokens=_max_tokens,
-                        timeout_s=_client_timeout,
-                    ),
-                    timeout=_generate_timeout,
-                )
-            text = (completion.text or "").strip()
-            # Strip common LLM quote/markdown wrappers
-            text = text.strip('"').strip("'").strip("`").strip()
-            # Take first non-empty line (models sometimes add an empty trailer)
-            for line in text.split("\n"):
-                line = line.strip().strip('"').strip("'").strip()
-                if line and 3 <= len(line) <= 80:
-                    return line
-        except Exception as e:
-            logger.debug("LLM semantic query failed for '%s': %s", topic[:40], e)
-        return None
+        return await build_semantic_pexels_query(topic, site_config=self._site_config)
 
     async def search_featured_image(
         self,
