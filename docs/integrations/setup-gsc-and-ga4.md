@@ -137,19 +137,19 @@ UPDATE external_taps
 
 ## Step 5 — Install the tap binaries
 
-The taps run as subprocesses; the worker needs them on `PATH`. Two options:
+The taps run as subprocesses; the worker needs them on `PATH` (or `config.command` needs to name an absolute path where they live). Two options:
 
-### Option A — install in the worker container (recommended for production)
+### Option A — install in a sidecar venv that the row's `command` points at (recommended)
+
+Isolates the taps' dependencies from the worker's shared Python env. `~/.poindexter` is usually root-owned in the container, so create the venv directory as root first if `appuser` can't write to it:
 
 ```
-docker exec -it poindexter-worker pip install tap-google-search-console tap-ga4
+docker exec --user root poindexter-worker sh -c "mkdir -p ~appuser/.poindexter/singer-venv && chown -R appuser:appgroup ~appuser/.poindexter/singer-venv"
+docker exec -it poindexter-worker python3 -m venv ~/.poindexter/singer-venv
+docker exec -it poindexter-worker ~/.poindexter/singer-venv/bin/pip install tap-google-search-console tap-ga4
 ```
 
-(Or add them to your `pyproject.toml` / `requirements.txt` so they're baked into the image on the next build.)
-
-### Option B — install in a sidecar venv that the row's `command` points at
-
-If you want the taps isolated from the worker's Python env, create a venv at e.g. `~/.poindexter/singer-venv`, install both taps there, and set the row's `config.command` to the absolute venv binary path:
+Then point the row's `config.command` at the absolute venv binary path:
 
 ```sql
 UPDATE external_taps
@@ -157,27 +157,43 @@ UPDATE external_taps
  WHERE name = 'gsc_main';
 ```
 
-Either works — option A is simpler.
+### Option B — install in the worker container's shared env
+
+```
+docker exec -it poindexter-worker pip install tap-google-search-console tap-ga4
+```
+
+**Known risk, hit in production (2026-07-14):** `tap-google-search-console`'s dependency `singer-python==6.0.1` pins `jsonschema==2.*`. The container installs `--user` by default (its base image's site-packages is read-only), and pip's resolver only checks the package it's installing against _its own_ dependency tree — it doesn't check the shared env's other already-installed packages, so it happily downgrades `jsonschema`, silently breaking `prefect` (needs `>=4.18`), `litellm` (needs `>=4.0`), and `mcp` (needs `>=4.20`). The running process is unaffected immediately (already-imported modules stay in memory), but the _next_ container restart picks up the broken version. **Always run `docker exec poindexter-worker pip check` right after installing** — if it reports a conflict, `pip uninstall` the packages you just added (this restores the base image's own compatible versions from `/usr/local/lib/...`, which `--user` installs only ever shadow, never overwrite) and use Option A instead.
+
+Option A avoids this class of conflict entirely — its venv's site-packages never touches the worker's shared environment.
 
 ---
 
 ## Step 6 — Test on demand
 
-Without flipping `enabled` yet, run each tap manually:
+**Run this inside the worker container, not on a Windows host shell.** Whichever
+option you picked in Step 5, `config.command` names a path that only exists
+inside `poindexter-worker` (a venv binary, or a bare command resolved via the
+container's `PATH`) — invoked from a Windows host, `asyncio.create_subprocess_exec`
+fails with `FileNotFoundError: [WinError 2] The system cannot find the file
+specified`, because Windows has no `/root/` or `/home/appuser/` filesystem at
+all. This isn't a bug to fix; it's the same class of gotcha as running the
+Ollama-backed CLI commands on host instead of in-container. Also note
+`poindexter` itself isn't on the container's `PATH` — invoke it as a module:
 
 ```
-poindexter taps run gsc_main
-poindexter taps run ga4_main
+docker exec -w /app poindexter-worker python3 -m poindexter taps run gsc_main
+docker exec -w /app poindexter-worker python3 -m poindexter taps run ga4_main
 ```
 
-> **Note:** the `taps run` CLI command only invokes enabled rows. For the on-demand test BEFORE enabling, either temporarily flip enabled and back, or call the runner inline:
+> **Note:** the `taps run` CLI command only invokes enabled rows. For the on-demand test BEFORE enabling, either temporarily flip enabled and back, or call the runner inline (still inside the container, for the same reason as above):
 >
 > ```
-> python -c "
-> import asyncio, asyncpg
+> docker exec -w /app poindexter-worker python3 -c "
+> import asyncio, asyncpg, os
 > from services.integrations import tap_runner
 > async def main():
->     pool = await asyncpg.create_pool('$LOCAL_DATABASE_URL', min_size=1, max_size=2)
+>     pool = await asyncpg.create_pool(os.environ['DATABASE_URL'], min_size=1, max_size=2)
 >     try:
 >         await pool.execute(\"UPDATE external_taps SET enabled=TRUE WHERE name='gsc_main'\")
 >         summary = await tap_runner.run_all(pool, only_names=['gsc_main'])
@@ -210,13 +226,15 @@ The schedule is `every 6 hours` for both. Watch the **Integrations & Admin** Gra
 
 ## Troubleshooting
 
-| Symptom                                               | Cause                                                    | Fix                                                                                                                                                        |
-| ----------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `tap exited 1` with "invalid_grant"                   | refresh_token revoked or stale                           | re-run `google-oauth-setup.py`, then `poindexter settings set google_oauth_refresh_token "<new_token>" --secret` (both taps share it — no row edit needed) |
-| `tap exited 1` with "Property not found" (GA4)        | wrong property_id                                        | verify in GA Admin → Property details                                                                                                                      |
-| `tap exited 1` with "User does not have access" (GSC) | OAuth account isn't a verified owner                     | grant the account access in https://search.google.com/search-console                                                                                       |
-| 0 records returned                                    | `start_date` is in the future, or data hasn't propagated | back the start_date up a week; GSC has 2-3 day lag                                                                                                         |
-| `tap-google-search-console: command not found`        | tap not on PATH                                          | `docker exec poindexter-worker pip install tap-google-search-console`                                                                                      |
+| Symptom                                                                                     | Cause                                                                                     | Fix                                                                                                                                                        |
+| ------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `tap exited 1` with "invalid_grant"                                                         | refresh_token revoked or stale                                                            | re-run `google-oauth-setup.py`, then `poindexter settings set google_oauth_refresh_token "<new_token>" --secret` (both taps share it — no row edit needed) |
+| `tap exited 1` with "Property not found" (GA4)                                              | wrong property_id                                                                         | verify in GA Admin → Property details                                                                                                                      |
+| `tap exited 1` with "User does not have access" (GSC)                                       | OAuth account isn't a verified owner                                                      | grant the account access in https://search.google.com/search-console                                                                                       |
+| 0 records returned                                                                          | `start_date` is in the future, or data hasn't propagated                                  | back the start_date up a week; GSC has 2-3 day lag                                                                                                         |
+| `tap-google-search-console: command not found`                                              | tap not on `PATH`, or `config.command`'s venv was never populated                         | `docker exec poindexter-worker ls <venv>/bin/` to check what's actually there, then (re-)run Step 5's install                                              |
+| `FileNotFoundError: [WinError 2] The system cannot find the file specified`                 | `taps run` invoked directly on a Windows host — `config.command` is a container-only path | run via `docker exec -w /app poindexter-worker python3 -m poindexter taps run <name>` instead (see Step 6)                                                 |
+| `pip`'s installer warns of a `jsonschema` (or other) version conflict after Step 5 Option B | `--user` install downgraded a shared dependency `prefect`/`litellm`/`mcp` need            | `docker exec poindexter-worker pip check`; if it flags a conflict, `pip uninstall` the packages you just added and use Option A instead                    |
 
 ## Where data lands
 
