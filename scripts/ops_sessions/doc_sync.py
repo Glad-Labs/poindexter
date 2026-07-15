@@ -7,7 +7,7 @@ from pathlib import Path
 
 import _common as c
 
-REPO = "Glad-Labs/glad-labs-stack"
+REPO = "Glad-Labs/poindexter"
 _REF = re.compile(r"(?:src|docs|infrastructure|scripts|brain)/[A-Za-z0-9_./-]+")
 
 
