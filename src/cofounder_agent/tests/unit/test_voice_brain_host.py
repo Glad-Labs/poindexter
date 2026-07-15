@@ -165,7 +165,7 @@ def test_run_turn_spawns_with_no_window_flags(cfg, monkeypatch):
 def server(cfg, monkeypatch):
     from http.server import ThreadingHTTPServer
 
-    monkeypatch.setattr(vbh, "_run_turn", lambda body: {"returncode": 0, "stdout": "ok", "stderr": ""})
+    monkeypatch.setattr(vbh, "_run_turn", lambda _body: {"returncode": 0, "stdout": "ok", "stderr": ""})
     httpd = ThreadingHTTPServer(("127.0.0.1", 0), vbh._Handler)
     port = httpd.server_address[1]
     t = threading.Thread(target=httpd.serve_forever, daemon=True)
