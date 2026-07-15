@@ -120,6 +120,37 @@ def retry_draft(draft_id: str) -> None:
         sys.exit(1)
 
 
+@social_group.command("backfill")
+@click.option(
+    "--lookback-days",
+    default=14,
+    type=int,
+    help="Only consider posts published within this many days",
+)
+def backfill_drafts(lookback_days: int) -> None:
+    """Regenerate social drafts for published posts with incomplete coverage.
+
+    Safe to run any time: delegates to the same reconciliation the
+    BackfillMissingSocialDraftsJob runs on a schedule, so a post with full
+    draft coverage already is a cheap no-op (no LLM calls).
+    """
+    try:
+        async def _impl(pool: Any) -> dict:
+            sc = await _with_site_config(pool)
+            return await _svc.reconcile_missing_drafts(pool, sc, lookback_days)
+
+        result = run_service(_impl)
+    except Exception as exc:
+        click.echo(f"Error: {exc}", err=True)
+        sys.exit(1)
+    click.echo(
+        f"Checked {result['candidates_checked']} post(s), "
+        f"created {result['drafts_created']} draft(s)."
+    )
+    for err in result["errors"]:
+        click.echo(f"  ERROR: {err}", err=True)
+
+
 @social_group.command("setup")
 def setup() -> None:
     """Guide through Postiz integration UUID setup."""

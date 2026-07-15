@@ -713,6 +713,11 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.cancel_orphaned_social_drafts",
             "CancelOrphanedSocialDraftsJob",
         ),
+        (
+            "jobs",
+            "services.jobs.backfill_missing_social_drafts",
+            "BackfillMissingSocialDraftsJob",
+        ),
         ("jobs", "services.jobs.update_utility_rates", "UpdateUtilityRatesJob"),
         ("jobs", "services.jobs.rollup_post_performance", "RollupPostPerformanceJob"),
         # One-shot backfill — patches google_* columns on existing

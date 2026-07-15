@@ -2280,6 +2280,10 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'social_draft_platforms': '',
     'social_reddit_subreddits': '',
     'social_draft_max_retries': '3',
+    # Reconciliation lookback for BackfillMissingSocialDraftsJob (poindexter#863)
+    # — how many days back to re-check published posts for incomplete draft
+    # coverage. Bounds the sweep so it doesn't re-scan the entire archive.
+    'social_draft_backfill_lookback_days': '14',
     'postiz_api_url': 'http://postiz:3000',
     'postiz_integration_id_twitter': '',
     'postiz_integration_id_linkedin': '',

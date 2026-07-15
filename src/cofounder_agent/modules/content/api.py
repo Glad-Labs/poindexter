@@ -6,7 +6,7 @@ from internal submodules (``modules.content.stages.*``,
 thin-adapter boundary described in CLAUDE.md and tracked as
 Glad-Labs/poindexter#712.
 
-Rerouted imports (10 executable imports across 8 substrate files):
+Rerouted imports (11 executable imports across 9 substrate files):
 
 1. ``main.py`` → ``UnifiedQualityService`` from ``quality_service``
 2. ``services/post_pipeline_actions.py`` → ``evaluate`` (gate evaluate) from
@@ -27,6 +27,10 @@ Rerouted imports (10 executable imports across 8 substrate files):
    from ``stages.topic_decision_gate``
 10. ``services/pipeline_templates/__init__.py`` → ``narrate_bundle`` module
     (whole module, aliased as ``_narrate_atom``)
+11. ``services/social_drafts.py`` → ``generate_social_drafts`` (lazy import
+    inside ``reconcile_missing_drafts``, to avoid a circular import — the
+    atom already imports ``SocialDraftsService`` at module level) from
+    ``atoms.social_generate_drafts``
 
 Out-of-scope — 3 string-path registries that reference content paths as
 **strings** for ``importlib.import_module``/walk-root discovery.  These
@@ -58,6 +62,13 @@ from modules.content import content_validator  # noqa: F401 — whole-module ali
 # atoms.narrate_bundle (also used as a whole-module alias ``_narrate_atom``)
 # ---------------------------------------------------------------------------
 from modules.content.atoms import narrate_bundle  # noqa: F401 — whole-module alias
+
+# ---------------------------------------------------------------------------
+# atoms.social_generate_drafts
+# ---------------------------------------------------------------------------
+from modules.content.atoms.social_generate_drafts import (
+    run as generate_social_drafts,
+)
 
 # ---------------------------------------------------------------------------
 # auto_publish
@@ -182,6 +193,8 @@ __all__ = [
     "build_topic_decision_artifact",
     # atoms.narrate_bundle
     "narrate_bundle",
+    # atoms.social_generate_drafts
+    "generate_social_drafts",
     # posts_service
     "PostsService",
     # post_edit_service

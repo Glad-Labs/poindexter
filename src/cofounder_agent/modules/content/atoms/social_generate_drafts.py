@@ -10,6 +10,7 @@ import logging
 from typing import Any
 
 from plugins.atom import AtomMeta
+from services.integrations.operator_notify import notify_operator
 from services.social_drafts import SocialDraftsService
 from services.social_poster import generate_social_posts
 
@@ -128,7 +129,21 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                         pool=pool,
                     )
         except Exception as exc:
+            # Root-cause fix (poindexter#863): a log-only catch here used to
+            # leave zero drafts with no alert and nothing for
+            # RetryFailedSocialDraftsJob to pick up (it only retries EXISTING
+            # 'failed' rows; this path never creates one). Stay non-fatal —
+            # a social-copy hiccup must not block the post from publishing —
+            # but notify_operator so the gap is visible instead of silent.
+            # BackfillMissingSocialDraftsJob provides the actual retry.
             logger.error("[social.generate_drafts] text draft generation failed: %s", exc)
+            await notify_operator(
+                f"[social] draft generation failed for task "
+                f"{pipeline_task_id[:8]} (platforms: {', '.join(text_platforms)}): "
+                f"{exc}",
+                critical=False,
+                site_config=site_config,
+            )
 
     if "reddit" in platforms:
         subreddits_raw = site_config.get("social_reddit_subreddits", "")
@@ -137,6 +152,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             for s in subreddits_raw.split(",")
             if s.strip() and ("reddit", s.strip()) not in taken
         ]
+        reddit_errors: list[str] = []
         for subreddit in subreddits:
             try:
                 copy = await _generate_reddit_copy(
@@ -159,6 +175,18 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 logger.error(
                     "[social.generate_drafts] reddit %s draft failed: %s", subreddit, exc
                 )
+                reddit_errors.append(f"{subreddit}: {exc}")
+        # One batched notification per run, not one per failing subreddit —
+        # a shared root cause (e.g. the LLM backend being down) would
+        # otherwise page once per subreddit.
+        if reddit_errors:
+            await notify_operator(
+                f"[social] reddit draft generation failed for task "
+                f"{pipeline_task_id[:8]} ({len(reddit_errors)} subreddit(s)): "
+                f"{'; '.join(reddit_errors)}",
+                critical=False,
+                site_config=site_config,
+            )
 
     return {}
 

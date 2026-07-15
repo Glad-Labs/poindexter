@@ -283,3 +283,103 @@ async def test_replay_reddit_skips_taken_subreddits(monkeypatch):
     assert create_draft.await_args.kwargs["platform_config"] == {
         "subreddit": "r/selfhosted"
     }
+
+
+# ---------------------------------------------------------------------------
+# Generation-failure visibility (poindexter#863): a swallowed exception used
+# to leave zero drafts with only a log line — no alert, no persisted record,
+# and nothing for RetryFailedSocialDraftsJob to pick up (it only retries
+# EXISTING 'failed' rows; this failure mode never creates one). The atom
+# must notify_operator so the failure is actually visible, while still
+# returning normally — a social-copy hiccup must never block the post from
+# publishing.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_text_generation_failure_notifies_operator(
+    monkeypatch, enabled_site_config, no_existing_drafts
+):
+    monkeypatch.setattr(
+        social_generate_drafts,
+        "generate_social_posts",
+        AsyncMock(side_effect=RuntimeError("ollama timeout")),
+    )
+    notify = AsyncMock()
+    monkeypatch.setattr(social_generate_drafts, "notify_operator", notify)
+
+    result = await drafts_run(_pooled_state(enabled_site_config))
+
+    assert result == {}
+    notify.assert_awaited_once()
+    assert "ollama timeout" in notify.await_args.args[0]
+    assert notify.await_args.kwargs["critical"] is False
+
+
+@pytest.mark.asyncio
+async def test_reddit_generation_failure_notifies_operator_once(monkeypatch):
+    """Both subreddits fail → ONE batched notification, not one per
+    subreddit — a shared root cause (e.g. Ollama down) shouldn't spam."""
+    site_config = SiteConfig(
+        initial_config={
+            "social_drafts_enabled": "true",
+            "social_draft_platforms": "reddit",
+            "social_reddit_subreddits": "r/LocalLLaMA,r/selfhosted",
+        }
+    )
+    monkeypatch.setattr(
+        social_generate_drafts._svc,
+        "existing_draft_keys",
+        AsyncMock(return_value=set()),
+    )
+    monkeypatch.setattr(
+        social_generate_drafts,
+        "_generate_reddit_copy",
+        AsyncMock(side_effect=RuntimeError("model unavailable")),
+    )
+    notify = AsyncMock()
+    monkeypatch.setattr(social_generate_drafts, "notify_operator", notify)
+
+    await drafts_run(_pooled_state(site_config))
+
+    notify.assert_awaited_once()
+    msg = notify.await_args.args[0]
+    assert "r/LocalLLaMA" in msg and "r/selfhosted" in msg
+    assert notify.await_args.kwargs["critical"] is False
+
+
+@pytest.mark.asyncio
+async def test_reddit_generation_partial_failure_still_creates_good_draft(
+    monkeypatch,
+):
+    """One subreddit fails, the other succeeds — the failure must not lose
+    the draft that DID generate successfully (per-subreddit try/except, not
+    one try/except around the whole loop)."""
+    site_config = SiteConfig(
+        initial_config={
+            "social_drafts_enabled": "true",
+            "social_draft_platforms": "reddit",
+            "social_reddit_subreddits": "r/LocalLLaMA,r/selfhosted",
+        }
+    )
+    monkeypatch.setattr(
+        social_generate_drafts._svc,
+        "existing_draft_keys",
+        AsyncMock(return_value=set()),
+    )
+
+    async def _copy(*, subreddit, **_kwargs):
+        if subreddit == "r/LocalLLaMA":
+            raise RuntimeError("boom")
+        return "good copy"
+
+    monkeypatch.setattr(social_generate_drafts, "_generate_reddit_copy", _copy)
+    create_draft = AsyncMock(return_value="draft-1")
+    monkeypatch.setattr(social_generate_drafts._svc, "create_draft", create_draft)
+    monkeypatch.setattr(social_generate_drafts, "notify_operator", AsyncMock())
+
+    await drafts_run(_pooled_state(site_config))
+
+    create_draft.assert_awaited_once()
+    assert create_draft.await_args.kwargs["platform_config"] == {
+        "subreddit": "r/selfhosted"
+    }

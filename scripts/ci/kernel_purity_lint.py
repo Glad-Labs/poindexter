@@ -73,6 +73,12 @@ KERNEL_PURITY_BASELINE = {
     # shifted 1221 -> 1251 by drain_background_tasks (GlitchTip #863 root
     # cause B — publish-tail drain added above it).
     "services/publish_service.py:1251",
+    # social_drafts.reconcile_missing_drafts calls modules.content.api
+    # (public surface) lazily, same pattern as post_pipeline_actions /
+    # publish_service — the atom it re-invokes imports SocialDraftsService
+    # at module level, so a top-level import here would be circular
+    # (poindexter#863, social-draft generation reliability fix).
+    "services/social_drafts.py:510",
     # research_context calls internal_link_coherence lazily.
     # Line shifted 151 -> 177 by the 2026-07-12 dropped_db_error aggregate
     # finding (silent-excepts burn-down batch 5) added above it.

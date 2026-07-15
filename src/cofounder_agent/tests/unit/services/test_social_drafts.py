@@ -669,6 +669,134 @@ async def test_approve_draft_appends_url_when_missing():
     )
 
 
+# ---------------------------------------------------------------------------
+# find_posts_missing_social_coverage / reconcile_missing_drafts (#863) —
+# reconciliation sweep for the swallowed-exception bug: a published post
+# whose social.generate_drafts run silently produced zero drafts gets a
+# fresh regeneration attempt, gated on the atom's own idempotency guard.
+# ---------------------------------------------------------------------------
+
+@pytest.mark.asyncio
+async def test_find_posts_missing_coverage_queries_published_within_window():
+    pool, conn = _make_pool(fetch=[])
+    svc = SocialDraftsService()
+    await svc.find_posts_missing_social_coverage(pool, lookback_days=14)
+    sql = conn.fetch.call_args[0][0].lower()
+    assert "p.status = 'published'" in sql
+    assert "social.generate_drafts" in sql
+    assert conn.fetch.call_args[0][1] == 14
+
+
+@pytest.mark.asyncio
+async def test_find_posts_missing_coverage_walks_nodes_key_not_bare_array():
+    """Regression: pipeline_templates.graph_def is stored as a top-level
+    OBJECT (keys: name/edges/entry/nodes/description — column default is
+    '{}'::jsonb, an object), not a bare array. jsonb_array_elements(graph_def)
+    directly raises 'cannot extract elements from an object' against the
+    real schema — verified against a live DB during development. The node
+    list lives under graph_def->'nodes'."""
+    pool, conn = _make_pool(fetch=[])
+    svc = SocialDraftsService()
+    await svc.find_posts_missing_social_coverage(pool, lookback_days=14)
+    sql = conn.fetch.call_args[0][0].lower()
+    assert "jsonb_array_elements(tpl.graph_def->'nodes')" in sql
+
+
+@pytest.mark.asyncio
+async def test_find_posts_missing_coverage_returns_atom_input_fields():
+    row = {
+        "pipeline_task_id": "task-1", "title": "T", "slug": "t-slug",
+        "content": "body", "excerpt": "ex", "seo_description": "sd",
+        "seo_keywords": "a,b",
+    }
+    pool, _conn = _make_pool(fetch=[row])
+    svc = SocialDraftsService()
+    result = await svc.find_posts_missing_social_coverage(pool, lookback_days=14)
+    assert result == [row]
+
+
+@pytest.mark.asyncio
+async def test_reconcile_calls_atom_and_counts_new_drafts(monkeypatch):
+    """A post missing bluesky coverage: existing_draft_keys grows by one
+    after the atom runs → drafts_created reflects the real delta, not just
+    'the atom ran'."""
+    pool, _conn = _make_pool()
+    svc = SocialDraftsService()
+    monkeypatch.setattr(
+        svc,
+        "find_posts_missing_social_coverage",
+        AsyncMock(return_value=[
+            {"pipeline_task_id": "task-1", "title": "T", "slug": "s",
+             "content": "c", "excerpt": "e", "seo_description": "sd",
+             "seo_keywords": "kw"},
+        ]),
+    )
+    monkeypatch.setattr(
+        svc,
+        "existing_draft_keys",
+        AsyncMock(side_effect=[set(), {("bluesky", "")}]),
+    )
+    generate = AsyncMock(return_value={})
+    monkeypatch.setattr("modules.content.api.generate_social_drafts", generate)
+
+    sc = _make_site_config({})
+    result = await svc.reconcile_missing_drafts(pool, sc, lookback_days=14)
+
+    generate.assert_awaited_once()
+    state = generate.await_args.args[0]
+    assert state["task_id"] == "task-1"
+    assert state["title"] == "T"
+    assert state["post_slug"] == "s"
+    assert state["site_config"] is sc
+    assert result["candidates_checked"] == 1
+    assert result["drafts_created"] == 1
+    assert result["errors"] == []
+
+
+@pytest.mark.asyncio
+async def test_reconcile_skips_candidates_without_task_id(monkeypatch):
+    pool, _conn = _make_pool()
+    svc = SocialDraftsService()
+    monkeypatch.setattr(
+        svc,
+        "find_posts_missing_social_coverage",
+        AsyncMock(return_value=[{"pipeline_task_id": None, "title": "T"}]),
+    )
+    generate = AsyncMock()
+    monkeypatch.setattr("modules.content.api.generate_social_drafts", generate)
+
+    result = await svc.reconcile_missing_drafts(pool, _make_site_config({}), 14)
+
+    generate.assert_not_awaited()
+    assert result["candidates_checked"] == 0
+
+
+@pytest.mark.asyncio
+async def test_reconcile_collects_per_task_errors_and_continues(monkeypatch):
+    """One task's regeneration raising must not abort the reconciliation
+    sweep for the remaining candidates."""
+    pool, _conn = _make_pool()
+    svc = SocialDraftsService()
+    monkeypatch.setattr(
+        svc,
+        "find_posts_missing_social_coverage",
+        AsyncMock(return_value=[
+            {"pipeline_task_id": "task-1", "title": "A", "slug": "a"},
+            {"pipeline_task_id": "task-2", "title": "B", "slug": "b"},
+        ]),
+    )
+    monkeypatch.setattr(svc, "existing_draft_keys", AsyncMock(return_value=set()))
+    generate = AsyncMock(side_effect=[RuntimeError("boom"), {}])
+    monkeypatch.setattr("modules.content.api.generate_social_drafts", generate)
+
+    result = await svc.reconcile_missing_drafts(pool, _make_site_config({}), 14)
+
+    assert generate.await_count == 2
+    assert result["candidates_checked"] == 2
+    assert len(result["errors"]) == 1
+    assert "task-1" in result["errors"][0]
+
+
 @pytest.mark.asyncio
 async def test_approve_draft_stamps_post_id_and_approved_at():
     """A successful approve links the draft to its posts row (post_id) and

@@ -446,6 +446,104 @@ class SocialDraftsService:
                 post_id,
             )
 
+    async def find_posts_missing_social_coverage(
+        self, pool: Any, lookback_days: int
+    ) -> list[dict[str, Any]]:
+        """Published posts whose task's template includes social.generate_drafts.
+
+        Filtering on the template's ``graph_def`` (not a literal draft-count
+        comparison) is deliberate: the atom's own ``existing_draft_keys``
+        idempotency guard is what actually decides which platforms still
+        need generating — this query only narrows down which posts are
+        worth that cheap re-check, not which platforms are missing.
+
+        Returns dicts carrying exactly the fields
+        ``modules.content.atoms.social_generate_drafts.run`` needs to
+        regenerate: pipeline_task_id, title, slug, content, excerpt,
+        seo_description, seo_keywords.
+        """
+        sql = """
+            SELECT p.metadata->>'pipeline_task_id' AS pipeline_task_id,
+                   p.title, p.slug, p.content, p.excerpt,
+                   p.seo_description, p.seo_keywords
+            FROM posts p
+            JOIN pipeline_tasks pt
+                ON pt.task_id = p.metadata->>'pipeline_task_id'
+            WHERE p.status = 'published'
+              AND p.published_at > now() - make_interval(days => $1::integer)
+              AND p.metadata->>'pipeline_task_id' IS NOT NULL
+              AND EXISTS (
+                  SELECT 1
+                  FROM pipeline_templates tpl,
+                       jsonb_array_elements(tpl.graph_def->'nodes') AS node
+                  WHERE tpl.slug = pt.template_slug
+                    AND tpl.active = true
+                    AND node->>'atom' = 'social.generate_drafts'
+              )
+            ORDER BY p.published_at DESC
+        """
+        async with pool.acquire() as conn:
+            rows = await conn.fetch(sql, lookback_days)
+        return [dict(r) for r in rows]
+
+    async def reconcile_missing_drafts(
+        self, pool: Any, site_config: SiteConfig, lookback_days: int
+    ) -> dict[str, Any]:
+        """Find + regenerate drafts for posts with incomplete platform coverage.
+
+        Root-cause fix for poindexter#863: social.generate_drafts can fail
+        mid-generation without a trace (the atom catches and logs but does
+        not persist anything), so RetryFailedSocialDraftsJob has nothing to
+        retry — no row was ever created. This re-invokes the atom's own
+        ``run()`` for each candidate; its ``existing_draft_keys`` idempotency
+        guard makes a post with full coverage a cheap no-op (one query, zero
+        LLM calls), so calling it again is always safe.
+
+        The atom is reached through ``modules.content.api`` (the thin-adapter
+        boundary substrate uses to call into the content module) via a lazy
+        import — the atom imports ``SocialDraftsService`` at module level, so
+        a top-level import here would be circular.
+        """
+        candidates = await self.find_posts_missing_social_coverage(
+            pool, lookback_days
+        )
+        from modules.content.api import generate_social_drafts
+
+        checked = 0
+        created = 0
+        errors: list[str] = []
+        for post in candidates:
+            task_id = post.get("pipeline_task_id") or ""
+            if not task_id:
+                continue
+            checked += 1
+            state = {
+                "site_config": site_config,
+                "task_id": task_id,
+                "title": post.get("title") or "",
+                "post_slug": post.get("slug") or "",
+                "content": post.get("content") or "",
+                "excerpt": post.get("excerpt") or post.get("seo_description") or "",
+                "seo_keywords": post.get("seo_keywords") or "",
+                "database_service": _PoolAdapter(pool),
+            }
+            try:
+                before = await self.existing_draft_keys(task_id, pool)
+                await generate_social_drafts(state)
+                after = await self.existing_draft_keys(task_id, pool)
+                created += len(after - before)
+            except Exception as exc:
+                logger.error(
+                    "[social_drafts] reconcile task %s raised: %s",
+                    task_id[:8], exc,
+                )
+                errors.append(f"{task_id[:8]}: {exc}")
+        return {
+            "candidates_checked": checked,
+            "drafts_created": created,
+            "errors": errors,
+        }
+
     async def cancel_orphaned_for_rejected_tasks(self, pool: Any) -> int:
         """Cancel pending/failed drafts whose content task was terminally rejected.
 
@@ -473,6 +571,19 @@ class SocialDraftsService:
                 list(_TERMINAL_REJECT_TASK_STATUSES),
             )
         return _pg_command_rowcount(command_tag)
+
+
+class _PoolAdapter:
+    """Minimal ``database_service``-shaped wrapper around a bare pool.
+
+    ``social_generate_drafts.run`` reaches the pool via
+    ``state['database_service'].pool`` (the graph_def seam), never a bare
+    ``state['pool']`` — see poindexter#855. reconcile_missing_drafts already
+    has a bare pool, not a real DatabaseService, so this adapts it.
+    """
+
+    def __init__(self, pool: Any) -> None:
+        self.pool = pool
 
 
 async def _resolve_post(draft_row: Any, pool: Any) -> Any:
