@@ -2,6 +2,30 @@
 
 ## Unreleased
 
+## [0.104.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.103.0...v0.104.0) (2026-07-15)
+
+
+### Features
+
+* **observability:** add ProbeDisabledCapabilitiesJob — surface silent opt-in features ([#2508](https://github.com/Glad-Labs/glad-labs-stack/issues/2508)) ([e734664](https://github.com/Glad-Labs/glad-labs-stack/commit/e734664124b8288df968c78af868244fd918e152))
+* **storage:** downscale oversized images before WebP conversion ([#2516](https://github.com/Glad-Labs/glad-labs-stack/issues/2516)) ([b309edf](https://github.com/Glad-Labs/glad-labs-stack/commit/b309edf6d83469ccd8f89e3357cfb2988c87fa84))
+* **topics:** add per-niche cadence target + wire into the SLO probe ([#2515](https://github.com/Glad-Labs/glad-labs-stack/issues/2515)) ([2a73acf](https://github.com/Glad-Labs/glad-labs-stack/commit/2a73acfb5037e88b491369d703c7021d798944c2))
+
+
+### Bug Fixes
+
+* **api:** add offset pagination to the validation-failures endpoint ([#2522](https://github.com/Glad-Labs/glad-labs-stack/issues/2522)) ([3a69f98](https://github.com/Glad-Labs/glad-labs-stack/commit/3a69f98831782aa62fd3904a448e4611e47a9d03))
+* **brain:** dedup docker_port_forward_recovery_failed across retries ([#2518](https://github.com/Glad-Labs/glad-labs-stack/issues/2518)) ([c460d6f](https://github.com/Glad-Labs/glad-labs-stack/commit/c460d6f50196f49c97688b1ae81ef642112f1183)), closes [#2486](https://github.com/Glad-Labs/glad-labs-stack/issues/2486)
+* **cli:** scope the Windows SelectorEventLoop switch to pipeline commands only (poindexter[#857](https://github.com/Glad-Labs/glad-labs-stack/issues/857) follow-up) ([#2519](https://github.com/Glad-Labs/glad-labs-stack/issues/2519)) ([8845691](https://github.com/Glad-Labs/glad-labs-stack/commit/88456917b8f86451fba63bcc9f7b58fd60a2884d))
+* **cli:** thread SiteConfig into `poindexter taps run` (poindexter[#857](https://github.com/Glad-Labs/glad-labs-stack/issues/857)) ([#2514](https://github.com/Glad-Labs/glad-labs-stack/issues/2514)) ([70c6a77](https://github.com/Glad-Labs/glad-labs-stack/commit/70c6a778a96aa142fcc47d8b2b17b46a5433d176))
+* **findings:** stop warn/warning severity fragmenting dashboard rollups ([#2526](https://github.com/Glad-Labs/glad-labs-stack/issues/2526)) ([78ac884](https://github.com/Glad-Labs/glad-labs-stack/commit/78ac884f285f7187bae4e87b3d6fedfbb7d2cb38))
+* **pipeline:** image_rebuild moved-on status set was missing rejected_final ([#2521](https://github.com/Glad-Labs/glad-labs-stack/issues/2521)) ([50542b3](https://github.com/Glad-Labs/glad-labs-stack/commit/50542b322cb22e14bab8ef0b50ed9fedcca5f75f))
+* **pipeline:** re-wire the orphaned heartbeat_task lease refresh ([#757](https://github.com/Glad-Labs/glad-labs-stack/issues/757)) ([#2528](https://github.com/Glad-Labs/glad-labs-stack/issues/2528)) ([808502c](https://github.com/Glad-Labs/glad-labs-stack/commit/808502cce2f8327827d0c9d70d1f739585156216))
+* **social:** stop silently swallowing draft-generation failures ([#2532](https://github.com/Glad-Labs/glad-labs-stack/issues/2532)) ([1eeb574](https://github.com/Glad-Labs/glad-labs-stack/commit/1eeb574c9ad068aea7e8ad6bd19c4866f5a08db5))
+* **tests:** stop nest_asyncio.apply() leaking asyncio.run() across the suite ([#2529](https://github.com/Glad-Labs/glad-labs-stack/issues/2529)) ([6d9d3ae](https://github.com/Glad-Labs/glad-labs-stack/commit/6d9d3ae22be250fa6ce15d1ac05c4e62d312c644))
+* **topics:** notify operator when a topic batch gate opens ([#2513](https://github.com/Glad-Labs/glad-labs-stack/issues/2513)) ([8d09d56](https://github.com/Glad-Labs/glad-labs-stack/commit/8d09d56bdc143349247f8ce33809408205171876))
+* **types:** give get_logger() an explicit return type to stop Pyright false positives ([#2527](https://github.com/Glad-Labs/glad-labs-stack/issues/2527)) ([36129d8](https://github.com/Glad-Labs/glad-labs-stack/commit/36129d8f4f186d1d970d96cdd8a66deb70e929b8))
+
 ## [0.103.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.102.0...v0.103.0) (2026-07-14)
 
 
