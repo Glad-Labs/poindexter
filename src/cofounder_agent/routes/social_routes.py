@@ -94,4 +94,6 @@ def _serialize(d: SocialDraftRow) -> dict[str, Any]:
         "created_at": d.created_at.isoformat() if d.created_at else None,
         "approved_at": d.approved_at.isoformat() if d.approved_at else None,
         "posted_at": d.posted_at.isoformat() if d.posted_at else None,
+        "title": d.title,
+        "resolved_post_id": d.resolved_post_id,
     }

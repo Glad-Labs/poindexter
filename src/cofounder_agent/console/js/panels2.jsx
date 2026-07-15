@@ -5,8 +5,12 @@
 
 /* ─── Social Distribution — per-post per-platform draft queue ── */
 // GET /api/social/drafts → {drafts:[…]}. Shows every draft's status, error,
-// retry count, and Postiz post ID — granularity the Grafana aggregate stats
-// don't have. Pending drafts surface here AND in the action inbox (kind='social').
+// retry count, Postiz post ID, and the article it promotes (title +
+// resolved post/task id — resolved server-side since post_id itself stays
+// null until the linked post publishes) — granularity the Grafana aggregate
+// stats don't have. Pending drafts surface here AND in the action inbox
+// (kind='social'), but only once their post is published (see draftToInbox
+// in app.jsx); this table is the only place to identify a draft before that.
 // No mock data: honest-empty in mock mode (no fabricated draft rows).
 const SOCIAL_STATUS_TAG = {
   pending: 'amber',
@@ -104,7 +108,7 @@ function SocialPanel({ social, onApprove, onReject }) {
                 {[
                   'Platform',
                   'Status',
-                  'Post ID',
+                  'Article',
                   'Error',
                   'Retries',
                   'Postiz ID',
@@ -148,19 +152,27 @@ function SocialPanel({ social, onApprove, onReject }) {
                       {d.status}
                     </span>
                   </td>
-                  <td
-                    className="mono c-dim"
-                    style={{
-                      padding: '6px 10px',
-                      maxWidth: 90,
-                      overflow: 'hidden',
-                      textOverflow: 'ellipsis',
-                      whiteSpace: 'nowrap',
-                      fontSize: 10,
-                    }}
-                    title={d.post_id || ''}
-                  >
-                    {d.post_id ? String(d.post_id).slice(0, 8) : '—'}
+                  <td style={{ padding: '6px 10px', maxWidth: 200 }}>
+                    <div
+                      style={{
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                        fontSize: 11,
+                      }}
+                      title={d.title || ''}
+                    >
+                      {d.title || '—'}
+                    </div>
+                    <div
+                      className="mono c-dim"
+                      style={{ fontSize: 9, marginTop: 2 }}
+                      title={d.resolved_post_id || d.pipeline_task_id || ''}
+                    >
+                      {d.resolved_post_id
+                        ? `POST ${String(d.resolved_post_id).slice(0, 8)}`
+                        : `TASK ${String(d.pipeline_task_id).slice(0, 8)}`}
+                    </div>
                   </td>
                   <td
                     style={{

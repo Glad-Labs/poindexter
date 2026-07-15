@@ -137,3 +137,29 @@ class TestListDraftsSerialization:
 
         assert resp.status_code == 200
         assert resp.json()["drafts"][0]["post_status"] == "published"
+
+    def test_list_drafts_includes_title_and_resolved_post_id(self, monkeypatch):
+        mock_svc = MagicMock()
+        mock_svc.list_drafts = AsyncMock(
+            return_value=[
+                SocialDraftRow(
+                    id="draft-1", pipeline_task_id="task-1", post_id=None,
+                    platform="bluesky", content="c", platform_config={},
+                    status="pending", postiz_post_id=None, error=None,
+                    retry_count=0, last_retry_at=None,
+                    created_at=datetime.now(timezone.utc),
+                    approved_at=None, posted_at=None, post_status=None,
+                    title="Why VRAM Bandwidth Matters",
+                    resolved_post_id="post-42",
+                )
+            ]
+        )
+        monkeypatch.setattr(social_routes_module, "_svc", mock_svc)
+        client = TestClient(_build_social_app())
+
+        resp = client.get("/api/social/drafts")
+
+        assert resp.status_code == 200
+        draft = resp.json()["drafts"][0]
+        assert draft["title"] == "Why VRAM Bandwidth Matters"
+        assert draft["resolved_post_id"] == "post-42"

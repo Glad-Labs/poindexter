@@ -63,6 +63,7 @@ def _list_row(**overrides) -> dict:
         "status": "pending", "postiz_post_id": None, "error": None,
         "retry_count": 0, "last_retry_at": None, "created_at": None,
         "approved_at": None, "posted_at": None, "resolved_post_status": None,
+        "article_title": None, "resolved_post_id": None,
     }
     row.update(overrides)
     return row
@@ -258,6 +259,46 @@ async def test_list_drafts_query_resolves_post_by_id_or_task_metadata():
     sql = conn.fetch.call_args[0][0].lower()
     assert "p.id = d.post_id" in sql
     assert "metadata->>'pipeline_task_id'" in sql
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_title_from_post_when_available():
+    """Once a posts row exists, its title (possibly revised post-writing)
+    wins over the task's original topic."""
+    pool, _conn = _make_pool(
+        fetch=[_list_row(article_title="Real Published Title", resolved_post_id="post-99")]
+    )
+    svc = SocialDraftsService()
+    drafts = await svc.list_drafts(None, None, None, pool)
+    assert drafts[0].title == "Real Published Title"
+    assert drafts[0].resolved_post_id == "post-99"
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_title_falls_back_to_task_topic():
+    """Before a posts row exists (task still awaiting_approval), the SQL
+    COALESCEs to pipeline_tasks.topic — resolved_post_id stays None."""
+    pool, _conn = _make_pool(
+        fetch=[_list_row(article_title="Original Task Topic", resolved_post_id=None)]
+    )
+    svc = SocialDraftsService()
+    drafts = await svc.list_drafts(None, None, None, pool)
+    assert drafts[0].title == "Original Task Topic"
+    assert drafts[0].resolved_post_id is None
+
+
+@pytest.mark.asyncio
+async def test_list_drafts_query_joins_pipeline_tasks_for_title():
+    """Locks in the join + COALESCE the title/id resolution depends on —
+    same rigor as the existing post-resolution join assertion above."""
+    pool, conn = _make_pool(fetch=[])
+    svc = SocialDraftsService()
+    await svc.list_drafts(None, None, None, pool)
+    sql = conn.fetch.call_args[0][0].lower()
+    assert "join pipeline_tasks" in sql
+    assert "pt.task_id = d.pipeline_task_id" in sql
+    assert "coalesce(rp.title, pt.topic)" in sql
+    assert "coalesce(d.post_id, rp.id)" in sql
 
 
 # ---------------------------------------------------------------------------

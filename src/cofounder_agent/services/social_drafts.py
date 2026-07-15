@@ -105,6 +105,8 @@ class SocialDraftRow:
     approved_at: datetime | None
     posted_at: datetime | None
     post_status: str | None
+    title: str | None = None
+    resolved_post_id: str | None = None
 
 
 class SocialDraftsService:
@@ -364,13 +366,19 @@ class SocialDraftsService:
         status: str | None,
         pool: Any,
     ) -> list[SocialDraftRow]:
-        """List drafts, each carrying its resolved post_status.
+        """List drafts, each carrying its resolved post_status, title, and id.
 
         post_status lets callers (the console's action inbox) distinguish a
         genuinely-approvable draft from one that would 409 on approve_draft's
         post-link gate (post not 'published' yet, or no posts row at all) —
         the same resolution _resolve_post uses: post_id when linked, else the
         latest posts row matching pipeline_task_id metadata.
+
+        title/resolved_post_id let callers identify which article a draft
+        promotes even before that article publishes: posts.title/posts.id
+        win once a posts row exists (can resolve before social_post_drafts.
+        post_id itself gets backfilled at publish time), else pipeline_tasks.
+        topic is the fallback label for a task with no posts row yet.
         """
         conditions: list[str] = []
         args: list[Any] = []
@@ -385,10 +393,14 @@ class SocialDraftsService:
             conditions.append(f"d.status = ${len(args)}")
         where = f"WHERE {' AND '.join(conditions)}" if conditions else ""
         sql = f"""
-            SELECT d.*, rp.status AS resolved_post_status
+            SELECT d.*,
+                   rp.status AS resolved_post_status,
+                   COALESCE(rp.title, pt.topic) AS article_title,
+                   COALESCE(d.post_id, rp.id) AS resolved_post_id
             FROM social_post_drafts d
+            LEFT JOIN pipeline_tasks pt ON pt.task_id = d.pipeline_task_id
             LEFT JOIN LATERAL (
-                SELECT p.status
+                SELECT p.id, p.title, p.status
                 FROM posts p
                 WHERE (d.post_id IS NOT NULL AND p.id = d.post_id)
                    OR (d.post_id IS NULL AND p.metadata->>'pipeline_task_id' = d.pipeline_task_id)
@@ -575,4 +587,8 @@ def _row_to_dataclass(row: Any) -> SocialDraftRow:
         approved_at=row["approved_at"],
         posted_at=row["posted_at"],
         post_status=row["resolved_post_status"],
+        title=row["article_title"],
+        resolved_post_id=(
+            str(row["resolved_post_id"]) if row["resolved_post_id"] else None
+        ),
     )
