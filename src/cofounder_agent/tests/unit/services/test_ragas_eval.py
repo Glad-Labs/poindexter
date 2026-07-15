@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 import sys
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from importlib.util import find_spec
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -321,6 +321,87 @@ def _inject_fake_modules(fake_modules: dict[str, Any]):
                 sys.modules[name] = original
 
 
+_MISSING = object()
+
+
+def _snapshot_own_attrs(obj: Any, names: list[str]) -> dict[str, Any]:
+    """Snapshot attrs ``obj`` (a class or module) defines in its OWN
+    ``__dict__`` — not ones it merely inherits — so restore can tell
+    "reassign the original" from "delete the patch, fall back to the
+    inherited/default implementation" apart. See ``_isolate_nest_asyncio_patch``.
+    """
+    owned = vars(obj)
+    return {name: owned.get(name, _MISSING) for name in names}
+
+
+def _restore_own_attrs(obj: Any, snapshot: dict[str, Any]) -> None:
+    for name, value in snapshot.items():
+        if value is _MISSING:
+            with suppress(AttributeError):
+                delattr(obj, name)
+        else:
+            setattr(obj, name, value)
+
+
+@contextmanager
+def _isolate_nest_asyncio_patch():
+    """Undo ``nest_asyncio.apply()``'s process-wide monkeypatch after the block.
+
+    ``nest_asyncio`` ships no "unapply" — its whole point (Jupyter-style
+    reentrant loops) is a one-way GLOBAL patch of ``asyncio.run``, the event
+    loop policy CLASS's ``get_event_loop``, and the concrete event loop
+    CLASS's ``run_forever`` / ``run_until_complete`` / ``_run_once`` (see
+    ``nest_asyncio.apply`` / ``_patch_asyncio`` / ``_patch_policy`` /
+    ``_patch_loop`` in the installed package — all class-level assignments,
+    never undone). Left unguarded, the real
+    ``nest_asyncio.apply()`` call inside
+    ``test_embed_sync_paths_bridge_from_inside_ragas_nested_loop`` (needed
+    there to prove the reentrant bridge genuinely survives Ragas's real
+    nesting pattern, not just a mocked one) leaks past this test: the
+    patched ``asyncio.run`` routes through a loop MEMOIZED per-thread on the
+    policy instead of creating+closing a fresh one every call, so any LATER
+    test in the same pytest process that calls ``asyncio.run()`` twice
+    expecting two distinct event loops silently gets the same cached one
+    back both times — e.g.
+    test_revalidation_service.py::test_rebuilds_client_when_the_running_loop_changes,
+    which only fails when the full suite runs this ragas test first, never
+    in isolation.
+
+    Same "snapshot + restore only what changed" idiom as
+    ``_inject_fake_modules`` above, sized to exactly the attributes
+    nest_asyncio's source sets.
+    """
+    import asyncio as _asyncio
+
+    policy = _asyncio.get_event_loop_policy()
+    throwaway_loop = _asyncio.new_event_loop()
+    loop_cls = type(throwaway_loop)
+    throwaway_loop.close()
+
+    module_snapshot = _snapshot_own_attrs(_asyncio, ["run", "_nest_patched"])
+    policy_cls_snapshot = _snapshot_own_attrs(type(policy), ["get_event_loop"])
+    loop_cls_snapshot = _snapshot_own_attrs(
+        loop_cls,
+        [
+            "run_forever", "run_until_complete", "_run_once",
+            "_check_running", "_check_runnung", "_nest_patched",
+            "_num_runs_pending", "_is_proactorloop",
+        ],
+    )
+    try:
+        yield
+    finally:
+        # nest_asyncio's patched asyncio.run never closes the loop it
+        # memoizes — close it before the patched methods that know how
+        # (run_until_complete et al.) are restored away underneath it.
+        leaked_loop = getattr(policy._local, "_loop", None)
+        if leaked_loop is not None and not leaked_loop.is_closed():
+            leaked_loop.close()
+        _restore_own_attrs(loop_cls, loop_cls_snapshot)
+        _restore_own_attrs(type(policy), policy_cls_snapshot)
+        _restore_own_attrs(_asyncio, module_snapshot)
+
+
 @pytest.mark.unit
 class TestDispatcherWrappers:
     """With a ``pool``, Ragas judge + embeddings route through the
@@ -478,7 +559,11 @@ class TestDispatcherWrappers:
             # exactly what ResponseRelevancy.calculate_similarity does.
             return embeddings.embed_query("some text")
 
-        result = asyncio.run(_ragas_like_ascore())
+        # nest_asyncio.apply() above is a real, process-wide, never-undone
+        # monkeypatch — see _isolate_nest_asyncio_patch's docstring for why
+        # this leaks into unrelated later tests without this guard.
+        with _isolate_nest_asyncio_patch():
+            result = asyncio.run(_ragas_like_ascore())
         assert result == [0.3, 0.4]
 
 
