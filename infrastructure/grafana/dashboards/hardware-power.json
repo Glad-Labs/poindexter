@@ -852,7 +852,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, (metric_value / 1000.0 * 0.14 * 24)::float AS \"Est. Daily Cost\" FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name='psu_power_in' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
+          "rawSql": "SELECT created_at AS time, (cost_usd / NULLIF(duration_ms, 0) * 3600000.0 * 24)::float AS \"Est. Daily Cost\" FROM cost_logs WHERE cost_type LIKE 'electricity%' AND $__timeFilter(created_at) ORDER BY created_at",
           "refId": "A"
         }
       ]

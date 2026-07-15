@@ -622,22 +622,23 @@ function CostPanel({ cost, onOpen, fresh }) {
       ? cost.percentUsed
       : (cost.monthToDate / cost.budget) * 100;
   const warn = pct > 80 || cost.status === 'warning';
-  const energyUsd =
-    cost.energyKwhMonth != null
-      ? cost.energyKwhMonth * cost.electricityRate
-      : null;
+  const energyUsd = cost.electricityUsdMonth;
   // The honest cost rows. Infra is $0 (self-hosted); the real levers are LLM/API
-  // spend vs cap (the headline) + local energy. `energyKwhMonth === null` means
-  // live mode with no backend read → explicit "backend read pending", never a
+  // spend vs cap (the headline) + measured electricity (cost_ledger's real
+  // 5-min ledger, not an estimate). `electricityUsdMonth == null` means live
+  // mode with no backend read → explicit "backend read pending", never a
   // fabricated number (feedback_no_dummy_data).
   const rows = [
     ['Infra', '$0/mo', cost.infraNote],
     [
       'Energy',
-      energyUsd != null ? `~$${energyUsd.toFixed(2)}/mo` : '— pending',
+      energyUsd != null ? `$${energyUsd.toFixed(2)}/mo` : '— pending',
       energyUsd != null
-        ? `${cost.energyKwhMonth} kWh × $${cost.electricityRate}/kWh`
-        : 'cost_guard energy read not yet routed',
+        ? window.PX.api.electricitySourceNote(
+            cost.electricitySource,
+            cost.electricityCoveragePct
+          )
+        : 'backend read pending',
     ],
     [
       'Daily burn',

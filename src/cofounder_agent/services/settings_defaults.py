@@ -218,6 +218,14 @@ DEFAULTS: dict[str, str] = {
     # ----- Cost / billing -----
     'daily_spend_limit_usd': '2.0',
     'monthly_spend_limit_usd': '100.0',
+    # Electricity rate ($/kWh) used by brain_daemon.py::log_electricity_cost
+    # (every 5-min cost_logs write) and the console/Grafana cost surfaces.
+    # UpdateUtilityRatesJob refreshes this daily from the EIA API once it has
+    # run at least once; this bootstraps a real value from first boot on
+    # fresh installs instead of leaving the key unset. Approximate recent
+    # U.S. national-average residential rate — a bootstrap constant, not a
+    # live data point (glad-labs-stack#2626).
+    'electricity_rate_kwh': '0.16',
     # Electricity ledger (cost_ledger.get_spend): prefer the brain's measured PSU
     # rows; fall back to per-call kWh estimates for windows the measured feed
     # didn't cover (HX1500i sampling has been flaky). A sample "covers" up to

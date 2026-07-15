@@ -98,9 +98,12 @@ function App() {
       if (!PX.api.isLive()) return Promise.resolve(PX.cost);
       return PX.api.budget().then((b) => {
         if (!b) throw new Error('budget: empty read');
-        // Merge the live spend read onto the PX.cost base: static facts ($0
-        // infra, energy rate, notes) come from the base; byModel/daily/energy
-        // stay empty until those reads are routed (honest-empty, not mocked).
+        // Merge the live spend read onto the PX.cost base: static facts
+        // ($0 infra, notes) come from the base; byModel/daily stay empty
+        // until those reads are routed (honest-empty, not mocked).
+        // electricity_* now rides the same budget() read (cost_aggregation_
+        // service surfaces cost_ledger's measured ledger) — real, not
+        // Prometheus-estimated.
         return {
           ...PX.cost,
           monthToDate: b.amount_spent ?? PX.cost.monthToDate,
@@ -112,7 +115,9 @@ function App() {
           alerts: b.alerts ?? [],
           byModel: [],
           daily: [],
-          energyKwhMonth: null,
+          electricityUsdMonth: b.electricity_usd ?? null,
+          electricitySource: b.electricity_source ?? 'none',
+          electricityCoveragePct: b.electricity_coverage_pct ?? 0,
         };
       });
     },

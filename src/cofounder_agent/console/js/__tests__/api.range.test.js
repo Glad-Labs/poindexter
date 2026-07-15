@@ -9,6 +9,23 @@ const {
 // api.js references window.PX.ts — preload timeseries.js into the sandbox first.
 const OPTS = { preload: ['timeseries.js'] };
 
+// http()-backed calls (e.g. /api/settings) mint an OAuth token first; Prometheus
+// calls don't. Tests that hit http() need both a client_id/secret seed and a
+// /token responder — wrap the caller's fetchImpl to add both.
+const CREDS = { px_client_id: 'test-client', px_client_secret: 'test-secret' };
+function withToken(fetchImpl) {
+  return async (url, opts) => {
+    if (String(url).endsWith('/token')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({ access_token: 'test-jwt', expires_in: 3600 }),
+      };
+    }
+    return fetchImpl(url, opts);
+  };
+}
+
 test('promRange maps a query_range matrix to canonical series', async () => {
   let captured = '';
   const fetchImpl = async (url) => {
@@ -201,7 +218,9 @@ test('gpu/vram/system methods issue their exact PromQL', async () => {
   assert.ok(seen.includes('max by (gpu) (nvidia_gpu_temperature_celsius)'));
   assert.ok(seen.includes('max by (gpu) (nvidia_gpu_power_draw_watts)'));
   assert.ok(seen.includes('max by (gpu) (nvidia_gpu_memory_used_mib) / 1024'));
-  assert.ok(seen.includes('system_total_power_estimate_watts'));
+  assert.ok(
+    seen.includes('psu_total_power_watts or system_total_power_estimate_watts')
+  );
 });
 
 test('systemPowerSeries forces a single "total" label', async () => {
@@ -220,6 +239,145 @@ test('systemPowerSeries forces a single "total" label', async () => {
   const out = await api.systemPowerSeries('1h');
   assert.equal(out.series.length, 1);
   assert.equal(out.series[0].label, 'total');
+});
+
+test('systemPowerSeries prefers psu_total_power_watts over the estimate', async () => {
+  const seen = [];
+  const fetchImpl = async (url) => {
+    seen.push(decodeURIComponent(new URL(url).searchParams.get('query') || ''));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { result: [] } }),
+    };
+  };
+  const api = loadApiWithFetch(fetchImpl, {}, OPTS);
+  await api.systemPowerSeries('1h');
+  assert.ok(
+    seen.includes('psu_total_power_watts or system_total_power_estimate_watts')
+  );
+});
+
+test('electricityRateKwh parses a numeric settings value', async () => {
+  const fetchImpl = withToken(async (url) => {
+    assert.ok(String(url).includes('/api/settings'));
+    assert.ok(String(url).includes('search=electricity_rate_kwh'));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({
+        items: [{ key: 'electricity_rate_kwh', value: '0.1523' }],
+        total: 1,
+        limit: 10,
+        offset: 0,
+      }),
+    };
+  });
+  const api = loadApiWithFetch(fetchImpl, CREDS, OPTS);
+  const out = await api.electricityRateKwh();
+  assert.equal(out, 0.1523);
+});
+
+test('electricityRateKwh returns null when the key is missing or malformed', async () => {
+  const missing = loadApiWithFetch(
+    withToken(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({ items: [], total: 0, limit: 10, offset: 0 }),
+    })),
+    CREDS,
+    OPTS
+  );
+  assert.equal(await missing.electricityRateKwh(), null);
+
+  const malformed = loadApiWithFetch(
+    withToken(async () => ({
+      ok: true,
+      status: 200,
+      json: async () => ({
+        items: [{ key: 'electricity_rate_kwh', value: 'not-a-number' }],
+        total: 1,
+        limit: 10,
+        offset: 0,
+      }),
+    })),
+    CREDS,
+    OPTS
+  );
+  assert.equal(await malformed.electricityRateKwh(), null);
+});
+
+test('electricityCostSeries interpolates the fetched rate into the PromQL', async () => {
+  const seen = [];
+  const fetchImpl = withToken(async (url) => {
+    const u = String(url);
+    if (u.includes('/api/settings')) {
+      return {
+        ok: true,
+        status: 200,
+        json: async () => ({
+          items: [{ key: 'electricity_rate_kwh', value: '0.2' }],
+          total: 1,
+          limit: 10,
+          offset: 0,
+        }),
+      };
+    }
+    seen.push(decodeURIComponent(new URL(u).searchParams.get('query') || ''));
+    return {
+      ok: true,
+      status: 200,
+      json: async () => ({ data: { result: [] } }),
+    };
+  });
+  const api = loadApiWithFetch(fetchImpl, CREDS, OPTS);
+  await api.electricityCostSeries('1h');
+  assert.ok(
+    seen.includes(
+      '(psu_total_power_watts or system_total_power_estimate_watts) / 1000 * 0.2 * 24'
+    )
+  );
+});
+
+test('electricityCostSeries is honest-empty when the rate is unavailable', async () => {
+  const api = loadApiWithFetch(
+    withToken(async (url) => {
+      if (String(url).includes('/api/settings')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({ items: [], total: 0, limit: 10, offset: 0 }),
+        };
+      }
+      throw new Error('should not query Prometheus without a rate');
+    }),
+    CREDS,
+    OPTS
+  );
+  const out = await api.electricityCostSeries('1h');
+  assert.ok(Array.isArray(out.series) && out.series.length === 0);
+});
+
+test('electricitySourceNote maps each source to an operator-legible note', async () => {
+  const api = loadApiWithFetch(
+    async () => ({ ok: true, status: 200, json: async () => ({}) }),
+    {},
+    OPTS
+  );
+  assert.equal(
+    api.electricitySourceNote('measured', 98.3),
+    'measured, live wall power'
+  );
+  assert.equal(
+    api.electricitySourceNote('estimated', 42),
+    'estimated — 42% sensor coverage this window'
+  );
+  assert.equal(
+    api.electricitySourceNote('mixed', 55.6),
+    'estimated — 56% sensor coverage this window'
+  );
+  assert.equal(api.electricitySourceNote('none', 0), '— pending');
+  assert.equal(api.electricitySourceNote(null, null), '— pending');
 });
 
 test('vramUsedSeries returns honest-empty when Prometheus throws', async () => {

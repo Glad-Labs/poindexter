@@ -1437,9 +1437,61 @@
     systemPowerSeries(range) {
       const o = rangeOpts(range);
       return pick(
-        () => labelledRange('system_total_power_estimate_watts', o, 'total'),
+        () =>
+          labelledRange(
+            'psu_total_power_watts or system_total_power_estimate_watts',
+            o,
+            'total'
+          ),
         () => ({ series: [] })
       );
+    },
+    // Live electricity rate ($/kWh), same settings-read pattern as
+    // voiceJoinUrl(). Returns null (never a fabricated rate) when the
+    // setting is missing or non-numeric.
+    electricityRateKwh() {
+      return pick(
+        async () => {
+          const r = await http(
+            'GET',
+            '/api/settings?search=electricity_rate_kwh&limit=10'
+          );
+          const hit = ((r && r.items) || []).find(
+            (s) => s.key === 'electricity_rate_kwh'
+          );
+          const v = hit && Number(hit.value);
+          return v && isFinite(v) && v > 0 ? v : null;
+        },
+        () => null
+      );
+    },
+    // $/day time series, Shelly-first (same fallback as systemPowerSeries),
+    // scaled by the live rate. Honest-empty when the rate is unavailable —
+    // never assumes $0.
+    electricityCostSeries(range) {
+      const o = rangeOpts(range);
+      return pick(
+        async () => {
+          const rate = await this.electricityRateKwh();
+          if (!rate) return { series: [] };
+          return labelledRange(
+            `(psu_total_power_watts or system_total_power_estimate_watts) / 1000 * ${rate} * 24`,
+            o,
+            'total'
+          );
+        },
+        () => ({ series: [] })
+      );
+    },
+    // Maps cost_ledger's electricity_source (+ coverage) to an
+    // operator-legible note for the Cost Control card's Energy row.
+    electricitySourceNote(source, coveragePct) {
+      if (source === 'measured') return 'measured, live wall power';
+      if (source === 'estimated' || source === 'mixed') {
+        const pct = coveragePct != null ? Math.round(coveragePct) : 0;
+        return `estimated — ${pct}% sensor coverage this window`;
+      }
+      return '— pending';
     },
 
     // ── time-series trends (Postgres internals — postgres_exporter) ─

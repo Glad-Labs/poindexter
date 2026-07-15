@@ -996,10 +996,7 @@ function Drawer({ entity, onClose, actions }) {
             {label} — backend read pending (no HTTP route yet)
           </div>
         );
-        const energyUsd =
-          c.energyKwhMonth != null
-            ? c.energyKwhMonth * c.electricityRate
-            : null;
+        const energyUsd = c.electricityUsdMonth;
         body = (
           <>
             <div className="section-label">LLM/API spend · 30 days</div>
@@ -1066,7 +1063,7 @@ function Drawer({ entity, onClose, actions }) {
                 [
                   'Energy',
                   energyUsd != null
-                    ? `~$${energyUsd.toFixed(2)}/mo · ${c.energyKwhMonth} kWh`
+                    ? `$${energyUsd.toFixed(2)}/mo · ${window.PX.api.electricitySourceNote(c.electricitySource, c.electricityCoveragePct)}`
                     : '— pending',
                 ],
                 ['Agent API', '$' + (c.agentApiMonth ?? 0).toFixed(2) + '/mo'],

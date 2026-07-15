@@ -82,7 +82,14 @@ def _make_service(db=None):
     return svc
 
 
-def _patch_month_api(monkeypatch, api_usd, *, electricity_usd=0.0):
+def _patch_month_api(
+    monkeypatch,
+    api_usd,
+    *,
+    electricity_usd=0.0,
+    electricity_source="measured",
+    electricity_coverage_pct=0.0,
+):
     """Patch the cost_ledger seam so get_budget_status sees a given month spend.
 
     Since get_budget_status now reads spend from cost_ledger.get_spend (not raw
@@ -93,7 +100,8 @@ def _patch_month_api(monkeypatch, api_usd, *, electricity_usd=0.0):
             api_usd=api_usd,
             electricity_usd=electricity_usd,
             total_usd=api_usd + electricity_usd,
-            electricity_source="measured",
+            electricity_source=electricity_source,
+            electricity_coverage_pct=electricity_coverage_pct,
         )
 
     monkeypatch.setattr(cost_ledger, "get_spend", _fake)
@@ -365,6 +373,23 @@ class TestGetBudgetStatus:
         svc = _make_service(db=_make_db())
         result = await svc.get_budget_status(monthly_budget=150.0)
         assert result["amount_spent"] == 4.0  # 30.0 electricity excluded
+
+    @pytest.mark.asyncio
+    async def test_electricity_axis_included(self, monkeypatch):
+        _patch_month_api(
+            monkeypatch,
+            4.0,
+            electricity_usd=27.94,
+            electricity_source="measured",
+            electricity_coverage_pct=98.3,
+        )
+        svc = _make_service(db=_make_db())
+        result = await svc.get_budget_status(monthly_budget=150.0)
+        assert result["electricity_usd"] == 27.94
+        assert result["electricity_source"] == "measured"
+        assert result["electricity_coverage_pct"] == 98.3
+        # Still excluded from the LLM/API budget-cap figure:
+        assert result["amount_spent"] == 4.0
 
     @pytest.mark.asyncio
     async def test_healthy_status_under_80_percent(self, monkeypatch):

@@ -843,9 +843,11 @@
     infraMonth: 0,
     infraNote:
       'fully self-hosted — local Docker · GPU · Postgres; only Vercel / R2 / Resend touch cloud',
-    // Local energy: the real physical cost of running the box (cost_guard + EIA).
-    energyKwhMonth: 9.5,
-    electricityRate: 0.142, // $/kWh (EIA residential)
+    // Local energy: the real physical cost of running the box, from the
+    // measured cost_logs electricity ledger (see cost_ledger.get_spend).
+    electricityUsdMonth: 1.35, // ~= 9.5 kWh x $0.142/kWh, kept plausible
+    electricitySource: 'measured',
+    electricityCoveragePct: 98.3,
     // Scheduled-agent Anthropic API spend (Phase 6.2). Agents were paused
     // 2026-06-09 for cost control and bill to Anthropic at full rate from
     // 2026-06-15. No by-provider cost route yet → rolls into monthToDate.

@@ -287,6 +287,11 @@ function HardwarePanel() {
     { title: 'VRAM used', fn: (x) => api.vramUsedSeries(x), unit: ' GB' },
     { title: 'GPU power draw', fn: (x) => api.gpuPowerSeries(x), unit: ' W' },
     { title: 'System power', fn: (x) => api.systemPowerSeries(x), unit: ' W' },
+    {
+      title: 'Electricity cost',
+      fn: (x) => api.electricityCostSeries(x),
+      unit: '$/day',
+    },
   ];
   return (
     <TrendGroup

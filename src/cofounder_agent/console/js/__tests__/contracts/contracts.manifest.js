@@ -315,6 +315,21 @@ module.exports = [
       assert.equal(typeof out, 'string', 'voiceJoinUrl returns a string'),
     openapi: { path: '/api/settings', method: 'get' },
   },
+  {
+    name: 'electricityRateKwh',
+    invoke: (api) => api.electricityRateKwh(),
+    request: {
+      method: 'GET',
+      path: '/api/settings',
+      query: { search: 'electricity_rate_kwh', limit: 10 },
+    },
+    shape: (out) =>
+      assert.ok(
+        out === null || (typeof out === 'number' && out > 0),
+        'electricityRateKwh returns a positive number or null'
+      ),
+    openapi: { path: '/api/settings', method: 'get' },
+  },
 
   // ══ TIER 3 — Prometheus (request PromQL + vector/scalar shape; no OpenAPI) ══
   {
@@ -441,7 +456,7 @@ module.exports = [
     request: {
       host: 'prometheus',
       rangeQuery: true,
-      query: 'system_total_power_estimate_watts',
+      query: 'psu_total_power_watts or system_total_power_estimate_watts',
     },
   },
 

@@ -523,6 +523,9 @@ class CostAggregationService:
                 "projected_final_cost": round(projected_final_cost, 2),
                 "alerts": alerts,
                 "status": status,
+                "electricity_usd": round(month.electricity_usd, 2),
+                "electricity_source": month.electricity_source,
+                "electricity_coverage_pct": round(month.electricity_coverage_pct, 1),
                 "last_updated": datetime.now(timezone.utc).isoformat(),
             }
         except Exception as e:

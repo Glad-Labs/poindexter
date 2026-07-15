@@ -118,6 +118,16 @@ def test_rag_rerank_device_default_is_cpu():
     assert METADATA["rag_rerank_device"]["value_type"] == "string"
 
 
+def test_electricity_rate_kwh_default_present():
+    # UpdateUtilityRatesJob only writes this key after its first successful
+    # EIA call; without a seeded default it's unset from boot until then (or
+    # forever, if the shared EIA DEMO_KEY is rate-limited). Every other
+    # cost_guard-adjacent tunable has a bootstrap default — this one was
+    # missing.
+    from services.settings_defaults import DEFAULTS
+    assert DEFAULTS["electricity_rate_kwh"] == "0.16"
+
+
 def test_vram_budget_defaults_present():
     """The VRAM budget guard reads four DB-tunable knobs: total VRAM, the
     desktop reserve carved out so the WDDM compositor never starves, the KV
