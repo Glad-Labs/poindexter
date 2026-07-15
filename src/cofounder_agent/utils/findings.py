@@ -44,6 +44,14 @@ from typing import Any
 from services.audit_event_schemas import validate_event_details
 from services.audit_log import audit_log_bg
 
+# "warning" is a drifted spelling of "warn" that crept into ~7 call sites
+# (copy-pasted from Prometheus/Alertmanager conventions) before this
+# normalization existed. Canonicalize here so every future emit_finding
+# caller writes the one spelling the rest of the findings subsystem
+# (ROUTABLE_SEVERITIES, the console severity filter/color map) already
+# treats as equivalent to "warn".
+_SEVERITY_ALIASES = {"warning": "warn"}
+
 
 def emit_finding(
     *,
@@ -71,7 +79,9 @@ def emit_finding(
     - ``severity``: ``info`` | ``warn`` | ``critical`` (default ``info``).
       The dispatcher will use this to pick channel — ``critical`` =
       Telegram, ``warn`` = Discord, ``info`` = log-only — per
-      ``feedback_telegram_vs_discord``.
+      ``feedback_telegram_vs_discord``. ``"warning"`` is accepted and
+      silently normalized to ``"warn"`` (a spelling that drifted into
+      several call sites); pass ``"warn"`` in new code.
     - ``dedup_key``: optional stable key for cooldown logic in the
       dispatcher (e.g. ``"broken-link:https://example.com"``).
     - ``extra``: additional structured data for the dispatcher to act on
@@ -97,6 +107,7 @@ def emit_finding(
         details["dedup_key"] = dedup_key
     if extra:
         details["extra"] = extra
+    severity = _SEVERITY_ALIASES.get(severity.lower(), severity.lower())
     audit_log_bg(
         event_type="finding",
         source=source,

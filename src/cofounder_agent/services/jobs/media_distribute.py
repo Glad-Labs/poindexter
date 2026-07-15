@@ -397,7 +397,7 @@ class MediaDistributeJob:
                 emit_finding(
                     source="media_distribute",
                     kind="duplicate_video_asset",
-                    severity="warning",
+                    severity="warn",
                     title=f"Redundant {row['type']} render pruned for post {post_id}",
                     body=(
                         f"Post {post_id} already had a {row['type']} media_asset; the "

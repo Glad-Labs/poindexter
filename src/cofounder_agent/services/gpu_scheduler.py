@@ -211,7 +211,7 @@ def _emit_cfg_fetch_finding(
         emit_finding(
             source="gpu_scheduler.cfg_fetch",
             kind="site_config_read_failed",
-            severity="warning",
+            severity="warn",
             title=f"gpu_scheduler cannot read {key} from SiteConfig",
             body=(
                 f"SiteConfig.get_{kind}({key!r}) raised "
@@ -722,7 +722,7 @@ class GPUScheduler:
             emit_finding(
                 source="gpu_scheduler",
                 kind="nvidia_exporter_unreachable",
-                severity="warning",
+                severity="warn",
                 title=(
                     f"GPU scheduler cannot read {metric} from Prometheus"
                 ),

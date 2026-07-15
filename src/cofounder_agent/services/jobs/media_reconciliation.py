@@ -642,7 +642,7 @@ class MediaReconciliationJob:
             emit_finding(
                 source="media_reconciliation",
                 kind="media_drift",
-                severity="warning",
+                severity="warn",
                 title=(
                     f"Media drift: {len(missing_podcast)} missing podcast, "
                     f"{len(missing_video)} missing video"

@@ -27,6 +27,15 @@ from typing import Any
 # Severities the alert router will forward (everything else is log-only).
 ROUTABLE_SEVERITIES = ("warn", "warning", "critical")
 
+# "warning" is a drifted spelling of "warn" (utils.findings.emit_finding now
+# normalizes new writes, but ~1,400 pre-fix rows already carry the literal
+# "warning", as does anything that writes audit_log directly — e.g. the brain
+# daemon can't import utils.findings). Roll it into "warn" everywhere severity
+# is grouped/displayed, matching how ROUTABLE_SEVERITIES already treats them
+# as one tier for routing — otherwise the same tier fragments into two rollup
+# rows / two dashboard badges / two trend lines.
+_SEVERITY_ROLLUP_SQL = "CASE WHEN LOWER(severity) = 'warning' THEN 'warn' ELSE LOWER(severity) END"
+
 
 def _delivery_for(kind: str, severity: str, delivery_by_kind: dict[str, str]) -> str:
     delivery = delivery_by_kind.get(kind, "route")
@@ -160,7 +169,7 @@ async def read_findings(
         *params,
     )
     by_sev_rows = await pool.fetch(
-        f"SELECT LOWER(severity) AS severity, COUNT(*) AS c "
+        f"SELECT {_SEVERITY_ROLLUP_SQL} AS severity, COUNT(*) AS c "
         f"FROM audit_log WHERE {base_where} GROUP BY 1 ORDER BY c DESC",
         *params,
     )
@@ -183,8 +192,9 @@ async def get_findings_trend(pool: Any, *, range_seconds: int, step_seconds: int
     from services.qa_trend import _clamp  # single clamp source
 
     r, s = _clamp(range_seconds, step_seconds)
+    sev_sql = _SEVERITY_ROLLUP_SQL
     rows = await pool.fetch(
-        """
+        f"""
         WITH grid AS (
             -- EXTRACT(epoch) is numeric (PG 14+) → generate_series(numeric,numeric,numeric).
             SELECT gs AS bucket FROM generate_series(
@@ -194,13 +204,13 @@ async def get_findings_trend(pool: Any, *, range_seconds: int, step_seconds: int
             ) AS gs
         ),
         sev AS (
-            SELECT DISTINCT LOWER(severity) AS severity FROM audit_log
+            SELECT DISTINCT {sev_sql} AS severity FROM audit_log
             WHERE event_type = 'finding'
               AND timestamp > NOW() - ($1 * INTERVAL '1 second')
         ),
         agg AS (
             SELECT floor(extract(epoch FROM timestamp) / $2) * $2 AS bucket,
-                   LOWER(severity) AS severity, COUNT(*) AS c
+                   {sev_sql} AS severity, COUNT(*) AS c
             FROM audit_log
             WHERE event_type = 'finding'
               AND timestamp > NOW() - ($1 * INTERVAL '1 second')

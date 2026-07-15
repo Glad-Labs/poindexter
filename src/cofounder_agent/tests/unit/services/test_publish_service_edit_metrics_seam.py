@@ -261,7 +261,7 @@ async def test_edit_metrics_failure_is_warning_plus_finding_not_fatal(
     ), "recorder failure must log at WARNING, not DEBUG"
     assert len(findings) == 1, "recorder failure must emit a finding"
     assert findings[0]["kind"] == "edit_metrics_record_failed"
-    assert findings[0]["severity"] == "warning"
+    assert findings[0]["severity"] == "warn"
 
 
 @pytest.mark.asyncio

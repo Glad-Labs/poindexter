@@ -8,7 +8,7 @@ has four outcomes worth pinning:
    No regen, no finding, ok=True.
 3. **Drift with successful regen** — at least one post is missing
    media; the job regenerates within the per-cycle cap, emits a
-   warning-severity finding, ok=True.
+   warn-severity finding, ok=True.
 4. **Drift with regen failure** — regen path raised or returned a
    falsy URL; finding escalates to critical, ok=False.
 
@@ -273,10 +273,10 @@ class TestMediaReconciliation:
         ]
         assert len(clear_calls) == 1
         assert clear_calls[0].args[1] == "t-p1"
-        # Finding emitted, warning severity (re-dispatch is not a failure).
+        # Finding emitted, warn severity (re-dispatch is not a failure).
         emit_mock.assert_called_once()
         kwargs = emit_mock.call_args.kwargs
-        assert kwargs["severity"] == "warning"
+        assert kwargs["severity"] == "warn"
         assert kwargs["kind"] == "media_drift"
 
     @pytest.mark.asyncio
@@ -359,7 +359,7 @@ class TestMediaReconciliation:
     async def test_redispatch_exception_is_surfaced_not_job_failure(self):
         """A re-dispatch raising must NOT crash the job and must NOT mark it
         failed — the watchdog has no author to fail. It's caught, counted as
-        unresolved, ok stays True, and the finding stays warning severity.
+        unresolved, ok stays True, and the finding stays warn severity.
         """
         pool, _ = _make_pool(
             [_post(id_="p_boom", media_to_generate=["podcast"])],
@@ -385,7 +385,7 @@ class TestMediaReconciliation:
         assert result.metrics["redispatched_podcast"] == 0
         assert result.metrics["podcast_unresolved"] == 1
         gen.assert_not_awaited()
-        assert emit_mock.call_args.kwargs["severity"] == "warning"
+        assert emit_mock.call_args.kwargs["severity"] == "warn"
 
 
     @pytest.mark.asyncio

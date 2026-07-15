@@ -50,3 +50,24 @@ class TestEmitFindingShapeValidation:
         assert kwargs["event_type"] == "finding"
         assert kwargs["source"] == "test_job"
         assert kwargs["severity"] == "warn"
+
+    def test_severity_warning_normalized_to_warn(self):
+        """"warning" drifted in at several call sites (copy-pasted from
+        Prometheus/Alertmanager conventions); emit_finding canonicalizes it to
+        "warn" so the by-severity rollup doesn't fragment into two badges."""
+        from utils.findings import emit_finding
+
+        with patch("utils.findings.audit_log_bg") as mock_write:
+            emit_finding(source="test_job", kind="k", title="t", body="b", severity="warning")
+
+        _, kwargs = mock_write.call_args
+        assert kwargs["severity"] == "warn"
+
+    def test_severity_normalized_case_insensitively(self):
+        from utils.findings import emit_finding
+
+        with patch("utils.findings.audit_log_bg") as mock_write:
+            emit_finding(source="test_job", kind="k", title="t", body="b", severity="WARNING")
+
+        _, kwargs = mock_write.call_args
+        assert kwargs["severity"] == "warn"

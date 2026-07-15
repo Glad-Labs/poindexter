@@ -121,8 +121,8 @@ class TestStaticExportReconciliation:
         finding_mock.assert_called_once()
         finding_kwargs = finding_mock.call_args.kwargs
         assert finding_kwargs["dedup_key"] == "r2_static_drift"
-        # Drift warning, not critical, because rebuild succeeded
-        assert finding_kwargs["severity"] == "warning"
+        # Drift warn, not critical, because rebuild succeeded
+        assert finding_kwargs["severity"] == "warn"
 
     @pytest.mark.asyncio
     async def test_manifest_fetch_failure_treated_as_drift(self):

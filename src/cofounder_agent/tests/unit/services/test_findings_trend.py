@@ -26,6 +26,8 @@ async def _reset(conn):
 
 
 async def test_one_series_per_severity_counts(db_pool):
+    """"warning" rows (the drifted spelling — see utils.findings.emit_finding)
+    must coalesce into the "warn" series, not fragment into their own line."""
     async with db_pool.acquire() as conn:
         await _reset(conn)
         await _seed(conn, severity="warning")
@@ -34,8 +36,9 @@ async def test_one_series_per_severity_counts(db_pool):
     try:
         out = await get_findings_trend(db_pool, range_seconds=3600, step_seconds=900)
         labels = sorted(s["label"] for s in out["series"])
-        assert "warning" in labels and "critical" in labels
-        warn = next(s for s in out["series"] if s["label"] == "warning")
+        assert "warn" in labels and "critical" in labels
+        assert "warning" not in labels
+        warn = next(s for s in out["series"] if s["label"] == "warn")
         counts = [v for _, v in warn["points"]]
         # populated bucket = 2; empty buckets are 0 (a count), never null
         assert 2 in counts and all(v is not None for v in counts)

@@ -311,7 +311,7 @@ async def _sync_published_post(post_id: str) -> None:
                 emit_finding(
                     source="publish_service.sync_to_cloud",
                     kind="cloud_sync_returned_false",
-                    severity="warning",
+                    severity="warn",
                     title=f"Cloud DB sync returned False for post {post_id}",
                     body=(
                         f"SyncService.push_post({post_id}) returned False "
@@ -329,7 +329,7 @@ async def _sync_published_post(post_id: str) -> None:
             emit_finding(
                 source="publish_service.sync_to_cloud",
                 kind="cloud_sync_exception",
-                severity="warning",
+                severity="warn",
                 title=f"Cloud DB sync raised {type(e).__name__} for post {post_id}",
                 body=(
                     f"Post {post_id} published locally but cloud sync "
@@ -445,7 +445,7 @@ async def _embed_published_post(db_service, post_dict: dict, site_config: "SiteC
             emit_finding(
                 source="publish_service.embed_published_post",
                 kind="rag_embed_failed",
-                severity="warning",
+                severity="warn",
                 title=f"RAG embedding failed for post {post_id_for_log}",
                 body=(
                     f"Post {post_id_for_log} published but its embedding "
@@ -1291,7 +1291,7 @@ async def _record_edit_distance_metrics(
         emit_finding(
             source="publish_service.record_edit_distance_metrics",
             kind="edit_metrics_record_failed",
-            severity="warning",
+            severity="warn",
             title=f"Edit-distance metrics not recorded for task {task_id}",
             body=(
                 f"_record_edit_distance_metrics raised "

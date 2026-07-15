@@ -356,7 +356,7 @@
           },
           "format": "time_series",
           "rawQuery": true,
-          "rawSql": "SELECT date_trunc('hour', timestamp) AS time, severity AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'finding' AND $__timeFilter(timestamp) GROUP BY 1, 2 ORDER BY 1;",
+          "rawSql": "SELECT date_trunc('hour', timestamp) AS time, CASE WHEN LOWER(severity) = 'warning' THEN 'warn' ELSE LOWER(severity) END AS metric, COUNT(*)::int AS value FROM audit_log WHERE event_type = 'finding' AND $__timeFilter(timestamp) GROUP BY 1, 2 ORDER BY 1;",
           "refId": "A"
         }
       ],

@@ -8,7 +8,7 @@ a freshness watchdog (``corsair_feed_probe``, #868) is the pattern this
 probe generalizes: per-feed ``max(timestamp)`` age vs an app_settings
 threshold, finding emitted on the fresh→stale EDGE only (state in
 ``brain_knowledge``), routed via the worker's ``findings_alert_router``
-(warning → Discord) with the brain's ``alert_dispatcher`` deduping.
+(warn → Discord) with the brain's ``alert_dispatcher`` deduping.
 
 Feeds are declarative JSON in ``app_settings.data_freshness_feeds``:
 
@@ -239,7 +239,7 @@ async def _emit_stale_finding(
     try:
         await pool.execute(
             "INSERT INTO audit_log (event_type, source, details, severity) "
-            "VALUES ('finding', 'data_freshness_probe', $1::jsonb, 'warning')",
+            "VALUES ('finding', 'data_freshness_probe', $1::jsonb, 'warn')",
             json.dumps(details),
         )
         logger.warning(

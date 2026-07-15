@@ -748,7 +748,7 @@ class TestPropertiesAndConfig:
         call_kwargs = mock_emit.call_args.kwargs
         assert call_kwargs["source"] == "gpu_scheduler.cfg_fetch"
         assert call_kwargs["kind"] == "site_config_read_failed"
-        assert call_kwargs["severity"] == "warning"
+        assert call_kwargs["severity"] == "warn"
         assert "threshold" in call_kwargs["title"]
         assert call_kwargs["dedup_key"] == "gpu_scheduler_cfg_int_threshold"
 

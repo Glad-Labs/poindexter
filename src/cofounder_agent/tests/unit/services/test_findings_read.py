@@ -14,7 +14,7 @@ import json
 
 import pytest
 
-from services.findings_read import read_findings
+from services.findings_read import get_findings_trend, read_findings
 
 # The db_pool fixture is loop_scope="session"; tests must share that loop.
 pytestmark = pytest.mark.asyncio(loop_scope="session")
@@ -84,6 +84,33 @@ async def test_rollup_status_and_delivery(db_pool):
         sev_counts = {r["severity"]: r["count"] for r in out["by_severity"]}
         assert sev_counts == {"warn": 1, "critical": 1, "info": 1}
         assert out["delivery_by_kind"]["broken_external_link"] == "discord"
+    finally:
+        async with db_pool.acquire() as conn:
+            await _reset(conn)
+
+
+async def test_warn_and_warning_severity_coalesce_in_rollup(db_pool):
+    """"warn" and "warning" are the same tier (utils.findings.emit_finding
+    normalizes new writes to "warn", but historical rows and direct-SQL
+    writers like the brain daemon can still carry "warning"). The by_severity
+    rollup and the per-severity trend must merge them into one "warn" bucket,
+    not fragment into two dashboard badges / two trend lines."""
+    async with db_pool.acquire() as conn:
+        await _reset(conn)
+        await _seed_finding(conn, kind="media_drift", severity="warn", title="A")
+        await _seed_finding(conn, kind="media_drift", severity="WARNING", title="B")
+        await _seed_finding(conn, kind="media_drift", severity="warning", title="C")
+
+    try:
+        out = await read_findings(db_pool, hours=168, limit=50)
+
+        sev_counts = {r["severity"]: r["count"] for r in out["by_severity"]}
+        assert sev_counts == {"warn": 3}
+        assert out["counts"]["emitted"] == 3
+
+        trend = await get_findings_trend(db_pool, range_seconds=3600 * 24, step_seconds=3600)
+        labels = {s["label"] for s in trend["series"]}
+        assert labels == {"warn"}
     finally:
         async with db_pool.acquire() as conn:
             await _reset(conn)

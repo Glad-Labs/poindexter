@@ -238,7 +238,7 @@ class StaticExportReconciliationJob:
             emit_finding(
                 source="static_export_reconciliation",
                 kind="r2_static_drift",
-                severity="critical" if not rebuild_ok else "warning",
+                severity="critical" if not rebuild_ok else "warn",
                 title=(
                     "R2 static index out of sync with DB"
                     + (" (rebuild failed)" if not rebuild_ok else " (rebuilt)")

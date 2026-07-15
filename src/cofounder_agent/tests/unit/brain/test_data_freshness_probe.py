@@ -2,7 +2,7 @@
 
 Pins the generalized data-feed dead-man's switch: per-feed staleness vs
 an app_settings-declared threshold, edge-triggered ``data_feed_stale``
-finding (warning severity, stable per-feed ``dedup_key``), no re-fire on
+finding (warn severity, stable per-feed ``dedup_key``), no re-fire on
 a persistent stall, recovery resets the edge, feeds with zero rows are
 not assessed, and malformed feed config entries are dropped instead of
 interpolated into SQL.
@@ -81,7 +81,7 @@ async def test_stale_transition_emits_finding_with_shape():
     details = json.loads(calls[0][1])
     assert details["kind"] == "data_feed_stale"  # dot-free per #756
     assert details["dedup_key"] == "data_feed_stale:cost_logs"
-    assert "'warning'" in calls[0][0]
+    assert "'warn'" in calls[0][0]
 
 
 @pytest.mark.asyncio
