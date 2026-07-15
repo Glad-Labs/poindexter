@@ -2197,7 +2197,7 @@ async def generate_daily_digest(pool):
                     AND updated_at > NOW() - INTERVAL '{_digest_h} hours') as failed_24h,
                 (SELECT COUNT(*) FROM posts WHERE status = 'published'
                     AND published_at > NOW() - INTERVAL '{_digest_h} hours') as published_24h,
-                (SELECT COUNT(*) FROM page_views WHERE created_at >= date_trunc('day', NOW())) as views_today,
+                (SELECT COUNT(*) FROM page_views_human WHERE created_at >= date_trunc('day', NOW())) as views_today,
                 (SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs
                     WHERE created_at >= date_trunc('month', NOW())) as month_spend
         """)

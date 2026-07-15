@@ -277,6 +277,84 @@ class TestDigestSqlSnapshotsMixedStatuses:
             )
 
 
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestDailyDigestViewsToday:
+    """poindexter#864: views_today must read page_views_human, not the
+    raw page_views table. PR #2246 (glad-labs-stack) introduced
+    page_views.is_bot + page_views_human specifically so reader-facing
+    surfaces stop reporting bot-flood traffic — it repointed console
+    /api/analytics/views, posts.view_count, and lab_outcomes_v1 but
+    missed this digest query. On 2026-07-15 the digest reported "505
+    views today" when only 31 were real; 498 were one continuously
+    active flood-tagged scraper UA (see docs/architecture/page-views-bot-flag.md)."""
+
+    async def test_views_today_reads_human_view(self, monkeypatch):
+        import datetime as _dt_mod
+        from datetime import timezone
+
+        real_datetime = _dt_mod.datetime
+
+        class _PatchDT(real_datetime):
+            @classmethod
+            def now(cls, tz=None):
+                return real_datetime(2026, 4, 27, 13, 30, tzinfo=timezone.utc)
+
+        monkeypatch.setattr(_dt_mod, "datetime", _PatchDT)
+        monkeypatch.setattr(bd, "send_telegram", AsyncMock())
+        monkeypatch.setattr(bd, "send_discord", AsyncMock())
+
+        stats_row = {
+            "total_posts": 46,
+            "approval_queue": 5,
+            "pending": 2,
+            "failed_24h": 0,
+            "published_24h": 1,
+            "views_today": 31,
+            "month_spend": 0.0,
+        }
+        pool = _digest_pool(stats_row)
+
+        await bd.generate_daily_digest(pool)
+
+        stats_sql = pool.fetchrow.call_args_list[1].args[0]
+        before_alias = stats_sql.split("as views_today")[0]
+        views_today_block = before_alias.rsplit("(SELECT", 1)[-1]
+        assert "FROM page_views_human" in views_today_block, (
+            "views_today must read page_views_human (bot-filtered), not "
+            "raw page_views — raw includes bot-flood traffic that "
+            "PR #2246 already filters out for every other reader-facing "
+            f"surface. Got block: {views_today_block!r}"
+        )
+        assert "FROM page_views " not in views_today_block, (
+            "views_today sub-select must not read the raw page_views "
+            f"table. Got block: {views_today_block!r}"
+        )
+
+
+@pytest.mark.unit
+class TestDigestSqlSnapshotViewsToday:
+    """Static counterpart to TestDailyDigestViewsToday — inspects the
+    literal SQL string in brain_daemon.py directly, mirroring how
+    TestDigestSqlSnapshotsMixedStatuses covers the total_posts /
+    published_24h fix above."""
+
+    def test_views_today_sql_reads_human_view(self):
+        if _BRAIN_DIR is None:
+            pytest.skip("brain/ not present in this checkout")
+        source = (_BRAIN_DIR / "brain_daemon.py").read_text(encoding="utf-8")
+
+        marker = "as views_today"
+        assert marker in source, f"expected `{marker}` in brain_daemon.py"
+        before = source.split(marker, 1)[0]
+        sub_select = before.rsplit("(SELECT", 1)[-1]
+        assert "FROM page_views_human" in sub_select, (
+            "poindexter#864: views_today sub-select must read "
+            "page_views_human, not raw page_views. Block was: "
+            f"{sub_select!r}"
+        )
+
+
 def _patch_now(monkeypatch, hour: int, minute: int = 30) -> None:
     """Freeze ``datetime.now(tz)`` to a deterministic UTC instant.
 
