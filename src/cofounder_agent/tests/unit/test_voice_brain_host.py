@@ -288,6 +288,29 @@ def test_attach_file_log_writes_to_explicit_path(monkeypatch, tmp_path):
         _strip_added_file_handlers(before)
 
 
+def test_attach_file_log_emits_info_despite_restrictive_root_level(monkeypatch, tmp_path):
+    """logger.info() must reach the file handler even when root's level is
+    WARNING -- logging.basicConfig() no-ops whenever root already has a
+    handler attached (always true under pytest), so the module must not
+    rely on it to keep the named logger's effective level at INFO."""
+    log_path = tmp_path / "vbh.log"
+    monkeypatch.setenv("VOICE_BRAIN_LOG", str(log_path))
+    root = logging.getLogger()
+    before = list(root.handlers)
+    before_level = root.level
+    root.setLevel(logging.WARNING)
+    try:
+        vbh._attach_file_log()
+        vbh.logger.info("hello-from-test")
+        for h in root.handlers:
+            h.flush()
+        assert log_path.exists()
+        assert "hello-from-test" in log_path.read_text(encoding="utf-8")
+    finally:
+        root.setLevel(before_level)
+        _strip_added_file_handlers(before)
+
+
 def test_attach_file_log_defaults_when_no_stderr(monkeypatch, tmp_path):
     """pythonw (sys.stderr is None) + no VOICE_BRAIN_LOG -> default log file."""
     monkeypatch.delenv("VOICE_BRAIN_LOG", raising=False)

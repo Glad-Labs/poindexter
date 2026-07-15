@@ -63,6 +63,11 @@ logging.basicConfig(
     format="%(asctime)s [voice-brain-host] %(levelname)s %(message)s",
 )
 logger = logging.getLogger("voice_brain_host")
+# basicConfig() is a no-op whenever the root logger already has a handler
+# attached (e.g. embedded under pytest, or any other host that configured
+# logging first) -- explicit level so this logger doesn't silently inherit
+# root's default WARNING and drop its own .info() calls.
+logger.setLevel(logging.INFO)
 
 # Windows: spawn the per-turn ``claude`` subprocess with NO console window, so a
 # voice turn doesn't pop a terminal on the host. The daemon itself runs hidden
