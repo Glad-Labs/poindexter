@@ -353,9 +353,9 @@
     },
     {
       "id": 12,
-      "title": "Page-views (window)",
+      "title": "Page-views (raw, pipe-health)",
       "type": "stat",
-      "description": "Page-view beacon hits over the global dashboard time range. Sourced from the page_views table populated by the sync_cloudflare_analytics job (5-min cycle pulling from CF Analytics Engine, which the Worker beacon at infrastructure/cloudflare/page-views-beacon/ writes to). If this flatlines to 0 while CF AE shows traffic, the sync job has regressed. Red at 0, yellow at <10, green at 10+.",
+      "description": "RAW page_views count (bot-inclusive) — a pipe-health/liveness signal, not a reader count. Expected to differ from bot-filtered numbers shown in the console/GA/page_views_human — that's by design, not a bug. Sourced from the page_views table populated by the sync_cloudflare_analytics job (5-min cycle pulling from CF Analytics Engine, which the Worker beacon at infrastructure/cloudflare/page-views-beacon/ writes to). If this flatlines to 0 while CF AE shows traffic, the sync job has regressed. Red at 0, yellow at <10, green at 10+. See docs/architecture/page-views-bot-flag.md.",
       "datasource": {
         "type": "grafana-postgresql-datasource",
         "uid": "local-brain-db"
