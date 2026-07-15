@@ -1188,6 +1188,41 @@ def _content_heartbeat_interval_seconds(site_config: Any) -> float:
         return default
 
 
+async def _pipeline_task_heartbeat_loop(
+    pool: Any, task_id: str, *, interval_seconds: float
+) -> None:
+    """Sidecar loop: refresh ``pipeline_tasks.updated_at`` via
+    ``TasksDatabase.heartbeat_task`` while the graph runs.
+
+    poindexter#757 / GH-90: the stale-task sweep (``sweep_stale_tasks``)
+    reclaims any ``in_progress`` row whose ``updated_at`` is older than
+    its threshold — it has no way to distinguish "genuinely still
+    running" from "worker died mid-stage" other than that one wall-clock
+    timestamp, frozen at claim time. ``heartbeat_task`` was built for
+    exactly this (GH-90), but its only caller was ``TaskExecutor``,
+    deleted in the 2026-05-16 Prefect cutover (poindexter#410 Stage 4) —
+    it went dark. This re-wires it as a sidecar alongside the pre-existing
+    ``live_activity`` heartbeat, torn down the same way.
+    """
+    from services.tasks_db import TasksDatabase
+
+    db = TasksDatabase(pool)
+    while True:
+        try:
+            await asyncio.sleep(interval_seconds)
+            await db.heartbeat_task(task_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:  # noqa: BLE001
+            # silent-ok: best-effort lease refresh — heartbeat_task already
+            # swallows+emits its own findings; a failure here must never
+            # kill the sidecar or the graph run it shadows. The sweep's
+            # wall-clock check still eventually reclaims a truly-dead run.
+            logger.debug(
+                "pipeline_task heartbeat swallowed for %s: %s", task_id, exc,
+            )
+
+
 async def _ainvoke_with_content_heartbeat(
     compiled: Any,
     invoke_input: Any,
@@ -1196,6 +1231,7 @@ async def _ainvoke_with_content_heartbeat(
     pool: Any,
     activity_id: int | None,
     interval_seconds: float,
+    task_id: str | None = None,
 ) -> Any:
     """Run the compiled graph, keeping the content live_activity row fresh with
     a sidecar heartbeat for the whole ``ainvoke``.
@@ -1205,12 +1241,23 @@ async def _ainvoke_with_content_heartbeat(
     the row go stale mid-node and be hidden even though the run is still going.
     The sidecar bumps it on an interval; the ``finally`` tears it down on every
     exit path (success, exception, cancellation) so it never outlives the run.
+
+    A second, independent sidecar (poindexter#757) does the same for
+    ``pipeline_tasks.updated_at`` when ``task_id`` is given — see
+    ``_pipeline_task_heartbeat_loop``.
     """
     hb = None
     if activity_id is not None:
         hb = asyncio.create_task(
             live_activity.heartbeat(
                 pool, activity_id, interval_seconds=interval_seconds
+            )
+        )
+    task_hb = None
+    if task_id:
+        task_hb = asyncio.create_task(
+            _pipeline_task_heartbeat_loop(
+                pool, task_id, interval_seconds=interval_seconds
             )
         )
     try:
@@ -1220,6 +1267,12 @@ async def _ainvoke_with_content_heartbeat(
             hb.cancel()
             try:
                 await hb
+            except asyncio.CancelledError:
+                pass  # silent-ok: expected — we cancelled the heartbeat ourselves
+        if task_hb is not None:
+            task_hb.cancel()
+            try:
+                await task_hb
             except asyncio.CancelledError:
                 pass  # silent-ok: expected — we cancelled the heartbeat ourselves
 
@@ -1571,6 +1624,7 @@ class TemplateRunner:
                         interval_seconds=_content_heartbeat_interval_seconds(
                             self._site_config
                         ),
+                        task_id=str(initial_state.get("task_id") or "") or None,
                     )
                 except Exception as exc:
                     await live_activity.finish(

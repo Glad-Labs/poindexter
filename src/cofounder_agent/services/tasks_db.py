@@ -865,8 +865,12 @@ class TasksDatabase(DatabaseServiceMixin):
         During long writer/QA/image stages the worker would otherwise sit
         on a single row for hours without touching ``updated_at``, so the
         sweeper couldn't tell the difference between "actively processing"
-        and "worker died mid-stage". This method is called on a timer by
-        :class:`TaskExecutor` to keep the row fresh.
+        and "worker died mid-stage". Originally called on a timer by
+        ``TaskExecutor``, which was deleted in the 2026-05-16 Prefect
+        cutover (poindexter#410 Stage 4) — this went dark until
+        poindexter#757 re-wired it as a sidecar in
+        ``template_runner._ainvoke_with_content_heartbeat`` (via
+        ``_pipeline_task_heartbeat_loop``).
 
         The heartbeat explicitly does NOT change status — any row already
         in a terminal state (``failed``, ``cancelled``, ``rejected``,
