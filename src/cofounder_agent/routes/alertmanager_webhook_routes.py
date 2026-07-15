@@ -65,15 +65,14 @@ from __future__ import annotations
 import datetime as _dt
 import hmac
 import json
-import logging
 from typing import Any
 
 from fastapi import APIRouter, Depends, Header, HTTPException, status
 
-from services.logger_config import get_logger
+from services.logger_config import StructuredLogger, get_logger
 from utils.route_utils import get_database_dependency
 
-logger: logging.Logger = get_logger(__name__)
+logger: StructuredLogger = get_logger(__name__)
 
 router = APIRouter(prefix="/api/webhooks", tags=["alertmanager"])
 

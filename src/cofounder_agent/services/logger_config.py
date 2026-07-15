@@ -30,7 +30,7 @@ import re
 import sys
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 
 # Try to import structlog for structured logging support
 try:
@@ -538,7 +538,31 @@ _structlog_configured = configure_structlog()
 # ============================================================================
 
 
-def get_logger(name: str | None = None):
+class StructuredLogger(Protocol):
+    """Structural type for the value ``get_logger()`` returns.
+
+    Every call site in the codebase uses the ``logger.info("event", key=value,
+    ...)`` structured-logging convention, whether the underlying object is
+    structlog's configured ``BoundLogger`` or (fallback) a stdlib
+    ``logging.Logger``. structlog's own ``get_logger()`` is typed to return
+    ``Any`` (its wrapper class is only known at configure-time), so an
+    unannotated ``get_logger()`` here leaves Pyright to infer the return type
+    as ``Any | Logger`` — and it then validates every call against stdlib
+    ``Logger``'s stricter, non-kwargs signature, flagging each structured
+    kwarg as a false-positive ``reportCallIssue``. Declaring this Protocol
+    (and casting to it below) gives Pyright/mypy an accurate shape instead.
+    """
+
+    def debug(self, event: str, *args: object, **kw: object) -> Any: ...
+    def info(self, event: str, *args: object, **kw: object) -> Any: ...
+    def warning(self, event: str, *args: object, **kw: object) -> Any: ...
+    def error(self, event: str, *args: object, **kw: object) -> Any: ...
+    def critical(self, event: str, *args: object, **kw: object) -> Any: ...
+    def exception(self, event: str, *args: object, **kw: object) -> Any: ...
+    def bind(self, **new_values: object) -> "StructuredLogger": ...
+
+
+def get_logger(name: str | None = None) -> StructuredLogger:
     """
     Get a logger instance with centralized configuration.
 
@@ -563,9 +587,9 @@ def get_logger(name: str | None = None):
         logger.info("user_action", action="login")
     """
     if structlog is not None and _structlog_configured:
-        return structlog.get_logger(name)
+        return cast(StructuredLogger, structlog.get_logger(name))
     else:
-        return logging.getLogger(name)
+        return cast(StructuredLogger, logging.getLogger(name))
 
 
 def set_log_level(level: str) -> None:
@@ -622,11 +646,11 @@ def set_log_level(level: str) -> None:
 if __name__ == "__main__":
     # Show configuration when module is run directly
     logger = get_logger("logger_config")
-    logger.info(  # type: ignore[call-arg]
+    logger.info(
         "Logger configuration initialized",
-        environment=ENVIRONMENT,  # type: ignore[call-arg]
-        log_level=LOG_LEVEL,  # type: ignore[call-arg]
-        log_format=LOG_FORMAT,  # type: ignore[call-arg]
-        structlog_available=STRUCTLOG_AVAILABLE,  # type: ignore[call-arg]
-        using_structlog=_structlog_configured,  # type: ignore[call-arg]
+        environment=ENVIRONMENT,
+        log_level=LOG_LEVEL,
+        log_format=LOG_FORMAT,
+        structlog_available=STRUCTLOG_AVAILABLE,
+        using_structlog=_structlog_configured,
     )

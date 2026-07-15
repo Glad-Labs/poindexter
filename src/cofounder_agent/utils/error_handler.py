@@ -17,14 +17,13 @@ Import guide:
     - Services (same package): from .error_handler import DatabaseError
 """
 
-import logging  # still needed for Logger type references elsewhere in this module
 from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import HTTPException
 
 from services.error_handler import handle_error
-from services.logger_config import get_logger
+from services.logger_config import StructuredLogger, get_logger
 
 logger = get_logger(__name__)
 
@@ -86,7 +85,7 @@ class ErrorResponse:
 async def handle_route_error(
     error: Exception,
     operation: str,
-    logger_instance: logging.Logger | None = None,
+    logger_instance: StructuredLogger | None = None,
     default_detail: str | None = None,
 ) -> HTTPException:
     """
@@ -175,7 +174,7 @@ async def handle_route_error(
 def handle_service_error(
     error: Exception,
     operation: str,
-    logger_instance: logging.Logger | None = None,
+    logger_instance: StructuredLogger | None = None,
     fallback_value: Any = None,
 ) -> Any:
     """
@@ -260,7 +259,7 @@ def log_and_raise_http_error(
     status_code: int,
     detail: str,
     operation: str | None = None,
-    logger_instance: logging.Logger | None = None,
+    logger_instance: StructuredLogger | None = None,
 ) -> None:
     """
     Log an error and raise HTTPException.

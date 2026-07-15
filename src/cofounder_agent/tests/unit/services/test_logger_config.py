@@ -69,7 +69,7 @@ class TestGetLogger:
         b = lc.get_logger("module.b")
         # They may be the same type but names differ for stdlib loggers
         assert (
-            a is not b or (hasattr(a, "name") and a.name != b.name) or True
+            a is not b or (hasattr(a, "name") and a.name != b.name) or True  # type: ignore[attr-defined]
         )  # structlog returns bound loggers that may differ
 
 
