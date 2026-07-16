@@ -2,6 +2,26 @@
 
 ## Unreleased
 
+## [0.105.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.104.0...v0.105.0) (2026-07-16)
+
+
+### Features
+
+* **video:** never-drop-a-shot fallback ladder for the renderer ([#2633](https://github.com/Glad-Labs/glad-labs-stack/issues/2633)) ([b69ef81](https://github.com/Glad-Labs/glad-labs-stack/commit/b69ef81ed968efa81e4d8a27c828c93d391cc0d5))
+
+
+### Bug Fixes
+
+* **backups:** close out the 07-16 B2 storage-cap incident's follow-ups ([#2635](https://github.com/Glad-Labs/glad-labs-stack/issues/2635)) ([21c9a06](https://github.com/Glad-Labs/glad-labs-stack/commit/21c9a060c8382fa18316c7f853fe6099c373d5fc))
+* **brain:** operator digest views_today reads page_views_human ([#2629](https://github.com/Glad-Labs/glad-labs-stack/issues/2629)) ([0851332](https://github.com/Glad-Labs/glad-labs-stack/commit/0851332f6870fa9b25854091388e24c0e790df59))
+* **console:** surface Gate-2 media in NEEDS YOU + add asset preview ([#2630](https://github.com/Glad-Labs/glad-labs-stack/issues/2630)) ([c4a5c4e](https://github.com/Glad-Labs/glad-labs-stack/commit/c4a5c4eb23adfa9fa1a00428d4e26431656c0c03))
+* **grafana:** make Page-views panel's raw/bot-inclusive nature visible without hovering ([#2631](https://github.com/Glad-Labs/glad-labs-stack/issues/2631)) ([3e7dc4e](https://github.com/Glad-Labs/glad-labs-stack/commit/3e7dc4eb0f3cce0850df10e0b9effa4694622798))
+* **llm:** route 3 more satellite phases off the cloud writer pin ([#2636](https://github.com/Glad-Labs/glad-labs-stack/issues/2636)) ([8a01189](https://github.com/Glad-Labs/glad-labs-stack/commit/8a011896e617d794546a6eb0240cf47341e018f6))
+* **llm:** route satellite phases off the cloud writer pin (Sonnet-canary leak) ([#2634](https://github.com/Glad-Labs/glad-labs-stack/issues/2634)) ([bd4ca5d](https://github.com/Glad-Labs/glad-labs-stack/commit/bd4ca5d72ea06e0f52cea4ec97e5aa5c71ec62ed))
+* **tests:** rename unused _run_turn stub arg to satisfy ruff ARG005 ([#2632](https://github.com/Glad-Labs/glad-labs-stack/issues/2632)) ([8dbc4ae](https://github.com/Glad-Labs/glad-labs-stack/commit/8dbc4ae849463b6f5e3b4c3d9ab25b21184f83d0))
+* **video:** short-form fit-to-narration + script cap (no more frozen tail) ([#2637](https://github.com/Glad-Labs/glad-labs-stack/issues/2637)) ([3168b21](https://github.com/Glad-Labs/glad-labs-stack/commit/3168b2171e8f06bc0889ea0454170c8a616a04be))
+* **voice-brain-host:** logger.setLevel(INFO) so basicConfig no-op can't silence it ([#2628](https://github.com/Glad-Labs/glad-labs-stack/issues/2628)) ([b292ab5](https://github.com/Glad-Labs/glad-labs-stack/commit/b292ab504b3472fcb5ace0b65d98d1bf59fc92d2))
+
 ## [0.104.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.103.0...v0.104.0) (2026-07-15)
 
 
