@@ -96,12 +96,31 @@ different model, set its pin — nothing else is affected.
 | `social_poster` (social copy gen)                        | `social_poster_fallback_model`                       | notify(critical) + raise                  |
 | `ragas_eval` (judge model)                               | `ragas_judge_model`                                  | notify(critical) + raise                  |
 | `deepeval_rails` (judge model)                           | `deepeval_judge_model`                               | notify(critical) + raise                  |
+| `self_consistency_rail` (agreement probe)                | `pipeline_local_writer_model` → writer (if local)    | advisory — degrade to skipped             |
+| `narrate_bundle` (dev-diary narration)                   | `pipeline_local_writer_model` → writer (if local)    | fail loud (paid writer + no local pin)    |
 
 The two LLM-judge advisory rails (`ragas_eval`, `deepeval_rails`) and the two
 hygiene-summary jobs (`collapse_old_embeddings`, `retention_summarize_to_table`)
 should point at a **sub-writer-size** model (e.g. `ollama/phi4:14b`, ~8 GB) so
 background/advisory work doesn't load the ~17 GB writer into VRAM. That contract
 is pinned by `tests/unit/services/migrations/test_hygiene_summary_model_rightsize.py`.
+
+### Satellite phases: the local-writer resolver
+
+The `self_consistency` QA probe and the `narrate_bundle` dev-diary writer are
+**satellite** phases — they need a writer-grade model but must never bill cloud
+prices. They resolve through `llm_text.resolve_local_writer_model`, which returns
+the `pipeline_local_writer_model` pin, else `pipeline_writer_model` **only when it
+is itself local** (reusing `dispatcher._is_paid_llm_call` to decide), else fails
+loud. This closes the 2026-07-07 **Sonnet-canary** leak: pinning
+`pipeline_writer_model` to a paid model for a blog-writer experiment used to bill
+the self-consistency probe (~247 calls / 10 days) and every dev-diary post at
+cloud rates, because both resolved the writer via the shared `resolve_local_model`
+(which returns the pin verbatim). `pipeline_local_writer_model` defaults to
+**empty** and self-adjusts to the writer on all-local installs (zero config); set
+it to a local Ollama tag on any install running a **paid** writer. The main blog
+draft is unaffected — it has its own resolver in `ai_content_generator` and still
+honors `pipeline_writer_model`.
 
 ## What didn't migrate (and why)
 

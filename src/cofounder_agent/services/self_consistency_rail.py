@@ -170,12 +170,24 @@ async def _sample_summaries(
     )
     # poindexter#485 fail-loud sweep: was previously a literal
     # ``ollama/glm-4.7-5090:latest`` fallback that silently masked a
-    # missing ``pipeline_writer_model`` setting. Now reads it via the
-    # shared resolver — raises ValueError if
-    # ``pipeline_writer_model`` is unset, which is the right answer (a
-    # self-consistency probe without a writer model has no work to do).
-    from services.llm_text import resolve_local_model
-    writer_model = resolve_local_model(site_config=site_config)
+    # missing ``pipeline_writer_model`` setting. Routes through the
+    # LOCAL-writer resolver — a self-consistency probe only self-checks the
+    # article, so it uses a guaranteed-local writer-grade model
+    # (pipeline_local_writer_model, else the writer when it is itself local)
+    # and never bills cloud prices when pipeline_writer_model is pinned to a
+    # paid model for a writer experiment (the 2026-07-07 Sonnet-canary).
+    from services.llm_text import resolve_local_writer_model
+    try:
+        writer_model = resolve_local_writer_model(site_config=site_config)
+    except ValueError as exc:
+        # Advisory rail — a missing local pin degrades to skipped, never a
+        # hard error (advisory QA must not fail the gate).
+        logger.debug(
+            "[self_consistency] no local writer-grade model resolvable "
+            "(%s) — skipping samples",
+            exc,
+        )
+        return []
 
     sample_failures: list[str] = []
 

@@ -306,6 +306,17 @@ DEFAULTS: dict[str, str] = {
     # only to decouple titles from a writer experiment.
     'pipeline_seo_model': '',
     'pipeline_title_model': '',
+    # Guaranteed-LOCAL writer-grade model for SATELLITE phases — the
+    # self-consistency QA probe and dev-diary narration — that call
+    # resolve_local_writer_model(). These are NOT the blog draft (which has its
+    # own resolver in ai_content_generator); they only self-check or narrate,
+    # so they must never bill cloud writer prices when pipeline_writer_model is
+    # pinned to a paid model for a writer experiment (the 2026-07-07
+    # Sonnet-canary billed both via the writer pin). EMPTY = self-adjust:
+    # follow pipeline_writer_model when it is itself local, else fail loud
+    # asking for this pin. Set it to a local Ollama tag on any install that
+    # runs a PAID writer.
+    'pipeline_local_writer_model': '',
     # Adversarial critic — must be a DIFFERENT model family from the writer and
     # reviser so biases don't cancel (cross-model QA principle). phi4:14b is fast,
     # reliable at JSON output, and distinct from Gemma (writer) and GLM (reviser).

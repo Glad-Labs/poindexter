@@ -232,6 +232,70 @@ class _CaptureSiteConfig:
         return int(default) if default is not None else 0
 
 
+class _PaidWriterSiteConfig:
+    """SiteConfig stand-in with a PAID writer pin + a LOCAL satellite pin.
+
+    Mirrors an operator running a blog-writer experiment on a cloud model
+    (``pipeline_writer_model='anthropic/claude-sonnet-5'``) while keeping
+    satellite phases local (``pipeline_local_writer_model='ollama/gemma3:27b'``).
+    """
+
+    def get(self, key, default=None):
+        if key == "pipeline_writer_model":
+            return "anthropic/claude-sonnet-5"
+        if key == "pipeline_local_writer_model":
+            return "ollama/gemma3:27b"
+        if key == "local_llm_api_url":
+            return "http://localhost:11434"
+        return default
+
+    def get_float(self, key, default=None):
+        return float(default) if default is not None else 120.0
+
+    def get_bool(self, key, default=None):
+        return bool(default) if default is not None else False
+
+    def get_int(self, key, default=None):
+        return int(default) if default is not None else 0
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+class TestRunNeverBillsCloudWriter:
+    """Regression guard for the 2026-07-07 Sonnet-canary leak.
+
+    When ``pipeline_writer_model`` is pinned to a PAID model for a blog-writer
+    experiment, dev-diary narration must still resolve the LOCAL writer-grade
+    model (``pipeline_local_writer_model``). narrate_bundle is a budget/free
+    tier writer (ATOM_META) and must never bill cloud prices — before the fix
+    it inherited the writer pin verbatim via ``resolve_local_model``.
+    """
+
+    async def test_paid_writer_pin_routes_narration_to_local_model(self):
+        bundle = _bundle_repro_pr_221()
+        captured_models: list[str | None] = []
+
+        async def _capture_chat(prompt, *, model=None, **kwargs):
+            captured_models.append(model)
+            return "TITLE: A real headline\n\nStub narration prose for the day."
+
+        with patch(
+            "modules.content.atoms.narrate_bundle._ollama_chat_text", _capture_chat
+        ):
+            result = await run({
+                "task_id": "sonnet-canary-repro",
+                "topic": "Daily dev diary",
+                "context_bundle": bundle,
+                "site_config": _PaidWriterSiteConfig(),
+            })
+
+        # The model handed to the LLM helper is the LOCAL pin, never the paid
+        # writer — this is the leak the fix closes.
+        assert captured_models == ["gemma3:27b"]
+        assert result["model_used"] == "gemma3:27b"
+        assert "anthropic" not in (result["model_used"] or "")
+
+
 @pytest.mark.unit
 @pytest.mark.asyncio
 class TestRunPromptConstruction:
@@ -822,12 +886,12 @@ class TestResolveSystemPrompt:
         registry is genuinely unreachable — ERROR is appropriate.
         """
         import logging
+        from unittest.mock import MagicMock, patch
 
         from modules.content.atoms.narrate_bundle import (
             _NARRATIVE_SYSTEM_PROMPT_FALLBACK,
             _resolve_system_prompt,
         )
-        from unittest.mock import MagicMock, patch
 
         def _raise(_key, **_kw):
             raise KeyError("atoms.narrate_bundle.system_prompt")

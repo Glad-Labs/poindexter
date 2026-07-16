@@ -283,7 +283,10 @@ async def test_sample_summaries_aggregates_failures_into_one_finding(monkeypatch
     with patch(
         "services.llm_providers.dispatcher.dispatch_complete", dispatch_mock,
     ), patch(
-        "services.llm_text.resolve_local_model", return_value="test-model",
+        # Satellite phases resolve via resolve_local_writer_model (the
+        # cloud-writer-leak fix) — patch it out so this test exercises only the
+        # sample-failure aggregation, not model resolution.
+        "services.llm_text.resolve_local_writer_model", return_value="test-model",
     ):
         result = await _sample_summaries(
             topic="some topic", content="some content", n=3,

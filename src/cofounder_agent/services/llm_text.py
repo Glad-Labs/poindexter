@@ -95,6 +95,71 @@ def resolve_local_model(model: str | None = None, *, site_config: Any = None) ->
     )
 
 
+def resolve_local_writer_model(
+    model: str | None = None, *, site_config: Any = None
+) -> str:
+    """Pick a guaranteed-LOCAL writer-grade model for satellite phases.
+
+    Satellite phases — the ``self_consistency`` QA probe and the
+    ``narrate_bundle`` dev-diary writer — need a writer-grade model but must
+    never incur cloud prices. They historically resolved via
+    :func:`resolve_local_model`, which returns ``pipeline_writer_model``
+    verbatim; when an operator pins a paid model there for a writer experiment
+    (the 2026-07-07 Sonnet-canary), every satellite silently billed cloud
+    rates. This resolver never returns a paid model.
+
+    Precedence:
+
+    1. explicit ``model`` arg (an experiment's model-axis override) — honored
+       verbatim, ``ollama/`` prefix stripped;
+    2. ``pipeline_local_writer_model`` when set — the operator's local pin;
+    3. ``pipeline_writer_model`` **only when it is itself local** — so an
+       all-local install self-adjusts to a writer upgrade with no extra config;
+    4. otherwise raise — no silent default (``feedback_no_silent_defaults``).
+
+    The "is it paid?" test reuses :func:`dispatcher._is_paid_llm_call`, the
+    same predicate cost-guard budget enforcement keys off, so "local" here
+    means exactly what the dispatcher means by it.
+
+    Args:
+        model: Explicit model override (experiment lab variant). When set, it
+            wins verbatim — the caller has deliberately chosen it.
+        site_config: SiteConfig DI seam. Required when ``model`` is unset.
+
+    Raises:
+        ValueError: when ``model`` is unset and no LOCAL model is resolvable —
+            either ``site_config`` is missing, or ``pipeline_writer_model`` is
+            paid/unset while ``pipeline_local_writer_model`` is empty.
+    """
+    if model:
+        return model.strip().removeprefix("ollama/")
+    if site_config is None:
+        raise ValueError(
+            "llm_text.resolve_local_writer_model: site_config is required to "
+            "resolve a local writer-grade model. Pass site_config explicitly."
+        )
+    local_pin = (site_config.get("pipeline_local_writer_model", "") or "").strip()
+    if local_pin:
+        return local_pin.removeprefix("ollama/")
+    # Self-adjust: an all-local install has no reason to configure a separate
+    # pin — reuse pipeline_writer_model, but ONLY when it is itself local.
+    writer = (site_config.get("pipeline_writer_model", "") or "").strip()
+    if writer:
+        from services.llm_providers.dispatcher import _is_paid_llm_call
+
+        if not _is_paid_llm_call(writer, None):
+            return writer.removeprefix("ollama/")
+    raise ValueError(
+        "llm_text.resolve_local_writer_model: no LOCAL writer-grade model "
+        "resolvable — pipeline_writer_model is unset or a paid/cloud model and "
+        "pipeline_local_writer_model is empty. Set pipeline_local_writer_model "
+        "to a local Ollama tag (e.g. `poindexter set-setting "
+        "pipeline_local_writer_model ollama/gemma3:27b`) so satellite phases "
+        "(self-consistency probe, dev-diary narration) never bill cloud writer "
+        "prices."
+    )
+
+
 def resolve_structured_model(
     model: str | None = None, *, site_config: Any = None
 ) -> str:
@@ -390,5 +455,6 @@ __all__ = [
     "maybe_unwrap_json",
     "ollama_chat_text",
     "resolve_local_model",
+    "resolve_local_writer_model",
     "strip_markdown_fence",
 ]

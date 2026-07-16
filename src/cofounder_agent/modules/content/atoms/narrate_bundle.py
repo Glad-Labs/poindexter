@@ -564,21 +564,26 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
     # DI seam (glad-labs-stack#330) — atoms read site_config from state.
     # 2026-05-12 (poindexter#485): replaced the three-place hardcoded
-    # ``glm-4.7-5090:latest`` fallback with the shared resolver, which
-    # reads the pipeline_writer_model pin (raise on unset).
-    # If the setting doesn't resolve, the atom now fails loud instead of
-    # silently trying a model the operator may not have.
+    # ``glm-4.7-5090:latest`` fallback with a shared resolver that fails
+    # loud instead of silently trying a model the operator may not have.
     #
-    # Phase 1 lab harness — when an experiment assigned a model-axis
-    # variant, ``experiment_runner.apply_variant_to_state`` stamps
-    # ``writer_model`` onto state. ``resolve_local_model`` accepts the
-    # explicit string and returns it after the ``ollama/`` prefix strip
-    # so no app_settings hit happens on the variant path. None = inherit
-    # the niche default writer model (pipeline_writer_model).
-    from services.llm_text import resolve_local_model
+    # dev-diary narration is a budget/free-tier writer (see ATOM_META:
+    # capability_tier="dev_diary_narrator", fallback budget_writer/
+    # free_writer), so it routes through resolve_local_writer_model — a
+    # guaranteed-LOCAL writer-grade model (pipeline_local_writer_model, else
+    # the writer when it is itself local). This keeps dev-diary posts off a
+    # paid writer when pipeline_writer_model is pinned to a cloud model for a
+    # blog-writer experiment (the 2026-07-07 Sonnet-canary billed this atom).
+    #
+    # Phase 1 lab harness — when an experiment assigned a model-axis variant,
+    # ``experiment_runner.apply_variant_to_state`` stamps ``writer_model`` onto
+    # state. The resolver honors that explicit string verbatim (``ollama/``
+    # prefix stripped, no app_settings hit) so a deliberate dev-diary-on-cloud
+    # experiment still works; None = the local writer-grade default.
+    from services.llm_text import resolve_local_writer_model
     site_config = state.get("site_config")
     model_override = state.get("writer_model")
-    model = resolve_local_model(model=model_override, site_config=site_config)
+    model = resolve_local_writer_model(model=model_override, site_config=site_config)
 
     bundle_text = _format_bundle_for_narrative(bundle)
     # Pass site_config so {site_name}/{site_url} placeholders are rendered

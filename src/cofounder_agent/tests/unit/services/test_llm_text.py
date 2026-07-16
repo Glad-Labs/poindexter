@@ -29,6 +29,7 @@ from services.llm_text import (
     maybe_unwrap_json,
     ollama_chat_text,
     resolve_local_model,
+    resolve_local_writer_model,
     resolve_structured_model,
 )
 
@@ -129,6 +130,74 @@ class TestResolveLocalModel:
     def test_raises_when_no_site_config_and_no_model(self):
         with pytest.raises(ValueError, match="site_config is required"):
             resolve_local_model()
+
+
+# ---------------------------------------------------------------------------
+# resolve_local_writer_model
+# ---------------------------------------------------------------------------
+
+
+class TestResolveLocalWriterModel:
+    """Satellite phases (self-consistency probe, dev-diary narration) must
+    resolve a LOCAL writer-grade model even when ``pipeline_writer_model`` is
+    pinned to a paid/cloud model for a writer experiment.
+
+    Regression guard for the 2026-07-07 Sonnet-canary leak: with
+    ``pipeline_writer_model='anthropic/claude-sonnet-5'`` the
+    ``self_consistency`` and ``narrate_bundle`` phases billed cloud prices
+    because they resolved the writer via :func:`resolve_local_model` (which
+    returns ``pipeline_writer_model`` verbatim). This resolver never returns a
+    paid model — it falls back to the local pin, self-adjusts to the writer
+    only when the writer is itself local, and fails loud otherwise.
+    """
+
+    @staticmethod
+    def _sc(**rows: str) -> Any:
+        sc = MagicMock()
+        sc.get = MagicMock(side_effect=lambda k, d=None: rows.get(k, d or ""))
+        return sc
+
+    def test_paid_writer_never_leaks_uses_local_pin(self):
+        sc = self._sc(
+            pipeline_writer_model="anthropic/claude-sonnet-5",
+            pipeline_local_writer_model="ollama/gemma3:27b",
+        )
+        assert resolve_local_writer_model(site_config=sc) == "gemma3:27b"
+
+    def test_explicit_override_wins_and_strips_prefix(self):
+        # An experiment-assigned writer_model is honored verbatim (the
+        # override is the whole point of the model-axis lab variant).
+        sc = self._sc(pipeline_local_writer_model="ollama/gemma3:27b")
+        assert (
+            resolve_local_writer_model("ollama/glm-4.7:latest", site_config=sc)
+            == "glm-4.7:latest"
+        )
+
+    def test_self_adjusts_to_local_writer_when_pin_empty(self):
+        # All-local install (no paid writer, no explicit local pin): follow the
+        # writer so satellites track a local writer upgrade with zero config.
+        sc = self._sc(
+            pipeline_writer_model="ollama/gemma-4-31B-it-qat:latest",
+            pipeline_local_writer_model="",
+        )
+        assert (
+            resolve_local_writer_model(site_config=sc)
+            == "gemma-4-31B-it-qat:latest"
+        )
+
+    def test_paid_writer_and_empty_pin_fails_loud(self):
+        # Paid writer + no local pin: no silent default — guide the operator to
+        # set the local pin (feedback_no_silent_defaults).
+        sc = self._sc(
+            pipeline_writer_model="anthropic/claude-sonnet-5",
+            pipeline_local_writer_model="",
+        )
+        with pytest.raises(ValueError, match="pipeline_local_writer_model"):
+            resolve_local_writer_model(site_config=sc)
+
+    def test_requires_site_config_when_no_model(self):
+        with pytest.raises(ValueError, match="site_config is required"):
+            resolve_local_writer_model()
 
 
 # ---------------------------------------------------------------------------
