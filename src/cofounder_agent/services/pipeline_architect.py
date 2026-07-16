@@ -309,18 +309,23 @@ async def compose(
     # poindexter#485 fail-loud sweep: was previously
     # ``... or "glm-4.7-5090:latest"`` — Matt's specific custom model
     # baked into a public OSS path. Architect prefers its dedicated
-    # setting; falls through to the writer-model resolver (which
-    # itself reads the ``pipeline_writer_model`` pin → ValueError). The
-    # architect cannot compose pipelines without
-    # a model, so raising is the right answer for unset config.
+    # setting; else falls through to the LOCAL-writer resolver. Graph
+    # composition is a SATELLITE phase (it designs a pipeline; it is NOT
+    # the blog draft, which has its own resolver in ai_content_generator),
+    # so it routes through ``resolve_local_writer_model`` — a guaranteed-
+    # local writer-grade model — and never bills cloud prices when
+    # ``pipeline_writer_model`` is pinned to a paid model for a writer
+    # experiment (the 2026-07-07 Sonnet-canary, Glad-Labs/poindexter#866).
+    # The resolver raises on unset config; the architect cannot compose
+    # without a model, so raising is the right answer.
     architect_override = (
         _sc.get("pipeline_architect_model") or ""
     ).strip()
     if architect_override:
         model = architect_override.removeprefix("ollama/")
     else:
-        from services.llm_text import resolve_local_model
-        model = resolve_local_model(site_config=_sc)
+        from services.llm_text import resolve_local_writer_model
+        model = resolve_local_writer_model(site_config=_sc)
 
     # The migrated prompt carries the operator persona as a {site_name}
     # placeholder (was hardcoded "Glad Labs"). _resolve_system_prompt renders

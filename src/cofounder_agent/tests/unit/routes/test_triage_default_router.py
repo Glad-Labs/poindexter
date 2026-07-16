@@ -5,10 +5,13 @@ silently consuming every token on ``<think>`` blocks:
 
 1. When ``ops_triage_writer_model`` is set on the SiteConfig, the
    router uses that model directly — does NOT fall through to
-   ``resolve_local_model()``.
+   ``resolve_local_writer_model()``.
 2. When ``ops_triage_writer_model`` is empty, the router falls back
-   to ``resolve_local_model()`` (which reads ``pipeline_writer_model``)
-   — preserves back-compat for installs that never seed the new key.
+   to ``resolve_local_writer_model()`` — a guaranteed-LOCAL writer-grade
+   model (``pipeline_local_writer_model``, else the writer when it is
+   itself local) so alert triage (a satellite phase) never bills cloud
+   prices for a paid ``pipeline_writer_model`` (the 2026-07-07
+   Sonnet-canary, Glad-Labs/poindexter#866).
 3. The response is always run through ``strip_think_blocks()`` so a
    thinking model accidentally configured as the triage model still
    produces clean operator prose.
@@ -41,7 +44,7 @@ def fake_site_config():
 @pytest.mark.asyncio
 async def test_uses_ops_triage_writer_model_when_set(fake_site_config):
     """Triage-specific override path. The router must NOT call
-    resolve_local_model() — the override is the whole point."""
+    resolve_local_writer_model() — the override is the whole point."""
     from routes.triage_routes import _DefaultModelRouter
 
     sc = fake_site_config({
@@ -55,7 +58,7 @@ async def test_uses_ops_triage_writer_model_when_set(fake_site_config):
             new=AsyncMock(return_value="clean diagnosis text"),
         ) as mock_chat,
         patch(
-            "services.llm_text.resolve_local_model",
+            "services.llm_text.resolve_local_writer_model",
         ) as mock_resolve,
     ):
         result = await router.invoke(
@@ -84,7 +87,7 @@ async def test_strips_ollama_prefix_from_override(fake_site_config):
             "services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="ok"),
         ) as mock_chat,
-        patch("services.llm_text.resolve_local_model"),
+        patch("services.llm_text.resolve_local_writer_model"),
     ):
         await router.invoke(model_class="ops_triage", system="s", user="u")
 
@@ -92,9 +95,9 @@ async def test_strips_ollama_prefix_from_override(fake_site_config):
 
 
 @pytest.mark.asyncio
-async def test_falls_back_to_resolve_local_model_when_override_empty(fake_site_config):
+async def test_falls_back_to_resolve_local_writer_model_when_override_empty(fake_site_config):
     """Back-compat: installs that never seed the triage-specific key
-    must still resolve a model via the writer-model chain. Pins the
+    must still resolve a model via the local-writer resolver. Pins the
     fallback so a future refactor doesn't drop it silently."""
     from routes.triage_routes import _DefaultModelRouter
 
@@ -107,7 +110,7 @@ async def test_falls_back_to_resolve_local_model_when_override_empty(fake_site_c
             new=AsyncMock(return_value="ok"),
         ) as mock_chat,
         patch(
-            "services.llm_text.resolve_local_model",
+            "services.llm_text.resolve_local_writer_model",
             return_value="some-fallback-model:latest",
         ) as mock_resolve,
     ):
@@ -138,7 +141,7 @@ async def test_response_is_think_block_stripped(fake_site_config):
             "services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value=raw_with_think),
         ),
-        patch("services.llm_text.resolve_local_model"),
+        patch("services.llm_text.resolve_local_writer_model"),
     ):
         result = await router.invoke(model_class="ops_triage", system="s", user="u")
 
@@ -167,7 +170,7 @@ async def test_router_threads_pool_into_ollama_chat_text(fake_site_config):
             "services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="ok"),
         ) as mock_chat,
-        patch("services.llm_text.resolve_local_model"),
+        patch("services.llm_text.resolve_local_writer_model"),
     ):
         await router.invoke(model_class="ops_triage", system="s", user="u")
 
@@ -192,7 +195,7 @@ async def test_build_router_threads_pool_to_default_router(fake_site_config):
             "services.llm_text.ollama_chat_text",
             new=AsyncMock(return_value="ok"),
         ) as mock_chat,
-        patch("services.llm_text.resolve_local_model"),
+        patch("services.llm_text.resolve_local_writer_model"),
     ):
         await router.invoke(model_class="ops_triage", system="s", user="u")
 
@@ -217,7 +220,7 @@ async def test_site_config_get_raising_uses_fallback(fake_site_config):
             new=AsyncMock(return_value="ok"),
         ) as mock_chat,
         patch(
-            "services.llm_text.resolve_local_model",
+            "services.llm_text.resolve_local_writer_model",
             return_value="writer-model:latest",
         ) as mock_resolve,
     ):
@@ -225,3 +228,30 @@ async def test_site_config_get_raising_uses_fallback(fake_site_config):
 
     mock_resolve.assert_called_once()
     assert mock_chat.await_args.kwargs["model"] == "writer-model:latest"
+
+
+@pytest.mark.asyncio
+async def test_paid_writer_does_not_leak_uses_local_pin(fake_site_config):
+    """Satellite regression (Refs Glad-Labs/poindexter#866): alert triage is
+    NOT the blog draft, so a PAID ``pipeline_writer_model`` pin must never leak
+    into it. With no ``ops_triage_writer_model`` override, the router resolves a
+    LOCAL writer pin via the real ``resolve_local_writer_model`` (only the LLM
+    I/O is mocked here — the resolver runs for real)."""
+    from routes.triage_routes import _DefaultModelRouter
+
+    sc = fake_site_config({
+        "ops_triage_writer_model": "",  # no override
+        "pipeline_writer_model": "anthropic/claude-sonnet-5",  # PAID
+        "pipeline_local_writer_model": "ollama/gemma3:27b",  # LOCAL pin
+    })
+    router = _DefaultModelRouter(sc)
+
+    with patch(
+        "services.llm_text.ollama_chat_text",
+        new=AsyncMock(return_value="ok"),
+    ) as mock_chat:
+        result = await router.invoke(model_class="ops_triage", system="s", user="u")
+
+    # Pre-fix (resolve_local_model) returned "anthropic/claude-sonnet-5" verbatim.
+    assert mock_chat.await_args.kwargs["model"] == "gemma3:27b"
+    assert result["model"] == "ollama/gemma3:27b"

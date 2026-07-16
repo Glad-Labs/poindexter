@@ -16,7 +16,7 @@ from __future__ import annotations
 
 import json
 from typing import Any
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi import FastAPI
@@ -245,3 +245,64 @@ class TestAbstainAtBoundary:
         resp = client.post("/api/remediation/select", json=_payload(catalog=[]))
         assert resp.status_code == 200
         assert resp.json()["action_name"] == ""
+
+
+# ---------------------------------------------------------------------------
+# _SelectorModelRouter model resolution — the DEFAULT router (not the stub
+# used above) resolves its model. Remediation selection is a SATELLITE phase
+# (it names a docker/sweep action; it is NOT the blog draft), so a paid
+# ``pipeline_writer_model`` pin must never leak into it. Regression guard for
+# the 2026-07-07 Sonnet-canary leak (Refs Glad-Labs/poindexter#866): the
+# selector used to fall through to ``resolve_local_model`` (returns the writer
+# pin verbatim); it now routes through ``resolve_local_writer_model``.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.unit
+class TestSelectorModelRouterResolution:
+    @pytest.mark.asyncio
+    async def test_paid_writer_does_not_leak_uses_local_pin(self):
+        """No ``ops_firefighter_model`` + a PAID ``pipeline_writer_model``: the
+        selector must resolve the LOCAL writer pin, never the paid model."""
+        from routes.remediation_routes import _SelectorModelRouter
+
+        sc = SiteConfig(initial_config={
+            "ops_firefighter_model": "",  # no dedicated override
+            "pipeline_writer_model": "anthropic/claude-sonnet-5",  # PAID
+            "pipeline_local_writer_model": "ollama/gemma3:27b",  # LOCAL pin
+            "local_llm_api_url": "http://localhost:11434",
+        })
+        router_obj = _SelectorModelRouter(sc)
+
+        with patch(
+            "services.llm_text.ollama_chat_text",
+            new=AsyncMock(return_value="{}"),
+        ) as mock_chat:
+            result = await router_obj.invoke(
+                model_class="ops_firefighter", system="s", user="u",
+            )
+
+        # Pre-fix returned "anthropic/claude-sonnet-5" verbatim (the leak).
+        assert mock_chat.await_args.kwargs["model"] == "gemma3:27b"
+        assert result["model"] == "ollama/gemma3:27b"
+
+    @pytest.mark.asyncio
+    async def test_dedicated_firefighter_model_override_still_wins(self):
+        """The dedicated ``ops_firefighter_model`` pin takes precedence over the
+        writer chain and is unaffected by the satellite-resolver swap."""
+        from routes.remediation_routes import _SelectorModelRouter
+
+        sc = SiteConfig(initial_config={
+            "ops_firefighter_model": "ollama/llama3.2:3b",
+            "pipeline_writer_model": "anthropic/claude-sonnet-5",  # would leak if reached
+            "local_llm_api_url": "http://localhost:11434",
+        })
+        router_obj = _SelectorModelRouter(sc)
+
+        with patch(
+            "services.llm_text.ollama_chat_text",
+            new=AsyncMock(return_value="{}"),
+        ) as mock_chat:
+            await router_obj.invoke(model_class="ops_firefighter", system="s", user="u")
+
+        assert mock_chat.await_args.kwargs["model"] == "llama3.2:3b"

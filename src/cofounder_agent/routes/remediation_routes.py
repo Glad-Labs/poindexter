@@ -95,13 +95,18 @@ class _SelectorModelRouter:
     ) -> dict[str, Any]:
         del model_class, max_tokens  # model is the ops_firefighter_model setting
         from services.llm_providers.thinking_models import strip_think_blocks
-        from services.llm_text import ollama_chat_text, resolve_local_model
+        from services.llm_text import ollama_chat_text, resolve_local_writer_model
 
         configured = (self._site_config.get("ops_firefighter_model", "") or "").strip()
+        # Remediation selection is a SATELLITE phase (it names a docker/sweep
+        # action; it is NOT the blog draft), so the fallback resolves a
+        # guaranteed-LOCAL writer-grade model and never bills cloud prices when
+        # pipeline_writer_model is pinned to a paid model for a writer experiment
+        # (the 2026-07-07 Sonnet-canary, Glad-Labs/poindexter#866).
         model_name = (
             configured.removeprefix("ollama/")
             if configured
-            else resolve_local_model(None, site_config=self._site_config)
+            else resolve_local_writer_model(None, site_config=self._site_config)
         )
         raw = await ollama_chat_text(
             prompt=user, system=system, model=model_name,

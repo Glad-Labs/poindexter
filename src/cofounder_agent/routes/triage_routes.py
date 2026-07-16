@@ -190,7 +190,7 @@ class _DefaultModelRouter:
     ) -> dict[str, Any]:
         del model_class, max_tokens  # tier→model resolution is the writer-model setting
         from services.llm_providers.thinking_models import strip_think_blocks
-        from services.llm_text import ollama_chat_text, resolve_local_model
+        from services.llm_text import ollama_chat_text, resolve_local_writer_model
 
         triage_model = ""
         try:
@@ -202,7 +202,14 @@ class _DefaultModelRouter:
         if triage_model:
             model_name = triage_model.removeprefix("ollama/")
         else:
-            model_name = resolve_local_model(None, site_config=self._site_config)
+            # Alert triage is a SATELLITE phase (it diagnoses an alert; it is
+            # NOT the blog draft), so it resolves a guaranteed-LOCAL writer-grade
+            # model and never bills cloud prices when pipeline_writer_model is
+            # pinned to a paid model for a writer experiment (the 2026-07-07
+            # Sonnet-canary, Glad-Labs/poindexter#866).
+            model_name = resolve_local_writer_model(
+                None, site_config=self._site_config
+            )
 
         raw = await ollama_chat_text(
             prompt=user, system=system, model=model_name,

@@ -98,6 +98,9 @@ different model, set its pin — nothing else is affected.
 | `deepeval_rails` (judge model)                           | `deepeval_judge_model`                               | notify(critical) + raise                  |
 | `self_consistency_rail` (agreement probe)                | `pipeline_local_writer_model` → writer (if local)    | advisory — degrade to skipped             |
 | `narrate_bundle` (dev-diary narration)                   | `pipeline_local_writer_model` → writer (if local)    | fail loud (paid writer + no local pin)    |
+| `pipeline_architect` (graph composition)                 | `pipeline_architect_model` → local writer            | fail loud (raise; no local pin)           |
+| `triage_routes` (alert triage)                           | `ops_triage_writer_model` → local writer             | advisory — empty diagnosis                |
+| `remediation_routes` (firefighter select)                | `ops_firefighter_model` → local writer               | advisory — degrade to abstain             |
 
 The two LLM-judge advisory rails (`ragas_eval`, `deepeval_rails`) and the two
 hygiene-summary jobs (`collapse_old_embeddings`, `retention_summarize_to_table`)
@@ -107,20 +110,25 @@ is pinned by `tests/unit/services/migrations/test_hygiene_summary_model_rightsiz
 
 ### Satellite phases: the local-writer resolver
 
-The `self_consistency` QA probe and the `narrate_bundle` dev-diary writer are
-**satellite** phases — they need a writer-grade model but must never bill cloud
-prices. They resolve through `llm_text.resolve_local_writer_model`, which returns
-the `pipeline_local_writer_model` pin, else `pipeline_writer_model` **only when it
+Five **satellite** phases — the `self_consistency` QA probe, the `narrate_bundle`
+dev-diary writer, the `pipeline_architect` graph-composition LLM, and the
+`triage_routes` / `remediation_routes` firefighter routers — need a writer-grade
+model but must never bill cloud prices. They resolve through
+`llm_text.resolve_local_writer_model`, which returns the
+`pipeline_local_writer_model` pin, else `pipeline_writer_model` **only when it
 is itself local** (reusing `dispatcher._is_paid_llm_call` to decide), else fails
 loud. This closes the 2026-07-07 **Sonnet-canary** leak: pinning
 `pipeline_writer_model` to a paid model for a blog-writer experiment used to bill
 the self-consistency probe (~247 calls / 10 days) and every dev-diary post at
 cloud rates, because both resolved the writer via the shared `resolve_local_model`
-(which returns the pin verbatim). `pipeline_local_writer_model` defaults to
-**empty** and self-adjusts to the writer on all-local installs (zero config); set
-it to a local Ollama tag on any install running a **paid** writer. The main blog
-draft is unaffected — it has its own resolver in `ai_content_generator` and still
-honors `pipeline_writer_model`.
+(which returns the pin verbatim). The architect and the two firefighter routers
+were the same latent class — dormant at migration (0 cloud `cost_logs` rows / 10
+days) but a paid-writer pin would have leaked into them too, so they moved onto
+the resolver to finish the pattern (Refs Glad-Labs/poindexter#866).
+`pipeline_local_writer_model` defaults to **empty** and self-adjusts to the writer
+on all-local installs (zero config); set it to a local Ollama tag on any install
+running a **paid** writer. The main blog draft is unaffected — it has its own
+resolver in `ai_content_generator` and still honors `pipeline_writer_model`.
 
 ## What didn't migrate (and why)
 
