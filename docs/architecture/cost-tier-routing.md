@@ -120,8 +120,10 @@ is itself local** (reusing `dispatcher._is_paid_llm_call` to decide), else fails
 loud. This closes the 2026-07-07 **Sonnet-canary** leak: pinning
 `pipeline_writer_model` to a paid model for a blog-writer experiment used to bill
 the self-consistency probe (~247 calls / 10 days) and every dev-diary post at
-cloud rates, because both resolved the writer via the shared `resolve_local_model`
-(which returns the pin verbatim). The architect and the two firefighter routers
+cloud rates, because both resolved the writer via the shared `resolve_writer_model`
+(formerly `resolve_local_model` — Glad-Labs/poindexter#866 renamed it, since it
+may resolve a paid/cloud model, so "local" was a misnomer; the old name is kept
+as a back-compat alias). The architect and the two firefighter routers
 were the same latent class — dormant at migration (0 cloud `cost_logs` rows / 10
 days) but a paid-writer pin would have leaked into them too, so they moved onto
 the resolver to finish the pattern (Refs Glad-Labs/poindexter#866).

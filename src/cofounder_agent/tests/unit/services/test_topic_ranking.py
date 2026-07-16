@@ -70,7 +70,7 @@ async def test_llm_final_score_returns_score_per_candidate(monkeypatch):
     ]
     weights = [NicheGoal("TRAFFIC", 60), NicheGoal("EDUCATION", 40)]
     # Pass model= explicitly so the test doesn't go through
-    # resolve_local_model (poindexter#485 fail-loud sweep) — that
+    # resolve_writer_model (poindexter#485 fail-loud sweep) — that
     # path is exercised in test_llm_text.py.
     scored = await llm_final_score(candidates, weights, model="glm-4.7:latest", site_config=_SC)
     assert scored["c1"].llm_score == 87.5
@@ -195,7 +195,7 @@ async def test_llm_final_score_falls_back_when_llm_omits_candidate(monkeypatch):
         ScoredCandidate(id="missing", title="B", summary="y", embedding_score=0.42),
     ]
     weights = [NicheGoal("TRAFFIC", 100)]
-    # Same pattern as above: bypass resolve_local_model for the
+    # Same pattern as above: bypass resolve_writer_model for the
     # tests that aren't exercising the model-resolution contract.
     scored = await llm_final_score(candidates, weights, model="glm-4.7:latest", site_config=_SC)
 

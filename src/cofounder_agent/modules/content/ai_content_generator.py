@@ -725,7 +725,7 @@ class AIContentGenerator:
         _push(preferred_model)
 
         # 2. pipeline_writer_model — operator-pinned writer (primary).
-        # This matches llm_text.resolve_local_model (the canonical reference).
+        # This matches llm_text.resolve_writer_model (the canonical reference).
         _sc = self._site_config
         try:
             _push(_sc.get("pipeline_writer_model", ""))
@@ -1278,7 +1278,7 @@ async def _resolve_rag_writer_model(
 ) -> str:
     """Resolve writer model for the RAG ``generate_with_*`` helpers.
 
-    Canonical precedence (matches ``llm_text.resolve_local_model``):
+    Canonical precedence (matches ``llm_text.resolve_writer_model``):
 
     1. ``app_settings[pipeline_writer_model]`` — operator-pinned writer
        (primary). This is the setting operators are directed to tune.

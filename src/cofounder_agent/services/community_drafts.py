@@ -12,7 +12,7 @@ import re
 from dataclasses import dataclass, field, replace
 from typing import Any
 
-from services.llm_text import ollama_chat_text, resolve_local_model
+from services.llm_text import ollama_chat_text, resolve_writer_model
 
 _PROFILE_COLS = (
     "subreddit, enabled, content_types, post_type, self_promo, flair, "
@@ -343,7 +343,7 @@ async def generate_reddit_draft(pool: Any, *, post_id: str, subreddit: str,
         flair=profile.flair or "(none)",
     )
     pin = (site_config.get("community_draft_model", "") or "").strip() or None
-    model = resolve_local_model(pin, site_config=site_config)
+    model = resolve_writer_model(pin, site_config=site_config)
     raw = await ollama_chat_text(
         prompt, model=model, site_config=site_config, pool=pool, tier="standard",
         phase="community_reddit_draft",

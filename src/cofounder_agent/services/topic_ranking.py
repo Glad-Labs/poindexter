@@ -315,7 +315,7 @@ async def llm_final_score(
     ``model`` defaults to the operator-tuned ``pipeline_writer_model``
     app_setting (already used by the rest of the content pipeline). The
     ``ollama/`` prefix some tenants use is stripped inside
-    :func:`services.llm_text.resolve_local_model`.
+    :func:`services.llm_text.resolve_writer_model`.
 
     poindexter#485 fail-loud sweep: previously this baked Matt's
     ``glm-4.7-5090:latest`` model name in as a Python-side fallback,
@@ -326,7 +326,7 @@ async def llm_final_score(
     pipeline-entry instead of as an opaque Ollama 404 mid-call.
     """
     # DI (#272 Phase-2b): ``site_config`` is keyword-required — threaded
-    # down into resolve_local_model, the goal-descriptions reader, and
+    # down into resolve_writer_model, the goal-descriptions reader, and
     # the LLM-chat helper so every downstream read honors the injected
     # instance.
     _sc = site_config

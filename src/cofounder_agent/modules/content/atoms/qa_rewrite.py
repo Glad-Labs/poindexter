@@ -170,7 +170,7 @@ def _emit_empty_finding(model: str) -> None:
 
 
 async def run(state: dict[str, Any]) -> dict[str, Any]:
-    from services.llm_text import ollama_chat_text, resolve_local_model
+    from services.llm_text import ollama_chat_text, resolve_writer_model
 
     content = (state.get("content") or "").strip()
     attempts = int(state.get("qa_rewrite_attempts") or 0)
@@ -196,7 +196,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     # the glm 19GB reload that timed out the same-model rescue under GPU thrash.
     # Empty setting → None → falls back to the writer model (pipeline_writer_model).
     reviser = (site_config.get("qa_rewrite_model", "") or "").strip() or None
-    model = resolve_local_model(model=reviser, site_config=site_config)
+    model = resolve_writer_model(model=reviser, site_config=site_config)
     revise_prompt = _resolve_revise_prompt(content=content, feedback=feedback)
 
     revised = ""

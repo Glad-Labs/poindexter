@@ -955,23 +955,23 @@ class GenerateContentStage:
         # ``glm-4.7-5090:latest`` — Matt's specific model — into a
         # public OSS file. Resolve from site_config so the scheduler
         # logs + metrics match whatever model the operator actually
-        # has installed. resolve_local_model fails loud (raise) when
+        # has installed. resolve_writer_model fails loud (raise) when
         # pipeline_writer_model is unset; the writer-mode dispatch below
         # would fail for the same reason, so we're not regressing
         # observability.
         #
         # Phase 1 lab harness — when a variant assigns ``writer_model``,
-        # it short-circuits ``resolve_local_model`` (which accepts an
+        # it short-circuits ``resolve_writer_model`` (which accepts an
         # explicit model string and returns it after the ``ollama/``
         # prefix strip). The GPU lock label uses the same resolved
         # value so observability + scheduling match the model the
         # variant actually exercises.
         from services.gpu_scheduler import gpu
-        from services.llm_text import resolve_local_model
+        from services.llm_text import resolve_writer_model
         variant_model_override = (
             variant.writer_model if variant is not None else None
         )
-        scheduler_model_label = resolve_local_model(
+        scheduler_model_label = resolve_writer_model(
             model=variant_model_override, site_config=site_config,
         )
         async with gpu.lock(
@@ -999,7 +999,7 @@ class GenerateContentStage:
                 # importing the legacy module-level singleton.
                 site_config=site_config,
                 # Phase 1 lab harness — when set, the writer atom's
-                # _revise_node calls resolve_local_model(writer_model_override=...)
+                # _revise_node calls resolve_writer_model(writer_model_override=...)
                 # to honour the variant's model choice. None for the
                 # production path (writer falls back to site_config
                 # resolution as before).

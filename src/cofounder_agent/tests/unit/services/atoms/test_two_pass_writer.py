@@ -27,7 +27,7 @@ pytestmark = pytest.mark.asyncio
 
 
 def _fake_site_config():
-    """Minimal SiteConfig stub so two_pass's resolve_local_model has a
+    """Minimal SiteConfig stub so two_pass's resolve_writer_model has a
     pipeline_writer_model to return. Added 2026-05-12 with batch 11 of
     the fail-loud sweep (poindexter#485): the previous hardcoded
     ``glm-4.7-5090:latest`` fallback was removed in favour of failing

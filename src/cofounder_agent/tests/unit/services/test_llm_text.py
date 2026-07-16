@@ -31,6 +31,7 @@ from services.llm_text import (
     resolve_local_model,
     resolve_local_writer_model,
     resolve_structured_model,
+    resolve_writer_model,
 )
 
 # No module-level asyncio mark: ``asyncio_mode = "auto"`` (pyproject.toml)
@@ -80,17 +81,17 @@ def _fake_completion(text: str = "dispatched output", prompt_tokens: int = 7, co
 
 
 # ---------------------------------------------------------------------------
-# resolve_local_model
+# resolve_writer_model
 # ---------------------------------------------------------------------------
 
 
-class TestResolveLocalModel:
+class TestResolveWriterModel:
     def test_explicit_model_wins_and_strips_ollama_prefix(self):
-        assert resolve_local_model("ollama/gemma3:27b") == "gemma3:27b"
+        assert resolve_writer_model("ollama/gemma3:27b") == "gemma3:27b"
 
     def test_pipeline_writer_model_is_preferred(self):
         sc = _StubSiteConfig(model="ollama/glm-4.7:latest")
-        assert resolve_local_model(site_config=sc) == "glm-4.7:latest"
+        assert resolve_writer_model(site_config=sc) == "glm-4.7:latest"
 
     def test_cost_tier_standard_is_ignored(self):
         """pipeline_writer_model is the only source; a stale cost_tier.standard.model
@@ -104,7 +105,7 @@ class TestResolveLocalModel:
             "pipeline_writer_model": "my-pinned-writer",
             "cost_tier.standard.model": "cost-tier-model",
         }.get(k, d or ""))
-        result = resolve_local_model(site_config=sc)
+        result = resolve_writer_model(site_config=sc)
         assert result == "my-pinned-writer", (
             f"only pipeline_writer_model is read; got {result!r}"
         )
@@ -118,18 +119,47 @@ class TestResolveLocalModel:
             "cost_tier.standard.model": "cost-tier-model",
         }.get(k, d or ""))
         with pytest.raises(ValueError, match="no writer model resolvable"):
-            resolve_local_model(site_config=sc)
+            resolve_writer_model(site_config=sc)
 
     def test_raises_when_nothing_resolves(self):
         """Per ``feedback_no_silent_defaults``: missing config fails loud."""
         sc = MagicMock()
         sc.get = MagicMock(return_value="")
         with pytest.raises(ValueError, match="no writer model resolvable"):
-            resolve_local_model(site_config=sc)
+            resolve_writer_model(site_config=sc)
 
     def test_raises_when_no_site_config_and_no_model(self):
         with pytest.raises(ValueError, match="site_config is required"):
-            resolve_local_model()
+            resolve_writer_model()
+
+
+# ---------------------------------------------------------------------------
+# resolve_local_model — back-compat alias (Glad-Labs/poindexter#866)
+# ---------------------------------------------------------------------------
+
+
+class TestResolveLocalModelBackcompatAlias:
+    """``resolve_local_model`` returns ``pipeline_writer_model`` verbatim, which
+    may be a paid/cloud model — "local" was a misnomer. Renamed to
+    ``resolve_writer_model``; this name is kept as a thin pass-through alias
+    so existing callers and third-party code keep working.
+    """
+
+    def test_explicit_model_still_works_through_alias(self):
+        assert resolve_local_model("ollama/gemma3:27b") == "gemma3:27b"
+
+    def test_alias_matches_resolve_writer_model_for_same_inputs(self):
+        """Regression guard: the alias and the canonical function must always
+        agree — reverting the alias to a stale copy instead of a pass-through
+        would silently diverge behavior between the two names."""
+        sc = _StubSiteConfig(model="ollama/glm-4.7:latest")
+        assert resolve_local_model(site_config=sc) == resolve_writer_model(site_config=sc)
+
+    def test_alias_still_raises_when_unset(self):
+        sc = MagicMock()
+        sc.get = MagicMock(return_value="")
+        with pytest.raises(ValueError, match="no writer model resolvable"):
+            resolve_local_model(site_config=sc)
 
 
 # ---------------------------------------------------------------------------

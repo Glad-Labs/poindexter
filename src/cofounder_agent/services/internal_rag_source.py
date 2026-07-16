@@ -34,7 +34,7 @@ from services.site_config import SiteConfig
 # setter to constructor DI via ``InternalRagSource`` taking ``site_config``
 # in ``__init__`` (stored as ``self._site_config``). The
 # ``niche_internal_rag_per_kind_limit`` / ``niche_internal_rag_snippet_max_chars``
-# reads + the ``resolve_local_model`` writer-model lookup now go through
+# reads + the ``resolve_writer_model`` writer-model lookup now go through
 # ``self._site_config``. The runtime ``pool`` is supplied by the caller, so
 # there is no container build-time cached_property; ``topic_batch_service``
 # constructs ``InternalRagSource(pool, site_config=...)`` from its own

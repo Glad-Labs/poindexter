@@ -9,7 +9,7 @@ from services.site_config import SiteConfig
 
 
 def _site_config():
-    # pipeline_writer_model lets resolve_local_model return without raising.
+    # pipeline_writer_model lets resolve_writer_model return without raising.
     return SiteConfig(initial_config={"pipeline_writer_model": "test-writer"})
 
 
@@ -133,7 +133,7 @@ class TestQaRewriteAtom:
 
     async def test_uses_cross_model_reviser_when_set(self, monkeypatch):
         # qa_rewrite_model routes the revise step to a DIFFERENT model than the
-        # writer (resolve_local_model strips the ollama/ prefix).
+        # writer (resolve_writer_model strips the ollama/ prefix).
         seen = {}
 
         async def _fake_chat(prompt, **kw):

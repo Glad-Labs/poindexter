@@ -31,8 +31,11 @@ What this provides:
   a pool is provided; falls back to direct httpx otherwise.
 - :func:`maybe_unwrap_json` — defensive unwrap for models that emit
   ``{"thought": "..."}`` envelopes even when not asked for JSON.
-- :func:`resolve_local_model` — model-name normalizer (strips
+- :func:`resolve_writer_model` — model-name normalizer (strips
   ``ollama/`` prefix, falls back to the writer-model setting).
+  ``resolve_local_model`` is kept as a back-compat alias for the same
+  function (Glad-Labs/poindexter#866 — "local" was a misnomer since
+  this may resolve a paid/cloud model).
 
 Local-by-default. The no-paid-APIs policy
 (``feedback_no_paid_apis`` memory) means the dispatcher picks the
@@ -56,8 +59,8 @@ logger = logging.getLogger(__name__)
 from services.langfuse_shim import langfuse_context, observe
 
 
-def resolve_local_model(model: str | None = None, *, site_config: Any = None) -> str:
-    """Pick the local model to call. Removes ``ollama/`` prefix and reads
+def resolve_writer_model(model: str | None = None, *, site_config: Any = None) -> str:
+    """Pick the writer model to call. Removes ``ollama/`` prefix and reads
     ``pipeline_writer_model`` from app_settings.
 
     **Canonical precedence reference.** This function defines the authoritative
@@ -72,6 +75,12 @@ def resolve_local_model(model: str | None = None, *, site_config: Any = None) ->
 
     Accepts the SiteConfig instance via the DI seam (glad-labs-stack#330).
 
+    Formerly named ``resolve_local_model`` (kept below as a thin back-compat
+    alias, Glad-Labs/poindexter#866) — it returns ``pipeline_writer_model``
+    verbatim, which may be a paid/cloud model, so "local" was a misnomer.
+    Satellite phases that need a guaranteed-LOCAL model use
+    :func:`resolve_local_writer_model` instead.
+
     Raises:
         ValueError when ``pipeline_writer_model`` is unset — fail loud so the
         operator notices a broken install before content generation blows up
@@ -81,7 +90,7 @@ def resolve_local_model(model: str | None = None, *, site_config: Any = None) ->
         return model.removeprefix("ollama/")
     if site_config is None:
         raise ValueError(
-            "llm_text.resolve_local_model: site_config is required to "
+            "llm_text.resolve_writer_model: site_config is required to "
             "resolve the writer model (no hardcoded fallback by design). "
             "Pass site_config explicitly or set the lifespan-bound instance."
         )
@@ -95,6 +104,16 @@ def resolve_local_model(model: str | None = None, *, site_config: Any = None) ->
     )
 
 
+def resolve_local_model(model: str | None = None, *, site_config: Any = None) -> str:
+    """Backward-compat alias for :func:`resolve_writer_model`.
+
+    ``resolve_local_model`` returns ``pipeline_writer_model`` verbatim, which
+    may be a paid/cloud model — "local" was a misnomer (Glad-Labs/poindexter#866).
+    Kept so any caller or third-party code using this name keeps working.
+    """
+    return resolve_writer_model(model, site_config=site_config)
+
+
 def resolve_local_writer_model(
     model: str | None = None, *, site_config: Any = None
 ) -> str:
@@ -103,7 +122,7 @@ def resolve_local_writer_model(
     Satellite phases — the ``self_consistency`` QA probe and the
     ``narrate_bundle`` dev-diary writer — need a writer-grade model but must
     never incur cloud prices. They historically resolved via
-    :func:`resolve_local_model`, which returns ``pipeline_writer_model``
+    :func:`resolve_writer_model`, which returns ``pipeline_writer_model``
     verbatim; when an operator pins a paid model there for a writer experiment
     (the 2026-07-07 Sonnet-canary), every satellite silently billed cloud
     rates. This resolver never returns a paid model.
@@ -165,7 +184,7 @@ def resolve_structured_model(
 ) -> str:
     """Pick the model for structured-JSON extraction calls (``json_object``).
 
-    Distinct from :func:`resolve_local_model` on purpose. The writer model
+    Distinct from :func:`resolve_writer_model` on purpose. The writer model
     (``pipeline_writer_model``) may be a *reasoning* model (e.g.
     ``glm-4.7-5090``) that emits its tokens into a thinking channel and
     returns an **empty** ``content`` field under
@@ -229,8 +248,8 @@ async def ollama_chat_text(
         prompt: The user message body.
         model: Concrete model name. When provided, sent to the
             provider as-is (after stripping ``ollama/`` prefix via
-            :func:`resolve_local_model`). When ``None``, resolves via
-            :func:`resolve_local_model`.
+            :func:`resolve_writer_model`). When ``None``, resolves via
+            :func:`resolve_writer_model`.
         timeout_setting: ``app_settings`` key for the request timeout.
             Default key is generic; per-atom helpers can override
             (e.g. narrate_bundle uses ``niche_ollama_chat_timeout_seconds``).
@@ -260,7 +279,7 @@ async def ollama_chat_text(
         The raw assistant content (post-unwrap, see
         :func:`maybe_unwrap_json`). Empty string on missing content.
     """
-    resolved_model = resolve_local_model(model, site_config=site_config)
+    resolved_model = resolve_writer_model(model, site_config=site_config)
     messages: list[dict[str, Any]] = []
     if system:
         messages.append({"role": "system", "content": system})
@@ -456,5 +475,6 @@ __all__ = [
     "ollama_chat_text",
     "resolve_local_model",
     "resolve_local_writer_model",
+    "resolve_writer_model",
     "strip_markdown_fence",
 ]

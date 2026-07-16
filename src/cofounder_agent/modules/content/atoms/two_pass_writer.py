@@ -1081,7 +1081,7 @@ async def _revise_node(state: _State) -> _State:
     # with '}'". ``ollama_chat_text`` also runs ``maybe_unwrap_json``
     # internally as belt-and-suspenders if a model still emits a JSON
     # envelope unprompted.
-    from services.llm_text import ollama_chat_text, resolve_local_model
+    from services.llm_text import ollama_chat_text, resolve_writer_model
 
     site_config = _SITE_CONFIG_REGISTRY.get(state["pool_thread"])
     pool = _POOL_REGISTRY.get(state["pool_thread"])
@@ -1090,7 +1090,7 @@ async def _revise_node(state: _State) -> _State:
     # (because pick_variant assigned a model-axis variant), it lives in
     # the parallel _MODEL_OVERRIDE_REGISTRY (string is msgpack-friendly
     # but keeping the override registry pattern uniform with pool / site
-    # config). resolve_local_model accepts the explicit string and returns
+    # config). resolve_writer_model accepts the explicit string and returns
     # it after stripping the ``ollama/`` prefix — no app_settings hit on
     # the variant path.
     model_override = _MODEL_OVERRIDE_REGISTRY.get(state["pool_thread"])
@@ -1099,8 +1099,8 @@ async def _revise_node(state: _State) -> _State:
     # ``pipeline_writer_model`` pin. This is the fallback target when a
     # variant override is unavailable: a single bad variant model must
     # NEVER zero the whole pipeline (poindexter#574).
-    default_model = resolve_local_model(model=None, site_config=site_config)
-    model = resolve_local_model(model=model_override, site_config=site_config)
+    default_model = resolve_writer_model(model=None, site_config=site_config)
+    model = resolve_writer_model(model=model_override, site_config=site_config)
     aug_block = "\n\n".join(
         f"[EXTERNAL_NEEDED: {r['need']}] → {r['research']}"
         for r in state["research_results"]
@@ -2036,8 +2036,8 @@ async def _maybe_expand_to_target(
     if words_before >= threshold:
         return draft, meta
 
-    from services.llm_text import ollama_chat_text, resolve_local_model
-    model = resolve_local_model(model=None, site_config=site_config)
+    from services.llm_text import ollama_chat_text, resolve_writer_model
+    model = resolve_writer_model(model=None, site_config=site_config)
     prompt = _resolve_expand_prompt(
         draft=draft, target_length=target_length, word_count=words_before,
     )
