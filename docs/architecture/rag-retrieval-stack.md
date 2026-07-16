@@ -221,3 +221,25 @@ All three knobs are DB-tunable app_settings. memory:
   `tests/unit/poindexter/memory/test_rag_engine_routing.py` (11 cases)
 - Issue: `Glad-Labs/glad-labs-stack#329` sub-issue 4 — third sub-issue
   closed in the Lane D push
+
+## Writer prompt-size observability (poindexter#868)
+
+Every `content.generate_draft` run on the two-pass (niche) path records how
+large the assembled writer prompt actually was, broken down by which part of
+this RAG/research stack contributed how many characters. Fields live on
+`atom_runs.metrics` (JSONB) for rows where `atom = 'content.generate_draft'`:
+
+| Field                                    | What it measures                                                                                                                         |
+| ---------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `writer_prompt_draft_chars`              | Total size of the fully-rendered draft prompt                                                                                            |
+| `writer_prompt_snippet_chars`            | Portion from this atom's own internal RAG snippet block                                                                                  |
+| `writer_prompt_research_chars`           | Portion from the `research_context`/SOURCES block (caller-attached + `ResearchService.build_context()` + `build_rag_context()`, layered) |
+| `writer_prompt_context_bundle_chars`     | Portion from the dev_diary GROUND TRUTH bundle (0 outside dev_diary)                                                                     |
+| `writer_prompt_override_chars`           | Portion from the niche `writer_prompt_override` + operator `writing_style_reference`                                                     |
+| `writer_prompt_internal_grounding_chars` | Portion from the #822 prior-work-anchor section                                                                                          |
+| `writer_prompt_revise_chars`             | Sum of every QA-rescue revise-pass prompt for this task                                                                                  |
+| `writer_prompt_revise_calls`             | How many revise passes ran (same value as `revision_loops`)                                                                              |
+
+Visible on the **Pipeline** dashboard's "Writer Context Size" row. See
+[the design doc](../superpowers/specs/2026-07-16-writer-prompt-size-metrics-design.md)
+for the full rationale and the forks considered.

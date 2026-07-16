@@ -456,3 +456,106 @@ def _passthrough_lock(*_a: Any, **_kw: Any) -> _PassthroughLock:
     """Drop-in replacement for ``gpu.lock`` — the production lock is a
     sync method returning an async ctx mgr; this matches that shape."""
     return _PassthroughLock()
+
+
+# ---------------------------------------------------------------------------
+# Writer prompt-size metrics forwarding (poindexter#868)
+# ---------------------------------------------------------------------------
+
+
+async def test_prompt_size_metrics_forwarded_to_stage_metrics() -> None:
+    """poindexter#868: two_pass_writer.run()'s writer_prompt_* fields (plus
+    revision_loops) must land on the metrics dict _generate_via_two_pass_atom
+    returns, with revision_loops renamed writer_prompt_revise_calls."""
+    from modules.content.stages.generate_content import GenerateContentStage
+
+    stage = GenerateContentStage()
+    db = _fake_database_service()
+
+    fake_atom_result = {
+        "draft": "draft body",
+        "model_used": "default-writer:1b",
+        "snippets_used": [],
+        "writer_prompt_draft_chars": 5000,
+        "writer_prompt_snippet_chars": 2000,
+        "writer_prompt_research_chars": 1500,
+        "writer_prompt_context_bundle_chars": 0,
+        "writer_prompt_override_chars": 300,
+        "writer_prompt_internal_grounding_chars": 200,
+        "writer_prompt_revise_chars": 800,
+        "revision_loops": 1,
+    }
+
+    with patch(
+        "modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "modules.content.atoms.two_pass_writer.run",
+        new=AsyncMock(return_value=fake_atom_result),
+    ), patch(
+        "services.experiment_runner.pick_variant",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "services.gpu_scheduler.gpu.lock",
+        new=_passthrough_lock,
+    ):
+        _content, _model_used, metrics = await stage._generate_via_two_pass_atom(
+            topic="t", style="", tone="", tags=[],
+            database_service=db, task_id="task-prompt-metrics",
+            niche_slug="glad-labs",
+            site_config=_fake_site_config(),
+        )
+
+    for key in (
+        "writer_prompt_draft_chars", "writer_prompt_snippet_chars",
+        "writer_prompt_research_chars", "writer_prompt_context_bundle_chars",
+        "writer_prompt_override_chars", "writer_prompt_internal_grounding_chars",
+        "writer_prompt_revise_chars",
+    ):
+        assert metrics[key] == fake_atom_result[key]
+    assert metrics["writer_prompt_revise_calls"] == 1
+
+
+async def test_prompt_size_metrics_absent_when_atom_doesnt_return_them() -> None:
+    """If two_pass_writer.run() ever returns without the new keys (e.g. an
+    older in-flight LangGraph checkpoint from before this deploy), the
+    forwarding block must not KeyError — it omits them, exactly like the
+    existing prompt_template_key guard already does."""
+    from modules.content.stages.generate_content import GenerateContentStage
+
+    stage = GenerateContentStage()
+    db = _fake_database_service()
+
+    fake_atom_result = {
+        "draft": "draft body",
+        "model_used": "default-writer:1b",
+        "snippets_used": [],
+    }
+
+    with patch(
+        "modules.content.stages.generate_content.GenerateContentStage._read_writer_prompt_override",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "modules.content.stages.generate_content.GenerateContentStage._read_context_bundle",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "modules.content.atoms.two_pass_writer.run",
+        new=AsyncMock(return_value=fake_atom_result),
+    ), patch(
+        "services.experiment_runner.pick_variant",
+        new=AsyncMock(return_value=None),
+    ), patch(
+        "services.gpu_scheduler.gpu.lock",
+        new=_passthrough_lock,
+    ):
+        _content, _model_used, metrics = await stage._generate_via_two_pass_atom(
+            topic="t", style="", tone="", tags=[],
+            database_service=db, task_id="task-no-metrics",
+            niche_slug="glad-labs",
+            site_config=_fake_site_config(),
+        )
+
+    assert "writer_prompt_draft_chars" not in metrics

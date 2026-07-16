@@ -923,3 +923,37 @@ class TestWritingStyleReferenceWired:
 
         assert result.ok is True
         assert _STYLE_REF in (captured.get("writing_style_context") or "")
+
+    async def test_legacy_path_stage_metrics_has_no_prompt_size_keys(self):
+        """poindexter#868: the legacy (non-niche) generate_blog_post path
+        must not emit any writer_prompt_* key — those are two-pass-only."""
+        ctx: dict[str, Any] = {
+            "task_id": "tlegacy-prompt-metrics",
+            "topic": "AI trends",
+            "style": "tech",
+            "tone": "neutral",
+            "target_length": 1200,
+            "tags": [],
+            "models_by_phase": {},
+            "database_service": _FakeDb(),
+            "site_config": SiteConfig(initial_config={}),
+        }
+        stage = GenerateContentStage()
+        patches = _patch_everything()
+        for p in patches:
+            p.start()
+        try:
+            with patch.object(stage, "_read_niche_slug", AsyncMock(return_value=None)):
+                result = await stage.execute(ctx, {})
+        finally:
+            for p in reversed(patches):
+                p.stop()
+
+        assert result.ok is True
+        for key in (
+            "writer_prompt_draft_chars", "writer_prompt_snippet_chars",
+            "writer_prompt_research_chars", "writer_prompt_context_bundle_chars",
+            "writer_prompt_override_chars", "writer_prompt_internal_grounding_chars",
+            "writer_prompt_revise_chars", "writer_prompt_revise_calls",
+        ):
+            assert key not in result.metrics

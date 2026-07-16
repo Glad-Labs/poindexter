@@ -276,6 +276,76 @@ async def test_internal_grounding_ineligible_source_no_section(monkeypatch):
     assert result["internal_grounding_anchor_injected"] is False
 
 
+async def test_draft_prompt_size_breakdown_all_sections_present(monkeypatch):
+    """Every context section that reaches the draft prompt must be measured
+    and returned on the result dict.
+
+    ``snippet_chars`` isn't asserted to an exact value here — its correctness
+    (that it equals ``len(_format_snippet_block(...))``) is Task 1's test.
+    This test's job is confirming the wiring survives _draft_node -> run(),
+    which draft_chars already demonstrates: both are set in the same
+    `if prompt_metrics is not None:` block off the same `_call_draft()` call,
+    so draft_chars > 0 confirms that block ran and populated the dict
+    _draft_node reads both fields from.
+
+    fake_pass1 must itself populate prompt_metrics — it fully replaces
+    generate_with_context, so nothing else simulates that side effect."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                          site_config=None, prompt_metrics=None, **_kw):
+        if prompt_metrics is not None:
+            prompt_metrics["prompt_chars"] = len(extra_instructions or "")
+            prompt_metrics["snippet_chars"] = 0
+        return "A clean first draft with no markers."
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+    monkeypatch.setattr("services.rag_scrub.scrub_rag_text", lambda t: t)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_grounding_pool(post_row={"slug": "vram-spill"}),
+        site_config=_grounding_site_config(site_url="https://www.gladlabs.io"),
+        research_context="Source A: something (https://example.com).",
+        writer_prompt_override="Niche house style: short sentences.",
+        context_bundle={"merged_prs": [{"number": 1, "title": "T", "url": "u", "body": "b"}]},
+        internal_grounding={"source_table": "posts", "source_id": "42",
+                            "preview": "How we cut VRAM spill.", "similarity": 0.7},
+    )
+    assert result["writer_prompt_draft_chars"] > 0
+    assert isinstance(result["writer_prompt_snippet_chars"], int)
+    assert result["writer_prompt_research_chars"] == len("Source A: something (https://example.com).")
+    assert result["writer_prompt_override_chars"] == len("Niche house style: short sentences.")
+    assert result["writer_prompt_context_bundle_chars"] > 0
+    assert result["writer_prompt_internal_grounding_chars"] > 0
+
+
+async def test_draft_prompt_size_breakdown_zero_when_sections_absent(monkeypatch):
+    """No override/context_bundle/research_context/internal_grounding →
+    every breakdown field is exactly 0 (not missing, not None)."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None,
+                          site_config=None, prompt_metrics=None, **_kw):
+        if prompt_metrics is not None:
+            prompt_metrics["prompt_chars"] = len(extra_instructions or "")
+            prompt_metrics["snippet_chars"] = 0
+        return "A clean first draft with no markers."
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
+    assert result["writer_prompt_draft_chars"] > 0
+    assert result["writer_prompt_research_chars"] == 0
+    assert result["writer_prompt_override_chars"] == 0
+    assert result["writer_prompt_context_bundle_chars"] == 0
+    assert result["writer_prompt_internal_grounding_chars"] == 0
+
+
 async def test_no_external_needed_returns_pass1_draft(monkeypatch):
     """First draft has no [EXTERNAL_NEEDED] markers → graph short-circuits, no revise."""
     async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
@@ -326,6 +396,61 @@ async def test_external_needed_triggers_research_and_revise(monkeypatch):
     assert "Revised draft" in result["draft"]
     assert len(result["external_lookups"]) == 1
     assert result["revision_loops"] == 1
+
+
+async def test_revise_chars_accumulate_across_two_loops(monkeypatch):
+    """Two revise passes (each still carrying an [EXTERNAL_NEEDED] marker on
+    the first) must sum their prompt lengths into writer_prompt_revise_chars,
+    and revision_loops must land at 2."""
+    drafts = iter([
+        "First draft with [EXTERNAL_NEEDED: a fact] inside.",
+        "Revised once, still needs [EXTERNAL_NEEDED: another fact].",
+        "Revised twice, now clean.",
+    ])
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        return next(drafts)
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+
+    revise_prompts: list[str] = []
+    async def fake_revise(prompt, **kwargs):
+        revise_prompts.append(prompt)
+        return next(drafts)
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_revise)
+
+    async def fake_research(query, max_sources=2, *, site_config=None):
+        return f"External research result for: {query}"
+    monkeypatch.setattr("services.research_service.research_topic", fake_research, raising=False)
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
+    assert result["revision_loops"] == 2
+    assert len(revise_prompts) == 2
+    assert result["writer_prompt_revise_chars"] == sum(len(p) for p in revise_prompts)
+
+
+async def test_revise_chars_zero_when_no_revision(monkeypatch):
+    """A clean first draft (no EXTERNAL_NEEDED marker) never enters
+    _revise_node, so writer_prompt_revise_chars stays 0."""
+    async def fake_pass1(topic, angle, snippets, extra_instructions=None, site_config=None, **_kw):
+        return "A clean first draft with no markers."
+    monkeypatch.setattr("modules.content.ai_content_generator.generate_with_context", fake_pass1, raising=False)
+    async def fake_embed(text, *, site_config=None):
+        return [0.0] * 768
+    monkeypatch.setattr("services.topic_ranking.embed_text", fake_embed)
+
+    result = await two_pass.run(
+        topic="t", angle="a", niche_id="n",
+        pool=_fake_pool_with_no_snippets(),
+        site_config=_fake_site_config(),
+    )
+    assert result["revision_loops"] == 0
+    assert result["writer_prompt_revise_chars"] == 0
 
 
 async def test_research_context_injected_into_draft_prompt(monkeypatch):
@@ -1055,6 +1180,73 @@ async def test_generate_with_context_forwards_target_length_to_prompt(monkeypatc
         pool=_fake_pool_with_no_snippets(), target_length=2500,
     )
     assert seen.get("target_length") == 2500
+
+
+async def test_generate_with_context_populates_prompt_metrics(monkeypatch):
+    """poindexter#868: a passed prompt_metrics dict gets populated with the
+    exact size of the rendered prompt and its snippet_block portion."""
+    import modules.content.ai_content_generator as acg
+
+    def fake_get_prompt(key, **kwargs):
+        return f"INSTRUCTIONS:{kwargs['instructions']}|SNIPPETS:{kwargs['snippet_block']}"
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.get_prompt_manager",
+        lambda: MagicMock(get_prompt=MagicMock(side_effect=fake_get_prompt)),
+    )
+
+    async def fake_resolve(*, site_config=None):
+        return "glm-4.7-5090:latest"
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator._resolve_rag_writer_model",
+        fake_resolve,
+    )
+
+    async def fake_text(prompt, **kwargs):
+        return "draft body"
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_text)
+
+    snippets = [{"source": "posts", "ref": "1", "snippet": "hello world"}]
+    metrics: dict = {}
+    content = await acg.generate_with_context(
+        topic="t", angle="a", snippets=snippets,
+        extra_instructions="write it", site_config=_fake_site_config(),
+        pool=_fake_pool_with_no_snippets(), prompt_metrics=metrics,
+    )
+
+    assert content == "draft body"
+    expected_snippet_block = acg._format_snippet_block(snippets, 500)
+    expected_prompt = f"INSTRUCTIONS:write it|SNIPPETS:{expected_snippet_block}"
+    assert metrics["prompt_chars"] == len(expected_prompt)
+    assert metrics["snippet_chars"] == len(expected_snippet_block)
+
+
+async def test_generate_with_context_prompt_metrics_none_is_noop(monkeypatch):
+    """Existing callers that don't pass prompt_metrics see no behavior
+    change (default None is a no-op, not a crash)."""
+    import modules.content.ai_content_generator as acg
+
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator.get_prompt_manager",
+        lambda: MagicMock(get_prompt=MagicMock(return_value="PROMPT")),
+    )
+
+    async def fake_resolve(*, site_config=None):
+        return "glm-4.7-5090:latest"
+    monkeypatch.setattr(
+        "modules.content.ai_content_generator._resolve_rag_writer_model",
+        fake_resolve,
+    )
+
+    async def fake_text(prompt, **kwargs):
+        return "draft body"
+    monkeypatch.setattr("services.llm_text.ollama_chat_text", fake_text)
+
+    content = await acg.generate_with_context(
+        topic="t", angle="a", snippets=[],
+        extra_instructions="write it", site_config=_fake_site_config(),
+        pool=_fake_pool_with_no_snippets(),
+    )
+    assert content == "draft body"
 
 
 # ---------------------------------------------------------------------------

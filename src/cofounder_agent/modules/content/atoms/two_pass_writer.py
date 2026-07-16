@@ -255,6 +255,19 @@ class _State(TypedDict, total=False):
     # rejected every glad-labs post for "ignoring the SOURCES corpus"
     # (2026-06-09 disconnect). Empty string when no research was gathered.
     research_context: str
+    # Writer prompt-size observability (poindexter#868) — captured by
+    # _draft_node at each context-section assembly point, before
+    # concatenation onto `instruction`. 0 (not missing) when a section is
+    # absent for this task.
+    writer_prompt_draft_chars: int
+    writer_prompt_snippet_chars: int
+    writer_prompt_research_chars: int
+    writer_prompt_context_bundle_chars: int
+    writer_prompt_override_chars: int
+    writer_prompt_internal_grounding_chars: int
+    # Accumulated across every _revise_node invocation in this run (mirrors
+    # how revision_loops already accumulates below). 0 when no revision ran.
+    writer_prompt_revise_chars: int
     # Phase 0 lab observability (2026-05-28) — populated by
     # _revise_node when it resolves a prompt via UnifiedPromptManager.
     # Surface up through run() into the caller stage so they land on
@@ -749,7 +762,8 @@ async def _embed_and_fetch_snippets(state: _State) -> _State:
             continue
         snippets.append({"source": c["source"], "ref": c["ref"], "snippet": clean})
     return {**state, "snippets": snippets, "revision_loops": 0,
-            "external_lookups": [], "loop_capped": False}
+            "external_lookups": [], "loop_capped": False,
+            "writer_prompt_revise_chars": 0}
 
 
 async def _draft_node(state: _State) -> _State:
@@ -779,6 +793,7 @@ async def _draft_node(state: _State) -> _State:
     # not the topic string, not the snippets. Closes #353. For niche-
     # batch / ad-hoc tasks this is empty and the section is skipped.
     bundle = state.get("context_bundle") or {}
+    context_bundle_chars = 0
     if bundle:
         ground_truth = _format_bundle_for_prompt(bundle)
         if ground_truth:
@@ -790,6 +805,7 @@ async def _draft_node(state: _State) -> _State:
                 f"commit, use the exact title and link to the URL given):\n\n"
                 f"{ground_truth}"
             )
+            context_bundle_chars = len(ground_truth)
     # Inject the pre-collected external research corpus (ResearchService +
     # RAG, threaded from GenerateContentStage via run()) as a SOURCES
     # section. The QA critic grades the draft against this same corpus, so
@@ -817,6 +833,7 @@ async def _draft_node(state: _State) -> _State:
     ig = state.get("internal_grounding") or {}
     ig_injected = False
     ig_source_table: str | None = None
+    internal_grounding_chars = 0
     if _internal_grounding_enabled(site_config) and ig:
         section, ig_source_table = await _build_internal_grounding_section(
             ig, site_config=site_config, pool=pool,
@@ -824,6 +841,10 @@ async def _draft_node(state: _State) -> _State:
         if section:
             instruction = f"{instruction}\n\n---\n\n{section}"
             ig_injected = True
+            internal_grounding_chars = len(section)
+
+    draft_metrics: dict[str, int] = {}
+
     async def _call_draft() -> str:
         return await generate_with_context(
             topic=state["topic"], angle=state["angle"],
@@ -835,6 +856,7 @@ async def _draft_node(state: _State) -> _State:
             # thinking-capable model doesn't burn its budget reasoning and
             # truncate the visible draft. 2026-07-06 investigation.
             think=_resolve_writer_think(site_config),
+            prompt_metrics=draft_metrics,
         )
 
     min_substance_words = _resolve_min_substance_words(site_config)
@@ -857,6 +879,12 @@ async def _draft_node(state: _State) -> _State:
         "draft": draft,
         "internal_grounding_injected": ig_injected,
         "internal_grounding_source_table": ig_source_table,
+        "writer_prompt_draft_chars": draft_metrics.get("prompt_chars", 0),
+        "writer_prompt_snippet_chars": draft_metrics.get("snippet_chars", 0),
+        "writer_prompt_research_chars": len(research_context),
+        "writer_prompt_context_bundle_chars": context_bundle_chars,
+        "writer_prompt_override_chars": len(override),
+        "writer_prompt_internal_grounding_chars": internal_grounding_chars,
     }
 
 
@@ -1120,6 +1148,11 @@ async def _revise_node(state: _State) -> _State:
             draft=state["draft"], aug_block=aug_block,
         )
     )
+    # Writer prompt-size observability (poindexter#868) — measured once per
+    # node invocation, not once per underlying _call() retry: a retry (main
+    # attempt + variant-fallback retry) resends this exact same
+    # revise_prompt, so counting it twice would double-count identical text.
+    revise_prompt_chars = len(revise_prompt)
 
     writer_think = _resolve_writer_think(site_config)
 
@@ -1205,6 +1238,9 @@ async def _revise_node(state: _State) -> _State:
         # for the caller stage to forward into capability_outcomes.
         "prompt_template_key": prompt_template_key,
         "prompt_template_version": prompt_template_version,
+        "writer_prompt_revise_chars": (
+            state.get("writer_prompt_revise_chars", 0) + revise_prompt_chars
+        ),
     }
 
 
@@ -2253,6 +2289,14 @@ async def run(*, topic: str, angle: str, niche_id: UUID | str | None, pool, task
             # provenance the same way.
             "prompt_template_key": final.get("prompt_template_key"),
             "prompt_template_version": final.get("prompt_template_version"),
+            # Writer prompt-size observability (poindexter#868).
+            "writer_prompt_draft_chars": final.get("writer_prompt_draft_chars", 0),
+            "writer_prompt_snippet_chars": final.get("writer_prompt_snippet_chars", 0),
+            "writer_prompt_research_chars": final.get("writer_prompt_research_chars", 0),
+            "writer_prompt_context_bundle_chars": final.get("writer_prompt_context_bundle_chars", 0),
+            "writer_prompt_override_chars": final.get("writer_prompt_override_chars", 0),
+            "writer_prompt_internal_grounding_chars": final.get("writer_prompt_internal_grounding_chars", 0),
+            "writer_prompt_revise_chars": final.get("writer_prompt_revise_chars", 0),
             # Prior-work anchor observability (#822) — did an anchor reach the
             # draft prompt this run, and from which corpus type (None = no anchor).
             "internal_grounding_anchor_injected": bool(

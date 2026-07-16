@@ -5124,6 +5124,239 @@
           "refId": "A"
         }
       ]
+    },
+    {
+      "type": "row",
+      "title": "Writer Context Size",
+      "collapsed": false,
+      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 296 },
+      "panels": [],
+      "id": 200
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Average total draft-call and revise-call prompt size sent to the writer, over time. poindexter#868.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "palette-classic" },
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 1,
+            "fillOpacity": 10,
+            "showPoints": "auto",
+            "axisPlacement": "auto"
+          },
+          "unit": "none",
+          "min": 0
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 297 },
+      "id": 201,
+      "options": {
+        "tooltip": { "mode": "multi", "sort": "desc" },
+        "legend": { "displayMode": "list", "placement": "bottom" }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "time_series",
+          "rawQuery": true,
+          "rawSql": "SELECT $__timeGroupAlias(created_at, '$__interval'), AVG((metrics ->> 'writer_prompt_draft_chars')::numeric) AS \"draft_chars\", AVG((metrics ->> 'writer_prompt_revise_chars')::numeric) AS \"revise_chars\" FROM atom_runs WHERE atom = 'content.generate_draft' AND metrics ? 'writer_prompt_draft_chars' AND $__timeFilter(created_at) GROUP BY 1 ORDER BY 1;",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Writer Prompt Size Over Time",
+      "type": "timeseries"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Average draft-call prompt size broken down by context section — answers which section dominates. poindexter#868.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "continuous-BlPu" },
+          "mappings": [],
+          "min": 0,
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 297 },
+      "id": 202,
+      "options": {
+        "displayMode": "gradient",
+        "orientation": "horizontal",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "showUnfilled": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT 'snippets' AS metric, AVG((metrics ->> 'writer_prompt_snippet_chars')::numeric) AS value FROM atom_runs WHERE atom = 'content.generate_draft' AND metrics ? 'writer_prompt_draft_chars' AND $__timeFilter(created_at) UNION ALL SELECT 'research', AVG((metrics ->> 'writer_prompt_research_chars')::numeric) FROM atom_runs WHERE atom = 'content.generate_draft' AND metrics ? 'writer_prompt_draft_chars' AND $__timeFilter(created_at) UNION ALL SELECT 'context_bundle', AVG((metrics ->> 'writer_prompt_context_bundle_chars')::numeric) FROM atom_runs WHERE atom = 'content.generate_draft' AND metrics ? 'writer_prompt_draft_chars' AND $__timeFilter(created_at) UNION ALL SELECT 'override', AVG((metrics ->> 'writer_prompt_override_chars')::numeric) FROM atom_runs WHERE atom = 'content.generate_draft' AND metrics ? 'writer_prompt_draft_chars' AND $__timeFilter(created_at) UNION ALL SELECT 'internal_grounding', AVG((metrics ->> 'writer_prompt_internal_grounding_chars')::numeric) FROM atom_runs WHERE atom = 'content.generate_draft' AND metrics ? 'writer_prompt_draft_chars' AND $__timeFilter(created_at) ORDER BY value DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Chars by Context Section (draft call)",
+      "type": "bargauge"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Percent of tasks whose writer went through at least one QA-rescue revise loop. poindexter#868.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "max": 100,
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          },
+          "unit": "percent"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 305 },
+      "id": 203,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(100.0 * COUNT(*) FILTER (WHERE (metrics ->> 'writer_prompt_revise_calls')::int > 0)::numeric / NULLIF(COUNT(*), 0), 1) AS \"Revised %\" FROM atom_runs WHERE atom = 'content.generate_draft' AND metrics ? 'writer_prompt_draft_chars' AND $__timeFilter(created_at);",
+          "refId": "A"
+        }
+      ],
+      "title": "Tasks With a Revise Loop",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Average chars added by revise passes, among tasks that revised at least once. poindexter#868.",
+      "fieldConfig": {
+        "defaults": {
+          "color": { "mode": "thresholds" },
+          "mappings": [],
+          "min": 0,
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [{ "color": "blue", "value": null }]
+          },
+          "unit": "none"
+        }
+      },
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 305 },
+      "id": 204,
+      "options": {
+        "colorMode": "background",
+        "graphMode": "area",
+        "justifyMode": "center",
+        "orientation": "auto",
+        "reduceOptions": {
+          "calcs": ["lastNotNull"],
+          "fields": "",
+          "values": false
+        },
+        "textMode": "value_and_name",
+        "wideLayout": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ROUND(AVG((metrics ->> 'writer_prompt_revise_chars')::numeric), 0) AS \"Avg Revise Chars\" FROM atom_runs WHERE atom = 'content.generate_draft' AND metrics ? 'writer_prompt_draft_chars' AND (metrics ->> 'writer_prompt_revise_calls')::int > 0 AND $__timeFilter(created_at);",
+          "refId": "A"
+        }
+      ],
+      "title": "Avg Revise Chars Added",
+      "type": "stat"
+    },
+    {
+      "datasource": {
+        "type": "grafana-postgresql-datasource",
+        "uid": "local-brain-db"
+      },
+      "description": "Most recent 25 draft calls by total prompt size — spot-check outliers. poindexter#868.",
+      "fieldConfig": {
+        "defaults": {
+          "custom": { "align": "auto", "cellOptions": { "type": "auto" } },
+          "mappings": []
+        },
+        "overrides": []
+      },
+      "gridPos": { "h": 9, "w": 24, "x": 0, "y": 309 },
+      "id": 205,
+      "options": {
+        "cellHeight": "sm",
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": {
+            "type": "grafana-postgresql-datasource",
+            "uid": "local-brain-db"
+          },
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT ar.created_at AS \"Time\", ar.task_id AS \"Task\", LEFT(pt.topic, 60) AS \"Topic\", (ar.metrics ->> 'writer_prompt_draft_chars')::int AS \"Draft Chars\", (ar.metrics ->> 'writer_prompt_revise_chars')::int AS \"Revise Chars\", ((ar.metrics ->> 'writer_prompt_draft_chars')::int + (ar.metrics ->> 'writer_prompt_revise_chars')::int) AS \"Total Chars\", (ar.metrics ->> 'writer_prompt_revise_calls')::int AS \"Revise Calls\" FROM atom_runs ar LEFT JOIN pipeline_tasks pt ON pt.task_id = ar.task_id WHERE ar.atom = 'content.generate_draft' AND ar.metrics ? 'writer_prompt_draft_chars' AND $__timeFilter(ar.created_at) ORDER BY \"Total Chars\" DESC LIMIT 25;",
+          "refId": "A"
+        }
+      ],
+      "title": "Recent Tasks by Total Prompt Size",
+      "type": "table"
     }
   ],
   "refresh": "30s",
@@ -5140,7 +5373,7 @@
   "timezone": "browser",
   "title": "Pipeline",
   "uid": "pipeline-merged",
-  "version": 2,
+  "version": 3,
   "weekStart": "",
   "description": "CHARTER: diagnose the content pipeline — where tasks are, why they failed or were rejected, and what media/approvals are waiting. Answers 'why is nothing publishing?'. Everything pipeline-shaped: approval queue, live operations, QA decisions, content quality. Replaces approval-queue / pipeline-operations / qa-observability / quality-content as separate dashboards."
 }

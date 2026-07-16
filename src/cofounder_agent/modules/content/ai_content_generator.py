@@ -1348,6 +1348,7 @@ async def generate_with_context(
     task_id: str | None = None,
     target_length: int = 1200,
     think: bool | None = None,
+    prompt_metrics: dict[str, int] | None = None,
 ) -> str:
     """Build a prompt using the snippets as background context, generate the
     draft. Wraps the existing generation path; tests can monkeypatch here.
@@ -1364,6 +1365,13 @@ async def generate_with_context(
     reasoning channel so a thinking-capable model doesn't burn its generation
     budget reasoning and truncate the visible draft. Threaded to
     ``ollama_chat_text``; ``None`` leaves the call unchanged.
+
+    ``prompt_metrics`` (poindexter#868): when passed a dict, populates it
+    with ``{"prompt_chars": <int>, "snippet_chars": <int>}`` — the size of
+    the fully-rendered prompt actually sent to the model, and the portion of
+    it from the snippet block. Optional and side-effect-only: every existing
+    caller (including test fakes that stub this function out entirely) is
+    unaffected. ``None`` (the default) is a no-op.
     """
     from services.llm_text import ollama_chat_text
 
@@ -1382,6 +1390,9 @@ async def generate_with_context(
         snippet_block=snippet_block,
         target_length=target_length,
     )
+    if prompt_metrics is not None:
+        prompt_metrics["prompt_chars"] = len(prompt)
+        prompt_metrics["snippet_chars"] = len(snippet_block)
     # 2026-06-02 (poindexter#572): switched from ``_ollama_chat_json``
     # (which forces ``format=json`` on Ollama) to the plain-text
     # ``ollama_chat_text`` helper — mirrors the same fix already applied

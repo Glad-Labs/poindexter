@@ -467,6 +467,23 @@ class GenerateContentStage:
             stage_metrics["prompt_template_version"] = metrics.get(
                 "prompt_template_version"
             )
+        # Writer prompt-size observability (poindexter#868) — only present
+        # on the two-pass (niche) path; the legacy generate_blog_post path
+        # never populates these keys in `metrics`, so `stage_metrics` simply
+        # omits them here rather than writing zeros for a path that never
+        # measured anything.
+        if metrics.get("writer_prompt_draft_chars") is not None:
+            for _key in (
+                "writer_prompt_draft_chars",
+                "writer_prompt_snippet_chars",
+                "writer_prompt_research_chars",
+                "writer_prompt_context_bundle_chars",
+                "writer_prompt_override_chars",
+                "writer_prompt_internal_grounding_chars",
+                "writer_prompt_revise_chars",
+                "writer_prompt_revise_calls",
+            ):
+                stage_metrics[_key] = metrics.get(_key, 0)
         niche_for_metrics = context.get("niche_slug")
         if niche_for_metrics:
             stage_metrics["niche_slug"] = niche_for_metrics
@@ -1047,6 +1064,20 @@ class GenerateContentStage:
             metrics["prompt_template_version"] = result.get(
                 "prompt_template_version"
             )
+        # Writer prompt-size observability (poindexter#868) — present
+        # whenever the graph reached _draft_node (i.e. always, on this
+        # two-pass path). writer_prompt_revise_calls reuses the same
+        # revision_loops counter already forwarded above rather than
+        # introducing a second independent counter that could drift.
+        if result.get("writer_prompt_draft_chars") is not None:
+            metrics["writer_prompt_draft_chars"] = result.get("writer_prompt_draft_chars", 0)
+            metrics["writer_prompt_snippet_chars"] = result.get("writer_prompt_snippet_chars", 0)
+            metrics["writer_prompt_research_chars"] = result.get("writer_prompt_research_chars", 0)
+            metrics["writer_prompt_context_bundle_chars"] = result.get("writer_prompt_context_bundle_chars", 0)
+            metrics["writer_prompt_override_chars"] = result.get("writer_prompt_override_chars", 0)
+            metrics["writer_prompt_internal_grounding_chars"] = result.get("writer_prompt_internal_grounding_chars", 0)
+            metrics["writer_prompt_revise_chars"] = result.get("writer_prompt_revise_chars", 0)
+            metrics["writer_prompt_revise_calls"] = result.get("revision_loops", 0)
         # Phase 1 lab harness — when a variant was assigned, stamp its
         # ids on the metrics dict so capability_outcomes.record_run
         # picks them up + writes them to the variant_id column on the
