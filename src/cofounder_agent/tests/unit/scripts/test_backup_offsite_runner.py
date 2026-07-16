@@ -52,7 +52,14 @@ source "${RUN_SH}"
 #              and exits FAKE_RESTIC_RC.
 #   emit_*   — print markers instead of hitting psql.
 pg_dump() { echo "PGDUMP_ARGS $*" >&2; printf 'FAKE_DUMP_BYTES'; return "${FAKE_PGDUMP_RC:-0}"; }
-restic() { cat >/dev/null 2>&1 || true; echo "RESTIC_ARGS $*"; return "${FAKE_RESTIC_RC}"; }
+restic() {
+    cat >/dev/null 2>&1 || true
+    echo "RESTIC_ARGS $*"
+    if [[ -n "${FAKE_RESTIC_STDERR:-}" ]]; then
+        printf '%s' "${FAKE_RESTIC_STDERR}" >&2
+    fi
+    return "${FAKE_RESTIC_RC}"
+}
 emit_heartbeat() { echo "HEARTBEAT event=$1"; }
 emit_alert() { echo "ALERT severity=$1 summary=$2 description=$3"; }
 
@@ -72,6 +79,7 @@ def _run_backup_harness(
     restic_rc: int,
     restic_host: str | None = None,
     pgdump_rc: int = 0,
+    restic_stderr: str | None = None,
 ) -> subprocess.CompletedProcess:
     assert _BASH is not None  # guarded by the module-level skipif
     env = {
@@ -84,6 +92,8 @@ def _run_backup_harness(
     }
     if restic_host is not None:
         env["HOST_ARG"] = restic_host
+    if restic_stderr is not None:
+        env["FAKE_RESTIC_STDERR"] = restic_stderr
     return subprocess.run(
         [_BASH, "-c", _HARNESS],
         capture_output=True,
@@ -171,3 +181,46 @@ def test_backup_pins_configured_restic_host(tmp_path):
     result = _run_backup_harness(tmp_path, restic_rc=0, restic_host="my-install")
     assert "--host my-install" in result.stdout
     assert "--host poindexter" not in result.stdout
+
+
+def test_failure_alert_keeps_generic_guidance_text(tmp_path):
+    """The original creds/network/postgres-reachability hint must survive —
+    it's the only lead left when a pg_dump-side failure (e.g. postgres
+    unreachable) never reaches restic, so err_tail captures nothing."""
+    result = _run_backup_harness(tmp_path, restic_rc=1)
+    assert "Check creds, network, postgres reachability" in result.stdout
+
+
+def test_failure_alert_includes_restic_stderr(tmp_path):
+    """The alert must surface restic's actual error text, not just an rc
+    number — see the 2026-07-16 B2 storage-cap incident, where diagnosing
+    the real cause required grepping docker logs because the alert only
+    said "rc=1"."""
+    result = _run_backup_harness(
+        tmp_path,
+        restic_rc=1,
+        restic_stderr="client.PutObject: storage cap exceeded",
+    )
+    assert "ALERT severity=critical" in result.stdout
+    assert "storage cap exceeded" in result.stdout
+
+
+def test_failure_alert_truncates_long_restic_stderr(tmp_path):
+    """A retry-spamming restic must not blow up the alert row — the tail is
+    capped, keeping the most recent (most decisive) error text rather than
+    the first line of a long retry sequence."""
+    long_stderr = ("X" * 900) + "TAILMARKER_end"
+    result = _run_backup_harness(tmp_path, restic_rc=1, restic_stderr=long_stderr)
+    assert "TAILMARKER_end" in result.stdout
+    assert result.stdout.count("X") < 700
+
+
+def test_restic_stderr_still_visible_on_success(tmp_path):
+    """Capturing stderr for the alert must not swallow it from docker logs —
+    restic can warn on stderr even on a 0 exit (e.g. a retried-then-succeeded
+    upload)."""
+    result = _run_backup_harness(
+        tmp_path, restic_rc=0, restic_stderr="warning: retried once",
+    )
+    assert "warning: retried once" in _combined(result)
+    assert "ALERT" not in result.stdout

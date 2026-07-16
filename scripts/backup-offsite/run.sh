@@ -131,6 +131,14 @@ run_backup() {
     # Capture rc on the same statement: a fall-through `if` resets $? to 0,
     # which made the 2026-06-23 failure alert claim "rc=0" and return success.
     local rc=0
+    # restic's own stderr (retries, the actual API error) is captured to a
+    # file rather than left to flow straight through, so a failure alert can
+    # quote it — the 2026-07-16 B2 storage-cap incident needed a docker logs
+    # grep to learn the alert's "rc=1" actually meant "storage cap exceeded".
+    # Re-emitted to our real stderr below regardless of outcome, so `docker
+    # logs` still shows everything it did before this capture existed.
+    local err_file
+    err_file=$(mktemp)
     # -Z0 = no pg_dump-side compression (the whole point — restic compresses).
     # --stdin-filename pins the snapshot's single path so restic's
     # (host, paths) parent selection stays stable across container recreates,
@@ -144,17 +152,25 @@ run_backup() {
       | restic -r "${repo}" backup --stdin \
             --stdin-filename "poindexter_brain.dump" \
             --host "${restic_host}" \
-            --tag poindexter --tag "${source_tier}" || rc=$?
+            --tag poindexter --tag "${source_tier}" \
+            2>"${err_file}" || rc=$?
+    [[ -s "${err_file}" ]] && cat "${err_file}" >&2
     if [[ "${rc}" -eq 0 ]]; then
         log "offsite backup OK"
         emit_heartbeat "offsite_backup_succeeded" \
             "restic --stdin backup of ${PG_DATABASE} complete"
+        rm -f "${err_file}"
         return 0
     fi
+    # Tail + strip newlines/`$` so a verbose retry sequence can't blow up the
+    # alert row, and can't break emit_alert's `$$...$$`-quoted SQL literal.
+    local err_tail
+    err_tail=$(tail -c 600 "${err_file}" 2>/dev/null | tr '\n$' ' _')
+    rm -f "${err_file}"
     log "offsite backup FAILED rc=${rc}"
     emit_alert "critical" \
         "Offsite restic backup failed (rc=${rc})" \
-        "streamed pg_dump -Z0 of ${PG_DATABASE} | restic backup --stdin → ${repo} returned ${rc}. Check creds, network, postgres reachability, and the repo URL."
+        "streamed pg_dump -Z0 of ${PG_DATABASE} | restic backup --stdin → ${repo} returned ${rc}. Check creds, network, postgres reachability, and the repo URL. restic stderr: ${err_tail:-<none captured>}"
     return "${rc}"
 }
 

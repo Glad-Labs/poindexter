@@ -146,6 +146,20 @@ window bounds how long a compromised host could hold deletion off), or run
 the prune from a separate trusted context. See the B2 reclaim steps in the
 2026-07 offsite-dedup PR for the recommended one-time cleanup.
 
+**Before relying on `forget --prune` to reclaim space, confirm the bucket
+has a _version-expiry_ lifecycle rule — a different setting from the
+age-based rule warned against above.** `forget --prune`'s deletes only hide
+the current version of an object; B2 keeps every prior version of every
+object indefinitely unless told otherwise, so without a rule expiring
+hidden/previous versions, the "reclaimed" space stays fully billed and fully
+counted against the Daily Storage Cap. (Confirmed 2026-07-16: a prune took
+restic's own view from 62 snapshots/8.3 GiB down to 16/1.8 GiB, but B2's
+reported usage stayed at 10.1 GB — the whole gap was retained hidden
+versions.) Set the bucket's file-lifecycle setting to **"Keep only the last
+version of the file"** — this only purges already-hidden versions and never
+touches a live/current object, so it's safe to apply even with snapshots
+still referencing other files in the same bucket.
+
 ### Operator commands
 
 ```bash
@@ -212,7 +226,12 @@ The runner inserts a row into `alert_events` (severity=critical) on
 any non-zero exit. The brain daemon's `alert_dispatcher` poll picks it
 up on its 30s sweep and routes through the same Telegram (critical) +
 Discord (warning) pipeline Grafana alerts use — one notification surface,
-not three.
+not three. The alert description includes a truncated tail of restic's
+actual stderr, not just the exit code, so the real cause (credentials,
+network, a B2 cap) doesn't require digging through `docker logs
+poindexter-backup-offsite` to find. A subsequent successful backup
+auto-resolves the firing row via `brain/offsite_backup_watch.py`'s
+fresh-heartbeat check, the same way it already resolves `offsite_backup_stale`.
 
 If the failure is "postgres is unreachable", the alert insert itself
 will fail (chicken-and-egg). The container's healthcheck catches that

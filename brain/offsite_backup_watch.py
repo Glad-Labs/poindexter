@@ -55,6 +55,10 @@ DEFAULT_RETRY_DELAY_SECONDS = 120
 
 _CONTAINER = "poindexter-backup-offsite"
 _ALERTNAME = "offsite_backup_stale"
+# Emitted directly by scripts/backup-offsite/run.sh's own emit_alert on a
+# backup failure — the runner has no mechanism of its own to resolve it, so
+# a fresh heartbeat here is the only place that ever will (2026-07-16).
+_FAILED_ALERTNAME = "offsite_backup_failed"
 _HEARTBEAT_EVENT = "offsite_backup_succeeded"
 _DOCKER_RESTART_TIMEOUT_SECONDS = 30
 PROBE_INTERVAL_SECONDS = 300
@@ -220,6 +224,49 @@ async def _emit_alert(pool: Any, *, status: str, severity: str, detail: str) -> 
         return False
 
 
+async def _emit_failed_alert_resolved(pool: Any, *, detail: str) -> bool:
+    """Auto-resolve a firing ``offsite_backup_failed`` row.
+
+    That alertname is inserted directly by the runner's own ``emit_alert`` in
+    run.sh on a backup failure — the runner only ever writes firing rows, so
+    without this a fixed backup still shows "firing" on the dashboard
+    forever. A separate helper (rather than a generalized ``_emit_alert``)
+    because its firing/resolved semantics belong to the runner, not this
+    watch — this only ever writes the resolved half.
+    """
+    labels = {
+        "source": "brain.offsite_backup_watch",
+        "category": "backup",
+        "tier": "offsite",
+    }
+    annotations = {
+        "summary": "Offsite backup succeeded — previous failure resolved",
+        "description": detail,
+    }
+    fingerprint = f"offsite-backup-failed-resolved-{int(time.time())}"
+    try:
+        await pool.execute(
+            """
+            INSERT INTO alert_events (
+                alertname, severity, status, labels, annotations,
+                starts_at, fingerprint
+            ) VALUES ($1, $2, $3, $4::jsonb, $5::jsonb, NOW(), $6)
+            """,
+            _FAILED_ALERTNAME,
+            "info",
+            "resolved",
+            json.dumps(labels),
+            json.dumps(annotations),
+            fingerprint,
+        )
+        return True
+    except Exception as exc:  # noqa: BLE001
+        logger.warning(
+            "[OFFSITE_WATCH] offsite_backup_failed resolve insert failed: %s", exc
+        )
+        return False
+
+
 async def _emit_audit_event(
     pool: Any, event: str, detail: str, *, extra: dict[str, Any] | None = None
 ) -> None:
@@ -300,6 +347,21 @@ async def run_offsite_backup_watch_probe(
                 pool,
                 "probe.offsite_backup_resolved",
                 f"fresh again (age={age:.0f}s)",
+                extra={"age_seconds": age},
+            )
+            status = "auto_resolved"
+        if await _firing_alert_exists(pool, _FAILED_ALERTNAME):
+            await _emit_failed_alert_resolved(
+                pool,
+                detail=(
+                    f"A subsequent offsite backup succeeded (age={age:.0f}s) "
+                    "after a prior offsite_backup_failed alert — auto-resolving."
+                ),
+            )
+            await _emit_audit_event(
+                pool,
+                "probe.offsite_backup_failed_resolved",
+                f"prior offsite_backup_failed alert cleared (age={age:.0f}s)",
                 extra={"age_seconds": age},
             )
             status = "auto_resolved"

@@ -97,6 +97,49 @@ def test_stale_triggers_restart_then_recovers():
     assert summary["status"] == "recovered"
 
 
+def test_fresh_heartbeat_resolves_prior_failed_alert():
+    """A fresh heartbeat must also auto-resolve a firing offsite_backup_failed
+    row — that alertname is emitted directly by the runner's own emit_alert
+    in run.sh on a backup failure, and the runner has no mechanism of its own
+    to resolve it. Without this, a fixed backup still shows "firing" on the
+    dashboard forever (found during the 2026-07-16 B2 storage-cap incident)."""
+    executed: list = []
+    pool = _make_pool(firing={"offsite_backup_failed"}, executed=executed)
+    summary = __import__("asyncio").run(
+        ow.run_offsite_backup_watch_probe(
+            pool,
+            age_fn=AsyncMock(return_value=600.0),  # fresh
+            restart_fn=MagicMock(),
+            sleep_fn=AsyncMock(),
+        )
+    )
+    assert summary["status"] == "auto_resolved"
+    assert any(
+        "alert_events" in q
+        and len(a) > 2
+        and a[0] == "offsite_backup_failed"
+        and a[2] == "resolved"
+        for q, a in executed
+    )
+
+
+def test_fresh_heartbeat_with_no_firing_failed_alert_is_a_noop():
+    """The new check must not fire (or error) when nothing is firing —
+    guards against always inserting a resolved row on every fresh cycle."""
+    executed: list = []
+    pool = _make_pool(executed=executed)
+    summary = __import__("asyncio").run(
+        ow.run_offsite_backup_watch_probe(
+            pool,
+            age_fn=AsyncMock(return_value=600.0),
+            restart_fn=MagicMock(),
+            sleep_fn=AsyncMock(),
+        )
+    )
+    assert summary["status"] == "fresh"
+    assert not any("alert_events" in q for q, _a in executed)
+
+
 def test_escalate_emits_firing_alert_after_max_retries():
     executed: list = []
     pool = _make_pool(executed=executed)
