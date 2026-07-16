@@ -1635,3 +1635,289 @@ def test_cap_hero_shots_noop_under_budget():
     ]
     out = mod._cap_hero_shots(shots, 3)
     assert [s.source for s in out] == ["generative", "wan21"]
+
+
+class TestRenderBrandCard:
+    """The guaranteed rung-3 card — pure PIL, no network, cannot fail."""
+
+    def test_card_writes_valid_png_at_requested_dims(self, tmp_path):
+        from PIL import Image
+
+        from services.video_renderers.shot_list_renderer import _render_brand_card
+
+        out = str(tmp_path / "card.png")
+        ok = _render_brand_card(
+            output_path=out, width=1920, height=1080, wordmark="Glad Labs"
+        )
+
+        assert ok is True
+        with Image.open(out) as im:
+            assert im.size == (1920, 1080)
+            assert im.mode == "RGB"
+
+    def test_card_renders_solid_field_when_wordmark_empty(self, tmp_path):
+        from PIL import Image
+
+        from services.video_renderers.shot_list_renderer import _render_brand_card
+
+        out = str(tmp_path / "card_blank.png")
+        ok = _render_brand_card(
+            output_path=out, width=1080, height=1920, wordmark=""
+        )
+
+        assert ok is True
+        with Image.open(out) as im:
+            assert im.size == (1080, 1920)
+
+    def test_card_survives_font_load_failure(self, tmp_path, monkeypatch):
+        """Even if every font path fails, the solid navy field still saves."""
+        from PIL import Image, ImageFont
+
+        from services.video_renderers import shot_list_renderer as slr
+
+        def _boom(*a, **k):
+            raise OSError("no fonts")
+
+        monkeypatch.setattr(ImageFont, "truetype", _boom)
+        monkeypatch.setattr(ImageFont, "load_default", _boom)
+
+        out = str(tmp_path / "card_nofont.png")
+        ok = slr._render_brand_card(
+            output_path=out, width=640, height=360, wordmark="X"
+        )
+
+        assert ok is True
+        with Image.open(out) as im:
+            assert im.size == (640, 360)
+
+    def test_wordmark_font_scales_without_linux_truetype_paths(self, monkeypatch):
+        """On a host WITHOUT the Linux DejaVu paths (Windows/macOS operator or a
+        fresh OSS install), the wordmark must still scale via
+        load_default(size=…) — not collapse to the ~10px bitmap default that
+        ignores size. Force truetype to miss and assert the rendered text height
+        tracks the requested size."""
+        from PIL import Image, ImageDraw, ImageFont
+
+        from services.video_renderers import shot_list_renderer as slr
+
+        # Simulate a host with no DejaVu font FILES on disk: fail truetype for a
+        # path string (the on-disk lookups) but let a file-like buffer through,
+        # so Pillow's own load_default(size=…) — which builds its bundled font
+        # from a BytesIO — still works. This is the Windows/macOS/OSS-install
+        # shape the fix targets, reproduced on any CI platform.
+        real_truetype = ImageFont.truetype
+
+        def _no_font_files(font=None, *a, **k):
+            if isinstance(font, str):
+                raise OSError("no dejavu font files on this host")
+            return real_truetype(font, *a, **k)
+
+        monkeypatch.setattr(ImageFont, "truetype", _no_font_files)
+        draw = ImageDraw.Draw(Image.new("RGB", (1920, 1080)))
+
+        small = draw.textbbox((0, 0), "Glad Labs", font=slr._load_card_font(24))
+        large = draw.textbbox((0, 0), "Glad Labs", font=slr._load_card_font(106))
+        small_h = small[3] - small[1]
+        large_h = large[3] - large[1]
+
+        # The 106px font must render markedly taller than the 24px one, and far
+        # above the ~11px bitmap floor that would prove the size was ignored.
+        assert large_h > small_h * 2
+        assert large_h > 40
+
+
+class TestBackfillPass:
+    """A failed shot is filled with a card, not dropped."""
+
+    def _failed_state(self, idx=0, source="image_gen"):
+        from schemas.video_shot_list import Shot
+        from services.video_renderers.shot_list_renderer import (
+            ShotRenderResult,
+            _ShotState,
+        )
+
+        shot = Shot(
+            idx=idx, duration_s=6.0, intent="establish topic", source=source,
+            prompt="isometric 3d, empty server hall", narration_offset_s=0.0,
+        )
+        res = ShotRenderResult(
+            idx=idx, source=source, success=False,
+            error="image-gen render returned no image",
+        )
+        return _ShotState(shot=shot, result=res, is_reused=False)
+
+    @pytest.mark.asyncio
+    async def test_failed_shot_filled_with_card(self, tmp_path):
+        from services.video_renderers.shot_list_renderer import _backfill_pass
+
+        st = self._failed_state()
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="", site_config=None,
+            http_client_factory=None, pexels_key="", orientation="landscape",
+            post_id="p1",
+        )
+
+        await _backfill_pass(
+            [st], render_kwargs=render_kwargs, site_config=None,
+            post_id="p1", width=1920, height=1080, wordmark="Glad Labs",
+        )
+
+        assert st.result.success is True
+        assert st.result.clip_path.endswith("_card.png")
+        assert st.rung == "card"
+        assert st.result.duration_s == 6.0  # timeline slot preserved
+
+    @pytest.mark.asyncio
+    async def test_card_disabled_leaves_shot_dropped(self, tmp_path):
+        from unittest.mock import MagicMock
+
+        from services.video_renderers.shot_list_renderer import _backfill_pass
+
+        sc = MagicMock()
+        sc.get.return_value = "false"  # video_fallback_card_enabled=false
+        st = self._failed_state()
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="", site_config=sc,
+            http_client_factory=None, pexels_key="", orientation="landscape",
+            post_id="p1",
+        )
+
+        await _backfill_pass(
+            [st], render_kwargs=render_kwargs, site_config=sc,
+            post_id="p1", width=1920, height=1080, wordmark="Glad Labs",
+        )
+
+        assert st.result.success is False
+        assert st.rung == "dropped"
+
+    @pytest.mark.asyncio
+    async def test_successful_shot_untouched(self, tmp_path):
+        from schemas.video_shot_list import Shot
+        from services.video_renderers.shot_list_renderer import (
+            ShotRenderResult,
+            _backfill_pass,
+            _ShotState,
+        )
+
+        shot = Shot(
+            idx=1, duration_s=5.0, intent="x", source="pexels",
+            query="server room", narration_offset_s=6.0,
+        )
+        st = _ShotState(
+            shot=shot,
+            result=ShotRenderResult(
+                idx=1, source="pexels", success=True,
+                clip_path="/tmp/real.mp4", duration_s=5.0,
+            ),
+            is_reused=False,
+        )
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="", site_config=None,
+            http_client_factory=None, pexels_key="", orientation="landscape",
+            post_id="p1",
+        )
+
+        await _backfill_pass(
+            [st], render_kwargs=render_kwargs, site_config=None,
+            post_id="p1", width=1920, height=1080, wordmark="Glad Labs",
+        )
+
+        assert st.result.clip_path == "/tmp/real.mp4"
+        assert st.rung == "primary"
+
+
+class TestCrossFamilySubstitute:
+    """Rung 2: an image-gen-family failure retries as real Pexels footage;
+    a pexels failure never routes to image-gen (no-AI-humans policy)."""
+
+    def test_query_strips_style_modifier(self):
+        from schemas.video_shot_list import Shot
+        from services.video_renderers.shot_list_renderer import (
+            _pexels_query_from_shot,
+        )
+
+        shot = Shot(
+            idx=0, duration_s=6.0, intent="establish the data center",
+            source="image_kenburns",
+            prompt="flat vector illustration, empty server hall, cyan palette",
+            kenburns_zoom=(1.0, 1.2),
+            narration_offset_s=0.0,
+        )
+        assert _pexels_query_from_shot(shot) == "empty server hall"
+
+    def test_query_falls_back_to_intent_when_prompt_has_no_subject(self):
+        """A prompt that is only a style modifier yields no subject → intent."""
+        from schemas.video_shot_list import Shot
+        from services.video_renderers.shot_list_renderer import (
+            _pexels_query_from_shot,
+        )
+
+        shot = Shot(
+            idx=0, duration_s=6.0, intent="city skyline at night",
+            source="image_gen", prompt="cyberpunk neon", narration_offset_s=0.0,
+        )
+        assert _pexels_query_from_shot(shot) == "city skyline at night"
+
+    @pytest.mark.asyncio
+    async def test_image_gen_failure_substitutes_pexels_video(
+        self, tmp_path, monkeypatch
+    ):
+        from services.video_renderers import shot_list_renderer as slr
+
+        async def _fake_video(*, output_path, **kwargs):
+            with open(output_path, "wb") as f:
+                f.write(b"mp4")
+            return True
+
+        monkeypatch.setattr(slr, "_render_pexels_video", _fake_video)
+
+        st = TestBackfillPass()._failed_state(source="image_gen")
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="", site_config=None,
+            http_client_factory=None, pexels_key="KEY",
+            orientation="landscape", post_id="p1",
+        )
+
+        await slr._backfill_pass(
+            [st], render_kwargs=render_kwargs, site_config=None,
+            post_id="p1", width=1920, height=1080, wordmark="GL",
+        )
+
+        assert st.rung == "substitute"
+        assert st.result.success is True
+        assert st.result.clip_path.endswith("_sub.mp4")
+
+    @pytest.mark.asyncio
+    async def test_pexels_source_never_substitutes_to_image_gen(self, tmp_path):
+        """A missed pexels shot must go straight to the card, never image-gen."""
+        from schemas.video_shot_list import Shot
+        from services.video_renderers.shot_list_renderer import (
+            ShotRenderResult,
+            _backfill_pass,
+            _ShotState,
+        )
+
+        shot = Shot(
+            idx=0, duration_s=5.0, intent="developer at desk",
+            source="pexels", query="developer typing", narration_offset_s=0.0,
+        )
+        st = _ShotState(
+            shot=shot,
+            result=ShotRenderResult(
+                idx=0, source="pexels", success=False,
+                error="pexels miss at idx=0",
+            ),
+            is_reused=False,
+        )
+        render_kwargs = dict(
+            work_dir=tmp_path, image_gen_url="", site_config=None,
+            http_client_factory=None, pexels_key="KEY",
+            orientation="landscape", post_id="p1",
+        )
+
+        await _backfill_pass(
+            [st], render_kwargs=render_kwargs, site_config=None,
+            post_id="p1", width=1920, height=1080, wordmark="GL",
+        )
+
+        assert st.rung == "card"  # NOT substitute — pexels never routes to image-gen

@@ -211,61 +211,76 @@ async def render_from_state(
         )
         return {output_key: ""}
 
-    if result.shots_rendered < result.shots_total:
-        # Minimum-shots gate (2026-07-03): below the tunable ratio the render
-        # is treated as FAILED — empty output key, so no video is persisted
-        # and the media_reconciliation watchdog re-dispatches the render —
-        # instead of shipping a badly degraded video (a 2/7-shot video
-        # shipped this way). '0' disables the gate.
-        min_ratio = (
-            site_config.get_float("video_render_min_shot_ratio", 0.5)
-            if site_config is not None
-            else 0.5
+    # Real-source ratio gate (2026-07-15, "never drop a shot" redesign). The
+    # fallback ladder guarantees shots_rendered == shots_total on the happy
+    # path — a failed source becomes a cross-family substitute or a rung-3
+    # branded card rather than a dropped shot — so a "shots dropped" count no
+    # longer signals a real outage (an all-cards video reads as 100% rendered).
+    # Key the gate off how much of the video comes from a REAL source (primary
+    # + holdover + substitute) vs. branded-card fill. Below the tunable floor
+    # the render is treated as FAILED — empty output key, so no video is
+    # persisted and the media_reconciliation watchdog re-dispatches it once
+    # image-gen/Pexels recover — instead of shipping a mostly-card video. '0'
+    # disables the reject gate. (When the card ladder is disabled, shots still
+    # drop and `dropped` carries the degrade signal instead.)
+    real_shots = result.shots_rendered - result.shots_carded
+    real_ratio = real_shots / max(result.shots_total, 1)
+    dropped = result.shots_total - result.shots_rendered
+    min_real_ratio = (
+        site_config.get_float("video_render_min_real_source_ratio", 0.5)
+        if site_config is not None
+        else 0.5
+    )
+    if real_ratio < min_real_ratio:
+        emit_finding(
+            source="media.render_video",
+            kind="partial_render_rejected",
+            title=(
+                f"{output_key}: only {real_shots}/{result.shots_total} shots from "
+                "a real source — below the ship threshold, treated as failed"
+            ),
+            body=(
+                f"Only {real_shots} of {result.shots_total} shots for task "
+                f"{task_id} came from a real source "
+                f"({result.shots_carded} branded-card fill(s), {dropped} dropped; "
+                f"real ratio {real_ratio:.0%} < the "
+                f"video_render_min_real_source_ratio of {min_real_ratio:.0%}). The "
+                "render was rejected instead of shipping a mostly-card video; the "
+                "media_reconciliation watchdog will re-dispatch it once image-gen/"
+                "Pexels recover. Check the per-shot video_shot_rendered audit_log "
+                "rows (rung) for which sources failed."
+            ),
+            severity="warn",
+            dedup_key=f"partial_render_rejected:{task_id}:{output_key}",
+            extra={
+                "task_id": str(task_id or ""),
+                "output_key": output_key,
+                "shots_rendered": result.shots_rendered,
+                "shots_total": result.shots_total,
+                "shots_carded": result.shots_carded,
+                "real_ratio": real_ratio,
+                "min_real_ratio": min_real_ratio,
+            },
         )
-        ratio = result.shots_rendered / max(result.shots_total, 1)
-        if ratio < min_ratio:
-            emit_finding(
-                source="media.render_video",
-                kind="partial_render_rejected",
-                title=(
-                    f"{output_key}: {result.shots_rendered}/{result.shots_total} "
-                    "shots rendered — below the ship threshold, treated as failed"
-                ),
-                body=(
-                    f"Only {result.shots_rendered} of {result.shots_total} shots "
-                    f"rendered for task {task_id} ({ratio:.0%} < the "
-                    f"video_render_min_shot_ratio of {min_ratio:.0%}). The render "
-                    "was rejected instead of shipping degraded; the "
-                    "media_reconciliation watchdog will re-dispatch it. Check the "
-                    "per-shot video_shot_rendered audit_log rows for which "
-                    "sources failed."
-                ),
-                severity="warn",
-                dedup_key=f"partial_render_rejected:{task_id}:{output_key}",
-                extra={
-                    "task_id": str(task_id or ""),
-                    "output_key": output_key,
-                    "shots_rendered": result.shots_rendered,
-                    "shots_total": result.shots_total,
-                    "min_ratio": min_ratio,
-                },
-            )
-            return {output_key: ""}
-        # A degraded-but-above-threshold video (e.g. 5 of 8 shots) still
-        # ships, but never silently — surface it for triage (redesign §9 /
-        # Gap C).
+        return {output_key: ""}
+    if result.shots_carded or result.shots_substituted or dropped:
+        # A degraded-but-above-floor video (fallback cards/substitutes, or —
+        # with the card ladder disabled — some dropped shots) still ships, but
+        # never silently: surface it for triage (redesign §9 / Gap C).
         emit_finding(
             source="media.render_video",
             kind="partial_render",
             title=(
-                f"{output_key}: {result.shots_rendered}/{result.shots_total} "
-                "shots rendered"
+                f"{output_key}: {result.shots_carded} card + "
+                f"{result.shots_substituted} substitute fill(s) of "
+                f"{result.shots_total} shots"
             ),
             body=(
-                f"Only {result.shots_rendered} of {result.shots_total} shots "
-                f"rendered for task {task_id}; a degraded video shipped. "
-                "Check the per-shot video_shot_rendered audit_log rows for "
-                "which sources failed."
+                f"Task {task_id} shipped with fallback fills — "
+                f"{result.shots_carded} branded card(s), "
+                f"{result.shots_substituted} cross-family substitute(s), "
+                f"{dropped} dropped. Check the per-shot video_shot_rendered "
+                "audit_log rows (rung) for which primary sources failed."
             ),
             severity="warn",
             dedup_key=f"partial_render:{task_id}:{output_key}",
@@ -274,6 +289,8 @@ async def render_from_state(
                 "output_key": output_key,
                 "shots_rendered": result.shots_rendered,
                 "shots_total": result.shots_total,
+                "shots_carded": result.shots_carded,
+                "shots_substituted": result.shots_substituted,
             },
         )
 

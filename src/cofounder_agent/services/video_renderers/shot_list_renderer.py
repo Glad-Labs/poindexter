@@ -100,6 +100,8 @@ class ShotListRenderResult:
     duration_s: float = 0.0
     shots_rendered: int = 0
     shots_total: int = 0
+    shots_substituted: int = 0
+    shots_carded: int = 0
     error: str | None = None
 
 
@@ -130,6 +132,7 @@ class _ShotState:
     is_reused: bool  # True ⇒ holdover / pexels-miss (reused a prior clip; never scored)
     qa: ShotQAResult | None = None  # best score (None ⇒ unscored / couldn't score)
     attempts: int = 0  # regen rounds spent on this shot
+    rung: str = "primary"  # fill provenance: primary | substitute | card | dropped
 
 
 def _build_qa_config(site_config: Any) -> _QAConfig:
@@ -165,6 +168,7 @@ async def _log_shot_audit(
     shot_result: ShotRenderResult,
     qa_score: float | None = None,
     qa_outcome: str | None = None,
+    rung: str = "primary",
 ) -> None:
     """Best-effort audit_log insert for a single shot's render result.
 
@@ -190,6 +194,7 @@ async def _log_shot_audit(
                 "error": shot_result.error,
                 "qa_score": qa_score,
                 "qa_outcome": qa_outcome,
+                "rung": rung,
             }),
             "info" if shot_result.success else "warning",
         )
@@ -437,6 +442,228 @@ async def _render_generative_clip(
     if not ok:
         return False, "wan provider result had no output file on disk"
     return True, ""
+
+
+# Brand palette (dark-techno set, video-director SKILL.md STYLE POLICY).
+_CARD_FIELD_RGB = (10, 26, 47)  # #0A1A2F deep navy
+_CARD_WORDMARK_RGB = (34, 211, 238)  # #22D3EE cyan
+
+
+def _load_card_font(size: int) -> Any:
+    """Best-effort scalable wordmark font at ``size`` px, degrading in quality
+    but never in guarantee — every branch returns a usable font and none raise.
+
+    Tiers: (1) DejaVu Bold TrueType — crisp, present in the worker's Linux
+    container; (2) ``load_default(size=…)`` — Pillow ≥10.1's scalable default,
+    so the wordmark stays properly sized on hosts WITHOUT the Linux font paths
+    (a Windows/macOS operator or a fresh OSS install — the earlier code fell
+    straight to the ~10px bitmap default there); (3) the bare bitmap default on
+    ancient Pillow. The final fallback is the last-resort floor, not the norm.
+    """
+    from PIL import ImageFont
+
+    for path in (
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "DejaVuSans-Bold.ttf",
+    ):
+        try:
+            return ImageFont.truetype(path, size=size)
+        except OSError:
+            continue
+    try:
+        # Pillow ≥10.1: a TrueType-backed default that honours ``size`` on any
+        # platform. Older Pillow raises TypeError (no size kwarg) → bitmap floor.
+        return ImageFont.load_default(size=size)
+    except TypeError:
+        return ImageFont.load_default()
+
+
+def _render_brand_card(
+    *, output_path: str, width: int, height: int, wordmark: str,
+) -> bool:
+    """Rung-3 of the fallback ladder: a guaranteed branded still card.
+
+    Pure PIL — no network, no GPU, no ffmpeg — so a shot slot is never empty
+    even in a total image-gen + Pexels outage. Returns a PNG the compositor
+    consumes like any image-gen still. Two-tier: a centered wordmark when a
+    font + draw succeed, else a text-less solid navy field (the draw is wrapped
+    so a decoration failure never breaks the save). Returns True when a PNG is
+    on disk.
+    """
+    from PIL import Image, ImageDraw
+
+    img = Image.new("RGB", (max(1, width), max(1, height)), _CARD_FIELD_RGB)
+    try:
+        text = (wordmark or "").strip()
+        if text:
+            draw = ImageDraw.Draw(img)
+            font = _load_card_font(size=max(24, width // 18))
+            bbox = draw.textbbox((0, 0), text, font=font)
+            tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            draw.text(
+                ((width - tw) / 2, (height - th) / 2),
+                text, fill=_CARD_WORDMARK_RGB, font=font,
+            )
+    except Exception as exc:  # noqa: BLE001 — decoration must not break the floor
+        # silent-ok: the wordmark is pure decoration; on any draw failure the
+        # solid navy card still saves below (the never-fail floor), so the card's
+        # guarantee holds and there is nothing to escalate — debug is right here.
+        logger.debug(
+            "[SHOT_LIST] card wordmark draw failed, using solid field: %s", exc,
+        )
+    try:
+        img.save(output_path, format="PNG")
+    except OSError as exc:
+        logger.warning("[SHOT_LIST] card save failed for %s: %s", output_path, exc)
+        return False
+    return os.path.exists(output_path) and os.path.getsize(output_path) > 0
+
+
+def _card_enabled(site_config: Any) -> bool:
+    """Master switch for the guaranteed-card rung (default on). Off ⇒ a shot
+    with no clip drops as before (legacy behaviour, for A/B / never-card)."""
+    if site_config is None:
+        return True
+    return str(
+        site_config.get("video_fallback_card_enabled", "true") or "true",
+    ).strip().lower() in ("true", "1", "yes")
+
+
+def _emit_shot_fallback_finding(*, shot: Shot, post_id: str, rung: str) -> None:
+    """Advisory (info) finding when a shot was filled by the fallback ladder
+    rather than its primary source. Info severity ⇒ lands in audit_log (the
+    Findings/Pipeline dashboards read it) but is below the router floor, so it
+    does NOT page — the 'mostly cards = outage' escalation is the gate's job."""
+    emit_finding(
+        source="shot_list_renderer",
+        kind="shot_fallback",
+        title=f"shot {shot.idx} ({shot.source}) filled via {rung}",
+        body=(
+            f"shot {shot.idx} ({shot.source}) produced no clip from its primary "
+            f"source; the fallback ladder filled the slot via '{rung}' so the "
+            f"timeline stays whole. Many cards in one render signal an "
+            f"image-gen/Pexels outage. Advisory only."
+        ),
+        severity="info",
+        dedup_key=f"shot_fallback:{post_id}:{shot.idx}",
+        extra={"shot_idx": shot.idx, "source": shot.source, "rung": rung},
+    )
+
+
+# Style-modifier prefixes the director prepends to AI-source prompts
+# (video-director SKILL.md STYLE POLICY); stripped to recover the subject nouns
+# for a Pexels search when an image-gen shot must fall back to footage.
+_STYLE_MODIFIERS = (
+    "flat vector illustration", "cinematic illustration", "isometric 3d",
+    "line art", "cyberpunk neon", "glassmorphism", "low poly", "watercolor",
+    "pixel art", "paper cutout",
+)
+
+# Sources whose failures may substitute to Pexels. Pexels itself is excluded —
+# a missed pexels shot goes straight to the card (never image-gen a human).
+_IMAGE_GEN_FAMILY = frozenset({"image_gen", "image_kenburns", "generative", "wan21"})
+
+
+def _pexels_query_from_shot(shot: Shot) -> str:
+    """Best-effort stock-search query for an image-gen-family shot falling back
+    to Pexels. Prefers the concrete prompt subject (leading style-modifier and
+    trailing palette clause stripped) over the abstract intent. The image-gen
+    prompt policy forbids human nouns, so the derived subject is non-human by
+    contract."""
+    prompt = (shot.prompt or "").strip()
+    low = prompt.lower()
+    for mod in _STYLE_MODIFIERS:
+        if low.startswith(mod):
+            prompt = prompt[len(mod):].lstrip(" ,").strip()
+            break
+    subject = prompt.split(",")[0].strip() if prompt else ""
+    return subject or (shot.intent or "").strip()
+
+
+async def _substitute_failed_shot(
+    shot: Shot,
+    *,
+    work_dir: Path,
+    pexels_key: str,
+    orientation: str,
+    http_client_factory: Any,
+) -> str | None:
+    """Rung-2 cross-family substitute: an image-gen-family shot whose render
+    hard-failed retries as REAL Pexels footage (video first, then photo) from a
+    prompt/intent-derived query. Returns a clip_path or None. The reverse
+    direction (pexels → image-gen) is intentionally never attempted."""
+    if not pexels_key:
+        return None
+    query = _pexels_query_from_shot(shot)
+    if not query:
+        return None
+    video_path = str(work_dir / f"shot_{shot.idx:02d}_sub.mp4")
+    if await _render_pexels_video(
+        query=query, output_path=video_path, api_key=pexels_key,
+        orientation=orientation, http_client_factory=http_client_factory,
+    ):
+        return video_path
+    photo_path = str(work_dir / f"shot_{shot.idx:02d}_sub.jpg")
+    if await _render_pexels_image(
+        query=query, output_path=photo_path, api_key=pexels_key,
+        orientation=orientation, http_client_factory=http_client_factory,
+    ):
+        return photo_path
+    return None
+
+
+async def _backfill_pass(
+    states: list[_ShotState],
+    *,
+    render_kwargs: dict[str, Any],
+    site_config: Any,
+    post_id: str,
+    width: int,
+    height: int,
+    wordmark: str,
+) -> None:
+    """Fill every shot that produced no clip so the slot is never empty (never
+    drop a shot). Card-only ladder in this task; the cross-family substitute
+    (rung 2) is inserted here in a later change. Sets ``st.rung`` and preserves
+    each shot's ``duration_s`` so the concat still sums to the plan.
+    """
+    card_ok = _card_enabled(site_config)
+    work_dir: Path = render_kwargs["work_dir"]
+    for st in states:
+        if st.result.success and st.result.clip_path:
+            continue  # primary / holdover / substitute already filled the slot
+        if st.shot.source in _IMAGE_GEN_FAMILY:
+            sub_path = await _substitute_failed_shot(
+                st.shot,
+                work_dir=work_dir,
+                pexels_key=render_kwargs["pexels_key"],
+                orientation=render_kwargs["orientation"],
+                http_client_factory=render_kwargs["http_client_factory"],
+            )
+            if sub_path:
+                st.result = ShotRenderResult(
+                    idx=st.shot.idx, source=st.shot.source, success=True,
+                    clip_path=sub_path, duration_s=st.shot.duration_s,
+                )
+                st.rung = "substitute"
+                _emit_shot_fallback_finding(
+                    shot=st.shot, post_id=post_id, rung="substitute",
+                )
+                continue
+        if card_ok:
+            card_path = str(work_dir / f"shot_{st.shot.idx:02d}_card.png")
+            if _render_brand_card(
+                output_path=card_path, width=width, height=height, wordmark=wordmark,
+            ):
+                st.result = ShotRenderResult(
+                    idx=st.shot.idx, source=st.shot.source, success=True,
+                    clip_path=card_path, duration_s=st.shot.duration_s,
+                )
+                st.rung = "card"
+                _emit_shot_fallback_finding(shot=st.shot, post_id=post_id, rung="card")
+                continue
+        st.rung = "dropped"
 
 
 async def _render_one_shot(
@@ -882,7 +1109,10 @@ async def _finalize_pass(
         qa_score: float | None = None
         qa_outcome: str | None = None
 
-        if st.is_reused:
+        if st.rung in ("substitute", "card"):
+            # Backfilled slot — result is already final, no QA verdict applies.
+            qa_outcome = st.rung
+        elif st.is_reused:
             # Holdover / pexels-miss → carry the post-QA prior clip. (An idx-0
             # reuse can't happen: the render pass fails it for lack of a prior.)
             if final_prior:
@@ -936,7 +1166,7 @@ async def _finalize_pass(
 
         await _log_shot_audit(
             pool, post_id=post_id, shot_result=result,
-            qa_score=qa_score, qa_outcome=qa_outcome,
+            qa_score=qa_score, qa_outcome=qa_outcome, rung=st.rung,
         )
         out.append(result)
         if result.success and result.clip_path:
@@ -1114,9 +1344,19 @@ async def render_shot_list(
         states, qa=qa, site_config=site_config,
         render_kwargs=render_kwargs, pool=pool,
     )
+    wordmark = ""
+    if site_config is not None:
+        wordmark = str(site_config.get("site_name", "") or "").strip()
+    await _backfill_pass(
+        states, render_kwargs=render_kwargs, site_config=site_config,
+        post_id=post_id, width=width, height=height, wordmark=wordmark,
+    )
     shot_results = await _finalize_pass(
         states, qa=qa, pool=pool, post_id=post_id,
     )
+
+    shots_substituted = sum(1 for st in states if st.rung == "substitute")
+    shots_carded = sum(1 for st in states if st.rung == "card")
 
     rendered = [r for r in shot_results if r.success and r.clip_path]
     if not rendered:
@@ -1124,6 +1364,8 @@ async def render_shot_list(
             success=False,
             shots_total=len(shot_list.shots),
             shots_rendered=0,
+            shots_substituted=shots_substituted,
+            shots_carded=shots_carded,
             error="no shots rendered — director output unrenderable",
         )
 
@@ -1183,6 +1425,8 @@ async def render_shot_list(
             success=False,
             shots_total=len(shot_list.shots),
             shots_rendered=len(rendered),
+            shots_substituted=shots_substituted,
+            shots_carded=shots_carded,
             error=(
                 f"compositor failed: {composition.error or 'no output_path'}"
             ),
@@ -1195,4 +1439,6 @@ async def render_shot_list(
         duration_s=composition.duration_s,
         shots_rendered=len(rendered),
         shots_total=len(shot_list.shots),
+        shots_substituted=shots_substituted,
+        shots_carded=shots_carded,
     )

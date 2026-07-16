@@ -385,7 +385,25 @@ DEFAULTS: dict[str, str] = {
     # video shipping (2026-07-03: task 9318d724 shipped 2/7 shots). Partials
     # at-or-above the ratio still ship and still emit the partial_render
     # finding. '0' disables the gate (every partial ships, prior behaviour).
+    # DEPRECATED 2026-07-15: superseded by video_render_min_real_source_ratio.
+    # The "never drop a shot" ladder makes shots_rendered == shots_total on the
+    # happy path (failures become substitutes/cards), so a drop-count gate no
+    # longer sees an all-cards outage. Left seeded (inert) for backcompat.
     'video_render_min_shot_ratio': '0.5',
+    # Master switch for the guaranteed rung-3 branded card in the shot-list
+    # renderer's fallback ladder. true (default) ⇒ a shot that renders no clip
+    # from any real source is filled with a branded card so the timeline stays
+    # whole (never drop a shot). false ⇒ legacy behaviour (the shot drops).
+    'video_fallback_card_enabled': 'true',
+    # Real-source ratio ship gate (2026-07-15). The fraction of a video's shots
+    # that must come from a REAL source — primary/holdover render or a
+    # cross-family Pexels substitute — vs. rung-3 branded-card fill:
+    # (shots_rendered - shots_carded) / shots_total. Below this the render is
+    # treated as FAILED (empty output key → media_reconciliation re-dispatch)
+    # rather than shipping a mostly-card video during an image-gen/Pexels
+    # outage. At-or-above still ships and emits the partial_render finding. '0'
+    # disables the reject gate. Replaces video_render_min_shot_ratio.
+    'video_render_min_real_source_ratio': '0.5',
     # Render-GPU VRAM preflight (2026-07-12 desktop-lockup fix). The Wan render
     # loads ~24 GB onto pipeline_gpu_index (the RTX 5090 that also drives the
     # desktop). dispatch_media_pipeline defers the whole cycle unless the card
@@ -2365,6 +2383,8 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'generative_video_model': {'owner': 'video', 'value_type': 'model'},
     'video_hero_shots_max': {'owner': 'video', 'value_type': 'integer'},
     'video_render_min_shot_ratio': {'owner': 'media_render', 'value_type': 'float'},
+    'video_fallback_card_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
+    'video_render_min_real_source_ratio': {'owner': 'media_render', 'value_type': 'float'},
     'video_caption_engine': {'owner': 'caption_providers', 'value_type': 'string'},
     'plugin.caption_provider.speaches.enabled': {
         'owner': 'caption_providers', 'value_type': 'boolean',

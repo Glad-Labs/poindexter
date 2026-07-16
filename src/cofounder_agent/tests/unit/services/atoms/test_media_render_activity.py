@@ -53,6 +53,8 @@ def _ok_result(**kw):
         duration_s=3.0,
         shots_rendered=1,
         shots_total=1,
+        shots_substituted=0,
+        shots_carded=0,
         error=None,
     )
     base.update(kw)
