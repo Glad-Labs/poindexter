@@ -35,6 +35,7 @@ succeeded without grepping container logs.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -1225,6 +1226,101 @@ def _cap_hero_shots(shots: list[Shot], max_hero: int) -> list[Shot]:
     return out
 
 
+async def _probe_duration_s(path: str, *, ffprobe: str = "ffprobe") -> float | None:
+    """Return a media file's duration in seconds via ffprobe, or None if it
+    can't be read.
+
+    Async (non-blocking) — used to fit the short's visuals to the real narration
+    length (issue #867). Best-effort: any failure returns None and the caller
+    falls back to the director's durations (today's pad behavior), so a broken
+    ffprobe can never crash a render.
+    """
+    if not path or not os.path.exists(path):
+        return None
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            ffprobe,
+            "-v",
+            "quiet",
+            "-print_format",
+            "json",
+            "-show_format",
+            path,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            return None
+        fmt = (json.loads(stdout.decode() or "{}") or {}).get("format") or {}
+        dur = float(fmt.get("duration", 0.0))
+        return dur if dur > 0 else None
+    except (OSError, ValueError, json.JSONDecodeError) as exc:
+        logger.debug("[SHOT_LIST] narration ffprobe failed for %s: %s", path, exc)
+        return None
+
+
+def _fit_scene_durations(
+    shot_durations: list[float],
+    narration_dur_s: float,
+    *,
+    max_shot_s: float,
+    max_scenes: int = 200,
+    tail_pad_s: float = 0.0,
+    overhang_tolerance_s: float = 1.0,
+) -> list[tuple[int, float]]:
+    """Lay out ``(shot_index, duration_s)`` pairs so the concat spans the
+    narration — the short-lane fix for the frozen tail (issue #867).
+
+    No-op (returns the director's durations, one pair per shot in order) when the
+    narration already fits: the video is longer than the narration, or the
+    overhang is within ``overhang_tolerance_s`` (the compositor's tail-pad
+    absorbs it).
+
+    Gentle regime (``scale <= max_shot_s / avg_shot``): pure proportional
+    rescale — every shot ×``narration/total`` — which spans the narration in one
+    pass and preserves the director's pacing EXACTLY (the ~2s hook stays
+    proportionally shortest). ``max_shot_s`` is a cycle-trigger, not a hard
+    per-frame clamp, so the single longest shot may run modestly over it here —
+    fine visually, and it avoids an ugly sub-second cycled fragment.
+
+    Pathological regime (a large overshoot — the average shot would itself exceed
+    the ceiling, e.g. re-rendering an old runaway script): cap each shot at
+    ``max_shot_s`` and CYCLE the sequence (repeating visuals at a steady cadence)
+    until the narration is filled, so no single image is held absurdly long.
+    ``max_scenes`` bounds a pathological fill.
+    """
+    n = len(shot_durations)
+    total = sum(shot_durations)
+    originals = list(enumerate(shot_durations))
+    if n == 0 or total <= 0 or narration_dur_s <= 0:
+        return originals
+    if narration_dur_s - total <= overhang_tolerance_s:
+        return originals
+    scale = narration_dur_s / total
+    target = narration_dur_s + max(0.0, tail_pad_s)
+    avg = total / n
+    if scale <= max_shot_s / avg:
+        # Gentle: pure proportional rescale, one pass, exact span, pacing kept.
+        return [(i, round(d * scale, 3)) for i, d in enumerate(shot_durations)]
+    # Pathological: cap each shot at the ceiling and cycle to fill the narration.
+    capped = [min(d * scale, max_shot_s) for d in shot_durations]
+    layout: list[tuple[int, float]] = []
+    acc = 0.0
+    i = 0
+    while acc < target - 1e-6 and len(layout) < max_scenes:
+        idx = i % n
+        dur = capped[idx]
+        remaining = target - acc
+        if dur >= remaining:
+            layout.append((idx, round(remaining, 3)))
+            break
+        layout.append((idx, round(dur, 3)))
+        acc += dur
+        i += 1
+    return layout
+
+
 async def render_shot_list(
     *,
     post_id: str,
@@ -1240,6 +1336,8 @@ async def render_shot_list(
     ambient_path: str | None = None,
     caption_path: str | None = None,
     progress_cb: ProgressCb | None = None,
+    narration_fit: bool = False,
+    narration_fit_max_shot_s: float = 9.0,
 ) -> ShotListRenderResult:
     """Render a full video from a shot list.
 
@@ -1280,6 +1378,15 @@ async def render_shot_list(
             the render. The Plan-4 media atom wires this to a live_activity
             ``media`` row so the console pulse shows real per-shot progress;
             ``None`` (the default, and the legacy caller) renders silently.
+        narration_fit: Short-lane fit-to-narration (issue #867). When True and
+            an ``audio_path`` exists, ffprobe the narration and lay out the
+            scenes (via ``_fit_scene_durations``) to span its ACTUAL duration —
+            so the compositor never clones the final frame to cover an overhang
+            (the frozen tail). Default False (the long lane keeps the director's
+            durations and deliberate pacing untouched); the short atom opts in.
+        narration_fit_max_shot_s: Per-shot ceiling for the fit rescale — no
+            single image is held longer than this; beyond it the shot sequence
+            cycles instead of stretching. Only consulted when ``narration_fit``.
 
     Returns:
         ``ShotListRenderResult`` with file path on success.
@@ -1377,15 +1484,43 @@ async def render_shot_list(
     # at the first transition (#media-render-fixes: audio cut off after
     # scene 2). Per-shot narration slicing is a follow-up — the schema's
     # ``narration_offset_s`` field is the seam.
-    scenes: list[CompositionScene] = []
-    for r in rendered:
-        scenes.append(
-            CompositionScene(
-                clip_path=r.clip_path or "",
-                narration_path=None,
-                duration_s=float(r.duration_s),
-            ),
+    # Narration-fit (short lane, issue #867): lay out the scenes to span the
+    # ACTUAL narration so the compositor never clones the final frame to cover
+    # an overhang (the frozen tail). No-op when the narration already fits;
+    # scoped by the caller to the short lane so the long lane's pacing is
+    # untouched. Cycling repeats a clip_path — free, no re-render.
+    shot_durs = [float(r.duration_s) for r in rendered]
+    scene_plan: list[tuple[int, float]] = list(enumerate(shot_durs))
+    if narration_fit and audio_path:
+        narration_dur = await _probe_duration_s(audio_path)
+        if narration_dur:
+            scene_plan = _fit_scene_durations(
+                shot_durs,
+                narration_dur,
+                max_shot_s=narration_fit_max_shot_s,
+            )
+            logger.info(
+                "[SHOT_LIST] narration-fit: %d shots (%.1fs) -> %d scenes "
+                "for %.1fs narration",
+                len(rendered),
+                sum(shot_durs),
+                len(scene_plan),
+                narration_dur,
+            )
+        else:
+            logger.info(
+                "[SHOT_LIST] narration-fit: ffprobe unreadable for %s, "
+                "keeping director durations (compositor tail-pad handles it)",
+                audio_path,
+            )
+    scenes: list[CompositionScene] = [
+        CompositionScene(
+            clip_path=rendered[idx].clip_path or "",
+            narration_path=None,
+            duration_s=dur,
         )
+        for idx, dur in scene_plan
+    ]
 
     request = CompositionRequest(
         scenes=scenes,
@@ -1409,7 +1544,7 @@ async def render_shot_list(
         metadata={
             "post_id": post_id,
             "renderer": "shot_list_renderer",
-            "shot_count": len(rendered),
+            "shot_count": len(scenes),
             "director_model": shot_list.director_model,
             "director_prompt_version": shot_list.director_prompt_version,
         },

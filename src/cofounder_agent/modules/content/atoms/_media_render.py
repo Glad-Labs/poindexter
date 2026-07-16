@@ -64,6 +64,7 @@ async def render_from_state(
     output_key: str,
     narration_key: str = "podcast_audio_path",
     caption_key: str = "caption_srt_path",
+    narration_fit: bool = False,
 ) -> dict[str, Any]:
     """Render a video from a shot-list channel in graph state.
 
@@ -80,6 +81,12 @@ async def render_from_state(
         caption_key: Which state channel holds this lane's burned-in SRT
             (``long_caption_srt_path`` / ``short_caption_srt_path``). Defaults to
             ``caption_srt_path`` for backcompat.
+        narration_fit: Opt into short-lane fit-to-narration (issue #867). The
+            short atom passes True; the long atom leaves it False so its
+            legitimately-longer shots and deliberate pacing are untouched. Even
+            when True it's still gated by ``video_narration_fit_enabled`` (master
+            switch), and the per-shot ceiling comes from
+            ``video_short_max_shot_seconds``.
 
     Returns:
         ``{output_key: <path-or-empty-string>}`` — empty on no-op /
@@ -128,6 +135,19 @@ async def render_from_state(
     # no track to burn.
     caption = state.get(caption_key) or None
     width, height = _resolve_dims(shot_list.aspect)
+
+    # Narration-fit is opt-in per lane (short only) AND gated by the master
+    # setting; the per-shot ceiling is operator-tunable (issue #867).
+    fit_enabled = bool(narration_fit) and (
+        site_config.get_bool("video_narration_fit_enabled", True)
+        if site_config is not None
+        else True
+    )
+    fit_max_shot_s = (
+        site_config.get_float("video_short_max_shot_seconds", 9.0)
+        if site_config is not None
+        else 9.0
+    )
 
     out_path = f"{tempfile.gettempdir()}/media_{task_id}_{output_key}.mp4"
 
@@ -180,6 +200,8 @@ async def render_from_state(
                     ambient_path=ambient,
                     caption_path=caption,
                     progress_cb=_progress,
+                    narration_fit=fit_enabled,
+                    narration_fit_max_shot_s=fit_max_shot_s,
                 )
             if not result.success:
                 act.fail()

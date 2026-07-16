@@ -389,6 +389,20 @@ DEFAULTS: dict[str, str] = {
     # excess hero shots to image_kenburns (see shot_list_renderer._cap_hero_shots).
     'generative_video_model': 'Wan-AI/Wan2.2-TI2V-5B',
     'video_hero_shots_max': '3',
+    # Canonical short-form target length in seconds (issue #867): drives BOTH the
+    # short prompt's narration ask (generate_media_scripts._build_scene_prompt)
+    # AND the shot-list duration clamp (generate_video_shot_list.
+    # _estimate_short_duration), so they can't disagree — they used to (a 60s
+    # prompt vs a 45s clamp guaranteed a ~15s frozen tail on every compliant
+    # short). The word target is derived: round(target * 2.5 WPS).
+    'video_short_target_seconds': '45',
+    # Hard cap on the short narration length in seconds (issue #867). A runaway
+    # short script (the model ignoring the target) is trimmed to the last full
+    # sentence within this budget so a "short" can't balloon to 2-3 minutes. Set
+    # > video_short_target_seconds to leave headroom — the renderer's
+    # narration-fit stretches the gap between target and this cap. An advisory
+    # short_script_trimmed finding fires when a trim bites.
+    'video_short_max_seconds': '60',
     # Minimum fraction of shots that must render for a video to SHIP
     # (modules/content/atoms/_media_render.py). Below this ratio the render is
     # treated as failed — empty output key, render_failed-class finding — so
@@ -415,6 +429,15 @@ DEFAULTS: dict[str, str] = {
     # outage. At-or-above still ships and emits the partial_render finding. '0'
     # disables the reject gate. Replaces video_render_min_shot_ratio.
     'video_render_min_real_source_ratio': '0.5',
+    # Short-lane fit-to-narration (issue #867). Master switch: the short renderer
+    # rescales the director's shots to span the ACTUAL narration so the final
+    # frame is never frozen to cover an overhang (the frozen tail). false =>
+    # legacy behaviour (compositor clones the last frame over the overhang).
+    'video_narration_fit_enabled': 'true',
+    # Per-shot ceiling for the narration-fit rescale (issue #867) — no single
+    # image is held longer than this; beyond it the shot sequence cycles
+    # (repeating visuals at a steady cadence) instead of stretching one frame.
+    'video_short_max_shot_seconds': '9',
     # Render-GPU VRAM preflight (2026-07-12 desktop-lockup fix). The Wan render
     # loads ~24 GB onto pipeline_gpu_index (the RTX 5090 that also drives the
     # desktop). dispatch_media_pipeline defers the whole cycle unless the card
@@ -2393,9 +2416,13 @@ METADATA: dict[str, dict[str, str | bool | None]] = {
     'video_pexels_video_enabled': {'owner': 'video', 'value_type': 'boolean'},
     'generative_video_model': {'owner': 'video', 'value_type': 'model'},
     'video_hero_shots_max': {'owner': 'video', 'value_type': 'integer'},
+    'video_short_target_seconds': {'owner': 'video', 'value_type': 'integer'},
+    'video_short_max_seconds': {'owner': 'video', 'value_type': 'integer'},
     'video_render_min_shot_ratio': {'owner': 'media_render', 'value_type': 'float'},
     'video_fallback_card_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
     'video_render_min_real_source_ratio': {'owner': 'media_render', 'value_type': 'float'},
+    'video_narration_fit_enabled': {'owner': 'media_render', 'value_type': 'boolean'},
+    'video_short_max_shot_seconds': {'owner': 'media_render', 'value_type': 'float'},
     'video_caption_engine': {'owner': 'caption_providers', 'value_type': 'string'},
     'plugin.caption_provider.speaches.enabled': {
         'owner': 'caption_providers', 'value_type': 'boolean',

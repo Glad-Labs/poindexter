@@ -130,19 +130,21 @@ def _estimate_target_duration(podcast_script: str) -> float:
 _DEFAULT_SHORT_DURATION_S = 20.0  # Fallback when short script length unknown
 
 
-def _estimate_short_duration(short_script: str) -> float:
+def _estimate_short_duration(short_script: str, target_seconds: float = 45.0) -> float:
     """Estimate the short-form clip duration from word count.
 
-    Same ~2.5 words/second estimate as the long-form director, but
-    clamped to [15, 45] seconds — the short-form retention window. Below
-    15s isn't enough to land a hook + payoff; above 45s a "short" stops
-    being short and viewers scroll. If empty, return the 20s default.
+    Same ~2.5 words/second estimate as the long-form director, but clamped to
+    [15, ``target_seconds``] — the short-form retention window. Below 15s isn't
+    enough to land a hook + payoff; above the target a "short" stops being short
+    and viewers scroll. ``target_seconds`` is the operator-tunable short target
+    (``video_short_target_seconds``, threaded in at the call site; issue #867) —
+    the upper bound was a hardcoded 45. If empty, return the 20s default.
     """
     if not short_script:
         return _DEFAULT_SHORT_DURATION_S
     word_count = len(short_script.split())
     estimated = word_count / _WORDS_PER_SECOND
-    return max(15.0, min(estimated, 45.0))
+    return max(15.0, min(estimated, target_seconds))
 
 
 def _extract_json_object(text: str) -> str | None:
@@ -800,7 +802,10 @@ class GenerateVideoShotListStage:
                 pool=pool,
                 model=model,
                 script=short_summary_script,
-                target_duration_s=_estimate_short_duration(short_summary_script),
+                target_duration_s=_estimate_short_duration(
+                    short_summary_script,
+                    cfg.get_int("video_short_target_seconds", 45),
+                ),
                 prompt_key="video.director_short_v1",
                 task_id=task_id,
                 now_iso=now_iso,

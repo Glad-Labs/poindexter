@@ -1921,3 +1921,173 @@ class TestCrossFamilySubstitute:
         )
 
         assert st.rung == "card"  # NOT substitute — pexels never routes to image-gen
+
+
+class TestFitSceneDurations:
+    """Pure narration-fit layout: rescale director shots to span the voiceover."""
+
+    def test_fits_already_is_noop(self):
+        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        durs = [2.0, 5.0, 6.0, 5.0]
+        # narration (17s) within tolerance of total (18s) → keep director durations
+        out = _fit_scene_durations(durs, 17.0, max_shot_s=9.0)
+        assert out == [(0, 2.0), (1, 5.0), (2, 6.0), (3, 5.0)]
+
+    def test_video_longer_than_narration_is_noop(self):
+        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        durs = [5.0, 5.0, 5.0]
+        out = _fit_scene_durations(durs, 8.0, max_shot_s=9.0)  # narration shorter
+        assert out == [(0, 5.0), (1, 5.0), (2, 5.0)]
+
+    def test_proportional_rescale_spans_narration_and_preserves_pacing(self):
+        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        durs = [2.0, 5.0, 6.0, 5.0, 6.0, 6.0, 7.0, 8.0]  # 45s, avg 5.625
+        out = _fit_scene_durations(durs, 54.0, max_shot_s=9.0)  # scale 1.2, gentle
+        # Gentle regime = pure proportional rescale: exact span, one pass, the
+        # director's pacing preserved. The 9s ceiling is a cycle-trigger, so the
+        # longest shot may sit modestly over it here (9.6) rather than cycle.
+        assert out == [
+            (0, 2.4), (1, 6.0), (2, 7.2), (3, 6.0),
+            (4, 7.2), (5, 7.2), (6, 8.4), (7, 9.6),
+        ]
+        assert abs(sum(d for _, d in out) - 54.0) < 0.05
+
+    def test_large_scale_caps_per_shot_and_cycles(self):
+        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        durs = [2.0, 5.0, 6.0, 5.0, 6.0, 6.0, 7.0, 8.0]  # 45s
+        out = _fit_scene_durations(durs, 158.0, max_shot_s=9.0)  # scale 3.5
+        total = sum(d for _, d in out)
+        assert abs(total - 158.0) < 0.05
+        assert all(d <= 9.0 + 1e-6 for _, d in out)   # ceiling holds
+        assert len(out) > 8                            # cycled past the 8 shots
+        assert out[8][0] == 0                          # wrapped back to shot 0
+
+    def test_scene_count_guard_bounds_pathological_fill(self):
+        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        out = _fit_scene_durations([1.0], 10_000.0, max_shot_s=1.0, max_scenes=50)
+        assert len(out) == 50
+
+    def test_empty_or_zero_total_returns_originals(self):
+        from services.video_renderers.shot_list_renderer import _fit_scene_durations
+        assert _fit_scene_durations([], 30.0, max_shot_s=9.0) == []
+        assert _fit_scene_durations([0.0, 0.0], 30.0, max_shot_s=9.0) == [(0, 0.0), (1, 0.0)]
+
+
+class TestRenderShotListNarrationFit:
+    """Part 1 (#867): ``render_shot_list(narration_fit=True)`` lays out the
+    scenes to span the ACTUAL narration (probed via ffprobe) so the compositor
+    never clones the final frame to cover an overhang (the frozen tail). Off by
+    default, so the long lane keeps the director's durations untouched."""
+
+    def _image_gen_shots(self, durations: list[float]) -> VideoShotList:
+        # Alternate image_kenburns/image_gen (both render via the mocked
+        # image-gen path) so the schema's "no >2 consecutive same-source" rule
+        # never trips regardless of shot count.
+        shots = [
+            Shot(
+                idx=i,
+                duration_s=d,
+                intent=f"still {i}",
+                source="image_kenburns" if i % 2 == 0 else "image_gen",
+                prompt=f"a clean abstract gradient backdrop variant {i}",
+                kenburns_zoom=(1.0, 1.15) if i % 2 == 0 else None,
+                narration_offset_s=float(sum(durations[:i])),
+            )
+            for i, d in enumerate(durations)
+        ]
+        return _build_shot_list(shots)
+
+    async def _render_capture(self, tmp_path, monkeypatch, *, durations, probe_s, fit_kwargs):
+        """Render a shot list through a mocked image-gen + compositor, returning
+        ``(result, captured_scene_durations, probe_calls)``. ``probe_s`` is the
+        stubbed narration duration; ``probe_calls`` counts ffprobe consultations
+        so we can assert the OFF path never probes."""
+        from services.video_renderers import shot_list_renderer as slr
+
+        shot_list = self._image_gen_shots(durations)
+        audio_path = str(tmp_path / "narration.mp3")
+        with open(audio_path, "wb") as f:
+            f.write(b"fake audio")
+        output_path = str(tmp_path / "final.mp4")
+
+        mock_resp = MagicMock()
+        mock_resp.status_code = 200
+        mock_resp.headers = {"content-type": "image/png"}
+        mock_resp.content = b"fake-png-bytes"
+        mock_client = AsyncMock()
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client.post = AsyncMock(return_value=mock_resp)
+
+        def _factory(*args, **kwargs):
+            return mock_client
+
+        captured: dict = {}
+
+        class _MockCompositor:
+            def __init__(self, site_config=None):
+                self._sc = site_config
+
+            async def compose(self, request, **kwargs):
+                captured["scene_durs"] = [s.duration_s for s in request.scenes]
+                with open(request.output_path, "wb") as fh:
+                    fh.write(b"fake composed mp4 bytes")
+                return MagicMock(
+                    success=True,
+                    output_path=request.output_path,
+                    file_size_bytes=len(b"fake composed mp4 bytes"),
+                    duration_s=probe_s,
+                )
+
+        probe_calls = {"n": 0}
+
+        async def _fake_probe(path, *, ffprobe="ffprobe"):
+            probe_calls["n"] += 1
+            return probe_s
+
+        monkeypatch.setattr(slr, "_probe_duration_s", _fake_probe, raising=False)
+
+        with patch(
+            "services.media_compositors.ffmpeg_local.FFmpegLocalCompositor",
+            _MockCompositor,
+        ):
+            result = await slr.render_shot_list(
+                post_id="post-fit",
+                shot_list=shot_list,
+                audio_path=audio_path,
+                output_path=output_path,
+                image_gen_url="http://image-gen:9836",
+                site_config=None,
+                pool=None,
+                http_client_factory=_factory,
+                **fit_kwargs,
+            )
+        return result, captured.get("scene_durs", []), probe_calls["n"]
+
+    @pytest.mark.asyncio
+    async def test_narration_fit_rescales_scenes_to_narration(self, tmp_path, monkeypatch):
+        """3×15s = 45s of shots, narration 54s → scenes laid out to span ~54s."""
+        result, scene_durs, probe_calls = await self._render_capture(
+            tmp_path,
+            monkeypatch,
+            durations=[15.0, 15.0, 15.0],
+            probe_s=54.0,
+            fit_kwargs={"narration_fit": True, "narration_fit_max_shot_s": 20.0},
+        )
+        assert result.success is True
+        assert probe_calls == 1
+        assert abs(sum(scene_durs) - 54.0) < 0.1
+
+    @pytest.mark.asyncio
+    async def test_narration_fit_off_keeps_director_durations(self, tmp_path, monkeypatch):
+        """Default (long lane): scenes keep the director's 45s total; no probe."""
+        result, scene_durs, probe_calls = await self._render_capture(
+            tmp_path,
+            monkeypatch,
+            durations=[15.0, 15.0, 15.0],
+            probe_s=54.0,
+            fit_kwargs={},  # narration_fit defaults False
+        )
+        assert result.success is True
+        assert probe_calls == 0
+        assert scene_durs == [15.0, 15.0, 15.0]

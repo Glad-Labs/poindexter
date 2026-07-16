@@ -608,3 +608,53 @@ class TestRenderShortVideoAtom:
         assert ATOM_META.name == "media.render_short_video"
         assert ATOM_META.requires == ("task_id",)
         assert ATOM_META.produces == ("short_video_path",)
+
+
+class TestNarrationFitPlumbing:
+    """Part 1 (#867): the short atom opts into narration-fit; the long atom does
+    not; the master setting can force it off. render_from_state resolves the
+    per-shot ceiling from site_config."""
+
+    @pytest.mark.asyncio
+    async def test_short_lane_passes_narration_fit_to_renderer(self):
+        site_config = SiteConfig(initial_config={
+            "video_narration_fit_enabled": "true",
+            "video_short_max_shot_seconds": "9",
+        })
+        state = {
+            "task_id": "t",
+            "short_shot_list": _SHORT_SHOT_LIST,
+            "site_config": site_config,
+        }
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await run_short(state)
+        kw = mock_render.await_args.kwargs
+        assert kw["narration_fit"] is True
+        assert kw["narration_fit_max_shot_s"] == 9.0
+
+    @pytest.mark.asyncio
+    async def test_long_lane_does_not_enable_narration_fit(self):
+        state = {"task_id": "t", "video_shot_list": _LONG_SHOT_LIST}
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await run_long(state)
+        assert mock_render.await_args.kwargs["narration_fit"] is False
+
+    @pytest.mark.asyncio
+    async def test_narration_fit_disabled_via_setting(self):
+        site_config = SiteConfig(initial_config={"video_narration_fit_enabled": "false"})
+        state = {
+            "task_id": "t",
+            "short_shot_list": _SHORT_SHOT_LIST,
+            "site_config": site_config,
+        }
+        mock_render = AsyncMock(return_value=_ok_result())
+        with patch.object(_media_render, "render_shot_list", mock_render):
+            await _media_render.render_from_state(
+                state,
+                shot_list_key="short_shot_list",
+                output_key="short_video_path",
+                narration_fit=True,
+            )
+        assert mock_render.await_args.kwargs["narration_fit"] is False

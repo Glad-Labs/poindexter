@@ -59,6 +59,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         output_key="short_video_path",
         narration_key="short_narration_audio_path",
         caption_key="short_caption_srt_path",
+        # Short lane only (issue #867): fit the visuals to the actual narration
+        # so the compositor never freezes the final frame over an overhang.
+        narration_fit=True,
     )
 
 

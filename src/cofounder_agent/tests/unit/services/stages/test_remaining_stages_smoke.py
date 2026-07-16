@@ -78,7 +78,12 @@ class TestNormalizeKeywords:
 
 class TestBuildScenePrompt:
     def test_includes_title_content_and_site_name(self):
-        prompt = _build_scene_prompt("My Title", "Content body.", "SiteName")
+        # target_seconds/target_words are threaded from video_short_target_seconds
+        # at the call site (#867); pass them explicitly here.
+        prompt = _build_scene_prompt(
+            "My Title", "Content body.", "SiteName",
+            target_seconds=45, target_words=112,
+        )
         assert "My Title" in prompt
         assert "Content body." in prompt
         assert "Full article at SiteName." in prompt
@@ -86,7 +91,9 @@ class TestBuildScenePrompt:
 
     def test_content_truncated_at_3000_chars(self):
         big = "x" * 5000
-        prompt = _build_scene_prompt("T", big, "S")
+        prompt = _build_scene_prompt(
+            "T", big, "S", target_seconds=45, target_words=112,
+        )
         # Truncated body appears; the slice size is exactly 3000
         assert "x" * 3000 in prompt
         assert "x" * 3001 not in prompt

@@ -28,8 +28,14 @@ from typing import Any
 from plugins.stage import StageResult
 from services.audio_gen_service import generate_audio, is_audio_gen_enabled
 from services.tts_service import is_tts_enabled, synthesize_speech
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
+
+# Narration pace estimate — mirrors generate_video_shot_list._WORDS_PER_SECOND
+# (~150 WPM). Kept local (not cross-stage imported) so the short prompt's word
+# target derives from the same second-target the shot-list clamp uses (#867).
+_WORDS_PER_SECOND = 2.5
 
 
 class GenerateMediaScriptsStage:
@@ -208,9 +214,12 @@ class GenerateMediaScriptsStage:
                     logger.warning("[MEDIA] video narration script failed: %s", vn_exc)
 
             # Call 2: Video scenes + short summary (single LLM call).
+            short_target_s = sc.get_int("video_short_target_seconds", 45) if sc is not None else 45
             scene_prompt = _build_scene_prompt(
                 title, clean_content,
                 sc.get("site_name", "our site") if sc is not None else "our site",
+                target_seconds=short_target_s,
+                target_words=round(short_target_s * _WORDS_PER_SECOND),
             )
 
             scene_output = ""
@@ -253,6 +262,44 @@ class GenerateMediaScriptsStage:
                     "[MEDIA] Video scenes: %d, Short summary: %d chars",
                     len(video_scenes), len(short_summary),
                 )
+
+                # Runaway-short cap (#867): a model that ignores the target can
+                # emit a 2-3 minute "short". Trim to the last full sentence
+                # within video_short_max_seconds so the narration can't outrun a
+                # short-form timeline (the renderer's narration-fit stretches the
+                # remaining gap). Deterministic, no LLM call, sentence-safe.
+                if short_summary:
+                    short_max_s = sc.get_int("video_short_max_seconds", 60) if sc is not None else 60
+                    max_short_words = round(short_max_s * _WORDS_PER_SECOND)
+                    short_summary, orig_w, kept_w = _trim_to_word_budget(
+                        short_summary, max_short_words,
+                    )
+                    if kept_w < orig_w:
+                        logger.info(
+                            "[MEDIA] short script trimmed %d->%d words (max %d)",
+                            orig_w, kept_w, max_short_words,
+                        )
+                        emit_finding(
+                            source="media.generate_scripts",
+                            kind="short_script_trimmed",
+                            title=f"short script trimmed {orig_w}->{kept_w} words",
+                            body=(
+                                f"The short summary for task {context.get('task_id')} ran "
+                                f"{orig_w} words (~{orig_w / _WORDS_PER_SECOND:.0f}s), over the "
+                                f"video_short_max_seconds budget of {short_max_s}s "
+                                f"({max_short_words} words). Trimmed to the last full sentence "
+                                f"within budget ({kept_w} words) so the short stays short. "
+                                "Advisory — tighten the short prompt if this is frequent."
+                            ),
+                            severity="info",
+                            dedup_key=f"short_script_trimmed:{context.get('task_id')}",
+                            extra={
+                                "task_id": str(context.get("task_id") or ""),
+                                "original_words": orig_w,
+                                "trimmed_words": kept_w,
+                                "max_words": max_short_words,
+                            },
+                        )
 
             # Audio gen — ambient video bed via StableAudioOpen.
             ambient_audio_path = ""
@@ -406,21 +453,66 @@ def _build_video_narration_prompt(title: str, clean_content: str) -> str:
         return _VIDEO_NARRATION_FALLBACK.format(title=title, content=content)
 
 
-def _build_scene_prompt(title: str, clean_content: str, site_name: str) -> str:
-    """Build the prompt for the video-scenes + short-summary LLM call."""
+def _build_scene_prompt(
+    title: str,
+    clean_content: str,
+    site_name: str,
+    *,
+    target_seconds: int,
+    target_words: int,
+) -> str:
+    """Build the prompt for the video-scenes + short-summary LLM call.
+
+    The short narration's second/word target is substituted from
+    ``video_short_target_seconds`` (issue #867) — never hardcoded — so the prompt
+    ask and the shot-list clamp agree (the old 60s/150w prompt vs a 45s clamp
+    guaranteed a ~15s frozen tail on every compliant script).
+    """
     return (
         "Generate TWO things for a blog post video:\n\n"
         "PART 1 — Write 6-8 numbered lines, each describing a photorealistic image "
         "for a video slideshow about this article. Each line is a Stable Diffusion XL prompt. "
         "Requirements: cinematic lighting, no people, no text, no faces, no hands, 4K quality. "
         "One scene per line.\n\n"
-        "PART 2 — After a blank line, write \"SHORT:\" on its own line, then write a 60-second "
-        "narration (about 150 words) summarizing the article for TikTok/YouTube Shorts. "
+        "PART 2 — After a blank line, write \"SHORT:\" on its own line, then write a "
+        f"~{target_seconds}-second narration (about {target_words} words) "
+        "summarizing the article for TikTok/YouTube Shorts. "
         f"Start with a hook, cover 2-3 key takeaways, end with \"Full article at {site_name}.\"\n\n"
         f"ARTICLE: {title}\n\n"
         f"{clean_content[:3000]}\n\n"
         "SCENES:"
     )
+
+
+# Sentence boundary for the runaway-short trim (#867): split after . ! ? + space.
+_SENTENCE_SPLIT = re.compile(r'(?<=[.!?])\s+')
+
+
+def _trim_to_word_budget(text: str, max_words: int) -> tuple[str, int, int]:
+    """Trim ``text`` to the last COMPLETE sentence within ``max_words``.
+
+    Returns ``(trimmed, original_words, kept_words)``. No-op when already within
+    budget. If the very first sentence already exceeds the budget (a single
+    run-on), hard-cut at ``max_words`` as a last resort (rare). Never cuts
+    mid-sentence otherwise — the short narration stays coherent (the same
+    concern #1874's mid-sentence-cut fix protected).
+    """
+    words = text.split()
+    original = len(words)
+    if original <= max_words:
+        return text, original, original
+    kept: list[str] = []
+    count = 0
+    for sentence in _SENTENCE_SPLIT.split(text.strip()):
+        w = len(sentence.split())
+        if count + w > max_words:
+            break
+        kept.append(sentence)
+        count += w
+    trimmed = " ".join(kept).strip()
+    if not trimmed:
+        return " ".join(words[:max_words]).strip(), original, max_words
+    return trimmed, original, count
 
 
 # Tolerant SHORT: marker (Glad-Labs/poindexter#689). The original

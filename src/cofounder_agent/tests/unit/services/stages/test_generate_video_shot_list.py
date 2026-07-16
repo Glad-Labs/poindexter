@@ -473,6 +473,16 @@ def test_estimate_short_duration_clamps_to_15_45() -> None:
     assert _estimate_short_duration(long_script) == 45.0
 
 
+def test_estimate_short_duration_clamps_to_target() -> None:
+    # The upper clamp is the operator-tunable video_short_target_seconds (#867),
+    # threaded in at the call site — no longer a hardcoded 45.
+    # 200 words / 2.5 = 80s → clamps down to the target.
+    assert _estimate_short_duration("word " * 200, target_seconds=45.0) == 45.0
+    assert _estimate_short_duration("word " * 200, target_seconds=30.0) == 30.0
+    # The 15s floor is independent of the target.
+    assert _estimate_short_duration("word " * 10, target_seconds=45.0) == 15.0
+
+
 def _make_valid_short_director_output() -> str:
     """JSON output for a 9:16 short that satisfies the schema validator."""
     return json.dumps({

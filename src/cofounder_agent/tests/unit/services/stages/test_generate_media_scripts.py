@@ -17,9 +17,11 @@ import pytest
 
 from modules.content.stages.generate_media_scripts import (
     GenerateMediaScriptsStage,
+    _build_scene_prompt,
     _build_video_narration_prompt,
     _parse_scene_output,
     _resolve_media_title,
+    _trim_to_word_budget,
 )
 
 
@@ -31,6 +33,10 @@ async def _fake_lock(*_a: Any, **_kw: Any):
 def _ctx() -> dict[str, Any]:
     sc = MagicMock()
     sc.get.return_value = "llama3:latest"
+    # A real SiteConfig.get_int returns the passed default for an unset key; the
+    # bare MagicMock would return a MagicMock and break the numeric short-cap
+    # comparison (#867). Mirror the real semantics for every get_int key.
+    sc.get_int.side_effect = lambda _key, default=0: default
     db = SimpleNamespace(pool=MagicMock())
     return {
         "title": "A Real Title",
@@ -39,6 +45,37 @@ def _ctx() -> dict[str, Any]:
         "database_service": db,
         "task_id": "t-mediascripts",
     }
+
+
+def test_scene_prompt_carries_target_no_hardcoded_counts() -> None:
+    """The short narration's second/word target is substituted from
+    video_short_target_seconds (#867), never hardcoded — so the prompt ask and
+    the shot-list clamp can't disagree (the old 60s/150w prompt vs 45s clamp
+    guaranteed a frozen tail)."""
+    p = _build_scene_prompt("T", "body", "Site", target_seconds=45, target_words=112)
+    assert "45-second" in p
+    assert "112 words" in p
+    # The old hardcoded literals are gone.
+    assert "150 words" not in p
+    assert "60-second" not in p
+
+
+def test_trim_noop_within_budget() -> None:
+    text = "One sentence. Two sentence."
+    assert _trim_to_word_budget(text, 50) == (text, 4, 4)
+
+
+def test_trim_cuts_on_sentence_boundary() -> None:
+    text = "Aaa bbb ccc. Ddd eee fff. Ggg hhh iii jjj kkk."  # 3+3+5 = 11 words
+    trimmed, orig, kept = _trim_to_word_budget(text, 7)
+    assert trimmed == "Aaa bbb ccc. Ddd eee fff."  # stops at the sentence <= 7
+    assert orig == 11 and kept == 6
+
+
+def test_trim_hardcuts_a_single_overlong_sentence() -> None:
+    text = "word " * 200  # one run, no sentence break
+    trimmed, orig, kept = _trim_to_word_budget(text.strip(), 50)
+    assert kept == 50 and orig == 200
 
 
 @pytest.mark.asyncio
@@ -89,6 +126,60 @@ async def test_happy_path_propagates_podcast_script_and_scenes():
 
     assert result.ok is True
     assert result.context_updates["podcast_script"] == "B" * 500
+
+
+@pytest.mark.asyncio
+async def test_runaway_short_is_trimmed_and_emits_finding():
+    """A short narration over video_short_max_seconds (default 60s → 150 words)
+    is trimmed to <= the budget and an advisory short_script_trimmed finding
+    fires (#867)."""
+    gpu = SimpleNamespace(lock=_fake_lock)
+    # 40 five-word sentences = 200 words, well over the 150-word (60s) budget.
+    runaway = " ".join(["The quick brown fox jumps."] * 40)
+    result_obj = SimpleNamespace(text=f"1. a scene\n2. another\n\nSHORT:\n{runaway}")
+    ctx = _ctx()
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch(
+             "services.podcast_service._build_script_with_llm",
+             new=AsyncMock(return_value="B" * 500),
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.emit_finding",
+         ) as mock_finding:
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok is True
+    trimmed = result.context_updates["short_summary_script"]
+    assert len(trimmed.split()) <= 150
+    assert mock_finding.call_count == 1
+    assert mock_finding.call_args.kwargs["kind"] == "short_script_trimmed"
+
+
+@pytest.mark.asyncio
+async def test_short_within_budget_is_not_trimmed():
+    """A short comfortably under the budget rides untouched — no finding."""
+    gpu = SimpleNamespace(lock=_fake_lock)
+    ok_short = " ".join(["Short and sweet."] * 5)  # 15 words, well under 150
+    result_obj = SimpleNamespace(text=f"1. a scene\n2. another\n\nSHORT:\n{ok_short}")
+    ctx = _ctx()
+    ctx["platform"] = MagicMock()
+    ctx["platform"].dispatch.complete = AsyncMock(return_value=result_obj)
+
+    with patch("services.gpu_scheduler.gpu", gpu), \
+         patch(
+             "services.podcast_service._build_script_with_llm",
+             new=AsyncMock(return_value="B" * 500),
+         ), \
+         patch(
+             "modules.content.stages.generate_media_scripts.emit_finding",
+         ) as mock_finding:
+        result = await GenerateMediaScriptsStage().execute(ctx, {})
+
+    assert result.ok is True
+    mock_finding.assert_not_called()
 
 
 # ---------------------------------------------------------------------------
