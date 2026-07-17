@@ -151,21 +151,32 @@ IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
 }
 
 
-def get_default_image_model(site_config: Any = None) -> ImageModel:
-    """Get the default image model from site_config or fallback.
+# The fallback when app_settings has no usable ``image_model``. Kept as ONE
+# constant because this function previously spelled ``sdxl_lightning`` four
+# times over (None-path, inline get() default, warning copy, ValueError path) —
+# and #2386's bake-off moved the seeded default to z_image_turbo without
+# catching any of them. Pinned to settings_defaults.DEFAULTS['image_model'] by
+# tests/unit/services/test_inline_defaults_match_seed.py.
+_DEFAULT_IMAGE_MODEL = ImageModel.Z_IMAGE_TURBO
 
-    Phase H step 5 (GH#95): when ``site_config`` is None (dispatcher
-    hasn't seeded it yet), returns the class-level default
-    ``sdxl_lightning``. Callers with an explicit instance (e.g. DI from
-    app.state) can pass it in to honor the app_settings override.
+
+def get_default_image_model(site_config: Any = None) -> ImageModel:
+    """Get the default image model from site_config, or the built-in fallback.
+
+    Phase H step 5 (GH#95): when ``site_config`` is None (dispatcher hasn't
+    seeded it yet), returns ``_DEFAULT_IMAGE_MODEL``. Callers with an explicit
+    instance (e.g. DI from app.state) can pass it in to honor the app_settings
+    override.
     """
     if site_config is None:
-        return ImageModel.SDXL_LIGHTNING
-    model_name = site_config.get("image_model", "sdxl_lightning")
+        return _DEFAULT_IMAGE_MODEL
+    model_name = site_config.get("image_model", _DEFAULT_IMAGE_MODEL.value)
     try:
         return ImageModel(model_name)
     except ValueError:
         logger.warning(
-            "Unknown IMAGE_MODEL '%s', falling back to sdxl_lightning", model_name,
+            "Unknown IMAGE_MODEL '%s', falling back to %s",
+            model_name,
+            _DEFAULT_IMAGE_MODEL.value,
         )
-        return ImageModel.SDXL_LIGHTNING
+        return _DEFAULT_IMAGE_MODEL

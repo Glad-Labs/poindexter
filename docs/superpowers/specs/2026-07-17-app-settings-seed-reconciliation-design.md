@@ -302,6 +302,65 @@ correction; refresh `_meta.last_updated`.
   (dead pins, fossils); the `daily_post_limit=1` style limits are product
   decisions and stay as-is.
 
+## Follow-up (decided 2026-07-17, separate from PRs 1–3)
+
+The operator asked whether to go further: **no defaults in code at all, every
+missing config fails loud.** Decided against, in favour of a narrower fix — the
+reasoning is worth recording because the instinct was right and the lever wasn't.
+
+**"No defaults" conflates two orthogonal questions.** _Where does a default live?_
+(single-source-of-truth) and _may this key be absent?_ (required-vs-optional) do
+not trade against each other. You can have one home for defaults AND fail-loud on
+the ~20 keys that matter.
+
+**The fail-loud primitive already exists and is 5% adopted.** `SiteConfig.require()`
+raises `RuntimeError` with remediation; `get()`'s docstring already points at it
+("For optional settings only. Use require() for required settings"). Adoption:
+**17 production callers vs 356 `get(key, default)` call sites.** Per
+`feedback_trace_orphaned_mechanisms_before_designing_fix`, re-wire it rather than
+build a new mechanism. `seed_loader.REQUIRED_KEYS` (9 boot-critical keys) is
+already the required/optional taxonomy in embryo.
+
+**The real defect is `get()`'s signature:**
+
+```python
+def get(self, key: str, default: str = "") -> str:
+```
+
+`''` is the unset sentinel (`feedback_app_settings_value_not_null`), so a bare
+`get("foo")` on a **missing** key returns `''` — indistinguishable from a key
+present-and-deliberately-empty. Nothing _can_ fail loud, because the signature
+erases the distinction before the caller sees it. Structurally identical to the
+`self_consistency` fail-open fixed in #2655 the same day: _if the neutral value
+you return on failure is inside the value's own domain, it's a lie the
+type-checker can't catch._ Note `SettingsService.get` already has the right shape
+(`default: str | None = None -> str | None`) — the two config seams disagree, and
+the one reached through DI is the lossy one.
+
+**Why full no-defaults backfires:** 1,242 live keys (CLAUDE.md's 1,090 is stale),
+most of them `*.threshold.*` tuning knobs where a default is correct; it removes
+the runnable free tier (`brain/seed_app_settings.json`'s entire purpose); and a
+_seeded row_ is discoverable from the console / MCP / Grafana while a _code
+default_ is invisible to all of them — deleting `settings_defaults.py` would make
+~397 keys undiscoverable without grepping source, against
+`feedback_design_for_llm_consumers`.
+
+**Decided scope (PR 4, after PRs 2–3):**
+
+1. Drop `default: str = ""` from `SiteConfig.get` so a caller must either pass an
+   explicit default (declaring the key optional) or call `require()`. Lint-enforceable.
+2. Grow `REQUIRED_KEYS` deliberately and route those keys to `require()`.
+3. **Deferred:** merging `settings_defaults.py` into the baseline seed. They are
+   not redundant — 734 vs 692 keys, only 337 overlapping — so neither generates
+   cleanly from the other today. Revisit after 1–2. This would obsolete the
+   code↔baseline half of the ratchet, which is an argument for landing the
+   ratchet first: it makes the 337-key overlap safe to reason about meanwhile.
+
+**Also fix while there:** `settings_defaults.py`'s docstring claims unseeded keys
+are "inserted lazily by SettingsService the first time the worker queries them."
+That is stale — `SettingsService.get` does not insert. It is the stated rationale
+for the module's existence, so it should not stay wrong.
+
 ## Risk
 
 **Matt's prod is untouched.** All three seeders are `ON CONFLICT DO NOTHING` and

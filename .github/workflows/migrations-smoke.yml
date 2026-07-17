@@ -91,5 +91,17 @@ jobs:
       - name: Lint settings seed/migration drift
         run: python scripts/ci/settings_seed_drift_lint.py
 
+      # Catches the three app_settings seed sources disagreeing on a key's
+      # VALUE — the gap poindexter#819 named and didn't close. First-writer-wins
+      # (all three are ON CONFLICT DO NOTHING), so a disagreement silently makes
+      # one value unreachable on a fresh install. settings_defaults.py and
+      # baseline.seeds.sql must agree exactly; brain/seed_app_settings.json is
+      # the free tier and may diverge only via a declared TIER_POLICY entry.
+      # NOTE: a fold-forward baseline squash re-imports live operator values and
+      # WILL red this — that's the guard working. See docs/operations/migrations.md.
+      # Static, no DB needed. (2026-07-17)
+      - name: Lint settings seed value drift
+        run: python scripts/ci/settings_seed_value_drift_lint.py
+
       - name: Run migrations against empty database
         run: python scripts/ci/migrations_smoke.py

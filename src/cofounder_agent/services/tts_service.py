@@ -130,6 +130,26 @@ def is_tts_enabled(site_config: Any) -> bool:
         return False
 
 
+def resolve_tts_format(site_config: Any) -> str:
+    """Resolve the TTS output format. THE single seam — do not inline a default.
+
+    Every caller that needs the format (the synth call itself, and the pipeline
+    stage naming the temp file) must come through here, so the file extension
+    and the actual audio bytes cannot disagree.
+
+    They did disagree: this stage defaulted to ``wav`` while the synth call
+    defaulted to ``mp3``, so an unconfigured install wrote mp3 bytes into a
+    ``.wav`` file. And ``wav`` is not merely a different choice — it is the
+    *unrecoverable* Speaches failure (#1696/#1706): only the first segment's
+    RIFF header survives the byte-concatenation, and ``ffmpeg -c copy`` remux
+    reads that first chunk and truncates. Never default to it.
+    """
+    fmt = _resolve(site_config, "podcast_tts_format", _DEFAULT_FORMAT)
+    # '' is the app_settings unset sentinel (feedback_app_settings_value_not_null),
+    # so an empty value means "unset", not "no extension".
+    return (fmt or _DEFAULT_FORMAT).strip().lower() or _DEFAULT_FORMAT
+
+
 def _resolve(site_config: Any, key: str, default: str) -> str:
     """Read a string setting, fall back to default on any error."""
     if site_config is None:
@@ -314,7 +334,7 @@ async def synthesize_speech(
     base_url = _resolve(site_config, "podcast_tts_base_url", _DEFAULT_BASE_URL)
     voice = voice or _resolve(site_config, "podcast_tts_voice", _DEFAULT_VOICE)
     model = _resolve(site_config, "podcast_tts_model", _DEFAULT_MODEL)
-    fmt = _resolve(site_config, "podcast_tts_format", _DEFAULT_FORMAT).lower()
+    fmt = resolve_tts_format(site_config)
 
     # Delegate the OpenAI POST + remux/loudnorm normalization to the shared,
     # engine-agnostic helper (the same one the bake-off TTSProvider plugins use).

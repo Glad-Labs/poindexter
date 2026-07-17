@@ -27,7 +27,7 @@ from typing import Any
 
 from plugins.stage import StageResult
 from services.audio_gen_service import generate_audio, is_audio_gen_enabled
-from services.tts_service import is_tts_enabled, synthesize_speech
+from services.tts_service import is_tts_enabled, resolve_tts_format, synthesize_speech
 from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
@@ -145,7 +145,7 @@ class GenerateMediaScriptsStage:
                 try:
                     import os
                     import tempfile
-                    suffix = (sc.get("podcast_tts_format", "wav") if sc else "wav") or "wav"
+                    suffix = resolve_tts_format(sc)
                     with tempfile.NamedTemporaryFile(
                         suffix=f".{suffix}", delete=False,
                     ) as tmp:

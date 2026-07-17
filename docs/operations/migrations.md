@@ -38,6 +38,21 @@ migrations in Poindexter. If you are adding a migration, read sections
   baseline-only. Orphan `schema_migrations` rows for the deleted files are
   harmless — the runner skips by filename and never reconciles the reverse
   direction.
+- **A squash regenerates the seeds from a LIVE DB — so it re-imports operator
+  drift. Reconcile before merging.**
+  `0000_baseline.seeds.sql` is regenerated fold-forward from a real database,
+  so it captures whatever prod held that day — including values that have since
+  drifted from `settings_defaults.py` (operator-tuned rates, stale defaults the
+  code has moved past). After any squash, run
+  `python scripts/ci/settings_seed_value_drift_lint.py` and reconcile every key
+  it reports **before** merging the squash PR. The lint reds precisely because
+  the regen re-imported drift — **that is the guard working, not a bug in the
+  squash.** Resolve each key toward the reference default (set the same value in
+  both `settings_defaults.py` and `0000_baseline.seeds.sql`), or — only for a
+  `brain/seed_app_settings.json` value that is a deliberate free-tier choice —
+  add a `TIER_POLICY` entry with a reason. This is the CI check that would
+  otherwise let the squash silently re-break the 30 keys reconciled in the
+  2026-07-17 pass (and the single key of poindexter#819 before it).
 - **New migrations use a UTC timestamp prefix:** `YYYYMMDD_HHMMSS_<slug>.py`
 - `0000_baseline.py` is the only legacy 4-digit file left in tree —
   renaming it would invalidate the `schema_migrations` rows of every

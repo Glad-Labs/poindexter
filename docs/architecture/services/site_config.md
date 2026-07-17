@@ -76,10 +76,34 @@ a seeded `SiteConfig` on an `AppContainer` so container-accessor modules
 
 `SiteConfig` reads from `app_settings`; it doesn't read its own
 settings. The set of keys depends entirely on what's in the table —
-~1,090 keys (~68 secret) as of 2026-06. See
+1,242 keys (~68 secret) on prod as of 2026-07. See
 [`docs/reference/app-settings.md`](../../reference/app-settings.md)
 for the current inventory, or run
 `poindexter settings list` to query the table directly.
+
+### Who seeds `app_settings` (fresh install)
+
+Three sources seed the table, all with `INSERT ... ON CONFLICT (key) DO
+NOTHING` — so **first writer wins**, and which one wins depends on the install
+path:
+
+| source                           | keys | when                                                                                                               |
+| -------------------------------- | ---- | ------------------------------------------------------------------------------------------------------------------ |
+| `brain/seed_app_settings.json`   | 81   | brain daemon boot, if the table is empty or missing a `REQUIRED_KEYS` value (free-tier profile, `_meta.tier=free`) |
+| `0000_baseline.seeds.sql`        | ~692 | migration runner, every boot                                                                                       |
+| `settings_defaults.py::DEFAULTS` | ~734 | `seed_all_defaults`, every boot, after migrations                                                                  |
+
+On `docker compose up` against an empty DB the brain seeds first (`worker`
+declares `depends_on: brain-daemon: service_healthy`), giving the precedence
+`brain > baseline > DEFAULTS`. Via `poindexter setup`, migrations plus
+`seed_all_defaults` run before any container, so the brain seed no-ops and the
+order is `baseline > DEFAULTS`. Either way, for a key the baseline also seeds,
+the `DEFAULTS` value is only reachable if it matches the baseline.
+`settings_defaults.py` and `0000_baseline.seeds.sql` must therefore agree on
+every overlapping key; `brain/seed_app_settings.json` may differ only via the
+declared `TIER_POLICY` allowlist. All three are held consistent by
+`scripts/ci/settings_seed_value_drift_lint.py` (in the `migrations-smoke`
+check).
 
 The only env vars `SiteConfig` itself touches:
 

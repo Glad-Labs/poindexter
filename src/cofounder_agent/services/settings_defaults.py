@@ -144,7 +144,7 @@ DEFAULTS: dict[str, str] = {
     'company_name': '',
     'company_founder_name': '',
     'company_founded_date': '2025-01-01',
-    'development_mode': '',
+    'development_mode': 'false',
     'disable_auth_for_dev': 'false',
     'environment': 'development',
     'owner_name': '',
@@ -274,7 +274,7 @@ DEFAULTS: dict[str, str] = {
     'podcast_script_model': 'ollama/gemma3:27b',
     'preferred_ollama_model': 'gemma3:27b',
     'inline_image_prompt_model': 'ollama/gemma3:27b',  # inline-image prompt-builder (public default; operator overlay pins the custom fine-tune)
-    'local_llm_api_url': 'http://localhost:11434',
+    'local_llm_api_url': 'http://host.docker.internal:11434',
     'model_role_image_decision': 'ollama/gemma3:27b',  # image-director reasoning (public default; operator overlay pins the custom fine-tune)
     # Writer places [IMAGE:]/[HERO-IMAGE:] markers; this caps how many inline
     # images survive normalization (feedback_no_hardcoded_lengths_in_prompts —
@@ -639,7 +639,7 @@ DEFAULTS: dict[str, str] = {
     # poindexter#716: vision alt-text + media-qa human-detect model key.
     # The baseline seeds this as 'qwen3-vl:30b'; seeded here too so fresh
     # installs without the baseline seeds can still get a sensible default.
-    'vision_alt_model': 'qwen3-vl:30b',
+    'vision_alt_model': 'ollama/qwen3-vl:30b',
     # Per-step model pins for utility LLM calls that previously resolved through
     # the (now-removed) cost_tier.* fallback. Each is read directly and fails
     # loud when empty — no tier indirection. Seeded to the model the step used
@@ -695,7 +695,7 @@ DEFAULTS: dict[str, str] = {
     'wan_server_url': '',
 
     # ----- RAG / retrieval -----
-    'niche_internal_rag_per_kind_limit': '5',
+    'niche_internal_rag_per_kind_limit': '4',
     'niche_internal_rag_snippet_max_chars': '600',
     # Cap internal_rag's discovery-batch share (finding #5); 1.0 disables.
     'niche_internal_rag_batch_share_cap': '0.5',
@@ -936,7 +936,7 @@ DEFAULTS: dict[str, str] = {
     'niche_batch_expires_days': '7',
     'niche_carry_forward_decay_factor': '0.7',
     'niche_embedding_model': 'nomic-embed-text',
-    'niche_goal_descriptions': '',
+    'niche_goal_descriptions': '{"TRAFFIC": "Topic likely to attract organic search traffic; trending keyword, broad appeal, evergreen demand.", "EDUCATION": "Topic that teaches the reader something concrete and useful they didn\'t know before.", "BRAND": "Topic that reinforces the operator\'s positioning and unique perspective.", "AUTHORITY": "Topic that demonstrates the operator\'s depth and expertise on something specific.", "REVENUE": "Topic that drives a commercial outcome: signups, sales, conversions, paid feature awareness.", "COMMUNITY": "Topic that resonates with the operator\'s existing audience; sparks discussion, shares, replies.", "NICHE_DEPTH": "Topic that goes deep on the operator\'s niche specialty rather than broad-audience content."}',
     'niche_ollama_chat_timeout_seconds': '300.0',
     'niche_top_n_per_pool': '5',
     # b2 pool-reader (poindexter#812): per-source row cap when run_sweep
@@ -1017,15 +1017,15 @@ DEFAULTS: dict[str, str] = {
     'content_validator_unlinked_citation_warning_threshold': '0',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
     'deepeval_enabled': 'true',
-    'enable_writer_self_review': 'false',
+    'enable_writer_self_review': 'true',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
     'guardrails_enabled': 'true',
     # why: advisory rail, cheap to run, data flows to audit_log for tuning per 2026-05-10 Lane D close-out
     'ragas_enabled': 'true',
-    'ragas_judge_model': '',
+    'ragas_judge_model': 'ollama/phi4:14b',
     'self_consistency_enabled': 'false',
     'self_consistency_sample_count': '3',
-    'self_consistency_threshold': '0.7',
+    'self_consistency_threshold': '0.55',
     # Content-originality rail (renamed from opening_originality 2026-07-12) —
     # flags a draft whose CONTENT near-duplicates an
     # existing published post (RAG self-echo). The two_pass writer grounds each
@@ -1154,7 +1154,7 @@ DEFAULTS: dict[str, str] = {
     # Leave empty to keep "text, words, letters, watermark, face, person, ..."
     # (Ignored by guidance-distilled models like z_image_turbo, which run at
     # CFG 0 and take no negative prompt.)
-    'image_negative_prompt': '',
+    'image_negative_prompt': 'text, words, letters, numbers, watermark, signature, logo, face, person, human, hands, fingers, blurry, low quality, distorted, deformed',
     # Style suffix appended to every image-gen prompt — niche brand voice.
     # Examples: "cyberpunk, neon accents" (tech), "natural light, botanical" (gardening)
     'image_base_style_prompt': '',
@@ -1165,7 +1165,7 @@ DEFAULTS: dict[str, str] = {
     # returns zero results.  Leave empty to use the built-in generic list.
     # Example for gardening: "plants, garden, outdoor, nature, floral"
     'image_pexels_fallback_keywords': '',
-    'image_styles': '',
+    'image_styles': '[\n    {"name": "flat_vector", "scene": "flat vector illustration", "tags": "simple geometric shapes, limited cyan and dark navy palette, tech iconography, clean minimal design, no text"},\n    {"name": "line_art", "scene": "thin white line art on pure black background", "tags": "wireframe blueprint aesthetic, technical drawing style, no text"},\n    {"name": "mono_diagram", "scene": "monochrome technical diagram", "tags": "white on dark slate, architectural blueprint feel, precise lines, no text"},\n    {"name": "terminal", "scene": "dark terminal aesthetic", "tags": "green and cyan glowing text on black, command line hacker style, no readable text"},\n    {"name": "cyberpunk_neon", "scene": "cyberpunk neon style", "tags": "dark background with glowing cyan and purple neon light lines, futuristic tech, moody, no text"},\n    {"name": "glassmorphism", "scene": "dark glassmorphism UI design", "tags": "frosted glass panels, subtle reflections, dark background, soft cyan glow, modern interface, no text"},\n    {"name": "silhouette", "scene": "dramatic dark silhouette", "tags": "black shapes on deep navy background, single bright cyan accent glow, no text"},\n    {"name": "isometric", "scene": "isometric 3D illustration", "tags": "colorful clean technical, servers and dashboards, low angle, no text"},\n    {"name": "low_poly", "scene": "low poly 3D geometric mesh style", "tags": "modern clean triangulated shapes, cyan and purple tones, no text"},\n    {"name": "watercolor", "scene": "soft watercolor washes with sharp technical line overlays", "tags": "abstract tech art, muted tones with cyan accents, no text"},\n    {"name": "pixel_art", "scene": "retro 16-bit pixel art style", "tags": "detailed pixel illustration, game aesthetic, bright colors on dark background, no text"},\n    {"name": "paper_cutout", "scene": "layered paper cutout craft style", "tags": "shadows between layers, colorful paper pieces, tactile handmade feel, no text"},\n    {"name": "risograph", "scene": "risograph print style", "tags": "grainy texture, limited 3 color palette, vintage print shop aesthetic, halftone dots, no text"}\n  ]',
     # Seconds the CLI waits for a POST /api/tasks/{id}/regen-image response.
     # Image generation blocks the HTTP handler, so this must exceed SDXL inference
     # time (~30-90s typical; longer after a post-crash boot window).
@@ -1389,31 +1389,10 @@ DEFAULTS: dict[str, str] = {
     # values here only affects new installs. Existing installs keep whatever
     # was seeded first; update via `poindexter settings set` to override.
     'tts_acronym_replacements': (
-        '{"SOC": "security operations", "CRM": "customer relationship management",'
-        ' "SLA": "service level agreement", "KPI": "key performance indicator",'
-        ' "ROI": "return on investment", "MVP": "minimum viable product",'
-        ' "POC": "proof of concept", "EOL": "end of life"}'
+        '{"SOC": "security operations", "CRM": "customer relationship management", "SLA": "service level agreement", "KPI": "key performance indicator", "ROI": "return on investment", "MVP": "minimum viable product", "POC": "proof of concept", "EOL": "end of life"}'
     ),
     'tts_pronunciations': (
-        '{"VRAM": "Vee RAM", "SRAM": "Ess RAM", "DRAM": "Dee RAM",'
-        ' "PB": "petabyte", "TB": "terabyte", "GB": "gigabyte",'
-        ' "MB": "megabyte", "KB": "kilobyte",'
-        ' "GHz": "gigahertz", "MHz": "megahertz", "kHz": "kilohertz",'
-        ' "Gbps": "gigabits per second", "Mbps": "megabits per second",'
-        ' "Kbps": "kilobits per second", "fps": "frames per second",'
-        ' "GitFlow": "git flow", "GitHub": "git hub", "GitLab": "git lab",'
-        ' "DevSecOps": "dev sec ops", "DevOps": "dev ops", "DevEx": "dev ex",'
-        ' "FastAPI": "fast A P I", "PostgreSQL": "postgres", "MongoDB": "mongo D B",'
-        ' "GraphQL": "graph Q L", "WebSocket": "web socket",'
-        ' "TypeScript": "type script", "JavaScript": "java script",'
-        ' "Next.js": "next J S", "Node.js": "node J S", "Vue.js": "view J S",'
-        ' "CI/CD": "See Eye See Dee", "I/O": "I O", "TCP/IP": "TCP IP", "OS/2": "OS 2",'
-        ' "e.g.": "for example", "i.e.": "that is", "etc.": "and so on",'
-        ' "vs": "versus", "vs.": "versus",'
-        ' "approx.": "approximately", "incl.": "including",'
-        ' "w/": "with", "w/o": "without",'
-        # "CI" must come after "CI/CD" so the slash form matches first.
-        ' "CI": "See Eye"}'
+        '{"I/O": "I O", "CI/CD": "See Eye See Dee", "DevEx": "dev ex", "DevOps": "dev ops", "GitHub": "git hub", "GitLab": "git lab", "TCP/IP": "TCP IP", "Vue.js": "view J S", "FastAPI": "fast A P I", "GitFlow": "git flow", "GraphQL": "graph Q L", "MongoDB": "mongo D B", "Next.js": "next J S", "Node.js": "node J S", "pgvector": "P G vector", "DevSecOps": "dev sec ops", "WebSocket": "web socket", "JavaScript": "java script", "PostgreSQL": "postgres", "TypeScript": "type script", "VRAM": "Vee RAM", "SRAM": "Ess RAM", "DRAM": "Dee RAM", "PB": "petabyte", "TB": "terabyte", "GB": "gigabyte", "MB": "megabyte", "KB": "kilobyte", "GHz": "gigahertz", "MHz": "megahertz", "kHz": "kilohertz", "Gbps": "gigabits per second", "Mbps": "megabits per second", "Kbps": "kilobits per second", "fps": "frames per second", "OS/2": "OS 2", "e.g.": "for example", "i.e.": "that is", "etc.": "and so on", "vs": "versus", "vs.": "versus", "approx.": "approximately", "incl.": "including", "w/": "with", "w/o": "without", "CI": "See Eye"}'
     ),
     # Domain TLD pronunciation for the spoken podcast outro. The outro speaks
     # site_domain aloud ("Visit gladlabs dot io ..."); a bare two-letter TLD
@@ -1441,9 +1420,9 @@ DEFAULTS: dict[str, str] = {
     'voice_agent_default_identity': 'operator',
     'voice_agent_identity': 'poindexter-bot',
     'voice_agent_livekit_enabled': 'true',
-    'voice_agent_livekit_url': '',
+    'voice_agent_livekit_url': 'ws://livekit:7880',
     'voice_agent_llm_model': 'gemma3:27b',
-    'voice_agent_ollama_url': 'http://localhost:11434/v1',
+    'voice_agent_ollama_url': 'http://host.docker.internal:11434/v1',
     'voice_agent_public_join_url': '',
     'voice_agent_public_livekit_url': '',
     'voice_agent_recall_k': '3',
@@ -1466,7 +1445,7 @@ When you call a tool, do NOT also say "let me check" or "one moment" — just em
 If the operator says something you cannot answer with a tool, answer plainly. Never claim you cannot hear or that you only process text — you are receiving live audio transcribed by Whisper.""",
     'voice_agent_tts_speed': '1.0',
     'voice_agent_tts_voice': 'bf_emma',
-    'voice_agent_vad_stop_secs': '0.2',
+    'voice_agent_vad_stop_secs': '0.4',
     # voice_agent_webrtc_* defaults retired 2026-05-08 — livekit is the
     # canonical voice surface. Existing app_settings rows from migrations
     # 0108 + 20260505 stay (orphan but harmless); no new installs seed them.
@@ -1598,7 +1577,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     # ``SiteConfig`` or missing DB row silently produced a NoopTracer
     # (spans dropped, Tempo panels empty).
     'enable_tracing': 'true',
-    'langfuse_host': '',
+    'langfuse_host': 'http://langfuse-web:3000',
     # Browser-facing Langfuse base for the console's trace "waterfall" deeplinks.
     # Distinct from langfuse_host (http://langfuse-web:3000, a Docker-internal
     # name the operator's browser can't resolve). Compose publishes the UI on
@@ -1634,7 +1613,7 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'pipeline_streaming_min_edit_interval_s': '5',
 
     # ----- Security / auth -----
-    'max_approval_queue': '3',
+    'max_approval_queue': '100',
     'oauth_issuer_url': '',
 
     # ----- Logging -----

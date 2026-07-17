@@ -111,9 +111,9 @@
     },
     {
       "key": "pipeline_critic_model",
-      "value": "ollama/gemma3:27b",
+      "value": "ollama/phi4:14b",
       "category": "models",
-      "description": "QA/content review model"
+      "description": "QA/content review model. Must be a model the operator has actually pulled; gemma3:27b was a dangling pin (~17GB, over the 8-16GB consumer VRAM target)."
     },
     {
       "key": "pipeline_fallback_model",
