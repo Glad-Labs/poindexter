@@ -6,9 +6,11 @@ boot-critical keys aren't present), we load the core seed from
 `brain/seed_app_settings.json` using `INSERT ... ON CONFLICT DO NOTHING` so
 any human-applied edits win over the seed.
 
-The core seed is the free-tier starter pack. The paid-tier Quick Start Guide
-ships an optimized seed overlay that the CLI applies on top (via
-`poindexter premium activate <license-key>` — see Gitea #225).
+The core seed is the free-tier starter pack. `poindexter premium activate
+<license-key>` records the license (`premium_*` keys) but does NOT apply a
+settings overlay. Operator-specific model pins are applied separately by
+`settings_defaults.apply_operator_model_overrides` from the mirror-stripped
+`services/operator_overrides.py` — see `project-oss-vs-operator-model-defaults`.
 
 This module has no external dependencies beyond asyncpg; it runs inside the
 brain container which ships asyncpg in its image.

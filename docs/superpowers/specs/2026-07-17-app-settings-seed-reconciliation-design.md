@@ -111,23 +111,37 @@ SDK as auto-initialising _whenever `sentry_dsn` is set_, so **every fresh OSS
 install boots an SDK shipping errors at a container that does not exist for
 them.** The brain seed already has `''` correctly.
 
-### 6. Agreement is not correctness — a class the ratchet cannot catch
+### 6. Agreement is not correctness — a real class, but my headline example was wrong
 
-`pipeline_writer_model` and `pipeline_fallback_model` are `ollama/gemma3:27b` in
-**all three sources**. Unanimous, so the ratchet passes green — and wrong anyway:
+> **CORRECTION (2026-07-17, post-merge).** This finding originally claimed
+> `pipeline_writer_model` / `pipeline_fallback_model` = `ollama/gemma3:27b` was
+> "unanimous but dead" and used it to justify a new sibling pinned-model check.
+> **That was false and is retracted.** `gemma3:27b` is the **sanctioned OSS
+> default**, chosen deliberately in stack#2018 (2026-06-30) _because_ it is
+> publicly pullable; the README documents `ollama pull gemma3:27b` and rates it
+> "16 GB — Writer, fallback." Its unanimity across all three sources is
+> **correct**. I conflated "not in Matt's fleet" with "dead": Matt's fleet runs
+> `gemma-4-31B-it-qat` via the **operator overlay** (`operator_overrides.
+OPERATOR_MODEL_PINS`, stripped from the mirror, conditional-upsert over the OSS
+> base) — the two-tier split working as designed, documented in
+> `project-oss-vs-operator-model-defaults`. No writer/fallback swap is warranted.
 
-- `gemma3:27b` is not in the operator fleet (verified against `/api/tags`).
-- It is ~17 GB, which **exceeds the 8–16 GB consumer-stack VRAM target**
-  (#1924, milestone #9) that the free tier is aimed at.
-- `reference_baseline_seeds_reseed_drift` already records `gemma3:27b` as one of
-  the dangling model pins that resurrected once.
+The underlying principle still holds — a value unanimous across all sources
+passes the ratchet without the ratchet vouching for its _correctness_ — but:
 
-Also unanimous-but-dead: `pipeline.stages.order` is seeded by baseline **and**
-brain with the pre-atom stage list (`verify_task, generate_content, …`) and has
-**zero non-test readers** — the pipeline has been graph_def-driven since #355.
+- **The sibling check already exists.** `tests/unit/services/test_oss_seed_model_hygiene.py`
+  guards the real failure (an operator-private tag leaking into the OSS seeds);
+  its `_OPERATOR_PRIVATE_MODEL_TAGS` list deliberately excludes `gemma3:27b`. No
+  new check is needed — see `feedback_trace_orphaned_mechanisms_before_designing_fix`.
+- **The one genuine unanimous-but-dead value is `pipeline.stages.order`** — seeded
+  by baseline + brain with the _pre-atom_ stage list (`generate_content`,
+  `cross_model_qa`, `replace_inline_images` — all deleted at the #355 atom
+  cutover) and with **zero readers** (the StageRunner that consumed it was
+  deleted 2026-05-16). That's a dead seed row, retired in the follow-up cleanup,
+  not a model-pin problem.
 
-This is why the ratchet is necessary but not sufficient, and why it gets a
-sibling check rather than being asked to do a job it structurally cannot.
+So the ratchet is necessary but not sufficient — the existing hygiene test, not a
+new one, covers the model half; the follow-up removes the one true fossil.
 
 ## Design
 
@@ -240,11 +254,13 @@ reintroduce operator values and the ratchet will red the squash PR. That is
 intended and is the whole point — but it means the squash runbook needs a step.
 `docs/operations/migrations.md` gets it.
 
-### Sibling check — pinned models must exist (Finding 6)
+### Sibling check — already exists (Finding 6, corrected)
 
-The ratchet structurally cannot catch a unanimous-but-wrong value. A separate
-check verifies every `*_model` pin in the seed sources against a known-model list
-rather than against the other files. Scoped to PR 3.
+> **CORRECTION.** This section originally proposed a new "pinned models must
+> exist" check. It is not needed: `tests/unit/services/test_oss_seed_model_hygiene.py`
+> already guards the real failure (an operator-private model tag leaking into the
+> OSS seeds). The value that prompted this — `gemma3:27b` — is the correct OSS
+> default, not a dead pin (see Finding 6). No new sibling check is built.
 
 ## Scope / PR split
 
@@ -260,12 +276,19 @@ the new lint + CI wiring; the two dangerous inline call-site defaults
 (`generate_media_scripts.py` `wav`, `image_service.py`/`_image_models.py`
 `sdxl_lightning`); docs.
 
-**PR 3 — free-tier profile revalidation.**
-`pipeline_writer_model` / `pipeline_fallback_model` off `gemma3:27b` onto a pin
-that fits the 8–16 GB consumer target; retire the `pipeline.stages.order` fossil
-from both seed sources; `image_generation_model` (`sdxl_lightning`, brain-only,
-post-#1947/#2386); the pinned-model sibling check; `seed_loader.py` docstring
-correction; refresh `_meta.last_updated`.
+**PR 3 — follow-up cleanup (scope corrected 2026-07-17).**
+The originally-planned "free-tier profile revalidation" evaporated: its
+centerpiece (swap `pipeline_writer_model` / `pipeline_fallback_model` off
+`gemma3:27b`) rested on the false premise retracted in Finding 6 — `gemma3:27b`
+is the correct OSS default and stays. The sibling check already exists. What
+actually remains is minor cleanup: retire the `pipeline.stages.order` fossil
+(zero readers, pre-atom stage list) from both seed sources; fix the
+`seed_loader.py` docstring (it claims `premium activate` applies a seed overlay
+— it does not, it only sets `premium_*` keys); fix stale prose in
+`anti-hallucination.md` (says the critic default is `gemma3:27b`; it is
+`phi4:14b`). (`image_generation_model` was already consistent; the brain-seed
+mojibake fix and the duplicate-`ImageModel`-enum consolidation are spawned as
+their own tasks.)
 
 ## Testing
 
