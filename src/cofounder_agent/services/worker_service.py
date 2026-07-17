@@ -104,6 +104,14 @@ class WorkerService:
                 )
             logger.info("[WORKER] Marked offline: %s", self.worker_id)
         except Exception:
+            # silent-ok: graceful-shutdown courtesy. Offline is authoritatively
+            # detected by heartbeat staleness — the brain's worker-offline
+            # threshold keys off last_heartbeat age, NOT this status flip (a hard
+            # crash never runs stop() at all), so a failed mark-offline just
+            # falls back to that always-required detection path. DEBUG (not the
+            # WARNING used on the recurring heartbeat-failure handler above) is
+            # deliberate: a one-shot DB-down shutdown is not independently
+            # actionable, and offline detection is unaffected.
             logger.debug("[WORKER] Failed to mark offline", exc_info=True)
 
     async def _heartbeat_loop(self):
@@ -190,12 +198,12 @@ class WorkerService:
             if not faulthandler.is_enabled():
                 faulthandler.enable()
             faulthandler.dump_traceback_later(secs, repeat=False)
-        except Exception:  # noqa: BLE001 — diagnostics must not break the worker
+        except Exception:  # noqa: BLE001 — silent-ok: best-effort faulthandler diagnostics must not break the worker; a failure loses only the optional hang stack-dump (e.g. no stderr fileno under captured output), not any worker function
             logger.debug("[WORKER] hang watchdog arm failed", exc_info=True)
 
     def _disarm_hang_watchdog(self) -> None:
         """Cancel any pending hang-watchdog dump (loop exit / shutdown)."""
         try:
             faulthandler.cancel_dump_traceback_later()
-        except Exception:  # noqa: BLE001 — best-effort teardown
+        except Exception:  # noqa: BLE001 — silent-ok: best-effort watchdog teardown at loop exit; the process is shutting down, so a cancel-dump failure is inert
             pass
