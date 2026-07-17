@@ -538,6 +538,22 @@ DEFAULTS: dict[str, str] = {
     # it's a no-op inside content stages that already hold the lock. Default ON;
     # operators with abundant VRAM can flip to 'false' to skip the serialization.
     'gpu_serialize_llm_dispatch': 'true',
+    # Exempt GPU-PINNED models from the shared GPU lock. A model routed by
+    # plugin.llm_provider.litellm.config.model_api_base_overrides to a second
+    # Ollama instance on its OWN card (glad-labs-stack#2051 — qwen3-vl on the
+    # 3090) contends for nothing that lock protects: _unload_ollama_models only
+    # evicts ollama_base_url, and image-gen / wan render on pipeline_gpu_index
+    # only. Serializing it anyway just queued it behind the writer until
+    # gpu_lock_acquire_timeout_seconds fired, and qa.vision fail-softs on
+    # timeout — so the vision rail silently "passed open" on 13-25% of calls
+    # (14d of cost_logs: qa_shot_vision 75.3% ok, caption_image 84.2%,
+    # qa_vision_image_relevance 86.5%, media_qa_topic_match 50.0%, every one
+    # capped at exactly the 900s lock timeout). Default ON — a no-op for any
+    # install with no override map (the OSS path). Flip to 'false' if your
+    # second instance shares ONE physical GPU with the first, where two servers
+    # genuinely do contend for the same VRAM. Read via
+    # services/llm_providers/dispatcher.py::_gpu_serialize_local_dispatch.
+    'gpu_pinned_endpoint_skips_lock': 'true',
     # VRAM budget guard (services/vram_budget.py + dispatcher clamp). The guard
     # estimates a model's footprint (weights + KV cache + overhead) and clamps
     # num_ctx so the projected footprint stays within (total - desktop_reserve),

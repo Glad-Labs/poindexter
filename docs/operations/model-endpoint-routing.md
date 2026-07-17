@@ -57,6 +57,18 @@ requires a second endpoint.
 - Both streaming and non-streaming calls honor the map. All LLM traffic
   flows through the LiteLLM provider, so the map covers every pipeline
   stage, QA rail, and job.
+- **A routed model skips the shared GPU lock.** Poindexter serializes local
+  LLM dispatches behind one GPU lock (`gpu_serialize_llm_dispatch`) so a model
+  load can't collide with an image/video render. A model routed to a
+  _different_ endpoint is exempt: it lives on its own server (and, per the
+  recipe below, its own card), the eviction path only ever targets the default
+  `api_base`, and renders are pinned to `pipeline_gpu_index` — so the lock
+  protects a routed model from nothing while forcing it to queue behind the
+  primary instance until `gpu_lock_acquire_timeout_seconds` fires. Because the
+  vision rail fails soft on timeout, that showed up as `qa.vision` silently
+  "passing open" rather than as an error. Set
+  `gpu_pinned_endpoint_skips_lock=false` if your second instance shares one
+  physical GPU with the first — two servers on one card genuinely do contend.
 
 ## Recipe: a second Ollama pinned to a specific GPU
 

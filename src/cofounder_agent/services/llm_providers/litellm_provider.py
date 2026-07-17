@@ -207,6 +207,67 @@ def _coerce_override_map(value: Any) -> dict[str, str]:
     }
 
 
+# Default namespace prefix for a bare model name ("gemma3:27b" →
+# "ollama/gemma3:27b"). Module-level so the provider instance and the routing
+# twin below resolve names identically; an install overrides it per-call via
+# the ``default_prefix`` config key.
+_DEFAULT_MODEL_PREFIX = "ollama/"
+
+
+def resolve_model_name(
+    model: str, default_prefix: str = _DEFAULT_MODEL_PREFIX,
+) -> str:
+    """Apply the default provider prefix to a bare model name.
+
+    ``ollama/gemma3:27b`` and inline ``http(s)://`` bases pass through; bare
+    ``gemma3:27b`` becomes ``ollama/gemma3:27b``. Shared by
+    ``LiteLLMProvider._resolve_model`` and :func:`pinned_api_base_for` so a
+    caller reasoning about WHERE a call lands resolves the name exactly the
+    way the dispatch will.
+    """
+    model = (model or "").strip()
+    if model.startswith("http"):
+        return model
+    if "/" in model:
+        return model
+    prefix = (default_prefix or _DEFAULT_MODEL_PREFIX).rstrip("/")
+    return f"{prefix}/{model}"
+
+
+def pinned_api_base_for(
+    model: str, provider_config: dict[str, Any] | None,
+) -> str | None:
+    """The NON-DEFAULT api_base this model is pinned to, or ``None``.
+
+    Module-level twin of ``LiteLLMProvider._api_base_for`` for callers that
+    must know where a call lands BEFORE the provider runs — notably the
+    dispatcher's GPU-lock decision: a model served by a second Ollama pinned
+    to its own GPU (glad-labs-stack#2051) contends for nothing the shared
+    ``gpu.lock("ollama")`` protects, so serializing it only starves it.
+
+    ``None`` means the model uses the install's default endpoint — the OSS
+    path, where no override map is configured. Never raises: a malformed map
+    degrades to "no override" exactly as it does for the provider, so the
+    lock decision cannot diverge from the routing.
+    """
+    cfg = provider_config or {}
+    overrides = _coerce_override_map(cfg.get("model_api_base_overrides"))
+    if not overrides:
+        return None
+    resolved = resolve_model_name(
+        model, str(cfg.get("default_prefix") or _DEFAULT_MODEL_PREFIX),
+    )
+    pinned = str(overrides.get(resolved) or "").strip()
+    if not pinned:
+        return None
+    # An override pointing back at the default endpoint is the SAME server: it
+    # shares the default GPU, so it is not a distinct placement.
+    default_base = str(cfg.get("api_base") or "").strip()
+    if default_base and pinned == default_base:
+        return None
+    return pinned
+
+
 class LangfuseConfigError(RuntimeError):
     """Raised when ``langfuse_tracing_enabled=true`` but a credential is
     missing.
@@ -596,7 +657,7 @@ class LiteLLMProvider:
 
     def __init__(self) -> None:
         self._configured = False
-        self._default_prefix = "ollama/"
+        self._default_prefix = _DEFAULT_MODEL_PREFIX
         self._api_base: str | None = None
         self._timeout = 120.0
         self._drop_params = True
@@ -775,12 +836,13 @@ class LiteLLMProvider:
         """Apply the default provider prefix when the caller passed a
         bare model name. ``ollama/gemma3:27b`` stays as-is;
         ``gemma3:27b`` becomes ``ollama/gemma3:27b``.
+
+        Delegates to the module-level :func:`resolve_model_name` so callers
+        that must resolve a name WITHOUT a provider instance (the
+        dispatcher's GPU-lock decision, via :func:`pinned_api_base_for`)
+        cannot drift from this behaviour.
         """
-        if "/" in model and not model.startswith("http"):
-            return model
-        if model.startswith("http"):
-            return model
-        return f"{self._default_prefix.rstrip('/')}/{model}"
+        return resolve_model_name(model, self._default_prefix)
 
     def _api_base_for(self, resolved_model: str) -> str | None:
         """Effective api_base for one call — per-model override wins.

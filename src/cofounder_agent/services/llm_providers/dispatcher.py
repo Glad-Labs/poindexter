@@ -131,6 +131,31 @@ def _is_paid_llm_call(model: str, provider_config: dict[str, Any] | None) -> boo
     return prefix not in _LOCAL_MODEL_PREFIXES
 
 
+def _routes_to_pinned_endpoint(
+    model: str, provider_config: dict[str, Any] | None,
+) -> bool:
+    """Whether this LOCAL dispatch is served by a GPU-pinned second endpoint.
+
+    ``model_api_base_overrides`` routes an eviction-prone model to its own
+    Ollama instance on its own card (glad-labs-stack#2051 — qwen3-vl on the
+    3090). Such an instance contends for nothing the shared GPU lock protects:
+    ``_unload_ollama_models`` only evicts ``ollama_base_url``, and image-gen /
+    wan render on ``pipeline_gpu_index`` only. Holding the lock for it merely
+    queues it behind the writer until ``gpu_lock_acquire_timeout_seconds``
+    fires — which fail-softs the vision rail to "unavailable, passing open".
+
+    Conservative toward SERIALIZING: any doubt (unreadable map, import
+    failure) returns False so the call keeps the pre-existing lock behaviour.
+    """
+    try:
+        from services.llm_providers.litellm_provider import pinned_api_base_for
+
+        return pinned_api_base_for(model, provider_config) is not None
+    except Exception:  # silent-ok: a routing read must never break dispatch;
+        # falling back to "not pinned" preserves the legacy serialize path.
+        return False
+
+
 def _gpu_serialize_local_dispatch(
     model: str, provider_config: dict[str, Any] | None,
 ) -> bool:
@@ -147,22 +172,36 @@ def _gpu_serialize_local_dispatch(
     impossible by construction. Paid/cloud calls use no local GPU, so they
     never serialize. Operators with abundant VRAM opt out via
     ``gpu_serialize_llm_dispatch=false``.
+
+    A model pinned to its OWN endpoint is also exempt: it owns a different
+    card, so the shared lock protects it from nothing and only starves it
+    (see :func:`_routes_to_pinned_endpoint`). Operators whose second instance
+    shares one physical GPU — where two servers genuinely do contend — keep
+    the legacy behaviour with ``gpu_pinned_endpoint_skips_lock=false``.
     """
     if _is_paid_llm_call(model, provider_config):
         return False
+    pinned = _routes_to_pinned_endpoint(model, provider_config)
     try:
         from services.container_registry import get_container
 
         container = get_container()
         if container is None:
-            # No container bootstrapped (CLI early paths, tests) — default to
-            # serializing; the reentrant lock is cheap when uncontended.
-            return True
-        return container.site_config.get_bool("gpu_serialize_llm_dispatch", True)
+            # No container bootstrapped (CLI early paths, tests) — serializing
+            # is the SAFE default only for models that share the default GPU.
+            return not pinned
+        site_config = container.site_config
+        if not site_config.get_bool("gpu_serialize_llm_dispatch", True):
+            return False
+        if pinned and site_config.get_bool(
+            "gpu_pinned_endpoint_skips_lock", True,
+        ):
+            return False
+        return True
     except Exception:  # silent-ok: a config-read failure defaults to the SAFE
         # behavior (serialize) — raising would break every dispatch, and a
         # per-call warning/finding on this hot path would be log noise.
-        return True
+        return not pinned
 
 
 # ---------------------------------------------------------------------------
