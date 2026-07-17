@@ -345,27 +345,7 @@ class GenerateContentStage:
 
         # Build the real-slug allowlist from the content generator's
         # internal-links cache, then scrub fabricated links using it.
-        real_slug_set: set[str] = set()
-        try:
-            links_cache = getattr(content_generator, "_internal_links_cache", [])
-            for link_line in links_cache:
-                if "/posts/" in link_line:
-                    slug = link_line.split("/posts/")[-1].strip().strip('"')
-                    if slug:
-                        real_slug_set.add(slug)
-        except Exception as exc:
-            # poindexter#455 — used to be silent. An empty real-slug
-            # allowlist makes scrub_fabricated_links() more aggressive
-            # (anything not on the list is a candidate to scrub),
-            # which can quietly remove legitimate internal links if
-            # the cache layout shifts. Debug-log so the scrub behavior
-            # change is traceable.
-            logger.debug(
-                "[generate_content] failed to build real-slug allowlist "
-                "from _internal_links_cache (%s: %s) — scrub_fabricated_links "
-                "will run with empty allowlist",
-                type(exc).__name__, exc,
-            )
+        real_slug_set = _build_real_slug_allowlist(content_generator)
         content_text = scrub_fabricated_links(content_text, known_slugs=real_slug_set)
 
         # Strip leaked image prompts / descriptions. LLMs sometimes emit
@@ -436,20 +416,14 @@ class GenerateContentStage:
         # Snapshot the initial draft into content_revisions so the feedback
         # loop can later diff this against the QA-revised + finalized
         # versions (internal tracker Phase 3.A2).
-        try:
-            from services.content_revisions_logger import log_revision
-            await log_revision(
-                database_service.pool,
-                task_id=task_id,
-                content=content_text,
-                title=title,
-                change_type="initial_draft",
-                change_summary="Writer first-pass output",
-                model_used=model_used,
-                quality_score=metrics.get("final_quality_score"),
-            )
-        except Exception as rev_err:
-            logger.debug("[content_revisions] initial snapshot failed: %s", rev_err)
+        await _snapshot_initial_draft(
+            database_service.pool,
+            task_id=task_id,
+            content=content_text,
+            title=title,
+            model_used=model_used,
+            quality_score=metrics.get("final_quality_score"),
+        )
 
         # Phase 0 lab observability (2026-05-28) — surface the prompt
         # provenance + niche_slug on the StageResult.metrics dict so
@@ -536,7 +510,24 @@ class GenerateContentStage:
                         "Research context from task: %d chars", len(caller_context),
                     )
         except Exception as e:
-            logger.debug("Failed to load task research_context: %s", e)
+            # The post still gets written — just without whatever research the
+            # caller attached (the seed-URL "Source article:" block). That is a
+            # quiet grounding downgrade, so surface it instead of debug-logging
+            # below the prod log level.
+            from utils.findings import emit_finding
+            emit_finding(
+                source="modules.content.writer_core",
+                kind="task_research_context_read_failed",
+                title="Caller research context unreadable — post written without it",
+                body=(
+                    f"get_task raised {type(e).__name__}: {e}. The writer proceeds "
+                    "with ResearchService + RAG layers only; anything the caller "
+                    "attached to the task is missing from the prompt."
+                ),
+                severity="info",
+                dedup_key="task_research_context_read_failed",
+                extra={"task_id": task_id, "error_type": type(e).__name__},
+            )
 
         # Re-run de-duplication. A caller-attached research_context that ALREADY
         # contains a build_context render is THIS task's own research being read
@@ -685,11 +676,12 @@ class GenerateContentStage:
             if not row:
                 return None
             sd = row["stage_data"]
+            # No inner try/except around these _json.loads calls: the outer
+            # handler already logs a warning and returns None, which is exactly
+            # what the inner guards did — so catching here only suppressed the
+            # one signal that says the bundle was lost to malformed JSON.
             if isinstance(sd, str):
-                try:
-                    sd = _json.loads(sd)
-                except Exception:
-                    return None
+                sd = _json.loads(sd)
             if not isinstance(sd, dict):
                 return None
             # Preferred read: the dev_diary job stashes the bundle at the
@@ -705,13 +697,14 @@ class GenerateContentStage:
                 try:
                     return _json.loads(preserved)
                 except Exception:
+                    # silent-ok: this is the fall-through, not a swallow — a
+                    # malformed preferred read drops to the legacy
+                    # task_metadata path below, whose own failure IS reported
+                    # by the outer handler.
                     pass
             tm = sd.get("task_metadata") or {}
             if isinstance(tm, str):
-                try:
-                    tm = _json.loads(tm)
-                except Exception:
-                    return None
+                tm = _json.loads(tm)
             if not isinstance(tm, dict):
                 return None
             cb = tm.get("context_bundle")
@@ -720,10 +713,7 @@ class GenerateContentStage:
                 if isinstance(inner, dict):
                     cb = inner.get("context_bundle")
             if isinstance(cb, str):
-                try:
-                    cb = _json.loads(cb)
-                except Exception:
-                    return None
+                cb = _json.loads(cb)
             return cb if isinstance(cb, dict) else None
         except Exception as e:
             logger.warning(
@@ -1106,13 +1096,112 @@ class GenerateContentStage:
                     "ORDER BY created_at DESC LIMIT 20"
                 )
             return "\n".join(f"- {r['title']}" for r in rows if r["title"])
-        except Exception:
-            return ""  # Non-critical — proceed without diversity check.
+        except Exception as exc:
+            # Non-blocking, but "proceed without diversity check" means the
+            # writer can now re-use a title it already published and nothing
+            # says so — the check is skipped, not merely degraded.
+            from utils.findings import emit_finding
+            emit_finding(
+                source="modules.content.writer_core",
+                kind="existing_titles_fetch_failed",
+                title="Existing-title fetch failed — title diversity check skipped",
+                body=(
+                    f"Reading recent published titles raised {type(exc).__name__}: "
+                    f"{exc}. The writer prompt carries no avoid-list, so a "
+                    "duplicate title can ship unnoticed."
+                ),
+                severity="info",
+                dedup_key="existing_titles_fetch_failed",
+                extra={"error_type": type(exc).__name__},
+            )
+            return ""
 
 
 # ---------------------------------------------------------------------------
 # Module-level helpers (lifted out for readability + testability)
 # ---------------------------------------------------------------------------
+
+
+def _build_real_slug_allowlist(content_generator: Any) -> set[str]:
+    """Slugs of the real internal links the content generator offered the writer.
+
+    Feeds ``scrub_fabricated_links(known_slugs=...)``, which treats anything
+    NOT on this list as a candidate to delete. So an empty allowlist is not a
+    neutral fallback — it makes the scrub maximally aggressive and quietly
+    removes *legitimate* internal links. poindexter#455 downgraded the failure
+    from silent to ``logger.debug``, but the worker only ships INFO+ to Loki,
+    so the "traceable" log reached nothing. Emit an info finding instead:
+    visible on the Findings dashboard, deduped, never paged.
+    """
+    real_slug_set: set[str] = set()
+    try:
+        links_cache = getattr(content_generator, "_internal_links_cache", [])
+        for link_line in links_cache:
+            if "/posts/" in link_line:
+                slug = link_line.split("/posts/")[-1].strip().strip('"')
+                if slug:
+                    real_slug_set.add(slug)
+    except Exception as exc:
+        from utils.findings import emit_finding
+        emit_finding(
+            source="modules.content.writer_core",
+            kind="real_slug_allowlist_build_failed",
+            title="Writer real-slug allowlist build failed — link scrub runs wide open",
+            body=(
+                f"Reading _internal_links_cache raised {type(exc).__name__}: {exc}. "
+                "scrub_fabricated_links will run with an EMPTY allowlist, so it "
+                "may delete legitimate internal links from this post."
+            ),
+            severity="info",
+            dedup_key="real_slug_allowlist_build_failed",
+            extra={"error_type": type(exc).__name__},
+        )
+    return real_slug_set
+
+
+async def _snapshot_initial_draft(
+    pool: Any,
+    *,
+    task_id: str,
+    content: str,
+    title: str,
+    model_used: str | None,
+    quality_score: Any,
+) -> None:
+    """Best-effort snapshot of the writer's first pass into content_revisions.
+
+    The feedback loop diffs this against the QA-revised + finalized versions
+    (internal tracker Phase 3.A2). Losing it doesn't fail the post, but every
+    later diff for the task silently compares against nothing — so surface it
+    rather than swallowing it. Never blocks the writer.
+    """
+    try:
+        from services.content_revisions_logger import log_revision
+        await log_revision(
+            pool,
+            task_id=task_id,
+            content=content,
+            title=title,
+            change_type="initial_draft",
+            change_summary="Writer first-pass output",
+            model_used=model_used,
+            quality_score=quality_score,
+        )
+    except Exception as exc:
+        from utils.findings import emit_finding
+        emit_finding(
+            source="modules.content.writer_core",
+            kind="content_revisions_snapshot_failed",
+            title="Initial-draft snapshot failed — revision diffs lose their baseline",
+            body=(
+                f"log_revision raised {type(exc).__name__}: {exc}. The task's "
+                "first-pass draft was not recorded, so the content_revisions "
+                "feedback loop has no baseline to diff later versions against."
+            ),
+            severity="info",
+            dedup_key="content_revisions_snapshot_failed",
+            extra={"task_id": task_id, "error_type": type(exc).__name__},
+        )
 
 
 _LEAKED_IMAGE_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -1179,6 +1268,9 @@ def _min_draft_chars(site_config: Any = None) -> int:
     try:
         return int(site_config.get_int("writer_min_draft_chars", 200))
     except Exception:  # noqa: BLE001 — defensive against test stubs
+        # silent-ok: a site_config stub without get_int falls back to the same
+        # documented 200-char floor the None branch above already returns —
+        # the check still runs, at its default threshold.
         return 200
 
 
@@ -1234,6 +1326,9 @@ async def _fail_empty_draft(
             },
         )
     except Exception:  # noqa: BLE001 — finding emission must never block the fail path
+        # silent-ok: this IS the finding path. Emitting a finding about a
+        # finding that failed to emit would recurse into the same broken
+        # dependency; the load-bearing status write above already landed.
         pass
 
     # 3. Audit event through the capability handle (Seam 1 Wave 3c, #667).
@@ -1247,6 +1342,9 @@ async def _fail_empty_draft(
                 severity="warning",
             )
     except Exception:  # noqa: BLE001
+        # silent-ok: redundant best-effort audit alongside the finding above,
+        # on the same fail path — the load-bearing status write already landed
+        # and the finding is the operator-facing signal.
         pass
 
 
@@ -1264,6 +1362,8 @@ def _self_review_enabled(site_config: Any = None) -> bool:
         raw = site_config.get("enable_writer_self_review", "true")
         return str(raw).lower() in ("true", "1", "yes")
     except Exception:
+        # silent-ok: a site_config stub without get() falls back to the same
+        # documented default as the None branch above — self-review stays on.
         return True
 
 
