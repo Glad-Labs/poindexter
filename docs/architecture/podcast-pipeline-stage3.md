@@ -270,3 +270,54 @@ all producers are conflict-aware so the one-video-per-post invariant holds going
 > un-reviewed video correctly stays off the feed until approved. This gates the
 > read-side surface independently of the §11 `video_long`→`video` rename +
 > distributor re-dispatch cutover above.
+
+## 12. Podcast one-per-post parity (shipped 2026-07-17 — #884)
+
+The §11 cutover gave the **video** lane a one-asset-per-post invariant
+(`uniq_media_assets_post_video_type` + a conflict-aware recorder + a link-time
+prune + `DISTINCT ON` delivery). The **podcast** lane was its unfinished twin —
+`record_media_asset` only upserted the video family, so `type='podcast'` fell
+through to a plain `INSERT`:
+
+- `PodcastService.generate_episode(force=True)` / `POST /podcast/generate/{post_id}`
+  re-INSERTed a fresh post-keyed `{post_id}.mp3` row on every regen.
+- Cross-path duplicates compounded it: the Stage-3 `podcast.persist` atom writes
+  a **task-keyed** `{task_id}.mp3` row (`post_id=NULL`, linked later), while
+  `PodcastService` writes a **post-keyed** `{post_id}.mp3` row — two rows, two
+  files, one post.
+
+Because `podcast_distribute`'s approved-undispatched query joined
+`media_assets` on `(post_id, type='podcast')` with **no newest-row filter**, a
+post with duplicate rows returned one row per duplicate; the deliver loop
+uploaded **each** render to the same deterministic key
+`podcast/{cdn_ver}/{post_id}.mp3` in a single cycle (last-write-wins,
+non-deterministic which render went live on Apple/Spotify), and `_STAMP_URL_SQL`
+stamped **all** the post's podcast rows. Observed in prod at fix time: **30
+redundant podcast rows across 29 posts; 27 of those posts already approved +
+dispatched** — the stale-render-to-feed path had fired, not merely a latent risk.
+
+The fix brings podcast to full video parity (mirrors §11):
+
+1. **Recorder** — `record_media_asset` now selects a `_PODCAST_UPSERT_CONFLICT`
+   `ON CONFLICT (post_id, type) … DO UPDATE` clause for a post-keyed podcast row,
+   so a regen refreshes the existing row instead of duplicating.
+2. **Migration** (`*_dedup_podcast_media_assets_and_add_unique_index.py`) — backs
+   up the redundant rows to `media_assets_dedup_backup`, deletes all-but-newest
+   per post (`created_at DESC, id DESC` — the same "newest render" rule delivery
+   uses), then creates the partial unique index
+   `uniq_media_assets_post_podcast_type` `(post_id, type) WHERE post_id IS NOT
+NULL AND type='podcast'` — the target the recorder's `ON CONFLICT` infers
+   against. Delete-before-create ordering, one transaction; idempotent.
+3. **Distributor** — `podcast_distribute` Pass 1 gains the §11 link-time guard:
+   before back-stamping a task-keyed render, `_EXISTING_PODCAST_SQL` checks the
+   post doesn't already hold a podcast asset; if it does, the orphan render row is
+   pruned (`_PRUNE_ORPHAN_SQL`) and a `duplicate_podcast_asset` finding is emitted
+   (self-heal, not silent). The approved-undispatched query gains
+   `DISTINCT ON (post_id) … ORDER BY post_id, created_at DESC` so delivery
+   collapses to the single newest render even if a duplicate ever slips through.
+
+Contract tests: `test_media_asset_recorder` (podcast `ON CONFLICT` shape),
+`test_podcast_distribute` (link-guard prune + `DISTINCT ON`), and the real-DB
+`tests/integration_db/test_dedup_podcast_media_asset` (unique guard blocks a 2nd
+row; recorder upsert is idempotent against the real index; migration de-dups +
+backs up losers). Closes [Glad-Labs/poindexter#884](https://github.com/Glad-Labs/poindexter/issues/884).

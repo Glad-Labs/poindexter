@@ -29,11 +29,16 @@ class _FakePool:
         unapproved: list[dict[str, Any]] | None = None,
         approved: list[dict[str, Any]] | None = None,
         resolve: Any = None,
+        existing: Any = None,
     ) -> None:
         self.unlinked = unlinked or []
         self.unapproved = unapproved or []
         self.approved = approved or []
         self.resolve = resolve
+        # Return value of the Pass-1 link-guard existing-podcast check
+        # (SELECT 1 FROM media_assets ...). Default None = post has no podcast
+        # asset yet, so the render links normally.
+        self.existing = existing
         self.executed: list[tuple[str, tuple[Any, ...]]] = []
 
     async def fetch(self, sql: str, *args: Any) -> list[dict[str, Any]]:
@@ -46,6 +51,10 @@ class _FakePool:
         return []
 
     async def fetchval(self, sql: str, *args: Any) -> Any:
+        # The link-guard existing-podcast check reads media_assets; the post
+        # resolve reads posts. Dispatch so the two return distinct fixtures.
+        if "FROM media_assets" in sql:
+            return self.existing
         return self.resolve
 
     async def execute(self, sql: str, *args: Any) -> str:
@@ -123,3 +132,60 @@ async def test_unlinked_asset_left_when_post_unresolved() -> None:
         await PodcastDistributeJob().run(pool, _cfg(True))
     link_calls = [a for (sql, a) in pool.executed if "post_id = $1" in sql]
     assert link_calls == []
+
+
+# --- #884: link-guard prune + newest-render delivery (media_distribute parity) ---
+
+
+@pytest.mark.asyncio
+async def test_pass1_prunes_orphan_when_post_already_has_podcast() -> None:
+    """A task-keyed render whose post already holds a podcast asset is pruned —
+    not linked — so the link UPDATE never violates uniq_media_assets_post_podcast_type
+    and the next cycle doesn't rediscover the orphan (mirrors media_distribute)."""
+    pool = _FakePool(
+        unlinked=[{"id": "a1", "task_id": "t1", "type": "podcast",
+                   "storage_path": "/dup.mp3"}],
+        resolve="p1",
+        existing=1,  # the post already has a podcast asset
+    )
+    with patch.object(podcast_distribute, "record_pending", new=AsyncMock()) as rp, \
+         patch.object(podcast_distribute, "emit_finding") as ef:
+        await PodcastDistributeJob().run(pool, _cfg(True))
+
+    # The orphan row was pruned, and it was NOT linked or seeded for approval.
+    prune_calls = [a for (sql, a) in pool.executed if "DELETE FROM media_assets" in sql]
+    link_calls = [a for (sql, a) in pool.executed if "SET post_id = $1" in sql]
+    assert ("a1",) in prune_calls
+    assert link_calls == []
+    rp.assert_not_awaited()
+    # A duplicate finding is emitted for observability (self-heal, not silent).
+    assert ef.call_count == 1
+    assert ef.call_args.kwargs.get("kind") == "duplicate_podcast_asset"
+
+
+@pytest.mark.asyncio
+async def test_pass1_links_when_no_existing_podcast() -> None:
+    """The guard is a no-op when the post has no podcast asset yet — the
+    task-keyed render links + seeds exactly as before (regression guard)."""
+    pool = _FakePool(
+        unlinked=[{"id": "a1", "task_id": "t1", "type": "podcast"}],
+        resolve="p1",
+        existing=None,  # no existing podcast asset for the post
+    )
+    with patch.object(podcast_distribute, "record_pending", new=AsyncMock()) as rp:
+        await PodcastDistributeJob().run(pool, _cfg(True))
+
+    link_calls = [a for (sql, a) in pool.executed if "SET post_id = $1" in sql]
+    prune_calls = [a for (sql, a) in pool.executed if "DELETE FROM media_assets" in sql]
+    assert ("p1", "a1") in link_calls
+    assert prune_calls == []
+    rp.assert_awaited()
+
+
+def test_approved_undispatched_query_picks_newest_render() -> None:
+    """Delivery collapses to one row per post (newest render) so a post with
+    duplicate podcast rows never uploads a stale render to the public feed (#884).
+    Mirrors the DISTINCT ON pattern already used by _UNAPPROVED_LINKED_SQL."""
+    sql = podcast_distribute._APPROVED_UNDISPATCHED_SQL
+    assert "DISTINCT ON (ma.post_id)" in sql
+    assert "created_at DESC" in sql

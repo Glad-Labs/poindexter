@@ -133,15 +133,19 @@ async def record_media_asset(
     if not mime_type:
         mime_type = _DEFAULT_MIME_TYPES.get(asset_type, "application/octet-stream")
 
-    # Recurrence-safe video producers (#1460): a video / video_short row with a
-    # post_id upserts under the (post_id, type) unique guard so a re-stamp updates
-    # the existing row rather than raising. Task-keyed renders (post_id=None) and
-    # images/podcast keep the plain INSERT — see _VIDEO_UPSERT_CONFLICT.
-    conflict = (
-        _VIDEO_UPSERT_CONFLICT
-        if (post_id is not None and asset_type in ("video", "video_short"))
-        else ""
-    )
+    # Recurrence-safe media producers: a video / video_short (#1460) or podcast
+    # (#884) row carrying a post_id upserts under its (post_id, type) partial
+    # unique guard so a re-stamp / regen refreshes the existing row rather than
+    # accumulating a duplicate. Task-keyed renders (post_id=None) and images keep
+    # the plain INSERT — a post legitimately holds many inline_image rows, and a
+    # task-keyed podcast (post_id=None) is linked + de-duplicated later by
+    # podcast_distribute. See _VIDEO_UPSERT_CONFLICT / _PODCAST_UPSERT_CONFLICT.
+    if post_id is not None and asset_type in ("video", "video_short"):
+        conflict = _VIDEO_UPSERT_CONFLICT
+    elif post_id is not None and asset_type == "podcast":
+        conflict = _PODCAST_UPSERT_CONFLICT
+    else:
+        conflict = ""
 
     try:
         async with pool.acquire() as conn:
@@ -159,7 +163,7 @@ async def record_media_asset(
                     $14, $15, $16
                 ){conflict}
                 RETURNING id
-                """,  # nosec B608 - conflict is "" or the hardcoded _VIDEO_UPSERT_CONFLICT constant, never external input
+                """,  # nosec B608 - conflict is "" or a hardcoded _VIDEO_UPSERT_CONFLICT / _PODCAST_UPSERT_CONFLICT constant, never external input
                 asset_type,
                 source,
                 storage_provider,
@@ -214,6 +218,28 @@ _VIDEO_UPSERT_CONFLICT = (
     "file_size_bytes = EXCLUDED.file_size_bytes, "
     "width = EXCLUDED.width, "
     "height = EXCLUDED.height, "
+    "duration_ms = EXCLUDED.duration_ms, "
+    "updated_at = NOW()"
+)
+
+
+# ON CONFLICT clause appended to the media_assets INSERT for a podcast row that
+# carries a post_id (#884). The (post_id, type) target + WHERE predicate MUST
+# stay identical to the partial index uniq_media_assets_post_podcast_type so
+# Postgres conflict inference resolves it; DO UPDATE refreshes the physical-file
+# attributes (a regen of the same logical episode) while preserving the original
+# provenance (source / provider_plugin / cost). No width/height — podcast is
+# audio-only. Without this, PodcastService.generate_episode(force=True) INSERTed
+# a fresh duplicate row per regen, and podcast_distribute — joining on
+# (post_id, type='podcast') with no newest-row filter — could then deliver a
+# non-deterministic (possibly stale) render to the public Apple/Spotify feed.
+_PODCAST_UPSERT_CONFLICT = (
+    " ON CONFLICT (post_id, type) "
+    "WHERE post_id IS NOT NULL AND type = 'podcast' "
+    "DO UPDATE SET "
+    "url = EXCLUDED.url, "
+    "storage_path = EXCLUDED.storage_path, "
+    "file_size_bytes = EXCLUDED.file_size_bytes, "
     "duration_ms = EXCLUDED.duration_ms, "
     "updated_at = NOW()"
 )

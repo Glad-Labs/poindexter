@@ -184,6 +184,38 @@ class TestRecordMediaAsset:
         )
         assert "ON CONFLICT" not in conn.fetchval.await_args.args[0]
 
+    # ---- podcast upsert under the (post_id,type) unique guard (#884) ----
+
+    async def test_podcast_family_insert_uses_on_conflict(self):
+        """A podcast row WITH a post_id upserts under uniq_media_assets_post_podcast_type
+        so a regen refreshes the row instead of accumulating a duplicate (poindexter#884).
+
+        The delivery job keyed on (post_id, type='podcast') would otherwise return
+        multiple rows and upload a non-deterministic render to the public feed.
+        """
+        pool, conn = _fake_pool(fetchval_return="pod-1")
+        await record_media_asset(
+            pool=pool, post_id="00000000-0000-0000-0000-000000000009",
+            asset_type="podcast", storage_path="/tmp/ep.mp3",
+        )
+        sql = conn.fetchval.await_args.args[0]
+        assert "ON CONFLICT" in sql
+        assert "DO UPDATE" in sql
+        # The conflict target must carry the podcast predicate so PG infers it
+        # against uniq_media_assets_post_podcast_type (not the video index).
+        assert "'podcast'" in sql
+
+    async def test_podcast_without_post_id_has_no_on_conflict(self):
+        """Task-keyed podcast renders (podcast.persist, post_id=None) fall outside the
+        partial index predicate, so they keep the plain INSERT — the post is resolved
+        + linked later by podcast_distribute."""
+        pool, conn = _fake_pool(fetchval_return="pod-2")
+        await record_media_asset(
+            pool=pool, post_id=None, task_id="t-9",
+            asset_type="podcast", storage_path="/tmp/ep.mp3",
+        )
+        assert "ON CONFLICT" not in conn.fetchval.await_args.args[0]
+
 
 # ---------------------------------------------------------------------------
 # media_asset_exists
