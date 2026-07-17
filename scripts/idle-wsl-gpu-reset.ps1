@@ -48,11 +48,42 @@ function Write-Log {
     Write-Host $line
 }
 
+# Resolve the Python interpreter that runs the checker. The checker needs
+# Python 3.13 + asyncpg + httpx + an importable brain.bootstrap. `poetry run`
+# from the main checkout is unreliable for exactly this task: a fresh worktree
+# has no env at all, and the main checkout's `poetry run python` can silently
+# resolve the wrong interpreter (3.11), which crashes the checker. So we point
+# at a concrete python.exe the same way the gpu-scraper / nvidia-smi-exporter
+# host tasks already do. Preference order:
+#   1. $POINDEXTER_IDLE_RESET_PYTHON - optional operator override (absolute
+#      path to a python.exe); the escape hatch when neither default fits.
+#   2. the repo-root .venv           - portable (resolves under wherever the
+#      repo is checked out) and the interpreter the sibling host GPU tasks use.
+#   3. `poetry run python`           - last resort so a box set up only via
+#      poetry still runs *something*; a wrong resolve there just makes the
+#      checker fail closed (no reset), never a bad reset.
+function Resolve-CheckerPython {
+    $override = $env:POINDEXTER_IDLE_RESET_PYTHON
+    if ($override -and (Test-Path $override)) { return , @($override) }
+
+    $venvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
+    if (Test-Path $venvPython) { return , @($venvPython) }
+
+    return , @("poetry", "run", "python")
+}
+
+$script:CheckerPython = Resolve-CheckerPython
+
 function Invoke-Checker {
     param([string[]]$CheckerArgs)
     Push-Location $backendDir
     try {
-        $output = & poetry run python $checkerScript @CheckerArgs 2>&1
+        $exe = $script:CheckerPython[0]
+        $prefixArgs = @()
+        if ($script:CheckerPython.Count -gt 1) {
+            $prefixArgs = $script:CheckerPython[1..($script:CheckerPython.Count - 1)]
+        }
+        $output = & $exe @prefixArgs $checkerScript @CheckerArgs 2>&1
         return @{ Output = ($output -join "`n"); ExitCode = $LASTEXITCODE }
     } finally {
         Pop-Location
@@ -60,6 +91,7 @@ function Invoke-Checker {
 }
 
 Write-Log "=== idle-wsl-gpu-reset starting (DryRun=$DryRun) ==="
+Write-Log "Checker interpreter: $($script:CheckerPython -join ' ')"
 
 # --- Idle time via the native Win32 GetLastInputInfo API --------------------
 Add-Type @"

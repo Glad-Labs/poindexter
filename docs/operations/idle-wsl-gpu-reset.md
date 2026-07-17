@@ -36,6 +36,19 @@ Two scripts, split by what each is actually good at:
   source of truth for every condition except idle time. Reuses the same
   DSN-resolution pattern as `scripts/image-gen-server.py` / `scripts/gpu-scraper.py`.
 
+The host script runs the checker with a **concrete Python interpreter, not
+`poetry run`** — from the main checkout `poetry run python` can silently
+resolve the wrong interpreter (3.11, which crashes the checker), and a fresh
+worktree has no poetry env at all. Resolution order (logged at the top of
+every run as `Checker interpreter:`):
+
+1. `$env:POINDEXTER_IDLE_RESET_PYTHON` — optional operator override, an
+   absolute path to a `python.exe` (the escape hatch when neither default fits).
+2. the repo-root `.venv\Scripts\python.exe` — portable and the same interpreter
+   the sibling `gpu-scraper.py` host task already uses.
+3. `poetry run python` — last resort; a wrong resolve here just makes the
+   checker fail closed (no reset), never a bad reset.
+
 All conditions must hold for a reset to fire:
 
 | #   | Condition                                                       | Setting                                     | Default |
@@ -44,12 +57,19 @@ All conditions must hold for a reset to fire:
 | 2   | User idle at least this long                                    | `idle_wsl_reset_min_idle_minutes`           | `20`    |
 | 3   | No `pipeline_tasks` in `in_progress`                            | (query, not a setting)                      | -       |
 | 4   | No media dispatch in the last N minutes                         | `idle_wsl_reset_inflight_grace_minutes`     | `15`    |
-| 5   | Render-GPU free VRAM below this (retention actually a problem)  | `idle_wsl_reset_trigger_free_vram_gb`       | `22`    |
+| 5   | Render-GPU free VRAM below this (retention actually a problem)  | `idle_wsl_reset_trigger_free_vram_gb`       | `28`    |
 | 6   | GPU utilization below `gpu_busy_threshold_percent` (not gaming) | `gpu_busy_threshold_percent` (existing key) | `30`    |
 | 7   | Last reset at least this long ago                               | `idle_wsl_reset_cooldown_hours`             | `6`     |
 
 Unreadable Prometheus telemetry fails **closed** (no reset) — same
 fail-closed posture as the VRAM gate itself.
+
+Condition 5's trigger is **clamped up to the render floor**
+(`media_render_min_free_vram_gb`, default `25`) whenever it is configured
+lower. A trigger below the floor is a dead zone: renders defer for lack of
+VRAM (free < floor) while the idle reset that would reclaim it never fires
+(free never drops under the lower trigger). The default is `28` — comfortably
+above the `25` floor (poindexter#881).
 
 ## Logs and notifications
 
