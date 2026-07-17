@@ -9,9 +9,22 @@ This module provides an async lock so that:
     for VRAM
   - Before image-gen / video render starts, any loaded Ollama model is unloaded
   - Before Ollama starts, image-gen pipeline is released (if loaded)
-  - Small models (embeddings) can coexist and skip the lock
   - If a non-stack app (e.g. a game) shares the GPU, optionally pause (gated;
     see "External-workload detection" below — off by default)
+
+No size-based exemption (poindexter#872):
+  Every caller of ``lock()`` serializes regardless of model size. The
+  components that DO coexist with a resident model — the embedding path, the
+  sentence-transformers reranker — do so by never taking the lock at all.
+  That is a known VRAM HAZARD (they stack on the resident writer at the pinch
+  point; see
+  docs/superpowers/specs/2026-06-22-single-gpu-vram-budget-stability-design.md),
+  not a designed exemption. An unread ``SMALL_MODEL_THRESHOLD_GB = 2.0``
+  constant advertised the opposite here until 2026-07-17; it was deleted
+  rather than implemented, because letting small models stack on an 18 GB
+  resident writer is precisely the WDDM sysmem-fallback that freezes the
+  desktop. A real coexist path would need a live free-VRAM headroom check,
+  not a static size threshold.
 
 Cross-process locking (poindexter#731):
   The in-process ``asyncio.Lock`` only serializes within one Python process.
@@ -116,9 +129,6 @@ def _prometheus_query_url() -> str:
     """
     return _sc_get("gpu_metrics_prometheus_url") or "http://prometheus:9090"
 
-
-# Models under this VRAM threshold (in GB) skip the lock — they can coexist.
-SMALL_MODEL_THRESHOLD_GB = 2.0
 
 # Gaming detection defaults — all overridable via app_settings (DB-first config)
 _DEFAULT_GPU_BUSY_THRESHOLD = 30  # GPU utilization % to consider "in use"

@@ -71,8 +71,13 @@ size↔context operating point with real numbers in hand.
   `OLLAMA_KV_CACHE_TYPE` / `OLLAMA_FLASH_ATTENTION` in compose or env.
 - **The reranker loads onto the GPU.** `rag_engine.py:630` calls
   `CrossEncoder(name)` with no `device=` arg → sentence-transformers defaults to
-  CUDA. It is a "small" model (skips the `SMALL_MODEL_THRESHOLD_GB = 2.0` lock) so
-  it stacks on the resident 18GB writer at the pinch point.
+  CUDA. It never takes `gpu.lock()` at all, so it stacks on the resident 18GB
+  writer at the pinch point.
+  > _Mechanism corrected 2026-07-17 (poindexter#872): this originally read
+  > "skips the `SMALL_MODEL_THRESHOLD_GB = 2.0` lock". No code ever read that
+  > constant — there was never a size-based lock exemption, and the constant
+  > has since been deleted. The finding stands (the reranker does stack); only
+  > the stated mechanism was wrong._
 - **Context is a uniform 8192 and only wired into legacy callers.**
   `ollama_client.py:132 _default_num_ctx()` reads `ollama_num_ctx` (default 8192,
   already DB-backed) and applies it to the 3 direct `ollama_client.py`
