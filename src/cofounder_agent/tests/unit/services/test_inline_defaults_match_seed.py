@@ -22,13 +22,14 @@ expectation here would just be a *sixth* copy free to drift. This ties the
 call site to the seed, so changing the seeded default either updates the call
 site or fails loudly.
 
-Scope note: `image_service.py` carries a SECOND `get_default_image_model` over a
-parallel `ImageModel` enum + registry that describes the retired local-diffusers
-render path (`pipeline_class="diffusers.*"`, `lora_repo`, `vram_gb`; the live
-path is the HTTP image-gen server via `_image_models.py` — CLAUDE.md #603). Its
-enum has no `z_image_turbo` member, so it can't return the prod default and is
-excluded here; consolidating the duplicate is logged separately. These tests
-pin the LIVE path.
+Scope note: `image_service.py` used to carry a SECOND `get_default_image_model`
+over a parallel `ImageModel` enum + registry (no `z_image_turbo` member), so it
+could not return the prod default and logged "Unknown IMAGE_MODEL 'z_image_turbo'"
+on every live path (CLAUDE.md #603). That duplicate has since been consolidated:
+`image_service.py` now imports + re-exports `ImageModel` / `IMAGE_MODEL_REGISTRY`
+/ `get_default_image_model` from `_image_models.py`, which is the single source
+of truth these tests pin. `tests/unit/services/test_image_service.py` covers the
+re-export path (`test_resolves_z_image_turbo_without_unknown_warning`).
 """
 
 from __future__ import annotations

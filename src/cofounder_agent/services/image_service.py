@@ -15,10 +15,10 @@ Architecture:
 - Proper error handling and fallback chains
 - Automatic photographer attribution from Pexels
 
-Supported Models:
-- sdxl_base: stabilityai/stable-diffusion-xl-base-1.0 (50 steps, ~6GB VRAM)
-- sdxl_lightning: SDXL base + ByteDance Lightning LoRA (4 steps, ~6GB VRAM)
-- flux_schnell: black-forest-labs/FLUX.1-schnell (4 steps, ~12GB VRAM)
+Supported Models: defined canonically in ``services.image_providers._image_models``
+(``ImageModel`` / ``IMAGE_MODEL_REGISTRY``), imported + re-exported here. The
+live default is ``z_image_turbo`` (HTTP image-gen server); sdxl_base /
+sdxl_lightning / flux_schnell describe the retired local-diffusers path.
 
 Cost: $0/month for all options (local GPU or CPU fallback)
 """
@@ -26,12 +26,16 @@ Cost: $0/month for all options (local GPU or CPU fallback)
 import asyncio
 import importlib
 import time
-from dataclasses import dataclass
 from datetime import datetime, timezone
-from enum import Enum
 from typing import TYPE_CHECKING, Any
 
 from services import live_activity
+from services.image_providers._image_models import (
+    IMAGE_MODEL_REGISTRY,
+    ImageModel,
+    ImageModelConfig,  # noqa: F401 — re-exported for back-compat (callers/tests import from here)
+    get_default_image_model,
+)
 from services.logger_config import get_logger
 from services.site_config import SiteConfig
 
@@ -113,83 +117,23 @@ logger = get_logger(__name__)
 # =============================================================================
 # IMAGE MODEL REGISTRY
 # =============================================================================
-
-
-class ImageModel(str, Enum):
-    """Available image generation models."""
-
-    SDXL_BASE = "sdxl_base"
-    SDXL_LIGHTNING = "sdxl_lightning"
-    FLUX_SCHNELL = "flux_schnell"
-
-
-@dataclass(frozen=True)
-class ImageModelConfig:
-    """Configuration for an image generation model."""
-
-    model_id: str
-    display_name: str
-    default_steps: int
-    default_guidance_scale: float
-    pipeline_class: str  # dotted import path within diffusers
-    lora_repo: str | None = None
-    lora_weight_name: str | None = None
-    scheduler_override: str | None = None  # e.g. "EulerDiscreteScheduler"
-    scheduler_kwargs: dict[str, Any] | None = None
-    torch_dtype_str: str = "float16"  # "float16" or "bfloat16"
-    vram_gb: float = 6.0
-    notes: str = ""
-
-
-IMAGE_MODEL_REGISTRY: dict[ImageModel, ImageModelConfig] = {
-    ImageModel.SDXL_BASE: ImageModelConfig(
-        model_id="stabilityai/stable-diffusion-xl-base-1.0",
-        display_name="Stable Diffusion XL Base",
-        default_steps=30,
-        default_guidance_scale=7.5,
-        pipeline_class="diffusers.StableDiffusionXLPipeline",
-        vram_gb=6.5,
-        notes="Original Stable Diffusion XL, high quality at 30-50 steps",
-    ),
-    ImageModel.SDXL_LIGHTNING: ImageModelConfig(
-        model_id="stabilityai/stable-diffusion-xl-base-1.0",
-        display_name="Stable Diffusion XL Lightning",
-        default_steps=4,
-        default_guidance_scale=0.0,
-        pipeline_class="diffusers.StableDiffusionXLPipeline",
-        lora_repo="ByteDance/SDXL-Lightning",
-        lora_weight_name="sdxl_lightning_4step_lora.safetensors",
-        scheduler_override="EulerDiscreteScheduler",
-        scheduler_kwargs={"timestep_spacing": "trailing"},
-        vram_gb=6.5,
-        notes="4-step distilled LoRA — 10x faster, great quality",
-    ),
-    ImageModel.FLUX_SCHNELL: ImageModelConfig(
-        model_id="black-forest-labs/FLUX.1-schnell",
-        display_name="Flux.1 Schnell",
-        default_steps=4,
-        default_guidance_scale=0.0,
-        pipeline_class="diffusers.FluxPipeline",
-        torch_dtype_str="bfloat16",
-        vram_gb=12.0,
-        notes="Best quality, needs ~12GB VRAM",
-    ),
-}
-
-
-def get_default_image_model(*, site_config: SiteConfig) -> ImageModel:
-    """Get the default image model from config or fallback.
-
-    SiteConfig DI (#272 Phase-2e): ``site_config`` is a required keyword.
-    Callers thread the run-bound instance (the ``ImageService`` methods pass
-    ``self._site_config``).
-    """
-    model_name = site_config.get("image_model", "sdxl_lightning")
-    try:
-        return ImageModel(model_name)
-    except ValueError:
-        logger.warning("Unknown IMAGE_MODEL '%s', falling back to sdxl_lightning", model_name)
-        return ImageModel.SDXL_LIGHTNING
+#
+# ``ImageModel`` / ``ImageModelConfig`` / ``IMAGE_MODEL_REGISTRY`` /
+# ``get_default_image_model`` are imported from
+# ``services.image_providers._image_models`` (see the import block above) and
+# re-exported here for backward compatibility (existing callers + test patches
+# keep working). That module is the SINGLE SOURCE OF TRUTH — it carries the
+# ``Z_IMAGE_TURBO`` member the live HTTP image-gen server actually renders
+# (scripts/image-gen-server.py), which this file's own copy never had.
+#
+# History: this file used to define a parallel, STALE copy of all four (only
+# sdxl_base / sdxl_lightning / flux_schnell — no ``z_image_turbo``). On every
+# live path ``get_default_image_model`` read the seeded prod default
+# ``image_model='z_image_turbo'``, missed it in the 3-member enum, hit
+# ``ValueError`` and logged "Unknown IMAGE_MODEL 'z_image_turbo', falling back
+# to sdxl_lightning" — returning the WRONG model (verified in Loki 2026-07-11).
+# Consolidating onto the canonical registry resolves the value. See the scope
+# note in tests/unit/services/test_inline_defaults_match_seed.py.
 
 
 class FeaturedImageMetadata:

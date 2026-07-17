@@ -7,6 +7,7 @@ generate_image_markdown, cache helpers, and factory.
 Heavy GPU/image-gen paths are not exercised; they are tested via flag checks only.
 """
 
+import logging
 from contextlib import asynccontextmanager
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -399,8 +400,8 @@ class TestGetImageServiceFactory:
 
 @pytest.mark.unit
 class TestImageModelEnum:
-    def test_has_three_members(self):
-        assert len(ImageModel) == 3
+    def test_has_four_members(self):
+        assert len(ImageModel) == 4
 
     def test_sdxl_base_value(self):
         assert ImageModel.SDXL_BASE.value == "sdxl_base"
@@ -410,6 +411,10 @@ class TestImageModelEnum:
 
     def test_flux_schnell_value(self):
         assert ImageModel.FLUX_SCHNELL.value == "flux_schnell"
+
+    def test_z_image_turbo_value(self):
+        # The live default (HTTP image-gen server) — absent from the old stale copy.
+        assert ImageModel.Z_IMAGE_TURBO.value == "z_image_turbo"
 
     def test_is_str_enum(self):
         # ImageModel inherits from str, so members are valid strings
@@ -491,11 +496,12 @@ class TestImageModelConfig:
 
 @pytest.mark.unit
 class TestImageModelRegistry:
-    def test_contains_all_three_models(self):
+    def test_contains_all_four_models(self):
         assert set(IMAGE_MODEL_REGISTRY.keys()) == {
             ImageModel.SDXL_BASE,
             ImageModel.SDXL_LIGHTNING,
             ImageModel.FLUX_SCHNELL,
+            ImageModel.Z_IMAGE_TURBO,
         }
 
     def test_all_entries_are_image_model_config(self):
@@ -534,6 +540,15 @@ class TestImageModelRegistry:
         assert cfg.vram_gb == 12.0
         assert cfg.pipeline_class == "diffusers.FluxPipeline"
 
+    def test_z_image_turbo_config(self):
+        # The live-default model, now reachable via the canonical registry.
+        cfg = IMAGE_MODEL_REGISTRY[ImageModel.Z_IMAGE_TURBO]
+        assert cfg.model_id == "Tongyi-MAI/Z-Image-Turbo"
+        assert cfg.default_steps == 9
+        assert cfg.default_guidance_scale == 0.0
+        assert cfg.torch_dtype_str == "bfloat16"
+        assert cfg.vram_gb == 13.0
+
 
 # ---------------------------------------------------------------------------
 # get_default_image_model(site_config=_test_sc())
@@ -542,10 +557,11 @@ class TestImageModelRegistry:
 
 @pytest.mark.unit
 class TestGetDefaultImageModel:
-    def test_returns_sdxl_lightning_when_env_not_set(self, monkeypatch):
+    def test_returns_z_image_turbo_when_env_not_set(self, monkeypatch):
+        # Canonical default tracks settings_defaults.DEFAULTS['image_model'].
         monkeypatch.delenv("IMAGE_MODEL", raising=False)
         result = get_default_image_model(site_config=_test_sc())
-        assert result is ImageModel.SDXL_LIGHTNING
+        assert result is ImageModel.Z_IMAGE_TURBO
 
     def test_returns_sdxl_base_from_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "sdxl_base")
@@ -565,12 +581,31 @@ class TestGetDefaultImageModel:
     def test_falls_back_on_invalid_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "nonexistent_model_xyz")
         result = get_default_image_model(site_config=_test_sc())
-        assert result is ImageModel.SDXL_LIGHTNING
+        assert result is ImageModel.Z_IMAGE_TURBO
 
     def test_falls_back_on_empty_string_env(self, monkeypatch):
         monkeypatch.setenv("IMAGE_MODEL", "")
         result = get_default_image_model(site_config=_test_sc())
-        assert result is ImageModel.SDXL_LIGHTNING
+        assert result is ImageModel.Z_IMAGE_TURBO
+
+    def test_resolves_z_image_turbo_without_unknown_warning(self, monkeypatch, caplog):
+        """Regression: the prod ``app_settings.image_model`` value ``z_image_turbo``
+        must resolve to a real ``ImageModel`` member.
+
+        The stale local copy of this enum had no ``Z_IMAGE_TURBO`` member, so
+        ``ImageModel("z_image_turbo")`` hit ``ValueError`` → logged
+        ``"Unknown IMAGE_MODEL 'z_image_turbo', falling back to sdxl_lightning"``
+        and returned the WRONG model on every live path (verified in Loki
+        2026-07-11). Consolidating onto the canonical registry
+        (``services.image_providers._image_models``) makes the value resolve.
+        """
+        monkeypatch.setenv("IMAGE_MODEL", "z_image_turbo")
+        with caplog.at_level(logging.WARNING):
+            result = get_default_image_model(site_config=_test_sc())
+        # Value compare (not ``is ImageModel.Z_IMAGE_TURBO``) so the assertion
+        # fails cleanly against the stale 3-member enum instead of AttributeError.
+        assert result.value == "z_image_turbo"
+        assert "Unknown IMAGE_MODEL" not in caplog.text
 
 
 # ---------------------------------------------------------------------------
@@ -1078,10 +1113,10 @@ class TestModelIntrospection:
         svc._active_model = ImageModel.SDXL_LIGHTNING
         assert svc.get_active_model() == ImageModel.SDXL_LIGHTNING
 
-    def test_list_available_models_returns_dict_with_all_three(self):
+    def test_list_available_models_returns_dict_with_all_registered(self):
         models = ImageService.list_available_models()
         assert isinstance(models, dict)
-        # All three from the registry
+        # Every model from the canonical registry (now includes z_image_turbo)
         for m in IMAGE_MODEL_REGISTRY:
             assert m.value in models
 
