@@ -106,6 +106,9 @@ class CheckMemoryStalenessJob:
                 )
             )
         except (ValueError, TypeError):
+            # silent-ok: a non-numeric override keeps default_threshold (the
+            # config default), so the staleness check still runs — just at the
+            # default window rather than the operator's malformed value.
             pass
 
         stale_writers: list[dict] = []
@@ -151,6 +154,9 @@ class CheckMemoryStalenessJob:
                     if (now - last_dt).total_seconds() < cooldown:
                         should_alert = False
                 except ValueError:
+                    # silent-ok: a corrupt stored cooldown timestamp fails OPEN
+                    # (should_alert stays True), so the alert still fires — the
+                    # safe direction for a monitoring job.
                     pass
 
             if not should_alert:
@@ -171,6 +177,10 @@ class CheckMemoryStalenessJob:
                     severity="warning",
                 )
             except Exception as e:
+                # silent-ok: the operator-facing alert still goes out via the
+                # Discord notify below (whose own failure IS surfaced as a
+                # finding); only the audit-trail row is lost here, and audit_log_bg
+                # is itself fire-and-forget background telemetry.
                 logger.debug("[MEMORY_STALE] audit event failed: %s", e)
 
             # Discord ops-channel notification.
@@ -186,7 +196,26 @@ class CheckMemoryStalenessJob:
                 await notify_operator(msg, critical=False)
                 alerts_fired.append(writer)
             except Exception as e:
-                logger.debug("[MEMORY_STALE] discord notify failed: %s", e)
+                # This IS the alert path — a silent failure here means the
+                # operator never learns the writer went stale. Surface it as a
+                # finding (a different channel that persists to the Findings
+                # board even when Discord itself is down) rather than a debug
+                # log the prod level never ships.
+                from utils.findings import emit_finding
+                emit_finding(
+                    source="services.jobs.check_memory_staleness",
+                    kind="memory_stale_notify_failed",
+                    title=f"Stale-memory alert for '{writer}' could not reach Discord",
+                    body=(
+                        f"notify_operator raised {type(e).__name__}: {e}. Writer "
+                        f"'{writer}' is stale ({age_seconds // 3600}h, threshold "
+                        f"{threshold // 3600}h) but the operator was not notified "
+                        "via Discord."
+                    ),
+                    severity="info",
+                    dedup_key=f"memory_stale_notify_failed:{writer}",
+                    extra={"writer": writer, "age_seconds": age_seconds},
+                )
 
             new_last_alerts[writer] = now.isoformat()
 
@@ -200,7 +229,24 @@ class CheckMemoryStalenessJob:
                     json.dumps(new_last_alerts),
                 )
             except Exception as e:
-                logger.debug("[MEMORY_STALE] state persist failed: %s", e)
+                # The cooldown dedup map wasn't saved — the next run reads the
+                # stale map and can re-alert (duplicate pages) or lose track of
+                # what already fired. Surface it instead of a debug log.
+                from utils.findings import emit_finding
+                emit_finding(
+                    source="services.jobs.check_memory_staleness",
+                    kind="memory_stale_state_persist_failed",
+                    title="Stale-memory alert cooldown state was not persisted",
+                    body=(
+                        f"Writing memory_stale_last_alerts raised "
+                        f"{type(e).__name__}: {e}. The alert-cooldown map is not "
+                        "saved, so the next run may re-send alerts already fired "
+                        "or lose track of the cooldown window."
+                    ),
+                    severity="info",
+                    dedup_key="memory_stale_state_persist_failed",
+                    extra={"error_type": type(e).__name__},
+                )
 
         return JobResult(
             ok=True,

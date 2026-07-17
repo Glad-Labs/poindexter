@@ -100,7 +100,6 @@
   "src/cofounder_agent/services/integrations/outbound_dispatcher.py": 1,
   "src/cofounder_agent/services/integrations/telegram_cli_passthrough.py": 1,
   "src/cofounder_agent/services/jobs/audit_published_quality.py": 1,
-  "src/cofounder_agent/services/jobs/check_memory_staleness.py": 5,
   "src/cofounder_agent/services/jobs/findings_alert_router.py": 3,
   "src/cofounder_agent/services/jobs/media_reconciliation.py": 2,
   "src/cofounder_agent/services/jobs/render_alertmanager_config.py": 1,
