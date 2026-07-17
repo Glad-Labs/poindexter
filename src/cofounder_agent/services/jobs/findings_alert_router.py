@@ -231,7 +231,9 @@ async def _dispatch_github_issue(
         try:
             list_proc.kill()
         except ProcessLookupError:
-            # `gh` already exited between the timeout and kill() — benign race.
+            # silent-ok: `gh` already exited between the timeout and kill() — a
+            # benign race, and the timeout itself is already logged at warning
+            # above (the operator-facing signal).
             pass
         return False
     if list_proc.returncode == 0:
@@ -241,7 +243,10 @@ async def _dispatch_github_issue(
                 logger.info("[findings_alert_router] dup issue exists: %r", title)
                 return True
         except json.JSONDecodeError:
-            pass  # fall through to create
+            # silent-ok: a malformed `gh issue list` payload just means the
+            # dup-check can't confirm an existing issue, so fall through to
+            # create — the safe direction (a duplicate issue beats a dropped one).
+            pass
 
     # Always include the `finding` marker; add any kind-derived labels.
     # gh fails the whole create on an unknown label, so the labels MUST exist
@@ -264,7 +269,9 @@ async def _dispatch_github_issue(
         try:
             create_proc.kill()
         except ProcessLookupError:
-            # `gh` already exited between the timeout and kill() — benign race.
+            # silent-ok: `gh` already exited between the timeout and kill() — a
+            # benign race, and the timeout itself is already logged at warning
+            # above (the operator-facing signal).
             pass
         return False
     if create_proc.returncode != 0:
