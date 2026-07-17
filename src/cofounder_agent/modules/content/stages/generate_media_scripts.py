@@ -389,20 +389,29 @@ def _first_h1(content: str) -> str:
 def _resolve_media_title(context: dict[str, Any]) -> str:
     """Resolve the reader-facing title for media narration (Bug C2).
 
-    The ``title`` channel can carry a polluted value: a style-rubric line
-    leaked by content.generate_title lands in ``pipeline_versions.title`` even
-    when the published post recovers a clean title from its content H1. Media
-    narration (the podcast intro "Today's episode: …" and the video voiceover)
-    must speak the real title, so prefer the clean sources — ``seo_title``,
-    then the content H1 — falling back to the raw ``title`` only as a last
-    resort.
+    Media narration — the podcast intro ("Today's episode: …") and the video
+    voiceover — is spoken aloud, so it must speak the FULL, clean title.
+
+    Two channels are unfit as the first choice:
+
+    - ``title`` can carry a polluted value: a style-rubric line leaked by
+      content.generate_title lands in ``pipeline_versions.title`` even when the
+      published post recovers a clean title from its content H1.
+    - ``seo_title`` is clamped to <=60 chars at a word boundary for the search
+      snippet, so on a long title it truncates mid-phrase — the "… Testing"
+      podcast-intro bug, where the full title was "… Testing Its Quality". A
+      spoken intro has no character budget, so the clipped form is wrong here.
+
+    Prefer the full clean title from the content H1 (the headline the reader
+    sees), then the clean-but-possibly-clipped ``seo_title``, then the raw
+    ``title`` channel only as a last resort.
     """
-    seo_title = (context.get("seo_title") or "").strip()
-    if seo_title:
-        return seo_title
     h1 = _first_h1(context.get("content") or "")
     if h1:
         return h1
+    seo_title = (context.get("seo_title") or "").strip()
+    if seo_title:
+        return seo_title
     return (context.get("title") or "").strip()
 
 

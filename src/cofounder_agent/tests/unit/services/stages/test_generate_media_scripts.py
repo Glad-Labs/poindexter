@@ -662,13 +662,16 @@ def test_video_narration_prompt_signals_audio_only_framing():
 # --- Bug C2: media narration must speak the real title, not a polluted one --
 # content.generate_title can leak a style-rubric line into the title channel;
 # the podcast intro ("Today's episode: {title}") then speaks rubric text. The
-# clean title lives in seo_title / the content H1.
+# full clean title lives in the content H1 (preferred), with seo_title as a
+# clean-but-clipped fallback over the raw title channel.
 
-def test_resolve_media_title_prefers_clean_seo_title_over_polluted_title():
+def test_resolve_media_title_prefers_seo_title_over_polluted_title_when_no_h1():
+    """With no H1 to recover a clean title from, seo_title still beats the
+    (possibly rubric-polluted) raw title channel (Bug C2)."""
     ctx = {
         "title": "Avoids the \"Version/Phase\" style: No mention of PRs or commits.",
         "seo_title": "Mechanical Keyboard Switches: Linear vs Tactile vs Clicky",
-        "content": "# Some H1\n\nbody",
+        "content": "body with no heading",
     }
     assert _resolve_media_title(ctx) == (
         "Mechanical Keyboard Switches: Linear vs Tactile vs Clicky"
@@ -686,3 +689,28 @@ def test_resolve_media_title_falls_back_to_content_h1_when_no_seo_title():
 def test_resolve_media_title_last_resort_raw_title():
     ctx = {"title": "Only Title Here", "content": "no heading body"}
     assert _resolve_media_title(ctx) == "Only Title Here"
+
+
+def test_resolve_media_title_prefers_full_h1_over_truncated_seo_title():
+    """Narration must speak the FULL title, not the <=60-char SEO-clipped one.
+
+    Regression (podcast intro "... Testing"): a long title clamped to <=60
+    chars at a word boundary for the search snippet leaves the spoken intro
+    trailing off mid-phrase — "Can the 'Critic' AI Really Catch Its Own
+    Mistakes? Testing" instead of "... Testing Its Quality". A spoken title has
+    no character budget, so narration prefers the full clean title from the
+    content H1 over the truncated seo_title.
+    """
+    full_title = (
+        "Can the 'Critic' AI Really Catch Its Own Mistakes? Testing Its Quality"
+    )
+    ctx = {
+        "title": full_title,
+        # The search-snippet form: derive_seo_title clamps to <=60 chars at a
+        # word boundary, so it truncates mid-phrase on "Testing".
+        "seo_title": (
+            "Can the 'Critic' AI Really Catch Its Own Mistakes? Testing"
+        ),
+        "content": f"# {full_title}\n\nbody text",
+    }
+    assert _resolve_media_title(ctx) == full_title
