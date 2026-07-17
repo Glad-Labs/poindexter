@@ -113,7 +113,8 @@ def _settings_rows(**overrides):
     base = {
         "idle_wsl_reset_enabled": "true",
         "idle_wsl_reset_min_idle_minutes": "20",
-        "idle_wsl_reset_trigger_free_vram_gb": "22",
+        "idle_wsl_reset_trigger_free_vram_gb": "28",
+        "media_render_min_free_vram_gb": "25",
         "idle_wsl_reset_cooldown_hours": "6",
         "idle_wsl_reset_inflight_grace_minutes": "15",
         "gpu_busy_threshold_percent": "30",
@@ -190,15 +191,79 @@ async def test_cooldown_active_blocks_reset(tmp_path):
 
 @pytest.mark.asyncio
 async def test_high_free_vram_blocks_reset(tmp_path):
-    """total-used = 30720-5120 = 25 GiB free, well above the 22 GB trigger
+    """total-used = 32768-2048 = 30 GiB free, above the 28 GB trigger
     -> retention isn't actually a problem, don't bounce the stack for nothing."""
     conn = _FakeConn(_settings_rows())
-    p1, p2, p3 = _patch_decide(conn, [30720.0, 5120.0, 2.0], tmp_path)
+    p1, p2, p3 = _patch_decide(conn, [32768.0, 2048.0, 2.0], tmp_path)
     with p1, p2, p3:
         result = await checker.decide(idle_minutes=60.0)
     assert result["should_reset"] is False
     assert any("retention not high" in r for r in result["reasons"])
-    assert result["checks"]["free_vram_gb"] == pytest.approx(25.0, abs=0.01)
+    assert result["checks"]["free_vram_gb"] == pytest.approx(30.0, abs=0.01)
+
+
+# ---------------------------------------------------------------------------
+# Trigger-vs-render-floor invariant (poindexter#881).
+#
+# media_render_min_free_vram_gb is the render floor: a media render defers
+# unless the GPU has at least that many GB free. The reclaim exists to lift the
+# GPU back over that floor, so a trigger BELOW the floor is incoherent — it
+# leaves a dead band where renders defer (free < floor) yet the reclaim never
+# fires (free >= trigger). The default trigger (28) sits above the floor (25),
+# and decide() clamps any configured trigger up to the floor so the two can't
+# silently drift into that gap.
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_dead_zone_between_old_trigger_and_floor_now_resets(tmp_path):
+    """The exact band the bug lived in: 23.6 GB free — a render defers (< 25
+    floor) but the OLD trigger of 22 left the reclaim ineligible (23.6 >= 22).
+    With the trigger now above the floor, the reclaim fires."""
+    conn = _FakeConn(_settings_rows())  # trigger 28, floor 25
+    # total 32768 MiB, used 8602 -> 23.6 GiB free
+    p1, p2, p3 = _patch_decide(conn, [32768.0, 8602.0, 2.0], tmp_path)
+    with p1, p2, p3:
+        result = await checker.decide(idle_minutes=60.0)
+    assert result["should_reset"] is True
+    assert result["reasons"] == ["all conditions satisfied"]
+    assert result["checks"]["free_vram_gb"] == pytest.approx(23.6, abs=0.1)
+
+
+@pytest.mark.asyncio
+async def test_trigger_below_floor_is_clamped_up(tmp_path):
+    """A trigger misconfigured below the floor is clamped up to it, so the
+    reclaim can always at least fire when renders defer. trigger=20 < floor=25;
+    at 23 GB free the raw trigger would block (23 >= 20) but the clamped-to-25
+    trigger fires (23 < 25)."""
+    conn = _FakeConn(_settings_rows(
+        idle_wsl_reset_trigger_free_vram_gb="20",
+        media_render_min_free_vram_gb="25",
+    ))
+    # total 32768, used 9216 -> 23.0 GiB free
+    p1, p2, p3 = _patch_decide(conn, [32768.0, 9216.0, 2.0], tmp_path)
+    with p1, p2, p3:
+        result = await checker.decide(idle_minutes=60.0)
+    assert result["should_reset"] is True
+    assert result["checks"]["trigger_free_vram_gb"] == pytest.approx(25.0, abs=0.01)
+    assert result["checks"]["configured_trigger_free_vram_gb"] == pytest.approx(20.0, abs=0.01)
+    assert result["checks"]["trigger_clamped_to_floor"] is True
+
+
+@pytest.mark.asyncio
+async def test_trigger_below_floor_clamp_still_blocks_when_ample(tmp_path):
+    """The clamp doesn't over-fire: trigger=20 clamped up to floor=25, but at
+    26 GB free that's still above the effective trigger, so no reset."""
+    conn = _FakeConn(_settings_rows(
+        idle_wsl_reset_trigger_free_vram_gb="20",
+        media_render_min_free_vram_gb="25",
+    ))
+    # total 32768, used 6144 -> 26.0 GiB free
+    p1, p2, p3 = _patch_decide(conn, [32768.0, 6144.0, 2.0], tmp_path)
+    with p1, p2, p3:
+        result = await checker.decide(idle_minutes=60.0)
+    assert result["should_reset"] is False
+    assert any("retention not high" in r for r in result["reasons"])
 
 
 @pytest.mark.asyncio
@@ -229,7 +294,7 @@ async def test_unreadable_prometheus_fails_closed(tmp_path):
 @pytest.mark.asyncio
 async def test_all_conditions_satisfied_allows_reset(tmp_path):
     """The happy path: idle long enough, nothing in progress, VRAM genuinely
-    low (5 GiB free < 22 GB trigger), GPU idle (2%), no cooldown."""
+    low (5 GiB free < 28 GB trigger), GPU idle (2%), no cooldown."""
     conn = _FakeConn(_settings_rows())
     p1, p2, p3 = _patch_decide(conn, [30720.0, 25600.0, 2.0], tmp_path)
     with p1, p2, p3:

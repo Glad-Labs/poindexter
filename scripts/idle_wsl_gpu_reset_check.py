@@ -131,6 +131,9 @@ _SETTINGS_KEYS = [
     "idle_wsl_reset_trigger_free_vram_gb",
     "idle_wsl_reset_cooldown_hours",
     "idle_wsl_reset_inflight_grace_minutes",
+    # The render floor the reclaim exists to protect — read so the trigger can
+    # be clamped to never sit below it (poindexter#881; see decide()).
+    "media_render_min_free_vram_gb",
     "gpu_busy_threshold_percent",
     "pipeline_gpu_index",
     "gpu_metrics_prometheus_url",
@@ -196,9 +199,25 @@ async def decide(idle_minutes: float) -> dict[str, Any]:
 
         idx = _as_int(settings.get("pipeline_gpu_index"), 0)
         prom_url = settings.get("gpu_metrics_prometheus_url") or "http://localhost:9091"
-        trigger_free_gb = _as_float(settings.get("idle_wsl_reset_trigger_free_vram_gb"), 22.0)
+        configured_trigger_gb = _as_float(
+            settings.get("idle_wsl_reset_trigger_free_vram_gb"), 28.0,
+        )
+        # The reclaim exists to lift the render GPU back over the render floor
+        # (media_render_min_free_vram_gb), so a trigger BELOW that floor is
+        # incoherent: it leaves a dead band where a render defers (free < floor)
+        # yet the reclaim that would fix it never fires (free >= trigger). Clamp
+        # the effective trigger up to the floor so the two thresholds can't
+        # silently drift into that gap (poindexter#881). The default (28)
+        # already sits above the floor (25); the clamp only bites a
+        # misconfiguration.
+        render_floor_gb = _as_float(settings.get("media_render_min_free_vram_gb"), 25.0)
+        trigger_free_gb = max(configured_trigger_gb, render_floor_gb)
         busy_threshold = _as_float(settings.get("gpu_busy_threshold_percent"), 30.0)
+        checks["configured_trigger_free_vram_gb"] = configured_trigger_gb
+        checks["render_floor_gb"] = render_floor_gb
         checks["trigger_free_vram_gb"] = trigger_free_gb
+        if trigger_free_gb > configured_trigger_gb:
+            checks["trigger_clamped_to_floor"] = True
         checks["gpu_busy_threshold_percent"] = busy_threshold
 
         total_mib = await _query_prometheus_scalar(

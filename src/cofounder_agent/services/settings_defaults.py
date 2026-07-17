@@ -466,7 +466,13 @@ DEFAULTS: dict[str, str] = {
     # supervised live run confirms the stack self-heals cleanly.
     'idle_wsl_reset_enabled': 'false',
     'idle_wsl_reset_min_idle_minutes': '20',
-    'idle_wsl_reset_trigger_free_vram_gb': '22',
+    # MUST stay >= media_render_min_free_vram_gb (25) — the reclaim exists to
+    # lift the render GPU back over that floor, so a trigger below it leaves a
+    # dead band where renders defer (free < 25) yet the reclaim never fires
+    # (free >= trigger). 28 keeps a 3 GB headroom above the floor so the reclaim
+    # fires proactively during idle. idle_wsl_gpu_reset_check.decide() also
+    # clamps the effective trigger up to the floor as a hard guard (poindexter#881).
+    'idle_wsl_reset_trigger_free_vram_gb': '28',
     'idle_wsl_reset_cooldown_hours': '6',
     'idle_wsl_reset_inflight_grace_minutes': '15',
     # Caption ASR engine for media.transcribe_narration. Default 'speaches'
