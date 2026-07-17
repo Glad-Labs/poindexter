@@ -264,7 +264,7 @@ async def recall_similar_turns(
           AND 1 - (embedding <=> $1::vector) >= $2
         ORDER BY embedding <=> $1::vector
         LIMIT ${limit_idx}
-    """
+    """  # nosec B608 - where_parts entries are hardcoded literal fragments with computed placeholder indices; values are bind params
 
     try:
         rows = await conn.fetch(sql, *params)

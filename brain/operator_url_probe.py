@@ -331,7 +331,7 @@ async def detect_tailscale_drift(pool) -> list[dict[str, str]]:
                 "db_ip": db_ip,
                 "live_ip": live_ip,
                 "fix": (
-                    f"UPDATE system_devices SET tailscale_ip = '{live_ip}', "
+                    f"UPDATE system_devices SET tailscale_ip = '{live_ip}', "  # nosec B608 - never executed as SQL; advisory text only, rendered into an operator notification by _format_drift_detail
                     f"updated_at = NOW() WHERE name = '{name}';"
                 ),
             })

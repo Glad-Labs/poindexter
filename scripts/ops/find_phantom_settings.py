@@ -122,7 +122,7 @@ def _render_report(
         lines.append("")
         lines.append("```sql")
         keys_sql = ", ".join(f"'{r['key']}'" for r in phantoms)
-        lines.append(f"DELETE FROM app_settings WHERE key IN ({keys_sql});")
+        lines.append(f"DELETE FROM app_settings WHERE key IN ({keys_sql});")  # nosec B608 - never executed as SQL; advisory copy-pasteable text in the printed markdown report only
         lines.append("```")
         lines.append("")
 

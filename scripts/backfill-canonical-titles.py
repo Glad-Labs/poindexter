@@ -227,7 +227,7 @@ async def _scan_pipeline_versions(
         ORDER BY task_id, version DESC
     """
     if limit:
-        query = f"SELECT * FROM ({query}) _sub LIMIT {int(limit)}"
+        query = f"SELECT * FROM ({query}) _sub LIMIT {int(limit)}"  # nosec B608 - limit is argparse type=int validated, never raw text
     rows = await conn.fetch(query)
 
     for row in rows:

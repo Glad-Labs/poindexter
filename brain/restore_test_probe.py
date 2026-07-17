@@ -341,7 +341,7 @@ def _table_count(name: str, db: str, table: str) -> int | None:
         return None
     rc, out, _ = _run_cmd(
         ["docker", "exec", name, "psql", "-U", "postgres", "-d", db,
-         "-tAc", f"SELECT count(*) FROM {table}"],
+         "-tAc", f"SELECT count(*) FROM {table}"],  # nosec B608 - table is regex-validated (_TABLE_NAME_RE) in _parse_tables before being added to the list, and re-validated above; db is always the hardcoded TARGET_DB constant
         _DOCKER_CMD_TIMEOUT)
     if rc != 0:
         return None

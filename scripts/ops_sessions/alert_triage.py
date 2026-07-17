@@ -93,7 +93,7 @@ async def _noisy_alerts() -> list[dict]:
         GROUP BY alertname
         HAVING COUNT(*) FILTER (WHERE dispatch_result NOT LIKE 'suppressed%') > {NOISE_THRESHOLD}
         ORDER BY n_paged DESC LIMIT 20
-        """  # noqa: S608 — interpolated values are module constants
+        """  # noqa: S608 — interpolated values are module constants  # nosec B608 - WINDOW/NOISE_THRESHOLD are hardcoded module constants (line 18-19), never external input; ruff's noqa:S608 isn't recognized by standalone bandit
     )
     return [dict(r) for r in rows]
 

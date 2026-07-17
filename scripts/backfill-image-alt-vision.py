@@ -153,10 +153,10 @@ async def mode_alt(conn, sc, pool, *, dry_run, post_id, limit, force) -> set[str
         "SELECT id, slug, title, content, "
         "COALESCE(metadata->>'topic', title) AS topic, "
         "featured_image_url "
-        f"FROM posts WHERE {where} ORDER BY published_at DESC NULLS LAST"
+        f"FROM posts WHERE {where} ORDER BY published_at DESC NULLS LAST"  # nosec B608 - where is built from hardcoded literal fragments; post_id travels as a $1 bind param via params
     )
     if limit:
-        sql += f" LIMIT {int(limit)}"
+        sql += f" LIMIT {int(limit)}"  # nosec B608 - limit is argparse type=int validated, never raw text
     rows = await conn.fetch(sql, *params)
     print(f"[alt] {len(rows)} post(s) to process (dry_run={dry_run}, force={force})")
 
@@ -212,10 +212,10 @@ async def mode_seo_desc(conn, sc, pool, *, dry_run, post_id, limit) -> set[str]:
     sql = (
         "SELECT id, slug, title, content, excerpt, "
         "COALESCE(metadata->>'topic', title) AS topic "
-        f"FROM posts WHERE {where} ORDER BY published_at DESC NULLS LAST"
+        f"FROM posts WHERE {where} ORDER BY published_at DESC NULLS LAST"  # nosec B608 - where is built from hardcoded literal fragments; post_id travels as a $1 bind param via params
     )
     if limit:
-        sql += f" LIMIT {int(limit)}"
+        sql += f" LIMIT {int(limit)}"  # nosec B608 - limit is argparse type=int validated, never raw text
     rows = await conn.fetch(sql, *params)
     print(f"[seo-desc] {len(rows)} post(s) missing meta description (dry_run={dry_run})")
 
@@ -260,9 +260,9 @@ async def mode_titles(conn, sc, pool, *, dry_run, post_id, limit) -> set[str]:
     if post_id:
         where += " AND id = $1::uuid"
         params.append(post_id)
-    sql = f"SELECT id, slug, title, seo_title FROM posts WHERE {where}"
+    sql = f"SELECT id, slug, title, seo_title FROM posts WHERE {where}"  # nosec B608 - where is built from hardcoded literal fragments; post_id travels as a $1 bind param via params
     if limit:
-        sql += f" LIMIT {int(limit)}"
+        sql += f" LIMIT {int(limit)}"  # nosec B608 - limit is argparse type=int validated, never raw text
     rows = await conn.fetch(sql, *params)
     touched: set[str] = set()
     n_seen = 0

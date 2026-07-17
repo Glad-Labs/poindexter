@@ -431,7 +431,7 @@ async def main(args: argparse.Namespace) -> None:
             FROM posts
             WHERE {' AND '.join(where_clauses)}
             ORDER BY published_at DESC
-        """
+        """  # nosec B608 - where_clauses entries are hardcoded literal fragments with computed placeholder indices; values are bind params
         posts = await conn.fetch(query, *params)
         logger.info(
             "Found %d post(s) with potential PNG/JPG images",

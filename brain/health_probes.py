@@ -1621,7 +1621,7 @@ async def probe_cadence_slo(pool) -> dict:
             FROM posts
             WHERE status = 'published'
               AND published_at >= NOW() - INTERVAL '{window_hours} hours'
-            """
+            """  # nosec B608 - window_hours is float-cast via the local _float() helper (ValueError falls back to a hardcoded default), never raw text
         )
         actual = row["c"] if row else 0
         last = row["last_published"] if row else None
@@ -1658,7 +1658,7 @@ async def probe_cadence_slo(pool) -> dict:
                 WHERE pt.niche_slug = $1
                   AND p.status = 'published'
                   AND p.published_at >= NOW() - INTERVAL '{window_hours} hours'
-                """,
+                """,  # nosec B608 - window_hours is float-cast via the local _float() helper (ValueError falls back to a hardcoded default), never raw text; niche_slug is bound as $1
                 n["slug"],
             )
             niche_actual = niche_row["c"] if niche_row else 0

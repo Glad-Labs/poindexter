@@ -2055,7 +2055,7 @@ async def auto_remediate(pool):
               AND updated_at < NOW() - INTERVAL '{cutoff_minutes} minutes'
               AND COALESCE(started_at, updated_at) < NOW() - INTERVAL '{cutoff_minutes} minutes'
             RETURNING task_id, topic
-        """)
+        """)  # nosec B608 - stale_minutes/cutoff_minutes are int-cast via _setting_int() (ValueError falls back to a hardcoded default), never raw text
         if stuck:
             topics = [r["topic"][:40] for r in stuck]
             task_ids = [r["task_id"] for r in stuck]
@@ -2090,7 +2090,7 @@ async def auto_remediate(pool):
             WHERE status = 'awaiting_approval'
               AND updated_at < NOW() - INTERVAL '{_approval_days} days'
             RETURNING task_id, topic
-        """)
+        """)  # nosec B608 - _approval_days is int-cast via _setting_int() (ValueError falls back to a hardcoded default), never raw text
         if expired:
             topics = [r["topic"][:40] for r in expired]
             actions_taken.append(f"auto-rejected {len(expired)} stale approval(s): {', '.join(topics)}")
@@ -2128,7 +2128,7 @@ async def auto_remediate(pool):
                  WHERE status = 'failed' AND updated_at > NOW() - INTERVAL '{_fail_win_h} hours') as recent_fails,
                 (SELECT COUNT(*) FROM pipeline_tasks_view
                  WHERE updated_at > NOW() - INTERVAL '{_fail_win_h} hours') as recent_total
-        """)
+        """)  # nosec B608 - _fail_win_h is int-cast via _setting_int() (ValueError falls back to a hardcoded default), never raw text
         if row and row["recent_total"] and row["recent_total"] > 0:
             fail_rate = row["recent_fails"] / row["recent_total"]
             if fail_rate > 0.5 and row["recent_fails"] >= 3:
@@ -2200,7 +2200,7 @@ async def generate_daily_digest(pool):
                 (SELECT COUNT(*) FROM page_views_human WHERE created_at >= date_trunc('day', NOW())) as views_today,
                 (SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs
                     WHERE created_at >= date_trunc('month', NOW())) as month_spend
-        """)
+        """)  # nosec B608 - _digest_h is int-cast via _setting_int() (ValueError falls back to a hardcoded default), never raw text
         if not stats:
             return
 

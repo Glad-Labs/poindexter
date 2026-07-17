@@ -44,7 +44,7 @@ if str(_SRC) not in sys.path:
 
 import asyncpg  # noqa: E402
 from services.excerpt_generator import generate_excerpt  # noqa: E402
-from services.multi_model_qa import format_qa_feedback_from_reviews  # noqa: E402
+from modules.content.multi_model_qa import format_qa_feedback_from_reviews  # noqa: E402
 
 
 def _resolve_db_url() -> str:
@@ -73,6 +73,17 @@ def _resolve_db_url() -> str:
 
 DB_URL = _resolve_db_url()
 
+# content_tasks is a compatibility view over pipeline_tasks (status passes
+# through directly), so this mirrors the pipeline_tasks_status_check DB
+# constraint — the ``--status`` CLI value is validated against it below
+# before being interpolated into the CREATE VIEW statement (which can't
+# bind a runtime parameter for a value in its own query definition).
+_VALID_TASK_STATUSES = frozenset({
+    "pending", "in_progress", "approved", "awaiting_approval", "awaiting_gate",
+    "rejected", "rejected_retry", "rejected_final", "failed", "completed",
+    "published", "cancelled", "dry_run", "superseded", "archived",
+})
+
 
 def _coerce_json(value) -> dict:
     """task_metadata is sometimes str (json), sometimes dict — normalize."""
@@ -99,7 +110,7 @@ async def backfill_category(conn, dry_run: bool, limit: int | None) -> int:
           AND task_metadata::text LIKE '%"category"%'
         ORDER BY created_at DESC
         {limit_clause}
-        """
+        """  # nosec B608 - limit is argparse type=int validated, never raw text
     )
     updated = 0
     for row in rows:
@@ -138,7 +149,7 @@ async def backfill_excerpt(conn, dry_run: bool, limit: int | None) -> int:
           AND LENGTH(content) > 100
         ORDER BY created_at DESC
         {limit_clause}
-        """
+        """  # nosec B608 - limit is argparse type=int validated, never raw text
     )
     updated = 0
     for row in rows:
@@ -185,7 +196,7 @@ async def backfill_qa_feedback(conn, dry_run: bool, limit: int | None) -> int:
           AND task_metadata IS NOT NULL
         ORDER BY created_at DESC
         {limit_clause}
-        """
+        """  # nosec B608 - limit is argparse type=int validated, never raw text
     )
     updated = 0
     for row in rows:
@@ -225,9 +236,14 @@ async def main(dry_run: bool, limit: int | None, status_filter: str | None) -> N
         # Status filter applies uniformly by wrapping the SELECT with a
         # subquery filter — keep it simple by short-circuiting here.
         if status_filter:
+            if status_filter not in _VALID_TASK_STATUSES:
+                sys.exit(
+                    f"--status {status_filter!r} is not a valid content_tasks "
+                    f"status (expected one of {sorted(_VALID_TASK_STATUSES)})"
+                )
             await conn.execute(
                 f"CREATE TEMP VIEW _gh86_scope AS "
-                f"SELECT * FROM content_tasks WHERE status = '{status_filter}'"
+                f"SELECT * FROM content_tasks WHERE status = '{status_filter}'"  # nosec B608 - status_filter is validated against _VALID_TASK_STATUSES above; CREATE VIEW can't bind a runtime parameter for its own query definition
             )
             print(f"Scoped to status = {status_filter!r}")
 

@@ -98,8 +98,13 @@ async def _scrub_table(
     content_column: str,
     where: str,
     dry_run: bool,
+    where_params: list | None = None,
 ) -> tuple[int, int, list[str]]:
     """Scrub token leaks from a single (table, content_column).
+
+    ``where`` is always built from hardcoded literal fragments by the
+    caller; any actual value (e.g. ``--post-id``) must travel in
+    ``where_params`` and be referenced from ``where`` as ``$1``, ``$2``, etc.
 
     Returns (rows_scanned, rows_updated, sample_ids_updated).
     """
@@ -112,7 +117,8 @@ async def _scrub_table(
         SELECT {id_column} AS row_id, {content_column} AS content
         FROM {table}
         WHERE {where}
-        """
+        """,  # nosec B608 - table/id_column/content_column are hardcoded literals at every call site; where is built from hardcoded fragments with actual values bound via where_params
+        *(where_params or []),
     )
 
     scanned = len(rows)
@@ -131,7 +137,7 @@ async def _scrub_table(
         if dry_run:
             continue
         await conn.execute(
-            f"UPDATE {table} SET {content_column} = $1 WHERE {id_column} = $2",
+            f"UPDATE {table} SET {content_column} = $1 WHERE {id_column} = $2",  # nosec B608 - table/id_column/content_column are hardcoded literals at every call site; values are bind params
             cleaned,
             row["row_id"],
         )
@@ -147,10 +153,12 @@ async def run(dry_run: bool, post_id: str | None, db_url: str) -> int:
 
         # 1) posts.content — published / drafts
         where = "content LIKE '%||%:%||%'"
+        where_params: list = []
         if post_id:
-            where = f"id = '{post_id}'::uuid AND {where}"
+            where = "id = $1::uuid AND " + where
+            where_params = [post_id]
         scanned, updated, sample = await _scrub_table(
-            conn, "posts", "id", "content", where, dry_run
+            conn, "posts", "id", "content", where, dry_run, where_params
         )
         total_updated += updated
         print(

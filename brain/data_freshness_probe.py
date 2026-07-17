@@ -159,7 +159,7 @@ async def _feed_age_minutes(pool: Any, feed: dict[str, Any]) -> float | None:
         where = f"WHERE {feed['filter_column']} = $1"
         args.append(str(feed["filter_value"]))
     sql = (
-        f"SELECT EXTRACT(EPOCH FROM (now() - max({feed['column']}))) / 60.0 "
+        f"SELECT EXTRACT(EPOCH FROM (now() - max({feed['column']}))) / 60.0 "  # nosec B608 - column/table/filter_column are regex-validated identifiers (_IDENTIFIER_RE) in _validate_entries; filter value is bound as $1
         f"AS age_min FROM {feed['table']} {where}"
     )
     try:
