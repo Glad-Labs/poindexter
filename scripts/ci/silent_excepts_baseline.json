@@ -50,7 +50,6 @@
   "src/cofounder_agent/modules/content/stages/generate_video_shot_list.py": 1,
   "src/cofounder_agent/modules/content/stages/writer_self_review.py": 1,
   "src/cofounder_agent/modules/finance/probes.py": 2,
-  "src/cofounder_agent/plugins/llm_providers/anthropic.py": 6,
   "src/cofounder_agent/plugins/llm_providers/gemini.py": 2,
   "src/cofounder_agent/plugins/llm_resilience.py": 4,
   "src/cofounder_agent/plugins/scheduler.py": 3,

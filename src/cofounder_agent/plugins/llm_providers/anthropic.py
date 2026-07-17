@@ -180,6 +180,9 @@ def _retry_after_seconds(headers: Any) -> float | None:
     try:
         raw = headers.get("retry-after") or headers.get("Retry-After")
     except Exception:  # pragma: no cover — defensive
+        # silent-ok: an unreadable header mapping is treated the same as an
+        # absent Retry-After — the retry manager falls back to its exponential
+        # schedule (per docstring), so the retry still happens.
         return None
     if raw is None:
         return None
@@ -392,9 +395,10 @@ class AnthropicProvider:
                 if enabled_val != "":
                     cfg["enabled"] = _to_bool(enabled_val)
             except Exception as e:  # pragma: no cover — defensive
-                # SiteConfig.get is sync and reads from the startup-loaded
-                # cache, so this should not fire. DEBUG so a misbehaving
-                # cache is at least visible in dev.
+                # silent-ok: SiteConfig.get is sync and reads the startup-loaded
+                # cache, so this should not fire; if it did, it's systemic cache
+                # corruption that surfaces on every setting read app-wide, not a
+                # per-provider signal. `enabled` keeps its prior-layer default.
                 logger.debug(
                     "[anthropic] site_config.get(enabled) failed: %s", e,
                 )
@@ -424,6 +428,9 @@ class AnthropicProvider:
                 try:
                     cfg["request_timeout_s"] = int(timeout_val)
                 except (TypeError, ValueError):
+                    # silent-ok: a non-numeric override keeps the prior
+                    # request_timeout_s (env/default layer) — a benign config
+                    # fallback, not a lost failure.
                     pass
             try:
                 pc_val = sc.get(
@@ -432,6 +439,9 @@ class AnthropicProvider:
                 if pc_val != "":
                     cfg["prompt_caching"] = _to_bool(pc_val)
             except Exception as e:  # pragma: no cover — defensive
+                # silent-ok: same sync-cache read as `enabled` above — a failure
+                # is systemic (surfaces app-wide), not a per-provider signal;
+                # prompt_caching keeps its prior-layer default.
                 logger.debug(
                     "[anthropic] site_config.get(prompt_caching) failed: %s", e,
                 )
@@ -444,6 +454,10 @@ class AnthropicProvider:
                 if api_key:
                     cfg["api_key"] = api_key
             except Exception as e:  # pragma: no cover — defensive
+                # silent-ok: falls back to the ANTHROPIC_API_KEY env var below;
+                # if BOTH are empty the SDK raises an AuthenticationError at the
+                # first real call, so a truly-missing key fails loudly there
+                # rather than being swallowed here.
                 logger.debug(
                     "[AnthropicProvider] get_secret failed (falling back "
                     "to per-call config): %s", e,
@@ -461,6 +475,8 @@ class AnthropicProvider:
             try:
                 cfg["request_timeout_s"] = int(per_call_timeout)
             except (TypeError, ValueError):
+                # silent-ok: a non-numeric per-call timeout_s keeps the resolved
+                # default — a benign caller-input fallback, not a lost failure.
                 pass
 
         return cfg
