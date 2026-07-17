@@ -411,6 +411,22 @@ _LEAK_PATTERNS = (
         "add it to the doc generator's _PRIVATE_KEY_PATTERNS.",
     ),
     LeakPattern(
+        # Sentry/GlitchTip DSN: scheme://<key>@host/<project>, where <key> is
+        # either a UUID (GlitchTip) or a 32-hex string (Sentry classic). The
+        # hex/UUID shape is what keeps ordinary userinfo URLs (postgres, redis)
+        # from tripping this. Added 2026-07-17 after baseline.seeds.sql shipped
+        # the operator's real GlitchTip DSN to the public mirror — the row is
+        # is_secret=false, so the squash's secret filter never saw it.
+        re.compile(
+            r"https?://(?:[0-9a-fA-F]{32}"
+            r"|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})@"
+        ),
+        "Sentry/GlitchTip DSN",
+        "A DSN is per-operator. Seed sentry_dsn as '' — the SDK stays off "
+        "when it is unset. Never seed a real DSN, even one on an internal "
+        "host: it points every fresh install's error reporting at you.",
+    ),
+    LeakPattern(
         # ``[\\/]+`` (one-or-more separators) so the SOURCE-escaped form
         # ``C:\\Users\\mattm`` is caught alongside the single-separator and
         # forward-slash forms. In Python source a Windows path is written with
