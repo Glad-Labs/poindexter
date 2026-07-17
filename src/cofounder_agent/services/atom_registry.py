@@ -307,8 +307,23 @@ def _make_stage_runner(
         pool = getattr(db, "pool", None) if db else None
         if pool is None:
             pool = fallback_pool
-        node = make_stage_node(stage, pool, record_sink=None)
-        return await node(state)  # type: ignore[arg-type]
+        # Local throwaway sink (poindexter#873). make_stage_node already builds
+        # a record carrying the stage's StageResult.metrics, but only when a
+        # sink is passed — the old record_sink=None discarded it, which is why
+        # atom_runs.metrics never carried content_length / model_used /
+        # prompt_template_key. This sink is local: it never reaches the graph's
+        # real record_sink, so no duplicate atom_runs row is written (_wrap_atom
+        # stays the only writer). A plain list has no append_and_notify, so
+        # _emit_record just appends — no DB write. We only lift the metrics onto
+        # the reserved _atom_metrics key, which _wrap_atom pops and merges.
+        sink: list = []
+        node = make_stage_node(stage, pool, record_sink=sink)
+        out = await node(state)  # type: ignore[arg-type]
+        if sink and isinstance(out, dict):
+            stage_metrics = getattr(sink[0], "metrics", None)
+            if stage_metrics:
+                out["_atom_metrics"] = dict(stage_metrics)
+        return out
 
     runner.__name__ = f"virtual_atom_runner_{getattr(stage, 'name', 'unknown')}"
     return runner

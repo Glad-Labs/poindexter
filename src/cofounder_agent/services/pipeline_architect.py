@@ -1211,6 +1211,17 @@ def _wrap_atom(
                     await asyncio.sleep(_sleep)
             elapsed_ms = int((_time.time() - t0) * 1000)
             out = result if isinstance(result, dict) else {}
+            # Observability seam (poindexter#873) — an atom may return a
+            # reserved ``_atom_metrics`` dict carrying its StageResult.metrics.
+            # Pop it BEFORE output_keys is computed so atoms that don't use it
+            # produce byte-identical rows, and atoms that do never leak the key
+            # into output_keys / the digests / output_preview. Popping also
+            # keeps it off LangGraph state: unlike a declared channel it can
+            # never be checkpointed and smear onto successor nodes.
+            _raw_metrics = out.pop("_atom_metrics", None)
+            atom_metrics: dict[str, Any] = (
+                dict(_raw_metrics) if isinstance(_raw_metrics, dict) else {}
+            )
             halted = bool(out.get("_halt"))
             _node_duration.labels(
                 node=atom_name, outcome="halted" if halted else "ok",
@@ -1236,6 +1247,7 @@ def _wrap_atom(
                         elapsed_ms=elapsed_ms,
                         node_id=node_id,
                         metrics={
+                            **atom_metrics,
                             "input_keys": input_keys,
                             "output_keys": output_keys,
                             "input_digest": digest_keys(input_keys),

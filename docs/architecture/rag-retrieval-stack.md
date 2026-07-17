@@ -243,3 +243,14 @@ this RAG/research stack contributed how many characters. Fields live on
 Visible on the **Pipeline** dashboard's "Writer Context Size" row. See
 [the design doc](../superpowers/specs/2026-07-16-writer-prompt-size-metrics-design.md)
 for the full rationale and the forks considered.
+
+> **Always filter `atom_runs.metrics` queries by `atom`.** Generic keys
+> (`content_length`, `model_used`) are emitted by many nodes, so a query without
+> an `atom = '<name>'` predicate blends unrelated nodes into a meaningless
+> average. The `writer_prompt_*` fields come from `content.generate_draft`
+> alone — one row per task.
+>
+> These fields only reach `atom_runs.metrics` as of
+> [poindexter#873](https://github.com/Glad-Labs/poindexter/issues/873), which
+> fixed the two points where `StageResult.metrics` was discarded on the
+> graph_def path. Before that fix the panels read "No data".

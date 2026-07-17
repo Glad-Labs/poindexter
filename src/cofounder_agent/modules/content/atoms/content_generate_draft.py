@@ -69,7 +69,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     if not result.ok:
         raise RuntimeError(f"content.generate_draft failed: {result.detail}")
     updates = result.context_updates or {}
-    return {k: updates[k] for k in (
+    out = {k: updates[k] for k in (
         "content", "research_context", "model_used",
         "models_used_by_phase", "generate_metrics",
     ) if k in updates} | (
@@ -80,6 +80,14 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
     ) | (
         {"stages": updates["stages"]} if "stages" in updates else {}
     )
+    # Observability seam (poindexter#873): hand StageResult.metrics to
+    # _wrap_atom via the reserved key so content_length / model_used /
+    # prompt_template_key / variant_id and the writer_prompt_* prompt-size
+    # fields (poindexter#868) reach atom_runs.metrics. _wrap_atom pops it
+    # before LangGraph sees the state, so it never becomes durable state.
+    if result.metrics:
+        out["_atom_metrics"] = dict(result.metrics)
+    return out
 
 
 __all__ = ["ATOM_META", "run"]
