@@ -235,7 +235,9 @@ def _emit_cfg_fetch_finding(
             dedup_key=f"gpu_scheduler_cfg_{kind}_{key}",
         )
     except Exception:
-        # Observability path must never gate the scheduler — log + move on.
+        # silent-ok: this IS the finding path (site_config_read_failed above) —
+        # a failure emitting it can't be surfaced without recursing, and the
+        # observability path must never gate the scheduler.
         logger.debug(
             "[gpu_scheduler] emit_finding for site_config_read_failed unavailable",
             exc_info=True,
@@ -306,6 +308,9 @@ class GPUScheduler:
             try:
                 await self._pg_lock_conn.close()
             except Exception:
+                # silent-ok: teardown close — the reference is dropped to None
+                # immediately below regardless, so a failed close leaks no
+                # usable handle and there is nothing for an operator to act on.
                 pass
             self._pg_lock_conn = None
 
@@ -393,6 +398,10 @@ class GPUScheduler:
                 try:
                     await conn.close()
                 except Exception:
+                    # silent-ok: cleanup of the connection whose lock-acquire
+                    # failure the outer handler ALREADY logged as a warning
+                    # above — the operator-facing signal is emitted; this is
+                    # just tidying up after it.
                     pass
 
     async def _release_pg_advisory_lock(self) -> None:
@@ -647,7 +656,33 @@ class GPUScheduler:
                         duration_seconds=duration,
                     )
                 except Exception as exc:
-                    logger.debug("gpu_task_sessions write failed", error=str(exc))
+                    # Best-effort economics — never gate the lock lifecycle on
+                    # it — but a dropped row is invisible data loss for the
+                    # gpu_task_sessions table with no other signal, so surface
+                    # it as a non-paging finding rather than a debug log the
+                    # prod level never ships.
+                    from utils.findings import emit_finding
+                    try:
+                        emit_finding(
+                            source="gpu_scheduler",
+                            kind="gpu_task_session_write_failed",
+                            severity="info",
+                            title="GPU task-session economics row not recorded",
+                            body=(
+                                f"Recording the gpu_task_sessions row for task "
+                                f"{task_id} (phase {phase or owner}, model {model}) "
+                                f"raised {type(exc).__name__}: {exc}. The GPU lock "
+                                "released normally; only the per-task compute/power "
+                                "economics sample was lost."
+                            ),
+                            dedup_key="gpu_task_session_write_failed",
+                            extra={"task_id": task_id, "error_type": type(exc).__name__},
+                        )
+                    except Exception:
+                        # silent-ok: the finding IS the observability path; a
+                        # failure here can't itself be surfaced without
+                        # recursing, and must never gate the lock release.
+                        logger.debug("gpu_task_sessions write failed", error=str(exc))
 
     async def _record_task_session(
         self,
@@ -672,6 +707,11 @@ class GPUScheduler:
             import asyncpg
             from brain.bootstrap import resolve_database_url
         except Exception:
+            # silent-ok: asyncpg + brain.bootstrap are core deps — an import
+            # failure here is a systemic, constant condition (the worker is
+            # already broken), not a per-task event worth a finding. The
+            # economics row is skipped; the caller's finally treats a raise the
+            # same way (gpu_task_session_write_failed) if it gets that far.
             return
         dsn = resolve_database_url()
         if not dsn:
@@ -747,8 +787,9 @@ class GPUScheduler:
                 dedup_key=f"nvidia_exporter_unreachable_{metric}",
             )
         except Exception:
-            # findings emission is observability — never gate the scheduler
-            # path on a failed alert write. Log + move on.
+            # silent-ok: this IS the finding path (nvidia_exporter_unreachable
+            # above) — a failure emitting it can't be surfaced without
+            # recursing, and observability must never gate the scheduler.
             logger.debug(
                 "emit_finding unavailable in gpu_scheduler", exc_info=True,
             )
@@ -959,9 +1000,9 @@ class GPUScheduler:
                     " (hard)" if hard else "",
                 )
         except Exception as exc:
-            # poindexter#455 — used to be `except: pass`. Log at debug
-            # because the image-gen server being offline is the common case
-            # (it's only running when image-gen phase is active), not a
+            # silent-ok: poindexter#455 — used to be `except: pass`. Log at
+            # debug because the image-gen server being offline is the common
+            # case (it's only running when image-gen phase is active), not a
             # genuine bug. A persistent failure would surface via the
             # nvidia-exporter finding when image-gen is supposed to be up.
             #

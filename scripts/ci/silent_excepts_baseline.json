@@ -88,7 +88,6 @@
   "src/cofounder_agent/services/devto_service.py": 1,
   "src/cofounder_agent/services/firefighter_service.py": 1,
   "src/cofounder_agent/services/flows/content_generation.py": 1,
-  "src/cofounder_agent/services/gpu_scheduler.py": 7,
   "src/cofounder_agent/services/guardrails_rails.py": 1,
   "src/cofounder_agent/services/image_decision_agent.py": 1,
   "src/cofounder_agent/services/image_providers/ai_generation.py": 1,
