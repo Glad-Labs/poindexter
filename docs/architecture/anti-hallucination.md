@@ -67,12 +67,23 @@ mean. Previously they were vetoless but still averaged in, so a cluster of
 low-scoring advisory rails (`deepeval_g_eval`, `ragas_eval`,
 `internal_consistency`, all ~65-70) silently dragged otherwise-clean posts under
 the 80 bar and rejected them — the 2026-06 "nothing passes QA" throughput
-incident. The required rails alone (`programmatic_validator`, `llm_critic`,
-`deepeval_brand_fabrication`, `deepeval_faithfulness`) average ~87, comfortably
-clear of 80, so dropping the advisory drag makes the gate reachable _without
-lowering the threshold_. A degenerate all-advisory review set falls back to
-scoring everything, so the score can't collapse to a spurious `0`. Pinned by
+incident. The required rails alone averaged ~87 at the time, comfortably clear
+of 80, so dropping the advisory drag makes the gate reachable _without lowering
+the threshold_. A degenerate all-advisory review set falls back to scoring
+everything, so the score can't collapse to a spurious `0`. Pinned by
 `test_qa_rail_common.py::test_advisory_reviews_excluded_from_score`.
+
+> **Which rails are actually required (verified against live prod + the
+> `qa_gates` baseline seed, 2026-07-17): only `programmatic_validator` and
+> `llm_critic`.** This paragraph previously listed
+> `deepeval_brand_fabrication` and `deepeval_faithfulness` as required too;
+> both are `required_to_pass=false` in the seed _and_ in the live DB, as is
+> every other rail. The ~87 figure above dates from the 2026-06 incident and
+> was not re-measured against the current two-rail required set — treat it as
+> historical, not a current reading. `qa_gates` is operator-tunable at runtime,
+> so a doc list of required rails goes stale silently; query the table rather
+> than trusting a prose list:
+> `SELECT name, required_to_pass FROM qa_gates ORDER BY required_to_pass DESC;`
 
 **Gate-config read failures fail loud, not required-everything (2026-07).**
 The advisory flag comes from a `qa_gates` read at rail-atom time
@@ -90,6 +101,33 @@ The `{}` → "everything required" fallback survives only for genuinely
 no-DB callers (`pool=None`: unit tests, fresh checkouts). Pinned by
 `test_qa_rail_common.py::TestResolveGateStates` and
 `test_qa_ragas_atom.py::test_live_pool_gate_lookup_failure_fails_loud`.
+
+**A rail that measured nothing appends no review (2026-07, poindexter#875).**
+Fail-open and fail-silent are different things, and `self_consistency` conflated
+them. `self_consistency_rail.evaluate()` is contractually
+never-raises, and it implemented that by returning `(True, 1.0, "…skipped: …")`
+on all four skip paths (empty content, <2 valid samples, embedding step down,
+caught exception). `passed=True` was right — an advisory rail that cannot run
+must not veto — but `score=1.0` was a fabricated **measurement**: `1.0` is a
+legitimate cosine similarity, so "didn't check" and "checked, perfect" became
+indistinguishable. `qa.self_consistency` recorded it as `100.0`, and prod
+`audit_log` rows carried a perfect self-consistency score whose own feedback
+read `self-consistency-skipped: embedding step failed`. Advisory-excluded-from-
+the-mean limited the blast radius to pass-rate inflation on the QA Rails board
+plus a masked embedding outage — but graduation is where it bit: at
+`required_to_pass=true` the fake `100` joins the weighted mean and counts as a
+pass, lifting a lone `72.0` peer to `86.0` (+14 points from a check that never
+ran, enough to clear the prod bar of `80`). Since 2026-07 `evaluate()` returns
+`score=None` on every skip path (contract is `tuple[bool, float | None, str]`)
+and the atom branches on `score is None` → **no review appended**, reusing its
+own existing "didn't run" convention, plus a `warn`-severity
+`qa_rail_no_measurement` finding (stable `dedup_key`, so a run of skips is one
+Discord ping while every occurrence still lands on the Findings dashboard). The
+general rule for any new rail: **a skip must be absent from the aggregate, never
+a passing member of it** — and if the neutral value you'd return on failure is
+inside the metric's own domain, it is a lie the type-checker cannot catch. Pinned
+by `test_qa_self_consistency_atom.py::TestNoMeasurement` and the `score is None`
+assertions in `test_self_consistency_rail.py`.
 
 The programmatic validator's warning penalty is gentler and DB-tunable too: each
 non-critical warning shaves `qa_validator_warning_penalty` points (default `5`,

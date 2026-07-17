@@ -1,5 +1,13 @@
 """Tests for services/self_consistency_rail.py — HalluCounter-style
-sampler-based hallucination signal (#196)."""
+sampler-based hallucination signal (#196).
+
+Every skip path asserts ``score is None`` (poindexter#875). These tests used to
+assert ``score == 1.0``, which is how the fail-open survived: a rail that
+measured nothing reported a PERFECT similarity, and the atom recorded it as
+100.0. ``passed is True`` is still asserted everywhere — an advisory rail that
+cannot run must never veto — but "didn't measure" and "measured perfect" have
+to be distinguishable, so the skip paths carry no number at all.
+"""
 
 from __future__ import annotations
 
@@ -48,14 +56,14 @@ class TestEvaluateGuards:
     async def test_empty_content_skips_cleanly(self):
         passed, score, reason = await evaluate(content="", topic="X")
         assert passed is True
-        assert score == 1.0
+        assert score is None
         assert "empty content" in reason
 
     @pytest.mark.asyncio
     async def test_whitespace_content_skips_cleanly(self):
         passed, score, reason = await evaluate(content="   \n\n  ", topic="X")
         assert passed is True
-        assert score == 1.0
+        assert score is None
         assert "empty content" in reason
 
 
@@ -76,7 +84,7 @@ class TestEvaluateSampleFailures:
                 content="a body", topic="t",
             )
         assert passed is True
-        assert score == 1.0
+        assert score is None
         assert "self-consistency-skipped" in reason
 
     @pytest.mark.asyncio
@@ -89,7 +97,7 @@ class TestEvaluateSampleFailures:
                 content="a body", topic="t",
             )
         assert passed is True
-        assert score == 1.0
+        assert score is None
         assert "1 valid sample" in reason
 
     @pytest.mark.asyncio
@@ -105,7 +113,7 @@ class TestEvaluateSampleFailures:
                 content="a body", topic="t",
             )
         assert passed is True
-        assert score == 1.0
+        assert score is None
         assert "embedding step failed" in reason
 
 
@@ -169,5 +177,5 @@ class TestEvaluateNeverRaises:
                 content="a body", topic="t",
             )
         assert passed is True
-        assert score == 1.0
+        assert score is None
         assert "self-consistency-skipped" in reason

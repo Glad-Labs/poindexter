@@ -34,12 +34,25 @@ Output contract
 - ``passed``: True iff mean pairwise similarity >= ``self_
   consistency_threshold`` (default 0.55).
 - ``score``: mean pairwise cosine similarity, range [-1, 1]
-  (effectively [0, 1] for sentence-transformers normalized vectors).
+  (effectively [0, 1] for sentence-transformers normalized vectors),
+  or ``None`` when the rail measured NOTHING — see below.
 - ``reason``: human-readable explanation that lands in the audit log.
 
 Never raises — Ollama errors / embedding errors are caught and
-surfaced as ``(True, 1.0, 'self-consistency-skipped: ...')`` so the
+surfaced as ``(True, None, 'self-consistency-skipped: ...')`` so the
 rail can't take down the QA pass.
+
+``score=None`` means NOT MEASURED — which is not the same as a score of
+1.0 (poindexter#875). Every skip path used to return ``(True, 1.0, ...)``,
+so a rail that never ran was recorded as a PERFECT PASS: prod audit rows
+carried ``score: 100.0`` right next to ``"self-consistency-skipped:
+embedding step failed"``. That inflated the QA Rails pass-rate, hid a real
+embedding outage behind a green number, and was a live landmine for
+graduation — the moment an operator sets
+``qa_gates.self_consistency.required_to_pass=true``, every skip would
+become a silent hard PASS. ``passed=True`` is retained so an advisory skip
+still cannot veto; callers MUST branch on ``score is None`` rather than
+record the value.
 """
 
 from __future__ import annotations
@@ -288,14 +301,15 @@ async def evaluate(
     content: str,
     topic: str,
     site_config: Any = None,
-) -> tuple[bool, float, str]:
+) -> tuple[bool, float | None, str]:
     """Run the self-consistency rail.
 
-    Returns ``(passed, score, reason)`` — see module docstring.
-    Never raises.
+    Returns ``(passed, score, reason)`` — see module docstring. ``score`` is
+    ``None`` on every skip path: the rail measured nothing, and reporting a
+    number there would fabricate a passing measurement. Never raises.
     """
     if not content or not content.strip():
-        return True, 1.0, "self-consistency-skipped: empty content"
+        return True, None, "self-consistency-skipped: empty content"
 
     n = _site_int(site_config, "self_consistency_sample_count", _DEFAULT_SAMPLE_COUNT)
     temperature = _site_float(
@@ -312,14 +326,14 @@ async def evaluate(
         )
         if len(samples) < 2:
             return (
-                True, 1.0,
+                True, None,
                 f"self-consistency-skipped: only {len(samples)} valid sample(s) "
                 f"(needed 2+, target N={n})",
             )
 
         score = await _pairwise_mean_cosine(samples, site_config=site_config)
         if score < 0:
-            return True, 1.0, "self-consistency-skipped: embedding step failed"
+            return True, None, "self-consistency-skipped: embedding step failed"
 
         passed = score >= threshold
         reason = (
@@ -330,7 +344,7 @@ async def evaluate(
         return passed, float(score), reason
     except Exception as e:
         logger.warning("[self_consistency] evaluate failed: %s", e, exc_info=True)
-        return True, 1.0, f"self-consistency-skipped: {type(e).__name__}: {e}"
+        return True, None, f"self-consistency-skipped: {type(e).__name__}: {e}"
 
 
 __all__ = [
