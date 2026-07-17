@@ -132,6 +132,9 @@ async def _safe_on_event(
     try:
         await on_event(contract, payload)
     except Exception as exc:  # noqa: BLE001 — callback must never break the run
+        # silent-ok: per the #361 contract the on_event callback is a CALLER's
+        # observer — its failure is the caller's concern, not the pipeline's,
+        # and must never break the run. The callback owner surfaces its own errors.
         logger.debug(
             "[template_runner] on_event callback failed for %s: %s",
             contract, exc,
@@ -360,6 +363,9 @@ async def _emit_progress(
             # Never bump to critical=True for routine progress.
             await notify_operator(notify_operator_message, critical=False)
     except Exception as exc:  # noqa: BLE001
+        # silent-ok: this is the routine progress ping to the Discord "spam"
+        # channel (critical=False) — losing one progress notification is
+        # inconsequential and a finding per run would itself be spam.
         logger.debug("[template_runner] operator notify failed: %s", exc)
 
 
@@ -1033,6 +1039,10 @@ async def _mark_stage_column(pool: Any, task_id: Any, stage_name: str) -> None:
                 stage_name, str(task_id),
             )
     except Exception as exc:  # noqa: BLE001
+        # silent-ok: per-node observability stamp that folds the last_progress_at
+        # heartbeat — consistent with the already-silent-ok'd _mark_progress
+        # below (brain probe falls back to the duration threshold; a finding
+        # would spam once per node on any DB hiccup).
         logger.debug("template_runner: stage column UPDATE failed: %s", exc)
 
 
@@ -1059,6 +1069,97 @@ async def _mark_progress(pool: Any, task_id: Any) -> None:
         # back to the legacy duration threshold when last_progress_at is missing,
         # and warning-level here would spam once per node on any DB hiccup.
         logger.debug("template_runner: progress heartbeat UPDATE failed: %s", exc)
+
+
+async def _record_capability_outcomes(
+    pool: Any,
+    *,
+    ok: bool,
+    template_slug: str,
+    halted_at: Any,
+    records: Any,
+    final_state: Any,
+    initial_state: dict,
+) -> None:
+    """Write one capability_outcomes row per node so the router can score
+    (atom, tier, model) combinations in production. Best-effort — never fails
+    the run — but a persistent silent failure means the router stops learning
+    with no signal, so surface it as a non-paging finding (once per run, deduped)
+    rather than a debug log the prod level never ships.
+    """
+    try:
+        from services.capability_outcomes import record_run as _record_run
+        interim = TemplateRunSummary(
+            ok=ok,
+            template_slug=template_slug,
+            halted_at=halted_at,
+            records=records,
+            final_state=dict(final_state) if isinstance(final_state, dict) else {},
+        )
+        written = await _record_run(pool, interim, initial_state)
+        logger.debug(
+            "[template_runner] capability_outcomes wrote %d row(s)", written,
+        )
+    except Exception as exc:  # noqa: BLE001
+        from utils.findings import emit_finding
+        emit_finding(
+            source="services.template_runner",
+            kind="capability_outcomes_write_failed",
+            title="Router-feedback (capability_outcomes) write failed",
+            body=(
+                f"record_run raised {type(exc).__name__}: {exc}. This run's "
+                "(atom, tier, model) outcomes were not recorded, so the model "
+                "router loses this datapoint; a persistent failure silently "
+                "stops the router learning."
+            ),
+            severity="info",
+            dedup_key="capability_outcomes_write_failed",
+            extra={"template_slug": template_slug, "error_type": type(exc).__name__},
+        )
+
+
+async def _capture_atom_runs(
+    pool: Any,
+    *,
+    run_id: Any,
+    task_id: str | None,
+    template_slug: str,
+    records: Any,
+    site_config: Any,
+) -> None:
+    """Write one atom_runs row per node record so the (composition → outcome)
+    substrate populates. Complementary to capability_outcomes; gated internally
+    by ``atom_runs_capture_enabled``. Best-effort — never fails the run — but a
+    silent failure leaves the composition-capture blind, so surface it.
+    """
+    try:
+        from services.atom_runs import persist_atom_runs
+        n_atom_runs = await persist_atom_runs(
+            pool,
+            run_id=run_id,
+            task_id=task_id,
+            template_slug=template_slug,
+            records=records,
+            site_config=site_config,
+        )
+        logger.debug(
+            "[template_runner] atom_runs wrote %d row(s)", n_atom_runs,
+        )
+    except Exception as exc:  # noqa: BLE001
+        from utils.findings import emit_finding
+        emit_finding(
+            source="services.template_runner",
+            kind="atom_runs_capture_failed",
+            title="atom_runs composition capture failed",
+            body=(
+                f"persist_atom_runs raised {type(exc).__name__}: {exc}. The "
+                "per-invocation composition→outcome rows for this run were not "
+                "written, so the atom-runs substrate is missing this run."
+            ),
+            severity="info",
+            dedup_key="atom_runs_capture_failed",
+            extra={"template_slug": template_slug, "error_type": type(exc).__name__},
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -1669,51 +1770,30 @@ class TemplateRunner:
             on_event=on_event,
         )
 
-        # Outcome feedback loop — write one capability_outcomes row per
-        # node so the router can score (atom, model, tier) combinations
-        # in production. Best-effort; logging failures don't fail the run.
-        try:
-            from services.capability_outcomes import record_run as _record_run
-            interim = TemplateRunSummary(
-                ok=ok,
-                template_slug=template_slug,
-                halted_at=halted_at,
-                records=records,
-                final_state=dict(final_state) if isinstance(final_state, dict) else {},
-            )
-            written = await _record_run(self._pool, interim, initial_state)
-            logger.debug(
-                "[template_runner] capability_outcomes wrote %d row(s)", written,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("[template_runner] outcome write failed: %s", exc)
-
-        # Atom-runs capture (#355 Plan 2 / #552) — write one atom_runs row
-        # per node record so the (composition -> outcome) substrate
-        # populates. Complementary to capability_outcomes above:
-        # capability_outcomes scores (atom, tier, model) for the router;
-        # atom_runs adds the per-invocation run_id + composition-shape
-        # digests + the outcome join (backfilled at approval time by
-        # record_atom_run_outcome). run_id == thread_id (the per-run
-        # identity LangGraph already threads; defaults to task_id). Gated
-        # by atom_runs_capture_enabled via the run-bound SiteConfig and
-        # best-effort internally — this outer guard mirrors the
-        # capability_outcomes posture so capture never fails the pipeline.
-        try:
-            from services.atom_runs import persist_atom_runs
-            n_atom_runs = await persist_atom_runs(
-                self._pool,
-                run_id=thread_id,
-                task_id=str(initial_state.get("task_id") or "") or None,
-                template_slug=template_slug,
-                records=records,
-                site_config=self._site_config,
-            )
-            logger.debug(
-                "[template_runner] atom_runs wrote %d row(s)", n_atom_runs,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.debug("[template_runner] atom_runs capture failed: %s", exc)
+        # Outcome feedback loop + atom-runs capture (#355 Plan 2 / #552) —
+        # per-run telemetry substrates the router + composition analysis read.
+        # Both best-effort (never fail the run) but now surface a finding on a
+        # persistent failure instead of vanishing at debug level. run_id ==
+        # thread_id (the per-run identity LangGraph threads; defaults to
+        # task_id); atom_runs is additionally gated by atom_runs_capture_enabled
+        # inside persist_atom_runs.
+        await _record_capability_outcomes(
+            self._pool,
+            ok=ok,
+            template_slug=template_slug,
+            halted_at=halted_at,
+            records=records,
+            final_state=final_state,
+            initial_state=initial_state,
+        )
+        await _capture_atom_runs(
+            self._pool,
+            run_id=thread_id,
+            task_id=str(initial_state.get("task_id") or "") or None,
+            template_slug=template_slug,
+            records=records,
+            site_config=self._site_config,
+        )
 
         return TemplateRunSummary(
             ok=ok,

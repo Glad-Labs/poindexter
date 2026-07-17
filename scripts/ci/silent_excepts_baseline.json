@@ -126,7 +126,6 @@
   "src/cofounder_agent/services/skill_importer.py": 1,
   "src/cofounder_agent/services/tasks_db.py": 1,
   "src/cofounder_agent/services/telemetry.py": 1,
-  "src/cofounder_agent/services/template_runner.py": 5,
   "src/cofounder_agent/services/text_utils.py": 2,
   "src/cofounder_agent/services/title_generation.py": 1,
   "src/cofounder_agent/services/title_originality_external.py": 1,
