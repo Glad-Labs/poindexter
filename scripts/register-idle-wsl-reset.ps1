@@ -69,9 +69,17 @@ function Install-IdleWslReset {
         -Execute $pwshExe `
         -Argument "-NoProfile -NonInteractive -WindowStyle Hidden -ExecutionPolicy Bypass -File `"$ResetScript`""
 
+    # 10 years, not [TimeSpan]::MaxValue: MaxValue serializes to
+    # P99999999DT23H59M59S, which the Task Scheduler XML schema rejects as out
+    # of range ("incorrectly formatted or out of range") on current Windows
+    # builds under BOTH PowerShell 7 and 5.1. That silent -Install failure is
+    # why the task was never registered and the whole idle-reset mechanism sat
+    # dormant despite idle_wsl_reset_enabled=true (poindexter#882). A bounded
+    # large value is effectively indefinite for a 15-minute poll and registers
+    # cleanly.
     $trigger = New-ScheduledTaskTrigger -Once -At (Get-Date) `
         -RepetitionInterval (New-TimeSpan -Minutes $PollIntervalMinutes) `
-        -RepetitionDuration ([TimeSpan]::MaxValue)
+        -RepetitionDuration (New-TimeSpan -Days 3650)
 
     $settings = New-ScheduledTaskSettingsSet `
         -StartWhenAvailable `
