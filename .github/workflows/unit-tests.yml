@@ -344,6 +344,22 @@ jobs:
         if: steps.changes.outputs.needs_tests == 'true'
         run: python scripts/ci/atom_independence_lint.py
 
+      # Bandit ratchet: no NEW security findings. Bandit is a textual matcher
+      # with no dataflow analysis, so on this codebase it is mostly false
+      # positives (all 30 of #2594-#2623 were, closed by #2644) — which makes it
+      # a bad issue-filer and a fine ratchet. Replaces the codebase-audit ops
+      # session's issue-per-finding flow, which filed 91 issues and buried the
+      # real backlog. Existing findings are grandfathered per-file-per-RULE in
+      # bandit_baseline.json (per-rule so a new B605 can't ride in behind a
+      # deleted B404); the lint fails on net-new. Escape hatch is bandit's own
+      # `# nosec <RULE>`. Unlike the ratchets above this one is NOT stdlib-only:
+      # it shells out to bandit — which the `Install dependencies` step above put
+      # on THIS interpreter (`virtualenvs.create false` installs the dev group
+      # into system site-packages), at the exact poetry.lock version.
+      - name: Bandit ratchet (no new security findings)
+        if: steps.changes.outputs.needs_tests == 'true'
+        run: python scripts/ci/bandit_lint.py
+
       # Brain async-safety guard (sync-CLI-in-async fix): brain/ is a
       # single-event-loop asyncio daemon that awaits every probe sequentially,
       # so a blocking subprocess.run / time.sleep / os.system directly in an
@@ -635,6 +651,15 @@ jobs:
         run: python scripts/ci/adapter_purity_lint.py
       - name: Atom-independence lint (tech-debt audit)
         run: python scripts/ci/atom_independence_lint.py
+      # The only non-stdlib lint in this job. Pinned to the exact poetry.lock
+      # version because the baseline is only meaningful against the bandit that
+      # generated it (a bump can add rules and turn a clean tree red);
+      # test_bandit_lint.py fails if this pin ever drifts from the lock, so a
+      # dependabot bump surfaces there instead of as a mystery red here.
+      - name: Install bandit (pinned to poetry.lock)
+        run: pip install "bandit==1.9.4"
+      - name: Bandit ratchet (no new security findings)
+        run: python scripts/ci/bandit_lint.py
       - name: Brain async-safety lint (no blocking calls on the loop)
         run: python scripts/ci/brain_async_safety_lint.py
       - name: HTTP detail-leak lint (security #724)

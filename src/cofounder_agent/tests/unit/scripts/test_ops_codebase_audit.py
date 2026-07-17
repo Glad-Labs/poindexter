@@ -1,6 +1,19 @@
+"""Tests for scripts/ops_sessions/codebase_audit.py — the ruff-fix ops session.
+
+This session used to ALSO run bandit and file one GitHub issue per finding.
+That is gone: security findings are gated by the bandit ratchet
+(``scripts/ci/bandit_lint.py``, tested in ``test_bandit_lint.py``), which blocks
+a net-new finding at PR time and files nothing. The issue-filing flow produced
+91 issues — every one examined was a false positive (#2594-#2623, closed by
+#2644) — and buried the real backlog three pages deep.
+
+The dedup logic these tests used to cover (#2645) went with it: nothing is
+filed, so nothing can be re-filed. ``test_session_files_no_github_issues`` is
+the guard that keeps the firehose from being reintroduced.
+"""
+
 from __future__ import annotations
 
-import json
 import logging
 import sys
 from pathlib import Path
@@ -25,147 +38,107 @@ class _FakeProc:
         self.stdout = stdout
 
 
-_B608_FINDING = {
-    "filename": "src/cofounder_agent/services/foo.py",
-    "line_number": 42,
-    "test_id": "B608",
-    "issue_severity": "MEDIUM",
-    "issue_text": "Possible SQL injection vector",
-    "code": 'query = f"SELECT * FROM t WHERE id = {task_id}"\n',
-}
-
-
-def test_bandit_issue_body_templating():
-    finding = {
-        "filename": "brain/foo.py",
-        "line_number": 42,
-        "test_id": "B605",
-        "issue_severity": "HIGH",
-        "issue_text": "Starting a process with a shell",
-        "code": "os.system(cmd)",
-    }
-    title, body = ca.bandit_issue_body(finding)
-    assert "B605" in title
-    assert "brain/foo.py:42" in body
-    assert "HIGH" in body
-    assert "os.system(cmd)" in body
-
-
-# --- finding_dedup_key: stable identity that survives line drift/reformat ---
-
-
-def test_dedup_key_stable_across_line_number_drift():
-    # An unrelated edit above the flagged line shifts line_number but must
-    # not change the finding's identity — otherwise every drift re-files.
-    moved = dict(_B608_FINDING, line_number=99)
-    assert ca.finding_dedup_key(_B608_FINDING) == ca.finding_dedup_key(moved)
-
-
-def test_dedup_key_survives_whitespace_reformatting():
-    reindented = dict(
-        _B608_FINDING,
-        code='    query = f"SELECT * FROM t WHERE id = {task_id}"  \n',
+def _install_fakes(monkeypatch, *, dirty: bool, gh_spy):
+    """Wire the session's shell-outs to fakes. ``dirty`` decides whether
+    `git status --porcelain` reports ruff-modified files."""
+    monkeypatch.setattr(
+        ca.c, "get_logger", lambda _name: logging.getLogger("test-codebase-audit")
     )
-    assert ca.finding_dedup_key(_B608_FINDING) == ca.finding_dedup_key(reindented)
+    monkeypatch.setattr(ca.c, "run", lambda *a, **k: _FakeProc(0, ""))
+    monkeypatch.setattr(ca.c, "gh", gh_spy)
 
-
-def test_dedup_key_differs_for_different_code():
-    other = dict(_B608_FINDING, code='query = f"SELECT * FROM t WHERE name = {name}"\n')
-    assert ca.finding_dedup_key(_B608_FINDING) != ca.finding_dedup_key(other)
-
-
-def test_dedup_key_differs_for_different_filename():
-    other = dict(_B608_FINDING, filename="src/cofounder_agent/services/bar.py")
-    assert ca.finding_dedup_key(_B608_FINDING) != ca.finding_dedup_key(other)
-
-
-def test_dedup_key_differs_for_different_rule():
-    other = dict(_B608_FINDING, test_id="B105")
-    assert ca.finding_dedup_key(_B608_FINDING) != ca.finding_dedup_key(other)
-
-
-def test_bandit_issue_body_embeds_dedup_key():
-    _, body = ca.bandit_issue_body(_B608_FINDING)
-    assert ca.finding_dedup_key(_B608_FINDING) in body
-
-
-# --- _has_existing_issue: query gh (open OR closed) before filing ---
-
-
-def test_has_existing_issue_true_when_gh_finds_a_match(monkeypatch):
-    calls = []
-
-    def fake_gh(*args):
-        calls.append(args)
-        return _FakeProc(0, '[{"number": 2650}]')
-
-    monkeypatch.setattr(ca.c, "gh", fake_gh)
-    assert ca._has_existing_issue("deadbeef12345678") is True
-    (call,) = calls
-    joined = " ".join(call)
-    assert "deadbeef12345678" in joined
-    assert "all" in call  # state:all — a finding closed as a false positive still dedups
-    assert "security" in joined
-    assert ca.REPO in call
-
-
-def test_has_existing_issue_false_when_gh_finds_nothing(monkeypatch):
-    monkeypatch.setattr(ca.c, "gh", lambda *_a: _FakeProc(0, "[]"))
-    assert ca._has_existing_issue("cafef00ddeadbeef") is False
-
-
-def test_has_existing_issue_failsafe_on_gh_error(monkeypatch):
-    # gh itself failed (auth hiccup, rate limit, ...) — fail toward "don't file"
-    monkeypatch.setattr(ca.c, "gh", lambda *_a: _FakeProc(1, ""))
-    assert ca._has_existing_issue("x") is True
-
-
-def test_has_existing_issue_failsafe_on_bad_json(monkeypatch):
-    monkeypatch.setattr(ca.c, "gh", lambda *_a: _FakeProc(0, "not json"))
-    assert ca._has_existing_issue("x") is True
-
-
-# --- main(): wiring the dedup check into the finding-filing loop ---
-
-
-def _fake_run_factory(findings: list[dict]):
-    def fake_run(cmd, *, cwd=None):
-        if "bandit" in cmd:
-            return _FakeProc(0, json.dumps({"results": findings}))
-        return _FakeProc(0, "")  # the ruff --fix call; output unused by main()
-
-    return fake_run
-
-
-def test_main_skips_finding_with_an_existing_issue_without_filing(monkeypatch):
-    def boom_gh(*args):
-        if args[:2] == ("issue", "create"):
-            raise AssertionError("an already-tracked finding must not file a duplicate issue")
-        return _FakeProc(0, '[{"number": 1}]')  # _has_existing_issue -> True
-
-    monkeypatch.setattr(ca.c, "get_logger", lambda _name: logging.getLogger("test-codebase-audit"))
-    monkeypatch.setattr(ca.c, "run", _fake_run_factory([_B608_FINDING]))
-    monkeypatch.setattr(ca.c, "gh", boom_gh)
-    monkeypatch.setattr(ca.c, "git", lambda *a, **k: _FakeProc(0, ""))
-
-    assert ca.main() == 0
-
-
-def test_main_files_new_finding_when_not_already_tracked(monkeypatch):
-    filed = []
-
-    def fake_gh(*args):
-        if args[:2] == ("issue", "list"):
-            return _FakeProc(0, "[]")  # nothing tracked yet
-        if args[:2] == ("issue", "create"):
-            filed.append(args)
+    def fake_git(*args, **_kwargs):
+        if args and args[0] == "status":
+            return _FakeProc(0, " M src/cofounder_agent/services/foo.py\n" if dirty else "")
         return _FakeProc(0, "")
 
-    monkeypatch.setattr(ca.c, "get_logger", lambda _name: logging.getLogger("test-codebase-audit"))
-    monkeypatch.setattr(ca.c, "run", _fake_run_factory([_B608_FINDING]))
-    monkeypatch.setattr(ca.c, "gh", fake_gh)
-    monkeypatch.setattr(ca.c, "git", lambda *a, **k: _FakeProc(0, ""))
+    monkeypatch.setattr(ca.c, "git", fake_git)
 
-    assert ca.main() == 0
-    (call,) = filed
-    assert "B608" in " ".join(call)
+
+class TestNoBanditIssueFiling:
+    """The whole point of the ratchet flip — this session must file nothing."""
+
+    def test_session_files_no_github_issues(self, monkeypatch):
+        # dirty=True on purpose: a clean tree makes main() skip gh entirely, so
+        # the assertion below could never fire and the test would pass
+        # vacuously. A dirty tree drives the one gh path that DOES run (pr
+        # create), proving `issue create` is absent rather than just unreached.
+        seen: list[tuple] = []
+
+        def boom_gh(*args):
+            seen.append(args)
+            if args[:2] == ("issue", "create"):
+                raise AssertionError(
+                    "codebase_audit must not file GitHub issues — the bandit "
+                    "ratchet (scripts/ci/bandit_lint.py) is the gate now. "
+                    "Re-adding issue-per-finding reintroduces the 91-issue "
+                    "firehose that buried the real backlog."
+                )
+            return _FakeProc(0, "")
+
+        _install_fakes(monkeypatch, dirty=True, gh_spy=boom_gh)
+        assert ca.main() == 0
+        assert seen, "guard is vacuous unless main() actually reached gh"
+        assert all(call[:2] != ("issue", "create") for call in seen)
+
+    def test_session_does_not_invoke_bandit(self, monkeypatch):
+        commands: list[list[str]] = []
+
+        def spy_run(cmd, *, cwd=None):
+            commands.append(cmd)
+            return _FakeProc(0, "")
+
+        monkeypatch.setattr(
+            ca.c, "get_logger", lambda _name: logging.getLogger("test-codebase-audit")
+        )
+        monkeypatch.setattr(ca.c, "run", spy_run)
+        monkeypatch.setattr(ca.c, "gh", lambda *_a: _FakeProc(0, ""))
+        monkeypatch.setattr(ca.c, "git", lambda *a, **k: _FakeProc(0, ""))
+
+        assert ca.main() == 0
+        flat = " ".join(part for cmd in commands for part in cmd)
+        assert "bandit" not in flat, "bandit belongs in the CI ratchet, not this session"
+
+    def test_module_exposes_no_issue_filing_helpers(self):
+        """The bandit-filing surface is gone, not merely unreferenced."""
+        for gone in ("bandit_issue_body", "finding_dedup_key", "_has_existing_issue", "BANDIT_TARGETS"):
+            assert not hasattr(ca, gone), f"{gone} should have been removed with the bandit flow"
+
+
+class TestRuffSweep:
+    def test_runs_ruff_fix_over_the_declared_targets(self, monkeypatch):
+        commands: list[list[str]] = []
+
+        def spy_run(cmd, *, cwd=None):
+            commands.append(cmd)
+            return _FakeProc(0, "")
+
+        monkeypatch.setattr(
+            ca.c, "get_logger", lambda _name: logging.getLogger("test-codebase-audit")
+        )
+        monkeypatch.setattr(ca.c, "run", spy_run)
+        monkeypatch.setattr(ca.c, "gh", lambda *_a: _FakeProc(0, ""))
+        monkeypatch.setattr(ca.c, "git", lambda *a, **k: _FakeProc(0, ""))
+
+        assert ca.main() == 0
+        (ruff_cmd,) = [c_ for c_ in commands if "ruff" in c_]
+        assert "--fix" in ruff_cmd
+        assert "F401,F841" in ruff_cmd
+        for target in ca.RUFF_TARGETS:
+            assert target in ruff_cmd
+
+    def test_opens_a_pr_when_ruff_changed_files(self, monkeypatch):
+        gh_calls: list[tuple] = []
+        _install_fakes(
+            monkeypatch, dirty=True, gh_spy=lambda *a: (gh_calls.append(a), _FakeProc(0, ""))[1]
+        )
+        assert ca.main() == 0
+        assert any(call[:2] == ("pr", "create") for call in gh_calls), "a dirty tree should open a lint PR"
+
+    def test_opens_no_pr_when_tree_is_clean(self, monkeypatch):
+        gh_calls: list[tuple] = []
+        _install_fakes(
+            monkeypatch, dirty=False, gh_spy=lambda *a: (gh_calls.append(a), _FakeProc(0, ""))[1]
+        )
+        assert ca.main() == 0
+        assert not any(call[:2] == ("pr", "create") for call in gh_calls)

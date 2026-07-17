@@ -17,7 +17,7 @@ cloud model are kept **disabled** pending a metered-API decision.
 | Session             | Tier                    | Schedule    | What it does                                  | Output                       |
 | ------------------- | ----------------------- | ----------- | --------------------------------------------- | ---------------------------- |
 | `dependency-review` | deterministic           | daily 06:30 | merge green patch-bump dependabot PRs         | `gh pr merge`                |
-| `codebase-audit`    | deterministic           | Wed 02:00   | `ruff --fix` F401/F841 + `bandit`             | lint PR + security issues    |
+| `codebase-audit`    | deterministic           | Wed 02:00   | `ruff --fix` F401/F841                        | lint PR                      |
 | `doc-sync`          | deterministic           | Fri 05:00   | verify/repair CLAUDE.md path references       | PR (or flag)                 |
 | `claude-md-sync`    | deterministic           | daily 02:30 | DB-count sync + migration-drift surface       | PR / Discord note            |
 | `triage-sweep`      | deterministic           | Mon 07:00   | weekly sweep + keyword area-labels            | label edits + Discord digest |
@@ -28,6 +28,18 @@ cloud model are kept **disabled** pending a metered-API decision.
 
 The deterministic five make **zero model calls**. The two local-LLM sessions
 make one structured [Ollama](http://localhost:11434) call per unit of work.
+
+> **`codebase-audit` lost its bandit half on 2026-07-17.** It used to file one
+> GitHub issue per bandit finding. That produced 91 issues — every one examined
+> was a false positive (#2594-#2623, all closed by #2644) — which buried the 18
+> genuine engineering issues three pages deep in the backlog. Bandit is a
+> textual matcher with no dataflow analysis, so it cannot distinguish a real
+> injection from the sanctioned `services/` pattern (hardcoded identifier +
+> asyncpg bind params); that makes it a bad issue-filer and a fine ratchet. It
+> now runs in CI as [`scripts/ci/bandit_lint.py`](../../scripts/ci/bandit_lint.py)
+> against `scripts/ci/bandit_baseline.json`, blocking a **net-new** finding at PR
+> time and filing nothing. The dedup logic added in #2645 went with it: nothing
+> is filed, so nothing can be re-filed.
 
 ## Why the rewire
 

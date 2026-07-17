@@ -1,0 +1,108 @@
+{
+  "brain/alert_dispatcher.py": {
+    "B310": 2
+  },
+  "brain/alert_sync.py": {
+    "B310": 1,
+    "B324": 1
+  },
+  "brain/brain_daemon.py": {
+    "B108": 1,
+    "B310": 7,
+    "B608": 4
+  },
+  "brain/data_freshness_probe.py": {
+    "B608": 1
+  },
+  "brain/docker_port_forward_probe.py": {
+    "B310": 1
+  },
+  "brain/health_probes.py": {
+    "B310": 4,
+    "B608": 2
+  },
+  "brain/migration_drift_probe.py": {
+    "B310": 1
+  },
+  "brain/operator_notifier.py": {
+    "B310": 2
+  },
+  "brain/operator_url_probe.py": {
+    "B608": 1
+  },
+  "brain/restore_test_probe.py": {
+    "B108": 1,
+    "B608": 1
+  },
+  "scripts/_voice_memory.py": {
+    "B608": 1
+  },
+  "scripts/auto-embed.py": {
+    "B310": 1
+  },
+  "scripts/backfill-alt-text.py": {
+    "B608": 2
+  },
+  "scripts/backfill-canonical-titles.py": {
+    "B608": 1
+  },
+  "scripts/backfill-image-alt-vision.py": {
+    "B608": 3
+  },
+  "scripts/backfill-qa-feedback-excerpt-category.py": {
+    "B608": 4
+  },
+  "scripts/backfill_image_webp.py": {
+    "B608": 1
+  },
+  "scripts/calibrate_content_originality_threshold.py": {
+    "B310": 1
+  },
+  "scripts/calibrate_topic_dedup_threshold.py": {
+    "B310": 1
+  },
+  "scripts/check_mcp_probe.py": {
+    "B310": 1
+  },
+  "scripts/discord-voice-bot.py": {
+    "B310": 1
+  },
+  "scripts/dr-reimport-posts-from-r2.py": {
+    "B310": 1
+  },
+  "scripts/experiments/ab_writer_test.py": {
+    "B310": 1
+  },
+  "scripts/image-gen-server.py": {
+    "B104": 1
+  },
+  "scripts/image_bakeoff.py": {
+    "B615": 1
+  },
+  "scripts/nvidia-smi-exporter.py": {
+    "B104": 1,
+    "B310": 1
+  },
+  "scripts/ops/find_phantom_settings.py": {
+    "B608": 1
+  },
+  "scripts/ops_sessions/alert_triage.py": {
+    "B608": 1
+  },
+  "scripts/recovery-agent.py": {
+    "B104": 1
+  },
+  "scripts/seo-audit.py": {
+    "B310": 1
+  },
+  "scripts/stable-audio-server.py": {
+    "B104": 1
+  },
+  "scripts/voice_brain_host.py": {
+    "B104": 1
+  },
+  "scripts/wan-server.py": {
+    "B104": 1,
+    "B615": 1
+  }
+}
