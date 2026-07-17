@@ -34,8 +34,31 @@ The two LLM-judge rails respect ``app_settings.deepeval_judge_model``
 and route through OpenAI-compatible providers via DeepEval's standard
 configuration. They share the same fail-soft contract as the brand
 metric — ``ImportError`` / runtime failure returns
-``(True, 1.0, "deepeval-skipped")`` so the rail can never take down
+``(True, None, "deepeval-skipped")`` so the rail can never take down
 the pipeline.
+
+Fail-soft is not fail-silent (poindexter#876)
+---------------------------------------------
+
+Every skip path returns ``score=None`` — NOT MEASURED. ``passed=True`` is
+retained (an advisory rail that cannot run must never veto) but there is no
+number, because a number here is a fabricated measurement. All three rails
+previously returned ``1.0`` on skip, which ``multi_model_qa._check_deepeval_*``
+rescaled to a **100.0 review**: a rail that never ran was recorded as a perfect
+pass. The brand metric makes the trap concrete — it is binary, so clean content
+genuinely scores ``1.0``, and "clean" was therefore indistinguishable from
+"deepeval isn't installed".
+
+This is not hypothetical. #601: g_eval was ``OPENAI_API_KEY``-erroring on every
+call and **scored 100 advisory on every run for ~7 days** before anyone noticed.
+That fix addressed the cause (wire the judge to Ollama); this one removes the
+mechanism, so the next cause — a renamed model, a dropped extra, a judge outage
+— surfaces immediately instead.
+
+Callers MUST branch on ``score is None`` and record NO review. Genuine failures
+also emit a ``qa_rail_degraded`` finding (``_surface_deepeval_degraded``, the
+kind ``ragas_eval`` established in poindexter#847); benign inapplicability
+(empty content, no retrieval context) returns ``None`` without a finding.
 
 Custom-metric pattern
 ---------------------
@@ -324,16 +347,25 @@ def make_test_case(
     )
 
 
-def evaluate_brand_fabrication(content: str, topic: str = "") -> tuple[bool, float, str]:
+def evaluate_brand_fabrication(
+    content: str, topic: str = "",
+) -> tuple[bool, float | None, str]:
     """Run the brand-fabrication metric and return ``(passed, score, reason)``.
 
     Never raises — DeepEval errors are caught + surfaced as
-    ``(True, 1.0, "deepeval-skipped")`` so the rail can't take down
+    ``(True, None, "deepeval-skipped")`` so the rail can't take down
     the pipeline. Caller correlates the score with the legacy
     ``content_validator`` result via the audit log.
+
+    ``score=None`` means NOT MEASURED (poindexter#876) — callers MUST branch on
+    it rather than record the value. This metric is binary, so a *clean* post
+    genuinely scores ``1.0``; when the skip paths also returned ``1.0``, "clean"
+    and "never ran" were the same value, and the caller rescaled both to a
+    ``100.0`` review. ``passed=True`` is retained so an advisory skip cannot
+    veto.
     """
     if not content or not isinstance(content, str):
-        return True, 1.0, "empty content"
+        return True, None, "empty content"
 
     try:
         metric_cls = _build_brand_fabrication_metric()
@@ -345,44 +377,61 @@ def evaluate_brand_fabrication(content: str, topic: str = "") -> tuple[bool, flo
         logger.warning(
             "[deepeval] deepeval not installed (%s) — skipping rail", e,
         )
-        _surface_deepeval_degraded("deepeval-not-installed", str(e))
-        return True, 1.0, "deepeval-not-installed"
+        _surface_deepeval_degraded(
+            "deepeval-not-installed", str(e), rail="brand_fabrication",
+        )
+        return True, None, "deepeval-not-installed"
     except Exception as e:
         logger.warning("[deepeval] Unexpected error in brand metric: %s", e, exc_info=True)
         _surface_deepeval_degraded(
-            f"deepeval-error: {type(e).__name__}", str(e),
+            f"deepeval-error: {type(e).__name__}", str(e), rail="brand_fabrication",
         )
-        return True, 1.0, f"deepeval-error: {type(e).__name__}"
+        return True, None, f"deepeval-error: {type(e).__name__}"
 
 
-def _surface_deepeval_degraded(reason: str, detail: str) -> None:
-    """Make a deepeval brand-rail fail-open VISIBLE (no silent skip).
+def _surface_deepeval_degraded(reason: str, detail: str, *, rail: str) -> None:
+    """Make a deepeval rail's inability to run VISIBLE (no silent skip).
 
-    ``evaluate_brand_fabrication`` must not raise (a rail can't take down
-    the pipeline), so on a missing package or runtime error it returns a
-    passing ``(True, 1.0, ...)``. That is a fail-OPEN: the rail scores a
-    perfect pass without actually checking anything. Before this, the only
-    trace was a WARNING log — an operator watching dashboards would see the
-    brand rail "passing" and assume it was working. Emit a typed finding so
-    the degradation routes to Discord / the Findings board instead of
-    hiding in the logs (feedback_no_silent_defaults).
+    The ``evaluate_*`` rails must not raise (a rail can't take down the
+    pipeline), so on a missing package or runtime error they return a passing
+    verdict. As of poindexter#876 they return ``score=None`` with it, so the
+    un-run check is no longer recorded as a perfect measurement — but "absent"
+    still needs to be loud, or a permanently-dead rail just looks like a rail
+    nobody reviews. Emit a typed finding so the degradation routes to Discord /
+    the Findings board instead of hiding in the logs
+    (feedback_no_silent_defaults).
+
+    ``rail`` scopes the source + dedup key. This was brand-only; g_eval and
+    faithfulness emitted NOTHING, which is how #601 hid for ~7 days (g_eval
+    OPENAI_API_KEY-erroring on every call while reporting a perfect 100).
+
+    Kind is ``qa_rail_degraded`` — the convention ``ragas_eval`` established
+    (poindexter#847). Dedup key follows its ``qa_rail_degraded:<rail>:<detail>``
+    shape so one chronic failure pages once rather than once per post; the
+    findings_alert_router owns collapsing repeat fires.
+
+    Call ONLY for genuine failures. A benign inapplicability (empty content, no
+    retrieval context) also returns ``score=None`` but is not a finding — the
+    rail correctly had nothing to measure, and paging on it is noise.
     """
     try:
         from utils.findings import emit_finding
 
         emit_finding(
-            source="deepeval_rails.evaluate_brand_fabrication",
+            source=f"deepeval_rails.evaluate_{rail}",
             kind="qa_rail_degraded",
             severity="warn",
-            title="DeepEval brand-fabrication rail failed open",
+            title=f"DeepEval {rail} rail could not run",
             body=(
-                f"The deepeval brand-fabrication rail could not run ({reason}: "
-                f"{detail}). It returned a passing score without checking the "
-                "post. The rail is advisory, so this does not block publish — "
-                "but brand-fabrication signal is missing until deepeval is "
-                "healthy. Investigate the deepeval install / runtime."
+                f"The deepeval {rail} rail could not run ({reason}: {detail}). "
+                "It recorded NO review for this post rather than a score — the "
+                "rail is simply absent from the QA pass. It is advisory, so "
+                "this does not block publish, but the signal is missing until "
+                "deepeval is healthy. Investigate the deepeval install / "
+                "runtime / judge model."
             ),
-            dedup_key=f"deepeval_brand_degraded_{reason}",
+            dedup_key=f"qa_rail_degraded:deepeval_{rail}:{reason}",
+            extra={"rail": f"deepeval_{rail}", "reason": reason},
         )
     except Exception:  # noqa: BLE001 — finding emission is best-effort
         logger.debug("[deepeval] emit_finding unavailable", exc_info=True)
@@ -499,7 +548,7 @@ async def evaluate_g_eval(
     threshold: float = 0.7,
     site_config: Any | None = None,
     pool: Any = None,
-) -> tuple[bool, float, str]:
+) -> tuple[bool, float | None, str]:
     """Run DeepEval's G-Eval (LLM-judge) against ``content``.
 
     G-Eval is a chain-of-thought LLM-judge metric: the judge model
@@ -521,17 +570,20 @@ async def evaluate_g_eval(
     dispatcher-or-direct shape as ``llm_text`` / ``topic_ranking``.
 
     Returns ``(passed, score, reason)`` — ``passed = score >= threshold``.
-    Never raises: import failures or judge errors return safe defaults.
+    Never raises: import failures or judge errors return ``score=None``
+    (NOT MEASURED — poindexter#876; callers branch on it and record no review)
+    with ``passed=True`` so an advisory skip still cannot veto.
     """
     if not content or not isinstance(content, str):
-        return True, 1.0, "empty content"
+        return True, None, "empty content"
 
     try:
         from deepeval.metrics import GEval as _GEvalMetric
         from deepeval.test_case import LLMTestCase, LLMTestCaseParams
     except ImportError as e:
         logger.warning("[deepeval] deepeval not installed (%s) — skipping g-eval", e)
-        return True, 1.0, "deepeval-not-installed"
+        _surface_deepeval_degraded("deepeval-not-installed", str(e), rail="g_eval")
+        return True, None, "deepeval-not-installed"
 
     if not criterion:
         criterion = _resolve_g_eval_criterion()
@@ -565,7 +617,10 @@ async def evaluate_g_eval(
         return passed, score, reason
     except Exception as e:
         logger.warning("[deepeval] g-eval error: %s", e, exc_info=True)
-        return True, 1.0, f"deepeval-error: {type(e).__name__}"
+        _surface_deepeval_degraded(
+            f"deepeval-error: {type(e).__name__}", str(e), rail="g_eval",
+        )
+        return True, None, f"deepeval-error: {type(e).__name__}"
 
 
 async def evaluate_faithfulness(
@@ -576,7 +631,7 @@ async def evaluate_faithfulness(
     threshold: float = 0.8,
     site_config: Any | None = None,
     pool: Any = None,
-) -> tuple[bool, float, str]:
+) -> tuple[bool, float | None, str]:
     """Run DeepEval's ``FaithfulnessMetric`` on ``content``.
 
     Every claim in the output must be attributable to one of the
@@ -590,15 +645,21 @@ async def evaluate_faithfulness(
     is wired; legacy ``OllamaModel`` otherwise).
 
     Returns ``(passed, score, reason)``. Returns
-    ``(True, 1.0, "no-context")`` when ``retrieval_context`` is empty
+    ``(True, None, "no-context")`` when ``retrieval_context`` is empty
     or None — the metric can't run without grounding text, so we
     skip rather than fail (the brand-fabrication rail catches the
-    fabrication patterns at a different layer).
+    fabrication patterns at a different layer). ``score=None`` means NOT
+    MEASURED (poindexter#876); callers branch on it and record no review
+    instead of a fabricated perfect score.
+
+    ``no-context`` / ``empty content`` are benign INAPPLICABILITY — no finding
+    is emitted, because the rail correctly had nothing to measure. A genuine
+    failure (missing package, judge error) does emit one.
     """
     if not content or not isinstance(content, str):
-        return True, 1.0, "empty content"
+        return True, None, "empty content"
     if not retrieval_context:
-        return True, 1.0, "no-context"
+        return True, None, "no-context"
 
     try:
         from deepeval.metrics import FaithfulnessMetric
@@ -607,7 +668,10 @@ async def evaluate_faithfulness(
         logger.warning(
             "[deepeval] deepeval not installed (%s) — skipping faithfulness", e,
         )
-        return True, 1.0, "deepeval-not-installed"
+        _surface_deepeval_degraded(
+            "deepeval-not-installed", str(e), rail="faithfulness",
+        )
+        return True, None, "deepeval-not-installed"
 
     resolved_model = None
     if pool is not None:
@@ -631,7 +695,10 @@ async def evaluate_faithfulness(
         return passed, score, reason
     except Exception as e:
         logger.warning("[deepeval] faithfulness error: %s", e, exc_info=True)
-        return True, 1.0, f"deepeval-error: {type(e).__name__}"
+        _surface_deepeval_degraded(
+            f"deepeval-error: {type(e).__name__}", str(e), rail="faithfulness",
+        )
+        return True, None, f"deepeval-error: {type(e).__name__}"
 
 
 def is_enabled(site_config: Any) -> bool:

@@ -249,9 +249,9 @@ class TestNoMeasurement:
         )
         await qa_self_consistency.run(_state())
         assert len(calls) == 1
-        assert calls[0]["kind"] == "qa_rail_no_measurement"
+        assert calls[0]["kind"] == "qa_rail_degraded"
         assert calls[0]["severity"] == "warn"
-        assert calls[0]["dedup_key"] == "qa_rail_no_measurement:self_consistency"
+        assert calls[0]["dedup_key"] == "qa_rail_degraded:self_consistency"
         assert "embedding step failed" in calls[0]["body"]
         assert calls[0]["extra"]["rail"] == "self_consistency"
 

@@ -114,8 +114,14 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
 
         emit_finding(
             source="qa.self_consistency",
-            kind="qa_rail_no_measurement",
-            title="self_consistency rail produced no measurement",
+            # qa_rail_degraded is the shared kind for "a QA rail could not
+            # measure" — established by ragas_eval (poindexter#847) and used by
+            # deepeval_rails. #2655 shipped a one-off `qa_rail_no_measurement`
+            # here instead; consolidated in poindexter#876 so all three rails
+            # route and dedup identically rather than fragmenting the Findings
+            # board across near-synonym kinds.
+            kind="qa_rail_degraded",
+            title="self_consistency rail could not run",
             body=(
                 f"{reason}\n\nNo review was appended for this post — the rail "
                 "is absent from the QA pass rather than scored. Repeated "
@@ -128,7 +134,7 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             # occurrence still lands on the Findings dashboard with its own
             # reason.
             severity="warn",
-            dedup_key="qa_rail_no_measurement:self_consistency",
+            dedup_key="qa_rail_degraded:self_consistency",
             extra={"rail": "self_consistency", "reason": reason},
         )
         return {}

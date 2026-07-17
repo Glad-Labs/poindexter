@@ -1548,6 +1548,17 @@ class MultiModelQA:
         passed, score_unit, reason = deepeval_rails.evaluate_brand_fabrication(
             content, topic,
         )
+        if score_unit is None:
+            # The rail measured nothing (poindexter#876) — deepeval missing, or
+            # the metric raised. Record NO review rather than rescale a
+            # fabricated 1.0 into a perfect 100. The rail already emitted a
+            # qa_rail_degraded finding, and None is this method's established
+            # "no review" signal, which qa.deepeval already drops.
+            logger.warning(
+                "[MULTI_QA] deepeval_brand_fabrication did not measure (%s) — "
+                "no review recorded", reason,
+            )
+            return None
         # Convert 0.0–1.0 to 0–100. Brand metric is binary today (0 or 1),
         # but we rescale generally so future metrics (G-Eval, Faithfulness)
         # that return graded 0.0–1.0 scores fit the same shape.
@@ -1666,6 +1677,13 @@ class MultiModelQA:
             self._surface_reviewer_failure("deepeval_g_eval", exc)
             return None
 
+        if score_unit is None:
+            # Did not measure (poindexter#876) — no review, not a fake 100.
+            logger.warning(
+                "[MULTI_QA] deepeval_g_eval did not measure (%s) — no review "
+                "recorded", reason,
+            )
+            return None
         score_100 = round(float(score_unit) * 100.0, 1)
         return ReviewerResult(
             reviewer="deepeval_g_eval",
@@ -1788,6 +1806,16 @@ class MultiModelQA:
             self._surface_reviewer_failure("deepeval_faithfulness", exc)
             return None
 
+        if score_unit is None:
+            # Did not measure (poindexter#876) — no review, not a fake 100.
+            # Includes the benign "no-context" case: without retrieval context
+            # the metric genuinely cannot run, so it is absent rather than
+            # perfect.
+            logger.warning(
+                "[MULTI_QA] deepeval_faithfulness did not measure (%s) — no "
+                "review recorded", reason,
+            )
+            return None
         score_100 = round(float(score_unit) * 100.0, 1)
         return ReviewerResult(
             reviewer="deepeval_faithfulness",

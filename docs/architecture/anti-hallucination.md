@@ -121,13 +121,36 @@ ran, enough to clear the prod bar of `80`). Since 2026-07 `evaluate()` returns
 `score=None` on every skip path (contract is `tuple[bool, float | None, str]`)
 and the atom branches on `score is None` → **no review appended**, reusing its
 own existing "didn't run" convention, plus a `warn`-severity
-`qa_rail_no_measurement` finding (stable `dedup_key`, so a run of skips is one
-Discord ping while every occurrence still lands on the Findings dashboard). The
-general rule for any new rail: **a skip must be absent from the aggregate, never
-a passing member of it** — and if the neutral value you'd return on failure is
+`qa_rail_degraded` finding (stable `dedup_key`, so a run of skips is one Discord
+ping while every occurrence still lands on the Findings dashboard). The general
+rule for any new rail: **a skip must be absent from the aggregate, never a
+passing member of it** — and if the neutral value you'd return on failure is
 inside the metric's own domain, it is a lie the type-checker cannot catch. Pinned
 by `test_qa_self_consistency_atom.py::TestNoMeasurement` and the `score is None`
 assertions in `test_self_consistency_rail.py`.
+
+**The same disease was live in all three `deepeval_rails` rails
+(2026-07, poindexter#876) — and it had already bitten us.** `evaluate_
+brand_fabrication` / `evaluate_g_eval` / `evaluate_faithfulness` each returned
+`(True, 1.0, "…")` on every skip path (empty content, `deepeval-not-installed`,
+judge error, `no-context`), which `multi_model_qa._check_deepeval_*` rescaled to
+a `100.0` review. The brand metric makes the trap vivid: it is binary, so clean
+content genuinely scores `1.0` — "clean" and "deepeval isn't installed" were
+literally the same value. This is exactly the #601 incident: g*eval was
+`OPENAI_API_KEY`-erroring on every call and **reported a perfect 100 advisory for
+~7 days** before anyone noticed. That fix wired the judge to Ollama (the cause);
+#876 removed the mechanism, so the next cause surfaces at once. All three now
+return `score=None` on skip (`passed=True` retained) and their `\_check_deepeval*\*`callers append no review; genuine failures emit the finding, benign
+inapplicability (empty / no-context) does not. Pinned by`test_deepeval_rails.py::TestDegradedRailIsLoud`and the`score is None`
+assertions there.
+
+**One finding kind across all QA rails: `qa_rail_degraded`.** `ragas_eval`
+established it (poindexter#847); deepeval and (as of #876) self_consistency use
+it too. #2655 briefly shipped a one-off `qa_rail_no_measurement` for
+self_consistency; that was consolidated in #876 so a rail going dark routes and
+dedups identically no matter which rail it is, instead of fragmenting the
+Findings board across near-synonym kinds. `dedup_key` shape is
+`qa_rail_degraded:<rail>[:<detail>]`.
 
 The programmatic validator's warning penalty is gentler and DB-tunable too: each
 non-critical warning shaves `qa_validator_warning_penalty` points (default `5`,

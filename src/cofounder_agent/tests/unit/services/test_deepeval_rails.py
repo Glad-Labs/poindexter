@@ -6,8 +6,17 @@ unconditionally. The g-eval / faithfulness rails depend on a real
 DeepEval install + a reachable judge model, so the live-judge tests
 mock the underlying ``deepeval.metrics`` classes via monkeypatch.
 The fail-soft contract (every rail returns
-``(True, 1.0, "<sentinel>")`` when DeepEval is missing or errors)
+``(True, None, "<sentinel>")`` when DeepEval is missing or errors)
 is verified directly without the SDK.
+
+**Every skip path asserts ``score is None``** (poindexter#876). These tests
+used to assert ``score == 1.0``, which is how the fail-open survived. The trap
+is sharpest here: ``test_clean_content_scores_one`` shows the brand metric
+genuinely returns ``1.0`` for clean content, so a *real* "this post is clean"
+and a *fake* "deepeval isn't installed" were the SAME VALUE — literally
+indistinguishable downstream, where both rescaled to a 100.0 review.
+``passed is True`` is still asserted everywhere (a rail that cannot run must
+never veto), but "didn't measure" now carries no number at all.
 """
 
 from __future__ import annotations
@@ -82,6 +91,10 @@ class TestMakeTestCase:
 @pytest.mark.unit
 class TestEvaluateBrandFabrication:
     def test_clean_content_scores_one(self):
+        """A REAL 1.0 — the brand metric is binary and clean content genuinely
+        scores 1.0. This is exactly why the fail-open was invisible: the skip
+        paths returned this same value, so "clean" and "never ran" were
+        indistinguishable. Keep asserting 1.0 here; that's a measurement."""
         passed, score, reason = evaluate_brand_fabrication(
             "FastAPI and PostgreSQL are reliable choices for backend development.",
             topic="Backend stacks",
@@ -93,12 +106,12 @@ class TestEvaluateBrandFabrication:
     def test_empty_content_skips_cleanly(self):
         passed, score, reason = evaluate_brand_fabrication("", topic="x")
         assert passed is True
-        assert score == 1.0
+        assert score is None
 
     def test_non_string_skips_cleanly(self):
         passed, score, reason = evaluate_brand_fabrication(None, topic="x")  # type: ignore[arg-type]
         assert passed is True
-        assert score == 1.0
+        assert score is None
 
     def test_fake_quote_pattern_lowers_score(self):
         # FAKE_QUOTE_PATTERNS catches obvious public-figure attribution.
@@ -181,7 +194,7 @@ class TestEvaluateGEval:
     async def test_empty_content_skips(self):
         passed, score, reason = await evaluate_g_eval("", topic="x")
         assert passed is True
-        assert score == 1.0
+        assert score is None
         assert reason == "empty content"
 
     @pytest.mark.asyncio
@@ -215,13 +228,19 @@ class TestEvaluateGEval:
 
     @pytest.mark.asyncio
     async def test_judge_exception_returns_safe_default(self, monkeypatch):
+        # Capture findings: the error path now emits qa_rail_degraded, and an
+        # un-patched emit_finding schedules a real audit_log_bg background write
+        # whenever a prior test in the run left the global audit logger
+        # initialised — which hangs loop teardown.
+        _capture_findings(monkeypatch)
+
         def factory(*_a, **_kw):
             raise RuntimeError("judge api down")
 
         monkeypatch.setattr("deepeval.metrics.GEval", factory)
         passed, score, reason = await evaluate_g_eval("post", topic="x")
         assert passed is True
-        assert score == 1.0
+        assert score is None
         assert "deepeval-error" in reason
 
     @pytest.mark.asyncio
@@ -293,7 +312,7 @@ class TestEvaluateFaithfulness:
             "Some post.", retrieval_context=None,
         )
         assert passed is True
-        assert score == 1.0
+        assert score is None
         assert reason == "no-context"
 
     @pytest.mark.asyncio
@@ -320,6 +339,10 @@ class TestEvaluateFaithfulness:
 
     @pytest.mark.asyncio
     async def test_judge_exception_returns_safe_default(self, monkeypatch):
+        # See the g_eval twin: the error path now emits a finding, so capture
+        # it rather than let emit_finding schedule a real background write.
+        _capture_findings(monkeypatch)
+
         def factory(*_a, **_kw):
             raise RuntimeError("judge died")
 
@@ -328,8 +351,87 @@ class TestEvaluateFaithfulness:
             "post.", retrieval_context=["context."],
         )
         assert passed is True
-        assert score == 1.0
+        assert score is None
         assert "deepeval-error" in reason
+
+
+def _capture_findings(monkeypatch) -> list[dict]:
+    """Collect emit_finding kwargs. The rails import emit_finding inside the
+    function body, so patching the module attribute intercepts it."""
+    calls: list[dict] = []
+    import utils.findings as findings_module
+
+    monkeypatch.setattr(findings_module, "emit_finding", lambda **kw: calls.append(kw))
+    return calls
+
+
+@pytest.mark.unit
+class TestDegradedRailIsLoud:
+    """poindexter#876 — a rail that could not run must be VISIBLE.
+
+    Only ``evaluate_brand_fabrication`` emitted a finding before this;
+    ``evaluate_g_eval`` and ``evaluate_faithfulness`` were fully silent — no
+    honest score AND no finding. That is exactly how #601 hid for ~7 days:
+    g_eval was OPENAI_API_KEY-erroring on every call and reported a perfect
+    100 the whole time, with nothing anywhere to say otherwise.
+
+    All three now share the ``qa_rail_degraded`` kind (the convention
+    ``ragas_eval`` already established, poindexter#847).
+    """
+
+    @pytest.mark.asyncio
+    async def test_g_eval_judge_error_emits_finding(self, monkeypatch):
+        calls = _capture_findings(monkeypatch)
+
+        def factory(*_a, **_kw):
+            raise RuntimeError("judge api down")
+
+        monkeypatch.setattr("deepeval.metrics.GEval", factory)
+        _passed, score, _reason = await evaluate_g_eval("post", topic="x")
+        assert score is None
+        assert len(calls) == 1
+        assert calls[0]["kind"] == "qa_rail_degraded"
+        assert calls[0]["severity"] == "warn"
+        assert calls[0]["dedup_key"].startswith("qa_rail_degraded:deepeval_g_eval")
+
+    @pytest.mark.asyncio
+    async def test_faithfulness_judge_error_emits_finding(self, monkeypatch):
+        calls = _capture_findings(monkeypatch)
+
+        def factory(*_a, **_kw):
+            raise RuntimeError("judge died")
+
+        monkeypatch.setattr("deepeval.metrics.FaithfulnessMetric", factory)
+        _passed, score, _reason = await evaluate_faithfulness(
+            "post.", retrieval_context=["context."],
+        )
+        assert score is None
+        assert len(calls) == 1
+        assert calls[0]["kind"] == "qa_rail_degraded"
+        assert calls[0]["dedup_key"].startswith("qa_rail_degraded:deepeval_faithfulness")
+
+    def test_brand_uses_the_shared_kind(self, monkeypatch):
+        calls = _capture_findings(monkeypatch)
+        monkeypatch.setattr(
+            _de_mod, "_build_brand_fabrication_metric",
+            lambda: (_ for _ in ()).throw(RuntimeError("metric blew up")),
+        )
+        _passed, score, _reason = evaluate_brand_fabrication("post", topic="x")
+        assert score is None
+        assert calls[0]["kind"] == "qa_rail_degraded"
+        assert calls[0]["dedup_key"].startswith("qa_rail_degraded:deepeval_brand")
+
+    @pytest.mark.asyncio
+    async def test_benign_skips_emit_no_finding(self, monkeypatch):
+        """Empty content / no-context are INAPPLICABILITY, not failure — the
+        rail correctly has nothing to measure. Score is still None (it did not
+        measure), but paging an operator would be noise."""
+        calls = _capture_findings(monkeypatch)
+        assert evaluate_brand_fabrication("", topic="x")[1] is None
+        assert (await evaluate_g_eval("", topic="x"))[1] is None
+        assert (await evaluate_faithfulness("", retrieval_context=["c"]))[1] is None
+        assert (await evaluate_faithfulness("post", retrieval_context=None))[1] is None
+        assert calls == []
 
 
 @pytest.mark.unit
