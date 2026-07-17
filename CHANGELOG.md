@@ -2,6 +2,27 @@
 
 ## Unreleased
 
+## [0.106.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.105.0...v0.106.0) (2026-07-17)
+
+
+### Features
+
+* **ci:** make bandit a ratchet instead of a GitHub-issue firehose ([#2650](https://github.com/Glad-Labs/glad-labs-stack/issues/2650)) ([aaab45a](https://github.com/Glad-Labs/glad-labs-stack/commit/aaab45a21561db0b59db7bc7a1c0cde29b8eb7bf))
+
+
+### Bug Fixes
+
+* **gpu:** exempt GPU-pinned models from the shared GPU lock ([#2646](https://github.com/Glad-Labs/glad-labs-stack/issues/2646)) ([707d836](https://github.com/Glad-Labs/glad-labs-stack/commit/707d836a1ad2c368ce56024574aa7d848aea4f68))
+* **llm:** litellm_provider.embed() never passed api_base — all embeds failed ([#2657](https://github.com/Glad-Labs/glad-labs-stack/issues/2657)) ([9309e0a](https://github.com/Glad-Labs/glad-labs-stack/commit/9309e0ab25456e98351a3b2eed2415b01f78834c))
+* **obs:** atom_runs.metrics never receives StageResult.metrics — lab + writer observability dead since [#355](https://github.com/Glad-Labs/glad-labs-stack/issues/355) ([#2649](https://github.com/Glad-Labs/glad-labs-stack/issues/2649)) ([71adc12](https://github.com/Glad-Labs/glad-labs-stack/commit/71adc1236f059dc6e751a197ebdb51d2a8849ce5))
+* **ops:** dedup bandit findings before filing security issues ([#2645](https://github.com/Glad-Labs/glad-labs-stack/issues/2645)) ([475575d](https://github.com/Glad-Labs/glad-labs-stack/commit/475575db4051fdf8fe40459d464ec8dfb730790e))
+* **podcast:** emit a finding when rendered audio can't reach durable storage ([#2656](https://github.com/Glad-Labs/glad-labs-stack/issues/2656)) ([c83b7b0](https://github.com/Glad-Labs/glad-labs-stack/commit/c83b7b013aac2db45289615429e3b247cfc2f9cc))
+* **qa:** stop the self_consistency rail scoring a skipped check 100 ([#2655](https://github.com/Glad-Labs/glad-labs-stack/issues/2655)) ([0311f20](https://github.com/Glad-Labs/glad-labs-stack/commit/0311f209c1b41da1e3f089e7c5022d6bd7ec0bb0))
+* **security:** pin HF model revisions across the image + video servers (B615) ([#2658](https://github.com/Glad-Labs/glad-labs-stack/issues/2658)) ([61d0283](https://github.com/Glad-Labs/glad-labs-stack/commit/61d0283267eca4a65ae95bd1d67f7962941cbec0))
+* **security:** silence 30 bandit B608 false positives with nosec annotations ([#2644](https://github.com/Glad-Labs/glad-labs-stack/issues/2644)) ([3f10d96](https://github.com/Glad-Labs/glad-labs-stack/commit/3f10d969150f5f4b1c3af58fd452ff9e3fa38e95))
+* **security:** triage 23 bandit B608 findings in brain/ and scripts/ ([#2647](https://github.com/Glad-Labs/glad-labs-stack/issues/2647)) ([eccd9c2](https://github.com/Glad-Labs/glad-labs-stack/commit/eccd9c2d71d4d0653a40c50217d9c3b58a8b4b63))
+* **video:** shim retired sdxl* shot sources + surface frozen-shot-list validation failures ([#2652](https://github.com/Glad-Labs/glad-labs-stack/issues/2652)) ([aeb2b54](https://github.com/Glad-Labs/glad-labs-stack/commit/aeb2b54a011708e35799b8449dfab43af9471931))
+
 ## [0.105.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.104.0...v0.105.0) (2026-07-16)
 
 
