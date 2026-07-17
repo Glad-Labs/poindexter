@@ -288,6 +288,10 @@ class SourceFeaturedImageStage:
                         "info",
                     )
                 except Exception:  # noqa: BLE001 — telemetry only
+                    # silent-ok: fire-and-forget audit row for style analytics —
+                    # the chosen style is already applied to updates[] above, so
+                    # only the audit trail row is lost, and a real DB-write
+                    # outage surfaces through the pipeline's load-bearing writes.
                     pass
 
             def _on_style_picked_sync(s: str) -> None:
@@ -299,7 +303,10 @@ class SourceFeaturedImageStage:
                 try:
                     asyncio.create_task(_on_style(s))
                 except RuntimeError:
-                    pass  # no running loop — tests/bootstrap
+                    # silent-ok: no running event loop (tests / bootstrap) — the
+                    # style is already recorded in updates[]; only the async
+                    # audit emit is skipped, which has nowhere to run anyway.
+                    pass
 
             gen_image = await _try_image_gen_featured(
                 subject=_resolve_featured_subject(context),
@@ -831,7 +838,25 @@ def _load_styles_from_settings(site_config: Any = None) -> list[tuple[str, str]]
         return []
     try:
         parsed = json.loads(raw)
-    except Exception:
+    except Exception as exc:
+        # The operator SET image_styles, so a silent [] hides a config typo and
+        # falls back to the built-in styles with no signal. Surface it as a
+        # non-paging finding rather than a debug log below the prod level.
+        from utils.findings import emit_finding
+        emit_finding(
+            source="modules.content.stages.source_featured_image",
+            kind="image_styles_setting_malformed",
+            title="image_styles setting is not valid JSON — custom styles ignored",
+            body=(
+                f"json.loads(image_styles) raised {type(exc).__name__}: {exc}. "
+                "The featured-image rotation falls back to the built-in styles; "
+                "the operator's configured styles are not in effect until the "
+                "app_settings.image_styles JSON is fixed."
+            ),
+            severity="info",
+            dedup_key="image_styles_setting_malformed",
+            extra={"error_type": type(exc).__name__},
+        )
         return []
     return [(s["scene"], s["tags"]) for s in parsed if "scene" in s and "tags" in s]
 
@@ -890,8 +915,10 @@ async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
                 rows = await conn.fetch(_QUERY, window)
             return [r["style"] for r in rows if r["style"]]
         except Exception:
-            # Pool errors are recoverable — fall through to the
-            # legacy raw-connect path rather than failing the stage.
+            # silent-ok: not a swallow — a pooled-read error deliberately falls
+            # THROUGH to the raw-connect path below, whose own failure IS
+            # reported (recent_published_styles_read_failed). Reporting here too
+            # would double-signal one lost read.
             pass
 
     try:
@@ -906,7 +933,27 @@ async def _load_recent_published_styles(site_config: Any = None) -> list[str]:
             return [r["style"] for r in rows if r["style"]]
         finally:
             await conn.close()
-    except Exception:
+    except Exception as exc:
+        # Both the pooled read (above, deliberate fall-through) and this
+        # raw-connect fallback failed — so cross-post rotation can't see any
+        # history and the SAME style will recur across posts (the exact
+        # regression this function's docstring records fixing once already).
+        # Surface it instead of returning [] silently.
+        from utils.findings import emit_finding
+        emit_finding(
+            source="modules.content.stages.source_featured_image",
+            kind="recent_published_styles_read_failed",
+            title="Recent-styles read failed — cross-post image-style rotation disabled",
+            body=(
+                f"Both the pooled and raw-connect reads of recent published "
+                f"image styles failed ({type(exc).__name__}: {exc}). Rotation "
+                "falls back to no history, so it cannot avoid repeating a style "
+                "already used on a recent post."
+            ),
+            severity="info",
+            dedup_key="recent_published_styles_read_failed",
+            extra={"error_type": type(exc).__name__},
+        )
         return []
 
 
