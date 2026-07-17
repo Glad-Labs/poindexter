@@ -63,14 +63,14 @@ def _row_to_profile(row: Any) -> SubredditProfile:
 async def list_profiles(pool: Any, *, enabled_only: bool = False) -> list[SubredditProfile]:
     where = "WHERE enabled " if enabled_only else ""
     rows = await pool.fetch(
-        f"SELECT {_PROFILE_COLS} FROM subreddit_profiles {where}ORDER BY subreddit"
+        f"SELECT {_PROFILE_COLS} FROM subreddit_profiles {where}ORDER BY subreddit"  # nosec B608 - _PROFILE_COLS is a hardcoded column-list constant; where is one of two hardcoded literals
     )
     return [_row_to_profile(r) for r in rows]
 
 
 async def get_profile(pool: Any, subreddit: str) -> SubredditProfile | None:
     row = await pool.fetchrow(
-        f"SELECT {_PROFILE_COLS} FROM subreddit_profiles WHERE subreddit = $1", subreddit
+        f"SELECT {_PROFILE_COLS} FROM subreddit_profiles WHERE subreddit = $1", subreddit  # nosec B608 - _PROFILE_COLS is a hardcoded column-list constant above
     )
     return _row_to_profile(row) if row else None
 
@@ -182,19 +182,19 @@ async def create_draft(pool: Any, *, target: str, body: str, title: str | None =
 async def list_drafts(pool: Any, *, status: str | None = None) -> list[CommunityDraft]:
     if status:
         rows = await pool.fetch(
-            f"SELECT {_DRAFT_COLS} FROM community_post_drafts WHERE status = $1 ORDER BY id DESC",
+            f"SELECT {_DRAFT_COLS} FROM community_post_drafts WHERE status = $1 ORDER BY id DESC",  # nosec B608 - _DRAFT_COLS is a hardcoded column-list constant above
             status,
         )
     else:
         rows = await pool.fetch(
-            f"SELECT {_DRAFT_COLS} FROM community_post_drafts ORDER BY id DESC"
+            f"SELECT {_DRAFT_COLS} FROM community_post_drafts ORDER BY id DESC"  # nosec B608 - _DRAFT_COLS is a hardcoded column-list constant above
         )
     return [_row_to_draft(r) for r in rows]
 
 
 async def get_draft(pool: Any, draft_id: int) -> CommunityDraft | None:
     row = await pool.fetchrow(
-        f"SELECT {_DRAFT_COLS} FROM community_post_drafts WHERE id = $1", draft_id
+        f"SELECT {_DRAFT_COLS} FROM community_post_drafts WHERE id = $1", draft_id  # nosec B608 - _DRAFT_COLS is a hardcoded column-list constant above
     )
     return _row_to_draft(row) if row else None
 

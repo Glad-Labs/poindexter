@@ -127,7 +127,7 @@ async def read_findings(
     detail_where = " AND ".join(detail_conditions)
     detail_params.append(limit)
     rows = await pool.fetch(
-        f"SELECT id, timestamp, source, severity, details FROM audit_log "
+        f"SELECT id, timestamp, source, severity, details FROM audit_log "  # nosec B608 - detail_where is hardcoded literal fragments with computed placeholder indices; values are bind params
         f"WHERE {detail_where} ORDER BY id DESC LIMIT ${didx}",
         *detail_params,
     )
@@ -155,21 +155,21 @@ async def read_findings(
         )
 
     # Aggregate rollups over the full window (filtered, no row limit).
-    emitted = await pool.fetchval(f"SELECT COUNT(*) FROM audit_log WHERE {base_where}", *params)
+    emitted = await pool.fetchval(f"SELECT COUNT(*) FROM audit_log WHERE {base_where}", *params)  # nosec B608 - base_where is hardcoded literal fragments with computed placeholder indices; values are bind params
     pending = await pool.fetchval(
-        f"SELECT COUNT(*) FROM audit_log WHERE {base_where} AND id > ${idx} "
+        f"SELECT COUNT(*) FROM audit_log WHERE {base_where} AND id > ${idx} "  # nosec B608 - base_where is hardcoded literal fragments with computed placeholder indices; values are bind params
         f"AND LOWER(severity) = ANY(${idx + 1}::text[])",
         *params,
         watermark,
         list(ROUTABLE_SEVERITIES),
     )
     by_kind_rows = await pool.fetch(
-        f"SELECT COALESCE(details->>'kind', '?') AS kind, COUNT(*) AS c "
+        f"SELECT COALESCE(details->>'kind', '?') AS kind, COUNT(*) AS c "  # nosec B608 - base_where is hardcoded literal fragments with computed placeholder indices; values are bind params
         f"FROM audit_log WHERE {base_where} GROUP BY 1 ORDER BY c DESC LIMIT 20",
         *params,
     )
     by_sev_rows = await pool.fetch(
-        f"SELECT {_SEVERITY_ROLLUP_SQL} AS severity, COUNT(*) AS c "
+        f"SELECT {_SEVERITY_ROLLUP_SQL} AS severity, COUNT(*) AS c "  # nosec B608 - _SEVERITY_ROLLUP_SQL/base_where are hardcoded literal fragments; values are bind params
         f"FROM audit_log WHERE {base_where} GROUP BY 1 ORDER BY c DESC",
         *params,
     )
@@ -221,7 +221,7 @@ async def get_findings_trend(pool: Any, *, range_seconds: int, step_seconds: int
         FROM grid g CROSS JOIN sev
         LEFT JOIN agg a ON a.bucket = g.bucket AND a.severity = sev.severity
         ORDER BY sev.severity, g.bucket
-        """,
+        """,  # nosec B608 - sev_sql is the hardcoded _SEVERITY_ROLLUP_SQL constant, never external input
         r,
         s,
     )

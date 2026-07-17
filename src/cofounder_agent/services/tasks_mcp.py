@@ -23,12 +23,12 @@ _LIST_COLS = (
 )
 
 _LIST_TASKS_FILTERED_SQL = (
-    f"SELECT {_LIST_COLS} "
+    f"SELECT {_LIST_COLS} "  # nosec B608 - _LIST_COLS is the hardcoded column-list constant above
     "FROM pipeline_tasks_view WHERE status = $1 ORDER BY created_at DESC LIMIT $2"
 )
 
 _LIST_TASKS_ALL_SQL = (
-    f"SELECT {_LIST_COLS} "
+    f"SELECT {_LIST_COLS} "  # nosec B608 - _LIST_COLS is the hardcoded column-list constant above
     "FROM pipeline_tasks_view ORDER BY created_at DESC LIMIT $1"
 )
 

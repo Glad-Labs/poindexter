@@ -55,18 +55,18 @@ ELECTRICITY_AXIS_PREDICATE = "cost_type LIKE 'electricity%'"
 # uniform ``# nosec B608``.
 _API_SQL = (
     "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
-    f"WHERE {API_AXIS_PREDICATE} AND {{w}}"
+    f"WHERE {API_AXIS_PREDICATE} AND {{w}}"  # nosec B608
 )
 _ELEC_SQL = (
     "SELECT COALESCE(SUM(cost_usd), 0) FROM cost_logs "
-    f"WHERE {ELECTRICITY_AXIS_PREDICATE} AND {{w}}"
+    f"WHERE {ELECTRICITY_AXIS_PREDICATE} AND {{w}}"  # nosec B608
 )
 _MEASURED_COUNT_SQL = (
-    f"SELECT COUNT(*) FROM cost_logs WHERE {ELECTRICITY_AXIS_PREDICATE} AND {{w}}"
+    f"SELECT COUNT(*) FROM cost_logs WHERE {ELECTRICITY_AXIS_PREDICATE} AND {{w}}"  # nosec B608
 )
 _EST_KWH_SQL = (
     "SELECT COALESCE(SUM(electricity_kwh), 0) FROM cost_logs "
-    f"WHERE {API_AXIS_PREDICATE} AND {{w}}"
+    f"WHERE {API_AXIS_PREDICATE} AND {{w}}"  # nosec B608
 )
 _BYTYPE_SQL = (
     "SELECT COALESCE(cost_type, 'inference') AS t, COALESCE(SUM(cost_usd), 0) AS v "

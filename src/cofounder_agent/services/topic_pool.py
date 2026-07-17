@@ -49,7 +49,7 @@ async def insert_pooled_topics(
         raise ValueError(f"insert_pooled_topics: refusing unknown table {table!r}")
 
     sql = (
-        f"INSERT INTO {table} "  # noqa: S608 — table is allowlisted above
+        f"INSERT INTO {table} "  # noqa: S608 — table is allowlisted above  # nosec B608
         "(niche_id, source, title, summary, url, category, score, dedup_key, status) "
         "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 'pooled') "
         "ON CONFLICT (niche_id, dedup_key) DO NOTHING "

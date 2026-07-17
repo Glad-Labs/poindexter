@@ -75,7 +75,7 @@ async def list_rules(
     if enabled is not None:
         args.append(enabled)
         where = " WHERE enabled = $1"
-    sql = f"SELECT * FROM remediation_rules{where} ORDER BY id"
+    sql = f"SELECT * FROM remediation_rules{where} ORDER BY id"  # nosec B608 - where is one of two hardcoded literals ("" or " WHERE enabled = $1")
     async with pool.acquire() as conn:
         rows = await conn.fetch(sql, *args)
     return [_row_to_dict(r) for r in rows]
@@ -86,7 +86,7 @@ async def get_rule(
 ) -> dict[str, Any] | None:
     """Return a single rule by id or alertname, or ``None`` if none matched."""
     col, value = _selector(rule_id, alertname)
-    sql = f"SELECT * FROM remediation_rules WHERE {col} = $1"
+    sql = f"SELECT * FROM remediation_rules WHERE {col} = $1"  # nosec B608 - col is "id" or "alertname" from _selector, never caller text
     async with pool.acquire() as conn:
         row = await conn.fetchrow(sql, value)
     return _row_to_dict(row) if row is not None else None
@@ -149,7 +149,7 @@ async def add_rule(
         for i, col in enumerate(_INSERT_COLUMNS, start=1)
     )
     sql = (
-        f"INSERT INTO remediation_rules ({cols_sql}) "
+        f"INSERT INTO remediation_rules ({cols_sql}) "  # nosec B608 - cols_sql/placeholders derive from the hardcoded _INSERT_COLUMNS tuple above; values are bind params
         f"VALUES ({placeholders}) RETURNING *"
     )
     async with pool.acquire() as conn:
@@ -163,7 +163,7 @@ async def remove_rule(
     """Delete a rule by id or alertname. Returns the deleted row, or ``None``
     if none matched (so an adapter can report a miss)."""
     col, value = _selector(rule_id, alertname)
-    sql = f"DELETE FROM remediation_rules WHERE {col} = $1 RETURNING *"
+    sql = f"DELETE FROM remediation_rules WHERE {col} = $1 RETURNING *"  # nosec B608 - col is "id" or "alertname" from _selector, never caller text
     async with pool.acquire() as conn:
         row = await conn.fetchrow(sql, value)
     return _row_to_dict(row) if row is not None else None
@@ -182,7 +182,7 @@ async def set_rule_enabled(
     within one 30s cycle (no restart)."""
     col, value = _selector(rule_id, alertname)
     sql = (
-        f"UPDATE remediation_rules SET enabled = $1, updated_at = now() "
+        f"UPDATE remediation_rules SET enabled = $1, updated_at = now() "  # nosec B608 - col is "id" or "alertname" from _selector, never caller text
         f"WHERE {col} = $2 RETURNING *"
     )
     async with pool.acquire() as conn:

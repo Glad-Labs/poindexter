@@ -787,7 +787,7 @@ async def _release_task_on_registry_unavailable(
                     error_message = $1,
                     updated_at = NOW()
                 WHERE task_id = $2 AND status = 'in_progress'
-                """,
+                """,  # nosec B608 - _REGISTRY_RELEASE_MAX_RETRIES is a hardcoded int constant, never external input
                 error_message,
                 task_id,
             )

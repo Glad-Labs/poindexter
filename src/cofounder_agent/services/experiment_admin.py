@@ -208,7 +208,7 @@ async def list_experiments(
     FROM experiments e
     WHERE {" AND ".join(where)}
     ORDER BY e.created_at DESC
-    """
+    """  # nosec B608 - where entries are hardcoded literal fragments with computed placeholder indices; values are bind params
     async with pool.acquire() as conn:
         rows = await conn.fetch(sql, *args)
     return [dict(r) for r in rows]

@@ -2773,7 +2773,7 @@ async def apply_operator_overrides(pool: Any) -> int:
             )
             n = len(set_map)
             row_id = await conn.fetchval(
-                f"UPDATE niches SET {assignments} "
+                f"UPDATE niches SET {assignments} "  # nosec B608 - set_map keys are validated against NICHE_OVERRIDE_COLUMNS above; values are bind params
                 f"WHERE slug = ${n + 1} AND writer_prompt_override = ${n + 2} "
                 "RETURNING id",
                 *set_map.values(),

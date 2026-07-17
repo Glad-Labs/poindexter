@@ -159,7 +159,7 @@ async def record_media_asset(
                     $14, $15, $16
                 ){conflict}
                 RETURNING id
-                """,
+                """,  # nosec B608 - conflict is "" or the hardcoded _VIDEO_UPSERT_CONFLICT constant, never external input
                 asset_type,
                 source,
                 storage_provider,

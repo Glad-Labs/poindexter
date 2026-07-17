@@ -1155,7 +1155,7 @@ async def _discard_thread_checkpoints(pool: Any, thread_id: str) -> int:
             total = 0
             for tbl in ("checkpoint_writes", "checkpoint_blobs", "checkpoints"):
                 res = await conn.execute(
-                    f"DELETE FROM {tbl} WHERE thread_id = $1::text", str(thread_id)
+                    f"DELETE FROM {tbl} WHERE thread_id = $1::text", str(thread_id)  # nosec B608 - tbl iterates the hardcoded checkpoint-table tuple above, never external input
                 )
                 # asyncpg returns a status tag like "DELETE 2"; take the count
                 # when present without a swallowing try/except.

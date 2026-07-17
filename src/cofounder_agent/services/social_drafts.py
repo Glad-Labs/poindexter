@@ -355,7 +355,7 @@ class SocialDraftsService:
         if platform_config is not None:
             updates.append(f"platform_config = ${len(args) + 1}")
             args.append(json.dumps(platform_config))
-        sql = f"UPDATE social_post_drafts SET {', '.join(updates)} WHERE id = $1"
+        sql = f"UPDATE social_post_drafts SET {', '.join(updates)} WHERE id = $1"  # nosec B608 - updates entries are hardcoded column literals with computed placeholder indices; values are bind params
         async with pool.acquire() as conn:
             await conn.execute(sql, *args)
 
@@ -409,7 +409,7 @@ class SocialDraftsService:
             ) rp ON true
             {where}
             ORDER BY d.created_at DESC
-        """
+        """  # nosec B608 - conditions entries are hardcoded column literals with computed placeholder indices; values are bind params
         async with pool.acquire() as conn:
             rows = await conn.fetch(sql, *args)
         return [_row_to_dataclass(r) for r in rows]
