@@ -20,6 +20,7 @@ from typing import Any
 from plugins.atom import AtomMeta, FieldSpec, RetryPolicy
 from services.media_asset_recorder import record_media_asset
 from services.podcast_service import PODCAST_DIR
+from utils.findings import emit_finding
 
 logger = logging.getLogger(__name__)
 
@@ -111,7 +112,35 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         PODCAST_DIR.mkdir(parents=True, exist_ok=True)
         shutil.move(src, durable)
     except OSError as exc:
+        # NOT the no-op above: the TTS already succeeded and the audio exists —
+        # only the move to durable storage failed. Returning the same empty list
+        # records no media_asset, so media_reconciliation sees a post with no
+        # podcast and re-dispatches, re-paying the whole TTS render against the
+        # identical disk failure. A warning alone is visible to a human reading
+        # Loki but leaves the return value success-shaped, which is exactly how
+        # poindexter#874 wedged a task for three weeks. Emit (issue #877).
         logger.warning("[podcast.persist] move failed for %s: %s", src, exc)
+        emit_finding(
+            source="podcast.persist",
+            kind="podcast_persist_failed",
+            title="podcast: rendered audio could not be moved to durable storage",
+            body=(
+                f"The podcast audio for task {task_id} rendered successfully but "
+                f"could not be moved from {src} to {durable}: {exc}. No "
+                f"media_asset row was written, so the podcast does not exist as "
+                f"far as the DB is concerned and media_reconciliation will "
+                f"re-dispatch it — re-paying the TTS render — until the "
+                f"underlying disk/permission problem is fixed."
+            ),
+            severity="warn",
+            dedup_key=f"podcast_persist_failed:{task_id}",
+            extra={
+                "task_id": str(task_id or ""),
+                "src": str(src),
+                "durable": str(durable),
+                "error": str(exc),
+            },
+        )
         return {"media_assets_recorded": []}
 
     try:

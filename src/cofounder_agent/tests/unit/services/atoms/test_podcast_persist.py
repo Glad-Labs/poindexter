@@ -9,7 +9,7 @@ is resolved later by ``podcast_distribute``).
 from __future__ import annotations
 
 from pathlib import Path
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -62,6 +62,56 @@ async def test_skips_when_no_audio_path(tmp_path: Path) -> None:
         result = await podcast_persist.run(state)
     assert result == {"media_assets_recorded": []}
     rec.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_no_audio_path_emits_no_finding(tmp_path: Path) -> None:
+    """The legitimate no-op stays silent — the render atom already emitted."""
+    state = {"task_id": "task-abc", "pool": _FakePool()}
+    mock_emit = MagicMock()
+    with patch.object(podcast_persist, "record_media_asset", new=AsyncMock()), \
+            patch.object(podcast_persist, "emit_finding", mock_emit):
+        await podcast_persist.run(state)
+    mock_emit.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_move_failure_emits_finding(tmp_path: Path) -> None:
+    """A failed move is a DEFECT, not a no-op (issue #877).
+
+    The TTS already succeeded and the audio exists — only the move to durable
+    storage failed. Returning the same empty list as "no narration produced"
+    leaves no media_asset row, so media_reconciliation re-dispatches and
+    re-pays the whole TTS render against the identical disk failure. Same
+    shape as #874: a logger.warning is visible to a human, but the return
+    value stays success-shaped so the watchdog can't branch on it.
+    """
+    src = tmp_path / "tmp_render.mp3"
+    src.write_bytes(b"ID3fake-audio-bytes")
+    state = {
+        "task_id": "task-abc",
+        "podcast_audio_path": str(src),
+        "pool": _FakePool(),
+    }
+    mock_emit = MagicMock()
+    rec = AsyncMock()
+    with patch.object(podcast_persist, "PODCAST_DIR", tmp_path / "podcast"), \
+            patch.object(podcast_persist, "record_media_asset", new=rec), \
+            patch.object(podcast_persist, "emit_finding", mock_emit), \
+            patch.object(
+                podcast_persist.shutil, "move",
+                side_effect=OSError("disk full"),
+            ):
+        result = await podcast_persist.run(state)
+
+    assert result == {"media_assets_recorded": []}
+    rec.assert_not_awaited()
+    assert mock_emit.call_count == 1
+    kwargs = mock_emit.call_args.kwargs
+    assert kwargs["kind"] == "podcast_persist_failed"
+    assert kwargs["severity"] == "warn"
+    assert kwargs["extra"]["task_id"] == "task-abc"
+    assert kwargs["dedup_key"] == "podcast_persist_failed:task-abc"
 
 
 @pytest.mark.asyncio
