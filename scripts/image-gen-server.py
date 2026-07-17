@@ -113,8 +113,19 @@ class ModelConfig:
     model_id: str
     default_steps: int
     default_guidance_scale: float
+    # Pinned commit SHA for model_id. An unpinned load resolves to whatever the
+    # repo's `main` points at on the day of a cold start, so the weights behind
+    # a "known-good" deploy can change with no commit here. Every SHA below was
+    # verified against BOTH the local HF cache snapshot and upstream `main` at
+    # pin time (2026-07-17), so pinning re-downloads nothing and changes no
+    # behaviour — it only stops future drift. A LoRA is a separate repo and gets
+    # its own pin. Both are required: see
+    # tests/unit/scripts/test_hf_revision_pinning.py (bandit's B615 does not
+    # cover diffusers, so it cannot catch a missing pin here).
+    revision: str | None = None
     lora_repo: str | None = None
     lora_weight_name: str | None = None
+    lora_revision: str | None = None
     scheduler_trailing: bool = False
     # pipeline_kind selects the diffusers pipeline class + call convention.
     # "sdxl"  -> StableDiffusionXLPipeline (fp16 variant, negative prompt, LoRA)
@@ -131,10 +142,12 @@ REGISTRY: dict[str, ModelConfig] = {
         friendly_name="sdxl_lightning",
         display_name="Stable Diffusion XL Lightning (4-step LoRA)",
         model_id="stabilityai/stable-diffusion-xl-base-1.0",
+        revision="462165984030d82259a11f4367a4eed129e94a7b",
         default_steps=4,
         default_guidance_scale=0.0,
         lora_repo="ByteDance/SDXL-Lightning",
         lora_weight_name="sdxl_lightning_4step_lora.safetensors",
+        lora_revision="c9a24f48e1c025556787b0c58dd67a091ece2e44",
         scheduler_trailing=True,
         notes="Distilled 4-step LoRA on top of Stable Diffusion XL base. Requires guidance_scale=0.",
     ),
@@ -142,6 +155,10 @@ REGISTRY: dict[str, ModelConfig] = {
         friendly_name="sdxl_turbo",
         display_name="Stable Diffusion XL Turbo",
         model_id="stabilityai/sdxl-turbo",
+        # Not present in this host's HF cache (config has never been selected),
+        # so this SHA is upstream `main` at pin time rather than a
+        # cache-verified running revision.
+        revision="71153311d3dbb46851df1931d3ca6e939de83304",
         default_steps=4,
         default_guidance_scale=0.0,
         notes="Single-pass turbo distillation. Lower quality than Lightning.",
@@ -150,6 +167,7 @@ REGISTRY: dict[str, ModelConfig] = {
         friendly_name="sdxl_base",
         display_name="Stable Diffusion XL Base 1.0",
         model_id="stabilityai/stable-diffusion-xl-base-1.0",
+        revision="462165984030d82259a11f4367a4eed129e94a7b",
         default_steps=30,
         default_guidance_scale=7.5,
         notes="Original Stable Diffusion XL — high quality, slower.",
@@ -158,6 +176,7 @@ REGISTRY: dict[str, ModelConfig] = {
         friendly_name="z_image_turbo",
         display_name="Z-Image-Turbo (Tongyi-MAI, 6B)",
         model_id="Tongyi-MAI/Z-Image-Turbo",
+        revision="f332072aa78be7aecdf3ee76d5c247082da564a6",
         default_steps=9,
         default_guidance_scale=0.0,
         pipeline_kind="zimage",
@@ -509,7 +528,9 @@ def load_pipeline(config: ModelConfig):
         # variant, no LoRA, no scheduler override, no attention-slicing knobs.
         from diffusers import ZImagePipeline
 
-        pipe = ZImagePipeline.from_pretrained(config.model_id, torch_dtype=dtype)
+        pipe = ZImagePipeline.from_pretrained(
+            config.model_id, torch_dtype=dtype, revision=config.revision,
+        )
         pipe = pipe.to("cuda")
         logger.info("%s ready", config.display_name)
         return pipe
@@ -519,13 +540,16 @@ def load_pipeline(config: ModelConfig):
     from_kwargs: dict[str, Any] = {"torch_dtype": dtype, "use_safetensors": True}
     if config.use_fp16_variant:
         from_kwargs["variant"] = "fp16"
-    pipe = StableDiffusionXLPipeline.from_pretrained(config.model_id, **from_kwargs)
+    pipe = StableDiffusionXLPipeline.from_pretrained(
+        config.model_id, revision=config.revision, **from_kwargs,
+    )
 
     if config.lora_repo:
-        logger.info("Loading LoRA from %s (%s)",
-                    config.lora_repo, config.lora_weight_name)
+        logger.info("Loading LoRA from %s (%s, revision=%s)",
+                    config.lora_repo, config.lora_weight_name, config.lora_revision)
         pipe.load_lora_weights(
-            config.lora_repo, weight_name=config.lora_weight_name
+            config.lora_repo, weight_name=config.lora_weight_name,
+            revision=config.lora_revision,
         )
         pipe.fuse_lora()
         logger.info("LoRA fused")

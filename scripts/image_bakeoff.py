@@ -50,6 +50,14 @@ NO_TEXT_CLAUSE = "clean textless composition, no text, no signage, no UI, no lab
 class BakeoffModel:
     key: str
     repo: str
+    # Pinned commit SHA for `repo`. A bake-off is a comparison, and an unpinned
+    # repo makes the result unreproducible — re-running months later would
+    # silently score different weights under the same key. It is also the same
+    # supply-chain exposure the live servers have. SHAs are upstream `main` as
+    # of the 2026-07-17 pin (the two also used by the live image server were
+    # additionally verified against this host's HF cache). Required by
+    # tests/unit/scripts/test_hf_revision_pinning.py.
+    revision: str
     pipeline_cls: str            # diffusers pipeline class name
     mechanism: str               # "cfg" | "distilled"
     steps: int
@@ -58,9 +66,11 @@ class BakeoffModel:
     license_tier: str            # "apache" | "mit" | "community" | "custom"
     gated: bool = False
     # SDXL-Lightning-style LoRA + trailing scheduler (mirrors the live server's
-    # ModelConfig); None/False for everything else.
+    # ModelConfig); None/False for everything else. A LoRA is a separate repo,
+    # so it carries its own pin.
     lora_repo: str | None = None
     lora_weight_name: str | None = None
+    lora_revision: str | None = None
     scheduler_trailing: bool = False
     use_fp16_variant: bool = False
     notes: str = ""
@@ -71,57 +81,70 @@ class BakeoffModel:
 ROSTER: list[BakeoffModel] = [
     BakeoffModel(
         "sdxl_lightning", "stabilityai/stable-diffusion-xl-base-1.0",
+        "462165984030d82259a11f4367a4eed129e94a7b",
         "StableDiffusionXLPipeline", "distilled", 4, 0.0, "float16", "openrail",
         lora_repo="ByteDance/SDXL-Lightning",
         lora_weight_name="sdxl_lightning_4step_lora.safetensors",
+        lora_revision="c9a24f48e1c025556787b0c58dd67a091ece2e44",
         scheduler_trailing=True, use_fp16_variant=True,
         notes="old baseline (SDXL + 4-step Lightning LoRA)",
     ),
     BakeoffModel(
         "z_image_turbo", "Tongyi-MAI/Z-Image-Turbo",
+        "f332072aa78be7aecdf3ee76d5c247082da564a6",
         "ZImagePipeline", "distilled", 9, 0.0, "bfloat16", "apache",
         notes="current control",
     ),
     BakeoffModel(
         "chroma1_hd", "lodestones/Chroma1-HD",
+        "0e0c60ece1e82b17cb7f77342d765ba5024c40c0",
         "ChromaPipeline", "cfg", 26, 4.5, "bfloat16", "apache",
     ),
     BakeoffModel(
         "chroma1_flash", "lodestones/Chroma1-Flash",
+        "093c4f63b60507234aa53a073f1f9f565b3f4336",
         "ChromaPipeline", "distilled", 8, 0.0, "bfloat16", "apache",
     ),
     BakeoffModel(
         "cogview4", "zai-org/CogView4-6B",
+        "63a52b7f6dace7033380cd6da14d0915eab3e6b5",
         "CogView4Pipeline", "cfg", 50, 3.5, "bfloat16", "apache",
     ),
     BakeoffModel(
         "lumina2", "Alpha-VLLM/Lumina-Image-2.0",
+        "53504abd8178b30685b6c4c7a4cd181ff78b73e9",
         "Lumina2Pipeline", "cfg", 30, 4.0, "bfloat16", "apache",
     ),
     BakeoffModel(
         "flux2_klein", "black-forest-labs/FLUX.2-klein-4B",
+        "e7b7dc27f91deacad38e78976d1f2b499d76a294",
         "Flux2Pipeline", "distilled", 8, 0.0, "bfloat16", "apache",
         notes="mechanism validated in dry run",
     ),
     BakeoffModel(
         "hidream_fast", "HiDream-ai/HiDream-I1-Fast",
+        "4856a5d8cd6fbd194780ed9f289bdf696d3afc10",
         "HiDreamImagePipeline", "distilled", 16, 0.0, "bfloat16", "mit",
     ),
     BakeoffModel(
         "qwen_image", "Qwen/Qwen-Image",
+        "75e0b4be04f60ec59a75f475837eced720f823b6",
         "QwenImagePipeline", "cfg", 30, 4.0, "bfloat16", "apache",
     ),
     BakeoffModel(
         "flux1_schnell", "black-forest-labs/FLUX.1-schnell",
+        "741f7c3ce8b383c54771c7003378a50191e9efe9",
         "FluxPipeline", "distilled", 4, 0.0, "bfloat16", "apache", gated=True,
     ),
     BakeoffModel(
         "sd35_medium", "stabilityai/stable-diffusion-3.5-medium",
+        "b940f670f0eda2d07fbb75229e779da1ad11eb80",
         "StableDiffusion3Pipeline", "cfg", 40, 4.5, "bfloat16", "community",
         gated=True,
     ),
     BakeoffModel(
         "krea2_turbo", "krea/Krea-2-Turbo",
+        "1161245028ef398cd0a951101b2bbf486464f841",
         "Krea2Pipeline", "distilled", 8, 0.0, "bfloat16", "custom",
         notes="eval-only; custom license (not gated)",
     ),
@@ -311,8 +334,12 @@ def load_pipeline(m: BakeoffModel):
         kwargs = {"torch_dtype": dtype}
         if m.use_fp16_variant:
             kwargs["variant"] = "fp16"
-        pipe = StableDiffusionXLPipeline.from_pretrained(m.repo, **kwargs)
-        pipe.load_lora_weights(hf_hub_download(m.lora_repo, m.lora_weight_name))
+        pipe = StableDiffusionXLPipeline.from_pretrained(
+            m.repo, revision=m.revision, **kwargs,
+        )
+        pipe.load_lora_weights(
+            hf_hub_download(m.lora_repo, m.lora_weight_name, revision=m.lora_revision)
+        )
         pipe.fuse_lora()
         if m.scheduler_trailing:
             pipe.scheduler = EulerDiscreteScheduler.from_config(
@@ -325,7 +352,7 @@ def load_pipeline(m: BakeoffModel):
             f"diffusers has no {m.pipeline_cls} (upgrade git main or trim {m.key})"
         )
     cls = getattr(diffusers, m.pipeline_cls)
-    return cls.from_pretrained(m.repo, torch_dtype=dtype).to("cuda:0")
+    return cls.from_pretrained(m.repo, torch_dtype=dtype, revision=m.revision).to("cuda:0")
 
 
 def _unload(pipe) -> None:

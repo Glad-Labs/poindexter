@@ -71,9 +71,29 @@ OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 # roundtrip on this server, since model selection here is much narrower
 # than image-gen's multi-model registry). The provider's swappable
 # ``generative_video_model`` seam (spec §3.3) sets this env in compose.
-MODEL_ID = os.getenv(
-    "WAN_MODEL_ID", "Wan-AI/Wan2.2-TI2V-5B-Diffusers",
-)
+_DEFAULT_MODEL_ID = "Wan-AI/Wan2.2-TI2V-5B-Diffusers"
+MODEL_ID = os.getenv("WAN_MODEL_ID", _DEFAULT_MODEL_ID)
+
+# Pinned commit for the default model. An unpinned load resolves to whatever
+# the repo's `main` points at on the day of a cold start, so the weights behind
+# an unchanged deploy can move without a commit here — a supply-chain exposure
+# and a reproducibility hole. This SHA was upstream `main` at pin time
+# (2026-07-17) and matches this host's cached snapshot, so pinning re-downloads
+# nothing and changes no behaviour today; it only stops future drift.
+#
+# The pin is deliberately conditional. A SHA is only meaningful inside the repo
+# it came from, so applying it to an operator's custom WAN_MODEL_ID would
+# request a commit that does not exist there — a guaranteed hard failure at
+# load. A custom model therefore either supplies WAN_MODEL_REVISION to pin
+# itself (recommended, and warned about below when absent) or tracks upstream.
+#
+# bandit's B615 only understands transformers/huggingface_hub, not diffusers,
+# so it cannot see three of the four loads below. The real guard is
+# tests/unit/scripts/test_hf_revision_pinning.py.
+_DEFAULT_MODEL_REVISION = "b8fff7315c768468a5333511427288870b2e9635"
+MODEL_REVISION: str | None = os.getenv("WAN_MODEL_REVISION", "").strip() or None
+if MODEL_REVISION is None and MODEL_ID == _DEFAULT_MODEL_ID:
+    MODEL_REVISION = _DEFAULT_MODEL_REVISION
 
 # Idle unload — the loaded model is large; release it so image-gen / Ollama
 # can reclaim VRAM when no video work is queued.
@@ -128,7 +148,18 @@ def _load_pipeline_blocking() -> Any:
     )
     from transformers import UMT5EncoderModel
 
-    logger.info("Loading WanImageToVideoPipeline from %s", MODEL_ID)
+    if MODEL_REVISION is None:
+        logger.warning(
+            "WAN_MODEL_ID=%s is a custom model with no WAN_MODEL_REVISION — "
+            "loading whatever that repo's `main` points at right now, which can "
+            "change under you between cold starts. Set WAN_MODEL_REVISION=<commit-sha> "
+            "to pin it.",
+            MODEL_ID,
+        )
+    logger.info(
+        "Loading WanImageToVideoPipeline from %s @ %s",
+        MODEL_ID, MODEL_REVISION or "<upstream default>",
+    )
     # Load each component and place it on the GPU as it loads — NOT
     # enable_model_cpu_offload. Offload keeps all ~34GB of weights in CPU
     # RAM, but this host's WSL backend has only ~23GB, so offload gets
@@ -145,12 +176,15 @@ def _load_pipeline_blocking() -> Any:
     # latents on the decode pass (per the diffusers Wan model card).
     vae = AutoencoderKLWan.from_pretrained(
         MODEL_ID, subfolder="vae", torch_dtype=torch.float32,
+        revision=MODEL_REVISION,
     ).to("cuda")
     text_encoder = UMT5EncoderModel.from_pretrained(
         MODEL_ID, subfolder="text_encoder", torch_dtype=torch.bfloat16,
+        revision=MODEL_REVISION,
     ).to("cuda")
     transformer = WanTransformer3DModel.from_pretrained(
         MODEL_ID, subfolder="transformer", torch_dtype=torch.bfloat16,
+        revision=MODEL_REVISION,
     ).to("cuda")
     pipe = WanImageToVideoPipeline.from_pretrained(
         MODEL_ID,
@@ -158,6 +192,7 @@ def _load_pipeline_blocking() -> Any:
         text_encoder=text_encoder,
         transformer=transformer,
         torch_dtype=torch.bfloat16,
+        revision=MODEL_REVISION,
     )
     # Tile the VAE decode so a multi-frame 720p clip doesn't spike VRAM on
     # the final fp32 decode pass.
