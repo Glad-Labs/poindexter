@@ -43,7 +43,6 @@
   "src/cofounder_agent/modules/content/atoms/qa_vision.py": 2,
   "src/cofounder_agent/modules/content/atoms/seo_generate_all_metadata.py": 2,
   "src/cofounder_agent/modules/content/atoms/seo_optimize_metadata.py": 2,
-  "src/cofounder_agent/modules/content/atoms/two_pass_writer.py": 4,
   "src/cofounder_agent/modules/content/auto_publish_gate.py": 3,
   "src/cofounder_agent/modules/content/content_validator.py": 1,
   "src/cofounder_agent/modules/content/stages/finalize_task.py": 3,

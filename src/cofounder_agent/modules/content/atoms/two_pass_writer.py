@@ -1024,7 +1024,7 @@ def _emit_variant_fallback_finding(
     )
     try:
         from utils.findings import emit_finding
-    except Exception:  # noqa: BLE001 — emit path optional; never block fallback
+    except Exception:  # noqa: BLE001 — silent-ok: WARNING already logged above; the finding import is optional belt-and-suspenders and must never block the writer fallback
         return
     try:
         emit_finding(
@@ -1051,7 +1051,7 @@ def _emit_variant_fallback_finding(
                 "reason": reason,
             },
         )
-    except Exception:  # noqa: BLE001 — finding emission must never raise here
+    except Exception:  # noqa: BLE001 — silent-ok: WARNING already logged above; finding emission is belt-and-suspenders and must never raise inside the fallback/recovery path
         pass
 
 
@@ -1074,7 +1074,7 @@ def _emit_empty_revise_kept_prior_finding(*, model: str) -> None:
     )
     try:
         from utils.findings import emit_finding
-    except Exception:  # noqa: BLE001 — emit path optional; never block recovery
+    except Exception:  # noqa: BLE001 — silent-ok: WARNING already logged above; the finding import is optional belt-and-suspenders and must never block the writer recovery
         return
     try:
         emit_finding(
@@ -1094,7 +1094,7 @@ def _emit_empty_revise_kept_prior_finding(*, model: str) -> None:
             dedup_key=f"writer_empty_draft_kept_prior:{model}",
             extra={"model": model, "reason": "revise returned empty twice"},
         )
-    except Exception:  # noqa: BLE001 — finding emission must never raise here
+    except Exception:  # noqa: BLE001 — silent-ok: WARNING already logged above; finding emission is belt-and-suspenders and must never raise inside the fallback/recovery path
         pass
 
 
