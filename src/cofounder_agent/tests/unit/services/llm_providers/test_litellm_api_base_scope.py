@@ -20,6 +20,16 @@ Contracts pinned here:
   "this exact model goes here"; the paid-endpoint policy validates the URL)
 - inline ``http(s)://`` model strings are untouched (litellm parses those
   itself)
+
+**Every egress method is covered — complete(), stream(), AND embed()**
+(poindexter#878). This file previously pinned only the first two, which is
+exactly how ``embed()`` shipped without attaching api_base at all: it called
+``_configure_from(provider_config)`` and then ignored the resolved endpoint, so
+litellm fell back to its built-in ollama default (``localhost:11434``) —
+unreachable from inside the worker container. Every ``dispatch_embed`` call
+failed, which silently killed the ``self_consistency`` QA rail for 9+ days
+(the rail's fail-open scored the un-run check 100 — Glad-Labs/glad-labs-stack#2655).
+A new egress method gets a section here.
 """
 
 from __future__ import annotations
@@ -210,3 +220,115 @@ async def test_stream_local_model_keeps_configured_api_base():
         ):
             pass
     assert mock_acomp.call_args.kwargs["api_base"] == _LOCAL_BASE
+
+
+# ---------------------------------------------------------------------------
+# Through embed() — symmetric with complete() / stream() (poindexter#878)
+# ---------------------------------------------------------------------------
+
+
+def _fake_embedding_response(dim: int = 4):
+    fake_response = MagicMock()
+    fake_response.data = [{"embedding": [0.1] * dim}]
+    return fake_response
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_embed_local_model_keeps_configured_api_base():
+    """THE #878 regression test.
+
+    embed() loaded _provider_config and then never attached api_base, so
+    litellm fell back to its ollama default (localhost:11434) — unreachable
+    from the worker container. Reproduced live before the fix:
+    WITHOUT api_base -> APIConnectionError; WITH -> OK, dim=768.
+    """
+    provider = LiteLLMProvider()
+    with patch(
+        "litellm.aembedding",
+        new_callable=AsyncMock,
+        return_value=_fake_embedding_response(),
+    ) as mock_aembed:
+        await provider.embed(
+            text="a sentence",
+            model="nomic-embed-text",
+            _provider_config={"api_base": _LOCAL_BASE},
+        )
+    sent = mock_aembed.call_args.kwargs
+    assert sent["api_base"] == _LOCAL_BASE
+    # Bare names still get the ollama/ prefix — same resolution as complete().
+    assert sent["model"] == "ollama/nomic-embed-text"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_embed_cloud_model_does_not_inherit_local_api_base():
+    """Symmetric with complete(): a cloud embedding model must fall through
+    to litellm's provider default, not get POSTed at local Ollama."""
+    provider = LiteLLMProvider()
+    with patch(
+        "litellm.aembedding",
+        new_callable=AsyncMock,
+        return_value=_fake_embedding_response(),
+    ) as mock_aembed:
+        await provider.embed(
+            text="a sentence",
+            model="openai/text-embedding-3-small",
+            _provider_config={
+                "api_base": _LOCAL_BASE,
+                "allow_paid_base_url": "true",
+            },
+        )
+    assert "api_base" not in mock_aembed.call_args.kwargs
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_embed_per_model_override_attaches_for_cloud_prefix():
+    """An explicit per-model override is the operator pinning an endpoint —
+    it wins for any prefix, exactly as in complete()."""
+    provider = LiteLLMProvider()
+    with patch(
+        "litellm.aembedding",
+        new_callable=AsyncMock,
+        return_value=_fake_embedding_response(),
+    ) as mock_aembed:
+        await provider.embed(
+            text="a sentence",
+            model="openai/text-embedding-3-small",
+            _provider_config={
+                "api_base": _LOCAL_BASE,
+                "allow_paid_base_url": "true",
+                "model_api_base_overrides": {
+                    "openai/text-embedding-3-small": "http://localhost:4000/proxy",
+                },
+            },
+        )
+    assert mock_aembed.call_args.kwargs["api_base"] == "http://localhost:4000/proxy"
+
+
+@pytest.mark.unit
+@pytest.mark.asyncio
+async def test_embed_inline_http_model_gets_no_api_base():
+    """An inline http(s):// model string is litellm's to parse — attaching a
+    second endpoint would fight it. Mirrors complete()'s startswith("http")
+    guard.
+
+    Uses a localhost URL deliberately: the paid-endpoint policy (which embed()
+    already enforces) refuses a non-local inline base without
+    allow_paid_base_url, and that guard is pinned in
+    test_litellm_paid_endpoint_policy.py — this test is about api_base
+    attachment, not spend authorisation.
+    """
+    provider = LiteLLMProvider()
+    with patch(
+        "litellm.aembedding",
+        new_callable=AsyncMock,
+        return_value=_fake_embedding_response(),
+    ) as mock_aembed:
+        await provider.embed(
+            text="a sentence",
+            model="http://localhost:8080/embed",
+            _provider_config={"api_base": _LOCAL_BASE},
+        )
+    assert "api_base" not in mock_aembed.call_args.kwargs

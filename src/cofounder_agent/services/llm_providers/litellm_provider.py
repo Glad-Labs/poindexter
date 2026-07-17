@@ -1229,6 +1229,15 @@ class LiteLLMProvider:
         path on a paid backend — same runaway-cost class the policy was
         added to prevent. The dispatcher already supplies the kwarg (see
         ``dispatch_embed`` after PR #615).
+
+        api_base attachment mirrors ``complete()`` exactly (poindexter#878).
+        This method used to read ``_provider_config`` and then never pass the
+        resolved endpoint to litellm, so litellm fell back to its built-in
+        ollama default (``localhost:11434``) — unreachable from inside the
+        worker container, making EVERY ``dispatch_embed`` call fail. It killed
+        the ``self_consistency`` rail for 9+ days without a peep, because that
+        rail's skip path scored the un-run check 100 (fixed separately in
+        glad-labs-stack#2655).
         """
         provider_config = kwargs.pop("_provider_config", {}) or {}
         self._configure_from(provider_config)
@@ -1239,11 +1248,22 @@ class LiteLLMProvider:
         # acompletion — "ollama/nomic-embed-text" routes to local Ollama.
         resolved_model = self._resolve_model(model)
         self._enforce_paid_endpoint_policy(resolved_model)
-        response = await litellm.aembedding(
-            model=resolved_model,
-            input=[text],
-            timeout=self._timeout,
-        )
+        embed_kwargs: dict[str, Any] = {
+            "model": resolved_model,
+            "input": [text],
+            "timeout": self._timeout,
+        }
+        # Same three guards as complete(): a cloud prefix must not inherit the
+        # local endpoint, an inline http(s):// model is litellm's to parse, and
+        # a per-model override still wins for any prefix.
+        effective_base = self._api_base_for(resolved_model)
+        if (
+            effective_base
+            and not resolved_model.startswith("http")
+            and self._api_base_applies(resolved_model)
+        ):
+            embed_kwargs["api_base"] = effective_base
+        response = await litellm.aembedding(**embed_kwargs)
         data = response.data if hasattr(response, "data") else response.get("data", [])
         if not data:
             return []

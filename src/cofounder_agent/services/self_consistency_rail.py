@@ -68,6 +68,9 @@ logger = get_logger(__name__)
 _DEFAULT_SAMPLE_COUNT = 3
 _DEFAULT_THRESHOLD = 0.55
 _DEFAULT_TEMPERATURE = 0.7
+_DEFAULT_EMBED_MODEL = "nomic-embed-text"
+"""Bootstrap fallback only. Production reads ``app_settings.embed_model`` —
+the same key the rest of the embedding stack uses."""
 _DEFAULT_SUMMARY_PROMPT = (
     "Summarize the following article in two sentences. Stay strictly "
     "grounded in the article — do not introduce facts that aren't "
@@ -267,15 +270,36 @@ async def _pairwise_mean_cosine(
 
     from services.llm_providers.dispatcher import dispatch_embed
 
+    # DB-first per feedback_db_first_config — was a hardcoded literal, which
+    # would silently diverge the moment an operator repoints `embed_model`
+    # (the key the rest of the embedding stack already reads).
+    embed_model = _DEFAULT_EMBED_MODEL
+    if site_config is not None:
+        try:
+            embed_model = (
+                str(site_config.get("embed_model", _DEFAULT_EMBED_MODEL) or "").strip()
+                or _DEFAULT_EMBED_MODEL
+            )
+        except Exception:
+            embed_model = _DEFAULT_EMBED_MODEL
+
     embeddings: list[list[float]] = []
     for s in samples:
         try:
             v = await dispatch_embed(
-                pool=pool, text=s, model="nomic-embed-text", tier="free",
+                pool=pool, text=s, model=embed_model, tier="free",
             )
             embeddings.append(v)
         except Exception as e:
-            logger.debug("[self_consistency] embed failed: %s", e)
+            # WARNING, not debug (poindexter#878): the worker only ships INFO+
+            # to Loki, so this failure was invisible there while the rail's
+            # skip path reported a perfect 100 — the outage had no observable
+            # surface at all for 9+ days. Returns on the first failure, so this
+            # logs once per evaluate(), not once per sample.
+            logger.warning(
+                "[self_consistency] embed failed (model=%s) — rail cannot "
+                "measure: %s", embed_model, e,
+            )
             return -1.0  # signal failure to caller
 
     arr = np.array(embeddings, dtype=float)
