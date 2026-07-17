@@ -256,6 +256,78 @@ class TestRenderFromStateHelper:
         mock_render.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_invalid_shot_list_emits_finding(self):
+        """A shot list that EXISTS but won't parse is a defect, not a no-op.
+
+        Returning empty makes the media_reconciliation watchdog re-dispatch,
+        which hits the identical failure — forever. Task 511012cc burned ~31
+        graph runs that way over three weeks because this path only logged
+        (issue #874). Every other failure path in the helper already emits.
+        """
+        state = {"task_id": "t-1", "video_shot_list": {"not": "a shot list"}}
+        mock_render = AsyncMock(return_value=_ok_result())
+        mock_emit = MagicMock()
+        with patch.object(_media_render, "render_shot_list", mock_render), patch.object(
+            _media_render, "emit_finding", mock_emit
+        ):
+            out = await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        assert out == {"long_video_path": ""}
+        mock_render.assert_not_called()
+        assert mock_emit.call_count == 1
+        kwargs = mock_emit.call_args.kwargs
+        assert kwargs["kind"] == "shot_list_invalid"
+        assert kwargs["severity"] == "warn"
+        assert kwargs["extra"]["task_id"] == "t-1"
+        assert kwargs["extra"]["shot_list_key"] == "video_shot_list"
+        assert kwargs["dedup_key"] == "shot_list_invalid:t-1:long_video_path"
+
+    @pytest.mark.asyncio
+    async def test_missing_shot_list_emits_no_finding(self):
+        """The legitimate no-op must stay silent.
+
+        No shot list at all is normal (a non-media task, or the director never
+        produced this aspect). Only a shot list that exists and won't parse is
+        a defect — emitting on both would just rebuild the alert noise this
+        finding exists to cut through.
+        """
+        state = {"task_id": "t-1"}
+        mock_emit = MagicMock()
+        with patch.object(_media_render, "render_shot_list", AsyncMock()), patch.object(
+            _media_render, "emit_finding", mock_emit
+        ):
+            await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        mock_emit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_frozen_pre_rename_shot_list_reaches_the_renderer(self):
+        """Both halves of #874 together, on the shape that actually wedged.
+
+        A frozen pre-rename list normalizes on parse and renders, rather than
+        raising ValidationError and emitting shot_list_invalid.
+        """
+        frozen = {
+            **_LONG_SHOT_LIST,
+            "shots": [{**_LONG_SHOT_LIST["shots"][0], "source": "sdxl_kenburns"}],
+        }
+        state = {"task_id": "t-511", "video_shot_list": frozen}
+        mock_render = AsyncMock(return_value=_ok_result(output_path="/tmp/ok.mp4"))
+        mock_emit = MagicMock()
+        with patch.object(_media_render, "render_shot_list", mock_render), patch.object(
+            _media_render, "emit_finding", mock_emit
+        ):
+            out = await _media_render.render_from_state(
+                state, shot_list_key="video_shot_list", output_key="long_video_path"
+            )
+        assert out == {"long_video_path": "/tmp/ok.mp4"}
+        mock_emit.assert_not_called()
+        shot_list = mock_render.await_args.kwargs["shot_list"]
+        assert shot_list.shots[0].source == "image_kenburns"
+
+    @pytest.mark.asyncio
     async def test_partial_render_above_ratio_emits_finding_and_ships(self):
         """Real-source ratio AT/above video_render_min_real_source_ratio
         (default 0.5 — 5 real of 8 here, card disabled so 3 dropped) → the

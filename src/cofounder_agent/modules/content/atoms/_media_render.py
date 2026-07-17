@@ -11,9 +11,12 @@ What it does:
 
 1. Reads a shot-list dict from state (``video_shot_list`` for the long
    form, ``short_shot_list`` for the 9:16 short) and rehydrates it into a
-   ``VideoShotList``. A missing / None / malformed shot list is a graceful
-   no-op — nothing to render, so the atom emits an empty output key rather
-   than failing the graph.
+   ``VideoShotList``. A missing / None shot list is a graceful no-op —
+   nothing to render, so the atom emits an empty output key rather than
+   failing the graph. A shot list that EXISTS but fails validation returns
+   the same empty key (the graph must not halt) but is NOT a no-op: it emits
+   a ``shot_list_invalid`` finding, because the watchdog will otherwise
+   re-dispatch it against the identical failure forever (issue #874).
 2. Resolves the aspect profile (``9:16`` → 1080×1920, else 1920×1080) and
    threads the podcast narration + the ambient bed (#679) into the
    existing ``render_shot_list`` engine.
@@ -93,9 +96,11 @@ async def render_from_state(
         invalid input / render failure. Never raises.
     """
     shot_list_dict = state.get(shot_list_key)
+    task_id = state.get("task_id")
     if not shot_list_dict:
         # Nothing persisted (e.g. a non-media task, or the director never
-        # produced this aspect) — graceful no-op, render NOT attempted.
+        # produced this aspect) — graceful no-op, render NOT attempted. This
+        # one stays silent: it's a normal state, not a defect.
         logger.info(
             "[media.render] no %s in state — skipping %s render",
             shot_list_key,
@@ -106,14 +111,41 @@ async def render_from_state(
     try:
         shot_list = VideoShotList.model_validate(shot_list_dict)
     except ValidationError as exc:
+        # A shot list that EXISTS but won't parse is a defect, not a no-op. No
+        # video gets produced, so the media_reconciliation watchdog re-dispatches
+        # and hits the identical failure — forever. Task 511012cc burned ~31
+        # graph runs over three weeks that way, re-paying TTS + transcription +
+        # audio QA each time, because this path only logged (issue #874).
         logger.warning(
             "[media.render] %s failed VideoShotList validation: %s — skipping",
             shot_list_key,
             exc,
         )
+        emit_finding(
+            source="media.render_video",
+            kind="shot_list_invalid",
+            title=f"{output_key}: frozen shot list fails schema validation",
+            body=(
+                f"The {shot_list_key} frozen for task {task_id} no longer "
+                f"validates against VideoShotList, so no video can be rendered "
+                f"and the media_reconciliation watchdog will re-dispatch it "
+                f"indefinitely. Shot lists are frozen at Stage 1 and re-read at "
+                f"render time — sometimes weeks later — so this usually means a "
+                f"schema change landed without a backcompat shim for the rows "
+                f"already frozen (see schemas/video_shot_list.py "
+                f"_DEPRECATED_SOURCES for the established shape). Errors: {exc}"
+            ),
+            severity="warn",
+            dedup_key=f"shot_list_invalid:{task_id}:{output_key}",
+            extra={
+                "task_id": str(task_id or ""),
+                "output_key": output_key,
+                "shot_list_key": shot_list_key,
+                "error_count": exc.error_count(),
+            },
+        )
         return {output_key: ""}
 
-    task_id = state.get("task_id")
     site_config = state.get("site_config")
     image_gen_url = (
         site_config.get("image_gen_server_url", _DEFAULT_IMAGE_GEN_URL)

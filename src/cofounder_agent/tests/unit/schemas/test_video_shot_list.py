@@ -30,7 +30,10 @@ def _valid_shot(idx: int = 0, source: str = "pexels", **overrides) -> dict:
     }
     if source == "pexels":
         base["query"] = "data center"
-    elif source in ("image_gen", "image_kenburns", "wan21", "generative"):
+    elif source in (
+        "image_gen", "image_kenburns", "wan21", "generative",
+        "sdxl", "sdxl_kenburns",  # pre-#1947 aliases, normalized on parse
+    ):
         base["prompt"] = "test prompt"
     base.update(overrides)
     return base
@@ -90,6 +93,83 @@ def test_wan21_accepted_with_prompt_backcompat() -> None:
 def test_image_kenburns_requires_prompt() -> None:
     with pytest.raises(ValidationError, match="requires a non-empty"):
         Shot.model_validate(_valid_shot(0, "image_kenburns", prompt=None))
+
+
+# ---------------------------------------------------------------------------
+# Deprecated ``source`` aliases (issue #874)
+#
+# Shot lists are frozen into ``pipeline_versions`` at Stage 1 and re-read at
+# render time weeks later, so renaming a source without a shim strands the
+# frozen rows. #1947 renamed sdxl -> image_gen / sdxl_kenburns ->
+# image_kenburns with no alias and left task 511012cc unrenderable: its list
+# froze 2026-06-25, the last day ``sdxl`` was legal.
+# ---------------------------------------------------------------------------
+
+
+def test_sdxl_normalized_to_image_gen() -> None:
+    shot = Shot.model_validate(_valid_shot(0, "sdxl"))
+    assert shot.source == "image_gen"
+
+
+def test_sdxl_kenburns_normalized_to_image_kenburns() -> None:
+    shot = Shot.model_validate(_valid_shot(0, "sdxl_kenburns"))
+    assert shot.source == "image_kenburns"
+
+
+def test_sdxl_still_requires_prompt() -> None:
+    # The alias must not smuggle a shot past the per-source input rules.
+    # Widening ``ShotSource`` instead would let sdxl fall through every branch
+    # of _validate_source_inputs' if/elif chain — no prompt check at all.
+    with pytest.raises(ValidationError, match="requires a non-empty"):
+        Shot.model_validate(_valid_shot(0, "sdxl", prompt=None))
+
+
+def test_sdxl_kenburns_still_requires_prompt() -> None:
+    with pytest.raises(ValidationError, match="requires a non-empty"):
+        Shot.model_validate(_valid_shot(0, "sdxl_kenburns", prompt=None))
+
+
+def test_sdxl_kenburns_still_validates_kenburns_zoom() -> None:
+    # The zoom check keys off source == "image_kenburns", so it only fires for
+    # a normalized sdxl_kenburns if normalization happens before it runs.
+    with pytest.raises(ValidationError, match="kenburns_zoom values must be positive"):
+        Shot.model_validate(_valid_shot(0, "sdxl_kenburns", kenburns_zoom=(0.0, 1.2)))
+
+
+def test_sdxl_prompt_still_scanned_for_human_tokens(caplog: pytest.LogCaptureFixture) -> None:
+    with caplog.at_level(logging.WARNING):
+        Shot.model_validate(_valid_shot(0, "sdxl", prompt="a developer at a desk"))
+    assert "human-indicator" in caplog.text
+
+
+def test_unknown_source_still_rejected() -> None:
+    # Normalization is a fixed alias map, not a wildcard — a genuinely bogus
+    # source must still fail loudly.
+    with pytest.raises(ValidationError):
+        Shot.model_validate(_valid_shot(0, "midjourney", prompt="x"))
+
+
+def test_frozen_pre_rename_shot_list_validates() -> None:
+    """A full list shaped like production task 511012cc's frozen long lane.
+
+    Mixed old/new vocabulary is impossible — #1947 was a pure rename, so
+    ``image_gen`` did not exist before it and ``sdxl`` did not after — which is
+    why normalizing can never fabricate a consecutive-source streak.
+    """
+    shot_list = VideoShotList.model_validate(
+        _valid_shot_list(
+            total_duration_s=20.0,
+            shots=[
+                _valid_shot(0, "pexels"),
+                _valid_shot(1, "sdxl_kenburns"),
+                _valid_shot(2, "generative"),
+                _valid_shot(3, "sdxl"),
+            ],
+        ),
+    )
+    assert [s.source for s in shot_list.shots] == [
+        "pexels", "image_kenburns", "generative", "image_gen",
+    ]
 
 
 def test_pexels_requires_query() -> None:

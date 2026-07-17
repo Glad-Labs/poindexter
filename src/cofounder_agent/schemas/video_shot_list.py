@@ -20,7 +20,7 @@ import re
 from datetime import datetime
 from typing import Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 logger = logging.getLogger(__name__)
 
@@ -37,6 +37,29 @@ ShotSource = Literal[
     "wan21",           # DEPRECATED alias of ``generative`` (legacy shot lists)
     "holdover",        # Cross-fade transition from prior shot (no asset)
 ]
+
+
+# Retired ``source`` spellings mapped onto their canonical replacements
+# (issue #874). A shot list is frozen into ``pipeline_versions`` at Stage 1 and
+# re-read by the renderer at Stage 2 — sometimes weeks later — so renaming a
+# source without a shim strands every already-frozen list that still carries
+# the old spelling. #1947 renamed sdxl/sdxl_kenburns with no alias and left
+# task 511012cc permanently unrenderable (its list froze the last day ``sdxl``
+# was legal); the watchdog then re-dispatched it ~31 times against the same
+# failure.
+#
+# Normalized here rather than added to ``ShotSource`` on purpose. Widening the
+# Literal would leave the retired spellings live in the vocabulary, so every
+# downstream branch that matches on source (``_HERO_SOURCES``,
+# ``_IMAGE_GEN_FAMILY``, the vision-QA retry set, ...) would have to list them
+# too — the same N-site burden that made #1947 miss this. It would also let
+# them fall through every branch of ``_validate_source_inputs`` below, skipping
+# the prompt requirement entirely. Rewriting on the way in means the rest of
+# the codebase never learns these names exist.
+_DEPRECATED_SOURCES: dict[str, str] = {
+    "sdxl": "image_gen",
+    "sdxl_kenburns": "image_kenburns",
+}
 
 
 # Human-indicator nouns scanned in AI-source prompts. Faces, hands, and
@@ -102,6 +125,27 @@ class Shot(BaseModel):
         description="Start/end zoom for image_kenburns shots (e.g. (1.0, 1.2))",
     )
     narration_offset_s: float = Field(..., ge=0, description="Audio offset where this shot's narration starts")
+
+    @field_validator("source", mode="before")
+    @classmethod
+    def _normalize_deprecated_source(cls, value: object) -> object:
+        """Rewrite retired source spellings to their canonical names.
+
+        Runs before the ``ShotSource`` literal check, so both this model's
+        own rules and every downstream renderer branch only ever see a
+        canonical value. Unknown sources fall through untouched and are
+        rejected by the Literal — this is a fixed alias map, not a wildcard.
+        """
+        if isinstance(value, str) and value in _DEPRECATED_SOURCES:
+            canonical = _DEPRECATED_SOURCES[value]
+            logger.info(
+                "shot source %r is retired — normalized to %r (frozen shot "
+                "list predates the rename)",
+                value,
+                canonical,
+            )
+            return canonical
+        return value
 
     @model_validator(mode="after")
     def _validate_source_inputs(self) -> Shot:

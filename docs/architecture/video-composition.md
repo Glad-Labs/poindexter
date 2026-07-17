@@ -119,6 +119,25 @@ problems at the shot-list level is cheaper than re-rendering.
   `"image_gen"` (static still), `"image_kenburns"` (still + motion), `"pexels"`
   (stock clip), `"wan21"` (native T2V), `"holdover"` (fade from previous shot
   — used for breathing room).
+
+  **Renaming a source value requires a backcompat shim.** A shot list is frozen
+  into `pipeline_versions.stage_data['task_metadata']` at Stage 1 and re-read by
+  the renderer at Stage 2 — sometimes weeks later, and again on every
+  re-dispatch. A rename that only updates the `ShotSource` literal leaves every
+  already-frozen list carrying a value the schema no longer accepts, so
+  `VideoShotList.model_validate` raises and the task can never render. Add the
+  old spelling to `_DEPRECATED_SOURCES` in
+  [`schemas/video_shot_list.py`](../../src/cofounder_agent/schemas/video_shot_list.py)
+  instead — it rewrites the retired value to its canonical replacement on parse,
+  so downstream code never learns the old name existed.
+
+  This is not hypothetical: #1947 renamed `sdxl` → `image_gen` and
+  `sdxl_kenburns` → `image_kenburns` without a shim and left task `511012cc`
+  permanently unrenderable (its list froze the last day `sdxl` was legal). The
+  watchdog re-dispatched it ~31 times against the identical failure before
+  poindexter#874 added the shim and a `shot_list_invalid` finding so the next
+  one surfaces instead of looping.
+
 - `prompt` / `query` — generation prompt OR stock-library query, depending on
   source. The director chooses which is appropriate.
 - `narration_offset_s` — where in the podcast audio this shot starts. The
