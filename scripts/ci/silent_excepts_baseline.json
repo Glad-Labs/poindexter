@@ -100,7 +100,6 @@
   "src/cofounder_agent/services/logger_config.py": 2,
   "src/cofounder_agent/services/media_compositors/ffmpeg_local.py": 5,
   "src/cofounder_agent/services/media_quality_service.py": 2,
-  "src/cofounder_agent/services/newsletter_service.py": 1,
   "src/cofounder_agent/services/pipeline_streaming.py": 1,
   "src/cofounder_agent/services/podcast_service.py": 1,
   "src/cofounder_agent/services/prompt_manager.py": 2,

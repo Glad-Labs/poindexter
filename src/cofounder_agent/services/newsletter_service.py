@@ -306,8 +306,22 @@ async def _log_send(
     subject: str,
     status: str,
     error: str | None = None,
+    failures: list[str] | None = None,
 ) -> None:
-    """Log send attempt to campaign_email_logs."""
+    """Log send attempt to campaign_email_logs.
+
+    This table doubles as the campaign's IDEMPOTENCY LEDGER:
+    :func:`_already_delivered_ids` reads its ``delivered`` rows and
+    :func:`send_post_newsletter` skips those subscribers. The newsletter fires
+    from several go-live seams and two can legitimately run for the same post,
+    so a lost ``delivered`` row means the next re-fire **re-mails** a subscriber
+    who already received the post.
+
+    Args:
+        failures: optional sink. When provided, the ``status`` of any row we
+            failed to write is appended so the caller can raise ONE aggregate
+            finding after the send loop instead of emitting per subscriber.
+    """
     try:
         await pool.execute(
             """INSERT INTO campaign_email_logs
@@ -316,6 +330,8 @@ async def _log_send(
             subscriber_id, campaign, subject, status, error,
         )
     except Exception as e:
+        if failures is not None:
+            failures.append(status)
         logger.debug("[NEWSLETTER] Failed to log send: %s", e)
 
 
@@ -399,6 +415,9 @@ async def send_post_newsletter(
     batch_size = cfg["batch_size"]
     batch_delay = cfg["batch_delay"]
     last_error: str | None = None
+    # Sink for campaign_email_logs write failures — aggregated into ONE finding
+    # after the loop (never per subscriber; see _log_send).
+    log_write_failures: list[str] = []
 
     logger.info(
         "[NEWSLETTER] Sending to %d subscribers via %s (batch=%d, delay=%ds)",
@@ -437,12 +456,16 @@ async def send_post_newsletter(
 
             if success:
                 result["sent"] += 1
-                await _log_send(pool, sub["id"], campaign, subject, "delivered")
+                await _log_send(
+                    pool, sub["id"], campaign, subject, "delivered",
+                    failures=log_write_failures,
+                )
             else:
                 result["failed"] += 1
                 last_error = (error or "send_error")[:300]
                 await _log_send(
-                    pool, sub["id"], campaign, subject, "failed", last_error
+                    pool, sub["id"], campaign, subject, "failed", last_error,
+                    failures=log_write_failures,
                 )
 
         # Respect rate limits between batches
@@ -454,6 +477,33 @@ async def send_post_newsletter(
         result["sent"], result["failed"], result["skipped"],
         result["total_subscribers"],
     )
+
+    if log_write_failures:
+        # campaign_email_logs is this campaign's idempotency ledger, so a lost
+        # 'delivered' row means the next legitimate re-fire (promote,
+        # gate-clear re-trigger, scheduled promote) will MAIL THAT SUBSCRIBER
+        # AGAIN. That reaches real people and isn't self-correcting once sent,
+        # so this is warn (Discord-routable) rather than the usual info — and
+        # note the summary line above still reports a clean "N sent, 0 failed".
+        # ONE aggregate finding, never one per subscriber.
+        delivered_lost = sum(1 for s in log_write_failures if s == "delivered")
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="services.newsletter_service",
+            kind="newsletter_send_log_write_failed",
+            title="newsletter send-log writes failed — re-fire may duplicate mail",
+            body=(
+                f"{len(log_write_failures)} campaign_email_logs write(s) failed "
+                f"for campaign {campaign} ({delivered_lost} of them 'delivered'). "
+                f"Those subscribers were emailed but have no delivered row, so "
+                f"_already_delivered_ids will not skip them and a re-fire of this "
+                f"post would mail them a second time. Recipients are unaffected "
+                f"right now — the sends themselves succeeded."
+            ),
+            severity="warn",
+            dedup_key=f"newsletter_send_log_write_failed:{campaign}",
+        )
 
     if result["failed"] > 0 and result["sent"] == 0:
         # Every attempted send failed — that's a campaign outage, not
