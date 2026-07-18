@@ -253,8 +253,24 @@ async def _get_site_config() -> Any:
         _site_config = SiteConfig(pool=pool)
         try:
             await _site_config.load(pool)
-        except Exception:
-            pass  # fall back to empty config — gate reads still work
+        except Exception as exc:
+            # Fall back to an empty config — gate reads still work — but SAY
+            # SO. An unloaded SiteConfig is not empty-and-obvious: every later
+            # cfg.get(key, default) silently returns the CODE default instead
+            # of the operator's tuned app_settings value.
+            #
+            # Worse here than in the equivalent CLI helpers: this result is
+            # cached in the module global above and never retried, so ONE
+            # failed load at startup makes this process serve code-defaults
+            # for its entire lifetime. No operator is watching a terminal, so
+            # WARNING to the log is the surface that actually reaches them.
+            logger.warning(
+                "SiteConfig load failed (%s: %s) — serving BUILT-IN DEFAULTS "
+                "for every app_settings read for the lifetime of this "
+                "process (the result is cached and not retried). Restart the "
+                "MCP server once the database is reachable.",
+                type(exc).__name__, exc,
+            )
     return _site_config
 
 
@@ -1066,6 +1082,7 @@ async def findings_list(
     try:
         pool = await _get_pool()
         from datetime import datetime as _dt
+
         from services.findings_read import read_findings
         data = await read_findings(
             pool,
@@ -1478,6 +1495,11 @@ def _stdio_main() -> None:
                 severity="critical",
             )
         except Exception:  # noqa: BLE001 — notifier is best-effort
+            # silent-ok: this is the alerting attempt on an already-fatal
+            # path, and the failure is reported loudly one line below —
+            # `print(f"FATAL: {exc}", stderr)` then `sys.exit(2)` run
+            # unconditionally. Warning here would duplicate that with less
+            # context, and the notifier itself is the thing that is broken.
             pass
         print(f"FATAL: {exc}", file=_sys.stderr)
         _sys.exit(2)

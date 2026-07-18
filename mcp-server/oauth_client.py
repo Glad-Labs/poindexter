@@ -124,6 +124,11 @@ def _bootstrap_secret_key() -> str:
     try:
         import tomllib as _toml
     except Exception:  # noqa: BLE001
+        # silent-ok: the docstring states the contract — "Stdlib-only, never
+        # raises: returns '' when the file or key is absent/unparseable, so
+        # the caller keeps its existing 'can't decrypt → default'
+        # degradation." This mirror runs in a bare uv venv with only httpx,
+        # so there is no logging infra to route anything to either.
         return ""
     path = os.path.expanduser("~/.poindexter/bootstrap.toml")
     if not os.path.exists(path):
@@ -132,6 +137,9 @@ def _bootstrap_secret_key() -> str:
         with open(path, "rb") as f:
             data = _toml.load(f)
     except Exception:  # noqa: BLE001
+        # silent-ok: same documented "" contract — an unreadable or malformed
+        # bootstrap.toml is indistinguishable from an absent one to the
+        # caller, which falls back to its default degradation either way.
         return ""
     return str(data.get("poindexter_secret_key") or "").strip()
 
@@ -223,6 +231,10 @@ class McpOAuthClient:
             try:
                 await self._http.aclose()
             except Exception:  # noqa: BLE001
+                # silent-ok: teardown-only. The client is discarded either way
+                # (self._http = None right below), so a failed close leaks
+                # nothing the process teardown won't reclaim — and raising
+                # from __aexit__ would mask the caller's real exception.
                 pass
             self._http = None
 

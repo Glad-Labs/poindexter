@@ -432,6 +432,12 @@ def build_app():
             if tm is not None:
                 tools = list(getattr(tm, "_tools", {}).keys())
         except Exception:  # noqa: BLE001
+            # silent-ok: this introspects FastMCP PRIVATE internals
+            # (`_tool_manager` / `_tools`) purely to decorate the health
+            # payload with a tool count, so it is expected to break across
+            # upstream versions. Degrading `tool_count` to 0 is strictly
+            # better than failing the health check itself — liveness, which
+            # is what /healthz exists to answer, is unaffected.
             pass
         return {
             "status": "ok",
