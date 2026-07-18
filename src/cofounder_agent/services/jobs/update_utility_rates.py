@@ -237,7 +237,10 @@ class UpdateUtilityRatesJob:
                 if change:
                     changes["gpu_power_watts"] = change
             except (OSError, FileNotFoundError, asyncio.TimeoutError) as e:
-                # nvidia-smi unavailable — expected on cloud boxes.
+                # silent-ok: nvidia-smi unavailable — the EXPECTED path on a
+                # cloud box or any host without an NVIDIA GPU, so it must not
+                # warn. A genuine detect failure is caught by the broad
+                # `except Exception` immediately below, which does warn.
                 logger.debug("UpdateUtilityRatesJob: GPU detect skipped (%s)", e)
             except Exception as e:
                 logger.warning("UpdateUtilityRatesJob: GPU detect failed: %s", e)
@@ -255,7 +258,16 @@ class UpdateUtilityRatesJob:
                         "info",
                     )
             except Exception as e:
-                logger.debug("UpdateUtilityRatesJob: audit_log insert failed: %s", e)
+                # Warn rather than emit_finding: a finding IS an audit_log row
+                # (emit_finding -> audit_log_bg), so a finding about a broken
+                # audit_log would vanish in the very outage it reports. Loki
+                # survives a DB outage. Note the rate change itself already
+                # landed in app_settings — what's lost here is only the
+                # "when/why it changed" breadcrumb.
+                logger.warning(
+                    "UpdateUtilityRatesJob: audit_log breadcrumb insert failed "
+                    "(the rate change itself was already applied): %s", e,
+                )
 
         detail = (
             f"{len(changes)} setting(s) updated: {list(changes.keys())}"
