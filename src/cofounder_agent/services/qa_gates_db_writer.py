@@ -203,6 +203,25 @@ async def record_chain_run(
                     )
     except Exception as exc:  # noqa: BLE001
         logger.debug("qa_gates counter update failed: %s", exc)
+        # One try wraps the WHOLE transaction (the per-gate loop is inside it),
+        # so a failure loses EVERY gate's counters for this chain run while the
+        # pipeline itself looks healthy. qa_gates is not audit_log, so a finding
+        # is the right signal — it can't vanish along with the row it reports.
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="services.qa_gates_db_writer",
+            kind="qa_gates_counter_update_failed",
+            title="qa_gates counter update failed",
+            body=(
+                f"Bumping qa_gates counters for {len(runs)} gate(s) raised "
+                f"{type(exc).__name__}: {exc}. total_runs / total_rejections / "
+                f"last_run_status feed the QA Rails dashboard, so a persistent "
+                f"failure makes it under-report every chain run."
+            ),
+            severity="info",
+            dedup_key="qa_gates_counter_update_failed",
+        )
 
 
 __all__ = ["record_chain_run", "reviewer_to_gate"]

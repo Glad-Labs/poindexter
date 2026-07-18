@@ -595,6 +595,29 @@ async def _maybe_run_preview_qa(
         )
     except Exception as exc:  # noqa: BLE001
         logger.debug("[PREVIEW_QA] persist failed: %s", exc)
+        # The logger.info below reports the score whether or not this write
+        # landed, so the log alone is no signal that the verdict was lost —
+        # whatever reads content_tasks.metadata (preview gate / console) just
+        # never sees it. This handler also wraps the deliberate fail-loud
+        # `raise RuntimeError("preview QA: no DB pool available")` above, so the
+        # finding is what keeps that guard from being silently neutralised.
+        # content_tasks is not audit_log, so a finding is the right signal.
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="services.post_pipeline_actions",
+            kind="preview_qa_persist_failed",
+            title="preview QA verdict not persisted",
+            body=(
+                f"Persisting the visual-QA verdict onto content_tasks.metadata "
+                f"for task {task_id} raised {type(exc).__name__}: {exc}. The "
+                f"preview gate and console read preview_qa_score / "
+                f"preview_qa_approved from that row, so a persistent failure "
+                f"leaves them blind to every visual-QA result."
+            ),
+            severity="info",
+            dedup_key="preview_qa_persist_failed",
+        )
 
     logger.info(
         "[PREVIEW_QA] Task %s visual score=%s approved=%s",

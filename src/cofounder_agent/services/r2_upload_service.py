@@ -556,3 +556,24 @@ class R2UploadService:
                 "[STORAGE] media_assets URL update failed (post_id=%s type=%s): %s",
                 post_id, asset_type, exc,
             )
+            # The file IS uploaded to R2, but the row still points at a
+            # stale/absent URL — and the site renders from that row, so this
+            # surfaces to readers as a broken or outdated image while every log
+            # looks healthy. media_assets is not audit_log, so a finding is the
+            # right signal here.
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="services.r2_upload_service",
+                kind="media_asset_url_update_failed",
+                title="media_assets URL stamp failed after R2 upload",
+                body=(
+                    f"Stamping the public URL onto media_assets for post "
+                    f"{post_id} (type={asset_type}, path={storage_path}) raised "
+                    f"{type(exc).__name__}: {exc}. The upload itself succeeded, "
+                    f"so the asset row keeps a stale/absent url and the rendered "
+                    f"page can show a broken or outdated image."
+                ),
+                severity="info",
+                dedup_key="media_asset_url_update_failed",
+            )
