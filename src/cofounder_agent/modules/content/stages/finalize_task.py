@@ -37,6 +37,118 @@ from plugins.stage import StageResult
 logger = logging.getLogger(__name__)
 
 
+def _maybe_append_sources_section(content_text: str, platform: Any) -> str:
+    """Best-effort: append a Sources section when the writer cited inline URLs
+    but omitted one (Phase 6 / GH#54). Idempotent, low-risk transform.
+
+    **Never raises** — a footer-append failure must not break finalize — but a
+    failure is surfaced as a non-paging ``info`` finding so a persistent break
+    (e.g. a ``citation_verifier`` regression) doesn't silently ship every citing
+    post without its Sources footer with no other signal (QA runs BEFORE
+    finalize). Returns ``content_text`` unchanged on disabled/no-URLs/failure.
+    """
+    try:
+        from services.citation_verifier import append_sources_section, extract_urls
+
+        # Seam 1 Wave 3e (#667): config via capability handle. None-tolerant:
+        # missing handle falls back to defaults.
+        _flag = (
+            platform.config.get("auto_append_sources_section", "true")
+            if platform is not None else "true"
+        )
+        if (_flag or "true").lower() in ("false", "0", "no"):
+            return content_text
+        _site_url = (
+            platform.config.get("site_url") if platform is not None else None
+        ) or None
+        _urls = extract_urls(content_text, site_url=_site_url)
+        if _urls:
+            return append_sources_section(content_text, _urls)
+        return content_text
+    except Exception as _sources_err:  # noqa: BLE001 — footer is best-effort; never break finalize
+        logger.debug(
+            "[finalize_task] Sources-section auto-append skipped (non-fatal): %s",
+            _sources_err,
+        )
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="modules.content.stages.finalize_task",
+            kind="sources_section_append_failed",
+            title="Sources-section auto-append failed at finalize",
+            body=(
+                f"Appending the Sources section raised {type(_sources_err).__name__}: "
+                f"{_sources_err}. The post finalizes with its inline citations intact "
+                f"but WITHOUT the appended Sources footer. A persistent failure ships "
+                f"every citing post without its sources list, and QA runs before "
+                f"finalize so nothing else flags it. Investigate "
+                f"services.citation_verifier."
+            ),
+            severity="info",
+            dedup_key=f"sources_section_append_failed:{type(_sources_err).__name__}",
+            extra={"error_type": type(_sources_err).__name__},
+        )
+        return content_text
+
+
+async def _snapshot_final_revision(
+    database_service: Any,
+    *,
+    task_id: Any,
+    content: str,
+    title: str,
+    change_summary: str,
+    model_used: Any,
+    quality_score: Any,
+) -> None:
+    """Snapshot the finalized draft into ``content_revisions`` (internal tracker
+    Phase 3.A2) — the terminal version-history row per task.
+
+    **Never raises** — a snapshot failure must not break finalize — but is
+    surfaced as a non-paging ``info`` finding so a persistent failure doesn't
+    silently drop the final revision from the feedback-loop diff chain (batch-1
+    ``_snapshot_initial_draft`` class; the initial + QA-rewrite rows precede
+    this, so a missing terminal row breaks the full story the chain tells).
+
+    Takes ``database_service`` (not its ``.pool``) so the ``.pool`` access stays
+    INSIDE the try — a mock/legacy db without ``.pool`` is swallowed here exactly
+    as the pre-extraction inline block did, rather than raising into finalize.
+    """
+    try:
+        from services.content_revisions_logger import log_revision
+
+        await log_revision(
+            database_service.pool,
+            task_id=task_id,
+            content=content,
+            title=title,
+            change_type="finalized",
+            change_summary=change_summary,
+            model_used=model_used,
+            quality_score=quality_score,
+        )
+    except Exception as rev_err:  # noqa: BLE001 — snapshot is best-effort; never break finalize
+        logger.debug("[content_revisions] final snapshot failed: %s", rev_err)
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="modules.content.stages.finalize_task",
+            kind="content_revisions_final_snapshot_failed",
+            title="content_revisions final snapshot failed at finalize",
+            body=(
+                f"log_revision(change_type='finalized') raised "
+                f"{type(rev_err).__name__}: {rev_err} for task {task_id}. The post "
+                f"finalizes, but its terminal content_revisions row is missing — the "
+                f"feedback-loop diff chain (initial draft + QA rewrites + this final "
+                f"row) is incomplete for this task. A persistent failure silently "
+                f"blinds the revision-history feedback loop."
+            ),
+            severity="info",
+            dedup_key=f"content_revisions_final_snapshot_failed:{type(rev_err).__name__}",
+            extra={"error_type": type(rev_err).__name__, "task_id": str(task_id)},
+        )
+
+
 class FinalizeTaskStage:
     name = "finalize_task"
     description = "Persist the awaiting_approval record with full task metadata"
@@ -91,29 +203,7 @@ class FinalizeTaskStage:
         # didn't append a Sources section, add one automatically. Readers
         # + search engines both benefit from an explicit list, and it's
         # a low-risk idempotent transform (existing sections left alone).
-        try:
-            from services.citation_verifier import (
-                append_sources_section,
-                extract_urls,
-            )
-            # Seam 1 Wave 3e (#667): config via capability handle (platform already
-            # extracted above). None-tolerant: missing handle falls back to defaults.
-            _flag = (
-                platform.config.get("auto_append_sources_section", "true")
-                if platform is not None else "true"
-            )
-            if (_flag or "true").lower() not in ("false", "0", "no"):
-                _site_url = (
-                    platform.config.get("site_url") if platform is not None else None
-                ) or None
-                _urls = extract_urls(content_text, site_url=_site_url)
-                if _urls:
-                    content_text = append_sources_section(content_text, _urls)
-        except Exception as _sources_err:
-            logger.debug(
-                "[finalize_task] Sources-section auto-append skipped (non-fatal): %s",
-                _sources_err,
-            )
+        content_text = _maybe_append_sources_section(content_text, platform)
 
         # GH-86: derive an excerpt from the finalized content. Frontend was
         # falling back to content[:N] which rendered the opening "What
@@ -335,23 +425,18 @@ class FinalizeTaskStage:
         # terminal row per task (internal tracker Phase 3.A2). The initial draft
         # + any QA rewrite iterations precede this row, so the diff chain
         # tells the full story.
-        try:
-            from services.content_revisions_logger import log_revision
-            await log_revision(
-                database_service.pool,
-                task_id=task_id,
-                content=content_text,
-                title=seo_title or topic,
-                change_type="finalized",
-                change_summary=(
-                    f"Final revision at quality score {final_quality_score} "
-                    f"({'passed' if context.get('quality_passing') else 'below threshold'})"
-                ),
-                model_used=context.get("model_used"),
-                quality_score=final_quality_score,
-            )
-        except Exception as rev_err:
-            logger.debug("[content_revisions] final snapshot failed: %s", rev_err)
+        await _snapshot_final_revision(
+            database_service,
+            task_id=task_id,
+            content=content_text,
+            title=seo_title or topic,
+            change_summary=(
+                f"Final revision at quality score {final_quality_score} "
+                f"({'passed' if context.get('quality_passing') else 'below threshold'})"
+            ),
+            model_used=context.get("model_used"),
+            quality_score=final_quality_score,
+        )
 
         # Auto-publish gate evaluation — observe-only by default per
         # feedback_auto_publish_requires_edit_distance_track_record. Logs
@@ -430,9 +515,11 @@ class FinalizeTaskStage:
                     ),
                     dedup_key=f"auto_publish_gate_eval_failed_{type(_gate_err).__name__}",
                 )
-            except Exception:
-                # emit_finding is best-effort; never let observability failure
-                # break the finalize path.
+            except Exception:  # noqa: BLE001
+                # silent-ok: emit_finding is best-effort fail-path telemetry —
+                # the auto_publish_gate_eval_failed finding above is itself the
+                # signal, and its emission must never recurse/break the finalize
+                # path. (The gate eval already fell through to observe-only.)
                 pass
 
         return StageResult(
