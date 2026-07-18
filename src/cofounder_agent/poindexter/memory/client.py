@@ -759,7 +759,7 @@ class MemoryClient:
                 },
                 severity="warning",
             )
-        except Exception:
+        except Exception:  # silent-ok: surface 2 of 3 in this fan-out fallback notifier — the WARNING at the top of _notify_rag_engine_fallback already fired loudly and operator-notify (surface 3) still runs; audit_log_bg silently drops when the audit logger isn't bound (bootstrap/test), the only acceptable silent surface here (see docstring above)
             pass
 
         # 3. Operator notification — Discord ops by default, escalates
@@ -774,7 +774,7 @@ class MemoryClient:
                 f"`rag_engine_enabled=false` until fixed.",
                 critical=False,
             )
-        except Exception as notify_exc:
+        except Exception as notify_exc:  # silent-ok: surface 3's own guard — "never let notify raise" (comment above); surfaces 1 (WARNING) + 2 (audit_log) already recorded the fallback, so a Discord/Telegram hiccup must not re-raise into the notifier
             logger.debug(
                 "[memory] notify_operator for rag_engine_fallback failed: %s",
                 notify_exc,
@@ -797,7 +797,7 @@ class MemoryClient:
                     "WHERE key = 'rag_engine_enabled' AND is_active = true "
                     "LIMIT 1"
                 )
-        except Exception:
+        except Exception:  # silent-ok: fail-safe read — on failure RAG is treated as disabled and search falls back to the legacy pgvector path; a DB-read failure here coincides with broader DB unavailability where RAG is moot (mirrors the annotated sibling _rag_embed_base_url / _rag_extras_flags)
             return False
         if not row:
             return False

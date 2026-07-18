@@ -62,7 +62,6 @@
   "src/cofounder_agent/poindexter/cli/schedule.py": 1,
   "src/cofounder_agent/poindexter/cli/setup.py": 5,
   "src/cofounder_agent/poindexter/cli/skills.py": 3,
-  "src/cofounder_agent/poindexter/memory/client.py": 3,
   "src/cofounder_agent/routes/alertmanager_webhook_routes.py": 1,
   "src/cofounder_agent/routes/approval_routes.py": 2,
   "src/cofounder_agent/routes/memory_dashboard_routes.py": 2,
