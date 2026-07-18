@@ -1299,6 +1299,20 @@ DEFAULTS: dict[str, str] = {
     # the same media_drift forever with no recovery path.
     'media_redispatch_cap_reset_enabled': 'true',
     'media_redispatch_cap_reset_cooldown_hours': '24',
+    # media_feed_reconciliation — converges the published podcast/video RSS
+    # feeds on R2 onto the DB's eligible-episode set. ON by default: unlike the
+    # Stage-2 media jobs it needs no GPU and no dormant master switch, and its
+    # steady state is one render + one GetObject per medium. Every feed rebuild
+    # is otherwise event-coupled and best-effort, so one dropped event stranded
+    # the feed indefinitely (2026-07-18: R2 listed 71 episodes vs 100 eligible).
+    'media_feed_reconciliation_enabled': 'true',
+    # Asymmetry guard. The feed route returns a VALID EMPTY feed when its DB
+    # query fails, so a convergence loop that trusted every render would wipe
+    # the podcast off Apple/Spotify during a DB blip. The reconciler will grow a
+    # feed freely but refuses to remove more than this many items in one pass,
+    # emitting media_feed_render_collapse instead. Raise it only for a genuine
+    # bulk un-publish; '0' means refuse any shrink at all.
+    'media_feed_reconcile_max_shrink': '5',
     # Per-medium call-to-action outros (DB-tunable; ML-optimizable later).
     # ``media.cta.podcast`` is LIVE — ``podcast.render`` appends it to the script
     # before TTS so the episode asks for ratings/reviews. The video CTAs are
@@ -1783,6 +1797,25 @@ If the operator says something you cannot answer with a tool, answer plainly. Ne
     'findings.topic_batch_stuck.fallback': 'log_only',
     'findings.topic_batch_stuck.cooldown_minutes': '720',
     'findings.topic_batch_stuck.min_severity': 'warn',
+    # Published RSS feed drifted from the DB and was republished by
+    # media_feed_reconciliation. The feed is already fixed by the time this
+    # fires, so it's routine Discord traffic (feedback_telegram_vs_discord) —
+    # but it still means an upstream event-coupled rebuild was dropped, which
+    # is worth seeing. 6h cooldown: a recurring drift is the signal, not each
+    # individual cycle.
+    'findings.media_feed_drift.delivery': 'discord',
+    'findings.media_feed_drift.fallback': 'log_only',
+    'findings.media_feed_drift.cooldown_minutes': '360',
+    'findings.media_feed_drift.min_severity': 'warn',
+    # The reconciler REFUSED to publish because the render collapsed. This is
+    # not routine: the feed route returns a valid EMPTY feed when its DB query
+    # fails, so a collapse means the renderer or the database is broken and a
+    # public surface is one unguarded write away from being wiped. Telegram —
+    # it needs a human, and the guard only holds the line, it doesn't fix it.
+    'findings.media_feed_render_collapse.delivery': 'telegram',
+    'findings.media_feed_render_collapse.fallback': 'discord',
+    'findings.media_feed_render_collapse.cooldown_minutes': '120',
+    'findings.media_feed_render_collapse.min_severity': 'error',
     # Topic-sanity gate (2026-06-30 dots-topic incident) — a tap/RAG source
     # emitting contentless titles is a source bug worth seeing on the routine
     # ops channel, not a page; 6h cooldown keeps a persistently garbage

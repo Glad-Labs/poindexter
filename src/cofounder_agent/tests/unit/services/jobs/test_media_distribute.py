@@ -304,6 +304,67 @@ async def test_dispatches_approved_assets_with_correct_shorts_flag(tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_long_form_dispatch_rebuilds_the_video_rss_feed(tmp_path):
+    """Delivering a long-form video must refresh video/feed.xml.
+
+    podcast_distribute has always rebuilt its feed after a delivery; this lane
+    did not, so a delivered video only reached the public feed if an unrelated
+    later event happened to rebuild it — the video half of the 2026-07-18
+    stale-feed class.
+    """
+    f = tmp_path / "v.mp4"
+    f.write_bytes(b"x")
+    job = MediaDistributeJob()
+    pool = _FakePool(
+        unlinked=[],
+        approved=[{
+            "post_id": "p1", "title": "T", "content": "c", "excerpt": "e",
+            "seo_keywords": "a,b", "slug": "s", "storage_path": str(f),
+            "medium": "video",
+        }],
+    )
+    disp = AsyncMock(return_value=[
+        md._PlatformDispatchResult(
+            platform="youtube", success=True, external_id="vid", url="u"
+        )
+    ])
+    rebuild = AsyncMock()
+    with patch.object(md, "_dispatch_asset", disp), \
+            patch.object(md, "record_dispatched", AsyncMock()), \
+            patch("services.media_feed_rebuild.rebuild_video_feed", rebuild):
+        await job.run(pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")})
+    rebuild.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_shorts_only_dispatch_does_not_rebuild_the_video_feed(tmp_path):
+    """Shorts go to YouTube Shorts and have no RSS surface — rebuilding on a
+    shorts-only cycle would be a pointless R2 write every 10 minutes."""
+    f = tmp_path / "v.mp4"
+    f.write_bytes(b"x")
+    job = MediaDistributeJob()
+    pool = _FakePool(
+        unlinked=[],
+        approved=[{
+            "post_id": "p1", "title": "T", "content": "c", "excerpt": "e",
+            "seo_keywords": "a,b", "slug": "s", "storage_path": str(f),
+            "medium": "video_short",
+        }],
+    )
+    disp = AsyncMock(return_value=[
+        md._PlatformDispatchResult(
+            platform="youtube", success=True, external_id="vid", url="u"
+        )
+    ])
+    rebuild = AsyncMock()
+    with patch.object(md, "_dispatch_asset", disp), \
+            patch.object(md, "record_dispatched", AsyncMock()), \
+            patch("services.media_feed_rebuild.rebuild_video_feed", rebuild):
+        await job.run(pool, {"_site_config": _sc(media_pipeline_trigger_enabled="true")})
+    rebuild.assert_not_awaited()
+
+
+@pytest.mark.asyncio
 async def test_dispatch_skips_and_does_not_stamp_missing_file(tmp_path):
     """An approved asset whose durable file is gone → don't dispatch and don't
     stamp dispatched (leave it for the reconciliation watchdog)."""

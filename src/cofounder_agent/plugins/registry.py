@@ -695,6 +695,22 @@ def get_core_samples() -> dict[str, list[Any]]:
             "services.jobs.media_reconciliation",
             "MediaReconciliationJob",
         ),
+        # Media-FEED reconciliation — the same watchdog one level up:
+        # media_reconciliation converges the MP3/MP4 files, this converges the
+        # RSS feeds that index them. Every feed rebuild is event-coupled and
+        # best-effort (publish_service fires before approval; decide() needs a
+        # site_config; podcast_distribute only fires when it delivered a NEW
+        # asset), so one dropped event stranded the published feed until some
+        # unrelated later event rebuilt it — on 2026-07-18 R2 listed 71 episodes
+        # against 100 DB-eligible. Renders the feed, diffs it against the
+        # published object, republishes on drift. Refuses to publish a collapsed
+        # render (the feed route returns a valid EMPTY feed when its DB query
+        # fails) and escalates instead.
+        (
+            "jobs",
+            "services.jobs.media_feed_reconciliation",
+            "MediaFeedReconciliationJob",
+        ),
         # Media orphan sweep — reaps unreferenced images/video/podcast objects
         # from R2 that pile up because image/video keys are UUID-per-regen and
         # nothing else deletes them. Dry-run unless media_orphan_sweep_armed=true;

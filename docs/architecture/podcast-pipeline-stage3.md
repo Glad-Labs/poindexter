@@ -98,6 +98,7 @@ SAFETY NET — media_reconciliation
 | `modules/content/atoms/podcast_persist.py`     | `podcast.persist` — durable move + `record_media_asset(type='podcast', task_id, post_id=None, duration_ms)`.                                                                                                                                                                                  |
 | `services/jobs/dispatch_podcast_pipeline.py`   | `DispatchPodcastPipelineJob` — mirror of `DispatchMediaPipelineJob`, own `podcast_dispatched_at` claim, `thread_id=podcast-{task_id}`.                                                                                                                                                        |
 | `services/jobs/podcast_distribute.py`          | `PodcastDistributeJob` — link → seed `record_pending` → R2 upload + feed rebuild on approval.                                                                                                                                                                                                 |
+| `services/jobs/media_feed_reconciliation.py`   | `MediaFeedReconciliationJob` (2026-07-18) — 15-min convergence watchdog: renders each RSS feed, diffs it against the published R2 object, republishes on drift. Refuses a collapsed render. See "Feed reconciliation — state, not events" below.                                              |
 | migration `*_podcast_pipeline_stage3.py`       | **As shipped:** add `pipeline_tasks.podcast_dispatched_at`; seed `podcast_pipeline` graph_def. (The `video_long`→`video` backfill was deferred to §11, which reuses the existing `media_pipeline_dispatched_at` marker rather than adding a separate `video_dispatched_at` column — see §11.) |
 
 ### Changed files
@@ -138,6 +139,65 @@ delegates to the same helper (one rebuild seam, not two copies). Both the CLI
 (`POST /api/media-approval/{post_id}/{medium}/decide`) load + pass a
 `site_config`. Non-fatal + idempotent — a rebuild failure never breaks the
 already-committed approval.
+
+### Feed reconciliation — state, not events (shipped 2026-07-18)
+
+The approval-time rebuild above narrowed the window but did not close the class.
+Every rebuild trigger is still a **discrete event**, and every one of them
+swallows its own failures:
+
+| Trigger                           | Why it can miss                                                                                 |
+| --------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `publish_service`                 | Fires at publish, _before_ the medium is approved — it can never contain the post it fired for. |
+| `media_approval_service.decide()` | Only when the calling surface threads a `site_config` through, and inside a bare `except`.      |
+| `podcast_distribute` Pass 3       | Only when that cycle delivered a **new** approved-and-undispatched asset.                       |
+| `media_distribute` (video)        | Rebuilt nothing at all until 2026-07-18.                                                        |
+
+Miss one and the published feed stays wrong until an unrelated later event
+happens to rebuild it. Measured 2026-07-18: `podcast/feed.xml` on R2 listed
+**71** episodes while **100** were DB-eligible — a 29-episode backlog that had
+survived weeks of publishes and only cleared on a manual
+`rebuild_podcast_feed`.
+
+`services/jobs/media_feed_reconciliation.py` (`MediaFeedReconciliationJob`, every
+15 min, `media_feed_reconciliation_enabled` default **true**) makes the feed a
+function of DB **state** instead of events. Per medium with an RSS surface
+(`podcast`, `video` — never `video_short`): render the feed from the worker
+route, read the published object out of the bucket, republish when they differ.
+No future delivery path can starve the feed, including ones not written yet.
+
+Two implementation details carry the weight:
+
+- **The published copy is read via authenticated S3 `GetObject`**
+  (`R2UploadService.get_object_text`), not by fetching the public
+  `pub-*.r2.dev` URL. The CDN caches; comparing against a cached copy would
+  manufacture phantom drift and an R2 write every cycle.
+- **The loop is deliberately asymmetric.** `podcast_feed` catches its own DB
+  error and returns a _valid zero-item feed_. A convergence loop that trusted
+  every render would publish that and wipe the podcast off Apple/Spotify —
+  turning a staleness bug into an outage. The reconciler grows a feed freely but
+  refuses to remove more than `media_feed_reconcile_max_shrink` items (default 5) in one pass, leaving the published feed untouched and escalating instead.
+
+Findings follow the `media_reconciliation` fail-loud contract — a self-heal that
+stayed quiet would hide the upstream regression:
+
+| Finding                      | Severity | Route        | Meaning                                                                |
+| ---------------------------- | -------- | ------------ | ---------------------------------------------------------------------- |
+| `media_feed_drift`           | `warn`   | Discord, 6h  | Feed had drifted and was republished. An upstream rebuild was dropped. |
+| `media_feed_render_collapse` | `error`  | Telegram, 2h | Render collapsed; republish **refused**. The renderer or DB is broken. |
+
+The same commit also gave `media_distribute` the podcast lane's long-missing
+`rebuild_video_feed` call after a long-form delivery (shorts excluded — no RSS
+surface). That is defense-in-depth for latency, not correctness: the watchdog is
+what guarantees convergence.
+
+> **Known residual — the public proxy caches.** `web/public-site/app/podcast-feed.xml/route.ts`
+> sets `revalidate = 3600` plus `Cache-Control: max-age=3600, stale-while-revalidate=86400`.
+> So even a correct R2 rebuild takes up to an hour to reach
+> `www.gladlabs.io/podcast-feed.xml`, and a CDN edge may serve up to 24h stale.
+> This is why the public feed can still lag R2 right after a reconcile. Not
+> changed here — shortening it is a deploy-side cost/freshness call, not a
+> pipeline fix.
 
 ## 5. Vocabulary
 

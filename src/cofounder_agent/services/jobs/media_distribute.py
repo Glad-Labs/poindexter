@@ -433,6 +433,8 @@ class MediaDistributeJob:
         # reach YouTube the same cycle. Long form → shorts=False, short →
         # shorts=True (the #1249 Shorts-aware handler).
         dispatched = 0
+        # Long-form deliveries only — they're the ones that change video/feed.xml.
+        rss_dispatched = 0
         try:
             drows = await pool.fetch(
                 _APPROVED_UNDISPATCHED_SQL,
@@ -486,6 +488,21 @@ class MediaDistributeJob:
                 )
             if ok:
                 dispatched += 1
+                if medium == "video":
+                    rss_dispatched += 1
+
+        # Refresh the public video RSS feed once per cycle when this pass put a
+        # new long-form episode behind it. Podcast's twin lane has always done
+        # this (podcast_distribute Pass 3); the video lane did not, so a
+        # delivered video only reached video/feed.xml if some *other* event
+        # (a publish, or an approve that happened to carry a site_config) came
+        # along later. video_short is excluded — Shorts go to YouTube, they have
+        # no RSS surface. media_feed_reconciliation is the backstop that catches
+        # whatever this still misses.
+        if rss_dispatched:
+            from services.media_feed_rebuild import rebuild_video_feed
+
+            await rebuild_video_feed(sc)
 
         detail = f"linked {linked}, dispatched {dispatched}"
         return JobResult(ok=True, detail=detail, changes_made=linked + dispatched)
