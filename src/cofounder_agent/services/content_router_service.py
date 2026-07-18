@@ -97,6 +97,59 @@ from .webhook_delivery_service import emit_webhook_event
 logger = get_logger(__name__)
 
 
+async def _record_experiment_outcome(
+    *,
+    result: dict[str, Any],
+    task_id: Any,
+    database_service: Any,
+    site_config: Any,
+    ok: bool,
+) -> None:
+    """Attribute a completed pipeline run to its experiment-assignment row
+    (Glad-Labs/poindexter#27; no-op when no experiment is active).
+
+    Best-effort — **never raises**, so it can't poison a successful run — but a
+    failure is surfaced as a non-paging ``info`` finding so a persistent break
+    doesn't silently starve the A/B Lab's ``(variant -> outcome)`` data
+    (router-learning class, batches 10-12). Lifted out of
+    ``process_content_generation_task`` for testability.
+    """
+    try:
+        from services.pipeline_experiment_hook import record_pipeline_outcome
+
+        await record_pipeline_outcome(
+            assignment=result.get("experiment_assignment") or {},
+            task_id=task_id,
+            database_service=database_service,
+            site_config=site_config,
+            metrics={
+                "quality_score": float(result.get("quality_score") or 0.0),
+                "qa_final_score": float(result.get("qa_final_score") or 0.0),
+                "status": str(result.get("status", "unknown")),
+                "model_used": str(result.get("model_used", "")),
+                "outcome": "success" if ok else "halted",
+            },
+        )
+    except Exception as _exc:  # noqa: BLE001 — attribution is best-effort; never poison the run
+        logger.debug("[BG-TASK] experiment record_outcome failed: %s", _exc)
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="services.content_router_service",
+            kind="experiment_outcome_record_failed",
+            title="Experiment outcome attribution failed",
+            body=(
+                f"record_pipeline_outcome raised {type(_exc).__name__}: {_exc} for "
+                f"task {task_id}. The pipeline run itself succeeded, but its outcome "
+                f"was not attributed to the experiment-assignment row — a persistent "
+                f"failure silently starves the A/B Lab's (variant -> outcome) data."
+            ),
+            severity="info",
+            dedup_key=f"experiment_outcome_record_failed:{type(_exc).__name__}",
+            extra={"error_type": type(_exc).__name__, "task_id": str(task_id)},
+        )
+
+
 async def _load_template_slug(database_service: DatabaseService, task_id: str) -> str | None:
     """Read ``pipeline_tasks.template_slug`` for ``task_id``.
 
@@ -570,7 +623,7 @@ async def process_content_generation_task(
                 database_service.pool, _sc, str(task_id),
                 template_slug=template_slug,
             )
-        except Exception as _stream_exc:  # noqa: BLE001
+        except Exception as _stream_exc:  # noqa: BLE001 — silent-ok: progress-streaming callback build is best-effort UX; a failure just means no live progress updates and the run continues normally
             logger.debug(
                 "[BG-TASK] streaming callback build failed (%s) — continuing "
                 "without on_event streaming", _stream_exc,
@@ -598,23 +651,13 @@ async def process_content_generation_task(
         # Glad-Labs/poindexter#27: attribute pipeline outcome to the
         # experiment assignment row (no-op when no experiment active).
         # Best-effort — failure here must not poison a successful run.
-        try:
-            from services.pipeline_experiment_hook import record_pipeline_outcome
-            await record_pipeline_outcome(
-                assignment=result.get("experiment_assignment") or {},
-                task_id=task_id,
-                database_service=database_service,
-                site_config=_sc,
-                metrics={
-                    "quality_score": float(result.get("quality_score") or 0.0),
-                    "qa_final_score": float(result.get("qa_final_score") or 0.0),
-                    "status": str(result.get("status", "unknown")),
-                    "model_used": str(result.get("model_used", "")),
-                    "outcome": "success" if _tmpl_summary.ok else "halted",
-                },
-            )
-        except Exception as _exc:
-            logger.debug("[BG-TASK] experiment record_outcome failed: %s", _exc)
+        await _record_experiment_outcome(
+            result=result,
+            task_id=task_id,
+            database_service=database_service,
+            site_config=_sc,
+            ok=_tmpl_summary.ok,
+        )
 
         logger.info("=" * 80)
         logger.info("CONTENT GENERATION PIPELINE FINISHED")
@@ -653,7 +696,7 @@ async def process_content_generation_task(
                 "no attempts recorded" in _err_text
                 or "AllModelsFailedError" in _err_text
             )
-        except Exception as _dry_exc:
+        except Exception as _dry_exc:  # noqa: BLE001 — silent-ok: dry-run classification is fail-safe; on failure _is_dry_run_halt stays False so the error is treated as a real error (the conservative direction)
             logger.debug("[BG-TASK] dry-run severity-demote check failed: %s", _dry_exc)
 
         # poindexter#846: content.load_draft_for_image_rebuild raises this

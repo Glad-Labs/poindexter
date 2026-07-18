@@ -76,7 +76,6 @@
   "src/cofounder_agent/services/audio_gen_providers/stable_audio_open.py": 1,
   "src/cofounder_agent/services/auth/oauth_client.py": 1,
   "src/cofounder_agent/services/category_resolver.py": 1,
-  "src/cofounder_agent/services/content_router_service.py": 3,
   "src/cofounder_agent/services/cost_guard.py": 1,
   "src/cofounder_agent/services/deepeval_rails.py": 2,
   "src/cofounder_agent/services/devto_service.py": 1,
