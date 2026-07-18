@@ -306,8 +306,90 @@ def _apply_spoken_replacement(text: str, written: str, spoken: str) -> str:
     return re.sub(re.escape(written), spoken, text, flags=re.IGNORECASE)
 
 
+# Model-identifier families whose version/quant tails get normalized for
+# speech. A pin like ``gemma-4-31B-it-qat:latest`` reads awful token-by-token
+# ("gemma dash four dash thirty-one B dash it dash qat colon latest"); we want
+# just "gemma four thirty-one B" — family + version/size, dropping the quant
+# (it-qat), tag (:latest) and GPU (-5090) noise. DB-tunable via
+# ``tts_model_name_families`` so an operator running other models can extend
+# the list without a code change (feedback_db_first_config).
+_DEFAULT_MODEL_FAMILIES: tuple[str, ...] = (
+    "gemma", "glm", "qwen", "phi", "llama", "mistral", "mixtral",
+    "deepseek", "codellama", "qwq", "granite", "nemotron", "smollm", "kokoro",
+)
+
+
+def _get_model_families(*, site_config: "SiteConfig | None" = None) -> tuple[str, ...]:
+    """Model families for the speech normalizer, from ``tts_model_name_families``.
+
+    A CSV in the DB; falls back to :data:`_DEFAULT_MODEL_FAMILIES` when unset so
+    a fresh install still speaks model names cleanly before the seed lands.
+    """
+    _sc = _resolve_site_config(site_config)
+    raw = (_sc.get("tts_model_name_families", "") or "").strip()
+    if not raw:
+        return _DEFAULT_MODEL_FAMILIES
+    fams = tuple(f.strip().lower() for f in raw.split(",") if f.strip())
+    return fams or _DEFAULT_MODEL_FAMILIES
+
+
+def _normalize_model_names(text: str, *, families: tuple[str, ...]) -> str:
+    """Speak model identifiers as family + version/size, dropping config noise.
+
+    ``gemma-4-31B-it-qat:latest`` → ``gemma 4 31B``, ``glm-4.7-5090`` →
+    ``glm 4.7``, ``qwen3:30b`` → ``qwen 3 30b``, ``phi4`` → ``phi 4``.
+
+    Only tokens anchored on a known *family* AND carrying a real version/size
+    (a ``\\d+B`` size, a ``\\d.\\d`` decimal, or a family-glued version) are
+    rewritten — prose that merely reuses a family word ("llama farm", "phi
+    coefficient", "Philadelphia", the compiler term "phi-node-2") is left
+    untouched. Runs before the pronunciation map so a split-off family (``glm``)
+    still picks up its ``GLM → G L M`` spoken form.
+    """
+    if not families:
+        return text
+
+    fam_alt = "|".join(re.escape(f) for f in sorted(families, key=len, reverse=True))
+    # family, then an optional family-glued version (phi"4", qwen"3"), then an
+    # optional [-:]-delimited config tail. Version/tail segments must END in an
+    # alphanumeric so a trailing sentence period ("gemma-4-31B.") isn't consumed.
+    pattern = re.compile(
+        rf"\b(?P<fam>{fam_alt})"
+        r"(?P<ver>\d(?:[\w.]*[A-Za-z0-9])?)?"
+        r"(?P<tail>(?:[-:][A-Za-z0-9._]*[A-Za-z0-9])+)?",
+        re.IGNORECASE,
+    )
+
+    def _keep(seg: str) -> bool:
+        # Keep a size (31B/30b/7B), a decimal version (4.7/2.5), or a short
+        # integer (4/31) — never a 4+-digit GPU model number (5090) or a quant
+        # format (q4_K_M, fp16), which either exceed the digit run or don't
+        # start with a bare digit run at all.
+        if re.fullmatch(r"\d{4,}", seg):
+            return False
+        return re.fullmatch(r"\d+[Bb]|\d+\.\d+|\d+", seg) is not None
+
+    def _repl(m: "re.Match[str]") -> str:
+        fam = m.group("fam")
+        ver = m.group("ver") or ""
+        segs = [s for s in re.split(r"[-:]", m.group("tail") or "") if s]
+        # A model identifier needs a real version/size signal; without one this
+        # is a same-spelled English word — leave the whole match untouched.
+        model_like = bool(ver) or any(re.fullmatch(r"\d+[Bb]|\d+\.\d+", s) for s in segs)
+        if not model_like:
+            return m.group(0)
+        kept = ([ver] if ver else []) + [s for s in segs if _keep(s)]
+        return fam + "".join(f" {k}" for k in kept)
+
+    return pattern.sub(_repl, text)
+
+
 def _normalize_for_speech(text: str, *, site_config: "SiteConfig | None" = None) -> str:
     """Convert written English conventions to natural spoken form."""
+    # Model identifiers first — collapse gemma-4-31B-it-qat:latest → "gemma 4
+    # 31B" BEFORE the pronunciation map, so the split-off family still gets its
+    # spoken form (glm → G L M) instead of being stranded in a config token.
+    text = _normalize_model_names(text, families=_get_model_families(site_config=site_config))
     # Simple replacements (DB-configurable via tts_pronunciations).
     for written, spoken in _get_tts_replacements(site_config=site_config):
         text = _apply_spoken_replacement(text, written, spoken)

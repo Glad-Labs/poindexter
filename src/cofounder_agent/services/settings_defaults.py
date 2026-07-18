@@ -1400,6 +1400,14 @@ DEFAULTS: dict[str, str] = {
     'tts_pronunciations': (
         '{"I/O": "I O", "CI/CD": "See Eye See Dee", "DevEx": "dev ex", "DevOps": "dev ops", "GitHub": "git hub", "GitLab": "git lab", "TCP/IP": "TCP IP", "Vue.js": "view J S", "FastAPI": "fast A P I", "GitFlow": "git flow", "GraphQL": "graph Q L", "MongoDB": "mongo D B", "Next.js": "next J S", "Node.js": "node J S", "pgvector": "P G vector", "DevSecOps": "dev sec ops", "WebSocket": "web socket", "JavaScript": "java script", "PostgreSQL": "postgres", "TypeScript": "type script", "VRAM": "Vee RAM", "SRAM": "Ess RAM", "DRAM": "Dee RAM", "PB": "petabyte", "TB": "terabyte", "GB": "gigabyte", "MB": "megabyte", "KB": "kilobyte", "GHz": "gigahertz", "MHz": "megahertz", "kHz": "kilohertz", "Gbps": "gigabits per second", "Mbps": "megabits per second", "Kbps": "kilobits per second", "fps": "frames per second", "OS/2": "OS 2", "e.g.": "for example", "i.e.": "that is", "etc.": "and so on", "vs": "versus", "vs.": "versus", "approx.": "approximately", "incl.": "including", "w/": "with", "w/o": "without", "CI": "See Eye", "GLM": "G L M", "LLM": "L L M", "vLLM": "V L L M", "LiteLLM": "lite L L M", "SDXL": "S D X L", "Phi": "fie", "Kokoro": "ko ko ro", "Qwen": "que-wen", "Ollama": "O llama", "QA": "Q A", "iframe": "I frame"}'
     ),
+    # Model-identifier families for the TTS speech normalizer. A CSV of base
+    # family names; podcast_service collapses a pin like
+    # `gemma-4-31B-it-qat:latest` → spoken "gemma four thirty-one B", keeping
+    # family + version/size and dropping the quant/tag/GPU config noise. Add a
+    # family here (e.g. a new local model) to have its config tail cleaned too.
+    'tts_model_name_families': (
+        'gemma,glm,qwen,phi,llama,mistral,mixtral,deepseek,codellama,qwq,granite,nemotron,smollm,kokoro'
+    ),
     # Domain TLD pronunciation for the spoken podcast outro. The outro speaks
     # site_domain aloud ("Visit gladlabs dot io ..."); a bare two-letter TLD
     # like "io" reads as "eoh" in TTS. This map rewrites ONLY the final domain

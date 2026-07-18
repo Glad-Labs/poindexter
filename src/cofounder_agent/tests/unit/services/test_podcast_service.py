@@ -443,6 +443,166 @@ class TestNormalizeForSpeech:
         assert "nassa" in result.lower()
 
 
+# ===========================================================================
+# Model-identifier speech normalization — quant/config tails read awful
+# token-by-token. gemma-4-31B-it-qat:latest should say "gemma four thirty-one
+# B", not spell out the it-qat / :latest / -5090 config noise.
+# ===========================================================================
+
+
+class TestNormalizeModelNames:
+    """family + version/size is spoken; quant/variant/tag/GPU noise is dropped."""
+
+    FAMS = ("gemma", "glm", "qwen", "phi", "llama", "mistral", "deepseek")
+
+    def test_strips_quant_and_tag_tail(self):
+        from services.podcast_service import _normalize_model_names
+        assert (
+            _normalize_model_names("we use gemma-4-31B-it-qat:latest", families=self.FAMS)
+            == "we use gemma 4 31B"
+        )
+
+    def test_strips_gpu_suffix_keeps_decimal_version(self):
+        from services.podcast_service import _normalize_model_names
+        assert (
+            _normalize_model_names("the glm-4.7-5090 reviser", families=self.FAMS)
+            == "the glm 4.7 reviser"
+        )
+
+    def test_colon_size_tag_kept(self):
+        from services.podcast_service import _normalize_model_names
+        assert (
+            _normalize_model_names("runs gemma-4:31b locally", families=self.FAMS)
+            == "runs gemma 4 31b locally"
+        )
+
+    def test_glued_ollama_version(self):
+        from services.podcast_service import _normalize_model_names
+        assert _normalize_model_names("qwen3:30b", families=self.FAMS) == "qwen 3 30b"
+
+    def test_glued_family_version_no_tail(self):
+        from services.podcast_service import _normalize_model_names
+        assert _normalize_model_names("phi4", families=self.FAMS) == "phi 4"
+
+    def test_instruct_variant_stripped(self):
+        from services.podcast_service import _normalize_model_names
+        assert (
+            _normalize_model_names("mistral-7B-instruct", families=self.FAMS)
+            == "mistral 7B"
+        )
+
+    def test_trailing_sentence_period_preserved(self):
+        # A model at the end of a sentence must keep its period, not eat it.
+        from services.podcast_service import _normalize_model_names
+        assert (
+            _normalize_model_names("It runs on gemma-4-31B.", families=self.FAMS)
+            == "It runs on gemma 4 31B."
+        )
+
+    def test_prose_family_words_untouched(self):
+        # No numeric version → not a model identifier → leave prose alone.
+        from services.podcast_service import _normalize_model_names
+        text = "The llama on the farm, the latest chat, and phi coefficients"
+        assert _normalize_model_names(text, families=self.FAMS) == text
+
+    def test_hyphenated_family_word_without_number_untouched(self):
+        from services.podcast_service import _normalize_model_names
+        assert (
+            _normalize_model_names("a llama-shaped cookie", families=self.FAMS)
+            == "a llama-shaped cookie"
+        )
+
+    def test_bare_integer_config_not_treated_as_model(self):
+        # "phi-node-2" (compiler SSA term) has only a bare integer, no size/
+        # decimal version — it must not be mistaken for a model identifier.
+        from services.podcast_service import _normalize_model_names
+        assert (
+            _normalize_model_names("the phi-node-2 pass", families=self.FAMS)
+            == "the phi-node-2 pass"
+        )
+
+    def test_family_substring_not_matched(self):
+        # "Philadelphia" contains "phi" but must be left intact.
+        from services.podcast_service import _normalize_model_names
+        assert (
+            _normalize_model_names("a trip to Philadelphia", families=self.FAMS)
+            == "a trip to Philadelphia"
+        )
+
+    def test_multiple_models_one_sentence(self):
+        from services.podcast_service import _normalize_model_names
+        assert (
+            _normalize_model_names(
+                "gemma-4-31B-it-qat:latest writes, glm-4.7 revises", families=self.FAMS
+            )
+            == "gemma 4 31B writes, glm 4.7 revises"
+        )
+
+    def test_empty_families_is_noop(self):
+        from services.podcast_service import _normalize_model_names
+        assert (
+            _normalize_model_names("gemma-4-31B-it-qat:latest", families=())
+            == "gemma-4-31B-it-qat:latest"
+        )
+
+
+class TestGetModelFamilies:
+    def test_falls_back_to_default_when_unset(self):
+        from services.podcast_service import (
+            _DEFAULT_MODEL_FAMILIES,
+            _get_model_families,
+        )
+        sc = SiteConfig(initial_config={"tts_model_name_families": ""})
+        assert _get_model_families(site_config=sc) == _DEFAULT_MODEL_FAMILIES
+
+    def test_reads_csv_from_db(self):
+        from services.podcast_service import _get_model_families
+        sc = SiteConfig(initial_config={"tts_model_name_families": "gemma, glm ,qwen"})
+        assert _get_model_families(site_config=sc) == ("gemma", "glm", "qwen")
+
+    def test_shipped_default_setting_has_core_families(self):
+        from services.podcast_service import _get_model_families
+        from services.settings_defaults import DEFAULTS
+
+        sc = SiteConfig(initial_config={
+            "tts_model_name_families": DEFAULTS["tts_model_name_families"],
+        })
+        fams = _get_model_families(site_config=sc)
+        for core in ("gemma", "glm", "qwen", "phi"):
+            assert core in fams
+
+
+class TestNormalizeForSpeechModelNames:
+    """End-to-end: the transform is wired into _normalize_for_speech and runs
+    BEFORE the pronunciation map (so a split-off 'glm' still gets 'G L M')."""
+
+    def test_quant_tail_stripped_end_to_end(self):
+        from services.podcast_service import _normalize_for_speech
+        sc = SiteConfig(initial_config={
+            "tts_pronunciations": "",
+            "tts_acronym_replacements": "",
+        })
+        result = _normalize_for_speech(
+            "we run gemma-4-31B-it-qat:latest nightly", site_config=sc
+        )
+        assert "it-qat" not in result
+        assert "qat" not in result
+        assert "31B" in result
+
+    def test_glm_family_pronounced_after_split(self):
+        from services.podcast_service import _normalize_for_speech
+        from services.settings_defaults import DEFAULTS
+
+        sc = SiteConfig(initial_config={
+            "tts_pronunciations": DEFAULTS["tts_pronunciations"],
+            "tts_acronym_replacements": "",
+        })
+        result = _normalize_for_speech("the glm-4.7-5090 model", site_config=sc)
+        assert "5090" not in result
+        assert "G L M" in result  # pronunciation applied to the split-off family
+        assert "4.7" in result
+
+
 class TestGetTtsReplacements:
     def test_returns_default_list_when_no_db_config(self):
         from services.podcast_service import _get_tts_replacements
