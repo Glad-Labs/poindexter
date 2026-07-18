@@ -256,6 +256,10 @@ def _rewrite_to_host(url: str) -> str | None:
                 netloc = f"localhost:{parts.port}"
             return urlunparse(parts._replace(netloc=netloc))
     except Exception:
+        # silent-ok: `None` means "no rewrite applicable", which is also the
+        # normal answer for any URL that isn't a docker-internal host. An
+        # unparseable URL therefore degrades to leaving it untouched — the
+        # safe result for a convenience rewrite.
         pass
     return None
 
@@ -325,6 +329,9 @@ async def _setting_value(dsn: str, key: str) -> str:
         finally:
             await conn.close()
     except Exception:
+        # silent-ok: `""` reads as "not configured yet", which during setup is
+        # the expected state — the caller prompts for the value instead. A
+        # DB that isn't reachable yet is the normal case here, not a fault.
         return ""
 
 
@@ -436,6 +443,10 @@ def _container_exists() -> bool:
         )
         return _AUTO_CONTAINER in (out.stdout or "").splitlines()
     except Exception:
+        # silent-ok: `False` is the FAIL-SAFE answer — "assume it isn't there"
+        # makes the caller try to CREATE the container, and docker itself then
+        # fails loudly with a real message if something is actually wrong.
+        # Claiming it exists on an error would strand setup instead.
         return False
 
 
@@ -447,6 +458,9 @@ def _container_running() -> bool:
         )
         return _AUTO_CONTAINER in (out.stdout or "").splitlines()
     except Exception:
+        # silent-ok: `False` is fail-safe here too — "assume it isn't running"
+        # makes the caller start it, and a genuine docker problem surfaces
+        # from that command with a real error.
         return False
 
 
@@ -506,6 +520,12 @@ def _auto_provision() -> str:
                 )
                 return existing_dsn
         except Exception:
+            # silent-ok: this is a best-effort ATTEMPT to recover a usable
+            # DSN, and failing it is not the end of the story — the very next
+            # statement raises a ClickException carrying full remediation
+            # (remove the container, or pass --db-url). The failure is
+            # reported loudly one line below; warning here would just
+            # duplicate it with less context.
             pass
         raise click.ClickException(
             f"Container '{_AUTO_CONTAINER}' already exists but the password "

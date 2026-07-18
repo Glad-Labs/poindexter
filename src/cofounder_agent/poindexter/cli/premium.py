@@ -240,6 +240,10 @@ async def _validate_silent() -> bool:
 
         return is_valid
     except Exception:
+        # silent-ok: `_validate_silent` is silent by name and by design, and
+        # `False` is the FAIL-CLOSED answer — a validation error denies
+        # premium rather than granting it. The interactive `premium` commands
+        # surface activation problems; this path is the background check.
         return False
     finally:
         await conn.close()

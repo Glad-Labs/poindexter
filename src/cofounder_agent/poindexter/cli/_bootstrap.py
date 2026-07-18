@@ -37,6 +37,10 @@ def read_bootstrap_value(key: str) -> str:
         else:  # pragma: no cover — tomli only on 3.10
             import tomli as _tomllib  # type: ignore[import-not-found]
     except Exception:  # noqa: BLE001
+        # silent-ok: `""` is this function's DOCUMENTED return for "no value
+        # recoverable" (see docstring) — callers fall through to env vars and
+        # raise their own, better error. No TOML parser available is one such
+        # case, and it runs before any logging is configured.
         return ""
     path = os.path.expanduser("~/.poindexter/bootstrap.toml")
     if not os.path.exists(path):
@@ -45,6 +49,9 @@ def read_bootstrap_value(key: str) -> str:
         with open(path, "rb") as f:
             data = _tomllib.load(f)
     except Exception:  # noqa: BLE001
+        # silent-ok: same documented `""` contract — an unreadable or
+        # malformed bootstrap.toml is indistinguishable from an absent one to
+        # every caller, and each falls through to env vars with its own error.
         return ""
     return str(data.get(key) or "").strip()
 

@@ -125,6 +125,10 @@ def cmd_pending(medium: str | None, limit: int, as_json: bool):
                 try:
                     r["quality_signals"] = json.loads(qs)
                 except (json.JSONDecodeError, TypeError):
+                    # silent-ok: cosmetic normalization only. On failure the
+                    # raw string is kept, so the row still renders and the
+                    # JSON output stays valid — it just carries a
+                    # nested-quoted string instead of a parsed object.
                     pass
         click.echo(json.dumps(rows, indent=2))
         return

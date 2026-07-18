@@ -74,8 +74,17 @@ async def _make_site_config(pool):
     cfg = SiteConfig(pool=pool)
     try:
         await cfg.load(pool)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Degrade to an empty config so the command still runs, but say so:
+        # every cfg.get(key, default) then returns the CODE default rather
+        # than the operator's tuned app_settings value. stderr keeps stdout
+        # scriptable.
+        click.echo(click.style(
+            f"  WARN: could not load app_settings ({type(exc).__name__}: "
+            f"{exc}) — falling back to built-in defaults for every setting "
+            "this command reads.",
+            fg="yellow",
+        ), err=True)
     return cfg
 
 

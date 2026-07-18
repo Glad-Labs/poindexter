@@ -44,6 +44,10 @@ def _read_bootstrap_value(key: str) -> str:
         else:  # pragma: no cover — tomli only on 3.10
             import tomli as _tomllib  # type: ignore[import-not-found]
     except Exception:  # noqa: BLE001
+        # silent-ok: `""` is the documented return for "no value recoverable"
+        # — the caller falls through to the env-var path (which is exactly
+        # what the docstring above describes). Twin of the same helper in
+        # poindexter/cli/_bootstrap.py.
         return ""
     path = os.path.expanduser("~/.poindexter/bootstrap.toml")
     if not os.path.exists(path):
@@ -52,6 +56,9 @@ def _read_bootstrap_value(key: str) -> str:
         with open(path, "rb") as f:
             data = _tomllib.load(f)
     except Exception:  # noqa: BLE001
+        # silent-ok: same documented `""` contract — an unreadable or
+        # malformed bootstrap.toml reads as absent, and the caller falls
+        # through to env vars with its own error message.
         return ""
     return str(data.get(key) or "").strip()
 
@@ -1108,6 +1115,10 @@ def _write_bootstrap_oauth_creds(client_id: str, client_secret: str) -> bool:
         import stat
         path.chmod(stat.S_IRUSR | stat.S_IWUSR)
     except Exception:  # noqa: BLE001
+        # silent-ok: permission tightening only, and explicitly best-effort
+        # ("no-op on Windows" above). The credential WRITE itself is already
+        # handled loudly — the `except OSError` a few lines up echoes a yellow
+        # WARN and returns False. Same shape as brain/bootstrap.py.
         pass
     return True
 

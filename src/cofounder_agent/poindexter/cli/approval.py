@@ -59,11 +59,21 @@ async def _make_site_config(pool):
     cfg = SiteConfig(pool=pool)
     try:
         await cfg.load(pool)
-    except Exception:
+    except Exception as exc:
         # Defensive — the load path may fail in odd environments
         # (missing app_settings table, partial bootstrap). Fall back to
         # an empty config so gate-list / gate-set still works.
-        pass
+        #
+        # But SAY SO: an empty config makes every cfg.get(key, default)
+        # return the code default, so `gate-list` can report a gate as
+        # disabled when app_settings actually has it enabled — a wrong
+        # answer presented as fact. stderr keeps stdout scriptable.
+        click.echo(click.style(
+            f"  WARN: could not load app_settings ({type(exc).__name__}: "
+            f"{exc}) — using built-in defaults; gate states shown may not "
+            "reflect your configuration.",
+            fg="yellow",
+        ), err=True)
     return cfg
 
 

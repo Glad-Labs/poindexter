@@ -203,6 +203,9 @@ def _dsn_or_none() -> str:
         from poindexter.cli._bootstrap import resolve_dsn
         return resolve_dsn()
     except Exception:  # noqa: BLE001
+        # silent-ok: the docstring states the contract — "Doesn't raise; the
+        # caller is expected to be tolerant of missing DSN (env-var-only
+        # setups still work)". Returning "" IS the env-var-only path.
         return ""
 
 

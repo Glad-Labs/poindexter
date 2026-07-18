@@ -591,8 +591,22 @@ def post_create(
             site_cfg = SiteConfig(pool=pool)
             try:
                 await site_cfg.load(pool)
-            except Exception:
-                pass
+            except Exception as cfg_exc:
+                # An unloaded SiteConfig is not empty-and-obvious: every
+                # site_cfg.get(key, default) below quietly returns the CODE
+                # default instead of the operator's tuned app_settings value
+                # — here that silently redirects --media resolution
+                # (default_media_to_generate) and the idempotency switch.
+                # The CLI is the operator's primary UI, so a command ignoring
+                # their configuration has to say so. stderr keeps stdout
+                # clean for scripting.
+                click.echo(click.style(
+                    f"  WARN: could not load app_settings "
+                    f"({type(cfg_exc).__name__}: {cfg_exc}) — falling back to "
+                    "built-in defaults for every setting this command reads "
+                    "(including default_media_to_generate).",
+                    fg="yellow",
+                ), err=True)
 
             # Resolve media with two-stage fallback:
             # explicit flag → app_settings default. (Needs the DB for the

@@ -73,9 +73,25 @@ def import_skill_cmd(source: str, pack: str, force: bool) -> None:
 
             async with container_for_cli(pool) as container:
                 site_config = container.site_config
-        except Exception:  # noqa: BLE001
-            # Disk-only mode — pool + site_config stay None
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # Disk-only mode — pool + site_config stay None. Legitimate, but
+            # it costs the operator two things they would not otherwise know:
+            #   1. import_skill's catalog upsert is guarded by
+            #      `if pool is not None`, so the file lands on disk WITHOUT a
+            #      skill_catalog row — a half-completed install reported as
+            #      success.
+            #   2. site_config is None, so license validation falls back to
+            #      the built-in allow-list rather than the operator's
+            #      skill_importer_allowed_licenses.
+            # stderr keeps stdout scriptable.
+            click.echo(click.style(
+                f"  WARN: database unavailable ({type(exc).__name__}: {exc}) — "
+                "installing to disk only: no skill_catalog row will be "
+                "written, and license checks use the built-in allow-list "
+                "rather than your configured one. Re-run once the database is "
+                "reachable to catalog it.",
+                fg="yellow",
+            ), err=True)
 
         try:
             result = await import_skill(
@@ -124,8 +140,17 @@ def list_skills_cmd(as_json: bool) -> None:
         try:
             dsn = _dsn()
             pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # Disk-only mode is a legitimate fallback, but it answers a
+            # DIFFERENT question than this command advertises: a filesystem
+            # scan of skills/ rather than the DB catalog. Say so, on stderr,
+            # so `--json` stdout stays machine-parseable.
+            click.echo(click.style(
+                f"  WARN: database unavailable ({type(exc).__name__}: {exc}) — "
+                "listing from a disk scan of skills/, which may differ from "
+                "the skill catalog.",
+                fg="yellow",
+            ), err=True)
 
         try:
             skills = await list_skills(pool=pool)
@@ -172,8 +197,18 @@ def remove_skill_cmd(name: str) -> None:
         try:
             dsn = _dsn()
             pool = await asyncpg.create_pool(dsn, min_size=1, max_size=2)
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as exc:  # noqa: BLE001
+            # Without a pool, remove_skill unlinks the file but SKIPS the
+            # catalog-row delete (guarded by `if pool is not None`), then
+            # still reports ok. That is a half-completed removal presented as
+            # success: the row survives, pointing at a file that is now gone.
+            click.echo(click.style(
+                f"  WARN: database unavailable ({type(exc).__name__}: {exc}) — "
+                "the skill FILE will be removed but its skill_catalog row will "
+                "NOT be. Re-run this command once the database is reachable to "
+                "clean up the stale row.",
+                fg="yellow",
+            ), err=True)
 
         try:
             result = await remove_skill(name, pool=pool)

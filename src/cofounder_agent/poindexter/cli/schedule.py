@@ -92,8 +92,17 @@ async def _load_site_config(pool):
     cfg = SiteConfig(pool=pool)
     try:
         await cfg.load(pool)
-    except Exception:
-        pass
+    except Exception as exc:
+        # Explicit CLI flags still flow through (as the docstring says), but
+        # every app_settings-derived default silently reverts to the code
+        # default — so the operator must be told which half they lost.
+        # stderr keeps stdout scriptable.
+        click.echo(click.style(
+            f"  WARN: could not load app_settings ({type(exc).__name__}: "
+            f"{exc}) — explicit CLI flags still apply, but configured "
+            "defaults fall back to built-in values.",
+            fg="yellow",
+        ), err=True)
     return cfg
 
 
