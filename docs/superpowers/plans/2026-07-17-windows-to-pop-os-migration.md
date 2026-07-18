@@ -78,84 +78,119 @@ Runs on the **current Windows box** against the live Docker-Desktop stack (Git B
 
 - Create: `scripts/linux/backup-precious.sh`
 
-- [ ] **Step 1: Write the backup script.** It dumps the precious DBs, tars the useful volumes, and copies operator config to a target dir.
+**✅ DONE — the script is committed at [`scripts/linux/backup-precious.sh`](../../../scripts/linux/backup-precious.sh).**
+Read it there; it is deliberately **not** duplicated here, because an inline
+copy drifts out of sync with the file that actually runs (the first version of
+this plan did exactly that and shipped four wrong volume names).
 
-```bash
-#!/usr/bin/env bash
-# backup-precious.sh — pre-migration backup of the precious + useful tiers.
-# Run from Git Bash on the CURRENT box while the Docker-Desktop stack is up.
-# Usage: bash scripts/linux/backup-precious.sh /d/migration-backup   (MP600 mount)
-set -euo pipefail
-DEST="${1:?usage: backup-precious.sh <dest-dir>}"
-PG=poindexter-postgres-local
-STAMP="$(date +%Y%m%d-%H%M%S)"
-OUT="$DEST/poindexter-backup-$STAMP"
-mkdir -p "$OUT/pg" "$OUT/volumes" "$OUT/config"
+- [ ] **Step 1: Read the script** before running it, so its failure modes are not a surprise mid-run.
 
-echo "== Postgres globals (roles/passwords) =="
-docker exec "$PG" pg_dumpall -U poindexter --globals-only > "$OUT/pg/globals.sql"
+**What a live run against the real stack corrected (2026-07-18)** — the original
+draft was wrong in four ways, each of which would have produced a backup that
+_looked_ successful:
 
-echo "== Precious DBs (skip junk *_unit_/test/e2e/flatten_*) =="
-for db in poindexter_brain prefect langfuse; do
-  echo "  - $db"
-  docker exec "$PG" pg_dump -U poindexter -Fc "$db" > "$OUT/pg/$db.dump"
-done
-# Postiz DB (separate container/volume — adjust name if different)
-docker exec "$PG" pg_dump -U poindexter -Fc postiz > "$OUT/pg/postiz.dump" 2>/dev/null || \
-  echo "  (postiz DB not on this PG instance — check the Postiz compose service)"
+| Assumption in the first draft            | Reality                                                                                                                                                                                      |
+| ---------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 6 hardcoded volume names                 | **4 of 6 were wrong.** Compose derives volume names from the project directory, so hardcoding them backs up nothing on a differently-named checkout. Now discovered from running containers. |
+| One Postgres instance holds every DB     | **Three instances**, each with its own superuser — bundled services ship their own Postgres. Now discovered, not assumed.                                                                    |
+| Tar the database volumes                 | A tar of a **live** data directory is a torn snapshot that may not replay. DB volumes are now excluded and captured as `pg_dump`s.                                                           |
+| `cp -r ~/.poindexter` is a config backup | It is **32.7 GB**, of which 22.65 GB is superseded local DB backups. Now copies top-level config files only, and hard-fails if `bootstrap.toml` is absent.                                   |
 
-echo "== Useful volumes (best-effort tar) =="
-for vol in gladlabs-grafana-data gladlabs-glitchtip-db gladlabs-langfuse-clickhouse \
-           gladlabs-langfuse-minio gladlabs-uptime-kuma gladlabs-postiz-uploads; do
-  docker run --rm -v "$vol:/v:ro" -v "$OUT/volumes:/b" alpine \
-    tar czf "/b/$vol.tar.gz" -C /v . 2>/dev/null && echo "  - $vol" || echo "  (skip $vol)"
-done
-
-echo "== Operator config =="
-cp -r "$HOME/.poindexter" "$OUT/config/dot-poindexter"      # bootstrap.toml + secrets + logs
-cp -r "$HOME/.claude"     "$OUT/config/dot-claude"          # memory, plugins, settings, keybindings
-echo "$OUT" > "$DEST/LATEST-BACKUP.txt"
-echo "DONE → $OUT"
-```
-
-- [ ] **Step 2: Commit the script.**
-
-```bash
-git add scripts/linux/backup-precious.sh
-git commit -m "feat(migration): pre-wipe backup-precious.sh (precious + useful tiers)"
-```
+The rewritten script therefore **discovers** containers, databases and volumes at
+runtime rather than hardcoding them, and verifies every dump with
+`pg_restore --list` before reporting success.
 
 ### Task 1.2: Run the backup to the MP600 and offsite
 
-- [ ] **Step 1: Mount the MP600** and run: `bash scripts/linux/backup-precious.sh /d/migration-backup` (adjust drive letter). **Expected:** `DONE → …/poindexter-backup-<stamp>` with `pg/globals.sql`, three+ `.dump` files, volume tarballs, and `config/`.
-- [ ] **Step 2: Verify the dumps are non-empty:** `ls -la /d/migration-backup/poindexter-backup-*/pg/` → each `.dump` > 0 bytes (`poindexter_brain.dump` ≈ hundreds of MB).
-- [ ] **Step 3: Push to offsite.** Copy the `poindexter-backup-<stamp>` dir to Backblaze/R2 (rclone/`poindexter backup` path). **Confirm the offsite copy lists the same files** — do not assume.
+**Partially executed 2026-07-18** — staged locally to `D:\migration-backup`
+(47.33 GB). This run predates the script rewrite, so it was driven step-by-step;
+the corrected script now reproduces it in one command. **Offsite is still
+outstanding (Step 3).**
+
+- [x] **Step 1: Run the backup.** `bash scripts/linux/backup-precious.sh /d/migration-backup`
+
+  Landed (~428 MB of dumps + 10.8 GB of volumes + 36 GB of config/media):
+
+  | Artifact                      | Size      | Note                                                    |
+  | ----------------------------- | --------- | ------------------------------------------------------- |
+  | `pg/poindexter_brain.dump`    | 296.21 MB | the precious one                                        |
+  | `pg/prefect.dump`             | 97.81 MB  |                                                         |
+  | `pg/glitchtip.dump`           | 33.93 MB  | from its **own** Postgres container                     |
+  | `pg/langfuse.dump`            | 0.42 MB   |                                                         |
+  | `pg/postiz.dump`              | 0.17 MB   | from its **own** Postgres container                     |
+  | `volumes/langfuse-clickhouse` | 10,703 MB | live-read; traces are re-derivable, best-effort is fine |
+  | `volumes/` (5 others)         | ~117 MB   | grafana, minio, uptime-kuma, postiz-uploads, pgadmin    |
+  | `config/dot-poindexter`       | ~0.1 MB   | `bootstrap.toml` **hash-verified** against source       |
+  | `config/dot-claude`           | ~1.9 GB   | 3 × 351 memory `.md` files, all present                 |
+
+- [x] **Step 2: Verify the dumps are non-empty** — all > 0 bytes; `poindexter_brain.dump` at 296 MB.
+- [ ] **Step 3: Push to offsite.** Copy to Backblaze/R2 and **confirm the remote listing shows the same files and sizes** — do not assume the upload succeeded.
+
+> **Note on `.claude`:** the copy reports `robocopy rc=9`. The only genuine
+> failure is the dangling `debug/latest` symlink (it points at a rotated log).
+> Everything that matters copied; `rc=9` here is expected, not a warning to chase.
 
 ### Task 1.3: Test-restore the precious DBs (proves the backup before the wipe)
 
-- [ ] **Step 1: Spin a throwaway Postgres** matching the compose pin (same major/image tag, with pgvector/pgcrypto):
+**✅ EXECUTED AND PASSED 2026-07-18.** `pg_restore rc=0` in 22 s; `vector 0.8.2`,
+`pgcrypto 1.3`, `pg_trgm`, `pg_stat_statements` all present; 768-dim KNN query
+returned neighbours; 6/7 tables matched exactly. Re-run this before the wipe
+against the FINAL dump from Task 3.0 — the run below only proves the rehearsal
+copy.
+
+- [ ] **Step 1: Capture the live baseline FIRST**, so there is something to compare against. Note the timestamp.
 
 ```bash
-docker run -d --name pg-restore-test -e POSTGRES_PASSWORD=test pgvector/pgvector:pg16
-sleep 5
+docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -t -A -F'|' -c \
+ "select 'posts',count(*) from posts union all select 'pipeline_tasks',count(*) from pipeline_tasks \
+  union all select 'app_settings',count(*) from app_settings union all select 'embeddings',count(*) from embeddings \
+  union all select 'brain_knowledge',count(*) from brain_knowledge union all select 'atom_runs',count(*) from atom_runs;"
 ```
 
-- [ ] **Step 2: Restore globals + one DB:**
+- [ ] **Step 2: Spin a throwaway Postgres** on the same image pin. Use `trust` auth so no password is handled; restore `--no-owner` because the dump is owned by `poindexter`, not `postgres`.
 
 ```bash
-docker cp /d/migration-backup/poindexter-backup-*/pg/. pg-restore-test:/tmp/pg/
-docker exec pg-restore-test bash -c 'psql -U postgres -f /tmp/pg/globals.sql; createdb -U postgres poindexter_brain; pg_restore -U postgres -d poindexter_brain /tmp/pg/poindexter_brain.dump'
+docker run -d --name pg-restore-test -e POSTGRES_HOST_AUTH_METHOD=trust \
+  -e POSTGRES_USER=poindexter -e POSTGRES_DB=postgres --memory=4g pgvector/pgvector:pg16
+until docker exec pg-restore-test pg_isready -U poindexter -q; do sleep 1; done
 ```
 
-- [ ] **Step 3: Verify row counts + extensions:**
+- [ ] **Step 3: Restore:**
 
 ```bash
-docker exec pg-restore-test psql -U postgres -d poindexter_brain -c "select count(*) from posts; select extname from pg_extension;"
+docker cp /d/migration-backup/pg/poindexter_brain.dump pg-restore-test:/tmp/brain.dump
+docker exec pg-restore-test createdb -U poindexter poindexter_brain
+docker exec pg-restore-test pg_restore -U poindexter -d poindexter_brain \
+  --no-owner --no-privileges -j 4 /tmp/brain.dump
 ```
 
-**Expected:** a plausible `posts` count and `vector` + `pgcrypto` present. If the restore errors → fix the backup **now**, before Phase 3.
+**Expected:** `rc=0`. Errors here mean the backup is broken — fix it **now**.
 
-- [ ] **Step 4: Tear down:** `docker rm -f pg-restore-test`.
+- [ ] **Step 4: Verify extensions are functional, not merely installed.** "Extension exists" does not prove the data survived:
+
+```bash
+docker exec pg-restore-test psql -U poindexter -d poindexter_brain -t -A -c \
+  "select vector_dims(embedding::vector) from embeddings where embedding is not null limit 1;"
+docker exec pg-restore-test psql -U poindexter -d poindexter_brain -t -A -c \
+  "select count(*) from (select id from embeddings where embedding is not null \
+    order by embedding <-> (select embedding from embeddings where embedding is not null limit 1) limit 5) s;"
+```
+
+**Expected:** a dimension count (768) and `5`. A KNN query that returns rows proves the vectors restored intact.
+
+- [ ] **Step 5: Compare row counts to the Step 1 baseline.**
+
+> **⚠️ Expect a small shortfall on append-only tables, and do not panic.** `pg_dump`
+> snapshots at the moment it **starts**, not when the file finishes writing. On the
+> 2026-07-18 run `audit_log` restored 197,719 against a live 197,805 — the missing
+> 86 were all written _after_ the snapshot. Confirm drift rather than assuming it:
+> every restored count must equal the live count **as of the dump's start**, i.e.
+> `select count(*) from audit_log where "timestamp" <= '<dump-start>'`. A shortfall
+> on a table that should be **static** (`posts`, `app_settings`) is a real failure.
+> This drift is harmless now because Windows still holds the live DB — it is exactly
+> what **Task 3.0** exists to eliminate at cutover.
+
+- [ ] **Step 6: Tear down:** `docker rm -f pg-restore-test`.
 
 ### Task 1.4: Credential re-homing (the unrecoverable-after gate)
 
@@ -165,6 +200,37 @@ docker exec pg-restore-test psql -U postgres -d poindexter_brain -c "select coun
 - [ ] **Step 2: Sweep top-tier accounts** in blast-radius order — Backblaze, Mercury, domain registrar, Cloudflare, Google, GitHub, Vercel, Anthropic, Resend, HuggingFace — for a passkey/security key bound to this PC.
 - [ ] **Step 3: Re-home each** onto the Pixel (passkey/authenticator) **while Hello still works**; save printed recovery codes for the top-tier set; harden the Google account's own recovery.
 - [ ] **Step 4: GATE** — confirm no account's only surviving factor is a wiped Hello passkey. This must be ✅ before Phase 3.
+
+#### Step 5: ⛔ Break the offsite-backup circular dependency (discovered 2026-07-18)
+
+**The automated offsite backup currently cannot be opened after a total loss.**
+This is **not** a migration bug — it is true right now — but Phase 3 makes it
+acute, because the wipe destroys the machine holding the only copy of the key.
+
+Verified state: `offsite_backup_enabled=true`, streaming a fresh `pg_dump` of
+`poindexter_brain` to `s3:…backblazeb2.com/poindexter-backup/poindexter` every
+24 h, last snapshot confirmed OK. Healthy — and unopenable, because:
+
+1. The only offsite artifact is the **B2 restic repo**.
+2. Opening it requires the **restic password** + **B2 access keys**.
+3. Those live **encrypted in `app_settings`**, inside `poindexter_brain`.
+4. `poindexter_brain` is inside the repo you cannot open. ⟲
+5. The key that decrypts them, **`poindexter_secret_key`, exists only in
+   `~/.poindexter/bootstrap.toml`** — which the offsite runner never backs up
+   (`scripts/backup-offsite/run.sh` streams exactly one database, nothing else).
+
+Lose the MP700 **and** the MP600 and every copy of the key is gone, leaving a
+verified daily backup that no one can decrypt.
+
+- [ ] **Step 5a: Put the recovery secrets somewhere outside both the machine and the bucket.** At minimum `offsite_backup_restic_password`, `offsite_backup_s3_access_key_id`, `offsite_backup_s3_secret_access_key`, and `poindexter_secret_key` → the Pixel's password manager (which Step 3 already re-homes) and/or printed and stored offline. **Matt only — do not automate this.**
+- [ ] **Step 5b: Prove it independently.** From a machine with _no_ access to this box, use only those stored secrets to run `restic -r <repo> snapshots` and confirm the latest snapshot lists. An untested recovery path is not a recovery path.
+- [ ] **Step 5c: GATE** — ✅ only when 5b has actually listed a snapshot.
+
+> **Scope note for the migration backup.** The nightly offsite job covers
+> `poindexter_brain` **only**. `bootstrap.toml`, `~/.claude` memory, the other
+> four databases, and every volume exist on the MP600 copy **alone** until
+> Task 1.2 Step 3 pushes them. Treat "the offsite backup is running" as covering
+> one database, not the migration.
 
 ---
 
@@ -179,7 +245,56 @@ docker exec pg-restore-test psql -U postgres -d poindexter_brain -c "select coun
 
 ## Phase 3 — ⛔ POINT OF NO RETURN: wipe MP700 + install Pop!\_OS
 
-**Do not start unless Phase 0 = GO, Task 1.3 test-restore passed, and Task 1.4 gate is ✅.**
+**Do not start unless Phase 0 = GO, Task 1.3 test-restore passed, Task 1.4 gate is ✅, and Task 3.0 has produced a verified FINAL dump.**
+
+### Task 3.0: Quiesce the stack and take the FINAL dump (⛔ prevents silent data loss)
+
+**Why this task exists.** The Phase 1 backup is a **rehearsal**, taken days or
+weeks earlier against a _running_ stack. `pg_dump` snapshots at the instant it
+starts, so every row written afterwards — new posts, pipeline tasks, audit rows,
+cost logs, embeddings — exists only on the MP700. Wiping while the Phase 1 copy
+is the newest artifact **destroys all of it**, silently, with a backup that looks
+perfectly healthy. Measured on 2026-07-18: `audit_log` accumulated 86 rows in the
+minutes between dump and verification alone. Across a weekend that is thousands.
+
+The fix is to stop the writers _first_, so the dump has nothing to race.
+
+- [ ] **Step 1: Announce downtime** (the public site stays up — this only affects the operator stack).
+- [ ] **Step 2: Stop everything that writes**, leaving only Postgres running:
+
+```bash
+bash scripts/start-stack.sh down
+docker compose -f docker-compose.local.yml up -d postgres-local
+```
+
+- [ ] **Step 3: Stop the host-side writers too.** The brain daemon and any scheduled agent connect over asyncpg and will keep writing even with the stack down:
+
+```powershell
+Get-ScheduledTask | Where-Object { $_.TaskName -like '*claude*' -or $_.TaskName -like '*poindexter*' } |
+  Disable-ScheduledTask
+Get-Process | Where-Object { $_.ProcessName -match 'ollama|python' } | Format-Table Id, ProcessName
+```
+
+- [ ] **Step 4: PROVE the database is quiet.** Do not take this on faith — run it twice, ~30 s apart:
+
+```bash
+docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -t -A -c \
+  "select count(*) from audit_log;"
+docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -t -A -c \
+  "select count(*) from pg_stat_activity where datname is not null and state='active' and pid <> pg_backend_pid();"
+```
+
+**Expected:** the `audit_log` count is **identical** across both runs, and the active-connection count is `0`. If either still moves, something is still writing — find it before dumping.
+
+- [ ] **Step 5: Take the final dump** into a _separate_ directory so it can never be confused with the rehearsal copy:
+
+```bash
+bash scripts/linux/backup-precious.sh /d/migration-backup-FINAL
+```
+
+- [ ] **Step 6: Re-run the Task 1.3 test-restore against THIS dump.** With writers stopped, counts must now match the live database **exactly** — zero drift. Any shortfall is a real failure, not a snapshot artifact.
+- [ ] **Step 7: Push the final dump offsite** and confirm the remote listing shows the same files and sizes.
+- [ ] **Step 8: GATE** — ✅ only when the final dump is verified, restored, and offsite. The MP600 must hold `migration-backup-FINAL`. **Now, and only now, proceed to the wipe.**
 
 ### Task 3.1: Install Pop!\_OS on the MP700
 
