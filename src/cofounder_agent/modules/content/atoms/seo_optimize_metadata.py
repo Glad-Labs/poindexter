@@ -65,6 +65,7 @@ def _extract_json(text: str) -> dict[str, Any] | None:
             if isinstance(parsed, dict):
                 return parsed
         except json.JSONDecodeError:
+            # silent-ok: a failed parse IS the control flow.
             # Chunk isn't whole-string JSON — expected; fall through to the
             # brace-substring extraction below before trying the next chunk.
             pass
@@ -75,6 +76,7 @@ def _extract_json(text: str) -> dict[str, Any] | None:
                 if isinstance(parsed, dict):
                     return parsed
             except json.JSONDecodeError:
+                # silent-ok: last rung of the same ladder.
                 # Brace substring wasn't valid JSON either — expected; the loop
                 # moves on to the next chunk (or returns None if exhausted).
                 pass

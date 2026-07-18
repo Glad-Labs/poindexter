@@ -84,6 +84,9 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
         if not site_config.get_bool("unlinked_attribution_enabled", True):
             return {}
     except Exception:  # noqa: BLE001 — config read must never break the pipeline
+        # silent-ok: falling through RUNS the rail (the setting defaults to
+        # True), so a failed read errs toward more checking, not less. The
+        # rail is advisory, so the worst case is an extra advisory review.
         pass
 
     research_context = state.get("research_context") or ""

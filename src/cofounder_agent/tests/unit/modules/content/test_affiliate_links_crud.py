@@ -11,7 +11,11 @@ from __future__ import annotations
 import pytest
 
 from modules.content.affiliate_links import (
-    add_link, list_active, list_all, remove_link, set_active,
+    add_link,
+    list_active,
+    list_all,
+    remove_link,
+    set_active,
 )
 
 

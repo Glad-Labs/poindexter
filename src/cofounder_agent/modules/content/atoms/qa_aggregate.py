@@ -429,7 +429,18 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             from services.qa_gates_db_writer import record_chain_run
             await record_chain_run(pool, reviews)
         except Exception as exc:  # noqa: BLE001
-            logger.debug("[qa.aggregate] qa_gates counter update skipped: %s", exc)
+            # WARNING for the same reason as the qa_pass_completed write
+            # below — and this one has already burned us once. When these
+            # counters froze at 0 (poindexter#553, the bug the comment above
+            # describes) the operator dashboard showed every gate as
+            # last_run_at=NEVER, which is indistinguishable from "QA never
+            # ran". A silent regression here reproduces that display exactly.
+            logger.warning(
+                "[qa.aggregate] qa_gates counter update FAILED (%s: %s) — "
+                "gate run/rejection counters are not advancing, so the "
+                "operator dashboard will drift toward last_run_at=NEVER.",
+                type(exc).__name__, exc,
+            )
 
     # One audit row per QA pass with the full reviewer breakdown. The
     # legacy MultiModelQA.review() emitted this; #355 bypassed review() so
@@ -508,7 +519,20 @@ def _emit_qa_pass_event(
             severity=severity,
         )
     except Exception as exc:  # noqa: BLE001
-        logger.debug("[qa.aggregate] qa_pass_completed audit skipped: %s", exc)
+        # WARNING, not emit_finding: findings are themselves audit_log writes
+        # (emit_finding -> audit_log_bg -> audit_log), so a finding can never
+        # report that an audit_log write failed. Loki carries WARNING even when
+        # the DB is the thing that broke.
+        #
+        # This row is the ONLY source for the QA Rails dashboard (/d/qa-rails):
+        # per-reviewer pass-rate, score distribution, latest passes. Losing it
+        # silently blanks those panels, and a blank panel reads as "no runs
+        # happened" rather than "the writes are failing".
+        logger.warning(
+            "[qa.aggregate] qa_pass_completed audit write FAILED (%s: %s) — "
+            "this QA pass is missing from the QA Rails dashboard.",
+            type(exc).__name__, exc,
+        )
 
 
 __all__ = ["ATOM_META", "run"]

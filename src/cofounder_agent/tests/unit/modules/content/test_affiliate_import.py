@@ -8,7 +8,11 @@ from unittest.mock import AsyncMock, patch
 import pytest
 
 from modules.content.affiliate_import import (
-    _derive_display_and_keywords, _map_category, _map_is_active, import_csv, slugify_code,
+    _derive_display_and_keywords,
+    _map_category,
+    _map_is_active,
+    import_csv,
+    slugify_code,
 )
 
 
@@ -77,7 +81,7 @@ def _write_csv(tmp_path, rows):
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
         for row in rows:
-            writer.writerow({**{k: "" for k in fieldnames}, **row})
+            writer.writerow({**dict.fromkeys(fieldnames, ""), **row})
     return str(path)
 
 

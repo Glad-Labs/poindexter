@@ -94,7 +94,17 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             if _urls:
                 content_text = append_sources_section(content_text, _urls)
     except Exception as _sources_err:
-        logger.debug("[content.compile_meta] Sources-section append skipped: %s", _sources_err)
+        # compile_meta is graph position ~36 — the entire QA block (nodes
+        # 18-30, including qa.citations and qa.unlinked_attribution) has
+        # already run and will not re-inspect the body. A failure here means
+        # the finished post ships with its citations stripped and no rail
+        # anywhere downstream notices.
+        logger.warning(
+            "[content.compile_meta] Sources-section append FAILED (%s: %s) — "
+            "this post ships without its Sources section. Every QA rail has "
+            "already run by this node, so nothing downstream re-checks it.",
+            type(_sources_err).__name__, _sources_err,
+        )
 
     # Excerpt derivation.
     from services.excerpt_generator import generate_excerpt
@@ -134,8 +144,18 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             base = ""
         if base:
             preview_url = f"{base}/preview/{preview_token}"
-    except Exception:
-        pass
+    except Exception as _preview_err:
+        # Note the asymmetry with an UNSET preview_base_url: that yields an
+        # empty base with no exception and is a legitimate "previews off"
+        # configuration. Reaching this handler means the read itself raised,
+        # so previews are configured and broken. Every post needs per-post
+        # sign-off, and this is the link the operator reviews it through.
+        logger.warning(
+            "[content.compile_meta] preview URL could not be built (%s: %s) — "
+            "this post reaches the approval queue with no preview link. The "
+            "preview token itself is still valid; only the URL is missing.",
+            type(_preview_err).__name__, _preview_err,
+        )
 
     return {
         "content": content_text,

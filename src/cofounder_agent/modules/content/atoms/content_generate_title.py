@@ -152,7 +152,30 @@ async def _fetch_existing_titles(database_service: Any) -> str:
                 "ORDER BY created_at DESC LIMIT 20"
             )
         return "\n".join(f"- {r['title']}" for r in rows if r["title"])
-    except Exception:
+    except Exception as exc:
+        # Returning "" removes the avoidance list from the title prompt, which
+        # skips the title-diversity check entirely — a near-duplicate title
+        # ships with nothing to explain why. Non-paging info finding; the
+        # title step still proceeds. Same fix as writer_core's
+        # _fetch_existing_titles (OLD-debt batch 1); this is the atom-side twin.
+        from utils.findings import emit_finding
+
+        logger.warning(
+            "[content.generate_title] recent-title lookup failed (%s: %s) — "
+            "the title prompt gets no avoidance list this run",
+            type(exc).__name__, exc,
+        )
+        emit_finding(
+            source="content.generate_title",
+            kind="title_history_lookup_failed",
+            title="generate_title could not load recent published titles",
+            body=(
+                f"The recent-titles query raised {type(exc).__name__}: {exc}. "
+                f"The avoidance list is empty, so this post's title was chosen "
+                f"without the diversity check and may duplicate an existing one."
+            ),
+            dedup_key="generate_title_history_lookup_failed",
+        )
         return ""
 
 

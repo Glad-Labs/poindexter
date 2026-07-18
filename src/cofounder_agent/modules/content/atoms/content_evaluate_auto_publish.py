@@ -200,8 +200,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                 dedup_key=f"auto_publish_gate_eval_failed_{type(_gate_err).__name__}",
             )
         except Exception:
-            # emit_finding is best-effort; never let observability failure
-            # break the finalize path.
+            # silent-ok: CIRCULARITY. This wraps emit_finding itself -- you
+            # cannot emit a finding to report that emitting a finding
+            # failed. emit_finding is best-effort; never let observability
+            # failure break the finalize path.
             pass
 
     # Terminal node: re-assert awaiting_approval so the graph is authoritative

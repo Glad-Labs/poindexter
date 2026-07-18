@@ -87,6 +87,10 @@ def _extract_json(text: str) -> dict[str, Any] | None:
             if isinstance(parsed, dict):
                 return parsed
         except json.JSONDecodeError:
+            # silent-ok: a failed parse IS the control flow here -- this
+            # chunk was not whole-string JSON, so we fall through to the
+            # brace-substring attempt below. Exhausting every rung returns
+            # None, which the caller treats as fail-loud.
             pass
         brace_match = re.search(r"\{[\s\S]*\}", chunk)
         if brace_match:
@@ -95,6 +99,9 @@ def _extract_json(text: str) -> dict[str, Any] | None:
                 if isinstance(parsed, dict):
                     return parsed
             except json.JSONDecodeError:
+                # silent-ok: last rung of the same ladder -- the brace
+                # substring was not valid JSON either, so the loop moves
+                # to the next chunk (or returns None if exhausted).
                 pass
     return None
 

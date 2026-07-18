@@ -83,6 +83,10 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             stage_label="content.plan_image_markers",
         )
     except Exception as exc:
+        # silent-ok: the unload is an OPTIMISATION, not the protection. If it
+        # is skipped the writer model stays resident and image-gen loads
+        # alongside it; the SDXL VRAM gate downstream is what actually
+        # refuses to over-subscribe, and it fails loudly on its own.
         logger.debug("[content.plan_image_markers] VRAM guard skipped: %s", exc)
 
     # Check for existing markers.

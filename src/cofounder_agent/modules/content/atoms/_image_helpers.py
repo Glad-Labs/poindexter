@@ -673,6 +673,7 @@ async def _upload_to_r2_with_fallback(
     so the final URL still resolves for anyone viewing the post.
     """
     img_url = tmp_path
+    upload_error: Exception | None = None
     try:
         from services.r2_upload_service import R2UploadService
         if site_config is None:
@@ -690,12 +691,26 @@ async def _upload_to_r2_with_fallback(
             img_url = r2_url
             with suppress(OSError):
                 os.remove(tmp_path)  # best-effort cleanup
-    except Exception:
-        logger.debug("[IMAGE] R2 upload failed for inline, using local path")
+    except Exception as exc:  # noqa: BLE001 — never block the image block
+        upload_error = exc
 
     # Rewrite local-dir paths to the worker's serve URL.
     if img_url.startswith("/") and "/glad-labs-generated-images/" in img_url:
         img_url = f"/images/generated/{os.path.basename(img_url)}"
+
+    if upload_error is not None:
+        # Loud on purpose: the fallback URL resolves on the worker and ONLY on
+        # the worker, so every in-process check still passes — url_validation
+        # runs before the image block injects anything, and qa.vision fetches
+        # from this same host where the file genuinely exists. The post ships
+        # clean and the first observer of the broken image is a public reader.
+        logger.warning(
+            "[IMAGE] R2 upload failed (%s: %s) — this image falls back to the "
+            "worker-local path %r, which does NOT resolve for public readers. "
+            "No QA rail catches this: url_validation runs before the image "
+            "block and qa.vision resolves the path on this worker.",
+            type(upload_error).__name__, upload_error, img_url,
+        )
     return img_url
 
 

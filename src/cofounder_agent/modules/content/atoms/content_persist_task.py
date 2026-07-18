@@ -214,7 +214,30 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
             quality_score=final_quality_score,
         )
     except Exception as rev_err:
-        logger.debug("[content.persist_task] final snapshot failed: %s", rev_err)
+        # content_revisions is the record of what the pipeline actually
+        # produced. A missing "finalized" row makes the history end at the
+        # previous snapshot, so any later diff silently compares against the
+        # wrong baseline. Non-paging info finding — the task is already
+        # persisted by this point and must not be failed for a lost snapshot.
+        from utils.findings import emit_finding
+
+        logger.warning(
+            "[content.persist_task] final revision snapshot failed for %s "
+            "(%s: %s)",
+            task_id, type(rev_err).__name__, rev_err,
+        )
+        emit_finding(
+            source="content.persist_task",
+            kind="final_revision_snapshot_failed",
+            title="persist_task could not write the finalized revision",
+            body=(
+                f"log_revision raised {type(rev_err).__name__}: {rev_err} for "
+                f"task {str(task_id)[:8]}. The task itself persisted, but "
+                f"content_revisions has no 'finalized' row for it, so its "
+                f"revision history ends at the previous snapshot."
+            ),
+            dedup_key="persist_task_final_snapshot_failed",
+        )
 
     stages = state.get("stages") or {}
     stages["5_post_created"] = False

@@ -106,6 +106,12 @@ class WriterSelfReviewStage:
                     task_id=task_id,
                 )
         except Exception as e:
+            # silent-ok: unlike qa_pass_completed (QA Rails board) and the
+            # qa_gates counters (Integrations board), the
+            # writer_self_review_pass row backs no dashboard, alert, or
+            # query -- it is a stats breadcrumb. Nothing goes blind when it
+            # is lost, which is the line this burn-down draws between a
+            # WARNING and an annotation.
             logger.debug("audit.write_bg failed: %s", e)
 
         return StageResult(

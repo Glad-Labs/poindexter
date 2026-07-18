@@ -345,7 +345,11 @@ def _audit_gate_states_unavailable(qa: Any, *, reason: str) -> None:
                 details={"reason": reason[:500]},
                 severity="warning",
             )
-    except Exception:  # noqa: BLE001 — audit is best-effort
+    except Exception:  # noqa: BLE001 - silent-ok: CIRCULARITY. This handler
+        # guards the audit write itself, and emit_finding routes through
+        # audit_log_bg -> audit_log, so a finding here would take the exact
+        # path that just failed. logger.warning is the only escape, and the
+        # callers of this helper already warn on the outcome that matters. — audit is best-effort
         pass
 
 

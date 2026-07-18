@@ -235,7 +235,30 @@ async def persist_qa_reject(
     try:
         await database_service.mark_model_performance_outcome(task_id, human_approved=False)
     except Exception as exc:  # noqa: BLE001
-        logger.debug("[qa.aggregate] mark_model_performance_outcome failed: %s", exc)
+        # Matches the pipeline_versions write directly above, which already
+        # emits a finding on failure — this sibling was the one left silent.
+        # Losing the negative outcome means the model that produced the
+        # rejected draft keeps its score and gets selected again.
+        # (emit_finding is imported at module level here — do NOT add a
+        # function-local import, it would make the name local to this whole
+        # function and UnboundLocalError the two earlier uses above.)
+        logger.warning(
+            "[qa.aggregate] mark_model_performance_outcome failed for %s "
+            "(%s: %s)",
+            task_id[:8], type(exc).__name__, exc,
+        )
+        emit_finding(
+            source="qa.aggregate",
+            kind="model_performance_outcome_write_failed",
+            title="QA reject never reached the router's learning signal",
+            body=(
+                f"mark_model_performance_outcome raised {type(exc).__name__}: "
+                f"{exc} for task {task_id[:8]}. The reject applied, but the "
+                f"model that produced the draft keeps its prior score and can "
+                f"be selected again for the same work."
+            ),
+            dedup_key="qa_model_performance_outcome_write_failed",
+        )
 
     # 4. Gate-history row.
     try:

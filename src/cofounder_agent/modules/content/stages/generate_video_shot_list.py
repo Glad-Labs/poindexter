@@ -406,6 +406,8 @@ def _reconcile_shot_list(parsed: Any) -> Any:
         try:
             total += float(raw_duration or 0.0)
         except (TypeError, ValueError):
+            # silent-ok: the per-shot schema validator rejects this shot
+            # downstream, so the loud line exists -- just not here.
             # A non-numeric duration_s contributes 0.0 to the total — the
             # per-shot schema validator rejects the shot downstream anyway, so
             # we don't fail reconciliation here. Log it so the bad director

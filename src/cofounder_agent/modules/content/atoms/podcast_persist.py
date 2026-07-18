@@ -79,7 +79,9 @@ def _duration_ms(path: str) -> int | None:
         )
         raw = out.stdout.strip()
         return int(float(raw) * 1000) if raw else None
-    except Exception:  # noqa: BLE001 — duration is metadata, never load-bearing
+    except Exception:  # noqa: BLE001 - silent-ok: duration is display
+        # metadata and never load-bearing. Returning None omits one field
+        # from the episode row; nothing downstream branches on it. — duration is metadata, never load-bearing
         return None
 
 

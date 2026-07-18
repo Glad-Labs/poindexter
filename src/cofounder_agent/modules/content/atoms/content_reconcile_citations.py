@@ -228,6 +228,11 @@ async def _resolve_youtube_authors(
                     failed_urls.append(url)
                     continue
     except Exception:  # noqa: BLE001 — never break the pipeline on transport setup
+        # silent-ok: returning {} means 'no author names resolved', which
+        # leaves those attributions unlinked -- exactly the state the
+        # advisory qa.unlinked_attribution rail exists to flag. The
+        # per-URL handler above already collects failed_urls and warns
+        # below; this outer one only covers transport setup.
         return {}
     if failed_urls:
         # A 404/private-video response never reaches here (status_code != 200

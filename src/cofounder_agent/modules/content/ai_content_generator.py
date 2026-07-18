@@ -724,20 +724,37 @@ class AIContentGenerator:
         # 1. Task-row override
         _push(preferred_model)
 
+        # A read that raises here is only fail-loud when it empties the whole
+        # list (see the docstring). PARTIAL failure is the dangerous case: the
+        # surviving pin keeps `ordered` non-empty, so the pipeline writes every
+        # post with the wrong model and nothing anywhere says so. Collect the
+        # failures and warn once below, where the effective model is known.
+        failed_reads: list[str] = []
+
         # 2. pipeline_writer_model — operator-pinned writer (primary).
         # This matches llm_text.resolve_writer_model (the canonical reference).
         _sc = self._site_config
         try:
             _push(_sc.get("pipeline_writer_model", ""))
         except Exception as e:
-            logger.debug("   pipeline_writer_model read failed: %s", e)
+            failed_reads.append(f"pipeline_writer_model ({type(e).__name__}: {e})")
 
         # 3. pipeline_fallback_model — per-call-site backstop.
         try:
             _push(_sc.get("pipeline_fallback_model", ""))
         except Exception as e:
-            logger.debug(
-                "   pipeline_fallback_model read failed: %s", e,
+            failed_reads.append(f"pipeline_fallback_model ({type(e).__name__}: {e})")
+
+        if failed_reads and ordered:
+            # Loud on purpose: `feedback_model_selection` sends the operator to
+            # `pipeline_writer_model` when QA rejects everything. Without this
+            # line they check the pin, find it correctly set, and have no way
+            # to learn it was never successfully read.
+            logger.warning(
+                "writer-model resolution partially failed (%s) — this post is "
+                "being written by %r instead of the operator's configured pin. "
+                "Candidate ladder is now %s.",
+                "; ".join(failed_reads), ordered[0], ordered,
             )
 
         return ordered

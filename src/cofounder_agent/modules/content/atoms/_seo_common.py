@@ -133,7 +133,10 @@ def degraded(field: str, exc: Exception) -> None:
         from services.metrics_exporter import increment_seo_degraded  # type: ignore
 
         increment_seo_degraded(field)
-    except Exception:  # noqa: BLE001 — metric is best-effort; the WARNING is the floor
+    except Exception:  # noqa: BLE001 - silent-ok: the metric is a duplicate
+        # signal, not the primary one -- the caller has already logged a
+        # WARNING for this same condition, so the floor is preserved and a
+        # second line here would only double the noise. — metric is best-effort; the WARNING is the floor
         pass
 
 

@@ -2439,6 +2439,10 @@ def validate_content(
         try:
             CONTENT_VALIDATOR_WARNINGS_TOTAL.labels(rule=_cat).inc(_count)
         except Exception as _exc:  # pragma: no cover — best-effort metric
+            # silent-ok: a Prometheus counter increment. The validation
+            # RESULT it counts is returned to the caller and acted on
+            # regardless, so losing the counter costs a dashboard tick,
+            # never a validation decision.
             logger.debug("[VALIDATOR] prometheus counter emit failed: %s", _exc)
 
     # (b) Named-source-without-URL promotion. Runs per-issue so we can

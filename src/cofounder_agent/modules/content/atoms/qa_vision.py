@@ -110,7 +110,10 @@ async def _preview_screenshot_enabled(settings_service: Any) -> bool:
         return False
     try:
         raw = await settings_service.get("qa_preview_screenshot_enabled")
-    except Exception:  # noqa: BLE001
+    except Exception:  # noqa: BLE001 - silent-ok: False matches this
+        # setting's own default, and it is read ONLY to decide whether an
+        # absent preview_url is fail-loud. A failed read therefore lands on
+        # the same behaviour as the unset case.
         return False
     return str(raw or "false").strip().lower() in ("true", "1", "yes")
 
@@ -218,6 +221,11 @@ async def _emit_deliberate_pass(
 
             await notify_operator(page_msg, critical=False, site_config=site_config)
         except Exception as exc:  # noqa: BLE001
+            # silent-ok: notify_operator is contractually non-raising and
+            # ALREADY logs at ERROR when every delivery path fails (see
+            # services/integrations/operator_notify.py). This particular
+            # notification is explicitly non-critical: an FYI about a vision
+            # review, not a gate decision.
             logger.debug("[qa.vision] operator notify failed (non-critical): %s", exc)
 
     review = ReviewerResult(

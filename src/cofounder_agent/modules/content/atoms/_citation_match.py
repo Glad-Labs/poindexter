@@ -123,7 +123,10 @@ def _registrable_and_sld(url: str) -> tuple[str, str] | None:
     """
     try:
         netloc = urlparse(url).netloc.lower()
-    except Exception:  # noqa: BLE001 — malformed URL
+    except Exception:  # noqa: BLE001 - silent-ok: None is the
+        # in-domain answer for 'no citation match here', which is also the
+        # normal result for any URL that simply does not match. A malformed
+        # URL lands in the same bucket rather than being a distinct failure. — malformed URL
         return None
     if not netloc:
         return None

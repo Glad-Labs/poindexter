@@ -313,6 +313,11 @@ async def _notify_critical(
         )
         await notify_operator(msg, critical=True, site_config=site_config)
     except Exception as exc:  # noqa: BLE001 — notifications are best-effort
+        # silent-ok: notify_operator is contractually non-raising and ALREADY
+        # logs at ERROR (with traceback) when every delivery path fails --
+        # see services/integrations/operator_notify.py. Reaching this handler
+        # means that contract was violated; the loud line for the operator's
+        # missed page is emitted upstream, so this is pure belt-and-braces.
         logger.debug("[atoms.approval_gate:%s] critical notify failed: %s", gate_name, exc)
 
 

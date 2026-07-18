@@ -155,7 +155,10 @@ async def _extract_frame(video_path: str, *, at_s: float) -> bytes | None:
             ],
             timeout=30.0,
         )
-    except Exception:  # noqa: BLE001 — fail-soft, the tool may be absent/hung
+    except Exception:  # noqa: BLE001 - silent-ok: None is this helper's
+        # documented 'no frame extracted' answer and the caller already
+        # branches on it. ffprobe/ffmpeg being absent or hung is the
+        # expected reason, not an anomaly worth paging on. — fail-soft, the tool may be absent/hung
         return None
     if rc != 0:
         return None
@@ -168,6 +171,7 @@ async def _extract_frame(video_path: str, *, at_s: float) -> bytes | None:
         try:
             os.remove(out_png)
         except OSError:
+            # silent-ok: see the rationale immediately below.
             # Best-effort temp-frame cleanup — a failed unlink (file already
             # gone, transient FS error) must not mask the extracted frame or
             # break QA. The OS reaps the temp dir eventually; intentionally

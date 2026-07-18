@@ -191,8 +191,29 @@ async def run(state: dict[str, Any]) -> dict[str, Any]:
                     if slug:
                         real_slug_set.add(slug)
     except Exception as exc:
-        logger.debug(
+        # An EMPTY allowlist is not a soft degradation: it makes
+        # scrub_fabricated_links (four lines below) maximally aggressive, so
+        # every legitimate internal link in the post is treated as fabricated
+        # and deleted. Non-paging info finding — the writer must never be
+        # blocked by its own telemetry. Same fix as writer_core's
+        # _build_real_slug_allowlist (OLD-debt batch 1); this is the atom-side
+        # twin that runs on the graph_def path.
+        from utils.findings import emit_finding
+
+        logger.warning(
             "[content.normalize_draft] failed to build slug allowlist: %s", exc
+        )
+        emit_finding(
+            source="content.normalize_draft",
+            kind="slug_allowlist_build_failed",
+            title="normalize_draft could not build the real-slug allowlist",
+            body=(
+                f"Reading the internal-links cache raised {type(exc).__name__}: "
+                f"{exc}. The allowlist is empty, so scrub_fabricated_links will "
+                f"treat every internal link in this post as fabricated and "
+                f"remove it — including legitimate ones."
+            ),
+            dedup_key="normalize_draft_slug_allowlist_failed",
         )
 
     content_text = normalize_text(content_text)
