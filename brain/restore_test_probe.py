@@ -409,7 +409,11 @@ async def _emit_audit(pool: Any, event: str, detail: str,
             """,
             event, "brain.restore_test_probe", json.dumps(payload), severity)
     except Exception as exc:  # noqa: BLE001
-        logger.debug("[RESTORE_TEST] audit write failed (%s): %s", event, exc)
+        # WARNING, not debug: this probe writes no alert_events row and makes
+        # 4 audit calls against 1 notify, so most of its events — including
+        # the restore-verification outcome — reach the operator ONLY through
+        # this row. debug is not shipped to Loki.
+        logger.warning("[RESTORE_TEST] audit write failed (%s): %s", event, exc)
 
 
 # --- verdict policy ---------------------------------------------------------

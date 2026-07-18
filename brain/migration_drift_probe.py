@@ -569,9 +569,16 @@ async def _emit_audit_event(
             "warning" if "detected" in event else "info",
         )
     except Exception as exc:
-        # audit_log table may not exist on a very fresh install — log
-        # and carry on. The probe still does its job via notify_operator.
-        logger.debug(
+        # The audit_log table may not exist on a very fresh install, so this
+        # stays best-effort and never raises.
+        #
+        # It logs at WARNING rather than debug because the previous comment
+        # here ("the probe still does its job via notify_operator") is only
+        # true for SOME events: this helper is called ~12 times against ~5
+        # notify calls, and the probe writes no alert_events row, so the
+        # majority of its events reach the operator ONLY through this row.
+        # debug is not shipped to Loki, so those vanished entirely.
+        logger.warning(
             "[MIGRATION_DRIFT] Could not write audit event %s: %s",
             event, exc,
         )

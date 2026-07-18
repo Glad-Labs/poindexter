@@ -675,7 +675,12 @@ async def _emit_audit_event(
             json.dumps({"detail": detail, **(payload or {})}),
         )
     except Exception as exc:
-        logger.debug(
+        # WARNING, not debug: the docstring above justifies CATCHING (keep the
+        # brain cycle cheap) but does not make the event visible elsewhere.
+        # This probe writes no alert_events row and makes more audit calls
+        # than notify calls, so its audit-only events reach the operator ONLY
+        # through this row — and debug is not shipped to Loki.
+        logger.warning(
             "[PREFECT_STUCK_FLOW] audit_log insert skipped (%s)", exc,
         )
 

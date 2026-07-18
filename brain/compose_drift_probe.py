@@ -829,7 +829,11 @@ async def _emit_audit_event(
             "warning" if "detected" in event else "info",
         )
     except Exception as exc:
-        logger.debug(
+        # WARNING, not debug: this probe writes NO alert_events row and makes
+        # more audit calls than notify calls, so several of its events reach
+        # the operator ONLY through this row. debug is not shipped to Loki, so
+        # a swallowed write erased the event with no trace anywhere.
+        logger.warning(
             "[COMPOSE_DRIFT] Could not write audit event %s: %s",
             event, exc,
         )
@@ -925,6 +929,12 @@ def _recreate_services(
                 if var not in env:
                     env[var] = "_compose-stub_"
         except Exception:
+            # silent-ok: stubbing `${VAR:?}` sentinels is a best-effort
+            # pre-step so compose can PARSE the file. If it fails, the very
+            # next statement runs `docker compose up`, which then fails loudly
+            # on the unset sentinel vars and is reported through the normal
+            # recreate-failure path — so the consequence is already surfaced
+            # downstream with a better error than we could raise here.
             pass
 
         # --project-directory <host_dir> (when known) so relative bind-mount

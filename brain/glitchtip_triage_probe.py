@@ -479,7 +479,20 @@ def _match_rule(
                 if count > int(rule["max_count"]):
                     continue
             except (TypeError, ValueError):
-                pass
+                # Fail-OPEN is preserved on purpose — tightening it here would
+                # silently change WHICH issues auto-resolve, which is a
+                # semantics decision, not a visibility one. But it must not be
+                # silent: an unparseable max_count SKIPS the gate entirely, so
+                # a rule the operator capped at a small count now matches an
+                # issue of ANY size and auto-resolves it.
+                logger.warning(
+                    "[GLITCHTIP_TRIAGE] rule %r has an unparseable max_count "
+                    "(%r): the count gate is SKIPPED, so this rule matches "
+                    "regardless of issue count and may auto-resolve issues you "
+                    "meant to keep. Fix the rule in app_settings.",
+                    rule.get("title_pattern", "<unknown>"),
+                    rule.get("max_count"),
+                )
         if rule.get("min_age_days") is not None and not _issue_meets_min_age(
             issue, rule["min_age_days"],
         ):
@@ -562,7 +575,12 @@ async def _emit_audit_event(
             severity,
         )
     except Exception as exc:
-        logger.debug(
+        # WARNING, not debug: this probe writes NO alert_events row and makes
+        # more audit calls than notify calls (e.g. the
+        # probe.glitchtip_triage_unconfigured event has no notify anywhere near
+        # it), so those events reach the operator ONLY through this row. debug
+        # is not shipped to Loki.
+        logger.warning(
             "[GLITCHTIP_TRIAGE] Could not write audit event %s: %s",
             event, exc,
         )
