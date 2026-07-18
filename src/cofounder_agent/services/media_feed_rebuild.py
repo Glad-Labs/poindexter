@@ -105,6 +105,26 @@ class FeedReconcileResult:
     error: str | None = None
 
 
+def _normalize_for_compare(xml: str | None) -> str:
+    """Newline- and trailing-whitespace-insensitive view of a feed body.
+
+    Drift means *content* drift. Measured on live prod 2026-07-18: the published
+    ``video/feed.xml`` carried ``\\r\\n`` in its XML declaration — written at some
+    point by a host-side (Windows) writer doing text-mode newline translation —
+    while the container renders ``\\n``. Identical 64 guids, identical content,
+    two bytes apart.
+
+    A raw byte-compare would call that drift on every cycle forever: a needless
+    R2 write every 15 minutes and a recurring ``media_feed_drift`` finding. That
+    is precisely the phantom-drift trap this module avoids for CDN reads, so the
+    same discipline applies to the comparison itself. Republishing to "fix" the
+    newlines would also risk ping-ponging with whatever host path wrote them.
+    """
+    if not xml:
+        return ""
+    return xml.replace("\r\n", "\n").replace("\r", "\n").strip()
+
+
 def count_feed_items(xml: str | None) -> int:
     """Number of ``<item>`` elements in an RSS body. Missing/garbage → ``0``.
 
@@ -279,7 +299,9 @@ async def reconcile_feed(site_config: Any, medium: str) -> FeedReconcileResult:
         rendered_items = count_feed_items(rendered)
         published_items = count_feed_items(published)
 
-        if published is not None and rendered == published:
+        if published is not None and (
+            _normalize_for_compare(rendered) == _normalize_for_compare(published)
+        ):
             logger.debug(
                 "[MEDIA_FEED_RECONCILE] %s in sync (%d items)",
                 spec.label, rendered_items,

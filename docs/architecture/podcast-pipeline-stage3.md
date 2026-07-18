@@ -155,9 +155,19 @@ swallows its own failures:
 
 Miss one and the published feed stays wrong until an unrelated later event
 happens to rebuild it. Measured 2026-07-18: `podcast/feed.xml` on R2 listed
-**71** episodes while **100** were DB-eligible — a 29-episode backlog that had
-survived weeks of publishes and only cleared on a manual
+**71** episodes while **72** were DB-eligible — one episode
+(`671255df`) stranded for hours after its approval, cleared only by a manual
 `rebuild_podcast_feed`.
+
+> **Correction (same day).** The first version of this note claimed a
+> 29-episode backlog (71 vs 100). That "100" came from an LLM summarising a long
+> XML document, not from a count — treating it as a measurement was the error.
+> An authoritative in-container count (`get_object_text` + regex, against the
+> DB's own eligibility predicate) gives **72 eligible / 72 published**, i.e. the
+> drift was exactly the one episode originally reported. The _mechanism_ below
+> is unchanged and still worth the watchdog — a one-episode gap that needs a
+> human to notice is the same failure as a thirty-episode one — but the
+> magnitude was overstated. Count public surfaces with a parser, not a prompt.
 
 `services/jobs/media_feed_reconciliation.py` (`MediaFeedReconciliationJob`, every
 15 min, `media_feed_reconciliation_enabled` default **true**) makes the feed a
@@ -172,6 +182,14 @@ Two implementation details carry the weight:
   (`R2UploadService.get_object_text`), not by fetching the public
   `pub-*.r2.dev` URL. The CDN caches; comparing against a cached copy would
   manufacture phantom drift and an R2 write every cycle.
+- **The comparison is newline-insensitive.** The live `video/feed.xml` carries
+  `\r\n` in its XML declaration — written at some point by a host-side (Windows)
+  writer doing text-mode newline translation — while the container renders
+  `\n`. Identical 64 guids, identical content, two bytes apart. A raw
+  byte-compare called that drift on every cycle: a needless R2 write every 15
+  minutes plus a recurring finding, and a ping-pong risk against whatever host
+  path wrote the CRLF. Caught only by running the check against production;
+  the mocked tests all passed.
 - **The loop is deliberately asymmetric.** `podcast_feed` catches its own DB
   error and returns a _valid zero-item feed_. A convergence loop that trusted
   every render would publish that and wipe the podcast off Apple/Spotify —

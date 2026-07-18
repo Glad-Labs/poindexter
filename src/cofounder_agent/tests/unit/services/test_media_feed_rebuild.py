@@ -131,10 +131,16 @@ async def test_rebuild_is_non_fatal_on_error() -> None:
 
 
 def _feed(n_items: int) -> str:
+    """Mirror the real renderer's shape — `_build_rss_xml` emits the XML
+    declaration, then a newline, then the tree. That newline is what the
+    CRLF-vs-LF case turns on, so the fixture must carry it."""
     items = "".join(
         f"<item><title>ep {i}</title><guid>g-{i}</guid></item>" for i in range(n_items)
     )
-    return f'<?xml version="1.0"?><rss version="2.0"><channel>{items}</channel></rss>'
+    return (
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        f'<rss version="2.0"><channel>{items}</channel></rss>'
+    )
 
 
 @pytest.mark.parametrize("n", [0, 1, 71, 100])
@@ -214,6 +220,56 @@ async def test_reconcile_uploads_when_published_feed_is_behind() -> None:
     assert (res.rendered_items, res.published_items) == (100, 71)
     upload.assert_awaited_once()
     assert upload.await_args.args[1] == "podcast/feed.xml"
+
+
+@pytest.mark.asyncio
+async def test_reconcile_ignores_crlf_only_differences() -> None:
+    """Found on live prod 2026-07-18: the published video/feed.xml carries CRLF
+    (written at some point by a Windows-host writer doing text-mode newline
+    translation) while the container renders LF. Same 64 guids, same content,
+    2 bytes apart.
+
+    A raw byte-compare calls that drift forever — a pointless R2 write every 15
+    minutes plus a recurring Discord finding, which is exactly the phantom-drift
+    failure this module's docstring warns about. Compare newline-insensitively.
+    """
+    sc = _site_config()
+    body = _feed(64)
+    crlf = body.replace("\n", "\r\n")
+    # Exactly the production shape: 2 bytes apart, same content.
+    assert crlf != body and len(crlf) == len(body) + 1
+    cp, rp, upload = _patch_transport(rendered=body, published=crlf)
+    with cp, rp:
+        res = await media_feed_rebuild.reconcile_feed(sc, "podcast")
+    assert res.drifted is False
+    assert res.healed is False
+    upload.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_ignores_trailing_whitespace_differences() -> None:
+    sc = _site_config()
+    body = _feed(10)
+    cp, rp, upload = _patch_transport(rendered=body, published=body + "\n\n  ")
+    with cp, rp:
+        res = await media_feed_rebuild.reconcile_feed(sc, "podcast")
+    assert res.drifted is False
+    upload.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_still_catches_real_drift_under_crlf() -> None:
+    """Newline-insensitivity must not blind the check to actual content drift."""
+    sc = _site_config()
+    cp, rp, upload = _patch_transport(
+        rendered=_feed(72), published=_feed(71).replace("\n", "\r\n"),
+    )
+    with cp, rp:
+        res = await media_feed_rebuild.reconcile_feed(sc, "podcast")
+    assert res.drifted is True
+    assert res.healed is True
+    assert (res.rendered_items, res.published_items) == (72, 71)
+    upload.assert_awaited_once()
 
 
 @pytest.mark.asyncio
