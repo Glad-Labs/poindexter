@@ -241,6 +241,25 @@ def _get_tts_replacements(*, site_config: "SiteConfig | None" = None) -> list:
         db_map = _json.loads(db_pronunciations)
     except (ValueError, TypeError):
         logger.warning("tts_pronunciations is not valid JSON — pronunciation table skipped")
+        # Surface the silent breakage. A single typo disables the WHOLE table
+        # (every written→spoken pronunciation skipped), which reads as "the TTS
+        # is just bad" until someone digs through logs. Emit a deduped finding so
+        # it reaches the findings board / Discord instead of rotting behind a log
+        # line (feedback_self_heal_not_suppress / feedback_no_silent_defaults).
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="podcast_service",
+            kind="tts_pronunciations_invalid_json",
+            title="tts_pronunciations is not valid JSON — pronunciation table disabled",
+            body=(
+                "The tts_pronunciations app_setting failed to parse, so every "
+                "written→spoken pronunciation is being skipped at TTS time. Fix "
+                "the JSON via `poindexter settings set tts_pronunciations '{...}'`."
+            ),
+            severity="warning",
+            dedup_key="tts_pronunciations_invalid_json",
+        )
         return list(_SPOKEN_REPLACEMENTS)
 
     return list(_SPOKEN_REPLACEMENTS) + list(db_map.items())
@@ -672,6 +691,30 @@ def _build_outro(*, site_config: "SiteConfig | None" = None) -> str:
     )
 
 
+def _append_podcast_cta(
+    script: str, *, site_config: "SiteConfig | None" = None
+) -> str:
+    """Append the per-medium podcast CTA (``media.cta.podcast``) to a finished
+    podcast script.
+
+    The Stage-3 ``podcast.render`` path adds this "rate & review" ask via
+    ``_narration_render.compose_narration_text``; ``PodcastService.generate_episode``
+    (the manual-regenerate path) historically did NOT, so a regenerated episode
+    silently lost the CTA the original render carried. This restores parity.
+
+    Idempotent — never double-appends. Returns ``script`` unchanged when the CTA
+    is unset/empty. The generic ``_build_outro`` (already baked into the script)
+    is preserved ahead of the CTA, matching the original Stage-3 output.
+    """
+    _sc = _resolve_site_config(site_config)
+    cta = (_sc.get("media.cta.podcast", "") or "").strip()
+    if not cta:
+        return script
+    if script.rstrip().endswith(cta):
+        return script
+    return f"{script.rstrip()}\n\n{cta}"
+
+
 def _wrap_with_intro_outro(
     script_body: str, spoken_title: str, *, site_config: "SiteConfig | None" = None
 ) -> str:
@@ -930,9 +973,16 @@ class PodcastService:
         logger.info("[PODCAST] Voice selected '%s' for post %s",
                     selected_voice, post_id[:12])
 
+        # Append the per-medium review CTA (media.cta.podcast) to the MAIN
+        # podcast episode only — restoring parity with the Stage-3 podcast.render
+        # path. The video-narration sibling below keeps the plain `script`: video
+        # carries its own media.cta.video ("like & subscribe"), never the
+        # podcast's "rate & review on Spotify/Apple".
+        episode_script = _append_podcast_cta(script, site_config=self._site_config)
+
         for voice in voices_to_try:
             try:
-                result = await self._generate_with_voice(script, voice, output_path)
+                result = await self._generate_with_voice(episode_script, voice, output_path)
                 if result.success:
                     logger.info(
                         "[PODCAST] Generated: %s (%d bytes, ~%ds, voice=%s)",

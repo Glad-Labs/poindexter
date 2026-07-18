@@ -1387,3 +1387,79 @@ class TestBuildScriptThreadsThink:
         # Operator opt-out resolves to None → no think kwarg, backend default kept.
         kwargs = await self._dispatch_kwargs("false")
         assert "think" not in kwargs
+
+
+class TestAppendPodcastCta:
+    """The per-medium review CTA (media.cta.podcast) must be appended to the
+    manually-regenerated episode, matching the Stage-3 podcast.render path.
+    Regression: PodcastService.generate_episode dropped it, so a regenerated
+    episode lost the 'rate & review' ask the original render carried.
+    """
+
+    _CTA = (
+        "If this was useful, follow the show and leave a quick rating or review "
+        "on Spotify or Apple Podcasts — it genuinely helps us reach more people."
+    )
+
+    def test_appends_cta_when_set(self):
+        from services.podcast_service import _append_podcast_cta
+        sc = SiteConfig(initial_config={"media.cta.podcast": self._CTA})
+        out = _append_podcast_cta(
+            "Body text. Thanks for listening. See you next time.", site_config=sc,
+        )
+        assert out.endswith(self._CTA)
+        # The pre-existing generic outro is preserved ahead of the CTA.
+        assert "See you next time." in out
+
+    def test_idempotent_no_double_append(self):
+        from services.podcast_service import _append_podcast_cta
+        sc = SiteConfig(initial_config={"media.cta.podcast": self._CTA})
+        once = _append_podcast_cta("Body text.", site_config=sc)
+        twice = _append_podcast_cta(once, site_config=sc)
+        assert once == twice
+        assert once.count(self._CTA) == 1
+
+    def test_noop_when_cta_unset(self):
+        from services.podcast_service import _append_podcast_cta
+        sc = SiteConfig(initial_config={"media.cta.podcast": ""})
+        script = "Body text. See you next time."
+        assert _append_podcast_cta(script, site_config=sc) == script
+
+
+class TestPronunciationsMalformedSurfaces:
+    """A malformed tts_pronunciations map silently disabled the WHOLE table
+    (one typo → every pronunciation skipped). It must SURFACE as a finding,
+    not just a buried log line.
+    """
+
+    def test_invalid_pronunciations_emits_finding(self, monkeypatch):
+        import utils.findings as findings
+        from services.podcast_service import _get_tts_replacements
+
+        calls: list[dict] = []
+        monkeypatch.setattr(findings, "emit_finding", lambda **kw: calls.append(kw))
+
+        sc = SiteConfig(initial_config={
+            "tts_pronunciations": '{"QA-: "Q A", "iframe", "I frame"}',
+            "tts_acronym_replacements": "",
+        })
+        result = _get_tts_replacements(site_config=sc)
+
+        # Structural transforms still returned (fail-soft), and the breakage
+        # surfaces exactly once (deduped) as a finding.
+        assert isinstance(result, list) and len(result) > 0
+        assert len(calls) == 1
+        assert calls[0].get("dedup_key")
+
+
+def test_default_tts_pronunciations_valid_and_has_model_names():
+    """The seeded default must be valid JSON (a typo would disable the whole
+    table for fresh installs) and cover the model families the podcasts name.
+    """
+    import json
+
+    from services.settings_defaults import DEFAULTS
+
+    parsed = json.loads(DEFAULTS["tts_pronunciations"])
+    for key in ("GLM", "vLLM", "SDXL"):
+        assert key in parsed, f"expected model-name pronunciation for {key!r}"
