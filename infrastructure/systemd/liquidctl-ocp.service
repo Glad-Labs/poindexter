@@ -1,0 +1,15 @@
+[Unit]
+Description=Corsair HXi single-rail +12V OCP at boot
+After=multi-user.target
+DefaultDependencies=no
+
+[Service]
+Type=oneshot
+# `initialize` resets +12V to MULTI-rail by default, so --single-12v-ocp must
+# be re-applied on every boot. --direct-access bypasses the corsair_psu hwmon
+# claim (or `modprobe -r corsair_psu` first if it still refuses).
+ExecStart=/usr/bin/liquidctl initialize --single-12v-ocp --direct-access
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

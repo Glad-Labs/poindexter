@@ -1,0 +1,12 @@
+# Template unit — one instance per ops session (e.g. poindexter-session@alert-triage).
+# Operators: set User= and the ExecStart path to your login + checkout
+# (ships with a generic `poindexter` / /home/poindexter). Triggered by the
+# per-session .timer files that scripts/linux/install-session-timers.sh writes.
+[Unit]
+Description=Poindexter ops session %i
+After=network-online.target
+
+[Service]
+Type=oneshot
+User=poindexter
+ExecStart=/home/poindexter/glad-labs-website/scripts/linux/run-session.sh %i

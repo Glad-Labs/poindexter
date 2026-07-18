@@ -1,0 +1,15 @@
+# Operators: set User= and the ExecStart path to your login + checkout
+# (ships with a generic `poindexter` / /home/poindexter). The wrapper pins the
+# second GPU (nvidia-smi index 1) and serves :11435, never unloading.
+[Unit]
+Description=Ollama vision (:11435, second GPU pinned, never-unload)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=poindexter
+ExecStart=/home/poindexter/glad-labs-website/scripts/linux/ollama-vision.sh
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

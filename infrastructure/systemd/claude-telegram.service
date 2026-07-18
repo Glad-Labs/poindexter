@@ -1,0 +1,18 @@
+# Operators: set User=, WorkingDirectory, and the claude path/flags to your
+# setup (ships with a generic `poindexter` / /home/poindexter). Waits for the
+# worker to be healthy before launching the operator Claude Code + Telegram
+# channel session.
+[Unit]
+Description=Claude Code with Telegram channel (operator session)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=poindexter
+WorkingDirectory=/home/poindexter
+ExecStartPre=/bin/bash -c 'until curl -sf localhost:8002/api/health; do sleep 5; done'
+ExecStart=/home/poindexter/.local/bin/claude --telegram --dangerously-skip-permissions
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target

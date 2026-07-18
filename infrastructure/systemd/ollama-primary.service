@@ -1,0 +1,17 @@
+# Operators: set User= to your login user (ships with a generic `poindexter`).
+[Unit]
+Description=Ollama primary (:11434, all GPUs)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=poindexter
+Environment=OLLAMA_HOST=0.0.0.0:11434
+Environment=OLLAMA_MAX_LOADED_MODELS=1
+Environment=OLLAMA_CONTEXT_LENGTH=8192
+Environment=OLLAMA_MODELS=/data/ollama/models
+ExecStart=/usr/local/bin/ollama serve
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
