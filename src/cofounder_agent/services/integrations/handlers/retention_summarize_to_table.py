@@ -128,7 +128,7 @@ def _validate_identifier_list(values: Sequence[str], field_name: str) -> list[st
 
 async def _get_setting(pool: Any, key: str, default: str) -> str:
     """Read a string value from app_settings with a fallback (same shape
-    as services.jobs.collapse_old_embeddings._get_setting)."""
+    as services.jobs.check_memory_staleness._get_setting)."""
     # read-telemetry: raw-SQL read bypasses SiteConfig; stamp the sink so the
     # zero-reader probe doesn't flag the key as an orphan (poindexter#756).
     record_read(key)
@@ -139,9 +139,17 @@ async def _get_setting(pool: Any, key: str, default: str) -> str:
         if row and row["value"] is not None:
             return str(row["value"])
     except Exception as exc:  # noqa: BLE001 — never crash retention pass
-        logger.debug(
-            "[retention.summarize_to_table] setting read failed for %s: %s",
-            key, exc,
+        # WARNING, not debug: a swallowed read is indistinguishable from
+        # "the operator never set this key", and debug is not shipped to
+        # Loki. That matters more here than in most places because retention
+        # DELETES data — falling back to a built-in window instead of the
+        # operator's tuned one can prune earlier than they configured.
+        # Same de-silencing already applied to the sibling reader in
+        # services/jobs/check_memory_staleness.py (poindexter#455).
+        logger.warning(
+            "[retention.summarize_to_table] setting read failed for %s "
+            "(%s: %s) — falling back to the built-in default %r",
+            key, type(exc).__name__, exc, default,
         )
     return default
 

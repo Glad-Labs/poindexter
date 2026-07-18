@@ -247,6 +247,11 @@ async def singer_subprocess(
                 try:
                     stderr_tail.append(line.decode("utf-8", errors="replace").rstrip("\n"))
                 except Exception:
+                    # silent-ok: stderr is NOT discarded — stderr_tail is what
+                    # builds the "Stderr tail: ..." RuntimeError below on a
+                    # non-zero exit. This guards one decode into a bounded
+                    # deque (and errors="replace" means it can barely fail),
+                    # so dropping a single tail line costs nothing.
                     pass
 
         stderr_task = asyncio.create_task(_drain_stderr())
@@ -283,6 +288,11 @@ async def singer_subprocess(
             try:
                 await stderr_task
             except (asyncio.CancelledError, Exception):
+                # silent-ok: NOT the swallow-cancellation anti-pattern. We
+                # cancelled stderr_task on the line above, so CancelledError
+                # here is the expected acknowledgement of our own cancel —
+                # and naming it explicitly is REQUIRED, since CancelledError
+                # is a BaseException and `except Exception` would miss it.
                 pass
 
         if return_code != 0:
@@ -305,6 +315,11 @@ async def singer_subprocess(
                 if file_state:
                     last_state = file_state
             except (OSError, json.JSONDecodeError):
+                # silent-ok: this is already the FALLBACK for taps that only
+                # persist state on exit. Leaving last_state as None means no
+                # new state is recorded, so the next run re-syncs from the
+                # previous checkpoint — it redoes work rather than SKIPPING
+                # data, which is the safe direction for a tap.
                 pass
 
     # Persist updated state on success.

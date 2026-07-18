@@ -137,8 +137,11 @@ async def _load_row(db_service: Any, name: str) -> dict[str, Any] | None:
             try:
                 out[k] = json.loads(v)
             except json.JSONDecodeError:
-                # Leave as-is and let handlers raise with a clearer error
-                # than a silent type confusion.
+                # silent-ok: deliberately deferring to a BETTER error. Leaving
+                # the raw string in place lets the handler that actually needs
+                # the parsed value raise with specifics (which key, which
+                # handler), instead of us guessing here — the failure is
+                # surfaced later and louder, not lost.
                 pass
     return out
 

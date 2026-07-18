@@ -108,6 +108,10 @@ def _extract_slug_from_url_or_path(value: str) -> str | None:
             from urllib.parse import urlparse
             after_path = urlparse(value).path
         except Exception:
+            # silent-ok: `None` means "no slug extractable", which is also
+            # the normal answer for any URL that doesn't match the
+            # /posts/<slug> shape — an unparseable URL lands in the same
+            # bucket rather than being a distinct failure.
             return None
     # Look for /posts/<slug> pattern.
     after_path = after_path.strip("/")

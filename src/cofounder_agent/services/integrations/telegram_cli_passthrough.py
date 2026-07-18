@@ -341,6 +341,8 @@ async def _run_cli_subprocess(args: list[str], timeout_s: int) -> _RunResult:
         try:
             proc.kill()
         except ProcessLookupError:
+            # silent-ok: the process already exited between the timeout and
+            # the kill — which is the outcome the kill was trying to produce.
             pass
         try:
             stdout_bytes, _ = await asyncio.wait_for(proc.communicate(), timeout=2)

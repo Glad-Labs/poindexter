@@ -209,10 +209,13 @@ async def notify_operator(
                 )
                 return
             except outbound_dispatcher.OutboundWebhookError as e:
-                # Row missing / disabled / inbound-only — operator turned
-                # the channel off, or migration 0086 hasn't run. Fall
-                # through to the legacy Discord path so we still get
-                # *some* notification on the dev box.
+                # silent-ok: this is the CONFIGURED-OFF case, not a failure —
+                # row missing / disabled / inbound-only means the operator
+                # turned the channel off (or migration 0086 hasn't run), and
+                # we fall through to the legacy Discord path so we still get
+                # *some* notification on the dev box. Contrast the handler
+                # below, which warns: a handler that actually raised is a
+                # real failure, this is an intentional configuration.
                 logger.debug(
                     "[notify_operator] dispatcher rejected %s: %s — falling back",
                     row_name, e,
@@ -230,8 +233,10 @@ async def notify_operator(
                 if not critical:
                     return
     except (ImportError, ModuleNotFoundError) as e:
-        # Expected during bootstrap / many unit tests — the framework isn't
-        # importable yet. Keep this quiet.
+        # silent-ok: narrow, and expected during bootstrap / many unit tests —
+        # the framework isn't importable yet. Keep this quiet; the broad
+        # handler below still catches anything that is a genuine fault, and
+        # the caller falls through to the legacy notification path.
         logger.debug(
             "[notify_operator] framework path unavailable (bootstrap): %s", e,
         )

@@ -78,6 +78,11 @@ def _parse_bot_result(response: Any, method: str) -> dict[str, Any]:
     try:
         envelope = response.json()
     except Exception:  # noqa: BLE001 — non-JSON 200: tolerate, no result
+        # silent-ok: every real failure mode is already loud — a non-2xx
+        # raises above with the status + body, and an `ok: false` envelope
+        # raises below with the Bot API description. What is left is a 2xx
+        # whose body simply is not JSON, i.e. success with no parseable
+        # result, and `{}` says exactly that.
         return {}
     if isinstance(envelope, dict) and envelope.get("ok") is False:
         raise RuntimeError(
