@@ -32,6 +32,128 @@ from .decorators import log_query_performance
 logger = get_logger(__name__)
 
 
+async def _mirror_model_performance(conn: Any, cost_log: dict[str, Any]) -> None:
+    """Mirror a cost row into ``model_performance`` (router-learning signal;
+    internal tracker Phase 3.A1).
+
+    Best-effort — **never raises**, so a mirror failure never breaks the
+    hot-path :meth:`AdminDatabase.log_cost` — but a failure is surfaced as a
+    non-paging ``info`` finding so a persistent schema/constraint break in the
+    learning substrate does not degrade the model router in the dark (batch-6
+    ``_record_capability_outcomes`` precedent). The primary ``cost_logs`` write
+    has already succeeded by the time ``log_cost`` calls this, so the pool is
+    healthy and ``emit_finding`` (an ``audit_log`` write) will land.
+    """
+    try:
+        await conn.execute(
+            """
+            INSERT INTO model_performance (
+                model_name, task_type, task_id,
+                quality_score, generation_time_ms,
+                tokens_input, tokens_output, cost_usd,
+                gpu_watts_avg, electricity_cost_usd
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+            """,
+            cost_log["model"],
+            cost_log.get("task_type") or cost_log.get("phase") or "blog_post",
+            str(cost_log["task_id"]) if cost_log.get("task_id") else None,
+            cost_log.get("quality_score"),
+            cost_log.get("duration_ms"),
+            cost_log.get("input_tokens", 0),
+            cost_log.get("output_tokens", 0),
+            float(cost_log.get("cost_usd", 0.0)),
+            cost_log.get("gpu_watts_avg"),
+            # Per-call electricity is no longer carried on the inference row's
+            # cost_usd. Under the P1 write invariant a local call logs
+            # cost_usd=0 and its electricity is attributed to
+            # cost_logs.electricity_kwh (summed via the cost_ledger seam), while
+            # the brain's measured PSU rows are the bill. Mirror 0.0; read
+            # electricity from the ledger / electricity_kwh, not this column.
+            0.0,
+        )
+    except Exception as mp_err:  # noqa: BLE001 — mirror is additive; never break log_cost
+        logger.debug(
+            "[log_cost] model_performance mirror write failed (non-fatal): %s",
+            mp_err,
+        )
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="services.admin_db",
+            kind="model_performance_mirror_write_failed",
+            title="model_performance mirror write failed in log_cost",
+            body=(
+                f"The additive model_performance mirror write raised "
+                f"{type(mp_err).__name__}: {mp_err}. The primary cost_logs row "
+                f"was written (accounting is intact), but the router-learning "
+                f"mirror row was dropped. A persistent failure here silently "
+                f"degrades the model-performance feedback signal. Likely causes: "
+                f"model_performance schema drift, a constraint/NOT NULL "
+                f"violation, or a column type mismatch."
+            ),
+            severity="info",
+            dedup_key=f"model_performance_mirror_write_failed:{type(mp_err).__name__}",
+            extra={"error_type": type(mp_err).__name__, "model": cost_log.get("model")},
+        )
+
+
+async def _mirror_routing_outcome(conn: Any, cost_log: dict[str, Any]) -> None:
+    """Mirror a routing decision into ``routing_outcomes`` — one row per
+    decision so the ML gateway (GH#32) can learn ``(task_type, model) ->
+    outcome``.
+
+    Same contract as :func:`_mirror_model_performance`: never raises, surfaces
+    a persistent failure as a non-paging ``info`` finding rather than starving
+    the routing-outcome learning signal in the dark.
+    """
+    try:
+        await conn.execute(
+            """
+            INSERT INTO routing_outcomes (
+                task_id, task_type, task_category, worker_id,
+                model_used, compute_tier, estimated_cost, actual_cost,
+                quality_score, duration_ms, success
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+            """,
+            str(cost_log["task_id"]) if cost_log.get("task_id") else None,
+            cost_log.get("task_type") or cost_log.get("phase") or "blog_post",
+            cost_log.get("task_category"),
+            cost_log.get("worker_id"),
+            cost_log["model"],
+            cost_log.get("compute_tier") or cost_log.get("provider"),
+            cost_log.get("estimated_cost_usd"),
+            float(cost_log.get("cost_usd", 0.0)),
+            cost_log.get("quality_score"),
+            cost_log.get("duration_ms"),
+            cost_log.get("success", True),
+        )
+    except Exception as ro_err:  # noqa: BLE001 — mirror is additive; never break log_cost
+        logger.debug(
+            "[log_cost] routing_outcomes mirror write failed (non-fatal): %s",
+            ro_err,
+        )
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="services.admin_db",
+            kind="routing_outcomes_mirror_write_failed",
+            title="routing_outcomes mirror write failed in log_cost",
+            body=(
+                f"The additive routing_outcomes mirror write raised "
+                f"{type(ro_err).__name__}: {ro_err}. The primary cost_logs row "
+                f"was written, but the ML-gateway routing-outcome row was "
+                f"dropped. A persistent failure here silently starves the "
+                f"(task_type, model) -> outcome learning signal. Likely causes: "
+                f"routing_outcomes schema drift or a constraint violation."
+            ),
+            severity="info",
+            dedup_key=f"routing_outcomes_mirror_write_failed:{type(ro_err).__name__}",
+            extra={"error_type": type(ro_err).__name__, "model": cost_log.get("model")},
+        )
+
+
 class AdminDatabase(DatabaseServiceMixin):
     """Administrative database operations (logs, financial, settings, health)."""
 
@@ -131,77 +253,14 @@ class AdminDatabase(DatabaseServiceMixin):
                 # health probes). They have no associated task and pollute
                 # the learning-signal aggregates.
                 if cost_log.get("model") != "system":
-                    try:
-                        await conn.execute(
-                            """
-                            INSERT INTO model_performance (
-                                model_name, task_type, task_id,
-                                quality_score, generation_time_ms,
-                                tokens_input, tokens_output, cost_usd,
-                                gpu_watts_avg, electricity_cost_usd
-                            )
-                            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-                            """,
-                            cost_log["model"],
-                            cost_log.get("task_type") or cost_log.get("phase") or "blog_post",
-                            str(cost_log["task_id"]) if cost_log.get("task_id") else None,
-                            cost_log.get("quality_score"),
-                            cost_log.get("duration_ms"),
-                            cost_log.get("input_tokens", 0),
-                            cost_log.get("output_tokens", 0),
-                            float(cost_log.get("cost_usd", 0.0)),
-                            cost_log.get("gpu_watts_avg"),
-                            # Per-call electricity is no longer carried on the
-                            # inference row's cost_usd. Under the P1 write
-                            # invariant a local call logs cost_usd=0 and its
-                            # electricity is attributed to cost_logs.electricity_kwh
-                            # (summed via the cost_ledger seam), while the brain's
-                            # measured PSU rows are the bill. The old branch keyed
-                            # on the self-hosted provider name (the pre-2026-05-16
-                            # LiteLLM-cutover tag, now dead — local inference logs
-                            # the router tag) and, post-invariant, would read $0
-                            # anyway. Mirror 0.0; read electricity from the ledger
-                            # / electricity_kwh, not from this column.
-                            0.0,
-                        )
-                    except Exception as mp_err:
-                        logger.debug(
-                            "[log_cost] model_performance mirror write failed (non-fatal): %s",
-                            mp_err,
-                        )
+                    await _mirror_model_performance(conn, cost_log)
                 # routing_outcomes — one row per routing decision so the
                 # ML gateway (GH#32) can learn (task_type, model) → outcome.
                 # Same 'system' exclusion as model_performance — no point
                 # training on idle warmup/probe calls.
                 if cost_log.get("model") == "system":
                     return ModelConverter.to_cost_log_response(row)
-                try:
-                    await conn.execute(
-                        """
-                        INSERT INTO routing_outcomes (
-                            task_id, task_type, task_category, worker_id,
-                            model_used, compute_tier, estimated_cost, actual_cost,
-                            quality_score, duration_ms, success
-                        )
-                        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
-                        """,
-                        str(cost_log["task_id"]) if cost_log.get("task_id") else None,
-                        cost_log.get("task_type") or cost_log.get("phase") or "blog_post",
-                        cost_log.get("task_category"),
-                        cost_log.get("worker_id"),
-                        cost_log["model"],
-                        cost_log.get("compute_tier") or cost_log.get("provider"),
-                        cost_log.get("estimated_cost_usd"),
-                        float(cost_log.get("cost_usd", 0.0)),
-                        cost_log.get("quality_score"),
-                        cost_log.get("duration_ms"),
-                        cost_log.get("success", True),
-                    )
-                except Exception as ro_err:
-                    logger.debug(
-                        "[log_cost] routing_outcomes mirror write failed (non-fatal): %s",
-                        ro_err,
-                    )
+                await _mirror_routing_outcome(conn, cost_log)
                 return ModelConverter.to_cost_log_response(row)
         except Exception as e:
             logger.error(
@@ -239,10 +298,28 @@ class AdminDatabase(DatabaseServiceMixin):
         try:
             async with self.pool.acquire() as conn:
                 await conn.execute(sql, *params)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 — analytics, not accounting; never raise
             logger.debug(
                 "[mark_model_performance_outcome] Update failed for %s: %s",
                 task_id, e,
+            )
+            from utils.findings import emit_finding
+
+            emit_finding(
+                source="services.admin_db",
+                kind="model_performance_outcome_update_failed",
+                title="model_performance outcome flip failed",
+                body=(
+                    f"Updating the outcome columns (human_approved/post_published) "
+                    f"on model_performance for task {task_id} raised "
+                    f"{type(e).__name__}: {e}. This is the downstream approval/"
+                    f"publish signal the model router learns from; a persistent "
+                    f"failure means the router never sees which models produced "
+                    f"approved, published content."
+                ),
+                severity="info",
+                dedup_key=f"model_performance_outcome_update_failed:{type(e).__name__}",
+                extra={"error_type": type(e).__name__, "task_id": str(task_id)},
             )
 
     @log_query_performance(operation="get_task_costs", category="cost_retrieval")
