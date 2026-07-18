@@ -1,6 +1,6 @@
 # App settings reference
 
-> **Auto-generated from live `app_settings` table on 2026-07-14.**  
+> **Auto-generated from live `app_settings` table on 2026-07-18.**  
 > Every runtime-configurable knob in the Poindexter pipeline.
 > 689 active rows across 56 categories. 2 stored encrypted via pgcrypto (`is_secret=true`); 0 additional values redacted as secret-shaped (defense-in-depth); 13 values redacted as operator-specific (Tailnet IPs, financial reality, etc.) so this file is safe to ship to the public OSS mirror.
 
@@ -42,7 +42,7 @@ The worker re-reads on every poll; no restart needed.
 - [features](#features) (4 keys)
 - [firefighter](#firefighter) (7 keys)
 - [gates](#gates) (3 keys)
-- [general](#general) (311 keys)
+- [general](#general) (312 keys)
 - [gpu](#gpu) (1 key)
 - [identity](#identity) (16 keys)
 - [image](#image) (2 keys)
@@ -64,7 +64,7 @@ The worker re-reads on every poll; no restart needed.
 - [ops-triage](#ops-triage) (1 key)
 - [orchestration](#orchestration) (1 key)
 - [performance](#performance) (4 keys)
-- [pipeline](#pipeline) (27 keys)
+- [pipeline](#pipeline) (26 keys)
 - [plugins](#plugins) (38 keys)
 - [plugin_telemetry](#plugin-telemetry) (1 key)
 - [podcast](#podcast) (2 keys)
@@ -98,7 +98,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `sentry_dsn` | `*(per-operator)*` | per-operator | Sentry DSN for error tracking |
+| `sentry_dsn` | `*(per-operator)*` | per-operator | Sentry/GlitchTip DSN for error tracking. Per-operator — leave empty to keep the SDK off (main.py only initialises Sen... |
 
 ## backup
 
@@ -224,10 +224,10 @@ The worker re-reads on every poll; no restart needed.
 | `cost_alert_threshold_pct` | `80` |  | Alert when spend exceeds this % of limit |
 | `daily_spend_limit` | `1.00` |  | Hard cap on daily AI spend in USD |
 | `daily_spend_limit_usd` | `2.0` |  | Maximum daily AI spend in USD (read by services/cost_guard.py) |
-| `electricity_rate_kwh` | `0.2579` |  | Electricity rate in $/kWh for energy-cost estimates. Tune to your utility rate. |
+| `electricity_rate_kwh` | `0.16` |  | Electricity rate in $/kWh for energy-cost estimates. Tune to your utility rate. |
 | `gpu_inference_watts` | `400` |  | GPU average inference power draw in watts |
 | `monthly_spend_limit` | `20.00` |  | Hard cap on monthly AI spend in USD |
-| `monthly_spend_limit_usd` | `10.0` |  | Maximum monthly AI spend in USD (read by services/cost_guard.py) |
+| `monthly_spend_limit_usd` | `100.0` |  | Maximum monthly AI spend in USD (read by services/cost_guard.py) |
 
 ## experiments
 
@@ -304,7 +304,7 @@ The worker re-reads on every poll; no restart needed.
 | `devto_per_page` | `15` |  |  |
 | `devto_tag` | `` |  |  |
 | `devto_top_days` | `7` |  |  |
-| `disable_auth_for_dev` | `true` |  | Disable auth in development |
+| `disable_auth_for_dev` | `false` |  | Disable auth in development |
 | `docker_port_forward_watch_list` | `[{"container": "poindexter-pyroscope"...` |  |  |
 | `embedding_retention_days.memory` | `` |  | Empty = no TTL. Memory embeddings are never auto-pruned — operator's curated state. |
 | `embedding_retention_days.posts` | `` |  | Empty = no TTL. Post embeddings are never auto-pruned — feed live RAG retrieval. |
@@ -385,7 +385,7 @@ The worker re-reads on every poll; no restart needed.
 | `host_home` | `` |  | Host home directory for Docker volume mounts |
 | `image_gen_enabled` | `true` |  | Master toggle for the image-gen featured/inline image pipeline. When false, source_featured_image skips the image-gen... |
 | `image_gen_server_url` | `http://image-gen-server:9836` |  | Image generation server URL (compose service DNS — resolvable container-to-container over the shared network; never a... |
-| `image_model` | `sdxl_lightning` |  | Default image generation model (legacy) |
+| `image_model` | `z_image_turbo` |  | Default image generation model (legacy) |
 | `indexnow_ping_url` | `https://api.indexnow.org/indexnow` |  | Auto-seeded by services.settings_defaults (#379) |
 | `internal_api_base_url` | `http://localhost:8002` |  | Base URL for the internal worker API (used for self-calls like the podcast feed regen) |
 | `media_approval_discord_notify_enabled` | `true` |  | Master switch — when true, a Discord ops ping fires when a newly-generated podcast/video/short lands in media_approva... |
@@ -516,7 +516,7 @@ The worker re-reads on every poll; no restart needed.
 | `rag_embed_retry_base_delay_seconds` | `0.25` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_hybrid_enabled` | `true` |  |  |
 | `rag_min_similarity` | `0.3` |  | Auto-seeded by services.settings_defaults (#379) |
-| `rag_rerank_enabled` | `true` |  |  |
+| `rag_rerank_enabled` | `false` |  |  |
 | `rag_rerank_model` | `cross-encoder/ms-marco-MiniLM-L-6-v2` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_rrf_k` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
 | `rag_source_filter` | `posts` |  | CSV allowlist of embeddings.source_table values RAG retrieval may draw from. Default 'posts' keeps generation grounde... |
@@ -534,7 +534,7 @@ The worker re-reads on every poll; no restart needed.
 | `restore_test_tier` | `daily` |  |  |
 | `scheduled_publisher_poll_seconds` | `60` |  | Auto-seeded by services.settings_defaults (#379) |
 | `scheduler_alert_on_job_failure` | `true` |  | Auto-seeded by services.settings_defaults (#379) |
-| `self_consistency_enabled` | `true` |  |  |
+| `self_consistency_enabled` | `false` |  |  |
 | `sentry_enabled` | `true` |  | Enable Sentry error tracking |
 | `shared_http_client_max_connections` | `100` |  | Auto-seeded by services.settings_defaults (#379) |
 | `shared_http_client_max_keepalive` | `20` |  | Auto-seeded by services.settings_defaults (#379) |
@@ -550,14 +550,15 @@ The worker re-reads on every poll; no restart needed.
 | `storage_endpoint` | `` |  |  |
 | `storage_public_url` | `` |  | Public base URL for the S3/R2 media bucket (e.g. https://<id>.r2.dev or a CDN domain). Configure via: poindexter sett... |
 | `structured_extraction_model` | `ollama/gemma3:27b` |  |  |
-| `topic_dedup_engine` | `word_overlap` |  |  |
+| `topic_dedup_engine` | `content_embedding` |  |  |
 | `topic_discovery_length_distribution` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `topic_discovery_queue_low_threshold` | `999` |  |  |
 | `topic_discovery_rejection_streak` | `999` |  |  |
 | `topic_discovery_stale_hours` | `8760` |  |  |
 | `trusted_source_domains` | `` |  | Auto-seeded by services.settings_defaults (#379) |
-| `tts_acronym_replacements` | `{"SOC":"security operations","CRM":"c...` |  |  |
-| `tts_pronunciations` | `{"I/O": "I O", "CI/CD": "CI CD", "Dev...` |  |  |
+| `tts_acronym_replacements` | `{"SOC": "security operations", "CRM":...` |  |  |
+| `tts_model_name_families` | `gemma,glm,qwen,phi,llama,mistral,mixt...` |  |  |
+| `tts_pronunciations` | `{"I/O": "I O", "CI/CD": "See Eye See ...` |  |  |
 | `use_ollama` | `false` |  | Auto-seeded by services.settings_defaults (#379) |
 | `video_compositor` | `` |  | Auto-seeded by services.settings_defaults (#379) |
 | `video_feed_name` | `` |  | Video RSS feed title |
@@ -665,8 +666,8 @@ The worker re-reads on every poll; no restart needed.
 | --- | --- | --- | --- |
 | `podcast_cover_url` | `` |  | Square podcast cover art URL for itunes:image element (Apple/Spotify require 1400-3000px). Configure via: poindexter ... |
 | `podcast_tts_base_url` | `http://speaches:8000/v1` |  | Speaches OpenAI-compatible base URL for podcast TTS. Compose-internal URL by default. Use http://host.docker.internal... |
-| `podcast_tts_enabled` | `true` |  | Enable TTS narration for podcast scripts via Speaches. Converts the LLM-generated podcast script to a .wav file using... |
-| `podcast_tts_format` | `wav` |  | Output audio format for podcast narration files. Options: wav, mp3, opus, flac. wav is lossless and universally playa... |
+| `podcast_tts_enabled` | `false` |  | Enable TTS narration for podcast scripts via Speaches. Converts the LLM-generated podcast script to a .wav file using... |
+| `podcast_tts_format` | `mp3` |  | Output audio format for podcast narration files. Options: wav, mp3, opus, flac. wav is lossless and universally playa... |
 | `podcast_tts_model` | `speaches-ai/Kokoro-82M-v1.0-ONNX` |  | Kokoro model id passed to Speaches for podcast TTS. Keep in sync with voice_agent_tts_model unless a different model ... |
 | `podcast_tts_voice` | `bf_emma` |  | Kokoro voice id for podcast narration. Options: bf_emma, bf_isabella, am_michael, etc. (matches voice_agent_tts_voice... |
 | `preferred_ai_video_style` | `flat_vector,isometric,isometric_voxel...` |  | Comma-list of stylized AI-video shot styles (drawn from image_styles pool). Director rotates per-shot. Operator note ... |
@@ -760,7 +761,7 @@ The worker re-reads on every poll; no restart needed.
 
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
-| `newsletter_enabled` | `true` |  | Enable newsletter sending on publish |
+| `newsletter_enabled` | `false` |  | Enable newsletter sending on publish |
 | `newsletter_from_name` | `` |  | Newsletter sender display name |
 | `newsletter_provider` | `resend` |  | Email provider: resend or smtp |
 
@@ -774,7 +775,7 @@ The worker re-reads on every poll; no restart needed.
 | `niche_goal_descriptions` | `{"TRAFFIC": "Topic likely to attract ...` |  | JSON blob mapping each goal_type (TRAFFIC, EDUCATION, BRAND, AUTHORITY, REVENUE, COMMUNITY, NICHE_DEPTH) to the prose... |
 | `niche_internal_rag_per_kind_limit` | `4` |  | Per-source-kind limit passed to InternalRagSource.generate by TopicBatchService._discover_internal. Default 4 matches... |
 | `niche_internal_rag_snippet_max_chars` | `600` |  | Per-snippet character cap when joining raw snippets into the topic/angle distillation prompt in InternalRagSource._di... |
-| `niche_ollama_chat_timeout_seconds` | `300` |  | HTTP timeout (seconds) for direct Ollama /api/chat calls made by topic_ranking._ollama_chat_json — used by the LLM sc... |
+| `niche_ollama_chat_timeout_seconds` | `300.0` |  | HTTP timeout (seconds) for direct Ollama /api/chat calls made by topic_ranking._ollama_chat_json — used by the LLM sc... |
 | `niche_top_n_per_pool` | `5` |  | Top N candidates per pool (external + internal) carried forward from the embedding pre-rank into the LLM final-score ... |
 
 ## notifications
@@ -793,7 +794,7 @@ The worker re-reads on every poll; no restart needed.
 | `data_fabric_prometheus_url` | `http://prometheus:9090` |  | Prometheus HTTP API base URL used by DataFabric.PrometheusClient. Defaults to compose-service DNS (prometheus listens... |
 | `data_fabric_pyroscope_url` | `http://pyroscope:4040` |  | Pyroscope HTTP API base URL used by DataFabric.PyroscopeClient. Defaults to compose-service DNS so it resolves from i... |
 | `data_fabric_tempo_url` | `http://tempo:3200` |  | Tempo HTTP API base URL used by DataFabric.TempoClient. Defaults to compose-service DNS so it resolves from inside th... |
-| `enable_pyroscope` | `true` |  | When true, services/profiling.py:setup_pyroscope() configures the pyroscope-io agent at worker / brain / voice-agent ... |
+| `enable_pyroscope` | `false` |  | When true, services/profiling.py:setup_pyroscope() configures the pyroscope-io agent at worker / brain / voice-agent ... |
 | `enable_tracing` | `true` |  | Master switch for OpenTelemetry tracing. When true, services.tracing.setup_tracing initializes the TracerProvider + O... |
 | `langfuse_host` | `http://langfuse-web:3000` |  | Langfuse base URL for prompt management + tracing. Default empty = Langfuse disabled, prompts resolve via DB+YAML fal... |
 | `langfuse_tracing_enabled` | `true` |  | When true (default), LiteLLMProvider registers Langfuse as a success/failure callback so every LLM call emits a span ... |
@@ -842,7 +843,6 @@ The worker re-reads on every poll; no restart needed.
 | `pipeline_architect_model` | `ollama/gemma3:27b` |  | Local Ollama model the architect-LLM uses to compose pipelines from intent + atom catalog. Cloud models are opt-in on... |
 | `pipeline_architect_timeout_seconds` | `120.0` |  | Max seconds to wait for the architect LLM to emit its JSON graph spec before timing out and falling back to a default... |
 | `pipeline_gate_draft_gate` | `off` |  | HITL approval gate 'draft_gate': on/off. When on, the canonical_blog pipeline pauses after the writer stage via LangG... |
-| `pipeline.stages.order` | `["verify_task", "generate_content", "...` |  | Ordered list of Stage names the content pipeline runs. Operators can disable (drop from list), reorder, or insert thi... |
 | `pipeline_streaming_channel` | `discord` |  | Where TemplateRunner.run streams per-node progress via its on_event callback: 'discord' (default — existing Discord p... |
 | `pipeline_streaming_min_edit_interval_s` | `5` |  | Minimum seconds between Telegram editMessageText calls when pipeline_streaming_channel='telegram'. Rapid node complet... |
 | `publish_spacing_hours` | `4` |  | Minimum hours between published posts |
@@ -1035,7 +1035,7 @@ The worker re-reads on every poll; no restart needed.
 | Key | Default | Classification | Description |
 | --- | --- | --- | --- |
 | `voice_agent_system_prompt` | `You are Emma, a concise voice assista...` |  | System prompt for the voice agent. Mentions the tools so the voice model actually invokes them. |
-| `voice_agent_whisper_model` | `medium` |  | faster-whisper model size. tiny/base/small/medium/large-v3. medium is the sweet spot for real voice accuracy on a mid... |
+| `voice_agent_whisper_model` | `base` |  | faster-whisper model size. tiny/base/small/medium/large-v3. medium is the sweet spot for real voice accuracy on a mid... |
 
 ## webhooks
 
