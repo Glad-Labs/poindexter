@@ -118,6 +118,13 @@ class AuditPublishedQualityJob:
                         "info",
                     )
             except Exception as e:
+                # silent-ok: the consequence is bounded and self-correcting, as
+                # the comment above states — a missed "audited" marker only means
+                # this post gets re-audited sooner than cooldown_days. The
+                # quality findings themselves are still emitted below, and a
+                # persistent audit_log outage now surfaces via the instrumented
+                # writers (shot_list_renderer / update_utility_rates /
+                # verify_published_posts), so this adds no new blind spot.
                 logger.debug(
                     "AuditPublishedQualityJob: audit_log insert failed for %s: %s",
                     row.get("id"), e,

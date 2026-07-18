@@ -200,8 +200,16 @@ async def _log_shot_audit(
             "info" if shot_result.success else "warning",
         )
     except Exception as exc:  # noqa: BLE001
-        logger.debug(
-            "[SHOT_LIST] audit_log insert failed for shot %d: %s",
+        # Warn rather than emit_finding: a finding IS an audit_log row
+        # (emit_finding -> audit_log_bg), so a finding about a broken audit_log
+        # would vanish in the very outage it reports. Loki survives a DB outage.
+        # This row is the per-source success-rate signal this helper's docstring
+        # promises, so losing it silently blanks that dashboard — including the
+        # warning-severity rows written for FAILED shots. Per-shot volume is
+        # bounded (single-digit-to-~20 per list), so a plain warning is fine.
+        logger.warning(
+            "[SHOT_LIST] audit_log insert failed for shot %d (the render itself "
+            "is unaffected; the per-source success-rate view will under-report): %s",
             shot_result.idx, exc,
         )
 
