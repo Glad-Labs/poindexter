@@ -2,6 +2,49 @@
 
 ## Unreleased
 
+## [0.106.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.106.0...v0.106.1) (2026-07-18)
+
+
+### Bug Fixes
+
+* **brain:** finish the brain/ silent-except tail (silent-excepts batch 24) ([#2704](https://github.com/Glad-Labs/glad-labs-stack/issues/2704)) ([ed9aa9f](https://github.com/Glad-Labs/glad-labs-stack/commit/ed9aa9f19a166f5987ac534178d4741720eed1f1))
+* **brain:** surface swallowed audit-mirror writes on 5 probes (silent-excepts batch 23) ([#2703](https://github.com/Glad-Labs/glad-labs-stack/issues/2703)) ([e5e65ae](https://github.com/Glad-Labs/glad-labs-stack/commit/e5e65aee3dcbaede58959fab49d54e9162cdcc33))
+* **cli:** surface silent config/DB degradation in the CLI (silent-excepts batch 25) ([#2705](https://github.com/Glad-Labs/glad-labs-stack/issues/2705)) ([1edee9c](https://github.com/Glad-Labs/glad-labs-stack/commit/1edee9cdcfd78a4a2542555ead44c5965392b2b5))
+* **gpu:** keep the idle-reset trigger above the render floor, not below it ([#2666](https://github.com/Glad-Labs/glad-labs-stack/issues/2666)) ([80aca52](https://github.com/Glad-Labs/glad-labs-stack/commit/80aca52ea3eb07d3d0113ef631d2f3f524453c95))
+* **gpu:** register-idle-wsl-reset -Install fails on [TimeSpan]::MaxValue duration ([#2667](https://github.com/Glad-Labs/glad-labs-stack/issues/2667)) ([e579759](https://github.com/Glad-Labs/glad-labs-stack/commit/e5797598b494d40b3090cce3dd88d8cb404af692))
+* **image:** consolidate duplicate ImageModel registry onto _image_models ([#2671](https://github.com/Glad-Labs/glad-labs-stack/issues/2671)) ([ed06722](https://github.com/Glad-Labs/glad-labs-stack/commit/ed067220bba2342054f2286dd83a4c3d41d53051))
+* **integrations:** de-silence the retention setting reader (silent-excepts batch 27) ([#2709](https://github.com/Glad-Labs/glad-labs-stack/issues/2709)) ([fb90789](https://github.com/Glad-Labs/glad-labs-stack/commit/fb907894009d47b9c81f142900afe21d160b35a0))
+* **mcp:** surface a failed SiteConfig load in the MCP server (silent-excepts batch 26) ([#2707](https://github.com/Glad-Labs/glad-labs-stack/issues/2707)) ([ee8b86e](https://github.com/Glad-Labs/glad-labs-stack/commit/ee8b86ee532441575f27ffd3eb5552222f527005))
+* **media:** compare feeds newline-insensitively; correct the drift measurement ([#2700](https://github.com/Glad-Labs/glad-labs-stack/issues/2700)) ([37425d6](https://github.com/Glad-Labs/glad-labs-stack/commit/37425d614b8f1efdf0a07b7a2ebce39e1ecb1791))
+* **media:** converge published RSS feeds on DB state instead of events ([#2698](https://github.com/Glad-Labs/glad-labs-stack/issues/2698)) ([10fae94](https://github.com/Glad-Labs/glad-labs-stack/commit/10fae94fe91a8e4924b522fb505005355ba219f8))
+* **media:** narrate the full title, not the SEO-truncated one ([#2665](https://github.com/Glad-Labs/glad-labs-stack/issues/2665)) ([7398348](https://github.com/Glad-Labs/glad-labs-stack/commit/73983483ccc04d00a37741783482020a6d145f47))
+* **observability:** de-silence 10 swallowed failures in modules/content (batch 28) ([#2710](https://github.com/Glad-Labs/glad-labs-stack/issues/2710)) ([8764e4f](https://github.com/Glad-Labs/glad-labs-stack/commit/8764e4f6f6384e65082cb5d949add74dda8ce081))
+* **observability:** make gpu_scheduler task-session write failure visible (silent-excepts batch 2) ([#2672](https://github.com/Glad-Labs/glad-labs-stack/issues/2672)) ([1edc867](https://github.com/Glad-Labs/glad-labs-stack/commit/1edc8676082dc763bd4a68532afc56faff40e471))
+* **observability:** make writer_core best-effort failures visible (silent-excepts batch 1) ([#2668](https://github.com/Glad-Labs/glad-labs-stack/issues/2668)) ([137b60d](https://github.com/Glad-Labs/glad-labs-stack/commit/137b60d636488d244539cc88bbb3cd9dfc7698e8))
+* **observability:** surface 3 non-audit_log write failures (silent-excepts batch 20) ([#2699](https://github.com/Glad-Labs/glad-labs-stack/issues/2699)) ([7e15538](https://github.com/Glad-Labs/glad-labs-stack/commit/7e155387e5180ea7e1ab793a2f1954bb9b89699c))
+* **observability:** surface admin_db router-learning write failures (silent-excepts batch 10) ([#2685](https://github.com/Glad-Labs/glad-labs-stack/issues/2685)) ([cfe42fb](https://github.com/Glad-Labs/glad-labs-stack/commit/cfe42fbf8b9f90ed25216f89abd458d60240a087))
+* **observability:** surface auto_publish_gate atom_runs-backfill failure (silent-excepts batch 11) ([#2686](https://github.com/Glad-Labs/glad-labs-stack/issues/2686)) ([cbe07d8](https://github.com/Glad-Labs/glad-labs-stack/commit/cbe07d80aeb0b56e265a9855b673b991409c8464))
+* **observability:** surface content_router experiment-outcome failure (silent-excepts batch 13) ([#2689](https://github.com/Glad-Labs/glad-labs-stack/issues/2689)) ([f313891](https://github.com/Glad-Labs/glad-labs-stack/commit/f313891ff9493e76f36239e6577277846945ba87))
+* **observability:** surface dispatcher cost_logs write failures (silent-excepts batch 16) ([#2692](https://github.com/Glad-Labs/glad-labs-stack/issues/2692)) ([287e260](https://github.com/Glad-Labs/glad-labs-stack/commit/287e260d3be31591424b0e0e1f117f11da17e1f2))
+* **observability:** surface finalize_task content-integrity write failures (silent-excepts batch 12) ([#2687](https://github.com/Glad-Labs/glad-labs-stack/issues/2687)) ([278b7a0](https://github.com/Glad-Labs/glad-labs-stack/commit/278b7a048323838f1aed0724c9d2a7fab59a9c0e))
+* **observability:** surface memory-staleness alert + persist failures (silent-excepts batch 5) ([#2677](https://github.com/Glad-Labs/glad-labs-stack/issues/2677)) ([48e9c37](https://github.com/Glad-Labs/glad-labs-stack/commit/48e9c37a41d8d8ff961691efb35b64d9b63899f9))
+* **observability:** surface newsletter send-log write failures (silent-excepts batch 21) ([#2701](https://github.com/Glad-Labs/glad-labs-stack/issues/2701)) ([5f3023c](https://github.com/Glad-Labs/glad-labs-stack/commit/5f3023ccaedf066370aa2aaf85898dd1866baa89))
+* **observability:** surface shot-render audit failures, document quality-audit marker (silent-excepts batch 19) ([#2696](https://github.com/Glad-Labs/glad-labs-stack/issues/2696)) ([2503413](https://github.com/Glad-Labs/glad-labs-stack/commit/25034131fe0c996e2c019c48e5e370ef675fa77a))
+* **observability:** surface source_featured_image style-load failures (silent-excepts batch 3) ([#2674](https://github.com/Glad-Labs/glad-labs-stack/issues/2674)) ([a3b6b8b](https://github.com/Glad-Labs/glad-labs-stack/commit/a3b6b8b077187fb1ed1f1c97eca6381e0ab6def6))
+* **observability:** surface template_runner outcome-telemetry write failures (silent-excepts batch 6) ([#2678](https://github.com/Glad-Labs/glad-labs-stack/issues/2678)) ([8657ef0](https://github.com/Glad-Labs/glad-labs-stack/commit/8657ef012d176d72a5fa1e56615d17078f7aa251))
+* **observability:** surface update_utility_rates audit breadcrumb failures (silent-excepts batch 18) ([#2695](https://github.com/Glad-Labs/glad-labs-stack/issues/2695)) ([e8506a2](https://github.com/Glad-Labs/glad-labs-stack/commit/e8506a27c25df155b2afe2791e0229e3d4126e9a))
+* **observability:** surface verify_published_posts audit mirror-write failures (silent-excepts batch 17) ([#2693](https://github.com/Glad-Labs/glad-labs-stack/issues/2693)) ([ff9ea46](https://github.com/Glad-Labs/glad-labs-stack/commit/ff9ea46614f72d87c3040214fd0ddcf0d5ad60d4))
+* **ops:** drop the incoherent host fallback from idle-reset, fail closed instead ([#2697](https://github.com/Glad-Labs/glad-labs-stack/issues/2697)) ([8b0e46e](https://github.com/Glad-Labs/glad-labs-stack/commit/8b0e46e67caf7abca0ce7511dce032d32d1eedd3))
+* **ops:** resolve idle-reset checker python directly, not via poetry run ([#2675](https://github.com/Glad-Labs/glad-labs-stack/issues/2675)) ([654936c](https://github.com/Glad-Labs/glad-labs-stack/commit/654936c01cc209c41b988902b0e2a3411ba3212b))
+* **ops:** run the idle-reset checker in-container, not on the host ([#2694](https://github.com/Glad-Labs/glad-labs-stack/issues/2694)) ([36bf0c9](https://github.com/Glad-Labs/glad-labs-stack/commit/36bf0c96efb21a2dba3a35699741218dc7067dc6))
+* **podcast:** dedup podcast media_assets + guard delivery against stale renders ([#2683](https://github.com/Glad-Labs/glad-labs-stack/issues/2683)) ([60b0155](https://github.com/Glad-Labs/glad-labs-stack/commit/60b0155dd8e3d4d6f12260d5f850fdd2d2c0c50d))
+* **podcast:** restore review CTA on regen + repair the pronunciation map ([#2684](https://github.com/Glad-Labs/glad-labs-stack/issues/2684)) ([ac8f1ab](https://github.com/Glad-Labs/glad-labs-stack/commit/ac8f1abb0664553b92adf0b734b7bf6ca60cc2b3))
+* **podcast:** speak model names cleanly, dropping quant/config tails ([#2688](https://github.com/Glad-Labs/glad-labs-stack/issues/2688)) ([ff391dc](https://github.com/Glad-Labs/glad-labs-stack/commit/ff391dc57c0dcd250a5f7c4dc63ffcaba5a97fcc))
+* **qa:** stop the deepeval rails scoring a skipped/failed check 100 ([#2664](https://github.com/Glad-Labs/glad-labs-stack/issues/2664)) ([3adcb4f](https://github.com/Glad-Labs/glad-labs-stack/commit/3adcb4fd1950dc6d960cc08a07a65f7832dd81b9))
+* **security:** stop seeding the operator GlitchTip DSN into the public baseline ([#2662](https://github.com/Glad-Labs/glad-labs-stack/issues/2662)) ([c6da0ce](https://github.com/Glad-Labs/glad-labs-stack/commit/c6da0ce7330737caddd6b770171694a6d06d0a23))
+* **seed:** repair double-encoded em-dash mojibake in 5 seed descriptions ([#2669](https://github.com/Glad-Labs/glad-labs-stack/issues/2669)) ([c96e398](https://github.com/Glad-Labs/glad-labs-stack/commit/c96e398b0ac3905c6b00924b051d8a9114127c63))
+* **settings:** reconcile the three app_settings seed sources + add a value-drift ratchet ([#2663](https://github.com/Glad-Labs/glad-labs-stack/issues/2663)) ([0dd1b39](https://github.com/Glad-Labs/glad-labs-stack/commit/0dd1b39335eac5ac4ff10512bcc2d113fc7861dd))
+
 ## [0.106.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.105.0...v0.106.0) (2026-07-17)
 
 
