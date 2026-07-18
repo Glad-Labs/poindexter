@@ -48,13 +48,46 @@ function Write-Log {
     Write-Host $line
 }
 
-# Resolve the Python interpreter that runs the checker. The checker needs
-# Python 3.13 + asyncpg + httpx + an importable brain.bootstrap. `poetry run`
-# from the main checkout is unreliable for exactly this task: a fresh worktree
-# has no env at all, and the main checkout's `poetry run python` can silently
-# resolve the wrong interpreter (3.11), which crashes the checker. So we point
-# at a concrete python.exe the same way the gpu-scraper / nvidia-smi-exporter
-# host tasks already do. Preference order:
+# --- How the checker gets invoked ---------------------------------------------
+# The checker is a CONTAINER-side tool, not a host tool. Both of its runtime
+# dependencies resolve only on the Docker network:
+#   * app_settings.gpu_metrics_prometheus_url is `http://prometheus:9090` - a
+#     compose hostname the Windows host cannot resolve AT ALL. The checker reads
+#     free-VRAM and GPU utilization from Prometheus, so run on the host it can
+#     only ever report "Prometheus VRAM/utilization unreadable - failing closed".
+#   * the DB is reached in-container at `postgres-local:5432`. From the host it
+#     needs the published :5433, which is itself prone to Docker Desktop
+#     port-forward wedges (observed hanging on BOTH IPv4 and IPv6, surviving a
+#     full `wsl --shutdown` + Docker Desktop restart).
+# So the checker could never produce a real decision from the host, independent
+# of the interpreter (#883) and registrar (#882) bugs. Run it INSIDE the worker
+# container, where repo-root scripts/ is already bind-mounted at /opt/scripts and
+# py3.13 + asyncpg + httpx are present.
+#
+# Host-python stays as a FALLBACK for topologies that do point those settings at
+# host-reachable addresses. If neither transport works, the checker emits no
+# parseable JSON and the script exits 2 without resetting (fail closed).
+$ContainerName = if ($env:POINDEXTER_IDLE_RESET_CONTAINER) {
+    $env:POINDEXTER_IDLE_RESET_CONTAINER
+} else {
+    "poindexter-worker"
+}
+$ContainerCheckerPath = "/opt/scripts/idle_wsl_gpu_reset_check.py"
+
+function Test-CheckerContainer {
+    # Probed per call rather than cached: the post-reset --stamp-cooldown and
+    # --notify calls happen after `wsl --shutdown` tore the container down and
+    # the stack has (hopefully) come back, so the correct transport can differ
+    # between the start and the end of a single run.
+    try {
+        $state = & docker inspect -f '{{.State.Running}}' $ContainerName 2>$null
+        return ($LASTEXITCODE -eq 0 -and "$state".Trim() -eq "true")
+    } catch {
+        return $false
+    }
+}
+
+# Host-python fallback, in preference order:
 #   1. $POINDEXTER_IDLE_RESET_PYTHON - optional operator override (absolute
 #      path to a python.exe); the escape hatch when neither default fits.
 #   2. the repo-root .venv           - portable (resolves under wherever the
@@ -76,6 +109,10 @@ $script:CheckerPython = Resolve-CheckerPython
 
 function Invoke-Checker {
     param([string[]]$CheckerArgs)
+    if (Test-CheckerContainer) {
+        $output = & docker exec $ContainerName python $ContainerCheckerPath @CheckerArgs 2>&1
+        return @{ Output = ($output -join "`n"); ExitCode = $LASTEXITCODE }
+    }
     Push-Location $backendDir
     try {
         $exe = $script:CheckerPython[0]
@@ -91,7 +128,11 @@ function Invoke-Checker {
 }
 
 Write-Log "=== idle-wsl-gpu-reset starting (DryRun=$DryRun) ==="
-Write-Log "Checker interpreter: $($script:CheckerPython -join ' ')"
+if (Test-CheckerContainer) {
+    Write-Log "Checker transport: docker exec $ContainerName python $ContainerCheckerPath"
+} else {
+    Write-Log "Checker transport: HOST FALLBACK ($($script:CheckerPython -join ' ')) - container '$ContainerName' is not running; expect a fail-closed decision unless this host can reach Prometheus + the DB directly."
+}
 
 # --- Idle time via the native Win32 GetLastInputInfo API --------------------
 Add-Type @"

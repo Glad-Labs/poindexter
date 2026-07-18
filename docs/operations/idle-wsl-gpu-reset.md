@@ -36,18 +36,40 @@ Two scripts, split by what each is actually good at:
   source of truth for every condition except idle time. Reuses the same
   DSN-resolution pattern as `scripts/image-gen-server.py` / `scripts/gpu-scraper.py`.
 
-The host script runs the checker with a **concrete Python interpreter, not
-`poetry run`** — from the main checkout `poetry run python` can silently
-resolve the wrong interpreter (3.11, which crashes the checker), and a fresh
-worktree has no poetry env at all. Resolution order (logged at the top of
-every run as `Checker interpreter:`):
+### Where the checker runs (it is a container-side tool)
 
-1. `$env:POINDEXTER_IDLE_RESET_PYTHON` — optional operator override, an
-   absolute path to a `python.exe` (the escape hatch when neither default fits).
-2. the repo-root `.venv\Scripts\python.exe` — portable and the same interpreter
-   the sibling `gpu-scraper.py` host task already uses.
-3. `poetry run python` — last resort; a wrong resolve here just makes the
-   checker fail closed (no reset), never a bad reset.
+**The checker runs INSIDE the worker container, not on the host.** Both of its
+runtime dependencies resolve only on the Docker network:
+
+- `app_settings.gpu_metrics_prometheus_url` is `http://prometheus:9090` — a
+  compose hostname the Windows host **cannot resolve at all**. The checker reads
+  free-VRAM and GPU utilization from Prometheus, so invoked from the host it can
+  only ever report _"Prometheus VRAM/utilization unreadable — failing closed"_.
+- the DB is reached in-container at `postgres-local:5432`. From the host it needs
+  the published `:5433`, which is itself prone to Docker Desktop port-forward
+  wedges (observed hanging on **both** IPv4 and IPv6 and surviving a full
+  `wsl --shutdown` + Docker Desktop restart).
+
+So a host-invoked checker could never produce a real decision, independent of the
+interpreter bug (#883) and the registrar bug (#882) — this was the root cause
+under both. The host script therefore shells out with:
+
+```
+docker exec <container> python /opt/scripts/idle_wsl_gpu_reset_check.py …
+```
+
+where repo-root `scripts/` is already bind-mounted at `/opt/scripts` and the
+image carries py3.13 + asyncpg + httpx. Container name defaults to
+`poindexter-worker`, overridable via `$env:POINDEXTER_IDLE_RESET_CONTAINER`. The
+transport is probed **per call** (not cached), because the post-reset
+`--stamp-cooldown` / `--notify` calls happen after `wsl --shutdown` tore the
+container down and the stack came back.
+
+A **host-python fallback** remains for topologies that do point those settings at
+host-reachable addresses: `$env:POINDEXTER_IDLE_RESET_PYTHON` → repo-root
+`.venv\Scripts\python.exe` → `poetry run python`. If neither transport works the
+checker emits no parseable JSON and the script exits 2 **without resetting**. The
+chosen transport is logged at the top of every run as `Checker transport:`.
 
 All conditions must hold for a reset to fire:
 
