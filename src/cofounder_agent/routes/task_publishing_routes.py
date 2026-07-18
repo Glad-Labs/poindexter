@@ -446,7 +446,7 @@ async def approve_task(
                 quality_score=_rfb_quality,
                 site_config=site_config_dep,
             )
-        except Exception as rfb_err:  # noqa: BLE001
+        except Exception as rfb_err:  # noqa: BLE001 — silent-ok: record_task_outcome is documented NEVER-raises and logs its own failures at WARNING internally (services/router_outcome_feedback.py); this route-level catch is a defensive belt over a non-raising call
             logger.debug(
                 "[approve_task] router outcome feedback failed: %s", rfb_err,
             )
@@ -458,7 +458,7 @@ async def approve_task(
             await db_service.mark_model_performance_outcome(
                 task_id, human_approved=approved,
             )
-        except Exception as mp_err:
+        except Exception as mp_err:  # noqa: BLE001 — silent-ok: db_service.mark_model_performance_outcome self-surfaces its DB failure as a model_performance_outcome_update_failed finding and never raises (batch 10 / #2685); this route-level catch is a belt over a non-raising call
             logger.debug(
                 "[approve_task] mark_model_performance_outcome failed: %s", mp_err,
             )
@@ -569,7 +569,7 @@ async def approve_task(
                         await db_service.mark_model_performance_outcome(
                             task_id, post_published=True,
                         )
-                    except Exception as mp_err:
+                    except Exception as mp_err:  # noqa: BLE001 — silent-ok: same as the approve flip — mark_model_performance_outcome self-surfaces its failure as a finding and never raises (batch 10 / #2685); belt over a non-raising call
                         logger.debug(
                             "[approve_task] mark_model_performance_outcome publish flip failed: %s",
                             mp_err,

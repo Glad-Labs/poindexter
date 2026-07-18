@@ -67,7 +67,6 @@
   "src/cofounder_agent/routes/approval_routes.py": 2,
   "src/cofounder_agent/routes/memory_dashboard_routes.py": 2,
   "src/cofounder_agent/routes/metrics_routes.py": 3,
-  "src/cofounder_agent/routes/task_publishing_routes.py": 3,
   "src/cofounder_agent/routes/task_routes.py": 2,
   "src/cofounder_agent/scripts/deploy_content_flow.py": 1,
   "src/cofounder_agent/services/approval_service.py": 2,
