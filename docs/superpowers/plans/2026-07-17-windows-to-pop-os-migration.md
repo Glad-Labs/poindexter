@@ -1,5 +1,25 @@
 # Windows 11 → Pop!\_OS Full-Wipe Migration — Implementation Plan
 
+> # ⛔ SUPERSEDED STRATEGY — DO NOT EXECUTE PHASE 3 AS WRITTEN
+>
+> **The full wipe was replaced by a reversible dual-boot evaluation on 2026-07-18.**
+> Pop!\_OS now installs to the **MP600 alongside Windows**; the wipe is deferred to a
+> final phase behind explicit exit criteria. Phase 3 below still reads
+> "⛔ POINT OF NO RETURN: wipe MP700" — **that is the old strategy and following it
+> would destroy the rollback path this redesign exists to preserve.**
+>
+> Read [`the design spec`](../specs/2026-07-17-windows-to-pop-os-migration-design.md)
+> for the current strategy. This plan is being rewritten to match; until then:
+>
+> - **Phases 0, 1, 2 are still accurate** and safe to execute (validation, backup, BIOS floor).
+> - **Task 3.0 (quiesce + final dump) is still correct** — it became the handoff ceremony.
+> - **Task 3.1 onward is stale.** Do not run it.
+>
+> Two rules the rewrite adds, worth knowing now: only **one OS may own the database
+> at a time** (never alternate — two Postgres instances diverge with no merge path),
+> and the precious backup tier must live on **two devices that are not the MP600**
+> before the MP600 is repartitioned.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to work this plan phase-by-phase with review checkpoints. Steps use checkbox (`- [ ]`) syntax for tracking. This is an **ops/migration runbook**, not a code feature: "tests" are **verification gates** (run a command, confirm the expected output) and the destructive step (Phase 3) is guarded by a hard GO/NO-GO gate.
 
 **Goal:** Migrate Matt's workstation from Windows 11 + Docker-Desktop/WSL2 to bare-metal Pop!\_OS 24.04, moving the whole Poindexter operator stack, both GPUs, host-native Ollama, orchestration, and hardware config, with the public site untouched.
