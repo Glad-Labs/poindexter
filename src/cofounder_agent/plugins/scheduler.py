@@ -113,6 +113,10 @@ def _parse_schedule(schedule: str, tz):
     try:
         return CronTrigger.from_crontab(schedule, timezone=tz)
     except Exception:
+        # silent-ok: `None` is this parser's DOCUMENTED return for an
+        # unrecognized schedule string (see docstring) — not a swallowed
+        # failure. Every caller logs + skips the Job on None, so the operator
+        # still learns which Job did not register.
         return None
 
 
@@ -350,6 +354,10 @@ class PluginScheduler:
                     f"Config for job {job.name} — tune cadence via config.schedule",
                 )
         except Exception as e:  # pragma: no cover - defensive
+            # silent-ok: seeding only pre-creates the operator-tunable row; the
+            # job still REGISTERS and runs on its code-default schedule (see
+            # docstring). Nothing is lost that the next boot won't re-attempt,
+            # and the write is ON CONFLICT DO NOTHING so a retry is free.
             logger.debug(
                 "scheduler: job-config seed skipped for %r: %s", job.name, e
             )
@@ -477,6 +485,11 @@ class PluginScheduler:
             if next_runs:
                 next_run_epoch = min(next_runs)
         except Exception as e:  # pragma: no cover - defensive
+            # silent-ok: `next_run_epoch` is ONE optional field of the stats
+            # dict and is documented as None-able. get_stats still returns the
+            # load-bearing liveness fields (is_running / jobs_failed /
+            # last_tick_epoch), which is what the health surface actually gates
+            # on — degrading this field beats failing the whole probe.
             logger.debug("scheduler.get_stats: next_run probe failed: %s", e)
 
         return {

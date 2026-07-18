@@ -193,7 +193,7 @@ async def _emit_audit_event(
             json.dumps({"detail": detail, **(payload or {})}),
             severity,
         )
-    except Exception as exc:  # noqa: BLE001
+    except Exception as exc:  # noqa: BLE001 — silent-ok: this row is the dashboard MIRROR, not the alert — the probe calls effective_notify(...) (notify_operator) for the same event immediately after this helper returns, so the operator is still paged. A finding would be wrong here anyway: emit_finding writes to audit_log too, so it would vanish in the same outage.
         logger.debug("[FINANCE_POLL] audit_log insert skipped (%s)", exc)
 
 
@@ -217,6 +217,10 @@ def _default_notify_fn() -> NotifyFn | None:
 
         return notify_operator
     except ImportError:
+        # silent-ok: deliberate two-step import probe — a miss here is the
+        # EXPECTED path on the worker side and is answered by the
+        # package-qualified retry immediately below. The docstring bounds the
+        # both-miss consequence (audit row + logs, no notify).
         pass
     try:  # pragma: no cover — package-qualified path for the worker side
         from brain.operator_notifier import notify_operator  # type: ignore
