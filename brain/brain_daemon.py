@@ -3534,4 +3534,7 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
+        # silent-ok: Ctrl-C is an OPERATOR-INITIATED shutdown, not a failure —
+        # the person who caused it is watching the terminal. info is the right
+        # level; a warning would cry wolf on every intentional stop.
         logging.getLogger("brain").info("[BRAIN] Interrupted, exiting")

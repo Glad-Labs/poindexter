@@ -321,6 +321,10 @@ async def _emit_audit_event(
             severity,
         )
     except Exception as exc:  # noqa: BLE001
+        # silent-ok: mirror only. Stale PRs are alerted by _emit_stale_alert
+        # (its own coalesced alert_events row -> alert_dispatcher), and the
+        # probe-failure event is paired with a notify_fn call — which now
+        # also warns if that delivery fails (see run_pr_staleness_probe).
         logger.debug("[PR_STALENESS] audit_log insert failed: %s", exc)
 
 
@@ -697,8 +701,17 @@ async def run_pr_staleness_probe(
                 source="brain.pr_staleness_probe",
                 severity="warning",
             )
-        except Exception:  # noqa: BLE001
-            pass
+        except Exception as notify_exc:  # noqa: BLE001
+            # The probe failure itself is already logged above; what would be
+            # lost here is that the operator's PAGE never went out. This
+            # system is run from a phone via Telegram/Discord, so a dead
+            # notifier reads as "no stale PRs" — silence looks like health.
+            logger.warning(
+                "[PR_STALENESS] probe-failure notification could not be "
+                "delivered (%s: %s) — the operator was NOT paged about the "
+                "GitHub error above",
+                type(notify_exc).__name__, notify_exc,
+            )
         return {
             "ok": False,
             "status": "github_error",

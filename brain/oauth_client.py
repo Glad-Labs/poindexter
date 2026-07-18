@@ -149,6 +149,11 @@ class BrainOAuthClient:
             try:
                 await self._http.aclose()
             except Exception:  # noqa: BLE001
+                # silent-ok: teardown-only. The client is being discarded
+                # either way (self._http is set to None right below), so a
+                # failed close leaks nothing the process teardown won't
+                # reclaim, and raising here would mask the caller's real
+                # exception when this runs from __aexit__.
                 pass
             self._http = None
 

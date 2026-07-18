@@ -139,7 +139,11 @@ async def _write_all(
             try:
                 target.chmod(0o600)
             except Exception:
-                # Non-fatal: bind-mount may not allow chmod.
+                # silent-ok: non-fatal — the bind-mount may not allow chmod,
+                # which is the NORMAL case in this deployment, and the secret
+                # file itself was written successfully on the line above.
+                # This runs every brain cycle, so warning here would be
+                # steady-state noise rather than signal.
                 pass
             status = "written" if existed else "created"
             out[filename] = status

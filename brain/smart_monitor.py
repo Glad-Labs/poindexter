@@ -663,9 +663,12 @@ async def _emit_audit_event(
             "warning" if "warning" in event or "critical" in event else "info",
         )
     except Exception as exc:  # noqa: BLE001
-        # audit_log table may not exist on a very fresh install — log
-        # and carry on so the probe still does its job via the
-        # dispatcher path.
+        # silent-ok: this row is the dashboard MIRROR, not the alert. Real
+        # SMART failures go out through this probe's alert_events rows ->
+        # alert_dispatcher, in a separate try. The one event that
+        # deliberately does NOT page (smartctl absent — see the "Deliberately
+        # NO notify_operator()" note below) keeps its own info-log, so it
+        # stays diagnosable even if this write is lost.
         logger.debug(
             "[SMART_MONITOR] Could not write audit event %s: %s",
             event, exc,

@@ -327,7 +327,12 @@ async def _record_rule_hash(pool, name: str, new_hash: str) -> None:
             f"hash:{name}", new_hash,
         )
     except Exception as e:
-        # Hash cache is best-effort; we can still sync on the next cycle.
+        # silent-ok: this IS a read-back ledger (see _load_rule_hashes), but
+        # the action it gates is an IDEMPOTENT Grafana rule PUT — losing a
+        # hash costs one redundant API call next cycle and nothing else, and
+        # the next successful write restores the cache. Contrast a ledger
+        # gating a non-idempotent action (e.g. sending mail), where a lost
+        # row causes a duplicate that reaches a real person.
         logger.debug("alert_sync: hash persist failed for %s (%s)", name, e)
 
 

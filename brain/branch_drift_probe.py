@@ -368,6 +368,11 @@ async def _emit_audit_event(pool: Any, event: str, detail: str, *, extra: dict[s
             event, "brain.branch_drift_probe", json.dumps(payload), severity,
         )
     except Exception as exc:  # noqa: BLE001
+        # silent-ok: mirror only. Drift itself is alerted by
+        # _emit_drift_alert (its own alert_events row -> alert_dispatcher),
+        # and the probe.branch_drift_failed event is followed immediately by
+        # a notify_fn call — so every load-bearing event here has an
+        # independent path to the operator.
         logger.debug("[BRANCH_DRIFT] audit_log insert failed: %s", exc)
 
 

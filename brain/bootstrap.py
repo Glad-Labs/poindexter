@@ -216,6 +216,12 @@ def write_bootstrap_toml(values: dict[str, str]) -> Path:
 
         tmp.chmod(stat.S_IRUSR | stat.S_IWUSR)
     except Exception:
+        # silent-ok: permission tightening is explicitly best-effort ("where
+        # the platform supports it" above) — the file itself is already
+        # written and is still moved into place below. This module is
+        # deliberately stdlib-only with no logger (it must work before any
+        # config exists), so there is nowhere to route a warning. The header
+        # written into the file tells the operator to keep it private.
         pass
 
     tmp.replace(BOOTSTRAP_FILE)

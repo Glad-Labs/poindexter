@@ -80,6 +80,10 @@ def _bootstrap_secret_key() -> str:
             from bootstrap import get_bootstrap_value
         return get_bootstrap_value("poindexter_secret_key", "")
     except Exception:  # noqa: BLE001 — best-effort, never raise
+        # silent-ok: "" is this helper's DOCUMENTED return for "no key
+        # recoverable" (see docstring) — it is a bootstrap-time fallback that
+        # runs before any logging/alerting infra is guaranteed, and every
+        # caller already handles "" by keeping its own default degradation.
         return ""
 
 

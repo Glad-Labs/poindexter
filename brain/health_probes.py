@@ -971,6 +971,10 @@ async def probe_disk_space(_pool) -> dict:
                         gb_free = usage.free / (1024 ** 3)
                         warnings.append(f"{drive} {pct_free:.1f}% free ({gb_free:.1f} GB)")
                 except (FileNotFoundError, OSError):
+                    # silent-ok: expected — this walks candidate drive
+                    # letters C..H and most are absent on any given machine.
+                    # An absent drive is simply not reported, which is the
+                    # correct result, not a swallowed failure.
                     pass  # Drive doesn't exist
         else:
             # Linux/Mac — check root
@@ -1775,6 +1779,11 @@ async def _alertmanager_healthy() -> bool:
     try:
         return await asyncio.to_thread(_alertmanager_healthy_blocking, ALERTMANAGER_URL)
     except Exception:  # pragma: no cover — to_thread plumbing
+        # silent-ok: False is the FAIL-SAFE answer, not a swallowed error.
+        # The only caller uses this to decide whether Alertmanager can
+        # deliver; answering "no" makes the brain STOP suppressing its own
+        # alerts for Prometheus-covered probes (see the comment at the call
+        # site), so an error here makes the system louder, never quieter.
         return False
 
 
@@ -1847,6 +1856,11 @@ async def run_health_probes(pool, notify_fn=None):
                 ["health", "probe", name],
             )
         except Exception as e:
+            # silent-ok: this is the knowledge-graph MIRROR of the probe
+            # result. The failure-tracking / alerting / remediation /
+            # issue-filing block immediately below is entirely independent of
+            # this write, and the statement is ON CONFLICT DO UPDATE, so the
+            # next probe cycle self-corrects a lost row.
             logger.debug("[PROBES] Failed to store result for %s: %s", name, e)
 
         # Track failures and alert.
@@ -1957,6 +1971,10 @@ async def _call_agent_recovery(pool, service: str) -> tuple[bool, str]:
                 try:
                     detail += f" — {response.json().get('detail', '')}"
                 except Exception:
+                    # silent-ok: this only ENRICHES an error string with the
+                    # response body. On a non-JSON body we keep the plain
+                    # "HTTP <status>" detail, and the real failure is still
+                    # returned as (False, detail) below.
                     pass
             return ok, detail
     except Exception as exc:  # noqa: BLE001

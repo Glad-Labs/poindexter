@@ -40,7 +40,7 @@ import os
 import subprocess
 import time
 from collections.abc import Awaitable, Callable
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 try:  # Flat import when brain/ is on sys.path (container runtime).
@@ -152,7 +152,7 @@ def _parse_publish_date(raw: Any) -> datetime | None:
     except ValueError:
         return None
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt
 
 
@@ -182,7 +182,7 @@ async def _overdue_queue_posts(
         # Callers gate on the key before invoking; belt-and-braces here.
         return {"overdue": 0, "sample": [], "unconfigured": True}
 
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     params = {
         "startDate": (now - timedelta(days=_SCAN_WINDOW_DAYS)).isoformat(),
         "endDate": (now + timedelta(days=1)).isoformat(),

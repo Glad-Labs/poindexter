@@ -463,9 +463,11 @@ async def _emit_audit_event(
             "warning" if "stale" in event or "escalate" in event else "info",
         )
     except Exception as exc:  # noqa: BLE001
-        # audit_log table may not exist on a very fresh install — log
-        # and carry on so the probe still does its job via the
-        # dispatcher path.
+        # silent-ok: the audit_log table may not exist on a very fresh
+        # install, and this row is only the dashboard MIRROR. The probe's
+        # load-bearing signal is its alert_events row (written separately,
+        # in its own try, and paged out by the brain's alert_dispatcher), so
+        # the operator is still alerted when this write fails.
         logger.debug(
             "[BACKUP_WATCHER] Could not write audit event %s: %s",
             event, exc,

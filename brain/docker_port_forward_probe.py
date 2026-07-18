@@ -1069,8 +1069,9 @@ async def _emit_audit_event(
             severity,
         )
     except Exception as exc:  # noqa: BLE001
-        # audit_log table may not exist on a very fresh install — log
-        # and carry on so the probe still does its job.
+        # silent-ok: mirror only. This probe escalates through its own
+        # alert_events rows (3 of them, in separate trys) -> notify_operator,
+        # so a lost audit row never costs the operator the alert.
         logger.debug(
             "[PORT_FORWARD] Could not write audit event %s: %s",
             event, exc,
