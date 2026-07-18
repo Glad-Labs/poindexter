@@ -34,9 +34,6 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$repoRoot = Split-Path -Parent $PSScriptRoot
-$backendDir = Join-Path $repoRoot "src\cofounder_agent"
-$checkerScript = Join-Path $repoRoot "scripts\idle_wsl_gpu_reset_check.py"
 $logDir = Join-Path $env:USERPROFILE ".poindexter\logs"
 if (-not (Test-Path $logDir)) { New-Item -ItemType Directory -Path $logDir -Force | Out-Null }
 $logFile = Join-Path $logDir "idle-wsl-gpu-reset.log"
@@ -64,9 +61,13 @@ function Write-Log {
 # container, where repo-root scripts/ is already bind-mounted at /opt/scripts and
 # py3.13 + asyncpg + httpx are present.
 #
-# Host-python stays as a FALLBACK for topologies that do point those settings at
-# host-reachable addresses. If neither transport works, the checker emits no
-# parseable JSON and the script exits 2 without resetting (fail closed).
+# There is deliberately NO host-python fallback. This script is Docker-dependent
+# by definition - its entire job is `wsl --shutdown` plus restarting Docker
+# Desktop, so if Docker is unavailable there is nothing here to reset. A host
+# fallback could not work on a normal install (see the Prometheus hostname
+# above) and actively masked failures: it once logged "docker exec" and then
+# silently ran `poetry run python`, because the container happened to restart in
+# the one second between the two probes (#887). Container-only, fail closed.
 $ContainerName = if ($env:POINDEXTER_IDLE_RESET_CONTAINER) {
     $env:POINDEXTER_IDLE_RESET_CONTAINER
 } else {
@@ -75,64 +76,36 @@ $ContainerName = if ($env:POINDEXTER_IDLE_RESET_CONTAINER) {
 $ContainerCheckerPath = "/opt/scripts/idle_wsl_gpu_reset_check.py"
 
 function Test-CheckerContainer {
-    # Probed per call rather than cached: the post-reset --stamp-cooldown and
-    # --notify calls happen after `wsl --shutdown` tore the container down and
-    # the stack has (hopefully) come back, so the correct transport can differ
-    # between the start and the end of a single run.
-    try {
-        $state = & docker inspect -f '{{.State.Running}}' $ContainerName 2>$null
-        return ($LASTEXITCODE -eq 0 -and "$state".Trim() -eq "true")
-    } catch {
-        return $false
+    param([int]$Attempts = 3, [int]$DelaySeconds = 2)
+    # Retried rather than single-shot: containers bounce. A worker that restarts
+    # for one second (deploy, healthcheck flap) must not be read as "Docker is
+    # gone" and lose the run - that exact one-second restart is what #887 caught.
+    for ($i = 1; $i -le $Attempts; $i++) {
+        try {
+            $state = & docker inspect -f '{{.State.Running}}' $ContainerName 2>$null
+            if ("$state".Trim() -eq "true") { return $true }
+        } catch {
+            # docker missing or daemon unreachable - treat as not available.
+        }
+        if ($i -lt $Attempts) { Start-Sleep -Seconds $DelaySeconds }
     }
+    return $false
 }
-
-# Host-python fallback, in preference order:
-#   1. $POINDEXTER_IDLE_RESET_PYTHON - optional operator override (absolute
-#      path to a python.exe); the escape hatch when neither default fits.
-#   2. the repo-root .venv           - portable (resolves under wherever the
-#      repo is checked out) and the interpreter the sibling host GPU tasks use.
-#   3. `poetry run python`           - last resort so a box set up only via
-#      poetry still runs *something*; a wrong resolve there just makes the
-#      checker fail closed (no reset), never a bad reset.
-function Resolve-CheckerPython {
-    $override = $env:POINDEXTER_IDLE_RESET_PYTHON
-    if ($override -and (Test-Path $override)) { return , @($override) }
-
-    $venvPython = Join-Path $repoRoot ".venv\Scripts\python.exe"
-    if (Test-Path $venvPython) { return , @($venvPython) }
-
-    return , @("poetry", "run", "python")
-}
-
-$script:CheckerPython = Resolve-CheckerPython
 
 function Invoke-Checker {
     param([string[]]$CheckerArgs)
-    if (Test-CheckerContainer) {
-        $output = & docker exec $ContainerName python $ContainerCheckerPath @CheckerArgs 2>&1
-        return @{ Output = ($output -join "`n"); ExitCode = $LASTEXITCODE }
+    if (-not (Test-CheckerContainer)) {
+        # Fail closed through the caller's existing $decision.error path rather
+        # than emitting unparseable junk, so the log carries one clear reason.
+        $msg = "checker container '$ContainerName' is not running - cannot evaluate, no reset"
+        return @{ Output = "{""should_reset"": false, ""error"": ""$msg""}"; ExitCode = 2 }
     }
-    Push-Location $backendDir
-    try {
-        $exe = $script:CheckerPython[0]
-        $prefixArgs = @()
-        if ($script:CheckerPython.Count -gt 1) {
-            $prefixArgs = $script:CheckerPython[1..($script:CheckerPython.Count - 1)]
-        }
-        $output = & $exe @prefixArgs $checkerScript @CheckerArgs 2>&1
-        return @{ Output = ($output -join "`n"); ExitCode = $LASTEXITCODE }
-    } finally {
-        Pop-Location
-    }
+    $output = & docker exec $ContainerName python $ContainerCheckerPath @CheckerArgs 2>&1
+    return @{ Output = ($output -join "`n"); ExitCode = $LASTEXITCODE }
 }
 
 Write-Log "=== idle-wsl-gpu-reset starting (DryRun=$DryRun) ==="
-if (Test-CheckerContainer) {
-    Write-Log "Checker transport: docker exec $ContainerName python $ContainerCheckerPath"
-} else {
-    Write-Log "Checker transport: HOST FALLBACK ($($script:CheckerPython -join ' ')) - container '$ContainerName' is not running; expect a fail-closed decision unless this host can reach Prometheus + the DB directly."
-}
+Write-Log "Checker transport: docker exec $ContainerName python $ContainerCheckerPath"
 
 # --- Idle time via the native Win32 GetLastInputInfo API --------------------
 Add-Type @"

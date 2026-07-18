@@ -61,15 +61,26 @@ docker exec <container> python /opt/scripts/idle_wsl_gpu_reset_check.py …
 where repo-root `scripts/` is already bind-mounted at `/opt/scripts` and the
 image carries py3.13 + asyncpg + httpx. Container name defaults to
 `poindexter-worker`, overridable via `$env:POINDEXTER_IDLE_RESET_CONTAINER`. The
-transport is probed **per call** (not cached), because the post-reset
+Availability is probed **per call** (not cached), because the post-reset
 `--stamp-cooldown` / `--notify` calls happen after `wsl --shutdown` tore the
-container down and the stack came back.
+container down and the stack came back. The probe **retries** (3 attempts, 2 s
+apart) so a container that bounces for a second — a deploy, a healthcheck flap —
+doesn't lose the run.
 
-A **host-python fallback** remains for topologies that do point those settings at
-host-reachable addresses: `$env:POINDEXTER_IDLE_RESET_PYTHON` → repo-root
-`.venv\Scripts\python.exe` → `poetry run python`. If neither transport works the
-checker emits no parseable JSON and the script exits 2 **without resetting**. The
-chosen transport is logged at the top of every run as `Checker transport:`.
+There is deliberately **no host-python fallback**. This script is Docker-dependent
+by definition: its whole job is `wsl --shutdown` plus restarting Docker Desktop,
+so if Docker is unavailable there is nothing to reset. A fallback also could not
+work on a normal install (the Prometheus hostname above), and it actively masked
+failures — it once logged `docker exec` and then silently ran `poetry run python`
+because the container restarted in the one second between two probes
+(poindexter#887). If the container is unavailable the checker returns a plain
+JSON error and the script logs one clear reason and exits 2 **without
+resetting**:
+
+```
+Checker output: {"should_reset": false, "error": "checker container 'X' is not running - cannot evaluate, no reset"}
+Checker reported an error (failing closed): ...
+```
 
 All conditions must hold for a reset to fire:
 
