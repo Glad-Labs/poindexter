@@ -761,14 +761,14 @@ async def _record_dispatch_cost(
                 try:
                     from services.integrations.shared_context import get_site_config
                     site_config = get_site_config()
-                except Exception:  # noqa: BLE001
+                except Exception:  # noqa: BLE001 — silent-ok: best-effort site_config fetch; on failure it stays None and CostGuard runs with defaults for the electricity estimate below (attribution-only, never the API cost axis)
                     pass
                 guard = CostGuard(pool=pool, site_config=site_config)
                 electricity_kwh = guard.estimate_local_kwh(duration_ms=duration_ms)
                 # NOTE: do NOT set cost_usd = kwh_to_usd(...) here — that conflated
                 # electricity onto the API axis and double-counted the brain's
                 # measured power. cost_usd stays 0 for local calls.
-            except Exception:  # noqa: BLE001 — best-effort; $0 is still a valid fallback
+            except Exception:  # noqa: BLE001 — silent-ok: best-effort local-electricity estimate; on failure electricity_kwh stays None and cost_usd stays $0 (a valid fallback) — the authoritative electricity spend is the brain's measured power rows, not per-call estimates
                 pass
 
         async with pool.acquire() as conn:
@@ -790,12 +790,34 @@ async def _record_dispatch_cost(
                 electricity_kwh, error,
             )
     except Exception as e:
-        # Demote to debug so we don't pollute logs on every call when
-        # something's structurally wrong (schema drift, pool exhausted).
-        # The cost_log_write_failed audit_log path is reserved for
-        # cost_guard.record; the dispatcher's auto-log is additive
-        # observability and not load-bearing for budget enforcement.
+        # Demote the per-call line to debug so we don't pollute logs on every
+        # call when something's structurally wrong (schema drift, pool
+        # exhausted) — but ALSO emit one deduped finding, because for every
+        # non-writer dispatch (QA / SEO / title / atom calls) this is the SOLE
+        # cost_logs writer (admin_db.log_cost is wired only to writer_core;
+        # cost_guard.record fires only for caption/media/youtube record_usage).
+        # The budget cap sums cost_logs.cost_usd, so a swallowed PAID-call write
+        # silently undercounts spend tracking and the daily/monthly cap — the
+        # exact invisibility this would otherwise hide. Non-paging info finding
+        # (deduped, Findings board); mirrors cost_guard.record's own
+        # cost_log_write_failed audit path (cost_guard.py, severity error).
         logger.debug("dispatcher: cost_logs auto-write skipped: %s", e)
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="services.llm_providers.dispatcher",
+            kind="dispatch_cost_log_write_failed",
+            title="dispatch cost_logs auto-write failed",
+            body=(
+                f"Writing the cost_logs row after a {model} dispatch "
+                f"(phase={phase}, task={task_id}) raised {type(e).__name__}: {e}. "
+                f"For non-writer LLM dispatches this is the only cost_logs writer, "
+                f"and the budget cap sums cost_logs.cost_usd — a persistent failure "
+                f"silently undercounts spend tracking and the spend cap."
+            ),
+            severity="info",
+            dedup_key="dispatch_cost_log_write_failed",
+        )
 
 
 async def dispatch_embed(

@@ -100,7 +100,6 @@
   "src/cofounder_agent/services/jobs/update_utility_rates.py": 2,
   "src/cofounder_agent/services/jobs/verify_published_posts.py": 2,
   "src/cofounder_agent/services/langfuse_shim.py": 1,
-  "src/cofounder_agent/services/llm_providers/dispatcher.py": 3,
   "src/cofounder_agent/services/logger_config.py": 2,
   "src/cofounder_agent/services/media_compositors/ffmpeg_local.py": 5,
   "src/cofounder_agent/services/media_quality_service.py": 2,
