@@ -142,7 +142,15 @@ class VerifyPublishedPostsJob:
                         "status": f"error: {e}",
                     })
 
-        # Record genuine failures to audit_log (best-effort).
+        # Mirror the detected failures into audit_log (best-effort). The same
+        # events are surfaced by the post_verification_failure /
+        # verify_blocked_by_edge findings below, so a failed mirror-write loses a
+        # dashboard row, not the alert. Count them and warn ONCE after the loops
+        # rather than per item — and warn via the LOGGER, never emit_finding: a
+        # finding is itself an audit_log write, so it would vanish in the very
+        # outage this is reporting.
+        audit_write_failures = 0
+
         for f in failures:
             try:
                 async with pool.acquire() as conn:
@@ -155,6 +163,7 @@ class VerifyPublishedPostsJob:
                         "warning",
                     )
             except Exception as e:
+                audit_write_failures += 1
                 logger.debug(
                     "VerifyPublishedPostsJob: audit_log insert failed for %s: %s",
                     f.get("slug"), e,
@@ -174,10 +183,21 @@ class VerifyPublishedPostsJob:
                         "warning",
                     )
             except Exception as e:
+                audit_write_failures += 1
                 logger.debug(
                     "VerifyPublishedPostsJob: edge audit_log insert failed for %s: %s",
                     f.get("slug"), e,
                 )
+
+        if audit_write_failures:
+            logger.warning(
+                "VerifyPublishedPostsJob: %d audit_log mirror-write(s) failed "
+                "(of %d failure + %d edge-blocked row(s)). The findings below "
+                "still carry these events; this warning is the surface that "
+                "survives an audit_log outage, since emit_finding writes there "
+                "too.",
+                audit_write_failures, len(failures), len(edge_blocked),
+            )
 
         if failures and file_issue:
             body_lines = [
