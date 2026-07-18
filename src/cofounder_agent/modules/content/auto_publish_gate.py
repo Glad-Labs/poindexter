@@ -77,6 +77,55 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+
+async def _backfill_atom_run_outcome(
+    pool: Any, *, task_id: Any, edit_distance: int
+) -> None:
+    """Backfill the ``"approved"`` outcome (+ operator edit distance) onto every
+    ``atom_runs`` row for a task (#355 Plan 2 / #552).
+
+    Best-effort — **never raises**, so it can never fail the approve/publish
+    path — but a failure is surfaced as a non-paging ``info`` finding so a
+    persistent break doesn't silently starve the ``atom_runs`` (composition ->
+    outcome) learning signal the router scores on (batch-10 admin_db precedent).
+    Called only after the primary ``published_post_edit_metrics`` write
+    succeeds, so the pool is healthy and ``emit_finding`` will land.
+    """
+    try:
+        from services.atom_runs import record_atom_run_outcome
+
+        await record_atom_run_outcome(
+            pool,
+            task_id=str(task_id),
+            decision="approved",
+            edit_distance=edit_distance,
+        )
+    except Exception as exc:  # noqa: BLE001 — backfill is additive; never fail publish
+        logger.debug(
+            "[auto_publish_gate] atom_runs outcome backfill failed: %s",
+            exc,
+        )
+        from utils.findings import emit_finding
+
+        emit_finding(
+            source="modules.content.auto_publish_gate",
+            kind="atom_runs_outcome_backfill_failed",
+            title="atom_runs approve-outcome backfill failed",
+            body=(
+                f"record_atom_run_outcome raised {type(exc).__name__}: {exc} "
+                f"while backfilling the 'approved' outcome (edit_distance="
+                f"{edit_distance}) for task {task_id}. The primary edit-metrics "
+                f"row was written, but the atom_runs (composition -> outcome) "
+                f"learning signal for this task is missing its approve outcome. A "
+                f"persistent failure silently starves the router's per-atom "
+                f"scoring."
+            ),
+            severity="info",
+            dedup_key=f"atom_runs_outcome_backfill_failed:{type(exc).__name__}",
+            extra={"error_type": type(exc).__name__, "task_id": str(task_id)},
+        )
+
+
 # ---------------------------------------------------------------------------
 # Structural requirement constants (template-level, no LLM)
 # ---------------------------------------------------------------------------
@@ -533,7 +582,7 @@ async def record_post_approve_metrics(
             # contribute zero. Approximate via 2 * (1 - ratio) * len(union).
             ratio = sm.ratio()
             char_diff = max(char_diff, int(2 * (1 - ratio) * max(len(pre), len(post))))
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — silent-ok: refines char_diff, already computed as abs(len) at the top of this block; stdlib difflib over post-sized strings can't realistically raise, and the crude fallback still records a metric
             pass
 
     pre_lines = pre.splitlines()
@@ -546,7 +595,7 @@ async def record_post_approve_metrics(
             line_diff = max(line_diff, int(
                 2 * (1 - sm_lines.ratio()) * max(len(pre_lines), len(post_lines))
             ))
-        except Exception:  # noqa: BLE001
+        except Exception:  # noqa: BLE001 — silent-ok: refines line_diff, already computed as abs(len) at the top of this block; stdlib difflib over post-sized strings can't realistically raise, and the crude fallback still records a metric
             pass
 
     # Phase 0 lab observability — back-fill any unset provenance fields
@@ -614,19 +663,9 @@ async def record_post_approve_metrics(
         # post_id is left to compose later: published_post_edit_metrics.post_id
         # is a legacy bigint while atom_runs.post_id is the posts uuid, so the
         # int passed here is not the uuid join key.
-        try:
-            from services.atom_runs import record_atom_run_outcome
-            await record_atom_run_outcome(
-                pool,
-                task_id=str(task_id),
-                decision="approved",
-                edit_distance=char_diff,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.debug(
-                "[auto_publish_gate] atom_runs outcome backfill failed: %s",
-                exc,
-            )
+        await _backfill_atom_run_outcome(
+            pool, task_id=task_id, edit_distance=char_diff
+        )
 
         return True
     except Exception as exc:  # noqa: BLE001
