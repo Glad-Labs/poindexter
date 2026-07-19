@@ -2,6 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to work this plan phase-by-phase with review checkpoints. Steps use checkbox (`- [ ]`) syntax for tracking. This is an **ops/migration runbook**, not a code feature: "tests" are **verification gates** — run a command, confirm the expected output.
 
+> ## 📍 RESUME HERE — migration status (last updated 2026-07-19)
+>
+> A session picking this up: read this block first, then jump to the phase named under "Next".
+>
+> - **Phase 0 — Live-USB validation: ✅ COMPLETE = GO** (verified 2026-07-19, live demo session, **no drive written**). UEFI ✅ · both GPUs 5090+3090 on driver 595.84 ✅ · display 3440×1440 ✅ · drives MP600=`nvme1n1` / MP700=`nvme0n1` ✅ · network 0% loss ✅ · PSU single-rail ✅. The Blackwell-5090 NO-GO risk is closed.
+> - **Where the operator is now:** back on **Windows**, working Phase 1 → the pre-Phase-3 gate.
+> - **Next actions (Windows, in order):** (1) refresh backup (`backup-precious.sh /d/migration-backup`); (2) **G4** push the *full* backup offsite; (3) **G3** two-device copy to `C:`; (4) **G5** `powercfg /hibernate off` + full shutdown; (5) **Phase 2** BIOS fan floor.
+> - **⛔ PRE-PHASE-3 GATE state** (see the block at the top of Phase 3): G1 ✅ · G2 ✅ (rehearsal restore) · **G3 ⬜ · G4 ⬜ · G5 ⬜**. **Do NOT begin Phase 3 (the MP600 shrink — the first destructive write) until G3+G4+G5 are all ✅.**
+> - **#889 recovery-secret proof (Task 1.4 Step 5) is a Phase 7 (wipe) gate, not Phase 3** — do it early, but it does not block the install.
+> - **⚠️ Handoff / provenance:** this progress lives in *this file's* checkboxes + dated notes. The commits are on branch **`claude/linux-pop-os-migration-l78vxj` (PR #2718)**, not yet on `main` — a local session must check out that branch (or merge the PR) to see current state. When you complete a step, tick its box here so the next session inherits accurate state.
+
 **Goal:** Move the Poindexter operator stack from Windows 11 + Docker-Desktop/WSL2 onto bare-metal Pop!\_OS 24.04 — both GPUs, host-native Ollama, orchestration and hardware config — **without giving up the ability to go back**, and with the public site untouched throughout.
 
 **Architecture:** Pop!\_OS installs to the **MP600 alongside Windows** on the MP700. Both OSes stay bootable; separate physical drives mean separate ESPs, so neither can break the other's boot path. Linux takes ownership of the database in a single explicit handoff, runs the business for a ≥14-day evaluation, and only then is Windows wiped. Native `docker-ce` republishes the identical 18 host ports, so `bootstrap.toml`/DSN are zero-touch.
@@ -108,37 +119,48 @@ Get-BitLockerVolume | Select-Object MountPoint, VolumeStatus, ProtectionStatus
 ### Task 0.2: Boot the live session and validate core hardware
 
 - [ ] **Step 1: Boot the USB.** F8 (ASUS boot menu) → **pick the entry prefixed `UEFI:`**. There are usually two entries for the same stick; the non-UEFI one boots legacy/CSM. At the Pop menu choose **Try Demo Mode** — do **not** click Install.
-- [ ] **Step 2: Confirm you actually booted UEFI — do this first.** Everything downstream assumes it, and getting it wrong stays silent until it breaks dual-boot much later:
+- [x] **Step 2: Confirm you actually booted UEFI — do this first.** Everything downstream assumes it, and getting it wrong stays silent until it breaks dual-boot much later:
 
 ```bash
 ls /sys/firmware/efi >/dev/null 2>&1 && echo "UEFI ✓" || echo "LEGACY — reboot via the UEFI: entry"
 ```
 
 **Expected:** `UEFI ✓`. If it reports LEGACY, reboot and pick the `UEFI:` entry — a legacy install cannot cleanly dual-boot against a UEFI Windows, and Phase 3's separate-ESP design depends on it.
+**Verified 2026-07-19 — live session printed `UEFI`. ✅**
 
-- [ ] **Step 3: Verify both GPUs enumerate — this is the real gate:**
+- [x] **Step 3: Verify both GPUs enumerate — this is the real gate:**
       `nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=csv`
       **Expected:** two rows — `0, NVIDIA GeForce RTX 5090, 32607 MiB, <ver>` and `1, NVIDIA GeForce RTX 3090, 24576 MiB, <ver>`.
       **If only the 3090 appears, that is the Blackwell driver gap** — note the driver version and stop. NO-GO. If `nvidia-smi` is missing or errors entirely, same verdict.
       _If the live session boots to a **black screen**, that is a signal rather than a dead end: retry with Pop's **safe graphics** option. Reaching a desktop only in safe graphics means the shipped driver cannot drive the 5090 — treat it as the same NO-GO._
-- [ ] **Step 4: Verify the display** runs the Acer ultrawide at native `3440x1440`.
+      **Verified 2026-07-19 — BOTH GPUs enumerate on driver `595.84`: `0, RTX 5090, 32607 MiB` and `1, RTX 3090, 24576 MiB`. The Blackwell driver gap is CLOSED — the live NVIDIA ISO drives the 5090 out of the box, and 595.84 is newer than the ~585 this plan assumed (see Task 3.6). ✅**
+- [x] **Step 4: Verify the display** runs the Acer ultrawide at native `3440x1440`.
       **Read it from COSMIC → Settings → Displays.** COSMIC on 24.04 is **Wayland**, so `xrandr` either fails or reports XWayland's view rather than the truth — do not trust it here.
-- [ ] **Step 5: Verify both NVMe drives are seen — and record which is which:**
+      **Verified 2026-07-19 — native 3440×1440 in COSMIC Displays. ✅**
+- [x] **Step 5: Verify both NVMe drives are seen — and record which is which:**
       `lsblk -d -o NAME,MODEL,SIZE` → expect two ~1.8T devices, one MP700 and one MP600.
       **Write down the `nvme?n1` → model mapping.** Phase 3 partitions the **MP600** specifically; confusing the two there is the expensive mistake, and Linux device order need not match Windows' Disk 0/Disk 1 numbering.
-- [ ] **Step 6: Verify network** (Ethernet or Wi-Fi): `ping -c3 1.1.1.1` → expect 0% loss.
+      **⭐ RECORDED 2026-07-19 (live session `lsblk`):**
+      | Linux device | Model | Size | Role in Phase 3 |
+      | ------------ | ----- | ---- | --------------- |
+      | **`nvme1n1`** | **Corsair MP600 CORE XT** | 1.8T | ⛔ **INSTALL TARGET** — shrink + install Pop here |
+      | **`nvme0n1`** | **Corsair MP700 ELITE with Heatsink** | 1.8T | Holds Windows — **NEVER written to** |
+      **⚠️ Note the inversion:** the install target (MP600) is `nvme1n1`, the *higher*-numbered device — the opposite of a naive "nvme0 = first disk" guess. In Phase 3 partitioning, confirm the model string reads **`MP600 CORE XT`** before touching any partition, not the device number. (USB installer media appeared as `sda`/`sdb`; `loop0` is the live squashfs; `zram0` is live-session swap — none are install targets.)
+- [x] **Step 6: Verify network** (Ethernet or Wi-Fi): `ping -c3 1.1.1.1` → expect 0% loss. **Verified 2026-07-19 — 0% loss. ✅**
 
 ### Task 0.3: Confirm PSU visibility on Linux (informational — NOT a gate)
 
 > **Resolved 2026-07-18:** the HX1500i stores the single/multi-rail toggle in its **own onboard memory**. The 2026-07-13 single-rail fix survives the wipe, iCUE's absence, and even a different machine — so this task no longer gates anything. It only confirms Linux-side telemetry.
 
-- [ ] **Step 1: Install liquidctl in the live session:** `sudo apt update && sudo apt install -y liquidctl` (or `pipx install liquidctl` if the apt version is old).
-- [ ] **Step 2: Detect the PSU:** `liquidctl list`
+- [x] **Step 1: Install liquidctl in the live session:** `sudo apt update && sudo apt install -y liquidctl` (or `pipx install liquidctl` if the apt version is old). **Done — the apt build detects the HX1500i.**
+- [x] **Step 2: Detect the PSU:** `liquidctl list`
       **Expected:** the HX1500i appears (e.g. `Corsair HXi ... (experimental)`). If it does NOT appear → note it; the 2025 HX1500i USB ID may need a newer liquidctl (`pipx install --pip-args=-U liquidctl`). Re-test before deciding.
+      **Verified 2026-07-19 — `Corsair HX1500i (experimental)` visible via `sudo liquidctl status`. ✅**
 - [ ] **Step 3 (optional):** if you want the Linux-side re-assert available later, test `sudo liquidctl initialize --single-12v-ocp` — **always with the flag**, since a bare `initialize` resets the PSU to multi-rail.
       (If it errors that a kernel driver owns the device, retry with `--direct-access`, or `sudo modprobe -r corsair_psu` first.)
-      **Expected:** initializes without error.
-- [ ] **Step 4: Read it back:** `sudo liquidctl status` → note the OCP/rail fields. **Not a blocker:** the single-rail setting lives in the PSU's onboard memory and survives the wipe regardless, so a liquidctl miss here costs only optional Linux-side telemetry.
+      **Expected:** initializes without error. **(Not needed now — Step 4 already reads single-rail; this is the Task 3.7 boot one-shot's job.)**
+- [x] **Step 4: Read it back:** `sudo liquidctl status` → note the OCP/rail fields. **Not a blocker:** the single-rail setting lives in the PSU's onboard memory and survives the wipe regardless, so a liquidctl miss here costs only optional Linux-side telemetry.
+      **Verified 2026-07-19 — `+12V OCP mode: Single rail` ✅ (the 2026-07-13 fix survived into Linux, exactly as the onboard-memory reasoning predicted); `Fan control mode: Hardware`; rails/temps healthy (11.94V, 54.5°C VRM). NOTE: the `Estimated input power` (3036 W) and `Estimated efficiency` (6%) fields are a known bogus-telemetry quirk of liquidctl on the HXi series — ignore them; the real signals are the rail voltages/currents/OCP mode.**
 
 ### Task 0.4: Validate iCUE LINK visibility (non-blocking)
 
@@ -146,6 +168,14 @@ ls /sys/firmware/efi >/dev/null 2>&1 && echo "UEFI ✓" || echo "LEGACY — rebo
 - [ ] **Step 2 (optional):** Try OpenLinkHub per https://github.com/jurkovic-nikola/OpenLinkHub to confirm the iCUE LINK System Hub is visible for later RGB/fan control. Failure here does **not** block the migration.
 
 **### PHASE 0 GATE:** Both GPUs ✅, display ✅, both drives ✅, network ✅. All green → **GO**. A GPU failure → **NO-GO**, Windows still fully intact. (PSU/liquidctl is informational only — the OCP setting persists in the PSU itself.)
+
+> **✅ PHASE 0 = GO — verified 2026-07-19 (live demo session).** UEFI ✅ · both GPUs
+> on driver 595.84 (5090 + 3090) ✅ · display 3440×1440 ✅ · both NVMe drives seen,
+> MP600=`nvme1n1`/MP700=`nvme0n1` ✅ · network 0% loss ✅. PSU bonus: HX1500i visible,
+> `+12V OCP = Single rail` confirmed on Linux. The Blackwell-5090 NO-GO risk is closed.
+> **Nothing was written to any drive.** Next actions are on the Windows side (Phase 1
+> backup completion + Phase 2 fan floor), then the ⛔ pre-Phase-3 gate before any
+> destructive write.
 
 ---
 
@@ -332,6 +362,28 @@ copy of anything first. If anything here goes wrong, Windows still boots.
 
 **Do not start unless Phase 0 = GO and Task 1.3's test-restore passed.**
 
+### ⛔ PRE-PHASE-3 GATE — data safety before the first destructive write
+
+Phase 3 is where the drive edits begin. Every box below must be ✅ **before**
+Task 3.2 shrinks the MP600 — this is the last checkpoint where the backup is
+still on a drive you are about to resize. Do not treat these as advisory; they
+are the difference between "reversible" and "sole copy destroyed." (References
+point back at the tasks that own each item — do them there, tick them here.)
+
+- [ ] **G1 — Phase 0 = GO.** Both GPUs ✅ (verified 2026-07-19, driver 595.84), display at native 3440×1440 ✅ (Task 0.2 Step 4), `ping -c3 1.1.1.1` 0% loss ✅ (Task 0.2 Step 6). The GPU + drive + UEFI checks are already recorded; **display and network are the two still open** — close them first.
+- [ ] **G2 — Test-restore passed (Task 1.3).** `pg_restore rc=0` on `poindexter_brain`, extensions functional (768-dim KNN returns rows), row counts match the live baseline. A backup that has never been restored is not a backup.
+- [ ] **G3 — Two-device rule (Task 3.1 Step 1).** The precious tier (~428 MB dumps + ~2 GB config) lives on **two devices that are NOT the MP600** — e.g. the MP700 `C:` copy **and** offsite. `bootstrap.toml` + `poindexter_brain.dump` confirmed readable in both.
+- [ ] **G4 — Full migration backup pushed offsite (Task 1.2 Step 3).** The nightly offsite job streams **`poindexter_brain` only** (verified in `scripts/backup-offsite/run.sh`). The other 4 databases, all volumes, `bootstrap.toml`, and `~/.claude` memory exist on the MP600 copy **alone** until this push. Copy them to Backblaze/R2 and **confirm the remote listing shows the same files and sizes** — do not assume the upload succeeded.
+- [ ] **G5 — Fast Startup disabled (Task 3.1 Step 2–3).** `powercfg /hibernate off`, verified with `powercfg /a`, then a **full shutdown** (not restart). A Linux read-write mount of a hibernated NTFS partition can corrupt it — backup included.
+
+> **Not on this gate, on purpose — #889 recovery secrets (Task 1.4 Step 5).** Stashing
+> the four recovery secrets off-machine and proving `restic snapshots` from an
+> unrelated box is a **Phase 7 (wipe) gate**, not a Phase 3 one — Phase 3 keeps
+> Windows fully bootable as rollback, so the offsite repo being openable isn't yet
+> load-bearing. Do it early anyway (it's cheap and manual), but it does not block
+> the shrink. **G4 above is the Phase-3-blocking half of the backup story; Task 1.4
+> Step 5 is the Phase-7-blocking half.**
+
 ### Task 3.1: Windows pre-flight (do both — each prevents a different disaster)
 
 - [ ] **Step 1: Satisfy the two-device rule.** The MP600 currently holds the plain-dump backup, and you are about to resize it. Get the precious tier onto two devices that are **not** the MP600. It is small — ~428 MB of dumps plus ~2 GB of config:
@@ -405,7 +457,7 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeI
 
 ### Task 3.6: Bring the NVIDIA driver to a recent build
 
-- [ ] **Step 1: Check the shipped driver:** `nvidia-smi --query-gpu=driver_version --format=csv,noheader` (Pop ships ~585).
+- [ ] **Step 1: Check the shipped driver:** `nvidia-smi --query-gpu=driver_version --format=csv,noheader` (Pop ships ~585). **Observed in the 2026-07-19 live session: `595.84` — already a current, 5090-capable build, so Step 2's upgrade is likely a no-op. Re-check the installed system after Task 3.3; only upgrade if the installed driver is older than the live ISO's.**
 - [ ] **Step 2 (if upgrading):** `sudo apt update && sudo apt full-upgrade -y` then, if needed, install a newer System76 driver package (`system76-driver-nvidia`) or the graphics-drivers PPA build toward the 610-class you ran on Windows. Reboot.
 - [ ] **Step 3: Verify:** `nvidia-smi` shows both GPUs on the new driver, no errors.
 
