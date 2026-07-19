@@ -123,8 +123,9 @@ ls /sys/firmware/efi >/dev/null 2>&1 && echo "UEFI ✓" || echo "LEGACY — rebo
       **If only the 3090 appears, that is the Blackwell driver gap** — note the driver version and stop. NO-GO. If `nvidia-smi` is missing or errors entirely, same verdict.
       _If the live session boots to a **black screen**, that is a signal rather than a dead end: retry with Pop's **safe graphics** option. Reaching a desktop only in safe graphics means the shipped driver cannot drive the 5090 — treat it as the same NO-GO._
       **Verified 2026-07-19 — BOTH GPUs enumerate on driver `595.84`: `0, RTX 5090, 32607 MiB` and `1, RTX 3090, 24576 MiB`. The Blackwell driver gap is CLOSED — the live NVIDIA ISO drives the 5090 out of the box, and 595.84 is newer than the ~585 this plan assumed (see Task 3.6). ✅**
-- [ ] **Step 4: Verify the display** runs the Acer ultrawide at native `3440x1440`.
+- [x] **Step 4: Verify the display** runs the Acer ultrawide at native `3440x1440`.
       **Read it from COSMIC → Settings → Displays.** COSMIC on 24.04 is **Wayland**, so `xrandr` either fails or reports XWayland's view rather than the truth — do not trust it here.
+      **Verified 2026-07-19 — native 3440×1440 in COSMIC Displays. ✅**
 - [x] **Step 5: Verify both NVMe drives are seen — and record which is which:**
       `lsblk -d -o NAME,MODEL,SIZE` → expect two ~1.8T devices, one MP700 and one MP600.
       **Write down the `nvme?n1` → model mapping.** Phase 3 partitions the **MP600** specifically; confusing the two there is the expensive mistake, and Linux device order need not match Windows' Disk 0/Disk 1 numbering.
@@ -134,19 +135,21 @@ ls /sys/firmware/efi >/dev/null 2>&1 && echo "UEFI ✓" || echo "LEGACY — rebo
       | **`nvme1n1`** | **Corsair MP600 CORE XT** | 1.8T | ⛔ **INSTALL TARGET** — shrink + install Pop here |
       | **`nvme0n1`** | **Corsair MP700 ELITE with Heatsink** | 1.8T | Holds Windows — **NEVER written to** |
       **⚠️ Note the inversion:** the install target (MP600) is `nvme1n1`, the *higher*-numbered device — the opposite of a naive "nvme0 = first disk" guess. In Phase 3 partitioning, confirm the model string reads **`MP600 CORE XT`** before touching any partition, not the device number. (USB installer media appeared as `sda`/`sdb`; `loop0` is the live squashfs; `zram0` is live-session swap — none are install targets.)
-- [ ] **Step 6: Verify network** (Ethernet or Wi-Fi): `ping -c3 1.1.1.1` → expect 0% loss.
+- [x] **Step 6: Verify network** (Ethernet or Wi-Fi): `ping -c3 1.1.1.1` → expect 0% loss. **Verified 2026-07-19 — 0% loss. ✅**
 
 ### Task 0.3: Confirm PSU visibility on Linux (informational — NOT a gate)
 
 > **Resolved 2026-07-18:** the HX1500i stores the single/multi-rail toggle in its **own onboard memory**. The 2026-07-13 single-rail fix survives the wipe, iCUE's absence, and even a different machine — so this task no longer gates anything. It only confirms Linux-side telemetry.
 
-- [ ] **Step 1: Install liquidctl in the live session:** `sudo apt update && sudo apt install -y liquidctl` (or `pipx install liquidctl` if the apt version is old).
-- [ ] **Step 2: Detect the PSU:** `liquidctl list`
+- [x] **Step 1: Install liquidctl in the live session:** `sudo apt update && sudo apt install -y liquidctl` (or `pipx install liquidctl` if the apt version is old). **Done — the apt build detects the HX1500i.**
+- [x] **Step 2: Detect the PSU:** `liquidctl list`
       **Expected:** the HX1500i appears (e.g. `Corsair HXi ... (experimental)`). If it does NOT appear → note it; the 2025 HX1500i USB ID may need a newer liquidctl (`pipx install --pip-args=-U liquidctl`). Re-test before deciding.
+      **Verified 2026-07-19 — `Corsair HX1500i (experimental)` visible via `sudo liquidctl status`. ✅**
 - [ ] **Step 3 (optional):** if you want the Linux-side re-assert available later, test `sudo liquidctl initialize --single-12v-ocp` — **always with the flag**, since a bare `initialize` resets the PSU to multi-rail.
       (If it errors that a kernel driver owns the device, retry with `--direct-access`, or `sudo modprobe -r corsair_psu` first.)
-      **Expected:** initializes without error.
-- [ ] **Step 4: Read it back:** `sudo liquidctl status` → note the OCP/rail fields. **Not a blocker:** the single-rail setting lives in the PSU's onboard memory and survives the wipe regardless, so a liquidctl miss here costs only optional Linux-side telemetry.
+      **Expected:** initializes without error. **(Not needed now — Step 4 already reads single-rail; this is the Task 3.7 boot one-shot's job.)**
+- [x] **Step 4: Read it back:** `sudo liquidctl status` → note the OCP/rail fields. **Not a blocker:** the single-rail setting lives in the PSU's onboard memory and survives the wipe regardless, so a liquidctl miss here costs only optional Linux-side telemetry.
+      **Verified 2026-07-19 — `+12V OCP mode: Single rail` ✅ (the 2026-07-13 fix survived into Linux, exactly as the onboard-memory reasoning predicted); `Fan control mode: Hardware`; rails/temps healthy (11.94V, 54.5°C VRM). NOTE: the `Estimated input power` (3036 W) and `Estimated efficiency` (6%) fields are a known bogus-telemetry quirk of liquidctl on the HXi series — ignore them; the real signals are the rail voltages/currents/OCP mode.**
 
 ### Task 0.4: Validate iCUE LINK visibility (non-blocking)
 
@@ -154,6 +157,14 @@ ls /sys/firmware/efi >/dev/null 2>&1 && echo "UEFI ✓" || echo "LEGACY — rebo
 - [ ] **Step 2 (optional):** Try OpenLinkHub per https://github.com/jurkovic-nikola/OpenLinkHub to confirm the iCUE LINK System Hub is visible for later RGB/fan control. Failure here does **not** block the migration.
 
 **### PHASE 0 GATE:** Both GPUs ✅, display ✅, both drives ✅, network ✅. All green → **GO**. A GPU failure → **NO-GO**, Windows still fully intact. (PSU/liquidctl is informational only — the OCP setting persists in the PSU itself.)
+
+> **✅ PHASE 0 = GO — verified 2026-07-19 (live demo session).** UEFI ✅ · both GPUs
+> on driver 595.84 (5090 + 3090) ✅ · display 3440×1440 ✅ · both NVMe drives seen,
+> MP600=`nvme1n1`/MP700=`nvme0n1` ✅ · network 0% loss ✅. PSU bonus: HX1500i visible,
+> `+12V OCP = Single rail` confirmed on Linux. The Blackwell-5090 NO-GO risk is closed.
+> **Nothing was written to any drive.** Next actions are on the Windows side (Phase 1
+> backup completion + Phase 2 fan floor), then the ⛔ pre-Phase-3 gate before any
+> destructive write.
 
 ---
 
