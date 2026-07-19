@@ -2,6 +2,17 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to work this plan phase-by-phase with review checkpoints. Steps use checkbox (`- [ ]`) syntax for tracking. This is an **ops/migration runbook**, not a code feature: "tests" are **verification gates** — run a command, confirm the expected output.
 
+> ## 📍 RESUME HERE — migration status (last updated 2026-07-19)
+>
+> A session picking this up: read this block first, then jump to the phase named under "Next".
+>
+> - **Phase 0 — Live-USB validation: ✅ COMPLETE = GO** (verified 2026-07-19, live demo session, **no drive written**). UEFI ✅ · both GPUs 5090+3090 on driver 595.84 ✅ · display 3440×1440 ✅ · drives MP600=`nvme1n1` / MP700=`nvme0n1` ✅ · network 0% loss ✅ · PSU single-rail ✅. The Blackwell-5090 NO-GO risk is closed.
+> - **Where the operator is now:** back on **Windows**, working Phase 1 → the pre-Phase-3 gate.
+> - **Next actions (Windows, in order):** (1) refresh backup (`backup-precious.sh /d/migration-backup`); (2) **G4** push the *full* backup offsite; (3) **G3** two-device copy to `C:`; (4) **G5** `powercfg /hibernate off` + full shutdown; (5) **Phase 2** BIOS fan floor.
+> - **⛔ PRE-PHASE-3 GATE state** (see the block at the top of Phase 3): G1 ✅ · G2 ✅ (rehearsal restore) · **G3 ⬜ · G4 ⬜ · G5 ⬜**. **Do NOT begin Phase 3 (the MP600 shrink — the first destructive write) until G3+G4+G5 are all ✅.**
+> - **#889 recovery-secret proof (Task 1.4 Step 5) is a Phase 7 (wipe) gate, not Phase 3** — do it early, but it does not block the install.
+> - **⚠️ Handoff / provenance:** this progress lives in *this file's* checkboxes + dated notes. The commits are on branch **`claude/linux-pop-os-migration-l78vxj` (PR #2718)**, not yet on `main` — a local session must check out that branch (or merge the PR) to see current state. When you complete a step, tick its box here so the next session inherits accurate state.
+
 **Goal:** Move the Poindexter operator stack from Windows 11 + Docker-Desktop/WSL2 onto bare-metal Pop!\_OS 24.04 — both GPUs, host-native Ollama, orchestration and hardware config — **without giving up the ability to go back**, and with the public site untouched throughout.
 
 **Architecture:** Pop!\_OS installs to the **MP600 alongside Windows** on the MP700. Both OSes stay bootable; separate physical drives mean separate ESPs, so neither can break the other's boot path. Linux takes ownership of the database in a single explicit handoff, runs the business for a ≥14-day evaluation, and only then is Windows wiped. Native `docker-ce` republishes the identical 18 host ports, so `bootstrap.toml`/DSN are zero-touch.
