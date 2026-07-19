@@ -108,24 +108,32 @@ Get-BitLockerVolume | Select-Object MountPoint, VolumeStatus, ProtectionStatus
 ### Task 0.2: Boot the live session and validate core hardware
 
 - [ ] **Step 1: Boot the USB.** F8 (ASUS boot menu) → **pick the entry prefixed `UEFI:`**. There are usually two entries for the same stick; the non-UEFI one boots legacy/CSM. At the Pop menu choose **Try Demo Mode** — do **not** click Install.
-- [ ] **Step 2: Confirm you actually booted UEFI — do this first.** Everything downstream assumes it, and getting it wrong stays silent until it breaks dual-boot much later:
+- [x] **Step 2: Confirm you actually booted UEFI — do this first.** Everything downstream assumes it, and getting it wrong stays silent until it breaks dual-boot much later:
 
 ```bash
 ls /sys/firmware/efi >/dev/null 2>&1 && echo "UEFI ✓" || echo "LEGACY — reboot via the UEFI: entry"
 ```
 
 **Expected:** `UEFI ✓`. If it reports LEGACY, reboot and pick the `UEFI:` entry — a legacy install cannot cleanly dual-boot against a UEFI Windows, and Phase 3's separate-ESP design depends on it.
+**Verified 2026-07-19 — live session printed `UEFI`. ✅**
 
-- [ ] **Step 3: Verify both GPUs enumerate — this is the real gate:**
+- [x] **Step 3: Verify both GPUs enumerate — this is the real gate:**
       `nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=csv`
       **Expected:** two rows — `0, NVIDIA GeForce RTX 5090, 32607 MiB, <ver>` and `1, NVIDIA GeForce RTX 3090, 24576 MiB, <ver>`.
       **If only the 3090 appears, that is the Blackwell driver gap** — note the driver version and stop. NO-GO. If `nvidia-smi` is missing or errors entirely, same verdict.
       _If the live session boots to a **black screen**, that is a signal rather than a dead end: retry with Pop's **safe graphics** option. Reaching a desktop only in safe graphics means the shipped driver cannot drive the 5090 — treat it as the same NO-GO._
+      **Verified 2026-07-19 — BOTH GPUs enumerate on driver `595.84`: `0, RTX 5090, 32607 MiB` and `1, RTX 3090, 24576 MiB`. The Blackwell driver gap is CLOSED — the live NVIDIA ISO drives the 5090 out of the box, and 595.84 is newer than the ~585 this plan assumed (see Task 3.6). ✅**
 - [ ] **Step 4: Verify the display** runs the Acer ultrawide at native `3440x1440`.
       **Read it from COSMIC → Settings → Displays.** COSMIC on 24.04 is **Wayland**, so `xrandr` either fails or reports XWayland's view rather than the truth — do not trust it here.
-- [ ] **Step 5: Verify both NVMe drives are seen — and record which is which:**
+- [x] **Step 5: Verify both NVMe drives are seen — and record which is which:**
       `lsblk -d -o NAME,MODEL,SIZE` → expect two ~1.8T devices, one MP700 and one MP600.
       **Write down the `nvme?n1` → model mapping.** Phase 3 partitions the **MP600** specifically; confusing the two there is the expensive mistake, and Linux device order need not match Windows' Disk 0/Disk 1 numbering.
+      **⭐ RECORDED 2026-07-19 (live session `lsblk`):**
+      | Linux device | Model | Size | Role in Phase 3 |
+      | ------------ | ----- | ---- | --------------- |
+      | **`nvme1n1`** | **Corsair MP600 CORE XT** | 1.8T | ⛔ **INSTALL TARGET** — shrink + install Pop here |
+      | **`nvme0n1`** | **Corsair MP700 ELITE with Heatsink** | 1.8T | Holds Windows — **NEVER written to** |
+      **⚠️ Note the inversion:** the install target (MP600) is `nvme1n1`, the *higher*-numbered device — the opposite of a naive "nvme0 = first disk" guess. In Phase 3 partitioning, confirm the model string reads **`MP600 CORE XT`** before touching any partition, not the device number. (USB installer media appeared as `sda`/`sdb`; `loop0` is the live squashfs; `zram0` is live-session swap — none are install targets.)
 - [ ] **Step 6: Verify network** (Ethernet or Wi-Fi): `ping -c3 1.1.1.1` → expect 0% loss.
 
 ### Task 0.3: Confirm PSU visibility on Linux (informational — NOT a gate)
@@ -405,7 +413,7 @@ reg add "HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeI
 
 ### Task 3.6: Bring the NVIDIA driver to a recent build
 
-- [ ] **Step 1: Check the shipped driver:** `nvidia-smi --query-gpu=driver_version --format=csv,noheader` (Pop ships ~585).
+- [ ] **Step 1: Check the shipped driver:** `nvidia-smi --query-gpu=driver_version --format=csv,noheader` (Pop ships ~585). **Observed in the 2026-07-19 live session: `595.84` — already a current, 5090-capable build, so Step 2's upgrade is likely a no-op. Re-check the installed system after Task 3.3; only upgrade if the installed driver is older than the live ISO's.**
 - [ ] **Step 2 (if upgrading):** `sudo apt update && sudo apt full-upgrade -y` then, if needed, install a newer System76 driver package (`system76-driver-nvidia`) or the graphics-drivers PPA build toward the 610-class you ran on Windows. Reboot.
 - [ ] **Step 3: Verify:** `nvidia-smi` shows both GPUs on the new driver, no errors.
 
