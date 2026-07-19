@@ -8,10 +8,10 @@
 >
 > - **Phase 0 — Live-USB validation: ✅ COMPLETE = GO** (verified 2026-07-19, live demo session, **no drive written**). UEFI ✅ · both GPUs 5090+3090 on driver 595.84 ✅ · display 3440×1440 ✅ · drives MP600=`nvme1n1` / MP700=`nvme0n1` ✅ · network 0% loss ✅ · PSU single-rail ✅. The Blackwell-5090 NO-GO risk is closed.
 > - **Where the operator is now:** back on **Windows**, working Phase 1 → the pre-Phase-3 gate.
-> - **Next actions (Windows, in order):** (1) refresh backup (`backup-precious.sh /d/migration-backup`); (2) **G4** push the *full* backup offsite; (3) **G3** two-device copy to `C:`; (4) **G5** `powercfg /hibernate off` + full shutdown; (5) **Phase 2** BIOS fan floor.
+> - **Next actions (Windows, in order):** (1) refresh backup (`backup-precious.sh /d/migration-backup`); (2) **G4** push the _full_ backup offsite; (3) **G3** two-device copy to `C:`; (4) **G5** `powercfg /hibernate off` + full shutdown; (5) **Phase 2** BIOS fan floor.
 > - **⛔ PRE-PHASE-3 GATE state** (see the block at the top of Phase 3): G1 ✅ · G2 ✅ (rehearsal restore) · **G3 ⬜ · G4 ⬜ · G5 ⬜**. **Do NOT begin Phase 3 (the MP600 shrink — the first destructive write) until G3+G4+G5 are all ✅.**
 > - **#889 recovery-secret proof (Task 1.4 Step 5) is a Phase 7 (wipe) gate, not Phase 3** — do it early, but it does not block the install.
-> - **⚠️ Handoff / provenance:** this progress lives in *this file's* checkboxes + dated notes. The commits are on branch **`claude/linux-pop-os-migration-l78vxj` (PR #2718)**, not yet on `main` — a local session must check out that branch (or merge the PR) to see current state. When you complete a step, tick its box here so the next session inherits accurate state.
+> - **⚠️ Handoff / provenance:** this progress lives in _this file's_ checkboxes + dated notes. The commits are on branch **`claude/linux-pop-os-migration-l78vxj` (PR #2718)**, not yet on `main` — a local session must check out that branch (or merge the PR) to see current state. When you complete a step, tick its box here so the next session inherits accurate state.
 
 **Goal:** Move the Poindexter operator stack from Windows 11 + Docker-Desktop/WSL2 onto bare-metal Pop!\_OS 24.04 — both GPUs, host-native Ollama, orchestration and hardware config — **without giving up the ability to go back**, and with the public site untouched throughout.
 
@@ -145,7 +145,7 @@ ls /sys/firmware/efi >/dev/null 2>&1 && echo "UEFI ✓" || echo "LEGACY — rebo
       | ------------ | ----- | ---- | --------------- |
       | **`nvme1n1`** | **Corsair MP600 CORE XT** | 1.8T | ⛔ **INSTALL TARGET** — shrink + install Pop here |
       | **`nvme0n1`** | **Corsair MP700 ELITE with Heatsink** | 1.8T | Holds Windows — **NEVER written to** |
-      **⚠️ Note the inversion:** the install target (MP600) is `nvme1n1`, the *higher*-numbered device — the opposite of a naive "nvme0 = first disk" guess. In Phase 3 partitioning, confirm the model string reads **`MP600 CORE XT`** before touching any partition, not the device number. (USB installer media appeared as `sda`/`sdb`; `loop0` is the live squashfs; `zram0` is live-session swap — none are install targets.)
+      **⚠️ Note the inversion:** the install target (MP600) is `nvme1n1`, the _higher_-numbered device — the opposite of a naive "nvme0 = first disk" guess. In Phase 3 partitioning, confirm the model string reads **`MP600 CORE XT`** before touching any partition, not the device number. (USB installer media appeared as `sda`/`sdb`; `loop0` is the live squashfs; `zram0` is live-session swap — none are install targets.)
 - [x] **Step 6: Verify network** (Ethernet or Wi-Fi): `ping -c3 1.1.1.1` → expect 0% loss. **Verified 2026-07-19 — 0% loss. ✅**
 
 ### Task 0.3: Confirm PSU visibility on Linux (informational — NOT a gate)
@@ -372,8 +372,30 @@ point back at the tasks that own each item — do them there, tick them here.)
 
 - [ ] **G1 — Phase 0 = GO.** Both GPUs ✅ (verified 2026-07-19, driver 595.84), display at native 3440×1440 ✅ (Task 0.2 Step 4), `ping -c3 1.1.1.1` 0% loss ✅ (Task 0.2 Step 6). The GPU + drive + UEFI checks are already recorded; **display and network are the two still open** — close them first.
 - [ ] **G2 — Test-restore passed (Task 1.3).** `pg_restore rc=0` on `poindexter_brain`, extensions functional (768-dim KNN returns rows), row counts match the live baseline. A backup that has never been restored is not a backup.
-- [ ] **G3 — Two-device rule (Task 3.1 Step 1).** The precious tier (~428 MB dumps + ~2 GB config) lives on **two devices that are NOT the MP600** — e.g. the MP700 `C:` copy **and** offsite. `bootstrap.toml` + `poindexter_brain.dump` confirmed readable in both.
-- [ ] **G4 — Full migration backup pushed offsite (Task 1.2 Step 3).** The nightly offsite job streams **`poindexter_brain` only** (verified in `scripts/backup-offsite/run.sh`). The other 4 databases, all volumes, `bootstrap.toml`, and `~/.claude` memory exist on the MP600 copy **alone** until this push. Copy them to Backblaze/R2 and **confirm the remote listing shows the same files and sizes** — do not assume the upload succeeded.
+- [x] **G3 — Two-device rule (Task 3.1 Step 1). ✅ DONE 2026-07-19.** `C:\migration-backup-copy` on the MP700 holds 2.64 GB: both dump sets (`pg-20260718-full` — the complete 7-file set incl. `glitchtip.dump`; `pg-20260719-fresh` — newer but incomplete), the 36 `~/.poindexter` top-level config/secret files, and `~/.claude` (1053 memory `.md` files). **`bootstrap.toml` and `poindexter_brain.dump` both hash-verified against source.** Deliberately excludes the ~60 GB of regenerable bulk (superseded local DB backups, generated images, video, podcast, logs) — copying those would turn a 2 GB safety copy into an hour-long transfer that protects nothing.
+- [ ] **G4 — Full migration backup pushed offsite (Task 1.2 Step 3).** The nightly offsite job streams **`poindexter_brain` only** (verified in `scripts/backup-offsite/run.sh`). The other 4 databases, all volumes, `bootstrap.toml`, and `~/.claude` memory exist on the MP600 copy **alone** until this push. **Confirm the remote listing** afterwards — do not assume the upload succeeded.
+
+  **How to push without handling any secret** (the mechanism matters — the restic password and B2 keys must never pass through a human or an agent): the running `poindexter-backup-offsite` container **already holds the credentials in its environment** and already bind-mounts `~/.poindexter/backups/auto` → `/backups`. So stage into that host directory and drive restic through `docker exec`; the container supplies its own credentials.
+
+  ```bash
+  # stage → then, from PowerShell (avoids Git Bash path mangling):
+  docker exec poindexter-backup-offsite restic \
+    -r "$(offsite_backup_repository from app_settings)" \
+    backup /backups/_migration-offsite/<tier> --tag migration-2026-07
+  ```
+
+  **Do NOT use `docker run --env-file .poindexter-backup-offsite.env`.** That file is auto-written by `start-stack.sh` with a **CP1252 em-dash** in its header comment, so `docker run` rejects it as `invalid utf8 bytes at line 1`. Compose's parser tolerates it, which is why the stack works and only ad-hoc `docker run` trips. (Encoding bug in the writer — worth fixing separately.)
+
+  **Tiering, because 99% of the bytes are the least valuable data.** Split into separate snapshots so the critical tier lands fast and a long tail can be interrupted without losing it:
+
+  | Tier             | Size     | Contents                                                      |
+  | ---------------- | -------- | ------------------------------------------------------------- |
+  | `precious`       | 2.64 GB  | all dumps + `bootstrap.toml`/secrets + `~/.claude` memory     |
+  | `volumes-small`  | 117 MB   | grafana, langfuse-minio, uptime-kuma, postiz-uploads, pgadmin |
+  | `volumes-traces` | 10.45 GB | Langfuse ClickHouse — **98.9% of the volume tier by size**    |
+
+  The ClickHouse tarball is LLM trace history: the spec classifies volumes as "useful, best-effort" and traces as re-derivable, so it is the one item here where accepting loss is defensible. Push it if bandwidth allows (≈$0.05/month on B2); do not let it block the gate.
+
 - [ ] **G5 — Fast Startup disabled (Task 3.1 Step 2–3).** `powercfg /hibernate off`, verified with `powercfg /a`, then a **full shutdown** (not restart). A Linux read-write mount of a hibernated NTFS partition can corrupt it — backup included.
 
 > **Not on this gate, on purpose — #889 recovery secrets (Task 1.4 Step 5).** Stashing

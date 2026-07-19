@@ -15,7 +15,26 @@
 #     a torn snapshot that may not replay; the pg_dump is the real artifact.
 #   * Each dump is verified readable with `pg_restore --list` before we claim
 #     success. An unverified dump is a hypothesis, not a backup.
+#   * Git Bash mangles docker's `-v src:dst` arguments (see MSYS_NO_PATHCONV
+#     below). This silently produced ZERO volume backups on a live run.
 set -euo pipefail
+
+# --- Git Bash / MSYS path-conversion guard ----------------------------------
+# On Windows, MSYS rewrites Unix-looking arguments into Windows paths before
+# exec. It mangles docker's volume syntax: `-v "$OUT/volumes:/b"` is rewritten
+# so the ":/b" becomes ";B", and docker then creates a HOST DIRECTORY literally
+# named "volumes;B" while the container writes into a path that disappears with
+# the container. The tar reports success and you end up with an empty volumes/.
+# Observed for real on 2026-07-19: 0 of 6 tarballs, plus a stray "volumes;B".
+# MSYS_NO_PATHCONV=1 is scoped to each docker invocation rather than exported
+# globally, because the surrounding shell still needs normal path handling.
+DOCKER_ENV=""
+if [ -n "${MSYSTEM:-}" ] || uname -s 2>/dev/null | grep -qiE 'mingw|msys'; then
+  DOCKER_ENV="MSYS_NO_PATHCONV=1 MSYS2_ARG_CONV_EXCL=*"
+  echo "note: Git Bash detected — disabling MSYS path conversion for docker args"
+fi
+# Run docker with path conversion disabled where required.
+dk() { env $DOCKER_ENV docker "$@"; }
 
 DEST="${1:?usage: backup-precious.sh <dest-dir>}"
 STAMP="$(date +%Y%m%d-%H%M%S)"
@@ -27,7 +46,7 @@ JUNK_DB_RE='(_unit_|_test$|^test|e2e|flatten_)'
 
 echo "== Discovering Postgres containers =="
 mapfile -t PG_CONTAINERS < <(
-  docker ps --format '{{.Names}}|{{.Image}}' |
+  dk ps --format '{{.Names}}|{{.Image}}' |
   awk -F'|' '$2 ~ /postgres|pgvector/ && $2 !~ /exporter/ { print $1 }'
 )
 [ "${#PG_CONTAINERS[@]}" -gt 0 ] || { echo "FATAL: no Postgres containers running"; exit 1; }
@@ -35,14 +54,14 @@ printf '  - %s\n' "${PG_CONTAINERS[@]}"
 
 for c in "${PG_CONTAINERS[@]}"; do
   # The official image records its superuser here; fall back to the conventional default.
-  user="$(docker exec "$c" printenv POSTGRES_USER 2>/dev/null || echo postgres)"
+  user="$(dk exec "$c" printenv POSTGRES_USER 2>/dev/null || echo postgres)"
   echo "== $c (superuser: $user) =="
 
   # Roles and passwords live outside any single database.
-  docker exec "$c" pg_dumpall -U "$user" --globals-only > "$OUT/pg/${c}__globals.sql"
+  dk exec "$c" pg_dumpall -U "$user" --globals-only > "$OUT/pg/${c}__globals.sql"
 
   mapfile -t dbs < <(
-    docker exec "$c" psql -U "$user" -d postgres -t -A -c \
+    dk exec "$c" psql -U "$user" -d postgres -t -A -c \
       "select datname from pg_database where datallowconn and not datistemplate order by 1;" |
     tr -d '\r'
   )
@@ -52,9 +71,9 @@ for c in "${PG_CONTAINERS[@]}"; do
     if [[ "$db" =~ $JUNK_DB_RE ]]; then echo "  skip $db (scratch)"; continue; fi
     # Dump to a file INSIDE the container, then docker cp it out. Redirecting a
     # binary -Fc stream through the host shell corrupts it on some platforms.
-    docker exec "$c" pg_dump -U "$user" -Fc -f "/tmp/${db}.dump" "$db"
-    docker cp "$c:/tmp/${db}.dump" "$OUT/pg/${c}__${db}.dump"
-    docker exec "$c" rm -f "/tmp/${db}.dump"
+    dk exec "$c" pg_dump -U "$user" -Fc -f "/tmp/${db}.dump" "$db"
+    dk cp "$c:/tmp/${db}.dump" "$OUT/pg/${c}__${db}.dump"
+    dk exec "$c" rm -f "/tmp/${db}.dump"
     sz=$(du -m "$OUT/pg/${c}__${db}.dump" | cut -f1)
     echo "  dumped $db (${sz} MB)"
   done
@@ -64,7 +83,7 @@ echo "== Verifying every dump is readable =="
 fail=0
 for d in "$OUT"/pg/*.dump; do
   if pg_restore --list "$d" >/dev/null 2>&1 ||
-     docker exec -i "${PG_CONTAINERS[0]}" pg_restore --list /dev/stdin < "$d" >/dev/null 2>&1; then
+     dk exec -i "${PG_CONTAINERS[0]}" pg_restore --list /dev/stdin < "$d" >/dev/null 2>&1; then
     echo "  OK   $(basename "$d")"
   else
     echo "  FAIL $(basename "$d") — table of contents unreadable"; fail=1
@@ -76,22 +95,39 @@ echo "== Useful volumes (tar) =="
 # Discover volumes actually attached to running containers, minus Postgres data
 # dirs (already captured as dumps above) and anything trivially regenerable.
 mapfile -t VOLS < <(
-  docker ps -q |
+  dk ps -q |
   xargs -r docker inspect -f '{{range .Mounts}}{{if eq .Type "volume"}}{{.Name}}{{"\n"}}{{end}}{{end}}' |
   grep -v '^$' | sort -u |
   grep -Ev '(postgres|pg-data|_db-data|db-data$)'
 )
+[ "${#VOLS[@]}" -gt 0 ] || echo "  (no non-database volumes attached to running containers)"
 for vol in "${VOLS[@]}"; do
-  # --warning=no-file-changed: live services mutate files mid-read. That is an
-  # expected warning for observability data, not a failure — but we still let
-  # real errors surface rather than swallowing all stderr.
-  if docker run --rm -v "$vol:/v:ro" -v "$OUT/volumes:/b" alpine \
-       tar czf "/b/$vol.tar.gz" --warning=no-file-changed -C /v . ; then
-    echo "  - $vol ($(du -m "$OUT/volumes/$vol.tar.gz" | cut -f1) MB)"
+  [ -n "$vol" ] || continue
+  # Stream the tar to the HOST via stdout instead of bind-mounting an output
+  # directory. One less path for MSYS to mangle, and it works identically on
+  # Linux and Git Bash. (bash redirects binary faithfully — unlike PowerShell,
+  # whose `>` corrupts binary streams.)
+  #
+  # --warning=no-file-changed: live services mutate files mid-read. Expected for
+  # observability data, not a failure — but real errors still surface, and the
+  # size assertion below is what actually decides whether we trust the artifact.
+  if dk run --rm -v "$vol:/v:ro" alpine \
+       tar czf - --warning=no-file-changed -C /v . > "$OUT/volumes/$vol.tar.gz"; then
+    sz=$(du -m "$OUT/volumes/$vol.tar.gz" 2>/dev/null | cut -f1)
+    # A tar of an empty/failed mount still yields a valid ~0 MB gzip, so size is
+    # the check that catches a silent miss.
+    if [ "${sz:-0}" -ge 1 ]; then
+      echo "  - $vol (${sz} MB)"
+    else
+      echo "  ! $vol — produced ${sz:-0} MB. Treat as FAILED, not as an empty volume."
+      fail=1
+    fi
   else
     echo "  ! $vol — tar reported an error, inspect before trusting this artifact"
+    fail=1
   fi
 done
+[ "$fail" -eq 0 ] || echo "WARNING: at least one volume did not back up cleanly (see ! lines above)."
 
 echo "== Operator config =="
 # Top-level files only: bootstrap.toml, tokens, PEMs. The bulk subdirectories
