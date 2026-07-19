@@ -1,47 +1,49 @@
-# Windows 11 → Pop!\_OS Full-Wipe Migration — Implementation Plan
+# Windows 11 → Pop!\_OS Dual-Boot Migration — Implementation Plan
 
-> # ⛔ SUPERSEDED STRATEGY — DO NOT EXECUTE PHASE 3 AS WRITTEN
->
-> **The full wipe was replaced by a reversible dual-boot evaluation on 2026-07-18.**
-> Pop!\_OS now installs to the **MP600 alongside Windows**; the wipe is deferred to a
-> final phase behind explicit exit criteria. Phase 3 below still reads
-> "⛔ POINT OF NO RETURN: wipe MP700" — **that is the old strategy and following it
-> would destroy the rollback path this redesign exists to preserve.**
->
-> Read [`the design spec`](../specs/2026-07-17-windows-to-pop-os-migration-design.md)
-> for the current strategy. This plan is being rewritten to match; until then:
->
-> - **Phases 0, 1, 2 are still accurate** and safe to execute (validation, backup, BIOS floor).
-> - **Task 3.0 (quiesce + final dump) is still correct** — it became the handoff ceremony.
-> - **Task 3.1 onward is stale.** Do not run it.
->
-> Two rules the rewrite adds, worth knowing now: only **one OS may own the database
-> at a time** (never alternate — two Postgres instances diverge with no merge path),
-> and the precious backup tier must live on **two devices that are not the MP600**
-> before the MP600 is repartitioned.
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to work this plan phase-by-phase with review checkpoints. Steps use checkbox (`- [ ]`) syntax for tracking. This is an **ops/migration runbook**, not a code feature: "tests" are **verification gates** — run a command, confirm the expected output.
 
-> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to work this plan phase-by-phase with review checkpoints. Steps use checkbox (`- [ ]`) syntax for tracking. This is an **ops/migration runbook**, not a code feature: "tests" are **verification gates** (run a command, confirm the expected output) and the destructive step (Phase 3) is guarded by a hard GO/NO-GO gate.
+**Goal:** Move the Poindexter operator stack from Windows 11 + Docker-Desktop/WSL2 onto bare-metal Pop!\_OS 24.04 — both GPUs, host-native Ollama, orchestration and hardware config — **without giving up the ability to go back**, and with the public site untouched throughout.
 
-**Goal:** Migrate Matt's workstation from Windows 11 + Docker-Desktop/WSL2 to bare-metal Pop!\_OS 24.04, moving the whole Poindexter operator stack, both GPUs, host-native Ollama, orchestration, and hardware config, with the public site untouched.
-
-**Architecture:** Full wipe of the MP700 (OS drive); back up to the MP600 + offsite first, restore locally after. Native `docker-ce` republishes the identical 18 host ports so `bootstrap.toml`/DSN stay zero-touch. Orchestration moves from Task Scheduler + PowerShell to `systemd`. Everything before Phase 3 is non-destructive and abortable.
+**Architecture:** Pop!\_OS installs to the **MP600 alongside Windows** on the MP700. Both OSes stay bootable; separate physical drives mean separate ESPs, so neither can break the other's boot path. Linux takes ownership of the database in a single explicit handoff, runs the business for a ≥14-day evaluation, and only then is Windows wiped. Native `docker-ce` republishes the identical 18 host ports, so `bootstrap.toml`/DSN are zero-touch.
 
 **Tech Stack:** Pop!\_OS 24.04 (COSMIC), `docker-ce` + compose v2, `nvidia-container-toolkit`, native Ollama, `systemd`, `liquidctl`, `node_exporter`, Tailscale, Poindexter (Python/FastAPI/Postgres).
 
-**Spec:** [`docs/superpowers/specs/2026-07-17-windows-to-pop-os-migration-design.md`](../specs/2026-07-17-windows-to-pop-os-migration-design.md). Read it for the _why_; this plan is the _how_.
+**Spec:** [`docs/superpowers/specs/2026-07-17-windows-to-pop-os-migration-design.md`](../specs/2026-07-17-windows-to-pop-os-migration-design.md). Read it for the _why_ — especially "Split-brain: the governing rule" and the exit criteria. This plan is the _how_.
 
 ## Global Constraints
 
-- **Public site is decoupled** — Vercel + R2 serve gladlabs.io throughout. Never a factor in downtime.
-- **Preserve the 18 published ports exactly** (`8002 3000 5433 3010 8080 9091 9093 3100 3200 4200 4040 3002 5003 18443 8001 9836 9840 7880-7882`). Same ports → host tooling + `~/.poindexter/bootstrap.toml`'s `localhost:5433` DSN need no change.
+**The three that will actually hurt if ignored:**
+
+- **⛔ ONE OS OWNS THE DATABASE AT A TIME.** Never run the stack on both. Two Postgres instances diverge with no merge path and no reconciliation tool — a post published on one side simply does not exist on the other. Handoff is a deliberate ceremony (Task 4.4), recorded in `D:\migration-backup\OWNER.txt`, which both OSes can read. **Cut over; do not alternate.**
+- **⛔ THE PRECIOUS TIER LIVES ON TWO DEVICES THAT ARE NOT THE MP600** before the MP600 is repartitioned. It currently holds the plain-dump backup, and Phase 3 resizes it.
+- **⛔ DISABLE WINDOWS FAST STARTUP** before Linux ever mounts the NTFS partition. Fast Startup leaves the filesystem hibernated and dirty; a read-write mount from Linux can corrupt it — including the backup living on it.
+
+**Standing technical constraints:**
+
+- **Public site is decoupled** — Vercel + R2 serve gladlabs.io throughout. Never a factor in downtime, in any phase.
+- **Preserve the 18 published ports exactly** (`8002 3000 5433 3010 8080 9091 9093 3100 3200 4200 4040 3002 5003 18443 8001 9836 9840 7880-7882`). Same ports → host tooling + `bootstrap.toml`'s `localhost:5433` DSN need no change.
 - **Native-Linux Docker networking rules (non-obvious, load-bearing):**
   - Containers reach host services via `host.docker.internal`, which on `docker-ce` requires `extra_hosts: ["host.docker.internal:host-gateway"]` (it is NOT automatic like Docker Desktop).
-  - Host services that containers must reach (Ollama, node_exporter) **bind `0.0.0.0`, not `127.0.0.1`** — a loopback bind is unreachable from the docker bridge. Gate external access with `ufw` instead.
+  - Host services containers must reach (Ollama, node_exporter) **bind `0.0.0.0`, not `127.0.0.1`** — a loopback bind is unreachable from the docker bridge. Gate external access with `ufw` instead.
 - **GPU indexing:** `nvidia-smi -i 0` = RTX 5090, `-i 1` = RTX 3090. Pin by **UUID** with `CUDA_DEVICE_ORDER=PCI_BUS_ID` (a bare numeric index is unreliable).
+- **WSL2 volumes are unreachable from Linux** — they live inside a VHDX (ext4 in a VM disk). Data moves via **dumps**, never file copies. The NTFS `D:` partition _is_ readable from Linux, so it is the handoff channel; no USB shuttle needed.
 - **Repo lives at** `~/glad-labs-website` (clone fresh); deploy checkout + worktree roots re-created under `~/.poindexter/`.
-- **Shipped `systemd` units are generic templates** (`User=poindexter`, `/home/poindexter/…`, for public-mirror hygiene). On your box either set `User=mattm` + the `/home/mattm/…` paths in each unit, or run the stack under a dedicated `poindexter` login. The `scripts/linux/*.sh` are `$HOME`-relative and need no edit. (Tasks below show the concrete `mattm` values.)
-- **Everything before Phase 3 is reversible at zero cost.** Do not start Phase 3 until Phase 0 is GO and Phase 1's test-restore passed.
+- **Shipped `systemd` units are generic templates** (`User=poindexter`, `/home/poindexter/…`, for public-mirror hygiene). Either set `User=mattm` + the `/home/mattm/…` paths in each unit, or run the stack under a dedicated `poindexter` login. The `scripts/linux/*.sh` are `$HOME`-relative and need no edit.
+- **Nothing here is irreversible until Phase 7.** Through Phase 6, rollback is: reboot to Windows, restore the retained final dump, flip `OWNER.txt`.
 - **`docs/superpowers/` is stripped from the public mirror** — this plan is operator-internal.
+
+## Phase map
+
+| Phase | What                                   | Reversible?                              |
+| ----- | -------------------------------------- | ---------------------------------------- |
+| 0     | Live-USB hardware validation           | Nothing touched                          |
+| 1     | Backup + credential re-homing          | Nothing touched — **backup ✅ verified** |
+| 2     | BIOS fan floor + Windows pre-flight    | Trivially undone                         |
+| 3     | Shrink MP600, install Pop alongside    | Windows untouched and bootable           |
+| 4     | Build the stack on Linux + **handoff** | Reboot + restore                         |
+| 5     | Re-home orchestration to systemd       | Reboot + restore                         |
+| 6     | **Evaluation** (≥14 days, measured)    | Reboot + restore                         |
+| 7     | ⛔ Wipe Windows                        | **The only one-way door**                |
 
 ---
 
@@ -54,8 +56,15 @@ No drive is touched. Proves the hardware runs Pop!\_OS before anything destructi
 **Files:** none (external media).
 
 - [ ] **Step 1: Download the Pop!\_OS 24.04 NVIDIA ISO** from https://system76.com/pop/download (the NVIDIA variant — ships the proprietary driver).
-- [ ] **Step 2: Flash to a USB stick** (≥8 GB) with the Pop!\_OS installer's recommended tool or `dd`/balenaEtcher/Rufus from the current Windows box.
-- [ ] **Step 3: Verify the ISO checksum** against the SHA-256 published on the download page. Expected: match.
+- [ ] **Step 2: Pick the target stick — carefully.** Verified 2026-07-18: **`F:` is a live restic backup repository** (`~/poindexter-backup`, written hourly by the backup containers). **Do not flash `F:`.** Use **`E:`** (SanDisk 29 GB, FAT32, unused) or another spare.
+- [ ] **Step 3: Flash with Rufus** (GPLv3, ~1.4 MB portable, no install — https://rufus.ie, source `pbatard/rufus`). Select the ISO and the `E:` device, leave the defaults.
+
+> **⚠️ When Rufus asks "ISO Image mode" vs "DD Image mode", choose DD Image mode.**
+> Pop!\_OS ships a hybrid ISO. ISO mode produces a stick that _looks_ written and
+> then will not boot — the single most common way this step fails.
+
+- [ ] **Step 4: Verify the ISO checksum** against the SHA-256 published on the download page. **Expected:** match. (Do this against the downloaded `.iso`, before or after flashing — it validates the download, not the stick.)
+- [ ] **Step 5: Keep this stick.** On a dual-boot machine it is your **rescue media**, not disposable installer media — it is what you boot if an EFI entry lands wrong or a bootloader needs repair. (A Ventoy stick, which holds multiple ISOs, is a nice follow-up afterwards — but don't add that abstraction layer during the migration itself.)
 
 ### Task 0.2: Boot the live session and validate core hardware
 
@@ -219,12 +228,12 @@ docker exec pg-restore-test psql -U poindexter -d poindexter_brain -t -A -c \
 - [ ] **Step 1: Inventory device passkeys** — Windows **Settings → Accounts → Passkeys**; screenshot the full list.
 - [ ] **Step 2: Sweep top-tier accounts** in blast-radius order — Backblaze, Mercury, domain registrar, Cloudflare, Google, GitHub, Vercel, Anthropic, Resend, HuggingFace — for a passkey/security key bound to this PC.
 - [ ] **Step 3: Re-home each** onto the Pixel (passkey/authenticator) **while Hello still works**; save printed recovery codes for the top-tier set; harden the Google account's own recovery.
-- [ ] **Step 4: GATE** — confirm no account's only surviving factor is a wiped Hello passkey. This must be ✅ before Phase 3.
+- [ ] **Step 4: GATE** — confirm no account's only surviving factor is a wiped Hello passkey. This must be ✅ before **Phase 7** (the wipe), which is what destroys the TPM-bound passkeys. Dual-boot buys runway here, not an exemption: the requirement is unchanged, the deadline just moved.
 
 #### Step 5: ⛔ Break the offsite-backup circular dependency (discovered 2026-07-18)
 
 **The automated offsite backup currently cannot be opened after a total loss.**
-This is **not** a migration bug — it is true right now — but Phase 3 makes it
+This is **not** a migration bug — it is true right now — but **Phase 7** makes it
 acute, because the wipe destroys the machine holding the only copy of the key.
 
 Verified state: `offsite_backup_enabled=true`, streaming a fresh `pg_dump` of
@@ -263,78 +272,98 @@ verified daily backup that no one can decrypt.
 
 ---
 
-## Phase 3 — ⛔ POINT OF NO RETURN: wipe MP700 + install Pop!\_OS
+## Phase 3 — Shrink the MP600 + install Pop!\_OS alongside Windows
 
-**Do not start unless Phase 0 = GO, Task 1.3 test-restore passed, Task 1.4 gate is ✅, and Task 3.0 has produced a verified FINAL dump.**
+**Windows is not touched in this phase.** The MP700 is never written to; the only
+drive modified is the MP600, and Task 3.1 makes sure it isn't holding the sole
+copy of anything first. If anything here goes wrong, Windows still boots.
 
-### Task 3.0: Quiesce the stack and take the FINAL dump (⛔ prevents silent data loss)
+**Do not start unless Phase 0 = GO and Task 1.3's test-restore passed.**
 
-**Why this task exists.** The Phase 1 backup is a **rehearsal**, taken days or
-weeks earlier against a _running_ stack. `pg_dump` snapshots at the instant it
-starts, so every row written afterwards — new posts, pipeline tasks, audit rows,
-cost logs, embeddings — exists only on the MP700. Wiping while the Phase 1 copy
-is the newest artifact **destroys all of it**, silently, with a backup that looks
-perfectly healthy. Measured on 2026-07-18: `audit_log` accumulated 86 rows in the
-minutes between dump and verification alone. Across a weekend that is thousands.
+### Task 3.1: Windows pre-flight (do both — each prevents a different disaster)
 
-The fix is to stop the writers _first_, so the dump has nothing to race.
-
-- [ ] **Step 1: Announce downtime** (the public site stays up — this only affects the operator stack).
-- [ ] **Step 2: Stop everything that writes**, leaving only Postgres running:
-
-```bash
-bash scripts/start-stack.sh down
-docker compose -f docker-compose.local.yml up -d postgres-local
-```
-
-- [ ] **Step 3: Stop the host-side writers too.** The brain daemon and any scheduled agent connect over asyncpg and will keep writing even with the stack down:
+- [ ] **Step 1: Satisfy the two-device rule.** The MP600 currently holds the plain-dump backup, and you are about to resize it. Get the precious tier onto two devices that are **not** the MP600. It is small — ~428 MB of dumps plus ~2 GB of config:
 
 ```powershell
-Get-ScheduledTask | Where-Object { $_.TaskName -like '*claude*' -or $_.TaskName -like '*poindexter*' } |
-  Disable-ScheduledTask
-Get-Process | Where-Object { $_.ProcessName -match 'ollama|python' } | Format-Table Id, ProcessName
+robocopy D:\migration-backup\pg C:\migration-backup-copy\pg /E /R:1 /W:1
+robocopy D:\migration-backup\config C:\migration-backup-copy\config /E /R:1 /W:1
 ```
 
-- [ ] **Step 4: PROVE the database is quiet.** Do not take this on faith — run it twice, ~30 s apart:
+Plus the offsite push (Task 1.2 Step 3). **Expected:** `bootstrap.toml` and `poindexter_brain.dump` readable in both the MP700 copy and offsite.
 
-```bash
-docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -t -A -c \
-  "select count(*) from audit_log;"
-docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -t -A -c \
-  "select count(*) from pg_stat_activity where datname is not null and state='active' and pid <> pg_backend_pid();"
+- [ ] **Step 2: Disable Fast Startup.** Non-negotiable before Linux mounts NTFS — Fast Startup leaves the filesystem hibernated and dirty, and a read-write mount from Linux can corrupt it, backup included.
+
+```powershell
+powercfg /hibernate off
 ```
 
-**Expected:** the `audit_log` count is **identical** across both runs, and the active-connection count is `0`. If either still moves, something is still writing — find it before dumping.
+Or: **Control Panel → Power Options → Choose what the power buttons do → Change settings that are currently unavailable → uncheck "Turn on fast startup"**.
 
-- [ ] **Step 5: Take the final dump** into a _separate_ directory so it can never be confused with the rehearsal copy:
+- [ ] **Step 3: Verify it took:** `powercfg /a` → **Expected:** hibernation is reported as unavailable/disabled. Then **shut down fully** (not restart) at least once before the install.
 
-```bash
-bash scripts/linux/backup-precious.sh /d/migration-backup-FINAL
+### Task 3.2: Shrink the NTFS `D:` partition
+
+- [ ] **Step 1: Note current usage** — the MP600 is ~1863 GB with ~1706 GB free, so there is enormous headroom.
+- [ ] **Step 2: Shrink from Windows** — **Disk Management → right-click `D:` → Shrink Volume**. Leave `D:` at ~**500 GB** (comfortably covers the ~156 GB in use plus backup growth) and free ~**1.3 TB** for Pop.
+- [ ] **Step 3: Verify** the freed space shows as _Unallocated_ on Disk 1, and that `D:` still mounts and `D:\migration-backup\pg\poindexter_brain.dump` still opens. **If the shrink fails or the backup is unreadable → stop.** Windows is fine; re-copy from the Task 3.1 duplicate and reassess.
+
+### Task 3.3: Install Pop!\_OS into the free space (Custom partitioning)
+
+> **⛔ Do NOT choose "Clean Install."** It takes the whole selected drive and may
+> adopt the MP700's existing ESP. Use **Custom (Advanced)** so Pop gets its own ESP
+> on the MP600 and the MP700 is never written to.
+
+- [ ] **Step 1: Boot the live USB → Install → Custom (Advanced).**
+- [ ] **Step 2: Create this layout in the unallocated space on Disk 1 (MP600).** The split is deliberate — see Step 3.
+
+| Mount       | Size    | FS    | Why                                                    |
+| ----------- | ------- | ----- | ------------------------------------------------------ |
+| `/boot/efi` | 1 GB    | FAT32 | **Pop's own ESP, on the MP600.** Flag as `esp`/boot.   |
+| `swap`      | 32 GB   | swap  | Generous for 64 GB RAM without hibernation.            |
+| `/`         | 150 GB  | ext4  | OS + packages only — kept deliberately small.          |
+| `/data`     | ~1.1 TB | ext4  | Docker data-root, Ollama models, media, local backups. |
+
+- [ ] **Step 3: Understand why root is small.** Everything heavy lives on `/data`, so `/` holds ~30–50 GB of pure OS. Migrating Pop to the MP700 later then becomes _reinstall root, remount `/data`_ — **the bulk data never moves**, and the MP600 lands in exactly the `/data` role the spec targets anyway. Letting Docker fill `/` instead would turn that move into relocating hundreds of GB.
+- [ ] **Step 4: Confirm the installer's target summary** names **Disk 1 / the MP600 ESP** and lists **no changes to Disk 0**. Read this screen carefully — it is the last checkpoint before anything is written.
+- [ ] **Step 5: Install**, then complete first-boot setup (user `mattm`, timezone `America/New_York`, connect network).
+- [ ] **Step 6: Verify both GPUs:** `nvidia-smi -L` → expect the 5090 and 3090 both listed.
+
+### Task 3.4: ⛔ GATE — prove both OSes still boot
+
+Do not proceed until this passes. Everything downstream assumes Windows is a live rollback path.
+
+- [ ] **Step 1: Reboot → firmware boot menu (F8/F11).** **Expected:** entries for **both** Pop!\_OS and Windows Boot Manager.
+- [ ] **Step 2: Boot Windows.** Confirm it reaches the desktop and `D:` still mounts with the backup intact.
+- [ ] **Step 3: Boot Pop!\_OS.** Confirm desktop + network.
+- [ ] **Step 4: Set the default.** Pick whichever you want the machine to land on unattended — during evaluation that should be **Pop**, since Linux will own the stack.
+- [ ] **Step 5: GATE** — ✅ only when both OSes boot on demand. **If Windows will not boot, stop and repair it before going further** — without it there is no rollback and you are effectively mid-wipe.
+
+### Task 3.5: Fix the RTC clock disagreement
+
+Windows treats the hardware clock as local time, Linux as UTC — left alone, each skews the other on every reboot. This matters more than usual here because `operator_timezone` drives cron fire-times.
+
+- [ ] **Step 1: On Linux, make the RTC UTC** (the correct convention): `timedatectl set-local-rtc 0 --adjust-system-clock`
+- [ ] **Step 2: Tell Windows to read the RTC as UTC:**
+
+```powershell
+reg add "HKLM\SYSTEM\CurrentControlSet\Control\TimeZoneInformation" /v RealTimeIsUniversal /t REG_DWORD /d 1 /f
 ```
 
-- [ ] **Step 6: Re-run the Task 1.3 test-restore against THIS dump.** With writers stopped, counts must now match the live database **exactly** — zero drift. Any shortfall is a real failure, not a snapshot artifact.
-- [ ] **Step 7: Push the final dump offsite** and confirm the remote listing shows the same files and sizes.
-- [ ] **Step 8: GATE** — ✅ only when the final dump is verified, restored, and offsite. The MP600 must hold `migration-backup-FINAL`. **Now, and only now, proceed to the wipe.**
+- [ ] **Step 3: Verify** by booting each OS in turn and checking the clock is correct in both. **Expected:** no hour-offset drift after switching.
 
-### Task 3.1: Install Pop!\_OS on the MP700
-
-- [ ] **Step 1: Boot the live USB → Install.** Select **Clean Install** onto the **MP700** only. **Leave the MP600 untouched** (it holds the backup). Enable drive encryption (LUKS) if desired.
-- [ ] **Step 2: Complete first-boot setup** (user `mattm`, timezone `America/New_York`, connect network).
-- [ ] **Step 3: Verify both GPUs post-install:** `nvidia-smi -L` → expect both the 5090 and 3090 listed.
-
-### Task 3.2: Bring the NVIDIA driver to a recent build
+### Task 3.6: Bring the NVIDIA driver to a recent build
 
 - [ ] **Step 1: Check the shipped driver:** `nvidia-smi --query-gpu=driver_version --format=csv,noheader` (Pop ships ~585).
 - [ ] **Step 2 (if upgrading):** `sudo apt update && sudo apt full-upgrade -y` then, if needed, install a newer System76 driver package (`system76-driver-nvidia`) or the graphics-drivers PPA build toward the 610-class you ran on Windows. Reboot.
 - [ ] **Step 3: Verify:** `nvidia-smi` shows both GPUs on the new driver, no errors.
 
-### Task 3.3: (OPTIONAL) liquidctl OCP boot one-shot — insurance, not a requirement
+### Task 3.7: (OPTIONAL) liquidctl OCP boot one-shot — insurance, not a requirement
 
 **Files:**
 
 - Create: `infrastructure/systemd/liquidctl-ocp.service`
 
-- [ ] **Step 0: Know why this is optional.** The HX1500i already retains single-rail OCP in onboard memory — the wipe never touches it. This unit exists solely to re-assert single-rail each boot as insurance against a stray bare `liquidctl initialize` (which resets to multi-rail by default). Skipping the whole task is a valid choice.
+- [ ] **Step 0: Know why this is optional.** The HX1500i already retains single-rail OCP in onboard memory — neither the install nor the eventual wipe touches it. This unit exists solely to re-assert single-rail each boot as insurance against a stray bare `liquidctl initialize` (which resets to multi-rail by default). Skipping the whole task is a valid choice.
 - [ ] **Step 1: Install liquidctl:** `sudo apt install -y liquidctl`.
 - [ ] **Step 2: Write the unit** (repo copy):
 
@@ -407,7 +436,77 @@ git add docker-compose.local.yml
 git commit -m "fix(migration): map host.docker.internal via host-gateway for docker-ce"
 ```
 
-### Task 4.4: Restore Postgres, then bring up the stack on identical ports
+### Task 4.4: ⛔ THE HANDOFF — quiesce Windows and take the FINAL dump
+
+**This is the moment ownership changes.** Everything before it was additive;
+after it, Linux is the sole owner of the database and Windows must not run the
+stack again without a deliberate hand-back.
+
+**Why a fresh dump, when Phase 1's backup already restored cleanly.** That one is
+a **rehearsal**, taken days or weeks ago against a _running_ stack. `pg_dump`
+snapshots at the instant it **starts**, so every row written since — posts,
+pipeline tasks, audit rows, cost logs, embeddings — exists only on the Windows
+side. Restoring the rehearsal copy would silently roll the business back to that
+date, behind a backup that looks perfectly healthy. Measured 2026-07-18:
+`audit_log` gained 86 rows in the minutes between dump and verification alone.
+
+The fix is to stop the writers _first_, so the dump has nothing to race.
+
+- [ ] **Step 1: Boot Windows.** Announce downtime — the public site stays up (Vercel + R2); this pauses only the operator pipeline.
+- [ ] **Step 2: Stop everything that writes**, leaving only Postgres running:
+
+```bash
+bash scripts/start-stack.sh down
+docker compose -f docker-compose.local.yml up -d postgres-local
+```
+
+- [ ] **Step 3: Stop the host-side writers too.** The brain daemon and the scheduled agents connect over asyncpg and keep writing even with the stack down:
+
+```powershell
+Get-ScheduledTask | Where-Object { $_.TaskName -like '*claude*' -or $_.TaskName -like '*poindexter*' } |
+  Disable-ScheduledTask
+Get-Process | Where-Object { $_.ProcessName -match 'ollama|python' } | Format-Table Id, ProcessName
+```
+
+- [ ] **Step 4: PROVE the database is quiet.** Do not take this on faith — run both twice, ~30 s apart:
+
+```bash
+docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -t -A -c \
+  "select count(*) from audit_log;"
+docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -t -A -c \
+  "select count(*) from pg_stat_activity where datname is not null and state='active' and pid <> pg_backend_pid();"
+```
+
+**Expected:** the `audit_log` count is **identical** across both runs, and active connections are `0`. If either still moves, something is still writing — find it before dumping.
+
+- [ ] **Step 5: Take the final dump** into a _separate_ directory so it can never be confused with the rehearsal copy:
+
+```bash
+bash scripts/linux/backup-precious.sh /d/migration-backup-FINAL
+```
+
+- [ ] **Step 6: Stop Windows from ever auto-starting the stack again.** This is the mechanical half of the split-brain rule — leaving it to memory is how you end up with two live databases at 1am.
+  - Docker Desktop → **Settings → General → uncheck "Start Docker Desktop when you sign in"**.
+  - Leave the scheduled tasks disabled from Step 3.
+- [ ] **Step 7: Record the owner** where both OSes can read it:
+
+```powershell
+"linux  $(Get-Date -Format o)  handoff at Task 4.4" | Out-File -Encoding utf8 D:\migration-backup\OWNER.txt
+```
+
+- [ ] **Step 8: Reboot into Pop!\_OS.** Windows' role is now rollback-only.
+- [ ] **Step 9: GATE** — ✅ only when `migration-backup-FINAL` exists, Windows cannot auto-start the stack, and `OWNER.txt` reads `linux`.
+
+### Task 4.5: Restore Postgres, then bring up the stack on identical ports
+
+> Restore from **`/d/migration-backup-FINAL`** (Task 4.4), _not_ the Phase 1
+> rehearsal copy. The NTFS partition mounts read-only or read-write from Linux —
+> read-only is safer here, you only need to read.
+>
+> **With writers stopped, restored counts must match the Windows database
+> exactly — zero drift.** Unlike the Phase 1 rehearsal, any shortfall now is a
+> real failure, not a snapshot artifact. Re-run the Task 1.3 verification and
+> compare against the Step 4 numbers before trusting the restore.
 
 - [ ] **Step 1: Start only Postgres** first: `bash scripts/start-stack.sh up -d postgres-local` (start-stack already reads `bootstrap.toml` and is Linux-native).
 - [ ] **Step 2: Restore globals + precious DBs** into the running container:
@@ -426,7 +525,7 @@ docker exec poindexter-postgres-local bash -c '
 - [ ] **Step 4: Bring up the full stack:** `bash scripts/start-stack.sh up -d`. **Expected:** all services start; `curl -s localhost:8002/api/health` → 200; `curl -s localhost:3000/api/health` (Grafana) → ok.
 - [ ] **Step 5: Verify the wedge class is gone:** hammer `localhost:5433` under churn: `for i in $(seq 1 40); do pg_isready -h localhost -p 5433 -U poindexter; done` → 40/40 accepting. (No `com.docker.backend` proxy exists to wedge.)
 
-### Task 4.5: Install host-native Ollama ×2 (systemd, GPU-pinned)
+### Task 4.6: Install host-native Ollama ×2 (systemd, GPU-pinned)
 
 **Files:**
 
@@ -509,7 +608,7 @@ git add scripts/linux/ollama-vision.sh infrastructure/systemd/ollama-primary.ser
 git commit -m "feat(migration): host-native Ollama x2 systemd units (5090 :11434 / 3090 :11435)"
 ```
 
-### Task 4.6: Tailscale + Claude-Code/Telegram autostart
+### Task 4.7: Tailscale + Claude-Code/Telegram autostart
 
 **Files:**
 
@@ -679,55 +778,115 @@ sudo ufw allow in on docker0 to any port 9100 proto tcp && sudo ufw deny 9100/tc
 - [ ] **Step 4: Reload + verify:** `curl -s localhost:9091/api/v1/targets | grep node` shows the target UP; `curl -s 'localhost:9091/api/v1/query?query=node_memory_MemAvailable_bytes'` returns data; the two host-memory rules evaluate without error.
 - [ ] **Step 5: Commit** the prometheus.yml + rule-builder changes together. **Note (fast-follow, not blocking):** any Grafana panels still querying `windows_*`/`hwinfo_*`/`aida64_*` (System Health, Hardware & Power) show NoData until re-sourced to `node_*`/`lm-sensors` — track as a follow-on issue.
 
-### Task 5.3: Delete obsolete WSL scaffolding
+### Task 5.3: Add the Linux watchdog — but do NOT delete the Windows scaffolding yet
 
 **Files:**
 
-- Delete: `scripts/idle-wsl-gpu-reset.ps1`, `scripts/register-idle-wsl-reset.ps1`, `scripts/fix-task-window-visibility.ps1`
-- Modify: `scripts/docker-watchdog.ps1` (or replace with a Linux `docker-watchdog.sh`)
+- Create: `scripts/linux/docker-watchdog.sh`
+
+> **Deletions move to Phase 7.** Windows is still the rollback path for the whole
+> evaluation. Removing its scripts now would mean a rollback lands on a Windows
+> install whose self-healing has been gutted — the exact moment you'd need it.
+
+- [ ] **Step 1: Add the Linux liveness check** (`scripts/linux/docker-watchdog.sh`): if `docker compose ps` shows the stack down, `sudo systemctl restart docker` + `start-stack.sh up -d`. No `wsl --shutdown` path — there is no VM to force-kill.
+- [ ] **Step 2: Leave `docker-watchdog.ps1`, `idle-wsl-gpu-reset.ps1`, `register-idle-wsl-reset.ps1` and `fix-task-window-visibility.ps1` in place.** They are inert on Linux and load-bearing for rollback.
+- [ ] **Step 3: Commit** the new watchdog only.
+
+---
+
+## Phase 6 — Cutover verification, then the evaluation period
+
+### Task 6.1: Cutover verification (the stack is genuinely working)
+
+- [ ] **Step 1:** `docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi -L` → both GPUs. ✅
+- [ ] **Step 2:** Kick a real content-pipeline task end-to-end; confirm the graph_def path with the writer on the 5090 and vision on the 3090 (`nvidia-smi` during the run). ✅
+- [ ] **Step 3:** `poindexter tasks list` from the host CLI + the `postgres` MCP both reach `localhost:5433` under churn — no wedge, no workaround. ✅
+
+```bash
+for i in $(seq 40); do pg_isready -h localhost -p 5433 -U poindexter; done
+```
+
+- [ ] **Step 4:** Grafana renders, alerts + brain heartbeat green, the 7 session timers listed by `systemctl list-timers`. ✅
+- [ ] **Step 5:** PSU still single-rail (spot-check `sudo liquidctl status` if available); dual-GPU load test holds temps sane. ✅
+- [ ] **Step 6:** Public site unaffected (spot-check gladlabs.io). ✅
+- [ ] **Step 7:** Both OSes still boot; `OWNER.txt` reads `linux`; Windows cannot auto-start the stack. ✅
+
+### Task 6.2: Run the evaluation (≥14 days) and actually measure it
+
+The point of dual-boot is that the migration's central claim becomes **falsifiable**. Measure it rather than forming an impression.
+
+- [ ] **Step 1: Start a dated log** at `/data/migration-eval.md`. Record the start date and the Windows baseline you're comparing against (~6 wedge events in ~3 weeks).
+- [ ] **Step 2: Check weekly** — three commands, five minutes:
+
+```bash
+# Unexpected container exits / restart loops
+docker ps -a --format '{{.Names}}\t{{.Status}}\t{{.RunningFor}}' | grep -iE 'exit|restart' || echo "none"
+
+# Kernel + service errors since boot (the Linux equivalent of the KP41 hunt)
+journalctl -p err -b --no-pager | tail -40
+
+# Pipeline health from the source of truth
+docker exec poindexter-postgres-local psql -U poindexter -d poindexter_brain -tAc \
+  "select status, count(*) from pipeline_tasks where created_at > now() - interval '7 days' group by 1 order by 2 desc;"
+```
+
+- [ ] **Step 3: Log every stability incident** with date, symptom and whether it has a Windows analogue. A Linux-specific _new_ failure class is a revert signal; a familiar one that also happened on Windows is not.
+- [ ] **Step 4: Do NOT judge on speed.** The MP600 is PCIe4 QLC vs the MP700's PCIe5, and Postgres/Docker do sustained writes — Linux will likely feel slower and **that is the drive, not the OS**. If performance ends up driving the decision, re-test with Linux on the MP700 before concluding.
+- [ ] **Step 5: At day 14, score the exit criteria** from the spec:
+  - **Commit** if all hold: zero wedge/VHDX-class incidents · pipeline at parity nightly · both GPUs stable in containers across reboots · timers/heartbeat/alerting green · no unresolved daily-driver blocker.
+  - **Revert** if any hold: a worse Linux-specific stability class · a hard hardware/driver blocker · 14 days elapsed without reaching pipeline parity.
+
+### Task 6.3: Rollback procedure (rehearse it once, early)
+
+Rollback is cheap **only if you've done it once**. Do a dry run in the first few days, while nothing is at stake.
+
+- [ ] **Step 1: On Linux, quiesce and dump** — same ceremony as Task 4.4, in reverse: stop the stack, prove the DB is quiet, `backup-precious.sh /data/handback`.
+- [ ] **Step 2: Copy the dump to the NTFS partition** so Windows can read it (mount `D:` read-write for this, then unmount cleanly).
+- [ ] **Step 3: Reboot to Windows**, restore that dump, re-enable Docker Desktop auto-start + the scheduled tasks.
+- [ ] **Step 4: Write `OWNER.txt = windows`** with a timestamp.
+- [ ] **Step 5: Verify** the pipeline runs a task end-to-end on Windows.
+- [ ] **Step 6: If this was the rehearsal, hand back to Linux** (Task 4.4 again) and note in the eval log that rollback is proven. **An unrehearsed rollback is a hope, not a plan.**
+
+---
+
+## Phase 7 — ⛔ The wipe (only after the exit criteria are met)
+
+**This is the one irreversible phase.** Do not start it before Task 6.2 Step 5 scores a commit, the Task 1.4 credential gate is ✅, and the [poindexter#889](https://github.com/Glad-Labs/poindexter/issues/889) recovery path has been proven from an unrelated machine.
+
+### Task 7.1: Final pre-wipe checks
+
+- [ ] **Step 1: Confirm the offsite backup is intact and current** — list it remotely; do not assume.
+- [ ] **Step 2: Confirm no Windows-only dependency remains unported.** Walk the Phase 5 list; anything still only on Windows either gets ported now or is consciously abandoned.
+- [ ] **Step 3: Take a final Windows-side dump** if anything at all still lives there.
+
+### Task 7.2: Decide the MP700's role, then wipe
+
+- [ ] **Step 1: Choose the end state.** Recommended: **reinstall Pop on the MP700** (PCIe5 — Postgres and Docker benefit most) and demote the MP600 to `/data`. The Phase 3 layout was designed for exactly this: `/` is small and `/data` already holds the bulk, so reinstalling root is cheap and the heavy data never moves. Alternative: keep Linux on the MP600 and make the MP700 `/data` — no reinstall, but the DB stays on the slower drive.
+- [ ] **Step 2: Wipe the MP700** and execute the chosen layout.
+- [ ] **Step 3: Re-run Task 6.1 verification** on the final configuration.
+
+### Task 7.3: Retire the obsolete WSL scaffolding
+
+Now that no rollback target exists, the deletions deferred from Task 5.3 are safe.
 
 - [ ] **Step 1: Remove the WSL-only scripts:**
 
 ```bash
-git rm scripts/idle-wsl-gpu-reset.ps1 scripts/register-idle-wsl-reset.ps1 scripts/fix-task-window-visibility.ps1
+git rm scripts/idle-wsl-gpu-reset.ps1 scripts/register-idle-wsl-reset.ps1 scripts/fix-task-window-visibility.ps1 scripts/docker-watchdog.ps1
 ```
 
-- [ ] **Step 2: Replace the watchdog** with a minimal Linux liveness check (`scripts/linux/docker-watchdog.sh`): if `docker compose ps` shows the stack down, `sudo systemctl restart docker` + `start-stack.sh up -d`; drop the `wsl --shutdown` path entirely.
-- [ ] **Step 3: Note the brain-probe retirement as a follow-on** (own PR): `docker_port_forward_probe`'s DB-wedge watch entry + `alert_events` routing are dead on bare metal — retire in a separate stack change, not the migration weekend.
-- [ ] **Step 4: Commit** the deletions + watchdog replacement.
-
----
-
-## Phase 6 — Verify + repurpose the MP600
-
-### Task 6.1: Full verification (definition of done)
-
-- [ ] **Step 1:** `docker run --rm --gpus all nvidia/cuda:12.6.0-base-ubuntu24.04 nvidia-smi -L` → both GPUs. ✅
-- [ ] **Step 2:** Kick a real content-pipeline task end-to-end; confirm it runs on the graph_def path with the writer on the 5090 and vision on the 3090 (`nvidia-smi` during the run). ✅
-- [ ] **Step 3:** `poindexter tasks list` from the host CLI + the `postgres` MCP both reach `localhost:5433` under churn — no wedge, no workaround. ✅
-- [ ] **Step 4:** Grafana dashboards render, alerts + brain heartbeat green, the 7 session timers listed by `systemctl list-timers`. ✅
-- [ ] **Step 5:** PSU still single-rail (persisted in PSU memory; spot-check `sudo liquidctl status` if available); dual-GPU load test holds temps sane. ✅
-- [ ] **Step 6:** Public site unaffected (spot-check gladlabs.io). ✅
-- [ ] **Step 7:** Every re-homed account signs in from the Linux box via the Pixel; no lockouts. ✅
-
-### Task 6.2: Repurpose the MP600 as /data
-
-- [ ] **Step 1: Confirm the offsite backup is intact** (you're about to wipe the local copy) — list it in Backblaze/R2.
-- [ ] **Step 2: Wipe + format the MP600** (ext4), add to `/etc/fstab` mounted at `/data`.
-- [ ] **Step 3: Move the Ollama model cache** to `/data/ollama/models` (matches the unit `OLLAMA_MODELS`); restart both Ollama units; confirm models resolve.
-- [ ] **Step 4: Point local backups** (`db-backup-local.sh`) at `/data/backups`.
-
-### Task 6.3: Land the migration branch
-
-- [ ] **Step 1:** Push the branch; the PR (#2682) now carries spec + plan + all repo artifacts. Mark ready-for-review.
-- [ ] **Step 2:** Merge once green (linear history). Fast-follow issues: Grafana panel re-sourcing, brain-probe retirement, remaining PowerShell utility ports.
+- [ ] **Step 2: Retire the brain's `docker_port_forward_probe`** DB-wedge watch + its `alert_events` routing — dead on bare metal. Own PR, not this one.
+- [ ] **Step 3: Drop** the `.wslconfig` balloon tuning, VHDX compaction runbooks, and the `#2239` autovacuum-stat-reset workaround from the docs.
+- [ ] **Step 4: Commit** the deletions.
 
 ---
 
 ## Self-Review
 
-**Spec coverage:** Phase 0 (live-USB gate) ✅ Task 0.x; Phase 1 backup + credential gate ✅ Task 1.x; Phase 2 fan floor ✅ 2.1; Phase 3 wipe/install/driver/OCP ✅ 3.x; Phase 4 docker-ce/restore/Ollama/Tailscale/Claude ✅ 4.x; Phase 5 timers/node_exporter/deletions ✅ 5.x; Phase 6 verify/repurpose ✅ 6.x. Honest-scope items (RAM not added; PSU OCP is OS-independent and persists in the PSU's onboard memory, so it is neither fixed nor stranded by the migration) are reflected in Phase 0.3 + Task 3.3. All 7 DoD criteria map to Task 6.1.
+**Spec coverage:** Phase 0 live-USB gate ✅ 0.x; Phase 1 backup (done) + credential gate + #889 recovery ✅ 1.x; Phase 2 fan floor ✅ 2.1; Phase 3 pre-flight/shrink/custom-install/both-boot gate/RTC/driver/OCP ✅ 3.1–3.7; Phase 4 docker-ce/restore/**handoff**/Ollama/Tailscale ✅ 4.1–4.7; Phase 5 timers/node_exporter/watchdog ✅ 5.x; Phase 6 cutover verification + measured evaluation + rehearsed rollback ✅ 6.1–6.3; Phase 7 wipe + deferred deletions ✅ 7.x. The spec's three governing rules each have an enforcing step: one-owner (4.4 Steps 6–7), two-device backup rule (3.1 Step 1), Fast Startup (3.1 Steps 2–3). The drive-speed confound is guarded in 6.2 Step 4 so it cannot silently decide the verdict.
 
-**Placeholder scan:** No TBD/TODO. Hardware-specific outputs are described as verification expectations (e.g. "two rows", "40/40 accepting") rather than fabricated exact strings — correct for an ops runbook. The one genuinely deferred item (Grafana panel re-sourcing) is explicitly a non-blocking fast-follow, not a hidden gap.
+**Placeholder scan:** No TBD/TODO. Hardware-specific outputs are stated as verification expectations ("two rows", "40/40 accepting", "identical across both runs") rather than fabricated exact strings — correct for an ops runbook. Deferred items (Grafana panel re-sourcing, brain-probe retirement) are explicitly non-blocking fast-follows, not hidden gaps.
 
-**Consistency:** Ports `11434`/`11435`, GPU index 0=5090/1=3090, `/data/ollama/models`, and `host.docker.internal:host-gateway` are used consistently across Tasks 4.3–4.5, 5.2, and 6.2. The `0.0.0.0`-bind rule (Global Constraints) is applied in every host-service task (Ollama 4.5, node_exporter 5.2).
+**Consistency:** Ports `11434`/`11435`, GPU 0=5090/1=3090, `/data/ollama/models`, and `host.docker.internal:host-gateway` are used consistently across 4.3–4.6, 5.2 and 6.1. The `0.0.0.0`-bind rule is applied in every host-service task (Ollama 4.6, node_exporter 5.2). `migration-backup-FINAL` names the same artifact in 4.4 and 4.5; `OWNER.txt` is written in 4.4 and checked in 6.1/6.3.
+
+**Reversibility audit** (the property this rewrite exists to protect): Phases 0–2 touch nothing. Phase 3 touches only the MP600, after 3.1 guarantees it holds no sole copy, and gates on both OSes booting. Phases 4–6 are undone by reboot + restore, rehearsed in 6.3. **Phase 7 is the only step that cannot be undone**, and it is gated on measured evidence rather than intent.
