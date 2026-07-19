@@ -9,7 +9,8 @@
 > - **Phase 0 — Live-USB validation: ✅ COMPLETE = GO** (verified 2026-07-19, live demo session, **no drive written**). UEFI ✅ · both GPUs 5090+3090 on driver 595.84 ✅ · display 3440×1440 ✅ · drives MP600=`nvme1n1` / MP700=`nvme0n1` ✅ · network 0% loss ✅ · PSU single-rail ✅. The Blackwell-5090 NO-GO risk is closed.
 > - **Where the operator is now:** back on **Windows**, working Phase 1 → the pre-Phase-3 gate.
 > - **Next actions (Windows, in order):** (1) refresh backup (`backup-precious.sh /d/migration-backup`); (2) **G4** push the _full_ backup offsite; (3) **G3** two-device copy to `C:`; (4) **G5** `powercfg /hibernate off` + full shutdown; (5) **Phase 2** BIOS fan floor.
-> - **⛔ PRE-PHASE-3 GATE state** (see the block at the top of Phase 3): G1 ✅ · G2 ✅ (rehearsal restore) · **G3 ⬜ · G4 ⬜ · G5 ⬜**. **Do NOT begin Phase 3 (the MP600 shrink — the first destructive write) until G3+G4+G5 are all ✅.**
+> - **⛔ PRE-PHASE-3 GATE state** (see the block at the top of Phase 3): G1 ✅ · G2 ✅ (rehearsal restore) · **G3 ✅ · G4 ✅ (both 2026-07-19) · G5 ⬜**. **Only G5 remains** — `powercfg /hibernate off`, verify with `powercfg /a`, then one full shutdown. Do NOT begin the MP600 shrink until it is ✅.
+> - **⚠️ `globals.sql` is secret-bearing.** `pg_dumpall --globals-only` emits `ALTER ROLE … SET "poindexter.secret_key" TO '<master key>'` plus the SCRAM password hash in plaintext. Handle it exactly like `bootstrap.toml` — never commit, never print, never paste. When verifying it, stream to a hash rather than to a file or the terminal.
 > - **#889 recovery-secret proof (Task 1.4 Step 5) is a Phase 7 (wipe) gate, not Phase 3** — do it early, but it does not block the install.
 > - **⚠️ Handoff / provenance:** this progress lives in _this file's_ checkboxes + dated notes. The commits are on branch **`claude/linux-pop-os-migration-l78vxj` (PR #2718)**, not yet on `main` — a local session must check out that branch (or merge the PR) to see current state. When you complete a step, tick its box here so the next session inherits accurate state.
 
@@ -373,7 +374,17 @@ point back at the tasks that own each item — do them there, tick them here.)
 - [ ] **G1 — Phase 0 = GO.** Both GPUs ✅ (verified 2026-07-19, driver 595.84), display at native 3440×1440 ✅ (Task 0.2 Step 4), `ping -c3 1.1.1.1` 0% loss ✅ (Task 0.2 Step 6). The GPU + drive + UEFI checks are already recorded; **display and network are the two still open** — close them first.
 - [ ] **G2 — Test-restore passed (Task 1.3).** `pg_restore rc=0` on `poindexter_brain`, extensions functional (768-dim KNN returns rows), row counts match the live baseline. A backup that has never been restored is not a backup.
 - [x] **G3 — Two-device rule (Task 3.1 Step 1). ✅ DONE 2026-07-19.** `C:\migration-backup-copy` on the MP700 holds 2.64 GB: both dump sets (`pg-20260718-full` — the complete 7-file set incl. `glitchtip.dump`; `pg-20260719-fresh` — newer but incomplete), the 36 `~/.poindexter` top-level config/secret files, and `~/.claude` (1053 memory `.md` files). **`bootstrap.toml` and `poindexter_brain.dump` both hash-verified against source.** Deliberately excludes the ~60 GB of regenerable bulk (superseded local DB backups, generated images, video, podcast, logs) — copying those would turn a 2 GB safety copy into an hour-long transfer that protects nothing.
-- [ ] **G4 — Full migration backup pushed offsite (Task 1.2 Step 3).** The nightly offsite job streams **`poindexter_brain` only** (verified in `scripts/backup-offsite/run.sh`). The other 4 databases, all volumes, `bootstrap.toml`, and `~/.claude` memory exist on the MP600 copy **alone** until this push. **Confirm the remote listing** afterwards — do not assume the upload succeeded.
+- [x] **G4 — Full migration backup pushed offsite. ✅ DONE 2026-07-19.** Three snapshots in B2, all confirmed present:
+
+  | Snapshot   | Tier             | Size     | Verification                                                                                                                       |
+  | ---------- | ---------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------- |
+  | `3028292b` | `precious`       | 2.64 GB  | **round-trip verified** — `bootstrap.toml` + `poindexter_brain.dump` pulled back out of B2 and hashed **byte-identical** to source |
+  | `6e71efdb` | `volumes-small`  | 117 MB   | listed                                                                                                                             |
+  | `c9b4eadf` | `volumes-traces` | 10.45 GB | size verified byte-exact (11,223,284,433 B)                                                                                        |
+
+  Measured throughput ≈ 8.5 MB/s on many small files, ≈ 27 MB/s on one large one (per-file overhead dominates the small-file case). Total ≈ 12 min.
+
+  > **Verify by restoring, not by listing.** A snapshot appearing in `restic snapshots` proves an upload happened, not that the bytes come back. Stream a file out and hash it: `restic -r <repo> dump <snap> <path> | sha256sum`, compared against the source hash. Streaming to a hash also avoids writing a secret-bearing file (`bootstrap.toml`, `globals.sql`) to disk just to check it.
 
   **How to push without handling any secret** (the mechanism matters — the restic password and B2 keys must never pass through a human or an agent): the running `poindexter-backup-offsite` container **already holds the credentials in its environment** and already bind-mounts `~/.poindexter/backups/auto` → `/backups`. So stage into that host directory and drive restic through `docker exec`; the container supplies its own credentials.
 
