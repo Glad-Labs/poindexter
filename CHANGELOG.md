@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.106.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.106.1...v0.106.2) (2026-07-19)
+
+
+### Bug Fixes
+
+* **migration:** close a silent data-loss gap in the Pop!_OS cutover + correct backup-precious.sh against the live stack ([#2712](https://github.com/Glad-Labs/glad-labs-stack/issues/2712)) ([98dc177](https://github.com/Glad-Labs/glad-labs-stack/commit/98dc1773f59068bfde0cebfcc34aa084370bd199))
+
 ## [0.106.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.106.0...v0.106.1) (2026-07-18)
 
 
