@@ -340,6 +340,28 @@ copy of anything first. If anything here goes wrong, Windows still boots.
 
 **Do not start unless Phase 0 = GO and Task 1.3's test-restore passed.**
 
+### ⛔ PRE-PHASE-3 GATE — data safety before the first destructive write
+
+Phase 3 is where the drive edits begin. Every box below must be ✅ **before**
+Task 3.2 shrinks the MP600 — this is the last checkpoint where the backup is
+still on a drive you are about to resize. Do not treat these as advisory; they
+are the difference between "reversible" and "sole copy destroyed." (References
+point back at the tasks that own each item — do them there, tick them here.)
+
+- [ ] **G1 — Phase 0 = GO.** Both GPUs ✅ (verified 2026-07-19, driver 595.84), display at native 3440×1440 ✅ (Task 0.2 Step 4), `ping -c3 1.1.1.1` 0% loss ✅ (Task 0.2 Step 6). The GPU + drive + UEFI checks are already recorded; **display and network are the two still open** — close them first.
+- [ ] **G2 — Test-restore passed (Task 1.3).** `pg_restore rc=0` on `poindexter_brain`, extensions functional (768-dim KNN returns rows), row counts match the live baseline. A backup that has never been restored is not a backup.
+- [ ] **G3 — Two-device rule (Task 3.1 Step 1).** The precious tier (~428 MB dumps + ~2 GB config) lives on **two devices that are NOT the MP600** — e.g. the MP700 `C:` copy **and** offsite. `bootstrap.toml` + `poindexter_brain.dump` confirmed readable in both.
+- [ ] **G4 — Full migration backup pushed offsite (Task 1.2 Step 3).** The nightly offsite job streams **`poindexter_brain` only** (verified in `scripts/backup-offsite/run.sh`). The other 4 databases, all volumes, `bootstrap.toml`, and `~/.claude` memory exist on the MP600 copy **alone** until this push. Copy them to Backblaze/R2 and **confirm the remote listing shows the same files and sizes** — do not assume the upload succeeded.
+- [ ] **G5 — Fast Startup disabled (Task 3.1 Step 2–3).** `powercfg /hibernate off`, verified with `powercfg /a`, then a **full shutdown** (not restart). A Linux read-write mount of a hibernated NTFS partition can corrupt it — backup included.
+
+> **Not on this gate, on purpose — #889 recovery secrets (Task 1.4 Step 5).** Stashing
+> the four recovery secrets off-machine and proving `restic snapshots` from an
+> unrelated box is a **Phase 7 (wipe) gate**, not a Phase 3 one — Phase 3 keeps
+> Windows fully bootable as rollback, so the offsite repo being openable isn't yet
+> load-bearing. Do it early anyway (it's cheap and manual), but it does not block
+> the shrink. **G4 above is the Phase-3-blocking half of the backup story; Task 1.4
+> Step 5 is the Phase-7-blocking half.**
+
 ### Task 3.1: Windows pre-flight (do both — each prevents a different disaster)
 
 - [ ] **Step 1: Satisfy the two-device rule.** The MP600 currently holds the plain-dump backup, and you are about to resize it. Get the precious tier onto two devices that are **not** the MP600. It is small — ~428 MB of dumps plus ~2 GB of config:
