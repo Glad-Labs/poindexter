@@ -27,6 +27,7 @@
   - Host services containers must reach (Ollama, node_exporter) **bind `0.0.0.0`, not `127.0.0.1`** — a loopback bind is unreachable from the docker bridge. Gate external access with `ufw` instead.
 - **GPU indexing:** `nvidia-smi -i 0` = RTX 5090, `-i 1` = RTX 3090. Pin by **UUID** with `CUDA_DEVICE_ORDER=PCI_BUS_ID` (a bare numeric index is unreliable).
 - **WSL2 volumes are unreachable from Linux** — they live inside a VHDX (ext4 in a VM disk). Data moves via **dumps**, never file copies. The NTFS `D:` partition _is_ readable from Linux, so it is the handoff channel; no USB shuttle needed.
+- **Secure Boot is OFF for the whole dual-boot period.** Pop!\_OS ships no Secure-Boot-signed shim, and its current build's bootloader is on Microsoft's revocation list — so Secure Boot on means a "Security Violation" screen instead of a boot menu. Windows 11 boots fine without it (it is an _installation_ requirement, not a runtime one), but treat this as a real, semi-permanent change to the machine's security posture rather than a toggle. Always **check BitLocker before changing it** (Task 0.1 Step 5) — the PCR shift triggers recovery-key prompts.
 - **Repo lives at** `~/glad-labs-website` (clone fresh); deploy checkout + worktree roots re-created under `~/.poindexter/`.
 - **Shipped `systemd` units are generic templates** (`User=poindexter`, `/home/poindexter/…`, for public-mirror hygiene). Either set `User=mattm` + the `/home/mattm/…` paths in each unit, or run the stack under a dedicated `poindexter` login. The `scripts/linux/*.sh` are `$HOME`-relative and need no edit.
 - **Nothing here is irreversible until Phase 7.** Through Phase 6, rollback is: reboot to Windows, restore the retained final dump, flip `OWNER.txt`.
@@ -63,18 +64,69 @@ No drive is touched. Proves the hardware runs Pop!\_OS before anything destructi
 > Pop!\_OS ships a hybrid ISO. ISO mode produces a stick that _looks_ written and
 > then will not boot — the single most common way this step fails.
 
-- [ ] **Step 4: Verify the ISO checksum** against the SHA-256 published on the download page. **Expected:** match. (Do this against the downloaded `.iso`, before or after flashing — it validates the download, not the stick.)
-- [ ] **Step 5: Keep this stick.** On a dual-boot machine it is your **rescue media**, not disposable installer media — it is what you boot if an EFI entry lands wrong or a bootloader needs repair. (A Ventoy stick, which holds multiple ISOs, is a nice follow-up afterwards — but don't add that abstraction layer during the migration itself.)
+> **⚠️ Rufus will warn "Revoked UEFI bootloader detected." This is expected — click OK.**
+> Rufus checks the ISO's bootloader against Microsoft's DBX revocation list, and the
+> GRUB2/shim revocations from the BootHole CVE family invalidated most distro
+> bootloaders. It means the shim is **older than the revocation list**, not that the
+> ISO is malicious. Rufus suggests "find a more up-to-date version" — on Pop!\_OS that
+> is a **dead end**: build 26 is current and still ships a pre-revocation shim.
+> Disabling Secure Boot (Step 6) is the path, not a workaround.
+
+- [ ] **Step 4: Verify the ISO checksum** — this, not the Rufus warning, is what distinguishes "old bootloader" from "tampered download":
+
+```powershell
+Get-FileHash -Algorithm SHA256 "$env:USERPROFILE\Downloads\pop-os_24.04_amd64_nvidia_26.iso"
+```
+
+Compare against System76's published value. The API serves it directly, no scraping:
+`https://api.pop-os.org/builds/24.04/nvidia` → `sha_sum`.
+
+**Verified 2026-07-18** — build 26 matched byte-for-byte:
+`6ba3e68cc2f96d133b2dab8ec04d852d8089888dfcb6d9e68fb6a70aab0d3776`
+
+- [ ] **Step 5: Check BitLocker BEFORE touching firmware settings** (elevated PowerShell):
+
+```powershell
+Get-BitLockerVolume | Select-Object MountPoint, VolumeStatus, ProtectionStatus
+```
+
+**Why this comes first:** changing Secure Boot alters the TPM's PCR measurements, and BitLocker reads that as tampering — it will demand the 48-digit recovery key on the next Windows boot. Locking yourself out of Windows _precisely as it becomes the rollback path_ is the worst possible timing.
+
+- If `ProtectionStatus` is **On**: `Suspend-BitLocker -MountPoint "C:" -RebootCount 0` first, retrieve the recovery key (account.microsoft.com/devices/recoverykey), and `Resume-BitLocker` once Windows is confirmed booting after the BIOS change.
+- If **Off**: nothing to do. _(Verified Off on this machine 2026-07-19.)_
+
+- [ ] **Step 6: Disable Secure Boot** (BIOS → Del). System76 does not ship a Secure-Boot-signed shim; with it enabled you get a "Security Violation" screen instead of a boot menu.
+
+> **This is a standing change, not a temporary toggle.** Secure Boot stays **off for the
+> entire dual-boot period**, because you will be booting Pop daily. Windows 11 boots
+> fine without it — Secure Boot is an _installation_ requirement, not a runtime one —
+> but this is a real change to the machine's security posture. Restoring it after
+> committing to Linux is a MOK-enrollment exercise, not a checkbox.
+
+- [ ] **Step 7: Keep this stick.** On a dual-boot machine it is your **rescue media**, not disposable installer media — it is what you boot if an EFI entry lands wrong or a bootloader needs repair. (A Ventoy stick, which holds multiple ISOs, is a nice follow-up afterwards — but don't add that abstraction layer during the migration itself.)
 
 ### Task 0.2: Boot the live session and validate core hardware
 
-- [ ] **Step 1: Boot the USB** (F8/F11 boot menu → the USB device) into "Try Demo Mode" — **do not** click Install.
-- [ ] **Step 2: Verify both GPUs enumerate.** Open a terminal, run:
+- [ ] **Step 1: Boot the USB.** F8 (ASUS boot menu) → **pick the entry prefixed `UEFI:`**. There are usually two entries for the same stick; the non-UEFI one boots legacy/CSM. At the Pop menu choose **Try Demo Mode** — do **not** click Install.
+- [ ] **Step 2: Confirm you actually booted UEFI — do this first.** Everything downstream assumes it, and getting it wrong stays silent until it breaks dual-boot much later:
+
+```bash
+ls /sys/firmware/efi >/dev/null 2>&1 && echo "UEFI ✓" || echo "LEGACY — reboot via the UEFI: entry"
+```
+
+**Expected:** `UEFI ✓`. If it reports LEGACY, reboot and pick the `UEFI:` entry — a legacy install cannot cleanly dual-boot against a UEFI Windows, and Phase 3's separate-ESP design depends on it.
+
+- [ ] **Step 3: Verify both GPUs enumerate — this is the real gate:**
       `nvidia-smi --query-gpu=index,name,memory.total,driver_version --format=csv`
-      **Expected:** two rows — `0, NVIDIA GeForce RTX 5090, 32607 MiB, <ver>` and `1, NVIDIA GeForce RTX 3090, 24576 MiB, <ver>`. If either GPU is missing or `nvidia-smi` errors → **NO-GO** (driver gap; note the version, stop).
-- [ ] **Step 3: Verify the display** runs the Acer ultrawide at native res: `xrandr | grep '\*'` (or COSMIC display settings) → expect `3440x1440`.
-- [ ] **Step 4: Verify both NVMe drives are seen:** `lsblk -d -o NAME,MODEL,SIZE` → expect the MP700 and MP600 both listed at ~2 TB.
-- [ ] **Step 5: Verify network** (Ethernet or Wi-Fi): `ping -c3 1.1.1.1` → expect 0% loss.
+      **Expected:** two rows — `0, NVIDIA GeForce RTX 5090, 32607 MiB, <ver>` and `1, NVIDIA GeForce RTX 3090, 24576 MiB, <ver>`.
+      **If only the 3090 appears, that is the Blackwell driver gap** — note the driver version and stop. NO-GO. If `nvidia-smi` is missing or errors entirely, same verdict.
+      _If the live session boots to a **black screen**, that is a signal rather than a dead end: retry with Pop's **safe graphics** option. Reaching a desktop only in safe graphics means the shipped driver cannot drive the 5090 — treat it as the same NO-GO._
+- [ ] **Step 4: Verify the display** runs the Acer ultrawide at native `3440x1440`.
+      **Read it from COSMIC → Settings → Displays.** COSMIC on 24.04 is **Wayland**, so `xrandr` either fails or reports XWayland's view rather than the truth — do not trust it here.
+- [ ] **Step 5: Verify both NVMe drives are seen — and record which is which:**
+      `lsblk -d -o NAME,MODEL,SIZE` → expect two ~1.8T devices, one MP700 and one MP600.
+      **Write down the `nvme?n1` → model mapping.** Phase 3 partitions the **MP600** specifically; confusing the two there is the expensive mistake, and Linux device order need not match Windows' Disk 0/Disk 1 numbering.
+- [ ] **Step 6: Verify network** (Ethernet or Wi-Fi): `ping -c3 1.1.1.1` → expect 0% loss.
 
 ### Task 0.3: Confirm PSU visibility on Linux (informational — NOT a gate)
 
