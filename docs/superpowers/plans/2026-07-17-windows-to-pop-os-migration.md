@@ -1001,7 +1001,7 @@ sudo ufw allow in on docker0 to any port 9100 proto tcp && sudo ufw deny 9100/tc
 **Files:**
 
 - Modify: `scripts/dr-backup/run-backup.sh`, `run-hourly-pg.sh` (**in the repo as of PR #2725**)
-- Create: `infrastructure/systemd/poindexter-dr-backup.{service,timer}`, `poindexter-dr-backup-hourly.{service,timer}`
+- ~~Create~~ **✅ Committed:** `infrastructure/systemd/poindexter-dr-backup.{service,timer}`, `poindexter-dr-backup-hourly.{service,timer}` — the four units exist, shipping the same generic `poindexter` / `/home/poindexter` / `/mnt/dr-usb` placeholders as the other units. They pass `DR_RESTIC_BIN=restic` + `DR_BACKUP_REPO`/`DR_BACKUP_MOUNT` via `Environment=` and gate on `RequiresMountsFor=` so a timer never fires against an unmounted USB. **Edit the three placeholders per box before installing** (and put `User=` in the `docker` group — the scripts `docker exec` for the pg_dump).
 
 - [x] **Step 1: Get the scripts into the repo before the wipe. ✅ DONE 2026-07-19 (PR #2725).** They previously existed only on the operator's box and inside the backups they produce — so total loss meant recovering the tooling from a restic repo whose passphrase those same scripts are what reads. Now committed at `scripts/dr-backup/`, de-identified and parameterised. **The operator-local copies at `~/.poindexter/scripts/dr-backup/` are still what actually runs** — the repo copy is behaviour-identical but nothing repoints the scheduled tasks at it. Reconciling that is Step 2.
 - [ ] **Step 2: Point the Linux timers at the repo copy — no code edits needed.** The committed scripts already resolve every path from `$HOME` plus env overrides, so porting is configuration, not modification:
@@ -1015,7 +1015,14 @@ sudo ufw allow in on docker0 to any port 9100 proto tcp && sudo ufw deny 9100/tc
 
   Prefer a UUID-keyed `/etc/fstab` mountpoint over `/media/$USER/…` — a systemd timer must not depend on a desktop session having automounted the drive. Note the `MSYS_NO_PATHCONV` guard in `backup-precious.sh` is a **no-op on Linux and should stay**; it is conditional on `$MSYSTEM`.
 
-- [ ] **Step 3: Create the timers** — daily 03:00 (`dr-daily`) and hourly (`pg-hourly`), matching current cadence. Use `Persistent=true` so a missed run fires on next boot; Task Scheduler did this implicitly and systemd does not by default.
+- [ ] **Step 3: Install the timers** — the four units are committed (daily 03:00 → `dr-daily`, hourly → `pg-hourly`, both `Persistent=true` so a missed run fires on next boot). After editing the `User=` / ExecStart path / `DR_*` + `RequiresMountsFor` placeholders:
+
+```bash
+sudo cp infrastructure/systemd/poindexter-dr-backup*.{service,timer} /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now poindexter-dr-backup.timer poindexter-dr-backup-hourly.timer
+systemctl list-timers 'poindexter-dr-backup*'   # confirm both show a next-fire time
+```
 - [ ] **Step 4: Verify by _reading back_, not by exit code.** `restic -r <repo> snapshots --tag dr-daily` should show a new snapshot, and `restic dump <snap> <…/bootstrap.toml> | head -1` should return content. A job that exits 0 having archived nothing is the failure mode this whole plan keeps rediscovering.
 - [ ] **Step 5: Disable the Windows tasks only after the Linux timers have produced a verified snapshot** — and note that **both OSes writing the same restic repo is fine** (restic locks), but both running the _hourly PG dump_ means two OSes touching the database, which the one-OS-owns-the-DB rule forbids. Disable the Windows pair at the same handoff as the stack (Task 4.4), not before and not after.
 

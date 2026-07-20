@@ -1,0 +1,12 @@
+# Fires poindexter-dr-backup-hourly.service every hour on the hour (matches the
+# Windows GladLabs-DR-Backup-Hourly cadence). Persistent=true runs a missed
+# snapshot on the next boot rather than skipping the window.
+[Unit]
+Description=Timer for the Glad Labs hourly DR pg snapshot
+
+[Timer]
+OnCalendar=hourly
+Persistent=true
+
+[Install]
+WantedBy=timers.target

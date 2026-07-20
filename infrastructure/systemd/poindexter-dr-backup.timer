@@ -1,0 +1,13 @@
+# Fires poindexter-dr-backup.service daily at 03:00 (matches the Windows
+# GladLabs-DR-Backup cadence). OnCalendar is evaluated in the host timezone —
+# set that to operator_timezone. Persistent=true runs a missed backup on the
+# next boot (Task Scheduler did this implicitly; systemd does not by default).
+[Unit]
+Description=Timer for the Glad Labs daily DR backup
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

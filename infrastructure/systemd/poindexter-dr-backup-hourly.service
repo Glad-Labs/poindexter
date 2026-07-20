@@ -1,0 +1,26 @@
+# Glad Labs DR backup — HOURLY poindexter_brain pg_dump into the restic USB repo
+# (tag `pg-hourly`, keep-last 24). Linux port of the Windows
+# `GladLabs-DR-Backup-Hourly` Task Scheduler job (Task 5.4).
+#
+# Same operator edits as poindexter-dr-backup.service (User in the `docker`
+# group, ExecStart path, DR_* env, RequiresMountsFor). The script exits 0 and
+# skips cleanly when postgres-local is down for planned maintenance, so a paused
+# stack does not page.
+#
+# ⛔ One-OS-owns-the-DB: this dumps the live database every hour. Do NOT run it
+# on Linux and Windows at the same time — disable the Windows hourly task at the
+# Task 4.4 handoff, not before and not after (Task 5.4 Step 5).
+# Triggered by poindexter-dr-backup-hourly.timer — no [Install] section here.
+[Unit]
+Description=Glad Labs DR backup (hourly poindexter_brain pg_dump -> restic USB repo)
+After=docker.service network-online.target
+Wants=network-online.target
+RequiresMountsFor=/mnt/dr-usb
+
+[Service]
+Type=oneshot
+User=poindexter
+Environment=DR_RESTIC_BIN=restic
+Environment=DR_BACKUP_REPO=/mnt/dr-usb/poindexter-backup
+Environment=DR_BACKUP_MOUNT=/mnt/dr-usb/poindexter-backup
+ExecStart=/home/poindexter/glad-labs-website/scripts/dr-backup/run-hourly-pg.sh
