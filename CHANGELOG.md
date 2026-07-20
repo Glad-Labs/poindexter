@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+## [0.107.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.106.2...v0.107.0) (2026-07-20)
+
+
+### Features
+
+* **backup:** commit the DR backup scripts — they existed only on one machine ([#2725](https://github.com/Glad-Labs/glad-labs-stack/issues/2725)) ([2f7ca49](https://github.com/Glad-Labs/glad-labs-stack/commit/2f7ca497ccf61cfd11ab974499591f34f99f3ddd))
+* **migration:** add the Task 5.4 DR-backup systemd units ([237ef76](https://github.com/Glad-Labs/glad-labs-stack/commit/237ef765d000e0e28a8c2a3120f2f40ff2f9d0a4))
+* **migration:** add the Task 5.4 DR-backup systemd units ([2b45f0e](https://github.com/Glad-Labs/glad-labs-stack/commit/2b45f0eb0abec9103c584254ba2b8ed77d87520f))
+
+
+### Bug Fixes
+
+* **backup:** the volume size assertion was a no-op — assert on file count ([#2723](https://github.com/Glad-Labs/glad-labs-stack/issues/2723)) ([6e86c37](https://github.com/Glad-Labs/glad-labs-stack/commit/6e86c371f7be3dc94d091e631c830dee46cab60b))
+* **migration:** backup-precious.sh silently backed up zero volumes on Git Bash ([#2719](https://github.com/Glad-Labs/glad-labs-stack/issues/2719)) ([b442ef6](https://github.com/Glad-Labs/glad-labs-stack/commit/b442ef69c9de44fd5f2a7d73877a187bcce4731d))
+
 ## [0.106.2](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.106.1...v0.106.2) (2026-07-19)
 
 
