@@ -110,17 +110,36 @@ for vol in "${VOLS[@]}"; do
   #
   # --warning=no-file-changed: live services mutate files mid-read. Expected for
   # observability data, not a failure — but real errors still surface, and the
-  # size assertion below is what actually decides whether we trust the artifact.
+  # assertion below is what actually decides whether we trust the artifact.
+  #
+  # Count the volume's real files BEFORE tarring. This is the only way to tell
+  # "this volume is genuinely empty" from "the mount failed and we archived
+  # nothing" — a size threshold cannot separate those two, and both produce a
+  # valid, tiny gzip. That ambiguity is the documented failure mode in
+  # Glad-Labs/poindexter#890 (three 0-byte tarballs sat undetected since May).
+  src_files=$(dk run --rm -v "$vol:/v:ro" alpine \
+                sh -c 'find /v -type f 2>/dev/null | wc -l' 2>/dev/null | tr -cd '0-9')
   if dk run --rm -v "$vol:/v:ro" alpine \
        tar czf - --warning=no-file-changed -C /v . > "$OUT/volumes/$vol.tar.gz"; then
     sz=$(du -m "$OUT/volumes/$vol.tar.gz" 2>/dev/null | cut -f1)
-    # A tar of an empty/failed mount still yields a valid ~0 MB gzip, so size is
-    # the check that catches a silent miss.
-    if [ "${sz:-0}" -ge 1 ]; then
-      echo "  - $vol (${sz} MB)"
-    else
-      echo "  ! $vol — produced ${sz:-0} MB. Treat as FAILED, not as an empty volume."
+    # Non-directory entries actually inside the archive.
+    tar_files=$(tar -tzf "$OUT/volumes/$vol.tar.gz" 2>/dev/null | grep -cv '/$' || true)
+    # NOT a megabyte floor. Real volumes are legitimately tiny — measured on a
+    # live stack, gladlabs-pgadmin-data is 17 KB (11 session files) and
+    # gladlabs-postiz-uploads is 27 KB (2 images). An earlier revision of this
+    # script asserted ">= 1 MB" and would have failed both of those valid
+    # archives while still passing anything that happened to exceed the floor.
+    # File count is the signal that actually distinguishes captured from missed.
+    if [ -z "${src_files}" ]; then
+      echo "  ? $vol (${sz:-0} MB, ${tar_files} files) — could not count source files; verify by hand"
       fail=1
+    elif [ "${src_files}" -eq 0 ] && [ "${tar_files}" -eq 0 ]; then
+      echo "  - $vol — volume is genuinely EMPTY (0 files at source). Archive is correct."
+    elif [ "${tar_files}" -eq 0 ]; then
+      echo "  ! $vol — source has ${src_files} files but the archive has NONE. FAILED, not empty."
+      fail=1
+    else
+      echo "  - $vol (${sz:-0} MB, ${tar_files}/${src_files} files)"
     fi
   else
     echo "  ! $vol — tar reported an error, inspect before trusting this artifact"
