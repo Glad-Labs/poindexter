@@ -49,7 +49,7 @@ except ImportError:
 # explicitly documents the standards contract and guarantees `traceparent`
 # injection across HTTP/process boundaries — the seam that lets an adopter's
 # own OTLP collector stitch our spans into one distributed trace
-# (Glad-Labs/glad-labs-stack#1997).
+# (Glad-Labs/poindexter#1997).
 try:
     from opentelemetry.propagate import set_global_textmap  # type: ignore
     from opentelemetry.trace.propagation.tracecontext import (  # type: ignore
@@ -188,7 +188,7 @@ def setup_telemetry(app, site_config=None, service_name="cofounder-agent"):
         # contract first-class and guarantees `traceparent` is injected on
         # every outbound carrier — the seam that lets a downstream service
         # (or an adopter's own OTLP backend) join our spans into one trace
-        # (Glad-Labs/glad-labs-stack#1997).
+        # (Glad-Labs/poindexter#1997).
         if set_global_textmap is not None and TraceContextTextMapPropagator is not None:
             try:
                 set_global_textmap(TraceContextTextMapPropagator())
