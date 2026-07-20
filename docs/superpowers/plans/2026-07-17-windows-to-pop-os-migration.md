@@ -334,15 +334,63 @@ Verified state: `offsite_backup_enabled=true`, streaming a fresh `pg_dump` of
 Lose the MP700 **and** the MP600 and every copy of the key is gone, leaving a
 verified daily backup that no one can decrypt.
 
-- [ ] **Step 5a: Put the recovery secrets somewhere outside both the machine and the bucket.** At minimum `offsite_backup_restic_password`, `offsite_backup_s3_access_key_id`, `offsite_backup_s3_secret_access_key`, and `poindexter_secret_key` → the Pixel's password manager (which Step 3 already re-homes) and/or printed and stored offline. **Matt only — do not automate this.**
-- [ ] **Step 5b: Prove it independently.** From a machine with _no_ access to this box, use only those stored secrets to run `restic -r <repo> snapshots` and confirm the latest snapshot lists. An untested recovery path is not a recovery path.
-- [ ] **Step 5c: GATE** — ✅ only when 5b has actually listed a snapshot.
+> **✅ UPDATE 2026-07-19 — the repo is now self-sufficient, so the kit shrank to
+> THREE secrets.** The G4 `precious` push put **`bootstrap.toml` inside the B2
+> repo** (round-trip verified). Before that, the repo held only
+> `poindexter_brain.dump`, so even a successful open yielded a database whose
+> `app_settings` secrets were encrypted with a key that existed nowhere else —
+> partial, undecryptable recovery. Now the repo carries the master key itself,
+> so opening it returns everything. **`poindexter_secret_key` no longer needs to
+> be stored separately** — it is recoverable _from_ `bootstrap.toml` once the
+> repo opens. The cycle is now **breakable but not yet broken**: the three
+> opening secrets still live only on this machine.
 
-> **Scope note for the migration backup.** The nightly offsite job covers
-> `poindexter_brain` **only**. `bootstrap.toml`, `~/.claude` memory, the other
-> four databases, and every volume exist on the MP600 copy **alone** until
-> Task 1.2 Step 3 pushes them. Treat "the offsite backup is running" as covering
-> one database, not the migration.
+**The recovery kit — three secrets plus one non-secret string:**
+
+| Value                   | Secret? | Where it lives today                              |
+| ----------------------- | ------- | ------------------------------------------------- |
+| repo URL                | no      | `app_settings.offsite_backup_repository`          |
+| `RESTIC_PASSWORD`       | yes     | `.poindexter-backup-offsite.env` (379 B, 3 lines) |
+| `AWS_ACCESS_KEY_ID`     | yes     | same file                                         |
+| `AWS_SECRET_ACCESS_KEY` | yes     | same file                                         |
+
+- [ ] **Step 5a: Put those three secrets outside both the machine and the bucket** — the Pixel's password manager (which Step 3 already re-homes) and/or printed and stored offline. **Matt only — do not automate, and do not let an agent read them.**
+- [ ] **Step 5b: Prove it from hardware with no access to this box.** Two assertions, and the second is the one that matters:
+
+```bash
+export RESTIC_PASSWORD=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
+restic -r <repo-url> snapshots                                   # 1. can you open it at all?
+restic -r <repo-url> dump <snap> <…/config/dot-poindexter/bootstrap.toml> | head -1
+                                                                 # 2. is the kit itself inside?
+```
+
+Assertion 2 proves the repo is **self-sufficient**, not merely readable — that opening it hands back the master key and every service credential.
+
+- [ ] **Step 5c: GATE** — ✅ only when 5b has actually returned a line of `bootstrap.toml` on foreign hardware.
+
+> **⚠️ Verification that does NOT count.** Streaming a file back with
+> `docker exec <backup-container> restic … dump …` proves the stored bytes are
+> intact — it would catch a corrupt or truncated upload, and it is worth doing
+> for that. It proves **nothing** about this gate, because the container supplies
+> credentials that exist only on the machine whose loss is the whole scenario.
+> It is the recovery equivalent of confirming you can get into your house
+> because you are already standing inside it. Only a run with **no access to the
+> source machine** settles this.
+
+> **⏳ Scope note — the self-sufficiency is point-in-time, and it expires.** The
+> G4 push was a **one-off**. The nightly job still streams `poindexter_brain`
+> **only** — `scripts/backup-offsite/run.sh` was never taught the other tiers —
+> so nothing re-pushes `bootstrap.toml`. The copy in B2 is frozen at 2026-07-19.
+> Rotate a credential, add a service, or let `poindexter setup` rewrite the file,
+> and the offsite copy silently drifts while still _looking_ current: `restic
+snapshots` keeps reporting fresh daily snapshots, because the one database it
+> covers really is fresh. **That is the failure mode to watch** — not an absent
+> backup, but a self-sufficiency claim that quietly stopped being true.
+>
+> Re-run the `precious` push after any credential change. The real fix — teach
+> the nightly runner to cover the other four databases plus the config tier, and
+> assert the recovery property rather than assume it — is
+> Glad-Labs/poindexter#891 (volumes are the sibling gap, #890).
 
 ---
 
