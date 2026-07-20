@@ -8,11 +8,24 @@
 >
 > - **Phase 0 — Live-USB validation: ✅ COMPLETE = GO** (verified 2026-07-19, live demo session, **no drive written**). UEFI ✅ · both GPUs 5090+3090 on driver 595.84 ✅ · display 3440×1440 ✅ · drives MP600=`nvme1n1` / MP700=`nvme0n1` ✅ · network 0% loss ✅ · PSU single-rail ✅. The Blackwell-5090 NO-GO risk is closed.
 > - **Where the operator is now:** back on **Windows**, working Phase 1 → the pre-Phase-3 gate.
-> - **Next actions (Windows, in order):** (1) refresh backup (`backup-precious.sh /d/migration-backup`); (2) **G4** push the _full_ backup offsite; (3) **G3** two-device copy to `C:`; (4) **G5** `powercfg /hibernate off` + full shutdown; (5) **Phase 2** BIOS fan floor.
-> - **⛔ PRE-PHASE-3 GATE state** (see the block at the top of Phase 3): G1 ✅ · G2 ✅ (rehearsal restore) · **G3 ✅ · G4 ✅ (both 2026-07-19) · G5 ⬜**. **Only G5 remains** — `powercfg /hibernate off`, verify with `powercfg /a`, then one full shutdown. Do NOT begin the MP600 shrink until it is ✅.
+> - **✅ ALL FIVE PRE-PHASE-3 GATES ARE CLOSED (2026-07-19).** G1 ✅ · G2 ✅ · G3 ✅ · G4 ✅ · **G5 ✅**. **Next action is Phase 2 (BIOS fan floor), then Phase 3 — the MP600 shrink + Pop!\_OS install.** That is the first destructive step; everything before it was reversible.
+> - **G5 evidence (2026-07-19):** `powercfg /a` reports `Hibernate — Hibernation has not been enabled` and `Fast Startup — Hibernation is not available`; `C:\hiberfil.sys` is **absent**; System event log shows a clean `6006 → 6005` pair with **no 6008 and no 41** (no unexpected/dirty shutdown). Note `HKLM\...\Power\HiberbootEnabled` still reads `1` — that is **moot and expected**: Fast Startup cannot function without hibernation, and `powercfg` reports it unavailable. Do not "fix" that registry value. One check needs elevation and was left for the operator: `fsutil dirty query D:` should say **not Dirty** before Linux mounts it read-write.
+> - **📦 Backup coverage — verified 2026-07-19, every artifact has ≥2 copies OFF the MP600** (the condition that actually gates repartitioning):
+>
+>   | artifact                  | D: MP600 _(being shrunk)_ | C: MP700    | B2 offsite | F: USB        |
+>   | ------------------------- | ------------------------- | ----------- | ---------- | ------------- |
+>   | 5 DB dumps                | ✅                        | ✅ two sets | ✅         | ⚠️ brain only |
+>   | config + `bootstrap.toml` | ✅                        | ✅          | ✅         | ✅ daily      |
+>   | `~/.claude` memory        | ✅                        | ✅          | ✅         | ✅            |
+>   | Docker volumes 10.8 GB    | ✅                        | ✅          | ✅         | ❌            |
+>
+>   The **volumes row was single-copy on the MP600 until 2026-07-19** — copied to `C:\migration-backup-copy\volumes` and all 6 archives SHA256-verified identical. `gladlabs-pgadmin-data` (17 KB) and `gladlabs-postiz-uploads` (27 KB) are **valid, just genuinely tiny** — do not read small as failed.
+>
 > - **⚠️ `globals.sql` is secret-bearing.** `pg_dumpall --globals-only` emits `ALTER ROLE … SET "poindexter.secret_key" TO '<master key>'` plus the SCRAM password hash in plaintext. Handle it exactly like `bootstrap.toml` — never commit, never print, never paste. When verifying it, stream to a hash rather than to a file or the terminal.
 > - **#889 recovery-secret proof (Task 1.4 Step 5) is a Phase 7 (wipe) gate, not Phase 3** — do it early, but it does not block the install.
-> - **⚠️ Handoff / provenance:** this progress lives in _this file's_ checkboxes + dated notes. The commits are on branch **`claude/linux-pop-os-migration-l78vxj` (PR #2718)**, not yet on `main` — a local session must check out that branch (or merge the PR) to see current state. When you complete a step, tick its box here so the next session inherits accurate state.
+> - **⚠️ Handoff / provenance:** this progress lives in _this file's_ checkboxes + dated notes, and **everything through 2026-07-19 is merged to `main`** (PRs #2712-#2723). No branch checkout needed. When you complete a step, tick its box here so the next session inherits accurate state.
+> - **☁️ IF YOU ARE A CLOUD SESSION, read this.** You can see this repo and the GitHub issues. You **cannot** see the operator's machine, and you cannot see `~/.claude/projects/*/memory/` — the local memory store where a lot of this migration's context was accumulated. This file is therefore the handoff surface: if something isn't written here, a cloud session does not know it. Two consequences: (1) every hardware/drive/backup claim above is a **recorded observation**, not something you can re-verify — do not assert it is still true, ask the operator to confirm before anything destructive; (2) the F: DR backup system below exists only on the operator's box and in this note.
+> - **🔌 There is a THIRD backup system the rest of this plan never mentions — and the migration silently kills it.** A 117 GB USB stick (`F:`) holds a restic repo at `F:/poindexter-backup`, fed by **two Windows Task Scheduler jobs**: `GladLabs-DR-Backup` (daily 03:00, tag `dr-daily`, retention 7d/4w/6m) and `GladLabs-DR-Backup-Hourly` (hourly, tag `pg-hourly`, keep-last 24). Both shell out through Git Bash to **`~/.poindexter/scripts/dr-backup/{run-backup,run-hourly-pg}.sh`, which are NOT in this git repo** — they are operator-local files, so they survive only inside the backups themselves. `restic.exe` lives at `~/bin/restic.exe` (not on `PATH`, which is why `which restic` finds nothing). The repo passphrase is `poindexter_backup_passphrase` in `bootstrap.toml` — **a different secret from the B2 repo's `RESTIC_PASSWORD`**, so F: is an _independent_ recovery path, and it contains `bootstrap.toml`, so opening it returns everything. **Task 5.1 ports the ops sessions and does NOT cover these two jobs — see Task 5.4.**
 
 **Goal:** Move the Poindexter operator stack from Windows 11 + Docker-Desktop/WSL2 onto bare-metal Pop!\_OS 24.04 — both GPUs, host-native Ollama, orchestration and hardware config — **without giving up the ability to go back**, and with the public site untouched throughout.
 
@@ -455,7 +468,9 @@ point back at the tasks that own each item — do them there, tick them here.)
 
   The ClickHouse tarball is LLM trace history: the spec classifies volumes as "useful, best-effort" and traces as re-derivable, so it is the one item here where accepting loss is defensible. Push it if bandwidth allows (≈$0.05/month on B2); do not let it block the gate.
 
-- [ ] **G5 — Fast Startup disabled (Task 3.1 Step 2–3).** `powercfg /hibernate off`, verified with `powercfg /a`, then a **full shutdown** (not restart). A Linux read-write mount of a hibernated NTFS partition can corrupt it — backup included.
+- [x] **G5 — Fast Startup disabled (Task 3.1 Step 2–3). ✅ DONE 2026-07-19.** `powercfg /a` reports `Hibernate — Hibernation has not been enabled` and `Fast Startup — Hibernation is not available`; `C:\hiberfil.sys` **absent** (the real proof — Windows deletes it when hibernation is off); System log shows a clean `6006 → 6005` pair with **no 6008 / no 41**, i.e. no unexpected or dirty shutdown. A Linux read-write mount of a hibernated NTFS partition can corrupt it — backup included — which is why this gate exists.
+
+  > **Two traps when verifying this.** (1) `HKLM\SYSTEM\CurrentControlSet\Control\Session Manager\Power\HiberbootEnabled` **stays `1`** and that is fine — Fast Startup cannot function without hibernation, and `powercfg /a` reports it unavailable. Setting that value to 0 is neither necessary nor sufficient; trust `powercfg /a` and the absence of `hiberfil.sys`, not the registry flag. (2) `fsutil dirty query D:` is the most direct check — it reads the NTFS dirty bit that Linux actually reacts to — but it **requires an elevated prompt**. Run it by hand before the first read-write mount and expect **not Dirty**.
 
 > **Not on this gate, on purpose — #889 recovery secrets (Task 1.4 Step 5).** Stashing
 > the four recovery secrets off-machine and proving `restic snapshots` from an
@@ -976,6 +991,25 @@ sudo ufw allow in on docker0 to any port 9100 proto tcp && sudo ufw deny 9100/tc
 - [ ] **Step 1: Add the Linux liveness check** (`scripts/linux/docker-watchdog.sh`): if `docker compose ps` shows the stack down, `sudo systemctl restart docker` + `start-stack.sh up -d`. No `wsl --shutdown` path — there is no VM to force-kill.
 - [ ] **Step 2: Leave `docker-watchdog.ps1`, `idle-wsl-gpu-reset.ps1`, `register-idle-wsl-reset.ps1` and `fix-task-window-visibility.ps1` in place.** They are inert on Linux and load-bearing for rollback.
 - [ ] **Step 3: Commit** the new watchdog only.
+
+---
+
+### Task 5.4: Port the DR backup jobs to systemd timers (the tier this plan forgot)
+
+**Why this is its own task.** Task 5.1 ports the **ops sessions** from `claude-sessions.ps1`. The DR backup runs on a **different pair of Windows Task Scheduler jobs** that no other task in this plan touches, so porting 5.1 and declaring Phase 5 done leaves the F: backup dead. It fails the way backups always fail here: silently, with nothing reporting red.
+
+**Files:**
+
+- Copy in: `~/.poindexter/scripts/dr-backup/run-backup.sh`, `run-hourly-pg.sh` (operator-local — **not currently in git**)
+- Create: `infrastructure/systemd/poindexter-dr-backup.{service,timer}`, `poindexter-dr-backup-hourly.{service,timer}`
+
+- [ ] **Step 1: Get the scripts into the repo _before_ the wipe.** They exist only on the operator's box and inside the backups. Losing the machine currently means recovering them from a restic repo whose own passphrase those scripts read. Commit them (they contain no secrets — the passphrase is read from `bootstrap.toml` at runtime), or at minimum confirm they are in the migration backup set.
+- [ ] **Step 2: Adapt the two paths that are Windows-shaped.** `RESTIC_BIN="/c/Users/mattm/bin/restic.exe"` → the distro `restic`; `REPO="F:/poindexter-backup"` → the USB mountpoint (`/media/$USER/...` or a fixed `/mnt/dr-backup` fstab entry keyed on UUID, which is the stabler choice for a timer). The `MSYS_NO_PATHCONV` guard in `backup-precious.sh` is a **no-op on Linux and should stay** — it is conditional on `$MSYSTEM`.
+- [ ] **Step 3: Create the timers** — daily 03:00 (`dr-daily`) and hourly (`pg-hourly`), matching current cadence. Use `Persistent=true` so a missed run fires on next boot; Task Scheduler did this implicitly and systemd does not by default.
+- [ ] **Step 4: Verify by _reading back_, not by exit code.** `restic -r <repo> snapshots --tag dr-daily` should show a new snapshot, and `restic dump <snap> <…/bootstrap.toml> | head -1` should return content. A job that exits 0 having archived nothing is the failure mode this whole plan keeps rediscovering.
+- [ ] **Step 5: Disable the Windows tasks only after the Linux timers have produced a verified snapshot** — and note that **both OSes writing the same restic repo is fine** (restic locks), but both running the _hourly PG dump_ means two OSes touching the database, which the one-OS-owns-the-DB rule forbids. Disable the Windows pair at the same handoff as the stack (Task 4.4), not before and not after.
+
+> **Do not skip the `~/.claude` source path.** It was missing from `run-backup.sh` for three months and was added 2026-07-19; the fix lives in the operator-local script, so a naive re-creation from memory will reintroduce the hole. Confirm `/c/Users/mattm/.claude` → `$HOME/.claude` is in the source list, and that `restic ls <snap> | grep -c memory/` returns ~352, not 0.
 
 ---
 
