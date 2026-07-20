@@ -1,0 +1,31 @@
+# Glad Labs DR backup — DAILY full-tree + pg_dump into the restic USB repo.
+# Linux port of the Windows `GladLabs-DR-Backup` Task Scheduler job (Task 5.4).
+#
+# Operators, set these to your machine (ships with generic placeholders for
+# public-mirror hygiene):
+#   - User=            your login user. It MUST be in the `docker` group —
+#                      the script uses `docker exec` for the pg_dump.
+#   - ExecStart path   your checkout of scripts/dr-backup/run-backup.sh.
+#   - Environment=DR_* the restic binary + your USB repo mountpoint. Porting is
+#                      config-only: run-backup.sh resolves every path from $HOME
+#                      plus these overrides (Task 5.4 Step 2). On Linux the repo
+#                      and the mount-check path are the same value (Git Bash
+#                      needed them split; Linux does not).
+#   - RequiresMountsFor point at the USB's fstab mountpoint so the timer never
+#                      runs against an unmounted drive (a systemd timer must not
+#                      depend on a desktop-session automount — use a UUID-keyed
+#                      /etc/fstab entry).
+# Triggered by poindexter-dr-backup.timer — no [Install] section here.
+[Unit]
+Description=Glad Labs DR backup (daily full tree + pg_dump -> restic USB repo)
+After=docker.service network-online.target
+Wants=network-online.target
+RequiresMountsFor=/mnt/dr-usb
+
+[Service]
+Type=oneshot
+User=poindexter
+Environment=DR_RESTIC_BIN=restic
+Environment=DR_BACKUP_REPO=/mnt/dr-usb/poindexter-backup
+Environment=DR_BACKUP_MOUNT=/mnt/dr-usb/poindexter-backup
+ExecStart=/home/poindexter/glad-labs-website/scripts/dr-backup/run-backup.sh
