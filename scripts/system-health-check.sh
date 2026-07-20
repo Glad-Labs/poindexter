@@ -106,17 +106,19 @@ psql_exec() {
     -t -A -c "$1" 2>&1
 }
 
-worker_api() {
-  # Read the rotated bearer token from app_settings (encrypted at rest;
-  # decrypted via plugins.secrets through the worker's get_secret path).
-  # We bypass that here by reading bootstrap.toml's api_token, which the
-  # rotation script keeps in sync. Falls back to empty so missing config
-  # produces a 401 we can flag instead of silently using a stale literal.
-  local _tok
-  _tok=$(grep -E '^api_token\s*=' "$HOME/.poindexter/bootstrap.toml" 2>/dev/null \
-    | head -1 | sed -E 's/^api_token\s*=\s*"(.*)"$/\1/')
-  curl -s -m 5 -H "Authorization: Bearer ${_tok}" "$@"
-}
+# NOTE (2026-07-19): `worker_api()` lived here and was deleted. It read a
+# static Bearer from bootstrap.toml's `api_token` — a field Phase 3 (#249)
+# stopped recognising when worker auth moved to OAuth 2.1. It had no callers
+# (its only occurrence in this file was its own definition), and the token it
+# read returned 401 on every authenticated endpoint when tested.
+#
+# It is called out rather than silently removed because the *dead function*
+# was the more misleading half: a grep for `api_token` surfaced a plausible
+# consumer, complete with a comment claiming a rotation script kept it in
+# sync, which is exactly what stops someone from deleting the dead key. If a
+# future check needs an authenticated call, mint a JWT through the OAuth
+# client (`poindexter auth migrate-scripts`) — do not reintroduce a static
+# Bearer.
 
 # ---------------------------------------------------------------------------
 # Infra: docker + postgres + worker reachable
