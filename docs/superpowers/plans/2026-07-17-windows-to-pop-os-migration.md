@@ -22,7 +22,7 @@
 >   The **volumes row was single-copy on the MP600 until 2026-07-19** — copied to `C:\migration-backup-copy\volumes` and all 6 archives SHA256-verified identical. `gladlabs-pgadmin-data` (17 KB) and `gladlabs-postiz-uploads` (27 KB) are **valid, just genuinely tiny** — do not read small as failed.
 >
 > - **⚠️ `globals.sql` is secret-bearing.** `pg_dumpall --globals-only` emits `ALTER ROLE … SET "poindexter.secret_key" TO '<master key>'` plus the SCRAM password hash in plaintext. Handle it exactly like `bootstrap.toml` — never commit, never print, never paste. When verifying it, stream to a hash rather than to a file or the terminal.
-> - **#889 recovery-secret proof (Task 1.4 Step 5) is a Phase 7 (wipe) gate, not Phase 3** — do it early, but it does not block the install.
+> - **✅ #889 recovery-secret proof (Task 1.4 Step 5) — DONE 2026-07-20.** Proven on a separate PC with no access to this box: the three carried secrets opened the B2 repo and restored `bootstrap.toml` (master key inside). The last non-hardware Phase 7 gate is cleared; the offsite repo is provably self-sufficient.
 > - **⚠️ Handoff / provenance:** this progress lives in _this file's_ checkboxes + dated notes, and **everything through 2026-07-19 is merged to `main`** (PRs #2712-#2723). No branch checkout needed. When you complete a step, tick its box here so the next session inherits accurate state.
 > - **☁️ IF YOU ARE A CLOUD SESSION, read this.** You can see this repo and the GitHub issues. You **cannot** see the operator's machine, and you cannot see `~/.claude/projects/*/memory/` — the local memory store where a lot of this migration's context was accumulated. This file is therefore the handoff surface: if something isn't written here, a cloud session does not know it. Two consequences: (1) every hardware/drive/backup claim above is a **recorded observation**, not something you can re-verify — do not assert it is still true, ask the operator to confirm before anything destructive; (2) the F: DR backup system below exists only on the operator's box and in this note.
 > - **🔌 There is a THIRD backup system the rest of this plan never mentions — and the migration silently kills it.** A 117 GB USB stick (`F:`) holds a restic repo at `F:/poindexter-backup`, fed by **two Windows Task Scheduler jobs**: `GladLabs-DR-Backup` (daily 03:00, tag `dr-daily`, retention 7d/4w/6m) and `GladLabs-DR-Backup-Hourly` (hourly, tag `pg-hourly`, keep-last 24). Both shell out through Git Bash to `~/.poindexter/scripts/dr-backup/{run-backup,run-hourly-pg}.sh`. **Those operator-local files are what actually runs**, but as of PR #2725 an equivalent, de-identified copy is committed at **`scripts/dr-backup/`** — before that they existed nowhere but the machine they protect and the snapshots they produce, which made recovering the tooling depend on already being able to open the repo. Nothing repoints the scheduled tasks at the repo copy; that is Task 5.4 Step 2. `restic.exe` lives at `~/bin/restic.exe` (not on `PATH`, which is why `which restic` finds nothing). The repo passphrase is `poindexter_backup_passphrase` in `bootstrap.toml` — **a different secret from the B2 repo's `RESTIC_PASSWORD`**, so F: is an _independent_ recovery path, and it contains `bootstrap.toml`, so opening it returns everything. **Task 5.1 ports the ops sessions and does NOT cover these two jobs — see Task 5.4.**
@@ -367,19 +367,25 @@ verified daily backup that no one can decrypt.
 | `AWS_ACCESS_KEY_ID`     | yes     | same file                                         |
 | `AWS_SECRET_ACCESS_KEY` | yes     | same file                                         |
 
-- [ ] **Step 5a: Put those three secrets outside both the machine and the bucket** — the Pixel's password manager (which Step 3 already re-homes) and/or printed and stored offline. **Matt only — do not automate, and do not let an agent read them.**
-- [ ] **Step 5b: Prove it from hardware with no access to this box.** Two assertions, and the second is the one that matters:
+- [x] **Step 5a: Put those three secrets outside both the machine and the bucket** — the Pixel's password manager (which Step 3 already re-homes) and/or printed and stored offline. **Matt only — do not automate, and do not let an agent read them.** **DONE 2026-07-20 — the three secrets were carried to a separate PC (below) with no access to this box, which is what proved 5a landed.**
+- [x] **Step 5b: Prove it from hardware with no access to this box.** Two assertions, and the second is the one that matters:
 
 ```bash
 export RESTIC_PASSWORD=... AWS_ACCESS_KEY_ID=... AWS_SECRET_ACCESS_KEY=...
+export AWS_DEFAULT_REGION=us-east-005   # REQUIRED — restic defaults to us-east-1; a B2 bucket rejects it as "signature validation failed"
 restic -r <repo-url> snapshots                                   # 1. can you open it at all?
-restic -r <repo-url> dump <snap> <…/config/dot-poindexter/bootstrap.toml> | head -1
-                                                                 # 2. is the kit itself inside?
+# The config tree lives in the G4 "precious" snapshot, NOT `latest` (latest is the
+# nightly poindexter_brain.dump stream). Find it across all snapshots:
+restic -r <repo-url> find bootstrap.toml                         # -> snapshot id + path
+restic -r <repo-url> restore <snap> --target /tmp/recover --include '**/bootstrap.toml'
+cat "$(find /tmp/recover -name bootstrap.toml | head -1)"        # 2. is the kit itself inside?
 ```
 
 Assertion 2 proves the repo is **self-sufficient**, not merely readable — that opening it hands back the master key and every service credential.
 
-- [ ] **Step 5c: GATE** — ✅ only when 5b has actually returned a line of `bootstrap.toml` on foreign hardware.
+**✅ EXECUTED AND PASSED 2026-07-20 on a separate Windows PC (Git Bash), zero access to the operator box.** Path notes learned in the run, so the next person doesn't re-hit them: (1) restic's B2 URL needs the `s3:` backend prefix — a bare hostname → "invalid backend"; (2) `AWS_DEFAULT_REGION` must match the bucket (`us-east-005`), else "signature validation failed"; (3) `latest` is the DB-only nightly snapshot — use `restic find bootstrap.toml` to locate the config snapshot (id `3028292b` this run); (4) `restic dump` chokes on the Windows `C:`-style stored path from bash — `restic restore … --include '**/bootstrap.toml'` sidesteps the quoting entirely. `bootstrap.toml` restored with `database_url` + `poindexter_secret_key` present.
+
+- [x] **Step 5c: GATE** — ✅ only when 5b has actually returned a line of `bootstrap.toml` on foreign hardware. **CLEARED 2026-07-20 — `bootstrap.toml` restored and read on a foreign PC using only the three carried secrets. The #889 circular dependency is broken: the offsite repo is now provably self-sufficient (opening it returns the master key that decrypts everything else). This clears the last non-hardware gate before Phase 7.**
 
 > **⚠️ Verification that does NOT count.** Streaming a file back with
 > `docker exec <backup-container> restic … dump …` proves the stored bytes are
