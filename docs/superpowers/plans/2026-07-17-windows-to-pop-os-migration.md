@@ -7,7 +7,8 @@
 > A session picking this up: read this block first, then jump to the phase named under "Next".
 >
 > - **Phase 0 — Live-USB validation: ✅ COMPLETE = GO** (verified 2026-07-19, live demo session, **no drive written**). UEFI ✅ · both GPUs 5090+3090 on driver 595.84 ✅ · display 3440×1440 ✅ · drives MP600=`nvme1n1` / MP700=`nvme0n1` ✅ · network 0% loss ✅ · PSU single-rail ✅. The Blackwell-5090 NO-GO risk is closed.
-> - **Where the operator is now:** back on **Windows**, working Phase 1 → the pre-Phase-3 gate.
+> - **Where the operator is now:** **Phase 3 — shrinking the MP600 (2026-07-22).** Windows Disk Management can't do it (`$Mft::$BITMAP` unmovable cap, 127 GB only), so the shrink is being done from the **Pop live USB with GParted** (Task 3.2 Step 2, updated). Then Task 3.3 installs Pop into the freed space.
+> - **🚨 DEVICE-NUMBER FLIP (2026-07-22) — READ BEFORE ANY PARTITION OP.** The `nvme?`/Disk numbering is **not stable across boots**. This boot: **MP600 = `nvme0n1` (install target, shrink `nvme0n1p2`)**, **MP700 = `nvme1n1` (Windows C: on `nvme1n1p3` — DO NOT TOUCH)** — the **opposite** of the 2026-07-19 Phase 0 record. Nearly caused a live-Windows resize. **Identify every disk by MODEL / Windows-layout, never by number** (Task 0.2 Step 5 has the full table).
 > - **✅ ALL FIVE PRE-PHASE-3 GATES ARE CLOSED (2026-07-19).** G1 ✅ · G2 ✅ · G3 ✅ · G4 ✅ · **G5 ✅**. **Next action is Phase 2 (BIOS fan floor), then Phase 3 — the MP600 shrink + Pop!\_OS install.** That is the first destructive step; everything before it was reversible.
 > - **G5 evidence (2026-07-19):** `powercfg /a` reports `Hibernate — Hibernation has not been enabled` and `Fast Startup — Hibernation is not available`; `C:\hiberfil.sys` is **absent**; System event log shows a clean `6006 → 6005` pair with **no 6008 and no 41** (no unexpected/dirty shutdown). Note `HKLM\...\Power\HiberbootEnabled` still reads `1` — that is **moot and expected**: Fast Startup cannot function without hibernation, and `powercfg` reports it unavailable. Do not "fix" that registry value. One check needs elevation and was left for the operator: `fsutil dirty query D:` should say **not Dirty** before Linux mounts it read-write.
 > - **📦 Backup coverage — verified 2026-07-19, every artifact has ≥2 copies OFF the MP600** (the condition that actually gates repartitioning):
@@ -157,9 +158,19 @@ ls /sys/firmware/efi >/dev/null 2>&1 && echo "UEFI ✓" || echo "LEGACY — rebo
       **⭐ RECORDED 2026-07-19 (live session `lsblk`):**
       | Linux device | Model | Size | Role in Phase 3 |
       | ------------ | ----- | ---- | --------------- |
-      | **`nvme1n1`** | **Corsair MP600 CORE XT** | 1.8T | ⛔ **INSTALL TARGET** — shrink + install Pop here |
-      | **`nvme0n1`** | **Corsair MP700 ELITE with Heatsink** | 1.8T | Holds Windows — **NEVER written to** |
-      **⚠️ Note the inversion:** the install target (MP600) is `nvme1n1`, the _higher_-numbered device — the opposite of a naive "nvme0 = first disk" guess. In Phase 3 partitioning, confirm the model string reads **`MP600 CORE XT`** before touching any partition, not the device number. (USB installer media appeared as `sda`/`sdb`; `loop0` is the live squashfs; `zram0` is live-session swap — none are install targets.)
+      | `nvme1n1` | **Corsair MP600 CORE XT** | 1.8T | ⛔ **INSTALL TARGET** — shrink + install Pop here |
+      | `nvme0n1` | **Corsair MP700 ELITE with Heatsink** | 1.8T | Holds Windows — **NEVER written to** |
+
+      > **🚨 THE `nvme?` NUMBERING IS NOT STABLE ACROSS BOOTS — it FLIPPED on 2026-07-22.** On the GParted boot the SAME hardware enumerated the **opposite** way:
+      >
+      > | Linux device | Model | 2026-07-22 layout | Role |
+      > | ------------ | ----- | ----------------- | ---- |
+      > | **`nvme0n1`** | **Corsair MP600 CORE XT** | p1 16M MSR · **p2 1.8T ntfs "MP600"** | ⛔ **INSTALL TARGET** — shrink `nvme0n1p2` |
+      > | **`nvme1n1`** | **Corsair MP700 ELITE with Heatsink** | p1 100M vfat ESP · p2 16M MSR · **p3 1.8T ntfs "MP700" = Windows C:** · p4 797M recovery | **WINDOWS DRIVE — NEVER TOUCH** |
+      >
+      > This nearly caused a disaster: keying off the 2026-07-19 mapping, `nvme1n1` was about to be resized in GParted — but on this boot `nvme1n1` is the **MP700 (Windows C:)**. The `MP700` partition **label** on `nvme1n1p3` is what caught it. **NEW STANDING RULE: at every destructive step, identify each disk by its MODEL string and/or the Windows layout (ESP+MSR+C:+Recovery = the drive to AVOID), NEVER by the `nvme0`/`nvme1` number.** Volume labels (`MP600`/`MP700`) happen to track the models here and are a useful second signal; the bare device number is not.
+
+      **⚠️ Note (from the original 2026-07-19 boot):** the install target was `nvme1n1` then — but per the flip above, do not rely on that. Confirm the model reads **`MP600 CORE XT`** in `lsblk`/GParted Device Information before touching any partition. (USB installer media appeared as `sda`/`sdb`; `loop0` is the live squashfs; `zram0` is live-session swap — none are install targets.)
 - [x] **Step 6: Verify network** (Ethernet or Wi-Fi): `ping -c3 1.1.1.1` → expect 0% loss. **Verified 2026-07-19 — 0% loss. ✅**
 
 ### Task 0.3: Confirm PSU visibility on Linux (informational — NOT a gate)
@@ -511,13 +522,24 @@ Or: **Control Panel → Power Options → Choose what the power buttons do → C
 
 - [ ] **Step 1: Note current usage** — the MP600 is ~1863 GB with ~1706 GB free, so there is enormous headroom.
 - [ ] **Step 2: Shrink from Windows** — **Disk Management → right-click `D:` → Shrink Volume**. Leave `D:` at ~**500 GB** (comfortably covers the ~156 GB in use plus backup growth) and free ~**1.3 TB** for Pop.
-- [ ] **Step 3: Verify** the freed space shows as _Unallocated_ on Disk 1, and that `D:` still mounts and `D:\migration-backup\pg\poindexter_brain.dump` still opens. **If the shrink fails or the backup is unreadable → stop.** Windows is fine; re-copy from the Task 3.1 duplicate and reassess.
+
+  > **🧱 REALITY 2026-07-22 — Windows Disk Management CANNOT do this shrink; use GParted instead.** It offered only **127 GB** of shrink space, capped by an unmovable file. Event Viewer → Application → source `Defrag` named it: **`$Mft::$BITMAP`** — the NTFS Master File Table's own metadata, sitting near the end of the volume. Windows can **never** relocate the MFT (pagefile-off, restore-points-off, shadow-copy delete all had **no effect** — it's not those). This is a hard dead-end from inside Windows. **Do it from the Pop live USB with GParted**, whose `ntfsresize` engine relocates MFT structures: select the **MP600 by model** (see the flip warning in Task 0.2 Step 5 — on this boot the MP600 is `nvme0n1`, resize `nvme0n1p2`), Resize/Move the NTFS partition to leave ~500 GB, Apply (MFT relocation is slow — don't interrupt). Safe because Fast Startup is off (G5); if GParted reports the volume "dirty", boot Windows once → `chkdsk D: /f` → full shutdown → retry.
+
+- [ ] **Step 3: Verify** the freed space shows as _Unallocated_ (on whichever disk is the **MP600 by model**, NOT by `nvme`/Disk number — the numbering is boot-unstable, see Task 0.2 Step 5), and that `D:` still mounts and `D:\migration-backup\pg\poindexter_brain.dump` still opens. **If the shrink fails or the backup is unreadable → stop.** Windows is fine; re-copy from the Task 3.1 duplicate and reassess.
 
 ### Task 3.3: Install Pop!\_OS into the free space (Custom partitioning)
 
 > **⛔ Do NOT choose "Clean Install."** It takes the whole selected drive and may
 > adopt the MP700's existing ESP. Use **Custom (Advanced)** so Pop gets its own ESP
 > on the MP600 and the MP700 is never written to.
+>
+> **🚨 IDENTIFY THE MP600 BY MODEL, NOT BY DISK/`nvme` NUMBER.** The `nvme0`/`nvme1`
+> (and installer "Disk 0"/"Disk 1") ordering is **not stable across boots** — it
+> flipped on 2026-07-22 (Task 0.2 Step 5). The MP700 is the one with the Windows
+> layout (**EFI + MSR + big NTFS labelled `MP700` + Recovery**); the MP600 is the
+> data drive (**MSR + big NTFS labelled `MP600`** → after the shrink, + unallocated).
+> Create Pop's ESP in the MP600's unallocated space — do **not** reuse or write the
+> Windows ESP that sits on the MP700.
 
 - [ ] **Step 1: Boot the live USB → Install → Custom (Advanced).**
 - [ ] **Step 2: Create this layout in the unallocated space on Disk 1 (MP600).** The split is deliberate — see Step 3.
@@ -530,7 +552,7 @@ Or: **Control Panel → Power Options → Choose what the power buttons do → C
 | `/data`     | ~1.1 TB | ext4  | Docker data-root, Ollama models, media, local backups. |
 
 - [ ] **Step 3: Understand why root is small.** Everything heavy lives on `/data`, so `/` holds ~30–50 GB of pure OS. Migrating Pop to the MP700 later then becomes _reinstall root, remount `/data`_ — **the bulk data never moves**, and the MP600 lands in exactly the `/data` role the spec targets anyway. Letting Docker fill `/` instead would turn that move into relocating hundreds of GB.
-- [ ] **Step 4: Confirm the installer's target summary** names **Disk 1 / the MP600 ESP** and lists **no changes to Disk 0**. Read this screen carefully — it is the last checkpoint before anything is written.
+- [ ] **Step 4: Confirm the installer's target summary** names the **MP600** (by model — the disk with the `MP600`-labelled NTFS, whatever its `nvme`/Disk number is this boot) for the new ESP + partitions, and lists **no changes to the MP700** (the Windows disk — EFI+MSR+`MP700` NTFS+Recovery). Read this screen carefully — it is the last checkpoint before anything is written.
 - [ ] **Step 5: Install**, then complete first-boot setup (user `mattm`, timezone `America/New_York`, connect network).
 - [ ] **Step 6: Verify both GPUs:** `nvidia-smi -L` → expect the 5090 and 3090 both listed.
 
