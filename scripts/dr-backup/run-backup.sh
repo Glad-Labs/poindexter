@@ -204,6 +204,11 @@ echo "DB dump: ${DUMP_SIZE} bytes"
 # above; backing up the in-container backup files too (~7 GB of hourly/daily
 # pg_dumps + kuma + service snapshots) would double-count that data and eat
 # USB space fast. The DR dump in ${DUMP_DIR} is the source of truth here.
+# infrastructure/prometheus/secrets is excluded: brain-regenerated plaintext
+# decryptions of DB secrets, root-owned on Linux so restic can't read them
+# (exit 3 fails the whole unit + pages Telegram — hit on the first Pop run,
+# 2026-07-23). Lossless to skip: the same snapshot carries the encrypted DB
+# dump and bootstrap.toml (master key), which regenerate them.
 echo "Running restic backup..."
 # NOTE: the $HOME paths below MUST use double quotes. These were literal
 # absolute paths before this script was parameterised, and single quotes were
@@ -223,6 +228,7 @@ echo "Running restic backup..."
     --exclude "$HOME/.poindexter/backups" \
     --exclude "$HOME/.claude/shell-snapshots" \
     --exclude "$HOME/.claude/session-env" \
+    --exclude "$HOME/glad-labs-website/infrastructure/prometheus/secrets" \
     --exclude '**/__pycache__' \
     --exclude '**/node_modules' \
     --exclude '**/.next' \
