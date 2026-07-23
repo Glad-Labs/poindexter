@@ -1,0 +1,10 @@
+# Fires the deploy-checkout sync every 10 minutes (the Windows task's cadence).
+[Unit]
+Description=Timer for the Poindexter deploy-checkout sync
+
+[Timer]
+OnBootSec=3min
+OnUnitActiveSec=10min
+
+[Install]
+WantedBy=timers.target

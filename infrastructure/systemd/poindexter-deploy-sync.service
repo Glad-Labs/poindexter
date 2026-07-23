@@ -1,0 +1,22 @@
+# Deploy-checkout sync — fetch/reset the dedicated deploy clone to origin/main
+# and bounce/rebuild the containers whose code changed (Linux port of the
+# Windows Poindexter-DeployCheckoutSync task; scripts/linux/deploy-checkout-sync.sh
+# carries the full design notes). Fired every 10 min by the paired .timer.
+# Operators: set User= to your login (ships generic `poindexter`); the script
+# resolves the clone from POINDEXTER_DEPLOY_ROOT (default
+# ~/.poindexter/deploy/glad-labs-stack — create it with
+# scripts/setup-deploy-checkout.sh). User needs the docker group.
+[Unit]
+Description=Poindexter deploy-checkout sync (origin/main -> running stack)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=poindexter
+# The script runs from the OPERATOR checkout (same as the Windows task) and
+# syncs the dedicated deploy clone; the clone is the reset target, never the
+# script source — so a broken merge can't brick the syncer that would fix it.
+ExecStart=/home/poindexter/glad-labs-website/scripts/linux/deploy-checkout-sync.sh
+# the pass includes a bounded Prefect flow-gap wait + possible image rebuilds
+TimeoutStartSec=900
