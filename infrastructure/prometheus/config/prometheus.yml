@@ -87,11 +87,13 @@ scrape_configs:
       - targets: ["worker:8002"]
 
   # System-level metrics (CPU, RAM, disk, network)
-  # windows_exporter running on host at :9182
-  - job_name: windows
+  # node_exporter running on the Pop!_OS host at :9100 (bound 0.0.0.0 so the
+  # docker bridge can reach it — Task 5.2 of the Windows→Pop migration; the
+  # windows_exporter :9182 job this replaces died with the Windows host).
+  - job_name: node
     scrape_interval: 30s
     static_configs:
-      - targets: ["host.docker.internal:9182"]
+      - targets: ["host.docker.internal:9100"]
 
   # Uptime Kuma — HTTP / TCP monitor response times & up/down status.
   # Auth via API key (password-only basic auth). The key lives in the

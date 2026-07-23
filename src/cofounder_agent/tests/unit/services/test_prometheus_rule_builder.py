@@ -207,7 +207,9 @@ class TestHostMemoryPressureRules:
     recurring freeze that escalates to a hard reset). There was NO host-memory
     alert before this — only per-container (cAdvisor) and GPU-VRAM rules — so
     the pressure that actually caused the freezes was invisible to Alertmanager.
-    windows_exporter (job="windows") exports both signals directly.
+    node_exporter (job="node") exports both signals directly — the rules were
+    calibrated on their windows_exporter twins pre-migration (available bytes /
+    swap page-out rate carry the same semantics).
     """
 
     def test_rules_and_thresholds_registered(self):
@@ -221,13 +223,13 @@ class TestHostMemoryPressureRules:
         )
 
     @pytest.mark.asyncio
-    async def test_available_low_renders_against_windows_exporter(self):
+    async def test_available_low_renders_against_node_exporter(self):
         pool = _FakePool([])
         out = await rb.build_current(pool)
         assert "alert: PoindexterHostMemoryLow" in out
         section = out.split("alert: PoindexterHostMemoryLow")[1].split("alert:", 1)[0]
         # Sources the available-RAM gauge the freeze investigation measured.
-        assert "windows_memory_available_bytes" in section
+        assert "node_memory_MemAvailable_bytes" in section
         # Threshold substituted to its default; no leftover placeholder.
         assert "{threshold." not in section
         assert "1024*1024*1024) < 4" in section
@@ -235,23 +237,23 @@ class TestHostMemoryPressureRules:
         assert "severity: warning" in section
 
     @pytest.mark.asyncio
-    async def test_thrashing_is_critical_and_targets_pagefile_writes(self):
+    async def test_thrashing_is_critical_and_targets_swap_pageouts(self):
         pool = _FakePool([])
         out = await rb.build_current(pool)
         assert "alert: PoindexterHostMemoryThrashing" in out
         section = out.split("alert: PoindexterHostMemoryThrashing")[1].split(
             "alert:", 1
         )[0]
-        # swap_pages_written = pagefile writes specifically (memory-pressure
+        # pswpout = pages swapped out specifically (memory-pressure
         # eviction), NOT ordinary buffered file I/O.
-        assert "windows_memory_swap_pages_written_total" in section
+        assert "node_vmstat_pswpout" in section
         assert "> 2000" in section
         # Critical → Telegram: it IS the freeze-in-progress signal and is rare
         # (idle median ~0.08 pages/s), so it only fires during a real episode.
         assert "severity: critical" in section
 
     def test_no_absent_guard_so_exporter_death_doesnt_false_fire(self):
-        """WindowsExporterDown owns exporter death; a bare comparison yields no
+        """NodeExporterDown owns exporter death; a bare comparison yields no
         series on no-data, so neither rule carries an absent() guard (#581)."""
         assert "absent(" not in rb.DEFAULT_RULES["PoindexterHostMemoryLow"]["expr"]
         assert (
@@ -561,7 +563,7 @@ class TestRestartGapBridging:
         30m pending window on a box that restarts the worker 8-46x/day."""
         import re
 
-        # cAdvisor / windows_exporter / nvidia-smi / postgres_exporter run as
+        # cAdvisor / node_exporter / nvidia-smi / postgres_exporter run as
         # independent containers or host services — worker deploys don't
         # blank their series.
         independent = {"PoindexterContainerMemoryHigh"}
@@ -583,10 +585,11 @@ class TestRestartGapBridging:
 # ---------------------------------------------------------------------------
 
 
-class TestWindowsExporterDownStaticRule:
-    """WindowsExporterDown must live in the static infrastructure.yml — it is a
+class TestNodeExporterDownStaticRule:
+    """NodeExporterDown must live in the static infrastructure.yml — it is a
     binary up/down rule with no tunable thresholds and must fire even when the
-    DB is down (when DB-rendered rules cannot be regenerated).  poindexter#705."""
+    DB is down (when DB-rendered rules cannot be regenerated).  poindexter#705.
+    (WindowsExporterDown pre-migration; the Pop!_OS Task 5.2 swap renamed it.)"""
 
     @pytest.fixture
     def infra_rules(self) -> list[dict]:
@@ -606,22 +609,22 @@ class TestWindowsExporterDownStaticRule:
 
     def test_rule_is_present(self, infra_rules):
         names = [r.get("alert") for r in infra_rules]
-        assert "WindowsExporterDown" in names
+        assert "NodeExporterDown" in names
 
     def test_expr_covers_absent_and_zero(self, infra_rules):
-        rule = next(r for r in infra_rules if r.get("alert") == "WindowsExporterDown")
+        rule = next(r for r in infra_rules if r.get("alert") == "NodeExporterDown")
         expr = rule["expr"]
-        assert 'up{job="windows"} == 0' in expr
+        assert 'up{job="node"} == 0' in expr
         assert "absent(up{job=" in expr
 
     def test_severity_critical(self, infra_rules):
-        rule = next(r for r in infra_rules if r.get("alert") == "WindowsExporterDown")
+        rule = next(r for r in infra_rules if r.get("alert") == "NodeExporterDown")
         assert rule["labels"]["severity"] == "critical"
 
     def test_for_at_least_2m(self, infra_rules):
         """Sustained window so a momentary scrape hiccup doesn't page."""
         import re
-        rule = next(r for r in infra_rules if r.get("alert") == "WindowsExporterDown")
+        rule = next(r for r in infra_rules if r.get("alert") == "NodeExporterDown")
         dur = rule.get("for", "0m")
         m = re.match(r"(\d+)m", dur)
         assert m is not None, f"unexpected for duration: {dur!r}"
@@ -751,18 +754,18 @@ class TestOllamaNoModelsLoadedRule:
 @pytest.mark.asyncio
 class TestDiskAbsentGuards:
     """Both disk rules must include an absent() guard so exporter death surfaces
-    through the disk alert path in addition to WindowsExporterDown.  poindexter#705."""
+    through the disk alert path in addition to NodeExporterDown.  poindexter#705."""
 
     async def test_disk_low_includes_absent_guard(self):
         pool = _FakePool([])
         out = await rb.build_current(pool)
         assert "alert: PoindexterDiskSpaceLow" in out
         low_section = out.split("alert: PoindexterDiskSpaceLow")[1].split("alert:", 1)[0]
-        assert "absent(windows_logical_disk_free_bytes)" in low_section
+        assert "absent(node_filesystem_free_bytes)" in low_section
 
     async def test_disk_critical_includes_absent_guard(self):
         pool = _FakePool([])
         out = await rb.build_current(pool)
         assert "alert: PoindexterDiskSpaceCritical" in out
         crit_section = out.split("alert: PoindexterDiskSpaceCritical")[1].split("alert:", 1)[0]
-        assert "absent(windows_logical_disk_free_bytes)" in crit_section
+        assert "absent(node_filesystem_free_bytes)" in crit_section

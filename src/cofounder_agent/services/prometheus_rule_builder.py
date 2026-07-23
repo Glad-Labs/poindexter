@@ -153,7 +153,7 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
     #     would paper over (connections release when the worker restarts;
     #     daily spend resets at midnight; the Ollama rule's `unless` guard
     #     needs both operands blanking in lockstep).
-    #   - Independent exporters (windows_exporter, nvidia-smi,
+    #   - Independent exporters (node_exporter, nvidia-smi,
     #     postgres_exporter, cadvisor) don't restart with worker deploys —
     #     raw instant reads are fine there.
 
@@ -386,27 +386,29 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "enabled": True,
         "group": "poindexter-infrastructure",
         "interval": "30s",
-        # absent() guard: fires (with no volume label) when windows_exporter dies
+        # absent() guard: fires (with no mountpoint label) when node_exporter dies
         # and the metric family disappears entirely — belt-and-suspenders alongside
-        # the static WindowsExporterDown rule in infrastructure.yml. poindexter#705.
+        # the static NodeExporterDown rule in infrastructure.yml. poindexter#705.
+        # fstype filter = real local filesystems only (skips tmpfs/squashfs/ntfs
+        # rescue mounts); was volume=~"[A-Z]:" on windows_exporter pre-migration.
         "expr": (
-            '(windows_logical_disk_free_bytes{volume=~"[A-Z]:"} / (1024*1024*1024)'
+            '(node_filesystem_free_bytes{fstype=~"ext4|xfs|btrfs"} / (1024*1024*1024)'
             " < {threshold.disk_free_warning_gb})"
-            " and on(volume) "
-            '(windows_logical_disk_size_bytes{volume=~"[A-Z]:"} / (1024*1024*1024)'
+            " and on(mountpoint) "
+            '(node_filesystem_size_bytes{fstype=~"ext4|xfs|btrfs"} / (1024*1024*1024)'
             " > {threshold.disk_min_total_gb})"
-            "\nor absent(windows_logical_disk_free_bytes)"
+            "\nor absent(node_filesystem_free_bytes)"
         ),
         "for": "10m",
         "severity": "warning",
         "category": "infrastructure",
-        "summary": "Host disk {{ $labels.volume }} has under 20 GB free",
+        "summary": "Host disk {{ $labels.mountpoint }} has under 20 GB free",
         "description": (
-            "Volume {{ $labels.volume }} on the worker host has "
+            "Filesystem {{ $labels.mountpoint }} on the worker host has "
             "{{ $value | humanize }} GB free (warning threshold: "
             "prometheus.threshold.disk_free_warning_gb, default 20 GB). Run "
-            "`powershell scripts/docker-prune.ps1`, clear old model files, "
-            "or archive cost_logs / page_views."
+            "`docker builder prune -af && docker image prune -af`, clear old "
+            "model files, or archive cost_logs / page_views."
         ),
     },
     "PoindexterDiskSpaceCritical": {
@@ -414,22 +416,23 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "group": "poindexter-infrastructure",
         "interval": "30s",
         "expr": (
-            '(windows_logical_disk_free_bytes{volume=~"[A-Z]:"} / (1024*1024*1024)'
+            '(node_filesystem_free_bytes{fstype=~"ext4|xfs|btrfs"} / (1024*1024*1024)'
             " < {threshold.disk_free_critical_gb})"
-            " and on(volume) "
-            '(windows_logical_disk_size_bytes{volume=~"[A-Z]:"} / (1024*1024*1024)'
+            " and on(mountpoint) "
+            '(node_filesystem_size_bytes{fstype=~"ext4|xfs|btrfs"} / (1024*1024*1024)'
             " > {threshold.disk_min_total_gb})"
-            "\nor absent(windows_logical_disk_free_bytes)"
+            "\nor absent(node_filesystem_free_bytes)"
         ),
         "for": "5m",
         "severity": "critical",
         "category": "infrastructure",
-        "summary": "Host disk {{ $labels.volume }} has under 10 GB free — imminent",
+        "summary": "Host disk {{ $labels.mountpoint }} has under 10 GB free — imminent",
         "description": (
-            "Volume {{ $labels.volume }} on the worker host is down to "
+            "Filesystem {{ $labels.mountpoint }} on the worker host is down to "
             "{{ $value | humanize }} GB free. Postgres writes, Docker pulls, "
             "and image generation will start failing. Free space now: "
-            "`powershell scripts/docker-prune.ps1`."
+            "`docker builder prune -af && docker image prune -af` (the 2026-07-23 "
+            "root-fill shut Postgres down mid-WAL-redo — act immediately)."
         ),
     },
     # Brain database capacity warning. Replaces the Grafana-managed SQL alert
@@ -491,13 +494,14 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         ),
     },
     # Host RAM pressure (2026-07-10 desktop-freeze investigation). The worker
-    # host oversubscribes RAM — WSL2, the container stack, the host inference
-    # fleet, and the operator desktop share one pool. There was no host-memory
-    # alert before this (only per-container cAdvisor + GPU-VRAM rules), so the
+    # host oversubscribes RAM — the container stack, the host inference fleet,
+    # and the operator desktop share one pool. There was no host-memory alert
+    # before this (only per-container cAdvisor + GPU-VRAM rules), so the
     # pressure that actually froze the desktop was invisible to Alertmanager.
-    # Both source windows_exporter (job="windows"). No absent() guard on either:
-    # a bare comparison yields no series when the exporter is down, so neither
-    # false-fires on no-data — WindowsExporterDown owns exporter death (#581).
+    # Both source node_exporter (job="node"; windows_exporter pre-migration).
+    # No absent() guard on either: a bare comparison yields no series when the
+    # exporter is down, so neither false-fires on no-data — NodeExporterDown
+    # owns exporter death (#581).
     "PoindexterHostMemoryLow": {
         "enabled": True,
         "group": "poindexter-infrastructure",
@@ -506,7 +510,7 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         # floor means the desktop + WSL + inference have crowded out headroom
         # and the next allocation spike will page.
         "expr": (
-            "windows_memory_available_bytes / (1024*1024*1024) < "
+            "node_memory_MemAvailable_bytes / (1024*1024*1024) < "
             "{threshold.host_memory_available_warning_gb}"
         ),
         "for": "10m",
@@ -514,30 +518,32 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "category": "infrastructure",
         "summary": "Host available RAM below the warning floor for 10m",
         "description": (
-            "windows_memory_available_bytes has stayed under the warning floor "
+            "node_memory_MemAvailable_bytes has stayed under the warning floor "
             "(prometheus.threshold.host_memory_available_warning_gb, default "
-            "4 GB) for 10m. The host is oversubscribed: WSL2 (capped in "
-            "~/.wslconfig), the container stack, the host Ollama/inference "
-            "fleet, and the desktop are competing for RAM, and when available "
-            "reaches ~0 the desktop compositor stalls. Levers: close idle "
-            "browser/Electron apps, `docker restart` a bloated container (see "
-            "the Database + Hardware & Power boards for the growth shape), or "
-            "unpin an idle KEEP_ALIVE=-1 model. Durable fix is de-"
-            "oversubscription (move the container tier off the box, or add RAM)."
+            "4 GB) for 10m. The host is oversubscribed: the container stack, "
+            "the host Ollama/inference fleet, and the desktop are competing "
+            "for RAM, and when available reaches ~0 the desktop compositor "
+            "stalls. Levers: close idle browser/Electron apps, `docker "
+            "restart` a bloated container (see the Database + Hardware & "
+            "Power boards for the growth shape), or unpin an idle "
+            "KEEP_ALIVE=-1 model. Durable fix is de-oversubscription (move "
+            "the container tier off the box, or add RAM)."
         ),
     },
     "PoindexterHostMemoryThrashing": {
         "enabled": True,
         "group": "poindexter-infrastructure",
         "interval": "30s",
-        # swap_pages_written = pagefile writes specifically (memory-pressure
-        # eviction), NOT ordinary buffered file I/O. Idle median ~0.08 pages/s,
-        # so a 2000 pages/s floor only trips during a genuine thrash episode —
-        # the minutes before a desktop lock-up, which is the lead time the box
-        # never gave before. Critical → Telegram because it IS the freeze-in-
-        # progress signal and it's rare, not chronic noise.
+        # pswpout = pages swapped out specifically (memory-pressure eviction),
+        # NOT ordinary buffered file I/O — the node_exporter twin of the
+        # windows_memory_swap_pages_written_total signal this rule was
+        # calibrated on. Idle median ~0.08 pages/s, so a 2000 pages/s floor
+        # only trips during a genuine thrash episode — the minutes before a
+        # desktop lock-up, which is the lead time the box never gave before.
+        # Critical → Telegram because it IS the freeze-in-progress signal and
+        # it's rare, not chronic noise.
         "expr": (
-            "rate(windows_memory_swap_pages_written_total[5m]) > "
+            "rate(node_vmstat_pswpout[5m]) > "
             "{threshold.host_memory_paging_critical_pages_per_sec}"
         ),
         "for": "2m",
@@ -545,11 +551,11 @@ DEFAULT_RULES: dict[str, dict[str, Any]] = {
         "category": "infrastructure",
         "summary": "Host is thrashing — sustained page-out to disk",
         "description": (
-            "The host has written to the pagefile at over "
+            "The host has paged out to swap at over "
             "prometheus.threshold.host_memory_paging_critical_pages_per_sec "
             "(default 2000) pages/s for 2m — active memory-pressure eviction, "
             "the precursor to a desktop freeze / hard reset. Physical RAM is "
-            "exhausted and the working set is spilling to the pagefile. "
+            "exhausted and the working set is spilling to swap. "
             "Intervene now: close browser/Electron apps to free RAM, or pause "
             "heavy pipeline work (image/video generation). If this recurs, the "
             "host is structurally oversubscribed — reduce resident load or move "

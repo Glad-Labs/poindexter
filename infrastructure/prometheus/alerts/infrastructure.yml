@@ -87,24 +87,27 @@ groups:
             (Workers & Pages → page-views-beacon) and `wrangler tail`, and
             verify the `cloudflare_beacon_url` app_setting is correct.
 
-      # --- Windows exporter ---
+      # --- Node exporter ---
       # Must be static (not DB-rendered): binary up/down, no tunable thresholds,
       # and must fire even when the DB is down (when dynamic rendering fails).
       # poindexter#705 — exporter death silently kills all disk alerting.
-      - alert: WindowsExporterDown
-        expr: up{job="windows"} == 0 or absent(up{job="windows"})
+      # (Was WindowsExporterDown / up{job="windows"} until the Pop!_OS
+      # migration's Task 5.2 swapped the host exporter to node_exporter.)
+      - alert: NodeExporterDown
+        expr: up{job="node"} == 0 or absent(up{job="node"})
         for: 5m
         labels:
           severity: critical
           category: infrastructure
         annotations:
-          summary: "windows_exporter is unreachable — host metrics gone"
+          summary: "node_exporter is unreachable — host metrics gone"
           description: |
-            Prometheus cannot scrape the windows_exporter target (port 9182).
-            All host metrics (disk, GPU, CPU, memory) have gone stale or absent.
+            Prometheus cannot scrape the node_exporter target (port 9100).
+            All host metrics (disk, CPU, memory) have gone stale or absent.
             PoindexterDiskSpaceLow/Critical is now blind.
-            Check: `Get-Process windows_exporter` in PowerShell, or
-            `Invoke-WebRequest http://localhost:9182/metrics`.
+            Check: `systemctl status prometheus-node-exporter`, and
+            `curl -s http://localhost:9100/metrics | head` (it must be bound
+            to 0.0.0.0, not 127.0.0.1, or the docker bridge can't reach it).
 
       # PoindexterDiskSpaceLow and PoindexterDiskSpaceCritical were here.
       # Moved to prometheus_rule_builder.py DEFAULT_RULES so operators can
