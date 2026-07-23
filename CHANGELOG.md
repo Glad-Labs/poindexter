@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+## [0.107.1](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.107.0...v0.107.1) (2026-07-23)
+
+
+### Bug Fixes
+
+* **migration:** finish Windows-side DB handoff (Task 4.4) + backup-precious docker cp fix ([#2744](https://github.com/Glad-Labs/glad-labs-stack/issues/2744)) ([f4f8b0b](https://github.com/Glad-Labs/glad-labs-stack/commit/f4f8b0b0e5a2b674117ceef61ebbb91644144c7d))
+
 ## [0.107.0](https://github.com/Glad-Labs/glad-labs-stack/compare/v0.106.2...v0.107.0) (2026-07-20)
 
 
