@@ -150,6 +150,31 @@ def test_shelly_missing_apower_no_sample():
     assert out.startswith("# ")
 
 
+def test_shelly_url_resolves_from_env_for_containerized_run(monkeypatch):
+    """The containerized gpu-exporter has no ~/.poindexter/bootstrap.toml, so
+    SHELLY_PSU_URL (exported by start-stack from the same bootstrap key) must
+    win the resolution — and a trailing slash must not double up in the RPC
+    path. Pop!_OS migration follow-up."""
+    monkeypatch.setenv("SHELLY_PSU_URL", "http://192.168.1.180/")
+    seen = {}
+
+    def fake(url):
+        seen["url"] = url
+        return {"apower": 220.9}
+
+    series = _series(EXPORTER.get_shelly_psu_metrics(None, _fetch=fake))
+    assert seen["url"] == "http://192.168.1.180/rpc/Switch.GetStatus?id=0"
+    assert series["psu_total_power_watts"] == "220.90"
+
+
+def test_shelly_env_unset_falls_back_to_bootstrap(monkeypatch):
+    """Host-script mode: no env var → the bootstrap.toml reader is consulted
+    (stubbed here; its own behavior is covered by the reader's contract)."""
+    monkeypatch.delenv("SHELLY_PSU_URL", raising=False)
+    monkeypatch.setattr(EXPORTER, "_read_shelly_url_from_bootstrap", lambda: "")
+    assert EXPORTER.get_shelly_psu_metrics(None, _fetch=lambda url: {}) == ""
+
+
 def test_shelly_queries_switch_getstatus_endpoint():
     captured = {}
 

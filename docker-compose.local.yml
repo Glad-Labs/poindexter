@@ -1652,6 +1652,12 @@ services:
       - "9835:9835"
     environment:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"
+      # Shelly wall-power plug base URL (true AC watts at the outlet →
+      # psu_total_power_watts). The exporter's bootstrap.toml fallback can't
+      # work in-container (no ~/.poindexter here), so start-stack's exported
+      # SHELLY_PSU_URL (from the same bootstrap key) rides in via env.
+      # Empty = no-op; the software estimate covers wall power.
+      SHELLY_PSU_URL: "${SHELLY_PSU_URL:-}"
     volumes:
       - ./scripts/nvidia-smi-exporter.py:/app/nvidia-smi-exporter.py:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/brain:ro

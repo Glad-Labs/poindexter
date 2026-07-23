@@ -617,6 +617,26 @@ def get_liquidctl_psu_metrics():
     return "\n".join(lines) + "\n" if lines else ""
 
 
+def _resolve_shelly_url() -> str:
+    """Shelly plug base URL: ``SHELLY_PSU_URL`` env var first, then the
+    ``shelly_psu_url`` key in ~/.poindexter/bootstrap.toml, else "".
+
+    Two launch modes need two sources (Pop!_OS migration):
+    - **Containerized** (the ``gpu-exporter`` service): no bootstrap.toml
+      inside the container, so compose passes ``SHELLY_PSU_URL`` through —
+      start-stack.sh already exports every bootstrap key as an uppercase
+      env var, so the value still has a single home in bootstrap.toml.
+    - **Host script** (the legacy Windows scheduled task): no inherited
+      user env, so it falls back to reading bootstrap.toml directly.
+    """
+    import os
+
+    env_url = os.environ.get("SHELLY_PSU_URL", "").strip()
+    if env_url:
+        return env_url.rstrip("/")
+    return _read_shelly_url_from_bootstrap()
+
+
 def _read_shelly_url_from_bootstrap() -> str:
     """Shelly plug base URL from ~/.poindexter/bootstrap.toml key
     ``shelly_psu_url`` (e.g. ``http://192.168.1.50``), or "" if absent.
@@ -659,12 +679,14 @@ def get_shelly_psu_metrics(base_url: str | None = None, *, _fetch=None) -> str:
     canonical wall-power metric ``brain.psu_power`` and the Grafana Hardware &
     Power board already consume — from the plug's ``apower`` reading.
 
-    Config: ``shelly_psu_url`` in bootstrap.toml. Unset → "" (no-op; the
-    software estimate covers it). Any error → "" so a plug reboot / network
-    blip never breaks the whole /metrics scrape.
+    Config: ``SHELLY_PSU_URL`` env var (containerized gpu-exporter) or
+    ``shelly_psu_url`` in bootstrap.toml (host script) — see
+    ``_resolve_shelly_url``. Unset → "" (no-op; the software estimate covers
+    it). Any error → "" so a plug reboot / network blip never breaks the
+    whole /metrics scrape.
     """
     if base_url is None:
-        base_url = _read_shelly_url_from_bootstrap()
+        base_url = _resolve_shelly_url()
     if not base_url:
         return ""
 

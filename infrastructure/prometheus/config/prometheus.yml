@@ -47,7 +47,10 @@ scrape_configs:
       - targets: ["gpu-exporter:9835"]
     metric_relabel_configs:
       - source_labels: [__name__]
-        regex: 'nvidia_gpu_.*|system_.*_power_estimate_.*'
+        # psu_.* = the Shelly outlet meter's psu_total_power_watts (true wall
+        # power) — this family rode the retired nvidia-smi-host job's keep-list
+        # on Windows; the containerized exporter emits it on this job now.
+        regex: 'nvidia_gpu_.*|system_.*_power_estimate_.*|psu_.*'
         action: keep
 
   # (RETIRED at the Pop!_OS migration) The `nvidia-smi-host` job scraped the

@@ -540,7 +540,7 @@
     {
       "id": 8,
       "type": "gauge",
-      "title": "PSU DC Output \u2014 total (HX1500i)",
+      "title": "Wall Power (Shelly plug)",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -594,16 +594,16 @@
             "type": "prometheus",
             "uid": "local-prometheus"
           },
-          "expr": "node_hwmon_power_watt{chip=~\".*1b1c.*\"} * on(chip, sensor) group_left(label) node_hwmon_sensor_label{label=\"power total\"}",
-          "legendFormat": "DC total"
+          "expr": "psu_total_power_watts",
+          "legendFormat": "Wall (Shelly)"
         }
       ],
-      "description": "Total DC output power from the corsair-psu kernel driver via node_exporter. The old panel showed wall/input power from the iCUE CSV export \u2014 the corsairpsu driver's input-power estimate is unreliable (reads garbage), so this panel now shows the trustworthy total DC output instead. Wall power \u2248 DC/efficiency (~92% at typical load for the HX1500i, 80+ Platinum)."
+      "description": "True AC wall power metered at the outlet by the Shelly plug (psu_total_power_watts via the gpu-exporter's /rpc/Switch.GetStatus poll). Reboot-proof and independent of the PSU's USB HID \u2014 the permanent wall-power source (see docs/operations/wall-power-metering.md). Compare with the DC-output stat beside it: wall \u2212 DC = PSU conversion loss."
     },
     {
       "id": 9,
       "type": "gauge",
-      "title": "+12V Rail Power (HX1500i)",
+      "title": "PSU DC Output \u2014 total (HX1500i)",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -657,11 +657,11 @@
             "type": "prometheus",
             "uid": "local-prometheus"
           },
-          "expr": "node_hwmon_power_watt{chip=~\".*1b1c.*\"} * on(chip, sensor) group_left(label) node_hwmon_sensor_label{label=\"power +12v\"}",
-          "legendFormat": "+12V rail"
+          "expr": "node_hwmon_power_watt{chip=~\".*1b1c.*\"} * on(chip, sensor) group_left(label) node_hwmon_sensor_label{label=\"power total\"}",
+          "legendFormat": "DC total"
         }
       ],
-      "description": "+12V rail output power (the GPU load rail) from the corsair-psu kernel driver via node_exporter. Replaced the iCUE CSV source (Pop!_OS migration)."
+      "description": "Total DC output power from the corsair-psu kernel driver via node_exporter hwmon. Pairs with the Shelly wall stat: wall \u2212 DC = conversion loss. (The driver's own input-power estimate reads garbage, hence the plug.)"
     },
     {
       "id": 10,
@@ -770,11 +770,20 @@
             "type": "prometheus",
             "uid": "local-prometheus"
           },
+          "expr": "psu_total_power_watts",
+          "legendFormat": "Wall (Shelly)"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
           "expr": "node_hwmon_power_watt{chip=~\".*1b1c.*\"} * on(chip, sensor) group_left(label) node_hwmon_sensor_label{label=\"power total\"}",
           "legendFormat": "DC total"
         },
         {
-          "refId": "B",
+          "refId": "C",
           "datasource": {
             "type": "prometheus",
             "uid": "local-prometheus"
@@ -783,7 +792,7 @@
           "legendFormat": "+12V rail"
         }
       ],
-      "description": "PSU DC output over time from the corsair-psu kernel driver via node_exporter (replaced the iCUE CSV export at the Pop!_OS migration)."
+      "description": "Wall power (Shelly outlet meter) vs PSU DC output (corsairpsu kernel driver) over time \u2014 the gap is PSU conversion loss. +12V rail carries the GPU load."
     },
     {
       "id": 11,
