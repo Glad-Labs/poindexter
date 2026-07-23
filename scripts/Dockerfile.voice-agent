@@ -11,6 +11,14 @@
 # under torch + onnxruntime-gpu. Pipecat's whisper service auto-selects
 # the GPU when one is reserved to the container (see compose `deploy:`).
 
+# Node runtime donor for the claude-code CLI (see the COPY below). A pinned
+# official image beats the old `curl nodesource | bash` — that pipeline
+# failed SILENTLY on docker-ce (this base ships wget but no curl, so the
+# repo-setup script never ran and `apt-get install nodejs` found nothing;
+# Docker Desktop's cached layers had masked it). Node 22 = current LTS
+# (20 went EOL 2026-04).
+FROM node:22-slim AS node-donor
+
 FROM pytorch/pytorch:2.5.1-cuda12.4-cudnn9-runtime
 
 # System deps:
@@ -83,9 +91,14 @@ RUN python -c "import pyroscope; assert hasattr(pyroscope, 'configure'), 'pyrosc
 # agent shares the host's MEMORY.md, so memory updates can race with
 # the host Claude session. See Glad-Labs/poindexter#432 for a future
 # per-component split (creds RO, projects/ container-only).
-RUN curl -fsSL https://deb.nodesource.com/setup_20.x | bash - \
-    && apt-get install -y --no-install-recommends nodejs \
-    && rm -rf /var/lib/apt/lists/* \
+# Node comes from the pinned node:22-slim stage (no curl|bash, no apt repo
+# juggling — the nodesource pipeline broke silently on docker-ce because
+# this base has no curl; see the node-donor comment at the top).
+COPY --from=node-donor /usr/local/bin/node /usr/local/bin/node
+COPY --from=node-donor /usr/local/lib/node_modules /usr/local/lib/node_modules
+RUN ln -sf /usr/local/lib/node_modules/npm/bin/npm-cli.js /usr/local/bin/npm \
+    && ln -sf /usr/local/lib/node_modules/npm/bin/npx-cli.js /usr/local/bin/npx \
+    && node --version && npm --version \
     && npm install -g @anthropic-ai/claude-code \
     && claude --version
 

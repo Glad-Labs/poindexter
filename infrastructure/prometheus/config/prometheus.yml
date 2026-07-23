@@ -25,22 +25,15 @@ rule_files:
   - /etc/prometheus/rules/*.yml
 
 scrape_configs:
-  # GPU metrics (nvidia_gpu_*) — sourced from the HOST exporter, not the
-  # gpu-exporter container. On Windows Docker Desktop the Linux container can't
-  # reach the NVIDIA driver (`nvidia-smi` -> "Driver Not Loaded"), so it serves
-  # zero nvidia_gpu_* series; worse, its :9835 publish shadows the host-side
-  # nvidia-smi-exporter.py on IPv6 and broke gpu-scraper.py (incident 2026-06-21).
-  # The host pythonw exporter reads the GPU reliably over host.docker.internal.
-  # We KEEP job_name "nvidia-smi" and limit this scrape to nvidia_gpu_* +
-  # system_*_power_estimate_* so every consumer is unchanged: the hardware-power
-  # dashboard's bare nvidia_gpu_* queries and the GpuTemperatureHigh /
-  # GpuVramUtilizationHigh rules (prometheus_rule_builder.py) keep their
-  # job="nvidia-smi" series. The complementary nvidia-smi-host job below supplies
-  # the host-only hwinfo_/aida64_/psu_/system_cpu_ sensors from the same endpoint,
-  # so the two keep-lists don't overlap (no duplicate series).
-  # The gpu-exporter container is profile-gated off on Windows in
-  # docker-compose.local.yml; re-point this job at "gpu-exporter:9835" on a Linux
-  # host where GPU passthrough actually works.
+  # GPU metrics (nvidia_gpu_*) — sourced from the gpu-exporter CONTAINER since
+  # the Pop!_OS migration (enable with the `linux-gpu` compose profile). On
+  # bare-metal Linux the container reaches the NVIDIA driver through the
+  # nvidia container runtime, so the old Windows-era host pythonw exporter at
+  # host.docker.internal:9835 (dead with Windows) is no longer the source.
+  # We KEEP job_name "nvidia-smi" and the keep-list so every consumer is
+  # unchanged: the hardware-power dashboard's bare nvidia_gpu_* queries and
+  # the GpuTemperatureHigh / GpuVramUtilizationHigh rules
+  # (prometheus_rule_builder.py) keep their job="nvidia-smi" series.
   - job_name: nvidia-smi
     scrape_interval: 30s
     # nvidia-smi can block past the default 10s scrape_timeout under heavy GPU
@@ -51,32 +44,19 @@ scrape_configs:
     # scrape beats a gap. (incident 2026-06-29 triage)
     scrape_timeout: 25s
     static_configs:
-      - targets: ["host.docker.internal:9835"]
+      - targets: ["gpu-exporter:9835"]
     metric_relabel_configs:
       - source_labels: [__name__]
         regex: 'nvidia_gpu_.*|system_.*_power_estimate_.*'
         action: keep
 
-  # Host hardware sensors — the host-side pythonw nvidia-smi-exporter.py is the
-  # ONLY source for Windows shared-memory sensors (HWiNFO64 + AIDA64) and AMD RAPL
-  # CPU power: the gpu-exporter container above runs the same script on Linux and
-  # can't read any of them. Capture-everything posture (2026-06-03; the Grafana
-  # Cloud free-tier cardinality cap that motivated keep-only-cpu was retired
-  # 2026-05-03): keep the full hwinfo_/aida64_/psu_/system_cpu_ families. We still
-  # DROP the host's nvidia_gpu_* and system_*_power_estimate_* because the container
-  # job already supplies those — keeping both would draw double lines in Grafana
-  # (two series differing only by ``job`` label).
-  - job_name: nvidia-smi-host
-    scrape_interval: 30s
-    # Same host :9835 endpoint as the nvidia-smi job above — raise scrape_timeout
-    # off the 10s default so the shared exporter's load spikes don't flap it.
-    scrape_timeout: 25s
-    static_configs:
-      - targets: ["host.docker.internal:9835"]
-    metric_relabel_configs:
-      - source_labels: [__name__]
-        regex: 'hwinfo_.*|aida64_.*|psu_.*|system_cpu_.*'
-        action: keep
+  # (RETIRED at the Pop!_OS migration) The `nvidia-smi-host` job scraped the
+  # Windows-only shared-memory sensors — hwinfo_* / aida64_* / psu_* /
+  # system_cpu_* — from the host pythonw exporter. Those sources died with
+  # Windows; their replacements flow through node_exporter's hwmon collector
+  # on the `node` job below (corsairpsu kernel driver = PSU power/temps/fan,
+  # k10temp + asusec = CPU/board temps). The hardware-power dashboard panels
+  # were re-sourced accordingly.
 
   # Canonical worker metrics — exposition produced via prometheus_client.
   # Gitea #269 folded the legacy /api/prometheus exposer into this path;

@@ -25,7 +25,7 @@
   "panels": [
     {
       "type": "row",
-      "title": "GPU — live (Prometheus)",
+      "title": "GPU \u2014 live (Prometheus)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -305,7 +305,7 @@
       "id": 56,
       "type": "timeseries",
       "title": "VRAM headroom (dedicated)",
-      "description": "Per-GPU dedicated-VRAM headroom = (card total - 3 GB desktop reserve) - VRAM used, one series per GPU. Uses each card's real nvidia_gpu_memory_total_mib so it stays correct across a mixed-size multi-GPU rig (e.g. 32 GB 5090 + 24 GB 3090) instead of hardcoding the primary card's size. When a series trends toward the 0 line the NVIDIA driver is about to spill that card's VRAM into system RAM (the WDDM desktop freeze). The Windows shared-memory spill counter itself isn't in Prometheus yet (windows_exporter has no GPU collector) — a future exporter task.",
+      "description": "Per-GPU dedicated-VRAM headroom = (card total - 3 GB desktop reserve) - VRAM used, one series per GPU. Uses each card's real nvidia_gpu_memory_total_mib so it stays correct across a mixed-size multi-GPU rig (e.g. 32 GB 5090 + 24 GB 3090) instead of hardcoding the primary card's size. When a series trends toward the 0 line the NVIDIA driver is about to spill that card's VRAM into system RAM (the WDDM desktop freeze). The Windows shared-memory spill counter itself isn't in Prometheus yet (no host GPU-spill collector on Linux either) \u2014 a future exporter task.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -410,8 +410,8 @@
     {
       "id": 65,
       "type": "stat",
-      "title": "Render VRAM gate — free (render GPU)",
-      "description": "Free VRAM on the render/display GPU (pipeline_gpu_index=0, the 5090) right now. Below media_render_min_free_vram_gb (default 25 GB → red) the media dispatch gate DEFERS video renders so a ~24 GB Wan render can't oversubscribe the card and spill WDDM into system RAM (the desktop freeze). Green (≥25 GB) → a render may proceed. Source: services/render_vram.py + the media_infra_health VRAM preflight (#2394). Video staying quiet during active desktop use is EXPECTED here until the VRAM-reclaim + idle-WSL-reset follow-up lands. If you retune pipeline_gpu_index, update the gpu filter in this query.",
+      "title": "Render VRAM gate \u2014 free (render GPU)",
+      "description": "Free VRAM on the render/display GPU (pipeline_gpu_index=0, the 5090) right now. Below media_render_min_free_vram_gb (default 25 GB \u2192 red) the media dispatch gate DEFERS video renders so a ~24 GB Wan render can't oversubscribe the card and spill WDDM into system RAM (the desktop freeze). Green (\u226525 GB) \u2192 a render may proceed. Source: services/render_vram.py + the media_infra_health VRAM preflight (#2394). Video staying quiet during active desktop use is EXPECTED here until the VRAM-reclaim + idle-WSL-reset follow-up lands. If you retune pipeline_gpu_index, update the gpu filter in this query.",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -469,7 +469,7 @@
     },
     {
       "type": "row",
-      "title": "Power — PSU / wall / CPU",
+      "title": "Power \u2014 PSU / wall / CPU",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -540,10 +540,10 @@
     {
       "id": 8,
       "type": "gauge",
-      "title": "Wall Power (HX1500i)",
+      "title": "PSU DC Output \u2014 total (HX1500i)",
       "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "type": "prometheus",
+        "uid": "local-prometheus"
       },
       "gridPos": {
         "h": 4,
@@ -589,24 +589,24 @@
       },
       "targets": [
         {
+          "refId": "A",
           "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "type": "prometheus",
+            "uid": "local-prometheus"
           },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS value FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name='psu_power_in' AND $__timeFilter(sampled_at) ORDER BY sampled_at DESC LIMIT 1",
-          "refId": "A"
+          "expr": "node_hwmon_power_watt{chip=~\".*1b1c.*\"} * on(chip, sensor) group_left(label) node_hwmon_sensor_label{label=\"power total\"}",
+          "legendFormat": "DC total"
         }
-      ]
+      ],
+      "description": "Total DC output power from the corsair-psu kernel driver via node_exporter. The old panel showed wall/input power from the iCUE CSV export \u2014 the corsairpsu driver's input-power estimate is unreliable (reads garbage), so this panel now shows the trustworthy total DC output instead. Wall power \u2248 DC/efficiency (~92% at typical load for the HX1500i, 80+ Platinum)."
     },
     {
       "id": 9,
       "type": "gauge",
-      "title": "DC Output (HX1500i)",
+      "title": "+12V Rail Power (HX1500i)",
       "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "type": "prometheus",
+        "uid": "local-prometheus"
       },
       "gridPos": {
         "h": 4,
@@ -652,24 +652,24 @@
       },
       "targets": [
         {
+          "refId": "A",
           "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "type": "prometheus",
+            "uid": "local-prometheus"
           },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS value FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name='psu_power_out' AND $__timeFilter(sampled_at) ORDER BY sampled_at DESC LIMIT 1",
-          "refId": "A"
+          "expr": "node_hwmon_power_watt{chip=~\".*1b1c.*\"} * on(chip, sensor) group_left(label) node_hwmon_sensor_label{label=\"power +12v\"}",
+          "legendFormat": "+12V rail"
         }
-      ]
+      ],
+      "description": "+12V rail output power (the GPU load rail) from the corsair-psu kernel driver via node_exporter. Replaced the iCUE CSV source (Pop!_OS migration)."
     },
     {
       "id": 10,
       "type": "timeseries",
       "title": "Power Over Time",
       "datasource": {
-        "type": "datasource",
-        "uid": "-- Mixed --"
+        "type": "prometheus",
+        "uid": "local-prometheus"
       },
       "gridPos": {
         "h": 8,
@@ -765,44 +765,25 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS \"Wall Power\" FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name='psu_power_in' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
-          },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS \"DC Output\" FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name='psu_power_out' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
-          "refId": "B"
-        },
-        {
+          "refId": "A",
           "datasource": {
             "type": "prometheus",
             "uid": "local-prometheus"
           },
-          "expr": "nvidia_gpu_power_draw_watts",
-          "legendFormat": "GPU",
-          "refId": "C"
+          "expr": "node_hwmon_power_watt{chip=~\".*1b1c.*\"} * on(chip, sensor) group_left(label) node_hwmon_sensor_label{label=\"power total\"}",
+          "legendFormat": "DC total"
         },
         {
+          "refId": "B",
           "datasource": {
             "type": "prometheus",
             "uid": "local-prometheus"
           },
-          "expr": "system_cpu_package_power_watts",
-          "legendFormat": "CPU",
-          "refId": "D"
+          "expr": "node_hwmon_power_watt{chip=~\".*1b1c.*\"} * on(chip, sensor) group_left(label) node_hwmon_sensor_label{label=\"power +12v\"}",
+          "legendFormat": "+12V rail"
         }
-      ]
+      ],
+      "description": "PSU DC output over time from the corsair-psu kernel driver via node_exporter (replaced the iCUE CSV export at the Pop!_OS migration)."
     },
     {
       "id": 11,
@@ -861,10 +842,10 @@
       "id": 12,
       "type": "timeseries",
       "title": "PSU Temperatures",
-      "description": "HX1500i internal temp from Corsair iCUE CSV. HWiNFO previously surfaced two PSU temps (VRM + Case); Corsair exposes only one, so the VRM line is what's shown — the trace label is kept for dashboard continuity.",
+      "description": "HX1500i VRM + case temperature from the corsair-psu kernel driver via node_exporter (replaced the iCUE CSV export at the Pop!_OS migration).",
       "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "type": "prometheus",
+        "uid": "local-prometheus"
       },
       "gridPos": {
         "h": 8,
@@ -929,20 +910,19 @@
       },
       "targets": [
         {
+          "refId": "A",
           "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "type": "prometheus",
+            "uid": "local-prometheus"
           },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_value AS \"PSU VRM\" FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name='psu_temp' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
-          "refId": "A"
+          "expr": "node_hwmon_temp_celsius{chip=~\".*1b1c.*\"} * on(chip, sensor) group_left(label) node_hwmon_sensor_label",
+          "legendFormat": "{{label}}"
         }
       ]
     },
     {
       "type": "row",
-      "title": "GPU — history (Postgres)",
+      "title": "GPU \u2014 history (Postgres)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1036,7 +1016,7 @@
     {
       "id": 50,
       "type": "row",
-      "title": "Sensors — AIDA64 + iCUE (live)",
+      "title": "Sensors \u2014 AIDA64 + iCUE (live)",
       "collapsed": false,
       "gridPos": {
         "h": 1,
@@ -1048,8 +1028,8 @@
     {
       "id": 51,
       "type": "timeseries",
-      "title": "Temperatures (AIDA64)",
-      "description": "Live temps from AIDA64 shared memory (Prometheus aida64_temperature_celsius). Labels are AIDA64 passthrough — adjust the regex if your sensor set differs.",
+      "title": "Temperatures (hwmon)",
+      "description": "All labeled hwmon temperature sensors via node_exporter \u2014 k10temp (CPU Tctl/Tccd), asusec (board/VRM), corsairpsu (PSU VRM/case), nvme, amdgpu. Replaced the Windows-only AIDA64 shared-memory source (Pop!_OS migration).",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1062,9 +1042,13 @@
       },
       "targets": [
         {
-          "expr": "aida64_temperature_celsius{label=~\"CPU Package|CPU Diode|CCD #1|CCD #2|VRM|GPU1|GPU1 Memory|Motherboard|DIMM2|DIMM4\"}",
-          "legendFormat": "{{label}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "node_hwmon_temp_celsius * on(chip, sensor) group_left(label) node_hwmon_sensor_label",
+          "legendFormat": "{{label}}"
         }
       ],
       "fieldConfig": {
@@ -1077,11 +1061,11 @@
     {
       "id": 52,
       "type": "timeseries",
-      "title": "Fans (iCUE)",
-      "description": "Case + PSU fan RPMs from the Corsair iCUE LINK CSV (sensor_samples, source=corsair_csv, fan_* metrics). AIDA64/HWiNFO can't see the iCUE fan controller, so this reads the same CSV tap that feeds PSU power. Empty until the corsair_csv tap config maps the fan_* columns.",
+      "title": "Fans (hwmon)",
+      "description": "All hwmon fan tachometers via node_exporter (PSU fan from corsairpsu, board fans from asusec). Replaced the iCUE CSV export (Pop!_OS migration).",
       "datasource": {
-        "type": "grafana-postgresql-datasource",
-        "uid": "local-brain-db"
+        "type": "prometheus",
+        "uid": "local-prometheus"
       },
       "gridPos": {
         "h": 8,
@@ -1091,14 +1075,13 @@
       },
       "targets": [
         {
+          "refId": "A",
           "datasource": {
-            "type": "grafana-postgresql-datasource",
-            "uid": "local-brain-db"
+            "type": "prometheus",
+            "uid": "local-prometheus"
           },
-          "format": "time_series",
-          "rawQuery": true,
-          "rawSql": "SELECT sampled_at AS time, metric_name AS metric, metric_value AS value FROM sensor_samples_unified WHERE source='corsair_csv' AND metric_name LIKE 'fan_%' AND $__timeFilter(sampled_at) ORDER BY sampled_at",
-          "refId": "A"
+          "expr": "node_hwmon_fan_rpm * on(chip, sensor) group_left(label) node_hwmon_sensor_label",
+          "legendFormat": "{{label}}"
         }
       ],
       "fieldConfig": {
@@ -1139,8 +1122,8 @@
     {
       "id": 54,
       "type": "timeseries",
-      "title": "Component Power — live (AIDA64)",
-      "description": "CPU package + GPU board power from AIDA64 (Prometheus aida64_power_watts). AIDA64 does not expose the Corsair PSU, so PSU wall/DC power lives on the Power row above (sourced from the iCUE CSV).",
+      "title": "Component Power \u2014 live (hwmon)",
+      "description": "PSU rail power (corsairpsu: total/+12V/+5V/+3.3V) + AMD PPT via node_exporter hwmon. GPU board power lives on the VRAM/Power panels (nvidia_gpu_*). Replaced AIDA64 CPU-Package/GPU1 (Pop!_OS migration).",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1153,9 +1136,13 @@
       },
       "targets": [
         {
-          "expr": "aida64_power_watts{label=~\"CPU Package|GPU1\"}",
-          "legendFormat": "{{label}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "node_hwmon_power_watt * on(chip, sensor) group_left(label) node_hwmon_sensor_label",
+          "legendFormat": "{{label}}"
         }
       ],
       "fieldConfig": {
@@ -1168,8 +1155,8 @@
     {
       "id": 55,
       "type": "timeseries",
-      "title": "Voltages (AIDA64)",
-      "description": "Live rail + core voltages from AIDA64 shared memory (Prometheus aida64_voltage_volts). The .12 V / .5 V / .3.3 V patterns match AIDA64's +-prefixed rail labels.",
+      "title": "Voltages (hwmon)",
+      "description": "Labeled hwmon voltages via node_exporter \u2014 corsairpsu v_out rails (+12V/+5V/+3.3V) and board sensors. Replaced the AIDA64 source (Pop!_OS migration).",
       "datasource": {
         "type": "prometheus",
         "uid": "local-prometheus"
@@ -1182,9 +1169,13 @@
       },
       "targets": [
         {
-          "expr": "aida64_voltage_volts{label=~\"CPU Core|SoC|VDDIO|.12 V|.5 V|.3.3 V\"}",
-          "legendFormat": "{{label}}",
-          "refId": "A"
+          "refId": "A",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "node_hwmon_in_volts * on(chip, sensor) group_left(label) node_hwmon_sensor_label",
+          "legendFormat": "{{label}}"
         }
       ],
       "fieldConfig": {
@@ -1196,9 +1187,14 @@
     },
     {
       "type": "row",
-      "title": "Host Memory — pressure (Prometheus)",
+      "title": "Host Memory \u2014 pressure (Prometheus)",
       "collapsed": false,
-      "gridPos": { "h": 1, "w": 24, "x": 0, "y": 86 },
+      "gridPos": {
+        "h": 1,
+        "w": 24,
+        "x": 0,
+        "y": 86
+      },
       "panels": [],
       "id": 59
     },
@@ -1206,19 +1202,38 @@
       "id": 60,
       "type": "stat",
       "title": "Available RAM",
-      "description": "windows_memory_available_bytes = truly-free + reclaimable-standby. When this trends toward 0 the desktop compositor starves and the UI freezes. The PoindexterHostMemoryLow warning fires under 4 GB sustained.",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 4, "w": 4, "x": 0, "y": 87 },
+      "description": "node_memory_MemAvailable_bytes = truly-free + reclaimable memory. When this trends toward 0 the desktop compositor starves and the UI freezes. The PoindexterHostMemoryLow warning fires under 4 GB sustained.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 0,
+        "y": 87
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "orange", "value": null },
-              { "color": "yellow", "value": 2147483648 },
-              { "color": "blue", "value": 4294967296 }
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 2147483648
+              },
+              {
+                "color": "blue",
+                "value": 4294967296
+              }
             ]
           }
         },
@@ -1236,8 +1251,11 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-          "expr": "windows_memory_available_bytes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "node_memory_MemAvailable_bytes",
           "refId": "A"
         }
       ]
@@ -1246,19 +1264,38 @@
       "id": 61,
       "type": "stat",
       "title": "Commit vs RAM",
-      "description": "windows_memory_committed_bytes / windows_memory_physical_total_bytes. Over 100% means committed memory exceeds physical RAM — the host is leaning on the pagefile. Sustained high commit is the structural oversubscription behind the freezes.",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 4, "w": 4, "x": 4, "y": 87 },
+      "description": "node_memory_Committed_AS_bytes / node_memory_CommitLimit_bytes. Over 100% means committed memory exceeds physical RAM \u2014 the host is leaning on swap. Sustained high commit is the structural oversubscription behind the freezes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 4,
+        "y": 87
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "percent",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "yellow", "value": 100 },
-              { "color": "orange", "value": 150 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 100
+              },
+              {
+                "color": "orange",
+                "value": 150
+              }
             ]
           }
         },
@@ -1276,8 +1313,11 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-          "expr": "windows_memory_committed_bytes / windows_memory_physical_total_bytes * 100",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "node_memory_Committed_AS_bytes / node_memory_CommitLimit_bytes * 100",
           "refId": "A"
         }
       ]
@@ -1286,19 +1326,38 @@
       "id": 62,
       "type": "stat",
       "title": "Page-out rate",
-      "description": "rate(windows_memory_swap_pages_written_total[5m]) — pages/s written to the pagefile (memory-pressure eviction, not ordinary file I/O). The PoindexterHostMemoryThrashing critical fires over 2000/s — the freeze-in-progress signal.",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 4, "w": 4, "x": 8, "y": 87 },
+      "description": "rate(node_vmstat_pswpout[5m]) \u2014 pages/s swapped out (memory-pressure eviction, not ordinary file I/O). The PoindexterHostMemoryThrashing critical fires over 2000/s \u2014 the freeze-in-progress signal.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 4,
+        "w": 4,
+        "x": 8,
+        "y": 87
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "yellow", "value": 500 },
-              { "color": "orange", "value": 2000 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 500
+              },
+              {
+                "color": "orange",
+                "value": 2000
+              }
             ]
           }
         },
@@ -1316,8 +1375,11 @@
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-          "expr": "rate(windows_memory_swap_pages_written_total[5m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "rate(node_vmstat_pswpout[5m])",
           "refId": "A"
         }
       ]
@@ -1327,23 +1389,41 @@
       "type": "timeseries",
       "title": "Available RAM (headroom)",
       "description": "Host available RAM over time. The line at 4 GB is the PoindexterHostMemoryLow warning floor; when this approaches 0 the desktop compositor stalls (the host-memory freeze).",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 91 },
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 91
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "bytes",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "custom": {
             "fillOpacity": 10,
             "lineWidth": 2,
             "showPoints": "never",
-            "thresholdsStyle": { "mode": "line" }
+            "thresholdsStyle": {
+              "mode": "line"
+            }
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "orange", "value": null },
-              { "color": "blue", "value": 4294967296 }
+              {
+                "color": "orange",
+                "value": null
+              },
+              {
+                "color": "blue",
+                "value": 4294967296
+              }
             ]
           }
         },
@@ -1355,12 +1435,17 @@
           "displayMode": "table",
           "placement": "bottom"
         },
-        "tooltip": { "mode": "multi" }
+        "tooltip": {
+          "mode": "multi"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-          "expr": "windows_memory_available_bytes",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "node_memory_MemAvailable_bytes",
           "legendFormat": "Available RAM",
           "refId": "A"
         }
@@ -1370,25 +1455,43 @@
       "id": 64,
       "type": "timeseries",
       "title": "Pagefile write rate (thrash)",
-      "description": "rate(windows_memory_swap_pages_written_total[5m]) — sustained pagefile writes = memory-pressure eviction. The line at 2000 pages/s is the PoindexterHostMemoryThrashing critical floor; spikes here are freeze-in-progress episodes.",
-      "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 91 },
+      "description": "rate(node_vmstat_pswpout[5m]) \u2014 sustained swap page-outs = memory-pressure eviction. The line at 2000 pages/s is the PoindexterHostMemoryThrashing critical floor; spikes here are freeze-in-progress episodes.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "local-prometheus"
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 91
+      },
       "fieldConfig": {
         "defaults": {
           "unit": "short",
-          "color": { "mode": "thresholds" },
+          "color": {
+            "mode": "thresholds"
+          },
           "custom": {
             "fillOpacity": 10,
             "lineWidth": 2,
             "showPoints": "never",
-            "thresholdsStyle": { "mode": "line" },
+            "thresholdsStyle": {
+              "mode": "line"
+            },
             "axisLabel": "pages/s"
           },
           "thresholds": {
             "mode": "absolute",
             "steps": [
-              { "color": "blue", "value": null },
-              { "color": "orange", "value": 2000 }
+              {
+                "color": "blue",
+                "value": null
+              },
+              {
+                "color": "orange",
+                "value": 2000
+              }
             ]
           }
         },
@@ -1400,12 +1503,17 @@
           "displayMode": "table",
           "placement": "bottom"
         },
-        "tooltip": { "mode": "multi" }
+        "tooltip": {
+          "mode": "multi"
+        }
       },
       "targets": [
         {
-          "datasource": { "type": "prometheus", "uid": "local-prometheus" },
-          "expr": "rate(windows_memory_swap_pages_written_total[5m])",
+          "datasource": {
+            "type": "prometheus",
+            "uid": "local-prometheus"
+          },
+          "expr": "rate(node_vmstat_pswpout[5m])",
           "legendFormat": "Page-out /s",
           "refId": "A"
         }
@@ -1497,5 +1605,5 @@
       ]
     }
   ],
-  "description": "CHARTER: GPU/PSU/wall power + host-memory pressure — thermal, electrical, and RAM headroom and electricity cost. GPU live is single-sourced from Prometheus nvidia_gpu_* (#653); the gpu_metrics SQL tables here are history only. Host-memory row added 2026-07-10 (desktop-freeze investigation)."
+  "description": "CHARTER: GPU/PSU/wall power + host-memory pressure \u2014 thermal, electrical, and RAM headroom and electricity cost. GPU live is single-sourced from Prometheus nvidia_gpu_* (#653); the gpu_metrics SQL tables here are history only. Host-memory row added 2026-07-10 (desktop-freeze investigation)."
 }
