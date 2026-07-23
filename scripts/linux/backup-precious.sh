@@ -69,11 +69,12 @@ for c in "${PG_CONTAINERS[@]}"; do
   for db in "${dbs[@]}"; do
     [ -n "$db" ] || continue
     if [[ "$db" =~ $JUNK_DB_RE ]]; then echo "  skip $db (scratch)"; continue; fi
-    # Dump to a file INSIDE the container, then docker cp it out. Redirecting a
-    # binary -Fc stream through the host shell corrupts it on some platforms.
-    dk exec "$c" pg_dump -U "$user" -Fc -f "/tmp/${db}.dump" "$db"
-    dk cp "$c:/tmp/${db}.dump" "$OUT/pg/${c}__${db}.dump"
-    dk exec "$c" rm -f "/tmp/${db}.dump"
+    # Stream -Fc straight to the host file. On THIS Git Bash a binary stdout
+    # redirect is faithful (the globals dump above and the volume tar below both
+    # rely on it), so we avoid `docker cp` — whose host-path arg the MSYS-off
+    # dk() wrapper mangles (/d/... -> C:\d\...). No /tmp scratch, no cp, no rm.
+    # [migration-local fix 2026-07-23; upstream dk() should scope MSYS per-arg.]
+    dk exec "$c" pg_dump -U "$user" -Fc "$db" > "$OUT/pg/${c}__${db}.dump"
     sz=$(du -m "$OUT/pg/${c}__${db}.dump" | cut -f1)
     echo "  dumped $db (${sz} MB)"
   done
