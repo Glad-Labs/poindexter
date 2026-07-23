@@ -6,8 +6,9 @@
 >
 > A session picking this up: read this block first, then jump to the phase named under "Next".
 >
-> - **✅ TASK 4.5 DONE — LINUX NOW OWNS THE DATABASE (2026-07-23, LOCAL Pop session).** Restored the FINAL dump (`/media/mattm/MP600/migration-backup-FINAL/poindexter-backup-20260723-013556`; NTFS mounted **read-only by label** — the `nvme?` numbers flipped again, MP600=`nvme1n1` this boot) with **zero drift** — all 7 baseline tables exact (posts 329 · pipeline_tasks 1960 · app_settings 1254 · embeddings 52773 · brain_knowledge 118 · atom_runs 6413 · audit_log 203707). Followed the dump's own `RESTORE-RECIPE.txt` (`<container>__<db>.dump` naming, streamed via stdin — the plan's flat `pg/<db>.dump` recipe was superseded), restored the secret-bearing globals (`poindexter.secret_key` GUC present), then brought up a **34-service core** — API `:8002/api/health` → 200, Grafana `database: ok`, DB port **40/40 under churn** (wedge-class gone by architecture; `pg_isready` isn't installed on the host, so verified via bash `/dev/tcp`), migrations **0 pending**, app_settings unchanged at 1254. **Blocker fixed:** `bootstrap.toml` `poindexter_deploy_root` was a leftover Windows path `C:/Users/…` → repointed to `/home/mattm/glad-labs-website` (it broke the brain/worker code bind-mounts — the only thing stopping the core `up`). **Deferred (NOT handoff-blocking):** `voice-agent-livekit` image build fails on docker-ce (its `curl … setup_20.x | bash-` Node install → `E: Unable to locate package nodejs`; voice not load-bearing), `image-gen-server`/`speaches` unbuilt, `wan-server`(built, VRAM-heavy)/`backup-*`(Phase-5 DR)/`github-runner`(PEM) not started; host Python lacks `asyncpg` so start-stack's grafana-webhook + offsite-backup secret pre-decrypt warns fail-soft. **Phase-4 tail = Ollama model staging:** `nomic-embed-text` pulled (fixed active embed 404s); standard set (`llama3.2:3b`/`phi4:14b`/`qwen3-vl:30b`/`qwen2.5:32b`) pulling; **custom `gemma-4-31B-it-qat` (local workhorse, ~25 `*_model` pins) + `glm-4.7-5090` (pipeline_architect) → rebuild from Hugging Face GGUFs (Matt's call 2026-07-23 — NOT a Windows boot; no `ollama create` recipe survives in repo/backup, so Matt re-pulls the GGUF and Claude writes the Modelfile + `ollama create` + verifies).** Primary writer is cloud `anthropic/claude-sonnet-5`, so drafting works meanwhile. **NEXT = finish model staging, then Phase 5 (systemd orchestration re-home) → Phase 6 (≥14-day eval).** Rollback still = reboot Windows + restore + flip `OWNER.txt` (reads `linux`).
+> - **✅ TASK 4.5 DONE — LINUX NOW OWNS THE DATABASE (2026-07-23, LOCAL Pop session).** Restored the FINAL dump (`/media/mattm/MP600/migration-backup-FINAL/poindexter-backup-20260723-013556`; NTFS mounted **read-only by label** — the `nvme?` numbers flipped again, MP600=`nvme1n1` this boot) with **zero drift** — all 7 baseline tables exact (posts 329 · pipeline_tasks 1960 · app_settings 1254 · embeddings 52773 · brain_knowledge 118 · atom_runs 6413 · audit_log 203707). Followed the dump's own `RESTORE-RECIPE.txt` (`<container>__<db>.dump` naming, streamed via stdin — the plan's flat `pg/<db>.dump` recipe was superseded), restored the secret-bearing globals (`poindexter.secret_key` GUC present), then brought up a **34-service core** — API `:8002/api/health` → 200, Grafana `database: ok`, DB port **40/40 under churn** (wedge-class gone by architecture; `pg_isready` isn't installed on the host, so verified via bash `/dev/tcp`), migrations **0 pending**, app_settings unchanged at 1254. **Blocker fixed:** `bootstrap.toml` `poindexter_deploy_root` was a leftover Windows path `C:/Users/…` → repointed to `/home/mattm/glad-labs-website` (it broke the brain/worker code bind-mounts — the only thing stopping the core `up`). **Deferred (NOT handoff-blocking):** `voice-agent-livekit` image build fails on docker-ce (its `curl … setup_20.x | bash-` Node install → `E: Unable to locate package nodejs`; voice not load-bearing), `image-gen-server`/`speaches` unbuilt, `wan-server`(built, VRAM-heavy)/`backup-*`(Phase-5 DR)/`github-runner`(PEM) not started; host Python lacks `asyncpg` so start-stack's grafana-webhook + offsite-backup secret pre-decrypt warns fail-soft. **Phase-4 tail = Ollama model staging:** `nomic-embed-text` pulled (fixed active embed 404s); standard set (`llama3.2:3b`/`phi4:14b`/`qwen3-vl:30b`/`qwen2.5:32b`) pulling; **custom `gemma-4-31B-it-qat` (local workhorse, ~25 `*_model` pins) + `glm-4.7-5090` (pipeline_architect) → rebuild from Hugging Face GGUFs (Matt's call 2026-07-23 — NOT a Windows boot; no `ollama create` recipe survives in repo/backup, so Matt re-pulls the GGUF and Claude writes the Modelfile + `ollama create` + verifies).** Primary writer is cloud `anthropic/claude-sonnet-5`, so drafting works meanwhile. **Model staging COMPLETE later same day** (`glm-4.7-5090` recovered via `ollama pull hf.co/unsloth/GLM-4.7-Flash-GGUF:UD-Q5_K_XL` → `ollama cp`; every custom pin satisfied) **and Phase 5 is DONE — see the PHASE 5 entry below. NEXT = Phase 6.** Rollback still = reboot Windows + restore + flip `OWNER.txt` (reads `linux`).
 > - **✅ SAME-DAY FOLLOW-THROUGH (2026-07-23 afternoon) — models staged, image-gen proven, Docker moved to `/data`.** (1) **Models:** standard set resident (`nomic-embed-text`/`llama3.2:3b`/`phi4:14b`/`qwen3-vl:30b`/`qwen2.5:32b`) + the custom workhorse recovered from HF — `ollama pull hf.co/unsloth/gemma-4-31B-it-qat-GGUF:UD-Q4_K_XL` → `ollama cp` to `gemma-4-31B-it-qat:latest` (the tag ~25 `*_model` pins expect). It's thinking-capable: `/api/chat` default puts the answer in `thinking` with empty `content`; the pipeline already passes `think=false` everywhere, no config change. `glm-4.7-5090` (pipeline_architect, dormant) still pending its HF source. (2) **image-gen:** the image had in fact built fine (never started); real breakage was `${USERPROFILE:-.}` bind-mounts resolving into the repo dir on Linux + docker auto-creating them root-owned → appuser EACCES. Swept all 23 to `${USERPROFILE:-${HOME}}` (PR #2747, merged) — also repaired the alertmanager webhook-token mount (now persisting alerts). **PROOF:** `/generate` → HTTP 200, 1024×1024 PNG, **7.5s render** on the 5090, OCR gate passed, container-written + host-read via the shared mount; Z-Image-Turbo is ~29 GB in `~/.cache/huggingface`; the server's idle watchdog auto-unloads (VRAM self-returned). (3) **⚠️ Disk-full incident + root-cause fix:** the 150 GB `/` filled (docker images + build cache + HF cache all landed on `/`); postgres hit `could not extend file … No space left` mid-WAL-redo and shut down, worker Exited(128). Operator pruned; postgres WAL-recovered clean (counts ≥ baseline, no loss). **Fix: Docker data-root relocated to `/data/docker`** — stack+daemon stopped, `rsync -aHAXS --numeric-ids` (13 GB real), `"data-root": "/data/docker"` merged into `/etc/docker/daemon.json` (nvidia runtime preserved), verified 31 images/24 volumes/GPU, old `/var/lib/docker` deleted. `/` now ~47 GB free; images/volumes/DB grow on the 1.1 TB `/data` (machine-local config — daemon.json is not in-repo). Watch item: `~/.cache/huggingface` (29 GB) still lives on `/`. Note: `sudo -n` (NOPASSWD) works in local Pop sessions — earlier handoff notes assumed otherwise.
+> - **✅ PHASE 5 DONE (2026-07-23 — all four tasks, same-day; PRs #2749/#2750/#2751 merged).** Orchestration is re-homed onto systemd. **5.1 ops sessions:** `python3.13` (deadsnakes PPA — Pop 24.04 ships 3.12, backend demands ≥3.13) + pipx `poetry` (symlinked into `/usr/local/bin` so systemd units find it) + full backend venv installed; the committed template + timer generator installed with per-box seds (`User=mattm`, `/home/mattm/…`); **7 timers armed** on the operator-local schedule; `alert-triage` smoke ran green end-to-end (`alerts=0 filed=0`). Gotcha fixed: docker auto-created `~/.poindexter/logs` + `backups` root-owned → chowned to mattm. **5.2 node_exporter:** `prometheus-node-exporter` installed bound `0.0.0.0:9100`; scrape job `windows`→`node`; static `WindowsExporterDown`→`NodeExporterDown`; 4 DB-rendered rules renamed (disk ×2 → `node_filesystem_*` w/ `fstype=~"ext4|xfs|btrfs"` + `mountpoint` labels, memory → `node_memory_MemAvailable_bytes`, thrashing → `rate(node_vmstat_pswpout[5m])`); 51/51 tests; **verified live end-to-end** — target `up`, both filesystems in the series, and the worker's next render wrote `node_*` into `rules/dynamic.yml` (0 `windows_*` left). On-box: `prometheus.threshold.disk_min_total_gb` lowered to **100** (the 147 GB Linux root fell under the 200 default — the filter would have excluded the exact partition that filled up). ufw lines skipped (ufw inactive, consistent with the deferred 4.6 gate). Fast-follow still open: Grafana panels querying `windows_*`/`hwinfo_*`/`aida64_*` show NoData until re-sourced. **5.3 watchdog:** `poindexter-docker-watchdog.{service,timer}` installed, 5-min cadence, healthy-path no-op verified; **`voice-agent-livekit` profile-gated (`profiles: ["voice"]`)** because its broken docker-ce build aborted every plain `up -d` — including the watchdog's own recovery. Windows scaffolding untouched (rollback path until Phase 7). **5.4 DR backup:** `restic` 0.16.4 installed; the 117 GB USB stick fstab-mounted by UUID at `/mnt/dr-usb` (`ntfs3`, `nofail`); the 4 committed units installed (per-box seds only — the `DR_*` defaults already fit) with `RequiresMountsFor=/mnt/dr-usb`; **both timers fired green and read-back-verified** — daily snapshot `513fe1a6` (bootstrap.toml restores byte-correct, **379** `~/.claude` memory files, DB dump in-snapshot; same repo as the Windows-era `Nightrider` chain) and hourly `28b2a4d6` (pop-os pg-hourly). First run exited 3 on root-owned brain-written `infrastructure/prometheus/secrets/*` → **excluded** (#2751 — derived plaintext decryptions; the snapshot's encrypted DB dump + bootstrap.toml regenerate them; that failure fired one real Telegram DR alert ~12:49 EDT 2026-07-23 — smoke artifact, disregard). Windows DR pair was already disabled at Task 4.4. **Post-prune parity note:** the operator's disk-full `docker image prune` had removed the un-running `poindexter-backup` + `wan-server` images; a full-surface `up -d` (now safe with voice profiled) is restoring backup-tier ×3 / wan / speaches / github-runner. **NEXT = Phase 6: Task 6.1 cutover verification, then the ≥14-day evaluation.**
 > - **Phase 0 — Live-USB validation: ✅ COMPLETE = GO** (verified 2026-07-19, live demo session, **no drive written**). UEFI ✅ · both GPUs 5090+3090 on driver 595.84 ✅ · display 3440×1440 ✅ · drives MP600=`nvme1n1` / MP700=`nvme0n1` ✅ · network 0% loss ✅ · PSU single-rail ✅. The Blackwell-5090 NO-GO risk is closed.
 > - **Where the operator is now:** **Phase 4 build-out on the installed Pop desktop (2026-07-22) — pre-handoff.** Phase 3 is DONE: MP600 shrunk via GParted, Pop installed with its own ESP, **both OSes boot** (Windows verified reaching desktop = rollback path intact; Task 3.4 gate effectively passed). Docker + GPU are up.
 >   - ✅ **Done:** `docker-ce` + compose installed; `nvidia-container-toolkit` wired (`docker run --gpus all … nvidia-smi -L` shows **both** 5090 + 3090 in-container, Task 4.1); Windows-side RTC reg key `RealTimeIsUniversal=1` set + Linux half `timedatectl set-local-rtc 0` done (Task 3.5 complete); **Docker Desktop auto-start disabled on Windows** (defensive only — Windows STILL owns the DB, NOT a handoff).
@@ -169,15 +170,15 @@ ls /sys/firmware/efi >/dev/null 2>&1 && echo "UEFI ✓" || echo "LEGACY — rebo
       | `nvme0n1` | **Corsair MP700 ELITE with Heatsink** | 1.8T | Holds Windows — **NEVER written to** |
 
       > **🚨 THE `nvme?` NUMBERING IS NOT STABLE ACROSS BOOTS — it FLIPPED on 2026-07-22.** On the GParted boot the SAME hardware enumerated the **opposite** way:
-              >
-              > | Linux device | Model | 2026-07-22 layout | Role |
-              > | ------------ | ----- | ----------------- | ---- |
-              > | **`nvme0n1`** | **Corsair MP600 CORE XT** | p1 16M MSR · **p2 1.8T ntfs "MP600"** | ⛔ **INSTALL TARGET** — shrink `nvme0n1p2` |
-              > | **`nvme1n1`** | **Corsair MP700 ELITE with Heatsink** | p1 100M vfat ESP · p2 16M MSR · **p3 1.8T ntfs "MP700" = Windows C:** · p4 797M recovery | **WINDOWS DRIVE — NEVER TOUCH** |
-              >
-              > This nearly caused a disaster: keying off the 2026-07-19 mapping, `nvme1n1` was about to be resized in GParted — but on this boot `nvme1n1` is the **MP700 (Windows C:)**. The `MP700` partition **label** on `nvme1n1p3` is what caught it. **NEW STANDING RULE: at every destructive step, identify each disk by its MODEL string and/or the Windows layout (ESP+MSR+C:+Recovery = the drive to AVOID), NEVER by the `nvme0`/`nvme1` number.** Volume labels (`MP600`/`MP700`) happen to track the models here and are a useful second signal; the bare device number is not.
+                  >
+                  > | Linux device | Model | 2026-07-22 layout | Role |
+                  > | ------------ | ----- | ----------------- | ---- |
+                  > | **`nvme0n1`** | **Corsair MP600 CORE XT** | p1 16M MSR · **p2 1.8T ntfs "MP600"** | ⛔ **INSTALL TARGET** — shrink `nvme0n1p2` |
+                  > | **`nvme1n1`** | **Corsair MP700 ELITE with Heatsink** | p1 100M vfat ESP · p2 16M MSR · **p3 1.8T ntfs "MP700" = Windows C:** · p4 797M recovery | **WINDOWS DRIVE — NEVER TOUCH** |
+                  >
+                  > This nearly caused a disaster: keying off the 2026-07-19 mapping, `nvme1n1` was about to be resized in GParted — but on this boot `nvme1n1` is the **MP700 (Windows C:)**. The `MP700` partition **label** on `nvme1n1p3` is what caught it. **NEW STANDING RULE: at every destructive step, identify each disk by its MODEL string and/or the Windows layout (ESP+MSR+C:+Recovery = the drive to AVOID), NEVER by the `nvme0`/`nvme1` number.** Volume labels (`MP600`/`MP700`) happen to track the models here and are a useful second signal; the bare device number is not.
 
-              **⚠️ Note (from the original 2026-07-19 boot):** the install target was `nvme1n1` then — but per the flip above, do not rely on that. Confirm the model reads **`MP600 CORE XT`** in `lsblk`/GParted Device Information before touching any partition. (USB installer media appeared as `sda`/`sdb`; `loop0` is the live squashfs; `zram0` is live-session swap — none are install targets.)
+                  **⚠️ Note (from the original 2026-07-19 boot):** the install target was `nvme1n1` then — but per the flip above, do not rely on that. Confirm the model reads **`MP600 CORE XT`** in `lsblk`/GParted Device Information before touching any partition. (USB installer media appeared as `sda`/`sdb`; `loop0` is the live squashfs; `zram0` is live-session swap — none are install targets.)
 
 - [x] **Step 6: Verify network** (Ethernet or Wi-Fi): `ping -c3 1.1.1.1` → expect 0% loss. **Verified 2026-07-19 — 0% loss. ✅**
 
@@ -853,7 +854,7 @@ git commit -m "feat(migration): host-native Ollama x2 systemd units (5090 :11434
 - Create: `infrastructure/systemd/claude-telegram.service`
 
 - [x] **Step 1: Tailscale:** `curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up --hostname=nightrider`. Verify `tailscale ip -4` returns the tailnet IP and Grafana/API are reachable over it.
-- [ ] **Step 2: Install Claude Code** (native Linux binary) and re-auth; confirm `~/.claude` memory/plugins restored.
+- [x] **Step 2: Install Claude Code** (native Linux binary) and re-auth; confirm `~/.claude` memory/plugins restored.
 - [ ] **Step 3: Write the autostart unit** (ports `claude-telegram.cmd`):
 
 ```ini
@@ -889,7 +890,7 @@ WantedBy=multi-user.target
 - Create: `infrastructure/systemd/poindexter-session@.service` (template)
 - Create: `scripts/linux/install-session-timers.sh` (generates the 7 timers)
 
-- [ ] **Step 1: Write `run-session.sh`** — worktree isolation + run the ops_sessions script under the main poetry env:
+- [x] **Step 1: Write `run-session.sh`** — worktree isolation + run the ops_sessions script under the main poetry env:
 
 ```bash
 #!/usr/bin/env bash
@@ -927,7 +928,7 @@ SCRIPT="$RUNDIR/scripts/ops_sessions/${NAME//-/_}.py"
 echo "session $NAME complete" >>"$LOG"
 ```
 
-- [ ] **Step 2: Write the template service** (`poindexter-session@.service`):
+- [x] **Step 2: Write the template service** (`poindexter-session@.service`):
 
 ```ini
 [Unit]
@@ -940,7 +941,7 @@ ExecStart=/home/mattm/glad-labs-website/scripts/linux/run-session.sh %i
 User=mattm
 ```
 
-- [ ] **Step 3: Write the timer generator** (`install-session-timers.sh`) — mirrors the PS1 schedule table (`OnCalendar` in `operator_timezone`):
+- [x] **Step 3: Write the timer generator** (`install-session-timers.sh`) — mirrors the PS1 schedule table (`OnCalendar` in `operator_timezone`):
 
 ```bash
 #!/usr/bin/env bash
@@ -971,7 +972,7 @@ done
 sudo systemctl daemon-reload
 ```
 
-- [ ] **Step 4: Install:**
+- [x] **Step 4: Install:**
 
 ```bash
 chmod +x scripts/linux/run-session.sh scripts/linux/install-session-timers.sh
@@ -980,8 +981,8 @@ sudo systemctl daemon-reload
 bash scripts/linux/install-session-timers.sh
 ```
 
-- [ ] **Step 5: Verify:** `systemctl list-timers 'poindexter-session@*'` shows 7 timers with next-fire times. Smoke one: `sudo systemctl start poindexter-session@alert-triage` → check its log under `~/.poindexter/logs/claude-sessions/`.
-- [ ] **Step 6: Commit** all three artifacts.
+- [x] **Step 5: Verify:** `systemctl list-timers 'poindexter-session@*'` shows 7 timers with next-fire times. Smoke one: `sudo systemctl start poindexter-session@alert-triage` → check its log under `~/.poindexter/logs/claude-sessions/`.
+- [x] **Step 6: Commit** all three artifacts.
 
 ### Task 5.2: node_exporter + Prometheus scrape swap + alert-rule metric rename
 
@@ -990,7 +991,7 @@ bash scripts/linux/install-session-timers.sh
 - Modify: `infrastructure/prometheus/config/prometheus.yml:91-94` (the `windows` job)
 - Modify: `src/cofounder_agent/services/prometheus_rule_builder.py` (host-memory rules: `windows_*` → `node_*`)
 
-- [ ] **Step 1: Install node_exporter as a host service** bound so the container can scrape it:
+- [x] **Step 1: Install node_exporter as a host service** bound so the container can scrape it:
 
 ```bash
 sudo apt install -y prometheus-node-exporter
@@ -1000,7 +1001,7 @@ sudo systemctl restart prometheus-node-exporter
 sudo ufw allow in on docker0 to any port 9100 proto tcp && sudo ufw deny 9100/tcp
 ```
 
-- [ ] **Step 2: Swap the scrape job.** Replace the `windows` job:
+- [x] **Step 2: Swap the scrape job.** Replace the `windows` job:
 
 ```yaml
 # System-level metrics (CPU, RAM, disk, network) — node_exporter on host at :9100
@@ -1010,11 +1011,11 @@ sudo ufw allow in on docker0 to any port 9100 proto tcp && sudo ufw deny 9100/tc
     - targets: ['host.docker.internal:9100']
 ```
 
-- [ ] **Step 3: Rename host-memory metrics in the DB-rendered rules.** In `prometheus_rule_builder.py`, update the `PoindexterHostMemoryLow` / `PoindexterHostMemoryThrashing` expressions:
+- [x] **Step 3: Rename host-memory metrics in the DB-rendered rules.** In `prometheus_rule_builder.py`, update the `PoindexterHostMemoryLow` / `PoindexterHostMemoryThrashing` expressions:
   - `windows_memory_available_bytes` → `node_memory_MemAvailable_bytes`
   - `rate(windows_memory_swap_pages_written_total[5m])` → `rate(node_vmstat_pswpout[5m])`
-- [ ] **Step 4: Reload + verify:** `curl -s localhost:9091/api/v1/targets | grep node` shows the target UP; `curl -s 'localhost:9091/api/v1/query?query=node_memory_MemAvailable_bytes'` returns data; the two host-memory rules evaluate without error.
-- [ ] **Step 5: Commit** the prometheus.yml + rule-builder changes together. **Note (fast-follow, not blocking):** any Grafana panels still querying `windows_*`/`hwinfo_*`/`aida64_*` (System Health, Hardware & Power) show NoData until re-sourced to `node_*`/`lm-sensors` — track as a follow-on issue.
+- [x] **Step 4: Reload + verify:** `curl -s localhost:9091/api/v1/targets | grep node` shows the target UP; `curl -s 'localhost:9091/api/v1/query?query=node_memory_MemAvailable_bytes'` returns data; the two host-memory rules evaluate without error.
+- [x] **Step 5: Commit** the prometheus.yml + rule-builder changes together. **Note (fast-follow, not blocking):** any Grafana panels still querying `windows_*`/`hwinfo_*`/`aida64_*` (System Health, Hardware & Power) show NoData until re-sourced to `node_*`/`lm-sensors` — track as a follow-on issue.
 
 ### Task 5.3: Add the Linux watchdog — but do NOT delete the Windows scaffolding yet
 
@@ -1026,9 +1027,9 @@ sudo ufw allow in on docker0 to any port 9100 proto tcp && sudo ufw deny 9100/tc
 > evaluation. Removing its scripts now would mean a rollback lands on a Windows
 > install whose self-healing has been gutted — the exact moment you'd need it.
 
-- [ ] **Step 1: Add the Linux liveness check** (`scripts/linux/docker-watchdog.sh`): if `docker compose ps` shows the stack down, `sudo systemctl restart docker` + `start-stack.sh up -d`. No `wsl --shutdown` path — there is no VM to force-kill.
-- [ ] **Step 2: Leave `docker-watchdog.ps1`, `idle-wsl-gpu-reset.ps1`, `register-idle-wsl-reset.ps1` and `fix-task-window-visibility.ps1` in place.** They are inert on Linux and load-bearing for rollback.
-- [ ] **Step 3: Commit** the new watchdog only.
+- [x] **Step 1: Add the Linux liveness check** (`scripts/linux/docker-watchdog.sh`): if `docker compose ps` shows the stack down, `sudo systemctl restart docker` + `start-stack.sh up -d`. No `wsl --shutdown` path — there is no VM to force-kill.
+- [x] **Step 2: Leave `docker-watchdog.ps1`, `idle-wsl-gpu-reset.ps1`, `register-idle-wsl-reset.ps1` and `fix-task-window-visibility.ps1` in place.** They are inert on Linux and load-bearing for rollback.
+- [x] **Step 3: Commit** the new watchdog only.
 
 ---
 
@@ -1042,7 +1043,7 @@ sudo ufw allow in on docker0 to any port 9100 proto tcp && sudo ufw deny 9100/tc
 - ~~Create~~ **✅ Committed:** `infrastructure/systemd/poindexter-dr-backup.{service,timer}`, `poindexter-dr-backup-hourly.{service,timer}` — the four units exist, shipping the same generic `poindexter` / `/home/poindexter` / `/mnt/dr-usb` placeholders as the other units. They pass `DR_RESTIC_BIN=restic` + `DR_BACKUP_REPO`/`DR_BACKUP_MOUNT` via `Environment=` and gate on `RequiresMountsFor=` so a timer never fires against an unmounted USB. **Edit the three placeholders per box before installing** (and put `User=` in the `docker` group — the scripts `docker exec` for the pg_dump).
 
 - [x] **Step 1: Get the scripts into the repo before the wipe. ✅ DONE 2026-07-19 (PR #2725).** They previously existed only on the operator's box and inside the backups they produce — so total loss meant recovering the tooling from a restic repo whose passphrase those same scripts are what reads. Now committed at `scripts/dr-backup/`, de-identified and parameterised. **The operator-local copies at `~/.poindexter/scripts/dr-backup/` are still what actually runs** — the repo copy is behaviour-identical but nothing repoints the scheduled tasks at it. Reconciling that is Step 2.
-- [ ] **Step 2: Point the Linux timers at the repo copy — no code edits needed.** The committed scripts already resolve every path from `$HOME` plus env overrides, so porting is configuration, not modification:
+- [x] **Step 2: Point the Linux timers at the repo copy — no code edits needed.** The committed scripts already resolve every path from `$HOME` plus env overrides, so porting is configuration, not modification:
 
   | variable          | Windows default        | Linux value                                |
   | ----------------- | ---------------------- | ------------------------------------------ |
@@ -1053,7 +1054,7 @@ sudo ufw allow in on docker0 to any port 9100 proto tcp && sudo ufw deny 9100/tc
 
   Prefer a UUID-keyed `/etc/fstab` mountpoint over `/media/$USER/…` — a systemd timer must not depend on a desktop session having automounted the drive. Note the `MSYS_NO_PATHCONV` guard in `backup-precious.sh` is a **no-op on Linux and should stay**; it is conditional on `$MSYSTEM`.
 
-- [ ] **Step 3: Install the timers** — the four units are committed (daily 03:00 → `dr-daily`, hourly → `pg-hourly`, both `Persistent=true` so a missed run fires on next boot). After editing the `User=` / ExecStart path / `DR_*` + `RequiresMountsFor` placeholders:
+- [x] **Step 3: Install the timers** — the four units are committed (daily 03:00 → `dr-daily`, hourly → `pg-hourly`, both `Persistent=true` so a missed run fires on next boot). After editing the `User=` / ExecStart path / `DR_*` + `RequiresMountsFor` placeholders:
 
 ```bash
 sudo cp infrastructure/systemd/poindexter-dr-backup*.{service,timer} /etc/systemd/system/
@@ -1062,8 +1063,8 @@ sudo systemctl enable --now poindexter-dr-backup.timer poindexter-dr-backup-hour
 systemctl list-timers 'poindexter-dr-backup*'   # confirm both show a next-fire time
 ```
 
-- [ ] **Step 4: Verify by _reading back_, not by exit code.** `restic -r <repo> snapshots --tag dr-daily` should show a new snapshot, and `restic dump <snap> <…/bootstrap.toml> | head -1` should return content. A job that exits 0 having archived nothing is the failure mode this whole plan keeps rediscovering.
-- [ ] **Step 5: Disable the Windows tasks only after the Linux timers have produced a verified snapshot** — and note that **both OSes writing the same restic repo is fine** (restic locks), but both running the _hourly PG dump_ means two OSes touching the database, which the one-OS-owns-the-DB rule forbids. Disable the Windows pair at the same handoff as the stack (Task 4.4), not before and not after.
+- [x] **Step 4: Verify by _reading back_, not by exit code.** `restic -r <repo> snapshots --tag dr-daily` should show a new snapshot, and `restic dump <snap> <…/bootstrap.toml> | head -1` should return content. A job that exits 0 having archived nothing is the failure mode this whole plan keeps rediscovering.
+- [x] **Step 5: Disable the Windows tasks only after the Linux timers have produced a verified snapshot** — and note that **both OSes writing the same restic repo is fine** (restic locks), but both running the _hourly PG dump_ means two OSes touching the database, which the one-OS-owns-the-DB rule forbids. Disable the Windows pair at the same handoff as the stack (Task 4.4), not before and not after.
 
 > **Do not skip the `$HOME/.claude` source path.** It was missing from `run-backup.sh` for three months and was added 2026-07-19. It is now in the committed copy, so this is safe as long as you _use_ that copy — but a re-creation from memory, or a fall-back to an older backup of the script, reintroduces the hole. Verify by reading the archive back: `restic ls <snap> | grep -c memory/` should return ~352, not 0.
 >
