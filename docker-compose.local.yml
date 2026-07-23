@@ -1717,6 +1717,13 @@ services:
     image: poindexter-voice-agent:latest
     container_name: poindexter-voice-agent-livekit
     restart: unless-stopped
+    # Profile-gated since the Pop!_OS migration (Task 5.3): the image build
+    # breaks on docker-ce (the nodesource curl|bash step finds no `nodejs`
+    # package), and because compose builds every default service, one broken
+    # build aborted EVERY plain `up -d` — including the docker-watchdog's
+    # recovery path. Voice isn't load-bearing; add "voice" to compose_profiles
+    # in bootstrap.toml once scripts/Dockerfile.voice-agent builds again.
+    profiles: ["voice"]
     command: ["python", "-m", "services.voice_agent_livekit", "--service"]
     environment:
       DATABASE_URL: "postgresql://${LOCAL_POSTGRES_USER:-poindexter}:${LOCAL_POSTGRES_PASSWORD:?Run 'poindexter setup' — LOCAL_POSTGRES_PASSWORD is generated in bootstrap.toml}@postgres-local:5432/${LOCAL_POSTGRES_DB:-poindexter_brain}"

@@ -1,0 +1,11 @@
+# Fires the poindexter-docker-watchdog liveness check every 5 minutes.
+# (The Windows ancestor ran docker-watchdog.ps1 from Task Scheduler.)
+[Unit]
+Description=Timer for the Poindexter docker/stack watchdog
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

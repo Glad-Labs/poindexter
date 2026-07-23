@@ -1,0 +1,15 @@
+# Liveness watchdog for the Poindexter stack (Linux; Task 5.3 of the
+# Windows→Pop!_OS migration). Runs scripts/linux/docker-watchdog.sh every
+# ~5 min via the paired .timer: engine down → restart docker; worker
+# unhealthy → start-stack.sh up -d. No-ops (exit 0) when healthy.
+# Operators: set User= and the ExecStart path to your login + checkout
+# (ships with a generic `poindexter` / /home/poindexter). The user needs
+# the docker group + passwordless sudo for `systemctl restart docker`.
+[Unit]
+Description=Poindexter docker/stack liveness watchdog
+After=docker.service network-online.target
+
+[Service]
+Type=oneshot
+User=poindexter
+ExecStart=/home/poindexter/glad-labs-website/scripts/linux/docker-watchdog.sh
