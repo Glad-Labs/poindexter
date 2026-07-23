@@ -1053,9 +1053,17 @@ _local_host = "host.docker.internal" if IS_DOCKER else "localhost"
 _worker_host = "poindexter-worker" if IS_DOCKER else "localhost"
 SERVICES.update({
     "worker": {"url": f"http://{_worker_host}:8002/api/health", "type": "json_status", "critical": False},
-    "openclaw": {"url": f"http://{_local_host}:18789/status", "type": "http", "critical": False},
     "nvidia_exporter": {"url": "http://poindexter-prometheus:9090/-/healthy" if IS_DOCKER else f"http://{_local_host}:9835/metrics", "type": "http", "critical": False},
-    "windows_exporter": {"url": f"http://{_local_host}:9182/metrics", "type": "http", "critical": False},
+    # host-level system metrics — node_exporter on the Pop!_OS host (the
+    # windows_exporter :9182 entry died with Windows; NodeExporterDown in
+    # infrastructure.yml is the paging path, this probe is the brain's local
+    # awareness of the same signal).
+    "node_exporter": {"url": f"http://{_local_host}:9100/metrics", "type": "http", "critical": False},
+    # (Removed at the Pop!_OS migration audit, 2026-07-23: "openclaw" —
+    # the gateway was a Windows host process (its restart path shelled out to
+    # PowerShell) and OpenClaw is optional-not-load-bearing; it warned every
+    # cycle against a port nothing serves on Linux. Re-add with a Linux
+    # restart path if/when OpenClaw is ported.)
 })
 
 # External service status pages (always monitored from anywhere)

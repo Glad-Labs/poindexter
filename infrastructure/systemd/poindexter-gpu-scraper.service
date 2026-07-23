@@ -1,0 +1,21 @@
+# GPU-metrics scraper — polls the nvidia-smi exporter's /metrics every 60s and
+# writes gpu_metrics rows (brain gpu_temperature probe + the Hardware & Power
+# GPU-history tables read them). Linux port of the Windows
+# background-services.ps1 launcher (Pop!_OS migration audit, 2026-07-23).
+# DSN resolves via brain.bootstrap (bootstrap.toml); needs host python3 with
+# asyncpg + httpx (apt: python3-asyncpg python3-httpx).
+# Operators: set User= and the paths to your login + checkout (ships generic).
+[Unit]
+Description=Poindexter GPU metrics scraper (exporter -> gpu_metrics table)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=poindexter
+WorkingDirectory=/home/poindexter/glad-labs-website
+ExecStart=/usr/bin/python3 /home/poindexter/glad-labs-website/scripts/gpu-scraper.py
+Restart=on-failure
+RestartSec=15
+
+[Install]
+WantedBy=multi-user.target

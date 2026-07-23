@@ -1,0 +1,25 @@
+# Poindexter MCP HTTP server (:8004) — the claude.ai-connector transport
+# (mcp-server/http_server.py, OAuth-protected; probed by brain/mcp_http_probe).
+# Linux port of the Windows logon-task launcher (Pop!_OS migration audit,
+# 2026-07-23). Binds 0.0.0.0 so the brain container's probe reaches it via
+# host-gateway; external exposure is via Tailscale serve/funnel, not the LAN.
+# Operators: set User= and the paths to your login + checkout (ships generic),
+# and run `uv sync` in mcp-server/ once to create .venv.
+[Unit]
+Description=Poindexter MCP HTTP server (claude.ai connector, :8004)
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+User=poindexter
+WorkingDirectory=/home/poindexter/glad-labs-website/mcp-server
+Environment=POINDEXTER_API_URL=http://localhost:8002
+Environment=OLLAMA_URL=http://localhost:11434
+Environment=POINDEXTER_MCP_HTTP_HOST=0.0.0.0
+Environment=POINDEXTER_MCP_HTTP_PORT=8004
+ExecStart=/home/poindexter/glad-labs-website/mcp-server/.venv/bin/python http_server.py
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

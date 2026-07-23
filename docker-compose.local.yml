@@ -510,6 +510,15 @@ services:
       # silently when this is missing, so the read-only /host-backups
       # bind on the backup_watcher service (line 270) appears empty.
       - ${USERPROFILE:-${HOME}}/.poindexter/backups:/home/appuser/.poindexter/backups
+      # Singer tap venvs (GA4 / GSC — docs/integrations/setup-gsc-and-ga4.md).
+      # Host-persisted so `pip install tap-ga4 tap-google-search-console`
+      # survives container recreates. The old Windows-era layout reached these
+      # through the legacy /root/.poindexter mount below, but the container's
+      # /root is 0700 and the worker runs as appuser — docker-ce enforces the
+      # traversal denial Docker Desktop ignored (run_taps PermissionError,
+      # found in the 2026-07-23 post-migration audit). external_taps rows
+      # point at /home/appuser/.poindexter/singer-venv/<tap>/bin/....
+      - ${USERPROFILE:-${HOME}}/.poindexter/singer-venv:/home/appuser/.poindexter/singer-venv
       # Legacy /root mount stays for code paths that still reference
       # /root/.poindexter or HOST_HOME=/root.
       - ${USERPROFILE:-${HOME}}/.poindexter:/root/.poindexter
