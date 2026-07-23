@@ -2,18 +2,18 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to work this plan phase-by-phase with review checkpoints. Steps use checkbox (`- [ ]`) syntax for tracking. This is an **ops/migration runbook**, not a code feature: "tests" are **verification gates** — run a command, confirm the expected output.
 
-> ## 📍 RESUME HERE — migration status (last updated 2026-07-19)
+> ## 📍 RESUME HERE — migration status (last updated 2026-07-22)
 >
 > A session picking this up: read this block first, then jump to the phase named under "Next".
 >
 > - **Phase 0 — Live-USB validation: ✅ COMPLETE = GO** (verified 2026-07-19, live demo session, **no drive written**). UEFI ✅ · both GPUs 5090+3090 on driver 595.84 ✅ · display 3440×1440 ✅ · drives MP600=`nvme1n1` / MP700=`nvme0n1` ✅ · network 0% loss ✅ · PSU single-rail ✅. The Blackwell-5090 NO-GO risk is closed.
 > - **Where the operator is now:** **Phase 4 build-out on the installed Pop desktop (2026-07-22) — pre-handoff.** Phase 3 is DONE: MP600 shrunk via GParted, Pop installed with its own ESP, **both OSes boot** (Windows verified reaching desktop = rollback path intact; Task 3.4 gate effectively passed). Docker + GPU are up.
 >   - ✅ **Done:** `docker-ce` + compose installed; `nvidia-container-toolkit` wired (`docker run --gpus all … nvidia-smi -L` shows **both** 5090 + 3090 in-container, Task 4.1); Windows-side RTC reg key `RealTimeIsUniversal=1` set (Task 3.5, Linux half `timedatectl set-local-rtc 0` still to do); **Docker Desktop auto-start disabled on Windows** (defensive only — Windows STILL owns the DB, NOT a handoff).
->   - ⏳ **In progress / next (Task 4.2, all pre-handoff):** mount the D: backup (`sudo mount -t ntfs-3g -o ro /dev/nvme0n1p2 /mnt/mp600` — plain `mount` failed, ntfs-3g needed) → restore `~/.poindexter` + `~/.claude` → clone repo to `~/glad-labs-website` → then host-native Ollama ×2 + Tailscale (Tasks 4.6–4.7).
->   - ⛔ **NOT started — the DB handoff (Task 4.4/4.5).** Windows is still the database owner. Do NOT bring the stack up or restore the DB on Linux until the deliberate handoff ceremony (quiesce Windows → prove DB quiet → FINAL dump → then cut over). Everything above is safe because it never touches the live database.
+>   - ✅ **Pre-handoff build-out DONE — Tasks 4.2 + 4.6 + 4.7-Step-1 (2026-07-22, LOCAL session).** Mounted the MP600 NTFS backup read-only **by stable by-id** (the `nvme?` number had **flipped a THIRD time** — MP600=`nvme1n1`, MP700=`nvme0n1` this boot; a plain `nvme0n1p2` mount hit the MP700's MSR → "NTFS signature missing"; by-id handles are in the device-flip note below). Restored `~/.poindexter` (bootstrap.toml + secrets + DR offsite env; **selective**, not the 42 GB of logs/media) and remapped the `~/.claude` 351-file memory store into the Linux project path; repo already cloned. **Ollama ×2 up + enabled** (`:11434` both-GPU / `:11435` 3090-pinned by UUID, units `User=mattm`, `OLLAMA_MODELS=/data/ollama/models`) — **no models staged yet** (recover the custom writer model from the still-alive Windows/WSL side during the 4.4 Windows boot). **Tailscale up** as `nightrider-1` (`100.111.15.72`; `nightrider` still held by the offline Windows node). **Deferred:** ufw docker-only gate, `claude-telegram` autostart (4.7 S2–5), volume restore (4.2 S3), `timedatectl set-local-rtc 0` (3.5 Linux half).
+>   - ⛔ **NEXT — NOT started: the DB handoff (Task 4.4/4.5).** Windows is still the database owner. Do NOT bring the stack up or restore the DB on Linux until the deliberate handoff ceremony (quiesce Windows → prove DB quiet → FINAL dump → then cut over). Everything above is safe because it never touches the live database.
 >   - **Display note:** slight screen flicker on the ultrawide was **FreeSync/VRR** — turned off in the monitor OSD, resolved. Log as a resolved daily-driver item for the Task 6.2 eval, not a blocker.
 >   - **🖥️ This state was reached over a cloud Claude Code session (copy-paste). Handoff to a LOCAL session on the Pop box is in progress** — it can run these steps directly. Start it inside `~/glad-labs-website` once cloned.
-> - **🚨 DEVICE-NUMBER FLIP (2026-07-22) — READ BEFORE ANY PARTITION OP.** The `nvme?`/Disk numbering is **not stable across boots**. This boot: **MP600 = `nvme0n1` (install target, shrink `nvme0n1p2`)**, **MP700 = `nvme1n1` (Windows C: on `nvme1n1p3` — DO NOT TOUCH)** — the **opposite** of the 2026-07-19 Phase 0 record. Nearly caused a live-Windows resize. **Identify every disk by MODEL / Windows-layout, never by number** (Task 0.2 Step 5 has the full table).
+> - **🚨 DEVICE-NUMBER FLIP (2026-07-22) — READ BEFORE ANY PARTITION OP.** The `nvme?`/Disk numbering is **not stable across boots**. This boot: **MP600 = `nvme0n1` (install target, shrink `nvme0n1p2`)**, **MP700 = `nvme1n1` (Windows C: on `nvme1n1p3` — DO NOT TOUCH)** — the **opposite** of the 2026-07-19 Phase 0 record. Nearly caused a live-Windows resize. **Identify every disk by MODEL / Windows-layout, never by number** (Task 0.2 Step 5 has the full table). **Stable handles that never flip across boots — prefer these for every mount/dump/restore target:** MP600 (Pop target) = `/dev/disk/by-id/nvme-Corsair_MP600_CORE_XT_A631B443009QQD`; MP700 (Windows C:/DB — off-limits till the handoff) = `/dev/disk/by-id/nvme-Corsair_MP700_ELITE_with_Heatsink_AA0CB507000XOS`. Confirmed flipped a **3rd** time on the 2026-07-22 local-session boot (MP600=`nvme1n1`, MP700=`nvme0n1`) — the numbers are pure coin-flip, the by-id handles are not.
 > - **✅ ALL FIVE PRE-PHASE-3 GATES ARE CLOSED (2026-07-19).** G1 ✅ · G2 ✅ · G3 ✅ · G4 ✅ · **G5 ✅**. **Next action is Phase 2 (BIOS fan floor), then Phase 3 — the MP600 shrink + Pop!\_OS install.** That is the first destructive step; everything before it was reversible.
 > - **G5 evidence (2026-07-19):** `powercfg /a` reports `Hibernate — Hibernation has not been enabled` and `Fast Startup — Hibernation is not available`; `C:\hiberfil.sys` is **absent**; System event log shows a clean `6006 → 6005` pair with **no 6008 and no 41** (no unexpected/dirty shutdown). Note `HKLM\...\Power\HiberbootEnabled` still reads `1` — that is **moot and expected**: Fast Startup cannot function without hibernation, and `powercfg` reports it unavailable. Do not "fix" that registry value. One check needs elevation and was left for the operator: `fsutil dirty query D:` should say **not Dirty** before Linux mounts it read-write.
 > - **📦 Backup coverage — verified 2026-07-19, every artifact has ≥2 copies OFF the MP600** (the condition that actually gates repartitioning):
@@ -638,8 +638,8 @@ sudo systemctl daemon-reload && sudo systemctl enable --now liquidctl-ocp.servic
 
 ### Task 4.2: Clone the repo + restore config and volumes
 
-- [ ] **Step 1: Clone:** `git clone git@github.com:Glad-Labs/glad-labs-stack.git ~/glad-labs-website` (restore the SSH/signing keys from `dot-claude`/`~/.ssh` backup first).
-- [ ] **Step 2: Restore operator config:** copy `config/dot-poindexter` → `~/.poindexter` and `config/dot-claude` → `~/.claude` from the MP600 backup. Confirm `~/.poindexter/bootstrap.toml` has the `localhost:5433` DSN + secrets.
+- [x] **Step 1: Clone:** `git clone git@github.com:Glad-Labs/glad-labs-stack.git ~/glad-labs-website` (restore the SSH/signing keys from `dot-claude`/`~/.ssh` backup first).
+- [x] **Step 2: Restore operator config:** copy `config/dot-poindexter` → `~/.poindexter` and `config/dot-claude` → `~/.claude` from the MP600 backup. Confirm `~/.poindexter/bootstrap.toml` has the `localhost:5433` DSN + secrets.
 - [ ] **Step 3: Restore useful volumes** into fresh docker volumes:
 
 ```bash
@@ -766,8 +766,8 @@ docker exec poindexter-postgres-local bash -c '
 - Create: `infrastructure/systemd/ollama-primary.service`
 - Create: `infrastructure/systemd/ollama-vision.service`
 
-- [ ] **Step 1: Install Ollama:** `curl -fsSL https://ollama.com/install.sh | sh`. Then **disable the packaged unit** so our two explicit units own the GPUs: `sudo systemctl disable --now ollama || true`.
-- [ ] **Step 2: Write the vision wrapper** (faithful port of `ollama-vision-gpu1.ps1`):
+- [x] **Step 1: Install Ollama:** `curl -fsSL https://ollama.com/install.sh | sh`. Then **disable the packaged unit** so our two explicit units own the GPUs: `sudo systemctl disable --now ollama || true`.
+- [x] **Step 2: Write the vision wrapper** (faithful port of `ollama-vision-gpu1.ps1`):
 
 ```bash
 #!/usr/bin/env bash
@@ -786,7 +786,7 @@ export OLLAMA_MODELS="${OLLAMA_MODELS:-/data/ollama/models}"
 exec ollama serve
 ```
 
-- [ ] **Step 3: Write the primary unit** (`ollama-primary.service`):
+- [x] **Step 3: Write the primary unit** (`ollama-primary.service`):
 
 ```ini
 [Unit]
@@ -807,7 +807,7 @@ User=mattm
 WantedBy=multi-user.target
 ```
 
-- [ ] **Step 4: Write the vision unit** (`ollama-vision.service`):
+- [x] **Step 4: Write the vision unit** (`ollama-vision.service`):
 
 ```ini
 [Unit]
@@ -824,7 +824,7 @@ User=mattm
 WantedBy=multi-user.target
 ```
 
-- [ ] **Step 5: Install, enable, and firewall:**
+- [x] **Step 5: Install, enable, and firewall:** _(2026-07-22: units installed + enabled as `User=mattm`; the **ufw docker-only gate is DEFERRED** — services bind `0.0.0.0`, exposed on the trusted LAN/tailnet for now)_
 
 ```bash
 chmod +x scripts/linux/ollama-vision.sh
@@ -833,8 +833,8 @@ sudo systemctl daemon-reload && sudo systemctl enable --now ollama-primary ollam
 sudo ufw allow in on docker0 to any port 11434,11435 proto tcp && sudo ufw deny 11434,11435/tcp   # docker-only
 ```
 
-- [ ] **Step 6: Verify pinning:** `curl -s localhost:11434/api/tags` and `:11435/api/tags` respond; `nvidia-smi` shows the vision model resident on **GPU 1** only when loaded. Re-pull models to `/data/ollama/models` as needed.
-- [ ] **Step 7: Commit the artifacts:**
+- [x] **Step 6: Verify pinning:** `curl -s localhost:11434/api/tags` and `:11435/api/tags` respond; `nvidia-smi` shows the vision model resident on **GPU 1** only when loaded. Re-pull models to `/data/ollama/models` as needed.
+- [x] **Step 7: Commit the artifacts:**
 
 ```bash
 git add scripts/linux/ollama-vision.sh infrastructure/systemd/ollama-primary.service infrastructure/systemd/ollama-vision.service
@@ -847,7 +847,7 @@ git commit -m "feat(migration): host-native Ollama x2 systemd units (5090 :11434
 
 - Create: `infrastructure/systemd/claude-telegram.service`
 
-- [ ] **Step 1: Tailscale:** `curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up --hostname=nightrider`. Verify `tailscale ip -4` returns the tailnet IP and Grafana/API are reachable over it.
+- [x] **Step 1: Tailscale:** `curl -fsSL https://tailscale.com/install.sh | sh && sudo tailscale up --hostname=nightrider`. Verify `tailscale ip -4` returns the tailnet IP and Grafana/API are reachable over it.
 - [ ] **Step 2: Install Claude Code** (native Linux binary) and re-auth; confirm `~/.claude` memory/plugins restored.
 - [ ] **Step 3: Write the autostart unit** (ports `claude-telegram.cmd`):
 
