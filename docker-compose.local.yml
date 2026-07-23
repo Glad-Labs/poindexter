@@ -157,7 +157,7 @@ services:
       # Bearer token for the Poindexter webhook receiver. Must match
       # app_settings.alertmanager_webhook_token. Rotate via:
       #   UPDATE app_settings ... ; echo -n <new> > file ; docker restart poindexter-alertmanager
-      - ${USERPROFILE:-.}/.poindexter/alertmanager-webhook-token:/etc/alertmanager/webhook-token:ro
+      - ${USERPROFILE:-${HOME}}/.poindexter/alertmanager-webhook-token:/etc/alertmanager/webhook-token:ro
       # #524 — native-Telegram bot token for the dead-man's-switch receiver.
       # The whole prometheus secrets dir is mounted ro (same host dir the
       # prometheus container mounts). brain/prometheus_secret_writer.py
@@ -499,22 +499,22 @@ services:
       # priority 1, and the host file's DSN points at localhost:5433
       # (the postgres host publish, see postgres-local.ports) which is
       # unreachable from inside the worker container.
-      - ${USERPROFILE:-.}/.poindexter/podcast:/home/appuser/.poindexter/podcast
-      - ${USERPROFILE:-.}/.poindexter/video:/home/appuser/.poindexter/video
-      - ${USERPROFILE:-.}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
-      - ${USERPROFILE:-.}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
+      - ${USERPROFILE:-${HOME}}/.poindexter/podcast:/home/appuser/.poindexter/podcast
+      - ${USERPROFILE:-${HOME}}/.poindexter/video:/home/appuser/.poindexter/video
+      - ${USERPROFILE:-${HOME}}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
+      - ${USERPROFILE:-${HOME}}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
       # DbBackupJob writes pg_dumps here. Without this mount the script's
       # mkdir at ${HOME}/.poindexter/backups fails Permission denied — the
       # /home/appuser/.poindexter dir created implicitly by Docker is
       # root-owned. GlitchTip #223 first seen 2026-05-27. Backups stop
       # silently when this is missing, so the read-only /host-backups
       # bind on the backup_watcher service (line 270) appears empty.
-      - ${USERPROFILE:-.}/.poindexter/backups:/home/appuser/.poindexter/backups
+      - ${USERPROFILE:-${HOME}}/.poindexter/backups:/home/appuser/.poindexter/backups
       # Legacy /root mount stays for code paths that still reference
       # /root/.poindexter or HOST_HOME=/root.
-      - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
-      - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/home/appuser/Downloads/glad-labs-generated-images
-      - ${USERPROFILE:-.}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
+      - ${USERPROFILE:-${HOME}}/.poindexter:/root/.poindexter
+      - ${USERPROFILE:-${HOME}}/Downloads/glad-labs-generated-images:/home/appuser/Downloads/glad-labs-generated-images
+      - ${USERPROFILE:-${HOME}}/Downloads/glad-labs-generated-images:/root/Downloads/glad-labs-generated-images
       # Corsair iCUE LINK CSV exports — read-only mount so the
       # tap.corsair_csv handler (services/integrations/handlers/
       # tap_corsair_csv.py) can ingest sensor data without leaving the
@@ -522,7 +522,7 @@ services:
       # tap's row.config.directory is set to the in-container path
       # (/host/sensor_logs) so the same handler works regardless of
       # whether the operator runs the worker via Docker or natively.
-      - ${USERPROFILE:-.}/sensor_logs:/host/sensor_logs:ro
+      - ${USERPROFILE:-${HOME}}/sensor_logs:/host/sensor_logs:ro
       # Dev mount: edit Python files on host, restart worker to pick up changes.
       # No docker cp needed. Read-only to prevent __pycache__ writes to source.
       #
@@ -630,7 +630,7 @@ services:
       # for ``brain.bootstrap`` (resolve_database_url fallback).
       PYTHONPATH: "/app:/opt/poindexter"
     volumes:
-      - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
+      - ${USERPROFILE:-${HOME}}/.poindexter:/root/.poindexter
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       # Mount brain alongside /app (which is :ro and can't host a child
       # mount) and tell voice_agent_*.py where to find it via
@@ -832,7 +832,7 @@ services:
       # outage, third silent gap). Same value the legacy worker sets.
       DEPLOYMENT_MODE: worker
     volumes:
-      - ${USERPROFILE:-.}/.poindexter:/root/.poindexter
+      - ${USERPROFILE:-${HOME}}/.poindexter:/root/.poindexter
       - ${POINDEXTER_DEPLOY_ROOT:-.}/src/cofounder_agent:/app:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/opt/poindexter/brain:ro
       - ./scripts:/opt/scripts:ro
@@ -1066,11 +1066,11 @@ services:
       # cache resolve to /home/appuser. Mounting at /root left renders + the model
       # cache in the container's ephemeral layer (the worker, which reads from the
       # host-shared dir, never saw them). Matches the worker's own mount.
-      - ${USERPROFILE:-.}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
-      - ${USERPROFILE:-.}/.cache/huggingface:/home/appuser/.cache/huggingface
+      - ${USERPROFILE:-${HOME}}/.poindexter/generated-images:/home/appuser/.poindexter/generated-images
+      - ${USERPROFILE:-${HOME}}/.cache/huggingface:/home/appuser/.cache/huggingface
       # OCR text-leakage gate's EasyOCR model weights (~100MB) — mounted so
       # they survive container recreates instead of re-downloading.
-      - ${USERPROFILE:-.}/.EasyOCR:/home/appuser/.EasyOCR
+      - ${USERPROFILE:-${HOME}}/.EasyOCR:/home/appuser/.EasyOCR
     deploy:
       resources:
         reservations:
@@ -1121,8 +1121,8 @@ services:
       # cache resolve to /home/appuser. Mounting at /root left renders + the model
       # cache in the container's ephemeral layer (the worker, which reads from the
       # host-shared dir, never saw them). Matches the worker's own mount + #1703.
-      - ${USERPROFILE:-.}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
-      - ${USERPROFILE:-.}/.cache/huggingface:/home/appuser/.cache/huggingface
+      - ${USERPROFILE:-${HOME}}/.poindexter/generated-videos:/home/appuser/.poindexter/generated-videos
+      - ${USERPROFILE:-${HOME}}/.cache/huggingface:/home/appuser/.cache/huggingface
     deploy:
       resources:
         reservations:
@@ -1163,7 +1163,7 @@ services:
       # HOME); shares downloaded weights with image-gen/wan via the same host dir.
       HF_HOME: /cache/huggingface
     volumes:
-      - ${USERPROFILE:-.}/.cache/huggingface:/cache/huggingface
+      - ${USERPROFILE:-${HOME}}/.cache/huggingface:/cache/huggingface
     deploy:
       resources:
         reservations:
@@ -1203,12 +1203,12 @@ services:
       # regardless of container-level device filtering.
       CUDA_VISIBLE_DEVICES: "${CHATTERBOX_GPU_DEVICE_ID:-0}"
     volumes:
-      - ${USERPROFILE:-.}/.cache/huggingface:/home/appuser/.cache/huggingface
+      - ${USERPROFILE:-${HOME}}/.cache/huggingface:/home/appuser/.cache/huggingface
       # Optional voice-clone reference(s). Empty/absent dir = harmless no-op
       # (chatterbox's own built-in voice). An operator's real clip goes here
       # + plugin.tts_provider.chatterbox.audio_prompt_path — see
       # scripts/tts_sidecars/assets/README.md. Never committed to git.
-      - ${USERPROFILE:-.}/.poindexter/tts-voices:/app/voices:ro
+      - ${USERPROFILE:-${HOME}}/.poindexter/tts-voices:/app/voices:ro
     deploy:
       resources:
         limits:
@@ -1318,12 +1318,12 @@ services:
     volumes:
       - ./scripts/auto-embed.py:/app/auto-embed.py:ro
       - ${POINDEXTER_DEPLOY_ROOT:-.}/brain:/brain:ro
-      - ${USERPROFILE:-.}/.claude/projects:/home/embedder/.claude/projects:ro
-      - ${USERPROFILE:-.}/.openclaw/workspace/memory:/memory/openclaw:ro
+      - ${USERPROFILE:-${HOME}}/.claude/projects:/home/embedder/.claude/projects:ro
+      - ${USERPROFILE:-${HOME}}/.openclaw/workspace/memory:/memory/openclaw:ro
       # Persist ~/.gladlabs/auto-embed.log to the host so `tail -f` works
       # without needing `docker exec`. Script writes to Path.home()/.gladlabs
       # which resolves to /root/.gladlabs inside the container (GitHub #62).
-      - ${USERPROFILE:-.}/.gladlabs:/root/.gladlabs
+      - ${USERPROFILE:-${HOME}}/.gladlabs:/root/.gladlabs
     extra_hosts:
       - "host.docker.internal:host-gateway"
     # Boot order: postgres (data) → brain-daemon (seeds + self-checks) → auto-embed
